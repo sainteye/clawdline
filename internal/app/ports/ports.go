@@ -46,4 +46,17 @@ type ScreenHost interface {
 type TerminalHost interface {
 	Inventory(ctx context.Context) (session.Inventory, error)
 	Name() string
+
+	// Send types one line into a session and submits it. A nil error means the
+	// bytes reached the tty — never that anything read them. Whether the
+	// assistant took the turn is a separate fact with separate evidence.
+	Send(ctx context.Context, s session.Session, text string) error
+
+	// Interrupt delivers raw bytes outside a bracketed paste: the byte that
+	// stops a turn without closing the session.
+	Interrupt(ctx context.Context, s session.Session) error
+
+	// Close takes the session away. The caller proves nothing is still running
+	// in it first; this port does not decide that.
+	Close(ctx context.Context, s session.Session) error
 }

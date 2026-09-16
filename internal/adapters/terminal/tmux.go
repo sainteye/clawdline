@@ -4,7 +4,9 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -93,4 +95,48 @@ func (t *Tmux) Capture(ctx context.Context, s session.Session) (string, bool) {
 		return "", false
 	}
 	return string(out), true
+}
+
+// Send types one line into a pane and submits it.
+//
+// The text goes in literally (`-l`) so that a line containing a semicolon, a
+// brace or a newline cannot be read by tmux as its own command syntax. Submit
+// is a separate key rather than a trailing newline in the same call, because
+// the two are different events to the program reading the tty.
+func (t *Tmux) Send(ctx context.Context, s session.Session, text string) error {
+	if err := t.run(ctx, "send-keys", "-t", s.ID, "-l", text); err != nil {
+		return err
+	}
+	return t.run(ctx, "send-keys", "-t", s.ID, "Enter")
+}
+
+// Interrupt stops the current turn without closing the pane.
+func (t *Tmux) Interrupt(ctx context.Context, s session.Session) error {
+	return t.run(ctx, "send-keys", "-t", s.ID, "C-c")
+}
+
+// Close removes the pane.
+func (t *Tmux) Close(ctx context.Context, s session.Session) error {
+	return t.run(ctx, "kill-pane", "-t", s.ID)
+}
+
+// run carries tmux's own sentence out with the failure.
+//
+// `exit status 1` tells a reader nothing they can act on, and the difference
+// between "that pane does not exist" and "no server is running" is the whole
+// question when an effect did not land. tmux already says which; this stops
+// throwing that away.
+func (t *Tmux) run(ctx context.Context, args ...string) error {
+	cmd := exec.CommandContext(ctx, t.Binary, args...)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		said := strings.TrimSpace(stderr.String())
+		if said == "" {
+			return fmt.Errorf("tmux %s failed: %w", args[0], err)
+		}
+		return fmt.Errorf("tmux %s refused: %s", args[0], said)
+	}
+	return nil
 }

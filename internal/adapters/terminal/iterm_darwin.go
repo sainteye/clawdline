@@ -5,6 +5,7 @@ package terminal
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -118,4 +119,46 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 			"iTerm2 reported ptyless mirror rows, left to the tmux adapter")
 	}
 	return inv, nil
+}
+
+// Send types one line into an iTerm2 session.
+//
+// Apple Events rather than the tty: you cannot write into another process's tty
+// on a current macOS, and iTerm2's own `write text` does not bring the window
+// forward, which is the whole point.
+func (i *ITerm) Send(ctx context.Context, s session.Session, text string) error {
+	return i.script(ctx, `
+const it = Application("iTerm2");
+const id = %q, text = %q;
+let done = false;
+const wins = it.windows();
+for (let a = 0; a < wins.length && !done; a++) {
+  const tabs = wins[a].tabs();
+  for (let b = 0; b < tabs.length && !done; b++) {
+    const ss = tabs[b].sessions();
+    for (let c = 0; c < ss.length && !done; c++) {
+      if (String(ss[c].id()) === id) { ss[c].writeText(text); done = true; }
+    }
+  }
+}
+JSON.stringify({sent: done});
+`, s.ID, text)
+}
+
+// Interrupt and Close are not implemented for the iTerm backend yet. They
+// answer with a refusal rather than doing nothing quietly, because a caller
+// that believes a turn was stopped is worse off than one told it was not.
+func (i *ITerm) Interrupt(ctx context.Context, s session.Session) error {
+	return errUnsupported("interrupt")
+}
+
+func (i *ITerm) Close(ctx context.Context, s session.Session) error {
+	return errUnsupported("close")
+}
+
+func (i *ITerm) script(ctx context.Context, format string, args ...any) error {
+	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript")
+	cmd.Stdin = strings.NewReader(fmt.Sprintf(format, args...))
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	return cmd.Run()
 }
