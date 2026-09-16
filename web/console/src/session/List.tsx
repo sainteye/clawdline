@@ -67,6 +67,14 @@ function StateLine({ row }: { row: SessionRow }) {
   useLayoutEffect(() => {
     L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
   }, [html])
+  // The live line is written separately from the markup, as `list.js` does
+  // with setText. It changes every second while a session works, and putting
+  // it in the markup would rebuild the spinner's canvas each time; kept out,
+  // the markup changes only when the shape of the line does.
+  useLayoutEffect(() => {
+    const line = ref.current?.querySelector<HTMLElement>(".line")
+    if (line && line.textContent !== (row.line ?? "")) line.textContent = row.line ?? ""
+  }, [html, row.line])
   return <div className="state" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
