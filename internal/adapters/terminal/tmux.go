@@ -79,3 +79,18 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 	}
 	return inv, nil
 }
+
+// Capture returns what is currently drawn in a pane. It is read-only: nothing
+// is typed, and the pane is not brought forward.
+func (t *Tmux) Capture(ctx context.Context, s session.Session) (string, bool) {
+	if s.Backend != session.BackendTmux || s.ID == "" {
+		return "", false
+	}
+	cmd := exec.CommandContext(ctx, t.Binary, "capture-pane", "-p", "-t", s.ID)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	return string(out), true
+}

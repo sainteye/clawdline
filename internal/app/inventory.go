@@ -16,6 +16,7 @@ type Inventory struct {
 	Process   ports.ProcessHost
 	Terminals []ports.TerminalHost
 	Identity  ports.IdentityHost
+	Screen    ports.ScreenHost
 }
 
 // Read takes one reading of the machine from every source and merges them.
@@ -69,7 +70,9 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 
 	sort.Strings(order)
 	for _, key := range order {
-		merged.Sessions = append(merged.Sessions, in.enrich(ctx, byTTY[key]))
+		row := in.enrich(ctx, byTTY[key])
+		row = in.readScreen(ctx, row)
+		merged.Sessions = append(merged.Sessions, row)
 	}
 	return merged
 }
@@ -103,6 +106,24 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 	if id.Status != "" {
 		s.State = session.StateFromAssistantStatus(id.Status)
 		s.Evidence = session.EvidenceRegistry
+	}
+	return s
+}
+
+// readScreen is the fallback for an assistant that keeps no live record of
+// itself. It runs only where nothing better answered, so a session that told us
+// what it is doing is never overruled by a guess about its screen.
+func (in Inventory) readScreen(ctx context.Context, s session.Session) session.Session {
+	if in.Screen == nil || !s.IsAssistant() || s.Evidence == session.EvidenceRegistry {
+		return s
+	}
+	screen, ok := in.Screen.Capture(ctx, s)
+	if !ok {
+		return s
+	}
+	if state, read := session.ReadState(screen, s.Assistant); read {
+		s.State = state
+		s.Evidence = session.EvidenceScreen
 	}
 	return s
 }

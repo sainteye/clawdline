@@ -134,6 +134,21 @@ console ──► 新 daemon (7727)
 | **P2** | 終端機控制：send / open / interrupt / close |
 | **P3** | `domain/task` ＋ board ＋ 排程 ＋ Clawdfather 協調（見 coordination.md） |
 | **P4** | 剪斷代理 |
+
+### 實證：單獨接管一條路由是看不見的（P1 量到）
+
+`/v1/sessions` 被接管之後，畫面完全沒有變化。原因是 `/v1/events` 仍在代理，
+而它送的是**整份 sessions 快照**——初始 fetch 用了新核心的資料，第一個串流影格
+就把它蓋掉了。判定方法：新核心的 payload 沒有 `closeability`，而畫面上有。
+
+所以「整塊整塊接管」不是偏好而是**必要條件**：一份資料與送它的串流必須一起搬。
+`/v1/sessions` 與 `/v1/events` 的 `sessions` 影格是同一塊。
+
+### 已知落差：新核心的 `/v1/sessions` 沒有認證
+
+舊 app 對這條路由要求已配對的裝置，新核心目前誰都能讀。在只綁 loopback 的
+開發階段可以接受，但**接管開關預設關閉**，而且逐路由 scope 是 P3 的工作項目
+（見 coordination.md §4.7）。
 | **P5** | Windows／Linux 殼與安裝檔 |
 
 **驗收門檻是 P3**：能派工才算數。

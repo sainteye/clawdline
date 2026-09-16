@@ -57,6 +57,7 @@ func New(cfg config.Config) (*Server, error) {
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
 			Identity:  transcript.NewHost(),
+			Screen:    terminal.NewTmux(),
 		},
 	}, nil
 }
@@ -68,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	// be read for the same machine at the same moment; the real route is taken
 	// over only once the payloads agree.
 	mux.HandleFunc("/v1/next/sessions", s.nextSessions)
+	mux.HandleFunc("/v1/sessions", s.sessions)
 	mux.Handle("/", s.proxy)
 	return mux
 }

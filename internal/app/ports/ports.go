@@ -34,6 +34,12 @@ type IdentityHost interface {
 	ForSession(ctx context.Context, s session.Session) (Identity, bool)
 }
 
+// ScreenHost reads what is currently drawn in a terminal. It is the weakest
+// evidence this daemon has and is only consulted where nothing better exists.
+type ScreenHost interface {
+	Capture(ctx context.Context, s session.Session) (string, bool)
+}
+
 // TerminalHost enumerates and drives terminal sessions. One interface covers
 // both surfaces: a terminal somebody else opened (attached) and a pty this
 // daemon owns.
