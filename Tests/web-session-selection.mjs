@@ -11,8 +11,6 @@ import {
 } from "../Resources/web/app/js/session/selection.js";
 import { clampSkillPickerIndex, selectedSkill } from
     "../Resources/web/app/js/input/skill-picker-state.js";
-import { deliveredComposerPayloadMatches } from
-    "../Resources/web/app/js/input/composer-state.js";
 
 let checks = 0;
 function check(condition, message) { checks += 1; assert.ok(condition, message); }
@@ -306,9 +304,7 @@ const composerSource = await readFile(
 check(composerSource.includes("api.send(selected.route, text, pictures)"),
     "composer sends target the captured route rather than display id");
 check(composerSource.includes("SessionSelection.effectIsCurrent(effect)"),
-    "composer settlement is fenced before clearing or painting");
-check(/clearDeliveredComposer\(selected, submittedDraftText, pictures\);\s*\n\s*if \(!SessionSelection\.effectIsCurrent/.test(composerSource),
-    "delivery clears only its exact unchanged payload before epoch-based paint fencing");
+    "composer settlement is fenced before painting");
 equal(clampSkillPickerIndex(8, 2), 1,
     "a narrowed skill result list clamps the prior keyboard index to its last row");
 equal(selectedSkill([{ name: "one" }, { name: "two" }], 8).name, "two",
@@ -317,32 +313,105 @@ check(/selected = clampSkillPickerIndex\(selected, matches\.length\)/.test(compo
     "SkillPicker clamps its numeric index after every filtered result change");
 check(/aria-selected", i === selected \? "true" : "false"/.test(composerSource),
     "SkillPicker exposes the same clamped index through aria-selected");
-check(deliveredComposerPayloadMatches({ identity, text: "sent", pictures: ["one"] },
-    { identity, text: "sent", pictures: ["one"] }),
-    "a delivered request owns the exact unchanged composer payload");
-equal(deliveredComposerPayloadMatches({ identity, text: "sent", pictures: ["one"] },
-    { identity, text: "newer", pictures: ["one"] }), false,
-    "a newer text draft cannot be cleared by the older delivery");
-equal(deliveredComposerPayloadMatches({ identity, text: "sent", pictures: ["one"] },
-    { identity, text: "sent", pictures: ["two"] }), false,
-    "a newer attachment draft cannot be cleared by the older delivery");
+/* ---- the box empties at Send and nothing ever fills it again ------------- */
 
-if (process.argv.includes("--mutate-composer-payload")) {
-    const composerStateSource = await readFile(
-        new URL("../Resources/web/app/js/input/composer-state.js", import.meta.url), "utf8");
-    globalThis.__selectionMatchForMutation = sameSessionSelection;
-    const mutatedSource = composerStateSource
-        .replace('import { sameSessionSelection } from "../session/selection.js";',
-            "const sameSessionSelection = globalThis.__selectionMatchForMutation;")
-        .replace("submitted.text === current.text", "true");
-    assert.notEqual(mutatedSource, composerStateSource, "composer mutation target remains present");
-    const mutated = await import("data:text/javascript;base64," +
-        Buffer.from(mutatedSource).toString("base64"));
-    assert.equal(mutated.deliveredComposerPayloadMatches(
-        { identity, text: "sent", pictures: [] },
-        { identity, text: "newer", pictures: [] }), false,
-    "an older delivery must never clear a newer draft");
+// The rule, decided 2026-09-16: a send that fails in the browser may already have been
+// delivered — a Cloud round trip times out at this end after the Mac answered `200` — so the
+// composer is emptied before the request exists and no settlement path writes into it. What
+// this replaced held the text until a byte-identical payload came back, and left a delivered
+// message in the box whenever anything had touched it in flight.
+//
+// `submit` is run here rather than read, because "it is not restored" is a statement about what
+// happens after a promise settles and no arrangement of the source text says it. The two whole
+// functions are lifted out and given fakes for everything they reach for.
+const clearSource = composerSource.match(/\nfunction clearComposer\(\) \{[\s\S]*?\n\}/)?.[0] || "";
+const submitSource = composerSource.match(/\nfunction submit\(\) \{[\s\S]*?\n\}/)?.[0];
+check(!!submitSource, "the composer's submit is readable as one whole function");
+const composerDependencies = ["sending", "els", "document", "blankness", "caretToEnd", "Shots",
+    "msgText", "callSessionUI", "SkillPicker", "SessionSelection", "S", "closingKey", "byId",
+    "atBottom", "optimisticSendSnapshot", "renderComposer", "renderDetailHead", "renderTranscript",
+    "api", "Diagnostics", "observeBoardWorkflowSend", "toast", "toastFailure", "T", "closeDetail",
+    "Optimistic", "authoritativeSendTime", "followPendingTranscript", "toBottom", "loadTranscript"];
+const composerHarness = new Function("deps",
+    "var {" + composerDependencies.join(", ") + "} = deps;\n" +
+    clearSource + "\n" + submitSource + "\nreturn submit;");
+
+async function pressSend(draft, attachments, outcome) {
+    const box = { textContent: draft, classList: { toggle() {} } };
+    const seen = { requests: 0, boxAtRequest: null, attachmentsAtRequest: null,
+        sentText: null, sentPictures: null, failures: 0 };
+    let held = attachments.slice();
+    const open = { key: "mac-a|terminal-1", rowId: "terminal-1",
+        route: { machine: "mac-a", session: "terminal-1" } };
+    composerHarness({
+        sending: false,
+        els: { msg: box },
+        document: { activeElement: box },
+        blankness() {},
+        caretToEnd() {},
+        Shots: { busy: () => false, urls: () => held, clear() { held = []; } },
+        msgText: () => String(box.textContent).trim(),
+        callSessionUI: () => false,
+        SkillPicker: { accept: () => false },
+        SessionSelection: { snapshot: () => ({ open }), beginEffect: () => ({}),
+            effectIsCurrent: () => true, matches: () => true, finishEffect() {} },
+        S: { agent: null, write: true, tx: { id: "terminal-1", entries: [] } },
+        closingKey: null,
+        byId: () => ({ assistant: "claude" }),
+        atBottom: () => false,
+        optimisticSendSnapshot: () => ({ known: [], startedAt: 0 }),
+        renderComposer() {}, renderDetailHead() {}, renderTranscript() {},
+        api: {
+            send(route, text, pictures) {
+                seen.requests += 1;
+                seen.boxAtRequest = box.textContent;
+                seen.attachmentsAtRequest = held.slice();
+                seen.sentText = text;
+                seen.sentPictures = pictures;
+                return outcome === "delivered" ? Promise.resolve({})
+                    : Promise.reject({ code: "cloud_read_timeout" });
+            },
+            end: () => Promise.resolve({})
+        },
+        Diagnostics: { note() {} },
+        observeBoardWorkflowSend() {},
+        toast() {},
+        toastFailure() { seen.failures += 1; },
+        T: { sendFailed: "never rendered here" },
+        closeDetail() {},
+        Optimistic: { add() {} },
+        authoritativeSendTime: () => 0,
+        followPendingTranscript() {},
+        toBottom() {},
+        loadTranscript() {}
+    })();
+    // Three `.then` stages settle inside one macrotask, so this is the whole send.
+    await new Promise((done) => setTimeout(done, 0));
+    return { box, attachments: () => held, seen };
 }
+
+const delivered = await pressSend("a message", ["picture-one"], "delivered");
+equal(delivered.seen.requests, 1, "one press makes exactly one request");
+equal(delivered.seen.boxAtRequest, "", "the box is already empty when the request is made");
+equal(delivered.seen.attachmentsAtRequest.length, 0, "and so are the attachments");
+equal(delivered.seen.sentText, "a message", "the request still carries the words that were in it");
+equal(delivered.seen.sentPictures.length, 1, "and the picture that was attached to them");
+equal(delivered.box.textContent, "", "a delivered send writes nothing back into the box");
+equal(delivered.attachments().length, 0, "and puts no picture back either");
+
+const failed = await pressSend("a message", ["picture-one"], "failed");
+equal(failed.seen.boxAtRequest, "", "a send that will fail empties the box before it is made");
+equal(failed.box.textContent, "",
+    "a browser-side failure may still have been delivered, so the draft is never restored");
+equal(failed.attachments().length, 0, "and neither are its attachments");
+equal(failed.seen.failures, 1, "the failure is still reported to the person");
+
+const composerSettlement = composerSource.slice(composerSource.indexOf("var request = quit"));
+check(!/els\.msg|textContent|Shots\.clear\(|clearComposer\(/.test(composerSettlement),
+    "no delivery or failure path touches the composer once the request exists");
+check(!composerSource.includes('addEventListener("beforeinput"'),
+    "an empty box is not frozen in flight — what is typed then is the next message");
+
 if (process.argv.includes("--mutate-skill-clamp")) {
     const skillStateSource = await readFile(
         new URL("../Resources/web/app/js/input/skill-picker-state.js", import.meta.url), "utf8");

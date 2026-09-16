@@ -20,7 +20,6 @@ import { observeBoardWorkflowSend } from "./board-workflow-status.js";
 import { SessionSelection } from "../session/selection.js";
 import { callSessionUI } from "../session/ui.js";
 import { clampSkillPickerIndex, selectedSkill } from "./skill-picker-state.js";
-import { deliveredComposerPayloadMatches } from "./composer-state.js";
 
 /* ---- the composer -------------------------------------------------------- */
 
@@ -273,9 +272,11 @@ els.msg.addEventListener("input", function () {
     SkillPicker.changed();
 });
 
-// Nothing goes in while a send is in flight. This rather than switching the editability off,
-// which would take the focus and the keyboard with it.
-els.msg.addEventListener("beforeinput", function (ev) { if (sending) ev.preventDefault(); });
+// **Nothing is frozen while a send is in flight.** There used to be a `beforeinput` guard here
+// refusing every edit until the answer came back, because the box still held the message that
+// was on its way and an edit to it changed what the delivery would be allowed to clear. The box
+// is emptied at Send now, so there is nothing in it left to protect: anything typed during the
+// flight *is* the next message, and blocking it only stops somebody writing while they wait.
 
 // Plain text, explicitly, even though `plaintext-only` covers most of it: what a browser does
 // with a rich paste is worth being sure about rather than nearly sure about. A pasted picture is
@@ -331,27 +332,28 @@ els.composer.addEventListener("submit", function (ev) { ev.preventDefault(); sub
 ///
 /// The button is disabled while a send is in flight, and that was the whole guard — which does
 /// nothing at all for Return, because Return does not go through the button. Sending takes a
-/// couple of hundred milliseconds (it is an osascript round trip at the far end), the box is not
-/// cleared until the answer arrives, and a second Return inside that window found the same text
-/// still sitting there and sent it again. Two identical messages in somebody's session, and
-/// nothing on this page had said no.
+/// couple of hundred milliseconds on the Mac and seconds over Cloud, and a second Return inside
+/// that window sent a second request. This page makes one send at a time, and Return is held to
+/// that as firmly as the button is.
 ///
 /// The `Idempotency-Key` does not help here and is not supposed to: it exists so a **retried**
 /// request is not a second prompt, and these were two requests the page chose to make.
 export var sending = false;
 
-/** Clear only the payload this request actually submitted, never whatever was typed afterwards. */
-function clearDeliveredComposer(identity, draftText, pictures) {
-    var open = SessionSelection.snapshot().open;
-    if (!deliveredComposerPayloadMatches({ identity: identity, text: draftText,
-        pictures: pictures }, { identity: open, text: rawMsgText(), pictures: Shots.urls() })) {
-        return false;
-    }
+/**
+ * Empty the box and the attachments.
+ *
+ * Called at Send and nowhere else. **Nothing ever puts a message back**, which is the whole
+ * rule: a send that fails at this end may already have been delivered — a Cloud round trip can
+ * time out in the browser after the Mac has accepted the text and the assistant has read it —
+ * so a draft that comes back is a copy of a message somebody already received, sitting in front
+ * of whatever is typed next and going out again as part of it.
+ */
+function clearComposer() {
     els.msg.textContent = "";
     blankness();
     if (document.activeElement === els.msg) caretToEnd();
     Shots.clear();
-    return true;
 }
 
 function submit() {
@@ -364,7 +366,6 @@ function submit() {
     if (SkillPicker.accept()) return;
     var text = msgText();
     var pictures = Shots.urls().slice();
-    var submittedDraftText = rawMsgText();
     var selected = SessionSelection.snapshot().open;
     if ((!text && !pictures.length) || !selected || S.agent || !S.write ||
         closingKey === selected.key) return;
@@ -383,15 +384,17 @@ function submit() {
     // same side of the handoff, so a row can land while the terminal round trip is still slow.
     var snapshot = quit ? null : optimisticSendSnapshot(
         S.tx.id === sentID ? S.tx.entries : [], Date.now() / 1000);
+    // **The box empties here, before the request exists.** The text and the pictures have been
+    // taken out of it above and belong to this send now; whatever happens to the request, they
+    // are not coming back. See `clearComposer`. Between here and the answer the only sign that
+    // anything is happening is the button's `T.webSending` state — the transcript row is still
+    // added when the Mac answers, not now.
+    clearComposer();
     sending = true;
     renderComposer();
     var effect = SessionSelection.beginEffect("send", { identity: selected });
     var request = quit ? api.end(selected.route) : api.send(selected.route, text, pictures);
     request.then(function (answer) {
-        // Delivery owns precisely the payload it sent, not the selection epoch. Closing and
-        // reopening the same logical conversation while the request is in flight must not leave
-        // an already-delivered message ready to send twice; a newer draft is never cleared.
-        clearDeliveredComposer(selected, submittedDraftText, pictures);
         if (!SessionSelection.effectIsCurrent(effect)) return;
         observeBoardWorkflowSend(answer, {
             note: function (event, data) { Diagnostics.note(event, data); },
@@ -422,9 +425,12 @@ function submit() {
             renderComposer();
             renderDetailHead();
         }
-        // The words are still in the box — they were never taken out of it — so the press can
-        // simply be repeated. A composer that clears itself and then fails is a composer that
-        // ate somebody's message.
+        // **The words are not put back.** A failure here is a failure *at this end* — the
+        // request timed out in the browser, the relay dropped it — and none of those say the
+        // Mac did not receive the text. It often did: measured on 2026-09-16, a send the Mac
+        // answered `200` was reported to the phone as failed with the message already in the
+        // assistant's transcript. Returning the draft would hand somebody a copy of a message
+        // that had arrived, and the next thing they typed would go out in front of it.
         toastFailure(e, T.sendFailed);
     }).then(function () {
         SessionSelection.finishEffect(effect);

@@ -97,9 +97,10 @@ export function renderComposer() {
     els.composer.dataset.sending = sending ? "on" : "off";
     els.composer.dataset.closing = selection.open && closingKey === selection.open.key ? "on" : "off";
     // Editable only when there is somewhere for the words to go. Not switched off while a send
-    // is in flight, though — see the `beforeinput` guard below: taking the editability away from
-    // a focused element takes the focus with it, and on a phone that shuts the keyboard between
-    // every message.
+    // is in flight, though: taking the editability away from a focused element takes the focus
+    // with it, and on a phone that shuts the keyboard between every message. There is nothing
+    // to protect there either — the box is emptied at Send, so what somebody types while the
+    // request is out is simply the next message.
     // Through the attribute rather than the property, so it can be compared before it is
     // written — see `setAttr`. Twice a second on a working session, the property was writing
     // `plaintext-only` over `plaintext-only` and unseating the caret each time.
