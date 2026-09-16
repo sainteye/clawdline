@@ -29,7 +29,9 @@
     "js/net/cloud-failure.js": "2f2409a848a0c79b",
     "js/session/selection.js": "8ddd312681b50047",
     "js/session/ui.js": "5b4ed1293afbea71",
-    "js/view/derive.js": "dd4d3d923a048310"
+    "js/view/derive.js": "dd4d3d923a048310",
+    "js/view/markdown.js": "1d6c074ba207f3e4",
+    "js/view/board-workflow-record.js": "a6a475180fefe085"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {

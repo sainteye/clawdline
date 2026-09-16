@@ -21,6 +21,8 @@ import type { Icon, SessionRow } from "@clawdline/contract"
 import { S } from "./js/core/state.js"
 import { T, applyStrings, fill, words } from "./js/core/i18n.js"
 import { hasKeyboard } from "./js/core/env.js"
+import { copyCodeBlock, inlineMd, richText } from "./js/view/markdown.js"
+import { boardWorkflowRecordHTML, parseBoardWorkflowRecord } from "./js/view/board-workflow-record.js"
 import { shortPath, tint } from "./js/core/util.js"
 import {
   ASSISTANT_LOGOS,
@@ -157,3 +159,16 @@ export async function loadStrings(get: () => Promise<Record<string, string>>): P
     /* built-in English stays */
   }
 }
+
+/* The transcript's renderers, copied rather than ported (the child replicating
+   the transcript asked for exactly this before its connection dropped). */
+
+/** A message body as the original renders it: markdown into safe HTML. */
+export const richTextHTML = richText as (text: string) => string
+/** One line of inline markdown as HTML. */
+export const inlineMdHTML = inlineMd as (text: string) => string
+/** The code-block copy button's action. */
+export const copyCode = copyCodeBlock as (text: string) => void
+/** A board-workflow record inside a message, if there is one; null otherwise. */
+export const parseWorkflowRecord = parseBoardWorkflowRecord as (text: string, role: string) => unknown
+export const workflowRecordHTML = boardWorkflowRecordHTML as (record: unknown, options?: Record<string, unknown>) => string
