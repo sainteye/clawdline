@@ -731,3 +731,74 @@ Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一�
 見 `artifacts/report.md` 的「relay 與 api 能不能在這台 Mac 上跑起來」一節。摘要：兩邊的依賴都已經
 裝好了（relay 有 `workerd-darwin-arm64` 與 wrangler，api 有 `mongodb-memory-server`，這台機器另外有
 Homebrew 的 `mongod` 8.0），所以**不需要對外部署也不需要連正式環境**就能跑起來當測試用。
+
+---
+
+## 15. 第二階段實測到的事實（2026-09-18）
+
+這一節只寫**實際跑出來的**：本機起了一份 relay（`wrangler dev`）與一份 api（Fastify + mongod
+rs0），Go 端以一台新機器的身分註冊、握手、送 envelope、被斷線重連，並讓一個 viewer 把同一個
+envelope 送兩次。每一條後面都標了看到它的地方。可重跑的方式寫在
+`internal/adapters/cloud/live_test.go` 的檔頭。
+
+### 15.1 本機環境：實際跑起來的指令
+
+| 元件 | 指令 | 實測結果 |
+|---|---|---|
+| mongod | `mongod --replSet rs0 --dbpath … --port 27117 --bind_ip 127.0.0.1` 再 `rs.initiate` | `hello.setName=rs0`、`isWritablePrimary=true` |
+| api | `MONGO_URI='mongodb://127.0.0.1:27117/?replicaSet=rs0&directConnection=true' HOST=127.0.0.1 PORT=8180 PUBLIC_URL=http://127.0.0.1:8180 node --experimental-strip-types src/index.ts` | `/readyz` → `{"ok":true,"mongo":"up"}` |
+| relay | `wrangler dev --ip 127.0.0.1 --port 8787 --var API_BASE:http://127.0.0.1:8180 --var RELAY_SERVICE_TOKEN:dev-service-token` | `/v1/health` → `{"ok":true,"service":"clawdline-relay"}` |
+
+三件第一階段沒寫、但**不知道就會卡住**的事：
+
+1. **`API_BASE` 一定要覆寫**，第一階段的報告已經警告過；補充的是**`RELAY_SERVICE_TOKEN` 也一定
+   要給**。relay 的 `#admitIdentity` 只有在 entitlements 抓成功並且提交過一次 revocation 之後
+   才會把 `#revocationAuthority` 設成 `durable`，在那之前每一條 `/v1/connect` 都回
+   `bad_gateway`。api 開發模式的 `SERVICE_TOKEN` 預設就是 `dev-service-token`。
+2. **api 需要一顆外部的 replica set**，`npm run dev` 不會自己起 mongo，
+   `mongodb-memory-server` 只有測試在用。
+3. **`TOKEN_ISSUER` 預設等於 `API_BASE`**，而 api 的 `iss` 預設等於 `PUBLIC_URL`。兩邊不一致
+   時 token 會被 relay 以 `unauthorized`（issuer is not ours）擋掉，所以起 api 時要把
+   `PUBLIC_URL` 設成 relay 那個 `API_BASE`。
+
+開發模式的登入是 stub OAuth：`GET /v1/auth/oauth/start` 直接 302 回 callback 並帶
+`code=stub:demo`，把 `demo` 換成別的字串就是另一個帳號（free tier 一個帳號只能有一台機器，
+所以每次重跑要換）。
+
+### 15.2 這一階段實測到的行為
+
+| 事實 | 怎麼看到的 |
+|---|---|
+| 握手就是 §7.1 寫的兩步，簽的字串是 `clawdline-challenge-v1\|<account>\|<device>\|<challenge>` | `TestLiveHandshakeAndDedupe` 的 step 1；challenge nonce 是標準 padded base64 的 32 bytes |
+| `ready` 帶 `connected_at` 與 `token_expires_at`，兩個都是 epoch **毫秒** | 同上 |
+| 一個 machine 送 `orch/<mid>` 會拿到 `ack status=delivered`，**`fanout=0`**（沒有 viewer 在聽也算 delivered） | step 2 |
+| **relay 自己完全不做 (sender, seq) 去重** | 對本機 relay 連送三次逐位元組相同的 envelope，三次都拿到 `ack delivered`（`artifacts/step5-connect-publish.txt`）。relay 的 `PUBLISH_ERROR_TABLE` 裡也沒有 duplicate 這個碼 |
+| 去重是**收端**的事：同一個 `(sender, seq)` 只認一次 | step 4：viewer 把同一份 envelope 送兩次，Mac 端 `inbound_total=1`、`inbound_dropped.replay=1` |
+| outbound 這一側也只結一次：第二張收據是 `late_ignored`，不是錯誤也不是復活 | `artifacts/step5-connect-publish.txt` 的 `cloud receipt ignored … reason=already_settled` |
+| 斷線之後照 §15.3 的階梯重連，序號**不重來** | `artifacts/step6-reconnect.txt`：relay 被殺掉後 305→458→987→1569→3807→6436 ms，回來之後 `generation=2`；重開的 process 從 seq 64 而不是 0 開始（fence） |
+| 重連之後在途的 envelope 是**原封不動**重送 | `TestAnUnansweredEnvelopeIsResentByteForByte` 逐位元組比對重送前後 |
+
+### 15.3 這一版照抄的常數（來源 `Sources/CloudTransport.swift:1711-1718`）
+
+`initialBackoff` 250 ms、`maximumBackoff` 30 s、`backoffResetAfter` 30 s、`openingTimeout` 15 s、
+`authenticationTimeout` 15 s、`receiveTimeout` 90 s、`keepaliveInterval` 30 s、`refreshAhead` 60 s。
+jitter 是 `0.75 + unit*0.5`（±25%，對稱），而且**先睡再加倍**（:2112-2113），所以任何一次失敗之後
+的第一次重試都是 250 ms 上下。退避只有在「剛死掉的那條連線活過 30 秒」時才歸零——不是「剛剛還有
+流量」：一條接起來就被拒絕的連線很快，快不可以讀成健康。
+
+### 15.4 刻意跟舊版不同的地方
+
+| 項目 | 舊 Swift app | 這一版 | 為什麼 |
+|---|---|---|---|
+| outbound spool 的 row | 持久化在 `outbound-spool.json` | **記憶體** | 舊版開檔時本來就把每一個 row 都燒掉（reserved 沒封、sent 的單調時間跨 process 不能比、ready 的 `ts` 過了 relay 的 skew 窗），所以持久化的可觀察差別只有序號 |
+| 序號 | 連號寫在 spool 檔裡 | **獨立的 fence 檔**（`outbound-sequence-v1.json`，一次前進 64） | 序號是唯一一個掉了會出事的東西：重開機從 0 開始，每個 viewer 的 replay 視窗都會安靜地拒收這台機器的全部快照 |
+| command ledger | actor＋durable store＋fairness＋GC metrics | 記憶體、同樣的常數與狀態機 | 重開機會忘記 outcome，同一個 request_id 會再執行一次。這是真的缺口，不是疏漏 |
+| ledger 的 GC | 只在 `reserve` 的 transaction 裡跑，而且 `retainedElapsedMilliseconds` 在正式版裡從來沒被推進過，所以 `expired` 分支實際上不會觸發 | 只用 `expiresAt`（wall clock）收，不要求單調時間的雙條件 | 舊版那個雙條件在正式版沒有推進者，等於 row 只會因為 revoke 或重開機消失。這一版少一個條件，會真的過期 |
+| WebSocket | `URLSession` / NIO | 自己寫的 RFC 6455 client（`websocket.go`） | 這個 repo 沒有直接相依，client 半邊很小；permessage-deflate 不談判，server 若硬開就當錯誤 |
+| 入站 roster | Keychain 的配對裝置表 | **還沒有**：`PublicKeyFor` 目前一定回 false | 配對是下一波（§8.3）。所以現在每一個入站 envelope 都會記成 `unknown_sender` 而不是被放行 |
+
+### 15.5 這一階段**沒有**做的
+
+27 種操作的內容、推播、配對、entitlements 快取、hosted console 的畫面、把 transport 接進 daemon
+的 `serve`（現在只有 `clawdline cloud connect` 會開線）、`/v1/cloud/status` 這種 HTTP 路由
+（daemon 還沒有一條活的線可以報告）。
