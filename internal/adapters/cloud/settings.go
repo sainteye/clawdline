@@ -34,6 +34,12 @@ const (
 	KeyAPIBase = "cloud_api_base"
 	// KeyMachineName is what the person will see in their machine list.
 	KeyMachineName = "cloud_machine_name"
+	// KeyCommands is whether a Cloud viewer may cause an effect here at all —
+	// type into a session, close one, start one. It is a **second** switch on
+	// purpose, the same shape as `remote` and `remote_write` on the free path:
+	// letting somebody read a session list and letting them run code on this
+	// Mac are two different decisions, and one switch cannot carry both.
+	KeyCommands = "cloud_commands"
 )
 
 // The production endpoints, `CloudBridgeLifecycle.swift:397`.
@@ -47,7 +53,10 @@ const MasterKeyID = "ms-1"
 
 // Settings is one reading of the switch.
 type Settings struct {
-	Enabled     bool
+	Enabled bool
+	// Commands is the remote-write switch. Off is off: a viewer may read and
+	// may not act.
+	Commands    bool
 	RelayURL    string
 	APIBase     string
 	MachineName string
@@ -73,6 +82,13 @@ func ReadSettings(file *nextconfig.File) (Settings, error) {
 		}
 		settings.Enabled = enabled
 	}
+	if raw, ok := values.Raw[KeyCommands]; ok {
+		var allowed bool
+		if err := json.Unmarshal(raw, &allowed); err != nil {
+			return Settings{}, fmt.Errorf("%s must be true or false", KeyCommands)
+		}
+		settings.Commands = allowed
+	}
 	if relay, ok := values.String(KeyRelayURL); ok && relay != "" {
 		if err := ValidateRelayURL(relay); err != nil {
 			return Settings{}, err
@@ -94,6 +110,15 @@ func ReadSettings(file *nextconfig.File) (Settings, error) {
 // SetEnabled writes the switch and leaves every other key as it was.
 func SetEnabled(file *nextconfig.File, enabled bool) error {
 	_, err := file.Set(map[string]any{KeyEnabled: enabled})
+	return err
+}
+
+// SetCommands writes the remote-write switch and leaves every other key as it
+// was. Turning the line off does not turn this one off, and that is deliberate:
+// the person who said "no writes" said it about every time the line comes back
+// up, not about this one session.
+func SetCommands(file *nextconfig.File, allowed bool) error {
+	_, err := file.Set(map[string]any{KeyCommands: allowed})
 	return err
 }
 

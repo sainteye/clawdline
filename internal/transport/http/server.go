@@ -150,6 +150,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/auth/", s.authRoute)
 	mux.HandleFunc("/v1/health", s.health)
 	mux.HandleFunc("/v1/diagnostics", s.diagnostics)
+	// What the line to app.clawdline.com is doing (cloud.go). This machine's
+	// own token only.
+	mux.HandleFunc("/v1/cloud/status", s.cloudStatusRoute)
 	// A shadow route, not the real one. It runs beside /v1/sessions so both can
 	// be read for the same machine at the same moment; the real route is taken
 	// over only once the payloads agree.

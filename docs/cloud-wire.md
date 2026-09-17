@@ -896,3 +896,89 @@ jitter 是 `0.75 + unit*0.5`（±25%，對稱），而且**先睡再加倍**（:
 27 種操作的內容、推播、配對、entitlements 快取、hosted console 的畫面、把 transport 接進 daemon
 的 `serve`（現在只有 `clawdline cloud connect` 會開線）、`/v1/cloud/status` 這種 HTTP 路由
 （daemon 還沒有一條活的線可以報告）。
+
+## 16. 第四階段：接線與 hosted console 端到端（2026-09-18 實測）
+
+第二階段把線接起來但沒人開它，第三階段把 27 種操作接到本機路由但沒有傳輸。這一階段把兩半接進
+`clawdline serve`，並且**用 app.clawdline.com 的正式前端 bytes**（`tools/build-web-app.py` 的產出，
+只是指向本機 api 與 relay）真的操作了這台 Mac。
+
+### 16.1 接線長什麼樣
+
+`cmd/clawdline/main.go` 的 `startCloudLine` 在 `serve` 起來之後開一條 `internal/transport/cloud`
+的 `Link`：
+
+- `Open` 先讀設定。`cloud_enabled` 不是 `true` 就**什麼都不開**——不開金鑰庫、不讀身分、不連線，
+  `/v1/cloud/status` 回 `enabled:false, state:"off"`。設定壞掉（relay URL 打錯）是**拒絕**，
+  daemon 照樣起來，理由寫在 status 的 `last_error`。
+- `Run` 開兩條 goroutine：transport 顧 socket，service 顧回答。另外兩條小的：roster 定時重讀、
+  快照發佈器。
+- 兩個開關，不是一個：`cloud_enabled` 是線通不通，`cloud_commands` 是 viewer 能不能動這台 Mac。
+  第二個**每次請求重讀**檔案，所以關掉的當下連在途的請求也一起擋。CLI 是 `clawdline cloud commands on|off`。
+
+### 16.2 入站 roster（§15.4 那個缺口補上了）
+
+`internal/adapters/cloud/roster.go` 用機器憑證讀 `GET /v1/devices`（控制平面的帳號裝置表），
+把每一列的 `public_key` 釘成 `PublicKeyFor`。核准發生在帳號那一端，這台機器沒有第二票。
+`revoked_at` 有值的不算；讀不到**不等於空的**（`roster_unreadable`，`Readable()` 分得出來）；
+一列壞掉不會鎖住其他三列；讀失敗保留上一次的好答案。
+
+裝置的 `caps` 也真的在用：`cloud_commands` 開著，還要這個 sender 的 roster 列上有 `send_prompt`
+或 `start_session`，才會讓一個 command 走到不可回頭那一點。
+
+### 16.3 狀態路由與設定頁
+
+`GET /v1/cloud/status`，**只有這台 Mac 自己的 token 讀得到**（跟 `/v1/diagnostics` 同一條規則：
+它會說出 relay、帳號、機器指紋與每一台已登記的 viewer）。沒有 token 是 401，orchestrator token
+也是 401。React 設定頁的「遠端」分頁多了一張 Cloud 狀態卡，5 秒一次、只在那一頁開著時才問。
+
+**刻意的缺口**：這個形狀**沒有**進 `api/v1/` 契約，因此設定頁是自己寫型別
+（`web/console/src/pages/settings/cloud.ts`）。理由是 task `e33336e8` 同時 claim 了 `api/v1/`，
+重生契約會改到 218 個型別的產出檔並跟它撞在一起。補契約是待辦。
+
+### 16.4 端到端實測：hosted console 真的看得到這台 Mac
+
+環境全部在本機，**沒有碰正式環境，也沒有碰使用者的 Cloud 帳號**：mongod 27117、
+`clawdline-cloud/api` 的複本 8180、relay 的複本（`wrangler dev`）8787，前面一層自簽 TLS 的
+Node 伺服器把三者收在同一個 origin `https://127.0.0.1:8443`（console 的 build 宣告強制
+`https` 與 `wss`，`net/cloud-boot.js:86-91`）。console 是
+`tools/build-web-app.py --app-origin/--api-origin/--relay-url` 指向本機的產出，**一個位元組都沒改**。
+
+量到的：
+
+| 步驟 | 結果 |
+|---|---|
+| `serve` 自己連上 relay | `cloud ready account=… machine=… generation=1`，不必再打 `cloud connect` |
+| api／relay 重啟後 | `relay_unauthorized` → 退避 → `connects=3`，線自己回來 |
+| console 的機器卡 | 「已連上」、`Mac 電腦 · clawdline-go-e2e` |
+| console 的 session 清單 | 這台 Mac 的 11 個 session 全部列出來（id、assistant、cwd、tty、狀態） |
+| 打開一個 session | transcript 在 console 裡展開，內容與本機一致 |
+| 從 console 送訊息 | 送進自己開的可拋棄 session，終端機收到、assistant 開始跑，訊息回到 console 的 transcript |
+
+### 16.5 這一階段學到的三件事（不接就看不到東西）
+
+1. **機器清單不是 API 路由。** `cloud-client.js` 的 `machines()` 是純本地計算，來源是它解密過的
+   `orch/` 與 `s/` envelope。只會回答、不會主動發佈的機器，在 console 上是**不存在**的。
+2. **session 清單是機器自己發佈的快照**：`s/<machine>/<session>` 一列一個 session，
+   `s/<machine>/__clawdline_inventory_v1__` 是清單標記（`{"inventory":{"version":1,"sessions":[…]}}`，
+   `features` 放在**旁邊**不能放裡面，多一個 key 整包 `bad_payload`）。
+   標記是**刪除屏障**：viewer 會丟掉它沒點名的每一列，所以只有 authoritative 的 scan 能發。
+   這個 daemon 的 `/v1/sessions` 目前 `scan.complete` 一直是 false，所以標記現在不會發，
+   清單靠 row 自己撐（實測有效），代價是消失的 session 不會被 prune。
+3. **descriptor 要自己說 `commands`。** 沒有 `commands` 陣列時 console 用 `platform` 猜，
+   猜不到的平台**一個字都不送**——不是送了被拒絕，是連請求都不發。所以
+   `internal/transport/cloud/publish.go` 直接把 `cloudops.Implemented()` 放進去。
+   同理 `features` 是算出來的不是抄的：`sessions.snapshot` 與 `board.items` 這個 daemon 都不會答，
+   所以現在是空的，不發這個 key。
+
+### 16.6 還沒做的（不可以當作通過）
+
+- **配對沒做。** Go 版沒有機器半邊的 QR／四階段 handover，所以瀏覽器拿不到這台機器的 master
+  secret。實測時是**用 devtools 把已完成配對會寫的那四筆直接種進 IndexedDB**
+  （`clawdline.machine-master*` / `-sender` / `-binding`）。因此這一段證明的是傳輸與操作那一層，
+  **不是配對那一層**。配對仍是下一波。
+- `sessions.snapshot` 這個字沒有接（發佈器自己每 5 秒掃）。
+- `t/` 上沒有主動推播；transcript 的即時更新在舊版是靠 row 上的 `transcript_signature` 變動來觸發，
+  這個 daemon 還沒有算那個簽章，所以 console 要靠自己的重讀節奏。
+- 正式環境（`relay.clawdline.com`／`api.clawdline.com`）一個位元組都沒連過。
+- entitlements、推播、`ctlr/` 回覆軌、交接通道都沒動。
