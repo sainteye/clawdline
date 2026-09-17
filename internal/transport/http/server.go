@@ -171,6 +171,12 @@ func (s *Server) Handler() http.Handler {
 			s.sessionScreenRoute(w, r, id)
 			return
 		}
+		// A read as well (git.go): what the session's repository has changed,
+		// asked for when its panel opens.
+		if id, ok := gitPath(r); ok {
+			s.sessionGitRoute(w, r, id)
+			return
+		}
 		if id, ok := focusPath(r); ok {
 			s.sessionFocusRoute(w, r, id)
 			return

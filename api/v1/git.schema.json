@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "git.schema.json",
+  "title": "A session's repository, as the Git panel reads it",
+  "description": "GET /v1/sessions/{id}/git. The Swift app answers this from `GitChanges.payload`; the shape is that payload, field for field, because `input/git-panel.js` reads it directly. It is a reading taken when the panel opens, never a subscription: three lock-free `git` invocations, and no cache beyond the answer.",
+  "$defs": {
+    "GitFileKind": {
+      "description": "What happened to one file. `conflict` outranks the rest — an unmerged path is the one row a reader must not mistake for an ordinary edit — and a rename is named before an add or a delete because Git reports it as both.",
+      "type": "string",
+      "enum": [
+        "modified",
+        "added",
+        "deleted",
+        "renamed",
+        "untracked",
+        "conflict"
+      ]
+    },
+    "GitFile": {
+      "description": "One row of `git status --porcelain=v2`, with the two diff counts joined onto it. `staged` and `unstaged` are the two halves of the XY code and are not exclusive: a file edited after being added is both.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "staged",
+        "unstaged",
+        "kind"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "from": {
+          "description": "Where a rename came from; null for every other kind.",
+          "type": "string",
+          "nullable": true
+        },
+        "staged": {
+          "type": "boolean"
+        },
+        "unstaged": {
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/GitFileKind"
+        },
+        "additions": {
+          "description": "Lines added, from `git diff --numstat` and `--cached --numstat` summed. Null when there is no measurement rather than zero: an untracked file appears in neither diff, and a binary side of one is a dash. A count of nothing and nothing counted are different facts and the panel draws them differently.",
+          "type": "integer",
+          "nullable": true
+        },
+        "deletions": {
+          "description": "Lines removed, on the same terms as `additions`. Once either side of a pair is unknowable both stay null rather than presenting half a measurement.",
+          "type": "integer",
+          "nullable": true
+        }
+      }
+    },
+    "GitSnapshot": {
+      "description": "The branch line and the changed files, as of the moment the panel asked.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch",
+        "head",
+        "ahead",
+        "behind",
+        "clean",
+        "files"
+      ],
+      "properties": {
+        "branch": {
+          "description": "`# branch.head`. Empty on a detached HEAD, where the panel falls back to the first eight characters of `head`.",
+          "type": "string"
+        },
+        "head": {
+          "description": "`# branch.oid`, or empty on a repository with no commit yet, where Git says `(initial)`.",
+          "type": "string"
+        },
+        "ahead": {
+          "type": "integer"
+        },
+        "behind": {
+          "type": "integer"
+        },
+        "clean": {
+          "description": "No changed files. Sent rather than derived so the two ends cannot disagree about what an empty list means.",
+          "type": "boolean"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GitFile"
+          }
+        }
+      }
+    },
+    "GitReply": {
+      "description": "The reply body. One key, because the Swift route wraps the snapshot and the page reads `data.git`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "git"
+      ],
+      "properties": {
+        "git": {
+          "$ref": "#/$defs/GitSnapshot"
+        }
+      }
+    }
+  }
+}

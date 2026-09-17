@@ -15,6 +15,7 @@ import { requestDocuments } from "../legacy/documents-bridge.js"
 import { requestUserMessages } from "../legacy/user-messages-bridge.js"
 import { askFocus } from "../legacy/screen-bridge.js"
 import { Transcript } from "./Transcript.js"
+import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
 import { ScreenPanel } from "./ScreenPanel.js"
 import { StatusLine } from "./StatusLine.js"
@@ -75,6 +76,20 @@ export function Detail({
     setScreenOpen(false)
   }, [row?.id])
 
+  // `els["pane-detail"].dataset.panel` (`input/git-panel.js`): which panel has
+  // the transcript's space. There is never more than one, and the copied
+  // stylesheet steps the transcript, the composer and the rest aside from this
+  // one attribute.
+  const [gitOpen, setGitOpen] = useState(false)
+  // `GitPanel.close(restore)`: focus goes back to the `⋯` trigger, and only
+  // when it is still something a person can be on.
+  const closeGit = (restore: boolean) => {
+    setGitOpen(false)
+    if (!restore) return
+    const trigger = document.getElementById("detail-actions-trigger") as HTMLButtonElement | null
+    if (trigger && !trigger.disabled) trigger.focus({ preventScroll: true })
+  }
+
   // No snippets route means no resolved project (`snippetProjectFor`), so the
   // mark is keyed by the session's own `cwd`.
   const mark = useMemo(() => markForSession(row), [row?.icon, row?.cwd])
@@ -93,7 +108,11 @@ export function Detail({
   const home = !row && !listUnknown
 
   return (
-    <section className="pane pane-detail" id="pane-detail" data-panel={screenOpen ? "screen" : undefined}>
+    <section
+      className="pane pane-detail"
+      id="pane-detail"
+      data-panel={screenOpen ? "screen" : gitOpen ? "git" : undefined}
+    >
       <div className="detail-head" id="detail-head" data-closing={ending ? "on" : "off"}>
         <button className="back" id="back" onClick={onBack} aria-label={T.webBackLabel} disabled={ending}>
           ‹ {T.webBack}
@@ -150,6 +169,7 @@ export function Detail({
             onDid={onDid}
             triggerRef={actionsTrigger}
             onScreen={() => setScreenOpen(true)}
+            onOpenGit={() => setGitOpen(true)}
           />
         </div>
       </div>
@@ -164,6 +184,8 @@ export function Detail({
           }
         }}
       />
+
+      <GitPanel row={row} open={gitOpen} onClose={closeGit} />
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
@@ -244,12 +266,13 @@ function detailSub(row: SessionRow | null): string {
  * - Documents opens the Documents page on this session (`pages/documents.tsx`),
  *   and My messages opens its sheet (`session/UserMessages.tsx`), both through
  *   an event, as `main.js` opens them from its own listener on these two rows.
- * - Git changes: no route in this console. Session info opens the info sheet.
+ * - Session info opens the info sheet.
  * - Snippets: hidden and disabled, which is the original's own shape for a
  *   transport with no snippets route (`syncRow` in `input/snippets.js`).
- * - commit, push: the daemon can send them, but the original sends them only
- *   through the `#action-confirm` sheet, which is not here, and sending without
- *   that step would be a weaker guard than the screen being replicated.
+ * - Git changes opens the panel over the transcript, as `#session-git` does
+ *   there. commit and push are ordinary prompts behind the `#action-confirm`
+ *   sheet — the daemon runs no git for them; the word is typed into the
+ *   session, which is what the original's `data-action` rows do.
  * - Close session opens the confirmation sheet, as the original does; a
  *   refusal is reported by the toast there, not by this menu.
  */
@@ -259,12 +282,14 @@ function Tools({
   onDid,
   triggerRef,
   onScreen,
+  onOpenGit,
 }: {
   row: SessionRow | null
   ending: boolean
   onDid: () => void
   triggerRef: RefObject<HTMLButtonElement | null>
   onScreen: () => void
+  onOpenGit: () => void
 }) {
   const T = L.strings
   const [open, setOpen] = useState(false)
@@ -574,13 +599,49 @@ function Tools({
               >
                 ‹ {T.webSessionActions}
               </button>
-              <button id="session-git" type="button" role="menuitem" disabled>
+              {/* A read: nothing is sent, so there is no confirmation to cross.
+                  The menu closes and the panel opens over the transcript. */}
+              <button
+                id="session-git"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending}
+                onClick={() => {
+                  closeMenu(false)
+                  onOpenGit()
+                }}
+              >
                 {T.webSessionGit}
               </button>
-              <button id="session-commit" type="button" role="menuitem" data-action="commit" disabled>
+              {/* `data-action` in the original, read by one listener on the
+                  menu. Both are sends, so both cross the confirmation sheet,
+                  which is what types the word into the session. */}
+              <button
+                id="session-commit"
+                type="button"
+                role="menuitem"
+                data-action="commit"
+                disabled={!row || ending}
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  requestConfirm({ kind: "commit", id: row.id, opener: triggerRef.current })
+                }}
+              >
                 commit
               </button>
-              <button id="session-push" type="button" role="menuitem" data-action="push" disabled>
+              <button
+                id="session-push"
+                type="button"
+                role="menuitem"
+                data-action="push"
+                disabled={!row || ending}
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  requestConfirm({ kind: "push", id: row.id, opener: triggerRef.current })
+                }}
+              >
                 push
               </button>
             </div>

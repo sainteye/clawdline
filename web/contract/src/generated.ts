@@ -1192,6 +1192,86 @@ export interface FocusResult {
 }
 
 /**
+ * One row of `git status --porcelain=v2`, with the two diff counts joined onto it.
+ * `staged` and `unstaged` are the two halves of the XY code and are not exclusive:
+ * a file edited after being added is both.
+ */
+export interface GitFile {
+  /**
+   * Lines added, from `git diff --numstat` and `--cached --numstat` summed. Null
+   * when there is no measurement rather than zero: an untracked file appears in
+   * neither diff, and a binary side of one is a dash. A count of nothing and
+   * nothing counted are different facts and the panel draws them differently.
+   */
+  additions: number | null
+
+  /**
+   * Lines removed, on the same terms as `additions`. Once either side of a pair is
+   * unknowable both stay null rather than presenting half a measurement.
+   */
+  deletions: number | null
+
+  /**
+   * Where a rename came from; null for every other kind.
+   */
+  from: string | null
+  kind: GitFileKind
+  path: string
+  staged: boolean
+  unstaged: boolean
+}
+
+/**
+ * What happened to one file. `conflict` outranks the rest — an unmerged path is
+ * the one row a reader must not mistake for an ordinary edit — and a rename is
+ * named before an add or a delete because Git reports it as both.
+ */
+export type GitFileKind =
+    "modified"
+  | "added"
+  | "deleted"
+  | "renamed"
+  | "untracked"
+  | "conflict"
+
+export const GitFileKindValues: readonly GitFileKind[] = ["modified", "added", "deleted", "renamed", "untracked", "conflict"] as const
+
+/**
+ * The reply body. One key, because the Swift route wraps the snapshot and the page
+ * reads `data.git`.
+ */
+export interface GitReply {
+  git: GitSnapshot
+}
+
+/**
+ * The branch line and the changed files, as of the moment the panel asked.
+ */
+export interface GitSnapshot {
+  ahead: number
+  behind: number
+
+  /**
+   * `# branch.head`. Empty on a detached HEAD, where the panel falls back to the
+   * first eight characters of `head`.
+   */
+  branch: string
+
+  /**
+   * No changed files. Sent rather than derived so the two ends cannot disagree
+   * about what an empty list means.
+   */
+  clean: boolean
+  files: GitFile[]
+
+  /**
+   * `# branch.oid`, or empty on a repository with no commit yet, where Git says
+   * `(initial)`.
+   */
+  head: string
+}
+
+/**
  * GET /v1/health, open without a token: that this daemon is alive and which
  * implementation it is, and nothing else. No path, no port, nothing about the work;
  * those are in Diagnostics.

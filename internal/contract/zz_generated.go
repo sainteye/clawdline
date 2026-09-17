@@ -103,7 +103,7 @@ type AnalyticsComparison struct {
 	CurrentRange *AnalyticsDayRange `json:"currentRange,omitempty"`
 
 	// Null when the previous output was 0.
-	Percent       float64            `json:"percent"`
+	Percent       *float64           `json:"percent"`
 	PercentReason *string            `json:"percentReason"`
 	Previous      int64              `json:"previous,omitempty"`
 	PreviousRange *AnalyticsDayRange `json:"previousRange"`
@@ -965,6 +965,70 @@ var EvidenceValues = []Evidence{EvidenceStructured, EvidenceTranscript, Evidence
 type FocusResult struct {
 	ID string `json:"id"`
 	OK bool   `json:"ok"`
+}
+
+// One row of `git status --porcelain=v2`, with the two diff counts joined onto
+// it. `staged` and `unstaged` are the two halves of the XY code and are not
+// exclusive: a file edited after being added is both.
+type GitFile struct {
+	// Lines added, from `git diff --numstat` and `--cached --numstat` summed. Null
+	// when there is no measurement rather than zero: an untracked file appears in
+	// neither diff, and a binary side of one is a dash. A count of nothing and nothing
+	// counted are different facts and the panel draws them differently.
+	Additions *int64 `json:"additions"`
+
+	// Lines removed, on the same terms as `additions`. Once either side of a pair is
+	// unknowable both stay null rather than presenting half a measurement.
+	Deletions *int64 `json:"deletions"`
+
+	// Where a rename came from; null for every other kind.
+	From     *string     `json:"from"`
+	Kind     GitFileKind `json:"kind"`
+	Path     string      `json:"path"`
+	Staged   bool        `json:"staged"`
+	Unstaged bool        `json:"unstaged"`
+}
+
+// What happened to one file. `conflict` outranks the rest — an unmerged path
+// is the one row a reader must not mistake for an ordinary edit — and a
+// rename is named before an add or a delete because Git reports it as both.
+type GitFileKind string
+
+const (
+	GitFileKindModified  GitFileKind = "modified"
+	GitFileKindAdded     GitFileKind = "added"
+	GitFileKindDeleted   GitFileKind = "deleted"
+	GitFileKindRenamed   GitFileKind = "renamed"
+	GitFileKindUntracked GitFileKind = "untracked"
+	GitFileKindConflict  GitFileKind = "conflict"
+)
+
+// GitFileKindValues is every value the contract allows, in contract order.
+var GitFileKindValues = []GitFileKind{GitFileKindModified, GitFileKindAdded, GitFileKindDeleted, GitFileKindRenamed, GitFileKindUntracked, GitFileKindConflict}
+
+// The reply body. One key, because the Swift route wraps the snapshot and the
+// page reads `data.git`.
+type GitReply struct {
+	Git GitSnapshot `json:"git"`
+}
+
+// The branch line and the changed files, as of the moment the panel asked.
+type GitSnapshot struct {
+	Ahead  int64 `json:"ahead"`
+	Behind int64 `json:"behind"`
+
+	// `# branch.head`. Empty on a detached HEAD, where the panel falls back to the
+	// first eight characters of `head`.
+	Branch string `json:"branch"`
+
+	// No changed files. Sent rather than derived so the two ends cannot disagree about
+	// what an empty list means.
+	Clean bool      `json:"clean"`
+	Files []GitFile `json:"files"`
+
+	// `# branch.oid`, or empty on a repository with no commit yet, where Git says
+	// `(initial)`.
+	Head string `json:"head"`
 }
 
 // GET /v1/health, open without a token: that this daemon is alive and which
