@@ -30,6 +30,10 @@ let accent = NSColor(srgbRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
 /// caught it.
 final class ConsoleWindow: NSWindow {
     var onReload: (() -> Void)?
+    /// ⌘[ and ⌘], which are a browser's keys and not a text view's, so nothing
+    /// under here would ever claim them. See Browser.swift.
+    var onBack: (() -> Void)?
+    var onForward: (() -> Void)?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if super.performKeyEquivalent(with: event) { return true }
@@ -46,6 +50,12 @@ final class ConsoleWindow: NSWindow {
             case "z": action = Selector(("undo:"))
             case "r":
                 onReload?()
+                return true
+            case "[":
+                onBack?()
+                return true
+            case "]":
+                onForward?()
                 return true
             default: break
             }
@@ -140,6 +150,15 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     var web: WKWebView!
     var statusItem: NSStatusItem!
     var daemon: Process?
+
+    /// The other place this window can be: anywhere on the web, in a cookie
+    /// store this machine's token has never been written to. Browser.swift.
+    var webTab: ExternalWeb!
+    /// The bar across the top, and the part of the window under it.
+    var bar: BrowserBar!
+    var content: NSView!
+    /// Which of the two views `content` is holding.
+    var showingWeb = false
 
     private let hotKey = HotKey()
     private var hotKeyActive = false
@@ -321,9 +340,13 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         window.isReleasedWhenClosed = false
         // The Swift app's Home window floor.
         window.minSize = NSSize(width: 680, height: 620)
-        window.contentView = web
+        // The console is one of the two views this window can show; the bar and
+        // the switch between them are in Browser.swift.
+        window.contentView = buildBrowser()
         window.delegate = self
-        window.onReload = { [weak self] in self?.reload() }
+        window.onReload = { [weak self] in self?.reloadActive() }
+        window.onBack = { [weak self] in self?.browserBack() }
+        window.onForward = { [weak self] in self?.browserForward() }
         window.center()
     }
 
@@ -392,16 +415,22 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     func windowDidMiniaturize(_ notification: Notification) { updateHotKeyScope() }
     func windowDidDeminiaturize(_ notification: Notification) { updateHotKeyScope() }
 
-    @objc func reload() {
+    @objc func reload() { load(home) }
+
+    /// Load a page of the console's, with this machine's token in place first.
+    ///
+    /// `url` is always the console's own origin — `go(to:)` in Browser.swift is
+    /// the only caller that passes anything but `home`, and it checks. Every
+    /// route but the page itself needs a token, this window included. The
+    /// cookie goes in first; see LocalToken.install for why it is not adopted
+    /// through the page.
+    func load(_ url: URL) {
         loadGeneration += 1
         pageLoaded = false
-        // Every route but the page itself needs a token, this window included.
-        // The cookie goes in first; see LocalToken.install for why it is not
-        // adopted through the page.
         let generation = loadGeneration
         LocalToken.install(in: web.configuration.websiteDataStore.httpCookieStore, for: home) { [weak self] _ in
             guard let self, generation == self.loadGeneration else { return }
-            self.web.load(URLRequest(url: home))
+            self.web.load(URLRequest(url: url))
         }
     }
 
@@ -731,7 +760,12 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     // MARK: - Actions
 
     @objc private func openPanel() { showConsole() }
-    @objc private func showHome() { showConsole() }
+
+    /// "Home" is the console, so it is also the tab the window is on.
+    @objc private func showHome() {
+        showConsole()
+        showTab(web: false)
+    }
 
     /// Launch at login, through SMAppService, off until somebody turns it on.
     /// Registering changes the person's login items; nothing here does it on
@@ -794,6 +828,44 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     }
 
     // MARK: - Navigation
+
+    /// The console's view stays on the console.
+    ///
+    /// This is the view that carries this machine's token in its cookie store,
+    /// so where it is allowed to go is not a matter of taste. A link out of the
+    /// console opens in the person's own browser — what the Swift app does with
+    /// every link it shows, `NSWorkspace.shared.open` — and the browser beside
+    /// it is reached by its own tab, never by a page steering this one.
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = action.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+        // No target frame means a new window, which `createWebViewWith` in
+        // Microphone.swift answers; a subframe is the page's own business, and
+        // an iframe that could open the person's browser would be a page
+        // reaching out through this window.
+        guard let frame = action.targetFrame, frame.isMainFrame else {
+            decisionHandler(.allow)
+            return
+        }
+        // `about:blank` is the page this shell writes itself when the daemon is
+        // not answering.
+        if isConsole(url) || url.scheme == "about" {
+            decisionHandler(.allow)
+            return
+        }
+        decisionHandler(.cancel)
+        // `file:` is this Mac's disk; the console has no reason to ask for one
+        // and a page is not the thing that decides to open it.
+        guard url.scheme != "file" else {
+            shellLog("browser: refused \(url.absoluteString) — a page may not open this Mac's files")
+            return
+        }
+        shellLog("browser: \(url.absoluteString) is not the console; handing it to the browser")
+        NSWorkspace.shared.open(url)
+    }
 
     // The shell says what it actually loaded. A window that came up is not
     // evidence that the console is in it, and on a machine without screen
@@ -885,6 +957,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 extension Shell {
     @objc func openSettings() {
         showConsole()
+        // The settings page is the console's; a window showing the web side
+        // would otherwise take ⌘, and appear to do nothing.
+        showTab(web: false)
         goToPage("settings")
     }
 

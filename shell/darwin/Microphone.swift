@@ -1,4 +1,5 @@
-// The one permission this shell answers for the page: the microphone.
+// What this shell answers for the console's page: the microphone, and where a
+// link that opens a new window goes.
 //
 // A WKWebView refuses `getUserMedia` unless its `WKUIDelegate` says otherwise,
 // and it refuses it silently from the page's point of view — the promise
@@ -43,6 +44,30 @@ extension Shell: WKUIDelegate {
         decisionHandler(.grant)
     }
 
+    /// `target="_blank"` in the console.
+    ///
+    /// Returning nil is what tells WebKit the request was handled here rather
+    /// than refused. A link to somewhere else opens in the person's browser,
+    /// which is what the Swift app does with every link it shows; a link to the
+    /// console's own origin is a page of this window's and is loaded in it,
+    /// with the token, rather than opened somewhere that has none.
+    ///
+    /// The browser tab beside this one has its own delegate and its own answer
+    /// to both of these — see Browser.swift.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard let url = action.request.url else { return nil }
+        if isConsole(url) {
+            shellLog("browser: the console asked for a new window at \(url.absoluteString); loading it here")
+            load(url)
+        } else {
+            shellLog("browser: the console asked for a new window at \(url.absoluteString);"
+                     + " handing it to the browser")
+            NSWorkspace.shared.open(url)
+        }
+        return nil
+    }
+
     /// Whether this is the console the shell loaded, rather than somewhere it
     /// was navigated to. Host and port, compared as the URL's own pieces —
     /// never as a prefix of a string, which is how `127.0.0.1.example.com`
@@ -51,7 +76,10 @@ extension Shell: WKUIDelegate {
         guard origin.`protocol` == "http" || origin.`protocol` == "https" else { return false }
         guard origin.host == home.host else { return false }
         // WebKit reports the default port as 0; this page is never on one.
-        let asked = origin.port == 0 ? nil : Int(truncating: origin.port)
+        // `port` is an `NSInteger` in the SDK on this machine (Swift 6.2,
+        // macOS 15) and was written here as if it were an `NSNumber`, which
+        // does not compile — the wave that added this file was never packaged.
+        let asked: Int? = origin.port == 0 ? nil : origin.port
         return asked == (home.port ?? 80)
     }
 }
