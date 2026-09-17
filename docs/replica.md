@@ -136,9 +136,11 @@ webview 之外，舊 app 的原生面：
 
 | 舊版 | 規模 | 狀態 |
 |---|---|---|
-| 選單列（`main.swift` buildMenu） | 約 300 行 | child `%845` |
-| 全域熱鍵（`HotKey.swift`） | 138 行 | child `%845`：設定讀 `~/.config/clawdline-next`，不與舊 app 搶同一組 |
-| 登入時啟動（`SMAppService`） | — | child `%845`：預設關閉，測試不打開 |
+| 選單列（`main.swift` buildMenu） | 約 300 行 | ✅ `841b870`：文字與順序逐字對齊，用 System Events 與舊 app 比對 |
+| 全域熱鍵（`HotKey.swift`） | 138 行 | ✅ `841b870`：設定讀 `~/.config/clawdline-next`，沒設定就不註冊 |
+| 登入時啟動（`SMAppService`） | — | ✅ `841b870`：開關，預設關閉；測試未打開 |
+| Dock 圖示 | — | ✅ `360c9fd`：與舊 app 逐位元組相同。兩個 app 同時跑會有兩個相同圖示與 ✳，這是忠實復刻的結果 |
+| 原生「設定⋯」 | — | child `%848`（打開 webview 的設定頁） |
 | 快捷面板（`Controller` + `Panel`） | 5,400 行 | 目前以 webview 視窗代替 |
 | 原生設定（`Settings.swift`） | 3,822 行 | 未開始 |
 | 導覽（`Onboarding.swift`） | 1,468 行 | 未開始 |
@@ -148,11 +150,15 @@ webview 之外，舊 app 的原生面：
 
 ## 下一步建議
 
-1. 唯讀 Swift store（`%843` 進行中）。
+1. 唯讀 Swift store——✅ `b3959bf`：同一秒 13 列 260 欄只差 8 欄（皆與 store 無關）；task 列表 1,045 欄 0 差異；
+   Clawdfather、協調等待、交付勾、標題、closeability（version 逐字相同）一致。adapter 只有一個 `O_RDONLY` 的開檔，
+   讀 `orchestrator.json`、`coordinator.json` 與 `config.json` 的 `session_titles`。
+   N5（一列的圖示）來自 Swift 記憶體裡永不失效的快取，store 沒有這個事實——**刻意不繼承**。
 2. overlay：Session 資訊、確認框、鍵盤說明——✅ `9eb0a58`（鍵盤卡 3,241 項 0 差異、確認框 0 差異、行為 22 項相同）。
-   **待 root 接線（等 `%843` 放開檔案）**：`Detail.tsx` 改用 `requestInfo`／`requestConfirm`／`useClosingId`、刪掉兩段式關閉
-   （逐行說明在 P1 報告的「需要 root 接上的 Detail.tsx」一節）；`overlays/legacy.ts` 的暫代匯出搬進 `bridge.ts`。
-3. 依畫面效益補後端：Session 資訊 sheet（`#info`）、開新 session（`#start`）、確認框（`#action-confirm`）、
+   接線 ✅ `fd90d22`：標題與選單開 Info 卡、關閉走確認框；暫代匯出收進 `legacy/overlay-bridge.ts`。
+3. 頁面（`f0d6b90` 之後，`pages/*.tsx` 自己註冊，不再改 App）：專案頁 `%846`、用量頁 `%847`、設定頁（本機）`%848`。
+   契約產出檔不給 child 認領，整合時由 root 統一重生。
+4. 依畫面效益補後端：Session 資訊 sheet（`#info`）、開新 session（`#start`）、確認框（`#action-confirm`）、
    在 Mac 上顯示——這四個是詳情標頭與選單最常用的入口。
 3. 側欄頁面：用量頁的後端最接近（已有 `/v1/orchestrator/usage` 與 transcript 用量）。
 
