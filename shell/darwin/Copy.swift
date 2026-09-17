@@ -88,6 +88,18 @@ struct ShellCopy {
     let settingsScopeGlobal = "所有 app"
     let settingsOff = "關閉"
 
+    // The browser bar (shell/darwin/Browser.swift). The Swift app has no
+    // embedded browser and so has no words for one; these are the nearest it
+    // does have, kept under its own property names so a line copied from one
+    // file still means the same thing in the other. The two destinations are
+    // the setup centre's own names for them (`Onboarding.swift`'s route
+    // cards), and the reload button is what the console's own refresh buttons
+    // say. Back and forward have no word anywhere in the Swift app, so they
+    // are drawn as ‹ and › and say nothing.
+    let homeLocalTitle = "本機瀏覽器"
+    let homeCloudPreviewTitle = "Clawdline Cloud 預覽"
+    let webInfoRefresh = "重新整理"
+
     // The pairing alert (`main.swift` showPairing in the Swift app).
     let pairingIgnore = "忽略"
     func pairingAsks(_ device: String) -> String { "\(device) 想跟這台 Mac 配對" }
