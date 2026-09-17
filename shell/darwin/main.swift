@@ -163,7 +163,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     private let hotKey = HotKey()
     private var hotKeyActive = false
     /// The input bar: its own borderless window, over its own page. See Bar.swift.
-    lazy var bar = BarController(home: home)
+    lazy var inputBar = BarController(home: home)
     /// Pairing codes, heard on the daemon's local-only stream.
     private let pairing = PairingWatcher(base: home)
     private var readings = MenuReadings()
@@ -226,7 +226,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         // Bar.swift.
         hotKey.onFire = { [weak self] in
             shellLog("hotkey fired")
-            self?.bar.toggle()
+            self?.inputBar.toggle()
         }
         // Whether the hotkey should be attached is recomputed whenever the
         // frontmost app changes — and the bar comes back when the terminal it
@@ -236,7 +236,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         ) { [weak self] note in
             self?.updateHotKeyScope()
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            self?.bar.appBecameFrontmost(app?.bundleIdentifier)
+            self?.inputBar.appBecameFrontmost(app?.bundleIdentifier)
         }
         applyConfiguredHotKey(alertOnFailure: true)
 
@@ -253,7 +253,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             // The bar's page is loaded now and kept loaded behind a window that
             // is not on screen, so that a hotkey press is a window appearing
             // rather than a page starting (Bar.swift).
-            self?.bar.reload()
+            self?.inputBar.reload()
         }
 
         // A first launch has a visible destination. Once the window has been
@@ -526,7 +526,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         // The bar counts as well as the console window: it is what the hotkey
         // now opens, and a combination detached while it is up would be a
         // combination that cannot close it (Bar.swift).
-        let visible = (window?.isVisible == true && window?.isMiniaturized == false) || bar.isVisible
+        let visible = (window?.isVisible == true && window?.isMiniaturized == false) || inputBar.isVisible
         let want = allowed.contains(front) || front == mine || visible
 
         if want, !hotKeyActive {
@@ -778,7 +778,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     // "打開輸入框" opens the input bar, which is what it says and what it opens
     // in the Swift app. The rows under it — "主頁／設定中心", "設定⋯" — are still
     // the console window's (Bar.swift).
-    @objc private func openPanel() { bar.toggle() }
+    @objc private func openPanel() { inputBar.toggle() }
 
     /// "Home" is the console, so it is also the tab the window is on.
     @objc private func showHome() {
