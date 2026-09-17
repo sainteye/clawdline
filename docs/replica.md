@@ -196,7 +196,7 @@ webview 之外，舊 app 的原生面：
 | 快捷面板（`Controller` + `Panel`） | 5,400 行 | 目前以 webview 視窗代替 |
 | 原生設定（`Settings.swift`） | 3,822 行 | 未開始 |
 | 導覽（`Onboarding.swift`） | 1,468 行 | 未開始 |
-| 瀏海島（`NotchIsland.swift`） | 1,148 行 | 裝飾，最後 |
+| 瀏海島（`NotchIsland.swift`） | 1,148 行 | 🔧 `shell/darwin/NotchIsland.swift`：兩耳、吉祥物（連 `Mascot.swift` 的取樣與繪製）、等待／在跑／跑完、tooltip、點角色開 console、點數字送 `/v1/sessions/{id}/focus`；`notch: false` 就整個不建立。**未編譯、未執行**，等 root 驗收時的那一次 build；跨平台對應見 `docs/cross-platform.md` |
 
 `7bbdd1a` 之後，打包出來的 app 在 WKWebView 裡實際畫出即時清單（殼回報 `booting=false elements-with-id=79 rows=11`）。
 

@@ -170,8 +170,9 @@ enum UpdateOffer {
 // MARK: - Mascots
 
 /// The packs the menu lists: this app's own directory, then the ones bundled
-/// with it. Nothing in this app draws a mascot yet — the panel and the notch
-/// that did are not ported — so the menu shows the choice and cannot make one.
+/// with it. The notch island draws the one the config names
+/// (`NotchIsland.swift`); the card that also drew one is a web page now, and
+/// the menu still only shows the choice rather than making it.
 enum MascotPacks {
     static var userDirectory: URL {
         NextConfig.directory.appendingPathComponent("mascots", isDirectory: true)
