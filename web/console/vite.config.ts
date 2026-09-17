@@ -1,5 +1,9 @@
+import { resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
+
+const here = fileURLToPath(new URL(".", import.meta.url))
 
 // The console is served by the daemon in a release and by Vite in development.
 // In development every /v1 call is proxied to the daemon rather than pointed at
@@ -35,5 +39,21 @@ export default defineConfig({
       },
     },
   },
-  build: { outDir: "dist", emptyOutDir: true },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    // Two documents, not one. `index.html` is the console; `bar.html` is the
+    // input bar, which the native shell loads into a borderless window of its
+    // own (see src/bar/ and docs/shell-bridge.md). It is a second entry rather
+    // than a page inside the console because the console's own chrome — the
+    // header, the drawer, twenty-nine stylesheets — is exactly what a card
+    // floating over somebody's terminal must not have, and because a panel
+    // summoned by a key should not be waiting on the session list's bundle.
+    rollupOptions: {
+      input: {
+        main: resolve(here, "index.html"),
+        bar: resolve(here, "bar.html"),
+      },
+    },
+  },
 })
