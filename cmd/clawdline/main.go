@@ -50,6 +50,10 @@ func main() {
 		terminalCommand("interrupt", os.Args[2:])
 	case "close":
 		terminalCommand("close", os.Args[2:])
+	case "open":
+		openCommand(os.Args[2:])
+	case "pair":
+		pairCommand(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println(version)
 	default:
@@ -60,8 +64,20 @@ func main() {
 
 func serve() {
 	cfg := config.Load()
+	port, err := daemonPort()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline:", err)
+		os.Exit(2)
+	}
+	cfg.Port = port
 	srv, err := httptransport.New(cfg)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline:", err)
+		os.Exit(1)
+	}
+	// A device file that cannot be read stops the daemon here, rather than
+	// letting it listen and refuse everybody.
+	if err := srv.AuthReady(); err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)
 	}
@@ -269,5 +285,7 @@ func newTaskID() string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|dispatch|settle|land|send|interrupt|close|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|dispatch|settle|land|send|interrupt|close|open|pair|version>")
+	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")
+	fmt.Fprintln(os.Stderr, "  pair [--watch]            show the code when a device asks to pair")
 }

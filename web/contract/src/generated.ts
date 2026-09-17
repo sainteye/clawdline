@@ -24,6 +24,14 @@ export interface ActionResult {
 }
 
 /**
+ * POST /v1/auth/adopt: a token the page was handed in a URL fragment, traded for
+ * the cookie EventSource needs. Nothing is granted: an unknown token is 401.
+ */
+export interface AdoptRequest {
+  token: string
+}
+
+/**
  * What attribution this service can hold.
  */
 export interface AnalyticsAttributionCapabilities {
@@ -657,6 +665,41 @@ export type Assistant =
 
 export const AssistantValues: readonly Assistant[] = ["claude", "codex"] as const
 
+/**
+ * The inside of every refusal the gate and the auth routes give. `code` is the part
+ * a client may branch on; `message` is English, for a person.
+ */
+export interface AuthError {
+  /**
+   * unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request,
+   * not_found, store_unavailable.
+   */
+  code: string
+  message: string
+
+  /**
+   * A fresh lowercase UUID per refusal, for finding it in a log.
+   */
+  request_id: string
+
+  /**
+   * Only on wrong_code: how many guesses this pairing has left, so a page need not
+   * count for itself.
+   */
+  tries_left?: number
+}
+
+/**
+ * POST /v1/auth/logout, and the device routes that only change something.
+ */
+export interface AuthOK {
+  ok: boolean
+}
+
+export interface AuthRefusal {
+  error: AuthError
+}
+
 export type Backend =
     "iterm"
   | "tmux"
@@ -691,6 +734,36 @@ export interface BoardWriteResult {
    */
   replayed: boolean
   revision: number
+}
+
+/**
+ * A device minted for a browser on this machine. `url` carries the token in its
+ * fragment, which a browser never sends and never logs; the page trades it for the
+ * cookie with /v1/auth/adopt.
+ */
+export interface BrowserDevice {
+  id: string
+  token: string
+  url: string
+}
+
+/**
+ * POST /v1/auth/devices/browser: `clawdline open` asking for a device of its own.
+ * Local token only.
+ */
+export interface BrowserRequest {
+  /**
+   * Also grant send. Off unless the person at this machine asked.
+   */
+  send?: boolean
+}
+
+/**
+ * POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other
+ * grant. Local token only.
+ */
+export interface CapsRequest {
+  caps: string[]
 }
 
 export interface CatalogError {
@@ -959,6 +1032,19 @@ export interface CoordinatorSnapshot {
   registered: boolean
 }
 
+/**
+ * GET /v1/auth/devices. This machine's own token only; a paired device is refused.
+ */
+export interface DeviceList {
+  /**
+   * Whether a person has paired something or set a password — the tunnel
+   * interlock's question. This machine's own token does not count.
+   */
+  configured: boolean
+  devices: PairedDevice[]
+  password: boolean
+}
+
 export interface DispatchRequest {
   assistant: Assistant
 
@@ -1153,6 +1239,86 @@ export interface ObligationList {
   stuck: number
 }
 
+/**
+ * POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left; the
+ * fifth wrong code, a lapsed pairing and a replaced one are 403 expired.
+ */
+export interface PairConfirm {
+  code: string
+  pairing_id: string
+}
+
+/**
+ * POST /v1/auth/pair. Open without a token. Three in ten minutes, then 429
+ * rate_limited.
+ */
+export interface PairRequest {
+  /**
+   * What to call the device; trimmed, at most forty characters, `A browser` when
+   * empty.
+   */
+  name?: string
+}
+
+/**
+ * The answer to a pairing request. The six-digit code is never in it: it is shown
+ * on this machine, to a local-token holder, and typed into the device.
+ */
+export interface PairStarted {
+  /**
+   * Unix seconds. Two minutes after the request.
+   */
+  expires: number
+  pairing_id: string
+}
+
+export interface PairedDevice {
+  /**
+   * read, and send when this device may type into a session.
+   */
+  caps: string[]
+
+  /**
+   * Unix seconds.
+   */
+  created: number
+  id: string
+
+  /**
+   * Unix seconds of the last request it made since the daemon started or last
+   * saved; absent when never.
+   */
+  last_seen?: number
+  name: string
+}
+
+/**
+ * One `pairing` event on GET /v1/auth/pairings, the server-sent stream only this
+ * machine's own token may open. It is the one place the code leaves the daemon. The
+ * stream starts with the pairing open now, if any.
+ */
+export interface PairingNotice {
+  code: string
+  expires: number
+  name: string
+  pairing_id: string
+}
+
+/**
+ * POST /v1/auth/password: a correct password mints a new read-only device.
+ */
+export interface PasswordRequest {
+  name?: string
+  password: string
+}
+
+/**
+ * POST /v1/auth/devices/password. Empty clears it. Local token only.
+ */
+export interface PasswordSet {
+  password: string
+}
+
 export interface Project {
   displayPath: string
   id: string
@@ -1269,6 +1435,15 @@ export interface Refusal {
   error: string
   route?: string
   upstream?: string
+}
+
+/**
+ * POST /v1/auth/devices/revoke-all: every paired device, the password and the open
+ * pairing. This machine's own token stays.
+ */
+export interface RevokedAll {
+  count: number
+  ok: boolean
 }
 
 /**
@@ -1728,6 +1903,16 @@ export interface SettleResult {
   settled: boolean
   state?: TaskState
   task_id: string
+}
+
+/**
+ * A new or adopted token, twice: here for a script, and in `Set-Cookie:
+ * clawdline-next=…; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict` (plus `;
+ * Secure` behind an HTTPS proxy) for a page.
+ */
+export interface SignedIn {
+  ok: boolean
+  token: string
 }
 
 export interface StartAssistant {

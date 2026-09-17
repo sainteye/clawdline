@@ -112,7 +112,10 @@ func New(cfg config.Config) (*Server, error) {
 }
 
 func (s *Server) Handler() http.Handler {
+	// Every route is behind the gate, with no exception for loopback: see gate.go.
+	gate := s.gate()
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/auth/", s.authRoute)
 	mux.HandleFunc("/v1/health", s.health)
 	// A shadow route, not the real one. It runs beside /v1/sessions so both can
 	// be read for the same machine at the same moment; the real route is taken
@@ -173,13 +176,13 @@ func (s *Server) Handler() http.Handler {
 		if root := WebRoot(); root != "" {
 			mux.Handle("/app/", newPage(root))
 			mux.Handle("/", &fallback{page: newPage(root), miss: s.notImplemented})
-			return mux
+			return gate.wrap(mux)
 		}
 		mux.Handle("/", http.HandlerFunc(s.notImplemented))
-		return mux
+		return gate.wrap(mux)
 	}
 	mux.Handle("/", s.proxy)
-	return mux
+	return gate.wrap(mux)
 }
 
 // health is the first route this daemon owns. It answers for itself and says so,

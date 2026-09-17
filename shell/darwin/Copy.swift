@@ -87,4 +87,17 @@ struct ShellCopy {
     let settingsScope = "在哪裡生效"
     let settingsScopeGlobal = "所有 app"
     let settingsOff = "關閉"
+
+    // The pairing alert (`main.swift` showPairing in the Swift app).
+    let pairingIgnore = "忽略"
+    func pairingAsks(_ device: String) -> String { "\(device) 想跟這台 Mac 配對" }
+    func pairingCode(_ code: String) -> String {
+        """
+        在它上面輸入這組代碼：
+
+        \(code)
+
+        兩分鐘內有效。如果剛才不是你要求的，不用理會——對方沒有這組代碼，就完成不了。
+        """
+    }
 }

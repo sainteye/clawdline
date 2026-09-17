@@ -28,6 +28,13 @@ func (s *Server) tasksRoute(w http.ResponseWriter, r *http.Request) {
 // the point. Overlapping claims are refused by naming the task that holds them
 // and how long it has held them, because "busy" alone sends a person looking.
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
+	// A paired device must never be able to start a session: through a tunnel
+	// every request comes from 127.0.0.1, so only the orchestrator's own 0600
+	// credential opens this.
+	if !machineAuthed(r) {
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "Dispatching needs the orchestrator token.")
+		return
+	}
 	var body contract.DispatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a dispatch")
@@ -75,6 +82,10 @@ func (s *Server) settleRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed",
 			"settling records a fact, so it is a POST")
+		return
+	}
+	if !machineAuthed(r) {
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "Settling a task needs the orchestrator token.")
 		return
 	}
 	state, settled, err := s.dispatcher.Settle(r.Context(), id)

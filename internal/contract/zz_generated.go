@@ -23,6 +23,13 @@ type ActionResult struct {
 	OK     bool   `json:"ok"`
 }
 
+// POST /v1/auth/adopt: a token the page was handed in a URL fragment, traded
+// for the cookie EventSource needs. Nothing is granted: an unknown token is
+// 401.
+type AdoptRequest struct {
+	Token string `json:"token"`
+}
+
 // What attribution this service can hold.
 type AnalyticsAttributionCapabilities struct {
 	AutomaticFeatureAttribution bool     `json:"automaticFeatureAttribution"`
@@ -508,6 +515,31 @@ const (
 // AssistantValues is every value the contract allows, in contract order.
 var AssistantValues = []Assistant{AssistantClaude, AssistantCodex}
 
+// The inside of every refusal the gate and the auth routes give. `code` is the
+// part a client may branch on; `message` is English, for a person.
+type AuthError struct {
+	// unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request,
+	// not_found, store_unavailable.
+	Code    string `json:"code"`
+	Message string `json:"message"`
+
+	// A fresh lowercase UUID per refusal, for finding it in a log.
+	RequestID string `json:"request_id"`
+
+	// Only on wrong_code: how many guesses this pairing has left, so a page need not
+	// count for itself.
+	TriesLeft int64 `json:"tries_left,omitempty"`
+}
+
+// POST /v1/auth/logout, and the device routes that only change something.
+type AuthOK struct {
+	OK bool `json:"ok"`
+}
+
+type AuthRefusal struct {
+	Error AuthError `json:"error"`
+}
+
 type Backend string
 
 const (
@@ -542,6 +574,28 @@ type BoardWriteResult struct {
 	// original outcome is the answer and nothing moved.
 	Replayed bool  `json:"replayed"`
 	Revision int64 `json:"revision"`
+}
+
+// A device minted for a browser on this machine. `url` carries the token in its
+// fragment, which a browser never sends and never logs; the page trades it for
+// the cookie with /v1/auth/adopt.
+type BrowserDevice struct {
+	ID    string `json:"id"`
+	Token string `json:"token"`
+	URL   string `json:"url"`
+}
+
+// POST /v1/auth/devices/browser: `clawdline open` asking for a device of its
+// own. Local token only.
+type BrowserRequest struct {
+	// Also grant send. Off unless the person at this machine asked.
+	Send bool `json:"send,omitempty"`
+}
+
+// POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other
+// grant. Local token only.
+type CapsRequest struct {
+	Caps []string `json:"caps"`
 }
 
 type CatalogError struct {
@@ -774,6 +828,16 @@ type CoordinatorSnapshot struct {
 	Registered bool               `json:"registered"`
 }
 
+// GET /v1/auth/devices. This machine's own token only; a paired device is
+// refused.
+type DeviceList struct {
+	// Whether a person has paired something or set a password — the tunnel
+	// interlock's question. This machine's own token does not count.
+	Configured bool           `json:"configured"`
+	Devices    []PairedDevice `json:"devices"`
+	Password   bool           `json:"password"`
+}
+
 type DispatchRequest struct {
 	Assistant Assistant `json:"assistant"`
 
@@ -965,6 +1029,64 @@ type ObligationList struct {
 	Stuck int64 `json:"stuck"`
 }
 
+// POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left;
+// the fifth wrong code, a lapsed pairing and a replaced one are 403 expired.
+type PairConfirm struct {
+	Code      string `json:"code"`
+	PairingID string `json:"pairing_id"`
+}
+
+// POST /v1/auth/pair. Open without a token. Three in ten minutes, then 429
+// rate_limited.
+type PairRequest struct {
+	// What to call the device; trimmed, at most forty characters, `A browser` when
+	// empty.
+	Name string `json:"name,omitempty"`
+}
+
+// The answer to a pairing request. The six-digit code is never in it: it is
+// shown on this machine, to a local-token holder, and typed into the device.
+type PairStarted struct {
+	// Unix seconds. Two minutes after the request.
+	Expires   int64  `json:"expires"`
+	PairingID string `json:"pairing_id"`
+}
+
+type PairedDevice struct {
+	// read, and send when this device may type into a session.
+	Caps []string `json:"caps"`
+
+	// Unix seconds.
+	Created int64  `json:"created"`
+	ID      string `json:"id"`
+
+	// Unix seconds of the last request it made since the daemon started or last saved;
+	// absent when never.
+	LastSeen int64  `json:"last_seen,omitempty"`
+	Name     string `json:"name"`
+}
+
+// One `pairing` event on GET /v1/auth/pairings, the server-sent stream only
+// this machine's own token may open. It is the one place the code leaves the
+// daemon. The stream starts with the pairing open now, if any.
+type PairingNotice struct {
+	Code      string `json:"code"`
+	Expires   int64  `json:"expires"`
+	Name      string `json:"name"`
+	PairingID string `json:"pairing_id"`
+}
+
+// POST /v1/auth/password: a correct password mints a new read-only device.
+type PasswordRequest struct {
+	Name     string `json:"name,omitempty"`
+	Password string `json:"password"`
+}
+
+// POST /v1/auth/devices/password. Empty clears it. Local token only.
+type PasswordSet struct {
+	Password string `json:"password"`
+}
+
 type Project struct {
 	DisplayPath string `json:"displayPath"`
 	ID          string `json:"id"`
@@ -1055,6 +1177,13 @@ type Refusal struct {
 	Error    string `json:"error"`
 	Route    string `json:"route,omitempty"`
 	Upstream string `json:"upstream,omitempty"`
+}
+
+// POST /v1/auth/devices/revoke-all: every paired device, the password and the
+// open pairing. This machine's own token stays.
+type RevokedAll struct {
+	Count int64 `json:"count"`
+	OK    bool  `json:"ok"`
 }
 
 // A broker-proved independent Feature Root this session owns.
@@ -1411,6 +1540,14 @@ type SettleResult struct {
 	Settled bool      `json:"settled"`
 	State   TaskState `json:"state,omitempty"`
 	TaskID  string    `json:"task_id"`
+}
+
+// A new or adopted token, twice: here for a script, and in `Set-Cookie:
+// clawdline-next=…; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict`
+// (plus `; Secure` behind an HTTPS proxy) for a page.
+type SignedIn struct {
+	OK    bool   `json:"ok"`
+	Token string `json:"token"`
 }
 
 type StartAssistant struct {

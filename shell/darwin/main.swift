@@ -143,6 +143,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
     private let hotKey = HotKey()
     private var hotKeyActive = false
+    /// Pairing codes, heard on the daemon's local-only stream.
+    private let pairing = PairingWatcher(base: home)
     private var readings = MenuReadings()
     /// The app that was in front when the window was summoned, so a hotkey
     /// dismissal can hand the front back — the Swift panel's `previousApp`.
@@ -211,6 +213,11 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         applyConfiguredHotKey(alertOnFailure: true)
 
         startBundledDaemon()
+        // Somebody, somewhere, is asking to pair. The code is shown here and
+        // nowhere else — it is never in the reply the asker got — so finishing
+        // requires being able to see this screen.
+        pairing.onPairing = { [weak self] notice in self?.showPairing(notice) }
+        pairing.start()
         // The daemon needs a moment to bind. A failed first load is retried by
         // the navigation delegate below.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
@@ -246,6 +253,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     // would put a second writer over the same state the next time somebody
     // opens the app.
     func applicationWillTerminate(_ note: Notification) {
+        pairing.stop()
         daemon?.terminate()
     }
 
@@ -382,7 +390,35 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     @objc func reload() {
         loadGeneration += 1
         pageLoaded = false
-        web.load(URLRequest(url: home))
+        // Every route but the page itself needs a token, this window included.
+        // The cookie goes in first; see LocalToken.install for why it is not
+        // adopted through the page.
+        let generation = loadGeneration
+        LocalToken.install(in: web.configuration.websiteDataStore.httpCookieStore, for: home) { [weak self] _ in
+            guard let self, generation == self.loadGeneration else { return }
+            self.web.load(URLRequest(url: home))
+        }
+    }
+
+    // MARK: - Pairing
+
+    /// The Swift app's alert, word for word, with its one button.
+    ///
+    /// One at a time: something hammering the pairing route must not stack a
+    /// wall of alerts to dismiss one by one. The watcher holds that gate (see
+    /// PairingWatcher for why it cannot be held here); the daemon's rate limit
+    /// is the other half.
+    private func showPairing(_ pending: PairingNotice) {
+        defer { pairing.alertClosed() }
+        // The name, never the code.
+        shellLog("pairing: \(pending.name) is asking; alert shown")
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = L.t.pairingAsks(pending.name)
+        alert.informativeText = L.t.pairingCode(pending.code)
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: L.t.pairingIgnore)
+        alert.runModal()
     }
 
     // MARK: - Where the hotkey applies
