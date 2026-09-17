@@ -78,9 +78,7 @@ func stringOrEmpty(v *string) string {
 	return *v
 }
 
-// lifecycleTasks hands the lifecycle the task records it reads. The Swift
-// store's `plan` and progress notes are not in swiftstore.Task, so a row's note
-// and "now" line stay empty here until that reader carries them.
+// lifecycleTasks hands the lifecycle the task records it reads.
 func lifecycleTasks(snap swiftstore.Snapshot) projects.TaskEvidence {
 	out := projects.TaskEvidence{Authoritative: snap.Known && !snap.Stale}
 	for _, t := range snap.Tasks {
@@ -91,6 +89,13 @@ func lifecycleTasks(snap swiftstore.Snapshot) projects.TaskEvidence {
 			Created:   secondsPtr(&t.Created),
 			BriefedAt: secondsPtr(t.BriefedAt), SpawnedAt: secondsPtr(t.SpawnedAt),
 			FinishedAt: secondsPtr(t.FinishedAt),
+		}
+		row.Plan = stringOrEmpty(t.Plan)
+		// Orchestrator.Task: the newest progress note, or else the summary.
+		if n := len(t.Progress); n > 0 {
+			row.Status = t.Progress[n-1].Note
+		} else {
+			row.Status = t.Summary.Text
 		}
 		if t.Created == 0 {
 			row.Created = nil

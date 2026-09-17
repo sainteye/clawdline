@@ -1,6 +1,7 @@
 package swiftstore
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -78,17 +79,35 @@ type Task struct {
 	Landing            *Landing            `json:"landing"`
 	Worktree           *Worktree           `json:"worktree"`
 	CompletionDelivery *CompletionDelivery `json:"completion_delivery"`
-	// Summary is whether the child wrote one. Its words are not needed here.
+	// Summary is whether the child wrote one, and its words when they are a
+	// string: the worktree lifecycle shows them when there is no progress note.
 	Summary present `json:"summary"`
+	// Plan and Progress are the task's own narrative, read by the Projects
+	// page's worktree lifecycle (ProjectWorktreeLifecycle.resolveOwner).
+	Plan     *string        `json:"plan"`
+	Progress []TaskProgress `json:"progress"`
 }
 
-// present records that a key was there without keeping its value.
-type present bool
+// TaskProgress is one progress note a child sent.
+type TaskProgress struct {
+	Note string `json:"note"`
+}
+
+// present records that a key was there, and keeps its words when they are a
+// string.
+type present struct {
+	set  bool
+	Text string
+}
 
 func (p *present) UnmarshalJSON(b []byte) error {
-	*p = string(b) != "null"
+	p.set = string(b) != "null"
+	_ = json.Unmarshal(b, &p.Text)
 	return nil
 }
+
+// Set is whether the key carried a value.
+func (p present) Set() bool { return p.set }
 
 // CompletionDelivery is how far the root has been told the task finished.
 type CompletionDelivery struct {

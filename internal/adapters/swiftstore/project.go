@@ -667,7 +667,7 @@ func canBlockRoot(t Task) bool {
 		return true
 	}
 	closed := t.Landing != nil && t.Landing.State != "pending"
-	if t.ResultVerifiedAt == nil && !bool(t.Summary) && !closed {
+	if t.ResultVerifiedAt == nil && !t.Summary.Set() && !closed {
 		return true
 	}
 	if t.Landing != nil && t.Landing.State == "pending" {
@@ -763,7 +763,7 @@ func (s Snapshot) obligations(l Live) []contract.CloseReason {
 			continue
 		}
 		closed := t.Landing != nil && t.Landing.State != "pending"
-		if t.ResultVerifiedAt == nil && !bool(t.Summary) && !closed {
+		if t.ResultVerifiedAt == nil && !t.Summary.Set() && !closed {
 			out = append(out, reason("task_without_result", "obligation", "task", t.ID, moverSelf()))
 		}
 		if t.Landing != nil && t.Landing.State == "pending" {
