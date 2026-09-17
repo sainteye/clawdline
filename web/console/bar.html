@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- The input bar's window, and the one document in this bundle that is not the
+     console.
+
+     `index.html` deliberately has no doctype: it renders in quirks mode because
+     the Swift app's page does, and the stylesheet copied from it was tuned
+     there. Nothing on this page is copied CSS — `src/bar/bar.css` is written
+     from `Panel.swift`'s own numbers, which are points in an AppKit window and
+     have never been through a browser — so it renders in standards mode, where
+     `box-sizing` and a flex column mean what they say.
+
+     It is served by the daemon as an ordinary file under the console's bundle
+     (`internal/transport/http/page.go` serves everything under the root), which
+     is why there is no route for it and no entry on the gate's open list: only
+     a shell that already holds this machine's token ever loads it. -->
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>clawdline bar</title>
+  </head>
+  <body>
+    <!-- The card fills the window; the shell sizes the window to the card. -->
+    <div id="bar"></div>
+    <script type="module" src="/src/bar/main.tsx"></script>
+  </body>
+</html>

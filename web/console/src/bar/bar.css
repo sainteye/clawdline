@@ -1,0 +1,439 @@
+/* ==========================================================================
+   The input bar's card
+
+   The Swift app draws this panel in AppKit (`Sources/Panel.swift`,
+   `Sources/Controller.swift`). Here the card is a web page and the window
+   around it is the shell's — see `docs/shell-bridge.md`. So every number below
+   is `Panel.swift`'s `enum Style`, named in the comment beside it, rather than
+   a value read off a screenshot.
+
+   The palette comes from `legacy/tokens.css`, which is the Swift app's own and
+   is imported by this page: `--accent` there is `Style.accent`
+   (srgb 0.851 0.467 0.341 = #d97757), to the byte.
+
+   **What this file cannot draw is deliberate.** `Style` describes a card made
+   of an `NSVisualEffectView` with a scrim over it: the blur is of the desktop
+   behind the window, which no page can see. The shell supplies that view and
+   loads this page on top of it with a transparent background; what is here is
+   the scrim, the top gloss and the hairline border — `CardChrome.draw` — over
+   whatever the shell put behind. A shell that has no such view gets a card
+   that is simply darker, which is the same card without the frost.
+   ========================================================================== */
+
+:root {
+    /* Panel.swift `Style` */
+    --bar-corner: 22px;
+    --bar-pad-h: 24px;
+    --bar-chevron-w: 18px;
+    --bar-chevron-gap: 14px;
+    --bar-input-min-h: 62px;
+    --bar-input-pad-v: 15px;
+    --bar-text-size: 21px;
+    --bar-max-text-h: 280px;
+    --bar-hint-h: 38px;
+    --bar-hint-size: 11px;
+    --bar-row-h: 34px;
+    --bar-list-pad-v: 8px;
+    --bar-list-size: 13px;
+    /* `Style.ink` at `Config.cardOpacity` (0.55): NSColor(white: 0.08…0.09). */
+    --bar-ink: 20, 20, 23;
+    --bar-scrim: rgba(20, 20, 23, 0.55);
+    /* `Style.hairline`, `Style.border`, `Style.topGloss`, `Style.chipFill`, `Style.chipEdge` */
+    --bar-hairline: rgba(255, 255, 255, 0.08);
+    --bar-border: rgba(255, 255, 255, 0.14);
+    --bar-gloss: rgba(255, 255, 255, 0.1);
+    --bar-chip-fill: rgba(255, 255, 255, 0.07);
+    --bar-chip-edge: rgba(255, 255, 255, 0.09);
+    /* AppKit's label colours in a dark appearance, which is what the panel draws in. */
+    --bar-label: rgba(255, 255, 255, 0.85);
+    --bar-label-2: rgba(255, 255, 255, 0.55);
+    --bar-label-3: rgba(255, 255, 255, 0.25);
+}
+
+/* The window is the card. Nothing outside it is drawn, and the page must not
+   paint a background of its own over the shell's blur. */
+html,
+body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: var(--ui);
+    -webkit-font-smoothing: antialiased;
+    /* The card is dragged by the shell's window, never by a text selection
+       started on the hint row. Only the input takes a caret. */
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+}
+
+/* `CardChrome`: the rounded rectangle, its hairline border and the highlight
+   along its top edge — "light comes from above, and this one stroke gives the
+   card thickness". */
+/* The card is as tall as what is in it, and that height is what the window
+   becomes: the page measures this element and tells the shell (`shell.ts`
+   `reportHeight`). So it must never be stretched to the viewport — a card that
+   filled the window would report the window's own height back at it. */
+.bar-card {
+    position: relative;
+    box-sizing: border-box;
+    border-radius: var(--bar-corner);
+    background: var(--bar-scrim);
+    /* `path.lineWidth = 1` inset by half a point, drawn inside the card. */
+    box-shadow: inset 0 0 0 1px var(--bar-border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* The gloss: a 26pt gradient from `Style.topGloss` to clear, clipped to the
+   card, as `CardChrome.draw` clips it. */
+.bar-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 26px;
+    background: linear-gradient(to bottom, var(--bar-gloss), rgba(255, 255, 255, 0));
+    pointer-events: none;
+}
+
+/* Lit while a file is being dragged over the window: `CardChrome.highlighted`,
+   2pt in the accent. Nothing drags yet — see docs/cross-platform.md — so this
+   rule is here for the shell that adds it rather than being used today. */
+.bar-card[data-drop="on"] {
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* ---- The input row --------------------------------------------------- */
+
+.bar-input {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--bar-chevron-gap);
+    box-sizing: border-box;
+    min-height: var(--bar-input-min-h);
+    padding: var(--bar-input-pad-v) var(--bar-pad-h);
+}
+
+/* `chevron`: monospaced 17pt bold in the accent, centred in its 18pt column. */
+.bar-chevron {
+    flex: 0 0 var(--bar-chevron-w);
+    width: var(--bar-chevron-w);
+    font: 700 17px / 1 var(--mono);
+    color: var(--accent);
+    text-align: center;
+    /* Sat on the first line of the box, not on the middle of a box that grows. */
+    line-height: 32px;
+}
+
+/* `PromptTextView`: 21pt, grows with the text and stops at `maxTextHeight`. */
+.bar-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    resize: none;
+    background: transparent;
+    color: var(--bar-label);
+    font: 400 var(--bar-text-size) / 1.5 var(--ui);
+    max-height: var(--bar-max-text-h);
+    overflow-y: auto;
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: text;
+}
+
+.bar-text::placeholder {
+    color: var(--bar-label-3);
+}
+
+/* `MicButton`: 26×28, the glyph at 13pt. Tertiary until hovered, the accent
+   while it is listening. */
+.bar-mic {
+    flex: 0 0 26px;
+    width: 26px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--bar-label-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.bar-mic:hover {
+    color: var(--bar-label-2);
+}
+
+.bar-mic svg {
+    width: 15px;
+    height: 15px;
+    display: block;
+}
+
+/* ---- The session list ------------------------------------------------ */
+
+/* `hintLine`/`listLine`: `Style.hairline`, one point. */
+.bar-list {
+    border-top: 1px solid var(--bar-hairline);
+    padding: var(--bar-list-pad-v) 0;
+    /* `geometry`: the list is at most nine rows, and nine rows is its height. */
+    overflow: hidden;
+}
+
+/* `TargetRow`. The whole row is pressable here because a session row has no
+   buttons on it — the rule `TargetRow` states ("a row must not be an invisible
+   button") is about the dev-stack rows, which this bar does not draw. */
+.bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    box-sizing: border-box;
+    width: 100%;
+    height: var(--bar-row-h);
+    margin: 0;
+    padding: 0 var(--bar-pad-h);
+    border: 0;
+    background: transparent;
+    font: 400 var(--bar-list-size) / 1 var(--ui);
+    color: var(--bar-label-2);
+    text-align: left;
+    cursor: pointer;
+    position: relative;
+}
+
+/* `draw(_:)`: the selected row is a rounded fill inset by `padH - 10`, plus a
+   short marker on the left — "reads as 'this one' more clearly than a tinted
+   background". */
+.bar-row[aria-selected="true"]::before {
+    content: "";
+    position: absolute;
+    left: calc(var(--bar-pad-h) - 10px);
+    right: calc(var(--bar-pad-h) - 10px);
+    top: 2px;
+    bottom: 2px;
+    border-radius: 9px;
+    background: rgba(217, 119, 87, 0.16);
+}
+
+.bar-row[aria-selected="true"]::after {
+    content: "";
+    position: absolute;
+    left: calc(var(--bar-pad-h) - 4px);
+    top: 50%;
+    width: 2.5px;
+    height: 14px;
+    margin-top: -7px;
+    border-radius: 1.25px;
+    background: var(--accent);
+}
+
+.bar-row > * {
+    position: relative;
+}
+
+.bar-row[aria-selected="true"] {
+    color: var(--bar-label);
+    font-weight: 500;
+}
+
+/* `badge`: "⌘n" at `padH + 4`, monospaced digits 10.5pt, in the accent on the
+   selected row. The 40pt column before the mark is `textX`. */
+.bar-badge {
+    flex: 0 0 36px;
+    width: 36px;
+    padding-left: 4px;
+    box-sizing: border-box;
+    font: 500 10.5px / 1 var(--mono);
+    color: var(--bar-label-3);
+}
+
+.bar-row[aria-selected="true"] .bar-badge {
+    color: var(--accent);
+}
+
+/* The project's mark, at `height: 11` as the row asks for it, then an 8pt gap
+   (`textX`). Full strength on the selected row and a shade back on the others. */
+.bar-mark {
+    display: block;
+    margin-right: 8px;
+    opacity: 0.75;
+}
+
+.bar-row[aria-selected="true"] .bar-mark {
+    opacity: 1;
+}
+
+.bar-label {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* `sessionRowText`: two spaces, the product mark at 11×11, a space, the short
+   name — all at `listSize - 1.5` and tertiary, on every row. */
+.bar-who {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    margin-left: 12px;
+    font-size: calc(var(--bar-list-size) - 1.5px);
+    color: var(--bar-label-3);
+}
+
+.bar-who .assistant-logo {
+    width: 11px;
+    height: 11px;
+    display: block;
+}
+
+/* `sessionRowDetail`: what the row says after its label, with the spinner
+   between the two when the session is working. */
+.bar-detail {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-left: 12px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: calc(var(--bar-list-size) - 1.5px);
+    color: var(--bar-label-3);
+}
+
+.bar-row[aria-selected="true"] .bar-detail {
+    color: var(--bar-label-2);
+}
+
+.bar-detail .waiting {
+    color: var(--accent);
+}
+
+.bar-detail canvas.spin {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 7px;
+}
+
+/* ---- The hint row ---------------------------------------------------- */
+
+.bar-hints {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-sizing: border-box;
+    height: var(--bar-hint-h);
+    padding: 0 var(--bar-pad-h);
+    border-top: 1px solid var(--bar-hairline);
+    font-size: var(--bar-hint-size);
+}
+
+/* `targetLabel`, bottom left: the project's mark, its name in the mark's own
+   accent, then the session. */
+.bar-target {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    /* `targetLabel.frame`: `max(60, hintsX - labelX - 16)` — the keys are laid
+       out first and the label gets what is left, never less than 60. */
+    flex: 1 1 auto;
+    min-width: 60px;
+    overflow: hidden;
+    white-space: nowrap;
+    color: var(--bar-label);
+}
+
+.bar-target .dot {
+    font-size: 10px;
+    color: var(--bar-label-3);
+}
+
+.bar-target[data-assistant="on"] .dot {
+    color: var(--accent);
+}
+
+.bar-target .project {
+    font-weight: 600;
+}
+
+.bar-target .session {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bar-target .index {
+    font-family: var(--mono);
+    font-size: calc(var(--bar-hint-size) - 0.5px);
+    color: var(--bar-label-2);
+}
+
+.bar-target .nothing {
+    color: var(--bar-label-3);
+}
+
+/* `setHint`: a hint replaces the whole footer for a second and a half, and a
+   warning is the accent. */
+.bar-target .said {
+    font-weight: 500;
+    color: var(--bar-label-2);
+}
+
+.bar-target .said[data-warn="on"] {
+    color: var(--accent);
+}
+
+/* `KeyHintsView`: the keycaps, right-aligned, clipped from the left when they
+   do not fit — `hintsW = min(intrinsicWidth, W - padH * 2 - 120)`. */
+.bar-keys {
+    display: flex;
+    align-items: center;
+    /* **Reversed, so that the clipping is the original's.** `KeyHintsView`
+       draws from `bounds.width - intrinsicWidth`, which goes negative once the
+       pairs are wider than the room they were given: the *first* pairs fall off
+       the left and the last ones survive. A plain `justify-content: flex-end`
+       row clips the other end — the one the eye is reading towards — so the row
+       is laid out from the right (`row-reverse`, with the pairs handed to it
+       backwards) and what overflows goes off the left edge, as there. */
+    flex-direction: row-reverse;
+    justify-content: flex-start;
+    gap: 13px;
+    /* `hintsW = min(intrinsicWidth, W - padH * 2 - 120)`: the row is `W` wide
+       with `padH` of padding each side, so this box is the `- 120`. It does not
+       shrink below that; the label above it does. */
+    flex: 0 0 auto;
+    max-width: calc(100% - 120px);
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.bar-keys .pair {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: 0 0 auto;
+}
+
+.bar-keys .cap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 17px;
+    padding: 0 6px;
+    box-sizing: border-box;
+    border-radius: 5px;
+    background: var(--bar-chip-fill);
+    border: 1px solid var(--bar-chip-edge);
+    font-weight: 500;
+    color: var(--bar-label-2);
+}
+
+.bar-keys .said {
+    color: var(--bar-label-3);
+}
