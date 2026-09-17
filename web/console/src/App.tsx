@@ -6,6 +6,7 @@ import { useFleet, usePoll } from "./useFleet.js"
 import { SessionsPage } from "./Sessions.js"
 import Dashboard from "./Dashboard.js"
 import * as L from "./legacy/bridge.js"
+import type { PageModule } from "./pages/types.js"
 import {
   ActionConfirm,
   Info,
@@ -68,9 +69,25 @@ const BRAND_MARK: Icon = {
   ),
 }
 
+/**
+ * Pages built as their own files. Any `pages/*.tsx` exporting `page` is found
+ * here at build time; its id turns its drawer item on. See pages/types.ts.
+ */
+const PAGE_MODULES: Record<string, PageModule> = Object.fromEntries(
+  Object.values(import.meta.glob<{ page?: PageModule }>("./pages/*.tsx", { eager: true }))
+    .map((m) => m.page)
+    .filter((m): m is PageModule => !!m)
+    .map((m) => [m.id, m]),
+)
+
+/** Whether this console can show a page: built in, or registered in pages/. */
+function ready(id: string): boolean {
+  return PAGES.some((p) => p.id === id && p.ready) || id in PAGE_MODULES
+}
+
 /** The pages a fragment may name here: `Pages.knows`, less the ones this daemon cannot show. */
 function knows(name: string): name is Page {
-  return name === "dashboard" || PAGES.some((p) => p.id === name && p.ready)
+  return name === "dashboard" || ready(name)
 }
 
 /** `pageInHash` (`core/pages.js`): the page a fragment names, or null when it names none. */
@@ -611,7 +628,7 @@ export default function App() {
               data-page-to={p.id}
               aria-current={page === p.id ? "page" : undefined}
               hidden={p.hidden}
-              disabled={!p.ready}
+              disabled={!ready(p.id)}
               onClick={() => go(p.id)}
             >
               {p.key ? T[p.key] : p.text}
@@ -652,6 +669,11 @@ export default function App() {
         onDid={fleet.refresh}
       />
       {page === "dashboard" && <Dashboard fleet={fleet} />}
+      {Object.values(PAGE_MODULES).map(({ id, Component }) => (
+        // Mounted once opened and kept, as the original keeps its sections in
+        // the document and only hides them.
+        <Component key={id} shown={page === id} />
+      ))}
       <Overlays />
     </>
   )
