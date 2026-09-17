@@ -257,6 +257,10 @@ func machineScoped(p string) bool {
 	switch p {
 	case "/v1/board", "/v1/next/board", "/v1/next/schedules", "/v1/next/coordinator":
 		return true
+	case "/v1/artifacts/images":
+		// Storing a session's pictures is the orchestrator's (images.go); the
+		// handler refuses a device, as the Swift app does.
+		return true
 	}
 	if strings.HasPrefix(p, "/v1/projects/") {
 		parts := strings.Split(strings.TrimPrefix(p, "/v1/projects/"), "/")

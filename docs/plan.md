@@ -203,6 +203,12 @@ React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`�
 - `~/.config/clawdline/config.json`：只解 `session_titles`，以及方案額度要的 `status_dir`、`codex_home`、
   `assistant_quota_low_threshold` 三個鍵（`QuotaConfig`）。
 - `~/.config/clawdline/schedules/*.json`：只解 `schedule_id` 與 `title`，給用量頁的排程名稱（`ScheduleTitles`）。
+- **圖片** `~/Library/Caches/com.tsunamiworks.clawdline/session-images/`（`CLAWDLINE_SESSION_IMAGE_DIR` 可改）：
+  舊 app 存過的圖片與它們的 metadata（`SessionImageMarker`／`SessionImageArtifact`）。舊 app 在跑的那段時間寫進
+  `~/.claude`／`~/.codex` 的對話裡有 `<clawdline-image id="…">` 標記，本專案沒有第二份來源；不讀，那些訊息就只剩一行
+  原始標記文字。做法（`images.go`）：`O_RDONLY` 開 `<id>.json` 與 `<id>.png`，比對 byteCount，過期或 `deletedAt`
+  就回「過期」。**舊 app 讀到過期記錄時會順手寫墓碑，本讀取器不寫**——過期是答案，不是要改的狀態。
+  自己存的圖在自己的 `CLAWDLINE_NEXT_DIR/session-images`，先查自己的、查不到才問舊的。
 - **用量帳本** `~/Library/Application Support/Clawdline/Observability/usage.sqlite3`
   （`CLAWDLINE_OBSERVABILITY_DIR` 可改；2026-09-17 使用者決定）：用量頁的列（`UsageLedger`，`usagedb.go`）。
   它是 WAL 模式的 SQLite，舊 app 隨時在寫，所以**從不開原檔**——`mode=ro` 仍會對 `-shm` 加鎖、也可能建立它。

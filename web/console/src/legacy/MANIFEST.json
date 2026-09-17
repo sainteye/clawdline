@@ -60,7 +60,9 @@
     "js/view/plan.js": "fa7a621929fe58ab",
     "js/net/billing.js": "ebe94bc98d31048f",
     "js/input/start.js": "360d6a8b2bf9b6cb",
-    "js/input/clawdfather.js": "5f1a061118d8b474"
+    "js/input/clawdfather.js": "5f1a061118d8b474",
+    "js/input/shots.js": "452a3ddb5d5e6369",
+    "js/view/transcript-images.js": "14f9b14d9beb7c4d"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {

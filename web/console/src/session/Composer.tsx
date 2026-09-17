@@ -1,9 +1,19 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ReactNode, RefObject } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
+import {
+  Shots,
+  carriesFiles,
+  carriesPicture,
+  sendWithPictures,
+  shotsHTML,
+  shotsVersion,
+  subscribeShots,
+} from "../legacy/shots-bridge.js"
+import { toast } from "../overlays/toast.js"
 import { Waiting } from "./Waiting.js"
 
 /**
@@ -20,8 +30,11 @@ import { Waiting } from "./Waiting.js"
  *
  * - `.waiting` is its own component (`Waiting.tsx`), filled from the row's
  *   parsed `menu` and answered through `POST /key`, as the original's is.
- * - `.shots`, `input#pick` and `button.attach`: the send route here takes text
- *   only (`SendRequest` is `{ text }`), so the attachment button is disabled.
+ * - `.shots`, `input#pick` and `button.attach` are `input/shots.js`
+ *   (`legacy/shots-bridge.ts`): a picture is picked, pasted or dropped on the
+ *   detail pane, shrunk here, drawn as a thumbnail and sent beside the words
+ *   as a `data:` URL. The listeners that file binds at its foot are bound
+ *   below, on the same elements.
  * - `.voice` and `button.mic`: there is no transcription route, so the
  *   microphone is disabled and its row stays hidden.
  * - `.skill-menu`: there is no skills route, so the menu never opens.
@@ -50,10 +63,84 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
   const [write, setWrite] = useState(true)
   const [failure, setFailure] = useState("")
   const sendWidth = useRef({ word: "", px: 0 })
+  const pick = useRef<HTMLInputElement>(null)
+  // `renderComposer` reads the pictures on every draw; a change to them is a draw.
+  useSyncExternalStore(subscribeShots, shotsVersion)
+  const shotsBusy = Shots.busy()
 
   useKeyboardBar(msg)
 
   const on = write && !!row
+  // The picture listeners are bound once, and ask what is open when they fire.
+  const open = useRef({ on })
+  open.current = { on }
+
+  // A picture picked for one session is not a picture for the next one
+  // (`session/open.js` clears them on every open and close).
+  const openId = row?.id ?? null
+  useEffect(() => {
+    Shots.clear()
+  }, [openId])
+
+  // `input/shots.js`, the foot of the file: a paste anywhere on the page, and
+  // a drag onto the whole detail pane.
+  useEffect(() => {
+    const say = (text: string, bad: boolean) => toast(text, bad)
+    // Paste, because copying a screenshot and pressing paste is how this is
+    // done everywhere else. Not while the filter box has the focus.
+    const paste = (ev: ClipboardEvent) => {
+      if (!open.current.on) return
+      if (document.activeElement === document.getElementById("filter")) return
+      // The box runs first and takes anything with words in it; a paste
+      // already spoken for is left alone.
+      if (ev.defaultPrevented) return
+      if (!carriesPicture(ev.clipboardData)) return
+      ev.preventDefault()
+      Shots.add(ev.clipboardData?.files, say)
+    }
+    // The whole pane is the target, and the document swallows the drops that
+    // miss, because the browser's own answer to those is to leave the page.
+    const over = (ev: DragEvent) => {
+      if (carriesFiles(ev.dataTransfer)) ev.preventDefault()
+    }
+    const pane = document.getElementById("pane-detail")
+    let depth = 0
+    const enter = (ev: DragEvent) => {
+      if (!carriesFiles(ev.dataTransfer) || !open.current.on) return
+      depth += 1
+      pane?.classList.add("dropping")
+    }
+    const leave = () => {
+      depth = Math.max(0, depth - 1)
+      if (!depth) pane?.classList.remove("dropping")
+    }
+    const drop = (ev: DragEvent) => {
+      depth = 0
+      pane?.classList.remove("dropping")
+      if (!carriesFiles(ev.dataTransfer)) return
+      ev.preventDefault()
+      if (!open.current.on) {
+        say(T.webShotNeedsSession, true)
+        return
+      }
+      Shots.add(ev.dataTransfer?.files, say)
+    }
+    document.addEventListener("paste", paste)
+    document.addEventListener("dragover", over)
+    document.addEventListener("drop", over)
+    pane?.addEventListener("dragenter", enter)
+    pane?.addEventListener("dragleave", leave)
+    pane?.addEventListener("drop", drop)
+    return () => {
+      document.removeEventListener("paste", paste)
+      document.removeEventListener("dragover", over)
+      document.removeEventListener("drop", over)
+      pane?.removeEventListener("dragenter", enter)
+      pane?.removeEventListener("dragleave", leave)
+      pane?.removeEventListener("drop", drop)
+      pane?.classList.remove("dropping")
+    }
+  }, [T])
   let placeholder = T.placeholder
   if (row?.assistant === "codex") {
     placeholder = placeholder.replace("Claude Code", "Codex").replace("Claude", "Codex")
@@ -114,26 +201,35 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
   }
 
   const submit = async () => {
-    if (inFlight.current) return
+    // A picture still shrinking is part of this message and has not arrived
+    // yet; Return comes through here as well as the button.
+    if (inFlight.current || Shots.busy()) return
     const said = rawText().trim()
-    if (!said || !row || !write) return
+    const pictures = Shots.urls().slice()
+    if ((!said && !pictures.length) || !row || !write) return
     // A quit line is not a message: the original ends the session instead, while
     // its terminal is still known. Exact and per assistant, so a sentence that
     // mentions `/exit` is still an ordinary prompt.
-    const quit = said === (row.assistant === "codex" ? "/quit" : "/exit")
+    const quit = !pictures.length && said === (row.assistant === "codex" ? "/quit" : "/exit")
     // **The box empties here, before the request exists**, and nothing puts the
-    // words back: a send that fails at this end may already have been delivered.
+    // words or the pictures back: a send that fails at this end may already
+    // have been delivered.
     if (msg.current) msg.current.textContent = ""
     if (document.activeElement === msg.current) caretToEnd()
     setText("")
     setFailure("")
+    Shots.clear()
     inFlight.current = true
     setSending(true)
     try {
       // A resolved send means the bytes reached the tty, not that the assistant
       // read them. Nothing is said on success — the turn appearing in the
       // transcript is the answer.
-      await (quit ? client.close(row.id) : client.send(row.id, said))
+      await (quit
+        ? client.close(row.id)
+        : pictures.length
+          ? sendWithPictures(row.id, said, pictures)
+          : client.send(row.id, said))
       onDid()
     } catch (err) {
       const code = err instanceof RefusalError ? err.code : "unexpected_error"
@@ -164,7 +260,15 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
       }}
     >
       <Waiting row={row} write={write} />
-      <div className="shots" id="shots"></div>
+      <div
+        className="shots"
+        id="shots"
+        onClick={(ev) => {
+          const handle = (ev.target as Element).closest?.("[data-shot]")
+          if (handle) Shots.remove(handle.getAttribute("data-shot") ?? "")
+        }}
+        dangerouslySetInnerHTML={{ __html: shotsHTML() }}
+      ></div>
       <div className="voice" id="voice" role="status" hidden></div>
       {/* The original's label is English in every language; the catalog has no key for it. */}
       <div
@@ -181,8 +285,9 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
           type="button"
           aria-label={T.webAttach}
           title={T.webAttach}
-          disabled
+          disabled={!on || sending}
           onMouseDown={(e) => e.preventDefault()}
+          onClick={() => pick.current?.click()}
         >
           +
         </button>
@@ -230,7 +335,9 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
           onInput={changed}
           onPaste={(e) => {
             const pasted = e.clipboardData?.getData("text/plain") || ""
-            if (!pasted) return
+            // A picture goes to the document's handler; anything else with
+            // words in it stays here.
+            if (carriesPicture(e.clipboardData) || !pasted) return
             e.preventDefault()
             insertText(pasted)
             changed()
@@ -250,7 +357,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
           className="send"
           id="send"
           type="submit"
-          disabled={!on || sending || !text.trim()}
+          disabled={!on || sending || shotsBusy || (!text.trim() && !Shots.count())}
           title={keyboard ? T.webSendTip : ""}
           style={pinned}
           onMouseDown={(e) => e.preventDefault()}
@@ -258,7 +365,20 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
           {sending ? T.webSending : T.webSend}
         </button>
       </div>
-      <input id="pick" type="file" accept="image/*" multiple hidden tabIndex={-1} />
+      <input
+        ref={pick}
+        id="pick"
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        tabIndex={-1}
+        onChange={(e) => {
+          Shots.add(e.currentTarget.files, (words, bad) => toast(words, bad))
+          // Cleared so that picking the same file twice in a row still counts as a change.
+          e.currentTarget.value = ""
+        }}
+      />
       <div className="why" id="why" {...(whyHTML !== null ? { dangerouslySetInnerHTML: { __html: whyHTML } } : {})}>
         {whyHTML === null ? why : null}
       </div>

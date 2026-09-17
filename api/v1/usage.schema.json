@@ -50,6 +50,7 @@
       "required": ["role", "text"],
       "properties": {
         "activity": { "$ref": "#/$defs/TranscriptActivity" },
+        "artifacts": { "description": "Pictures an assistant turn showed with a `<clawdline-image>` marker, or a Clawdline session message carried. Resolved against this daemon's store and then, read-only, the Swift app's.", "type": "array", "items": { "$ref": "images.schema.json#/$defs/ImageArtifact" } },
         "at": { "description": "Unix seconds. Absent when the record carried no timestamp this reader accepts.", "type": "integer" },
         "fileChanges": { "description": "Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent on every other entry.", "type": "array", "items": { "$ref": "#/$defs/TranscriptFileChange" } },
         "imageCount": { "description": "Images attached to a user turn. Absent when there were none: the Swift app writes an explicit 0 on user rows, and a reader treats absence as that 0.", "type": "integer" },

@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
+	"sync/atomic"
+	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
@@ -22,6 +26,9 @@ type Actions struct {
 	Inventory Inventory
 	Terminals []ports.TerminalHost
 	Store     *store.Store
+	// Pictures is what a send with pictures needs besides a terminal. A zero
+	// value refuses pictures rather than dropping them.
+	Pictures Pictures
 }
 
 // Refusal is a typed no, in the shape every refusal on this daemon has.
@@ -96,6 +103,237 @@ func (a Actions) Send(ctx context.Context, id, text string) (session.Session, er
 	}
 	a.record(ctx, "session.typed", s.ID, map[string]any{"bytes": len(text)})
 	return s, nil
+}
+
+// Pictures is where a send puts its pictures and how it lends them to Claude Code.
+type Pictures struct {
+	Drops      *artifacts.Drops
+	Pasteboard PictureLender
+}
+
+// PictureLender is the pasteboard, as a send borrows it (artifacts.Pasteboard).
+type PictureLender interface {
+	Available() bool
+	Borrow(ctx context.Context) (*artifacts.Borrowed, error)
+	Offer(ctx context.Context, b *artifacts.Borrowed, path string) error
+	GiveBack(ctx context.Context, b *artifacts.Borrowed) error
+}
+
+// typist types text into a session without submitting it. Only the picture
+// path needs that, because only there is the prompt assembled in pieces.
+type typist interface {
+	Type(ctx context.Context, s session.Session, text string) error
+}
+
+// Pauses between the pieces of a prompt with pictures in it, the Swift app's:
+// the far side reads the pasteboard when it handles Ctrl-V, which is not the
+// instant the byte arrives, and the last picture is still being read after the
+// Return.
+var (
+	pictureSettle = 250 * time.Millisecond
+	submitSettle  = 200 * time.Millisecond
+)
+
+// keyPaste is Ctrl-V, sent as a key and outside any paste: inside one it is
+// just a character.
+var keyPaste = []byte{0x16}
+
+// The pasteboard is one thing on the machine, so picture sends take turns at
+// it. A few may wait; past that the answer is `busy` before anything is typed,
+// which is the difference between a queue and a pile.
+var (
+	pasteboardSlot    = make(chan struct{}, 1)
+	pasteboardWaiting atomic.Int32
+)
+
+const pasteboardQueue = 4
+
+// SendWithPictures is `sendTerminal` with `images`: text, pictures, or both.
+//
+// Each picture arrives as a `data:` URL, is drawn and written out again as PNG
+// (artifacts.Normalize) and saved in the drop cache. Into a Claude Code session
+// each one is then lent to the pasteboard and pasted with Ctrl-V, so it arrives
+// as `[Image #1]`; anywhere else — Codex, a platform with no pasteboard, a
+// pasteboard that would not take it — the assistant is given the file's path,
+// which is plainer and never wrong. A picture that cannot be decoded is left
+// out; a message none of whose pictures can be is refused.
+//
+// A nil error means the bytes reached the tty, as for Send. Files that never
+// reached one are removed; the rest are kept for the program to read later.
+func (a Actions) SendWithPictures(ctx context.Context, id, text string, images []string) (session.Session, error) {
+	if len(images) == 0 {
+		return a.Send(ctx, id, text)
+	}
+	policy := artifacts.ProductionPolicy
+	if len(images) > policy.MaxImagesPerMessage {
+		return session.Session{}, Refusal{Code: "bad_request",
+			Detail: fmt.Sprintf("one message carries at most %d pictures", policy.MaxImagesPerMessage)}
+	}
+	if a.Pictures.Drops == nil {
+		return session.Session{}, Refusal{Code: "pictures_unavailable",
+			Detail: "this daemon was started without a place to keep pictures"}
+	}
+	s, err := a.Find(ctx, id)
+	if err != nil {
+		return session.Session{}, err
+	}
+	h, err := a.host(s)
+	if err != nil {
+		return session.Session{}, err
+	}
+	var paths []string
+	for _, url := range images {
+		raw, ok := artifacts.DecodeDataURL(url)
+		if !ok {
+			continue
+		}
+		pic, err := artifacts.Normalize(ctx, raw, policy)
+		if err != nil {
+			log.Printf("send: a picture was left out: %v", err)
+			continue
+		}
+		path, err := a.Pictures.Drops.Store(pic.PNG, time.Now())
+		if err != nil {
+			log.Printf("send: a picture could not be kept: %v", err)
+			continue
+		}
+		paths = append(paths, path)
+	}
+	if len(paths) == 0 {
+		return s, Refusal{Code: "bad_request", Detail: "None of those were images I could read."}
+	}
+	how, err := a.deliverPictures(ctx, s, h, text, paths)
+	if err != nil {
+		a.Pictures.Drops.Discard(paths)
+		return s, err
+	}
+	a.record(ctx, "session.typed", s.ID, map[string]any{
+		"bytes": len(text), "images": len(paths), "skipped": len(images) - len(paths), "delivery": how,
+	})
+	return s, nil
+}
+
+// deliverPictures is `Targets.send(_ pieces:to:)`, and answers how the
+// pictures went: "paste" or "path".
+func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports.TerminalHost,
+	text string, paths []string) (string, error) {
+	asPaths := func(pending []string) string {
+		parts := []string{}
+		if text != "" {
+			parts = append(parts, text)
+		}
+		for _, p := range pending {
+			parts = append(parts, quotedPath(p))
+		}
+		return strings.Join(parts, " ")
+	}
+	byPath := func() (string, error) {
+		if err := h.Send(ctx, s, asPaths(paths)); err != nil {
+			return "", Refusal{Code: "send_failed", Detail: err.Error()}
+		}
+		return "path", nil
+	}
+	keys, canKey := h.(ports.KeyHost)
+	typer, canType := h.(typist)
+	lender := a.Pictures.Pasteboard
+	// Claude Code specifically: `[Image #1]` is its convention, and in a shell
+	// Ctrl-V is readline's quoted-insert.
+	if s.Assistant != session.AssistantClaude || lender == nil || !lender.Available() || !canKey || !canType {
+		return byPath()
+	}
+
+	release, err := takePasteboard(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	// Once the pasteboard is ours the prompt is typed to the end, whatever the
+	// caller does meanwhile: half a prompt left in somebody's input line is
+	// worse than a late answer.
+	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+	defer cancel()
+	borrowed, err := lender.Borrow(work)
+	if err != nil {
+		log.Printf("send: the pasteboard could not be borrowed, sending paths: %v", err)
+		return byPath()
+	}
+	defer func() {
+		time.Sleep(submitSettle)
+		if err := lender.GiveBack(work, borrowed); err != nil {
+			log.Printf("send: the pasteboard was not given back: %v", err)
+		}
+	}()
+
+	typed := false
+	if text != "" {
+		if err := typer.Type(work, s, text); err != nil {
+			return "", Refusal{Code: "send_failed", Detail: err.Error()}
+		}
+		typed = true
+	}
+	asPath := 0
+	for _, p := range paths {
+		if err := lender.Offer(work, borrowed, p); err != nil {
+			// Its bytes would not load. The path still works and is only plainer.
+			asPath++
+			words := quotedPath(p)
+			if typed {
+				words = " " + words
+			}
+			if err := typer.Type(work, s, words); err != nil {
+				return "", Refusal{Code: "send_failed", Detail: err.Error()}
+			}
+			typed = true
+			continue
+		}
+		if err := keys.Keystroke(work, s, keyPaste); err != nil {
+			return "", Refusal{Code: "send_failed", Detail: err.Error()}
+		}
+		typed = true
+		time.Sleep(pictureSettle)
+	}
+	if err := keys.Keystroke(work, s, keyReturn); err != nil {
+		return "", Refusal{Code: "send_failed", Detail: err.Error()}
+	}
+	if asPath > 0 {
+		log.Printf("send: %d image(s) went as paths", asPath)
+		return "paste+path", nil
+	}
+	return "paste", nil
+}
+
+// takePasteboard waits for the pasteboard, a little. The refusal says nothing
+// was typed, which is true: nothing is, until the pasteboard is held.
+func takePasteboard(ctx context.Context) (func(), error) {
+	if pasteboardWaiting.Add(1) > pasteboardQueue {
+		pasteboardWaiting.Add(-1)
+		return nil, Refusal{Code: "busy", Detail: fmt.Sprintf(
+			"This Mac already has %d picture sends in hand. Try again after they drain.", pasteboardQueue)}
+	}
+	defer pasteboardWaiting.Add(-1)
+	select {
+	case pasteboardSlot <- struct{}{}:
+		return func() { <-pasteboardSlot }, nil
+	case <-ctx.Done():
+		return nil, Refusal{Code: "busy",
+			Detail: "the pasteboard was still lent to another send; nothing was typed"}
+	}
+}
+
+// quotedPath is `Drop.quoted`: quoted only when it has to be, because the
+// prompt is something a person is about to read.
+func quotedPath(path string) string {
+	safe := true
+	for _, r := range path {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("/._-+=@~", r)) {
+			safe = false
+			break
+		}
+	}
+	if safe {
+		return path
+	}
+	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
 }
 
 // Interrupt stops the current turn without closing the session.

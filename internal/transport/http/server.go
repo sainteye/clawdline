@@ -55,6 +55,9 @@ type Server struct {
 	// Clawdfather, which task opened a tab, who waits on whom, what was
 	// delivered. See internal/adapters/swiftstore for the rules it keeps.
 	swift *swiftstore.Store
+	// pictures is this daemon's own picture stores, the pasteboard a send
+	// lends pictures to, and the Swift app's picture store, read-only.
+	pictures pictures
 	// lastScreen is the sessions the last list was built from, so a task list
 	// can place a task under its root without scanning the machine again.
 	lastScreen atomic.Pointer[screenReading]
@@ -103,6 +106,7 @@ func New(cfg config.Config) (*Server, error) {
 		facts:     transcript.NewRecordFacts(),
 		icons:     icon.NewRegistry(),
 		swift:     swiftstore.Open(swiftstore.Dir()),
+		pictures:  newPictures(cfg.Dir),
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
@@ -166,6 +170,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/usage/analytics.json", s.usageAnalyticsRoute)
 	mux.HandleFunc("/v1/orchestrator/usage/project-worktrees", s.usageWorktreesRoute)
 	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
+	// Pictures: stored by a session (machine token), read by id (images.go).
+	mux.HandleFunc("/v1/artifacts/images", s.imagesRoute)
+	mux.HandleFunc("/v1/artifacts/images/", s.imageRoute)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			s.boardWrite(w, r)

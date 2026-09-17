@@ -155,8 +155,11 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 	page.Evidence = contract.EvidenceTranscript
 	page.Signature = read.Signature
 	entries := make([]contract.TranscriptEntry, 0, len(read.Entries))
+	now := time.Now()
 	for _, e := range read.Entries {
-		entries = append(entries, transcriptEntry(e))
+		row := transcriptEntry(e)
+		row.Artifacts = s.pictures.wireArtifacts(e, now)
+		entries = append(entries, row)
 	}
 	kept, omitted := boundedTranscript(entries)
 	page.Entries = kept

@@ -14,6 +14,9 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline-go/internal/config"
 )
 
 // The kinds of entry a conversation is read into. They are the Swift app's
@@ -64,9 +67,18 @@ type Entry struct {
 	SourceMode      string
 	SourceAssistant string
 	Notice          *Notice
-	FileChanges     []FileChange
-	Plan            []PlanStep
-	Activity        *Activity
+	// ArtifactIDs are the pictures an assistant turn showed with
+	// `<clawdline-image id="…">`, in order. Ids only: what each one is — a
+	// picture, an expired one, an unknown one — is asked of the image stores
+	// when the entry is served, because that answer changes while the
+	// transcript does not.
+	ArtifactIDs []string
+	// Artifacts are the pictures a Clawdline session message carried, as its
+	// envelope described them.
+	Artifacts   []ImageRef
+	FileChanges []FileChange
+	Plan        []PlanStep
+	Activity    *Activity
 
 	// Claude records a message from another session twice: once when it is
 	// queued and once when it is delivered. These two tell the copies apart,
@@ -471,11 +483,13 @@ func claudeEntries(line []byte) []Entry {
 	}
 
 	var out []Entry
+	// One budget of pictures for the whole turn, which arrives here a block at
+	// a time (`Transcript.assistantEntry`'s `limit`).
+	pictures := artifacts.ProductionPolicy.MaxImagesPerMessage
 	prose := func(raw string) {
-		// Image markers in an assistant's own reply resolve against the image
-		// store, which this daemon does not read yet, so they stay as written.
-		if t := strings.TrimSpace(raw); t != "" {
-			out = append(out, Entry{Kind: KindAssistant, Text: t, At: at})
+		if e, ok := assistantEntry(raw, at, pictures); ok {
+			pictures -= len(e.ArtifactIDs)
+			out = append(out, e)
 		}
 	}
 	for _, b := range blocks {
@@ -896,8 +910,8 @@ func codexItemEntries(item object, at int64) []Entry {
 		return some(entry(KindUser, text, ""))
 
 	case "AgentMessage":
-		if t := strings.TrimSpace(codexText(item["content"])); t != "" {
-			return []Entry{{Kind: KindAssistant, Text: t, At: at}}
+		if e, ok := assistantEntry(codexText(item["content"]), at, artifacts.ProductionPolicy.MaxImagesPerMessage); ok {
+			return []Entry{e}
 		}
 		return nil
 
@@ -1490,22 +1504,225 @@ func sessionMessage(raw string, at int64) (Entry, bool) {
 	if id == "" || label == "" || (assistant != "claude" && assistant != "codex") {
 		return Entry{}, false
 	}
+	var refs []ImageRef
 	switch version {
 	case 1:
 		if !sameKeys(obj, "protocol", "version", "kind", "source", "body") || body == "" {
 			return Entry{}, false
 		}
 	case 2:
-		artifacts, ok := obj.objects("artifacts")
+		policy := artifacts.ProductionPolicy
+		list, ok := obj.objects("artifacts")
 		if !sameKeys(obj, "protocol", "version", "kind", "source", "body", "artifacts") ||
-			!ok || len(artifacts) == 0 || len(artifacts) > 6 {
+			!ok || len(list) == 0 || len(list) > policy.MaxImagesPerMessage {
+			return Entry{}, false
+		}
+		total := 0
+		for _, item := range list {
+			ref, ok := decodeImageRef(item)
+			if !ok {
+				return Entry{}, false
+			}
+			total += ref.ByteCount
+			refs = append(refs, ref)
+		}
+		if total > policy.MaxTotalBytes {
 			return Entry{}, false
 		}
 	default:
 		return Entry{}, false
 	}
 	return Entry{Kind: KindMessage, Text: body, At: at,
-		Source: label, SourceMode: "clawdline", SourceAssistant: assistant}, true
+		Source: label, SourceMode: "clawdline", SourceAssistant: assistant, Artifacts: refs}, true
+}
+
+// ImageRef is one picture a version-2 session message described.
+type ImageRef struct {
+	ID        string
+	MediaType string
+	ByteCount int
+	Width     int
+	Height    int
+	ExpiresAt int64
+}
+
+// decodeImageRef is `SessionImageArtifact.decode`: exactly the six keys, whole
+// numbers that are not booleans, and a reference the store could have made.
+func decodeImageRef(o object) (ImageRef, bool) {
+	if !sameKeys(o, "id", "media_type", "byte_count", "width", "height", "expires_at") {
+		return ImageRef{}, false
+	}
+	id, ok1 := o.str("id")
+	mediaType, ok2 := o.str("media_type")
+	bytes, ok3 := o.integer("byte_count")
+	width, ok4 := o.integer("width")
+	height, ok5 := o.integer("height")
+	expires, ok6 := o.integer("expires_at")
+	if !(ok1 && ok2 && ok3 && ok4 && ok5 && ok6) {
+		return ImageRef{}, false
+	}
+	const most = int64(1) << 31
+	if bytes > most || width > most || height > most {
+		return ImageRef{}, false
+	}
+	a := artifacts.Artifact{ID: id, MediaType: mediaType, ByteCount: int(bytes),
+		Width: int(width), Height: int(height), ExpiresAt: expires}
+	if !a.Valid(artifacts.ProductionPolicy) {
+		return ImageRef{}, false
+	}
+	return ImageRef{ID: a.ID, MediaType: a.MediaType, ByteCount: a.ByteCount,
+		Width: a.Width, Height: a.Height, ExpiresAt: a.ExpiresAt}, true
+}
+
+// assistantEntry is `Transcript.assistantEntry`: one assistant turn with the
+// image markers it honoured lifted out of its prose. A turn that was nothing
+// but a picture is not empty — the marker was the whole message.
+func assistantEntry(raw string, at int64, limit int) (Entry, bool) {
+	text, ids := readImageMarkers(raw, limit)
+	text = strings.TrimSpace(text)
+	if text == "" && len(ids) == 0 {
+		return Entry{}, false
+	}
+	return Entry{Kind: KindAssistant, Text: text, At: at, ArtifactIDs: ids}, true
+}
+
+// readImageMarkers is `SessionImageMarker.read`.
+//
+// Recognition is all or nothing: the one spelling around one opaque id, and
+// anything else — a malformed tag, one past the limit, one inside a fenced
+// code block, which is a reply *about* the format — stays exactly where it was
+// written, because a marker that vanished silently looks like one that worked.
+func readImageMarkers(raw string, limit int) (string, []string) {
+	opening, closing := artifacts.MarkerOpening, artifacts.MarkerClosing
+	if limit <= 0 || !strings.Contains(raw, opening) {
+		return raw, nil
+	}
+	fenced := fencedRanges(raw)
+	var b strings.Builder
+	var ids []string
+	cursor := 0
+	for {
+		rel := strings.Index(raw[cursor:], opening)
+		if rel < 0 {
+			break
+		}
+		open := cursor + rel
+		after := open + len(opening)
+		id, end := "", -1
+		if len(ids) < limit && !inRanges(fenced, open) {
+			if c := strings.Index(raw[after:], closing); c >= 0 {
+				if candidate := raw[after : after+c]; artifacts.IsID(candidate) {
+					id, end = candidate, after+c+len(closing)
+				}
+			}
+		}
+		if end < 0 {
+			// Not honoured. Scanning resumes just past the opening, so a real
+			// marker later in the turn is still found.
+			b.WriteString(raw[cursor:after])
+			cursor = after
+			continue
+		}
+		ids = append(ids, id)
+		from, to := markerRemoval(raw, open, end)
+		b.WriteString(raw[cursor:max(from, cursor)])
+		cursor = to
+	}
+	b.WriteString(raw[cursor:])
+	return b.String(), ids
+}
+
+// fencedRanges are the line-anchored ``` and ~~~ blocks of one turn; an
+// unclosed fence runs to the end, because that is what a reader sees too.
+func fencedRanges(raw string) [][2]int {
+	var ranges [][2]int
+	openedAt, openChar, openRun := -1, byte(0), 0
+	lineStart := 0
+	for {
+		lineEnd := len(raw)
+		if i := strings.IndexByte(raw[lineStart:], '\n'); i >= 0 {
+			lineEnd = lineStart + i
+		}
+		if ch, run, ok := fenceRun(raw[lineStart:lineEnd]); ok {
+			if openedAt >= 0 {
+				if ch == openChar && run >= openRun {
+					ranges = append(ranges, [2]int{openedAt, lineEnd})
+					openedAt = -1
+				}
+			} else {
+				openedAt, openChar, openRun = lineStart, ch, run
+			}
+		}
+		if lineEnd == len(raw) {
+			break
+		}
+		lineStart = lineEnd + 1
+	}
+	if openedAt >= 0 {
+		ranges = append(ranges, [2]int{openedAt, len(raw)})
+	}
+	return ranges
+}
+
+func fenceRun(line string) (byte, int, bool) {
+	i := 0
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+		i++
+	}
+	if i == len(line) || (line[i] != '`' && line[i] != '~') {
+		return 0, 0, false
+	}
+	mark, run := line[i], 0
+	for i < len(line) && line[i] == mark {
+		run++
+		i++
+	}
+	return mark, run, run >= 3
+}
+
+func inRanges(ranges [][2]int, at int) bool {
+	for _, r := range ranges {
+		if at >= r[0] && at < r[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// markerRemoval is what one honoured marker takes with it. Alone on its line
+// it takes the line and its newline — and one blank line when it sat between
+// two paragraphs, so a picture leaves one paragraph break rather than two. With
+// words beside it, it takes only itself: those are the sentence somebody wrote.
+func markerRemoval(raw string, start, end int) (int, int) {
+	lineStart := start
+	for lineStart > 0 {
+		c := raw[lineStart-1]
+		if c == ' ' || c == '\t' {
+			lineStart--
+			continue
+		}
+		if c == '\n' {
+			break
+		}
+		return start, end
+	}
+	lineEnd := end
+	for lineEnd < len(raw) {
+		c := raw[lineEnd]
+		if c == ' ' || c == '\t' {
+			lineEnd++
+			continue
+		}
+		if c != '\n' {
+			return start, end
+		}
+		cut := lineEnd + 1
+		if lineStart > 0 && raw[lineStart-1] == '\n' && cut < len(raw) && raw[cut] == '\n' {
+			cut++
+		}
+		return lineStart, cut
+	}
+	return lineStart, lineEnd
 }
 
 // decodeNotice decodes Clawdline's own notice about a task, a wait or a
@@ -1732,8 +1949,14 @@ var imageMarkers = regexp.MustCompile(`\[Image #\d+\]\s*`)
 // dropPattern matches only paths Clawdline's own drop cache created. The
 // directory is the left boundary, so a greedy match cannot eat authored text
 // such as `Resources/web/app.js` before the path begins.
+//
+// Two caches: the Swift app's, and this daemon's own (artifacts.DropsDir), which
+// holds what a picture sent from this daemon's page became when it was handed
+// over as a path.
 var dropPattern = func() *regexp.Regexp {
-	file := regexp.QuoteMeta(dropDirectory()+"/") + `clawdline-[A-Za-z0-9-]+\.(?:png|tiff|jpg|jpeg|heic|gif|webp)`
+	dirs := regexp.QuoteMeta(dropDirectory()+string(filepath.Separator)) + "|" +
+		regexp.QuoteMeta(artifacts.DropsDir(config.Dir())+string(filepath.Separator))
+	file := `(?:` + dirs + `)clawdline-[A-Za-z0-9-]+\.(?:png|tiff|jpg|jpeg|heic|gif|webp)`
 	return regexp.MustCompile(`(?:'` + file + `'|` + file + `)`)
 }()
 

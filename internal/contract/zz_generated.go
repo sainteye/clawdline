@@ -934,6 +934,56 @@ type Icon struct {
 	Cells  [][]*string `json:"cells"`
 }
 
+// Why a reference has no picture behind it: `expired` when the store held it
+// and no longer does, `unknown` when no store here ever held that id.
+type ImageAbsence string
+
+const (
+	ImageAbsenceExpired ImageAbsence = "expired"
+	ImageAbsenceUnknown ImageAbsence = "unknown"
+)
+
+// ImageAbsenceValues is every value the contract allows, in contract order.
+var ImageAbsenceValues = []ImageAbsence{ImageAbsenceExpired, ImageAbsenceUnknown}
+
+// One picture a transcript entry shows, in the Swift app's
+// `SessionImageArtifact.object` shape. A reference with `state` describes no
+// bytes: its size fields are 0 and `expires_at` is 1, which is the branch every
+// renderer already draws as gone.
+type ImageArtifact struct {
+	ByteCount int64 `json:"byte_count"`
+
+	// Unix seconds after which the picture is gone.
+	ExpiresAt int64 `json:"expires_at"`
+	Height    int64 `json:"height"`
+
+	// A lowercase UUID. The whole of what the bytes are fetched by.
+	ID string `json:"id"`
+
+	// Always image/png: every stored picture was drawn and written out again.
+	MediaType string       `json:"media_type"`
+	State     ImageAbsence `json:"state,omitempty"`
+	Width     int64        `json:"width"`
+}
+
+type ImagePath struct {
+	// One normalized absolute path to a regular local file. A link is refused.
+	Path string `json:"path"`
+}
+
+// POST /v1/artifacts/images, with this machine's orchestrator token only: 1…6
+// local pictures a session wants to show in its own reply. Each is decoded,
+// bounded and stored as PNG before any is kept.
+type ImageStoreRequest struct {
+	Images []ImagePath `json:"images"`
+}
+
+type ImageStoreResult struct {
+	Artifacts []StoredImage `json:"artifacts"`
+	At        int64         `json:"at"`
+	OK        bool          `json:"ok"`
+}
+
 type Inventory struct {
 	At       int64              `json:"at"`
 	Scan     InventoryScan      `json:"scan"`
@@ -1395,8 +1445,13 @@ type SchedulerPulse struct {
 	TickSeconds int64  `json:"tickSeconds"`
 }
 
+// Text, pictures, or both; a send that is neither is refused. Each picture is a
+// base64 `data:` URL, at most six, inside the 20 MB body limit. Pictures that
+// cannot be decoded are left out, and a send none of whose pictures can be is
+// refused.
 type SendRequest struct {
-	Text string `json:"text"`
+	Images []string `json:"images,omitempty"`
+	Text   string   `json:"text,omitempty"`
 }
 
 // Who this session is parked on, and who is parked on it. Absent when neither.
@@ -1786,6 +1841,18 @@ const (
 // StoreReadingValues is every value the contract allows, in contract order.
 var StoreReadingValues = []StoreReading{StoreReadingCurrent, StoreReadingStale, StoreReadingUnknown}
 
+// One stored picture and the literal to paste into a reply to show it:
+// `<clawdline-image id="…">`.
+type StoredImage struct {
+	ByteCount int64  `json:"byte_count"`
+	ExpiresAt int64  `json:"expires_at"`
+	Height    int64  `json:"height"`
+	ID        string `json:"id"`
+	Marker    string `json:"marker"`
+	MediaType string `json:"media_type"`
+	Width     int64  `json:"width"`
+}
+
 // The tab the task was opened in.
 type TaskChild struct {
 	Backend    string `json:"backend,omitempty"`
@@ -1945,6 +2012,11 @@ type TranscriptActivity struct {
 // instead, after the U+0001 `ask` U+0001 marker.
 type TranscriptEntry struct {
 	Activity *TranscriptActivity `json:"activity,omitempty"`
+
+	// Pictures an assistant turn showed with a `<clawdline-image>` marker, or a
+	// Clawdline session message carried. Resolved against this daemon's store and
+	// then, read-only, the Swift app's.
+	Artifacts []ImageArtifact `json:"artifacts,omitempty"`
 
 	// Unix seconds. Absent when the record carried no timestamp this reader accepts.
 	At int64 `json:"at,omitempty"`

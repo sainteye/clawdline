@@ -1151,6 +1151,66 @@ export interface Icon {
   cells: ((string | null)[])[]
 }
 
+/**
+ * Why a reference has no picture behind it: `expired` when the store held it and no
+ * longer does, `unknown` when no store here ever held that id.
+ */
+export type ImageAbsence =
+    "expired"
+  | "unknown"
+
+export const ImageAbsenceValues: readonly ImageAbsence[] = ["expired", "unknown"] as const
+
+/**
+ * One picture a transcript entry shows, in the Swift app's
+ * `SessionImageArtifact.object` shape. A reference with `state` describes no bytes:
+ * its size fields are 0 and `expires_at` is 1, which is the branch every renderer
+ * already draws as gone.
+ */
+export interface ImageArtifact {
+  byte_count: number
+
+  /**
+   * Unix seconds after which the picture is gone.
+   */
+  expires_at: number
+  height: number
+
+  /**
+   * A lowercase UUID. The whole of what the bytes are fetched by.
+   */
+  id: string
+
+  /**
+   * Always image/png: every stored picture was drawn and written out again.
+   */
+  media_type: string
+  state?: ImageAbsence
+  width: number
+}
+
+export interface ImagePath {
+  /**
+   * One normalized absolute path to a regular local file. A link is refused.
+   */
+  path: string
+}
+
+/**
+ * POST /v1/artifacts/images, with this machine's orchestrator token only: 1…6
+ * local pictures a session wants to show in its own reply. Each is decoded, bounded
+ * and stored as PNG before any is kept.
+ */
+export interface ImageStoreRequest {
+  images: ImagePath[]
+}
+
+export interface ImageStoreResult {
+  artifacts: StoredImage[]
+  at: number
+  ok: boolean
+}
+
 export interface Inventory {
   at: number
   scan: InventoryScan
@@ -1713,8 +1773,15 @@ export interface SchedulerPulse {
   tickSeconds: number
 }
 
+/**
+ * Text, pictures, or both; a send that is neither is refused. Each picture is a
+ * base64 `data:` URL, at most six, inside the 20 MB body limit. Pictures that
+ * cannot be decoded are left out, and a send none of whose pictures can be is
+ * refused.
+ */
 export interface SendRequest {
-  text: string
+  images?: string[]
+  text?: string
 }
 
 /**
@@ -2211,6 +2278,20 @@ export type StoreReading =
 export const StoreReadingValues: readonly StoreReading[] = ["current", "stale", "unknown"] as const
 
 /**
+ * One stored picture and the literal to paste into a reply to show it:
+ * `<clawdline-image id="…">`.
+ */
+export interface StoredImage {
+  byte_count: number
+  expires_at: number
+  height: number
+  id: string
+  marker: string
+  media_type: string
+  width: number
+}
+
+/**
  * The tab the task was opened in.
  */
 export interface TaskChild {
@@ -2392,6 +2473,13 @@ export interface TranscriptActivity {
  */
 export interface TranscriptEntry {
   activity?: TranscriptActivity
+
+  /**
+   * Pictures an assistant turn showed with a `<clawdline-image>` marker, or a
+   * Clawdline session message carried. Resolved against this daemon's store and
+   * then, read-only, the Swift app's.
+   */
+  artifacts?: ImageArtifact[]
 
   /**
    * Unix seconds. Absent when the record carried no timestamp this reader accepts.

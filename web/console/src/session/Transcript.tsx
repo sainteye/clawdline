@@ -20,6 +20,7 @@ import type {
 import { client } from "../client.js"
 import { usePoll } from "../useFleet.js"
 import * as L from "../legacy/bridge.js"
+import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images-bridge.js"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -33,8 +34,13 @@ import * as L from "../legacy/bridge.js"
  * replicates, and the wire is the original's too: `entries` with `role`,
  * `text`, `tool`, `at`, `fileChanges`, `plan`, `activity`, `notice`, `source`.
  *
- * Not drawn, because this daemon does not send it yet: image artifacts (the
- * original's `artifactTilesHTML`) and the composer's optimistic entries.
+ * Pictures are the original's too: an assistant turn or a Clawdline message
+ * with `artifacts` carries `artifactTilesHTML`'s static tiles, numbered into one
+ * queue in the order they are drawn, and `legacy/images-bridge.ts` connects them
+ * after the draw with the original's own `transcript-images.js`.
+ *
+ * Not drawn, because this daemon does not send it yet: the composer's
+ * optimistic entries.
  */
 
 /** Same as the original's `limit=200`, so both panes are reading the same stretch. */
@@ -79,6 +85,17 @@ function TranscriptOf({ id }: { id: string }) {
   // reads them, and a draw of their own when either changes.
   const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
   const icons = useSyncExternalStore(L.subscribeSettings, L.settingsAssistantIcons)
+
+  // `artifactRenderQueue`: every picture this draw shows, in the order it is
+  // drawn, rebuilt on every draw. The tiles are connected after the draw.
+  const tiles = useRef<ArtifactTiles | null>(null)
+  tiles.current ??= new ArtifactTiles()
+  const queue = useRef<NonNullable<TranscriptEntry["artifacts"]>>([])
+  queue.current = []
+  useEffect(() => {
+    tiles.current?.settle(document.getElementById("tx"), queue.current)
+  })
+  useEffect(() => () => tiles.current?.release(), [])
 
   // `settleTranscript`: a read whose signature is new is drawn, and if the
   // reader was at the bottom before it was drawn they are put back there. A
@@ -151,9 +168,18 @@ function TranscriptOf({ id }: { id: string }) {
       else next[key] = !open
       return next
     })
-  const view: View = { who, expanded, toggle, assistant: session?.assistant, icons }
-
   const blocks = blocksOf(entries.filter(worthDrawing), session?.state === "working")
+  // Slots are handed out in the order the blocks are drawn, which is the
+  // original's: it reverses the blocks before rendering them.
+  const slots = new Map<Entry, number>()
+  for (const block of newestFirst ? [...blocks].reverse() : blocks) {
+    const e = block.rows[0]
+    if (block.kind !== "entry" || !showsPictures(who, e)) continue
+    slots.set(e, queue.current.length)
+    queue.current.push(...(e.artifacts ?? []))
+  }
+  const view: View = { who, expanded, toggle, assistant: session?.assistant, icons, slots }
+
   let at = 0
   const drawn = blocks.map((block) => {
     const start = at
@@ -182,6 +208,21 @@ interface View {
   assistant: string | undefined
   /** `S.assistantIcons` as this draw read it. */
   icons: boolean
+  /** Where each entry's pictures start in this draw's queue. */
+  slots: Map<Entry, number>
+}
+
+/** Whether `entryHTML` draws this entry's pictures: an assistant turn or a Clawdline message that has some. */
+function showsPictures(who: Record<string, string>, e: Entry): boolean {
+  if (!e.artifacts?.length || fileChangesOf(e) || planOf(e) || activityOf(e) || e.role === "notice") return false
+  const role = who[e.role] ? e.role : "assistant"
+  return role === "message" || role === "assistant"
+}
+
+/** This entry's tiles, or nothing. */
+function tilesHTML(v: View, e: Entry): string {
+  const first = v.slots.get(e)
+  return first === undefined ? "" : artifactTilesHTML(e.artifacts, first)
 }
 
 /** `worthDrawing`: prose always, a named call always, other tool output only with a letter or digit in it. */
@@ -492,11 +533,18 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
       meta +
       "</div><div>" +
       L.richTextHTML(e.text) +
-      "</div></div>"
+      "</div>" +
+      tilesHTML(v, e) +
+      "</div>"
     return (
       <div className="entry" data-role="message" key={"m:" + at}>
         {whoHTML(v, "message", e.at)}
-        <div className="body" onClick={copyFrom} dangerouslySetInnerHTML={{ __html: card }} />
+        <div
+          className="body"
+          key={artifactsKey(e.artifacts)}
+          onClick={copyFrom}
+          dangerouslySetInnerHTML={{ __html: card }}
+        />
       </div>
     )
   }
@@ -527,10 +575,18 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
       label: /^zh/i.test(document.documentElement.lang || "") ? "看板紀錄" : "Board record",
     })
   }
+  // An assistant turn carries pictures when it wrote an image marker into its
+  // own reply; the tiles are the same field-free markup the message card uses.
+  if (role === "assistant") body += tilesHTML(v, e)
   return (
     <div className="entry" data-role={role} key={"m:" + at}>
       {whoHTML(v, role, e.at)}
-      <div className="body" onClick={copyFrom} dangerouslySetInnerHTML={{ __html: body }} />
+      <div
+        className="body"
+        key={role === "assistant" ? artifactsKey(e.artifacts) : undefined}
+        onClick={copyFrom}
+        dangerouslySetInnerHTML={{ __html: body }}
+      />
     </div>
   )
 }

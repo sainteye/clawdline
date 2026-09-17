@@ -5,10 +5,11 @@
   "description": "POST /v1/sessions/{id}/send, /interrupt, /close and /key. Each has a precondition that is not the terminal's to check, so none of them is a thin wrapper over a keystroke.",
   "$defs": {
     "SendRequest": {
+      "description": "Text, pictures, or both; a send that is neither is refused. Each picture is a base64 `data:` URL, at most six, inside the 20 MB body limit. Pictures that cannot be decoded are left out, and a send none of whose pictures can be is refused.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["text"],
       "properties": {
+        "images": { "type": "array", "items": { "type": "string" } },
         "text": { "type": "string" }
       }
     },

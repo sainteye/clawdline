@@ -3,6 +3,8 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -45,12 +47,36 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 
 	switch verb {
 	case "send":
+		// Pictures travel inside this body, so it may be large; past the Swift
+		// server's limit it is refused with that server's words.
 		var body contract.SendRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		limited := http.MaxBytesReader(w, r.Body, sendBodyLimit)
+		if err := json.NewDecoder(limited).Decode(&body); err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				size := fmt.Sprintf("more than %d", tooLarge.Limit)
+				if r.ContentLength > 0 {
+					size = fmt.Sprint(r.ContentLength)
+				}
+				writeRefusal(w, http.StatusRequestEntityTooLarge, "too_large", fmt.Sprintf(
+					"That was %s bytes and the limit is %d. Send fewer or smaller pictures.", size, tooLarge.Limit))
+				return
+			}
 			writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a send")
 			return
 		}
-		if _, err := s.actions().Send(ctx, id, body.Text); err != nil {
+		if body.Text == "" && len(body.Images) == 0 {
+			writeRefusal(w, http.StatusBadRequest, "empty_text", "there is nothing to type")
+			return
+		}
+		// The terminal half of a send with pictures can take a few seconds per
+		// picture; the read of the machine before it keeps the ordinary bound.
+		if len(body.Images) > 0 {
+			var more context.CancelFunc
+			ctx, more = context.WithTimeout(r.Context(), 45*time.Second)
+			defer more()
+		}
+		if _, err := s.actions().SendWithPictures(ctx, id, body.Text, body.Images); err != nil {
 			writeActionRefusal(w, err)
 			return
 		}
@@ -85,7 +111,8 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 
 // actions builds the action surface for one request.
 func (s *Server) actions() app.Actions {
-	return app.Actions{Inventory: s.inventory, Terminals: s.terminals, Store: s.store}
+	return app.Actions{Inventory: s.inventory, Terminals: s.terminals, Store: s.store,
+		Pictures: app.Pictures{Drops: s.pictures.drops, Pasteboard: s.pictures.pasteboard}}
 }
 
 // writeActionRefusal gives each typed refusal the status that describes it, and
@@ -134,6 +161,11 @@ func actionStatus(code string) int {
 		return http.StatusConflict
 	case "empty_text", "bad_request":
 		return http.StatusBadRequest
+	case "busy":
+		// The Swift app's answer when its terminal queue is full.
+		return http.StatusTooManyRequests
+	case "pictures_unavailable":
+		return http.StatusServiceUnavailable
 	case "backend_unsupported":
 		return http.StatusNotImplemented
 	case "terminal_io_failed":
