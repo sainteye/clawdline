@@ -156,6 +156,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/strings", s.strings)
 	mux.HandleFunc("/v1/settings", s.settingsRoute)
 	mux.HandleFunc("/v1/places", s.placesRoute)
+	// Starting and resuming a session in a place, and what was said there (start.go).
+	mux.HandleFunc("/v1/places/", s.placeRoute)
 	mux.HandleFunc("/v1/projects", s.projectCatalogRoute)
 	mux.HandleFunc("/v1/projects/", s.projectsRoute)
 	mux.HandleFunc("/v1/orchestrator/usage", s.usageRoute)

@@ -1,0 +1,1132 @@
+import { T, fill } from "../core/i18n.js";
+import { S } from "../core/state.js";
+import { els } from "../core/dom.js";
+import { clockOf, shortPath, tint, toast, toastFailure } from "../core/util.js";
+import { bindFailureLine, failureSentence } from "../core/failure-text.js";
+import { bandSpin, drawIcon, drawSpinner, setBandSpin, setStartSpin, spinPhase, spinners, startSpin } from "../core/pixels.js";
+import { api } from "../net/api.js";
+import { byId, bySessionId } from "../view/derive.js";
+import { renderList } from "../view/list.js";
+import { renderComposer } from "../view/composer.js";
+import { Waits } from "../view/waits.js";
+import { openSession } from "../session/open.js";
+import {
+    clawdfatherChoiceSupported,
+    clawdfatherCreationChoice,
+    clawdfatherCreationLabel,
+    createClawdfatherAssignmentState,
+    createClawdfatherCoordinatorLoader
+} from "./clawdfather.js";
+import { coordinatorOfflineAdvice, coordinatorPresenceText } from "./coordinator-actions.js";
+import { LOCAL_SESSION_MACHINE, SessionSelection, sessionSelectionIdentity,
+    sessionSelectionKey } from "../session/selection.js";
+
+/* ---- starting a session -------------------------------------------------- */
+
+/**
+ * A new Claude Code session, started from the sofa.
+ *
+ * **The page never names a directory.** It shows a list the Mac built — the places `claude` has
+ * actually been run in, that are still there — and sends back the opaque id printed on the row
+ * it was given. There is no field on that route a path could be written into, so there is
+ * nothing here that could be persuaded to start a session somewhere the Mac did not offer.
+ *
+ * **It is its own sheet.** The one behind the wordmark is what is true of *this browser on this
+ * device*; this is a question about the Mac, and putting them together would have made one sheet
+ * that answers two different questions. It is one tap from the list and it costs the list
+ * nothing — a square on a row that already exists, rather than a control the session list has to
+ * make room for on every screen for ever.
+ *
+ * **Picking one back up is the same sheet, one step further in.** The switch above the list
+ * decides what the next press on a project means: begin a conversation there, or show the ones
+ * the selected assistant has already recorded there and carry one of them on. That second screen
+ * is the same list, the same filter box and the same press — which is why it is a mode of this sheet
+ * rather than a sheet of its own — and it obeys the same rule as everything else here: the page
+ * never names a conversation, it sends back an id off a list the Mac just built.
+ *
+ * **A conversation something is writing to right now is not resumable.** Two processes on one
+ * transcript is a corrupted record, so those rows say so and go to the session instead — which
+ * is what somebody who tapped one wanted anyway. It is the Mac that decides which those are:
+ * `live` arrives on the row.
+ *
+ * **The gap is the hard part.** `POST …/start` answers *before the session exists*: the id it
+ * gives back is in the same space as every id in `/v1/sessions`, but that session is not in the
+ * list yet and asking for it directly would `404` for a moment. So the id is kept and the list
+ * is watched — for the **id**, not for `isClaude`, which stays false until `claude` itself is up
+ * — and what is on screen meanwhile is both the persistent line under the header and a project-
+ * shaped placeholder at the top of the list. The latter remains deliberately outside the
+ * session collection: it has no state, transcript, count or keyboard position, only enough of
+ * the chosen place to show where the real row is arriving. After fifteen seconds both stop
+ * waiting and the line says the tab is open but nothing has reported in. **It never retries.**
+ * The tab exists; a retry is a second tab, and "did that work?" has never meant "do it again".
+ */
+export var Start = (function () {
+    var HOLD = 15000;    // how long the band waits before it admits it has stopped waiting
+    var MANY = 8;        // places, past which a box to filter them earns its row
+
+    var places = null;   // as the Mac sent them; null until an answer has arrived
+    var machines = null; // authenticated machine routes; null until this opening reads them
+    var machine = null;  // exact route selected before its Projects are read
+    var machineExplicit = false; // a stale route may be probed only after the person presses it
+    var preferredMachineID = null; // a Devices card may name the route before this sheet reads it
+    var machineLoading = false;
+    var machineSyncing = false; // relay is still realigning retained per-machine channels
+    var machineSyncTimer = null;
+    var machineGeneration = 0;
+    var placesGeneration = 0;
+    var assistants = [];  // what the Mac will start — [{ id, label }], its list and not this one
+    var with_ = null;     // which of them the next press opens; null until the list arrives
+    var loading = false;
+    var pressing = null; // the place being started, while that one request is in flight
+    var find = "";       // what has been typed into the sheet's filter
+    var resume = false;  // whether the next press picks a conversation up rather than starting one
+    var at = null;       // the place whose conversations are on screen; null while showing places
+    var pasts = null;    // as the Mac sent them, for `at`; null until an answer has arrived
+    var capped = false;  // the Mac stopped listing before the end, and said so
+    var reading = false;
+    var coordinatorPayload = null; // durable device Bearings; null while its read is in flight
+    var coordinatorFailed = false;
+    var wait = null;     // { id, from, late, place } — started, and not in the list yet
+    var assignmentIdentity = null; // exact machine/session route for the optional new coordinator
+    // The command that reaches the session just started, or null when there is nowhere to send
+    // anybody. Only the detached-tmux start fills it — see `attach` on the start reply — and it
+    // is the one thing on this band that outlives the wait: everything else here is about a
+    // session that is on its way, and this is about where it went.
+    var detached = null;
+    var timer = null;
+    var placeholderNode = null;
+    // Held at the placeholder's position through the first following stream update. That first
+    // paint is the promised in-place replacement; after it, ordinary list ordering takes over
+    // through the same FLIP path as every other move rather than making the arrival itself jump.
+    var landed = null;
+
+    var assignmentState = createClawdfatherAssignmentState({
+        timeoutMs: HOLD,
+        onTimeout: function () {
+            assignmentIdentity = null;
+            toast(T.webClawdfatherRegisterLate, true);
+        },
+        // `result.state` is what this browser did; `result.choice.state` is what the Mac said.
+        // Both can read "blocked" and they are not the same word: the outer one means nothing
+        // was typed, the inner one means the coordinator record must not be written over.
+        onSettled: function (result) {
+            assignmentIdentity = null;
+            if (result && result.state === "sent") {
+                toast(T.webClawdfatherRegisterSent);
+                return;
+            }
+            if (result && result.state === "blocked") {
+                var choice = result.choice || {};
+                var coordinator = choice.coordinator || {};
+                if (choice.state === "assigned") {
+                    toast(coordinatorPresenceText(coordinator));
+                } else if (choice.state === "blocked") {
+                    toast(T.webClawdfatherRegisterBlocked, true);
+                } else {
+                    toast(T.webCoordReadFailed, true);
+                }
+                return;
+            }
+            var error = result && result.error;
+            if (error) toastFailure(error, T.webCoordReadFailed);
+            else toast(T.webCoordReadFailed, true);
+        }
+    });
+    // The getter, not `api` itself. This IIFE runs while `main.js` is still resolving its own
+    // static imports, which is long before it calls `useApi` — so handing the value over here
+    // hands over `null`, and `null` has no `coordinatorBearings` on it. The sheet then said
+    // *Could not read Clawdfather's bearings* on every path, for the life of the page, without
+    // ever having asked anybody. Both orderings of this one call were run against the same
+    // transport and nothing else was changed: constructed after `useApi` the row read
+    // "Clawdfather offline"; constructed before it, which is what the page really does, it read
+    // the failed-read sentence. `createClawdfatherCoordinatorLoader` takes a getter for exactly
+    // this, and the creation-sheet fixture in `Tests/web-clawdfather.mjs` opens the sheet in the
+    // page's own order so a snapshot put back here goes red.
+    var coordinatorLoader = createClawdfatherCoordinatorLoader(function () { return api; },
+                                                              function (state) {
+        coordinatorPayload = state.payload;
+        coordinatorFailed = state.failed === true;
+        draw();
+    });
+
+    function say(words) { els["start-say"].textContent = words || ""; }
+    function said(words, error) {
+        els["start-said"].textContent = words || "";
+        bindFailureLine(els["start-said"], error || null);
+    }
+
+    /**
+     * A transport call as a promise, whatever the transport did.
+     *
+     * Every request on this sheet raises a flag first — `loading`, `reading`, `pressing` — and
+     * only its settle puts the flag down. A transport that throws instead of rejecting skips
+     * that settle, and the flag then shuts every row and Close until the page is reloaded: the
+     * Cloud client did exactly that for a press on a row it had no route for. The transports
+     * are held to rejecting (`Tests/web-start-sheet-failures.mjs`), and this is the second layer,
+     * because a fourth transport will not have read that test.
+     */
+    function asked(request) {
+        try { return Promise.resolve(request()); }
+        catch (e) { return Promise.reject(e); }
+    }
+
+    /**
+     * What a refusal means, said in this page's own words.
+     *
+     * The server's `message` is English, and the reader may not be — so the codes that have a
+     * translated sentence get it, and the terminal's name comes out of the error object rather
+     * than out of the sentence it was written into. Every other code is said by
+     * `core/failure-text.js`, and every line — this sheet's own sentences included — ends in its
+     * `code · ref`: "That could not be started." alone used to be the whole of what a phone knew.
+     */
+    function why(e) {
+        return failureSentence(e, { sentence: ownWhy(e), fallback: T.webStartFailed });
+    }
+
+    function ownWhy(e) {
+        var code = e && e.code;
+        if (code === "write_disabled") return T.webStartOff;
+        if (code === "not_found") return T.webStartGone;
+        // `terminal_closed` carries `app` and its sentence is written around the name; without
+        // one there is nothing to write, because a translation with `{app}` still in it is worse
+        // than the plain refusal, so that one falls through.
+        if (e && e.app && code === "terminal_closed") return fill(T.webStartTerminalClosed, { app: e.app });
+        // `terminal_unsupported` never carries a name and does not need one: it means tmux is
+        // what Settings asks for and there is no tmux on that Mac, so its sentence is written
+        // whole. Guarding it on `e.app` too is what made the one refusal with a person behind it
+        // arrive as "That could not be started."
+        if (code === "terminal_unsupported") return T.webStartTerminalUnsupported;
+        return "";
+    }
+
+    function matching() {
+        var q = find.trim().toLowerCase();
+        return (places || []).filter(function (p) {
+            if (!q) return true;
+            return ((p.label || "") + " " + (p.path || "")).toLowerCase().indexOf(q) >= 0;
+        });
+    }
+
+    /** The conversations on screen, narrowed by what has been typed. By title alone: the id is
+     *  a UUID nobody reads, and a list that answers to one would be a list you could search for
+     *  a conversation you were never shown. */
+    function matchingPast() {
+        var q = find.trim().toLowerCase();
+        return (pasts || []).filter(function (r) {
+            if (!q) return true;
+            return (r.title || "").toLowerCase().indexOf(q) >= 0;
+        });
+    }
+
+    /** Whether picking a conversation up is on the table at all. Each assistant owns its own
+     *  history and names; the Mac selects the matching source from this closed assistant id. */
+    function resumable() {
+        return (with_ === "claude" || with_ === "codex")
+            && typeof api.pastSessions === "function";
+    }
+
+    /** When a conversation was last written to.
+     *
+     *  Inside the hour it is the page's own words; today it is a clock; before that it is a
+     *  date, in the browser's own language rather than in a string this app would have to
+     *  translate fourteen times. A list that can span a month cannot say "14:32" for all of it. */
+    function when(unix) {
+        if (!unix) return "";
+        var then = new Date(unix * 1000);
+        var now = new Date();
+        var sameDay = then.getFullYear() === now.getFullYear()
+            && then.getMonth() === now.getMonth() && then.getDate() === now.getDate();
+        if (sameDay) return clockOf(unix);
+        try {
+            return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+        } catch (e) {
+            return clockOf(unix);
+        }
+    }
+
+    /**
+     * The two chips that say what a press opens.
+     *
+     * **Only when there is a choice.** One assistant on the Mac and this is a control with
+     * nothing to control — so it is not drawn at all, and the sheet is exactly what it was
+     * before Codex existed. The list comes from the Mac; this page does not know what is
+     * installed and does not guess.
+     */
+    function drawWith() {
+        var row = els["start-with"];
+        // Gone once a project's conversations are on screen. Not merely irrelevant there — a
+        // press on the other chip would have to leave the list to mean anything, and a control
+        // that silently throws away the screen you are on is worse than one that is not offered.
+        row.hidden = (typeof api.machines === "function" && !machine) ||
+            assistants.length < 2 || !!at;
+        if (row.hidden) { row.innerHTML = ""; return; }
+        row.innerHTML = "";
+        var label = document.createElement("span");
+        label.className = "with-label";
+        label.textContent = T.webStartWith;
+        row.appendChild(label);
+        assistants.forEach(function (a) {
+            var chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "chip" + (a.id === with_ ? " on" : "");
+            chip.textContent = a.label || a.id;
+            // Shut while a start is in flight, for the same reason every row is: the press that
+            // is already on its way is the one that decides, and changing this under it would
+            // only mislead about what opened.
+            chip.disabled = !!pressing || !!wait;
+            chip.setAttribute("aria-pressed", a.id === with_ ? "true" : "false");
+            chip.onclick = function () {
+                with_ = a.id;
+                // Changing assistant is changing what the list is *of*, so anything opened
+                // under the old one is stood down rather than left on screen answering to the
+                // wrong chip.
+                if (!resumable()) leave();
+                draw();
+            };
+            row.appendChild(chip);
+        });
+    }
+
+    function drawMachines() {
+        var row = els["start-machine"];
+        row.hidden = !machines || !!at ||
+            (machines.length === 1 && machine && machines[0].autoSelectable === true);
+        if (row.hidden) { row.innerHTML = ""; return; }
+        row.innerHTML = "";
+        row.setAttribute("role", "group");
+        row.setAttribute("aria-label", T.webStartMachine);
+        row.setAttribute("aria-describedby", "start-say");
+        var label = document.createElement("span");
+        label.className = "with-label";
+        label.textContent = T.webStartMachine;
+        row.appendChild(label);
+        machines.forEach(function (candidate) {
+            var chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "chip" + (machine && candidate.id === machine.id ? " on" : "");
+            chip.textContent = (candidate.label || candidate.name || candidate.id) +
+                (candidate.autoSelectable ? "" : " · " + T.webStartMachineStale);
+            chip.title = candidate.id;
+            chip.disabled = !candidate.selectable || !!pressing || !!wait || loading;
+            chip.setAttribute("aria-pressed", machine && candidate.id === machine.id ? "true" : "false");
+            chip.onclick = function () { selectMachine(candidate); };
+            row.appendChild(chip);
+        });
+    }
+
+    function selectMachine(candidate) {
+        if (!candidate || !candidate.id || candidate.selectable !== true ||
+            loading || pressing || wait) return;
+        machine = candidate;
+        machineExplicit = true;
+        places = null;
+        assistants = [];
+        with_ = null;
+        leave();
+        said("");
+        load();
+        draw();
+    }
+
+    /**
+     * The switch, and the way back out.
+     *
+     * One row with one control in it at a time: while projects are on screen it is the question
+     * *what does the next press mean*, and while a project's conversations are on screen it is
+     * the answer to *how do I get back*. Two controls would have been one of them always wrong —
+     * a switch that turns resuming off under a list of conversations has nothing sensible to do
+     * with the list it is standing on.
+     */
+    function drawResume() {
+        var row = els["start-resume"];
+        row.innerHTML = "";
+        row.hidden = (typeof api.machines === "function" && !machine) ||
+            !S.write || typeof api.pastSessions !== "function";
+        if (row.hidden) return;
+
+        if (at) {
+            var back = document.createElement("button");
+            back.type = "button";
+            back.className = "chip back";
+            // The project, in its own mark and its own colour. It is the only thing on this
+            // screen that says which project these conversations are from — every row below is
+            // a title and nothing else — and it is the way out, which is one control doing two
+            // jobs that were always the same job.
+            back.innerHTML = '<span class="arrow">\u2190</span><canvas></canvas>'
+                + '<span class="name"></span>';
+            var mark = back.querySelector("canvas");
+            if (!drawIcon(mark, at.icon, 4)) mark.classList.add("none");
+            var name = back.querySelector(".name");
+            name.textContent = at.label || shortPath(at.path);
+            name.style.color = at.icon ? tint(at.icon.accent) : "";
+            back.setAttribute("aria-label", T.webResumeBack);
+            back.disabled = !!pressing || !!wait;
+            back.onclick = function () { leave(); draw(); };
+            row.appendChild(back);
+            return;
+        }
+
+        var chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip check" + (resume && resumable() ? " on" : "");
+        // The box and the tick as one path each, on one fourteen-unit grid, so the mark sits
+        // where it was drawn rather than where a rotate and a translate happen to land it.
+        chip.innerHTML = '<svg class="tick" viewBox="0 0 14 14" aria-hidden="true"'
+            + ' focusable="false">'
+            + '<rect class="box" x="0.5" y="0.5" width="13" height="13" rx="3.5"></rect>'
+            + '<path class="mark" d="M3.6 7.1 5.9 9.4 10.4 4.6"'
+            + ' stroke-linecap="round" stroke-linejoin="round"></path></svg>'
+            + '<span class="label"></span>';
+        chip.querySelector(".label").textContent = T.webResumeWith;
+        chip.disabled = !!pressing || !!wait || !resumable();
+        chip.setAttribute("aria-pressed", resume && resumable() ? "true" : "false");
+        chip.onclick = function () {
+            resume = !resume;
+            if (resume) assignmentState.choose(false);
+            draw();
+        };
+        row.appendChild(chip);
+    }
+
+    /**
+     * A creation-only role switch, closed by any durable coordinator record.
+     *
+     * The live Session list cannot answer the offline case: its coordinator projection is on the
+     * exact bound process only. Bearings can, and only `registration.state === "available"`
+     * enables this button. A failed or unfinished read therefore looks disabled rather than
+     * guessing that an absent live crown means the machine is unowned, and a store the Mac
+     * cannot read says so in its own words instead of borrowing the failed-read sentence.
+     */
+    function drawClawdfather() {
+        var row = els["start-clawdfather-row"];
+        var button = els["start-clawdfather"];
+        var state = els["start-clawdfather-state"];
+        // A transport with no Bearings read has no choice to offer, and the row is not drawn —
+        // the rule `docs/api.md` already states for the other four reads the Cloud path does not
+        // carry. Asked here of the transport rather than of an answer, because a read that does
+        // not exist and a read that failed are different facts and only one of them is about
+        // this Mac. The hosted console drew this row greyed, saying it could not read a
+        // coordinator whose record was `configured` the whole time.
+        if (!clawdfatherChoiceSupported(api)) { row.hidden = true; return; }
+        var choice = clawdfatherCreationChoice(
+            coordinatorPayload, assignmentState.selected(), !resume && !at);
+        row.hidden = !choice.shown;
+        if (!choice.shown) return;
+        els["start-clawdfather-label"].textContent = clawdfatherCreationLabel();
+        button.disabled = !choice.enabled || !!pressing || !!wait || !S.write;
+        button.classList.toggle("on", choice.checked);
+        button.setAttribute("aria-pressed", choice.checked ? "true" : "false");
+        button.dataset.state = choice.state;
+
+        var words = "";
+        if (choice.state === "checking") words = T.webLoading;
+        else if (choice.state === "blocked") {
+            // Not a failed read: the read succeeded and said the record is unreadable at the
+            // other end. Saying "could not read bearings" here would blame the wrong hop.
+            words = T.webClawdfatherRegisterBlocked;
+        } else if (choice.state === "unavailable" || coordinatorFailed) {
+            words = T.webCoordReadFailed;
+        } else if (choice.state === "assigned") {
+            var coordinator = choice.coordinator || {};
+            words = coordinatorPresenceText(coordinator);
+            // This is the one screen that can see the crown fall off, so it is the one that
+            // owes the next step. A status word on its own is what let a machine run for hours
+            // with an offline coordinator and nothing anywhere saying a rebind was owed.
+            var advice = coordinatorOfflineAdvice(coordinator);
+            if (advice) words = words + " · " + advice;
+        }
+        state.textContent = words;
+        button.title = words;
+    }
+
+    /** Whether the list is hiding anything below its own edge, which is what the fade at the
+     *  bottom of it answers to. Read straight after the rows are put in — the layout is forced by
+     *  asking, which is the point — and again whenever it is scrolled. */
+    function edge() {
+        var list = els["start-list"];
+        var more = list.scrollHeight - list.scrollTop - list.clientHeight > 2;
+        list.dataset.more = more ? "1" : "0";
+    }
+
+    function draw() {
+        setStartSpin(null);
+        if (els.start.hidden) return;
+        var list = els["start-list"];
+        var box = els["start-filter"];
+
+        // Sending switched off, and that is the whole sheet. The control is still here and it
+        // still opens — a button that fails on press teaches nothing, and the sentence names the
+        // switch and where it lives. Nothing is fetched: there is nothing to press.
+        if (!S.write) {
+            say(T.webStartOff);
+            box.hidden = true;
+            els["start-with"].hidden = true;
+            els["start-machine"].hidden = true;
+            els["start-resume"].hidden = true;
+            els["start-clawdfather-row"].hidden = true;
+            list.innerHTML = "";
+            return;
+        }
+
+        drawMachines();
+        drawWith();
+        drawResume();
+        drawClawdfather();
+
+        if (at) { drawPast(list, box); return; }
+
+        box.placeholder = T.webStartFilter;
+        box.setAttribute("aria-label", T.webStartFilter);
+
+        var currentMachines = (machines || []).filter(function (candidate) {
+            return candidate.autoSelectable === true;
+        });
+        say(wait ? T.webStartWaiting
+            : (machineLoading || machineSyncing) ? T.webLoading
+            : (machines && !currentMachines.length) ? T.webStartMachineNone
+            : (machines && machines.length > 1 && !machine) ? T.webStartMachinePick
+            : (loading && !places) ? T.webLoading
+            : (places && !places.length) ? T.webStartEmpty
+            : T.webStartPick);
+        // Nothing is written into `start-said` here. Every refusal on this screen is said and
+        // then drawn, so a clear at this line erased each one in the turn it was written — a
+        // refused start looked like a press that did nothing. The sentence is cleared where a
+        // new question is asked instead: opening the sheet, a press, entering or leaving a project.
+
+        // Forty is the most the Mac will ever offer and three fit on a phone without scrolling.
+        // Under nine, a box to narrow them down is furniture in front of the answer.
+        box.hidden = !(places && places.length > MANY);
+        if (box.hidden && box.value) { box.value = ""; find = ""; }
+
+        list.innerHTML = "";
+        if (machines && !machine) { edge(); return; }
+        matching().forEach(function (p) {
+            var li = document.createElement("li");
+            var row = document.createElement("button");
+            row.type = "button";
+            row.className = "place";
+            row.dataset.id = p.id;
+            // One press. While a start is in flight, or while one is settling, every row is
+            // shut — the second press is a second tab and nobody ever wanted two.
+            row.disabled = !!pressing || !!wait;
+            if (pressing === p.id) row.dataset.busy = "1";
+            row.innerHTML = '<canvas></canvas><span class="name"></span><span class="where"></span>';
+
+            // The same mark the session list draws, drawn by the same code, and still optional.
+            var mark = row.querySelector("canvas");
+            if (!drawIcon(mark, p.icon, 4)) mark.classList.add("none");
+
+            var name = row.querySelector(".name");
+            name.textContent = p.label || p.path;
+            name.style.color = p.icon ? tint(p.icon.accent) : "";
+            // The path is here so two projects with the same name can be told apart, and it is
+            // stood aside for the one line that matters more while a row is being pressed.
+            var where = row.querySelector(".where");
+            if (pressing === p.id && Waits.startPress.visible) {
+                where.innerHTML = '<canvas class="start-spin"></canvas><span></span>';
+                where.querySelector("span").textContent = T.webStarting;
+                setStartSpin(where.querySelector(".start-spin"));
+                drawSpinner(startSpin, spinPhase);
+            } else {
+                where.textContent = pressing === p.id ? T.webStarting : shortPath(p.path);
+            }
+
+            li.appendChild(row);
+            list.appendChild(li);
+        });
+        edge();
+    }
+
+    /**
+     * One project's recorded conversations.
+     *
+     * The filter is on the moment there is more than one row, which is a lower bar than the
+     * projects have and deliberately so: a project's own name is a word somebody already knows
+     * and can find by eye, and a conversation's title is a sentence out of a month of work.
+     * Finding one by typing part of it is the whole reason this screen has a box.
+     */
+    function drawPast(list, box) {
+        box.placeholder = T.webResumeFilter;
+        box.setAttribute("aria-label", T.webResumeFilter);
+
+        say(wait ? T.webStartWaiting
+            : (reading && !pasts) ? T.webLoading
+            : (pasts && !pasts.length) ? T.webResumeEmpty
+            : T.webResumePick);
+
+        box.hidden = !(pasts && pasts.length > 1);
+        if (box.hidden && box.value) { box.value = ""; find = ""; }
+
+        list.innerHTML = "";
+        var all = matchingPast();
+        all.forEach(function (r) {
+            var li = document.createElement("li");
+            var row = document.createElement("button");
+            row.type = "button";
+            row.className = "place past";
+            row.dataset.session = r.id;
+            // A conversation something is writing to right now is still pressable — it goes to
+            // that session — but only if this page can see which row it is. Without hooks or a
+            // registry entry the Mac knows the transcript is busy and not which tab has it, and
+            // a button that cannot do either of its two jobs is better shut.
+            var open = r.live ? bySessionId(r.id) : null;
+            row.disabled = !!pressing || !!wait || (r.live && !open);
+            if (pressing === r.id) row.dataset.busy = "1";
+            row.innerHTML = '<span class="name"></span><span class="where"></span>';
+
+            row.querySelector(".name").textContent = r.title;
+            var where = row.querySelector(".where");
+            if (pressing === r.id && Waits.startPress.visible) {
+                where.innerHTML = '<canvas class="start-spin"></canvas><span></span>';
+                where.querySelector("span").textContent = T.webResuming;
+                setStartSpin(where.querySelector(".start-spin"));
+                drawSpinner(startSpin, spinPhase);
+            } else if (pressing === r.id) {
+                where.textContent = T.webResuming;
+            } else if (r.live) {
+                row.dataset.live = "1";
+                where.textContent = T.webResumeLive;
+            } else {
+                where.textContent = when(r.at);
+            }
+
+            li.appendChild(row);
+            list.appendChild(li);
+        });
+
+        // Every row the Mac sent, and then what it did not send.
+        //
+        // There was a *Show 25 more* row here for an afternoon and it was friction with nothing
+        // behind it: the whole list is already on this device, so the button was asking somebody
+        // to authorise work that had been done before the sheet opened. What is worth a row at
+        // the bottom is the one thing scrolling genuinely cannot reach.
+        if (capped && all.length) {
+            var note = document.createElement("li");
+            note.className = "note";
+            note.setAttribute("role", "status");
+            note.textContent = T.webResumeCapped;
+            list.appendChild(note);
+        }
+        edge();
+    }
+
+    /** Asked afresh every time the sheet opens: a directory can go away between two looks, and
+     *  the list is sorted by when each was last worked in. The old one stays on screen while
+     *  the new one is on its way — a list that blanks itself to refetch is a flicker. */
+    function load() {
+        if (loading || typeof api.places !== "function" ||
+            (typeof api.machines === "function" && !machine)) return;
+        var selected = machine;
+        var generation = ++placesGeneration;
+        var selectedID = selected && selected.id;
+        loading = true;
+        draw();
+        asked(function () { return api.places(selected ? selected.id : undefined); }).then(function (d) {
+            if (generation !== placesGeneration || selectedID !== (machine && machine.id)) return;
+            places = (d && d.places) || [];
+            // The Mac's list, not this page's. Whether Codex is installed is a question only
+            // that end can answer, and a chip for something that is not there opens a tab
+            // saying "command not found".
+            assistants = (d && d.assistants) || [];
+            if (!with_ || !assistants.some(function (a) { return a.id === with_; })) {
+                with_ = assistants.length ? assistants[0].id : null;
+            }
+        }).catch(function (e) {
+            if (generation !== placesGeneration || selectedID !== (machine && machine.id)) return;
+            places = places || [];
+            said(why(e), e);
+        }).then(function () {
+            if (generation !== placesGeneration || selectedID !== (machine && machine.id)) return;
+            loading = false;
+            draw();
+        });
+    }
+
+    function loadMachines(refresh) {
+        if (machineLoading || typeof api.machines !== "function") {
+            if (!refresh && typeof api.machines !== "function") load();
+            return;
+        }
+        if (machineSyncTimer !== null) clearTimeout(machineSyncTimer);
+        machineSyncTimer = null;
+        var generation = ++machineGeneration;
+        var previousMachine = machine;
+        var previousExplicit = refresh && machineExplicit;
+        if (!refresh) { machines = null; machine = null; machineExplicit = false; }
+        machineLoading = true;
+        var retryAfterMs = 0;
+        draw();
+        asked(function () { return api.machines(); }).then(function (answer) {
+            if (generation !== machineGeneration) return;
+            machines = (answer && Array.isArray(answer.machines)) ? answer.machines : [];
+            machineSyncing = !!(answer && answer.syncing);
+            retryAfterMs = answer && Number.isFinite(answer.retryAfterMs)
+                ? Math.max(0, Math.min(answer.retryAfterMs, 60 * 1000)) : 0;
+            var preferred = preferredMachineID && machines.find(function (candidate) {
+                return candidate.id === preferredMachineID && candidate.selectable === true;
+            });
+            preferredMachineID = null;
+            var retained = previousMachine && machines.find(function (candidate) {
+                return candidate.id === previousMachine.id && candidate.selectable === true &&
+                    (candidate.autoSelectable === true || previousExplicit);
+            });
+            machine = preferred || retained || null;
+            machineExplicit = !!preferred || (!!retained && previousExplicit);
+            var current = machines.filter(function (candidate) {
+                return candidate.autoSelectable === true;
+            });
+            if (!machine && current.length === 1 && machines.length === 1 && !machineSyncing) {
+                machine = current[0];
+                machineExplicit = false;
+                if (previousMachine && previousMachine.id !== machine.id) {
+                    places = null; assistants = []; with_ = null;
+                }
+                machineLoading = false;
+                if (!refresh || !places) load();
+            } else if (!machine) {
+                machineExplicit = false;
+                placesGeneration += 1;
+                loading = false;
+                places = null; assistants = []; with_ = null;
+            } else if (!refresh) {
+                machineLoading = false;
+                load();
+            }
+        }).catch(function (error) {
+            if (generation !== machineGeneration) return;
+            machines = [];
+            machineSyncing = false;
+            said(why(error), error);
+        }).then(function () {
+            if (generation !== machineGeneration) return;
+            machineLoading = false;
+            draw();
+            if (machineSyncing && retryAfterMs > 0 && !els.start.hidden) {
+                machineSyncTimer = setTimeout(function () {
+                    machineSyncTimer = null;
+                    if (!els.start.hidden && !machineLoading) loadMachines(true);
+                }, Math.max(1, retryAfterMs));
+                if (machineSyncTimer && typeof machineSyncTimer.unref === "function") {
+                    machineSyncTimer.unref();
+                }
+            }
+        });
+    }
+
+    /** Read the durable owner independently of the places list; either may be slow without
+     *  holding the other off screen. Every opening gets a fresh answer because coordinator
+     *  registration can change between two visits to the sheet. */
+    function loadCoordinator() {
+        return coordinatorLoader.load();
+    }
+
+    /** Show what has already been said in a place. Asked every time rather than remembered: a
+     *  conversation can be started, renamed or deleted between two looks at the same project,
+     *  and `live` is a fact about this instant that a cache would be wrong about immediately. */
+    function enter(place) {
+        at = place;
+        pasts = null;
+        capped = false;
+        find = "";
+        els["start-filter"].value = "";
+        said("");
+        reading = true;
+        draw();
+        asked(function () { return api.pastSessions(place.id, with_); }).then(function (d) {
+            if (!at || at.id !== place.id) return;   // gone back while this was in flight
+            pasts = (d && d.sessions) || [];
+            capped = !!(d && d.more);
+        }).catch(function (e) {
+            if (!at || at.id !== place.id) return;
+            pasts = pasts || [];
+            if (e && e.code === "not_found") {
+                // That directory has gone since the list was built. It is the project list that
+                // is wrong rather than the press, so back out to it and ask again.
+                leave();
+                places = null;
+                load();
+            }
+            said(why(e), e);
+        }).then(function () {
+            reading = false;
+            draw();
+        });
+    }
+
+    /** Back to the projects. The switch is left where it was: it is a preference about what a
+     *  press means, and coming back out of one project has not changed anybody's mind. */
+    function leave() {
+        at = null;
+        pasts = null;
+        capped = false;
+        reading = false;
+        find = "";
+        els["start-filter"].value = "";
+        said("");
+    }
+
+    function press(id) {
+        if (pressing || wait || !S.write || typeof api.startPlace !== "function") return;
+        var place = null;
+        (places || []).some(function (p) {
+            if (p.id !== id) return false;
+            place = p;
+            return true;
+        });
+        // The switch decides what this press means. Nothing is started here — the list of what
+        // has already been said is a read, and the press that starts anything is the one on a
+        // row of it.
+        if (resume && resumable() && place) { enter(place); return; }
+        pressing = id;
+        var makeClawdfather = assignmentState.selected();
+        said("");
+        draw();
+        Waits.startPress.start();
+        asked(function () { return api.startPlace(id, with_); }).then(function (d) {
+            Waits.startPress.settle(function () {
+                pressing = null;
+                // From here the tab exists on the Mac. Nothing after this line is allowed to read
+                // as "it might not have worked", and nothing after it presses this again.
+                began(d && d.id, place, makeClawdfather, d && d.attach);
+            });
+        }).catch(function (e) {
+            Waits.startPress.settle(function () {
+                pressing = null;
+                assignmentState.choose(false);
+                if (e && e.code === "write_disabled") {
+                    // The switch was turned off while this sheet was open. The server is the one
+                    // that knows, so take its word for it — the composer answers to the same flag.
+                    S.write = false;
+                    renderComposer();
+                } else if (e && e.code === "not_found") {
+                    // That directory has gone since the list was built. It is the list that is
+                    // wrong rather than the press, so the list is what gets asked again.
+                    places = null;
+                    load();
+                }
+                said(why(e), e);
+                draw();
+            });
+        });
+    }
+
+    /**
+     * Carry one conversation on.
+     *
+     * The same machinery as a fresh start from here down: the Mac answers with an id before the
+     * session exists, and `began` watches the list for it. What is different is only which
+     * request was made and what the placeholder is called — a resumed session comes back under
+     * the name it already had, which is the reason somebody picked it off this list rather than
+     * pressing the project.
+     */
+    function pick(sessionID) {
+        if (pressing || wait || !S.write || !at || typeof api.resumePlace !== "function") return;
+        var row = null;
+        (pasts || []).some(function (r) {
+            if (r.id !== sessionID) return false;
+            row = r;
+            return true;
+        });
+        if (!row) return;
+
+        // Already open. Go to it rather than start a second process on the same transcript —
+        // which is what the person who pressed it wanted, and the only safe reading of it.
+        if (row.live) {
+            var open = bySessionId(sessionID);
+            if (!open) return;
+            close();
+            openSession(open.id);
+            return;
+        }
+
+        var place = at;
+        pressing = sessionID;
+        said("");
+        draw();
+        Waits.startPress.start();
+        asked(function () { return api.resumePlace(place.id, sessionID, with_); }).then(function (d) {
+            Waits.startPress.settle(function () {
+                pressing = null;
+                began(d && d.id, { label: row.title, path: place.path, icon: place.icon },
+                      false, d && d.attach);
+            });
+        }).catch(function (e) {
+            Waits.startPress.settle(function () {
+                pressing = null;
+                if (e && e.code === "write_disabled") {
+                    S.write = false;
+                    renderComposer();
+                } else if (e && e.code === "not_found") {
+                    // The transcript has gone, or something else has it. Either way this list is
+                    // the thing that is out of date, so it is what gets asked again.
+                    said(T.webResumeGone);
+                    enter(place);
+                    return;
+                }
+                said(why(e), e);
+                draw();
+            });
+        });
+    }
+
+    /**
+     * Started. The sheet has done its job, and what is left is a wait.
+     *
+     * `attach` is the Mac's own answer to *where did it go* — empty for every start that put a
+     * tab in front of somebody, and the command to type for the one that did not. When it is
+     * there it replaces the waiting line, because "waiting for it to appear" is the wrong thing
+     * to say about a session that is never going to appear on that Mac's screen at all.
+     */
+    function began(id, place, makeClawdfather, attach) {
+        detached = attach || null;
+        close();
+        if (!id) {
+            assignmentIdentity = null;
+            assignmentState.begin(id, makeClawdfather === true);
+            // A reply with no id is nothing to watch the list for. The tab was still opened —
+            // that is what `ok` meant — so this says now what the fifteen seconds would have.
+            band(detached ? detachedWords() : T.webStartSlow, true);
+            return;
+        }
+        var routeMachine = (machine && machine.id) || (place && place.machine) ||
+            LOCAL_SESSION_MACHINE;
+        var identity = sessionSelectionIdentity({ id: id, machine: routeMachine,
+            identity: { machine: routeMachine, session: id } });
+        assignmentIdentity = makeClawdfather === true ? identity : null;
+        assignmentState.begin(id, makeClawdfather === true);
+        wait = { id: id, identity: identity,
+            from: SessionSelection.snapshot().open && SessionSelection.snapshot().open.key,
+            late: false, place: place || {} };
+        band(detached ? detachedWords() : T.webStartWaiting, false);
+        renderList();
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+            if (!wait) return;
+            wait.late = true;
+            // "Have a look at the Mac" is advice for a session that should have turned up and
+            // has not. A detached one is not late; it is somewhere else, and the line that says
+            // where stays where it is.
+            band(detached ? detachedWords() : T.webStartSlow, true);
+            renderList();
+        }, HOLD);
+    }
+
+    /** The one sentence written around the Mac's own `attach` command. */
+    function detachedWords() {
+        return fill(T.webStartDetached, { command: detached });
+    }
+
+    function band(words, slow) {
+        els.starting.dataset.state = slow ? "slow" : "waiting";
+        // Shown before it is written into: it is a live region, and a change made while it is
+        // still `hidden` is a change nothing was listening to.
+        els.starting.hidden = false;
+        els["starting-say"].textContent = words;
+        // The spinner rides the list's clock — see `bandSpin`. Nothing turns once the wait has
+        // been given up on: there is nothing left to be waiting for.
+        setBandSpin(slow ? null : els["starting-spin"]);
+        if (bandSpin) drawSpinner(bandSpin, spinPhase);
+    }
+
+    function hideBand() {
+        els.starting.hidden = true;
+        setBandSpin(null);
+    }
+
+    function open(machineID) {
+        preferredMachineID = typeof machineID === "string" && machineID ? machineID : null;
+        assignmentState.open();
+        els.start.hidden = false;
+        said("");
+        // Always at the projects. The switch survives — it is a preference — but a sheet that
+        // reopened inside whichever project was last looked at would be a sheet whose first
+        // screen depends on something nobody remembers doing.
+        leave();
+        if (S.write) {
+            if (!wait) loadMachines();
+            loadCoordinator();
+        }
+        draw();
+        els["start-close"].focus({ preventScroll: true });
+    }
+
+    function close() {
+        if (pressing) return;
+        machineGeneration += 1;
+        placesGeneration += 1;
+        loading = false;
+        machineLoading = false;
+        machineSyncing = false;
+        if (machineSyncTimer !== null) clearTimeout(machineSyncTimer);
+        machineSyncTimer = null;
+        els.start.hidden = true;
+        setStartSpin(null);
+    }
+
+    function arrange(list) {
+        var identity = wait ? wait.identity : landed;
+        if (!identity) return list;
+        for (var i = 0; i < list.length; i++) {
+            if (sessionSelectionKey(list[i]) !== identity.key) continue;
+            return [list[i]].concat(list.slice(0, i), list.slice(i + 1));
+        }
+        return list;
+    }
+
+    /** The list-shaped promise of the place just pressed. Its node is private to Start rather
+     *  than entered into `rowNodes`, which is the mechanical guarantee that arrows, filters and
+     *  counts cannot mistake it for a session while still letting it occupy the exact geometry
+     *  the arriving row will use. */
+    function placeholder() {
+        if (!wait || wait.late || byId(wait.identity)) {
+            if (placeholderNode && placeholderNode.parentNode) {
+                placeholderNode.parentNode.removeChild(placeholderNode);
+            }
+            return null;
+        }
+        if (!placeholderNode) {
+            placeholderNode = document.createElement("li");
+            placeholderNode.className = "row starting-row";
+            placeholderNode.setAttribute("role", "status");
+            placeholderNode.innerHTML = '<canvas class="mark"></canvas>' +
+                '<div class="title"><span class="label"></span></div>' +
+                '<div class="meta"><span class="path"></span></div>' +
+                '<div class="state"><canvas class="spin"></canvas><span class="line"></span></div>';
+        }
+        var place = wait.place || {};
+        placeholderNode.setAttribute("aria-label", T.webStartWaiting);
+        var mark = placeholderNode.querySelector(".mark");
+        if (!drawIcon(mark, place.icon, 4)) mark.classList.add("none");
+        else mark.classList.remove("none");
+        var title = placeholderNode.querySelector(".title");
+        title.querySelector(".label").textContent = place.label || place.path || T.webStarting;
+        title.style.color = place.icon ? tint(place.icon.accent) : "";
+        placeholderNode.querySelector(".path").textContent = shortPath(place.path);
+        placeholderNode.querySelector(".line").textContent = T.webStartWaiting;
+        var spin = placeholderNode.querySelector(".spin");
+        drawSpinner(spin, spinPhase);
+        spinners.push(spin);
+        return placeholderNode;
+    }
+
+    return {
+        open: open,
+        close: close,
+        // Schedule history reaches the same resume route and creates the same arriving Session
+        // row. Sharing this transition keeps its placeholder and slow warning identical to a
+        // resume started from the ordinary project picker.
+        began: began,
+        press: press,
+        pick: pick,
+        toggleClawdfather: function () {
+            var choice = clawdfatherCreationChoice(
+                coordinatorPayload, assignmentState.selected(), !resume && !at);
+            if (choice.enabled !== true || pressing || wait || !S.write) return;
+            assignmentState.choose(!assignmentState.selected());
+            draw();
+        },
+        typed: function (value) { find = value; draw(); },
+        scrolled: edge,
+        placeholder: placeholder,
+        arrange: arrange,
+        arriving: function (row) {
+            return !!(wait && wait.identity && sessionSelectionKey(row) === wait.identity.key);
+        },
+
+        /** The write switch can flip under an open sheet — `hello` carries it on every
+         *  reconnect — and the sheet is a different screen on either side of that. */
+        sync: function () {
+            draw();
+            if (!els.start.hidden && typeof api.machines === "function" &&
+                !machineLoading) loadMachines(true);
+        },
+
+        /** Let go of the wait: the reader has read the line and closed it. A session that
+         *  turns up afterwards is a row in the list like any other. */
+        dismiss: function () {
+            wait = null;
+            detached = null;
+            clearTimeout(timer);
+            timer = null;
+            hideBand();
+            renderList();
+        },
+
+        /**
+         * Every list that arrives, until the one with this session in it.
+         *
+         * The id is what is watched for, not `isClaude` — a tab exists a good second or two
+         * before `claude` is a process `ps` can see, and a page waiting for the flag would sit
+         * there through a session that had already started fine.
+         */
+        check: function () {
+            attemptAssignment();
+            if (!wait && landed) {
+                landed = null;
+                renderList();
+                return false;
+            }
+            if (!wait || !byId(wait.identity)) return false;
+            var id = wait.id, identity = wait.identity, from = wait.from, late = wait.late;
+            var arrived = byId(identity);
+            landed = late ? null : identity;
+            wait = null;
+            clearTimeout(timer);
+            timer = null;
+            // **The wait is over and the sentence is not.** Everything else this band says is
+            // about a session on its way, so the row arriving is the end of it. Where that
+            // session went is still true after it arrives, and it is a command somebody has to
+            // carry to a keyboard — so it stays until the × beside it is pressed.
+            if (detached) band(detachedWords(), true); else hideBand();
+            draw();
+            // Opened, for somebody who has not gone anywhere since pressing it — that is what
+            // they asked for, and it is one less tap on a phone. Not if they have opened
+            // something else meanwhile, and not after the fifteen seconds have gone by: by then
+            // they have been told to look at the Mac, and a transcript arriving over whatever
+            // they moved on to is the page having an opinion it has not earned.
+            var currentOpen = SessionSelection.snapshot().open;
+            if (late || (currentOpen && currentOpen.key) !== from) {
+                SessionSelection.select(identity, S.sessions);
+                renderList();
+                return false;
+            }
+            openSession(arrived);
+            return true;
+        }
+    };
+
+    /**
+     * Type the registration recipe only after the assistant process exists.
+     *
+     * The terminal id appears in `/v1/sessions` before Claude or Codex does. Sending on that
+     * first frame would type a paragraph into the newborn shell; waiting for the closed assistant
+     * field makes it the assistant's first instruction instead. Bearings is read once more at
+     * this last boundary so a coordinator registered while the tab was starting wins the race
+     * and the new Session is never asked to take over.
+     */
+    function attemptAssignment() {
+        var id = assignmentState.pendingID();
+        if (!id) return;
+        var exact = assignmentIdentity && assignmentIdentity.rowId === id
+            ? byId(assignmentIdentity) : null;
+        assignmentState.attempt(exact, api, { timeoutMs: 8000 });
+    }
+})();
+
+els["start-go"].addEventListener("click", function () { Start.open(); });
+els.start.addEventListener("click", function () { Start.close(); });
+els["start-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
+els["start-close"].addEventListener("click", function () { Start.close(); });
+els["start-filter"].addEventListener("input", function () { Start.typed(this.value); });
+els["start-clawdfather"].addEventListener("click", function () { Start.toggleClawdfather(); });
+els["start-list"].addEventListener("scroll", function () { Start.scrolled(); }, { passive: true });
+els["start-list"].addEventListener("click", function (ev) {
+    var row = ev.target.closest ? ev.target.closest(".place") : null;
+    if (!row || row.disabled) return;
+    // Which list this is, off the row rather than off a flag somewhere else. The two screens
+    // share a container, and a mode read from a variable is a mode that can disagree with what
+    // is actually under the finger.
+    if (row.dataset.session) Start.pick(row.dataset.session);
+    else Start.press(row.dataset.id);
+});
+els["starting-close"].addEventListener("click", function () { Start.dismiss(); });

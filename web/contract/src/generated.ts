@@ -1342,6 +1342,123 @@ export interface PasswordSet {
   password: string
 }
 
+/**
+ * One conversation an assistant has already recorded in a place. `id` is the only
+ * part a client sends back.
+ */
+export interface PastSession {
+  /**
+   * When it was last written to, Unix seconds.
+   */
+  at: number
+
+  /**
+   * A lowercase UUID: the conversation's own id.
+   */
+  id: string
+
+  /**
+   * Something is writing to it right now; resuming it would put a second process on
+   * the same record.
+   */
+  live: boolean
+  title: string
+}
+
+/**
+ * GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded in
+ * the place, newest first, at most two hundred. Dispatched children and `-p` runs
+ * are not conversations and are left out.
+ */
+export interface PastSessionList {
+  assistant: string
+  at: number
+
+  /**
+   * The list stopped at its cap and there were more.
+   */
+  more: boolean
+  place: string
+  sessions: PastSession[]
+}
+
+/**
+ * A refusal from the start, resume and history routes: not_found, forbidden,
+ * bad_request, invalid_launch, terminal_closed, terminal_unsupported,
+ * terminal_io_failed, iterm_attention_required, capability_unavailable,
+ * terminal_busy.
+ */
+export interface PlaceError {
+  /**
+   * The terminal the refusal is about, on terminal_closed and
+   * iterm_attention_required, so a page can name it in its own language.
+   */
+  app?: string
+  code: string
+  message: string
+  request_id: string
+}
+
+export interface PlaceRefusal {
+  error: PlaceError
+}
+
+/**
+ * POST /v1/places/{id}/resume/[{assistant}/]{session}: a conversation this machine
+ * listed for that place, picked back up in a new terminal. The same gate and replay
+ * as a start.
+ */
+export interface PlaceResumed {
+  assistant: string
+  at: number
+  attach: string
+  backend: Backend
+  cwd: string
+  id: string
+  ok: boolean
+  place: string
+
+  /**
+   * The conversation that was resumed.
+   */
+  session: string
+}
+
+/**
+ * POST /v1/places/{id}/start[/{assistant}[/{model}]]: a terminal was opened and the
+ * assistant typed into it. The body is not read. `id` is in the same space as every
+ * id in /v1/sessions, but the session is not in that list yet. Needs a device that
+ * may send and an Idempotency-Key; a retry within ten minutes is answered from the
+ * first reply rather than opening a second tab.
+ */
+export interface PlaceStarted {
+  /**
+   * claude or codex, as the path named it (claude when it named none).
+   */
+  assistant: string
+  at: number
+
+  /**
+   * What to type at the Mac to see the session, for the one start that puts it
+   * where nobody is looking (a tmux server started detached); empty otherwise.
+   */
+  attach: string
+  backend: Backend
+  cwd: string
+
+  /**
+   * The new terminal: a tmux pane id or an iTerm2 session id.
+   */
+  id: string
+
+  /**
+   * The model the path named, or empty.
+   */
+  model: string
+  ok: boolean
+  place: string
+}
+
 export interface Project {
   displayPath: string
   id: string

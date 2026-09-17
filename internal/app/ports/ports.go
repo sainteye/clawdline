@@ -80,3 +80,27 @@ type TerminalHost interface {
 	// in it first; this port does not decide that.
 	Close(ctx context.Context, s session.Session) error
 }
+
+// Launcher opens a new terminal and types one line into its shell. It is the
+// start route's port, apart from TerminalHost because what it opens is decided
+// by the machine's terminal setting and by what is running, not by a backend
+// the caller already chose — StartPoints.start in the Swift app.
+//
+// Every method answers with a typed error rather than doing nothing: a page
+// told a tab exists when none does sends somebody to look for it.
+type Launcher interface {
+	// ITermRunning is whether iTerm2 is open. It never launches it.
+	ITermRunning(ctx context.Context) (bool, error)
+	// TmuxReach is 0 for no tmux, 1 for tmux with no server, 2 for a server
+	// with panes on it (projects.TmuxReach).
+	TmuxReach(ctx context.Context) int
+	// NewITermTab opens a tab without bringing iTerm2 forward and types line
+	// into it. The answer is the iTerm2 session id.
+	NewITermTab(ctx context.Context, line string) (string, error)
+	// NewTmuxWindow adds a window to the running server with a login shell in
+	// cwd and types command into it. The answer is the pane id.
+	NewTmuxWindow(ctx context.Context, cwd, command string) (string, error)
+	// NewTmuxSession starts a server with a detached session named name, the
+	// same way. The answer is the pane id.
+	NewTmuxSession(ctx context.Context, cwd, name, command string) (string, error)
+}

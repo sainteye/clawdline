@@ -43,6 +43,85 @@
         "places": { "type": "array", "items": { "$ref": "#/$defs/StartPlace" } }
       }
     },
+    "PlaceStarted": {
+      "description": "POST /v1/places/{id}/start[/{assistant}[/{model}]]: a terminal was opened and the assistant typed into it. The body is not read. `id` is in the same space as every id in /v1/sessions, but the session is not in that list yet. Needs a device that may send and an Idempotency-Key; a retry within ten minutes is answered from the first reply rather than opening a second tab.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "id", "backend", "assistant", "model", "place", "cwd", "attach", "at"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "id": { "description": "The new terminal: a tmux pane id or an iTerm2 session id.", "type": "string" },
+        "backend": { "$ref": "common.schema.json#/$defs/Backend" },
+        "assistant": { "description": "claude or codex, as the path named it (claude when it named none).", "type": "string" },
+        "model": { "description": "The model the path named, or empty.", "type": "string" },
+        "place": { "type": "string" },
+        "cwd": { "type": "string" },
+        "attach": { "description": "What to type at the Mac to see the session, for the one start that puts it where nobody is looking (a tmux server started detached); empty otherwise.", "type": "string" },
+        "at": { "type": "integer" }
+      }
+    },
+    "PlaceResumed": {
+      "description": "POST /v1/places/{id}/resume/[{assistant}/]{session}: a conversation this machine listed for that place, picked back up in a new terminal. The same gate and replay as a start.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "id", "backend", "assistant", "place", "cwd", "session", "attach", "at"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "id": { "type": "string" },
+        "backend": { "$ref": "common.schema.json#/$defs/Backend" },
+        "assistant": { "type": "string" },
+        "place": { "type": "string" },
+        "cwd": { "type": "string" },
+        "session": { "description": "The conversation that was resumed.", "type": "string" },
+        "attach": { "type": "string" },
+        "at": { "type": "integer" }
+      }
+    },
+    "PastSession": {
+      "description": "One conversation an assistant has already recorded in a place. `id` is the only part a client sends back.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "at", "live"],
+      "properties": {
+        "id": { "description": "A lowercase UUID: the conversation's own id.", "type": "string" },
+        "title": { "type": "string" },
+        "at": { "description": "When it was last written to, Unix seconds.", "type": "integer" },
+        "live": { "description": "Something is writing to it right now; resuming it would put a second process on the same record.", "type": "boolean" }
+      }
+    },
+    "PastSessionList": {
+      "description": "GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded in the place, newest first, at most two hundred. Dispatched children and `-p` runs are not conversations and are left out.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "place", "assistant", "more", "sessions"],
+      "properties": {
+        "at": { "type": "integer" },
+        "place": { "type": "string" },
+        "assistant": { "type": "string" },
+        "more": { "description": "The list stopped at its cap and there were more.", "type": "boolean" },
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/PastSession" } }
+      }
+    },
+    "PlaceError": {
+      "description": "A refusal from the start, resume and history routes: not_found, forbidden, bad_request, invalid_launch, terminal_closed, terminal_unsupported, terminal_io_failed, iterm_attention_required, capability_unavailable, terminal_busy.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "request_id"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "request_id": { "type": "string" },
+        "app": { "description": "The terminal the refusal is about, on terminal_closed and iterm_attention_required, so a page can name it in its own language.", "type": "string" }
+      }
+    },
+    "PlaceRefusal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": { "$ref": "#/$defs/PlaceError" }
+      }
+    },
     "CatalogReadStatus": {
       "description": "ready: the store was read now. stale: the newest read failed and an earlier one is carried. error: nothing could be read.",
       "type": "string",

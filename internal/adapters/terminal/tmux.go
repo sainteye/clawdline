@@ -45,7 +45,12 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 		"#{session_name}", "#{pane_title}", "#{pane_current_path}",
 	}, paneSeparator)
 
-	cmd := exec.CommandContext(ctx, t.Binary, "list-panes", "-a", "-F", format)
+	// `-u`: under LC_ALL=C tmux treats the client as non-UTF-8 and rewrites
+	// every control character in format output — the \x01 separator above
+	// included — as `_`, so no line had six fields and every pane was
+	// dropped (tmux 3.6a). `-u` declares the client UTF-8 and leaves the
+	// separator alone; the locale stays C for everything else.
+	cmd := exec.CommandContext(ctx, t.Binary, "-u", "list-panes", "-a", "-F", format)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()
 	if err != nil {

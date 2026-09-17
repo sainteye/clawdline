@@ -202,5 +202,14 @@ func richer(a, b session.Session) session.Session {
 		out.ID = b.ID
 		out.Backend = b.Backend
 	}
+	// So is an iTerm2 session id, and it is the one the Swift app lists, the
+	// one a start answers with, and the one the iTerm2 adapter finds a tab by.
+	// Keeping the tty here listed every iTerm2 tab under a name no action
+	// could reach. A tmux pane already on the row keeps its id: under
+	// `tmux -CC` the iTerm2 mirror has no tty and never reaches this merge.
+	if b.Backend == session.BackendITerm && b.ID != "" && b.ID != b.TTY && out.Backend != session.BackendTmux {
+		out.ID = b.ID
+		out.Backend = b.Backend
+	}
 	return out
 }

@@ -1106,6 +1106,93 @@ type PasswordSet struct {
 	Password string `json:"password"`
 }
 
+// One conversation an assistant has already recorded in a place. `id` is the
+// only part a client sends back.
+type PastSession struct {
+	// When it was last written to, Unix seconds.
+	At int64 `json:"at"`
+
+	// A lowercase UUID: the conversation's own id.
+	ID string `json:"id"`
+
+	// Something is writing to it right now; resuming it would put a second process on
+	// the same record.
+	Live  bool   `json:"live"`
+	Title string `json:"title"`
+}
+
+// GET /v1/places/{id}/sessions[/{assistant}]: what that assistant has recorded
+// in the place, newest first, at most two hundred. Dispatched children and `-p`
+// runs are not conversations and are left out.
+type PastSessionList struct {
+	Assistant string `json:"assistant"`
+	At        int64  `json:"at"`
+
+	// The list stopped at its cap and there were more.
+	More     bool          `json:"more"`
+	Place    string        `json:"place"`
+	Sessions []PastSession `json:"sessions"`
+}
+
+// A refusal from the start, resume and history routes: not_found, forbidden,
+// bad_request, invalid_launch, terminal_closed, terminal_unsupported,
+// terminal_io_failed, iterm_attention_required, capability_unavailable,
+// terminal_busy.
+type PlaceError struct {
+	// The terminal the refusal is about, on terminal_closed and
+	// iterm_attention_required, so a page can name it in its own language.
+	App       string `json:"app,omitempty"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id"`
+}
+
+type PlaceRefusal struct {
+	Error PlaceError `json:"error"`
+}
+
+// POST /v1/places/{id}/resume/[{assistant}/]{session}: a conversation this
+// machine listed for that place, picked back up in a new terminal. The same
+// gate and replay as a start.
+type PlaceResumed struct {
+	Assistant string  `json:"assistant"`
+	At        int64   `json:"at"`
+	Attach    string  `json:"attach"`
+	Backend   Backend `json:"backend"`
+	CWD       string  `json:"cwd"`
+	ID        string  `json:"id"`
+	OK        bool    `json:"ok"`
+	Place     string  `json:"place"`
+
+	// The conversation that was resumed.
+	Session string `json:"session"`
+}
+
+// POST /v1/places/{id}/start[/{assistant}[/{model}]]: a terminal was opened and
+// the assistant typed into it. The body is not read. `id` is in the same space
+// as every id in /v1/sessions, but the session is not in that list yet. Needs a
+// device that may send and an Idempotency-Key; a retry within ten minutes is
+// answered from the first reply rather than opening a second tab.
+type PlaceStarted struct {
+	// claude or codex, as the path named it (claude when it named none).
+	Assistant string `json:"assistant"`
+	At        int64  `json:"at"`
+
+	// What to type at the Mac to see the session, for the one start that puts it where
+	// nobody is looking (a tmux server started detached); empty otherwise.
+	Attach  string  `json:"attach"`
+	Backend Backend `json:"backend"`
+	CWD     string  `json:"cwd"`
+
+	// The new terminal: a tmux pane id or an iTerm2 session id.
+	ID string `json:"id"`
+
+	// The model the path named, or empty.
+	Model string `json:"model"`
+	OK    bool   `json:"ok"`
+	Place string `json:"place"`
+}
+
 type Project struct {
 	DisplayPath string `json:"displayPath"`
 	ID          string `json:"id"`

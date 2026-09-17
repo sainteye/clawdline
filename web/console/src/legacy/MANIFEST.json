@@ -58,7 +58,9 @@
     "js/view/worktrees.js": "050fafa6e4a46c59",
     "js/view/devices.js": "d9de9358d519f908",
     "js/view/plan.js": "fa7a621929fe58ab",
-    "js/net/billing.js": "ebe94bc98d31048f"
+    "js/net/billing.js": "ebe94bc98d31048f",
+    "js/input/start.js": "360d6a8b2bf9b6cb",
+    "js/input/clawdfather.js": "5f1a061118d8b474"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {

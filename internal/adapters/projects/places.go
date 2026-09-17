@@ -31,6 +31,13 @@ type Labeler func(path string) string
 // one instance is meant to live as long as the daemon.
 type Places struct {
 	Label Labeler
+	// Fixture is StartPoints.fixtureForTesting's `places`: when set, it is the
+	// whole list, and nothing on this machine is read to build it. It exists so
+	// the start route can be driven in a directory made for the purpose — which
+	// lives under a temporary root, and the durable-place rule would otherwise
+	// keep off the list — without offering any of the person's real projects to
+	// a test that presses rows. The paths still have to be real directories.
+	Fixture []string
 
 	mu       sync.Mutex
 	resolved map[string]resolvedFolder
@@ -42,8 +49,33 @@ type resolvedFolder struct {
 	path  string
 }
 
+// FixtureEnv names a JSON file holding an array of absolute directories; when
+// it is set, NewPlaces answers with exactly those. Test use only.
+const FixtureEnv = "CLAWDLINE_NEXT_PLACES_FIXTURE"
+
 func NewPlaces(label Labeler) *Places {
-	return &Places{Label: label, resolved: map[string]resolvedFolder{}, heads: map[string]codexHead{}}
+	return &Places{Label: label, Fixture: fixtureFromEnv(),
+		resolved: map[string]resolvedFolder{}, heads: map[string]codexHead{}}
+}
+
+// fixtureFromEnv reads FixtureEnv. A named file that cannot be read is an
+// empty list rather than the real one: somebody asked for a fixture, and
+// falling back to their projects is the thing the fixture is there to stop.
+func fixtureFromEnv() []string {
+	name := os.Getenv(FixtureEnv)
+	if name == "" {
+		return nil
+	}
+	out := []string{}
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return out
+	}
+	_ = json.Unmarshal(data, &out)
+	if out == nil {
+		out = []string{}
+	}
+	return out
 }
 
 // label is StartPoints.label(for:).
@@ -61,6 +93,15 @@ func (p *Places) label(path string) string {
 // directory of every assistant session this machine can see now.
 func (p *Places) List(live []string, limit int) []Place {
 	now := time.Now()
+	if p.Fixture != nil {
+		var out []Place
+		for _, path := range p.Fixture {
+			if usable(path) && isDirectory(path) && len(out) < limit {
+				out = append(out, Place{ID: PlaceID(path), Path: path, Label: p.label(path), At: now})
+			}
+		}
+		return out
+	}
 	all := p.recorded(60, 240)
 	all = append(all, p.codexRecorded(60, 40)...)
 	for _, cwd := range live {

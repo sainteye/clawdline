@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type RefObject } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import type { ScheduleRow, SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { Row } from "./session/List.js"
 import { Detail } from "./session/Detail.js"
+import { Start, StartSheet, StartingRow } from "./session/Start.js"
+import { Starting } from "./session/Starting.js"
 
 /**
  * The session list page: the list, and the conversation beside it.
@@ -61,7 +63,12 @@ export function SessionsPage({
   // The copied modules read a module-level object, so it is filled before
   // anything is drawn from them, and the list's own order and filter are used.
   L.publish(rows, openId, filter, selected, tasks)
-  const shown = L.orderedRows()
+  // A session started from this page sits at the top while it arrives, and
+  // the place it is arriving for stands there until it does (`Start.arrange`,
+  // `Start.placeholder`). Both change with the wait, which is not a prop.
+  useSyncExternalStore(Start.subscribe, Start.version)
+  const shown = Start.arrange(L.orderedRows())
+  const arriving = Start.placeholder()
   // From the whole fleet, as `byId` looks it up: a filter that hides the open
   // row does not close it.
   const open = rows.find((r) => r.id === openId) ?? null
@@ -73,6 +80,26 @@ export function SessionsPage({
   useEffect(() => {
     L.bindSessionUI({ renderList: () => redraw((n) => n + 1) })
   }, [])
+
+  // The start sheet opens a row the way the list does, and asks which is open.
+  const openIdRef = useRef(openId)
+  openIdRef.current = openId
+  const onOpenRef = useRef(onOpen)
+  onOpenRef.current = onOpen
+  const onDidRef = useRef(onDid)
+  onDidRef.current = onDid
+  useEffect(() => {
+    Start.host({
+      open: (id) => onOpenRef.current(id),
+      openId: () => openIdRef.current,
+      refresh: () => onDidRef.current(),
+    })
+  }, [])
+  // Every list that arrives, until the one with the started session in it
+  // (`Start.check`, which `renderList` calls in the original).
+  useEffect(() => {
+    Start.check()
+  }, [rows])
 
   // `Waits.list` and `listUnknown()` (`view/waits.js`). Nothing is drawn for
   // the first 150ms; after that a skeleton stands in for the rows, and once up
@@ -98,7 +125,7 @@ export function SessionsPage({
   // The original's fifth, a browser that was refused, has no counterpart on
   // this daemon. What the element holds is only rewritten when it is shown, as
   // there, so a skeleton that has been taken down is still inside it, hidden.
-  const empty = !skeleton && drawn.length === 0 && !listUnknown
+  const empty = !skeleton && drawn.length === 0 && !arriving && !listUnknown
   const homeEmpty = empty && rows.length === 0 && !filter
   const said = useRef<"skel" | [string, string] | null>(null)
   if (skeleton) said.current = "skel"
@@ -118,119 +145,124 @@ export function SessionsPage({
   const schedules = useSchedules(arrived)
 
   return (
-    <main
-      className="app"
-      id="app"
-      data-page-view="sessions"
-      data-view={view}
-      data-pane={paneOpen ? "on" : "off"}
-      hidden={!onScreen}
-    >
-      <section className="pane pane-list">
-        <div className="filter-row">
-          {/* Every attribute here keeps a password manager out of a box that
-              filters a list (`index.html`). Uncontrolled, because a controlled
-              input writes a `value` attribute the original does not have. */}
-          <input
-            id="filter"
-            type="search"
-            name="q7f3"
-            placeholder={T.webFilterPlaceholder}
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            data-1p-ignore=""
-            data-lpignore="true"
-            data-bwignore=""
-            data-form-type="other"
-            aria-label={T.webFilterLabel}
-            onChange={(e) => onFilter(e.target.value)}
-          />
-          <span className="slash">/</span>
-          {/* Saying what to start and picking where to start it. Both lead to a
-              sheet this page does not have — the command sheet with its
-              dictation and draft, and the start sheet with its places — and
-              this daemon serves neither the draft nor the places, so both are
-              here and disabled. */}
-          <button
-            className="start"
-            id="voice-go"
-            type="button"
-            title={T.webCommand}
-            aria-label={T.webCommandLabel}
-            aria-pressed="false"
-            disabled
-          >
-            <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect>
-              <path
-                d="M5.75 11.75v0.5a6.25 6.25 0 0 0 12.5 0v-0.5M12 18.5V21"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              ></path>
-            </svg>
-            <svg className="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
-            </svg>
-          </button>
-          <button
-            className="start"
-            id="start-go"
-            type="button"
-            title={T.webStart}
-            aria-label={T.webStartLabel}
-            disabled
-          >
-            <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
-              <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"></path>
-            </svg>
-          </button>
-        </div>
-        <div className="scroller list-scroll" id="list-scroll" ref={scrollRef}>
-          <div className="ptr" id="ptr" ref={ptrRef}>
-            <span id="ptr-label">{ptrWord === "release" ? T.webPullRelease : ptrWord === "busy" ? T.webPullBusy : T.webPull}</span>
+    <>
+      {/* Before the page, as in `index.html`: the band is news about the Mac,
+          and stays in view on whatever page is showing. */}
+      <Starting />
+      <main
+        className="app"
+        id="app"
+        data-page-view="sessions"
+        data-view={view}
+        data-pane={paneOpen ? "on" : "off"}
+        hidden={!onScreen}
+      >
+        <section className="pane pane-list">
+          <div className="filter-row">
+            {/* Every attribute here keeps a password manager out of a box that
+                filters a list (`index.html`). Uncontrolled, because a controlled
+                input writes a `value` attribute the original does not have. */}
+            <input
+              id="filter"
+              type="search"
+              name="q7f3"
+              placeholder={T.webFilterPlaceholder}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              data-1p-ignore=""
+              data-lpignore="true"
+              data-bwignore=""
+              data-form-type="other"
+              aria-label={T.webFilterLabel}
+              onChange={(e) => onFilter(e.target.value)}
+            />
+            <span className="slash">/</span>
+            {/* Saying what to start leads to the command sheet, with its
+                dictation and draft, which this page does not have, so it is
+                disabled. Picking where to start opens the start sheet. */}
+            <button
+              className="start"
+              id="voice-go"
+              type="button"
+              title={T.webCommand}
+              aria-label={T.webCommandLabel}
+              aria-pressed="false"
+              disabled
+            >
+              <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect>
+                <path
+                  d="M5.75 11.75v0.5a6.25 6.25 0 0 0 12.5 0v-0.5M12 18.5V21"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                ></path>
+              </svg>
+              <svg className="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
+              </svg>
+            </button>
+            <button
+              className="start"
+              id="start-go"
+              type="button"
+              title={T.webStart}
+              aria-label={T.webStartLabel}
+              onClick={() => Start.open()}
+            >
+              <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+                <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"></path>
+              </svg>
+            </button>
           </div>
-          <ul className="rows" id="rows" role="listbox" aria-label={T.webListLabel} tabIndex={0} ref={listRef}>
-            {drawn.map((r) => (
-              <Row key={r.id} row={r} selected={r.id === selected} open={r.id === openId} onOpen={onOpen} />
-            ))}
-          </ul>
-          <div className={emptyClass} id="list-empty" hidden={!skeleton && !empty}>
-            {said.current === "skel" ? (
-              <ListSkeleton />
-            ) : said.current ? (
-              <>
-                <b>{said.current[0]}</b>
-                {said.current[1]}
-              </>
-            ) : null}
+          <div className="scroller list-scroll" id="list-scroll" ref={scrollRef}>
+            <div className="ptr" id="ptr" ref={ptrRef}>
+              <span id="ptr-label">{ptrWord === "release" ? T.webPullRelease : ptrWord === "busy" ? T.webPullBusy : T.webPull}</span>
+            </div>
+            <ul className="rows" id="rows" role="listbox" aria-label={T.webListLabel} tabIndex={0} ref={listRef}>
+              {!skeleton && arriving && <StartingRow place={arriving} />}
+              {drawn.map((r) => (
+                <Row key={r.id} row={r} selected={r.id === selected} open={r.id === openId} onOpen={onOpen} />
+              ))}
+            </ul>
+            <div className={emptyClass} id="list-empty" hidden={!skeleton && !empty}>
+              {said.current === "skel" ? (
+                <ListSkeleton />
+              ) : said.current ? (
+                <>
+                  <b>{said.current[0]}</b>
+                  {said.current[1]}
+                </>
+              ) : null}
+            </div>
+            <Schedules list={schedules} />
           </div>
-          <Schedules list={schedules} />
-        </div>
-        {/* Whether this device is told when a session waits. It stays hidden
-            until `Push` has decided, and this daemon serves no push key or
-            subscription, so nothing decides and it stays as marked up. */}
-        <div className="notify" id="notify" hidden>
-          <button className="go" id="notify-go" type="button" hidden>
-            <svg className="bell" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-              <circle cx="8" cy="1.7" r="1" fill="currentColor"></circle>
-              <path
-                fill="currentColor"
-                d="M8 2.2a3.9 3.9 0 0 1 3.9 3.9v2.6l1.05 1.75H3.05L4.1 8.7V6.1A3.9 3.9 0 0 1 8 2.2Z"
-              ></path>
-              <path fill="currentColor" d="M6.3 11.6h3.4a1.7 1.7 0 0 1-3.4 0Z"></path>
-            </svg>
-            <span id="notify-go-label">{T.webNotifyGo}</span>
-          </button>
-          <span className="say" id="notify-say"></span>
-        </div>
-      </section>
+          {/* Whether this device is told when a session waits. It stays hidden
+              until `Push` has decided, and this daemon serves no push key or
+              subscription, so nothing decides and it stays as marked up. */}
+          <div className="notify" id="notify" hidden>
+            <button className="go" id="notify-go" type="button" hidden>
+              <svg className="bell" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <circle cx="8" cy="1.7" r="1" fill="currentColor"></circle>
+                <path
+                  fill="currentColor"
+                  d="M8 2.2a3.9 3.9 0 0 1 3.9 3.9v2.6l1.05 1.75H3.05L4.1 8.7V6.1A3.9 3.9 0 0 1 8 2.2Z"
+                ></path>
+                <path fill="currentColor" d="M6.3 11.6h3.4a1.7 1.7 0 0 1-3.4 0Z"></path>
+              </svg>
+              <span id="notify-go-label">{T.webNotifyGo}</span>
+            </button>
+            <span className="say" id="notify-say"></span>
+          </div>
+        </section>
 
-      <Detail row={open} onBack={onBack} onDid={onDid} listUnknown={listUnknown} />
-    </main>
+        <Detail row={open} onBack={onBack} onDid={onDid} listUnknown={listUnknown} />
+      </main>
+      <StartSheet />
+    </>
   )
 }
 
