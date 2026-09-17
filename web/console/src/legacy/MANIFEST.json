@@ -60,7 +60,11 @@
     "js/view/plan.js": "fa7a621929fe58ab",
     "js/net/billing.js": "ebe94bc98d31048f",
     "js/input/start.js": "360d6a8b2bf9b6cb",
-    "js/input/clawdfather.js": "5f1a061118d8b474"
+    "js/input/clawdfather.js": "5f1a061118d8b474",
+    "js/view/document-render.js": "d5b8cc533155d4d4",
+    "js/net/cloud-crypto.js": "1ed51a5f2634e23b",
+    "js/net/document-links.js": "434ad37d1c146669",
+    "js/view/documents.js": "130ecb29731148d3"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {

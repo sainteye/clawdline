@@ -180,13 +180,13 @@ func (s *Server) Handler() http.Handler {
 		if root := WebRoot(); root != "" {
 			mux.Handle("/app/", newPage(root))
 			mux.Handle("/", &fallback{page: newPage(root), miss: s.notImplemented})
-			return gate.wrap(mux)
+			return gate.wrap(s.withDocuments(mux))
 		}
 		mux.Handle("/", http.HandlerFunc(s.notImplemented))
-		return gate.wrap(mux)
+		return gate.wrap(s.withDocuments(mux))
 	}
 	mux.Handle("/", s.proxy)
-	return gate.wrap(mux)
+	return gate.wrap(s.withDocuments(mux))
 }
 
 // health is the first route this daemon owns. It answers for itself and says so,
