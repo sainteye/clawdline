@@ -94,7 +94,8 @@
         "id": { "type": "string" },
         "isClaude": { "type": "boolean" },
         "label": { "description": "What the session is called, by the Swift app's rungs (ITerm.swift preferredDisplayLabel): a name typed in Clawdline (the Swift store's config.json `session_titles`), the title of the task, handoff or Feature Root Clawdline opened the tab for (orchestrator.json), the conversation's own title (`/rename`, else `aiTitle`), Codex's thread name or an automatic title, Claude Code's registry handle — the first that has something. Never a terminal title. Absent when nothing names the session.", "type": "string" },
-        "line": { "description": "What a working session says it is doing, read from its screen with the assistant's own clock in it. Present only while working. The Swift app sends it under this name and the row's height depends on it.", "type": "string" },
+        "line": { "description": "What a working session says it is doing, read from its screen with the assistant's own clock in it. Present while working; on a waiting session with a menu it is instead that menu's revision (the Swift app's menuRevision), which no row draws and which changes whenever the question does. The Swift app sends it under this name and the row's height depends on it.", "type": "string" },
+        "menu": { "$ref": "#/$defs/SessionMenu" },
         "owed": { "$ref": "#/$defs/WorkOwed" },
         "root_assignment": { "$ref": "#/$defs/RootAssignmentRecord" },
         "sessionId": { "description": "The assistant's own conversation id, when one was recovered from its command line.", "type": "string" },
@@ -107,6 +108,54 @@
         "work_provenance": { "$ref": "#/$defs/WorkProvenance" },
         "work_since": { "description": "Unix seconds: when that declaration was made.", "type": "integer" },
         "work_state": { "$ref": "#/$defs/WorkState" }
+      }
+    },
+    "SessionMenu": {
+      "description": "The question on a waiting session's screen, as rows a finger can hit (the Swift app's menuObject). Present only on a waiting session whose screen could be read as a menu; a waiting row without it is a question drawn in a shape nothing recognised. The row labels and details may be refilled from the session's own transcript, but only once the screen proves which question it is showing; the numbers, the caret, Submit and the steps are always the screen's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["options"],
+      "properties": {
+        "options": { "type": "array", "items": { "$ref": "#/$defs/SessionMenuOption" } },
+        "question": { "description": "The prose above the rows, or the question as the call asked it. Absent when it could not be read.", "type": "string" },
+        "selected": { "description": "The number of the row the caret is on. Absent when it is on none of them — a multi-select's button can hold it.", "type": "integer" },
+        "steps": { "description": "Where this question sits in a set of them, as the picker's tab bar draws it. Absent for a lone question.", "type": "array", "items": { "$ref": "#/$defs/SessionMenuStep" } },
+        "submit": { "$ref": "#/$defs/SessionMenuSubmit" }
+      }
+    },
+    "SessionMenuOption": {
+      "description": "One row. `n` is the keystroke and not the position: the page sends that number to `POST /v1/sessions/{id}/key`, and renumbering would make a button answer a different question than its label says.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["can", "label", "n", "selected"],
+      "properties": {
+        "can": { "description": "Whether a keystroke reaches this row (1…9). A row that cannot be answered is drawn and not offered.", "type": "boolean" },
+        "checked": { "description": "Only on a multi-select, where a row ticks rather than answers; present and false is a real answer (the daemon writes it through its own wire type, since a generated optional bool would drop false).", "type": "boolean" },
+        "detail": { "description": "The prose under the label, joined.", "type": "string" },
+        "label": { "type": "string" },
+        "n": { "type": "integer" },
+        "selected": { "description": "The caret is on this row, so it is what a bare Return would confirm.", "type": "boolean" }
+      }
+    },
+    "SessionMenuSubmit": {
+      "description": "The button under a multi-select's rows. It has no number on screen; `POST /key` takes the word `submit` for it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "selected"],
+      "properties": {
+        "label": { "type": "string" },
+        "selected": { "type": "boolean" }
+      }
+    },
+    "SessionMenuStep": {
+      "description": "One question of a set, as the picker's tab bar names it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["done", "label"],
+      "properties": {
+        "answer": { "description": "What was chosen, once the picker's review screen names it.", "type": "string" },
+        "done": { "type": "boolean" },
+        "label": { "type": "string" }
       }
     },
     "SessionShell": {

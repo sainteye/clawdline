@@ -64,6 +64,10 @@ func StateFromAssistantStatus(status string) State {
 		return StateWorking
 	case "idle":
 		return StateIdle
+	case "waiting":
+		// A person is being asked. The registry decides *whether* a session is
+		// waiting; only the screen says what it is being asked (Menu).
+		return StateWaiting
 	default:
 		return StateUnknown
 	}
@@ -94,6 +98,11 @@ type Session struct {
 	// CustomTitle is the conversation's current `/rename`, which retires a
 	// name typed before it. Not on the wire.
 	CustomTitle string `json:"-"`
+
+	// Menu is the question on screen while the session waits, when the screen
+	// could be read as one. Nil otherwise — including a waiting session whose
+	// dialog is drawn in a shape nothing here recognises.
+	Menu *Menu `json:"-"`
 
 	// Shells are the commands this session left running in the background,
 	// newest first. Empty for most sessions, and always for Codex, which keeps

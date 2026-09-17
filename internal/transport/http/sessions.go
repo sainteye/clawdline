@@ -52,6 +52,9 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 type sessionRowWire struct {
 	contract.SessionRow
 	WorkPersonNeeded *bool `json:"work_person_needed,omitempty"`
+	// Menu shadows the generated field for the same reason: a multi-select's
+	// unticked row is `checked: false`, which the generated bool would drop.
+	Menu *menuWire `json:"menu,omitempty"`
 }
 
 // sessionsSnapshotWire is contract.SessionsSnapshot with those rows.
@@ -243,7 +246,7 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		SessionID: item.ConversationID,
 		Shells:    wireShells(item.Shells),
 	}
-	out := sessionRowWire{}
+	out := sessionRowWire{Menu: wireMenu(item)}
 
 	if in.swift.Known {
 		work := in.swift.Work(in.live, state)

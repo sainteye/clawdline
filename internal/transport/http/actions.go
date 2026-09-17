@@ -61,6 +61,8 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "interrupted"})
+	case "key":
+		s.sessionKey(ctx, w, r, id)
 	case "close":
 		var body contract.CloseRequest
 		// An absent body is an ordinary close. Only a malformed one is a
@@ -134,6 +136,9 @@ func actionStatus(code string) int {
 		return http.StatusBadRequest
 	case "backend_unsupported":
 		return http.StatusNotImplemented
+	case "terminal_io_failed":
+		// The Swift app's status for a terminal command that did not complete.
+		return http.StatusBadGateway
 	}
 	return http.StatusInternalServerError
 }

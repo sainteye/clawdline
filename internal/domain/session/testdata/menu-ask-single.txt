@@ -1,0 +1,45 @@
+
+ ▐▛███▛█   Claude Code v2.1.274
+▝▜██████▀  Haiku 4.5 · Claude Max
+  ▝▝ ▝▝    /private/tmp/cl-f-test · /rc            
+
+
+❯ 請呼叫 AskUserQuestion 工具，一次問兩題（不要做其他事，不要讀寫任何檔案）：第 1 題                          
+  header「飲料」、question「下午想喝什麼？」、單選，選項依序為 Tea、Water、Coffee（每個選項都給一句           
+  description）。第 2 題 header「點心」、question「要配哪些點心？」、multiSelect: true，選項依序為            
+  Cookie、Cake、Fruit。回答後只要回覆「收到」兩個字。                                                         
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ 飲料  ☐ 點心  ✔ Submit  →
+
+下午想喝什麼？
+
+❯ 1. Tea
+     溫和的茶香，舒緩放鬆
+  2. Water
+     清爽解渴，清淨無味
+  3. Coffee
+     濃郁咖啡，提神醒腦
+  4. Type something.
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel
+
+
+
+
+
+
+
+
+
+                                                                                                            
+
+
+                                                                                                            
+
+
+
+                                                                                                              
+                                                                                                            
+                                                     

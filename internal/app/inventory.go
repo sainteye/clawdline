@@ -141,17 +141,40 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 // own record can say it is working; only the screen says what it is working
 // on, and the Swift app draws that line under every working row whatever told
 // it the state. So a registry-backed session is captured too — but only while
-// it is working, which is the only time there is a line to find.
+// it is working, which is the only time there is a line to find, or waiting,
+// which is the only time there is a menu to find.
+//
+// **A menu beats a spinner, and beats a registry that says busy.** Claude Code
+// draws its dialog below whatever came before it without always erasing the
+// spinner line, and the registry can be a beat behind a dialog just drawn; of
+// the two ways to be wrong for that beat, only "a waiting session shown as
+// working" hides the row somebody has to act on (SessionState.read,
+// SessionRegistry.merge). A registry that says waiting opens the parsing gate
+// for AskUserQuestion's flush-left caret; nothing else here does, because this
+// daemon installs no hooks.
 func (in Inventory) readScreen(ctx context.Context, s session.Session) session.Session {
 	if in.Screen == nil || !s.IsAssistant() {
 		return s
 	}
 	registry := s.Evidence == session.EvidenceRegistry
-	if registry && s.State != session.StateWorking {
+	if registry && s.State != session.StateWorking && s.State != session.StateWaiting {
 		return s
 	}
 	screen, ok := in.Screen.Capture(ctx, s)
 	if !ok {
+		return s
+	}
+	gate := registry && s.State == session.StateWaiting
+	if menu, found := session.ReadMenu(screen, s.Assistant, gate); found {
+		if s.State != session.StateWaiting {
+			s.State = session.StateWaiting
+			s.Evidence = session.EvidenceScreen
+		}
+		menu = in.refillMenu(ctx, s, menu)
+		s.Menu = &menu
+		// The Swift page's transcript revision watches `line`, and a waiting
+		// row never draws it, so it carries the menu's revision instead.
+		s.Line = session.MenuRevision(menu)
 		return s
 	}
 	if !registry {
@@ -164,6 +187,23 @@ func (in Inventory) readScreen(ctx context.Context, s session.Session) session.S
 		s.Line = session.WorkingLine(screen, s.Assistant, 25)
 	}
 	return s
+}
+
+// refillMenu gives a menu the words the screen had no room for, from the
+// questions the session's own transcript says are open — and only from the one
+// the screen proves it is showing (session.RefillMenu).
+func (in Inventory) refillMenu(ctx context.Context, s session.Session, menu session.Menu) session.Menu {
+	h, ok := in.Identity.(interface {
+		OpenQuestions(context.Context, session.Session) ([]session.AskedQuestion, bool)
+	})
+	if !ok || len(menu.Options) == 0 {
+		return menu
+	}
+	asked, ok := h.OpenQuestions(ctx, s)
+	if !ok {
+		return menu
+	}
+	return session.RefillMenu(menu, asked)
 }
 
 // readShells asks what the session left running in the background, when the

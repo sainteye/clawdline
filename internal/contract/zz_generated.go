@@ -11,9 +11,11 @@
 // with nothing to notice, which is the defect this package exists to remove.
 package contract
 
-// What actually happened. `typed` is the strongest thing a send can claim: the
-// bytes reached the tty. Whether the assistant took the turn is a separate
-// fact, read from the fleet list, and this never asserts it.
+// What actually happened. `keyed` says the keystrokes of an answer reached the
+// tty and, for a digit, that a Return followed only if the screen showed the
+// digit landed. `typed` is the strongest thing a send can claim: the bytes
+// reached the tty. Whether the assistant took the turn is a separate fact, read
+// from the fleet list, and this never asserts it.
 type ActionResult struct {
 	Action string `json:"action"`
 
@@ -960,6 +962,15 @@ type InventorySession struct {
 	TTY            string       `json:"tty,omitempty"`
 }
 
+// One key for a session's menu: a digit "1"…"9" answers the row with that
+// number, "tab" and "shift+tab" are the only other keys, and "submit" presses a
+// multi-select's button. Anything else is refused before the session is looked
+// up. Never a way to type text: words sent to a picker are thrown away and the
+// Return after them confirms whatever is highlighted.
+type KeyRequest struct {
+	Key string `json:"key"`
+}
+
 // What a current inventory says about the bound process. An incomplete reading
 // answers `unknown`, never `offline`: absence of evidence is not proof of
 // death.
@@ -1503,6 +1514,67 @@ type SessionLimits struct {
 	Windows  []SessionLimitWindow `json:"windows"`
 }
 
+// The question on a waiting session's screen, as rows a finger can hit (the
+// Swift app's menuObject). Present only on a waiting session whose screen could
+// be read as a menu; a waiting row without it is a question drawn in a shape
+// nothing recognised. The row labels and details may be refilled from the
+// session's own transcript, but only once the screen proves which question it
+// is showing; the numbers, the caret, Submit and the steps are always the
+// screen's.
+type SessionMenu struct {
+	Options []SessionMenuOption `json:"options"`
+
+	// The prose above the rows, or the question as the call asked it. Absent when it
+	// could not be read.
+	Question string `json:"question,omitempty"`
+
+	// The number of the row the caret is on. Absent when it is on none of them — a
+	// multi-select's button can hold it.
+	Selected int64 `json:"selected,omitempty"`
+
+	// Where this question sits in a set of them, as the picker's tab bar draws it.
+	// Absent for a lone question.
+	Steps  []SessionMenuStep  `json:"steps,omitempty"`
+	Submit *SessionMenuSubmit `json:"submit,omitempty"`
+}
+
+// One row. `n` is the keystroke and not the position: the page sends that
+// number to `POST /v1/sessions/{id}/key`, and renumbering would make a button
+// answer a different question than its label says.
+type SessionMenuOption struct {
+	// Whether a keystroke reaches this row (1…9). A row that cannot be answered is
+	// drawn and not offered.
+	Can bool `json:"can"`
+
+	// Only on a multi-select, where a row ticks rather than answers; present and false
+	// is a real answer (the daemon writes it through its own wire type, since a
+	// generated optional bool would drop false).
+	Checked bool `json:"checked,omitempty"`
+
+	// The prose under the label, joined.
+	Detail string `json:"detail,omitempty"`
+	Label  string `json:"label"`
+	N      int64  `json:"n"`
+
+	// The caret is on this row, so it is what a bare Return would confirm.
+	Selected bool `json:"selected"`
+}
+
+// One question of a set, as the picker's tab bar names it.
+type SessionMenuStep struct {
+	// What was chosen, once the picker's review screen names it.
+	Answer string `json:"answer,omitempty"`
+	Done   bool   `json:"done"`
+	Label  string `json:"label"`
+}
+
+// The button under a multi-select's rows. It has no number on screen; `POST
+// /key` takes the word `submit` for it.
+type SessionMenuSubmit struct {
+	Label    string `json:"label"`
+	Selected bool   `json:"selected"`
+}
+
 // One model this session's assistant can be switched to. A session's current
 // model is matched against `id` by prefix, so a dated id still finds its row;
 // `name` is what a reader is shown for it.
@@ -1537,9 +1609,12 @@ type SessionRow struct {
 	Label string `json:"label,omitempty"`
 
 	// What a working session says it is doing, read from its screen with the
-	// assistant's own clock in it. Present only while working. The Swift app sends it
+	// assistant's own clock in it. Present while working; on a waiting session with a
+	// menu it is instead that menu's revision (the Swift app's menuRevision), which no
+	// row draws and which changes whenever the question does. The Swift app sends it
 	// under this name and the row's height depends on it.
 	Line           string                `json:"line,omitempty"`
+	Menu           *SessionMenu          `json:"menu,omitempty"`
 	Owed           *WorkOwed             `json:"owed,omitempty"`
 	RootAssignment *RootAssignmentRecord `json:"root_assignment,omitempty"`
 

@@ -55,6 +55,14 @@ type ScreenHost interface {
 	Capture(ctx context.Context, s session.Session) (string, bool)
 }
 
+// KeyHost types raw key bytes into a session as one keypress, outside any
+// bracketed paste. It is apart from TerminalHost because only the menu-answer
+// path uses it, and that path allows a closed set of bytes (app.Actions.Key):
+// a byte channel into a tty is an escape-sequence channel into a tty.
+type KeyHost interface {
+	Keystroke(ctx context.Context, s session.Session, bytes []byte) error
+}
+
 // TerminalHost enumerates and drives terminal sessions. One interface covers
 // both surfaces: a terminal somebody else opened (attached) and a pty this
 // daemon owns.

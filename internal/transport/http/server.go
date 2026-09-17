@@ -107,7 +107,7 @@ func New(cfg config.Config) (*Server, error) {
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
 			Identity:  transcript.NewHost(),
-			Screen:    terminal.NewTmux(),
+			Screen:    terminal.NewScreens(),
 		},
 	}, nil
 }

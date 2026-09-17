@@ -8,9 +8,11 @@
 // React Native API, so the web console and a native app can both read it.
 
 /**
- * What actually happened. `typed` is the strongest thing a send can claim: the
- * bytes reached the tty. Whether the assistant took the turn is a separate fact,
- * read from the fleet list, and this never asserts it.
+ * What actually happened. `keyed` says the keystrokes of an answer reached the tty
+ * and, for a digit, that a Return followed only if the screen showed the digit
+ * landed. `typed` is the strongest thing a send can claim: the bytes reached the
+ * tty. Whether the assistant took the turn is a separate fact, read from the fleet
+ * list, and this never asserts it.
  */
 export interface ActionResult {
   action: string
@@ -1180,6 +1182,17 @@ export interface InventorySession {
 }
 
 /**
+ * One key for a session's menu: a digit "1"…"9" answers the row with that number,
+ * "tab" and "shift+tab" are the only other keys, and "submit" presses a
+ * multi-select's button. Anything else is refused before the session is looked up.
+ * Never a way to type text: words sent to a picker are thrown away and the Return
+ * after them confirms whatever is highlighted.
+ */
+export interface KeyRequest {
+  key: string
+}
+
+/**
  * What a current inventory says about the bound process. An incomplete reading
  * answers `unknown`, never `offline`: absence of evidence is not proof of death.
  */
@@ -1855,6 +1868,90 @@ export interface SessionLimits {
 }
 
 /**
+ * The question on a waiting session's screen, as rows a finger can hit (the Swift
+ * app's menuObject). Present only on a waiting session whose screen could be read
+ * as a menu; a waiting row without it is a question drawn in a shape nothing
+ * recognised. The row labels and details may be refilled from the session's own
+ * transcript, but only once the screen proves which question it is showing; the
+ * numbers, the caret, Submit and the steps are always the screen's.
+ */
+export interface SessionMenu {
+  options: SessionMenuOption[]
+
+  /**
+   * The prose above the rows, or the question as the call asked it. Absent when it
+   * could not be read.
+   */
+  question?: string
+
+  /**
+   * The number of the row the caret is on. Absent when it is on none of them — a
+   * multi-select's button can hold it.
+   */
+  selected?: number
+
+  /**
+   * Where this question sits in a set of them, as the picker's tab bar draws it.
+   * Absent for a lone question.
+   */
+  steps?: SessionMenuStep[]
+  submit?: SessionMenuSubmit
+}
+
+/**
+ * One row. `n` is the keystroke and not the position: the page sends that number to
+ * `POST /v1/sessions/{id}/key`, and renumbering would make a button answer a
+ * different question than its label says.
+ */
+export interface SessionMenuOption {
+  /**
+   * Whether a keystroke reaches this row (1…9). A row that cannot be answered is
+   * drawn and not offered.
+   */
+  can: boolean
+
+  /**
+   * Only on a multi-select, where a row ticks rather than answers; present and
+   * false is a real answer (the daemon writes it through its own wire type, since a
+   * generated optional bool would drop false).
+   */
+  checked?: boolean
+
+  /**
+   * The prose under the label, joined.
+   */
+  detail?: string
+  label: string
+  n: number
+
+  /**
+   * The caret is on this row, so it is what a bare Return would confirm.
+   */
+  selected: boolean
+}
+
+/**
+ * One question of a set, as the picker's tab bar names it.
+ */
+export interface SessionMenuStep {
+  /**
+   * What was chosen, once the picker's review screen names it.
+   */
+  answer?: string
+  done: boolean
+  label: string
+}
+
+/**
+ * The button under a multi-select's rows. It has no number on screen; `POST /key`
+ * takes the word `submit` for it.
+ */
+export interface SessionMenuSubmit {
+  label: string
+  selected: boolean
+}
+
+/**
  * One model this session's assistant can be switched to. A session's current model
  * is matched against `id` by prefix, so a dated id still finds its row; `name` is
  * what a reader is shown for it.
@@ -1895,10 +1992,13 @@ export interface SessionRow {
 
   /**
    * What a working session says it is doing, read from its screen with the
-   * assistant's own clock in it. Present only while working. The Swift app sends it
-   * under this name and the row's height depends on it.
+   * assistant's own clock in it. Present while working; on a waiting session with a
+   * menu it is instead that menu's revision (the Swift app's menuRevision), which
+   * no row draws and which changes whenever the question does. The Swift app sends
+   * it under this name and the row's height depends on it.
    */
   line?: string
+  menu?: SessionMenu
   owed?: WorkOwed
   root_assignment?: RootAssignmentRecord
 

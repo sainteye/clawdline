@@ -94,7 +94,10 @@ func (t *Tmux) Capture(ctx context.Context, s session.Session) (string, bool) {
 	if s.Backend != session.BackendTmux || s.ID == "" {
 		return "", false
 	}
-	cmd := exec.CommandContext(ctx, t.Binary, "capture-pane", "-p", "-t", s.ID)
+	// `-J` joins what the pane wrapped, as the Swift app's reading does: a
+	// menu option too long for the pane is one row, not a row and a
+	// description.
+	cmd := exec.CommandContext(ctx, t.Binary, "capture-pane", "-p", "-J", "-t", s.ID)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()
 	if err != nil {

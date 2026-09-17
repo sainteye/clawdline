@@ -4,6 +4,7 @@ import type { SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
+import { Waiting } from "./Waiting.js"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -17,8 +18,8 @@ import * as L from "../legacy/bridge.js"
  * What this daemon cannot do is still drawn, switched off, rather than left out:
  * a row that is missing reads as something the reader misremembered.
  *
- * - `.waiting` stays hidden. The original fills it from the session's parsed
- *   menu; a SessionRow carries no menu, so there is nothing true to put in it.
+ * - `.waiting` is its own component (`Waiting.tsx`), filled from the row's
+ *   parsed `menu` and answered through `POST /key`, as the original's is.
  * - `.shots`, `input#pick` and `button.attach`: the send route here takes text
  *   only (`SendRequest` is `{ text }`), so the attachment button is disabled.
  * - `.voice` and `button.mic`: there is no transcription route, so the
@@ -162,7 +163,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
         void submit()
       }}
     >
-      <div className="waiting" id="waiting" role="status" hidden></div>
+      <Waiting row={row} write={write} />
       <div className="shots" id="shots"></div>
       <div className="voice" id="voice" role="status" hidden></div>
       {/* The original's label is English in every language; the catalog has no key for it. */}
