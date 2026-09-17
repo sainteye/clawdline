@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "screens.schema.json",
+  "title": "Watching a terminal, and bringing one forward",
+  "description": "GET /v1/sessions/{id}/screen, GET /v1/screens and POST /v1/sessions/{id}/focus. Reading a screen is the subscription: there is no route that attaches a pipe and none that takes one off, so a watcher that stops asking stops being a watcher and the machine state it created goes with it.",
+  "$defs": {
+    "ScreenChannel": {
+      "description": "How a watcher finds out that a screen changed, which is a fact about the backend and not about the watcher. `signalled` is tmux with a pipe on the pane, about four milliseconds behind it; `on-demand` is a sample taken when somebody asks, no faster than `askAgainAfterMs`. Drawing the two identically would be a lie the reader has no way to catch, so it is in every payload.",
+      "type": "string",
+      "enum": ["signalled", "on-demand"]
+    },
+    "Screen": {
+      "description": "One reading of a terminal. `backend` and `channel` come first because a screen with no backend named is the defect this exists to avoid, and `lines` is what came back rather than what was asked for: an alternate-screen program has no history to give and this must not imply otherwise.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "captures", "channel", "id", "pending", "readable", "revision", "signals", "watchingUntil"],
+      "properties": {
+        "id": { "type": "string" },
+        "backend": { "$ref": "common.schema.json#/$defs/Backend" },
+        "channel": { "$ref": "#/$defs/ScreenChannel" },
+        "revision": { "description": "What a client compares to decide whether it already has this screen. FNV-1a over the UTF-8 bytes, which is enough for \"did these change\" and is deliberately not a promise about anything else. An unreadable screen is the constant `unreadable`, so a pane that stays unreadable stops producing events after the first one.", "type": "string" },
+        "readable": { "type": "boolean" },
+        "pending": { "description": "Nothing has been captured for this session yet. The first read of a session answers this and the screen arrives a few milliseconds later on the `screen` event, because the answer comes out of a published snapshot and the capture happens behind it.", "type": "boolean" },
+        "watchingUntil": { "description": "Unix seconds. The lease this read renewed; a lease nobody renews expires and takes the pipe with it.", "type": "integer" },
+        "captures": { "type": "integer" },
+        "signals": { "type": "integer" },
+        "text": { "description": "The capture, escape sequences kept. Absent until the first one completes.", "type": "string" },
+        "lines": { "description": "How many rows actually came back. The trailing newline a capture ends with is a terminator, not a row.", "type": "integer" },
+        "at": { "description": "Unix seconds of the capture this text came from.", "type": "integer" },
+        "askAgainAfterMs": { "description": "On `on-demand` only, said out loud rather than left for the client to discover: nothing will tell it the screen moved, so asking again is the only way to see a change, and this is the fastest it may.", "type": "integer" }
+      }
+    },
+    "ScreenAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["screen"],
+      "properties": {
+        "screen": { "$ref": "#/$defs/Screen" }
+      }
+    },
+    "ScreenEvent": {
+      "description": "The `screen` frame on /v1/events: only that a screen moved, and to what revision. The screen itself is fetched through the authenticated GET, exactly as a transcript append is — a stream frame reaches every device on this connection, and a terminal somebody else is watching has no business on it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "id", "revision"],
+      "properties": {
+        "id": { "type": "string" },
+        "revision": { "type": "string" },
+        "at": { "type": "integer" }
+      }
+    },
+    "ScreenWatch": {
+      "description": "One row of what this daemon is watching.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "captures", "channel", "expiresIn", "id", "readable", "signalled", "signals", "watching"],
+      "properties": {
+        "id": { "type": "string" },
+        "backend": { "$ref": "common.schema.json#/$defs/Backend" },
+        "channel": { "$ref": "#/$defs/ScreenChannel" },
+        "watching": { "type": "boolean" },
+        "expiresIn": { "type": "integer" },
+        "signalled": { "description": "Whether this daemon has a pipe on that pane right now.", "type": "boolean" },
+        "captures": { "type": "integer" },
+        "signals": { "type": "integer" },
+        "readable": { "type": "boolean" }
+      }
+    },
+    "ScreenInventory": {
+      "description": "The machine state this feature creates, published so that somebody can see it. `tmux list-panes -a -F '#{pane_id} #{pane_pipe}'` answers the same question in one command; this answers it and says which of those pipes this daemon can account for, which tmux cannot, because `#{pane_pipe}` is a boolean with no owner in it. A pane that is piped and not on this daemon's list is therefore `unattributed` rather than a leak, and nothing here takes somebody else's pipe off.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attached", "leaseSeconds", "piped", "screens", "unattributed", "windowMs"],
+      "properties": {
+        "screens": { "type": "array", "items": { "$ref": "#/$defs/ScreenWatch" } },
+        "attached": { "type": "array", "items": { "type": "string" } },
+        "piped": { "type": "array", "items": { "type": "string" } },
+        "unattributed": { "type": "array", "items": { "type": "string" } },
+        "windowMs": { "type": "integer" },
+        "leaseSeconds": { "type": "integer" }
+      }
+    },
+    "FocusResult": {
+      "description": "The session's terminal was asked to come forward. It says the selection was made on this machine, never that a window is now in front of a person: under tmux the emulator drawing the pane decides that, and one of them — iTerm2 under `tmux -CC` — is asked separately, after this answer has already gone out.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "id": { "type": "string" }
+      }
+    }
+  }
+}

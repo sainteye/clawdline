@@ -17,6 +17,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -58,6 +59,12 @@ type Server struct {
 	// lastScreen is the sessions the last list was built from, so a task list
 	// can place a task under its root without scanning the machine again.
 	lastScreen atomic.Pointer[screenReading]
+	// screens is the one owner of this daemon's `pipe-pane` state: who is
+	// watching which terminal, and the leases that decide whether a pipe stays
+	// on a pane. Nothing else may attach or detach one.
+	screens *app.Screens
+	// screenBus carries a moved screen's revision to every open event stream.
+	screenBus *screenBus
 	// pulse is the scheduler's own account of its last pass, read by
 	// /v1/diagnostics.
 	pulse atomic.Pointer[app.Pulse]
@@ -89,7 +96,7 @@ func New(cfg config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open the store at %s: %w", cfg.Dir, err)
 	}
-	return &Server{
+	srv := &Server{
 		store: st,
 		cfg:   cfg,
 		proxy: proxy,
@@ -109,7 +116,27 @@ func New(cfg config.Config) (*Server, error) {
 			Identity:  transcript.NewHost(),
 			Screen:    terminal.NewScreens(),
 		},
-	}, nil
+	}
+	// The live screens, and the FIFO directory that is their ownership record.
+	// A pane this daemon piped and did not take back is a `%N.fifo` left in
+	// there, which is why the directory is under this daemon's own state and
+	// not under a temporary one somebody else may empty.
+	srv.screenBus = newScreenBus()
+	hosts := terminal.Hosts()
+	screenDir := filepath.Join(cfg.Dir, "screens")
+	srv.screens = app.NewScreens(hosts, terminal.NewPaneSignal(screenDir, terminal.NewTmux()),
+		srv.screenBus.publish)
+	// Panes piped by a previous run, taken back. Once, at start, and off the
+	// startup path: it is a subprocess, and a daemon that cannot reach tmux
+	// must still come up.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if taken := srv.screens.Reclaim(ctx); len(taken) > 0 {
+			log.Printf("live screens: took back %d pipe(s) from a previous run: %v", len(taken), taken)
+		}
+	}()
+	return srv, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -133,8 +160,21 @@ func (s *Server) Handler() http.Handler {
 			s.sessionInfoRoute(w, r, id)
 			return
 		}
+		// Watching a screen is a read and brings its own route (screen.go);
+		// sessionAction below refuses anything that is not a POST, so this has
+		// to be asked before it.
+		if id, ok := screenPath(r); ok {
+			s.sessionScreenRoute(w, r, id)
+			return
+		}
+		if id, ok := focusPath(r); ok {
+			s.sessionFocusRoute(w, r, id)
+			return
+		}
 		s.sessionAction(w, r)
 	})
+	// What this feature has done to the machine, published (screen.go).
+	mux.HandleFunc("/v1/screens", s.screensRoute)
 	mux.HandleFunc("/v1/events", s.events)
 	mux.HandleFunc("/v1/next/obligations", s.obligations)
 	mux.HandleFunc("/v1/next/schedules", s.schedules)

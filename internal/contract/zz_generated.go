@@ -912,6 +912,16 @@ const (
 // EvidenceValues is every value the contract allows, in contract order.
 var EvidenceValues = []Evidence{EvidenceStructured, EvidenceTranscript, EvidenceProcess, EvidenceScreen, EvidenceRegistry, EvidenceNone}
 
+// The session's terminal was asked to come forward. It says the selection was
+// made on this machine, never that a window is now in front of a person: under
+// tmux the emulator drawing the pane decides that, and one of them — iTerm2
+// under `tmux -CC` — is asked separately, after this answer has already gone
+// out.
+type FocusResult struct {
+	ID string `json:"id"`
+	OK bool   `json:"ok"`
+}
+
 // GET /v1/health, open without a token: that this daemon is alive and which
 // implementation it is, and nothing else. No path, no port, nothing about the
 // work; those are in Diagnostics.
@@ -1393,6 +1403,110 @@ type SchedulerPulse struct {
 	// Why a pass did nothing, when the reason was not that nothing was due.
 	Note        string `json:"note,omitempty"`
 	TickSeconds int64  `json:"tickSeconds"`
+}
+
+// One reading of a terminal. `backend` and `channel` come first because a
+// screen with no backend named is the defect this exists to avoid, and `lines`
+// is what came back rather than what was asked for: an alternate-screen program
+// has no history to give and this must not imply otherwise.
+type Screen struct {
+	// On `on-demand` only, said out loud rather than left for the client to discover:
+	// nothing will tell it the screen moved, so asking again is the only way to see a
+	// change, and this is the fastest it may.
+	AskAgainAfterMs int64 `json:"askAgainAfterMs,omitempty"`
+
+	// Unix seconds of the capture this text came from.
+	At       int64         `json:"at,omitempty"`
+	Backend  Backend       `json:"backend"`
+	Captures int64         `json:"captures"`
+	Channel  ScreenChannel `json:"channel"`
+	ID       string        `json:"id"`
+
+	// How many rows actually came back. The trailing newline a capture ends with is a
+	// terminator, not a row.
+	Lines int64 `json:"lines,omitempty"`
+
+	// Nothing has been captured for this session yet. The first read of a session
+	// answers this and the screen arrives a few milliseconds later on the `screen`
+	// event, because the answer comes out of a published snapshot and the capture
+	// happens behind it.
+	Pending  bool `json:"pending"`
+	Readable bool `json:"readable"`
+
+	// What a client compares to decide whether it already has this screen. FNV-1a over
+	// the UTF-8 bytes, which is enough for "did these change" and is deliberately not
+	// a promise about anything else. An unreadable screen is the constant
+	// `unreadable`, so a pane that stays unreadable stops producing events after the
+	// first one.
+	Revision string `json:"revision"`
+	Signals  int64  `json:"signals"`
+
+	// The capture, escape sequences kept. Absent until the first one completes.
+	Text string `json:"text,omitempty"`
+
+	// Unix seconds. The lease this read renewed; a lease nobody renews expires and
+	// takes the pipe with it.
+	WatchingUntil int64 `json:"watchingUntil"`
+}
+
+type ScreenAnswer struct {
+	Screen Screen `json:"screen"`
+}
+
+// How a watcher finds out that a screen changed, which is a fact about the
+// backend and not about the watcher. `signalled` is tmux with a pipe on the
+// pane, about four milliseconds behind it; `on-demand` is a sample taken when
+// somebody asks, no faster than `askAgainAfterMs`. Drawing the two identically
+// would be a lie the reader has no way to catch, so it is in every payload.
+type ScreenChannel string
+
+const (
+	ScreenChannelSignalled ScreenChannel = "signalled"
+	ScreenChannelOnDemand  ScreenChannel = "on-demand"
+)
+
+// ScreenChannelValues is every value the contract allows, in contract order.
+var ScreenChannelValues = []ScreenChannel{ScreenChannelSignalled, ScreenChannelOnDemand}
+
+// The `screen` frame on /v1/events: only that a screen moved, and to what
+// revision. The screen itself is fetched through the authenticated GET, exactly
+// as a transcript append is — a stream frame reaches every device on this
+// connection, and a terminal somebody else is watching has no business on it.
+type ScreenEvent struct {
+	At       int64  `json:"at"`
+	ID       string `json:"id"`
+	Revision string `json:"revision"`
+}
+
+// The machine state this feature creates, published so that somebody can see
+// it. `tmux list-panes -a -F '#{pane_id} #{pane_pipe}'` answers the same
+// question in one command; this answers it and says which of those pipes this
+// daemon can account for, which tmux cannot, because `#{pane_pipe}` is a
+// boolean with no owner in it. A pane that is piped and not on this daemon's
+// list is therefore `unattributed` rather than a leak, and nothing here takes
+// somebody else's pipe off.
+type ScreenInventory struct {
+	Attached     []string      `json:"attached"`
+	LeaseSeconds int64         `json:"leaseSeconds"`
+	Piped        []string      `json:"piped"`
+	Screens      []ScreenWatch `json:"screens"`
+	Unattributed []string      `json:"unattributed"`
+	WindowMs     int64         `json:"windowMs"`
+}
+
+// One row of what this daemon is watching.
+type ScreenWatch struct {
+	Backend   Backend       `json:"backend"`
+	Captures  int64         `json:"captures"`
+	Channel   ScreenChannel `json:"channel"`
+	ExpiresIn int64         `json:"expiresIn"`
+	ID        string        `json:"id"`
+	Readable  bool          `json:"readable"`
+
+	// Whether this daemon has a pipe on that pane right now.
+	Signalled bool  `json:"signalled"`
+	Signals   int64 `json:"signals"`
+	Watching  bool  `json:"watching"`
 }
 
 type SendRequest struct {

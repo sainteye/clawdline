@@ -1,9 +1,20 @@
 import type { Icon, SessionRow } from "@clawdline/contract"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type RefObject,
+} from "react"
 import { requestConfirm, requestInfo, useClosingId } from "../overlays/index.js"
+import { toast, toastFailure } from "../overlays/toast.js"
 import * as L from "../legacy/bridge.js"
+import { askFocus } from "../legacy/screen-bridge.js"
 import { Transcript } from "./Transcript.js"
 import { Composer } from "./Composer.js"
+import { ScreenPanel } from "./ScreenPanel.js"
 import { StatusLine } from "./StatusLine.js"
 
 /**
@@ -49,6 +60,17 @@ export function Detail({
   // head reads it so it can show that session as ending.
   const closingId = useClosingId()
   const ending = !!row && closingId === row.id
+  // Which panel is over the transcript. `#screen-panel` is the only one this
+  // console has; `pane-detail`'s `data-panel` is what the stylesheet reads, and
+  // it is deleted rather than set to a word when nothing is open, as
+  // `Terminal.close` does.
+  const [screenOpen, setScreenOpen] = useState(false)
+  const actionsTrigger = useRef<HTMLButtonElement>(null)
+  // A different session, or none, closes the panel: it is that session's
+  // terminal that was being watched (`followTerminal`).
+  useEffect(() => {
+    setScreenOpen(false)
+  }, [row?.id])
 
   // No snippets route means no resolved project (`snippetProjectFor`), so the
   // mark is keyed by the session's own `cwd`.
@@ -68,7 +90,7 @@ export function Detail({
   const home = !row && !listUnknown
 
   return (
-    <section className="pane pane-detail" id="pane-detail">
+    <section className="pane pane-detail" id="pane-detail" data-panel={screenOpen ? "screen" : undefined}>
       <div className="detail-head" id="detail-head" data-closing={ending ? "on" : "off"}>
         <button className="back" id="back" onClick={onBack} aria-label={T.webBackLabel} disabled={ending}>
           ‹ {T.webBack}
@@ -119,9 +141,26 @@ export function Detail({
           </button>
         </div>
         <div className="tools">
-          <Tools row={row} ending={ending} onDid={onDid} />
+          <Tools
+            row={row}
+            ending={ending}
+            onDid={onDid}
+            triggerRef={actionsTrigger}
+            onScreen={() => setScreenOpen(true)}
+          />
         </div>
       </div>
+
+      <ScreenPanel
+        row={row}
+        open={screenOpen}
+        onClose={(restore) => {
+          setScreenOpen(false)
+          if (restore && !actionsTrigger.current?.disabled) {
+            actionsTrigger.current?.focus({ preventScroll: true })
+          }
+        }}
+      />
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
@@ -193,8 +232,10 @@ function detailSub(row: SessionRow | null): string {
  * dropped: a menu that is missing rows is a menu somebody will assume they
  * imagined, and a disabled row says which part is not here.
  *
- * - Show on Mac, Live screen, Documents, Git changes: no route or no sheet in
- *   this console. Session info opens the info sheet.
+ * - Show on Mac and Live screen are routes this daemon now owns: the chip and
+ *   the row both POST `/focus`, and Live screen opens `#screen-panel`.
+ * - Documents, Git changes: no route or no sheet in this console. Session info
+ *   opens the info sheet.
  * - My messages: needs no route, but its sheet (`#user-messages`) is not here.
  * - Snippets: hidden and disabled, which is the original's own shape for a
  *   transport with no snippets route (`syncRow` in `input/snippets.js`).
@@ -208,10 +249,14 @@ function Tools({
   row,
   ending,
   onDid,
+  triggerRef,
+  onScreen,
 }: {
   row: SessionRow | null
   ending: boolean
   onDid: () => void
+  triggerRef: RefObject<HTMLButtonElement | null>
+  onScreen: () => void
 }) {
   const T = L.strings
   const [open, setOpen] = useState(false)
@@ -220,7 +265,6 @@ function Tools({
   // carries no aria-hidden, as the static markup has none.
   const [leveled, setLeveled] = useState(false)
 
-  const triggerRef = useRef<HTMLButtonElement>(null)
   const mainRef = useRef<HTMLDivElement>(null)
   const gitRef = useRef<HTMLDivElement>(null)
   const gitMoreRef = useRef<HTMLButtonElement>(null)
@@ -282,6 +326,30 @@ function Tools({
     }
   })
 
+  /**
+   * `SessionActions.focusMac` and the `#tx-focus` listener, which are the same
+   * call from two places.
+   *
+   * The toast is what the original says on success, and it says exactly what
+   * happened: the Mac was *asked* to bring that terminal forward. Whether a
+   * window is now in front of somebody is the emulator's answer and this end
+   * never sees it — under `tmux -CC` iTerm2 is asked after the route has
+   * already replied, and Ghostty, Terminal.app and the rest are selected inside
+   * tmux and raise nothing.
+   */
+  const focusMac = () => {
+    if (!row) return
+    const mine = row.id
+    askFocus(mine).then(
+      () => {
+        if (mine === row.id) toast(T.webShowOnMacAsked)
+      },
+      (e) => {
+        if (mine === row.id) toastFailure(e, T.webRequestFailed)
+      },
+    )
+  }
+
   const onTriggerKey = (ev: ReactKeyboardEvent) => {
     if (ev.key !== "ArrowDown") return
     ev.preventDefault()
@@ -317,15 +385,25 @@ function Tools({
 
   return (
     <>
-      {/* No focus route in this daemon, so the chip is always disabled. Its title
-          is the write-on wording; the write flag lives with the composer. */}
+      {/* **Hidden unless this page is being read on the Mac itself.** The chip
+          brings a session's terminal to the front over there; pressed from a
+          phone it does something real and entirely invisible to the person
+          pressing it. The test is where the page was *loaded from*, not the
+          screen width: an iPad with a keyboard is not at the Mac either, and a
+          narrow window on the Mac still is.
+
+          Its title is the write-on wording. The original swaps it for
+          `webShowOnMacOff` on a `write: false` health, which this daemon's
+          health does not carry — the same gap the composer has, and a refusal
+          arrives in the toast rather than in the title. */}
       <button
         className="chip"
         id="tx-focus"
         type="button"
         hidden={!atMac()}
-        disabled
+        disabled={!row || ending}
         title={T.webShowOnMacTip}
+        onClick={focusMac}
       >
         <svg className="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
           <rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" strokeWidth="1.3" />
@@ -370,7 +448,16 @@ function Tools({
               aria-hidden={leveled ? git : undefined}
               inert={git}
             >
-              <button id="session-focus" type="button" role="menuitem" disabled>
+              <button
+                id="session-focus"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending}
+                onClick={() => {
+                  closeMenu(false)
+                  focusMac()
+                }}
+              >
                 {T.webShowOnMac}
               </button>
               <button
@@ -385,7 +472,19 @@ function Tools({
               >
                 {T.webSessionInfo}
               </button>
-              <button id="session-screen" type="button" role="menuitem" disabled>
+              {/* The original writes no `disabled` on this row and neither does
+                  this: reading a screen needs no send capability, and the menu
+                  it sits in cannot be opened without a session. */}
+              <button
+                id="session-screen"
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  onScreen()
+                }}
+              >
                 {T.webSessionScreen}
               </button>
               <button id="session-documents" type="button" role="menuitem" disabled>

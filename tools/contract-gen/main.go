@@ -215,7 +215,12 @@ var initialisms = map[string]string{
 }
 
 func goName(prop string) string {
-	parts := strings.Split(prop, "_")
+	// Both separators, because an enum value is a word on the wire and not a
+	// Go identifier: `on-demand` is spelled with a hyphen by the app being
+	// replicated, and splitting on underscores alone made a constant called
+	// `ScreenChannelOn-demand`, which is a file that does not parse rather than
+	// a name somebody would notice. No property name here contains a hyphen.
+	parts := strings.FieldsFunc(prop, func(r rune) bool { return r == '_' || r == '-' })
 	var b strings.Builder
 	for _, p := range parts {
 		if p == "" {
