@@ -4,6 +4,7 @@ import { ClawdlineClient } from "@clawdline/core"
 import { client } from "./client.js"
 import { useFleet, usePoll } from "./useFleet.js"
 import { SessionsPage } from "./Sessions.js"
+import { toggleOrder } from "./session/Transcript.js"
 import Dashboard from "./Dashboard.js"
 import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
@@ -524,8 +525,10 @@ export default function App() {
 
     if (typing(document.activeElement)) return
     if (meta || ev.altKey) return
-    // The drawer is over the page, so `j` is not "move down the list behind it".
-    if (menuRef.current) return
+    // A sheet is over the page, so `j` is not "move down the list behind it",
+    // and the drawer is one more thing that is over it (keys.js). Settings is
+    // the one such sheet this console has so far.
+    if (menuRef.current || pageRef.current === "settings") return
 
     switch (key) {
       case "ArrowDown":
@@ -561,6 +564,10 @@ export default function App() {
         if (tx) tx.scrollTop = tx.scrollHeight
         break
       }
+      case "r":
+        ev.preventDefault()
+        toggleOrder()
+        break
       case "?":
         ev.preventDefault()
         toggleKeys()

@@ -29,6 +29,46 @@ export function setSettingsNewestFirst(on: boolean): void {
   state.newestFirst = on
 }
 
+/*
+ * Who is told when `S.assistantIcons` or `S.newestFirst` changes.
+ *
+ * The original's presses redraw the transcript themselves (`renderTranscript()`
+ * right after the write). Here the transcript is React's and the press belongs
+ * to another page, so the two values are watched where they are kept instead:
+ * the first subscription turns both into accessors over the same value, and
+ * every write — the setters above, `toggleOrder`, any copied module — tells
+ * whoever listens. Writing the value it already has tells nobody.
+ */
+const settingsListeners = new Set<() => void>()
+let settingsWatched = false
+
+function watchSettings(): void {
+  if (settingsWatched) return
+  settingsWatched = true
+  for (const name of ["assistantIcons", "newestFirst"] as const) {
+    let value = state[name]
+    Object.defineProperty(state, name, {
+      configurable: true,
+      enumerable: true,
+      get: () => value,
+      set: (next: boolean) => {
+        if (next === value) return
+        value = next
+        settingsListeners.forEach((listener) => listener())
+      },
+    })
+  }
+}
+
+/** Subscribe to both values, in the shape `useSyncExternalStore` takes; answers the unsubscribe. */
+export function subscribeSettings(listener: () => void): () => void {
+  watchSettings()
+  settingsListeners.add(listener)
+  return () => {
+    settingsListeners.delete(listener)
+  }
+}
+
 /** `S.version`, the Mac's version as `/v1/health` carries it; empty when it does not. */
 export const settingsMacVersion = (): string => String(state.version || "")
 

@@ -1,4 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactElement } from "react"
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type MouseEvent,
+  type ReactElement,
+} from "react"
 import type {
   SessionRow,
   TranscriptActivity,
@@ -66,23 +75,45 @@ function TranscriptOf({ id }: { id: string }) {
   const session = useSession(id)
   const entries = useMemo<Entry[]>(() => (data ? data.entries.map((e) => ({ ...e })) : []), [data])
   const skeleton = useWait(!data && !error)
+  // `S.newestFirst` and `S.assistantIcons`, read on every draw as the original
+  // reads them, and a draw of their own when either changes.
+  const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
+  const icons = useSyncExternalStore(L.subscribeSettings, L.settingsAssistantIcons)
 
   // `settleTranscript`: a read whose signature is new is drawn, and if the
   // reader was at the bottom before it was drawn they are put back there. A
   // reader who scrolled up stays where they are. A fresh session starts empty,
-  // which is the bottom, so it opens on its newest entry.
+  // which is the bottom, so it opens at the bottom — its newest entry, or its
+  // oldest when it reads newest first, as there.
+  //
+  // "Where they are" is the number: the original replaces every node, which
+  // leaves the browser's scroll anchoring nothing to hold, so a turn arriving
+  // above the reader pushes what they were reading down. React keeps the
+  // nodes and the browser would hold them still, so the number is put back.
   const drawnSignature = skeleton || !data ? undefined : data.signature || null
   const shownSignature = useRef<string | null | undefined>(undefined)
   const stick = useRef(false)
+  const held = useRef(0)
   if (drawnSignature !== undefined && (drawnSignature === null || drawnSignature !== shownSignature.current)) {
     stick.current = atBottom()
+    held.current = scrollTop()
   }
   useLayoutEffect(() => {
     if (drawnSignature === undefined) return
     if (drawnSignature !== null && drawnSignature === shownSignature.current) return
     shownSignature.current = drawnSignature
     if (stick.current) toBottom()
+    else toScrollTop(held.current)
   }, [data, drawnSignature])
+
+  // `toggleOrder`: the transcript is drawn the other way round and goes back to
+  // its top — whoever turned it over, the settings row or `r`.
+  const drawnOrder = useRef(newestFirst)
+  useLayoutEffect(() => {
+    if (drawnOrder.current === newestFirst) return
+    drawnOrder.current = newestFirst
+    toScrollTop(0)
+  }, [newestFirst])
 
   // `liveSweepPhase`: the box carries the page-wide clock, so a newly live row
   // starts its sweep where one sweep across the page would be now.
@@ -120,11 +151,11 @@ function TranscriptOf({ id }: { id: string }) {
       else next[key] = !open
       return next
     })
-  const view: View = { who, expanded, toggle, assistant: session?.assistant }
+  const view: View = { who, expanded, toggle, assistant: session?.assistant, icons }
 
   const blocks = blocksOf(entries.filter(worthDrawing), session?.state === "working")
   let at = 0
-  const drawn = blocks.flatMap((block) => {
+  const drawn = blocks.map((block) => {
     const start = at
     at += block.rows.length
     if (block.kind === "run") return runHTML(view, block.rows, block.live, start)
@@ -132,10 +163,14 @@ function TranscriptOf({ id }: { id: string }) {
     if (block.kind === "ask") return [askHTML(view, block.rows[0], start)]
     return [entryHTML(view, block.rows[0], start)]
   })
+  // Reversed a block at a time, so a run of calls stays one thing in its own
+  // order whichever way round the transcript is read. Keys are counted from
+  // the oldest entry either way, so turning it over moves rows, not rebuilds them.
+  if (newestFirst) drawn.reverse()
   return (
     <>
       {notice}
-      {drawn}
+      {drawn.flat()}
     </>
   )
 }
@@ -145,6 +180,8 @@ interface View {
   expanded: Record<string, boolean>
   toggle: Toggle
   assistant: string | undefined
+  /** `S.assistantIcons` as this draw read it. */
+  icons: boolean
 }
 
 /** `worthDrawing`: prose always, a named call always, other tool output only with a letter or digit in it. */
@@ -279,6 +316,25 @@ function toBottom(): void {
   if (el) el.scrollTop = el.scrollHeight
 }
 
+function scrollTop(): number {
+  return document.getElementById("tx-scroll")?.scrollTop ?? 0
+}
+
+function toScrollTop(top: number): void {
+  const el = document.getElementById("tx-scroll")
+  if (el) el.scrollTop = top
+}
+
+/**
+ * `toggleOrder` (`input/keys.js`), for `r`: the transcript turns over and goes
+ * back to its top. The settings row does the same through its own setter; the
+ * transcript follows the value, not the press.
+ */
+export function toggleOrder(): void {
+  L.setSettingsNewestFirst(!L.settingsNewestFirst())
+  toScrollTop(0)
+}
+
 function firstLine(text: string): string {
   const line = String(text ?? "").split("\n")[0].replace(/\s+/g, " ").trim()
   return line || "…"
@@ -404,7 +460,7 @@ function askHTML(v: View, e: Entry, at: number) {
 
 /** `whoHTML`: the speaker, with the assistant's mark when this browser opted into it. */
 function whoHTML(v: View, role: string, at: number | undefined) {
-  const mark = role === "assistant" && L.assistantIconsOn() ? L.assistantLogoHTML(v.assistant) : ""
+  const mark = role === "assistant" && v.icons ? L.assistantLogoHTML(v.assistant) : ""
   return (
     <div className="who">
       <span className="speaker" dangerouslySetInnerHTML={{ __html: mark + L.escapeHTML(v.who[role]) }} />
