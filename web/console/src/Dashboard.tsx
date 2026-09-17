@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react"
 import type {
   CloseReason,
+  Diagnostics,
   Obligation,
   SchedulerPulse,
   ScheduleRow,
@@ -44,20 +45,37 @@ export default function Dashboard({ fleet }: { fleet: ReturnType<typeof useFleet
   )
 }
 
+/**
+ * Whether the daemon answers, from the open `/v1/health`, and the clock and
+ * port from `/v1/diagnostics`, which only this Mac's own token may read. A
+ * browser that is a paired device of its own is refused those, and the pills
+ * that need them are left out rather than shown as a failure.
+ */
 function Health() {
   const read = useMemo(() => () => client.health(), [])
   const { data, error } = usePoll(read, 15000)
+  const readDetail = useMemo(() => () => readDiagnostics(), [])
+  const { data: detail } = usePoll(readDetail, 15000)
   if (error) return <span className="pill"><i className="dot off" />daemon 連不上</span>
   if (!data) return <span className="pill"><i className="dot" />…</span>
   return (
     <>
-      <Clock pulse={data.scheduler} />
+      {detail && <Clock pulse={detail.scheduler} />}
       <span className="pill">
         <i className="dot on" />
-        {data.served_by} :{data.port}
+        {data.served_by}
+        {detail && ` :${detail.port}`}
       </span>
     </>
   )
+}
+
+/** `/v1/diagnostics`, or null when this browser may not read it. */
+async function readDiagnostics(): Promise<Diagnostics | null> {
+  const res = await fetch(client.url("/v1/diagnostics"), { credentials: "same-origin" })
+  if (res.status === 401 || res.status === 403) return null
+  if (!res.ok) throw new Error(`/v1/diagnostics answered ${res.status}`)
+  return (await res.json()) as Diagnostics
 }
 
 /**

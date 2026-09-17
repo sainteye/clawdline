@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "auth.schema.json",
+  "title": "Who may ask",
+  "description": "The gate in front of every route, pairing, the local token and the device list. A port of the Swift app's RemoteAuth and RemoteServer: the bodies, the sentences and the cookie are the ones its page (net/fetch.js, door/door.js) already reads, which is why a refusal here is the Swift envelope `{\"error\":{\"code\",\"message\",\"request_id\"}}` rather than this daemon's flat Refusal. Open without a token: the page, its bundle (/app/, /assets/, /strings/), the icons, /v1/health, /v1/strings and /v1/auth/*. Everything else needs `Authorization: Bearer <token>` or the `clawdline-next` cookie. Anything but GET and HEAD is a change, and the gate asks three more things of it: an Origin, when there is one, is this request's own (scheme, host and port); a change carried by the cookie has an Origin, and a Sec-Fetch-Site of same-origin when it has one; and its body is application/json or nothing at all, else 415 unsupported_media_type. The cookie is not called `clawdline`, as the Swift app's is, because a browser does not separate cookies by port: one name on 127.0.0.1 would make each app sign the other out.",
+  "$defs": {
+    "AuthError": {
+      "description": "The inside of every refusal the gate and the auth routes give. `code` is the part a client may branch on; `message` is English, for a person.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "request_id"],
+      "properties": {
+        "code": { "description": "unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request, not_found, store_unavailable, unsupported_media_type.", "type": "string" },
+        "message": { "type": "string" },
+        "request_id": { "description": "A fresh lowercase UUID per refusal, for finding it in a log.", "type": "string" },
+        "tries_left": { "description": "Only on wrong_code: how many guesses pairing has left, so a page need not count for itself. The count is across pairings, not per pairing: asking again does not refill it.", "type": "integer" }
+      }
+    },
+    "AuthRefusal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": { "$ref": "#/$defs/AuthError" }
+      }
+    },
+    "PairRequest": {
+      "description": "POST /v1/auth/pair. Open without a token. Three in ten minutes, then 429 rate_limited; also 429 rate_limited while five wrong codes in the last day keep pairing closed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "description": "What to call the device; trimmed, at most forty characters, `A browser` when empty.", "type": "string" }
+      }
+    },
+    "PairStarted": {
+      "description": "The answer to a pairing request. The six-digit code is never in it: it is shown on this machine, to a local-token holder, and typed into the device.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expires", "pairing_id"],
+      "properties": {
+        "expires": { "description": "Unix seconds. Two minutes after the request.", "type": "integer" },
+        "pairing_id": { "type": "string" }
+      }
+    },
+    "PairConfirm": {
+      "description": "POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left. Five wrong codes in a day, whichever pairings they were typed into, close pairing: the fifth, and every confirmation after it, is 403 expired, as are a lapsed pairing and a replaced one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "pairing_id"],
+      "properties": {
+        "code": { "type": "string" },
+        "pairing_id": { "type": "string" }
+      }
+    },
+    "AdoptRequest": {
+      "description": "POST /v1/auth/adopt: a token the page was handed in a URL fragment, traded for the cookie EventSource needs. Nothing is granted: an unknown token is 401.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token"],
+      "properties": {
+        "token": { "type": "string" }
+      }
+    },
+    "PasswordRequest": {
+      "description": "POST /v1/auth/password: a correct password mints a new read-only device. Ten wrong passwords in a day, from everybody together, and the checks still under way count toward the same ten; past it, 429 rate_limited before any hashing. `name` is cut to forty characters before it is stored or audited.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["password"],
+      "properties": {
+        "name": { "type": "string" },
+        "password": { "type": "string" }
+      }
+    },
+    "SignedIn": {
+      "description": "A new or adopted token, twice: here for a script, and in `Set-Cookie: clawdline-next=…; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict` (plus `; Secure` behind an HTTPS proxy) for a page.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "token"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "token": { "type": "string" }
+      }
+    },
+    "AuthOK": {
+      "description": "POST /v1/auth/logout, and the device routes that only change something.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" }
+      }
+    },
+    "PairedDevice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caps", "created", "id", "name"],
+      "properties": {
+        "caps": { "description": "read, and send when this device may type into a session.", "type": "array", "items": { "type": "string" } },
+        "created": { "description": "Unix seconds.", "type": "integer" },
+        "id": { "type": "string" },
+        "last_seen": { "description": "Unix seconds of the last request it made since the daemon started or last saved; absent when never.", "type": "integer" },
+        "name": { "type": "string" }
+      }
+    },
+    "DeviceList": {
+      "description": "GET /v1/auth/devices. This machine's own token only; a paired device is refused.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["configured", "devices", "password"],
+      "properties": {
+        "configured": { "description": "Whether a person has paired something or set a password — the tunnel interlock's question. This machine's own token does not count.", "type": "boolean" },
+        "devices": { "type": "array", "items": { "$ref": "#/$defs/PairedDevice" } },
+        "password": { "type": "boolean" }
+      }
+    },
+    "CapsRequest": {
+      "description": "POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other grant. Local token only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caps"],
+      "properties": {
+        "caps": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "RevokedAll": {
+      "description": "POST /v1/auth/devices/revoke-all: every paired device, the password and the open pairing. This machine's own token stays.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "ok"],
+      "properties": {
+        "count": { "type": "integer" },
+        "ok": { "type": "boolean" }
+      }
+    },
+    "BrowserRequest": {
+      "description": "POST /v1/auth/devices/browser: `clawdline open` asking for a device of its own. Local token only.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "send": { "description": "Also grant send. Off unless the person at this machine asked.", "type": "boolean" }
+      }
+    },
+    "BrowserDevice": {
+      "description": "A device minted for a browser on this machine. `url` carries the token in its fragment, which a browser never sends and never logs; the page trades it for the cookie with /v1/auth/adopt.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "token", "url"],
+      "properties": {
+        "id": { "type": "string" },
+        "token": { "type": "string" },
+        "url": { "type": "string" }
+      }
+    },
+    "PasswordSet": {
+      "description": "POST /v1/auth/devices/password. Empty clears it. Local token only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["password"],
+      "properties": {
+        "password": { "type": "string" }
+      }
+    },
+    "PairingNotice": {
+      "description": "One `pairing` event on GET /v1/auth/pairings, the server-sent stream only this machine's own token may open. It is the one place the code leaves the daemon. The stream starts with the pairing open now, if any.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "expires", "name", "pairing_id"],
+      "properties": {
+        "code": { "type": "string" },
+        "expires": { "type": "integer" },
+        "name": { "type": "string" },
+        "pairing_id": { "type": "string" }
+      }
+    }
+  }
+}

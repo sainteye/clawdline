@@ -28,6 +28,29 @@
 - 列高 219 vs 86：`canvas.spin` 沒被畫，停在 canvas 預設的 300×150（原本的註解正好警告這件事）
 - 「機器 · %801」vs「Mac 電腦 · 這台 Mac」：wire 上本來就沒有 machine，是舊版前端補的
 
+### 閘門上線之後，量 :7727 要先認證
+
+新核心照舊版的規則把每條路由都放在閘門後面，本機也沒有例外；不需要 token 的只有頁面本身、
+`/assets/`、`/strings/`、圖示、`/v1/health`、`/v1/strings` 與 `/v1/auth/*`。**沒有任何開關或環境變數能關掉它。**
+
+- **瀏覽器**：在跑 daemon 的那台機器上執行 `clawdline open`（`CLAWDLINE_NEXT_PORT`、`CLAWDLINE_NEXT_DIR`
+  要跟 daemon 一致）。它替這個瀏覽器發一個自己的裝置「Browser on this Mac」，打開
+  `http://127.0.0.1:7727/v1/auth/open#t=…`。token 在 fragment（瀏覽器不會送出、不會寫進 log），
+  那一頁用 `/v1/auth/adopt` 換成 `clawdline-next` cookie，再轉到 `/`。之後同一個瀏覽器裡的量測照舊：
+  measure2.js 在頁面裡 `fetch('/v1/…')`，同源的 760 寬 iframe 與 hidden 分頁 shim 都吃同一個 cookie。
+  這個裝置只能讀；要量 send、interrupt 這類寫入，改用 `clawdline open --send`。
+  量完在該分頁執行 `fetch('/v1/auth/logout', {method: 'POST'})`，cookie 清掉，裝置也一起撤銷。
+  沒有瀏覽器可開時，`clawdline open --print` 只印網址（網址本身就是鑰匙，別貼到別處）。
+- **cookie 名字刻意跟舊版不同**：舊版叫 `clawdline`，新版叫 `clawdline-next`。瀏覽器的 cookie 不分 port，
+  同名會互相覆蓋，同一個視窗就沒辦法同時量 7717 與 7727。
+- **curl／Node**：帶本機 token。
+  `curl -H "Authorization: Bearer $(cat ~/.config/clawdline-next/local-token)" http://127.0.0.1:7727/v1/sessions`。
+  `local-token`（0600）是 daemon 啟動時寫的，可以讀也可以 send、管理裝置——只給本機腳本用，
+  不要貼進瀏覽器，也不要拿它對真的 session 試 send。
+- **派工與 `/v1/orchestrator/*` 的寫入**：要 `-H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline-next/orchestrator-token)"`。
+  瀏覽器裡的裝置一律 403，Dashboard 的派工按鈕也是（舊版同樣不讓配對的裝置派工）。
+- 沒帶 token 的回應是舊版的原文：`401 {"error":{"code":"unauthorized","message":"This needs a paired device.",…}}`。
+
 ## 進度
 
 ### Session 清單頁（主畫面）

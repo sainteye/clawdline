@@ -32,6 +32,13 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			"a session action is a POST; a GET would make it something a link could do by accident")
 		return
 	}
+	// Typing into a session runs code on this machine, so reading is not
+	// enough: the device must have been granted send. A newly paired one has
+	// not. The Swift app's sentence and envelope, since its page reads both.
+	if !maySend(r) {
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "This device may read, and not send.")
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()

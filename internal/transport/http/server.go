@@ -58,7 +58,8 @@ type Server struct {
 	// lastScreen is the sessions the last list was built from, so a task list
 	// can place a task under its root without scanning the machine again.
 	lastScreen atomic.Pointer[screenReading]
-	// pulse is the scheduler's own account of its last pass, read by /v1/health.
+	// pulse is the scheduler's own account of its last pass, read by
+	// /v1/diagnostics.
 	pulse atomic.Pointer[app.Pulse]
 	tick  time.Duration
 }
@@ -112,8 +113,12 @@ func New(cfg config.Config) (*Server, error) {
 }
 
 func (s *Server) Handler() http.Handler {
+	// Every route is behind the gate, with no exception for loopback: see gate.go.
+	gate := s.gate()
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/auth/", s.authRoute)
 	mux.HandleFunc("/v1/health", s.health)
+	mux.HandleFunc("/v1/diagnostics", s.diagnostics)
 	// A shadow route, not the real one. It runs beside /v1/sessions so both can
 	// be read for the same machine at the same moment; the real route is taken
 	// over only once the payloads agree.
@@ -173,19 +178,41 @@ func (s *Server) Handler() http.Handler {
 		if root := WebRoot(); root != "" {
 			mux.Handle("/app/", newPage(root))
 			mux.Handle("/", &fallback{page: newPage(root), miss: s.notImplemented})
-			return mux
+			return gate.wrap(mux)
 		}
 		mux.Handle("/", http.HandlerFunc(s.notImplemented))
-		return mux
+		return gate.wrap(mux)
 	}
 	mux.Handle("/", s.proxy)
-	return mux
+	return gate.wrap(mux)
 }
 
 // health is the first route this daemon owns. It answers for itself and says so,
 // so that a reader can tell which of the two daemons replied.
+//
+// It is on the gate's open list, so it says nothing but that: no path, no
+// port, nothing about the work. What a person diagnosing this machine wants is
+// at /v1/diagnostics, behind this machine's own token.
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, contract.Health{
+		OK:       true,
+		ServedBy: servedBy,
+		At:       time.Now().Unix(),
+	})
+}
+
+// diagnostics is what health used to say about this process: where its state
+// is, which ports it holds, and the clock's last pass. Only this machine's own
+// token reads it — a paired phone has no use for a path on this disk.
+func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request", "Diagnostics are read with GET.")
+		return
+	}
+	if !requireLocal(w, r) {
+		return
+	}
+	writeJSON(w, contract.Diagnostics{
 		OK:        true,
 		Scheduler: s.schedulerPulse(),
 		ServedBy:  servedBy,
@@ -249,7 +276,7 @@ func (s *Server) StartScheduler(ctx context.Context) {
 	log.Printf("scheduler ticking every %s", tick)
 }
 
-// schedulerPulse is what /v1/health says about the clock.
+// schedulerPulse is what /v1/diagnostics says about the clock.
 //
 // Before the first pass there is no `at`, and that absence is the honest
 // answer: a daemon thirty seconds old has not had a pass yet, and reporting a

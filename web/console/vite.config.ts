@@ -19,6 +19,13 @@ export default defineConfig({
         // Server-sent events must not be buffered on the way through, or the
         // fleet list looks frozen in development and nowhere else.
         configure: (proxy) => {
+          // The daemon's gate compares Origin with its own scheme, host and
+          // port, and the browser names Vite's. Only the Origin is rewritten:
+          // Sec-Fetch-Site is still the browser's own, so a page from another
+          // origin is still refused a write.
+          proxy.on("proxyReq", (proxyReq) => {
+            if (proxyReq.getHeader("origin")) proxyReq.setHeader("origin", daemon)
+          })
           proxy.on("proxyRes", (proxyRes) => {
             if (proxyRes.headers["content-type"]?.includes("text/event-stream")) {
               proxyRes.headers["cache-control"] = "no-cache"
