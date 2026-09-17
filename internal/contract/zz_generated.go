@@ -23,6 +23,481 @@ type ActionResult struct {
 	OK     bool   `json:"ok"`
 }
 
+// What attribution this service can hold.
+type AnalyticsAttributionCapabilities struct {
+	AutomaticFeatureAttribution bool     `json:"automaticFeatureAttribution"`
+	Decisions                   []string `json:"decisions"`
+	Dimensions                  []string `json:"dimensions"`
+	FeatureAggregation          string   `json:"featureAggregation"`
+	FeatureProducer             string   `json:"featureProducer"`
+	LlmEvidence                 string   `json:"llmEvidence"`
+	Sources                     []string `json:"sources"`
+}
+
+// complete, or partial with scan_limit_reached.
+type AnalyticsAvailability struct {
+	Reason string `json:"reason,omitempty"`
+	Status string `json:"status"`
+}
+
+// A summary for one group, with the group's key.
+type AnalyticsBreakdown struct {
+	Costs    []AnalyticsCostSeries    `json:"costs"`
+	Coverage AnalyticsCoverageSummary `json:"coverage"`
+
+	// The group's value; null for rows without one.
+	Key string `json:"key"`
+
+	// Sum of the known parts of every row that knew any; null when none did.
+	MeasuredFloor int64 `json:"measuredFloor"`
+
+	// Rows by origin: manual, dispatch, schedule, follow_up.
+	Origins       AnalyticsCounts `json:"origins"`
+	Rows          int64           `json:"rows"`
+	ScheduledRuns int64           `json:"scheduledRuns"`
+
+	// Sum of whole rows; null when any row is incomplete or there are none.
+	StrictTotal       int64                    `json:"strictTotal"`
+	TokenPartsUnknown AnalyticsCounts          `json:"tokenPartsUnknown"`
+	TokenRowsUnknown  int64                    `json:"tokenRowsUnknown"`
+	Tokens            AnalyticsTokens          `json:"tokens"`
+	UnavailableCost   AnalyticsUnavailableCost `json:"unavailableCost"`
+}
+
+// The query language this service accepts.
+type AnalyticsCapabilities struct {
+	Attribution    AnalyticsAttributionCapabilities `json:"attribution"`
+	Buckets        []string                         `json:"buckets"`
+	Exports        []string                         `json:"exports"`
+	Filters        []string                         `json:"filters"`
+	GroupBy        []string                         `json:"groupBy"`
+	MaxPageSize    int64                            `json:"maxPageSize"`
+	MaxScannedRows int64                            `json:"maxScannedRows"`
+	Views          []string                         `json:"views"`
+}
+
+// The Feature classifier; this daemon runs none, so `configured` is false and
+// nothing else is sent.
+type AnalyticsClassifier struct {
+	Configured bool    `json:"configured"`
+	ID         string  `json:"id,omitempty"`
+	Threshold  float64 `json:"threshold,omitempty"`
+	Version    string  `json:"version,omitempty"`
+}
+
+// Output against the equal previous range. `status` is comparable or
+// unavailable; `reason` is closed_range_required, range_truncated,
+// no_previous_data or incomplete_output.
+type AnalyticsComparison struct {
+	Absolute     int64              `json:"absolute,omitempty"`
+	Current      int64              `json:"current,omitempty"`
+	CurrentRange *AnalyticsDayRange `json:"currentRange,omitempty"`
+
+	// Null when the previous output was 0.
+	Percent       float64            `json:"percent"`
+	PercentReason *string            `json:"percentReason"`
+	Previous      int64              `json:"previous,omitempty"`
+	PreviousRange *AnalyticsDayRange `json:"previousRange"`
+	Reason        string             `json:"reason,omitempty"`
+	Status        string             `json:"status"`
+}
+
+// One (unit, basis) cost series.
+type AnalyticsCostSeries struct {
+	// list_price_estimate, published_rate_estimate, provider_actual or unknown.
+	Basis            string   `json:"basis"`
+	PriceSnapshotIds []string `json:"priceSnapshotIds"`
+	Rows             int64    `json:"rows"`
+
+	// USD or credits.
+	Unit  string  `json:"unit"`
+	Value float64 `json:"value"`
+}
+
+// A map, keyed by name, of counts. contract-gen has no map type, so the
+// generated type is empty and a reader indexes it by key.
+type AnalyticsCounts struct {
+}
+
+// A set of rows' coverage, with its verdict.
+type AnalyticsCoverage struct {
+	CompleteRows int64           `json:"completeRows"`
+	PartialRows  int64           `json:"partialRows"`
+	Reasons      AnalyticsCounts `json:"reasons"`
+	Rows         int64           `json:"rows"`
+	States       AnalyticsCounts `json:"states"`
+
+	// unavailable, complete or partial.
+	Status            string `json:"status"`
+	UnknownOutputRuns int64  `json:"unknownOutputRuns"`
+}
+
+// How much of a set of rows could be measured.
+type AnalyticsCoverageSummary struct {
+	// Rows by named coverage reason.
+	Reasons AnalyticsCounts `json:"reasons"`
+
+	// Rows by coverage: complete, partial, source_missing.
+	States AnalyticsCounts `json:"states"`
+
+	// Rows by token part that was unknown; only parts with a count appear.
+	TokenPartsUnknown AnalyticsCounts `json:"tokenPartsUnknown"`
+
+	// Rows with at least one unknown token part.
+	TokenRowsUnknown int64 `json:"tokenRowsUnknown"`
+}
+
+// A from/to pair of local days.
+type AnalyticsDayRange struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// One Feature with one unambiguous accepted head. `usageByRole` is open:
+// implementation, review and undeclared readings.
+type AnalyticsFeature struct {
+	Coverage          AnalyticsCoverage       `json:"coverage"`
+	ID                string                  `json:"id"`
+	Label             string                  `json:"label"`
+	Output            int64                   `json:"output"`
+	Project           AnalyticsFeatureProject `json:"project"`
+	Runs              int64                   `json:"runs"`
+	UnknownOutputRuns int64                   `json:"unknownOutputRuns"`
+	UsageByRole       AnalyticsCounts         `json:"usageByRole"`
+}
+
+// The Project a Feature belongs to.
+type AnalyticsFeatureProject struct {
+	Icon   *Icon  `json:"icon,omitempty"`
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// Accepted Feature attribution. This daemon records none, so `groups` is empty
+// and every run is the Unknown Feature.
+type AnalyticsFeatures struct {
+	AutomaticAttribution bool                  `json:"automaticAttribution"`
+	Classifier           AnalyticsClassifier   `json:"classifier"`
+	Groups               []AnalyticsFeature    `json:"groups"`
+	Policy               string                `json:"policy"`
+	RoleEvidence         AnalyticsRoleEvidence `json:"roleEvidence"`
+
+	// available or no_accepted_attribution.
+	Status  string                  `json:"status"`
+	Unknown AnalyticsUnknownFeature `json:"unknown"`
+}
+
+// How recent the whole store is.
+type AnalyticsFreshness struct {
+	AgeSeconds       int64  `json:"ageSeconds"`
+	GeneratedAt      string `json:"generatedAt"`
+	LatestObservedAt string `json:"latestObservedAt"`
+	ScanTruncated    bool   `json:"scanTruncated"`
+
+	// empty, current or stale (older than 600 s).
+	Status string `json:"status"`
+}
+
+// Whether a Project could be named.
+type AnalyticsIdentity struct {
+	Reasons []string `json:"reasons"`
+
+	// available or unavailable.
+	Status string `json:"status"`
+}
+
+// One operational clue: top_mover, context_to_output, coverage_degradation or
+// cost_concentration. At most four, in that order.
+type AnalyticsInsight struct {
+	Detail string `json:"detail"`
+	Kind   string `json:"kind"`
+
+	// Absent for coverage_degradation.
+	ProjectID string `json:"projectId,omitempty"`
+	Title     string `json:"title"`
+}
+
+// Runs by role; scheduled work is never guessed as root or child.
+type AnalyticsLineage struct {
+	ChildRuns     int64  `json:"childRuns"`
+	Reason        string `json:"reason"`
+	RootRuns      int64  `json:"rootRuns"`
+	ScheduledRuns int64  `json:"scheduledRuns"`
+
+	// available, partial or unavailable.
+	Status      string `json:"status"`
+	UnknownRuns int64  `json:"unknownRuns"`
+}
+
+// One slice of a Project's assistant or work mix.
+type AnalyticsMix struct {
+	Label             string `json:"label"`
+	Output            int64  `json:"output"`
+	Runs              int64  `json:"runs"`
+	UnknownOutputRuns int64  `json:"unknownOutputRuns"`
+}
+
+// Where the next page starts.
+type AnalyticsPagination struct {
+	HasMore bool  `json:"hasMore"`
+	Limit   int64 `json:"limit"`
+
+	// An opaque continuation; null on the last page.
+	NextCursor string `json:"nextCursor"`
+}
+
+// The Project Portfolio.
+type AnalyticsPortfolio struct {
+	Comparison    AnalyticsComparison    `json:"comparison"`
+	Features      AnalyticsFeatures      `json:"features"`
+	Insights      []AnalyticsInsight     `json:"insights"`
+	PrimarySignal string                 `json:"primarySignal"`
+	Projects      []AnalyticsProject     `json:"projects"`
+	Runs          int64                  `json:"runs"`
+	ScheduledWork AnalyticsScheduledWork `json:"scheduledWork"`
+	SchemaVersion int64                  `json:"schemaVersion"`
+	ScoreWarning  string                 `json:"scoreWarning"`
+}
+
+// Which list-price table priced the rows.
+type AnalyticsPriceSnapshot struct {
+	ActiveID    string   `json:"activeId"`
+	Meaning     string   `json:"meaning"`
+	ObservedIds []string `json:"observedIds"`
+}
+
+// One Project in the portfolio, ranked by generated output.
+type AnalyticsProject struct {
+	AssistantMix []AnalyticsMix       `json:"assistantMix"`
+	Comparison   AnalyticsComparison  `json:"comparison"`
+	Cost         AnalyticsProjectCost `json:"cost"`
+	Coverage     AnalyticsCoverage    `json:"coverage"`
+
+	// project-<16 hex>, or unknown-project.
+	ID       string            `json:"id"`
+	Identity AnalyticsIdentity `json:"identity"`
+	Label    string            `json:"label"`
+	Lineage  AnalyticsLineage  `json:"lineage"`
+	Output   int64             `json:"output"`
+	Rank     int64             `json:"rank"`
+
+	// Up to six rows, newest first, with `project` set to this Project's label.
+	RecentWork []AnalyticsRow `json:"recentWork"`
+
+	// Distinct tasks, or distinct sessions without one.
+	Runs              int64                  `json:"runs"`
+	ScheduledOutput   int64                  `json:"scheduledOutput"`
+	ScheduledRuns     int64                  `json:"scheduledRuns"`
+	TokenPartsUnknown AnalyticsCounts        `json:"tokenPartsUnknown"`
+	Tokens            AnalyticsTokens        `json:"tokens"`
+	Trend             []AnalyticsTrendBucket `json:"trend"`
+	UnknownOutputRuns int64                  `json:"unknownOutputRuns"`
+	WorkMix           []AnalyticsMix         `json:"workMix"`
+}
+
+// Claude Code's comparable cost for a Project. unavailable carries a reason:
+// no_claude_code_usage, partial_cost_coverage, no_cost_series or
+// mixed_cost_series.
+type AnalyticsProjectCost struct {
+	Assistant       string  `json:"assistant"`
+	Basis           string  `json:"basis,omitempty"`
+	Reason          string  `json:"reason,omitempty"`
+	Rows            int64   `json:"rows,omitempty"`
+	Status          string  `json:"status"`
+	UnavailableRows int64   `json:"unavailableRows,omitempty"`
+	Unit            string  `json:"unit,omitempty"`
+	Value           float64 `json:"value,omitempty"`
+}
+
+// The inclusive local dates asked for.
+type AnalyticsRange struct {
+	From string `json:"from"`
+
+	// IANA zone.
+	Timezone string `json:"timezone"`
+	To       string `json:"to"`
+}
+
+// How recent the matched rows are.
+type AnalyticsRangeFreshness struct {
+	AgeSeconds  int64  `json:"ageSeconds"`
+	DataThrough string `json:"dataThrough"`
+
+	// empty, current or historical.
+	Status string `json:"status"`
+}
+
+// How much review evidence was read.
+type AnalyticsReviewReceipts struct {
+	Limit     int64  `json:"limit"`
+	Read      int64  `json:"read"`
+	Status    string `json:"status"`
+	Truncated bool   `json:"truncated"`
+}
+
+// Evidence behind the per-role split.
+type AnalyticsRoleEvidence struct {
+	ReviewReceipts AnalyticsReviewReceipts `json:"reviewReceipts"`
+}
+
+// One usage interval. On this daemon an interval is one conversation as its own
+// record accounts for it. Prompts, session ids and paths are never sent.
+type AnalyticsRow struct {
+	// claude or codex.
+	Assistant string            `json:"assistant"`
+	Cost      *AnalyticsRowCost `json:"cost"`
+
+	// complete, partial or source_missing.
+	Coverage        string   `json:"coverage"`
+	CoverageReasons []string `json:"coverageReasons"`
+
+	// Null while the conversation is still being written.
+	EndedAt string `json:"endedAt"`
+
+	// The interval key.
+	ID string `json:"id"`
+
+	// excludes_cache (Claude) or includes_cache (Codex).
+	InputBasis        string              `json:"inputBasis"`
+	Lineage           AnalyticsRowLineage `json:"lineage"`
+	MeasuredFloor     int64               `json:"measuredFloor"`
+	MissingCostReason string              `json:"missingCostReason"`
+	Model             string              `json:"model"`
+
+	// manual, dispatch or schedule.
+	Origin string `json:"origin"`
+
+	// The Project's final name; null for a missing key or a managed worktree.
+	Project        string `json:"project"`
+	Reconciliation string `json:"reconciliation"`
+	ScheduleID     string `json:"scheduleId"`
+
+	// The record's own total, as it counts.
+	SourceTotal int64 `json:"sourceTotal"`
+
+	// ISO 8601, UTC, whole seconds.
+	StartedAt         string          `json:"startedAt"`
+	StrictTotal       int64           `json:"strictTotal"`
+	TaskID            string          `json:"taskId"`
+	Tokens            AnalyticsTokens `json:"tokens"`
+	UnknownTokenParts []string        `json:"unknownTokenParts"`
+}
+
+// A recorded or estimated cost.
+type AnalyticsRowCost struct {
+	Basis           string  `json:"basis"`
+	PriceSnapshotID string  `json:"priceSnapshotId"`
+	Unit            string  `json:"unit"`
+	Value           float64 `json:"value"`
+}
+
+// What is known of the row's place in a task graph; every key may be null.
+type AnalyticsRowLineage struct {
+	Attempt         int64  `json:"attempt"`
+	Disposition     string `json:"disposition"`
+	GraphID         string `json:"graphId"`
+	LandingState    string `json:"landingState"`
+	LandingVerified bool   `json:"landingVerified"`
+	ParentTaskID    string `json:"parentTaskId"`
+	RetryOf         string `json:"retryOf"`
+}
+
+// One schedule's work.
+type AnalyticsSchedule struct {
+	ActiveDays        int64             `json:"activeDays"`
+	Coverage          AnalyticsCoverage `json:"coverage"`
+	ID                string            `json:"id"`
+	Label             string            `json:"label"`
+	LastRunAt         string            `json:"lastRunAt"`
+	Output            int64             `json:"output"`
+	Runs              int64             `json:"runs"`
+	UnknownOutputRuns int64             `json:"unknownOutputRuns"`
+}
+
+// Work with explicit schedule identity.
+type AnalyticsScheduledWork struct {
+	Output            int64                    `json:"output"`
+	Reason            string                   `json:"reason"`
+	Runs              int64                    `json:"runs"`
+	Schedules         []AnalyticsSchedule      `json:"schedules"`
+	Status            string                   `json:"status"`
+	UnknownOutputRuns int64                    `json:"unknownOutputRuns"`
+	UnknownSchedule   AnalyticsUnknownSchedule `json:"unknownSchedule"`
+}
+
+// `UsageQueryService.summary` over a set of rows.
+type AnalyticsSummary struct {
+	Costs    []AnalyticsCostSeries    `json:"costs"`
+	Coverage AnalyticsCoverageSummary `json:"coverage"`
+
+	// Sum of the known parts of every row that knew any; null when none did.
+	MeasuredFloor int64 `json:"measuredFloor"`
+
+	// Rows by origin: manual, dispatch, schedule, follow_up.
+	Origins       AnalyticsCounts `json:"origins"`
+	Rows          int64           `json:"rows"`
+	ScheduledRuns int64           `json:"scheduledRuns"`
+
+	// Sum of whole rows; null when any row is incomplete or there are none.
+	StrictTotal       int64                    `json:"strictTotal"`
+	TokenPartsUnknown AnalyticsCounts          `json:"tokenPartsUnknown"`
+	TokenRowsUnknown  int64                    `json:"tokenRowsUnknown"`
+	Tokens            AnalyticsTokens          `json:"tokens"`
+	UnavailableCost   AnalyticsUnavailableCost `json:"unavailableCost"`
+}
+
+// The four token parts. A part no row could measure is null, never 0.
+type AnalyticsTokens struct {
+	CacheRead  int64 `json:"cacheRead"`
+	CacheWrite int64 `json:"cacheWrite"`
+	InputNew   int64 `json:"inputNew"`
+	Output     int64 `json:"output"`
+}
+
+// One bucket of the trend; empty buckets are not sent.
+type AnalyticsTrendBucket struct {
+	// YYYY-MM-DD for day and week (weeks start on Sunday), YYYY-MM for month.
+	Bucket        string                   `json:"bucket"`
+	Coverage      AnalyticsCoverageSummary `json:"coverage"`
+	MeasuredFloor int64                    `json:"measuredFloor"`
+	StrictTotal   int64                    `json:"strictTotal"`
+	Tokens        AnalyticsTokens          `json:"tokens"`
+}
+
+// Rows without a cost, by why.
+type AnalyticsUnavailableCost struct {
+	// plan_billed, no_price_for_model, unknown_model or no_cost_recorded.
+	Reasons AnalyticsCounts `json:"reasons"`
+	Rows    int64           `json:"rows"`
+}
+
+// Views this service refuses to infer.
+type AnalyticsUnavailableDimensions struct {
+	Dimensions          []string `json:"dimensions"`
+	FeatureAvailability string   `json:"featureAvailability"`
+	FeatureView         bool     `json:"featureView"`
+	GraphView           bool     `json:"graphView"`
+	LandingView         bool     `json:"landingView"`
+	Reason              string   `json:"reason"`
+	RetryView           bool     `json:"retryView"`
+}
+
+// What the named Features do not account for.
+type AnalyticsUnknownFeature struct {
+	Label             string `json:"label"`
+	Output            int64  `json:"output"`
+	Reason            string `json:"reason"`
+	Runs              int64  `json:"runs"`
+	UnknownOutputRuns int64  `json:"unknownOutputRuns"`
+}
+
+// Scheduled runs with no schedule identity.
+type AnalyticsUnknownSchedule struct {
+	Reason string `json:"reason"`
+	Runs   int64  `json:"runs"`
+}
+
 type Assistant string
 
 const (
@@ -443,6 +918,60 @@ type Project struct {
 
 	// A reading, not a stored count, so it cannot drift from the thing it describes.
 	SessionCount int64 `json:"sessionCount"`
+}
+
+// Which worktrees under one Project finished a Feature. With no accepted
+// Feature attribution on this daemon, `worktrees` is always empty; the read
+// still resolves the Project.
+type ProjectWorktrees struct {
+	Excluded      ProjectWorktreesExcluded `json:"excluded"`
+	GeneratedAt   string                   `json:"generatedAt"`
+	OutcomeRule   string                   `json:"outcomeRule"`
+	Policy        string                   `json:"policy"`
+	Project       ProjectWorktreesProject  `json:"project"`
+	Range         AnalyticsRange           `json:"range"`
+	Read          ProjectWorktreesRead     `json:"read"`
+	SchemaVersion int64                    `json:"schemaVersion"`
+
+	// available or partial.
+	Status       string                       `json:"status"`
+	Unattributed ProjectWorktreesUnattributed `json:"unattributed"`
+
+	// Per-worktree outcomes (open objects).
+	Worktrees []AnalyticsCounts `json:"worktrees"`
+}
+
+// Worktrees left out for having no accepted Feature.
+type ProjectWorktreesExcluded struct {
+	Reason                  string `json:"reason"`
+	WorktreesWithoutFeature int64  `json:"worktreesWithoutFeature"`
+}
+
+// The Project resolved.
+type ProjectWorktreesProject struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// What a project-worktrees read covered.
+type ProjectWorktreesRead struct {
+	FeatureRows    int64 `json:"featureRows"`
+	MaxScannedRows int64 `json:"maxScannedRows"`
+	ProjectRows    int64 `json:"projectRows"`
+	Rows           int64 `json:"rows"`
+	Truncated      bool  `json:"truncated"`
+	WorktreeRows   int64 `json:"worktreeRows"`
+}
+
+// GET /v1/orchestrator/usage/project-worktrees.
+type ProjectWorktreesReply struct {
+	ProjectWorktrees ProjectWorktrees `json:"projectWorktrees"`
+}
+
+// Managed worktrees whose rows name no Project.
+type ProjectWorktreesUnattributed struct {
+	Reasons   AnalyticsCounts `json:"reasons"`
+	Worktrees int64           `json:"worktrees"`
 }
 
 // Every refusal on this daemon has this shape. A caller reads `error` as the
@@ -1076,6 +1605,57 @@ type TranscriptTruncation struct {
 
 	// transcript_byte_budget.
 	Reason string `json:"reason"`
+}
+
+// The Swift app's `UsageQueryService` payload. The lossless `.json` export is
+// this object unwrapped, with every matched row, `truncated`, and no
+// `pagination`.
+type UsageAnalytics struct {
+	Availability   AnalyticsAvailability    `json:"availability"`
+	Breakdown      []AnalyticsBreakdown     `json:"breakdown"`
+	Bucket         string                   `json:"bucket"`
+	Capabilities   AnalyticsCapabilities    `json:"capabilities"`
+	Corrections    int64                    `json:"corrections"`
+	Coverage       AnalyticsCoverageSummary `json:"coverage"`
+	Freshness      AnalyticsFreshness       `json:"freshness"`
+	GroupBy        string                   `json:"groupBy"`
+	Pagination     *AnalyticsPagination     `json:"pagination,omitempty"`
+	Portfolio      AnalyticsPortfolio       `json:"portfolio"`
+	PriceSnapshot  AnalyticsPriceSnapshot   `json:"priceSnapshot"`
+	Range          AnalyticsRange           `json:"range"`
+	RangeFreshness AnalyticsRangeFreshness  `json:"rangeFreshness"`
+	RowCount       int64                    `json:"rowCount"`
+	Rows           []AnalyticsRow           `json:"rows"`
+	SchemaVersion  int64                    `json:"schemaVersion"`
+	Totals         AnalyticsSummary         `json:"totals"`
+	Trend          []AnalyticsTrendBucket   `json:"trend"`
+
+	// The `.json` export only.
+	Truncated             bool                           `json:"truncated,omitempty"`
+	UnavailableDimensions AnalyticsUnavailableDimensions `json:"unavailableDimensions"`
+
+	// overview or agent_work; echoed only.
+	View string `json:"view"`
+}
+
+// A refused Usage read.
+type UsageAnalyticsRefusal struct {
+	Error UsageAnalyticsRefusalBody `json:"error"`
+}
+
+// The Swift app's refusal envelope, which the Usage page reads its code from.
+// Codes: bad_request, usage_analytics_busy (503, with Retry-After),
+// export_too_large (413), json_serialization_failed, ambiguous_project (409),
+// project_not_found (404).
+type UsageAnalyticsRefusalBody struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id"`
+}
+
+// GET /v1/orchestrator/usage/analytics.
+type UsageAnalyticsReply struct {
+	Usage UsageAnalytics `json:"usage"`
 }
 
 type UsageReport struct {

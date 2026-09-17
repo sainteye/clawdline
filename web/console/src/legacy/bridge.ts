@@ -286,3 +286,6 @@ export * from "./overlay-bridge.js"
 
 /* The settings page's part of the bridge. */
 export * from "./settings-bridge.js"
+
+/* The usage page's part of the bridge. */
+export * from "./usage-bridge.js"

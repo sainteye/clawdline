@@ -151,6 +151,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/strings", s.strings)
 	mux.HandleFunc("/v1/settings", s.settingsRoute)
 	mux.HandleFunc("/v1/orchestrator/usage", s.usageRoute)
+	mux.HandleFunc("/v1/orchestrator/usage/analytics", s.usageAnalyticsRoute)
+	mux.HandleFunc("/v1/orchestrator/usage/analytics.csv", s.usageAnalyticsRoute)
+	mux.HandleFunc("/v1/orchestrator/usage/analytics.json", s.usageAnalyticsRoute)
+	mux.HandleFunc("/v1/orchestrator/usage/project-worktrees", s.usageWorktreesRoute)
 	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {

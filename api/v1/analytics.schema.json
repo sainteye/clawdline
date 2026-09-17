@@ -1,0 +1,1757 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "analytics.schema.json",
+  "title": "The Usage page: Project Portfolio analytics",
+  "description": "GET /v1/orchestrator/usage/analytics (and its .csv and .json exports) and GET /v1/orchestrator/usage/project-worktrees, in the Swift app's shapes. The rules are its UsageQueryService's; the rows are read from the assistants' own records, one conversation per row, limited to conversations a terminal showed (Claude `entrypoint: cli`, Codex user threads other than `exec`) or a Swift task opened.",
+  "$defs": {
+    "AnalyticsCounts": {
+      "description": "A map, keyed by name, of counts. contract-gen has no map type, so the generated type is empty and a reader indexes it by key.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "properties": {}
+    },
+    "AnalyticsTokens": {
+      "description": "The four token parts. A part no row could measure is null, never 0.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputNew": {
+          "type": "integer",
+          "nullable": true
+        },
+        "output": {
+          "type": "integer",
+          "nullable": true
+        },
+        "cacheRead": {
+          "type": "integer",
+          "nullable": true
+        },
+        "cacheWrite": {
+          "type": "integer",
+          "nullable": true
+        }
+      },
+      "required": [
+        "cacheRead",
+        "cacheWrite",
+        "inputNew",
+        "output"
+      ]
+    },
+    "AnalyticsCoverageSummary": {
+      "description": "How much of a set of rows could be measured.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "states": {
+          "description": "Rows by coverage: complete, partial, source_missing.",
+          "$ref": "#/$defs/AnalyticsCounts"
+        },
+        "reasons": {
+          "description": "Rows by named coverage reason.",
+          "$ref": "#/$defs/AnalyticsCounts"
+        },
+        "tokenRowsUnknown": {
+          "description": "Rows with at least one unknown token part.",
+          "type": "integer"
+        },
+        "tokenPartsUnknown": {
+          "description": "Rows by token part that was unknown; only parts with a count appear.",
+          "$ref": "#/$defs/AnalyticsCounts"
+        }
+      },
+      "required": [
+        "reasons",
+        "states",
+        "tokenPartsUnknown",
+        "tokenRowsUnknown"
+      ]
+    },
+    "AnalyticsCostSeries": {
+      "description": "One (unit, basis) cost series.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unit": {
+          "description": "USD or credits.",
+          "type": "string"
+        },
+        "basis": {
+          "description": "list_price_estimate, published_rate_estimate, provider_actual or unknown.",
+          "type": "string"
+        },
+        "value": {
+          "type": "number"
+        },
+        "rows": {
+          "type": "integer"
+        },
+        "priceSnapshotIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "basis",
+        "priceSnapshotIds",
+        "rows",
+        "unit",
+        "value"
+      ]
+    },
+    "AnalyticsUnavailableCost": {
+      "description": "Rows without a cost, by why.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "type": "integer"
+        },
+        "reasons": {
+          "description": "plan_billed, no_price_for_model, unknown_model or no_cost_recorded.",
+          "$ref": "#/$defs/AnalyticsCounts"
+        }
+      },
+      "required": [
+        "reasons",
+        "rows"
+      ]
+    },
+    "AnalyticsSummary": {
+      "description": "`UsageQueryService.summary` over a set of rows.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "type": "integer"
+        },
+        "tokens": {
+          "$ref": "#/$defs/AnalyticsTokens"
+        },
+        "tokenPartsUnknown": {
+          "$ref": "#/$defs/AnalyticsCounts"
+        },
+        "tokenRowsUnknown": {
+          "type": "integer"
+        },
+        "measuredFloor": {
+          "description": "Sum of the known parts of every row that knew any; null when none did.",
+          "type": "integer",
+          "nullable": true
+        },
+        "strictTotal": {
+          "description": "Sum of whole rows; null when any row is incomplete or there are none.",
+          "type": "integer",
+          "nullable": true
+        },
+        "costs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsCostSeries"
+          }
+        },
+        "unavailableCost": {
+          "$ref": "#/$defs/AnalyticsUnavailableCost"
+        },
+        "origins": {
+          "description": "Rows by origin: manual, dispatch, schedule, follow_up.",
+          "$ref": "#/$defs/AnalyticsCounts"
+        },
+        "scheduledRuns": {
+          "type": "integer"
+        },
+        "coverage": {
+          "$ref": "#/$defs/AnalyticsCoverageSummary"
+        }
+      },
+      "required": [
+        "costs",
+        "coverage",
+        "measuredFloor",
+        "origins",
+        "rows",
+        "scheduledRuns",
+        "strictTotal",
+        "tokenPartsUnknown",
+        "tokenRowsUnknown",
+        "tokens",
+        "unavailableCost"
+      ]
+    },
+    "AnalyticsBreakdown": {
+      "description": "A summary for one group, with the group's key.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "type": "integer"
+        },
+        "tokens": {
+          "$ref": "#/$defs/AnalyticsTokens"
+        },
+        "tokenPartsUnknown": {
+          "$ref": "#/$defs/AnalyticsCounts"
+        },
+        "tokenRowsUnknown": {
+          "type": "integer"
+        },
+        "measuredFloor": {
+          "description": "Sum of the known parts of every row that knew any; null when none did.",
+          "type": "integer",
+          "nullable": true
+        },
+        "strictTotal": {
+          "description": "Sum of whole rows; null when any row is incomplete or there are none.",
+          "type": "integer",
+          "nullable": true
+        },
+        "costs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsCostSeries"
+          }
+        },
+        "unavailableCost": {
+          "$ref": "#/$defs/AnalyticsUnavailableCost"
+        },
+        "origins": {
+          "description": "Rows by origin: manual, dispatch, schedule, follow_up.",
+          "$ref": "#/$defs/AnalyticsCounts"
+        },
+        "scheduledRuns": {
+          "type": "integer"
+        },
+        "coverage": {
+          "$ref": "#/$defs/AnalyticsCoverageSummary"
+        },
+        "key": {
+          "description": "The group's value; null for rows without one.",
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "costs",
+        "coverage",
+        "key",
+        "measuredFloor",
+        "origins",
+        "rows",
+        "scheduledRuns",
+        "strictTotal",
+        "tokenPartsUnknown",
+        "tokenRowsUnknown",
+        "tokens",
+        "unavailableCost"
+      ]
+    },
+    "AnalyticsTrendBucket": {
+      "description": "One bucket of the trend; empty buckets are not sent.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bucket": {
+          "description": "YYYY-MM-DD for day and week (weeks start on Sunday), YYYY-MM for month.",
+          "type": "string"
+        },
+        "tokens": {
+          "$ref": "#/$defs/AnalyticsTokens"
+        },
+        "measuredFloor": {
+          "type": "integer",
+          "nullable": true
+        },
+        "strictTotal": {
+          "type": "integer",
+          "nullable": true
+        },
+        "coverage": {
+          "$ref": "#/$defs/AnalyticsCoverageSummary"
+        }
+      },
+      "required": [
+        "bucket",
+        "coverage",
+        "measuredFloor",
+        "strictTotal",
+        "tokens"
+      ]
+    },
+    "AnalyticsRowCost": {
+      "description": "A recorded or estimated cost.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "basis": {
+          "type": "string"
+        },
+        "priceSnapshotId": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "basis",
+        "priceSnapshotId",
+        "unit",
+        "value"
+      ]
+    },
+    "AnalyticsRowLineage": {
+      "description": "What is known of the row's place in a task graph; every key may be null.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "graphId": {
+          "type": "string",
+          "nullable": true
+        },
+        "parentTaskId": {
+          "type": "string",
+          "nullable": true
+        },
+        "retryOf": {
+          "type": "string",
+          "nullable": true
+        },
+        "attempt": {
+          "type": "integer",
+          "nullable": true
+        },
+        "landingState": {
+          "type": "string",
+          "nullable": true
+        },
+        "landingVerified": {
+          "type": "boolean",
+          "nullable": true
+        },
+        "disposition": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "attempt",
+        "disposition",
+        "graphId",
+        "landingState",
+        "landingVerified",
+        "parentTaskId",
+        "retryOf"
+      ]
+    },
+    "AnalyticsRow": {
+      "description": "One usage interval. On this daemon an interval is one conversation as its own record accounts for it. Prompts, session ids and paths are never sent.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The interval key.",
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string",
+          "nullable": true
+        },
+        "scheduleId": {
+          "type": "string",
+          "nullable": true
+        },
+        "startedAt": {
+          "description": "ISO 8601, UTC, whole seconds.",
+          "type": "string"
+        },
+        "endedAt": {
+          "description": "Null while the conversation is still being written.",
+          "type": "string",
+          "nullable": true
+        },
+        "assistant": {
+          "description": "claude or codex.",
+          "type": "string"
+        },
+        "model": {
+          "type": "string",
+          "nullable": true
+        },
+        "origin": {
+          "description": "manual, dispatch or schedule.",
+          "type": "string"
+        },
+        "project": {
+          "description": "The Project's final name; null for a missing key or a managed worktree.",
+          "type": "string",
+          "nullable": true
+        },
+        "tokens": {
+          "$ref": "#/$defs/AnalyticsTokens"
+        },
+        "strictTotal": {
+          "type": "integer",
+          "nullable": true
+        },
+        "measuredFloor": {
+          "type": "integer",
+          "nullable": true
+        },
+        "unknownTokenParts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceTotal": {
+          "description": "The record's own total, as it counts.",
+          "type": "integer",
+          "nullable": true
+        },
+        "cost": {
+          "$ref": "#/$defs/AnalyticsRowCost",
+          "nullable": true
+        },
+        "missingCostReason": {
+          "type": "string",
+          "nullable": true
+        },
+        "coverage": {
+          "description": "complete, partial or source_missing.",
+          "type": "string"
+        },
+        "coverageReasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reconciliation": {
+          "type": "string",
+          "nullable": true
+        },
+        "inputBasis": {
+          "description": "excludes_cache (Claude) or includes_cache (Codex).",
+          "type": "string",
+          "nullable": true
+        },
+        "lineage": {
+          "$ref": "#/$defs/AnalyticsRowLineage"
+        }
+      },
+      "required": [
+        "assistant",
+        "cost",
+        "coverage",
+        "coverageReasons",
+        "endedAt",
+        "id",
+        "inputBasis",
+        "lineage",
+        "measuredFloor",
+        "missingCostReason",
+        "model",
+        "origin",
+        "project",
+        "reconciliation",
+        "scheduleId",
+        "sourceTotal",
+        "startedAt",
+        "strictTotal",
+        "taskId",
+        "tokens",
+        "unknownTokenParts"
+      ]
+    },
+    "AnalyticsRange": {
+      "description": "The inclusive local dates asked for.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "nullable": true
+        },
+        "to": {
+          "type": "string",
+          "nullable": true
+        },
+        "timezone": {
+          "description": "IANA zone.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "timezone",
+        "to"
+      ]
+    },
+    "AnalyticsFreshness": {
+      "description": "How recent the whole store is.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "generatedAt": {
+          "type": "string"
+        },
+        "latestObservedAt": {
+          "type": "string",
+          "nullable": true
+        },
+        "ageSeconds": {
+          "type": "integer",
+          "nullable": true
+        },
+        "status": {
+          "description": "empty, current or stale (older than 600 s).",
+          "type": "string"
+        },
+        "scanTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ageSeconds",
+        "generatedAt",
+        "latestObservedAt",
+        "scanTruncated",
+        "status"
+      ]
+    },
+    "AnalyticsRangeFreshness": {
+      "description": "How recent the matched rows are.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dataThrough": {
+          "type": "string",
+          "nullable": true
+        },
+        "ageSeconds": {
+          "type": "integer",
+          "nullable": true
+        },
+        "status": {
+          "description": "empty, current or historical.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ageSeconds",
+        "dataThrough",
+        "status"
+      ]
+    },
+    "AnalyticsAttributionCapabilities": {
+      "description": "What attribution this service can hold.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "featureAggregation": {
+          "type": "string"
+        },
+        "automaticFeatureAttribution": {
+          "type": "boolean"
+        },
+        "featureProducer": {
+          "type": "string"
+        },
+        "llmEvidence": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "automaticFeatureAttribution",
+        "decisions",
+        "dimensions",
+        "featureAggregation",
+        "featureProducer",
+        "llmEvidence",
+        "sources"
+      ]
+    },
+    "AnalyticsCapabilities": {
+      "description": "The query language this service accepts.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "views": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "groupBy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxPageSize": {
+          "type": "integer"
+        },
+        "maxScannedRows": {
+          "type": "integer"
+        },
+        "attribution": {
+          "$ref": "#/$defs/AnalyticsAttributionCapabilities"
+        }
+      },
+      "required": [
+        "attribution",
+        "buckets",
+        "exports",
+        "filters",
+        "groupBy",
+        "maxPageSize",
+        "maxScannedRows",
+        "views"
+      ]
+    },
+    "AnalyticsPriceSnapshot": {
+      "description": "Which list-price table priced the rows.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activeId": {
+          "type": "string"
+        },
+        "observedIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "meaning": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "activeId",
+        "meaning",
+        "observedIds"
+      ]
+    },
+    "AnalyticsPagination": {
+      "description": "Where the next page starts.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "nextCursor": {
+          "description": "An opaque continuation; null on the last page.",
+          "type": "string",
+          "nullable": true
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hasMore",
+        "limit",
+        "nextCursor"
+      ]
+    },
+    "AnalyticsUnavailableDimensions": {
+      "description": "Views this service refuses to infer.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reason": {
+          "type": "string"
+        },
+        "graphView": {
+          "type": "boolean"
+        },
+        "retryView": {
+          "type": "boolean"
+        },
+        "landingView": {
+          "type": "boolean"
+        },
+        "featureView": {
+          "type": "boolean"
+        },
+        "featureAvailability": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "dimensions",
+        "featureAvailability",
+        "featureView",
+        "graphView",
+        "landingView",
+        "reason",
+        "retryView"
+      ]
+    },
+    "AnalyticsAvailability": {
+      "description": "complete, or partial with scan_limit_reached.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "AnalyticsComparison": {
+      "description": "Output against the equal previous range. `status` is comparable or unavailable; `reason` is closed_range_required, range_truncated, no_previous_data or incomplete_output.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "current": {
+          "type": "integer"
+        },
+        "previous": {
+          "type": "integer"
+        },
+        "absolute": {
+          "type": "integer"
+        },
+        "percent": {
+          "description": "Null when the previous output was 0.",
+          "type": "number",
+          "nullable": true
+        },
+        "percentReason": {
+          "type": "string",
+          "nullable": true
+        },
+        "currentRange": {
+          "$ref": "#/$defs/AnalyticsDayRange"
+        },
+        "previousRange": {
+          "$ref": "#/$defs/AnalyticsDayRange",
+          "nullable": true
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "AnalyticsDayRange": {
+      "description": "A from/to pair of local days.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "nullable": true
+        },
+        "to": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "AnalyticsIdentity": {
+      "description": "Whether a Project could be named.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "description": "available or unavailable.",
+          "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "reasons",
+        "status"
+      ]
+    },
+    "AnalyticsProjectCost": {
+      "description": "Claude Code's comparable cost for a Project. unavailable carries a reason: no_claude_code_usage, partial_cost_coverage, no_cost_series or mixed_cost_series.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "basis": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "integer"
+        },
+        "unavailableRows": {
+          "type": "integer"
+        },
+        "assistant": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "assistant",
+        "status"
+      ]
+    },
+    "AnalyticsCoverage": {
+      "description": "A set of rows' coverage, with its verdict.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "description": "unavailable, complete or partial.",
+          "type": "string"
+        },
+        "rows": {
+          "type": "integer"
+        },
+        "completeRows": {
+          "type": "integer"
+        },
+        "partialRows": {
+          "type": "integer"
+        },
+        "unknownOutputRuns": {
+          "type": "integer"
+        },
+        "states": {
+          "$ref": "#/$defs/AnalyticsCounts"
+        },
+        "reasons": {
+          "$ref": "#/$defs/AnalyticsCounts"
+        }
+      },
+      "required": [
+        "completeRows",
+        "partialRows",
+        "reasons",
+        "rows",
+        "states",
+        "status",
+        "unknownOutputRuns"
+      ]
+    },
+    "AnalyticsLineage": {
+      "description": "Runs by role; scheduled work is never guessed as root or child.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "description": "available, partial or unavailable.",
+          "type": "string"
+        },
+        "rootRuns": {
+          "type": "integer"
+        },
+        "childRuns": {
+          "type": "integer"
+        },
+        "scheduledRuns": {
+          "type": "integer"
+        },
+        "unknownRuns": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "required": [
+        "childRuns",
+        "reason",
+        "rootRuns",
+        "scheduledRuns",
+        "status",
+        "unknownRuns"
+      ]
+    },
+    "AnalyticsMix": {
+      "description": "One slice of a Project's assistant or work mix.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "runs": {
+          "type": "integer"
+        },
+        "output": {
+          "type": "integer",
+          "nullable": true
+        },
+        "unknownOutputRuns": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "label",
+        "output",
+        "runs",
+        "unknownOutputRuns"
+      ]
+    },
+    "AnalyticsProject": {
+      "description": "One Project in the portfolio, ranked by generated output.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "project-<16 hex>, or unknown-project.",
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/AnalyticsIdentity"
+        },
+        "rank": {
+          "type": "integer"
+        },
+        "output": {
+          "type": "integer",
+          "nullable": true
+        },
+        "unknownOutputRuns": {
+          "type": "integer"
+        },
+        "tokens": {
+          "$ref": "#/$defs/AnalyticsTokens"
+        },
+        "tokenPartsUnknown": {
+          "$ref": "#/$defs/AnalyticsCounts"
+        },
+        "runs": {
+          "description": "Distinct tasks, or distinct sessions without one.",
+          "type": "integer"
+        },
+        "scheduledRuns": {
+          "type": "integer"
+        },
+        "scheduledOutput": {
+          "type": "integer",
+          "nullable": true
+        },
+        "cost": {
+          "$ref": "#/$defs/AnalyticsProjectCost"
+        },
+        "coverage": {
+          "$ref": "#/$defs/AnalyticsCoverage"
+        },
+        "lineage": {
+          "$ref": "#/$defs/AnalyticsLineage"
+        },
+        "comparison": {
+          "$ref": "#/$defs/AnalyticsComparison"
+        },
+        "trend": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsTrendBucket"
+          }
+        },
+        "assistantMix": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsMix"
+          }
+        },
+        "workMix": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsMix"
+          }
+        },
+        "recentWork": {
+          "description": "Up to six rows, newest first, with `project` set to this Project's label.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsRow"
+          }
+        }
+      },
+      "required": [
+        "assistantMix",
+        "comparison",
+        "cost",
+        "coverage",
+        "id",
+        "identity",
+        "label",
+        "lineage",
+        "output",
+        "rank",
+        "recentWork",
+        "runs",
+        "scheduledOutput",
+        "scheduledRuns",
+        "tokenPartsUnknown",
+        "tokens",
+        "trend",
+        "unknownOutputRuns",
+        "workMix"
+      ]
+    },
+    "AnalyticsSchedule": {
+      "description": "One schedule's work.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "runs": {
+          "type": "integer"
+        },
+        "output": {
+          "type": "integer",
+          "nullable": true
+        },
+        "unknownOutputRuns": {
+          "type": "integer"
+        },
+        "activeDays": {
+          "type": "integer"
+        },
+        "lastRunAt": {
+          "type": "string",
+          "nullable": true
+        },
+        "coverage": {
+          "$ref": "#/$defs/AnalyticsCoverage"
+        }
+      },
+      "required": [
+        "activeDays",
+        "coverage",
+        "id",
+        "label",
+        "lastRunAt",
+        "output",
+        "runs",
+        "unknownOutputRuns"
+      ]
+    },
+    "AnalyticsUnknownSchedule": {
+      "description": "Scheduled runs with no schedule identity.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runs": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "runs"
+      ]
+    },
+    "AnalyticsScheduledWork": {
+      "description": "Work with explicit schedule identity.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "nullable": true
+        },
+        "runs": {
+          "type": "integer"
+        },
+        "output": {
+          "type": "integer",
+          "nullable": true
+        },
+        "unknownOutputRuns": {
+          "type": "integer"
+        },
+        "schedules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsSchedule"
+          }
+        },
+        "unknownSchedule": {
+          "$ref": "#/$defs/AnalyticsUnknownSchedule"
+        }
+      },
+      "required": [
+        "output",
+        "reason",
+        "runs",
+        "schedules",
+        "status",
+        "unknownOutputRuns",
+        "unknownSchedule"
+      ]
+    },
+    "AnalyticsClassifier": {
+      "description": "The Feature classifier; this daemon runs none, so `configured` is false and nothing else is sent.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "threshold": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "configured"
+      ]
+    },
+    "AnalyticsReviewReceipts": {
+      "description": "How much review evidence was read.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "read": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "limit",
+        "read",
+        "status",
+        "truncated"
+      ]
+    },
+    "AnalyticsRoleEvidence": {
+      "description": "Evidence behind the per-role split.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reviewReceipts": {
+          "$ref": "#/$defs/AnalyticsReviewReceipts"
+        }
+      },
+      "required": [
+        "reviewReceipts"
+      ]
+    },
+    "AnalyticsFeatureProject": {
+      "description": "The Project a Feature belongs to.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "nullable": true
+        },
+        "label": {
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "AnalyticsFeature": {
+      "description": "One Feature with one unambiguous accepted head. `usageByRole` is open: implementation, review and undeclared readings.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/AnalyticsFeatureProject"
+        },
+        "runs": {
+          "type": "integer"
+        },
+        "output": {
+          "type": "integer",
+          "nullable": true
+        },
+        "unknownOutputRuns": {
+          "type": "integer"
+        },
+        "usageByRole": {
+          "$ref": "#/$defs/AnalyticsCounts"
+        },
+        "coverage": {
+          "$ref": "#/$defs/AnalyticsCoverage"
+        }
+      },
+      "required": [
+        "coverage",
+        "id",
+        "label",
+        "output",
+        "project",
+        "runs",
+        "unknownOutputRuns",
+        "usageByRole"
+      ]
+    },
+    "AnalyticsUnknownFeature": {
+      "description": "What the named Features do not account for.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "runs": {
+          "type": "integer"
+        },
+        "output": {
+          "type": "integer",
+          "nullable": true
+        },
+        "unknownOutputRuns": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "output",
+        "reason",
+        "runs",
+        "unknownOutputRuns"
+      ]
+    },
+    "AnalyticsFeatures": {
+      "description": "Accepted Feature attribution. This daemon records none, so `groups` is empty and every run is the Unknown Feature.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "description": "available or no_accepted_attribution.",
+          "type": "string"
+        },
+        "automaticAttribution": {
+          "type": "boolean"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "classifier": {
+          "$ref": "#/$defs/AnalyticsClassifier"
+        },
+        "roleEvidence": {
+          "$ref": "#/$defs/AnalyticsRoleEvidence"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsFeature"
+          }
+        },
+        "unknown": {
+          "$ref": "#/$defs/AnalyticsUnknownFeature"
+        }
+      },
+      "required": [
+        "automaticAttribution",
+        "classifier",
+        "groups",
+        "policy",
+        "roleEvidence",
+        "status",
+        "unknown"
+      ]
+    },
+    "AnalyticsInsight": {
+      "description": "One operational clue: top_mover, context_to_output, coverage_degradation or cost_concentration. At most four, in that order.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "projectId": {
+          "description": "Absent for coverage_degradation.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "detail",
+        "kind",
+        "title"
+      ]
+    },
+    "AnalyticsPortfolio": {
+      "description": "The Project Portfolio.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer"
+        },
+        "primarySignal": {
+          "type": "string"
+        },
+        "scoreWarning": {
+          "type": "string"
+        },
+        "runs": {
+          "type": "integer"
+        },
+        "comparison": {
+          "$ref": "#/$defs/AnalyticsComparison"
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsProject"
+          }
+        },
+        "scheduledWork": {
+          "$ref": "#/$defs/AnalyticsScheduledWork"
+        },
+        "features": {
+          "$ref": "#/$defs/AnalyticsFeatures"
+        },
+        "insights": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsInsight"
+          }
+        }
+      },
+      "required": [
+        "comparison",
+        "features",
+        "insights",
+        "primarySignal",
+        "projects",
+        "runs",
+        "scheduledWork",
+        "schemaVersion",
+        "scoreWarning"
+      ]
+    },
+    "UsageAnalytics": {
+      "description": "The Swift app's `UsageQueryService` payload. The lossless `.json` export is this object unwrapped, with every matched row, `truncated`, and no `pagination`.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer"
+        },
+        "view": {
+          "description": "overview or agent_work; echoed only.",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AnalyticsRange"
+        },
+        "freshness": {
+          "$ref": "#/$defs/AnalyticsFreshness"
+        },
+        "rangeFreshness": {
+          "$ref": "#/$defs/AnalyticsRangeFreshness"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/AnalyticsCapabilities"
+        },
+        "priceSnapshot": {
+          "$ref": "#/$defs/AnalyticsPriceSnapshot"
+        },
+        "totals": {
+          "$ref": "#/$defs/AnalyticsSummary"
+        },
+        "coverage": {
+          "$ref": "#/$defs/AnalyticsCoverageSummary"
+        },
+        "corrections": {
+          "type": "integer"
+        },
+        "breakdown": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsBreakdown"
+          }
+        },
+        "groupBy": {
+          "type": "string"
+        },
+        "trend": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsTrendBucket"
+          }
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsRow"
+          }
+        },
+        "rowCount": {
+          "type": "integer"
+        },
+        "pagination": {
+          "$ref": "#/$defs/AnalyticsPagination"
+        },
+        "truncated": {
+          "description": "The `.json` export only.",
+          "type": "boolean"
+        },
+        "unavailableDimensions": {
+          "$ref": "#/$defs/AnalyticsUnavailableDimensions"
+        },
+        "portfolio": {
+          "$ref": "#/$defs/AnalyticsPortfolio"
+        },
+        "availability": {
+          "$ref": "#/$defs/AnalyticsAvailability"
+        }
+      },
+      "required": [
+        "availability",
+        "breakdown",
+        "bucket",
+        "capabilities",
+        "corrections",
+        "coverage",
+        "freshness",
+        "groupBy",
+        "portfolio",
+        "priceSnapshot",
+        "range",
+        "rangeFreshness",
+        "rowCount",
+        "rows",
+        "schemaVersion",
+        "totals",
+        "trend",
+        "unavailableDimensions",
+        "view"
+      ]
+    },
+    "UsageAnalyticsReply": {
+      "description": "GET /v1/orchestrator/usage/analytics.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "usage": {
+          "$ref": "#/$defs/UsageAnalytics"
+        }
+      },
+      "required": [
+        "usage"
+      ]
+    },
+    "UsageAnalyticsRefusalBody": {
+      "description": "The Swift app's refusal envelope, which the Usage page reads its code from. Codes: bad_request, usage_analytics_busy (503, with Retry-After), export_too_large (413), json_serialization_failed, ambiguous_project (409), project_not_found (404).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "request_id"
+      ]
+    },
+    "UsageAnalyticsRefusal": {
+      "description": "A refused Usage read.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/UsageAnalyticsRefusalBody"
+        }
+      },
+      "required": [
+        "error"
+      ]
+    },
+    "ProjectWorktreesRead": {
+      "description": "What a project-worktrees read covered.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "type": "integer"
+        },
+        "projectRows": {
+          "type": "integer"
+        },
+        "worktreeRows": {
+          "type": "integer"
+        },
+        "featureRows": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "maxScannedRows": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "featureRows",
+        "maxScannedRows",
+        "projectRows",
+        "rows",
+        "truncated",
+        "worktreeRows"
+      ]
+    },
+    "ProjectWorktreesProject": {
+      "description": "The Project resolved.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "ProjectWorktreesExcluded": {
+      "description": "Worktrees left out for having no accepted Feature.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "worktreesWithoutFeature": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "worktreesWithoutFeature"
+      ]
+    },
+    "ProjectWorktreesUnattributed": {
+      "description": "Managed worktrees whose rows name no Project.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "worktrees": {
+          "type": "integer"
+        },
+        "reasons": {
+          "$ref": "#/$defs/AnalyticsCounts"
+        }
+      },
+      "required": [
+        "reasons",
+        "worktrees"
+      ]
+    },
+    "ProjectWorktrees": {
+      "description": "Which worktrees under one Project finished a Feature. With no accepted Feature attribution on this daemon, `worktrees` is always empty; the read still resolves the Project.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "integer"
+        },
+        "status": {
+          "description": "available or partial.",
+          "type": "string"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "outcomeRule": {
+          "type": "string"
+        },
+        "generatedAt": {
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AnalyticsRange"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectWorktreesProject"
+        },
+        "read": {
+          "$ref": "#/$defs/ProjectWorktreesRead"
+        },
+        "worktrees": {
+          "description": "Per-worktree outcomes (open objects).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnalyticsCounts"
+          }
+        },
+        "excluded": {
+          "$ref": "#/$defs/ProjectWorktreesExcluded"
+        },
+        "unattributed": {
+          "$ref": "#/$defs/ProjectWorktreesUnattributed"
+        }
+      },
+      "required": [
+        "excluded",
+        "generatedAt",
+        "outcomeRule",
+        "policy",
+        "project",
+        "range",
+        "read",
+        "schemaVersion",
+        "status",
+        "unattributed",
+        "worktrees"
+      ]
+    },
+    "ProjectWorktreesReply": {
+      "description": "GET /v1/orchestrator/usage/project-worktrees.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectWorktrees": {
+          "$ref": "#/$defs/ProjectWorktrees"
+        }
+      },
+      "required": [
+        "projectWorktrees"
+      ]
+    }
+  }
+}

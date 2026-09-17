@@ -23,6 +23,634 @@ export interface ActionResult {
   ok: boolean
 }
 
+/**
+ * What attribution this service can hold.
+ */
+export interface AnalyticsAttributionCapabilities {
+  automaticFeatureAttribution: boolean
+  decisions: string[]
+  dimensions: string[]
+  featureAggregation: string
+  featureProducer: string
+  llmEvidence: string
+  sources: string[]
+}
+
+/**
+ * complete, or partial with scan_limit_reached.
+ */
+export interface AnalyticsAvailability {
+  reason?: string
+  status: string
+}
+
+/**
+ * A summary for one group, with the group's key.
+ */
+export interface AnalyticsBreakdown {
+  costs: AnalyticsCostSeries[]
+  coverage: AnalyticsCoverageSummary
+
+  /**
+   * The group's value; null for rows without one.
+   */
+  key: string | null
+
+  /**
+   * Sum of the known parts of every row that knew any; null when none did.
+   */
+  measuredFloor: number | null
+
+  /**
+   * Rows by origin: manual, dispatch, schedule, follow_up.
+   */
+  origins: AnalyticsCounts
+  rows: number
+  scheduledRuns: number
+
+  /**
+   * Sum of whole rows; null when any row is incomplete or there are none.
+   */
+  strictTotal: number | null
+  tokenPartsUnknown: AnalyticsCounts
+  tokenRowsUnknown: number
+  tokens: AnalyticsTokens
+  unavailableCost: AnalyticsUnavailableCost
+}
+
+/**
+ * The query language this service accepts.
+ */
+export interface AnalyticsCapabilities {
+  attribution: AnalyticsAttributionCapabilities
+  buckets: string[]
+  exports: string[]
+  filters: string[]
+  groupBy: string[]
+  maxPageSize: number
+  maxScannedRows: number
+  views: string[]
+}
+
+/**
+ * The Feature classifier; this daemon runs none, so `configured` is false and
+ * nothing else is sent.
+ */
+export interface AnalyticsClassifier {
+  configured: boolean
+  id?: string
+  threshold?: number
+  version?: string
+}
+
+/**
+ * Output against the equal previous range. `status` is comparable or unavailable;
+ * `reason` is closed_range_required, range_truncated, no_previous_data or
+ * incomplete_output.
+ */
+export interface AnalyticsComparison {
+  absolute?: number
+  current?: number
+  currentRange?: AnalyticsDayRange
+
+  /**
+   * Null when the previous output was 0.
+   */
+  percent: number | null
+  percentReason: string | null
+  previous?: number
+  previousRange: AnalyticsDayRange | null
+  reason?: string
+  status: string
+}
+
+/**
+ * One (unit, basis) cost series.
+ */
+export interface AnalyticsCostSeries {
+  /**
+   * list_price_estimate, published_rate_estimate, provider_actual or unknown.
+   */
+  basis: string
+  priceSnapshotIds: string[]
+  rows: number
+
+  /**
+   * USD or credits.
+   */
+  unit: string
+  value: number
+}
+
+/**
+ * A map, keyed by name, of counts. contract-gen has no map type, so the generated
+ * type is empty and a reader indexes it by key.
+ */
+export interface AnalyticsCounts {
+}
+
+/**
+ * A set of rows' coverage, with its verdict.
+ */
+export interface AnalyticsCoverage {
+  completeRows: number
+  partialRows: number
+  reasons: AnalyticsCounts
+  rows: number
+  states: AnalyticsCounts
+
+  /**
+   * unavailable, complete or partial.
+   */
+  status: string
+  unknownOutputRuns: number
+}
+
+/**
+ * How much of a set of rows could be measured.
+ */
+export interface AnalyticsCoverageSummary {
+  /**
+   * Rows by named coverage reason.
+   */
+  reasons: AnalyticsCounts
+
+  /**
+   * Rows by coverage: complete, partial, source_missing.
+   */
+  states: AnalyticsCounts
+
+  /**
+   * Rows by token part that was unknown; only parts with a count appear.
+   */
+  tokenPartsUnknown: AnalyticsCounts
+
+  /**
+   * Rows with at least one unknown token part.
+   */
+  tokenRowsUnknown: number
+}
+
+/**
+ * A from/to pair of local days.
+ */
+export interface AnalyticsDayRange {
+  from: string | null
+  to: string | null
+}
+
+/**
+ * One Feature with one unambiguous accepted head. `usageByRole` is open:
+ * implementation, review and undeclared readings.
+ */
+export interface AnalyticsFeature {
+  coverage: AnalyticsCoverage
+  id: string
+  label: string
+  output: number | null
+  project: AnalyticsFeatureProject
+  runs: number
+  unknownOutputRuns: number
+  usageByRole: AnalyticsCounts
+}
+
+/**
+ * The Project a Feature belongs to.
+ */
+export interface AnalyticsFeatureProject {
+  icon?: Icon
+  id: string | null
+  label: string
+  reason?: string
+}
+
+/**
+ * Accepted Feature attribution. This daemon records none, so `groups` is empty and
+ * every run is the Unknown Feature.
+ */
+export interface AnalyticsFeatures {
+  automaticAttribution: boolean
+  classifier: AnalyticsClassifier
+  groups: AnalyticsFeature[]
+  policy: string
+  roleEvidence: AnalyticsRoleEvidence
+
+  /**
+   * available or no_accepted_attribution.
+   */
+  status: string
+  unknown: AnalyticsUnknownFeature
+}
+
+/**
+ * How recent the whole store is.
+ */
+export interface AnalyticsFreshness {
+  ageSeconds: number | null
+  generatedAt: string
+  latestObservedAt: string | null
+  scanTruncated: boolean
+
+  /**
+   * empty, current or stale (older than 600 s).
+   */
+  status: string
+}
+
+/**
+ * Whether a Project could be named.
+ */
+export interface AnalyticsIdentity {
+  reasons: string[]
+
+  /**
+   * available or unavailable.
+   */
+  status: string
+}
+
+/**
+ * One operational clue: top_mover, context_to_output, coverage_degradation or
+ * cost_concentration. At most four, in that order.
+ */
+export interface AnalyticsInsight {
+  detail: string
+  kind: string
+
+  /**
+   * Absent for coverage_degradation.
+   */
+  projectId?: string
+  title: string
+}
+
+/**
+ * Runs by role; scheduled work is never guessed as root or child.
+ */
+export interface AnalyticsLineage {
+  childRuns: number
+  reason: string | null
+  rootRuns: number
+  scheduledRuns: number
+
+  /**
+   * available, partial or unavailable.
+   */
+  status: string
+  unknownRuns: number
+}
+
+/**
+ * One slice of a Project's assistant or work mix.
+ */
+export interface AnalyticsMix {
+  label: string
+  output: number | null
+  runs: number
+  unknownOutputRuns: number
+}
+
+/**
+ * Where the next page starts.
+ */
+export interface AnalyticsPagination {
+  hasMore: boolean
+  limit: number
+
+  /**
+   * An opaque continuation; null on the last page.
+   */
+  nextCursor: string | null
+}
+
+/**
+ * The Project Portfolio.
+ */
+export interface AnalyticsPortfolio {
+  comparison: AnalyticsComparison
+  features: AnalyticsFeatures
+  insights: AnalyticsInsight[]
+  primarySignal: string
+  projects: AnalyticsProject[]
+  runs: number
+  scheduledWork: AnalyticsScheduledWork
+  schemaVersion: number
+  scoreWarning: string
+}
+
+/**
+ * Which list-price table priced the rows.
+ */
+export interface AnalyticsPriceSnapshot {
+  activeId: string
+  meaning: string
+  observedIds: string[]
+}
+
+/**
+ * One Project in the portfolio, ranked by generated output.
+ */
+export interface AnalyticsProject {
+  assistantMix: AnalyticsMix[]
+  comparison: AnalyticsComparison
+  cost: AnalyticsProjectCost
+  coverage: AnalyticsCoverage
+
+  /**
+   * project-<16 hex>, or unknown-project.
+   */
+  id: string
+  identity: AnalyticsIdentity
+  label: string
+  lineage: AnalyticsLineage
+  output: number | null
+  rank: number
+
+  /**
+   * Up to six rows, newest first, with `project` set to this Project's label.
+   */
+  recentWork: AnalyticsRow[]
+
+  /**
+   * Distinct tasks, or distinct sessions without one.
+   */
+  runs: number
+  scheduledOutput: number | null
+  scheduledRuns: number
+  tokenPartsUnknown: AnalyticsCounts
+  tokens: AnalyticsTokens
+  trend: AnalyticsTrendBucket[]
+  unknownOutputRuns: number
+  workMix: AnalyticsMix[]
+}
+
+/**
+ * Claude Code's comparable cost for a Project. unavailable carries a reason:
+ * no_claude_code_usage, partial_cost_coverage, no_cost_series or mixed_cost_series.
+ */
+export interface AnalyticsProjectCost {
+  assistant: string
+  basis?: string
+  reason?: string
+  rows?: number
+  status: string
+  unavailableRows?: number
+  unit?: string
+  value?: number
+}
+
+/**
+ * The inclusive local dates asked for.
+ */
+export interface AnalyticsRange {
+  from: string | null
+
+  /**
+   * IANA zone.
+   */
+  timezone: string
+  to: string | null
+}
+
+/**
+ * How recent the matched rows are.
+ */
+export interface AnalyticsRangeFreshness {
+  ageSeconds: number | null
+  dataThrough: string | null
+
+  /**
+   * empty, current or historical.
+   */
+  status: string
+}
+
+/**
+ * How much review evidence was read.
+ */
+export interface AnalyticsReviewReceipts {
+  limit: number
+  read: number
+  status: string
+  truncated: boolean
+}
+
+/**
+ * Evidence behind the per-role split.
+ */
+export interface AnalyticsRoleEvidence {
+  reviewReceipts: AnalyticsReviewReceipts
+}
+
+/**
+ * One usage interval. On this daemon an interval is one conversation as its own
+ * record accounts for it. Prompts, session ids and paths are never sent.
+ */
+export interface AnalyticsRow {
+  /**
+   * claude or codex.
+   */
+  assistant: string
+  cost: AnalyticsRowCost | null
+
+  /**
+   * complete, partial or source_missing.
+   */
+  coverage: string
+  coverageReasons: string[]
+
+  /**
+   * Null while the conversation is still being written.
+   */
+  endedAt: string | null
+
+  /**
+   * The interval key.
+   */
+  id: string
+
+  /**
+   * excludes_cache (Claude) or includes_cache (Codex).
+   */
+  inputBasis: string | null
+  lineage: AnalyticsRowLineage
+  measuredFloor: number | null
+  missingCostReason: string | null
+  model: string | null
+
+  /**
+   * manual, dispatch or schedule.
+   */
+  origin: string
+
+  /**
+   * The Project's final name; null for a missing key or a managed worktree.
+   */
+  project: string | null
+  reconciliation: string | null
+  scheduleId: string | null
+
+  /**
+   * The record's own total, as it counts.
+   */
+  sourceTotal: number | null
+
+  /**
+   * ISO 8601, UTC, whole seconds.
+   */
+  startedAt: string
+  strictTotal: number | null
+  taskId: string | null
+  tokens: AnalyticsTokens
+  unknownTokenParts: string[]
+}
+
+/**
+ * A recorded or estimated cost.
+ */
+export interface AnalyticsRowCost {
+  basis: string
+  priceSnapshotId: string | null
+  unit: string
+  value: number
+}
+
+/**
+ * What is known of the row's place in a task graph; every key may be null.
+ */
+export interface AnalyticsRowLineage {
+  attempt: number | null
+  disposition: string | null
+  graphId: string | null
+  landingState: string | null
+  landingVerified: boolean | null
+  parentTaskId: string | null
+  retryOf: string | null
+}
+
+/**
+ * One schedule's work.
+ */
+export interface AnalyticsSchedule {
+  activeDays: number
+  coverage: AnalyticsCoverage
+  id: string
+  label: string
+  lastRunAt: string | null
+  output: number | null
+  runs: number
+  unknownOutputRuns: number
+}
+
+/**
+ * Work with explicit schedule identity.
+ */
+export interface AnalyticsScheduledWork {
+  output: number | null
+  reason: string | null
+  runs: number
+  schedules: AnalyticsSchedule[]
+  status: string
+  unknownOutputRuns: number
+  unknownSchedule: AnalyticsUnknownSchedule
+}
+
+/**
+ * `UsageQueryService.summary` over a set of rows.
+ */
+export interface AnalyticsSummary {
+  costs: AnalyticsCostSeries[]
+  coverage: AnalyticsCoverageSummary
+
+  /**
+   * Sum of the known parts of every row that knew any; null when none did.
+   */
+  measuredFloor: number | null
+
+  /**
+   * Rows by origin: manual, dispatch, schedule, follow_up.
+   */
+  origins: AnalyticsCounts
+  rows: number
+  scheduledRuns: number
+
+  /**
+   * Sum of whole rows; null when any row is incomplete or there are none.
+   */
+  strictTotal: number | null
+  tokenPartsUnknown: AnalyticsCounts
+  tokenRowsUnknown: number
+  tokens: AnalyticsTokens
+  unavailableCost: AnalyticsUnavailableCost
+}
+
+/**
+ * The four token parts. A part no row could measure is null, never 0.
+ */
+export interface AnalyticsTokens {
+  cacheRead: number | null
+  cacheWrite: number | null
+  inputNew: number | null
+  output: number | null
+}
+
+/**
+ * One bucket of the trend; empty buckets are not sent.
+ */
+export interface AnalyticsTrendBucket {
+  /**
+   * YYYY-MM-DD for day and week (weeks start on Sunday), YYYY-MM for month.
+   */
+  bucket: string
+  coverage: AnalyticsCoverageSummary
+  measuredFloor: number | null
+  strictTotal: number | null
+  tokens: AnalyticsTokens
+}
+
+/**
+ * Rows without a cost, by why.
+ */
+export interface AnalyticsUnavailableCost {
+  /**
+   * plan_billed, no_price_for_model, unknown_model or no_cost_recorded.
+   */
+  reasons: AnalyticsCounts
+  rows: number
+}
+
+/**
+ * Views this service refuses to infer.
+ */
+export interface AnalyticsUnavailableDimensions {
+  dimensions: string[]
+  featureAvailability: string
+  featureView: boolean
+  graphView: boolean
+  landingView: boolean
+  reason: string
+  retryView: boolean
+}
+
+/**
+ * What the named Features do not account for.
+ */
+export interface AnalyticsUnknownFeature {
+  label: string
+  output: number | null
+  reason: string
+  runs: number
+  unknownOutputRuns: number
+}
+
+/**
+ * Scheduled runs with no schedule identity.
+ */
+export interface AnalyticsUnknownSchedule {
+  reason: string
+  runs: number
+}
+
 export type Assistant =
     "claude"
   | "codex"
@@ -474,6 +1102,76 @@ export interface Project {
    * A reading, not a stored count, so it cannot drift from the thing it describes.
    */
   sessionCount: number
+}
+
+/**
+ * Which worktrees under one Project finished a Feature. With no accepted Feature
+ * attribution on this daemon, `worktrees` is always empty; the read still resolves
+ * the Project.
+ */
+export interface ProjectWorktrees {
+  excluded: ProjectWorktreesExcluded
+  generatedAt: string
+  outcomeRule: string
+  policy: string
+  project: ProjectWorktreesProject
+  range: AnalyticsRange
+  read: ProjectWorktreesRead
+  schemaVersion: number
+
+  /**
+   * available or partial.
+   */
+  status: string
+  unattributed: ProjectWorktreesUnattributed
+
+  /**
+   * Per-worktree outcomes (open objects).
+   */
+  worktrees: AnalyticsCounts[]
+}
+
+/**
+ * Worktrees left out for having no accepted Feature.
+ */
+export interface ProjectWorktreesExcluded {
+  reason: string
+  worktreesWithoutFeature: number
+}
+
+/**
+ * The Project resolved.
+ */
+export interface ProjectWorktreesProject {
+  id: string
+  label: string
+}
+
+/**
+ * What a project-worktrees read covered.
+ */
+export interface ProjectWorktreesRead {
+  featureRows: number
+  maxScannedRows: number
+  projectRows: number
+  rows: number
+  truncated: boolean
+  worktreeRows: number
+}
+
+/**
+ * GET /v1/orchestrator/usage/project-worktrees.
+ */
+export interface ProjectWorktreesReply {
+  projectWorktrees: ProjectWorktrees
+}
+
+/**
+ * Managed worktrees whose rows name no Project.
+ */
+export interface ProjectWorktreesUnattributed {
+  reasons: AnalyticsCounts
+  worktrees: number
 }
 
 /**
@@ -1260,6 +1958,68 @@ export interface TranscriptTruncation {
    * transcript_byte_budget.
    */
   reason: string
+}
+
+/**
+ * The Swift app's `UsageQueryService` payload. The lossless `.json` export is this
+ * object unwrapped, with every matched row, `truncated`, and no `pagination`.
+ */
+export interface UsageAnalytics {
+  availability: AnalyticsAvailability
+  breakdown: AnalyticsBreakdown[]
+  bucket: string
+  capabilities: AnalyticsCapabilities
+  corrections: number
+  coverage: AnalyticsCoverageSummary
+  freshness: AnalyticsFreshness
+  groupBy: string
+  pagination?: AnalyticsPagination
+  portfolio: AnalyticsPortfolio
+  priceSnapshot: AnalyticsPriceSnapshot
+  range: AnalyticsRange
+  rangeFreshness: AnalyticsRangeFreshness
+  rowCount: number
+  rows: AnalyticsRow[]
+  schemaVersion: number
+  totals: AnalyticsSummary
+  trend: AnalyticsTrendBucket[]
+
+  /**
+   * The `.json` export only.
+   */
+  truncated?: boolean
+  unavailableDimensions: AnalyticsUnavailableDimensions
+
+  /**
+   * overview or agent_work; echoed only.
+   */
+  view: string
+}
+
+/**
+ * A refused Usage read.
+ */
+export interface UsageAnalyticsRefusal {
+  error: UsageAnalyticsRefusalBody
+}
+
+/**
+ * The Swift app's refusal envelope, which the Usage page reads its code from.
+ * Codes: bad_request, usage_analytics_busy (503, with Retry-After),
+ * export_too_large (413), json_serialization_failed, ambiguous_project (409),
+ * project_not_found (404).
+ */
+export interface UsageAnalyticsRefusalBody {
+  code: string
+  message: string
+  request_id: string
+}
+
+/**
+ * GET /v1/orchestrator/usage/analytics.
+ */
+export interface UsageAnalyticsReply {
+  usage: UsageAnalytics
 }
 
 export interface UsageReport {
