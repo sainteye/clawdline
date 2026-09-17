@@ -46,6 +46,14 @@ func (h *fakeHost) Type(ctx context.Context, s session.Session, text string) err
 	h.note("type:" + text)
 	return nil
 }
+
+// Reveal and Screen arrived with Show on Mac; a picture test neither reveals
+// nor reads a screen, so they answer the way a host that did nothing answers.
+func (h *fakeHost) Reveal(ctx context.Context, s session.Session, activate bool) error { return nil }
+func (h *fakeHost) Screen(ctx context.Context, s session.Session, lines int) (string, bool) {
+	return "", false
+}
+
 func (h *fakeHost) Keystroke(ctx context.Context, s session.Session, b []byte) error {
 	if h.failKey {
 		return errors.New("the pane is gone")
