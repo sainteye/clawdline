@@ -846,6 +846,46 @@ export interface SessionsSnapshot {
 }
 
 /**
+ * The keys to change. A null key is left as it is.
+ */
+export interface SettingsRequest {
+  /**
+   * A combination the shell can register (`cmd+shift+k`), or empty for none.
+   */
+  hotkey: string | null
+
+  /**
+   * Bundle identifiers separated by commas, or empty for every app.
+   */
+  scope_app: string | null
+}
+
+export interface SettingsSnapshot {
+  /**
+   * False before anything has been written. Every key then has the shell's default.
+   */
+  exists: boolean
+
+  /**
+   * The file's `hotkey`, or null when the file does not carry one as a string. Null
+   * and empty both register nothing in this app: the Swift app is running and owns
+   * option+space.
+   */
+  hotkey: string | null
+
+  /**
+   * Where the file is, whether or not it exists.
+   */
+  path: string
+
+  /**
+   * The file's `scope_app`, or null when absent — which the shell reads as
+   * com.googlecode.iterm2. Empty is every app.
+   */
+  scope_app: string | null
+}
+
+/**
  * Whether the task has written a result yet. `settled` false is not a failure; it
  * means nothing has been written, which is the ordinary state of work still in
  * progress.

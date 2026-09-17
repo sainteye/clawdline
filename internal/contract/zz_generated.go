@@ -741,6 +741,32 @@ type SessionsSnapshot struct {
 	Sessions []SessionRow `json:"sessions"`
 }
 
+// The keys to change. A null key is left as it is.
+type SettingsRequest struct {
+	// A combination the shell can register (`cmd+shift+k`), or empty for none.
+	Hotkey *string `json:"hotkey"`
+
+	// Bundle identifiers separated by commas, or empty for every app.
+	ScopeApp *string `json:"scope_app"`
+}
+
+type SettingsSnapshot struct {
+	// False before anything has been written. Every key then has the shell's default.
+	Exists bool `json:"exists"`
+
+	// The file's `hotkey`, or null when the file does not carry one as a string. Null
+	// and empty both register nothing in this app: the Swift app is running and owns
+	// option+space.
+	Hotkey *string `json:"hotkey"`
+
+	// Where the file is, whether or not it exists.
+	Path string `json:"path"`
+
+	// The file's `scope_app`, or null when absent — which the shell reads as
+	// com.googlecode.iterm2. Empty is every app.
+	ScopeApp *string `json:"scope_app"`
+}
+
 // Whether the task has written a result yet. `settled` false is not a failure;
 // it means nothing has been written, which is the ordinary state of work still
 // in progress.

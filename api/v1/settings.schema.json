@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "settings.schema.json",
+  "title": "This app's settings file",
+  "description": "GET and POST /v1/settings. The file is ~/.config/clawdline-next/config.json, never the Swift app's; its keys are the Swift app's spellings. A write is a merge onto what is on disk, atomic, and leaves every other key as it was. A file that is not a JSON object is refused rather than replaced.",
+  "$defs": {
+    "SettingsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exists", "path"],
+      "properties": {
+        "exists": { "description": "False before anything has been written. Every key then has the shell's default.", "type": "boolean" },
+        "hotkey": { "description": "The file's `hotkey`, or null when the file does not carry one as a string. Null and empty both register nothing in this app: the Swift app is running and owns option+space.", "nullable": true, "type": "string" },
+        "path": { "description": "Where the file is, whether or not it exists.", "type": "string" },
+        "scope_app": { "description": "The file's `scope_app`, or null when absent — which the shell reads as com.googlecode.iterm2. Empty is every app.", "nullable": true, "type": "string" }
+      }
+    },
+    "SettingsRequest": {
+      "description": "The keys to change. A null key is left as it is.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hotkey": { "description": "A combination the shell can register (`cmd+shift+k`), or empty for none.", "nullable": true, "type": "string" },
+        "scope_app": { "description": "Bundle identifiers separated by commas, or empty for every app.", "nullable": true, "type": "string" }
+      }
+    }
+  }
+}

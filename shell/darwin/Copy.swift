@@ -77,4 +77,14 @@ struct ShellCopy {
         """
     }
     let loginFailed = "設定開機啟動失敗"
+
+    // The settings window's words (`Settings.swift`). That window is not
+    // ported: "Settings…" opens the console's settings page, and the rows of
+    // the window this shell acts on are drawn there, in these words, handed
+    // to the page before its first script runs.
+    let settingsHotkey = "快速鍵"
+    let settingsRecording = "按下按鍵……"
+    let settingsScope = "在哪裡生效"
+    let settingsScopeGlobal = "所有 app"
+    let settingsOff = "關閉"
 }

@@ -107,6 +107,34 @@ final class HotKey {
         return out
     }
 
+    /// The combination a key press names, for the settings page's recorder —
+    /// the Swift app's `spec(forKeyCode:flags:)`. A bare letter is not a
+    /// hotkey, it is a letter: registering one takes that key from every app
+    /// that is frontmost. Function keys are the exception, being nobody's
+    /// letter. (The original asks `hasPrefix("f") && count <= 3`, which lets
+    /// the bare letter f through; this asks for a digit after it.)
+    static func spec(forKeyCode code: UInt16, flags: NSEvent.ModifierFlags) -> String? {
+        guard let name = codeNames[UInt32(code)] else { return nil }
+        var parts: [String] = []
+        if flags.contains(.control) { parts.append("control") }
+        if flags.contains(.option) { parts.append("option") }
+        if flags.contains(.shift) { parts.append("shift") }
+        if flags.contains(.command) { parts.append("cmd") }
+        let functionKey = name.count >= 2 && name.count <= 3 && name.hasPrefix("f")
+            && name.dropFirst().allSatisfy(\.isNumber)
+        guard !parts.isEmpty || functionKey else { return nil }
+        return (parts + [name]).joined(separator: "+")
+    }
+
+    /// Each key code's longest name, so 36 is "return" rather than "enter".
+    private static let codeNames: [UInt32: String] = {
+        var out: [UInt32: String] = [:]
+        for (name, code) in keyCodes where out[code] == nil || name.count > out[code]!.count {
+            out[code] = name
+        }
+        return out
+    }()
+
     private static let keyCodes: [String: UInt32] = [
         "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9,
         "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,

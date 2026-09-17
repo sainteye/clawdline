@@ -283,3 +283,6 @@ export function agentTokens(n: number): string {
 
 /* The overlays' part of the bridge. */
 export * from "./overlay-bridge.js"
+
+/* The settings page's part of the bridge. */
+export * from "./settings-bridge.js"

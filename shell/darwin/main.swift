@@ -112,6 +112,28 @@ let fleetBridgeScript = """
 })();
 """
 
+/// The settings window's words, handed to the page before its first script
+/// runs. The console's catalog has no keys for them — in the Swift app they
+/// were never on a web page — and a page that made its own would be inventing
+/// them. See web/console/src/pages/settings/shell.ts for the other half.
+func settingsWordsScript() -> String {
+    let words: [String: String] = [
+        "hotkey": L.t.settingsHotkey,
+        "recording": L.t.settingsRecording,
+        "scope": L.t.settingsScope,
+        "scopeGlobal": L.t.settingsScopeGlobal,
+        "off": L.t.settingsOff,
+    ]
+    let json = (try? JSONSerialization.data(withJSONObject: words, options: [.sortedKeys]))
+        .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    return """
+    (function () {
+      var shell = window.__clawdlineShell || (window.__clawdlineShell = {});
+      shell.settings = { words: \(json) };
+    })();
+    """
+}
+
 final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate,
                    WKScriptMessageHandler {
     var window: ConsoleWindow!
@@ -136,6 +158,21 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// page reports on whatever replaced it.
     private var loadGeneration = 0
     private var failedLoads = 0
+    /// Whether the console has finished loading in the current generation, so
+    /// a page can be asked for now or must be asked for once it has.
+    private var pageLoaded = false
+    /// A page to go to once the console has loaded — "Settings…" pressed while
+    /// the daemon was still coming up.
+    private var pendingPage: String?
+
+    /// The settings page's key recorder, while it is listening.
+    private var recorder: Any?
+    /// Whether the configured combination could not be registered the last
+    /// time this shell tried. Said on the settings page, under the chip.
+    private var hotKeyFailed = false
+    /// The combination is let go while a new one is being recorded, and until
+    /// the page has written it or given up.
+    private var hotKeySuspended = false
 
     // MARK: - Launch
 
@@ -253,6 +290,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
                                            injectionTime: .atDocumentStart,
                                            forMainFrameOnly: true))
         content.add(WeakMessageHandler(self), name: "shellFleet")
+        content.addUserScript(WKUserScript(source: settingsWordsScript(),
+                                           injectionTime: .atDocumentStart,
+                                           forMainFrameOnly: true))
+        content.add(WeakMessageHandler(self), name: "shellSettings")
         config.userContentController = content
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
@@ -324,6 +365,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
     func windowWillClose(_ notification: Notification) {
         guard notification.object as? NSWindow === window else { return }
+        stopRecording(restore: true)
         // Putting the window away is what the Swift app records when Home is
         // dismissed: from now on a launch does not open it by itself.
         let store = IntroductionStore()
@@ -339,6 +381,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
     @objc func reload() {
         loadGeneration += 1
+        pageLoaded = false
         web.load(URLRequest(url: home))
     }
 
@@ -353,10 +396,12 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         guard !config.hotKey.isEmpty else {
             hotKey.unregister()
             hotKeyActive = false
+            hotKeyFailed = false
             shellLog("hotkey: none configured in \(config.fileURL.path); nothing registered")
             return .none
         }
         hotKeyActive = hotKey.register(config.hotKey)
+        hotKeyFailed = !hotKeyActive
         if hotKeyActive {
             shellLog("hotkey registered: \(HotKey.display(config.hotKey))"
                      + (config.scopeApp.isEmpty ? " (global)" : " (only in \(config.scopeApp))"))
@@ -383,10 +428,13 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// in every other app instead of being swallowed here.
     private func updateHotKeyScope() {
         let config = NextConfig.shared
-        guard !config.hotKey.isEmpty else { return }
+        guard !config.hotKey.isEmpty, !hotKeySuspended else { return }
         let scope = config.scopeApp
         guard !scope.isEmpty else {
-            if !hotKeyActive { hotKeyActive = hotKey.register(config.hotKey) }
+            if !hotKeyActive {
+                hotKeyActive = hotKey.register(config.hotKey)
+                hotKeyFailed = !hotKeyActive
+            }
             return
         }
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
@@ -397,7 +445,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
         if want, !hotKeyActive {
             hotKeyActive = hotKey.register(config.hotKey)
-            shellLog("hotkey attached (frontmost: \(front))")
+            hotKeyFailed = !hotKeyActive
+            shellLog("hotkey \(hotKeyActive ? "attached" : "could not attach") (frontmost: \(front))")
         } else if !want, hotKeyActive {
             hotKey.unregister()
             hotKeyActive = false
@@ -425,9 +474,12 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         appMenu.addItem(homeItem)
         appMenu.addItem(.separator())
 
-        // The native settings window is not ported, and the console's settings
-        // page has nothing behind it yet: shown, and off.
-        appMenu.addItem(NSMenuItem(title: L.t.menuEditConfig, action: nil, keyEquivalent: ","))
+        // The native settings window is not ported; this opens the console's
+        // settings page, which carries the rows of it this shell acts on.
+        let settings = NSMenuItem(title: L.t.menuEditConfig, action: #selector(openSettings),
+                                  keyEquivalent: ",")
+        settings.target = self
+        appMenu.addItem(settings)
         appMenu.addItem(.separator())
 
         let services = NSMenuItem(title: L.t.menuServices, action: nil, keyEquivalent: "")
@@ -515,6 +567,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "shellSettings" {
+            settingsMessage(message)
+            return
+        }
         guard message.name == "shellFleet", let body = message.body as? [String: Any] else { return }
         let kind = body["kind"] as? String ?? ""
         let before = (waiting, working)
@@ -584,8 +640,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         login.tag = Self.loginTag
         menu.addItem(login)
 
-        // No settings window in this app yet: shown, and off.
-        menu.addItem(NSMenuItem(title: L.t.menuEditConfig, action: nil, keyEquivalent: ""))
+        let edit = NSMenuItem(title: L.t.menuEditConfig, action: #selector(openSettings), keyEquivalent: "")
+        edit.target = self
+        menu.addItem(edit)
 
         let reloadItem = NSMenuItem(title: L.t.menuReload, action: #selector(reloadConfig), keyEquivalent: "")
         reloadItem.target = self
@@ -663,6 +720,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         readings.mascots = MascotPacks.available()
         statusItem.menu = buildMenu()
         refreshStatusItem()
+        sendSettingsState()
     }
 
     @objc private func openReleases() {
@@ -707,6 +765,11 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     func webView(_ webView: WKWebView, didFinish nav: WKNavigation!) {
         guard webView.url?.host == home.host else { return }
         failedLoads = 0
+        pageLoaded = true
+        if let page = pendingPage {
+            pendingPage = nil
+            goToPage(page)
+        }
         report(webView, attempt: 0, generation: loadGeneration)
     }
 
@@ -738,6 +801,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     func webView(_ webView: WKWebView, didFailProvisionalNavigation nav: WKNavigation!,
                  withError error: Error) {
         failedLoads += 1
+        pageLoaded = false
         let generation = loadGeneration
         let retrying = failedLoads <= 30
         let html = """
@@ -764,6 +828,163 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         shellLog("web content process ended; reloading")
         reload()
+    }
+}
+
+// MARK: - Settings
+
+/// "Settings…", and the settings page's half of the conversation.
+///
+/// The Swift app's settings window writes the config file, then posts
+/// `clawdlineConfigChanged`, and the app re-applies the hotkey and the rest in
+/// one place. Here the page writes the file through the daemon and then says
+/// `changed`; the shell reads the file again and re-applies it the same way,
+/// then tells the page what it actually registered. A hand edit still takes
+/// "Reload config", as there — nothing watches the file.
+extension Shell {
+    @objc func openSettings() {
+        showConsole()
+        goToPage("settings")
+    }
+
+    /// Ask the console for a page the way its own address does. Before the
+    /// console has loaded, the request waits for it.
+    func goToPage(_ name: String) {
+        guard pageLoaded else {
+            pendingPage = name
+            return
+        }
+        let fragment = "#page=" + (name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? name)
+        let script = """
+        (function () {
+          try { history.replaceState(history.state, '', \(jsString(fragment))); }
+          catch (e) { location.hash = \(jsString(fragment)); return; }
+          window.dispatchEvent(new HashChangeEvent('hashchange'));
+        })();
+        """
+        web.evaluateJavaScript(script) { _, error in
+            if let error { shellLog("page: could not go to \(name): \(error.localizedDescription)") }
+        }
+    }
+
+    func settingsMessage(_ message: WKScriptMessage) {
+        // Only the console this shell loaded may ask; a page it navigated to
+        // by a link is somebody else's.
+        guard message.frameInfo.isMainFrame,
+              message.frameInfo.request.url?.host == home.host,
+              message.frameInfo.request.url?.port == home.port,
+              let body = message.body as? [String: Any],
+              let kind = body["kind"] as? String else { return }
+        switch kind {
+        case "state":
+            sendSettingsState()
+        case "record":
+            startRecording()
+        case "stopRecording":
+            stopRecording(restore: true)
+        case "changed":
+            configChanged()
+        default:
+            shellLog("settings: unknown request \(kind)")
+        }
+    }
+
+    /// `configChanged`: what "Reload config" does, without the alert — the
+    /// page says a failed registration under the chip instead.
+    func configChanged() {
+        stopRecording(restore: false)
+        hotKeySuspended = false
+        let config = NextConfig.shared
+        config.load()
+        if let problem = config.problem { shellLog("config: \(problem)") }
+        installMainMenu()
+        applyConfiguredHotKey(alertOnFailure: false)
+        updateHotKeyScope()
+        statusItem.menu = buildMenu()
+        refreshStatusItem()
+        shellLog("settings: applied hotkey=\(config.hotKey.isEmpty ? "(none)" : config.hotKey)"
+                 + " registered=\(hotKey.isRegistered) scope=\(config.scopeApp.isEmpty ? "(global)" : config.scopeApp)")
+        sendSettingsState()
+    }
+
+    func sendSettingsState() {
+        guard pageLoaded else { return }
+        let config = NextConfig.shared
+        let display = config.hotKey.isEmpty ? "" : HotKey.display(config.hotKey)
+        let state: [String: Any] = [
+            "hotkey": config.hotKey,
+            "display": display,
+            "registered": hotKey.isRegistered,
+            "failure": (!config.hotKey.isEmpty && hotKeyFailed) ? L.t.hotkeyFailedTitle(display) : "",
+            "scopeApp": config.scopeApp,
+        ]
+        dispatchToPage("clawdline-shell-settings", state)
+    }
+
+    /// `startRecording`: the next key pressed with a modifier is the answer,
+    /// Escape leaves the setting alone, and a bare letter is swallowed — it is
+    /// not an answer, and it is not text either.
+    ///
+    /// One difference: the configured combination is let go while listening.
+    /// In the Swift app, pressing it there toggled the panel behind the
+    /// settings window; here the settings page *is* the window, and the press
+    /// would hide the thing that is waiting for it.
+    func startRecording() {
+        stopRecording(restore: false)
+        hotKey.unregister()
+        hotKeyActive = false
+        hotKeySuspended = true
+        recorder = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self, event.window === self.window else { return event }
+            if event.keyCode == 53 {
+                self.stopRecording(restore: true)
+                return nil
+            }
+            guard let spec = HotKey.spec(forKeyCode: event.keyCode, flags: event.modifierFlags) else {
+                return nil
+            }
+            // The combination comes back once the page has written the new one
+            // and said so; if the write fails the page says stopRecording, and
+            // closing the page or the window does the same.
+            self.stopRecording(restore: false)
+            self.dispatchToPage("clawdline-shell-hotkey", ["spec": spec, "display": HotKey.display(spec)])
+            return nil
+        }
+        shellLog("settings: recording a hotkey")
+    }
+
+    /// Stop listening. `restore` puts back the combination the file names;
+    /// a page still waiting for an answer is told there will not be one.
+    func stopRecording(restore: Bool) {
+        let listening = recorder != nil
+        if let monitor = recorder {
+            NSEvent.removeMonitor(monitor)
+            recorder = nil
+        }
+        guard restore else { return }
+        if hotKeySuspended {
+            hotKeySuspended = false
+            applyConfiguredHotKey(alertOnFailure: false)
+            updateHotKeyScope()
+        }
+        if listening { dispatchToPage("clawdline-shell-hotkey", ["cancelled": true]) }
+    }
+
+    private func dispatchToPage(_ event: String, _ detail: [String: Any]) {
+        guard pageLoaded,
+              let data = try? JSONSerialization.data(withJSONObject: detail, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let script = "window.dispatchEvent(new CustomEvent(\(jsString(event)), { detail: \(json) }));"
+        web.evaluateJavaScript(script) { _, error in
+            if let error { shellLog("settings: could not reach the page: \(error.localizedDescription)") }
+        }
+    }
+
+    /// A string as a JavaScript literal: JSON's quoting is JavaScript's.
+    private func jsString(_ s: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [s]),
+              let array = String(data: data, encoding: .utf8) else { return "\"\"" }
+        return String(array.dropFirst().dropLast())
     }
 }
 

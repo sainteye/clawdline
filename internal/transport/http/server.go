@@ -149,6 +149,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/tasks", s.tasksRoute)
 	mux.HandleFunc("/v1/orchestrator/tasks/", s.settleRoute)
 	mux.HandleFunc("/v1/strings", s.strings)
+	mux.HandleFunc("/v1/settings", s.settingsRoute)
 	mux.HandleFunc("/v1/orchestrator/usage", s.usageRoute)
 	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
