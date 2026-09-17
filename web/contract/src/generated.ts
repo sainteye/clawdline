@@ -693,6 +693,66 @@ export interface BoardWriteResult {
   revision: number
 }
 
+export interface CatalogError {
+  code: string
+  message: string
+}
+
+/**
+ * How completely the Board store's own ingestion covered its sources. This daemon
+ * does not ingest, so it says unknown.
+ */
+export interface CatalogIngestion {
+  status: string
+}
+
+/**
+ * One Project in the Board store. `label`, `displayPath` and `icon` are present
+ * only for a Project a start place resolves to (`isStartPoint`). `activeItemCount`
+ * and `summaryCoverage` are absent: they are the Swift app's progress projection,
+ * which this daemon does not restate, and an absent count is drawn as unknown,
+ * never as zero.
+ */
+export interface CatalogProject {
+  displayPath?: string
+  icon?: Icon
+  id: string
+  isStartPoint: boolean
+
+  /**
+   * Items the store files under this Project.
+   */
+  itemCount: number
+  label?: string
+  name: string
+}
+
+export interface CatalogReadState {
+  error?: CatalogError
+
+  /**
+   * Unix seconds of the reading, when there is one.
+   */
+  observedAt?: number
+  status: CatalogReadStatus
+}
+
+/**
+ * ready: the store was read now. stale: the newest read failed and an earlier one
+ * is carried. error: nothing could be read.
+ */
+export type CatalogReadStatus =
+    "ready"
+  | "stale"
+  | "error"
+
+export const CatalogReadStatusValues: readonly CatalogReadStatus[] = ["ready", "stale", "error"] as const
+
+export interface CatalogSource {
+  ingestion: CatalogIngestion
+  truncated: boolean
+}
+
 /**
  * Who clears the thing standing in the way, as the Swift app's
  * CloseabilityMover.wire spells it. `self` distinguishes the session that has to
@@ -1102,6 +1162,32 @@ export interface Project {
    * A reading, not a stored count, so it cannot drift from the thing it describes.
    */
   sessionCount: number
+}
+
+export interface ProjectCatalog {
+  /**
+   * False when the store could not be read at all; `readState.error` says why.
+   */
+  available: boolean
+
+  /**
+   * The store's own Board switch.
+   */
+  enabled: boolean
+  mode: string
+  projects: CatalogProject[]
+  readState: CatalogReadState
+  revision: number
+  schemaVersion: number
+  source: CatalogSource
+}
+
+/**
+ * GET /v1/projects.
+ */
+export interface ProjectCatalogAnswer {
+  at: number
+  catalog: ProjectCatalog
 }
 
 /**
@@ -1593,6 +1679,49 @@ export interface SettleResult {
   settled: boolean
   state?: TaskState
   task_id: string
+}
+
+export interface StartAssistant {
+  availability: StartAvailability
+  id: string
+  label: string
+}
+
+/**
+ * AssistantQuota.Availability. This daemon reads no quota, so it answers unknown.
+ */
+export type StartAvailability =
+    "ok"
+  | "low"
+  | "exhausted"
+  | "unknown"
+
+export const StartAvailabilityValues: readonly StartAvailability[] = ["ok", "low", "exhausted", "unknown"] as const
+
+/**
+ * One directory a session can be started in. `id` is sixteen hex characters of the
+ * path's SHA-256 and is the only part a client sends back; `path` is here so two
+ * projects with one name can be told apart.
+ */
+export interface StartPlace {
+  /**
+   * When this place was last worked in, Unix seconds.
+   */
+  at: number
+  icon?: Icon
+  id: string
+  label: string
+  path: string
+}
+
+/**
+ * GET /v1/places: recorded Claude Code folders, Codex rollouts and live sessions'
+ * directories, deduplicated, still on disk, newest first, at most forty.
+ */
+export interface StartPlaceList {
+  assistants: StartAssistant[]
+  at: number
+  places: StartPlace[]
 }
 
 /**
@@ -2114,3 +2243,157 @@ export type WorkState =
   | "work_complete"
 
 export const WorkStateValues: readonly WorkState[] = ["ready", "working", "holding", "waiting_you", "waiting_session", "unknown", "milestone_complete", "work_complete"] as const
+
+export interface WorktreeCanonical {
+  error: WorktreeIssue | null
+  observedAt: string | null
+  oid: string | null
+  ref: string | null
+  state: WorktreeObservationState
+}
+
+export type WorktreeClass =
+    "active_in_use"
+  | "landed_identical_residue"
+  | "genuinely_unlanded"
+  | "mixed_conflicted"
+  | "task_owned_temporary"
+  | "prunable_stale_metadata"
+  | "unknown_incomplete_evidence"
+
+export const WorktreeClassValues: readonly WorktreeClass[] = ["active_in_use", "landed_identical_residue", "genuinely_unlanded", "mixed_conflicted", "task_owned_temporary", "prunable_stale_metadata", "unknown_incomplete_evidence"] as const
+
+/**
+ * An assessment only. No route here acts on it.
+ */
+export interface WorktreeCleanup {
+  blockers: WorktreeIssue[]
+  eligible: boolean
+  nextOwner: string | null
+}
+
+export interface WorktreeContext {
+  createdAt: string | null
+  currentStatus: string | null
+  evidence: string
+  finishedAt: string | null
+  note: string | null
+  originSession: WorktreeOrigin
+  purpose: string | null
+  startedAt: string | null
+  state: string
+}
+
+/**
+ * Each is null when any row it sums could not be read, or the observation failed or
+ * was truncated. Null is never zero.
+ */
+export interface WorktreeCounts {
+  active: number | null
+  modified: number | null
+  rows: number | null
+  staged: number | null
+  storageBytes: number | null
+  unknown: number | null
+  untracked: number | null
+}
+
+export interface WorktreeIssue {
+  code: string
+  message: string
+}
+
+/**
+ * One Project's worktree lifecycle, as ProjectWorktreeLifecycleService.snapshotJSON
+ * writes it. Before the first refresh it is `complete: false` with error
+ * `not_observed`, which means nobody has looked yet, not that there is nothing.
+ */
+export interface WorktreeLifecycle {
+  complete: boolean
+  counts: WorktreeCounts
+  error: WorktreeIssue | null
+  observedAt: string | null
+  project: WorktreeProjectRef
+  repository: WorktreeRepository
+  rows: WorktreeRow[]
+  schemaVersion: number
+  truncated: boolean
+}
+
+/**
+ * GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh.
+ */
+export interface WorktreeLifecycleAnswer {
+  projectWorktreeLifecycle: WorktreeLifecycle
+}
+
+export interface WorktreeLocal {
+  error: WorktreeIssue | null
+  head: string | null
+  observedAt: string | null
+  state: WorktreeObservationState
+}
+
+export type WorktreeObservationState =
+    "current"
+  | "stale"
+  | "unknown"
+  | "failed"
+
+export const WorktreeObservationStateValues: readonly WorktreeObservationState[] = ["current", "stale", "unknown", "failed"] as const
+
+export interface WorktreeOrigin {
+  sessionId: string | null
+  title: string | null
+}
+
+export interface WorktreeOwner {
+  evidence: string
+  sessionId: string | null
+  taskId: string | null
+  terminalId: string | null
+  title: string | null
+}
+
+export interface WorktreeProjectRef {
+  id: string
+  label: string
+}
+
+export interface WorktreeRepository {
+  canonicalPath: string
+  id: string
+  label: string
+}
+
+export interface WorktreeRow {
+  active: boolean | null
+  base: string | null
+  branch: string | null
+  canonicalTargetObservation: WorktreeCanonical
+  classifications: WorktreeClass[]
+  cleanup: WorktreeCleanup
+  context: WorktreeContext
+  head: string | null
+  localObservation: WorktreeLocal
+  owner: WorktreeOwner
+  path: string
+  status: WorktreeStatus
+  storage: WorktreeStorage
+  target: string | null
+  worktreeId: string
+}
+
+export interface WorktreeStatus {
+  complete: boolean
+  modified: number | null
+  staged: number | null
+  untracked: number | null
+}
+
+export interface WorktreeStorage {
+  bytes: number | null
+  complete: boolean
+  error: WorktreeIssue | null
+  observedAt: string | null
+}

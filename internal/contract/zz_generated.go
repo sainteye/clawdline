@@ -544,6 +544,60 @@ type BoardWriteResult struct {
 	Revision int64 `json:"revision"`
 }
 
+type CatalogError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// How completely the Board store's own ingestion covered its sources. This
+// daemon does not ingest, so it says unknown.
+type CatalogIngestion struct {
+	Status string `json:"status"`
+}
+
+// One Project in the Board store. `label`, `displayPath` and `icon` are present
+// only for a Project a start place resolves to (`isStartPoint`).
+// `activeItemCount` and `summaryCoverage` are absent: they are the Swift app's
+// progress projection, which this daemon does not restate, and an absent count
+// is drawn as unknown, never as zero.
+type CatalogProject struct {
+	DisplayPath  string `json:"displayPath,omitempty"`
+	Icon         *Icon  `json:"icon,omitempty"`
+	ID           string `json:"id"`
+	IsStartPoint bool   `json:"isStartPoint"`
+
+	// Items the store files under this Project.
+	ItemCount int64  `json:"itemCount"`
+	Label     string `json:"label,omitempty"`
+	Name      string `json:"name"`
+}
+
+type CatalogReadState struct {
+	Error *CatalogError `json:"error,omitempty"`
+
+	// Unix seconds of the reading, when there is one.
+	ObservedAt float64           `json:"observedAt,omitempty"`
+	Status     CatalogReadStatus `json:"status"`
+}
+
+// ready: the store was read now. stale: the newest read failed and an earlier
+// one is carried. error: nothing could be read.
+type CatalogReadStatus string
+
+const (
+	CatalogReadStatusReady CatalogReadStatus = "ready"
+	CatalogReadStatusStale CatalogReadStatus = "stale"
+	CatalogReadStatusError CatalogReadStatus = "error"
+)
+
+// CatalogReadStatusValues is every value the contract allows, in contract order.
+var CatalogReadStatusValues = []CatalogReadStatus{CatalogReadStatusReady, CatalogReadStatusStale, CatalogReadStatusError}
+
+type CatalogSource struct {
+	Ingestion CatalogIngestion `json:"ingestion"`
+	Truncated bool             `json:"truncated"`
+}
+
 // Who clears the thing standing in the way, as the Swift app's
 // CloseabilityMover.wire spells it. `self` distinguishes the session that has
 // to act from another one, which is the difference between a thing a reader can
@@ -918,6 +972,26 @@ type Project struct {
 
 	// A reading, not a stored count, so it cannot drift from the thing it describes.
 	SessionCount int64 `json:"sessionCount"`
+}
+
+type ProjectCatalog struct {
+	// False when the store could not be read at all; `readState.error` says why.
+	Available bool `json:"available"`
+
+	// The store's own Board switch.
+	Enabled       bool             `json:"enabled"`
+	Mode          string           `json:"mode"`
+	Projects      []CatalogProject `json:"projects"`
+	ReadState     CatalogReadState `json:"readState"`
+	Revision      int64            `json:"revision"`
+	SchemaVersion int64            `json:"schemaVersion"`
+	Source        CatalogSource    `json:"source"`
+}
+
+// GET /v1/projects.
+type ProjectCatalogAnswer struct {
+	At      int64          `json:"at"`
+	Catalog ProjectCatalog `json:"catalog"`
 }
 
 // Which worktrees under one Project finished a Feature. With no accepted
@@ -1304,6 +1378,47 @@ type SettleResult struct {
 	Settled bool      `json:"settled"`
 	State   TaskState `json:"state,omitempty"`
 	TaskID  string    `json:"task_id"`
+}
+
+type StartAssistant struct {
+	Availability StartAvailability `json:"availability"`
+	ID           string            `json:"id"`
+	Label        string            `json:"label"`
+}
+
+// AssistantQuota.Availability. This daemon reads no quota, so it answers
+// unknown.
+type StartAvailability string
+
+const (
+	StartAvailabilityOK        StartAvailability = "ok"
+	StartAvailabilityLow       StartAvailability = "low"
+	StartAvailabilityExhausted StartAvailability = "exhausted"
+	StartAvailabilityUnknown   StartAvailability = "unknown"
+)
+
+// StartAvailabilityValues is every value the contract allows, in contract order.
+var StartAvailabilityValues = []StartAvailability{StartAvailabilityOK, StartAvailabilityLow, StartAvailabilityExhausted, StartAvailabilityUnknown}
+
+// One directory a session can be started in. `id` is sixteen hex characters of
+// the path's SHA-256 and is the only part a client sends back; `path` is here
+// so two projects with one name can be told apart.
+type StartPlace struct {
+	// When this place was last worked in, Unix seconds.
+	At    int64  `json:"at"`
+	Icon  *Icon  `json:"icon,omitempty"`
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Path  string `json:"path"`
+}
+
+// GET /v1/places: recorded Claude Code folders, Codex rollouts and live
+// sessions' directories, deduplicated, still on disk, newest first, at most
+// forty.
+type StartPlaceList struct {
+	Assistants []StartAssistant `json:"assistants"`
+	At         int64            `json:"at"`
+	Places     []StartPlace     `json:"places"`
 }
 
 // Whether the Swift app's store was read for this answer: `current`; `stale`,
@@ -1744,3 +1859,158 @@ const (
 
 // WorkStateValues is every value the contract allows, in contract order.
 var WorkStateValues = []WorkState{WorkStateReady, WorkStateWorking, WorkStateHolding, WorkStateWaitingYou, WorkStateWaitingSession, WorkStateUnknown, WorkStateMilestoneComplete, WorkStateWorkComplete}
+
+type WorktreeCanonical struct {
+	Error      *WorktreeIssue           `json:"error"`
+	ObservedAt string                   `json:"observedAt"`
+	Oid        string                   `json:"oid"`
+	Ref        string                   `json:"ref"`
+	State      WorktreeObservationState `json:"state"`
+}
+
+type WorktreeClass string
+
+const (
+	WorktreeClassActiveInUse               WorktreeClass = "active_in_use"
+	WorktreeClassLandedIdenticalResidue    WorktreeClass = "landed_identical_residue"
+	WorktreeClassGenuinelyUnlanded         WorktreeClass = "genuinely_unlanded"
+	WorktreeClassMixedConflicted           WorktreeClass = "mixed_conflicted"
+	WorktreeClassTaskOwnedTemporary        WorktreeClass = "task_owned_temporary"
+	WorktreeClassPrunableStaleMetadata     WorktreeClass = "prunable_stale_metadata"
+	WorktreeClassUnknownIncompleteEvidence WorktreeClass = "unknown_incomplete_evidence"
+)
+
+// WorktreeClassValues is every value the contract allows, in contract order.
+var WorktreeClassValues = []WorktreeClass{WorktreeClassActiveInUse, WorktreeClassLandedIdenticalResidue, WorktreeClassGenuinelyUnlanded, WorktreeClassMixedConflicted, WorktreeClassTaskOwnedTemporary, WorktreeClassPrunableStaleMetadata, WorktreeClassUnknownIncompleteEvidence}
+
+// An assessment only. No route here acts on it.
+type WorktreeCleanup struct {
+	Blockers  []WorktreeIssue `json:"blockers"`
+	Eligible  bool            `json:"eligible"`
+	NextOwner string          `json:"nextOwner"`
+}
+
+type WorktreeContext struct {
+	CreatedAt     string         `json:"createdAt"`
+	CurrentStatus string         `json:"currentStatus"`
+	Evidence      string         `json:"evidence"`
+	FinishedAt    string         `json:"finishedAt"`
+	Note          string         `json:"note"`
+	OriginSession WorktreeOrigin `json:"originSession"`
+	Purpose       string         `json:"purpose"`
+	StartedAt     string         `json:"startedAt"`
+	State         string         `json:"state"`
+}
+
+// Each is null when any row it sums could not be read, or the observation
+// failed or was truncated. Null is never zero.
+type WorktreeCounts struct {
+	Active       int64 `json:"active"`
+	Modified     int64 `json:"modified"`
+	Rows         int64 `json:"rows"`
+	Staged       int64 `json:"staged"`
+	StorageBytes int64 `json:"storageBytes"`
+	Unknown      int64 `json:"unknown"`
+	Untracked    int64 `json:"untracked"`
+}
+
+type WorktreeIssue struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// One Project's worktree lifecycle, as
+// ProjectWorktreeLifecycleService.snapshotJSON writes it. Before the first
+// refresh it is `complete: false` with error `not_observed`, which means nobody
+// has looked yet, not that there is nothing.
+type WorktreeLifecycle struct {
+	Complete      bool               `json:"complete"`
+	Counts        WorktreeCounts     `json:"counts"`
+	Error         *WorktreeIssue     `json:"error"`
+	ObservedAt    string             `json:"observedAt"`
+	Project       WorktreeProjectRef `json:"project"`
+	Repository    WorktreeRepository `json:"repository"`
+	Rows          []WorktreeRow      `json:"rows"`
+	SchemaVersion int64              `json:"schemaVersion"`
+	Truncated     bool               `json:"truncated"`
+}
+
+// GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh.
+type WorktreeLifecycleAnswer struct {
+	ProjectWorktreeLifecycle WorktreeLifecycle `json:"projectWorktreeLifecycle"`
+}
+
+type WorktreeLocal struct {
+	Error      *WorktreeIssue           `json:"error"`
+	Head       string                   `json:"head"`
+	ObservedAt string                   `json:"observedAt"`
+	State      WorktreeObservationState `json:"state"`
+}
+
+type WorktreeObservationState string
+
+const (
+	WorktreeObservationStateCurrent WorktreeObservationState = "current"
+	WorktreeObservationStateStale   WorktreeObservationState = "stale"
+	WorktreeObservationStateUnknown WorktreeObservationState = "unknown"
+	WorktreeObservationStateFailed  WorktreeObservationState = "failed"
+)
+
+// WorktreeObservationStateValues is every value the contract allows, in contract order.
+var WorktreeObservationStateValues = []WorktreeObservationState{WorktreeObservationStateCurrent, WorktreeObservationStateStale, WorktreeObservationStateUnknown, WorktreeObservationStateFailed}
+
+type WorktreeOrigin struct {
+	SessionID string `json:"sessionId"`
+	Title     string `json:"title"`
+}
+
+type WorktreeOwner struct {
+	Evidence   string `json:"evidence"`
+	SessionID  string `json:"sessionId"`
+	TaskID     string `json:"taskId"`
+	TerminalID string `json:"terminalId"`
+	Title      string `json:"title"`
+}
+
+type WorktreeProjectRef struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+type WorktreeRepository struct {
+	CanonicalPath string `json:"canonicalPath"`
+	ID            string `json:"id"`
+	Label         string `json:"label"`
+}
+
+type WorktreeRow struct {
+	Active                     bool              `json:"active"`
+	Base                       string            `json:"base"`
+	Branch                     string            `json:"branch"`
+	CanonicalTargetObservation WorktreeCanonical `json:"canonicalTargetObservation"`
+	Classifications            []WorktreeClass   `json:"classifications"`
+	Cleanup                    WorktreeCleanup   `json:"cleanup"`
+	Context                    WorktreeContext   `json:"context"`
+	Head                       string            `json:"head"`
+	LocalObservation           WorktreeLocal     `json:"localObservation"`
+	Owner                      WorktreeOwner     `json:"owner"`
+	Path                       string            `json:"path"`
+	Status                     WorktreeStatus    `json:"status"`
+	Storage                    WorktreeStorage   `json:"storage"`
+	Target                     string            `json:"target"`
+	WorktreeID                 string            `json:"worktreeId"`
+}
+
+type WorktreeStatus struct {
+	Complete  bool  `json:"complete"`
+	Modified  int64 `json:"modified"`
+	Staged    int64 `json:"staged"`
+	Untracked int64 `json:"untracked"`
+}
+
+type WorktreeStorage struct {
+	Bytes      int64          `json:"bytes"`
+	Complete   bool           `json:"complete"`
+	Error      *WorktreeIssue `json:"error"`
+	ObservedAt string         `json:"observedAt"`
+}

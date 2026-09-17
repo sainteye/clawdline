@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "projects.schema.json",
+  "title": "Projects",
+  "description": "What the Projects page reads. GET /v1/places is the Swift app's StartPoints list. GET /v1/projects is the Board store's Project catalog, read-only, joined with those places the way ProjectBoardIntegration joins them. GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh are the worktree lifecycle read model; there is no cleanup route.",
+  "$defs": {
+    "StartAvailability": {
+      "description": "AssistantQuota.Availability. This daemon reads no quota, so it answers unknown.",
+      "type": "string",
+      "enum": ["ok", "low", "exhausted", "unknown"]
+    },
+    "StartAssistant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "id", "label"],
+      "properties": {
+        "availability": { "$ref": "#/$defs/StartAvailability" },
+        "id": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "StartPlace": {
+      "description": "One directory a session can be started in. `id` is sixteen hex characters of the path's SHA-256 and is the only part a client sends back; `path` is here so two projects with one name can be told apart.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "id", "label", "path"],
+      "properties": {
+        "at": { "description": "When this place was last worked in, Unix seconds.", "type": "integer" },
+        "icon": { "$ref": "common.schema.json#/$defs/Icon" },
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "path": { "type": "string" }
+      }
+    },
+    "StartPlaceList": {
+      "description": "GET /v1/places: recorded Claude Code folders, Codex rollouts and live sessions' directories, deduplicated, still on disk, newest first, at most forty.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistants", "at", "places"],
+      "properties": {
+        "assistants": { "type": "array", "items": { "$ref": "#/$defs/StartAssistant" } },
+        "at": { "type": "integer" },
+        "places": { "type": "array", "items": { "$ref": "#/$defs/StartPlace" } }
+      }
+    },
+    "CatalogReadStatus": {
+      "description": "ready: the store was read now. stale: the newest read failed and an earlier one is carried. error: nothing could be read.",
+      "type": "string",
+      "enum": ["ready", "stale", "error"]
+    },
+    "CatalogError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "CatalogReadState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "error": { "$ref": "#/$defs/CatalogError" },
+        "observedAt": { "description": "Unix seconds of the reading, when there is one.", "type": "number" },
+        "status": { "$ref": "#/$defs/CatalogReadStatus" }
+      }
+    },
+    "CatalogIngestion": {
+      "description": "How completely the Board store's own ingestion covered its sources. This daemon does not ingest, so it says unknown.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string" }
+      }
+    },
+    "CatalogSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ingestion", "truncated"],
+      "properties": {
+        "ingestion": { "$ref": "#/$defs/CatalogIngestion" },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "CatalogProject": {
+      "description": "One Project in the Board store. `label`, `displayPath` and `icon` are present only for a Project a start place resolves to (`isStartPoint`). `activeItemCount` and `summaryCoverage` are absent: they are the Swift app's progress projection, which this daemon does not restate, and an absent count is drawn as unknown, never as zero.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "isStartPoint", "itemCount", "name"],
+      "properties": {
+        "displayPath": { "type": "string" },
+        "icon": { "$ref": "common.schema.json#/$defs/Icon" },
+        "id": { "type": "string" },
+        "isStartPoint": { "type": "boolean" },
+        "itemCount": { "description": "Items the store files under this Project.", "type": "integer" },
+        "label": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "ProjectCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "enabled", "mode", "projects", "readState", "revision", "schemaVersion", "source"],
+      "properties": {
+        "available": { "description": "False when the store could not be read at all; `readState.error` says why.", "type": "boolean" },
+        "enabled": { "description": "The store's own Board switch.", "type": "boolean" },
+        "mode": { "type": "string" },
+        "projects": { "type": "array", "items": { "$ref": "#/$defs/CatalogProject" } },
+        "readState": { "$ref": "#/$defs/CatalogReadState" },
+        "revision": { "type": "integer" },
+        "schemaVersion": { "type": "integer" },
+        "source": { "$ref": "#/$defs/CatalogSource" }
+      }
+    },
+    "ProjectCatalogAnswer": {
+      "description": "GET /v1/projects.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "catalog"],
+      "properties": {
+        "at": { "type": "integer" },
+        "catalog": { "$ref": "#/$defs/ProjectCatalog" }
+      }
+    },
+    "WorktreeClass": {
+      "type": "string",
+      "enum": ["active_in_use", "landed_identical_residue", "genuinely_unlanded", "mixed_conflicted", "task_owned_temporary", "prunable_stale_metadata", "unknown_incomplete_evidence"]
+    },
+    "WorktreeIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "WorktreeProjectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": { "id": { "type": "string" }, "label": { "type": "string" } }
+    },
+    "WorktreeRepository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalPath", "id", "label"],
+      "properties": {
+        "canonicalPath": { "type": "string" },
+        "id": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "WorktreeCounts": {
+      "description": "Each is null when any row it sums could not be read, or the observation failed or was truncated. Null is never zero.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active", "modified", "rows", "staged", "storageBytes", "unknown", "untracked"],
+      "properties": {
+        "active": { "type": "integer", "nullable": true },
+        "modified": { "type": "integer", "nullable": true },
+        "rows": { "type": "integer", "nullable": true },
+        "staged": { "type": "integer", "nullable": true },
+        "storageBytes": { "type": "integer", "nullable": true },
+        "unknown": { "type": "integer", "nullable": true },
+        "untracked": { "type": "integer", "nullable": true }
+      }
+    },
+    "WorktreeOwner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "sessionId", "taskId", "terminalId", "title"],
+      "properties": {
+        "evidence": { "type": "string" },
+        "sessionId": { "type": "string", "nullable": true },
+        "taskId": { "type": "string", "nullable": true },
+        "terminalId": { "type": "string", "nullable": true },
+        "title": { "type": "string", "nullable": true }
+      }
+    },
+    "WorktreeStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "modified", "staged", "untracked"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "modified": { "type": "integer", "nullable": true },
+        "staged": { "type": "integer", "nullable": true },
+        "untracked": { "type": "integer", "nullable": true }
+      }
+    },
+    "WorktreeObservationState": {
+      "type": "string",
+      "enum": ["current", "stale", "unknown", "failed"]
+    },
+    "WorktreeLocal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "head", "observedAt", "state"],
+      "properties": {
+        "error": { "$ref": "#/$defs/WorktreeIssue", "nullable": true },
+        "head": { "type": "string", "nullable": true },
+        "observedAt": { "type": "string", "nullable": true },
+        "state": { "$ref": "#/$defs/WorktreeObservationState" }
+      }
+    },
+    "WorktreeCanonical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "observedAt", "oid", "ref", "state"],
+      "properties": {
+        "error": { "$ref": "#/$defs/WorktreeIssue", "nullable": true },
+        "observedAt": { "type": "string", "nullable": true },
+        "oid": { "type": "string", "nullable": true },
+        "ref": { "type": "string", "nullable": true },
+        "state": { "$ref": "#/$defs/WorktreeObservationState" }
+      }
+    },
+    "WorktreeOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "title"],
+      "properties": {
+        "sessionId": { "type": "string", "nullable": true },
+        "title": { "type": "string", "nullable": true }
+      }
+    },
+    "WorktreeContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["createdAt", "currentStatus", "evidence", "finishedAt", "note", "originSession", "purpose", "startedAt", "state"],
+      "properties": {
+        "createdAt": { "type": "string", "nullable": true },
+        "currentStatus": { "type": "string", "nullable": true },
+        "evidence": { "type": "string" },
+        "finishedAt": { "type": "string", "nullable": true },
+        "note": { "type": "string", "nullable": true },
+        "originSession": { "$ref": "#/$defs/WorktreeOrigin" },
+        "purpose": { "type": "string", "nullable": true },
+        "startedAt": { "type": "string", "nullable": true },
+        "state": { "type": "string" }
+      }
+    },
+    "WorktreeStorage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "complete", "error", "observedAt"],
+      "properties": {
+        "bytes": { "type": "integer", "nullable": true },
+        "complete": { "type": "boolean" },
+        "error": { "$ref": "#/$defs/WorktreeIssue", "nullable": true },
+        "observedAt": { "type": "string", "nullable": true }
+      }
+    },
+    "WorktreeCleanup": {
+      "description": "An assessment only. No route here acts on it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blockers", "eligible", "nextOwner"],
+      "properties": {
+        "blockers": { "type": "array", "items": { "$ref": "#/$defs/WorktreeIssue" } },
+        "eligible": { "type": "boolean" },
+        "nextOwner": { "type": "string", "nullable": true }
+      }
+    },
+    "WorktreeRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active", "base", "branch", "canonicalTargetObservation", "classifications", "cleanup", "context", "head", "localObservation", "owner", "path", "status", "storage", "target", "worktreeId"],
+      "properties": {
+        "active": { "type": "boolean", "nullable": true },
+        "base": { "type": "string", "nullable": true },
+        "branch": { "type": "string", "nullable": true },
+        "canonicalTargetObservation": { "$ref": "#/$defs/WorktreeCanonical" },
+        "classifications": { "type": "array", "items": { "$ref": "#/$defs/WorktreeClass" } },
+        "cleanup": { "$ref": "#/$defs/WorktreeCleanup" },
+        "context": { "$ref": "#/$defs/WorktreeContext" },
+        "head": { "type": "string", "nullable": true },
+        "localObservation": { "$ref": "#/$defs/WorktreeLocal" },
+        "owner": { "$ref": "#/$defs/WorktreeOwner" },
+        "path": { "type": "string" },
+        "status": { "$ref": "#/$defs/WorktreeStatus" },
+        "storage": { "$ref": "#/$defs/WorktreeStorage" },
+        "target": { "type": "string", "nullable": true },
+        "worktreeId": { "type": "string" }
+      }
+    },
+    "WorktreeLifecycle": {
+      "description": "One Project's worktree lifecycle, as ProjectWorktreeLifecycleService.snapshotJSON writes it. Before the first refresh it is `complete: false` with error `not_observed`, which means nobody has looked yet, not that there is nothing.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "counts", "error", "observedAt", "project", "repository", "rows", "schemaVersion", "truncated"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "counts": { "$ref": "#/$defs/WorktreeCounts" },
+        "error": { "$ref": "#/$defs/WorktreeIssue", "nullable": true },
+        "observedAt": { "type": "string", "nullable": true },
+        "project": { "$ref": "#/$defs/WorktreeProjectRef" },
+        "repository": { "$ref": "#/$defs/WorktreeRepository" },
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/WorktreeRow" } },
+        "schemaVersion": { "type": "integer" },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "WorktreeLifecycleAnswer": {
+      "description": "GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectWorktreeLifecycle"],
+      "properties": {
+        "projectWorktreeLifecycle": { "$ref": "#/$defs/WorktreeLifecycle" }
+      }
+    }
+  }
+}

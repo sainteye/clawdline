@@ -53,7 +53,9 @@
     "js/view/user-messages-data.js": "1ea5808c41a913f4",
     "js/net/api.js": "b9105bac6494ea14",
     "js/input/coordinator-actions.js": "678c8c20e14a79b6",
-    "js/view/usage.js": "73b5b1c8dc87dbb3"
+    "js/view/usage.js": "73b5b1c8dc87dbb3",
+    "js/view/projects.js": "1520a08e08b7e38e",
+    "js/view/worktrees.js": "050fafa6e4a46c59"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {
