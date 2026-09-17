@@ -443,8 +443,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
           className="send"
           id="send"
           type="submit"
-          disabled={!on || sending || shotsBusy || (!text.trim() && !Shots.count())}
-          disabled={!on || sending || voiceBusy || !text.trim()}
+          disabled={!on || sending || shotsBusy || voiceBusy || (!text.trim() && !Shots.count())}
           title={keyboard ? T.webSendTip : ""}
           style={pinned}
           onMouseDown={(e) => e.preventDefault()}
