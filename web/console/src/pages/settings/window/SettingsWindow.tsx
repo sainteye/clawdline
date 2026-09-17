@@ -3,7 +3,15 @@ import type { SettingsSnapshot } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { readSettings, writeSettings } from "../api.js"
 import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyFailedTitle, seconds } from "./copy.js"
-import { readCloudStatus, type CloudStatus } from "../cloud.js"
+import {
+  beginCloudPairing,
+  cancelCloudPairing,
+  offerCloudPairing,
+  readCloudStatus,
+  revokeCloudViewer,
+  type CloudStatus,
+  type CloudViewer,
+} from "../cloud.js"
 import { DEFAULTS, reading, type SettingKey } from "./defaults.js"
 import {
   APP_EVENT,
@@ -68,6 +76,13 @@ export function SettingsWindow() {
   // The Cloud line's own reading. `undefined` is "not asked yet", `null` is
   // "this daemon would not tell us", and the two draw different cards.
   const [cloud, setCloud] = useState<CloudStatus | null | undefined>(undefined)
+  // The pairing card's own state. `pairingSaid` is whatever went wrong with the
+  // last button press, which is separate from the line's `last_error`: one is
+  // about this person's click and the other about the socket.
+  const [pairingSaid, setPairingSaid] = useState("")
+  const [pairingBusy, setPairingBusy] = useState(false)
+  const [pairingCode, setPairingCode] = useState("")
+  const [copied, setCopied] = useState(false)
   const rememberedScope = useRef("")
   const recordingRef = useRef(false)
   recordingRef.current = recording
@@ -107,12 +122,17 @@ export function SettingsWindow() {
       })
     }
     pass()
-    const timer = setInterval(pass, 5_000)
+    // Two rhythms. A line that is merely up changes slowly and five seconds is
+    // plenty; a pairing that is waiting is a person standing at two screens,
+    // and five seconds of "waiting…" after they finished is the whole of what
+    // this card feels like.
+    const waiting = cloud?.pairing?.phase === "waiting" || cloud?.pairing?.phase === "sealing"
+    const timer = setInterval(pass, waiting ? 1_500 : 5_000)
     return () => {
       live = false
       clearInterval(timer)
     }
-  }, [tab])
+  }, [tab, cloud?.pairing?.phase])
 
   /**
    * Write, then tell the shell. The Swift app's `apply()`: save the file and
@@ -630,6 +650,180 @@ export function SettingsWindow() {
     )
   }
 
+  /**
+   * Pairing a browser with this Mac, and throwing one out again.
+   *
+   * This is the one card in this window that is not a reading of a file: it
+   * starts a handover, waits for a browser to answer it, and lists who this
+   * Mac will then verify. The link it shows carries a one-time secret in its
+   * fragment — that is why the route behind it takes this machine's own token
+   * and why the card is only ever drawn in this window.
+   *
+   * Two ways in, because there are two kinds of browser. A phone points its
+   * camera at the link; a laptop on the same desk has no camera to point, so
+   * it shows its own pairing code and that goes in the field at the bottom.
+   * The cryptography is identical either way.
+   */
+  function cloudPairingBlock() {
+    if (!cloud || !cloud.enabled) return null
+    const pairing = cloud.pairing ?? { phase: "idle" }
+    const viewers = cloud.devices ?? []
+
+    const run = (what: () => Promise<unknown>) => {
+      setPairingBusy(true)
+      setPairingSaid("")
+      void what().then(
+        () => {
+          setPairingBusy(false)
+          void readCloudStatus().then((answer) => setCloud(answer))
+        },
+        (error: unknown) => {
+          setPairingBusy(false)
+          setPairingSaid(sentence(error))
+        },
+      )
+    }
+
+    const lines: { key: string; text: string; dot: "idle" | "warn" | "live" }[] = []
+    if (cloud.pinned_readable === false) {
+      lines.push({
+        key: "pinned",
+        text: fill(W.webCloudPairPinnedFailed, { why: cloud.pinned_error ?? "" }),
+        dot: "warn",
+      })
+    }
+    switch (pairing.phase) {
+      case "waiting":
+        lines.push({ key: "phase", text: W.webCloudPairWaiting, dot: "live" })
+        break
+      case "sealing":
+        lines.push({ key: "phase", text: W.webCloudPairSealing, dot: "live" })
+        break
+      case "paired":
+        lines.push({
+          key: "phase",
+          text: fill(W.webCloudPairDone, {
+            device: pairing.viewer_device_id ?? "",
+            key: pairing.viewer_fingerprint ?? "",
+          }),
+          dot: "live",
+        })
+        break
+      case "failed":
+        lines.push({ key: "phase", text: fill(W.webCloudPairFailed, { why: pairing.error ?? "" }), dot: "warn" })
+        break
+      default:
+        if (viewers.length === 0) lines.push({ key: "phase", text: W.webCloudPairNone, dot: "idle" })
+    }
+    if (pairing.phase === "waiting" && pairing.expires_at) {
+      lines.push({
+        key: "expires",
+        text: fill(W.webCloudPairExpires, { at: new Date(pairing.expires_at * 1000).toLocaleTimeString() }),
+        dot: "idle",
+      })
+    }
+    if (pairing.phase === "waiting" && pairing.machine_fingerprint) {
+      lines.push({
+        key: "machine",
+        text: fill(W.webCloudPairMachineKey, { key: pairing.machine_fingerprint }),
+        dot: "idle",
+      })
+    }
+    if (pairingSaid) lines.push({ key: "said", text: pairingSaid, dot: "warn" })
+
+    const waiting = pairing.phase === "waiting" || pairing.phase === "sealing"
+    return (
+      <Block label={W.webCloudPair}>
+        {lines.map((line) => (
+          <Note key={line.key} dot={line.dot}>
+            {line.text}
+          </Note>
+        ))}
+        {waiting && pairing.link ? (
+          <>
+            <Note dot="idle">{W.webCloudPairOpen}</Note>
+            <Note
+              mono
+              dot="live"
+              trailing={
+                <Chip
+                  onClick={() => {
+                    // A clipboard a browser refuses is not an error worth a
+                    // dialog: the link is on screen and can be selected.
+                    void navigator.clipboard?.writeText(pairing.link ?? "").then(
+                      () => {
+                        setCopied(true)
+                        setTimeout(() => setCopied(false), 2_000)
+                      },
+                      () => setPairingSaid(W.webCloudPairCopy),
+                    )
+                  }}
+                >
+                  {copied ? W.webCloudPairCopied : W.webCloudPairCopy}
+                </Chip>
+              }
+            >
+              {pairing.link}
+            </Note>
+          </>
+        ) : null}
+        <div className="sw-note">
+          <span className="sw-dot idle" aria-hidden="true" />
+          <span className="sw-note-text">
+            <Chip disabled={pairingBusy} onClick={() => run(beginCloudPairing)}>
+              {waiting ? W.webCloudPairAgain : W.webCloudPairStart}
+            </Chip>
+            {waiting ? (
+              <Chip disabled={pairingBusy} onClick={() => run(cancelCloudPairing)}>
+                {W.webCloudPairCancel}
+              </Chip>
+            ) : null}
+          </span>
+        </div>
+        {viewers.map((viewer) => (
+          <Note
+            key={viewer.id}
+            dot={viewer.revoked ? "warn" : viewer.pinned ? "live" : "idle"}
+            trailing={
+              viewer.revoked ? undefined : (
+                <Chip disabled={pairingBusy} onClick={() => run(() => revokeCloudViewer(viewer.id))}>
+                  {W.webCloudPairRevoke}
+                </Chip>
+              )
+            }
+          >
+            {viewerLine(viewer)}
+          </Note>
+        ))}
+        <Row label={W.webCloudPairCodeLabel} hint={W.webCloudPairCodeHint}>
+          <MemoField
+            label={W.webCloudPairCodeLabel}
+            value={pairingCode}
+            example="eyJhY2NvdW50X2lkIjoi…"
+            onCommit={(value) => {
+              const code = value.trim()
+              setPairingCode("")
+              if (!code) return
+              run(() => offerCloudPairing(code))
+            }}
+          />
+        </Row>
+      </Block>
+    )
+  }
+
+  /** One viewer row: who it is, what this Mac knows it by, and where that came from. */
+  function viewerLine(viewer: CloudViewer): string {
+    const source = viewer.revoked
+      ? W.webCloudPairRevoked
+      : viewer.pinned
+        ? W.webCloudPairPinned
+        : W.webCloudPairRoster
+    const name = viewer.name || viewer.kind || viewer.id
+    const parts = [name, viewer.fingerprint, source].filter(Boolean)
+    return parts.join(" · ")
+  }
+
   function remotePane() {
     return (
       <>
@@ -670,6 +864,7 @@ export function SettingsWindow() {
         </div>
         <div className="sw-column">
           {cloudBlock()}
+          {cloudPairingBlock()}
           <Row label={W.settingsTunnel} hint={W.settingsTunnelHint} first>
             <PopUp
               label={W.settingsTunnel}

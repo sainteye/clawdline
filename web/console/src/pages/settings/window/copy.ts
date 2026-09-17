@@ -120,6 +120,33 @@ export const W = {
   webCloudStatusMac: "Mac {machine}",
   webCloudStatusDropped: "自 {at} 起 Mac 丟棄：{list}",
   webCloudStatusNoDrops: "自 {at} 起 Mac 沒有丟棄任何指令。",
+
+  // Pairing a browser with this Mac. These are this build's own words rather
+  // than the hosted console's: the Swift app pairs from an AppKit sheet with a
+  // QR in it, and this window has neither the sheet nor a camera to point at
+  // one, so the sentences are about a link instead of a code on a screen.
+  webCloudPair: "配對瀏覽器",
+  webCloudPairNone: "還沒有任何瀏覽器配對到這台 Mac。",
+  webCloudPairStart: "產生配對連結",
+  webCloudPairAgain: "換一個連結",
+  webCloudPairCancel: "停止等待",
+  webCloudPairOpen: "在要配對的瀏覽器上打開這個連結，那個瀏覽器要先登入同一個 Clawdline Cloud 帳號。",
+  webCloudPairCopy: "複製連結",
+  webCloudPairCopied: "已複製",
+  webCloudPairExpires: "連結在 {at} 失效。",
+  webCloudPairMachineKey: "這台 Mac 的金鑰是 {key}，配對完成時瀏覽器會顯示同一組。",
+  webCloudPairWaiting: "等待瀏覽器回應⋯⋯",
+  webCloudPairSealing: "收到瀏覽器的配對資料，正在交接金鑰⋯⋯",
+  webCloudPairDone: "已配對 {device}（{key}）。",
+  webCloudPairFailed: "配對沒有完成：{why}",
+  webCloudPairCodeLabel: "瀏覽器顯示的配對碼",
+  webCloudPairCodeHint: "桌機瀏覽器沒有鏡頭可以掃這台 Mac，改成把它畫面上的那串配對碼貼進來，走的是同一套加密。",
+  webCloudPairCodeSend: "用這串配對碼配對",
+  webCloudPairPinned: "由這台 Mac 配對",
+  webCloudPairRoster: "只在帳號清單上",
+  webCloudPairRevoked: "已在這台 Mac 撤銷",
+  webCloudPairRevoke: "撤銷",
+  webCloudPairPinnedFailed: "讀不到這台 Mac 的已配對清單，所以現在不接受任何瀏覽器：{why}",
   webFailMacWritesOff: "Mac 目前不接受來自 Cloud 的指令。",
 } as const
 
