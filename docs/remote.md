@@ -49,7 +49,10 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
 
 1. 設定、用量、專案三頁（已落地：c9f60c1、303c9e4、ef77892）。
 2. 免費版配對與認證的 Go 核心，加上原生殼的最小接線（token、配對 alert）。在隔離的 worktree 裡做，
-   這樣閘門不會在其他 child 量 7727 的途中上線。
+   這樣閘門不會在其他 child 量 7727 的途中上線。**做完了，在分支 `free-auth`（0e5baf0），還沒合進 master**：
+   先由另一個模型（Codex）做一次安全審查；合進去之後，下一次重建 7727 閘門就會生效，量測要改用
+   `clawdline open`（見分支裡的 replica.md）。已知還沒做：React console 的配對畫面、Dashboard 的派工按鈕
+   （會 403）、send 的 Idempotency-Key、`/v1/health` 的 auth 欄位。
 3. 配對的網頁入口（照抄 `door/door.js`、`door.css`）與原生殼的 Remote 設定。
 4. tunnel：跑使用者自己安裝的 cloudflared，一律帶 `--config`，還沒配對任何裝置就拒絕啟動。
 5. Cloud bridge：先讀 PROTOCOL.md，拆成傳輸與加密一波、27 種操作分兩三波，用假的 relay 測。
