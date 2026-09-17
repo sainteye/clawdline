@@ -2808,6 +2808,53 @@ export interface UsageRow {
 }
 
 /**
+ * A refusal from this route. It is the ordinary refusal shape with one field added,
+ * because `no_whisper` covers two different afternoons: `brew install whisper-cpp`
+ * leaves a machine with the binary and no model, and a page told only "no whisper"
+ * sends somebody to check the thing they already did.
+ */
+export interface VoiceRefusal {
+  detail: string
+  error: string
+
+  /**
+   * Only on `no_whisper`: `no_binary` or `no_model`.
+   */
+  reason?: string
+}
+
+/**
+ * A recording, already in the one shape whisper.cpp takes. The resampling is done
+ * in the browser because that is the one format question every browser can answer
+ * about itself — what it just recorded — while this machine has no ffmpeg and
+ * could not open an Opus file if it wanted to.
+ */
+export interface VoiceRequest {
+  /**
+   * Base64 of little-endian 16-bit mono PCM. A minute of it is about 2.6MB encoded.
+   */
+  audio: string
+
+  /**
+   * Must be 16000. Checked rather than resampled: a body that names 48000 has not
+   * made a small mistake, it has sent something that would transcribe as a voice
+   * three times too fast, and quietly resampling somebody's voice is a worse answer
+   * than saying no.
+   */
+  rate: number
+}
+
+/**
+ * What was said, and how long this machine took to read it. An empty `text` is an
+ * answer and not a failure: whisper heard the recording and there were no words in
+ * it, which happens to a pocket and to a room that went quiet.
+ */
+export interface VoiceResult {
+  ms: number
+  text: string
+}
+
+/**
  * What a finished row delivered, present only with `milestone_complete` or
  * `work_complete`. `scope` is `session` for a session's own delivery receipt and
  * `task` for the task that opened it; the landing fields are present only when a

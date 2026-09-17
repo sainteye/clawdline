@@ -60,6 +60,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Clawdline</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <!-- Dictation. The console records in the WKWebView and this machine's own
+       whisper reads it (POST /v1/voice); nothing about that leaves the
+       machine, which is the sentence the system prompt shows. Without this
+       key macOS kills the app the first time the page asks for a microphone
+       rather than prompting for one, so it ships with the delegate that
+       grants it (shell/darwin/Microphone.swift) and not separately. -->
+  <key>NSMicrophoneUsageDescription</key><string>Clawdline Next transcribes what you dictate on this Mac, with the model on this Mac. The recording is never uploaded.</string>
   <!-- clawdline-next://open, so any tool can summon the window. Not clawdline://,
        which the Swift app owns and which both apps would then answer. -->
   <key>CFBundleURLTypes</key>

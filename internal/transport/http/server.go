@@ -173,6 +173,10 @@ func (s *Server) Handler() http.Handler {
 	// Pictures: stored by a session (machine token), read by id (images.go).
 	mux.HandleFunc("/v1/artifacts/images", s.imagesRoute)
 	mux.HandleFunc("/v1/artifacts/images/", s.imageRoute)
+	// Said out loud rather than typed (voice.go). Not a session route and not
+	// a send: this machine transcribes and answers with the text, and what
+	// happens to it afterwards is the composer's business.
+	mux.HandleFunc("/v1/voice", s.voiceRoute)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			s.boardWrite(w, r)

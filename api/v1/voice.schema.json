@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "voice.schema.json",
+  "title": "Saying it instead of typing it",
+  "description": "POST /v1/voice. The browser records, this machine transcribes, and the words land in the composer's box and stop there. Nothing on this path can reach a terminal, which is what makes a dictation that heard the wrong thing a typo rather than an incident.",
+  "$defs": {
+    "VoiceRequest": {
+      "description": "A recording, already in the one shape whisper.cpp takes. The resampling is done in the browser because that is the one format question every browser can answer about itself — what it just recorded — while this machine has no ffmpeg and could not open an Opus file if it wanted to.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["audio", "rate"],
+      "properties": {
+        "audio": { "description": "Base64 of little-endian 16-bit mono PCM. A minute of it is about 2.6MB encoded.", "type": "string" },
+        "rate": { "description": "Must be 16000. Checked rather than resampled: a body that names 48000 has not made a small mistake, it has sent something that would transcribe as a voice three times too fast, and quietly resampling somebody's voice is a worse answer than saying no.", "type": "integer" }
+      }
+    },
+    "VoiceResult": {
+      "description": "What was said, and how long this machine took to read it. An empty `text` is an answer and not a failure: whisper heard the recording and there were no words in it, which happens to a pocket and to a room that went quiet.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ms", "text"],
+      "properties": {
+        "ms": { "type": "integer" },
+        "text": { "type": "string" }
+      }
+    },
+    "VoiceRefusal": {
+      "description": "A refusal from this route. It is the ordinary refusal shape with one field added, because `no_whisper` covers two different afternoons: `brew install whisper-cpp` leaves a machine with the binary and no model, and a page told only \"no whisper\" sends somebody to check the thing they already did.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detail", "error"],
+      "properties": {
+        "detail": { "type": "string" },
+        "error": { "type": "string" },
+        "reason": { "description": "Only on `no_whisper`: `no_binary` or `no_model`.", "type": "string" }
+      }
+    }
+  }
+}

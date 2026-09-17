@@ -305,6 +305,11 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         config.userContentController = content
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
+        // The microphone, and only for the console's own origin — see
+        // Microphone.swift. Without a UI delegate a WKWebView refuses
+        // `getUserMedia` silently, so dictation would look broken in the app
+        // and work in a browser.
+        web.uiDelegate = self
 
         window = ConsoleWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
