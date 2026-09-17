@@ -65,6 +65,32 @@ func (v Values) String(key string) (string, bool) {
 	return s, true
 }
 
+// Bool returns a key's value when it is a JSON boolean, and whether it was.
+func (v Values) Bool(key string) (bool, bool) {
+	raw, ok := v.Raw[key]
+	if !ok {
+		return false, false
+	}
+	var b bool
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return false, false
+	}
+	return b, true
+}
+
+// Number returns a key's value when it is a JSON number, and whether it was.
+func (v Values) Number(key string) (float64, bool) {
+	raw, ok := v.Raw[key]
+	if !ok {
+		return 0, false
+	}
+	var f float64
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return 0, false
+	}
+	return f, true
+}
+
 // File is the settings file of one directory. One per process is enough; its
 // lock orders this process's writers, and a write re-reads the disk under it.
 type File struct {
@@ -297,6 +323,183 @@ func ValidScope(s string) bool {
 		for _, r := range id {
 			ok := r == '.' || r == '-' || r == '_' ||
 				(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+			if !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// Settable is one key the settings window may change, and what the file will
+// take for it.
+//
+// A table rather than thirty-six `if` statements in the route, for the reason
+// the route is not the right place to know any of this: what `output_size`
+// accepts is a fact about the file, and the shell, the daemon and a later
+// platform's shell all have to agree on it. The bounds are the Swift app's
+// `Config.load` bounds, not its sliders' — a hand-edited file that app would
+// keep is a file this one keeps too.
+type Settable struct {
+	// Name is the key as it is spelled in the file.
+	Name string
+	// Kind is one of "string", "bool", "number", "int".
+	Kind string
+	// Choices is the closed set a string may be, when it is closed.
+	Choices []string
+	// Check is the test for a string that is not a closed set.
+	Check func(string) bool
+	// Min and Max bound a number or an integer, inclusive.
+	Min, Max float64
+	// Refusal is the code a rejected value answers with.
+	Refusal string
+	// Because is what the refusal says after the code.
+	Because string
+}
+
+// Allows reports whether v is a value this key will take. v is a string, a
+// bool, a float64 or an int64, matching Kind.
+func (k Settable) Allows(v any) bool {
+	switch k.Kind {
+	case "string":
+		s, ok := v.(string)
+		if !ok {
+			return false
+		}
+		if k.Check != nil {
+			return k.Check(s)
+		}
+		for _, choice := range k.Choices {
+			if s == choice {
+				return true
+			}
+		}
+		return false
+	case "bool":
+		_, ok := v.(bool)
+		return ok
+	case "number":
+		f, ok := v.(float64)
+		return ok && f >= k.Min && f <= k.Max
+	case "int":
+		i, ok := v.(int64)
+		return ok && float64(i) >= k.Min && float64(i) <= k.Max
+	}
+	return false
+}
+
+// Settables is every key the settings window writes, in the order the window's
+// tabs reach them. A key absent from here is a key the route will not take, so
+// adding a row to that window is adding a line here first.
+var Settables = []Settable{
+	{Name: "hotkey", Kind: "string", Check: ValidHotkey, Refusal: "invalid_hotkey",
+		Because: "not a combination the shell can register"},
+	{Name: "scope_app", Kind: "string", Check: ValidScope, Refusal: "invalid_scope",
+		Because: "scope_app is bundle identifiers separated by commas"},
+	{Name: "language", Kind: "string", Choices: Languages, Refusal: "invalid_language",
+		Because: "auto, or a tag the catalog resolves"},
+	{Name: "mascot", Kind: "string", Check: ValidName, Refusal: "invalid_mascot",
+		Because: "a pack name: letters, digits, dot, dash or underscore"},
+	{Name: "terminal", Kind: "string", Choices: []string{"auto", "iterm", "tmux"},
+		Refusal: "invalid_terminal", Because: "auto, iterm or tmux"},
+	{Name: "reopen_on_return", Kind: "bool"},
+	{Name: "follow_target", Kind: "bool"},
+	{Name: "codex_auto_name", Kind: "bool"},
+	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"claude", "codex"},
+		Refusal: "invalid_assistant", Because: "claude or codex"},
+	{Name: "notch", Kind: "bool"},
+	// The Swift app takes y_fraction strictly between 0.02 and 0.9; the bound
+	// here is inclusive, so it is stated a step inside on both sides.
+	{Name: "y_fraction", Kind: "number", Min: 0.021, Max: 0.899},
+	{Name: "width", Kind: "number", Min: 360, Max: 1400},
+	{Name: "card_opacity", Kind: "number", Min: 0, Max: 1},
+	{Name: "output_mode", Kind: "string", Choices: []string{"auto", "transcript", "terminal"},
+		Refusal: "invalid_output_mode", Because: "auto, transcript or terminal"},
+	{Name: "output_height", Kind: "number", Min: 80, Max: 900},
+	{Name: "output_size", Kind: "number", Min: 8, Max: 28},
+	{Name: "output_font", Kind: "string", Check: ValidFont, Refusal: "invalid_font",
+		Because: "a font family name"},
+	{Name: "backdrop", Kind: "number", Min: 0, Max: 1},
+	{Name: "output_newest_first", Kind: "bool"},
+	{Name: "voice_engine", Kind: "string", Choices: []string{"auto", "apple", "whisper"},
+		Refusal: "invalid_voice_engine", Because: "auto, apple or whisper"},
+	{Name: "voice_settle_seconds", Kind: "number", Min: 0, Max: 30},
+	{Name: "voice_stop_seconds", Kind: "number", Min: 0, Max: 300},
+	{Name: "remote", Kind: "bool"},
+	{Name: "remote_write", Kind: "bool"},
+	{Name: "remote_tunnel", Kind: "string", Choices: []string{"off", "quick", "named"},
+		Refusal: "invalid_tunnel", Because: "off, quick or named"},
+	{Name: "remote_hostname", Kind: "string", Check: ValidHostname, Refusal: "invalid_hostname",
+		Because: "a hostname, or empty"},
+	{Name: "push_on_delivery", Kind: "bool"},
+	{Name: "push_on_fanout", Kind: "bool"},
+	{Name: "smart_notifications", Kind: "bool"},
+	{Name: "push_on_deploy", Kind: "bool"},
+	{Name: "orchestrator_agent_notify", Kind: "bool"},
+	{Name: "orchestrator_enabled", Kind: "bool"},
+	{Name: "orchestrator_max_children", Kind: "int", Min: 1, Max: 10},
+	{Name: "orchestrator_permission", Kind: "string", Choices: []string{"ask", "edits", "full"},
+		Refusal: "invalid_permission", Because: "ask, edits or full"},
+	{Name: "orchestrator_notify_root", Kind: "bool"},
+	{Name: "orchestrator_child_linger", Kind: "int", Min: -1, Max: 3600},
+}
+
+// SettableByName finds one key, or false for a name this file does not set.
+func SettableByName(name string) (Settable, bool) {
+	for _, k := range Settables {
+		if k.Name == name {
+			return k, true
+		}
+	}
+	return Settable{}, false
+}
+
+// Languages is `auto` plus the tags the Swift app's language popup offers, in
+// its order (`Settings.swift` languagePopUp). This build ships one catalog;
+// the key is still written so that a build with more reads it.
+var Languages = []string{"auto", "en", "zh-Hant", "zh-Hans", "ja", "ko", "es", "pt", "fr", "de",
+	"ru", "it", "hi", "id", "tr"}
+
+// ValidName reports whether s is a plain identifier — a mascot pack's name.
+// Anything that could be a path, a control character or a surprise is refused:
+// this value reaches a file name in the shell.
+func ValidName(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		ok := r == '.' || r == '-' || r == '_' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if !ok {
+			return false
+		}
+	}
+	return s != "." && s != ".."
+}
+
+// ValidFont reports whether s could be a font family name. The list of faces on
+// a machine is the shell's to know; this only refuses what no name is.
+func ValidFont(s string) bool {
+	if s == "" || len(s) > 128 {
+		return false
+	}
+	return !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f })
+}
+
+// ValidHostname reports whether s is a hostname, or empty for none.
+func ValidHostname(s string) bool {
+	if s == "" {
+		return true
+	}
+	if len(s) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(s, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		for _, r := range label {
+			ok := r == '-' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 			if !ok {
 				return false
 			}

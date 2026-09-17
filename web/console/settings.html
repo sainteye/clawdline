@@ -1,0 +1,20 @@
+<!-- The native settings window's document.
+     A second entry rather than a page inside the console, because that is what
+     the window is: the shell opens its own window on this, and nothing of the
+     session list — the header, the drawer, the event stream, twenty-nine
+     stylesheets — belongs in it. The console's index.html stays exactly as the
+     Swift app's page has it, quirks mode and all; this one is new, so it has
+     the doctype a new document should have. -->
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Clawdline 設定</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/pages/settings/window/main.tsx"></script>
+  </body>
+</html>

@@ -57,12 +57,10 @@ export const SHELL_RECORDING_EVENT = "clawdline-shell-hotkey"
 
 type Handler = { postMessage: (body: unknown) => void }
 
-declare global {
-  interface Window {
-    __clawdlineShell?: { settings?: { words?: Partial<ShellSettingsWords> } }
-    webkit?: { messageHandlers?: Record<string, Handler | undefined> }
-  }
-}
+// `window.__clawdlineShell` and `window.webkit` are declared once, in
+// window/bridge.ts, which is where the whole of the shell's surface is written
+// down. A second declaration of the same property has to match it exactly, and
+// two files describing one object is how they stop matching.
 
 function handler(): Handler | null {
   return window.webkit?.messageHandlers?.shellSettings ?? null
@@ -78,7 +76,7 @@ export function shellSettingsWords(): ShellSettingsWords | null {
   if (!w) return null
   const keys: (keyof ShellSettingsWords)[] = ["hotkey", "recording", "scope", "scopeGlobal", "off"]
   if (!keys.every((k) => typeof w[k] === "string" && w[k])) return null
-  return w as ShellSettingsWords
+  return w as unknown as ShellSettingsWords
 }
 
 /** Ask the shell for something. False when there is no shell to ask. */

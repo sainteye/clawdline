@@ -1,0 +1,575 @@
+/*
+ * The native settings window, measured.
+ *
+ * Every number here is read out of the Swift app rather than judged by eye:
+ * `Metric` in Sources/WindowChrome.swift for the paddings, the gutter and the
+ * type sizes, `Style` in Sources/Panel.swift for the ink, the hairline, the
+ * chip fill and the accent, and the control classes in Sources/Settings.swift
+ * for the switch's 38x20, the chip's 26pt and 7pt radius, the tab strip's 2pt
+ * accent rule and the card's 8pt one.
+ *
+ * The window is dark whatever the system is, exactly as the original is and for
+ * the original's reason: every surface colour this project owns is white at a
+ * low alpha and simply disappears on a light ground.
+ *
+ * Nothing in here leaks: the whole sheet is under `.sw-window`, and this
+ * stylesheet is loaded only by the settings window's own document.
+ */
+
+.sw-window {
+  --sw-pad: 26px;
+  --sw-gutter: 36px;
+  --sw-row-gap: 18px;
+  --sw-row-pad: 8px;
+  --sw-strip: 46px;
+  --sw-foot: 40px;
+
+  --sw-ink: rgb(20, 20, 23); /* Style.ink, 0.08/0.08/0.09 */
+  --sw-accent: rgb(217, 119, 87); /* Style.accent */
+  --sw-hairline: rgba(255, 255, 255, 0.08);
+  --sw-chip-fill: rgba(255, 255, 255, 0.07);
+  --sw-chip-edge: rgba(255, 255, 255, 0.09);
+  --sw-label: rgba(255, 255, 255, 0.92); /* Metric.label */
+  --sw-soft: rgba(255, 255, 255, 0.62); /* Metric.soft */
+  --sw-faint: rgba(255, 255, 255, 0.44); /* Metric.faint */
+  --sw-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sw-ink);
+  color: var(--sw-label);
+  font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The strip: words with an accent rule under the current one, a hairline under
+   the band, and the mascot standing on the same line the words sit on. */
+.sw-strip {
+  flex: none;
+  height: var(--sw-strip);
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 var(--sw-pad);
+  border-bottom: 1px solid var(--sw-hairline);
+}
+
+.sw-strip-mark {
+  width: 22px;
+  height: 22px;
+  margin-right: -8px;
+  flex: none;
+  /* The project's own creature at three pixels a cell, the wordmark's literal
+     (`main.js`): ".######." / ".#o##o#." / "########" / ".##..##.". Drawn as a
+     gradient grid rather than fetched, so the window needs no second request. */
+  background-image: linear-gradient(var(--sw-accent), var(--sw-accent)), linear-gradient(#141416, #141416);
+  background-repeat: no-repeat;
+  background-size: 100% 100%, 0 0;
+  -webkit-mask-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'>\
+<path fill='black' d='M1 0h6v1H1zM1 1h1v1H1zM3 1h2v1H3zM6 1h1v1H6zM0 2h8v1H0zM1 3h2v1H1zM5 3h2v1H5z'/>\
+</svg>");
+  -webkit-mask-size: 22px 11px;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'>\
+<path fill='black' d='M1 0h6v1H1zM1 1h1v1H1zM3 1h2v1H3zM6 1h1v1H6zM0 2h8v1H0zM1 3h2v1H1zM5 3h2v1H5z'/>\
+</svg>");
+  mask-size: 22px 11px;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+
+.sw-tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 2px 0 9px;
+  margin: 0;
+  font: 500 12.5px/1 inherit;
+  color: var(--sw-faint);
+  cursor: pointer;
+  position: relative;
+}
+.sw-tab:hover {
+  color: var(--sw-soft);
+}
+.sw-tab.current {
+  color: var(--sw-label);
+  cursor: default;
+}
+.sw-tab.current::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--sw-accent);
+}
+.sw-tab:focus-visible {
+  outline: 1px solid rgba(217, 119, 87, 0.55);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* The pane scrolls; the strip and the footer stay outside it, so the tabs do
+   not scroll away from under the pointer. */
+.sw-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 22px var(--sw-pad) 24px;
+}
+
+.sw-pane {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--sw-gutter);
+  align-items: start;
+  max-width: 904px; /* Metric.maxColumn * 2 + gutter */
+}
+/* One column only, when the tab has one: the original makes the pane the full
+   width rather than leaving half of it empty. */
+.sw-pane:has(.sw-column:only-child) {
+  grid-template-columns: 1fr;
+}
+
+.sw-column {
+  min-width: 0;
+}
+
+.sw-hairline {
+  height: 1px;
+  background: var(--sw-hairline);
+}
+
+/* A row: the label at the left edge, the control finishing at the right. Not a
+   label column and a control column — the fixed 168pt seam is the arrangement
+   that made the original read as generated. */
+.sw-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sw-row-gap);
+  padding: var(--sw-row-pad) 0;
+  min-height: calc(15px + var(--sw-row-pad) * 2);
+}
+.sw-row-label {
+  flex: 1 1 auto;
+  min-width: 60px;
+  color: var(--sw-label);
+}
+.sw-row-control {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.sw-hint {
+  margin: -3px 0 8px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--sw-faint);
+  max-width: 600px; /* Metric.maxMeasure */
+}
+.sw-hint-block {
+  margin: 7px 0 4px;
+}
+
+.sw-head {
+  font: 600 10px/1.3 inherit;
+  letter-spacing: 0.04em;
+  color: var(--sw-faint);
+  padding-bottom: 8px;
+}
+
+.sw-block {
+  padding: 16px 0 0;
+}
+.sw-block-label {
+  display: block;
+  color: var(--sw-label);
+  padding-bottom: 6px;
+}
+
+.sw-mono,
+.sw-foot-path {
+  font: 11px/1.45 var(--sw-mono);
+  color: var(--sw-faint);
+  user-select: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sw-mono {
+  padding-top: 10px;
+}
+
+.sw-said {
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  color: var(--sw-soft);
+}
+.sw-said-foot {
+  flex: none;
+  padding: 0 var(--sw-pad) 8px;
+}
+
+/* The footer: where the file is, as plain selectable text. There is no "open
+   the config file" button, and its absence is deliberate — see Settings.swift. */
+.sw-foot {
+  flex: none;
+  height: var(--sw-foot);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sw-pad);
+  border-top: 1px solid var(--sw-hairline);
+}
+
+/* --- the controls ------------------------------------------------------- */
+
+.sw-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 13px;
+  border-radius: 7px;
+  border: 1px solid var(--sw-chip-edge);
+  background: var(--sw-chip-fill);
+  color: var(--sw-label);
+  font: 500 11.5px/1 inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sw-chip.wide {
+  min-width: 128px;
+}
+.sw-chip:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+.sw-chip:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+}
+.sw-chip.armed {
+  background: rgba(217, 119, 87, 0.28);
+  border-color: var(--sw-accent);
+}
+.sw-chip:disabled {
+  opacity: 0.36;
+  cursor: default;
+}
+.sw-chip:focus-visible {
+  outline: 1px solid rgba(217, 119, 87, 0.55);
+  outline-offset: 2px;
+}
+
+/* SwitchView: a 38x20 track, a 14pt knob, the accent behind it once it is on. */
+.sw-switch {
+  position: relative;
+  display: inline-flex;
+  width: 38px;
+  height: 22px;
+  flex: none;
+}
+.sw-switch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.sw-switch input:disabled {
+  cursor: default;
+}
+.sw-switch-track {
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 38px;
+  height: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--sw-chip-edge);
+  background: var(--sw-chip-fill);
+  transition: background 0.16s ease, border-color 0.16s ease;
+  pointer-events: none;
+}
+.sw-switch.on .sw-switch-track {
+  background: rgba(217, 119, 87, 0.9);
+  border-color: var(--sw-accent);
+}
+.sw-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.5);
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+.sw-switch.on .sw-switch-knob {
+  transform: translateX(18px);
+  background: rgba(255, 255, 255, 0.95);
+}
+.sw-switch.off-limits {
+  opacity: 0.36;
+}
+.sw-switch input:focus-visible + .sw-switch-track {
+  outline: 1.5px solid rgba(217, 119, 87, 0.55);
+  outline-offset: 2.5px;
+  border-radius: 13px;
+}
+
+/* ChoicePopUp: sized to its contents, then clamped between 130 and 210. */
+.sw-popup {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.sw-popup select {
+  appearance: none;
+  min-width: 130px;
+  max-width: 210px;
+  height: 25px;
+  padding: 0 24px 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--sw-chip-edge);
+  background: var(--sw-chip-fill);
+  color: var(--sw-label);
+  font: 12px/1 inherit;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.sw-popup select:disabled {
+  opacity: 0.36;
+  cursor: default;
+}
+.sw-popup select:focus-visible {
+  outline: 1px solid rgba(217, 119, 87, 0.55);
+  outline-offset: 2px;
+}
+.sw-popup option {
+  background: var(--sw-ink);
+  color: var(--sw-label);
+}
+.sw-popup-mark {
+  position: absolute;
+  right: 8px;
+  width: 8px;
+  height: 10px;
+  color: var(--sw-soft);
+  pointer-events: none;
+}
+
+/* ValueSlider: a 142pt track and a 56pt right-aligned readout, 206 in all. */
+.sw-slider {
+  display: inline-flex;
+  align-items: center;
+  width: 206px;
+}
+.sw-slider input {
+  appearance: none;
+  width: 142px;
+  height: 20px;
+  margin: 0;
+  background: none;
+  cursor: pointer;
+}
+.sw-slider input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--sw-accent) 0,
+    var(--sw-accent) var(--sw-filled, 0%),
+    rgba(255, 255, 255, 0.14) var(--sw-filled, 0%),
+    rgba(255, 255, 255, 0.14) 100%
+  );
+}
+.sw-slider input::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 7px;
+  background: #f2f2f4;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.sw-slider input:focus-visible {
+  outline: 1px solid rgba(217, 119, 87, 0.55);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.sw-readout {
+  width: 56px;
+  margin-left: 8px;
+  text-align: right;
+  font: 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--sw-soft);
+}
+
+.sw-field {
+  width: 206px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid var(--sw-chip-edge);
+  background: var(--sw-chip-fill);
+  color: var(--sw-label);
+  font: 11px/1 var(--sw-mono);
+}
+.sw-field::placeholder {
+  color: var(--sw-faint);
+}
+.sw-field:focus-visible {
+  outline: 1px solid rgba(217, 119, 87, 0.55);
+  outline-offset: 1px;
+}
+
+/* NoteCard: a sentence with a mark in front of it, set apart from the rows so a
+   reading does not look like a setting you failed to change. */
+.sw-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--sw-chip-edge);
+  background: var(--sw-chip-fill);
+}
+.sw-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  position: relative;
+}
+.sw-dot::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 3.5px;
+  width: 5px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.sw-dot.live::after {
+  background: var(--sw-accent);
+}
+.sw-dot.warn::after {
+  background: rgba(217, 119, 87, 0.42);
+}
+.sw-note-text {
+  flex: 1 1 auto;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--sw-soft);
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+.sw-note-text.mono {
+  font: 11px/1.45 var(--sw-mono);
+}
+.sw-note-trailing {
+  flex: none;
+}
+
+/* AppScopeView: one application a row, 27pt each, with the add chip underneath. */
+.sw-apps.dimmed {
+  opacity: 0.36;
+}
+.sw-app {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 27px;
+}
+.sw-app-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.sw-app-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sw-label);
+}
+/* A bundle id whose app is not installed still gets a row, in monospace: the
+   alternative is dropping a line somebody wrote into their own config file. */
+.sw-app-name.plain {
+  font: 11px/1 var(--sw-mono);
+  color: var(--sw-faint);
+}
+.sw-app-remove {
+  min-width: 28px;
+  padding: 0 6px;
+}
+
+.sw-add {
+  position: relative;
+  padding-top: 7px;
+}
+
+.sw-menu {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 3;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--sw-chip-edge);
+  background: #1c1c20;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+.sw-menu-head {
+  padding: 5px 8px;
+  font-size: 10.5px;
+  color: var(--sw-faint);
+}
+.sw-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--sw-label);
+  font: 12px/1.3 inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sw-menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.sw-menu-item:disabled {
+  opacity: 0.36;
+  cursor: default;
+}
+.sw-menu-rule {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--sw-hairline);
+}
+
+/* Narrow enough that two columns would be two narrow columns: the original
+   cannot be resized at all, and a shell window on a small screen can. */
+@media (max-width: 720px) {
+  .sw-pane {
+    grid-template-columns: 1fr;
+  }
+}

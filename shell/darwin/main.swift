@@ -560,8 +560,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         appMenu.addItem(homeItem)
         appMenu.addItem(.separator())
 
-        // The native settings window is not ported; this opens the console's
-        // settings page, which carries the rows of it this shell acts on.
+        // The native settings window, in its own window — SettingsWindow.swift.
         let settings = NSMenuItem(title: L.t.menuEditConfig, action: #selector(openSettings),
                                   keyEquivalent: ",")
         settings.target = self
@@ -975,11 +974,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 /// "Reload config", as there — nothing watches the file.
 extension Shell {
     @objc func openSettings() {
-        showConsole()
-        // The settings page is the console's; a window showing the web side
-        // would otherwise take ⌘, and appear to do nothing.
-        showTab(web: false)
-        goToPage("settings")
+        // The settings window is its own window now (SettingsWindow.swift),
+        // the way the Swift app's is, rather than a page in the console.
+        SettingsWindowController.shared.show(host: self)
     }
 
     /// Ask the console for a page the way its own address does. Before the
@@ -1121,6 +1118,22 @@ extension Shell {
               let array = String(data: data, encoding: .utf8) else { return "\"\"" }
         return String(array.dropFirst().dropLast())
     }
+}
+
+/// The settings window's two hooks into the app (SettingsWindow.swift).
+///
+/// Here rather than there because both touch members this file keeps private,
+/// and because they are the whole of what that window may reach: it draws
+/// nothing of this app's state and changes nothing but the file.
+extension Shell: SettingsWindowHost {
+    func settingsSuspendHotKey() {
+        stopRecording(restore: false)
+        hotKey.unregister()
+        hotKeyActive = false
+        hotKeySuspended = true
+    }
+
+    func settingsApplyConfig() { configChanged() }
 }
 
 extension Shell: NSMenuDelegate {
