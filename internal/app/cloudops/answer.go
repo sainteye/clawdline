@@ -161,19 +161,53 @@ func (b Bridge) answer(cmd Command, p plan, o op, res LocalResponse) Answer {
 		}
 		return b.settle(p, res.Status, "", res.Body, nil)
 	}
-	base := map[string]any{"code": "command_failed", "message": "This command could not be completed."}
-	var parsed map[string]any
-	if err := json.Unmarshal(res.Body, &parsed); err == nil {
-		if inner, ok := parsed["error"].(map[string]any); ok {
-			base = inner
-		}
-	}
+	base := refusalOf(res.Body)
 	code, _ := base["code"].(string)
 	if code == "" {
 		code = "command_failed"
 	}
 	detail, _ := base["detail"].(map[string]any)
 	return b.settle(p, res.Status, code, nil, errorObject(base, code, layerRoute, cmd.Sequence, detail))
+}
+
+// refusalOf reads this daemon's refusal, which has two spellings.
+//
+// The gate and the documents route answer `{"error":{"code","message"}}`, which
+// is the Swift app's shape and the one the hosted console reads. Most other
+// routes answer `{"error":"<code>","detail":"<sentence>"}` — flat, with the
+// code where the object would be. Both are this machine's own word for what
+// happened, and a viewer that got `command_failed` for a `session_unknown`
+// would be shown a shrug where there was an explanation.
+//
+// **Whatever else the route put beside it comes too.** A blocked close carries
+// `reasons`, and a card that can only say "refused" sends a person to the
+// terminal to find out why — which is the round trip this daemon exists to
+// remove.
+func refusalOf(answer []byte) map[string]any {
+	fallback := map[string]any{"code": "command_failed",
+		"message": "This command could not be completed."}
+	var parsed map[string]any
+	if err := json.Unmarshal(answer, &parsed); err != nil || parsed == nil {
+		return fallback
+	}
+	if nested, ok := parsed["error"].(map[string]any); ok {
+		return nested
+	}
+	code, ok := parsed["error"].(string)
+	if !ok || code == "" {
+		return fallback
+	}
+	base := map[string]any{"code": code}
+	if message, ok := parsed["detail"].(string); ok && message != "" {
+		base["message"] = message
+	}
+	for key, value := range parsed {
+		if key == "error" || key == "detail" {
+			continue
+		}
+		base[key] = value
+	}
+	return base
 }
 
 // MARK: the three answers that are not JSON on the wire

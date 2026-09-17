@@ -242,6 +242,12 @@ type op struct {
 	// shape turns an answer that is not JSON — a picture, a document — into
 	// something an envelope can carry.
 	shape func(p plan, res LocalResponse) (json.RawMessage, Refusal)
+	// divergence is how this daemon's answer differs from the one the hosted
+	// console was written against, for a word that is routed anyway. It is a
+	// sentence and not a flag because the differences are not alike, and it is
+	// here rather than in a document because whoever decides what to advertise
+	// needs it at that moment (see Divergences).
+	divergence string
 }
 
 var catalog = map[string]op{}
@@ -250,6 +256,21 @@ func register(ops ...op) {
 	for _, o := range ops {
 		catalog[o.name] = o
 	}
+}
+
+// divergences is every routed word whose answer is not what the hosted
+// console expects, and how. Read it before advertising a word: a machine that
+// lists a word it answers differently is worse for the person than one that
+// does not list it, because the second draws nothing and the first draws
+// something wrong.
+func divergences() map[string]string {
+	out := map[string]string{}
+	for name, o := range catalog {
+		if o.route != nil && o.divergence != "" {
+			out[name] = o.divergence
+		}
+	}
+	return out
 }
 
 func opNames(keep func(op) bool) []string {
@@ -412,6 +433,8 @@ func init() {
 		// MARK: reads with a local capability
 
 		op{name: "transcript", read: true,
+			divergence: "`priority` is accepted and dropped: this daemon reads a transcript on " +
+				"one lane, so a foreground read is not overtaken by a background one",
 			decode: func(b body) (plan, bool) {
 				if !b.hasOneOf([]string{"type", "session", "limit"},
 					[]string{"type", "session", "limit", "priority"}) {
@@ -447,6 +470,8 @@ func init() {
 			}},
 
 		op{name: "info", read: true,
+			divergence: "`parts` travels as a query and this daemon's info route answers the " +
+				"same body for both halves, so a summary is a full answer here",
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "parts") {
 					return plan{}, false
@@ -592,6 +617,9 @@ func init() {
 			}},
 
 		op{name: "board", read: true,
+			divergence: "this daemon's /v1/board is a snapshot of the projects derived from " +
+				"what is running on this machine; the hosted console was written against the " +
+				"Swift app's board envelope, with items, a revision and an audience",
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request", "project", "item") {
 					return plan{}, false
@@ -794,6 +822,10 @@ func init() {
 		op{name: "key", decode: decodeAnswer("key"), route: routeAnswer},
 
 		op{name: "end",
+			divergence: "`expected_closeability_version` is carried and this daemon's close " +
+				"route does not compare it, so a viewer's compare-and-swap against a stale " +
+				"reading is not the guard it is on the Swift app; the route's own obligation " +
+				"check still runs",
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request", "accept_loss",
 					"expected_closeability_version") {

@@ -185,6 +185,12 @@ func Vocabulary() []string { return opNames(func(o op) bool { return true }) }
 // (`machineLacks` in `net/cloud-client.js`).
 func Implemented() []string { return opNames(func(o op) bool { return o.route != nil }) }
 
+// Divergences names every routed word whose answer is not the one the hosted
+// console was written against, and says how each differs. It is not a list of
+// bugs: it is what this daemon currently has, stated where whoever decides
+// what to advertise can read it.
+func Divergences() map[string]string { return divergences() }
+
 // Knows reports whether the word is in the vocabulary at all.
 func Knows(name string) bool { _, ok := catalog[name]; return ok }
 

@@ -566,6 +566,43 @@ func TestARouteRefusalCrossesWithItsOwnCode(t *testing.T) {
 	}
 }
 
+// TestThisDaemonsOwnRefusalSpellingAlsoCrosses. Most routes here answer
+// `{"error":"<code>","detail":"…"}` rather than the nested object the gate and
+// the documents route answer, and a viewer shown `command_failed` for a
+// `session_unknown` would be given a shrug where there was an explanation.
+func TestThisDaemonsOwnRefusalSpellingAlsoCrosses(t *testing.T) {
+	r := &router{status: 409,
+		body: `{"detail":"this reading of the machine was incomplete (merged), so %195 is not absent, it is unseen","error":"session_unknown"}`}
+	answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "screen", "session": pane}))
+	if answer.Status != 409 || answer.Code != "session_unknown" {
+		t.Fatalf("answered %d/%q, wanted 409/session_unknown", answer.Status, answer.Code)
+	}
+	failure := errorOf(t, answer)
+	if failure["code"] != "session_unknown" {
+		t.Fatalf("the code did not cross: %v", failure)
+	}
+	if message, _ := failure["message"].(string); !strings.Contains(message, "it is unseen") {
+		t.Fatalf("the sentence did not cross: %v", failure["message"])
+	}
+
+	// A blocked close carries what is in the way, because a card that can only
+	// say "refused" sends a person to the terminal to find out why.
+	blocked := &router{status: 409, body: `{"error":"close_blocked","detail":"still owed: landing",` +
+		`"reasons":[{"kind":"obligation","code":"landing","subject_id":"t1"}]}`}
+	answer = open(blocked).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "end", "session": pane, "request": "req-end", "accept_loss": false,
+		"expected_closeability_version": ""}))
+	failure = errorOf(t, answer)
+	if failure["code"] != "close_blocked" {
+		t.Fatalf("the code did not cross: %v", failure)
+	}
+	reasons, ok := failure["reasons"].([]any)
+	if !ok || len(reasons) != 1 {
+		t.Fatalf("the reasons did not cross: %v", failure)
+	}
+}
+
 // TestAnUnreachableRouteIsSaidOutLoud: a bridge with nothing behind it answers
 // a code rather than a success with an empty body.
 func TestAnUnreachableRouteIsSaidOutLoud(t *testing.T) {
@@ -812,6 +849,34 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedules", "board"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
+		}
+	}
+}
+
+// TestEveryDivergenceIsAboutAWordThisDaemonActuallyAnswers. A divergence on a
+// word with no route would be a note about nothing, and the list is read at
+// the moment somebody decides what to advertise.
+func TestEveryDivergenceIsAboutAWordThisDaemonActuallyAnswers(t *testing.T) {
+	implemented := map[string]bool{}
+	for _, word := range Implemented() {
+		implemented[word] = true
+	}
+	found := Divergences()
+	if len(found) == 0 {
+		t.Fatal("no divergences at all, which this port has not earned yet")
+	}
+	for word, why := range found {
+		if !implemented[word] {
+			t.Fatalf("%s diverges and is not routed", word)
+		}
+		if len(why) < 40 {
+			t.Fatalf("%s: %q says too little to act on", word, why)
+		}
+	}
+	// The four measured on 2026-09-18 against this daemon's own routes.
+	for _, word := range []string{"board", "transcript", "info", "end"} {
+		if found[word] == "" {
+			t.Fatalf("%s answers differently from the hosted contract and says nothing about it", word)
 		}
 	}
 }

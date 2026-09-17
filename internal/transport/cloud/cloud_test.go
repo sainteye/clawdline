@@ -1,0 +1,221 @@
+package cloud
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/sainteye/clawdline-go/internal/app/cloudops"
+)
+
+func plaintext(t *testing.T, object map[string]any) []byte {
+	t.Helper()
+	out, err := json.Marshal(object)
+	if err != nil {
+		t.Fatalf("that body is not JSON: %v", err)
+	}
+	return out
+}
+
+// answering is a bridge with a router that says yes to everything, which is
+// enough for the questions this file asks: they are about addresses and
+// delivery, not about what an operation means.
+func answering(t *testing.T) cloudops.Bridge {
+	t.Helper()
+	return cloudops.Bridge{MachineID: "mac-01", AllowCommands: func() bool { return true },
+		Router: routerFunc(func(context.Context, cloudops.LocalRequest) (cloudops.LocalResponse, error) {
+			return cloudops.LocalResponse{Status: 200, Body: []byte(`{"ok":true}`)}, nil
+		})}
+}
+
+type routerFunc func(context.Context, cloudops.LocalRequest) (cloudops.LocalResponse, error)
+
+func (f routerFunc) Do(ctx context.Context, req cloudops.LocalRequest) (cloudops.LocalResponse, error) {
+	return f(ctx, req)
+}
+
+// TestAnAnswerRidesTheSessionsOwnTranscriptChannel. `t/<machine>/<session>` is
+// where the viewer is already subscribed; a new prefix would need a relay this
+// repository does not contain.
+func TestAnAnswerRidesTheSessionsOwnTranscriptChannel(t *testing.T) {
+	fake := NewFake(4)
+	service := Service{MachineID: "mac-01", Bridge: answering(t), Transport: fake,
+		Log: func(string, ...any) {}}
+	service.Answer(context.Background(), Inbound{Channel: "ctl/mac-01", Class: "ctl",
+		Sender: "viewer-device-01", Sequence: 411,
+		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%195"})})
+	published := fake.Published()
+	if len(published) != 1 {
+		t.Fatalf("published %d answers, wanted one", len(published))
+	}
+	out := published[0]
+	if out.Channel != "t/mac-01/%25195" {
+		t.Fatalf("published on %q, wanted t/mac-01/%%25195", out.Channel)
+	}
+	if out.Class != "stream" {
+		t.Fatalf("published as class %q, wanted stream", out.Class)
+	}
+	if out.Reply.Name != "git" || out.Reply.Sender != "viewer-device-01" || out.Reply.Sequence != 411 {
+		t.Fatalf("the answer lost who it is for: %+v", out.Reply)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Payload, &payload); err != nil {
+		t.Fatalf("that payload is not JSON: %v", err)
+	}
+	if payload["read"] != "git" || payload["status"] != float64(200) {
+		t.Fatalf("the payload is %s", out.Payload)
+	}
+}
+
+// TestAnAnswerWithNowhereToGoIsRecordedRatherThanSent.
+func TestAnAnswerWithNowhereToGoIsRecordedRatherThanSent(t *testing.T) {
+	fake := NewFake(4)
+	var lines []string
+	service := Service{MachineID: "mac-01", Bridge: answering(t), Transport: fake,
+		Log: func(format string, args ...any) { lines = append(lines, format) }}
+	// Addressed to another Mac: the viewer listens on the channel it named,
+	// and an answer on ours would be read by nobody.
+	service.Answer(context.Background(), Inbound{Channel: "ctl/mac-02", Class: "ctl",
+		Sender: "viewer-device-01", Sequence: 412,
+		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%195"})})
+	if len(fake.Published()) != 0 {
+		t.Fatalf("an answer for another Mac was published: %+v", fake.Published())
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "answered nobody") {
+		t.Fatalf("that drop was not recorded: %v", lines)
+	}
+}
+
+// TestAPublicationThatCannotLeaveIsSaidOutLoud: the answer's own channel is
+// the only way back to the asker, so a failure there is recorded rather than
+// retried into a second effect.
+func TestAPublicationThatCannotLeaveIsSaidOutLoud(t *testing.T) {
+	fake := NewFake(4)
+	fake.Fail = errors.New("the socket is closed")
+	var lines []string
+	service := Service{MachineID: "mac-01", Bridge: answering(t), Transport: fake,
+		Log: func(format string, args ...any) { lines = append(lines, format) }}
+	answer := service.Answer(context.Background(), Inbound{Channel: "ctl/mac-01", Class: "ctl",
+		Sender: "viewer-device-01", Sequence: 413,
+		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%195"})})
+	if !answer.Published() {
+		t.Fatalf("the bridge decided nothing: %+v", answer)
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "not delivered") {
+		t.Fatalf("an undelivered answer was not recorded: %v", lines)
+	}
+}
+
+// TestRunDrainsUntilTheTransportIsFinished.
+func TestRunDrainsUntilTheTransportIsFinished(t *testing.T) {
+	fake := NewFake(4)
+	for _, session := range []string{"%195", "%196"} {
+		fake.Deliver(Inbound{Channel: "ctl/mac-01", Class: "ctl", Sender: "viewer-device-01",
+			Sequence: 1, Plaintext: plaintext(t, map[string]any{"type": "git", "session": session})})
+	}
+	fake.Close()
+	service := Service{MachineID: "mac-01", Bridge: answering(t), Transport: fake,
+		Log: func(string, ...any) {}}
+	if err := service.Run(context.Background()); err != nil {
+		t.Fatalf("Run ended with %v", err)
+	}
+	if len(fake.Published()) != 2 {
+		t.Fatalf("published %d answers, wanted two", len(fake.Published()))
+	}
+}
+
+// TestTheRouterDispatchesInThisProcess. Not a socket, and everything behind
+// the handler is kept: the path as spelled, the query, the body, the headers
+// the gate reads.
+func TestTheRouterDispatchesInThisProcess(t *testing.T) {
+	var seen *http.Request
+	var body []byte
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "image/png")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("PNG"))
+	})
+	router := Router{Handler: handler, Authorize: func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer a-token")
+	}}
+	res, err := router.Do(context.Background(), cloudops.LocalRequest{
+		Method: "POST", Path: "/v1/sessions/%25195/send",
+		Query:  map[string]string{"limit": "200"},
+		Header: map[string]string{"Idempotency-Key": "req-send"},
+		Body:   []byte(`{"text":"hello"}`)})
+	if err != nil {
+		t.Fatalf("the router failed: %v", err)
+	}
+	if res.Status != 200 || string(res.Body) != "PNG" || res.ContentType != "image/png" {
+		t.Fatalf("the answer is %+v", res)
+	}
+	if seen.URL.EscapedPath() != "/v1/sessions/%25195/send" {
+		t.Fatalf("the path arrived as %q", seen.URL.EscapedPath())
+	}
+	if seen.URL.Query().Get("limit") != "200" {
+		t.Fatalf("the query arrived as %q", seen.URL.RawQuery)
+	}
+	if string(body) != `{"text":"hello"}` {
+		t.Fatalf("the body arrived as %q", body)
+	}
+	if seen.Header.Get("Content-Type") != "application/json" {
+		t.Fatalf("a change without a JSON content type: %q", seen.Header.Get("Content-Type"))
+	}
+	if seen.Header.Get("Idempotency-Key") != "req-send" {
+		t.Fatalf("the idempotency key did not arrive: %q", seen.Header.Get("Idempotency-Key"))
+	}
+	if seen.Header.Get("Authorization") != "Bearer a-token" {
+		t.Fatalf("the credential did not arrive: %q", seen.Header.Get("Authorization"))
+	}
+	if seen.Host != "127.0.0.1" {
+		t.Fatalf("the Host is %q, which the rebinding check would refuse", seen.Host)
+	}
+}
+
+// TestARouterWithNoCredentialIsRefusedByTheGate is the default being the safe
+// one: wiring that forgets to say who this viewer is gets the gate's own no,
+// not an answer.
+func TestARouterWithNoCredentialIsRefusedByTheGate(t *testing.T) {
+	gate := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"code":"unauthorized","message":"This needs a paired device."}}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	res, err := Router{Handler: gate}.Do(context.Background(),
+		cloudops.LocalRequest{Method: "GET", Path: "/v1/places"})
+	if err != nil {
+		t.Fatalf("the router failed: %v", err)
+	}
+	if res.Status != http.StatusUnauthorized {
+		t.Fatalf("status %d, wanted 401", res.Status)
+	}
+}
+
+// TestARouterWithNoHandlerSaysSo rather than answering an empty success.
+func TestARouterWithNoHandlerSaysSo(t *testing.T) {
+	if _, err := (Router{}).Do(context.Background(),
+		cloudops.LocalRequest{Method: "GET", Path: "/v1/places"}); err == nil {
+		t.Fatal("a router with nothing behind it answered")
+	}
+}
+
+// TestAHandlerThatWroteNothingIsNotARefusal: Go's own server answers 200 with
+// an empty body there, and inventing a refusal would report a failure the
+// route did not make.
+func TestAHandlerThatWroteNothingIsNotARefusal(t *testing.T) {
+	res, err := Router{Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}.
+		Do(context.Background(), cloudops.LocalRequest{Method: "GET", Path: "/v1/places"})
+	if err != nil || res.Status != 200 || len(res.Body) != 0 {
+		t.Fatalf("answered %+v, %v", res, err)
+	}
+}
