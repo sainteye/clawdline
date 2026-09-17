@@ -56,14 +56,13 @@
 
 ### 其他頁面（側欄）
 
-全部需要後端，舊版 83 條路由裡新核心沒有的部分。排在主畫面驗收之後。
-
-| 頁 | 舊版檔案 | 後端 |
+| 頁 | 狀態 | 後端 |
 |---|---|---|
-| 用量 | `usage.css` 294 行 | `/v1/orchestrator/usage/analytics*`（部分已有 `/v1/orchestrator/usage`） |
-| 專案 | `projects.css` 184 行 | `/v1/projects`、`/v1/places` |
-| 驗證帳本 | `ledger.css` 164 行 | `/v1/orchestrator/usage/verification-ledger` |
-| 裝置、方案、設定 | `devices.css` / `plan.css` / `sheets.css` | 多數屬雲端版（2026-09-15 已拍板不在本機版） |
+| 設定（本機） | ✅ `c9f60c1` | `/v1/settings`，寫 `~/.config/clawdline-next/config.json`；看板區塊要等 `/v1/board` 帶 `board.enabled` |
+| 用量 | ✅ `303c9e4`、`2df060b` | `/v1/orchestrator/usage/analytics*`、`project-worktrees`；數字讀舊 app 的 `usage.sqlite3` 副本（`plan.md` §4），沒有就退回 transcript；`portfolio.features` 未移植 |
+| 專案 | ✅ `c3a5bb7`、`ef77892` | `/v1/places`、`/v1/projects`；每列進行中數量要等 Board 進度投影 |
+| 裝置、方案（本機、沒有 Cloud） | ✅ `836344b` | 不需要；與舊版本機頁一樣是前端常數 |
+| 看板、驗證帳本 | 未開始 | Board 是整個功能（舊版 `/v1/board` 有 19 個欄位，含 entitlement）；帳本是 `/v1/orchestrator/usage/verification-ledger` |
 
 ### Dashboard
 
@@ -119,7 +118,34 @@
 未比對（不算通過）：resize 轉換、觸控、帶 `#page=` 的冷啟動、g／G、篩選框內的 Escape、凍結排序的實際效果。
 兩邊的 `hero-orchestration-v4-task-clinic.webp` 都回 404——舊版本身的缺陷，照樣繼承。
 
-## 現在的狀態（2026-09-17 清晨）
+## Reviewer 第三輪（task 5ba0274e，對 master `836344b`）
+
+第一次有獨立的眼睛看五個新頁面與 session 增量。1129 與 760 兩種寬度，同源 iframe，dpr 2.2，兩邊 BackCompat。
+
+| 範圍 | 比了 | 差 |
+|---|---|---|
+| 裝置頁 | 1,510 項 ×2 寬 | 0 |
+| 方案頁 | 2,560 項 ×2 寬 | 0 |
+| 設定頁 | 3,965 項 | 33，全部已知（看板區塊、通知權限狀態） |
+| 專案清單 | 21,569 項 | 400，全部已知（進行中數量） |
+| 用量頁（1129） | 408,351 項 | 扣掉已知的 features 後 0；Load more、明細、Recent agent work 各 0 |
+| 用量 API（同一秒） | 30 天 27 列、7 天 18 列 | 順序與數字全同，只差 `portfolio.features` |
+| 行為 | 104＋21＋20 步 | 全部相同（Tab 順序由 DOM 推算，沒有真的按） |
+| session 增量（%798、%712） | r、設定頁切換、助理圖示、`.limits` | 相同；`/info` 的 limits 只差 `readAtMs` |
+
+新發現兩項，都是 minor：
+- **R1**：`r` 不會重畫隱藏中的 `#settings-order` 文字，進設定頁時才更新。設定頁開著時 `r` 本來就不作用，
+  使用者看不到舊字，所以不修。
+- **R2**：失敗路徑（stale 橫幅、`503 usage_analytics_busy`、429、看板讀不到的後備、清單更新失敗）沒有任何
+  獨立比對。這是覆蓋缺口，不是缺陷。
+
+未比對：760 寬的 session 增量、真的按 Tab 或 Escape、失敗路徑。結論：**扣除已知清單，已量到的範圍可以宣稱 1:1。**
+
+## 現在的狀態（2026-09-17 早上）
+
+五個側欄頁面與狀態列的方案額度已落地（見上表）。免費版的配對與認證在分支 `free-auth`，
+等 Codex 的安全審查（`docs/remote.md`）。以下是清晨時的記錄。
+
 
 **Session 清單頁**：兩輪 reviewer 加一輪窄驗收之後，除了下面兩類，已量到的部分與舊版一致。
 
@@ -141,7 +167,8 @@ webview 之外，舊 app 的原生面：
 | 全域熱鍵（`HotKey.swift`） | 138 行 | ✅ `841b870`：設定讀 `~/.config/clawdline-next`，沒設定就不註冊 |
 | 登入時啟動（`SMAppService`） | — | ✅ `841b870`：開關，預設關閉；測試未打開 |
 | Dock 圖示 | — | ✅ `360c9fd`：與舊 app 逐位元組相同。兩個 app 同時跑會有兩個相同圖示與 ✳，這是忠實復刻的結果 |
-| 原生「設定⋯」 | — | child `%848`（打開 webview 的設定頁） |
+| 原生「設定⋯」 | — | ✅ `c9f60c1`：⌘, 與選單列都打開 `#page=settings`；熱鍵錄製在殼裡。只做過型別檢查，殼沒有實際跑過 |
+| 配對 alert、本機 token | — | 分支 `free-auth`：只有「忽略」的 NSAlert、cookie 注入；待審 |
 | 快捷面板（`Controller` + `Panel`） | 5,400 行 | 目前以 webview 視窗代替 |
 | 原生設定（`Settings.swift`） | 3,822 行 | 未開始 |
 | 導覽（`Onboarding.swift`） | 1,468 行 | 未開始 |
@@ -163,6 +190,15 @@ webview 之外，舊 app 的原生面：
    在 Mac 上顯示——這四個是詳情標頭與選單最常用的入口。
 3. 側欄頁面：用量頁的後端最接近（已有 `/v1/orchestrator/usage` 與 transcript 用量）。
 
+## 還沒做的（2026-09-17 早上）
+
+- 原生：導覽（`Onboarding.swift` 1,468 行）、聽寫（`Voice.swift` 633 行）、瀏海島（`NotchIsland.swift` 1,148 行）、
+  原生 Remote 設定。
+- 頁面與 sheet：看板、驗證帳本、開新 session（`#start`）、`#command`、`#schedule-form`、Git 面板、即時畫面、
+  在 Mac 上顯示、常用句、附圖。
+- 遠端：網頁的配對入口（`door.js`）、tunnel、Cloud bridge（`docs/remote.md`）。
+
 ## 額度
 
 2026-09-17 深夜：Claude 7 天 85%、Codex 7 天 92%。所以今晚是**少量高價值**的派工，不做大量扇出。
+2026-09-17 早上：Claude 7 天 95%（約 16 小時後重置），Codex 92%。只做修正，不開新功能。
