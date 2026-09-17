@@ -159,6 +159,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/cloud/pairing", s.cloudPairingRoute)
 	mux.HandleFunc("/v1/cloud/pairing/offer", s.cloudPairingOfferRoute)
 	mux.HandleFunc("/v1/cloud/devices/revoke", s.cloudDeviceRoute)
+	mux.HandleFunc("/v1/cloud/keys/rotate", s.cloudRotateRoute)
 	// A shadow route, not the real one. It runs beside /v1/sessions so both can
 	// be read for the same machine at the same moment; the real route is taken
 	// over only once the payloads agree.

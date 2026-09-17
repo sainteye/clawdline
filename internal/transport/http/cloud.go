@@ -16,6 +16,7 @@ package http
 // own gets a link of its own.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -101,6 +102,8 @@ func (s *Server) CloudCredentials() (local string, machine string, err error) {
 type CloudPairingLine interface {
 	CloudLine
 	Pairing() *cloudtransport.Pairing
+	RotationCost() []string
+	RotateSigningKey(ctx context.Context, confirm bool) (cloudtransport.RotationOutcome, error)
 }
 
 // cloudPairingRoute begins, reads or cancels this machine's one pairing.
@@ -217,6 +220,60 @@ func (s *Server) cloudDeviceRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"device": device, "revoked": changed})
+}
+
+// cloudRotateRoute replaces this machine's signing key.
+//
+//	GET  /v1/cloud/keys/rotate   what a rotation would cost
+//	POST /v1/cloud/keys/rotate   do it, with `{"confirm": true}`
+//
+// The GET exists so that the question a person is asked has names in it. Every
+// browser that pinned the old key stops being able to verify this machine, and
+// "are you sure" is not a useful sentence unless it says which browsers.
+func (s *Server) cloudRotateRoute(w http.ResponseWriter, r *http.Request) {
+	if !requireLocal(w, r) {
+		return
+	}
+	line, ok := cloudLines.Load(s.cfg.Dir)
+	if !ok {
+		writeAuthRefusal(w, http.StatusConflict, "cloud_off", "The Cloud line is off in this app's settings.")
+		return
+	}
+	holder, ok := line.(CloudPairingLine)
+	if !ok {
+		writeAuthRefusal(w, http.StatusConflict, "cloud_off", "This Cloud line cannot rotate a key.")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		writeJSON(w, map[string]any{"repair": holder.RotationCost()})
+	case http.MethodPost:
+		var body struct {
+			Confirm bool `json:"confirm"`
+		}
+		if r.Body != nil {
+			_ = json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&body)
+		}
+		outcome, err := holder.RotateSigningKey(r.Context(), body.Confirm)
+		if errors.Is(err, cloudtransport.ErrRotationUnconfirmed) {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":   map[string]any{"code": "confirm_required", "message": err.Error()},
+				"repair":  outcome.Repair,
+				"confirm": "post {\"confirm\": true} to rotate anyway",
+			})
+			return
+		}
+		if err != nil {
+			writeCloudPairingError(w, err)
+			return
+		}
+		writeJSON(w, outcome)
+	default:
+		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request",
+			"A rotation is previewed with GET and done with POST.")
+	}
 }
 
 // cloudPairing answers the link's pairing, or writes the refusal that says why

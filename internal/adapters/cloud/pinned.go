@@ -101,6 +101,27 @@ type PinnedStore struct {
 	loaded  bool
 	record  pinnedRecord
 	loadErr error
+	// stamp is the file as it was when it was last read. The record is
+	// re-read when it changes, because this file has more than one writer in
+	// practice — a second `clawdline` process, or a person with an editor —
+	// and a daemon that cached a revocation away would keep admitting a
+	// device somebody threw out.
+	stamp fileStamp
+}
+
+// fileStamp is the cheapest honest "is this the same file" this needs.
+type fileStamp struct {
+	size    int64
+	modTime time.Time
+	missing bool
+}
+
+func stampOf(path string) fileStamp {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileStamp{missing: true}
+	}
+	return fileStamp{size: info.Size(), modTime: info.ModTime()}
 }
 
 // NewPinnedStore keeps the record in dir, which is the cloudkeys directory.
@@ -237,7 +258,7 @@ func (s *PinnedStore) Revoke(deviceID string, at time.Time) (bool, error) {
 func (s *PinnedStore) Forget() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.loaded, s.record, s.loadErr = false, pinnedRecord{}, nil
+	s.loaded, s.record, s.loadErr, s.stamp = false, pinnedRecord{}, nil, fileStamp{}
 	if err := os.Remove(s.Path()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -248,10 +269,11 @@ func (s *PinnedStore) Forget() error {
 // failure: a store that retried a permission error on every envelope would
 // turn one misconfigured file into a syscall per inbound message.
 func (s *PinnedStore) loadLocked() error {
-	if s.loaded {
+	stamp := stampOf(s.Path())
+	if s.loaded && stamp == s.stamp {
 		return s.loadErr
 	}
-	s.loaded = true
+	s.loaded, s.stamp, s.loadErr = true, stamp, nil
 	data, err := os.ReadFile(s.Path())
 	if errors.Is(err, os.ErrNotExist) {
 		s.record = pinnedRecord{Version: 1}
@@ -282,5 +304,9 @@ func (s *PinnedStore) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomically(s.dir, s.Path(), append(body, '\n'))
+	if err := writeFileAtomically(s.dir, s.Path(), append(body, '\n')); err != nil {
+		return err
+	}
+	s.stamp = stampOf(s.Path())
+	return nil
 }

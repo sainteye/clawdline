@@ -2,7 +2,7 @@ package main
 
 // `clawdline cloud …` — the line to app.clawdline.com, from the command line.
 //
-// Five subcommands, and the first thing every one of them does is read the
+// Nine subcommands, and the first thing every one of them does is read the
 // switch. The line is off until somebody turns it on; `cloud on` is that
 // somebody saying so out loud, in a file they can read.
 //
@@ -10,6 +10,10 @@ package main
 //	clawdline cloud on | off            the switch
 //	clawdline cloud commands on | off   whether a viewer may act on this Mac
 //	clawdline cloud login               register this machine, and wait for approval
+//	clawdline cloud pair [--offer …]    hand a browser the account key (cloudpair.go)
+//	clawdline cloud devices             who may speak to this Mac
+//	clawdline cloud revoke <device>     throw one browser out
+//	clawdline cloud rotate              replace this machine's signing key
 //	clawdline cloud connect [--for 30s] hold the line open and print what happens
 //
 // `serve` now opens the same line by itself when the switch is on
@@ -58,6 +62,14 @@ func cloudCommand(args []string) {
 		cloudLoginCommand(args[1:])
 	case "connect":
 		cloudConnectCommand(args[1:])
+	case "pair":
+		cloudPairCommand(args[1:])
+	case "devices":
+		cloudDevicesCommand()
+	case "revoke":
+		cloudRevokeCommand(args[1:])
+	case "rotate":
+		cloudRotateCommand(args[1:])
 	default:
 		cloudUsage()
 		os.Exit(2)
@@ -65,11 +77,15 @@ func cloudCommand(args []string) {
 }
 
 func cloudUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline cloud <status|on|off|commands|login|connect>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline cloud <status|on|off|commands|login|pair|devices|revoke|rotate|connect>")
 	fmt.Fprintln(os.Stderr, "  status                 the switch, the identity and the endpoints")
 	fmt.Fprintln(os.Stderr, "  on | off               turn the cloud line on or off in the settings file")
 	fmt.Fprintln(os.Stderr, "  commands on | off      whether a paired viewer may act on this Mac; off by default")
 	fmt.Fprintln(os.Stderr, "  login [--wait 10m]     register this machine and wait for the approval")
+	fmt.Fprintln(os.Stderr, "  pair [--offer <code>]  show a browser a one-time link, or finish with its code")
+	fmt.Fprintln(os.Stderr, "  devices                who may speak to this Mac, and where that trust came from")
+	fmt.Fprintln(os.Stderr, "  revoke <device-id>     throw one browser out of this Mac")
+	fmt.Fprintln(os.Stderr, "  rotate [--yes]         replace this machine's signing key; every browser re-pairs")
 	fmt.Fprintln(os.Stderr, "  connect [--for 1m]     hold the line open and report what happens")
 }
 

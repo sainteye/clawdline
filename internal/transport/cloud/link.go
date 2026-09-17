@@ -26,6 +26,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net/http"
 	"runtime"
 	"strings"
@@ -196,6 +197,11 @@ type Link struct {
 	answered    int
 	refused     int
 	fingerprint string
+	// stopRun cancels the socket currently up, and rotated says the next
+	// `Run` iteration should rebuild rather than return. They are one pair:
+	// a cancel with no flag is a shutdown, a cancel with it is a rotation.
+	stopRun context.CancelFunc
+	rotated bool
 }
 
 // ErrDisabledLink is Run's answer for a link whose switch is off. It is not a
@@ -248,32 +254,6 @@ func Open(opts LinkOptions) (*Link, error) {
 		return link, nil
 	}
 	link.identity = identity
-
-	key, err := domaincloud.LoadOrCreateDeviceKey(keys, rand.Reader)
-	if err != nil {
-		link.fail(err)
-		return link, nil
-	}
-	secret, err := domaincloud.LoadOrCreateMasterSecret(keys, rand.Reader)
-	if err != nil {
-		link.fail(err)
-		return link, nil
-	}
-	link.fingerprint = key.Fingerprint()
-
-	fence := adaptercloud.NewFileFence(keys.Dir(), identity.MachineID)
-	spool, err := adaptercloud.NewSpool(adaptercloud.DefaultSpoolLimits(), fence, opts.Now)
-	if err != nil {
-		link.fail(err)
-		return link, nil
-	}
-
-	status := adaptercloud.NewStatusRecorder(opts.Now())
-	status.SetEnabled(true)
-	status.SetIdentity(identity.AccountID, identity.MachineID, settings.RelayURL)
-	link.status = status
-
-	link.roster = adaptercloud.NewRoster(settings.APIBase, identity.MachineCredential, opts.Now)
 	link.pinned = adaptercloud.NewPinnedStore(keys.Dir())
 	link.pairing = &Pairing{
 		AccountID:  identity.AccountID,
@@ -289,7 +269,57 @@ func Open(opts LinkOptions) (*Link, error) {
 		Now:    opts.Now,
 		Log:    opts.Log,
 	}
-	link.relay = &Relay{
+	if err := link.wire(); err != nil {
+		link.fail(err)
+		return link, nil
+	}
+	link.state = adaptercloud.StateIdle
+	return link, nil
+}
+
+// wire builds everything downstream of the keys: the spool, the transport, the
+// relay, the bridge and the publisher.
+//
+// It is a method rather than the rest of `Open` because it is called twice: at
+// startup, and again after a key rotation. A rotated signing key cannot be
+// swapped into a live transport — the relay judges every envelope's signature
+// against the `pk` in the device token, and a socket that changed keys halfway
+// would sign the second half with a key the relay has stopped accepting — so
+// rotating means building this again and reconnecting.
+//
+// The spool is rebuilt with it, and that is the deliberate part: envelopes
+// queued under the old key are dropped rather than sent, because they would be
+// refused on arrival and would spend a sequence number doing it.
+func (l *Link) wire() error {
+	keys, identity, settings, opts := l.keys, l.identity, l.settings, l.opts
+
+	key, err := domaincloud.LoadOrCreateDeviceKey(keys, rand.Reader)
+	if err != nil {
+		return err
+	}
+	secret, err := domaincloud.LoadOrCreateMasterSecret(keys, rand.Reader)
+	if err != nil {
+		return err
+	}
+	l.mu.Lock()
+	l.fingerprint = key.Fingerprint()
+	l.mu.Unlock()
+
+	fence := adaptercloud.NewFileFence(keys.Dir(), identity.MachineID)
+	spool, err := adaptercloud.NewSpool(adaptercloud.DefaultSpoolLimits(), fence, opts.Now)
+	if err != nil {
+		return err
+	}
+
+	status := adaptercloud.NewStatusRecorder(opts.Now())
+	status.SetEnabled(true)
+	status.SetIdentity(identity.AccountID, identity.MachineID, settings.RelayURL)
+	l.status = status
+
+	if l.roster == nil {
+		l.roster = adaptercloud.NewRoster(settings.APIBase, identity.MachineCredential, opts.Now)
+	}
+	l.relay = &Relay{
 		Spool:     spool,
 		MachineID: identity.MachineID,
 		Signer:    key,
@@ -311,40 +341,38 @@ func Open(opts LinkOptions) (*Link, error) {
 		Spool:        spool,
 		Status:       status,
 		Replay:       domaincloud.NewReplayWindow(0),
-		Inbound:      link.relay.Deliver,
-		PublicKeyFor: link.publicKeyFor,
+		Inbound:      l.relay.Deliver,
+		PublicKeyFor: l.publicKeyFor,
 		ContentKey:   secret,
-		Log:          func(line string) { link.logf("%s", line) },
+		Log:          func(line string) { l.logf("%s", line) },
 		Now:          opts.Now,
 	})
 	if err != nil {
-		link.fail(err)
-		return link, nil
+		return err
 	}
-	link.transport = transport
-	link.relay.Transport = transport
-	link.service = Service{
+	l.transport = transport
+	l.relay.Transport = transport
+	l.service = Service{
 		MachineID: identity.MachineID,
 		Bridge: cloudops.Bridge{
 			MachineID:     identity.MachineID,
 			Router:        Router{Handler: opts.Handler, Authorize: opts.Authorize},
-			AllowCommands: link.allowCommands,
-			Authority:     link.authority,
+			AllowCommands: l.allowCommands,
+			Authority:     l.authority,
 		},
-		Transport: link.relay,
+		Transport: l.relay,
 		Log:       opts.Log,
 	}
-	link.publisher = &Publisher{
+	l.publisher = &Publisher{
 		MachineID:   identity.MachineID,
 		MachineName: machineName(identity, settings),
 		Platform:    runtime.GOOS,
 		Version:     opts.Version,
 		Router:      Router{Handler: opts.Handler, Authorize: opts.Authorize},
-		Publish:     link.relay.Publish,
+		Publish:     l.relay.Publish,
 		Log:         opts.Log,
 	}
-	link.state = adaptercloud.StateIdle
-	return link, nil
+	return nil
 }
 
 // machineName is what a person picks this Mac out by in their machine list.
@@ -373,9 +401,38 @@ func (l *Link) Run(ctx context.Context) error {
 	if !l.settings.Enabled {
 		return ErrDisabledLink
 	}
-	if l.transport == nil {
-		return errors.New("the cloud line could not be opened: " + l.lastError())
+	for {
+		if l.transport == nil {
+			return errors.New("the cloud line could not be opened: " + l.lastError())
+		}
+		inner, stop := context.WithCancel(ctx)
+		l.mu.Lock()
+		l.stopRun = stop
+		l.mu.Unlock()
+		err := l.runOnce(inner)
+		stop()
+		l.mu.Lock()
+		l.stopRun = nil
+		rotated := l.rotated
+		l.rotated = false
+		l.mu.Unlock()
+		if ctx.Err() != nil || !rotated {
+			return err
+		}
+		// A rotation took the socket down on purpose. Rebuild on the key the
+		// store now holds and go back up; anything else would leave a machine
+		// signing with a key the relay has stopped accepting.
+		if err := l.wire(); err != nil {
+			l.fail(err)
+			return err
+		}
+		l.setState(adaptercloud.StateIdle)
+		l.logf("cloud: the line is coming back on the rotated key %s", l.Fingerprint())
 	}
+}
+
+// runOnce holds one socket up until its context is done.
+func (l *Link) runOnce(ctx context.Context) error {
 	// The roster is fetched once before the socket opens, so that a viewer's
 	// first envelope is not dropped as `unknown_sender` while the first lookup
 	// is still in flight.
@@ -747,4 +804,146 @@ func machineScoped(path string) bool {
 		return true
 	}
 	return path == "/v1/board"
+}
+
+// MARK: rotation
+
+// RotationOutcome is what a key rotation did, and what it cost.
+type RotationOutcome struct {
+	// Fingerprint is the new key, as a person reads it aloud.
+	Fingerprint string `json:"fingerprint"`
+	// Previous is the key that was replaced.
+	Previous string `json:"previous_fingerprint"`
+	// KeyEpoch is what the control plane now judges tokens by.
+	KeyEpoch      int `json:"key_epoch"`
+	IdentityEpoch int `json:"identity_epoch"`
+	// Repair names the viewers that pinned the old key and must be paired
+	// again. It is the whole reason this operation asks before it acts.
+	Repair []string `json:"repair,omitempty"`
+	// Reconnected is whether the live line was taken down and brought back on
+	// the new key. False means the line was not running, so nothing had to be.
+	Reconnected bool `json:"reconnected"`
+}
+
+// ErrRotationUnconfirmed is a rotation nobody agreed to the cost of.
+var ErrRotationUnconfirmed = errors.New("rotating this machine's signing key makes every paired browser re-pair")
+
+// RotationCost answers what a rotation would break, without doing it.
+//
+// It exists so that "are you sure" is a sentence with names in it rather than a
+// generic warning: the person is being asked to make *these* browsers stop
+// working until they pair again.
+func (l *Link) RotationCost() []string {
+	if l.pinned == nil {
+		return nil
+	}
+	devices, err := l.pinned.Devices()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, device := range devices {
+		if !device.Active() {
+			continue
+		}
+		name := device.Fingerprint
+		if device.DeviceID != "" {
+			name = device.DeviceID + " (" + device.Fingerprint + ")"
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+// RotateSigningKey replaces this machine's Ed25519 identity.
+//
+// **Every browser that pinned the old key stops being able to verify this
+// machine.** They pinned it during their own handover, from bytes the cloud
+// never saw; that is the property the whole pairing exists for, and its price
+// is that a new key means a new pairing. So this refuses unless `confirm` is
+// true, and it answers the list of viewers that will need repairing either way.
+//
+// The order is: read the epoch the control plane holds, mint, compare-and-swap,
+// and only then write the new key to the store. A store written first would,
+// on a refused swap, leave a machine holding a key the account has never heard
+// of — which looks exactly like a machine that was revoked.
+func (l *Link) RotateSigningKey(ctx context.Context, confirm bool) (RotationOutcome, error) {
+	if l.keys == nil || !l.identity.Valid() {
+		return RotationOutcome{}, ErrPairingUnavailable
+	}
+	cost := l.RotationCost()
+	if !confirm {
+		return RotationOutcome{Repair: cost}, ErrRotationUnconfirmed
+	}
+	client := adaptercloud.NewAccountClient(l.settings.APIBase)
+	machines, err := client.Machines(ctx, l.identity.MachineCredential)
+	if err != nil {
+		return RotationOutcome{Repair: cost}, err
+	}
+	epoch := 0
+	for _, machine := range machines {
+		if machine.ID == l.identity.MachineID {
+			epoch = machine.KeyEpoch
+		}
+	}
+	if epoch < 1 {
+		// Not a detail to paper over with a 1: the swap is compare-and-swap,
+		// and guessing the value it compares against is how two daemons
+		// overwrite each other's identity.
+		return RotationOutcome{Repair: cost}, fmt.Errorf(
+			"the control plane does not list %s, so there is no key epoch to rotate from", l.identity.MachineID)
+	}
+	previous := l.Fingerprint()
+
+	fresh, err := domaincloud.NewDeviceKey(rand.Reader)
+	if err != nil {
+		return RotationOutcome{Repair: cost}, err
+	}
+	rotated, err := client.RotateMachineKey(ctx, l.identity.MachineCredential,
+		l.identity.MachineID, fresh.PublicKey(), fresh.Fingerprint(), epoch)
+	if err != nil {
+		return RotationOutcome{Repair: cost}, err
+	}
+	if err := l.keys.SaveDeviceKey(fresh); err != nil {
+		// The account already moved. Saying so is the only useful thing left:
+		// this machine now holds a key the control plane has replaced, and the
+		// person has to be told rather than left to read it as a revocation.
+		return RotationOutcome{Repair: cost}, fmt.Errorf(
+			"the control plane accepted the new key but this machine could not store it, "+
+				"so it is now signing with a key the account has replaced: %w", err)
+	}
+	l.logf("cloud: this machine's signing key is now %s (was %s)", fresh.Fingerprint(), previous)
+
+	outcome := RotationOutcome{
+		Fingerprint:   fresh.Fingerprint(),
+		Previous:      previous,
+		KeyEpoch:      rotated.KeyEpoch,
+		IdentityEpoch: rotated.IdentityEpoch,
+		Repair:        cost,
+	}
+	l.mu.Lock()
+	stop := l.stopRun
+	if stop != nil {
+		l.rotated = true
+	}
+	l.mu.Unlock()
+	if stop != nil {
+		outcome.Reconnected = true
+		stop()
+	}
+	return outcome, nil
+}
+
+// setState records the line's own word for what it is doing.
+func (l *Link) setState(state string) {
+	l.mu.Lock()
+	l.state = state
+	l.mu.Unlock()
+}
+
+// Fingerprint is this machine's signing key, as a person reads it aloud.
+func (l *Link) Fingerprint() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.fingerprint
 }
