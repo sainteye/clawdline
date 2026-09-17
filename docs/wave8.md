@@ -79,8 +79,9 @@ Go：自己的圖片儲存（`CLAWDLINE_NEXT_DIR` 下，0700／0600，大小與�
 `RemoteServer.swift` 約 3782 行的 `transcribe`、`Whisper.swift`（找 `whisper-cli` 與 `ggml-*.bin` 的路徑、詞彙表、
 逾時）、`index.html` 的 `#mic`、`#voice`。
 Go：`POST /v1/voice` → 執行 `whisper-cli`。搜尋路徑要涵蓋 macOS（Homebrew）、Linux、Windows；同時只跑一個，
-有大小與時間上限，暫存檔一定清掉，錯誤具名（沒裝、沒模型、逾時、太大）。**這台機器若沒裝 whisper-cli，
-不要自己安裝**，只驗「沒裝」的路徑，並在 report 寫明。
+有大小與時間上限，暫存檔一定清掉，錯誤具名（沒裝、沒模型、逾時、太大）。這台機器有 `/opt/homebrew/bin/whisper-cli`，
+打包的殼也找到了模型 `ggml-large-v3-turbo-q5_0.bin`（2026-09-17 實測），所以要測真的轉錄：用 `say -o` 產生一段
+已知內容的語音當輸入，比對轉出來的字。「沒裝」與「沒模型」的路徑用改過的搜尋路徑驗，不要去動已安裝的東西。
 原生殼：WKWebView 要允許麥克風（`WKUIDelegate` 的媒體權限、`Info.plist` 的 `NSMicrophoneUsageDescription`，
 打包腳本 `tools/package-macos.sh` 要帶上）。
 可改：`web/console/src/session/Composer.tsx`（只改 `#mic`、`#voice` 那段）、`web/console/src/legacy/`（照抄

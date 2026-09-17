@@ -191,7 +191,7 @@ webview 之外，舊 app 的原生面：
 | 登入時啟動（`SMAppService`） | — | ✅ `841b870`：開關，預設關閉；測試未打開 |
 | Dock 圖示 | — | ✅ `360c9fd`：與舊 app 逐位元組相同。兩個 app 同時跑會有兩個相同圖示與 ✳，這是忠實復刻的結果 |
 | 原生「設定⋯」 | — | ✅ `c9f60c1`：⌘, 與選單列都打開 `#page=settings`；熱鍵錄製在殼裡。只做過型別檢查，殼沒有實際跑過 |
-| 配對 alert、本機 token | — | 分支 `free-auth`：只有「忽略」的 NSAlert、cookie 注入；待審 |
+| 配對 alert、本機 token | — | ✅ `5cca6b1`（審查後合併）：只有「忽略」的 NSAlert、cookie 注入。2026-09-17 以 `de7c5da` 重新打包，對開著閘門的 7727 實測：殼帶著本機 token 載入，`booting=false elements-with-id=265 rows=8`。alert 沒有在這台機器上觸發過 |
 | 快捷面板（`Controller` + `Panel`） | 5,400 行 | 目前以 webview 視窗代替 |
 | 原生設定（`Settings.swift`） | 3,822 行 | 未開始 |
 | 導覽（`Onboarding.swift`） | 1,468 行 | 未開始 |
