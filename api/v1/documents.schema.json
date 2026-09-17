@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "documents.schema.json",
+  "title": "Documents",
+  "description": "GET /v1/sessions/{id}/documents lists the Markdown and text files this project and its tasks wrote down; GET /v1/sessions/{id}/documents/project/<path> and /v1/sessions/{id}/documents/task/<task id>/<path> serve one of them as bytes rather than as JSON, so only the listing is a type here. The row shape is the one `net/document-links.js` validates with `localDocumentListing`, which refuses a row carrying a key it does not expect — so a field added here without adding it there makes every listing unreadable rather than merely wider.",
+  "$defs": {
+    "DocumentTask": {
+      "description": "The task a `task`-scoped row belongs to. Exactly these two keys: the page checks the count.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "description": "The dispatched task's id, which is what the read address names.", "type": "string" },
+        "title": { "description": "What that task was called, empty when it was called nothing.", "type": "string" }
+      }
+    },
+    "DocumentRow": {
+      "description": "One document a paired device may read. `label` repeats `path` because the page checks that they agree; `url` is this daemon's own address for the bytes and is dropped by the page, which builds its own from the locator.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "label", "modified", "path", "source", "url"],
+      "properties": {
+        "bytes": { "description": "The file's size when it was checked, never above the two-megabyte cap.", "type": "integer" },
+        "label": { "type": "string" },
+        "modified": { "description": "Unix seconds with a fraction, as the filesystem reported them.", "type": "number" },
+        "path": { "description": "Relative to its root, `/`-separated, at most six segments, none of them starting with a dot.", "type": "string" },
+        "source": { "$ref": "#/$defs/DocumentSource" },
+        "task": { "$ref": "#/$defs/DocumentTask" },
+        "url": { "type": "string" }
+      }
+    },
+    "DocumentSource": {
+      "description": "Which root this document is in: the project's `<cwd>/artifacts`, or one task's `<task dir>/artifacts`.",
+      "type": "string",
+      "enum": ["project", "task"]
+    },
+    "DocumentList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documents"],
+      "properties": {
+        "documents": { "type": "array", "items": { "$ref": "#/$defs/DocumentRow" } }
+      }
+    }
+  }
+}

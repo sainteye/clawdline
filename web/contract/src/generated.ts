@@ -1097,6 +1097,63 @@ export interface DispatchResult {
   task_id: string
 }
 
+export interface DocumentList {
+  documents: DocumentRow[]
+}
+
+/**
+ * One document a paired device may read. `label` repeats `path` because the page
+ * checks that they agree; `url` is this daemon's own address for the bytes and is
+ * dropped by the page, which builds its own from the locator.
+ */
+export interface DocumentRow {
+  /**
+   * The file's size when it was checked, never above the two-megabyte cap.
+   */
+  bytes: number
+  label: string
+
+  /**
+   * Unix seconds with a fraction, as the filesystem reported them.
+   */
+  modified: number
+
+  /**
+   * Relative to its root, `/`-separated, at most six segments, none of them
+   * starting with a dot.
+   */
+  path: string
+  source: DocumentSource
+  task?: DocumentTask
+  url: string
+}
+
+/**
+ * Which root this document is in: the project's `<cwd>/artifacts`, or one task's
+ * `<task dir>/artifacts`.
+ */
+export type DocumentSource =
+    "project"
+  | "task"
+
+export const DocumentSourceValues: readonly DocumentSource[] = ["project", "task"] as const
+
+/**
+ * The task a `task`-scoped row belongs to. Exactly these two keys: the page checks
+ * the count.
+ */
+export interface DocumentTask {
+  /**
+   * The dispatched task's id, which is what the read address names.
+   */
+  id: string
+
+  /**
+   * What that task was called, empty when it was called nothing.
+   */
+  title: string
+}
+
 /**
  * How loud an obligation has become. Escalation changes visibility, never verdict:
  * nothing here ever declares a session dead.

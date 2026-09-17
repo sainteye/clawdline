@@ -1,0 +1,25 @@
+
+    <div class="documents-shell">
+        <header class="documents-head">
+            <button id="documents-back" class="documents-back" type="button">‹ Sessions</button>
+            <button id="document-list-back" class="documents-back" type="button" hidden>‹ Documents</button>
+            <h1 id="documents-title" tabindex="-1">Documents</h1>
+        </header>
+        <p id="documents-status" class="documents-status" role="status" aria-live="polite"></p>
+        <div id="documents-list-view">
+            <ol id="documents-rows" class="documents-rows"></ol>
+        </div>
+        <article id="document-viewer" class="document-viewer" hidden>
+            <div class="document-heading">
+                <div>
+                    <h2 id="document-title"></h2>
+                    <p id="document-meta" class="document-meta"></p>
+                </div>
+                <div class="document-actions">
+                    <button id="document-share" type="button" disabled>Share</button>
+                    <button id="document-copy" type="button" disabled>Copy link</button>
+                </div>
+            </div>
+            <div id="document-body" class="document-body"></div>
+        </article>
+    </div>

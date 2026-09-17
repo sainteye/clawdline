@@ -882,6 +882,51 @@ type DispatchResult struct {
 	TaskID   string `json:"task_id"`
 }
 
+type DocumentList struct {
+	Documents []DocumentRow `json:"documents"`
+}
+
+// One document a paired device may read. `label` repeats `path` because the
+// page checks that they agree; `url` is this daemon's own address for the bytes
+// and is dropped by the page, which builds its own from the locator.
+type DocumentRow struct {
+	// The file's size when it was checked, never above the two-megabyte cap.
+	Bytes int64  `json:"bytes"`
+	Label string `json:"label"`
+
+	// Unix seconds with a fraction, as the filesystem reported them.
+	Modified float64 `json:"modified"`
+
+	// Relative to its root, `/`-separated, at most six segments, none of them starting
+	// with a dot.
+	Path   string         `json:"path"`
+	Source DocumentSource `json:"source"`
+	Task   *DocumentTask  `json:"task,omitempty"`
+	URL    string         `json:"url"`
+}
+
+// Which root this document is in: the project's `<cwd>/artifacts`, or one
+// task's `<task dir>/artifacts`.
+type DocumentSource string
+
+const (
+	DocumentSourceProject DocumentSource = "project"
+	DocumentSourceTask    DocumentSource = "task"
+)
+
+// DocumentSourceValues is every value the contract allows, in contract order.
+var DocumentSourceValues = []DocumentSource{DocumentSourceProject, DocumentSourceTask}
+
+// The task a `task`-scoped row belongs to. Exactly these two keys: the page
+// checks the count.
+type DocumentTask struct {
+	// The dispatched task's id, which is what the read address names.
+	ID string `json:"id"`
+
+	// What that task was called, empty when it was called nothing.
+	Title string `json:"title"`
+}
+
 // How loud an obligation has become. Escalation changes visibility, never
 // verdict: nothing here ever declares a session dead.
 type Escalation string

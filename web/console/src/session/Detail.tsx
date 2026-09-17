@@ -2,9 +2,12 @@ import type { Icon, SessionRow } from "@clawdline/contract"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { requestConfirm, requestInfo, useClosingId } from "../overlays/index.js"
 import * as L from "../legacy/bridge.js"
+import { requestDocuments } from "../legacy/documents-bridge.js"
+import { requestUserMessages } from "../legacy/user-messages-bridge.js"
 import { Transcript } from "./Transcript.js"
 import { Composer } from "./Composer.js"
 import { StatusLine } from "./StatusLine.js"
+import { UserMessages } from "./UserMessages.js"
 
 /**
  * Whether this transport can read a project's snippets — `snippetControls(api).read`
@@ -131,6 +134,10 @@ export function Detail({
 
       <Composer row={row} onDid={onDid} />
       <StatusLine row={row} />
+      {/* `input/user-messages.js` puts its overlay on the body at import; this
+          one is drawn into the body from here, because the `⋯` row that opens
+          it is this component's. */}
+      <UserMessages row={row} />
     </section>
   )
 }
@@ -193,9 +200,11 @@ function detailSub(row: SessionRow | null): string {
  * dropped: a menu that is missing rows is a menu somebody will assume they
  * imagined, and a disabled row says which part is not here.
  *
- * - Show on Mac, Live screen, Documents, Git changes: no route or no sheet in
- *   this console. Session info opens the info sheet.
- * - My messages: needs no route, but its sheet (`#user-messages`) is not here.
+ * - Show on Mac, Live screen, Git changes: no route or no sheet in this
+ *   console. Session info opens the info sheet.
+ * - Documents opens the Documents page on this session (`pages/documents.tsx`),
+ *   and My messages opens its sheet (`session/UserMessages.tsx`), both through
+ *   an event, as `main.js` opens them from its own listener on these two rows.
  * - Snippets: hidden and disabled, which is the original's own shape for a
  *   transport with no snippets route (`syncRow` in `input/snippets.js`).
  * - commit, push: the daemon can send them, but the original sends them only
@@ -388,10 +397,30 @@ function Tools({
               <button id="session-screen" type="button" role="menuitem" disabled>
                 {T.webSessionScreen}
               </button>
-              <button id="session-documents" type="button" role="menuitem" disabled>
+              <button
+                id="session-documents"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending}
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  requestDocuments(row.id)
+                }}
+              >
                 {documentsMenuWord()}
               </button>
-              <button id="session-user-messages" type="button" role="menuitem" disabled>
+              <button
+                id="session-user-messages"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending}
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  requestUserMessages()
+                }}
+              >
                 {userMessagesTitle()}
               </button>
               <button id="session-snippets" type="button" role="menuitem" hidden={!SNIPPETS_READABLE} disabled>
