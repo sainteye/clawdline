@@ -1181,6 +1181,17 @@ export type Evidence =
 export const EvidenceValues: readonly Evidence[] = ["structured", "transcript", "process", "screen", "registry", "none"] as const
 
 /**
+ * The session's terminal was asked to come forward. It says the selection was made
+ * on this machine, never that a window is now in front of a person: under tmux the
+ * emulator drawing the pane decides that, and one of them — iTerm2 under `tmux
+ * -CC` — is asked separately, after this answer has already gone out.
+ */
+export interface FocusResult {
+  id: string
+  ok: boolean
+}
+
+/**
  * GET /v1/health, open without a token: that this daemon is alive and which
  * implementation it is, and nothing else. No path, no port, nothing about the work;
  * those are in Diagnostics.
@@ -1828,6 +1839,132 @@ export interface SchedulerPulse {
    */
   note?: string
   tickSeconds: number
+}
+
+/**
+ * One reading of a terminal. `backend` and `channel` come first because a screen
+ * with no backend named is the defect this exists to avoid, and `lines` is what
+ * came back rather than what was asked for: an alternate-screen program has no
+ * history to give and this must not imply otherwise.
+ */
+export interface Screen {
+  /**
+   * On `on-demand` only, said out loud rather than left for the client to discover:
+   * nothing will tell it the screen moved, so asking again is the only way to see a
+   * change, and this is the fastest it may.
+   */
+  askAgainAfterMs?: number
+
+  /**
+   * Unix seconds of the capture this text came from.
+   */
+  at?: number
+  backend: Backend
+  captures: number
+  channel: ScreenChannel
+  id: string
+
+  /**
+   * How many rows actually came back. The trailing newline a capture ends with is a
+   * terminator, not a row.
+   */
+  lines?: number
+
+  /**
+   * Nothing has been captured for this session yet. The first read of a session
+   * answers this and the screen arrives a few milliseconds later on the `screen`
+   * event, because the answer comes out of a published snapshot and the capture
+   * happens behind it.
+   */
+  pending: boolean
+  readable: boolean
+
+  /**
+   * What a client compares to decide whether it already has this screen. FNV-1a
+   * over the UTF-8 bytes, which is enough for "did these change" and is
+   * deliberately not a promise about anything else. An unreadable screen is the
+   * constant `unreadable`, so a pane that stays unreadable stops producing events
+   * after the first one.
+   */
+  revision: string
+  signals: number
+
+  /**
+   * The capture, escape sequences kept. Absent until the first one completes.
+   */
+  text?: string
+
+  /**
+   * Unix seconds. The lease this read renewed; a lease nobody renews expires and
+   * takes the pipe with it.
+   */
+  watchingUntil: number
+}
+
+export interface ScreenAnswer {
+  screen: Screen
+}
+
+/**
+ * How a watcher finds out that a screen changed, which is a fact about the backend
+ * and not about the watcher. `signalled` is tmux with a pipe on the pane, about
+ * four milliseconds behind it; `on-demand` is a sample taken when somebody asks, no
+ * faster than `askAgainAfterMs`. Drawing the two identically would be a lie the
+ * reader has no way to catch, so it is in every payload.
+ */
+export type ScreenChannel =
+    "signalled"
+  | "on-demand"
+
+export const ScreenChannelValues: readonly ScreenChannel[] = ["signalled", "on-demand"] as const
+
+/**
+ * The `screen` frame on /v1/events: only that a screen moved, and to what revision.
+ * The screen itself is fetched through the authenticated GET, exactly as a
+ * transcript append is — a stream frame reaches every device on this connection,
+ * and a terminal somebody else is watching has no business on it.
+ */
+export interface ScreenEvent {
+  at: number
+  id: string
+  revision: string
+}
+
+/**
+ * The machine state this feature creates, published so that somebody can see it.
+ * `tmux list-panes -a -F '#{pane_id} #{pane_pipe}'` answers the same question in
+ * one command; this answers it and says which of those pipes this daemon can
+ * account for, which tmux cannot, because `#{pane_pipe}` is a boolean with no owner
+ * in it. A pane that is piped and not on this daemon's list is therefore
+ * `unattributed` rather than a leak, and nothing here takes somebody else's pipe
+ * off.
+ */
+export interface ScreenInventory {
+  attached: string[]
+  leaseSeconds: number
+  piped: string[]
+  screens: ScreenWatch[]
+  unattributed: string[]
+  windowMs: number
+}
+
+/**
+ * One row of what this daemon is watching.
+ */
+export interface ScreenWatch {
+  backend: Backend
+  captures: number
+  channel: ScreenChannel
+  expiresIn: number
+  id: string
+  readable: boolean
+
+  /**
+   * Whether this daemon has a pipe on that pane right now.
+   */
+  signalled: boolean
+  signals: number
+  watching: boolean
 }
 
 /**

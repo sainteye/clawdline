@@ -55,6 +55,47 @@ type ScreenHost interface {
 	Capture(ctx context.Context, s session.Session) (string, bool)
 }
 
+// PaneSignal is a backend saying that a pane moved, rather than being asked.
+//
+// Only tmux can: `pipe-pane` into a FIFO makes the readability of that FIFO the
+// whole message, which is 0.014 ms from a byte reaching the pane. A platform or
+// a backend with no such thing has no implementation here at all, and the
+// screen it publishes says `on-demand` — a view that showed a four-millisecond
+// screen and a second-old sample with the same chrome, and no word about which,
+// would be lying in a way the reader cannot catch.
+//
+// **Attaching is machine state that outlives this process**, so Detach is owed
+// for every Attach and Abandoned is how a previous life's pipes are found
+// again: the FIFO on disk is the ownership record, and there is no second file
+// to fall out of step with it.
+type PaneSignal interface {
+	// OnMoved is where a wake-up goes. Set once, before the first Attach.
+	OnMoved(func(paneID string))
+	// Attach is idempotent: a pane already attached is already the answer.
+	Attach(paneID string) bool
+	Detach(paneID string)
+	DetachAll()
+	IsAttached(paneID string) bool
+	// Abandoned names the panes a previous run of this daemon piped and did
+	// not take back.
+	Abandoned() []string
+	// Forget removes the record of an abandoned pane. The caller decides
+	// whether to unpipe first, so a directory scan that could not reach the
+	// backend does not erase the evidence.
+	Forget(paneID string)
+}
+
+// PipeHost is the backend half of that: attaching the pipe, taking it off, and
+// saying which panes carry one. Only tmux implements it.
+type PipeHost interface {
+	Pipe(ctx context.Context, paneID, command string) bool
+	Unpipe(ctx context.Context, paneID string) bool
+	// PipedPanes is keyed by pane id rather than a set, because a pane missing
+	// from the answer is a pane the backend does not have, which is not the
+	// same fact as a pane with no pipe.
+	PipedPanes(ctx context.Context) map[string]bool
+}
+
 // KeyHost types raw key bytes into a session as one keypress, outside any
 // bracketed paste. It is apart from TerminalHost because only the menu-answer
 // path uses it, and that path allows a closed set of bytes (app.Actions.Key):
@@ -87,6 +128,30 @@ type TerminalHost interface {
 	// Close takes the session away. The caller proves nothing is still running
 	// in it first; this port does not decide that.
 	Close(ctx context.Context, s session.Session) error
+
+	// Reveal puts this session's terminal in front of whoever is at the
+	// machine. `activate` false selects the tab and raises nothing, which is
+	// the courtesy a walk through a list wants: the terminal follows what is
+	// being pointed at and the keyboard stays where it was.
+	//
+	// A nil error means the selection was made. It never means a window is now
+	// in front of a person — whether the emulator drawing a tmux pane comes
+	// forward is that emulator's to decide, and the one that can be asked is
+	// asked after this has returned.
+	Reveal(ctx context.Context, s session.Session, activate bool) error
+
+	// Screen is the visible screen and what scrolled off the top of it, with
+	// the escape sequences kept, for the one caller that is showing a person a
+	// terminal rather than deciding something from it.
+	//
+	// Apart from ScreenHost.Capture, which is the no-history reading every
+	// classifier wants: history answers a different question with the same
+	// words, and a composer that scrolled away hours ago once said "this
+	// session is ready". `lines` is a ceiling and not an offer — an
+	// alternate-screen program has no history to give.
+	//
+	// False is "not read", never "empty".
+	Screen(ctx context.Context, s session.Session, lines int) (string, bool)
 }
 
 // Launcher opens a new terminal and types one line into its shell. It is the

@@ -118,6 +118,15 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
+	// A moved screen rides this stream too, and it is the only frame here that
+	// is not on the tick: a pane that wrote something is news the moment tmux
+	// says so, about four milliseconds later, and putting it on a two-second
+	// clock would turn the live screen back into the sampler it exists not to
+	// be. Only the revision travels — the screen itself is fetched through the
+	// authenticated GET, exactly as a transcript append is.
+	token, screens := s.screenBus.subscribe()
+	defer s.screenBus.unsubscribe(token)
+
 	// The first frame goes out at once. A client that had to wait one tick to
 	// see anything would show an empty fleet for two seconds, and an empty
 	// fleet is a statement.
@@ -128,6 +137,13 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
+		case moved := <-screens:
+			payload, err := json.Marshal(moved)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "event: screen\ndata: %s\n\n", payload)
+			flusher.Flush()
 		case <-ticker.C:
 			send()
 			sendTasks()
