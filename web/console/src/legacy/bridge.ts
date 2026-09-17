@@ -11,7 +11,7 @@
 // touches no DOM and returns strings, so React hands what it returns to
 // dangerouslySetInnerHTML — the same input produces the same markup as the
 // original, and the copied stylesheet then styles it identically.
-import type { Icon, SessionRow } from "@clawdline/contract"
+import type { Icon, SessionRow, TaskRow } from "@clawdline/contract"
 
 /* The imports below are the copied modules. They are plain JavaScript with no
    types, read with allowJs so the compiler infers what it can and checks none
@@ -39,15 +39,25 @@ import {
 import { LOCAL_SESSION_MACHINE, machinePresentationForFleet, sessionSelectionKey } from "./js/session/selection.js"
 import { bindSessionUI as bindSessionUIOriginal } from "./js/session/ui.js"
 import {
+  featureRootChip as featureRootChipOriginal,
   freezeOrder as freezeOrderOriginal,
   thawOrder as thawOrderOriginal,
   ordered,
   projectSessionCloseability,
   projectSessionWorkState,
+  rowDepth as rowDepthOriginal,
+  selfReportedPeerWaitCopy,
   sessionCloseabilityHTML,
+  sessionCloseabilityShape,
   sessionStatusGlyphHTML,
   sessionWorkStateHTML,
+  taskLive as taskLiveOriginal,
+  taskOfChild as taskOfChildOriginal,
+  taskShaping as taskShapingOriginal,
+  taskWord as taskWordOriginal,
+  tasksOfRoot as tasksOfRootOriginal,
 } from "./js/view/derive.js"
+import { coordinatorForSession as coordinatorForSessionOriginal, coordinatorRowModel as coordinatorRowModelOriginal } from "./js/input/coordinator-actions.js"
 
 /**
  * Put the current fleet where the copied modules look for it.
@@ -60,6 +70,7 @@ export function publish(
   openId: string | null,
   filter: string,
   selectedId: string | null = openId,
+  tasks?: TaskRow[] | null,
 ): void {
   // The inferred types of the copied state object come from its initialisers —
   // `sessions: []` reads as never[] — so the seam is widened here rather than
@@ -71,7 +82,12 @@ export function publish(
   // payload has no such field either and whose rows still read "Mac 電腦 · 這台
   // Mac" — the constant comes from the client there too.
   state.sessions = sessions.map((s) => ({ ...s, machine: LOCAL_SESSION_MACHINE }))
-  state.tasks = state.tasks ?? []
+  // The whole task list, replaced whole, as `handlers.tasks` does. A caller
+  // with no answer yet passes nothing and the last list stands; the original
+  // starts from an empty one, which leaves every task function answering as
+  // though the feature did not exist.
+  if (tasks) state.tasks = tasks
+  else state.tasks = state.tasks ?? []
   state.arrived = true
   // Two ids, as in the original: the highlight and the conversation on screen
   // are separate since the keyboard can move one without the other.
@@ -212,3 +228,55 @@ export const freezeOrder = freezeOrderOriginal as () => void
 export const thawOrder = thawOrderOriginal as () => void
 /** Tell the copied modules how to redraw this page's list. */
 export const bindSessionUI = bindSessionUIOriginal as (ui: Record<string, () => void>) => void
+
+/* Dispatched work and the coordinator, from the copied modules (`view/derive.js`,
+   `input/coordinator-actions.js`). They read `S.tasks` and `S.sessions`, which
+   `publish` fills. */
+
+/** A task as the copied modules read it: the Swift list's row. */
+export type LegacyTask = TaskRow
+
+/** Still going: queued, spawning or briefed. */
+export const taskLive = taskLiveOriginal as (t: LegacyTask | null | undefined) => boolean
+/** Whether a task still decides where its child's row sits. */
+export const taskShaping = taskShapingOriginal as (t: LegacyTask | null | undefined) => boolean
+/** The task a session is the child of, live or long over; the freshest wins. */
+export const taskOfChild = taskOfChildOriginal as (id: string) => LegacyTask | null
+/** The tasks a session is the root of, of those still shaping the list. */
+export const tasksOfRoot = tasksOfRootOriginal as (id: string) => LegacyTask[]
+/** One word for where a task got to. */
+export const taskWord = taskWordOriginal as (t: LegacyTask | null | undefined) => string
+/** How far a row is indented under the sessions that asked for it: 0, 1 or 2. */
+export const rowDepth = rowDepthOriginal as (id: string) => number
+/** The Feature Root chip, or null. */
+export const featureRootChip = featureRootChipOriginal as (
+  s: SessionRow,
+) => { text: string; title: string; live: boolean; childCount: number } | null
+/** A session's own account of the peer it waits on; "" when not complete enough to trust. */
+export const selfReportedPeerWait = selfReportedPeerWaitCopy as (s: SessionRow) => string
+/** Everything in the closeability badge whose identity can change its words. */
+export const closeabilityShape = sessionCloseabilityShape as (s: SessionRow) => string
+/** The Clawdfather record on a row, normalised, or null. */
+export const coordinatorForSession = coordinatorForSessionOriginal as (
+  s: SessionRow | null | undefined,
+) => { label: string; status: string; commands: unknown[] } | null
+/** The coordinator-only mark and badge, or null for an ordinary row. */
+export const coordinatorRowModel = coordinatorRowModelOriginal as (
+  s: SessionRow,
+) => { badge: string; label: string; mark: { role: string; ariaHaspopup: "dialog"; ariaLabel: string } } | null
+
+/**
+ * Tokens the way the assistant counts them out loud: `840`, `9.3k`, `84.4k`,
+ * `120k`.
+ *
+ * Not a copy: this is `agentTokens` from `session/agent.js` (line 129), restated.
+ * That module imports the list, the transcript and the composer renderers, so
+ * copying it would bring the whole page with it; the function itself is four
+ * lines and has no state. If `session/agent.js` is ever copied, this goes and
+ * its export is used instead.
+ */
+export function agentTokens(n: number): string {
+  if (n < 1000) return String(n)
+  const k = n / 1000
+  return (k < 100 ? k.toFixed(1) : String(Math.round(k))) + "k"
+}

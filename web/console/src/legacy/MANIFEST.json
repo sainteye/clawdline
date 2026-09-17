@@ -50,7 +50,9 @@
     "js/view/markdown.js": "1d6c074ba207f3e4",
     "js/view/board-workflow-record.js": "a6a475180fefe085",
     "js/view/project-mark.js": "b5459e2b72bc28b9",
-    "js/view/user-messages-data.js": "1ea5808c41a913f4"
+    "js/view/user-messages-data.js": "1ea5808c41a913f4",
+    "js/net/api.js": "b9105bac6494ea14",
+    "js/input/coordinator-actions.js": "678c8c20e14a79b6"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {

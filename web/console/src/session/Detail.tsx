@@ -86,8 +86,14 @@ export function Detail({
             aria-label={snippetsSays || undefined}
           >
             <span className="detail-identity">
-              {/* `coordinatorForSession` — this daemon knows no coordinator, so the crown stays hidden. */}
-              <span className="clawdfather-crown" id="detail-clawdfather-crown" role="img" aria-label="Clawdfather" hidden />
+              {/* `coordinatorForSession`: shown on the registered Clawdfather's session. */}
+              <span
+                className="clawdfather-crown"
+                id="detail-clawdfather-crown"
+                role="img"
+                aria-label="Clawdfather"
+                hidden={!L.coordinatorForSession(row)}
+              />
               <canvas id="detail-mark" ref={markRef} width={0} height={0} />
             </span>
           </button>
@@ -145,14 +151,12 @@ function HomeHero() {
 }
 
 /**
- * The line under the name, as `renderDetailHead` builds it: path, tty, and a
- * word for the three states a reader should not mistake for idle. No pane id.
- *
- * The original then adds the task that opened this session — its title, its
- * word, tokens and cost — from `taskOfChild` (`view/derive.js`). This console
- * never fills `S.tasks` (`bridge.publish` leaves it empty), so that lookup
- * answers nothing here and the part is absent, as it is there for a session no
- * task opened.
+ * The line under the name, as `renderDetailHead` builds it: path, tty, a word
+ * for the three states a reader should not mistake for idle, and then the task
+ * that opened this session — its title, its word, tokens and cost — from
+ * `taskOfChild` (`view/derive.js`). Every known task, not only the ones still
+ * shaping the list: "what was this for" has an answer long after the row went
+ * back to normal. No pane id.
  */
 function detailSub(row: SessionRow | null): string {
   if (!row) return ""
@@ -162,6 +166,17 @@ function detailSub(row: SessionRow | null): string {
   if (row.state === "waiting") sub.push(T.sessionWaiting)
   else if (row.state === "working") sub.push(T.webStateWorking)
   else if (row.state === "unknown") sub.push(T.webStateUnreadable)
+  const task = L.taskOfChild(row.id)
+  if (task) {
+    if (task.title) sub.push(task.title)
+    sub.push(L.taskWord(task))
+    const used = task.usage
+    if (used?.total) sub.push("↓ " + L.agentTokens(used.total))
+    // Only when there is a figure. Codex is billed by the plan rather than the
+    // token, so there is no cost, and a "$0.0000" beside real work would read as
+    // a measurement.
+    if (typeof used?.costUsd === "number") sub.push("$" + used.costUsd.toFixed(4))
+  }
   return sub.join("  ·  ")
 }
 

@@ -87,6 +87,14 @@ type Session struct {
 	// survives a terminal restart, which a tty and a pane id do not.
 	ConversationID string `json:"conversation_id,omitempty"`
 
+	// Rungs are the parts Label was chosen from, kept so a reader holding a
+	// higher rung (a name typed in the Swift app, the task that opened the tab)
+	// can choose again without reading the transcript twice. Not on the wire.
+	Rungs LabelRungs `json:"-"`
+	// CustomTitle is the conversation's current `/rename`, which retires a
+	// name typed before it. Not on the wire.
+	CustomTitle string `json:"-"`
+
 	// Shells are the commands this session left running in the background,
 	// newest first. Empty for most sessions, and always for Codex, which keeps
 	// no record of them.

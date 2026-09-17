@@ -27,6 +27,10 @@ type Identity struct {
 	Label          string
 	// Status is the assistant's own word, not ours. The domain maps it.
 	Status string
+	// Rungs are the label's parts; Label is PreferredLabel(Rungs).
+	Rungs session.LabelRungs
+	// CustomTitle is the conversation's current `/rename`, if any.
+	CustomTitle string
 }
 
 // OpenRequest is what it takes to start a session.

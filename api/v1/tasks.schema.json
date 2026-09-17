@@ -2,30 +2,119 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "tasks.schema.json",
   "title": "Dispatched work",
-  "description": "GET /v1/tasks. Claims are the paths a task reserved at dispatch time; they are compared by ancestry, never by string equality.",
+  "description": "GET /v1/orchestrator/tasks, in the Swift app's shape (OrchestratorTaskList.swift): every unfinished task, then one page of finished ones, newest first. The rows are the Swift app's own tasks, read from its store, joined by the tasks this daemon dispatched; an id appears once. Claims are the paths a task reserved at dispatch time; they are compared by ancestry, never by string equality.",
   "$defs": {
     "TaskState": {
       "type": "string",
       "enum": ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled", "spawn_failed"]
     },
-    "TaskRow": {
+    "TaskRoot": {
+      "description": "The session that asked for the task. `terminalId` is not stored: it is resolved on every read against the sessions on screen — the parent task's child terminal first, otherwise the one live session whose conversation is `sessionId` — and is absent when that is not exactly one.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["assistant", "claims", "created_at", "project_dir", "state", "task_id"],
+      "required": [],
       "properties": {
+        "assistant": { "type": "string" },
+        "label": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "taskId": { "type": "string" },
+        "terminalId": { "type": "string" }
+      }
+    },
+    "TaskChild": {
+      "description": "The tab the task was opened in.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "backend": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "terminalId": { "type": "string" }
+      }
+    },
+    "TaskUsage": {
+      "description": "What the child spent. `costUsd` is absent where nothing priced it, which is always the case for Codex.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cacheRead", "cacheWrite", "input", "output", "total"],
+      "properties": {
+        "cacheRead": { "type": "integer" },
+        "cacheWrite": { "type": "integer" },
+        "costUsd": { "type": "number" },
+        "input": { "type": "integer" },
+        "model": { "type": "string" },
+        "output": { "type": "integer" },
+        "total": { "type": "integer" }
+      }
+    },
+    "StoreReading": {
+      "description": "Whether the Swift app's store was read for this answer: `current`; `stale`, an earlier reading carried because the newest one was half-written; or `unknown`, nothing could be read. Unknown is never the same as empty.",
+      "type": "string",
+      "enum": ["current", "stale", "unknown"]
+    },
+    "TaskPage": {
+      "description": "Which finished tasks this answer carries. Unfinished ones ride on every page.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cursor", "fields", "finished", "limit", "unfinished"],
+      "properties": {
+        "cursor": { "type": "integer" },
+        "fields": { "type": "string" },
+        "finished": { "type": "integer" },
+        "limit": { "type": "integer" },
+        "nextCursor": { "description": "Where the next page starts. The Swift app sends null on the last page; here the key is absent.", "type": "integer" },
+        "unfinished": { "type": "integer" }
+      }
+    },
+    "TaskRow": {
+      "description": "One task. The camelCase keys are the Swift app's list projection, which the copied console reads (`view/derive.js`: id, title, state, created, finishedAt, child, root, usage). The four snake_case keys `task_id`, `project_dir`, `created_at` and `claims` are this daemon's older names, kept beside them because the Dashboard panel still reads them. The Swift app's `projectDir` is sent only as `project_dir`: the generator gives both spellings one Go name, and the copied console reads neither. `claims` is therefore always present here, where the Swift app leaves it out when none were declared (`claims_declared` says which). Omitted from the Swift projection because no page here reads them: worktree (its presence is `isolation`), executor, completion_delivery, verification, landing, landing_paths, terminal_intervention, released_claims, respawn_of, waiting_on.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "claims", "claims_declared", "created", "created_at", "depth", "dir", "id", "kind", "permission", "project_dir", "state", "task_id", "title"],
+      "properties": {
+        "artifacts": { "type": "array", "items": { "type": "string" } },
         "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "attachSession": { "type": "string" },
+        "attached": { "type": "boolean" },
+        "briefedAt": { "type": "integer" },
+        "child": { "$ref": "#/$defs/TaskChild" },
         "claims": { "type": "array", "items": { "type": "string" } },
-        "created_at": { "type": "integer" },
+        "claims_declared": { "type": "boolean" },
+        "created": { "description": "Unix seconds.", "type": "integer" },
+        "created_at": { "description": "Unix seconds; the same instant as `created`.", "type": "integer" },
+        "depth": { "type": "integer" },
+        "dir": { "type": "string" },
+        "finishedAt": { "type": "integer" },
+        "id": { "type": "string" },
+        "isolation": { "type": "string" },
+        "kind": { "type": "string" },
+        "model": { "type": "string" },
+        "permission": { "type": "string" },
         "project_dir": { "type": "string" },
+        "reasoning_effort": { "type": "string" },
+        "resultVerifiedAt": { "type": "integer" },
+        "root": { "$ref": "#/$defs/TaskRoot" },
+        "schedule_id": { "type": "string" },
+        "session_root": { "type": "boolean" },
+        "spawnedAt": { "type": "integer" },
         "state": { "$ref": "#/$defs/TaskState" },
-        "task_id": { "type": "string" }
+        "task_id": { "type": "string" },
+        "title": { "type": "string" },
+        "untouched_claims": { "type": "array", "items": { "type": "string" } },
+        "usage": { "$ref": "#/$defs/TaskUsage" },
+        "workItemId": { "type": "string" },
+        "workPhase": { "type": "string" }
       }
     },
     "TaskList": {
+      "description": "`at` is when the answer was built. With `store` at `unknown` the list holds only this daemon's own tasks, which is not the same as the machine having no others.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["tasks"],
+      "required": ["at", "page", "store", "tasks"],
       "properties": {
+        "at": { "type": "integer" },
+        "page": { "$ref": "#/$defs/TaskPage" },
+        "store": { "$ref": "#/$defs/StoreReading" },
         "tasks": { "type": "array", "items": { "$ref": "#/$defs/TaskRow" } }
       }
     }

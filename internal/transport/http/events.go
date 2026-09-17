@@ -120,6 +120,23 @@ func (s *Server) forward(w http.ResponseWriter, flusher http.Flusher, frame []st
 		// upstream one is still true, just not ours.
 	}
 
+	if name == "orchestrator" || name == "orchestrator-delta" {
+		// The task list is this daemon's too: the Swift app's rows as read from
+		// its store, joined by this daemon's own. A delta against upstream's
+		// base would be applied to our rows, so both are replaced by a whole
+		// list, which is what a delta may always be replaced with.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		list, err := s.tasksPayload(ctx, 0, 50)
+		cancel()
+		if err == nil {
+			if payload, err := json.Marshal(list); err == nil {
+				fmt.Fprintf(w, "event: orchestrator\nid: %s\ndata: %s\n\n", id, payload)
+				flusher.Flush()
+				return
+			}
+		}
+	}
+
 	for _, line := range frame {
 		fmt.Fprint(w, line, "\n")
 	}

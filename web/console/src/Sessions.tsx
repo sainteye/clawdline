@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react"
-import type { ScheduleRow, SessionRow } from "@clawdline/contract"
+import type { ScheduleRow, SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { Row } from "./session/List.js"
@@ -53,9 +53,14 @@ export function SessionsPage({
   onBack: () => void
   onDid: () => void
 }) {
+  // The task list the chips, the indent and the detail header read. Fetched
+  // here rather than taken from the stream because the page's stream reader
+  // does not hand its frames to this page.
+  const tasks = useTasks(arrived, rows)
+
   // The copied modules read a module-level object, so it is filled before
   // anything is drawn from them, and the list's own order and filter are used.
-  L.publish(rows, openId, filter, selected)
+  L.publish(rows, openId, filter, selected, tasks)
   const shown = L.orderedRows()
   // From the whole fleet, as `byId` looks it up: a filter that hides the open
   // row does not close it.
@@ -387,6 +392,93 @@ function usePullToRefresh(
  * on return if a minute was missed. A failed read draws nothing — the section
  * stays absent before any answer and keeps the last truthful list after one.
  */
+/**
+ * The dispatched-work list, `S.tasks` in the original.
+ *
+ * The original is handed the whole list on its stream's `orchestrator` frame,
+ * every time a task moves. This page's stream reader (`useFleet`, outside this
+ * file) passes on only session frames, so the list is read here instead: once
+ * when the first session list arrives, again whenever the rows change shape —
+ * a tab opens or closes, a session starts or stops working, which is when a
+ * task is briefed or finishes — at most every 1.5 seconds, and on a 10-second
+ * lane for the moves that change no row. A failed read keeps the last list:
+ * a chip that vanished because one request failed would be a false statement
+ * that the task is over.
+ */
+function useTasks(arrived: boolean, rows: SessionRow[]): TaskRow[] | null {
+  const [list, setList] = useState<TaskRow[] | null>(null)
+  const readRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    if (!arrived) return
+    const LANE_MS = 10000
+    const GAP_MS = 1500
+    let alive = true
+    let inFlight = false
+    let again = false
+    let last = 0
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const read = () => {
+      if (inFlight) {
+        again = true
+        return
+      }
+      const wait = last + GAP_MS - Date.now()
+      if (wait > 0) {
+        if (timer === null) {
+          timer = setTimeout(() => {
+            timer = null
+            read()
+          }, wait)
+        }
+        return
+      }
+      inFlight = true
+      last = Date.now()
+      client
+        .tasks()
+        .then((d) => {
+          if (alive) setList(d.tasks ?? [])
+        })
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false
+          if (alive && again) {
+            again = false
+            read()
+          }
+        })
+    }
+    readRef.current = read
+    read()
+    let lane: ReturnType<typeof setInterval> | null = document.hidden ? null : setInterval(read, LANE_MS)
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (lane !== null) clearInterval(lane)
+        lane = null
+        return
+      }
+      if (lane !== null) return
+      lane = setInterval(read, LANE_MS)
+      if (Date.now() - last >= LANE_MS) read()
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      alive = false
+      readRef.current = () => {}
+      if (lane !== null) clearInterval(lane)
+      if (timer !== null) clearTimeout(timer)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [arrived])
+  // The rows' shape: which sessions exist and what they are doing. A working
+  // line that ticks every second is not a change of shape.
+  const shape = rows.map((r) => `${r.id}:${r.state}:${r.work_state}`).join("|")
+  useEffect(() => {
+    readRef.current()
+  }, [shape])
+  return list
+}
+
 function useSchedules(arrived: boolean): ScheduleRow[] | null {
   const [list, setList] = useState<ScheduleRow[] | null>(null)
   useEffect(() => {

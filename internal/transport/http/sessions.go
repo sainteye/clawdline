@@ -3,11 +3,13 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"sync/atomic"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/icon"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
@@ -40,41 +42,90 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(s.sessionsPayload(ctx))
 }
 
+// sessionRowWire is a row as it is sent. It exists for one key the contract
+// generator cannot express: `work_person_needed` is optional, and `false` is a
+// real answer the console tests for (`=== false`), so it must be a pointer
+// rather than the generated bool, whose omitempty would drop the false. The
+// outer field shadows the embedded one for encoding/json.
+type sessionRowWire struct {
+	contract.SessionRow
+	WorkPersonNeeded *bool `json:"work_person_needed,omitempty"`
+}
+
+// sessionsSnapshotWire is contract.SessionsSnapshot with those rows.
+type sessionsSnapshotWire struct {
+	At       int64            `json:"at"`
+	Scan     contract.Scan    `json:"scan"`
+	Sessions []sessionRowWire `json:"sessions"`
+}
+
 // sessionsPayload builds the one snapshot both the route and the event stream
 // publish. They are the same payload, so they are the same code: two builders
 // would drift, and the client would have no way to tell which one it got.
-func (s *Server) sessionsPayload(ctx context.Context) contract.SessionsSnapshot {
+func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
 	inv := s.inventory.Read(ctx)
 
 	// One reading of what is owed, for the whole list. Asking per row would
 	// ask the same question eight times and let two rows disagree about the
 	// same moment.
 	owed, owedErr := s.store.OpenObligations(ctx)
-	live, liveErr := s.store.LiveTasks(ctx)
-	if liveErr != nil {
+	if _, liveErr := s.store.LiveTasks(ctx); liveErr != nil {
 		// One unreadable input makes the projection incomplete, not wrong in
 		// one place: it is carried as missing evidence rather than as zero.
 		owedErr = liveErr
 	}
+	// One reading of the Swift app's store, for the same reason.
+	swift := s.swift.Read()
 
 	// Only assistant sessions are rows. A terminal running an ordinary shell is
 	// not a session in this contract — the Swift app carries shells as an
 	// attribute of the session that left them running, and publishing them as
 	// rows of their own turned eight cards into eighteen, ten of which the
 	// console could only describe as unreadable.
+	items := make([]session.Session, 0, len(inv.Sessions))
+	for _, item := range inv.Sessions {
+		if item.IsAssistant() {
+			items = append(items, item)
+		}
+	}
+	lives := make([]swiftstore.Live, len(items))
+	for i, item := range items {
+		lives[i] = liveOf(item)
+	}
+	matches := identityMatchCounts(items)
+	s.lastScreen.Store(&screenReading{at: time.Now(), rows: onScreen(items)})
+
+	// Names first, because a coordination wait names the sessions on either
+	// side of it by the label this list gives them.
+	labels := make(map[string]string, len(items))
+	for i, item := range items {
+		labels[item.ID] = rowLabel(item, swift.TitleOf(lives[i], item.CustomTitle, lives))
+	}
+	labelOf := func(id string) string { return labels[id] }
+
 	// One generation for the whole snapshot, taken before the rows are built,
 	// so every row's closeability names the same reading it arrived with.
 	gen := generation.Add(1)
-	rows := make([]contract.SessionRow, 0, len(inv.Sessions))
-	for _, item := range inv.Sessions {
-		if !item.IsAssistant() {
-			continue
-		}
-		rows = append(rows, sessionRow(item, owed, owedErr, live, s.icons, gen))
+	now := time.Now()
+	rows := make([]sessionRowWire, 0, len(items))
+	for i, item := range items {
+		rows = append(rows, s.sessionRow(rowInput{
+			item:       item,
+			live:       lives[i],
+			label:      labels[item.ID],
+			labelOf:    labelOf,
+			matches:    matches[item.ID],
+			swift:      swift,
+			owed:       owed,
+			owedErr:    owedErr,
+			inv:        inv,
+			now:        now,
+			generation: gen,
+		}))
 	}
 
-	return contract.SessionsSnapshot{
-		At:       time.Now().Unix(),
+	return sessionsSnapshotWire{
+		At:       now.Unix(),
 		Sessions: rows,
 		Scan: contract.Scan{
 			Epoch:      epoch,
@@ -93,15 +144,88 @@ func (s *Server) sessionsPayload(ctx context.Context) contract.SessionsSnapshot 
 	}
 }
 
+// liveOf is a session reduced to the identity the Swift store's records are
+// compared with. The start time is asked of the kernel here, once per row per
+// reading: it is one sysctl, and a cached one would be the one fact that could
+// be wrong about a process that replaced another in the same second.
+func liveOf(item session.Session) swiftstore.Live {
+	return swiftstore.Live{
+		TerminalID:     item.ID,
+		TTY:            item.TTY,
+		Assistant:      string(item.Assistant),
+		PID:            int64(item.PID),
+		ProcessStart:   swiftstore.ProcessStart(item.PID),
+		ConversationID: item.ConversationID,
+	}
+}
+
+// identityMatchCounts is SessionClosePolicy.identityMatchCounts: how many rows
+// share each row's conversation. A row whose conversation could not be read
+// counts as one; any unreadable conversation makes every other row of that
+// assistant ambiguous, because it could be any of them.
+func identityMatchCounts(items []session.Session) map[string]int {
+	unreadable := map[session.Assistant]bool{}
+	byConversation := map[string]int{}
+	for _, item := range items {
+		if item.ConversationID == "" {
+			unreadable[item.Assistant] = true
+			continue
+		}
+		byConversation[string(item.Assistant)+"\x01"+item.ConversationID]++
+	}
+	out := make(map[string]int, len(items))
+	for _, item := range items {
+		switch {
+		case item.ConversationID == "":
+			out[item.ID] = 1
+		case unreadable[item.Assistant]:
+			out[item.ID] = 0
+		default:
+			out[item.ID] = byConversation[string(item.Assistant)+"\x01"+item.ConversationID]
+		}
+	}
+	return out
+}
+
+// rowLabel chooses a name by the Swift app's rungs, with the two it keeps in
+// its store filled from there. A Claude conversation's automatic name is its
+// thread rung.
+func rowLabel(item session.Session, titles swiftstore.Titles) string {
+	rungs := item.Rungs
+	rungs.Manual = titles.Manual
+	rungs.Orchestrator = titles.Orchestrator
+	if rungs.Thread == "" {
+		rungs.Thread = titles.Automatic
+	}
+	if label := session.PreferredLabel(rungs); label != "" {
+		return label
+	}
+	return item.Label
+}
+
+type rowInput struct {
+	item       session.Session
+	live       swiftstore.Live
+	label      string
+	labelOf    func(string) string
+	matches    int
+	swift      swiftstore.Snapshot
+	owed       []task.Obligation
+	owedErr    error
+	inv        session.Inventory
+	now        time.Time
+	generation int64
+}
+
 // sessionRow renders one session in the shape the console reads.
 //
-// Fields this daemon cannot yet support are left at their zero value and the
-// contract marks them optional, so they are absent rather than invented. The
-// contract already says several of them are absent in ordinary cases, so a
-// reader that handles absence handles this too.
-func sessionRow(item session.Session, owed []task.Obligation, owedErr error, live []task.Task, marks *icon.Registry, gen int64) contract.SessionRow {
-	return contract.SessionRow{
-		Icon:     wireIcon(marks.For(item.CWD)),
+// Fields that cannot be supported are left at their zero value and the
+// contract marks them optional, so they are absent rather than invented.
+func (s *Server) sessionRow(in rowInput) sessionRowWire {
+	item := in.item
+	state := string(item.State)
+	row := contract.SessionRow{
+		Icon:     wireIcon(s.icons.For(item.CWD)),
 		ID:       item.ID,
 		Backend:  contract.Backend(item.Backend),
 		State:    contract.SessionState(item.State),
@@ -109,19 +233,92 @@ func sessionRow(item session.Session, owed []task.Obligation, owedErr error, liv
 		// Not in the Swift contract: how this row's state was learned. A
 		// registry reading and a screen guess are different kinds of fact.
 		Evidence:  contract.Evidence(item.Evidence),
-		WorkState: contract.WorkState(workState(item, owed, owedErr, live)),
-		// This daemon projected it; nothing here takes a session's own word for
-		// what it needs, so `self` is never claimed.
-		WorkProvenance: contract.WorkProvenanceBroker,
-		Closeability:   closeability(item, owed, owedErr, time.Now(), gen),
-		TTY:            item.TTY,
-		Assistant:      contract.Assistant(item.Assistant),
-		Label:          item.Label,
-		Line:           item.Line,
-		CWD:            item.CWD,
-		SessionID:      item.ConversationID,
-		Shells:         wireShells(item.Shells),
+		TTY:       item.TTY,
+		Assistant: contract.Assistant(item.Assistant),
+		Label:     in.label,
+		Line:      item.Line,
+		CWD:       item.CWD,
+		SessionID: item.ConversationID,
+		Shells:    wireShells(item.Shells),
 	}
+	out := sessionRowWire{}
+
+	if in.swift.Known {
+		work := in.swift.Work(in.live, state)
+		// This daemon's own peer waits are an input the Swift store does not
+		// hold; they rank where the Swift app's coordination waits do.
+		if work.State != "waiting_you" && ownWaitingOnPeer(item, in.owed) {
+			work = swiftstore.Work{State: "waiting_session", Provenance: "broker", Owed: work.Owed}
+		}
+		row.WorkState = contract.WorkState(work.State)
+		row.WorkProvenance = contract.WorkProvenance(work.Provenance)
+		row.WorkNote = work.Note
+		row.WorkSince = work.Since
+		row.WorkMovedBy = work.MovedBy
+		out.WorkPersonNeeded = work.PersonNeeded
+		row.Owed = work.Owed
+		row.Disposition = work.Disposition
+		row.RootAssignment = in.swift.RootAssignment(in.live)
+		row.Coordination = in.swift.Coordination(item.ID, in.labelOf)
+		row.Coordinator = in.swift.CoordinatorFor(in.live)
+	} else {
+		// Without the store there is no reading of the task, the delivery or
+		// the declaration behind a state, and the honest projection is the
+		// daemon's own with that evidence marked missing.
+		row.WorkState = contract.WorkState(workState(item, in.owed, errSwiftUnknown, nil))
+		row.WorkProvenance = contract.WorkProvenanceBroker
+	}
+
+	row.Closeability = in.swift.Closeability(swiftstore.CloseInput{
+		Live:          in.live,
+		TerminalState: state,
+		Bound: in.live.Assistant != "" && in.live.PID != 0 &&
+			!in.live.ProcessStart.IsZero() && in.live.ConversationID != "",
+		Matches:             in.matches,
+		InventoryComplete:   in.inv.Complete,
+		InventoryObservedAt: in.inv.ObservedAt,
+		Now:                 in.now,
+		Generation:          in.generation,
+		Extra:               ownCloseReasons(item, in.owed, in.owedErr),
+	})
+	out.SessionRow = row
+	return out
+}
+
+var errSwiftUnknown = errors.New("the Swift store could not be read")
+
+// ownWaitingOnPeer is this daemon's own record of a session parked on another.
+func ownWaitingOnPeer(item session.Session, owed []task.Obligation) bool {
+	for _, o := range owed {
+		if o.Mover.Kind == task.MoverOtherSession && o.Subject == item.ID {
+			return true
+		}
+	}
+	return false
+}
+
+// ownCloseReasons carries this daemon's own obligations into the closeability
+// projection beside the Swift store's, as Swift's `additionalObligations`. An
+// unreadable list is evidence, so the row reads unknown rather than short.
+func ownCloseReasons(item session.Session, owed []task.Obligation, err error) []contract.CloseReason {
+	if err != nil {
+		return []contract.CloseReason{{
+			Code: "obligation_list_unreadable", Kind: "evidence",
+			Mover: contract.CloseMover{Kind: "broker"},
+		}}
+	}
+	c := task.Closeability(item.ID, owed, nil)
+	out := make([]contract.CloseReason, 0, len(c.Reasons))
+	for _, r := range c.Reasons {
+		out = append(out, contract.CloseReason{
+			Kind:        "obligation",
+			Code:        string(r.Kind),
+			SubjectID:   r.Mover.ID,
+			SubjectKind: string(r.Mover.Kind),
+			Mover:       wireCloseMover(r.Mover, item.ID),
+		})
+	}
+	return out
 }
 
 // wireShells carries a session's background commands across. None is nil, so
@@ -143,90 +340,6 @@ func wireShells(shells []session.Shell) []contract.SessionShell {
 	return out
 }
 
-// closeability carries the domain's answer across to the wire, with what the
-// reader needs in order to believe it.
-//
-// The decision is not made here; the fleet list and the close action ask one
-// function. What is added is the evidence around it, because `safe` is a
-// positive claim and the console refuses to draw it as one without a current
-// source, an attestation id and a version. That bar is the right way round: a
-// daemon that has not proved anything should not be able to say `safe` merely
-// by leaving fields out.
-func closeability(item session.Session, owed []task.Obligation, err error, now time.Time, gen int64) contract.Closeability {
-	c := task.Closeability(item.ID, owed, err)
-	reasons := make([]contract.CloseReason, 0, len(c.Reasons))
-	for _, r := range c.Reasons {
-		reasons = append(reasons, contract.CloseReason{
-			Kind:        "obligation",
-			Code:        string(r.Kind),
-			SubjectID:   r.Mover.ID,
-			SubjectKind: string(r.Mover.Kind),
-			Mover:       wireCloseMover(r.Mover, item.ID),
-		})
-	}
-	out := contract.Closeability{
-		SessionGeneration: gen,
-		State:             contract.CloseabilityState(c.State),
-		Reasons:           reasons,
-		Mover:             overallMover(c, item.ID),
-		ObservedAt:        now.Unix(),
-		// One entry, and it is this daemon. The list exists because a reading
-		// can have more than one source and a reader should be able to see
-		// which; claiming more than one here would be the lie.
-		Provenance: []string{"broker"},
-		Version:    task.Version,
-		Source: contract.CloseSource{
-			Provenance:    "broker",
-			ObservedAt:    now.Unix(),
-			MaxAgeSeconds: int64(task.MaxAge / time.Second),
-			Freshness:     task.Freshness(now, now),
-		},
-	}
-	if id := task.Attest(item.ID, c.State, owed, now); id != "" {
-		out.AttestationID = &id
-	}
-	return out
-}
-
-// wireCloseMover says who clears one reason.
-//
-// `self` is the distinction that matters to a reader: a thing this session has
-// to do is a thing they can do now, and a thing another session has to do is
-// only something to wait for.
-func wireCloseMover(m task.Mover, subject string) contract.CloseMover {
-	out := contract.CloseMover{Kind: "session"}
-	switch m.Kind {
-	case task.MoverPerson:
-		out.Kind = "person"
-		out.PersonNeeded = true
-	case task.MoverBroker:
-		out.Kind = "broker"
-	case task.MoverTask:
-		out.Kind = "task"
-	}
-	out.Self = m.ID == subject
-	return out
-}
-
-// overallMover is who has to move for the session as a whole.
-//
-// A person, if any reason needs one: the loudest obligation decides, because a
-// row that says "this session can clear it" while one of its reasons needs a
-// person would send somebody away from the thing only they can do.
-func overallMover(c task.Close, subject string) contract.CloseMover {
-	out := contract.CloseMover{Kind: "session", Self: true}
-	for _, r := range c.Reasons {
-		m := wireCloseMover(r.Mover, subject)
-		if m.PersonNeeded {
-			return m
-		}
-		if !m.Self {
-			out = m
-		}
-	}
-	return out
-}
-
 // wireIcon carries a mark across to the wire in the shape the console draws.
 func wireIcon(g icon.Grid) *contract.Icon {
 	if len(g.Cells) == 0 {
@@ -243,7 +356,9 @@ func wireMover(m task.Mover) contract.Mover {
 	return contract.Mover{Kind: contract.MoverKind(m.Kind), ID: m.ID}
 }
 
-// workState gathers this session's axes and hands them to the projection.
+// workState is this daemon's own projection, used only when the Swift store
+// cannot be read: it gathers this session's axes and hands them to the
+// projection.
 func workState(item session.Session, owed []task.Obligation, owedErr error, live []task.Task) task.WorkState {
 	in := task.WorkInputs{
 		AskedOnScreen:          item.State == session.StateWaiting,
@@ -262,4 +377,25 @@ func workState(item session.Session, owed []task.Obligation, owedErr error, live
 	}
 	_ = live
 	return task.ProjectWorkState(in)
+}
+
+// wireCloseMover says who clears one reason, as the Swift app's
+// CloseabilityMover.wire spells it.
+//
+// `self` is the distinction that matters to a reader: a thing this session has
+// to do is a thing they can do now, and a thing another session has to do is
+// only something to wait for — so the other session is named.
+func wireCloseMover(m task.Mover, subject string) contract.CloseMover {
+	switch m.Kind {
+	case task.MoverPerson:
+		return contract.CloseMover{Kind: "person", PersonNeeded: true}
+	case task.MoverBroker:
+		return contract.CloseMover{Kind: "broker"}
+	case task.MoverTask:
+		return contract.CloseMover{Kind: "task", TaskID: m.ID}
+	}
+	if m.ID == subject {
+		return contract.CloseMover{Kind: "session", Self: true}
+	}
+	return contract.CloseMover{Kind: "session", SessionID: m.ID}
 }

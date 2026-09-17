@@ -39,9 +39,8 @@ const heartbeat = 15 * time.Second
 // pointed at this daemon was reading the other app's heartbeat and reporting it
 // as this one's.
 //
-// What is lost by not splicing is the `orchestrator` frame, which this daemon
-// has no reading for. It is absent rather than faked: a client that needs it
-// can tell, which is the whole reason absence is modelled here at all.
+// The `orchestrator` frame is this daemon's task list, which reads the Swift
+// app's store (read-only) and adds its own tasks; see tasksPayload.
 func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -91,10 +90,39 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
+	// The task list rides the same stream, as it does from the Swift app: a
+	// task is briefed and finishes on its own clock, without the session list
+	// changing. Sent when its rows change, compared without `at`.
+	var lastTasks []byte
+	sendTasks := func() {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		list, err := s.tasksPayload(ctx, 0, 50)
+		cancel()
+		if err != nil {
+			return
+		}
+		body, err := json.Marshal(struct {
+			Tasks any
+			Page  any
+			Store any
+		}{list.Tasks, list.Page, list.Store})
+		if err != nil || bytes.Equal(body, lastTasks) {
+			return
+		}
+		lastTasks = body
+		payload, err := json.Marshal(list)
+		if err != nil {
+			return
+		}
+		fmt.Fprintf(w, "event: orchestrator\ndata: %s\n\n", payload)
+		flusher.Flush()
+	}
+
 	// The first frame goes out at once. A client that had to wait one tick to
 	// see anything would show an empty fleet for two seconds, and an empty
 	// fleet is a statement.
 	send()
+	sendTasks()
 
 	for {
 		select {
@@ -102,6 +130,7 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-ticker.C:
 			send()
+			sendTasks()
 		case <-beat.C:
 			fmt.Fprint(w, ": still here\n\n")
 			flusher.Flush()

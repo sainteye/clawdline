@@ -34,11 +34,10 @@ func (h *Host) Refresh() {
 //
 // The two rungs above the conversation's own title are records the Swift app
 // keeps in its own store: a name somebody typed in Clawdline, and the title of
-// the task Clawdline opened the tab for. This daemon keeps neither, so they are
-// empty here rather than read out of the other app's store. For the same
-// reason a Claude conversation has no fallback title under its own, which is
-// also why a weak `aiTitle` is never set aside here: it only gives way to a
-// fallback, and there is none.
+// the task Clawdline opened the tab for. They are not read here; the session
+// list fills them from that store (internal/adapters/swiftstore) and chooses
+// again from Rungs. A weak `aiTitle` is still never set aside, because telling
+// weak from strong needs the conversation's first message, which is not read.
 func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identity, bool) {
 	switch s.Assistant {
 	case session.AssistantClaude:
@@ -46,19 +45,22 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		if !ok {
 			return ports.Identity{}, false
 		}
-		title := ""
+		title, custom := "", ""
 		if r.CWD != "" && r.SessionID != "" {
-			title, _ = h.titles.Read(ClaudePath(h.Home, r.CWD, r.SessionID))
+			title, custom = h.titles.Read(ClaudePath(h.Home, r.CWD, r.SessionID))
+		}
+		rungs := session.LabelRungs{
+			Conversation: session.DisplayedConversationTitle(title, false, ""),
+			Handle:       r.Name,
 		}
 		return ports.Identity{
 			ConversationID: r.SessionID,
 			Pane:           r.Pane(),
 			CWD:            r.CWD,
-			Label: session.PreferredLabel(session.LabelRungs{
-				Conversation: session.DisplayedConversationTitle(title, false, ""),
-				Handle:       r.Name,
-			}),
-			Status: r.Status,
+			Label:          session.PreferredLabel(rungs),
+			Rungs:          rungs,
+			CustomTitle:    custom,
+			Status:         r.Status,
 		}, true
 
 	case session.AssistantCodex:
@@ -69,9 +71,11 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		if s.ConversationID == "" {
 			return ports.Identity{}, false
 		}
+		rungs := session.LabelRungs{Thread: h.codex[s.ConversationID]}
 		return ports.Identity{
 			ConversationID: s.ConversationID,
-			Label:          session.PreferredLabel(session.LabelRungs{Thread: h.codex[s.ConversationID]}),
+			Label:          session.PreferredLabel(rungs),
+			Rungs:          rungs,
 		}, true
 	}
 	return ports.Identity{}, false

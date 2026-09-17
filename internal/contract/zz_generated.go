@@ -69,24 +69,35 @@ type BoardWriteResult struct {
 	Revision int64 `json:"revision"`
 }
 
-// Who clears the thing standing in the way. `self` distinguishes the session
-// that has to act from another one, which is the difference between a thing a
-// reader can do now and a thing they can only wait for.
+// Who clears the thing standing in the way, as the Swift app's
+// CloseabilityMover.wire spells it. `self` distinguishes the session that has
+// to act from another one, which is the difference between a thing a reader can
+// do now and a thing they can only wait for. `self` is always present here; the
+// Swift app leaves it out for a person, a task and the broker, where it would
+// be false.
 type CloseMover struct {
 	Kind         string `json:"kind"`
 	PersonNeeded bool   `json:"person_needed"`
 	Self         bool   `json:"self"`
+
+	// The other session that moves it, when `kind` is `session` and `self` is false.
+	SessionID string `json:"session_id,omitempty"`
+
+	// The task that moves it, when `kind` is `task`.
+	TaskID string `json:"task_id,omitempty"`
 }
 
 // One thing in the way. It names the machine code, the subject it is about and
 // who moves it: a code alone says there is a problem but not which object has
-// it, and a sentence alone cannot be grepped for in a log.
+// it, and a sentence alone cannot be grepped for in a log. `subject_kind` and
+// `subject_id` are absent for the evidence reasons that are about the reading
+// rather than an object.
 type CloseReason struct {
 	Code        string     `json:"code"`
 	Kind        string     `json:"kind"`
 	Mover       CloseMover `json:"mover"`
-	SubjectID   string     `json:"subject_id"`
-	SubjectKind string     `json:"subject_kind"`
+	SubjectID   string     `json:"subject_id,omitempty"`
+	SubjectKind string     `json:"subject_kind,omitempty"`
 }
 
 // A close refused by what the session still owes. It carries the same reasons
@@ -105,9 +116,10 @@ type CloseRequest struct {
 	Force bool `json:"force,omitempty"`
 }
 
-// Where the reading came from and how old it is. `freshness` is what stops a
-// stale `safe` being read as a current one — the console refuses to call
-// anything safe unless this says `current`.
+// Where the reading came from and how old it is. `provenance` is
+// `session_watch`, the scan of the machine's sessions this row came from.
+// `freshness` is what stops a stale `safe` being read as a current one — the
+// console refuses to call anything safe unless this says `current`.
 type CloseSource struct {
 	Freshness     string `json:"freshness"`
 	MaxAgeSeconds int64  `json:"max_age_seconds"`
@@ -115,40 +127,50 @@ type CloseSource struct {
 	Provenance    string `json:"provenance"`
 }
 
-// Whether this session can end. A separate question from whether it can take
-// work, and neither may be read off the other. `safe` is a positive claim and
-// the reader enforces what it costs: no reasons, a current source, an
-// attestation id and a version, and a session that is not working, waiting or
-// unreadable. Anything short of that reads as `unknown`, which is why an
-// unreadable obligation list can never come out as safe.
+// Whether this session can end, by the Swift app's rules
+// (Orchestrator.projectCloseability, CloseabilityIndex.swift) over the Swift
+// app's store, read-only, plus this daemon's own obligations. A separate
+// question from whether it can take work, and neither may be read off the
+// other. `safe` is a positive claim and the reader enforces what it costs: no
+// reasons, a current source, an attestation id and a version, and a session
+// that is not working, waiting or unreadable. Anything short of that reads as
+// `unknown`. An unreadable store is an `evidence` reason
+// (`swift_store_unreadable`), so it can never come out as safe or as an empty
+// list. `attestation_id` and `mover` are always present and may be null.
 type Closeability struct {
-	// Absent here. The Swift app counts activity for its own caching and this daemon
-	// has no such counter; a number invented to fill the field would be a counter that
-	// never moves, which is worse than a field that is not there. Nothing in the
-	// console's projection reads it.
-	ActivityGeneration int64 `json:"activity_generation,omitempty"`
+	// This terminal's turn clock from the Swift store (`session_activity`); 0 when it
+	// has none. An attestation names it, so a turn started after attesting invalidates
+	// the claim.
+	ActivityGeneration int64 `json:"activity_generation"`
 
 	// The identifier of the reading that proves nothing is owed. Null until something
 	// attests, and a null here is exactly why a state that would otherwise be safe
 	// reads as unknown.
-	AttestationID *string    `json:"attestation_id"`
-	Mover         CloseMover `json:"mover"`
+	AttestationID *string `json:"attestation_id"`
 
-	// Absent here, for the same reason as `activity_generation`.
-	ObligationGeneration int64         `json:"obligation_generation,omitempty"`
-	ObservedAt           int64         `json:"observed_at"`
-	Provenance           []string      `json:"provenance"`
-	Reasons              []CloseReason `json:"reasons"`
+	// The one mover every reason points at; null when they point at more than one,
+	// which is itself the answer.
+	Mover *CloseMover `json:"mover"`
+
+	// The Swift store's machine-wide obligation clock.
+	ObligationGeneration int64 `json:"obligation_generation"`
+	ObservedAt           int64 `json:"observed_at"`
+
+	// `broker`, and `self` beside it when the session's own attestation matched this
+	// process.
+	Provenance []string      `json:"provenance"`
+	Reasons    []CloseReason `json:"reasons"`
 
 	// Which reading of the machine this came from — the same counter the snapshot's
 	// scan carries, so a closeability and the list it arrived with can be told apart
 	// from a later pair.
-	SessionGeneration int64             `json:"session_generation,omitempty"`
+	SessionGeneration int64             `json:"session_generation"`
 	Source            CloseSource       `json:"source"`
 	State             CloseabilityState `json:"state"`
 
-	// Which computation produced this. A reading with no version is a reading nobody
-	// can say the rules for, and the console treats it as unproven.
+	// `cl1_` and 32 hex digits: the Swift app's closeabilityVersion over the exact
+	// process identity, the two clocks and the state. A reading with no version is a
+	// reading nobody can say the rules for.
 	Version string `json:"version"`
 }
 
@@ -165,6 +187,25 @@ const (
 
 // CloseabilityStateValues is every value the contract allows, in contract order.
 var CloseabilityStateValues = []CloseabilityState{CloseabilityStateSafe, CloseabilityStateBlocked, CloseabilityStateNeedsAttestation, CloseabilityStateUnknown}
+
+// One file-ownership wait between sessions, from the Swift store's
+// `coordination_waits`, as Orchestrator.coordination(forTerminal:) shapes it.
+// On the waiting side it carries `reason` and `waiterCreatedAt`; on the owner's
+// side `waiterSessionId` and `reason`. The label beside a session id is present
+// when that session is on screen.
+type CoordinationWaitRow struct {
+	CreatedAt        int64    `json:"createdAt"`
+	ID               string   `json:"id"`
+	OwnerLabel       string   `json:"ownerLabel,omitempty"`
+	OwnerSessionID   string   `json:"ownerSessionId"`
+	Paths            []string `json:"paths"`
+	Reason           string   `json:"reason,omitempty"`
+	ReleaseCondition string   `json:"releaseCondition"`
+	Repository       string   `json:"repository"`
+	WaiterCreatedAt  int64    `json:"waiterCreatedAt,omitempty"`
+	WaiterLabel      string   `json:"waiterLabel,omitempty"`
+	WaiterSessionID  string   `json:"waiterSessionId,omitempty"`
+}
 
 type CoordinatorRecord struct {
 	Assistant      Assistant `json:"assistant"`
@@ -413,6 +454,15 @@ type Refusal struct {
 	Upstream string `json:"upstream,omitempty"`
 }
 
+// A broker-proved independent Feature Root this session owns.
+type RootAssignmentRecord struct {
+	Explanation string `json:"explanation"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Ownership   string `json:"ownership"`
+	State       string `json:"state"`
+}
+
 // What the reading behind this snapshot knows about itself. Without it an empty
 // list cannot be told apart from a failed scan.
 type Scan struct {
@@ -500,6 +550,37 @@ type SendRequest struct {
 	Text string `json:"text"`
 }
 
+// Who this session is parked on, and who is parked on it. Absent when neither.
+// `state` is `waiting_on_session` whenever `waitingOn` is not empty, otherwise
+// `has_waiters`.
+type SessionCoordination struct {
+	State      string                `json:"state"`
+	WaitedOnBy []CoordinationWaitRow `json:"waitedOnBy"`
+	WaitingOn  []CoordinationWaitRow `json:"waitingOn"`
+}
+
+// Present on exactly the row whose live process is the one
+// ~/.config/clawdline/coordinator.json registers — terminal, assistant, tty,
+// pid, start time and conversation all equal. `status` is always `online` here,
+// because the field is only attached to a matching live row.
+type SessionCoordinator struct {
+	Commands []SessionCoordinatorCommand `json:"commands"`
+	Label    string                      `json:"label"`
+	Status   string                      `json:"status"`
+}
+
+// One command in the Clawdfather panel. The list is the Swift app's fixed table
+// (Coordinator.swift `commands`), in its order. `reason` and `why` are present
+// only when `enabled` is false.
+type SessionCoordinatorCommand struct {
+	Enabled          bool   `json:"enabled"`
+	Reason           string `json:"reason,omitempty"`
+	TokenEffort      string `json:"token_effort"`
+	TokenEffortBasis string `json:"token_effort_basis"`
+	Type             string `json:"type"`
+	Why              string `json:"why,omitempty"`
+}
+
 // The facts behind the status line under an open session. This daemon serves
 // the transcript-derived part the Swift app calls the summary; the working
 // tree, context use, plan windows, links, permission and fast mode are not read
@@ -560,30 +641,36 @@ type SessionModel struct {
 	Name    string `json:"name"`
 }
 
-// One assistant session. Fields this daemon cannot support are absent rather
-// than invented; a reader that handles absence handles this too.
+// One assistant session. Fields that cannot be supported are absent rather than
+// invented; a reader that handles absence handles this too.
 type SessionRow struct {
-	Assistant    Assistant    `json:"assistant,omitempty"`
-	Backend      Backend      `json:"backend"`
-	Closeability Closeability `json:"closeability"`
-	CWD          string       `json:"cwd,omitempty"`
-	Evidence     Evidence     `json:"evidence"`
-	Icon         *Icon        `json:"icon,omitempty"`
-	ID           string       `json:"id"`
-	IsClaude     bool         `json:"isClaude"`
+	Assistant    Assistant            `json:"assistant,omitempty"`
+	Backend      Backend              `json:"backend"`
+	Closeability Closeability         `json:"closeability"`
+	Coordination *SessionCoordination `json:"coordination,omitempty"`
+	Coordinator  *SessionCoordinator  `json:"coordinator,omitempty"`
+	CWD          string               `json:"cwd,omitempty"`
+	Disposition  *WorkDisposition     `json:"disposition,omitempty"`
+	Evidence     Evidence             `json:"evidence"`
+	Icon         *Icon                `json:"icon,omitempty"`
+	ID           string               `json:"id"`
+	IsClaude     bool                 `json:"isClaude"`
 
-	// What the session is called: a name typed in Clawdline, the title of the task
-	// Clawdline opened it for, the conversation's own title (`/rename`, else
-	// `aiTitle`), Codex's thread name, Claude Code's registry handle — the first
-	// that has something. Never a terminal title. This daemon keeps no typed names and
-	// no task titles, so its rows start at the conversation's own title. Absent when
-	// nothing names the session.
+	// What the session is called, by the Swift app's rungs (ITerm.swift
+	// preferredDisplayLabel): a name typed in Clawdline (the Swift store's config.json
+	// `session_titles`), the title of the task, handoff or Feature Root Clawdline
+	// opened the tab for (orchestrator.json), the conversation's own title (`/rename`,
+	// else `aiTitle`), Codex's thread name or an automatic title, Claude Code's
+	// registry handle — the first that has something. Never a terminal title. Absent
+	// when nothing names the session.
 	Label string `json:"label,omitempty"`
 
 	// What a working session says it is doing, read from its screen with the
 	// assistant's own clock in it. Present only while working. The Swift app sends it
 	// under this name and the row's height depends on it.
-	Line string `json:"line,omitempty"`
+	Line           string                `json:"line,omitempty"`
+	Owed           *WorkOwed             `json:"owed,omitempty"`
+	RootAssignment *RootAssignmentRecord `json:"root_assignment,omitempty"`
 
 	// The assistant's own conversation id, when one was recovered from its command
 	// line.
@@ -592,11 +679,25 @@ type SessionRow struct {
 	// The commands this session left running in the background, newest first, at most
 	// six. Absent rather than empty when there are none, as the Swift app sends it;
 	// always absent for Codex, which keeps no record of them.
-	Shells         []SessionShell `json:"shells,omitempty"`
-	State          SessionState   `json:"state"`
-	TTY            string         `json:"tty,omitempty"`
-	WorkProvenance WorkProvenance `json:"work_provenance,omitempty"`
-	WorkState      WorkState      `json:"work_state"`
+	Shells []SessionShell `json:"shells,omitempty"`
+	State  SessionState   `json:"state"`
+	TTY    string         `json:"tty,omitempty"`
+
+	// Who the declaring session said will move it — a session id, or a person.
+	WorkMovedBy string `json:"work_moved_by,omitempty"`
+
+	// The session's own words for its state, present only when its declaration decided
+	// `work_state` (then `work_provenance` is `self`).
+	WorkNote string `json:"work_note,omitempty"`
+
+	// Whether that mover is a person. Absent unless the declaration decided the state;
+	// present and false is a real answer.
+	WorkPersonNeeded bool           `json:"work_person_needed,omitempty"`
+	WorkProvenance   WorkProvenance `json:"work_provenance,omitempty"`
+
+	// Unix seconds: when that declaration was made.
+	WorkSince int64     `json:"work_since,omitempty"`
+	WorkState WorkState `json:"work_state"`
 }
 
 // One background command a session started and has not finished: its output
@@ -650,17 +751,112 @@ type SettleResult struct {
 	TaskID  string    `json:"task_id"`
 }
 
-type TaskList struct {
-	Tasks []TaskRow `json:"tasks"`
+// Whether the Swift app's store was read for this answer: `current`; `stale`,
+// an earlier reading carried because the newest one was half-written; or
+// `unknown`, nothing could be read. Unknown is never the same as empty.
+type StoreReading string
+
+const (
+	StoreReadingCurrent StoreReading = "current"
+	StoreReadingStale   StoreReading = "stale"
+	StoreReadingUnknown StoreReading = "unknown"
+)
+
+// StoreReadingValues is every value the contract allows, in contract order.
+var StoreReadingValues = []StoreReading{StoreReadingCurrent, StoreReadingStale, StoreReadingUnknown}
+
+// The tab the task was opened in.
+type TaskChild struct {
+	Backend    string `json:"backend,omitempty"`
+	SessionID  string `json:"sessionId,omitempty"`
+	TerminalID string `json:"terminalId,omitempty"`
 }
 
+// `at` is when the answer was built. With `store` at `unknown` the list holds
+// only this daemon's own tasks, which is not the same as the machine having no
+// others.
+type TaskList struct {
+	At    int64        `json:"at"`
+	Page  TaskPage     `json:"page"`
+	Store StoreReading `json:"store"`
+	Tasks []TaskRow    `json:"tasks"`
+}
+
+// Which finished tasks this answer carries. Unfinished ones ride on every page.
+type TaskPage struct {
+	Cursor   int64  `json:"cursor"`
+	Fields   string `json:"fields"`
+	Finished int64  `json:"finished"`
+	Limit    int64  `json:"limit"`
+
+	// Where the next page starts. The Swift app sends null on the last page; here the
+	// key is absent.
+	NextCursor int64 `json:"nextCursor,omitempty"`
+	Unfinished int64 `json:"unfinished"`
+}
+
+// The session that asked for the task. `terminalId` is not stored: it is
+// resolved on every read against the sessions on screen — the parent task's
+// child terminal first, otherwise the one live session whose conversation is
+// `sessionId` — and is absent when that is not exactly one.
+type TaskRoot struct {
+	Assistant  string `json:"assistant,omitempty"`
+	Label      string `json:"label,omitempty"`
+	SessionID  string `json:"sessionId,omitempty"`
+	TaskID     string `json:"taskId,omitempty"`
+	TerminalID string `json:"terminalId,omitempty"`
+}
+
+// One task. The camelCase keys are the Swift app's list projection, which the
+// copied console reads (`view/derive.js`: id, title, state, created,
+// finishedAt, child, root, usage). The four snake_case keys `task_id`,
+// `project_dir`, `created_at` and `claims` are this daemon's older names, kept
+// beside them because the Dashboard panel still reads them. The Swift app's
+// `projectDir` is sent only as `project_dir`: the generator gives both
+// spellings one Go name, and the copied console reads neither. `claims` is
+// therefore always present here, where the Swift app leaves it out when none
+// were declared (`claims_declared` says which). Omitted from the Swift
+// projection because no page here reads them: worktree (its presence is
+// `isolation`), executor, completion_delivery, verification, landing,
+// landing_paths, terminal_intervention, released_claims, respawn_of,
+// waiting_on.
 type TaskRow struct {
-	Assistant  Assistant `json:"assistant"`
-	Claims     []string  `json:"claims"`
-	CreatedAt  int64     `json:"created_at"`
-	ProjectDir string    `json:"project_dir"`
-	State      TaskState `json:"state"`
-	TaskID     string    `json:"task_id"`
+	Artifacts      []string   `json:"artifacts,omitempty"`
+	Assistant      Assistant  `json:"assistant"`
+	AttachSession  string     `json:"attachSession,omitempty"`
+	Attached       bool       `json:"attached,omitempty"`
+	BriefedAt      int64      `json:"briefedAt,omitempty"`
+	Child          *TaskChild `json:"child,omitempty"`
+	Claims         []string   `json:"claims"`
+	ClaimsDeclared bool       `json:"claims_declared"`
+
+	// Unix seconds.
+	Created int64 `json:"created"`
+
+	// Unix seconds; the same instant as `created`.
+	CreatedAt        int64      `json:"created_at"`
+	Depth            int64      `json:"depth"`
+	Dir              string     `json:"dir"`
+	FinishedAt       int64      `json:"finishedAt,omitempty"`
+	ID               string     `json:"id"`
+	Isolation        string     `json:"isolation,omitempty"`
+	Kind             string     `json:"kind"`
+	Model            string     `json:"model,omitempty"`
+	Permission       string     `json:"permission"`
+	ProjectDir       string     `json:"project_dir"`
+	ReasoningEffort  string     `json:"reasoning_effort,omitempty"`
+	ResultVerifiedAt int64      `json:"resultVerifiedAt,omitempty"`
+	Root             *TaskRoot  `json:"root,omitempty"`
+	ScheduleID       string     `json:"schedule_id,omitempty"`
+	SessionRoot      bool       `json:"session_root,omitempty"`
+	SpawnedAt        int64      `json:"spawnedAt,omitempty"`
+	State            TaskState  `json:"state"`
+	TaskID           string     `json:"task_id"`
+	Title            string     `json:"title"`
+	UntouchedClaims  []string   `json:"untouched_claims,omitempty"`
+	Usage            *TaskUsage `json:"usage,omitempty"`
+	WorkItemID       string     `json:"workItemId,omitempty"`
+	WorkPhase        string     `json:"workPhase,omitempty"`
 }
 
 type TaskState string
@@ -678,6 +874,18 @@ const (
 
 // TaskStateValues is every value the contract allows, in contract order.
 var TaskStateValues = []TaskState{TaskStateQueued, TaskStateSpawning, TaskStateBriefed, TaskStateSuccess, TaskStateFailure, TaskStateTimeout, TaskStateCancelled, TaskStateSpawnFailed}
+
+// What the child spent. `costUsd` is absent where nothing priced it, which is
+// always the case for Codex.
+type TaskUsage struct {
+	CacheRead  int64   `json:"cacheRead"`
+	CacheWrite int64   `json:"cacheWrite"`
+	CostUsd    float64 `json:"costUsd,omitempty"`
+	Input      int64   `json:"input"`
+	Model      string  `json:"model,omitempty"`
+	Output     int64   `json:"output"`
+	Total      int64   `json:"total"`
+}
 
 type TranscriptAction struct {
 	Command string `json:"command,omitempty"`
@@ -874,11 +1082,35 @@ type UsageRow struct {
 	TotalTokens int64  `json:"totalTokens"`
 }
 
-// Who decided a row's work state. `broker` means this daemon projected it from
-// what it could read; `self` means the session said so. Only `broker` is
-// produced here, because nothing yet takes a session's own word for what it
-// needs — and emitting `self` where that is untrue would make a projection
-// look like testimony.
+// What a finished row delivered, present only with `milestone_complete` or
+// `work_complete`. `scope` is `session` for a session's own delivery receipt
+// and `task` for the task that opened it; the landing fields are present only
+// when a broker-verified landing backs `work_complete`.
+type WorkDisposition struct {
+	Commit       string `json:"commit,omitempty"`
+	Evidence     string `json:"evidence"`
+	LandedAt     int64  `json:"landedAt,omitempty"`
+	ReceiptAt    int64  `json:"receiptAt,omitempty"`
+	Scope        string `json:"scope"`
+	Target       string `json:"target,omitempty"`
+	TargetCommit string `json:"targetCommit,omitempty"`
+	TaskID       string `json:"taskId,omitempty"`
+	Title        string `json:"title"`
+}
+
+// Something this session declared it is owed, beside whatever its work state
+// is.
+type WorkOwed struct {
+	MovedBy      string `json:"moved_by,omitempty"`
+	Note         string `json:"note"`
+	PersonNeeded bool   `json:"person_needed"`
+	Provenance   string `json:"provenance"`
+	Since        int64  `json:"since"`
+}
+
+// Who decided a row's work state. `broker` means it was projected from what
+// could be read; `self` means the session's own declaration (the Swift store's
+// `session_self_states`) is what decided it.
 type WorkProvenance string
 
 const (

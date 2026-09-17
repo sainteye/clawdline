@@ -117,6 +117,8 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 		s.ConversationID = id.ConversationID
 	}
 	s.Label = id.Label
+	s.Rungs = id.Rungs
+	s.CustomTitle = id.CustomTitle
 	if s.CWD == "" && id.CWD != "" {
 		s.CWD = id.CWD
 	}

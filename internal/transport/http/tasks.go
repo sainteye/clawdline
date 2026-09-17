@@ -1,33 +1,134 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
-// tasksList publishes the tasks this daemon knows about.
+// tasksList publishes dispatched work in the Swift app's shape
+// (OrchestratorTaskList.swift): every unfinished task, then one page of
+// finished ones, newest first. The rows are the Swift app's own, read from its
+// store, joined by the tasks this daemon dispatched; an id appears once.
+//
+// The copied console needs the finished ones too: a child whose task ended
+// still sits under its root while its tab is open, and the detail header names
+// the task that opened a session long after it finished.
 func (s *Server) tasksList(w http.ResponseWriter, r *http.Request) {
-	live, err := s.store.LiveTasks(r.Context())
+	q := r.URL.Query()
+	cursor, _ := strconv.Atoi(q.Get("cursor"))
+	limit := 50
+	if v, err := strconv.Atoi(q.Get("limit")); err == nil {
+		limit = v
+	}
+	list, err := s.tasksPayload(r.Context(), cursor, limit)
 	if err != nil {
 		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
 	}
-	rows := make([]contract.TaskRow, 0, len(live))
+	if state := q.Get("state"); state != "" {
+		kept := list.Tasks[:0]
+		for _, row := range list.Tasks {
+			if string(row.State) == state {
+				kept = append(kept, row)
+			}
+		}
+		list.Tasks = kept
+	}
+	writeJSON(w, list)
+}
+
+// tasksPayload builds the task list the route and the stream's `orchestrator`
+// frame both publish.
+func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.TaskList, error) {
+	live, err := s.store.LiveTasks(ctx)
+	if err != nil {
+		return contract.TaskList{}, err
+	}
+	own := make([]contract.TaskRow, 0, len(live))
 	for _, t := range live {
-		rows = append(rows, contract.TaskRow{
-			TaskID:     t.ID,
-			Assistant:  contract.Assistant(t.Assistant),
-			ProjectDir: t.ProjectDir,
-			Claims:     t.Claims,
-			State:      contract.TaskState(t.State),
-			CreatedAt:  t.CreatedAt.Unix(),
+		claims := t.Claims
+		if claims == nil {
+			claims = []string{}
+		}
+		created := t.CreatedAt.Unix()
+		own = append(own, contract.TaskRow{
+			ID:             t.ID,
+			TaskID:         t.ID,
+			Assistant:      contract.Assistant(t.Assistant),
+			ProjectDir:     t.ProjectDir,
+			Claims:         claims,
+			ClaimsDeclared: t.Claims != nil,
+			State:          contract.TaskState(t.State),
+			Created:        created,
+			CreatedAt:      created,
+			Dir:            s.dispatcher.Tasks.Path(t.ID),
+			// This daemon records no kind, title, permission or depth; they are
+			// empty rather than guessed, and no child tab is known.
 		})
 	}
-	writeJSON(w, contract.TaskList{Tasks: rows})
+	snap := s.swift.Read()
+	rows, page := snap.TaskPage(s.screen(ctx), own, cursor, limit)
+	return contract.TaskList{
+		At:    time.Now().Unix(),
+		Tasks: rows,
+		Page:  page,
+		Store: storeReading(snap),
+	}, nil
+}
+
+// storeReading says how the Swift store was read for an answer.
+func storeReading(snap swiftstore.Snapshot) contract.StoreReading {
+	switch {
+	case !snap.Known:
+		return contract.StoreReadingUnknown
+	case snap.Stale:
+		return contract.StoreReadingStale
+	}
+	return contract.StoreReadingCurrent
+}
+
+// screen is the sessions on screen, for resolving which tab a task's root is
+// in. The session list keeps the last one it built; a task list asked for when
+// nobody has read the sessions lately reads the machine itself.
+func (s *Server) screen(ctx context.Context) []swiftstore.OnScreen {
+	if held := s.lastScreen.Load(); held != nil && time.Since(held.at) < screenMaxAge {
+		return held.rows
+	}
+	inv := s.inventory.Read(ctx)
+	rows := onScreen(inv.Sessions)
+	s.lastScreen.Store(&screenReading{at: time.Now(), rows: rows})
+	return rows
+}
+
+const screenMaxAge = 10 * time.Second
+
+type screenReading struct {
+	at   time.Time
+	rows []swiftstore.OnScreen
+}
+
+func onScreen(items []session.Session) []swiftstore.OnScreen {
+	out := make([]swiftstore.OnScreen, 0, len(items))
+	for _, item := range items {
+		if !item.IsAssistant() {
+			continue
+		}
+		out = append(out, swiftstore.OnScreen{
+			TerminalID:     item.ID,
+			Assistant:      string(item.Assistant),
+			ConversationID: item.ConversationID,
+		})
+	}
+	return out
 }
 
 // strings answers with the localisation catalog, from the console bundle.

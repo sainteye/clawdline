@@ -66,27 +66,41 @@ export interface BoardWriteResult {
 }
 
 /**
- * Who clears the thing standing in the way. `self` distinguishes the session that
- * has to act from another one, which is the difference between a thing a reader can
- * do now and a thing they can only wait for.
+ * Who clears the thing standing in the way, as the Swift app's
+ * CloseabilityMover.wire spells it. `self` distinguishes the session that has to
+ * act from another one, which is the difference between a thing a reader can do now
+ * and a thing they can only wait for. `self` is always present here; the Swift app
+ * leaves it out for a person, a task and the broker, where it would be false.
  */
 export interface CloseMover {
   kind: string
   person_needed: boolean
   self: boolean
+
+  /**
+   * The other session that moves it, when `kind` is `session` and `self` is false.
+   */
+  session_id?: string
+
+  /**
+   * The task that moves it, when `kind` is `task`.
+   */
+  task_id?: string
 }
 
 /**
  * One thing in the way. It names the machine code, the subject it is about and who
  * moves it: a code alone says there is a problem but not which object has it, and a
- * sentence alone cannot be grepped for in a log.
+ * sentence alone cannot be grepped for in a log. `subject_kind` and `subject_id`
+ * are absent for the evidence reasons that are about the reading rather than an
+ * object.
  */
 export interface CloseReason {
   code: string
   kind: string
   mover: CloseMover
-  subject_id: string
-  subject_kind: string
+  subject_id?: string
+  subject_kind?: string
 }
 
 /**
@@ -109,9 +123,10 @@ export interface CloseRequest {
 }
 
 /**
- * Where the reading came from and how old it is. `freshness` is what stops a stale
- * `safe` being read as a current one — the console refuses to call anything safe
- * unless this says `current`.
+ * Where the reading came from and how old it is. `provenance` is `session_watch`,
+ * the scan of the machine's sessions this row came from. `freshness` is what stops
+ * a stale `safe` being read as a current one — the console refuses to call
+ * anything safe unless this says `current`.
  */
 export interface CloseSource {
   freshness: string
@@ -121,21 +136,24 @@ export interface CloseSource {
 }
 
 /**
- * Whether this session can end. A separate question from whether it can take work,
- * and neither may be read off the other. `safe` is a positive claim and the reader
- * enforces what it costs: no reasons, a current source, an attestation id and a
- * version, and a session that is not working, waiting or unreadable. Anything short
- * of that reads as `unknown`, which is why an unreadable obligation list can never
- * come out as safe.
+ * Whether this session can end, by the Swift app's rules
+ * (Orchestrator.projectCloseability, CloseabilityIndex.swift) over the Swift app's
+ * store, read-only, plus this daemon's own obligations. A separate question from
+ * whether it can take work, and neither may be read off the other. `safe` is a
+ * positive claim and the reader enforces what it costs: no reasons, a current
+ * source, an attestation id and a version, and a session that is not working,
+ * waiting or unreadable. Anything short of that reads as `unknown`. An unreadable
+ * store is an `evidence` reason (`swift_store_unreadable`), so it can never come
+ * out as safe or as an empty list. `attestation_id` and `mover` are always present
+ * and may be null.
  */
 export interface Closeability {
   /**
-   * Absent here. The Swift app counts activity for its own caching and this daemon
-   * has no such counter; a number invented to fill the field would be a counter
-   * that never moves, which is worse than a field that is not there. Nothing in the
-   * console's projection reads it.
+   * This terminal's turn clock from the Swift store (`session_activity`); 0 when it
+   * has none. An attestation names it, so a turn started after attesting
+   * invalidates the claim.
    */
-  activity_generation?: number
+  activity_generation: number
 
   /**
    * The identifier of the reading that proves nothing is owed. Null until something
@@ -143,13 +161,23 @@ export interface Closeability {
    * reads as unknown.
    */
   attestation_id: string | null
-  mover: CloseMover
 
   /**
-   * Absent here, for the same reason as `activity_generation`.
+   * The one mover every reason points at; null when they point at more than one,
+   * which is itself the answer.
    */
-  obligation_generation?: number
+  mover: CloseMover | null
+
+  /**
+   * The Swift store's machine-wide obligation clock.
+   */
+  obligation_generation: number
   observed_at: number
+
+  /**
+   * `broker`, and `self` beside it when the session's own attestation matched this
+   * process.
+   */
   provenance: string[]
   reasons: CloseReason[]
 
@@ -158,13 +186,14 @@ export interface Closeability {
    * scan carries, so a closeability and the list it arrived with can be told apart
    * from a later pair.
    */
-  session_generation?: number
+  session_generation: number
   source: CloseSource
   state: CloseabilityState
 
   /**
-   * Which computation produced this. A reading with no version is a reading nobody
-   * can say the rules for, and the console treats it as unproven.
+   * `cl1_` and 32 hex digits: the Swift app's closeabilityVersion over the exact
+   * process identity, the two clocks and the state. A reading with no version is a
+   * reading nobody can say the rules for.
    */
   version: string
 }
@@ -180,6 +209,27 @@ export type CloseabilityState =
   | "unknown"
 
 export const CloseabilityStateValues: readonly CloseabilityState[] = ["safe", "blocked", "needs_attestation", "unknown"] as const
+
+/**
+ * One file-ownership wait between sessions, from the Swift store's
+ * `coordination_waits`, as Orchestrator.coordination(forTerminal:) shapes it. On
+ * the waiting side it carries `reason` and `waiterCreatedAt`; on the owner's side
+ * `waiterSessionId` and `reason`. The label beside a session id is present when
+ * that session is on screen.
+ */
+export interface CoordinationWaitRow {
+  createdAt: number
+  id: string
+  ownerLabel?: string
+  ownerSessionId: string
+  paths: string[]
+  reason?: string
+  releaseCondition: string
+  repository: string
+  waiterCreatedAt?: number
+  waiterLabel?: string
+  waiterSessionId?: string
+}
 
 export interface CoordinatorRecord {
   assistant: Assistant
@@ -438,6 +488,17 @@ export interface Refusal {
 }
 
 /**
+ * A broker-proved independent Feature Root this session owns.
+ */
+export interface RootAssignmentRecord {
+  explanation: string
+  id: string
+  label: string
+  ownership: string
+  state: string
+}
+
+/**
  * What the reading behind this snapshot knows about itself. Without it an empty
  * list cannot be told apart from a failed scan.
  */
@@ -545,6 +606,43 @@ export interface SendRequest {
 }
 
 /**
+ * Who this session is parked on, and who is parked on it. Absent when neither.
+ * `state` is `waiting_on_session` whenever `waitingOn` is not empty, otherwise
+ * `has_waiters`.
+ */
+export interface SessionCoordination {
+  state: string
+  waitedOnBy: CoordinationWaitRow[]
+  waitingOn: CoordinationWaitRow[]
+}
+
+/**
+ * Present on exactly the row whose live process is the one
+ * ~/.config/clawdline/coordinator.json registers — terminal, assistant, tty, pid,
+ * start time and conversation all equal. `status` is always `online` here, because
+ * the field is only attached to a matching live row.
+ */
+export interface SessionCoordinator {
+  commands: SessionCoordinatorCommand[]
+  label: string
+  status: string
+}
+
+/**
+ * One command in the Clawdfather panel. The list is the Swift app's fixed table
+ * (Coordinator.swift `commands`), in its order. `reason` and `why` are present only
+ * when `enabled` is false.
+ */
+export interface SessionCoordinatorCommand {
+  enabled: boolean
+  reason?: string
+  token_effort: string
+  token_effort_basis: string
+  type: string
+  why?: string
+}
+
+/**
  * The facts behind the status line under an open session. This daemon serves the
  * transcript-derived part the Swift app calls the summary; the working tree,
  * context use, plan windows, links, permission and fast mode are not read here and
@@ -620,26 +718,30 @@ export interface SessionModel {
 }
 
 /**
- * One assistant session. Fields this daemon cannot support are absent rather than
+ * One assistant session. Fields that cannot be supported are absent rather than
  * invented; a reader that handles absence handles this too.
  */
 export interface SessionRow {
   assistant?: Assistant
   backend: Backend
   closeability: Closeability
+  coordination?: SessionCoordination
+  coordinator?: SessionCoordinator
   cwd?: string
+  disposition?: WorkDisposition
   evidence: Evidence
   icon?: Icon
   id: string
   isClaude: boolean
 
   /**
-   * What the session is called: a name typed in Clawdline, the title of the task
-   * Clawdline opened it for, the conversation's own title (`/rename`, else
-   * `aiTitle`), Codex's thread name, Claude Code's registry handle — the first
-   * that has something. Never a terminal title. This daemon keeps no typed names
-   * and no task titles, so its rows start at the conversation's own title. Absent
-   * when nothing names the session.
+   * What the session is called, by the Swift app's rungs (ITerm.swift
+   * preferredDisplayLabel): a name typed in Clawdline (the Swift store's
+   * config.json `session_titles`), the title of the task, handoff or Feature Root
+   * Clawdline opened the tab for (orchestrator.json), the conversation's own title
+   * (`/rename`, else `aiTitle`), Codex's thread name or an automatic title, Claude
+   * Code's registry handle — the first that has something. Never a terminal
+   * title. Absent when nothing names the session.
    */
   label?: string
 
@@ -649,6 +751,8 @@ export interface SessionRow {
    * under this name and the row's height depends on it.
    */
   line?: string
+  owed?: WorkOwed
+  root_assignment?: RootAssignmentRecord
 
   /**
    * The assistant's own conversation id, when one was recovered from its command
@@ -664,7 +768,29 @@ export interface SessionRow {
   shells?: SessionShell[]
   state: SessionState
   tty?: string
+
+  /**
+   * Who the declaring session said will move it — a session id, or a person.
+   */
+  work_moved_by?: string
+
+  /**
+   * The session's own words for its state, present only when its declaration
+   * decided `work_state` (then `work_provenance` is `self`).
+   */
+  work_note?: string
+
+  /**
+   * Whether that mover is a person. Absent unless the declaration decided the
+   * state; present and false is a real answer.
+   */
+  work_person_needed?: boolean
   work_provenance?: WorkProvenance
+
+  /**
+   * Unix seconds: when that declaration was made.
+   */
+  work_since?: number
   work_state: WorkState
 }
 
@@ -731,17 +857,123 @@ export interface SettleResult {
   task_id: string
 }
 
+/**
+ * Whether the Swift app's store was read for this answer: `current`; `stale`, an
+ * earlier reading carried because the newest one was half-written; or `unknown`,
+ * nothing could be read. Unknown is never the same as empty.
+ */
+export type StoreReading =
+    "current"
+  | "stale"
+  | "unknown"
+
+export const StoreReadingValues: readonly StoreReading[] = ["current", "stale", "unknown"] as const
+
+/**
+ * The tab the task was opened in.
+ */
+export interface TaskChild {
+  backend?: string
+  sessionId?: string
+  terminalId?: string
+}
+
+/**
+ * `at` is when the answer was built. With `store` at `unknown` the list holds only
+ * this daemon's own tasks, which is not the same as the machine having no others.
+ */
 export interface TaskList {
+  at: number
+  page: TaskPage
+  store: StoreReading
   tasks: TaskRow[]
 }
 
+/**
+ * Which finished tasks this answer carries. Unfinished ones ride on every page.
+ */
+export interface TaskPage {
+  cursor: number
+  fields: string
+  finished: number
+  limit: number
+
+  /**
+   * Where the next page starts. The Swift app sends null on the last page; here the
+   * key is absent.
+   */
+  nextCursor?: number
+  unfinished: number
+}
+
+/**
+ * The session that asked for the task. `terminalId` is not stored: it is resolved
+ * on every read against the sessions on screen — the parent task's child terminal
+ * first, otherwise the one live session whose conversation is `sessionId` — and
+ * is absent when that is not exactly one.
+ */
+export interface TaskRoot {
+  assistant?: string
+  label?: string
+  sessionId?: string
+  taskId?: string
+  terminalId?: string
+}
+
+/**
+ * One task. The camelCase keys are the Swift app's list projection, which the
+ * copied console reads (`view/derive.js`: id, title, state, created, finishedAt,
+ * child, root, usage). The four snake_case keys `task_id`, `project_dir`,
+ * `created_at` and `claims` are this daemon's older names, kept beside them because
+ * the Dashboard panel still reads them. The Swift app's `projectDir` is sent only
+ * as `project_dir`: the generator gives both spellings one Go name, and the copied
+ * console reads neither. `claims` is therefore always present here, where the Swift
+ * app leaves it out when none were declared (`claims_declared` says which). Omitted
+ * from the Swift projection because no page here reads them: worktree (its presence
+ * is `isolation`), executor, completion_delivery, verification, landing,
+ * landing_paths, terminal_intervention, released_claims, respawn_of, waiting_on.
+ */
 export interface TaskRow {
+  artifacts?: string[]
   assistant: Assistant
+  attachSession?: string
+  attached?: boolean
+  briefedAt?: number
+  child?: TaskChild
   claims: string[]
+  claims_declared: boolean
+
+  /**
+   * Unix seconds.
+   */
+  created: number
+
+  /**
+   * Unix seconds; the same instant as `created`.
+   */
   created_at: number
+  depth: number
+  dir: string
+  finishedAt?: number
+  id: string
+  isolation?: string
+  kind: string
+  model?: string
+  permission: string
   project_dir: string
+  reasoning_effort?: string
+  resultVerifiedAt?: number
+  root?: TaskRoot
+  schedule_id?: string
+  session_root?: boolean
+  spawnedAt?: number
   state: TaskState
   task_id: string
+  title: string
+  untouched_claims?: string[]
+  usage?: TaskUsage
+  workItemId?: string
+  workPhase?: string
 }
 
 export type TaskState =
@@ -755,6 +987,20 @@ export type TaskState =
   | "spawn_failed"
 
 export const TaskStateValues: readonly TaskState[] = ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled", "spawn_failed"] as const
+
+/**
+ * What the child spent. `costUsd` is absent where nothing priced it, which is
+ * always the case for Codex.
+ */
+export interface TaskUsage {
+  cacheRead: number
+  cacheWrite: number
+  costUsd?: number
+  input: number
+  model?: string
+  output: number
+  total: number
+}
 
 export interface TranscriptAction {
   command?: string
@@ -1014,10 +1260,38 @@ export interface UsageRow {
 }
 
 /**
- * Who decided a row's work state. `broker` means this daemon projected it from what
- * it could read; `self` means the session said so. Only `broker` is produced here,
- * because nothing yet takes a session's own word for what it needs — and emitting
- * `self` where that is untrue would make a projection look like testimony.
+ * What a finished row delivered, present only with `milestone_complete` or
+ * `work_complete`. `scope` is `session` for a session's own delivery receipt and
+ * `task` for the task that opened it; the landing fields are present only when a
+ * broker-verified landing backs `work_complete`.
+ */
+export interface WorkDisposition {
+  commit?: string
+  evidence: string
+  landedAt?: number
+  receiptAt?: number
+  scope: string
+  target?: string
+  targetCommit?: string
+  taskId?: string
+  title: string
+}
+
+/**
+ * Something this session declared it is owed, beside whatever its work state is.
+ */
+export interface WorkOwed {
+  moved_by?: string
+  note: string
+  person_needed: boolean
+  provenance: string
+  since: number
+}
+
+/**
+ * Who decided a row's work state. `broker` means it was projected from what could
+ * be read; `self` means the session's own declaration (the Swift store's
+ * `session_self_states`) is what decided it.
  */
 export type WorkProvenance =
     "broker"

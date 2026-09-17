@@ -23,6 +23,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/process"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
@@ -50,6 +51,13 @@ type Server struct {
 	// icons derives each project's mark by the same rules the Swift app uses,
 	// reading the same registry, so the two draw the same creature.
 	icons *icon.Registry
+	// swift reads the Swift app's store, and only reads it: which session is
+	// Clawdfather, which task opened a tab, who waits on whom, what was
+	// delivered. See internal/adapters/swiftstore for the rules it keeps.
+	swift *swiftstore.Store
+	// lastScreen is the sessions the last list was built from, so a task list
+	// can place a task under its root without scanning the machine again.
+	lastScreen atomic.Pointer[screenReading]
 	// pulse is the scheduler's own account of its last pass, read by /v1/health.
 	pulse atomic.Pointer[app.Pulse]
 	tick  time.Duration
@@ -93,6 +101,7 @@ func New(cfg config.Config) (*Server, error) {
 		ledger:    transcript.NewLedger(),
 		facts:     transcript.NewRecordFacts(),
 		icons:     icon.NewRegistry(),
+		swift:     swiftstore.Open(swiftstore.Dir()),
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
