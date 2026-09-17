@@ -588,16 +588,16 @@ func publicRow(r Row) obj {
 		"missingCostReason": strOrNil(r.MissingCost),
 		"coverage":          r.Coverage,
 		"coverageReasons":   m.reasons,
-		"reconciliation":    nil,
+		"reconciliation":    strOrNil(r.Reconciliation),
 		"inputBasis":        strOrNil(r.InputBasis),
 		"lineage": obj{
-			"graphId":         nil,
+			"graphId":         strOrNil(r.GraphID),
 			"parentTaskId":    strOrNil(r.ParentTaskID),
-			"retryOf":         nil,
-			"attempt":         nil,
+			"retryOf":         strOrNil(r.RetryOf),
+			"attempt":         intOrNil(r.Attempt),
 			"landingState":    strOrNil(r.LandingState),
 			"landingVerified": verified,
-			"disposition":     nil,
+			"disposition":     strOrNil(r.Disposition),
 		},
 	}
 }
@@ -1249,6 +1249,16 @@ func abs(v int64) int64 {
 
 // ---------- the payload ----------
 
+// corrections is how many `usage_corrections` name a row in the range, which
+// is the count the Swift route joins against the same matched rows.
+func corrections(rows []Row) int {
+	n := 0
+	for _, r := range rows {
+		n += r.Corrections
+	}
+	return n
+}
+
 func latest(rows []Row) time.Time {
 	var t time.Time
 	for _, r := range rows {
@@ -1319,7 +1329,7 @@ func (res Result) base() obj {
 			"meaning": "Observed ids priced rows in this range; activeId is the current list-price table, not an actual bill."},
 		"totals":      totals,
 		"coverage":    totals["coverage"],
-		"corrections": 0,
+		"corrections": corrections(res.Rows),
 		"breakdown":   breakdown(res.Rows, q.Group, q.Loc),
 		"groupBy":     q.Group,
 		"trend":       trend(res.Rows, q.Bucket, q.Loc),
@@ -1421,7 +1431,7 @@ func (res Result) ExportCSV() string {
 		cells := []string{r.IntervalKey, r.TaskID, iso(r.StartedAt), ended, r.Assistant, r.Model, r.Origin, project,
 			num(r.Tokens[partInputNew]), num(r.Tokens[partOutput]), num(r.Tokens[partCacheRead]),
 			num(r.Tokens[partCacheWrite]), num(m.total), floor, strings.Join(m.unknownParts, " "),
-			num(r.SourceTotal), "", r.InputBasis, cost, r.CostUnit, r.CostBasis, r.PriceSnapshotID,
+			num(r.SourceTotal), r.Reconciliation, r.InputBasis, cost, r.CostUnit, r.CostBasis, r.PriceSnapshotID,
 			r.MissingCost, r.Coverage, strings.Join(m.reasons, " ")}
 		for i, c := range cells {
 			if i > 0 {

@@ -161,12 +161,36 @@
         "total": { "type": "integer" }
       }
     },
+    "SessionLimitWindow": {
+      "description": "One plan window, as the provider last described it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hit", "name", "usedPercent"],
+      "properties": {
+        "hit": { "description": "The window is spent: the provider refused a request on it, or reported 100% or more.", "type": "boolean" },
+        "name": { "description": "`5h`, `7d`, or the window's length for any other (`1d`, `90m`).", "type": "string" },
+        "resetsAt": { "description": "Unix seconds. Absent when the provider did not say.", "type": "integer" },
+        "usedPercent": { "description": "As the provider reported it, unrounded; it can exceed 100.", "type": "number" }
+      }
+    },
+    "SessionLimits": {
+      "description": "The plan windows of the account this session's assistant runs on: an account-level reading shared by every session of that assistant (the Swift app's `AssistantQuota.machineLimits`), not this conversation's. An empty `windows` is \"nobody said\", never 0%.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windows"],
+      "properties": {
+        "at": { "description": "Unix seconds of the provider record the windows came from. Absent when nothing has been read.", "type": "integer" },
+        "readAtMs": { "description": "Unix milliseconds when this daemon took the reading. A client holding readings from several answers keeps the newest by this. Absent for a session with no assistant.", "type": "integer" },
+        "windows": { "type": "array", "items": { "$ref": "#/$defs/SessionLimitWindow" } }
+      }
+    },
     "SessionInfo": {
-      "description": "The facts behind the status line under an open session. This daemon serves the transcript-derived part the Swift app calls the summary; the working tree, context use, plan windows, links, permission and fast mode are not read here and their keys are absent.",
+      "description": "The facts behind the status line under an open session. This daemon serves the transcript-derived part the Swift app calls the summary, and the plan windows; the working tree, context use, links, permission and fast mode are not read here and their keys are absent.",
       "type": "object",
       "additionalProperties": false,
       "required": ["models", "session"],
       "properties": {
+        "limits": { "$ref": "#/$defs/SessionLimits" },
         "models": { "type": "array", "items": { "$ref": "#/$defs/SessionModel" } },
         "session": { "$ref": "#/$defs/SessionInfoSession" },
         "usage": { "$ref": "#/$defs/SessionInfoUsage" }

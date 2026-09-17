@@ -353,6 +353,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 			info.Usage = wireSessionUsage(facts.Usage, item, home)
 		}
 	}
+	info.Limits = s.sessionLimits(item.Assistant, time.Now())
 	writeJSON(w, contract.SessionInfoReply{Info: info})
 }
 

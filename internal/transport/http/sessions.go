@@ -6,9 +6,11 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/limits"
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/icon"
@@ -398,4 +400,46 @@ func wireCloseMover(m task.Mover, subject string) contract.CloseMover {
 		return contract.CloseMover{Kind: "session", Self: true}
 	}
 	return contract.CloseMover{Kind: "session", SessionID: m.ID}
+}
+
+// The plan-window reader lives beside the Server rather than in it, for the
+// same reason the usage collector does: this adds no field to server.go.
+var (
+	limitsOnce   sync.Once
+	limitsReader *limits.Reader
+)
+
+// sessionLimits is what the Swift app's `/info` puts under `limits`: the
+// account-level plan windows of the session's assistant
+// (`AssistantQuota.machineLimits`), stamped with the moment they were read. A
+// session with no assistant has none and no stamp.
+func (s *Server) sessionLimits(assistant session.Assistant, now time.Time) *contract.SessionLimits {
+	out := &contract.SessionLimits{Windows: []contract.SessionLimitWindow{}}
+	if assistant != session.AssistantClaude && assistant != session.AssistantCodex {
+		return out
+	}
+	limitsOnce.Do(func() {
+		home, _ := os.UserHomeDir()
+		config := swiftstore.OpenQuotaConfig(swiftstore.Dir())
+		limitsReader = limits.NewReader(home, func() limits.Settings {
+			q := config.Read()
+			return limits.Settings{StatusDir: q.StatusDir, CodexHome: q.CodexHome, LowThreshold: q.LowThreshold}
+		})
+	})
+	read := limitsReader.Machine(string(assistant), now)
+	for _, w := range read.Windows {
+		row := contract.SessionLimitWindow{Name: w.Name, Hit: w.Hit}
+		if w.UsedPercent != nil {
+			row.UsedPercent = *w.UsedPercent
+		}
+		if w.ResetsAt != nil {
+			row.ResetsAt = *w.ResetsAt
+		}
+		out.Windows = append(out.Windows, row)
+	}
+	if read.At != nil {
+		out.At = *read.At
+	}
+	out.ReadAtMs = now.UnixMilli()
+	return out
 }

@@ -1428,11 +1428,12 @@ export interface SessionCoordinatorCommand {
 
 /**
  * The facts behind the status line under an open session. This daemon serves the
- * transcript-derived part the Swift app calls the summary; the working tree,
- * context use, plan windows, links, permission and fast mode are not read here and
- * their keys are absent.
+ * transcript-derived part the Swift app calls the summary, and the plan windows;
+ * the working tree, context use, links, permission and fast mode are not read here
+ * and their keys are absent.
  */
 export interface SessionInfo {
+  limits?: SessionLimits
   models: SessionModel[]
   session: SessionInfoSession
   usage?: SessionInfoUsage
@@ -1488,6 +1489,54 @@ export interface SessionInfoUsage {
   model?: string
   output: number
   total: number
+}
+
+/**
+ * One plan window, as the provider last described it.
+ */
+export interface SessionLimitWindow {
+  /**
+   * The window is spent: the provider refused a request on it, or reported 100% or
+   * more.
+   */
+  hit: boolean
+
+  /**
+   * `5h`, `7d`, or the window's length for any other (`1d`, `90m`).
+   */
+  name: string
+
+  /**
+   * Unix seconds. Absent when the provider did not say.
+   */
+  resetsAt?: number
+
+  /**
+   * As the provider reported it, unrounded; it can exceed 100.
+   */
+  usedPercent: number
+}
+
+/**
+ * The plan windows of the account this session's assistant runs on: an
+ * account-level reading shared by every session of that assistant (the Swift app's
+ * `AssistantQuota.machineLimits`), not this conversation's. An empty `windows` is
+ * "nobody said", never 0%.
+ */
+export interface SessionLimits {
+  /**
+   * Unix seconds of the provider record the windows came from. Absent when nothing
+   * has been read.
+   */
+  at?: number
+
+  /**
+   * Unix milliseconds when this daemon took the reading. A client holding readings
+   * from several answers keeps the newest by this. Absent for a session with no
+   * assistant.
+   */
+  readAtMs?: number
+  windows: SessionLimitWindow[]
 }
 
 /**

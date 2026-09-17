@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { SessionInfo, SessionRow } from "@clawdline/contract"
+import type { SessionInfo, SessionLimitWindow, SessionLimits, SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { SessionFacts, requestInfo } from "../overlays/index.js"
 
@@ -33,7 +33,11 @@ import { SessionFacts, requestInfo } from "../overlays/index.js"
  * - `.files` stays hidden: the working tree is not part of this daemon's read.
  * - `.deploy` stays hidden: a running deploy comes from the project-link walk,
  *   which this daemon does not have.
- * - `.limits` stays empty: plan windows are not part of this daemon's read.
+ * - `.limits` carries the plan windows, from the same `/info` answer: the
+ *   account-level reading every session of that assistant shares. The newest
+ *   reading per assistant is held and drawn over an older answer, and while an
+ *   answer is still loading the held one is drawn, as the original's
+ *   `SessionFacts` does (`machineLimits`).
  */
 export function StatusLine({ row, listPending = false }: { row: SessionRow | null; listPending?: boolean }) {
   const T = L.strings
@@ -42,6 +46,7 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
   const drawn = useRef(false)
   if (row) drawn.current = true
   const info = useSessionInfo(row)
+  const windows = row ? (info ? overlayMachineLimits(info) : machineLimits(row.assistant))?.windows ?? [] : []
 
   let open
   if (!drawn.current) {
@@ -98,7 +103,11 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
         rel="noopener noreferrer"
         {...(drawn.current ? { "data-kind": "" } : {})}
       ></a>
-      <div className="limits" id="status-line-limits"></div>
+      <div
+        className="limits"
+        id="status-line-limits"
+        dangerouslySetInnerHTML={{ __html: windows.length ? limitsHTML(windows) : "" }}
+      ></div>
     </footer>
   )
 }
@@ -120,6 +129,52 @@ function modelName(info: SessionInfo): string {
   const current = info.session.model || info.usage?.model || ""
   const row = info.models.find((m) => current && (current === m.id || current.indexOf(m.id) === 0))
   return row ? row.name : current
+}
+
+/**
+ * `limitsHTML` in `status-line.js`: one `.limit` per window, its percentage
+ * rounded and clamped, coloured by the same two thresholds as the context
+ * reading; a window with no percentage says "unknown".
+ */
+function limitsHTML(windows: SessionLimitWindow[]): string {
+  return windows
+    .map((w) => {
+      const pct = typeof w.usedPercent === "number" ? Math.max(0, Math.min(100, Math.round(w.usedPercent))) : null
+      const level = pct === null ? "" : pct >= 85 ? "bad" : pct >= 60 ? "warn" : "ok"
+      return (
+        `<span class="limit" data-level="${level}">${L.escapeHTML(w.name)} ` +
+        `<b>${pct === null ? L.escapeHTML(L.strings.webInfoUnknown) : pct + "%"}</b></span>`
+      )
+    })
+    .join("")
+}
+
+/**
+ * `machineLimitsByAssistant` in `createTieredSessionFacts`: the newest plan
+ * reading per assistant. Plan windows belong to the account, so an answer for
+ * one session updates what every session of that assistant shows, and two
+ * answers that complete out of order are ordered by when the daemon read the
+ * windows (`readAtMs`, or the provider's own `at` when an answer has no stamp).
+ */
+const heldLimits = new Map<string, { readAtMs: number; limits: SessionLimits }>()
+
+function machineLimits(assistant: string | undefined): SessionLimits | null {
+  return (assistant && heldLimits.get(assistant)?.limits) || null
+}
+
+/** `captureMachineLimits` and `overlayMachineLimits` together: remember this answer's windows if they are the newest, then answer with the newest. */
+function overlayMachineLimits(info: SessionInfo): SessionLimits | undefined {
+  const assistant = info.session.assistant || ""
+  const limits = info.limits
+  if (assistant && limits) {
+    let readAtMs = Number(limits.readAtMs)
+    if (!Number.isFinite(readAtMs) && Number.isFinite(Number(limits.at))) readAtMs = Number(limits.at) * 1000
+    if (Number.isFinite(readAtMs)) {
+      const held = heldLimits.get(assistant)
+      if (!held || readAtMs >= held.readAtMs) heldLimits.set(assistant, { readAtMs, limits })
+    }
+  }
+  return machineLimits(assistant) ?? limits
 }
 
 function dollars(x: number): string {

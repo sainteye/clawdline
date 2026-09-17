@@ -1185,10 +1185,11 @@ type SessionCoordinatorCommand struct {
 }
 
 // The facts behind the status line under an open session. This daemon serves
-// the transcript-derived part the Swift app calls the summary; the working
-// tree, context use, plan windows, links, permission and fast mode are not read
-// here and their keys are absent.
+// the transcript-derived part the Swift app calls the summary, and the plan
+// windows; the working tree, context use, links, permission and fast mode are
+// not read here and their keys are absent.
 type SessionInfo struct {
+	Limits  *SessionLimits     `json:"limits,omitempty"`
 	Models  []SessionModel     `json:"models"`
 	Session SessionInfoSession `json:"session"`
 	Usage   *SessionInfoUsage  `json:"usage,omitempty"`
@@ -1233,6 +1234,38 @@ type SessionInfoUsage struct {
 	Model  string `json:"model,omitempty"`
 	Output int64  `json:"output"`
 	Total  int64  `json:"total"`
+}
+
+// One plan window, as the provider last described it.
+type SessionLimitWindow struct {
+	// The window is spent: the provider refused a request on it, or reported 100% or
+	// more.
+	Hit bool `json:"hit"`
+
+	// `5h`, `7d`, or the window's length for any other (`1d`, `90m`).
+	Name string `json:"name"`
+
+	// Unix seconds. Absent when the provider did not say.
+	ResetsAt int64 `json:"resetsAt,omitempty"`
+
+	// As the provider reported it, unrounded; it can exceed 100.
+	UsedPercent float64 `json:"usedPercent"`
+}
+
+// The plan windows of the account this session's assistant runs on: an
+// account-level reading shared by every session of that assistant (the Swift
+// app's `AssistantQuota.machineLimits`), not this conversation's. An empty
+// `windows` is "nobody said", never 0%.
+type SessionLimits struct {
+	// Unix seconds of the provider record the windows came from. Absent when nothing
+	// has been read.
+	At int64 `json:"at,omitempty"`
+
+	// Unix milliseconds when this daemon took the reading. A client holding readings
+	// from several answers keeps the newest by this. Absent for a session with no
+	// assistant.
+	ReadAtMs int64                `json:"readAtMs,omitempty"`
+	Windows  []SessionLimitWindow `json:"windows"`
 }
 
 // One model this session's assistant can be switched to. A session's current

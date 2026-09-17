@@ -1,14 +1,15 @@
 // Package analytics answers the Usage page: the Swift app's
-// `UsageQueryService`, with its rows read from the assistants' own records
-// rather than from the Swift app's ledger.
+// `UsageQueryService`, over the Swift app's own ledger when this machine has
+// one (ledger.go), and over the assistants' own records when it does not.
 //
 // The rules — what a run is, how a Project is named, when two ranges compare,
 // which insight is worth showing — are that service's, ported rule for rule
-// (Sources/UsageLedger.swift). The rows are not: the Swift app records an
-// interval while it watches a session, and this daemon was not watching, so a
-// row here is one conversation (per model, for Claude) as its transcript
-// accounts for it. The numbers therefore differ from the Swift page's; the
-// shape and the arithmetic over them do not.
+// (Sources/UsageLedger.swift). Read from the ledger, the rows are that
+// service's too. Read from the transcripts they are not: the Swift app records
+// an interval while it watches a session, and this daemon was not watching, so
+// a row there is one conversation (per model, for Claude) as its transcript
+// accounts for it, and the numbers differ from the Swift page's; the shape and
+// the arithmetic over them do not.
 package analytics
 
 import (
@@ -20,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -87,6 +87,15 @@ type Row struct {
 	ParentTaskID    string
 	LandingState    string
 	LandingVerified *bool
+	// The rest is only known from the Swift ledger; a transcript row leaves
+	// them empty, which the wire spells null.
+	Reconciliation string
+	GraphID        string
+	RetryOf        string
+	Attempt        *int64
+	Disposition    string
+	// Corrections is how many `usage_corrections` name this row.
+	Corrections int
 }
 
 // ErrBusy means the scan the answer needs is still running. The scan carries
@@ -97,8 +106,9 @@ var ErrBusy = errors.New("usage analytics is still reading the assistants' recor
 // grows, so a Claude record is read on from where the last read stopped; a
 // Codex record is read at both ends and nowhere else.
 type Collector struct {
-	home  string
-	swift *swiftstore.Store
+	home   string
+	swift  *swiftstore.Store
+	ledger *swiftstore.UsageLedger
 
 	mu      sync.Mutex
 	claude  map[string]*claudeFile
@@ -107,6 +117,10 @@ type Collector struct {
 	scan    *scan
 	fresh   time.Time // when the last completed scan started
 	covered time.Time // the earliest start that scan was asked to cover
+
+	ledgerRead    *ledgerCache
+	source        string
+	sourceFailing bool
 }
 
 type scan struct {
@@ -114,11 +128,13 @@ type scan struct {
 	done chan struct{}
 }
 
-// NewCollector reads under home. swift may be nil.
+// NewCollector reads under home: the Swift app's usage ledger when home has
+// one, and the assistants' transcripts otherwise. swift may be nil.
 func NewCollector(home string, swift *swiftstore.Store) *Collector {
 	return &Collector{
 		home:   home,
 		swift:  swift,
+		ledger: swiftstore.OpenUsageLedger(swiftstore.ObservabilityDirIn(home)),
 		claude: map[string]*claudeFile{},
 		codex:  map[string]*codexFile{},
 		keys:   map[string]string{},
@@ -129,6 +145,9 @@ func NewCollector(home string, swift *swiftstore.Store) *Collector {
 // means all of them), waiting for a scan no longer than ctx allows. A scan is
 // shared: two requests at once start one.
 func (c *Collector) Rows(ctx context.Context, since time.Time) ([]Row, error) {
+	if rows, ok, err := c.ledgerRows(ctx, since); ok {
+		return rows, err
+	}
 	for {
 		c.mu.Lock()
 		reusable := !c.fresh.IsZero() && time.Since(c.fresh) < 15*time.Second &&
@@ -838,6 +857,10 @@ func sortNewestFirst(rows []Row) {
 	})
 }
 
+// epoch is `timeIntervalSince1970`. A ledger row's start is a double in the
+// ledger, and the whole seconds and the fraction are added separately so that
+// double comes back exactly: a cursor carries it, and the Swift route's
+// cursor carries it unrounded.
 func epoch(t time.Time) float64 {
-	return math.Round(float64(t.UnixNano())/1e3) / 1e6
+	return float64(t.Unix()) + float64(t.Nanosecond())/1e9
 }

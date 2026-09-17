@@ -198,6 +198,19 @@ React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`�
 （`orchestrator.json`）。這些是舊 app 自己的事實，新 app 沒有另一份來源；不讀，清單上就少了
 皇冠、task chip、協調等待與交付勾，標題也會不同。
 
+讀的東西（全部在 `internal/adapters/swiftstore`）：
+- `~/.config/clawdline/orchestrator.json`、`coordinator.json`：上面那些事實。
+- `~/.config/clawdline/config.json`：只解 `session_titles`，以及方案額度要的 `status_dir`、`codex_home`、
+  `assistant_quota_low_threshold` 三個鍵（`QuotaConfig`）。
+- `~/.config/clawdline/schedules/*.json`：只解 `schedule_id` 與 `title`，給用量頁的排程名稱（`ScheduleTitles`）。
+- **用量帳本** `~/Library/Application Support/Clawdline/Observability/usage.sqlite3`
+  （`CLAWDLINE_OBSERVABILITY_DIR` 可改；2026-09-17 使用者決定）：用量頁的列（`UsageLedger`，`usagedb.go`）。
+  它是 WAL 模式的 SQLite，舊 app 隨時在寫，所以**從不開原檔**——`mode=ro` 仍會對 `-shm` 加鎖、也可能建立它。
+  做法是以 `O_RDONLY` 把主檔與 `-wal`（不含 `-shm`）複製到本 app 自己的 `$TMPDIR/clawdline-next/`
+  （目錄 0700、檔案 0600），複製前後比對兩個檔的 size、mtime、inode，變了就重來；只開副本，讀完即刪。
+  依 stamp 快取，最多每 5 秒複製一次。重試仍失敗就沿用上次讀數（stale），沒有就回「未知」，不回空。
+  沒有這個檔（Linux、Windows、沒跑過舊 app 的 Mac）時用量頁退回 transcript 計算。
+
 規則：
 - **只讀。** 不寫、不 rename、不建立或觸碰 `.lock`。
 - **不讀秘密。** `secrets/`、各種 token 檔、`orchestrator-archive-key`、`push.json`，以及紀錄裡的
