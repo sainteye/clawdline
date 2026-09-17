@@ -1,14 +1,11 @@
-// What the overlays need from the copied modules and `legacy/bridge.ts` does
-// not export yet.
-//
-// **Stand-in, owned by root.** The bridge is the one way into `legacy/js/`, and
-// it was being edited by another task when this was written, so these are
-// imported here instead and listed in the task summary. Moving each line into
-// `bridge.ts` unchanged and switching the imports in this directory to
-// `../legacy/bridge.js` is the whole of retiring this file.
-import { S } from "../legacy/js/core/state.js"
-import { failureSentence as failureSentenceOriginal } from "../legacy/js/core/failure-text.js"
-import { confirmSpin, drawSpinner, setConfirmSpin as setConfirmSpinOriginal, spinPhase } from "../legacy/js/core/pixels.js"
+// The overlays' part of the bridge: what the info sheet, the confirmation
+// sheet and the toast need from the copied modules. Kept as its own file
+// because the overlays arrived as a separate piece of work; bridge.ts
+// re-exports all of it, and nothing outside legacy/ imports this file or the
+// copied modules directly.
+import { S } from "./js/core/state.js"
+import { failureSentence as failureSentenceOriginal } from "./js/core/failure-text.js"
+import { confirmSpin, drawSpinner, setConfirmSpin as setConfirmSpinOriginal, spinPhase } from "./js/core/pixels.js"
 import {
   byId as byIdOriginal,
   closeabilityLines as closeabilityLinesOriginal,
@@ -19,12 +16,11 @@ import {
   projectSessionWorkState,
   selfReportedPeerWaitCopy as selfReportedPeerWaitCopyOriginal,
   sessionCloseabilityHTML,
-  sessionCloseabilityShape,
   sessionStatusGlyphHTML,
   sessionWorkStateHTML,
   suggestedReplyButtonHTML as suggestedReplyButtonHTMLOriginal,
   suggestedReplyKeydown as suggestedReplyKeydownOriginal,
-} from "../legacy/js/view/derive.js"
+} from "./js/view/derive.js"
 
 /** A session as the copied modules hold it: the wire row, loosely. */
 export type LegacySession = Record<string, unknown> & { id: string }
@@ -42,7 +38,6 @@ export const closeabilityOf = projectSessionCloseability as (s: unknown) => Clos
 export const workStateOf = projectSessionWorkState as (s: unknown) => { state: string }
 export const closeabilityLines = closeabilityLinesOriginal as (s: unknown) => string[]
 export const closeabilityPlainReasons = closeabilityPlainReasonsOriginal as (s: unknown) => { text: string; count: number }[]
-export const closeabilityShape = sessionCloseabilityShape as (s: unknown) => string
 export const closeabilityBadgeHTML = sessionCloseabilityHTML as (s: unknown) => string
 export const lostIfClosed = lostIfClosedOriginal as (id: string) => string[]
 export const owedBadgeHTML = owedBadgeHTMLOriginal as (s: unknown) => string

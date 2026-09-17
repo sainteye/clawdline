@@ -1,7 +1,6 @@
 import type { Icon, SessionRow } from "@clawdline/contract"
-import { RefusalError } from "@clawdline/core"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
-import { client } from "../client.js"
+import { requestConfirm, requestInfo, useClosingId } from "../overlays/index.js"
 import * as L from "../legacy/bridge.js"
 import { Transcript } from "./Transcript.js"
 import { Composer } from "./Composer.js"
@@ -46,8 +45,10 @@ export function Detail({
   const T = L.strings
   // Which session is being closed, as `closingSelectionKey()` is there: the
   // header is "ending" only while the session it shows is the one going away.
-  const [endingId, setEndingId] = useState<string | null>(null)
-  const ending = !!row && endingId === row.id
+  // Which session is being closed is the confirmation sheet's to know; the
+  // head reads it so it can show that session as ending.
+  const closingId = useClosingId()
+  const ending = !!row && closingId === row.id
 
   // No snippets route means no resolved project (`snippetProjectFor`), so the
   // mark is keyed by the session's own `cwd`.
@@ -97,15 +98,13 @@ export function Detail({
               <canvas id="detail-mark" ref={markRef} width={0} height={0} />
             </span>
           </button>
-          {/* Opens the session info sheet in the original. That sheet (`#info`) and
-              its route are not in this console, so a press opens nothing; the button
-              stays enabled because disabling it dims the whole title. */}
           <button
             className="detail-session"
             id="detail-info"
             type="button"
             aria-haspopup="dialog"
             disabled={!row || ending}
+            onClick={requestInfo}
             title={T.webSessionInfo}
             aria-label={T.webSessionInfo}
           >
@@ -120,7 +119,7 @@ export function Detail({
           </button>
         </div>
         <div className="tools">
-          <Tools row={row} ending={ending} setEndingId={setEndingId} onDid={onDid} />
+          <Tools row={row} ending={ending} onDid={onDid} />
         </div>
       </div>
 
@@ -194,25 +193,24 @@ function detailSub(row: SessionRow | null): string {
  * dropped: a menu that is missing rows is a menu somebody will assume they
  * imagined, and a disabled row says which part is not here.
  *
- * - Show on Mac, Session info, Live screen, Documents, Git changes: no route or
- *   no sheet in this console.
+ * - Show on Mac, Live screen, Documents, Git changes: no route or no sheet in
+ *   this console. Session info opens the info sheet.
  * - My messages: needs no route, but its sheet (`#user-messages`) is not here.
  * - Snippets: hidden and disabled, which is the original's own shape for a
  *   transport with no snippets route (`syncRow` in `input/snippets.js`).
  * - commit, push: the daemon can send them, but the original sends them only
  *   through the `#action-confirm` sheet, which is not here, and sending without
  *   that step would be a weaker guard than the screen being replicated.
- * - Close session keeps the two-step confirmation this menu already had.
+ * - Close session opens the confirmation sheet, as the original does; a
+ *   refusal is reported by the toast there, not by this menu.
  */
 function Tools({
   row,
   ending,
-  setEndingId,
   onDid,
 }: {
   row: SessionRow | null
   ending: boolean
-  setEndingId: (id: string | null) => void
   onDid: () => void
 }) {
   const T = L.strings
@@ -221,8 +219,6 @@ function Tools({
   // `level()` first runs when the menu first opens; until then the main level
   // carries no aria-hidden, as the static markup has none.
   const [leveled, setLeveled] = useState(false)
-  const [confirm, setConfirm] = useState(false)
-  const [said, setSaid] = useState<string | null>(null)
 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const mainRef = useRef<HTMLDivElement>(null)
@@ -255,7 +251,6 @@ function Tools({
     if (!open) return
     setOpen(false)
     setGit(false)
-    setConfirm(false)
     if (restore) focusNext.current = "trigger"
   }
 
@@ -263,7 +258,6 @@ function Tools({
   useEffect(() => {
     setOpen(false)
     setGit(false)
-    setConfirm(false)
   }, [row?.id])
 
   // A press anywhere else closes it, and Escape closes it from the first level;
@@ -319,24 +313,6 @@ function Tools({
             ? (at + 1 + list.length) % list.length
             : (at - 1 + list.length) % list.length
     list[next].focus({ preventScroll: true })
-  }
-
-  // As `SessionActions.end`: the menu closes first, the header shows the
-  // session as ending while the request is out, and a refusal is said here.
-  const end = async () => {
-    if (!row || ending) return
-    const id = row.id
-    closeMenu(false)
-    setEndingId(id)
-    try {
-      await client.close(id)
-      setSaid(null)
-      onDid()
-    } catch (err) {
-      setSaid(err instanceof RefusalError ? err.detail : String(err))
-    } finally {
-      setEndingId(null)
-    }
   }
 
   return (
@@ -397,7 +373,16 @@ function Tools({
               <button id="session-focus" type="button" role="menuitem" disabled>
                 {T.webShowOnMac}
               </button>
-              <button id="session-info" type="button" role="menuitem" disabled>
+              <button
+                id="session-info"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending}
+                onClick={() => {
+                  closeMenu(false)
+                  requestInfo()
+                }}
+              >
                 {T.webSessionInfo}
               </button>
               <button id="session-screen" type="button" role="menuitem" disabled>
@@ -433,9 +418,13 @@ function Tools({
                 type="button"
                 role="menuitem"
                 disabled={!row || ending}
-                onClick={() => (confirm ? void end() : setConfirm(true))}
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  requestConfirm({ kind: "end", id: row.id, opener: triggerRef.current })
+                }}
               >
-                {confirm ? T.webConfirm : T.webEndSession}
+                {T.webEndSession}
               </button>
             </div>
             <div
@@ -471,11 +460,6 @@ function Tools({
           </div>
         </div>
       </div>
-      {said && (
-        <span className="chip" title={said}>
-          {said}
-        </span>
-      )}
     </>
   )
 }

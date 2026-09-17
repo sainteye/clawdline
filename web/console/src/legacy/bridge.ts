@@ -255,7 +255,7 @@ export const featureRootChip = featureRootChipOriginal as (
 /** A session's own account of the peer it waits on; "" when not complete enough to trust. */
 export const selfReportedPeerWait = selfReportedPeerWaitCopy as (s: SessionRow) => string
 /** Everything in the closeability badge whose identity can change its words. */
-export const closeabilityShape = sessionCloseabilityShape as (s: SessionRow) => string
+export const closeabilityShape = sessionCloseabilityShape as (s: unknown) => string
 /** The Clawdfather record on a row, normalised, or null. */
 export const coordinatorForSession = coordinatorForSessionOriginal as (
   s: SessionRow | null | undefined,
@@ -280,3 +280,6 @@ export function agentTokens(n: number): string {
   const k = n / 1000
   return (k < 100 ? k.toFixed(1) : String(Math.round(k))) + "k"
 }
+
+/* The overlays' part of the bridge. */
+export * from "./overlay-bridge.js"

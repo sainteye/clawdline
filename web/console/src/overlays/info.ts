@@ -17,7 +17,7 @@ import {
   suggestedReplyButtonHTML,
   workStateBadgeHTML,
   workStateOf,
-} from "./legacy.js"
+} from "../legacy/bridge.js"
 import { toast } from "./toast.js"
 
 /**

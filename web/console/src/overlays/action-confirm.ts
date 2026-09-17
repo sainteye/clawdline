@@ -3,7 +3,7 @@ import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { getClosingId, setClosingId } from "./events.js"
-import { byId, closeabilityLines, closeabilityOf, lostIfClosed, setConfirmSpin, type Closeable } from "./legacy.js"
+import { byId, closeabilityLines, closeabilityOf, lostIfClosed, setConfirmSpin, type Closeable } from "../legacy/bridge.js"
 import { toast, toastFailure } from "./toast.js"
 
 /**

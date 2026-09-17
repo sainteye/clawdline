@@ -1,4 +1,4 @@
-import { failureSentence } from "./legacy.js"
+import { failureSentence } from "../legacy/bridge.js"
 
 /**
  * `toast` and `toastFailure` (`core/util.js`), against the `div#toast` that
