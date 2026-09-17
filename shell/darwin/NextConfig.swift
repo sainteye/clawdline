@@ -13,8 +13,10 @@
 //              taking the same combination breaks the one the person is using.
 //   scope_app  com.googlecode.iterm2, as in the Swift app. Only read when a
 //              hotkey is set.
-//   mascot     clawd, as in the Swift app. Shown in the menu, drawn by nothing
-//              yet.
+//   mascot     clawd, as in the Swift app. Shown in the menu, and drawn by the
+//              notch island.
+//   notch      true, as in the Swift app. False and the island is not created
+//              at all — no window, no bridge, no drawing.
 import Foundation
 
 final class NextConfig {
@@ -23,6 +25,7 @@ final class NextConfig {
     private(set) var hotKey = ""
     private(set) var scopeApp = "com.googlecode.iterm2"
     private(set) var mascot = "clawd"
+    private(set) var notch = true
 
     /// Why the last load did not take the file at its word, or nil. Written to
     /// the log by whoever loaded; a config that is silently ignored looks
@@ -52,6 +55,7 @@ final class NextConfig {
         hotKey = ""
         scopeApp = "com.googlecode.iterm2"
         mascot = "clawd"
+        notch = true
         problem = nil
 
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
@@ -65,6 +69,7 @@ final class NextConfig {
         }
         if let v = obj["scope_app"] as? String { scopeApp = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
+        if let v = obj["notch"] as? Bool { notch = v }
     }
 }
 

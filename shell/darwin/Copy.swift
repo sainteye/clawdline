@@ -22,6 +22,10 @@ struct ShellCopy {
     }
     func statusWorking(_ count: Int) -> String { "\(count) 個在跑" }
 
+    // The notch island (`NotchIsland.swift`).
+    let islandDone = "跑完了"
+    let islandAllSessions = "所有 session⋯"
+
     // Main menu
     let menuApplication = "Clawdline"
     let menuWindow = "視窗"

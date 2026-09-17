@@ -194,6 +194,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         readings.dictation = DictationEngine.status()
         readings.mascots = MascotPacks.available()
         buildStatusItem()
+        NotchIsland.shared.install()
         takeSlowReadings()
         if UpdateOffer.feed == nil {
             shellLog("update-check: no release feed for this app; the update row stays absent")
@@ -302,6 +303,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
                                            injectionTime: .atDocumentStart,
                                            forMainFrameOnly: true))
         content.add(WeakMessageHandler(self), name: "shellSettings")
+        // The notch island listens to the same stream and opens this window
+        // when its character is pressed (NotchIsland.swift).
+        NotchIsland.shared.attach(to: content, open: { [weak self] in self?.showConsole() })
         config.userContentController = content
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
@@ -696,9 +700,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         return menu
     }
 
-    /// The packs there are, with the configured one ticked. Nothing here draws
-    /// a mascot, so choosing one would change nothing anybody can see; the
-    /// items are listed and off.
+    /// The packs there are, with the configured one ticked. The island draws
+    /// the ticked one; picking a different one from here is not wired, so the
+    /// items are listed and off, and the config file is what chooses.
     private func buildMascotMenu() -> NSMenu {
         let sub = NSMenu()
         for name in readings.mascots {
@@ -761,6 +765,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         readings.mascots = MascotPacks.available()
         statusItem.menu = buildMenu()
         refreshStatusItem()
+        NotchIsland.shared.install()
         sendSettingsState()
     }
 
@@ -943,6 +948,7 @@ extension Shell {
         updateHotKeyScope()
         statusItem.menu = buildMenu()
         refreshStatusItem()
+        NotchIsland.shared.install()
         shellLog("settings: applied hotkey=\(config.hotKey.isEmpty ? "(none)" : config.hotKey)"
                  + " registered=\(hotKey.isRegistered) scope=\(config.scopeApp.isEmpty ? "(global)" : config.scopeApp)")
         sendSettingsState()
