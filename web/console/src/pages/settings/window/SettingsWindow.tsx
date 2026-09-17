@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { SettingsSnapshot } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { readSettings, writeSettings } from "../api.js"
-import { ASSISTANT_LABEL, W, dictationStatus, hotkeyFailedTitle, seconds } from "./copy.js"
+import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyFailedTitle, seconds } from "./copy.js"
+import { readCloudStatus, type CloudStatus } from "../cloud.js"
 import { DEFAULTS, reading, type SettingKey } from "./defaults.js"
 import {
   APP_EVENT,
@@ -64,6 +65,9 @@ export function SettingsWindow() {
   const [recording, setRecording] = useState(false)
   const [pendingHotkey, setPendingHotkey] = useState<string | null>(null)
   const [busyHooks, setBusyHooks] = useState(false)
+  // The Cloud line's own reading. `undefined` is "not asked yet", `null` is
+  // "this daemon would not tell us", and the two draw different cards.
+  const [cloud, setCloud] = useState<CloudStatus | null | undefined>(undefined)
   const rememberedScope = useRef("")
   const recordingRef = useRef(false)
   recordingRef.current = recording
@@ -88,6 +92,27 @@ export function SettingsWindow() {
     read()
     ask({ kind: "state" })
   }, [read])
+
+  // The Cloud line, while the 遠端 tab is open. A line that is reconnecting
+  // changes on its own, so this card is the one thing in this window that is
+  // not simply a reading of the file — and it stops polling the moment the tab
+  // is left, because a settings window nobody is looking at should ask this
+  // daemon nothing.
+  useEffect(() => {
+    if (tab !== 3) return
+    let live = true
+    const pass = () => {
+      void readCloudStatus().then((answer) => {
+        if (live) setCloud(answer)
+      })
+    }
+    pass()
+    const timer = setInterval(pass, 5_000)
+    return () => {
+      live = false
+      clearInterval(timer)
+    }
+  }, [tab])
 
   /**
    * Write, then tell the shell. The Swift app's `apply()`: save the file and
@@ -533,6 +558,78 @@ export function SettingsWindow() {
     )
   }
 
+  /**
+   * What the line to app.clawdline.com is doing.
+   *
+   * Three states and each says a different thing: the switch is off and this
+   * daemon has no Cloud line at all; the switch is on and the line is up, in
+   * which case the fingerprint is here to be read back to somebody; or this
+   * caller may not ask, which is what a paired phone reading this window over
+   * a tunnel gets, and which is the honest card rather than an empty one.
+   *
+   * There is no switch here. Turning Cloud on is `clawdline cloud on`, which
+   * writes `cloud_enabled` in the same file — deliberately not a control in
+   * this window until enrolment has a screen of its own, because a switch that
+   * turns on a line with no account behind it turns on nothing and says
+   * nothing.
+   */
+  function cloudBlock() {
+    if (cloud === undefined) return null
+    if (cloud === null) {
+      return (
+        <Block label={W.webCloudStatus}>
+          <Note dot="idle">{W.webCloudStatusReadFailed}</Note>
+        </Block>
+      )
+    }
+    const lines: { text: string; dot: "idle" | "warn" | "live" }[] = []
+    lines.push({
+      text: fill(W.webCloudStatusConnection, { state: cloud.state }),
+      dot: cloud.state === "connected" ? "live" : cloud.enabled ? "warn" : "idle",
+    })
+    if (cloud.machine_id) {
+      lines.push({ text: fill(W.webCloudStatusMac, { machine: cloud.machine_name || cloud.machine_id }), dot: "idle" })
+    }
+    if (cloud.fingerprint) {
+      lines.push({ text: fill(W.webCloudStatusKey, { key: cloud.fingerprint }), dot: "idle" })
+    }
+    if (cloud.token_expires_at) {
+      lines.push({
+        text: fill(W.webCloudStatusToken, { at: new Date(cloud.token_expires_at * 1000).toLocaleString() }),
+        dot: "idle",
+      })
+    }
+    if (cloud.last_close) {
+      lines.push({ text: fill(W.webCloudStatusClosed, { code: cloud.last_close }), dot: "warn" })
+    }
+    // The last error is this daemon's own sentence, not a word from the
+    // catalog: it is whatever went wrong, and paraphrasing it into one of five
+    // canned lines is how a person ends up in the log anyway.
+    if (cloud.last_error) lines.push({ text: cloud.last_error, dot: "warn" })
+    if (cloud.enabled && !cloud.commands) {
+      lines.push({ text: W.webFailMacWritesOff, dot: "idle" })
+    }
+    const drops = Object.entries(cloud.inbound_dropped ?? {}).filter(([, count]) => count > 0)
+    if (cloud.enabled && cloud.connected_since) {
+      const at = new Date(cloud.connected_since * 1000).toLocaleString()
+      lines.push({
+        text: drops.length
+          ? fill(W.webCloudStatusDropped, { at, list: drops.map(([name, count]) => `${name} ${count}`).join("、") })
+          : fill(W.webCloudStatusNoDrops, { at }),
+        dot: drops.length ? "warn" : "idle",
+      })
+    }
+    return (
+      <Block label={W.webCloudStatus}>
+        {lines.map((line) => (
+          <Note key={line.text} dot={line.dot}>
+            {line.text}
+          </Note>
+        ))}
+      </Block>
+    )
+  }
+
   function remotePane() {
     return (
       <>
@@ -572,6 +669,7 @@ export function SettingsWindow() {
           </Row>
         </div>
         <div className="sw-column">
+          {cloudBlock()}
           <Row label={W.settingsTunnel} hint={W.settingsTunnelHint} first>
             <PopUp
               label={W.settingsTunnel}

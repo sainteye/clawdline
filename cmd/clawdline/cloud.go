@@ -8,8 +8,14 @@ package main
 //
 //	clawdline cloud status              what the switch and the identity say
 //	clawdline cloud on | off            the switch
+//	clawdline cloud commands on | off   whether a viewer may act on this Mac
 //	clawdline cloud login               register this machine, and wait for approval
 //	clawdline cloud connect [--for 30s] hold the line open and print what happens
+//
+// `serve` now opens the same line by itself when the switch is on
+// (`main.go`'s startCloudLine), so `connect` is the diagnostic rather than the
+// only way to reach the relay: it prints every state change on the terminal and
+// exits, which a daemon cannot.
 
 import (
 	"context"
@@ -46,6 +52,8 @@ func cloudCommand(args []string) {
 		cloudSwitchCommand(true)
 	case "off":
 		cloudSwitchCommand(false)
+	case "commands":
+		cloudCommandsCommand(args[1:])
 	case "login":
 		cloudLoginCommand(args[1:])
 	case "connect":
@@ -57,9 +65,10 @@ func cloudCommand(args []string) {
 }
 
 func cloudUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline cloud <status|on|off|login|connect>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline cloud <status|on|off|commands|login|connect>")
 	fmt.Fprintln(os.Stderr, "  status                 the switch, the identity and the endpoints")
 	fmt.Fprintln(os.Stderr, "  on | off               turn the cloud line on or off in the settings file")
+	fmt.Fprintln(os.Stderr, "  commands on | off      whether a paired viewer may act on this Mac; off by default")
 	fmt.Fprintln(os.Stderr, "  login [--wait 10m]     register this machine and wait for the approval")
 	fmt.Fprintln(os.Stderr, "  connect [--for 1m]     hold the line open and report what happens")
 }
@@ -112,6 +121,7 @@ func cloudStatusCommand() {
 		os.Exit(1)
 	}
 	fmt.Printf("enabled    %v\n", parts.settings.Enabled)
+	fmt.Printf("commands   %v\n", parts.settings.Commands)
 	fmt.Printf("relay      %s\n", parts.settings.RelayURL)
 	fmt.Printf("api        %s\n", parts.settings.APIBase)
 	fmt.Printf("keys       %s\n", parts.keys.Dir())
@@ -159,6 +169,30 @@ func cloudSwitchCommand(on bool) {
 		return
 	}
 	fmt.Printf("cloud off  %s\n", parts.file.Path())
+}
+
+// cloudCommandsCommand is the remote-write switch, which is a separate
+// decision from whether the line is up: reading a session list and running code
+// on this Mac are not the same permission and never share a switch.
+func cloudCommandsCommand(args []string) {
+	if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
+		fmt.Fprintln(os.Stderr, "usage: clawdline cloud commands <on|off>")
+		os.Exit(2)
+	}
+	parts, err := openCloud()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline:", err)
+		os.Exit(1)
+	}
+	on := args[0] == "on"
+	if err := cloud.SetCommands(parts.file, on); err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("commands %-3s %s\n", args[0], parts.file.Path())
+	if on {
+		fmt.Printf("           a paired viewer may now type into this Mac's sessions\n")
+	}
 }
 
 func cloudLoginCommand(args []string) {

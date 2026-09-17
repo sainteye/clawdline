@@ -106,7 +106,33 @@ export const W = {
   settingsOrchestratorCloseLinger: "三分鐘後再關",
   settingsOrchestratorCloseKeep: "留著不要關",
   menuMascot: "吉祥物",
+  // The Cloud status card's words. Same rule as everything above: each is a
+  // property of `Copy+Chinese.swift`, copied under its own name. They are the
+  // hosted console's Cloud status sheet's words (`webCloudStatus*`, :1132-1151)
+  // rather than an invented settings vocabulary, because this card answers the
+  // same questions about the same line and the original has no second spelling.
+  webCloudStatus: "Cloud 狀態",
+  webCloudStatusReadFailed: "讀不到這台 Mac 的狀態。",
+  webCloudStatusConnection: "連線：{state}",
+  webCloudStatusClosed: "上次關閉：{code}",
+  webCloudStatusToken: "Mac 憑證到期：{at}",
+  webCloudStatusKey: "Mac 金鑰：{key}",
+  webCloudStatusMac: "Mac {machine}",
+  webCloudStatusDropped: "自 {at} 起 Mac 丟棄：{list}",
+  webCloudStatusNoDrops: "自 {at} 起 Mac 沒有丟棄任何指令。",
+  webFailMacWritesOff: "Mac 目前不接受來自 Cloud 的指令。",
 } as const
+
+/**
+ * `fill(_:_:)` (`view/cloud-status.js:64`): the `{name}` placeholders the Cloud
+ * words carry. One spelling, because a template filled two ways is two
+ * templates.
+ */
+export function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (whole, name: string) =>
+    Object.hasOwn(values, name) ? values[name]! : whole,
+  )
+}
 
 /** `settingsSeconds(_:)`, the same `%.1f 秒`. */
 export function seconds(value: number): string {

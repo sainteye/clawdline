@@ -6,8 +6,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -23,6 +26,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 
 	"github.com/sainteye/clawdline-go/internal/config"
+	cloudtransport "github.com/sainteye/clawdline-go/internal/transport/cloud"
 	httptransport "github.com/sainteye/clawdline-go/internal/transport/http"
 )
 
@@ -84,10 +88,59 @@ func serve() {
 		os.Exit(1)
 	}
 	srv.StartScheduler(context.Background())
+	startCloudLine(context.Background(), cfg, srv)
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)
 	}
+}
+
+// startCloudLine brings up the line to app.clawdline.com, if the settings say
+// so.
+//
+// **Off by default, and a failure here never stops the daemon.** The free
+// product does not depend on Cloud (`docs/remote.md` design principle 1), so a
+// settings file with a typo in its relay URL, a control plane that is down, or
+// a machine that was never enrolled must all leave a working local daemon
+// behind. Each of those is recorded where `/v1/cloud/status` can say it, which
+// is the difference between a quiet failure and a legible one.
+func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.Server) {
+	link, err := cloudtransport.Open(cloudtransport.LinkOptions{
+		Dir:         cfg.Dir,
+		ForeignDirs: foreignDirs(),
+		// The daemon's own routes, gate and all. A Cloud request is answered by
+		// exactly the handler a paired browser on this machine's own network
+		// reaches — one set of permission checks, not two.
+		Handler: srv.Handler(),
+		Authorize: func(r *http.Request) {
+			local, machine, err := srv.CloudCredentials()
+			if err != nil {
+				// No credential is the right answer for a daemon that cannot
+				// read its own device store: the gate then refuses, which is
+				// what it should do.
+				return
+			}
+			cloudtransport.LocalAuthorizer(local, machine)(r)
+		},
+		Version: version,
+		Log:     func(format string, args ...any) { log.Printf(format, args...) },
+	})
+	if err != nil {
+		// A malformed cloud setting is loud and is not fatal. Falling back to
+		// the production relay because somebody mistyped a local one is the
+		// failure worth refusing.
+		log.Printf("cloud: the line is off: %v", err)
+		return
+	}
+	httptransport.SetCloudLine(cfg.Dir, link)
+	if !link.Enabled() {
+		return
+	}
+	go func() {
+		if err := link.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("cloud: the line stopped: %v", err)
+		}
+	}()
 }
 
 func doctor() {
