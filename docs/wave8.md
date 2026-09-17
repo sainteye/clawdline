@@ -29,7 +29,7 @@
 | C | 7763 | 在 Mac 上顯示＋即時畫面 |
 | D | 7764 | Git 面板＋commit／push |
 | E | 7765 | 文件＋我傳出的訊息 |
-| F | 7766 | 在瀏覽器回答問題：等待卡、`menu`、`/key`。**使用者要求提前，9/17 已派出**（task `c7000a81`，在共用樹做，不是隔離 worktree） |
+| F | 7766 | 在瀏覽器回答問題：等待卡、`menu`、`/key`。**使用者要求提前，9/17 已派出並落地（`005b0e1`）**（task `c7000a81`，在共用樹做，不是隔離 worktree） |
 
 ### 共用前言（每份派工都放在最前面）
 
@@ -140,4 +140,4 @@ Go：`internal/adapters/terminal` 加 keystroke；讀畫面解析 `menu`，放�
 
 依完成順序合併；`Composer.tsx`、`Detail.tsx`、`server.go`、`bridge.ts`、`MANIFEST.json` 的衝突由 root 解。
 每合一個：重生契約並 `-check`、`go vet`／`build`、`tsc`、`check-legacy-css.sh`，提交，landing。
-六個都合完後，重建 7727，派一個 reviewer 審這六項，外加已落地的「開啟新 session」（`4f0d3c7`）：它的 start／resume 路由會依請求啟動程序，實作者建議獨立審查（權限、Idempotency-Key、佇列、路徑與參數注入）。
+A–E 都合完後，重建 7727，派一個 reviewer 審這六項（含已落地的 F），外加已落地的「開啟新 session」（`4f0d3c7`）：它的 start／resume 路由會依請求啟動程序，實作者建議獨立審查（權限、Idempotency-Key、佇列、路徑與參數注入）。
