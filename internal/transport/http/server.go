@@ -153,6 +153,12 @@ func (s *Server) Handler() http.Handler {
 	// What the line to app.clawdline.com is doing (cloud.go). This machine's
 	// own token only.
 	mux.HandleFunc("/v1/cloud/status", s.cloudStatusRoute)
+	// Pairing a browser with this Mac, and throwing one out again. Same rule:
+	// this machine's own token, because the first of them answers a link that
+	// hands over the account key.
+	mux.HandleFunc("/v1/cloud/pairing", s.cloudPairingRoute)
+	mux.HandleFunc("/v1/cloud/pairing/offer", s.cloudPairingOfferRoute)
+	mux.HandleFunc("/v1/cloud/devices/revoke", s.cloudDeviceRoute)
 	// A shadow route, not the real one. It runs beside /v1/sessions so both can
 	// be read for the same machine at the same moment; the real route is taken
 	// over only once the payloads agree.

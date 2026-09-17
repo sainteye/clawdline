@@ -23,6 +23,7 @@ package cloud
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
 	"net/http"
@@ -111,6 +112,14 @@ type Status struct {
 
 	// Commandset is what this machine would advertise it can answer.
 	Commandset []string `json:"commandset,omitempty"`
+
+	// Pairing is the handover in progress, if there is one.
+	Pairing PairingState `json:"pairing"`
+	// PinnedReadable is false when the local paired-device file could not be
+	// read. An unreadable pin file is not an empty one: see `pinned.go`.
+	PinnedReadable bool `json:"pinned_readable"`
+	// PinnedError says why the pin file could not be read.
+	PinnedError string `json:"pinned_error,omitempty"`
 }
 
 // Viewer is one enrolled device, as the status route shows it. It carries no
@@ -121,6 +130,17 @@ type Viewer struct {
 	Name        string   `json:"name,omitempty"`
 	Caps        []string `json:"caps,omitempty"`
 	Fingerprint string   `json:"fingerprint,omitempty"`
+	// Pinned is whether this machine itself handed that device the account
+	// key. A row that is only in the account's roster is listed too, because
+	// it is still admitted — but the two are different amounts of evidence and
+	// the settings page says which is which.
+	Pinned bool `json:"pinned"`
+	// PairedAt is when this machine pinned it, Unix seconds.
+	PairedAt int64 `json:"paired_at,omitempty"`
+	// Revoked is a device this machine threw out. It stays on the list so that
+	// "I revoked it" is visible rather than a row quietly disappearing.
+	Revoked   bool  `json:"revoked,omitempty"`
+	RevokedAt int64 `json:"revoked_at,omitempty"`
 }
 
 // StateOff is the state of a link whose switch is off. It is deliberately not
@@ -159,6 +179,8 @@ type Link struct {
 	identity adaptercloud.Identity
 	keys     *cloudkeys.Files
 	deviceID string
+	pinned   *adaptercloud.PinnedStore
+	pairing  *Pairing
 
 	transport *adaptercloud.Transport
 	relay     *Relay
@@ -252,6 +274,21 @@ func Open(opts LinkOptions) (*Link, error) {
 	link.status = status
 
 	link.roster = adaptercloud.NewRoster(settings.APIBase, identity.MachineCredential, opts.Now)
+	link.pinned = adaptercloud.NewPinnedStore(keys.Dir())
+	link.pairing = &Pairing{
+		AccountID:  identity.AccountID,
+		MachineID:  identity.MachineID,
+		Credential: identity.MachineCredential,
+		AppOrigin:  settings.AppOrigin,
+		Client:     adaptercloud.NewAccountClient(settings.APIBase),
+		// Read from the store rather than captured, so that a rotation
+		// between two pairings cannot hand the second browser the first
+		// browser's key.
+		Keys:   link.pairingKeys,
+		Pinned: link.pinned,
+		Now:    opts.Now,
+		Log:    opts.Log,
+	}
 	link.relay = &Relay{
 		Spool:     spool,
 		MachineID: identity.MachineID,
@@ -275,7 +312,7 @@ func Open(opts LinkOptions) (*Link, error) {
 		Status:       status,
 		Replay:       domaincloud.NewReplayWindow(0),
 		Inbound:      link.relay.Deliver,
-		PublicKeyFor: link.roster.PublicKeyFor,
+		PublicKeyFor: link.publicKeyFor,
 		ContentKey:   secret,
 		Log:          func(line string) { link.logf("%s", line) },
 		Now:          opts.Now,
@@ -435,6 +472,67 @@ func (l *Link) allowCommands() bool {
 	return settings.Commands
 }
 
+// publicKeyFor is who this machine will verify an envelope against.
+//
+// The order is the whole point, and it is PROTOCOL.md §3's "held locally, not
+// trusted from the cloud":
+//
+//  1. **A device this machine threw out is refused**, whatever anything else
+//     says. A local revocation that the account's roster could undo would not
+//     be a revocation.
+//  2. **A pin wins.** The key came out of a sealed offer this machine opened
+//     itself; the control plane never saw it in the clear and so cannot
+//     substitute one.
+//  3. **The roster is the fallback**, for a viewer paired before the pin file
+//     existed. It is the fourth wave's behaviour, kept rather than removed so
+//     that a browser that already works does not stop working — and it is the
+//     weaker answer, which is why the settings page marks which rows are pins.
+//
+// An unreadable pin file refuses everybody rather than falling through, for
+// the reason `pinned.go` gives: falling through is exactly the substitution
+// the pins exist against.
+func (l *Link) publicKeyFor(sender string) (ed25519.PublicKey, bool) {
+	if l.pinned != nil {
+		refused, err := l.pinned.Refused(sender)
+		if err != nil {
+			l.logf("cloud: the paired-device file cannot be read, so no sender is admitted: %v", err)
+			return nil, false
+		}
+		if refused {
+			return nil, false
+		}
+		if key, ok, err := l.pinned.PublicKeyFor(sender); err != nil {
+			l.logf("cloud: the paired-device file cannot be read, so no sender is admitted: %v", err)
+			return nil, false
+		} else if ok {
+			return key, true
+		}
+	}
+	if l.roster == nil {
+		return nil, false
+	}
+	return l.roster.PublicKeyFor(sender)
+}
+
+// Pairing is the handover this link drives, for the routes that start one.
+func (l *Link) Pairing() *Pairing { return l.pairing }
+
+// pairingKeys reads the two keys a handover carries, from the store, now.
+func (l *Link) pairingKeys() (domaincloud.DeviceKey, domaincloud.ContentKey, error) {
+	if l.keys == nil {
+		return domaincloud.DeviceKey{}, domaincloud.ContentKey{}, ErrPairingUnavailable
+	}
+	key, err := domaincloud.LoadOrCreateDeviceKey(l.keys, rand.Reader)
+	if err != nil {
+		return domaincloud.DeviceKey{}, domaincloud.ContentKey{}, err
+	}
+	secret, err := domaincloud.LoadOrCreateMasterSecret(l.keys, rand.Reader)
+	if err != nil {
+		return domaincloud.DeviceKey{}, domaincloud.ContentKey{}, err
+	}
+	return key, secret, nil
+}
+
 // authority is cloudops' re-read at the point of no return.
 //
 // The roster is the account's, not this machine's: a device the person removed
@@ -444,6 +542,14 @@ func (l *Link) allowCommands() bool {
 // account's decision rather than one this file makes up.
 func (l *Link) authority(ctx context.Context, sender string, requiresWriteGate bool) cloudops.Authority {
 	readable, _ := l.roster.Readable()
+	if l.pinned != nil {
+		if refused, err := l.pinned.Refused(sender); err != nil || refused {
+			// A device this machine threw out, or a pin file it cannot read.
+			// Either way the answer is no, and it is no before the roster is
+			// consulted: the roster is the thing a revocation has to beat.
+			return cloudops.Authority{ClockReady: true, RosterReadable: readable}
+		}
+	}
 	a := cloudops.Authority{
 		// The clock guard is not wired yet; the transport admits on the relay's
 		// own timestamp window today. Saying `true` here is reporting what is
@@ -511,6 +617,26 @@ func (l *Link) Status() Status {
 	if l.relay != nil {
 		out.QueueDropped = l.relay.Dropped()
 	}
+	// The viewer list is the two sources joined, in the order that decides
+	// admission: this machine's own pins, then the account's roster for
+	// anything it has never pinned. A row that is only in the roster is shown
+	// as such rather than silently equated with a pin.
+	seen := map[string]int{}
+	if l.pinned != nil {
+		devices, err := l.pinned.Devices()
+		out.PinnedReadable = err == nil
+		if err != nil {
+			out.PinnedError = err.Error()
+		}
+		for _, device := range devices {
+			seen[device.DeviceID] = len(out.Devices)
+			out.Devices = append(out.Devices, Viewer{
+				ID: device.DeviceID, Name: device.Name, Fingerprint: device.Fingerprint,
+				Pinned: true, PairedAt: device.PairedAt,
+				Revoked: !device.Active(), RevokedAt: device.RevokedAt,
+			})
+		}
+	}
 	if l.roster != nil {
 		readable, _ := l.roster.Readable()
 		out.RosterReadable = readable
@@ -518,11 +644,26 @@ func (l *Link) Status() Status {
 			if device.RevokedAt != nil && *device.RevokedAt != "" {
 				continue
 			}
+			if at, ok := seen[device.ID]; ok {
+				// The account knows this device's kind, name and capabilities;
+				// the pin knows its key. Both belong on the one row.
+				out.Devices[at].Kind = device.Kind
+				out.Devices[at].Caps = device.Caps
+				if device.Name != "" {
+					out.Devices[at].Name = device.Name
+				}
+				continue
+			}
 			out.Devices = append(out.Devices, Viewer{
 				ID: device.ID, Kind: device.Kind, Name: device.Name,
 				Caps: device.Caps, Fingerprint: device.Fingerprint,
 			})
 		}
+	}
+	if l.pairing != nil {
+		out.Pairing = l.pairing.State()
+	} else {
+		out.Pairing = PairingState{Phase: PairingIdle}
 	}
 	if l.transport != nil {
 		out.State = l.transport.State()
