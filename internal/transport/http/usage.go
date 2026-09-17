@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
@@ -305,15 +304,7 @@ func deref(s *string) string {
 
 // infoPath recognises GET /v1/sessions/{id}/info and returns the id, decoded.
 func infoPath(r *http.Request) (string, bool) {
-	if r.Method != http.MethodGet {
-		return "", false
-	}
-	rest, ok := strings.CutPrefix(r.URL.Path, "/v1/sessions/")
-	if !ok {
-		return "", false
-	}
-	id, ok := strings.CutSuffix(rest, "/info")
-	return id, ok && id != ""
+	return sessionVerbIs(r, "info", http.MethodGet)
 }
 
 // sessionInfoRoute answers the status line under an open session: which model

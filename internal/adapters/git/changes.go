@@ -68,13 +68,32 @@ var (
 	// repository" to both; on a machine with no git that sentence is false of
 	// every directory on it, so this one is named instead of guessed.
 	ErrUnavailable = errors.New("no git on this machine")
+	// ErrTooLarge is the answer being bigger than this reads. A truncated
+	// porcelain answer is not a smaller reading of the repository, it is a
+	// reading that stops mid-line, so it is refused rather than parsed.
+	ErrTooLarge = errors.New("that repository answered with more than this read takes")
 )
 
 // changesTimeout is the whole read's budget, and no single command may take
 // more than commandTimeout of it. The Swift route uses the same two numbers.
+//
+// outputLimit is how much of one command's answer is kept. Nothing else in
+// this repository reads an unbounded stream — every file read goes through an
+// `io.LimitReader` — and this one used to: `cmd.Output()` grows a buffer until
+// the command stops, and a session whose working directory is a home folder
+// answers `status --porcelain=v2` with every untracked path under it. Eight
+// megabytes is far past any panel anybody reads and far short of a machine.
+//
+// waitDelay is the other half of the same stall. `exec.CommandContext` kills
+// the process it started; a child git left behind that inherited the pipe
+// keeps it open, and a `Wait` that is still copying will not return until it
+// closes — past every timeout above. With a delay, `Wait` gives up on the copy
+// instead of the request goroutine hanging for as long as the grandchild lives.
 const (
 	changesTimeout = 8 * time.Second
 	commandTimeout = 5 * time.Second
+	outputLimit    = 8 << 20
+	waitDelay      = time.Second
 )
 
 // Changes reads one repository for the Git panel.
@@ -93,7 +112,7 @@ func (g *Git) Changes(ctx context.Context, cwd string) (Status, error) {
 	// repository and git still would not answer.
 	status, err := g.readOnly(ctx, cwd, "status", "--porcelain=v2", "--branch")
 	if err != nil {
-		if errors.Is(err, ErrTimedOut) || errors.Is(err, ErrUnavailable) {
+		if errors.Is(err, ErrTimedOut) || errors.Is(err, ErrUnavailable) || errors.Is(err, ErrTooLarge) {
 			return Status{}, err
 		}
 		return Status{}, ErrNotRepository
@@ -116,7 +135,27 @@ func (g *Git) readOnly(ctx context.Context, cwd string, args ...string) (string,
 	}
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, g.Binary, args...)
+	// **This reading of somebody's repository runs git, and nothing that
+	// repository asked to have run.** A directory is opened here because a
+	// session is sitting in it and somebody pressed a menu item — a device
+	// that may only read is enough — and the repository under it may have been
+	// cloned by an agent an hour ago. Several git settings name a program and
+	// git runs it: `core.fsmonitor` during `status`, an external driver or a
+	// `textconv` filter during a diff. So they are turned off on the command
+	// line, where they outrank the repository's own `.git/config`, and the
+	// system-wide file is left out with them. This is the rule rather than the
+	// one spelling somebody found: what may decide this reading is this
+	// process's own argument list, and nothing written inside the directory
+	// being read.
+	if len(args) == 0 {
+		return "", ErrFailed
+	}
+	full := []string{"-c", "core.fsmonitor=", args[0]}
+	if args[0] == "diff" {
+		full = append(full, "--no-ext-diff", "--no-textconv")
+	}
+	full = append(full, args[1:]...)
+	cmd := exec.CommandContext(ctx, g.Binary, full...)
 	cmd.Dir = cwd
 	// GIT_OPTIONAL_LOCKS=0 is what keeps this lock-free: without it `status`
 	// refreshes the index and takes index.lock, which is the one thing a
@@ -127,8 +166,21 @@ func (g *Git) readOnly(ctx context.Context, cwd string, args ...string) (string,
 	// readers match on. The porcelain formats are stable by contract; this
 	// makes that true of the whole invocation rather than of the flags
 	// somebody remembered to pass.
-	cmd.Env = append(cmd.Environ(), "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C", "LANG=C")
-	out, err := cmd.Output()
+	//
+	// GIT_CONFIG_NOSYSTEM keeps /etc/gitconfig out of a reading that is not
+	// this machine's administrator asking anything.
+	cmd.Env = append(cmd.Environ(),
+		"GIT_OPTIONAL_LOCKS=0", "LC_ALL=C", "LANG=C", "GIT_CONFIG_NOSYSTEM=1")
+	out := &capped{limit: outputLimit}
+	cmd.Stdout = out
+	// stderr is read by nobody here: the refusals below are this package's own
+	// sentences, and git's are not shown to a paired device.
+	cmd.Stderr = nil
+	cmd.WaitDelay = waitDelay
+	err := cmd.Run()
+	if out.over {
+		return "", ErrTooLarge
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", ErrTimedOut
@@ -139,8 +191,30 @@ func (g *Git) readOnly(ctx context.Context, cwd string, args ...string) (string,
 		}
 		return "", ErrFailed
 	}
-	return string(out), nil
+	return out.String(), nil
 }
+
+// capped is a bounded sink for one command's stdout: it keeps what fits and
+// remembers that there was more, so the caller refuses rather than parsing
+// half a line as a whole one.
+type capped struct {
+	buf   strings.Builder
+	limit int
+	over  bool
+}
+
+func (c *capped) Write(p []byte) (int, error) {
+	if c.over {
+		return len(p), nil
+	}
+	if c.buf.Len()+len(p) > c.limit {
+		c.over = true
+		return len(p), errors.New("that repository answered with more than this read takes")
+	}
+	return c.buf.Write(p)
+}
+
+func (c *capped) String() string { return c.buf.String() }
 
 // Assemble joins the two numstat views onto the status rows. It is pure, so a
 // partially staged file or a binary one can be pinned without a repository.

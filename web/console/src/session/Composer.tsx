@@ -333,8 +333,6 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
         }}
         dangerouslySetInnerHTML={{ __html: shotsHTML() }}
       ></div>
-      <div className="voice" id="voice" role="status" hidden></div>
-      <div className="shots" id="shots"></div>
       {/* Empty here and built in `voice-bridge.ts`, as the original builds it
           in `voice.js`: React renders no children into this row, so it never
           diffs away the meter, the count or the two ways out. `opening` is the

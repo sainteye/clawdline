@@ -36,7 +36,9 @@ func (s *Server) authRoute(w http.ResponseWriter, r *http.Request) {
 			"The device store could not be read, so nobody can be let in.")
 		return
 	}
-	p := cleanPath(r.URL.Path)
+	// The string the mux dispatched by, so that this route's own names are
+	// read the way the gate read them (routePath, gate.go).
+	p := routePath(r)
 	post := r.Method == http.MethodPost
 	switch {
 	case post && p == "/v1/auth/pair":
@@ -294,7 +296,13 @@ func (g *gate) devicesRoute(w http.ResponseWriter, r *http.Request, rest string)
 		return
 	}
 	get, post := r.Method == http.MethodGet, r.Method == http.MethodPost
+	// Split first, then decode each segment: the id of a device is a name, and
+	// a name is one segment (routePath, gate.go).
 	parts := strings.Split(rest, "/")
+	for i, part := range parts {
+		parts[i] = decodeSegment(part)
+	}
+	rest = strings.Join(parts, "/")
 	switch {
 	case get && rest == "":
 		g.listDevices(w)

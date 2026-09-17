@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log"
 	"sort"
 	"strconv"
 	"sync"
@@ -66,6 +67,20 @@ const (
 	// long a pipe outlives its watcher; the lease itself is compared against
 	// the clock, never against this.
 	ScreenSweep = 5 * time.Second
+
+	// ScreenWatches is how many screens this daemon watches at once.
+	//
+	// **A read attaches a pipe, and a pipe is machine state.** Watching is
+	// deliberately read-level — looking at a screen types nothing, and the app
+	// being replicated lets a read-only device look — but on tmux each watched
+	// pane costs a `pipe-pane`, which is a `sh -c` tmux forks and a FIFO in
+	// this daemon's directory. Nothing bounded how many could be alive at
+	// once, so a device that may only read could name one session after
+	// another and leave a process and a pipe behind each time, for the length
+	// of a lease. Ten is more screens than anybody has open and far fewer than
+	// a machine notices. Past it a screen reads as unreadable, which is what
+	// the page already draws for a terminal it cannot see into.
+	ScreenWatches = 10
 
 	// ScreenLines is the ceiling on how much screen is asked for. On an
 	// assistant pane it is inert — the alternate screen has no history to give
@@ -240,6 +255,10 @@ type Screens struct {
 	sweeper   *time.Ticker
 	stopped   bool
 	done      chan struct{}
+
+	// watchMu and watchSaid bound how often a refused watch is written down.
+	watchMu   sync.Mutex
+	watchSaid time.Time
 }
 
 // NewScreens builds the one owner of this daemon's pipes.
@@ -316,6 +335,13 @@ func (s *Screens) demand(item session.Session, until, now time.Time) {
 	}
 	watch := s.watches[item.ID]
 	if watch == nil {
+		if live := s.liveWatchesLocked(now); live >= ScreenWatches {
+			s.mu.Unlock()
+			// Once per refusal rather than once per read: the page renews
+			// twice a lease, and a log nobody can read past is its own denial.
+			s.refuseWatch(item.ID, live)
+			return
+		}
 		watch = &screenWatch{revision: ScreenUnreadable}
 		s.watches[item.ID] = watch
 	}
@@ -334,6 +360,31 @@ func (s *Screens) demand(item session.Session, until, now time.Time) {
 	if wantSignal {
 		s.signal.Attach(item.ID)
 	}
+}
+
+// liveWatchesLocked is how many leases have not run out yet. Counted rather
+// than trusted to the sweep, which runs every ScreenSweep and not on demand.
+func (s *Screens) liveWatchesLocked(now time.Time) int {
+	live := 0
+	for _, watch := range s.watches {
+		if watch.until.After(now) {
+			live++
+		}
+	}
+	return live
+}
+
+// refuseWatch says once that this machine is watching as many screens as it
+// will. It is rate-limited to one line a minute per daemon, because the caller
+// that provoked it is the one that would otherwise choose how big the log is.
+func (s *Screens) refuseWatch(id string, live int) {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	if time.Since(s.watchSaid) < time.Minute {
+		return
+	}
+	s.watchSaid = time.Now()
+	log.Printf("live screens: already watching %d screens; %s is not being attached", live, id)
 }
 
 // shouldCaptureOnRead is whether reading should itself start a capture.

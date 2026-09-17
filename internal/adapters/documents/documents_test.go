@@ -1,6 +1,7 @@
 package documents
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,7 @@ func fixture(t *testing.T) (dir, root string) {
 	write(t, filepath.Join(root, ".hidden.md"), "hidden")
 	write(t, filepath.Join(root, "program.html"), "<script>")
 	write(t, filepath.Join(dir, "secret.md"), "not yours")
-	return dir, ProjectRoot(dir)
+	return dir, ProjectRoot(dir, false)
 }
 
 func write(t *testing.T, path, body string) {
@@ -88,16 +89,17 @@ func TestFileRefusesASymlinkOutOfTheRoot(t *testing.T) {
 	}
 	// And the walk does not offer it either, which is the property that makes
 	// the listing safe to turn into links.
-	for _, row := range Walk(root) {
+	for _, row := range Walk(context.Background(), root) {
 		if row.Path == "escape.md" {
 			t.Fatal("the listing offered a document the read refuses")
 		}
 	}
 }
 
-// A symlinked root is followed on purpose — a person saying "my documents live
+// A symlinked root is followed when this machine has asked for that, which is
+// the app being replicated's own behaviour — a person saying "my documents live
 // over there" — and everything under what it resolves to is then inside.
-func TestProjectRootFollowsItsSymlink(t *testing.T) {
+func TestProjectRootFollowsItsSymlinkWhenAsked(t *testing.T) {
 	dir := t.TempDir()
 	elsewhere := filepath.Join(dir, "elsewhere")
 	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
@@ -111,12 +113,47 @@ func TestProjectRootFollowsItsSymlink(t *testing.T) {
 	if err := os.Symlink(elsewhere, filepath.Join(home, "artifacts")); err != nil {
 		t.Skipf("no symlinks here: %v", err)
 	}
-	root := ProjectRoot(home)
+	root := ProjectRoot(home, false)
 	if root == "" {
 		t.Fatal("a symlinked project root was not followed")
 	}
 	if _, err := File(root, "notes.md"); err != nil {
 		t.Fatalf("notes.md under the followed root: %v", err)
+	}
+	// And the machine that would rather lose the symlink says so, once.
+	if root := ProjectRoot(home, true); root != "" {
+		t.Fatalf("a contained project root left the session's directory: %q", root)
+	}
+}
+
+// The floor under a followed root: a symlink may say where this project's
+// documents are and may not say "everything above you". `ln -s ~ artifacts`
+// in a session's working directory is the finding this pins (reviewer task
+// 2315c043, F11) — one line an agent working in that directory could write,
+// after which every document under a home directory is readable by a device
+// that may only read.
+func TestProjectRootRefusesARootThatHoldsTheAsker(t *testing.T) {
+	dir := t.TempDir()
+	inside := filepath.Join(dir, "deep", "session")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(dir, filepath.Join(inside, "artifacts")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	if root := ProjectRoot(inside, false); root != "" {
+		t.Fatalf("a project root above the session was followed: %q", root)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return
+	}
+	elsewhere := t.TempDir()
+	if err := os.Symlink(home, filepath.Join(elsewhere, "artifacts")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	if root := ProjectRoot(elsewhere, false); root != "" {
+		t.Fatalf("a project root at the home directory was followed: %q", root)
 	}
 }
 
@@ -140,7 +177,7 @@ func TestTaskRootRefusesASymlinkOutOfTheTaskDirectory(t *testing.T) {
 	}
 	// The same directory, asked for as a project, is followed — which is the
 	// whole of the difference between the two calls.
-	if root := ProjectRoot(task); root == "" {
+	if root := ProjectRoot(task, false); root == "" {
 		t.Fatal("the project root stopped following its symlink")
 	}
 }
@@ -174,7 +211,7 @@ func TestFileRefusesSomethingTooLarge(t *testing.T) {
 // makes a row safe to turn into a link, and it is checked rather than assumed.
 func TestWalkOffersOnlyWhatTheReadServes(t *testing.T) {
 	_, root := fixture(t)
-	found := Walk(root)
+	found := Walk(context.Background(), root)
 	if len(found) != 3 {
 		t.Fatalf("expected the three readable documents, got %d: %v", len(found), found)
 	}

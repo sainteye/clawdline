@@ -180,7 +180,14 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 			writeAuthRefusal(w, http.StatusForbidden, "forbidden", msg)
 			return
 		}
-		p := cleanPath(r.URL.Path)
+		// And before that again: a path that two readers can read as two
+		// different routes is refused here, whoever is asking. See readable
+		// path below — this is the clause the `%2F` bypass walked through.
+		if !readablePath(r.URL.EscapedPath()) {
+			writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "Could not read that request")
+			return
+		}
+		p := routePath(r)
 		machine := machineScoped(p) && g.verifyMachine(r.Header.Get(machineHeader))
 		verdict := g.permission(r)
 		if !openPath(p) && !machine && !taskSecretRoute(r.Method, p) && !verdict.Allowed {
@@ -545,6 +552,61 @@ func stripCredentials(r *http.Request) {
 	if len(kept) > 0 {
 		r.Header.Set("Cookie", strings.Join(kept, "; "))
 	}
+}
+
+// routePath is the one string every decision about a request's route is made
+// on, at the gate and behind it: **the string `http.ServeMux` dispatches by**.
+//
+// That is `EscapedPath` — the path as the caller wrote it, percent-encoding
+// and all — cleaned of dot segments, which is what net/http's `findHandler`
+// matches patterns against (`server.go`: `path = cleanPath(escapedPath)`, and
+// `routing_tree.go` compares the segments of that string).
+//
+// The gate used to decide on `r.URL.Path`, and those are not the same string.
+// net/http has already decoded that one, so `%2F` is a separator in it and a
+// character in the mux's — and
+// `/v1/sessions/..%2F..%2Fv1%2Fauth%2Fx/git` read as `/v1/auth/x/git` here,
+// which is on the open list, while the mux still read one session id and ran
+// the session's handler. No token, and `/git` and `/info` take a full reading
+// of the machine (ps, tmux, osascript) before they look anything up. The Swift
+// app never had that gap because its `request.path` is the raw target and its
+// router switches on the same string; this is that property, stated.
+//
+// Anything that needs a *name* out of the path — a session id, a place id —
+// splits this string first and decodes one segment, which is what
+// `decodeSegment` is for. The whole path is never decoded and then split: that
+// order is the bug.
+func routePath(r *http.Request) string { return cleanPath(r.URL.EscapedPath()) }
+
+// readablePath reports whether every segment of a path names one thing.
+//
+// The rule, rather than the spelling that was caught: **a path segment is a
+// name, and a name holds no separator.** So a segment is refused when it does
+// not decode at all, when what it decodes to is `.` or `..`, and when what it
+// decodes to holds a separator — `/`, `\` on the platforms where that is one,
+// or NUL, which ends a name inside every system call underneath this. That
+// covers `%2F` and `%2f`, `%2e%2e`, a literal `..`, and any later spelling of
+// the same idea, because it asks what the segment *means* rather than how it
+// was typed.
+//
+// It is deliberately in front of authentication: a request nobody can read one
+// way should not first be judged as though everybody agreed what it said. The
+// answer is the Swift app's own refusal for a request it could not read
+// (`RemoteServer.response(for:)`, `.badRequest`).
+//
+// Empty segments are not refused: a trailing slash makes one, and `cleanPath`
+// resolves repeated slashes the way the mux does.
+func readablePath(escaped string) bool {
+	for _, segment := range strings.Split(escaped, "/") {
+		name, err := url.PathUnescape(segment)
+		if err != nil {
+			return false
+		}
+		if name == "." || name == ".." || strings.ContainsAny(name, `/\`+"\x00") {
+			return false
+		}
+	}
+	return true
 }
 
 // cleanPath is the path the decision is made on: dot segments and repeated

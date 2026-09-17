@@ -129,7 +129,7 @@ func writePlaceRefusal(w http.ResponseWriter, status int, code, message, app str
 
 // placeRoute answers everything under /v1/places/.
 func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
-	raw := strings.TrimPrefix(r.URL.EscapedPath(), "/v1/places/")
+	raw := strings.TrimPrefix(routePath(r), "/v1/places/")
 	var parts []string
 	for _, p := range strings.Split(raw, "/") {
 		v, err := url.PathUnescape(p)
@@ -201,11 +201,27 @@ func (s *Server) writing(w http.ResponseWriter, r *http.Request, body func(http.
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "That needs an Idempotency-Key header.")
 		return
 	}
-	entry, owner := replays.claim(accessOf(r).verdict.Device + "\x00" + key)
+	// **The key names one request, and a request is a method and a route.**
+	// A key is the caller's word for "this thing I am asking for once"; the
+	// same word for `POST /v1/places/A/start` and for
+	// `POST /v1/places/B/resume/<id>` is two different askings, and answering
+	// the second with the first's body is a session that never opened
+	// reported as one that did. The voice route binds its own key the same
+	// way (voice.go).
+	entry, owner := replays.claim(accessOf(r).verdict.Device + "\x00" + r.Method + "\x00" + routePath(r) + "\x00" + key)
 	if !owner {
 		select {
 		case <-entry.done:
 		case <-r.Context().Done():
+			return
+		}
+		if entry.status == 0 {
+			// The request holding this key went away before it answered —
+			// queued for the one opening slot, and its caller left. Nothing
+			// happened under this key, so this one is told what a full queue
+			// is told rather than being handed an answer nobody wrote.
+			writePlaceRefusal(w, http.StatusTooManyRequests, "terminal_busy",
+				"Other sessions are already being opened on this machine; try again shortly.", "")
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -216,8 +232,16 @@ func (s *Server) writing(w http.ResponseWriter, r *http.Request, body func(http.
 	rec := &recorder{header: http.Header{}}
 	func() {
 		defer func() {
+			// Nothing was written at all. That is not a failed request, it is
+			// a request whose caller went away while it queued (admitOpening
+			// returns without writing when the context ends), so there is no
+			// answer to file. Filing the 500 this used to invent left the same
+			// key reading that 500 for ten minutes, for a start that had never
+			// been attempted.
 			if rec.status == 0 {
-				rec.status = http.StatusInternalServerError
+				replays.forget(entry)
+				close(entry.done)
+				return
 			}
 			entry.status, entry.body, entry.at = rec.status, rec.body.Bytes(), time.Now()
 			close(entry.done)
@@ -229,6 +253,10 @@ func (s *Server) writing(w http.ResponseWriter, r *http.Request, body func(http.
 		}()
 		body(rec)
 	}()
+	if rec.status == 0 {
+		// Nobody is waiting for this answer and there is none to give.
+		return
+	}
 	for k, vs := range rec.header {
 		w.Header()[k] = vs
 	}
@@ -465,6 +493,12 @@ func writeStartRefusal(w http.ResponseWriter, err error) string {
 		writePlaceRefusal(w, refusal.Status, refusal.Code, refusal.Message, refusal.App)
 		return refusal.Code
 	}
-	writePlaceRefusal(w, http.StatusInternalServerError, "internal", err.Error(), "")
+	// Not `err.Error()`. Everything typed has already been answered above;
+	// what is left is this daemon's own plumbing, whose words are file paths,
+	// command lines and library sentences. The machine's log is where a person
+	// diagnoses that, and it is the one place with nobody else reading.
+	log.Printf("start: refused: %v", err)
+	writePlaceRefusal(w, http.StatusInternalServerError, "internal",
+		"This Mac could not open that session.", "")
 	return "internal"
 }

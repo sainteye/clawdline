@@ -49,7 +49,9 @@ func (s *Server) imageRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "an image is read with GET")
 		return
 	}
-	id := strings.TrimPrefix(r.URL.Path, "/v1/artifacts/images/")
+	// One segment, split off the routed string and decoded once (routePath,
+	// gate.go): an image id is a name, never a path.
+	id := decodeSegment(strings.TrimPrefix(routePath(r), "/v1/artifacts/images/"))
 	if id == "" || strings.Contains(id, "/") {
 		writeRefusal(w, http.StatusNotFound, "artifact_not_found", "No image artifact named that.")
 		return

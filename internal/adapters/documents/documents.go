@@ -21,6 +21,7 @@
 package documents
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -130,15 +131,63 @@ func IsInside(path, base string) bool {
 	return strings.HasPrefix(path, base)
 }
 
-// ProjectRoot is the project's root: `<session cwd>/artifacts`, **with its
-// symlink followed**, settled before a caller's string is looked at. The empty
+// ProjectRoot is the project's root: `<session cwd>/artifacts`. The empty
 // string when there is no such directory, which is the ordinary case.
 //
-// Following it is the point. A person put that symlink there to say "my
-// documents live over there", so what it resolves to *becomes* the root and
-// containment is judged against that.
-func ProjectRoot(directory string) string {
-	return root(directory, "")
+// **The symlink is followed, and there is a floor under it.** The app being
+// replicated follows it unconditionally (`ProjectArtifact.projectRoot`, "with
+// its symlink followed") and its reasoning is written down: a person put that
+// symlink there to say "my documents live over there", so what it resolves to
+// becomes the root. That is a real arrangement on this machine —
+// `~/code/clawdline/artifacts -> ../clawdline-cloud/artifacts`, and the
+// documents page reads 101 rows through it — so following stays the default.
+//
+// What does not hold here is the assumption underneath it, that a person is
+// the only one writing in a session's working directory: this daemon dispatches
+// agents that work in those directories, and `ln -s ~ artifacts` would hand
+// every `.md`, `.markdown` and `.txt` within `MaximumDepth` of a home
+// directory to any paired device that may only read. So the floor: **a project
+// root may point elsewhere, but not at somewhere that contains the person
+// asking.** A directory that holds the home directory, the session's own
+// working directory, or the whole filesystem is not "this project's
+// documents", it is everything, and it is refused in both modes.
+//
+// `contain` is the stricter rule — the enclosure `TaskRoot` applies, where the
+// resolved root must still be inside the directory it was named from — and it
+// is what `documents_contain_project_root: true` in this daemon's own
+// `config.json` asks for, on a machine that would rather lose the symlink than
+// trust it.
+func ProjectRoot(directory string, contain bool) string {
+	if contain {
+		return root(directory, directory)
+	}
+	path := root(directory, "")
+	if path == "" || holdsTheAsker(path, directory) {
+		return ""
+	}
+	return path
+}
+
+// holdsTheAsker is the floor under a followed project root: whether what it
+// resolved to contains the session's own working directory, the home
+// directory, or is the filesystem root.
+func holdsTheAsker(path, directory string) bool {
+	if path == "" {
+		return true
+	}
+	if filepath.Dir(path) == path {
+		return true
+	}
+	if IsInside(ResolvedPath(directory), path) {
+		return true
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		resolvedHome := ResolvedPath(home)
+		if path == resolvedHome || IsInside(resolvedHome, path) {
+			return true
+		}
+	}
+	return false
 }
 
 // TaskRoot is a task's root: `<task directory>/artifacts`, and **a symlink that
@@ -271,7 +320,14 @@ func MediaType(path string) string {
 // direction is deliberately false: past `MaximumListed` the rows are cut while
 // the documents behind them stay readable, so a page that draws this list is
 // drawing a menu, and a menu is allowed to be shorter than the kitchen.
-func Walk(root string) []Document {
+//
+// **It takes the caller's context because it is somebody's request.** One
+// listing is up to `MaximumTasksListed` roots of `MaximumWalked` entries, and
+// every entry costs a `ResolvedPath` — an `EvalSymlinks`, which is a syscall
+// per component. Without the context that whole walk carried on after the
+// phone that asked had closed the tab, on the request's own goroutine, and the
+// answer went nowhere. Now it stops where the request stopped.
+func Walk(ctx context.Context, root string) []Document {
 	if root == "" {
 		return nil
 	}
@@ -294,6 +350,9 @@ func Walk(root string) []Document {
 		}
 		if path == base {
 			return nil
+		}
+		if ctx.Err() != nil {
+			return stop
 		}
 		// `.skipsHiddenFiles`, which in the original skips hidden directories
 		// whole as well.

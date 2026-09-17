@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/sainteye/clawdline-go/internal/app"
@@ -17,9 +18,26 @@ import (
 // well-formed key still tells you whether a session exists — but because the
 // allowlist is what this route is for, and a check that runs after two other
 // steps is a check somebody will later move.
+// keyBodyLimit is what one key weighs. `{"key":"shift+tab"}` is twenty bytes;
+// four kilobytes is room for a body somebody wrote by hand and nothing else.
+//
+// Every other body on this daemon is bounded — `/send` at the Swift server's
+// twenty megabytes (actions.go), `/voice` at its own (voice.go), `/v1/settings`
+// at 64 KiB — and this one was not, so `{"key":"<a few hundred megabytes>"}`
+// was read into memory before the allowlist below ever looked at it. The
+// server sets no `ReadTimeout` either, so it was read slowly if the caller
+// liked. It needs send, which is exactly what a phone answering a menu has.
+const keyBodyLimit = 4 << 10
+
 func (s *Server) sessionKey(ctx context.Context, w http.ResponseWriter, r *http.Request, id string) {
 	var body contract.KeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, keyBodyLimit)).Decode(&body); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeRefusal(w, http.StatusRequestEntityTooLarge, "too_large",
+				"That is larger than one key. A key is \"1\"…\"9\", \"tab\", \"shift+tab\" or \"submit\".")
+			return
+		}
 		writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a key")
 		return
 	}

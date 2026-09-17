@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/documents"
+	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/contract"
 )
@@ -110,7 +111,7 @@ func (s *Server) documentsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	switch decoded[0] {
 	case "project":
-		s.serveDocument(w, documents.ProjectRoot(cwd), strings.Join(decoded[1:], "/"))
+		s.serveDocument(w, documents.ProjectRoot(cwd, s.containsProjectRoot()), strings.Join(decoded[1:], "/"))
 	case "task":
 		if len(decoded) < 3 {
 			documentRefusal(w, documents.NotFound)
@@ -125,6 +126,25 @@ func (s *Server) documentsRoute(w http.ResponseWriter, r *http.Request) {
 	default:
 		documentRefusal(w, documents.NotFound)
 	}
+}
+
+// containsProjectRoot is whether `<session cwd>/artifacts -> elsewhere` must
+// stay inside the session's own directory (documents.ProjectRoot).
+//
+// Off by default, which is the behaviour of the app being replicated and the
+// one this machine's own checkouts rely on; on, a project root that leaves the
+// session's directory is no root at all. Read per request rather than at
+// startup, so turning it on is a file edit and not a restart. It is this
+// daemon's setting and not the console's: the wire carries no such field in
+// the app being replicated, and a switch over what a paired device may read
+// should not be reachable from a paired device.
+func (s *Server) containsProjectRoot() bool {
+	v, err := nextconfig.Open(s.cfg.Dir).Read()
+	if err != nil {
+		return false
+	}
+	on, ok := v.Bool("documents_contain_project_root")
+	return ok && on
 }
 
 // decodeSegment percent-decodes one path segment, keeping the spelling as
@@ -202,14 +222,14 @@ func (s *Server) documentsPayload(ctx context.Context, cwd, sessionID string) []
 			})
 		}
 	}
-	rows(documents.Walk(documents.ProjectRoot(cwd)), "project", "project", nil)
+	rows(documents.Walk(ctx, documents.ProjectRoot(cwd, s.containsProjectRoot())), "project", "project", nil)
 	for _, record := range s.documentTaskRecords(ctx, cwd) {
 		root := documents.TaskRoot(record.Dir)
 		if root == "" {
 			continue
 		}
 		task := contract.DocumentTask{ID: record.ID, Title: record.Title}
-		rows(documents.Walk(root), "task/"+documents.Escaped(record.ID), "task", &task)
+		rows(documents.Walk(ctx, root), "task/"+documents.Escaped(record.ID), "task", &task)
 	}
 	if len(out) > documents.MaximumListed {
 		out = out[:documents.MaximumListed]

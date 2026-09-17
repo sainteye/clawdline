@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/contract"
@@ -15,15 +14,7 @@ import (
 // somebody's machine moves their keyboard: it is not a read, and a device that
 // may only read may not do it.
 func focusPath(r *http.Request) (string, bool) {
-	if r.Method != http.MethodPost {
-		return "", false
-	}
-	rest, ok := strings.CutPrefix(r.URL.Path, "/v1/sessions/")
-	if !ok {
-		return "", false
-	}
-	id, ok := strings.CutSuffix(rest, "/focus")
-	return id, ok && id != ""
+	return sessionVerbIs(r, "focus", http.MethodPost)
 }
 
 // sessionFocusRoute brings one session's terminal to the front.

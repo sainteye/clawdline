@@ -8,6 +8,7 @@ import {
   type DocumentsPage,
   type DocumentsRequest,
 } from "../legacy/documents-bridge.js"
+import { requestPage } from "../overlays/index.js"
 import sectionMarkup from "./documents/section.html?raw"
 
 /**
@@ -112,23 +113,26 @@ function DocumentsPageView({ shown }: { shown: boolean }) {
 }
 
 /**
- * The page router, as the drawer moves: its row for that page, clicked.
+ * The page router: `main.js`'s own `navigate` for this module, which is
+ * `Pages.go(name, { hash: false })` — the page moves and the address is not
+ * written.
+ *
+ * ```js
+ * navigate: function (name, options) {
+ *     return Pages.go(name, name === "documents" ? { hash: false } : options);
+ * }
+ * ```
  *
  * Documents has no drawer row — it has none in the original either, where it is
- * reached from the session menu and from a document address — so the address is
- * how this page is asked for. `App`'s router follows `#page=` on every change
- * and switches without writing it back, which is `Pages.go(name, {hash:false})`
- * arriving the other way round.
+ * reached from the session menu and from a document address. This used to reach
+ * `App`'s router the other way round, by writing `#page=documents` and letting
+ * the `hashchange` arrive; on a phone that never worked, because the write is a
+ * same-document navigation, the `popstate` it fires is the back gesture, and
+ * the detail closing behind it replaced the address before anybody read it. So
+ * the page is asked for directly, as it is there.
  */
 function navigate(name: string): void {
-  const row = document.querySelector<HTMLButtonElement>(`#sidebar [data-page-to="${name}"]`)
-  if (row && !row.disabled) {
-    row.click()
-    return
-  }
-  const wanted = "#page=" + encodeURIComponent(name)
-  if (location.hash === wanted) return
-  location.hash = wanted
+  requestPage({ page: name, hash: false })
 }
 
 export const page: PageModule = { id: "documents", Component: DocumentsPageView }

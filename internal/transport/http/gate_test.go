@@ -288,3 +288,113 @@ func TestHealthAndDiagnostics(t *testing.T) {
 		}
 	}
 }
+
+// One path, read one way — the gate and the mux, and every decision either of
+// them makes.
+//
+// The bypass this pins was real on 2026-09-18 (reviewer task 2315c043): the
+// gate decided on `r.URL.Path`, which net/http had already percent-decoded, so
+// `/v1/sessions/..%2F..%2Fv1%2Fauth%2Fx/git` read as `/v1/auth/x/git` — on the
+// open list — while `http.ServeMux` matched the same request against
+// `/v1/sessions/` and ran the session handler. No token at all, and `/git` and
+// `/info` read the whole machine (ps, tmux, osascript) before looking anything
+// up. A second spelling of the same fault was found while fixing it: with four
+// `../` a documents path cleaned to `/v1/health` at the gate while
+// `withDocuments`, which matches the raw path, still recognised it as the
+// documents route.
+//
+// So these are about the spelling of a path rather than about who is asking,
+// and each one is asked twice: with no credential and with a good one.
+func TestGateReadsAPathOneWay(t *testing.T) {
+	f, h := newGateFixture(t)
+	unreadable := []struct {
+		name, path string
+	}{
+		{"the reviewer's /git", "/v1/sessions/..%2F..%2Fv1%2Fauth%2Fx/git"},
+		{"the reviewer's /info", "/v1/sessions/..%2F..%2Fv1%2Fauth%2Fx/info"},
+		{"the reviewer's /places", "/v1/places/..%2F..%2Fv1%2Fauth%2Fx/sessions"},
+		{"the reviewer's /documents", "/v1/sessions/..%2F..%2Fv1%2Fauth%2Fx/documents/project/notes.md"},
+		{"lowercase %2f", "/v1/sessions/..%2f..%2fv1%2fauth%2fx/git"},
+		{"the dots encoded too", "/v1/sessions/%2e%2e%2F%2e%2e%2Fv1%2Fauth%2Fx/git"},
+		{"a bare encoded separator", "/v1/sessions/a%2Fb/git"},
+		{"out of the open list with dots", "/v1/auth/x/..%2F..%2Fv1%2Fsessions"},
+		{"the documents matcher's own spelling", "/v1/sessions/%25798/documents/../../../../v1/health"},
+		{"a literal dot segment", "/v1/sessions/./%25798/git"},
+		{"a backslash in a name", "/v1/sessions/a%5Cb/git"},
+		{"a NUL in a name", "/v1/sessions/a%00b/git"},
+	}
+	for _, tc := range unreadable {
+		for _, who := range []struct {
+			name    string
+			headers map[string]string
+		}{
+			{"no credential", nil},
+			{"a good token", map[string]string{"Authorization": "Bearer " + f.local}},
+		} {
+			rec := call{method: http.MethodGet, path: tc.path, headers: who.headers}.do(h)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("%s (%s): status %d, want 400", tc.name, who.name, rec.Code)
+			}
+			if strings.Contains(rec.Body.String(), "reached") {
+				t.Errorf("%s (%s): reached the handler", tc.name, who.name)
+			}
+		}
+	}
+
+	// And the other half of the same rule: an ordinary spelling is answered as
+	// it always was, including the percent sign in a tmux pane's name.
+	for _, tc := range []struct {
+		name, path string
+		headers    map[string]string
+		want       int
+	}{
+		{"a pane id, no credential", "/v1/sessions/%25798/git", nil, 401},
+		{"a pane id, a token", "/v1/sessions/%25798/git",
+			map[string]string{"Authorization": "Bearer " + f.read}, 200},
+		{"a place, a token", "/v1/places/470885724e5330e1/sessions",
+			map[string]string{"Authorization": "Bearer " + f.read}, 200},
+		{"documents, a token", "/v1/sessions/%25798/documents/project/notes.md",
+			map[string]string{"Authorization": "Bearer " + f.read}, 200},
+		{"the open page", "/v1/health", nil, 200},
+		{"the door", "/v1/auth/open", nil, 200},
+		{"the bundle", "/assets/index-abc123.js", nil, 200},
+		{"the strings", "/strings/zh-Hant.json", nil, 200},
+		{"a project's worktrees, the orchestrator's token",
+			"/v1/projects/project-470885724e5330e17b907e43/worktrees",
+			map[string]string{machineHeader: f.machine}, 200},
+	} {
+		rec := call{method: http.MethodGet, path: tc.path, headers: tc.headers}.do(h)
+		if rec.Code != tc.want {
+			t.Errorf("%s: status %d, want %d (%s)", tc.name, rec.Code, tc.want, rec.Body.String())
+		}
+	}
+}
+
+// readablePath states the rule rather than the spellings above, so it is worth
+// its own table: a segment is a name, and a name holds no separator.
+func TestReadablePath(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{"/", true},
+		{"/v1/health", true},
+		{"/v1/sessions/%25798/git", true},
+		{"/v1/auth/", true},
+		{"/v1/projects/project-abc/worktrees", true},
+		{"/assets/index-a.b.c.js", true},
+		{"/v1/sessions/a.b/git", true},
+		{"/v1/sessions/..%2F../git", false},
+		{"/v1/sessions/%2f/git", false},
+		{"/v1/sessions/%2E%2E/git", false},
+		{"/v1/sessions/../git", false},
+		{"/v1/sessions/./git", false},
+		{"/v1/sessions/a%5Cb/git", false},
+		{"/v1/sessions/a%00b/git", false},
+		{"/v1/sessions/%zz/git", false},
+	} {
+		if got := readablePath(tc.path); got != tc.want {
+			t.Errorf("readablePath(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}

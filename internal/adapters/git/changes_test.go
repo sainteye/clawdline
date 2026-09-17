@@ -259,3 +259,100 @@ func keys(m map[string]numstat) []string {
 	}
 	return out
 }
+
+// **A reading of somebody's repository runs git, and nothing that repository
+// asked to have run.**
+//
+// `core.fsmonitor` names a program and `git status` runs it — twice per read,
+// measured here on git 2.38.1 — and `.git/config` is a file anything working in
+// that directory can write. The Git panel is opened by a device that may only
+// read, on a working directory that on this machine is often a checkout an
+// agent made an hour ago (reviewer task 2315c043, F4). So the settings that
+// name a program are turned off on the command line, where they outrank the
+// repository's own config.
+//
+// The marker is what the planted program would leave behind. The test asserts
+// there is none, and that the reading still answers.
+func TestChangesRunsNothingTheRepositoryNames(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on PATH")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "it-ran")
+	hostile := filepath.Join(dir, "hostile.sh")
+	if err := os.WriteFile(hostile, []byte("#!/bin/sh\necho ran >> \""+marker+"\"\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(dir, "repo")
+	if err := os.Mkdir(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(dir, "nonexistent-gitconfig"),
+			"GIT_CONFIG_SYSTEM="+filepath.Join(dir, "nonexistent-gitconfig"),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.invalid",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.invalid")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "trunk")
+	if err := os.WriteFile(filepath.Join(repo, "kept.txt"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "kept.txt")
+	run("commit", "-qm", "first")
+	if err := os.WriteFile(filepath.Join(repo, "kept.txt"), []byte("one\ntwo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Everything this repository can say that names a program.
+	run("config", "core.fsmonitor", hostile)
+	run("config", "diff.external", hostile+" external")
+	run("config", "diff.evil.textconv", hostile+" textconv")
+	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("kept.txt diff=evil\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := New().Changes(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("Changes: %v", err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		body, _ := os.ReadFile(marker)
+		t.Fatalf("the repository's own program was run by a reading of it: %s", body)
+	}
+	if len(got.Files) == 0 {
+		t.Errorf("the reading answered nothing: %+v", got)
+	}
+}
+
+// The sink under one command's stdout: what fits is kept, and the moment there
+// is more than that the reading says so instead of parsing half a line as a
+// whole one. `git status --porcelain=v2` in a home directory is hundreds of
+// megabytes, and `cmd.Output()` grew a buffer for all of it (F5).
+func TestCappedRefusesMoreThanItHolds(t *testing.T) {
+	c := &capped{limit: 8}
+	if n, err := c.Write([]byte("12345")); n != 5 || err != nil {
+		t.Fatalf("Write(5) = %d, %v", n, err)
+	}
+	if c.over {
+		t.Fatal("five bytes did not fit in eight")
+	}
+	if _, err := c.Write([]byte("67890")); err == nil {
+		t.Fatal("the ninth byte was accepted")
+	}
+	if !c.over {
+		t.Fatal("over was not recorded")
+	}
+	// A writer that keeps being written to does not panic or grow.
+	if _, err := c.Write([]byte("more")); err != nil {
+		t.Fatalf("a second write after the limit: %v", err)
+	}
+	if c.String() != "12345" {
+		t.Fatalf("kept %q", c.String())
+	}
+}
