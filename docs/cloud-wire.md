@@ -660,13 +660,103 @@ relay 的 `delivered` 只證明 fan-out 送出去了，不證明機器執行或�
 `project-worktree-lifecycle`(-refresh)、`past-sessions`、`schedules`、`snippets`、`schedule`、
 `push-key`。
 
-Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一波一種都不做。**
+Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一波（地基）一種都不做**；第三階段接了
+17 種、對 10 種回具名的拒絕，逐項在 §10.5。
 
 ### 10.4 派工就是 task.json
 
 遠端派工的加密載荷帶的就是本機 orchestrator 已經在講的 wire format：**task.json 就是協定**。
 收到的 Mac 用它自己的 claims、serialize、depth、capacity 與 dispatch policy 檢查，跟本機建立的任務
 一模一樣，並在同一條通道上用同樣的 typed error 回答（PROTOCOL.md:262-270）。
+
+### 10.5 Go 端怎麼接（2026-09-18 量到的）
+
+第三階段把 27 種操作接到這個 daemon 已有的本機路由上。**這一節只寫量到的事實**：路由存不存在是
+2026-09-18 對 `http://127.0.0.1:7727` 用本機 token 發真的請求量的（寫入類只用不存在的 session id
+`nope` 與會在找 session 之前就被擋下的 body，沒有碰任何真的 session）。
+
+程式在 `internal/app/cloudops/`（詞彙、嚴格解碼、權限、路由對照、回應組裝）與
+`internal/transport/cloud/`（傳輸接縫、假傳輸、in-process router）。`internal/adapters/cloud/`
+是另一條線的，這一波沒有碰。
+
+| 操作 | 類別 | 這個 daemon 的路由 | 量到的回應 | 狀態 |
+|---|---|---|---|---|
+| `transcript` | read | `GET /v1/transcript?session&limit` | 409 `session_unknown` | 接上（`priority` 收下不用） |
+| `info` | read | `GET /v1/sessions/{id}/info` | 409 `session_unknown` | 接上（`parts` 兩半同一個 body） |
+| `git` | read | `GET /v1/sessions/{id}/git` | 409 `session_unknown` | 接上 |
+| `screen` | read | `GET /v1/sessions/{id}/screen` | 409 `session_unknown` | 接上 |
+| `image` | read | `GET /v1/artifacts/images/{id}` | 404 `artifact_not_found` | 接上（PNG → base64） |
+| `documents` | read | `GET /v1/sessions/{id}/documents` | 404 `document_not_found` | 接上（清單去掉本機網址） |
+| `document` | read | `GET /v1/sessions/{id}/documents/{scope}[/{task}]/{path}` | 404 `document_not_found` | 接上（只送 inert UTF-8） |
+| `places` | read | `GET /v1/places` | 200 | 接上 |
+| `schedules` | read | `GET /v1/orchestrator/schedules` | 200 | 接上 |
+| `board` | read | `GET /v1/board` | 200 | 接上，**但 body 形狀不同**（見下） |
+| `send` | command | `POST /v1/sessions/{id}/send` | 400 `empty_text` | 接上 |
+| `answer`（與別名 `key`） | command | `POST /v1/sessions/{id}/key` | 400 `bad_request` | 接上 |
+| `end` | command | `POST /v1/sessions/{id}/close` | 409 `session_unknown` | 接上，**CAS 沒有比對**（見下） |
+| `focus` | command | `POST /v1/sessions/{id}/focus` | 409 `session_unknown` | 接上 |
+| `start` | command | `POST /v1/places/{place}/start[/{assistant}[/{model}]]` | 沒實測（會真的開 session） | 接上，路由由 `start.go` 讀出 |
+| `resume` | command | `POST /v1/places/{place}/resume/[{assistant}/]{past}` | 沒實測（同上） | 接上，路由由 `start.go` 讀出 |
+| `voice` | command | `POST /v1/voice` | 400 `bad_request`（rate） | 接上 |
+| `agent` | read | — | `GET …/agents/{id}` 405 | 回 `unknown_command` |
+| `shell` | read | — | `GET …/shells/{id}` 405 | 回 `unknown_command` |
+| `skills` | read | — | `GET …/skills` 405 | 回 `unknown_command` |
+| `board.items` | read | — | 本機沒有卡片模型 | 回 `unknown_command` |
+| `timeline` | read | — | `GET /v1/timeline` 501 | 回 `unknown_command` |
+| `snippets` | read | — | `GET /v1/snippets` 501 | 回 `unknown_command` |
+| `schedule` | read | — | `GET /v1/orchestrator/schedules/{id}` 501 | 回 `unknown_command` |
+| `diagnostics.report` | read-level command | — | 沒有這條路由 | 回 `unknown_command` |
+| `diagnostics.events` | read-level command | — | 沒有這條路由 | 回 `unknown_command` |
+| `dispatch` | command | （有 `POST /v1/orchestrator/tasks`） | — | 回 `cloud_dispatch_unpinned` 409，照舊版 |
+
+**為什麼「沒有本機能力」是回 `unknown_command`。** 舊 app 27 種全都有，所以它只在 `default:` 用這個碼。
+但這正是 hosted console 會學的那一個：`net/cloud-client.js` 的 `_settleRead` 看到 `unknown_command`
+就把這個字記進 `machineLacks`，之後不再問這台機器（`_unsupportedRefusal` 回
+`cloud_feature_unavailable`）。所以回這個碼＝這台 Mac 老實說「我不會」，而不是沉默或超時。
+唯一與舊版不同的地方：舊版那個分支是「連 body 形狀都不知道」，所以只能發 notice；這裡的字是**知道形狀的**，
+所以先照它自己的規則解碼，再把拒絕發在這個 read 自己的 `(session, name)` 上，等的人才收得到。
+
+**`dispatch` 照舊版拒絕。** 這個 daemon 有 `POST /v1/orchestrator/tasks`，但 hosted console 只送
+`{task}`，本機 broker 要的是 materialized `task.json` 加 task id 與 secret，沒有任何 pinned wire shape
+說這些怎麼帶、那個檔案可以寫到哪裡。舊版為此回 409 `cloud_dispatch_unpinned`，這裡一字不改。
+
+**兩個「接上了但答案不一樣」的地方**（`cloudops.Divergences()` 會把它們列出來，接線的人在決定要對外
+advertise 哪些字時讀得到）：
+
+1. `board`：這個 daemon 的 `/v1/board` 是「從現在跑著的 session 推出來的 projects 快照」
+   （`{schema_version, revision, projects, source, at}`），舊版是 `{"board": {items, revision, …}}`。
+   兩邊回答的不是同一個問題。**在 Go 的 board 對齊之前，不要把 `board` 放進對外宣告的 `commands`**；
+   要改成一律拒絕的話，`internal/app/cloudops/ops.go` 裡把 `board` 的 `route` 拿掉就會變
+   `unknown_command`，是一行。
+2. `end`：`expected_closeability_version` 有帶過去，`POST /v1/sessions/{id}/close` **沒有比對它**
+   （`contract.CloseRequest` 只有 `force`）。route 自己的 obligation 檢查照跑，所以不是沒有守門，
+   但 viewer 以為的「拿我看到的那一版做 compare-and-swap」在這裡不成立。要補要動
+   `internal/transport/http`（另一條線的 claims），不在這一波。
+
+其餘兩個較小的：`transcript` 的 `priority` 收下不用（這裡只有一條 lane），`info` 的 `parts` 兩半回同一個
+body（`summary` 在這裡其實是 full）。
+
+**權限。** Cloud 來的指令屬於已配對的 viewer，照舊版分三層：read 不過寫入閘門（transcript 讀不進任何東西）；
+`diagnostics.report`／`diagnostics.events` 是 read-level command（遠端寫入關掉也能送，但仍要過 roster 與時鐘）；
+其餘 command 先過機器的寫入開關（關著回 403 `cloud_commands_disabled`），解碼後在「不可回頭的那一點」
+重讀一次授權，依序回 `command_clock_uncertain` 503、`command_roster_unreadable` 503、`unknown_sender` 403、
+`cloud_commands_disabled` 403。**預設全部拒絕**：`Bridge` 的零值不允許任何 command。
+
+**回應形狀。** 這一版產生的是已上線 producer 的形狀，也就是 `t/<machine>/<session>` 上的
+`{"read": <name>, "status": <http>, "body"|"error": …}`（`CloudAppBridge.publishJSONAnswer`、
+`performRead`）。§10.2 那個九欄位的 `execution_response` 是契約包裡 `ctlr/` 回覆軌的形狀，Swift 沒有分支、
+PWA 會拒絕（§11 的 `GAP-CTLR`），所以這一波不產生它。
+
+**這個 daemon 的拒絕有兩種拼法，兩種都要讀。** gate 與 documents 回
+`{"error":{"code","message"}}`（舊版形狀），其餘多數路由回 `{"error":"<code>","detail":"<句子>"}`。
+只讀前者的話，`session_unknown` 會變成 `command_failed`，`close_blocked` 的 `reasons` 會整個掉。
+兩種都正規化，`reasons` 這類同層欄位也一起帶過去。
+
+**還沒接線。** `Bridge.Router` 的實作 `internal/transport/cloud.Router` 需要一個 `Authorize` 勾子，
+把 gate 判得出來的憑證蓋在 in-process 請求上；沒有勾子時 gate 會回 `unauthorized`，這是刻意的預設。
+誰接線誰決定「一個已配對的 cloud viewer 在這台機器上算什麼」，那個決定要寫下來，不是這個檔案去假設。
+
+---
 
 ---
 
@@ -701,6 +791,7 @@ Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一�
 | §2、§4.1、§4.2 envelope | `internal/domain/cloud/envelope.go` | `TestSealReproducesEveryPublishedEnvelope`（6 個向量的 `ct` 與 `sig` 逐位元組相同）、`TestCanonicalEnvelopeBytes`（byte_length 與 SHA-256）、`TestChannelGrammar` |
 | §4.4 ctlr reply key | 同上 | `TestControlResponseUsesTheRequestReplyKey`（master secret 開不開得了，兩個結果都讀向量自己的宣告） |
 | §5 金鑰與指紋 | `internal/domain/cloud/keys.go` | `TestDeviceKeyMatchesThePublishedSeed`、`TestFingerprintMatchesThePublishedPairingValues`（machine 與 viewer 兩個 oracle） |
+| §10.3、§10.5 27 種操作 | `internal/app/cloudops/`、`internal/transport/cloud/` | `TestEveryOperationIsAnsweredAsItself`（28 個字各一筆真形狀的指令，斷言回哪個 channel 與打哪條路由或回哪個碼）、`TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise`、`TestTheAuthorityIsRereadAtThePointOfNoReturn` |
 | §5.4 儲存 | `internal/adapters/cloudkeys/files.go` | `TestAnUnreadableSecretIsNeverAnAbsentOne`、`TestASymlinkIsNotAKeyFile`、`TestRefusesTheSwiftAppsDirectory` |
 | §6.1、§6.2 時鐘 | `internal/domain/cloud/clock.go` | `TestAdmissionOpensOnlyAfterAWholeStableWindow`、`TestEachAnomalyClosesAdmissionAndOwesCleanup`、`TestOfferDoesNotRestartALiveWindow` |
 
@@ -708,7 +799,10 @@ Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一�
 
 - recovery code（§5.3）：沒有公開向量，用獨立的 Python 實作當 oracle。
 - EpochGuard（§6.2）：沒有向量，是行為移植加表格測試。
-- replay 視窗（§6.3）、pairing（§8.3）、握手（§7.1）、指令載荷（§10）：**這一波沒有實作**。
+- replay 視窗（§6.3）、pairing（§8.3）、握手（§7.1）：**這一波沒有實作**。
+- 指令載荷（§10）：第三階段實作了（§10.5）。**沒有 byte 對照**——`vectors.json` 只有
+  `control_response` 那一筆，走的是 `ctlr/` 回覆軌（`GAP-CTLR`，還不產生），已上線 producer 的
+  `{"read","status","body"}` 形狀沒有公開向量，所以這一層是照 `CloudAppBridge.swift` 移植加表格測試。
 
 ---
 
