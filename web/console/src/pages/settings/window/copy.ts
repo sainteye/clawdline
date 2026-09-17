@@ -1,0 +1,138 @@
+/**
+ * The native settings window's words.
+ *
+ * Every line below is a property of `TraditionalChinese` in the Swift app's
+ * `Sources/Copy+Chinese.swift`, copied across under the same name. Nothing here
+ * is written fresh: a word the original does not have is a word this window
+ * does not show.
+ *
+ * **They live on this side rather than in the shell.** The five the console's
+ * settings page already needed were handed over by shell/darwin (`Copy.swift`,
+ * `settingsWordsScript`), which was right while the shell was the only thing
+ * that had them; a whole window of words held there would mean writing them
+ * again for the Linux shell and the Windows one. The shell now sends only what
+ * it alone can know — what it registered, which apps are open, where the file
+ * is — and the words come from here. See docs/shell-bridge.md.
+ *
+ * The console's own catalog (`public/strings/zh-Hant.json`, 778 keys) has none
+ * of these: in the Swift app this window was never a web page.
+ */
+export const W = {
+  settingsTitle: "Clawdline 設定",
+  settingsGeneral: "一般",
+  settingsBar: "輸入條",
+  settingsReading: "閱讀",
+  settingsVoice: "語音輸入",
+  settingsHotkey: "快速鍵",
+  settingsRecording: "按下按鍵……",
+  settingsScope: "在哪裡生效",
+  settingsScopeGlobal: "所有 app",
+  settingsScopeHint: "留空就是到處都能按，所以把最後一個移掉，上面那個開關就會自己打開——再把它關掉，清單就回來了。設定檔裡存的是 bundle id，自己手動編輯的清單一樣有效。",
+  settingsSessionTerminal: "新 session 開在",
+  settingsSessionTerminalHint: "跟上面熱鍵在哪裡生效是兩回事。自動是 iTerm2 開著就用它、沒開就走 tmux；選 iTerm2 就是指名要 iTerm2，旁邊有跑著的 tmux server 也不算答案，iTerm2 關著就直接拒絕；選 tmux 則是就算 iTerm2 開著也一律開在 tmux server 裡。下一個開的 session 就會照這個走，不用重開 app。",
+  settingsScopeAdd: "加入 app……",
+  settingsScopeChoose: "選擇其他 app……",
+  settingsScopeRunning: "現在開著的",
+  settingsScopeRemove: "移除",
+  settingsLanguage: "語言",
+  settingsReopen: "輸入條跟著終端機出現和收起",
+  settingsReopenHint: "從終端機切到別的地方，輸入條就收起來；切回終端機，它就回來。Esc 才是「這次用完了」的意思。",
+  settingsFollow: "終端機顯示輸入條指著的那個 session",
+  settingsFollowHint: "它會把那個 session 的分頁選起來。它不會把終端機叫到最前面——不然每按一次 Tab，鍵盤就從你正在打字的那個框裡跑掉了。",
+  settingsCodexAutoName: "自動命名新的 session",
+  settingsCodexAutoNameHint: "每個尚未命名的 session 會由你選的助理跑一次小型 turn。它使用第一則需求、消耗該助理的額度，而且不會蓋掉你自己取的名稱。",
+  settingsNotch: "住在瀏海裡",
+  settingsNotchHint: "在鏡頭那塊住一隻角色。關掉就是真的關掉——什麼都不畫，視窗也不會建立。",
+  settingsPosition: "在螢幕上的高度",
+  settingsWidth: "寬度",
+  settingsOpacity: "卡片不透明度",
+  settingsShow: "顯示",
+  settingsPaneHeight: "面板高度",
+  settingsTextSize: "文字大小",
+  settingsPaneFont: "面板字型",
+  settingsBlur: "背後模糊",
+  settingsNewestFirst: "最新的在最上面",
+  settingsEngine: "辨識引擎",
+  settingsSettle: "停頓多久算一句話結束",
+  settingsStop: "安靜多久算整段結束",
+  settingsAuto: "自動",
+  settingsTranscript: "對話記錄",
+  settingsTerminal: "終端機畫面",
+  settingsOff: "關閉",
+  settingsHooks: "Claude Code Hook",
+  settingsHooksHint: "裝上之後，一輪對話開始、結束、或是需要你回答的當下，Claude Code 會直接說一聲，不必等 Clawdline 下一次去看。每一次判讀仍然來自畫面，這裡只決定判讀發生得多快。",
+  settingsHooksInstall: "安裝",
+  settingsHooksRemove: "移除",
+  settingsHooksOff: "未安裝——狀態全部從畫面讀",
+  settingsHooksOn: "已安裝——還沒有 session 回報過",
+  settingsHooksLive: "已安裝，session 正在回報",
+  settingsStateHook: "session 換狀態的時候",
+  settingsStateHookHint: "只要有 session 開始跑、跑完、或是要問你話，Clawdline 就會執行這個：你自己的程式，細節放在它的環境變數裡。它寫在設定檔而不是這裡，因為那是一串 argv、不是一行命令列——路徑裡有空格，它也還是一整個路徑。",
+  settingsRemote: "遠端",
+  settingsRemoteServe: "讓瀏覽器或你的手機看得到你的 session",
+  settingsRemoteHint: "關著的時候，這台 Mac 以外的東西什麼都碰不到。打開之後，session 清單就在 127.0.0.1 上讀得到——給這裡的瀏覽器，給隔著通道連進來的手機，給一支腳本。交出去的是儲存庫名稱、分支和工作標題，所以在你開口之前，它一直是關著的。",
+  settingsTunnel: "從任何地方連到這台 Mac",
+  settingsTunnelQuick: "自動產生的網址",
+  settingsTunnelNamed: "我自己的網域",
+  settingsTunnelHostname: "主機名稱",
+  settingsTunnelHint: "透過 cloudflared 從這台 Mac 往外連出去——不必開通訊埠轉發，你的網路上也沒有東西在聽。要先配對過一台裝置它才會啟動，因為通道後面就是這台 Mac 上每一個儲存庫名稱、每一個工作標題。",
+  settingsRemoteWrite: "讓配對過的裝置寫進 session",
+  settingsRemoteWriteHint: "關著的時候，配對過的裝置只能讀。打開之後，它可以把文字送進 session，也可以開新的 session——那就是在這台 Mac 上執行程式碼，因為 Claude Code 做的就是這件事。這跟上面那一題是兩回事，所以它是另一個開關。",
+  settingsPushDelivery: "session 回報交件時通知我",
+  settingsPushDeliveryHint: "一次回報通知一次，同一份重複回報不會再響。",
+  settingsPushFanout: "一批派出去的任務全部結束時通知我",
+  settingsPushFanoutHint: "整批只通知一次，會說有幾件失敗。",
+  settingsSmartNotifications: "智慧通知",
+  settingsSmartNotificationsHint: "用 Haiku 說明剛完成了什麼；產生失敗時仍會送出原本的通知。",
+  settingsPushDeploy: "deploy 結束時通知我",
+  settingsPushDeployHint: "成功和失敗都會通知。",
+  settingsAgentNotify: "允許 agent 主動推播",
+  settingsAgentNotifyNote: "只管 agent 主動送出的內容；工作完成、deploy 與其他通知都不受影響。",
+  settingsOrchestrator: "派工作給別的 session",
+  settingsOrchestratorEnabled: "讓一個 session 把工作派給另一個",
+  settingsOrchestratorEnabledHint: "帶著 clawdline skill 的 session 可以開一個新分頁、把指示打進去，做完再回頭跟它說一聲。關著的時候，每一次派工都會被擋下來——已經在跑的不會被停掉。",
+  settingsOrchestratorMax: "同時最多幾個子 session",
+  settingsOrchestratorMaxHint: "預設五個，一個 session 算一份，不是整台 Mac 算一份。每一個都是一個終端機分頁，裡面有一個 assistant 在做事。",
+  settingsOrchestratorPermission: "child 可以自己走多遠",
+  settingsOrchestratorPermissionHint: "child 的分頁沒有人在看，停下來等核准的 session 會一路停到逾時——而派出去的 session 整份工作就是跑指令和寫檔案，所以只要不是最後一格，它就會停在某個地方。任務可以要求比這裡保守，但不能超過。",
+  settingsOrchestratorPermissionAsk: "每一步都先問",
+  settingsOrchestratorPermissionEdits: "寫檔案不用問",
+  settingsOrchestratorPermissionFull: "都不要問",
+  settingsOrchestratorNotify: "做完之後回報給發派的 session",
+  settingsOrchestratorNotifyHint: "工作結束的時候，往那個 session 裡打一行字。",
+  settingsOrchestratorClose: "子 session 回報之後",
+  settingsOrchestratorCloseHint: "回報過了就把它的分頁關掉——逾時的那個會留著，讓你自己看是怎麼回事。",
+  settingsOrchestratorCloseNow: "馬上把分頁關掉",
+  settingsOrchestratorCloseLinger: "三分鐘後再關",
+  settingsOrchestratorCloseKeep: "留著不要關",
+  menuMascot: "吉祥物",
+} as const
+
+/** `settingsSeconds(_:)`, the same `%.1f 秒`. */
+export function seconds(value: number): string {
+  return `${value.toFixed(1)} 秒`
+}
+
+/** `Assistant.label` (`Assistant.swift`), the two product names as they are written there. */
+export const ASSISTANT_LABEL = { claude: "Claude Code", codex: "Codex" } as const
+
+/**
+ * `dictationStatus(_:)`, composed here from the reading the shell sends rather
+ * than from a sentence it wrote: the words are this side's, the fact is the
+ * machine's.
+ */
+export function dictationStatus(status: { kind: string; model?: string }): string {
+  switch (status.kind) {
+    case "ready":
+      return `語音：Apple，之後 Whisper（${status.model ?? ""}）`
+    case "noModel":
+      return "語音：只有 Apple——whisper-cli 有了，缺模型"
+    default:
+      return "語音：只有 Apple——沒有 whisper-cli"
+  }
+}
+
+/** `hotkeyFailedTitle(_:)` (`Copy+Chinese.swift`). */
+export function hotkeyFailedTitle(combo: string): string {
+  return `${combo} 註冊不起來`
+}

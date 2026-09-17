@@ -1,3 +1,5 @@
+import { resolve } from "node:path"
+
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 
@@ -35,5 +37,18 @@ export default defineConfig({
       },
     },
   },
-  build: { outDir: "dist", emptyOutDir: true },
+  // Two documents. index.html is the console — the Swift app's web page,
+  // replicated. settings.html is the native settings window, which was never a
+  // web page there and is one here so that the Linux and Windows shells can
+  // open the same window (docs/shell-bridge.md).
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        index: resolve(import.meta.dirname, "index.html"),
+        settings: resolve(import.meta.dirname, "settings.html"),
+      },
+    },
+  },
 })

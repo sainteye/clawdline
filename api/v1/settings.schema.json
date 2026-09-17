@@ -2,17 +2,211 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "settings.schema.json",
   "title": "This app's settings file",
-  "description": "GET and POST /v1/settings. The file is ~/.config/clawdline-next/config.json, never the Swift app's; its keys are the Swift app's spellings. A write is a merge onto what is on disk, atomic, and leaves every other key as it was. A file that is not a JSON object is refused rather than replaced.",
+  "description": "GET and POST /v1/settings. The file is ~/.config/clawdline-next/config.json, never the Swift app's; its keys are the Swift app's spellings. A write is a merge onto what is on disk, atomic, and leaves every other key as it was. A file that is not a JSON object is refused rather than replaced. Every key here has a row in the native settings window, whose layout is a web page (web/console/src/pages/settings/window) drawn inside a shell window — see docs/shell-bridge.md.",
   "$defs": {
     "SettingsSnapshot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["exists", "path"],
+      "required": [
+        "exists",
+        "path"
+      ],
       "properties": {
-        "exists": { "description": "False before anything has been written. Every key then has the shell's default.", "type": "boolean" },
-        "hotkey": { "description": "The file's `hotkey`, or null when the file does not carry one as a string. Null and empty both register nothing in this app: the Swift app is running and owns option+space.", "nullable": true, "type": "string" },
-        "path": { "description": "Where the file is, whether or not it exists.", "type": "string" },
-        "scope_app": { "description": "The file's `scope_app`, or null when absent — which the shell reads as com.googlecode.iterm2. Empty is every app.", "nullable": true, "type": "string" }
+        "exists": {
+          "description": "False before anything has been written. Every key then has the shell's default.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Where the file is, whether or not it exists.",
+          "type": "string"
+        },
+        "hotkey": {
+          "description": "The file's `hotkey`, or null when the file does not carry one as a string. Null and empty both register nothing in this app: the Swift app is running and owns option+space.",
+          "nullable": true,
+          "type": "string"
+        },
+        "scope_app": {
+          "description": "The file's `scope_app`, or null when absent — which the shell reads as com.googlecode.iterm2. Empty is every app.",
+          "nullable": true,
+          "type": "string"
+        },
+        "language": {
+          "description": "`auto`, or one of the catalog's tags (`zh-Hant`, `en`, …). This build ships only zh-Hant; the key is written so a later one can read it.",
+          "nullable": true,
+          "type": "string"
+        },
+        "mascot": {
+          "description": "Which mascot pack the shell draws.",
+          "nullable": true,
+          "type": "string"
+        },
+        "terminal": {
+          "description": "Where a new session opens: `auto`, `iterm` or `tmux`. Not the same question as scope_app.",
+          "nullable": true,
+          "type": "string"
+        },
+        "reopen_on_return": {
+          "description": "Whether the bar comes back with the terminal.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "follow_target": {
+          "description": "Whether the terminal selects the tab the bar points at.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "codex_auto_name": {
+          "description": "Whether a new session is named by an assistant. The Swift app's spelling, kept so a line copied between the two files means the same thing.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "auto_name_assistant": {
+          "description": "Whose quota that naming turn spends, `claude` or `codex`. Remembered while the switch above is off, so turning it back on does not quietly change providers.",
+          "nullable": true,
+          "type": "string"
+        },
+        "notch": {
+          "description": "Whether a mascot lives in the notch.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "y_fraction": {
+          "description": "Where the bar's top sits, as a fraction of screen height.",
+          "nullable": true,
+          "type": "number"
+        },
+        "width": {
+          "description": "The bar's width in points.",
+          "nullable": true,
+          "type": "number"
+        },
+        "card_opacity": {
+          "description": "The bar card's opacity.",
+          "nullable": true,
+          "type": "number"
+        },
+        "output_mode": {
+          "description": "What the reading pane shows: `auto`, `transcript` or `terminal`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "output_height": {
+          "description": "The reading pane's height in points.",
+          "nullable": true,
+          "type": "number"
+        },
+        "output_size": {
+          "description": "The reading pane's text size in points.",
+          "nullable": true,
+          "type": "number"
+        },
+        "output_font": {
+          "description": "The reading pane's face. Monospaced, because the pane draws a terminal.",
+          "nullable": true,
+          "type": "string"
+        },
+        "backdrop": {
+          "description": "How much the bar blurs what is behind it.",
+          "nullable": true,
+          "type": "number"
+        },
+        "output_newest_first": {
+          "description": "Whether the reading pane puts the newest first.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "voice_engine": {
+          "description": "`auto`, `apple` or `whisper`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "voice_settle_seconds": {
+          "description": "How long a pause ends a sentence. 0 is off.",
+          "nullable": true,
+          "type": "number"
+        },
+        "voice_stop_seconds": {
+          "description": "How long a silence ends the whole turn. 0 is off.",
+          "nullable": true,
+          "type": "number"
+        },
+        "remote": {
+          "description": "Whether anything but this Mac may read the session list.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "remote_write": {
+          "description": "Whether a paired device may write into a session.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "remote_tunnel": {
+          "description": "`off`, `quick` or `named`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "remote_hostname": {
+          "description": "The hostname a named tunnel answers on.",
+          "nullable": true,
+          "type": "string"
+        },
+        "push_on_delivery": {
+          "description": "Notify when a session reports a delivery.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "push_on_fanout": {
+          "description": "Notify when a whole batch of dispatched work ends.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "smart_notifications": {
+          "description": "Have a model write the sentence a notification carries.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "push_on_deploy": {
+          "description": "Notify when a deploy ends, either way.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "orchestrator_agent_notify": {
+          "description": "Whether an agent may push a sentence of its own.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "orchestrator_enabled": {
+          "description": "Whether one session may hand work to another.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "orchestrator_max_children": {
+          "description": "How many child sessions one session may run at once, 1 to 10.",
+          "nullable": true,
+          "type": "integer"
+        },
+        "orchestrator_permission": {
+          "description": "How far a child may go on its own: `ask`, `edits` or `full`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "orchestrator_notify_root": {
+          "description": "Whether a finished child types a line back into the session that sent it.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "orchestrator_child_linger": {
+          "description": "What becomes of a child's tab after it reports: 0 closes it, 180 waits three minutes, -1 keeps it.",
+          "nullable": true,
+          "type": "integer"
+        },
+        "on_state_change": {
+          "description": "The file's `on_state_change`, the argv this app runs when a session changes state. Read only here: it is an argument list, not a command line, and a single text box invites exactly the word-splitting that would break a path with a space in it. Absent is an empty list.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "SettingsRequest": {
@@ -20,8 +214,186 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "hotkey": { "description": "A combination the shell can register (`cmd+shift+k`), or empty for none.", "nullable": true, "type": "string" },
-        "scope_app": { "description": "Bundle identifiers separated by commas, or empty for every app.", "nullable": true, "type": "string" }
+        "hotkey": {
+          "description": "A combination the shell can register (`cmd+shift+k`), or empty for none.",
+          "nullable": true,
+          "type": "string"
+        },
+        "scope_app": {
+          "description": "Bundle identifiers separated by commas, or empty for every app.",
+          "nullable": true,
+          "type": "string"
+        },
+        "language": {
+          "description": "`auto` or a language tag the catalog resolves.",
+          "nullable": true,
+          "type": "string"
+        },
+        "mascot": {
+          "description": "A pack name the shell offers.",
+          "nullable": true,
+          "type": "string"
+        },
+        "terminal": {
+          "description": "`auto`, `iterm` or `tmux`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "reopen_on_return": {
+          "description": "Whether the bar comes back with the terminal.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "follow_target": {
+          "description": "Whether the terminal selects the tab the bar points at.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "codex_auto_name": {
+          "description": "Whether a new session is named by an assistant.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "auto_name_assistant": {
+          "description": "`claude` or `codex`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "notch": {
+          "description": "Whether a mascot lives in the notch.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "y_fraction": {
+          "description": "0.05 to 0.80.",
+          "nullable": true,
+          "type": "number"
+        },
+        "width": {
+          "description": "360 to 1400.",
+          "nullable": true,
+          "type": "number"
+        },
+        "card_opacity": {
+          "description": "0 to 1.",
+          "nullable": true,
+          "type": "number"
+        },
+        "output_mode": {
+          "description": "`auto`, `transcript` or `terminal`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "output_height": {
+          "description": "80 to 900.",
+          "nullable": true,
+          "type": "number"
+        },
+        "output_size": {
+          "description": "8 to 28.",
+          "nullable": true,
+          "type": "number"
+        },
+        "output_font": {
+          "description": "A font family name.",
+          "nullable": true,
+          "type": "string"
+        },
+        "backdrop": {
+          "description": "0 to 1.",
+          "nullable": true,
+          "type": "number"
+        },
+        "output_newest_first": {
+          "description": "Whether the reading pane puts the newest first.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "voice_engine": {
+          "description": "`auto`, `apple` or `whisper`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "voice_settle_seconds": {
+          "description": "0 to 30.",
+          "nullable": true,
+          "type": "number"
+        },
+        "voice_stop_seconds": {
+          "description": "0 to 300.",
+          "nullable": true,
+          "type": "number"
+        },
+        "remote": {
+          "description": "Whether anything but this Mac may read the session list.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "remote_write": {
+          "description": "Whether a paired device may write into a session.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "remote_tunnel": {
+          "description": "`off`, `quick` or `named`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "remote_hostname": {
+          "description": "A hostname, or empty.",
+          "nullable": true,
+          "type": "string"
+        },
+        "push_on_delivery": {
+          "description": "Notify when a session reports a delivery.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "push_on_fanout": {
+          "description": "Notify when a whole batch of dispatched work ends.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "smart_notifications": {
+          "description": "Have a model write the sentence a notification carries.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "push_on_deploy": {
+          "description": "Notify when a deploy ends, either way.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "orchestrator_agent_notify": {
+          "description": "Whether an agent may push a sentence of its own.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "orchestrator_enabled": {
+          "description": "Whether one session may hand work to another.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "orchestrator_max_children": {
+          "description": "1 to 10.",
+          "nullable": true,
+          "type": "integer"
+        },
+        "orchestrator_permission": {
+          "description": "`ask`, `edits` or `full`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "orchestrator_notify_root": {
+          "description": "Whether a finished child types a line back into the session that sent it.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "orchestrator_child_linger": {
+          "description": "0, 180 or -1.",
+          "nullable": true,
+          "type": "integer"
+        }
       }
     }
   }

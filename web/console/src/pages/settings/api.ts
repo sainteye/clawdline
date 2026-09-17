@@ -40,9 +40,20 @@ export function readSettings(): Promise<SettingsSnapshot> {
   return call({ method: "GET" })
 }
 
-/** Change the keys given; a key left null is left as the file has it. */
+/**
+ * Change the keys given; a key left out, or sent as null, is left as the file
+ * has it.
+ *
+ * Only what was asked for goes on the wire. The settings window has thirty-six
+ * rows and writes one of them at a time, and a body carrying the other
+ * thirty-five would turn every switch into a chance to overwrite a hand edit
+ * made since this page last read the file.
+ */
 export function writeSettings(change: Partial<SettingsRequest>): Promise<SettingsSnapshot> {
-  const body: SettingsRequest = { hotkey: change.hotkey ?? null, scope_app: change.scope_app ?? null }
+  const body: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(change)) {
+    if (value !== undefined) body[key] = value
+  }
   return call({
     method: "POST",
     headers: { "Content-Type": "application/json" },

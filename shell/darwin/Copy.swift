@@ -78,10 +78,17 @@ struct ShellCopy {
     }
     let loginFailed = "設定開機啟動失敗"
 
-    // The settings window's words (`Settings.swift`). That window is not
-    // ported: "Settings…" opens the console's settings page, and the rows of
-    // the window this shell acts on are drawn there, in these words, handed
-    // to the page before its first script runs.
+    // The settings window's words (`Settings.swift`).
+    //
+    // `settingsTitle` is the native window's own title bar, which is drawn
+    // before its page loads, so it has to be here. The rest of that window's
+    // words are not: they are in the page (web/console/src/pages/settings/window/copy.ts),
+    // transcribed from the same `Copy+Chinese.swift`, so the Linux and Windows
+    // shells get them without a second transcription. See docs/shell-bridge.md.
+    //
+    // The four below are still handed to the *console's* settings page, whose
+    // shell-only block predates the settings window and is unchanged.
+    let settingsTitle = "Clawdline 設定"
     let settingsHotkey = "快速鍵"
     let settingsRecording = "按下按鍵……"
     let settingsScope = "在哪裡生效"

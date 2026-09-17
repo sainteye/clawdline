@@ -2439,21 +2439,218 @@ export interface SessionsSnapshot {
  */
 export interface SettingsRequest {
   /**
+   * `claude` or `codex`.
+   */
+  auto_name_assistant: string | null
+
+  /**
+   * 0 to 1.
+   */
+  backdrop: number | null
+
+  /**
+   * 0 to 1.
+   */
+  card_opacity: number | null
+
+  /**
+   * Whether a new session is named by an assistant.
+   */
+  codex_auto_name: boolean | null
+
+  /**
+   * Whether the terminal selects the tab the bar points at.
+   */
+  follow_target: boolean | null
+
+  /**
    * A combination the shell can register (`cmd+shift+k`), or empty for none.
    */
   hotkey: string | null
 
   /**
+   * `auto` or a language tag the catalog resolves.
+   */
+  language: string | null
+
+  /**
+   * A pack name the shell offers.
+   */
+  mascot: string | null
+
+  /**
+   * Whether a mascot lives in the notch.
+   */
+  notch: boolean | null
+
+  /**
+   * Whether an agent may push a sentence of its own.
+   */
+  orchestrator_agent_notify: boolean | null
+
+  /**
+   * 0, 180 or -1.
+   */
+  orchestrator_child_linger: number | null
+
+  /**
+   * Whether one session may hand work to another.
+   */
+  orchestrator_enabled: boolean | null
+
+  /**
+   * 1 to 10.
+   */
+  orchestrator_max_children: number | null
+
+  /**
+   * Whether a finished child types a line back into the session that sent it.
+   */
+  orchestrator_notify_root: boolean | null
+
+  /**
+   * `ask`, `edits` or `full`.
+   */
+  orchestrator_permission: string | null
+
+  /**
+   * A font family name.
+   */
+  output_font: string | null
+
+  /**
+   * 80 to 900.
+   */
+  output_height: number | null
+
+  /**
+   * `auto`, `transcript` or `terminal`.
+   */
+  output_mode: string | null
+
+  /**
+   * Whether the reading pane puts the newest first.
+   */
+  output_newest_first: boolean | null
+
+  /**
+   * 8 to 28.
+   */
+  output_size: number | null
+
+  /**
+   * Notify when a session reports a delivery.
+   */
+  push_on_delivery: boolean | null
+
+  /**
+   * Notify when a deploy ends, either way.
+   */
+  push_on_deploy: boolean | null
+
+  /**
+   * Notify when a whole batch of dispatched work ends.
+   */
+  push_on_fanout: boolean | null
+
+  /**
+   * Whether anything but this Mac may read the session list.
+   */
+  remote: boolean | null
+
+  /**
+   * A hostname, or empty.
+   */
+  remote_hostname: string | null
+
+  /**
+   * `off`, `quick` or `named`.
+   */
+  remote_tunnel: string | null
+
+  /**
+   * Whether a paired device may write into a session.
+   */
+  remote_write: boolean | null
+
+  /**
+   * Whether the bar comes back with the terminal.
+   */
+  reopen_on_return: boolean | null
+
+  /**
    * Bundle identifiers separated by commas, or empty for every app.
    */
   scope_app: string | null
+
+  /**
+   * Have a model write the sentence a notification carries.
+   */
+  smart_notifications: boolean | null
+
+  /**
+   * `auto`, `iterm` or `tmux`.
+   */
+  terminal: string | null
+
+  /**
+   * `auto`, `apple` or `whisper`.
+   */
+  voice_engine: string | null
+
+  /**
+   * 0 to 30.
+   */
+  voice_settle_seconds: number | null
+
+  /**
+   * 0 to 300.
+   */
+  voice_stop_seconds: number | null
+
+  /**
+   * 360 to 1400.
+   */
+  width: number | null
+
+  /**
+   * 0.05 to 0.80.
+   */
+  y_fraction: number | null
 }
 
 export interface SettingsSnapshot {
   /**
+   * Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
+   * switch above is off, so turning it back on does not quietly change providers.
+   */
+  auto_name_assistant: string | null
+
+  /**
+   * How much the bar blurs what is behind it.
+   */
+  backdrop: number | null
+
+  /**
+   * The bar card's opacity.
+   */
+  card_opacity: number | null
+
+  /**
+   * Whether a new session is named by an assistant. The Swift app's spelling, kept
+   * so a line copied between the two files means the same thing.
+   */
+  codex_auto_name: boolean | null
+
+  /**
    * False before anything has been written. Every key then has the shell's default.
    */
   exists: boolean
+
+  /**
+   * Whether the terminal selects the tab the bar points at.
+   */
+  follow_target: boolean | null
 
   /**
    * The file's `hotkey`, or null when the file does not carry one as a string. Null
@@ -2463,15 +2660,171 @@ export interface SettingsSnapshot {
   hotkey: string | null
 
   /**
+   * `auto`, or one of the catalog's tags (`zh-Hant`, `en`, …). This build ships
+   * only zh-Hant; the key is written so a later one can read it.
+   */
+  language: string | null
+
+  /**
+   * Which mascot pack the shell draws.
+   */
+  mascot: string | null
+
+  /**
+   * Whether a mascot lives in the notch.
+   */
+  notch: boolean | null
+
+  /**
+   * The file's `on_state_change`, the argv this app runs when a session changes
+   * state. Read only here: it is an argument list, not a command line, and a single
+   * text box invites exactly the word-splitting that would break a path with a
+   * space in it. Absent is an empty list.
+   */
+  on_state_change?: string[]
+
+  /**
+   * Whether an agent may push a sentence of its own.
+   */
+  orchestrator_agent_notify: boolean | null
+
+  /**
+   * What becomes of a child's tab after it reports: 0 closes it, 180 waits three
+   * minutes, -1 keeps it.
+   */
+  orchestrator_child_linger: number | null
+
+  /**
+   * Whether one session may hand work to another.
+   */
+  orchestrator_enabled: boolean | null
+
+  /**
+   * How many child sessions one session may run at once, 1 to 10.
+   */
+  orchestrator_max_children: number | null
+
+  /**
+   * Whether a finished child types a line back into the session that sent it.
+   */
+  orchestrator_notify_root: boolean | null
+
+  /**
+   * How far a child may go on its own: `ask`, `edits` or `full`.
+   */
+  orchestrator_permission: string | null
+
+  /**
+   * The reading pane's face. Monospaced, because the pane draws a terminal.
+   */
+  output_font: string | null
+
+  /**
+   * The reading pane's height in points.
+   */
+  output_height: number | null
+
+  /**
+   * What the reading pane shows: `auto`, `transcript` or `terminal`.
+   */
+  output_mode: string | null
+
+  /**
+   * Whether the reading pane puts the newest first.
+   */
+  output_newest_first: boolean | null
+
+  /**
+   * The reading pane's text size in points.
+   */
+  output_size: number | null
+
+  /**
    * Where the file is, whether or not it exists.
    */
   path: string
+
+  /**
+   * Notify when a session reports a delivery.
+   */
+  push_on_delivery: boolean | null
+
+  /**
+   * Notify when a deploy ends, either way.
+   */
+  push_on_deploy: boolean | null
+
+  /**
+   * Notify when a whole batch of dispatched work ends.
+   */
+  push_on_fanout: boolean | null
+
+  /**
+   * Whether anything but this Mac may read the session list.
+   */
+  remote: boolean | null
+
+  /**
+   * The hostname a named tunnel answers on.
+   */
+  remote_hostname: string | null
+
+  /**
+   * `off`, `quick` or `named`.
+   */
+  remote_tunnel: string | null
+
+  /**
+   * Whether a paired device may write into a session.
+   */
+  remote_write: boolean | null
+
+  /**
+   * Whether the bar comes back with the terminal.
+   */
+  reopen_on_return: boolean | null
 
   /**
    * The file's `scope_app`, or null when absent — which the shell reads as
    * com.googlecode.iterm2. Empty is every app.
    */
   scope_app: string | null
+
+  /**
+   * Have a model write the sentence a notification carries.
+   */
+  smart_notifications: boolean | null
+
+  /**
+   * Where a new session opens: `auto`, `iterm` or `tmux`. Not the same question as
+   * scope_app.
+   */
+  terminal: string | null
+
+  /**
+   * `auto`, `apple` or `whisper`.
+   */
+  voice_engine: string | null
+
+  /**
+   * How long a pause ends a sentence. 0 is off.
+   */
+  voice_settle_seconds: number | null
+
+  /**
+   * How long a silence ends the whole turn. 0 is off.
+   */
+  voice_stop_seconds: number | null
+
+  /**
+   * The bar's width in points.
+   */
+  width: number | null
+
+  /**
+   * Where the bar's top sits, as a fraction of screen height.
+   */
+  y_fraction: number | null
 }
 
 /**

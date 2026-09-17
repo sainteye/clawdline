@@ -1967,28 +1967,243 @@ type SessionsSnapshot struct {
 
 // The keys to change. A null key is left as it is.
 type SettingsRequest struct {
+	// `claude` or `codex`.
+	AutoNameAssistant *string `json:"auto_name_assistant"`
+
+	// 0 to 1.
+	Backdrop *float64 `json:"backdrop"`
+
+	// 0 to 1.
+	CardOpacity *float64 `json:"card_opacity"`
+
+	// Whether a new session is named by an assistant.
+	CodexAutoName *bool `json:"codex_auto_name"`
+
+	// Whether the terminal selects the tab the bar points at.
+	FollowTarget *bool `json:"follow_target"`
+
 	// A combination the shell can register (`cmd+shift+k`), or empty for none.
 	Hotkey *string `json:"hotkey"`
 
+	// `auto` or a language tag the catalog resolves.
+	Language *string `json:"language"`
+
+	// A pack name the shell offers.
+	Mascot *string `json:"mascot"`
+
+	// Whether a mascot lives in the notch.
+	Notch *bool `json:"notch"`
+
+	// Whether an agent may push a sentence of its own.
+	OrchestratorAgentNotify *bool `json:"orchestrator_agent_notify"`
+
+	// 0, 180 or -1.
+	OrchestratorChildLinger *int64 `json:"orchestrator_child_linger"`
+
+	// Whether one session may hand work to another.
+	OrchestratorEnabled *bool `json:"orchestrator_enabled"`
+
+	// 1 to 10.
+	OrchestratorMaxChildren *int64 `json:"orchestrator_max_children"`
+
+	// Whether a finished child types a line back into the session that sent it.
+	OrchestratorNotifyRoot *bool `json:"orchestrator_notify_root"`
+
+	// `ask`, `edits` or `full`.
+	OrchestratorPermission *string `json:"orchestrator_permission"`
+
+	// A font family name.
+	OutputFont *string `json:"output_font"`
+
+	// 80 to 900.
+	OutputHeight *float64 `json:"output_height"`
+
+	// `auto`, `transcript` or `terminal`.
+	OutputMode *string `json:"output_mode"`
+
+	// Whether the reading pane puts the newest first.
+	OutputNewestFirst *bool `json:"output_newest_first"`
+
+	// 8 to 28.
+	OutputSize *float64 `json:"output_size"`
+
+	// Notify when a session reports a delivery.
+	PushOnDelivery *bool `json:"push_on_delivery"`
+
+	// Notify when a deploy ends, either way.
+	PushOnDeploy *bool `json:"push_on_deploy"`
+
+	// Notify when a whole batch of dispatched work ends.
+	PushOnFanout *bool `json:"push_on_fanout"`
+
+	// Whether anything but this Mac may read the session list.
+	Remote *bool `json:"remote"`
+
+	// A hostname, or empty.
+	RemoteHostname *string `json:"remote_hostname"`
+
+	// `off`, `quick` or `named`.
+	RemoteTunnel *string `json:"remote_tunnel"`
+
+	// Whether a paired device may write into a session.
+	RemoteWrite *bool `json:"remote_write"`
+
+	// Whether the bar comes back with the terminal.
+	ReopenOnReturn *bool `json:"reopen_on_return"`
+
 	// Bundle identifiers separated by commas, or empty for every app.
 	ScopeApp *string `json:"scope_app"`
+
+	// Have a model write the sentence a notification carries.
+	SmartNotifications *bool `json:"smart_notifications"`
+
+	// `auto`, `iterm` or `tmux`.
+	Terminal *string `json:"terminal"`
+
+	// `auto`, `apple` or `whisper`.
+	VoiceEngine *string `json:"voice_engine"`
+
+	// 0 to 30.
+	VoiceSettleSeconds *float64 `json:"voice_settle_seconds"`
+
+	// 0 to 300.
+	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
+
+	// 360 to 1400.
+	Width *float64 `json:"width"`
+
+	// 0.05 to 0.80.
+	YFraction *float64 `json:"y_fraction"`
 }
 
 type SettingsSnapshot struct {
+	// Whose quota that naming turn spends, `claude` or `codex`. Remembered while the
+	// switch above is off, so turning it back on does not quietly change providers.
+	AutoNameAssistant *string `json:"auto_name_assistant"`
+
+	// How much the bar blurs what is behind it.
+	Backdrop *float64 `json:"backdrop"`
+
+	// The bar card's opacity.
+	CardOpacity *float64 `json:"card_opacity"`
+
+	// Whether a new session is named by an assistant. The Swift app's spelling, kept
+	// so a line copied between the two files means the same thing.
+	CodexAutoName *bool `json:"codex_auto_name"`
+
 	// False before anything has been written. Every key then has the shell's default.
 	Exists bool `json:"exists"`
+
+	// Whether the terminal selects the tab the bar points at.
+	FollowTarget *bool `json:"follow_target"`
 
 	// The file's `hotkey`, or null when the file does not carry one as a string. Null
 	// and empty both register nothing in this app: the Swift app is running and owns
 	// option+space.
 	Hotkey *string `json:"hotkey"`
 
+	// `auto`, or one of the catalog's tags (`zh-Hant`, `en`, …). This build ships
+	// only zh-Hant; the key is written so a later one can read it.
+	Language *string `json:"language"`
+
+	// Which mascot pack the shell draws.
+	Mascot *string `json:"mascot"`
+
+	// Whether a mascot lives in the notch.
+	Notch *bool `json:"notch"`
+
+	// The file's `on_state_change`, the argv this app runs when a session changes
+	// state. Read only here: it is an argument list, not a command line, and a single
+	// text box invites exactly the word-splitting that would break a path with a space
+	// in it. Absent is an empty list.
+	OnStateChange []string `json:"on_state_change,omitempty"`
+
+	// Whether an agent may push a sentence of its own.
+	OrchestratorAgentNotify *bool `json:"orchestrator_agent_notify"`
+
+	// What becomes of a child's tab after it reports: 0 closes it, 180 waits three
+	// minutes, -1 keeps it.
+	OrchestratorChildLinger *int64 `json:"orchestrator_child_linger"`
+
+	// Whether one session may hand work to another.
+	OrchestratorEnabled *bool `json:"orchestrator_enabled"`
+
+	// How many child sessions one session may run at once, 1 to 10.
+	OrchestratorMaxChildren *int64 `json:"orchestrator_max_children"`
+
+	// Whether a finished child types a line back into the session that sent it.
+	OrchestratorNotifyRoot *bool `json:"orchestrator_notify_root"`
+
+	// How far a child may go on its own: `ask`, `edits` or `full`.
+	OrchestratorPermission *string `json:"orchestrator_permission"`
+
+	// The reading pane's face. Monospaced, because the pane draws a terminal.
+	OutputFont *string `json:"output_font"`
+
+	// The reading pane's height in points.
+	OutputHeight *float64 `json:"output_height"`
+
+	// What the reading pane shows: `auto`, `transcript` or `terminal`.
+	OutputMode *string `json:"output_mode"`
+
+	// Whether the reading pane puts the newest first.
+	OutputNewestFirst *bool `json:"output_newest_first"`
+
+	// The reading pane's text size in points.
+	OutputSize *float64 `json:"output_size"`
+
 	// Where the file is, whether or not it exists.
 	Path string `json:"path"`
+
+	// Notify when a session reports a delivery.
+	PushOnDelivery *bool `json:"push_on_delivery"`
+
+	// Notify when a deploy ends, either way.
+	PushOnDeploy *bool `json:"push_on_deploy"`
+
+	// Notify when a whole batch of dispatched work ends.
+	PushOnFanout *bool `json:"push_on_fanout"`
+
+	// Whether anything but this Mac may read the session list.
+	Remote *bool `json:"remote"`
+
+	// The hostname a named tunnel answers on.
+	RemoteHostname *string `json:"remote_hostname"`
+
+	// `off`, `quick` or `named`.
+	RemoteTunnel *string `json:"remote_tunnel"`
+
+	// Whether a paired device may write into a session.
+	RemoteWrite *bool `json:"remote_write"`
+
+	// Whether the bar comes back with the terminal.
+	ReopenOnReturn *bool `json:"reopen_on_return"`
 
 	// The file's `scope_app`, or null when absent — which the shell reads as
 	// com.googlecode.iterm2. Empty is every app.
 	ScopeApp *string `json:"scope_app"`
+
+	// Have a model write the sentence a notification carries.
+	SmartNotifications *bool `json:"smart_notifications"`
+
+	// Where a new session opens: `auto`, `iterm` or `tmux`. Not the same question as
+	// scope_app.
+	Terminal *string `json:"terminal"`
+
+	// `auto`, `apple` or `whisper`.
+	VoiceEngine *string `json:"voice_engine"`
+
+	// How long a pause ends a sentence. 0 is off.
+	VoiceSettleSeconds *float64 `json:"voice_settle_seconds"`
+
+	// How long a silence ends the whole turn. 0 is off.
+	VoiceStopSeconds *float64 `json:"voice_stop_seconds"`
+
+	// The bar's width in points.
+	Width *float64 `json:"width"`
+
+	// Where the bar's top sits, as a fraction of screen height.
+	YFraction *float64 `json:"y_fraction"`
 }
 
 // Whether the task has written a result yet. `settled` false is not a failure;
