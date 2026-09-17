@@ -6,6 +6,21 @@ import { useFleet, usePoll } from "./useFleet.js"
 import { SessionsPage } from "./Sessions.js"
 import Dashboard from "./Dashboard.js"
 import * as L from "./legacy/bridge.js"
+import {
+  ActionConfirm,
+  Info,
+  OPEN_CONFIRM,
+  OPEN_INFO,
+  Overlays,
+  closeKeys,
+  endedIfGone,
+  getClosingId,
+  hostConfirm,
+  hostInfo,
+  shown,
+  toggleKeys,
+  type ConfirmRequest,
+} from "./overlays/index.js"
 
 /**
  * The shell: a wordmark that opens the pages, a connection light, and one page
@@ -263,9 +278,12 @@ export default function App() {
     select(list[next].id)
   }
 
-  // The detail head says "closing" while its session is being ended, and until
-  // that settles the session is not given back or replaced (`closingSelectionKey`).
-  const closing = () => document.getElementById("detail-head")?.dataset.closing === "on"
+  // While a session is being ended, and until that settles, the open session is
+  // not given back or replaced (`closingSelectionKey`). The confirmation owns
+  // the close and is asked first; the header's own flag is read as well while
+  // the header still runs a close of its own.
+  const closing = () =>
+    getClosingId() !== null || document.getElementById("detail-head")?.dataset.closing === "on"
 
   // `openSession` (`session/open.js`). A session lives on the sessions page, so
   // opening one means being there. On a phone it is a whole screen, with a
@@ -295,8 +313,10 @@ export default function App() {
   // `closeDetail`: the session goes, the highlight stays. On a phone the list
   // comes back and a `#session=…` or `#page=…` address goes with the detail,
   // replaced rather than pushed so it adds no Back step.
-  const closeDetail = () => {
-    if (openRef.current && closing()) return
+  // `settled` is the close's own call: it gives the detail back once the close
+  // has settled, a frame before the header has been redrawn to say so.
+  const closeDetail = (settled = false) => {
+    if (!settled && openRef.current && closing()) return
     setOpen(null)
     if (phone()) {
       setView("list")
@@ -319,6 +339,9 @@ export default function App() {
   // not — and not when the address asked for another page.
   const firstList = useRef(true)
   useEffect(() => {
+    // A list without the session being closed is that close's answer
+    // (`SessionActions.gone`), and it settles before the detail is given back.
+    endedIfGone(new Set(rows.map((r) => r.id)))
     if (selectedRef.current && !rows.some((r) => r.id === selectedRef.current)) setSelected(null)
     if (openRef.current && !rows.some((r) => r.id === openRef.current)) closeDetail()
     if (firstList.current && rows.length) {
@@ -333,10 +356,49 @@ export default function App() {
     }
   }, [rows])
 
+  // `Info.follow` after every list and every change of the open session: a
+  // card about a session that is no longer open closes, and one whose session
+  // changed state is redrawn.
+  useEffect(() => {
+    Info.follow()
+  }, [rows, openId])
+
   // The phone's back gesture (`input/action-confirm.js`), and a window that
   // changes width under an open session (`input/edges.js`).
-  const layoutRef = useRef({ closeDetail })
-  layoutRef.current = { closeDetail }
+  const layoutRef = useRef({ closeDetail, refresh: fleet.refresh })
+  layoutRef.current = { closeDetail, refresh: fleet.refresh }
+
+  // What the overlays ask of the page. `writable` is the original's `S.write`,
+  // which comes from `/v1/health`; this daemon's health does not carry it, and
+  // the composer already takes the page as writable until a send is refused.
+  useEffect(() => {
+    hostInfo({ openId: () => openRef.current, writable: () => true })
+    hostConfirm({
+      openId: () => openRef.current,
+      writable: () => true,
+      closeDetail: () => layoutRef.current.closeDetail(true),
+      refresh: () => layoutRef.current.refresh(),
+    })
+  }, [])
+
+  // The presses that open an overlay from a component that does not own it
+  // (`overlays/events.ts`). `#detail-info` and the menu's Session info row
+  // open nothing while no session is open, as there.
+  useEffect(() => {
+    const onInfo = () => {
+      if (openRef.current) Info.open()
+    }
+    const onConfirm = (ev: Event) => {
+      const ask = (ev as CustomEvent<ConfirmRequest | undefined>).detail
+      ActionConfirm.open(ask?.kind || "end", ask?.id, ask?.opener)
+    }
+    document.addEventListener(OPEN_INFO, onInfo)
+    document.addEventListener(OPEN_CONFIRM, onConfirm)
+    return () => {
+      document.removeEventListener(OPEN_INFO, onInfo)
+      document.removeEventListener(OPEN_CONFIRM, onConfirm)
+    }
+  }, [])
   useEffect(() => {
     const onPop = () => {
       if (!phone()) return
@@ -355,17 +417,27 @@ export default function App() {
   }, [])
 
   // `input/keys.js`, one listener, in its order: one press does one thing, and
-  // a `return` here ends this listener and nothing else. The sheets it asks
-  // about first (the door, a confirmation, Info, Start, Command, the schedule
-  // form, the keyboard card) are not in this console, and neither are an
-  // agent's transcript or the pages with a step inside them; `r` and `?` have
-  // nothing to toggle here. The session menu answers its own Escape before
-  // this sees it, as `detail-actions.js` does.
+  // a `return` here ends this listener and nothing else. Of the sheets it asks
+  // about, the confirmation, Info and the keyboard card are here; the door,
+  // Start, Command, Settings and the schedule form are not, and neither are an
+  // agent's transcript or the pages with a step inside them; `r` has nothing
+  // to reverse here. The session menu answers its own Escape before this sees
+  // it, as `detail-actions.js` does.
   const onKey = (ev: KeyboardEvent) => {
     const key = ev.key
     const meta = ev.metaKey || ev.ctrlKey
     const rowsEl = document.getElementById("rows")
     const filterEl = document.getElementById("filter") as HTMLInputElement | null
+
+    // A confirmation is a decision about one action, not another layer of the
+    // page: while it is open nothing behind it runs, and Escape is the way out.
+    if (ActionConfirm.isOpen()) {
+      if (key === "Escape") {
+        ev.preventDefault()
+        ActionConfirm.close(true)
+      }
+      return
+    }
 
     if (meta && (key === "k" || key === "K")) {
       ev.preventDefault()
@@ -383,11 +455,30 @@ export default function App() {
       setPane(!paneRef.current)
       return
     }
+    if (meta && (key === "i" || key === "I")) {
+      ev.preventDefault()
+      if (Info.isOpen()) {
+        Info.close()
+        return
+      }
+      // One sheet is not stacked over another: an open drawer or keyboard
+      // card owns the next key until it closes.
+      if (!menuRef.current && !shown("keys")) Info.open()
+      return
+    }
 
     if (key === "Escape") {
+      if (Info.isOpen()) {
+        Info.close()
+        return
+      }
       // The drawer is over whatever page is showing, so it goes before the page does.
       if (menuRef.current) {
         closeMenu()
+        return
+      }
+      if (shown("keys")) {
+        closeKeys()
         return
       }
       if (pageRef.current !== "sessions") {
@@ -453,6 +544,10 @@ export default function App() {
         if (tx) tx.scrollTop = tx.scrollHeight
         break
       }
+      case "?":
+        ev.preventDefault()
+        toggleKeys()
+        break
       default:
         break
     }
@@ -553,10 +648,11 @@ export default function App() {
         selected={selected}
         openId={openId}
         onOpen={(id) => openSession(id)}
-        onBack={closeDetail}
+        onBack={() => closeDetail()}
         onDid={fleet.refresh}
       />
       {page === "dashboard" && <Dashboard fleet={fleet} />}
+      <Overlays />
     </>
   )
 }

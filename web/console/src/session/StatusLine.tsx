@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { SessionInfo, SessionInfoReply, SessionRow } from "@clawdline/contract"
-import { client } from "../client.js"
+import type { SessionInfo, SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
+import { SessionFacts, requestInfo } from "../overlays/index.js"
 
 /**
  * The status line under the open conversation — the original's `footer#status-line`.
@@ -27,8 +27,9 @@ import * as L from "../legacy/bridge.js"
  *   the same read the original's `status-line.js` makes, held for a minute,
  *   asked again when a turn ends. Until the first answer it says the assistant
  *   and "Loading…", as the original does. Context use is not drawn: this
- *   daemon does not read it. The button is disabled because the Session info
- *   card it opens does not exist here.
+ *   daemon does not read it. The answer is `SessionFacts` (`overlays/facts.ts`),
+ *   shared with the Session info card, which a press on the button opens; it
+ *   is disabled while no session is open.
  * - `.files` stays hidden: the working tree is not part of this daemon's read.
  * - `.deploy` stays hidden: a running deploy comes from the project-link walk,
  *   which this daemon does not have.
@@ -53,7 +54,8 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
         type="button"
         title={`${T.webSessionInfo} (⌘I)`}
         aria-label={T.webSessionInfo}
-        disabled
+        disabled={!row}
+        onClick={requestInfo}
       >
         {row ? (
           info ? (
@@ -125,34 +127,6 @@ function dollars(x: number): string {
 }
 
 /**
- * One small cache in front of the info read, as `SessionFacts` is: an answer
- * is fresh for a minute, a second asker while one read is out gets the same
- * promise, and a session that was open before shows what was last read while
- * a newer answer is on its way.
- */
-const FRESH_MS = 60_000
-const held = new Map<string, { at: number; info: SessionInfo }>()
-const pending = new Map<string, Promise<SessionInfo>>()
-
-function readInfo(id: string, force: boolean): Promise<SessionInfo> {
-  const hit = held.get(id)
-  if (!force && hit && Date.now() - hit.at < FRESH_MS) return Promise.resolve(hit.info)
-  const out = pending.get(id)
-  if (!force && out) return out
-  const read = fetch(client.url(`/v1/sessions/${encodeURIComponent(id)}/info?parts=summary`))
-    .then((r) => (r.ok ? (r.json() as Promise<SessionInfoReply>) : Promise.reject(new Error(`info ${r.status}`))))
-    .then((reply) => {
-      held.set(id, { at: Date.now(), info: reply.info })
-      return reply.info
-    })
-    .finally(() => {
-      if (pending.get(id) === read) pending.delete(id)
-    })
-  pending.set(id, read)
-  return read
-}
-
-/**
  * When the original reads: when the open session changes, when a turn ends
  * (the moment totals most likely moved, and then regardless of age), and on
  * a visible minute clock. A hidden page reads nothing and asks once when it is
@@ -176,13 +150,22 @@ function useSessionInfo(row: SessionRow | null): SessionInfo | null {
     owed.current = ""
     const mine = ++ticket.current
     nextAt.current = Date.now() + FRESH_MS
-    readInfo(want, force).then(
+    SessionFacts.getSummary(want, force).then(
       (info) => {
-        if (mine === ticket.current && current.current === want) setAnswer({ id: want, info })
+        if (info && mine === ticket.current && current.current === want) setAnswer({ id: want, info })
       },
       () => {},
     )
   }, [])
+
+  // `StatusLine.receive`: the card read the whole answer, and the line shows it too.
+  useEffect(
+    () =>
+      SessionFacts.subscribe((from, info) => {
+        if (from === current.current) setAnswer({ id: from, info })
+      }),
+    [],
+  )
 
   useEffect(() => {
     current.current = id
@@ -190,8 +173,8 @@ function useSessionInfo(row: SessionRow | null): SessionInfo | null {
     stateSeen.current = state
     nextAt.current = 0
     owed.current = ""
-    const last = id ? held.get(id) : undefined
-    setAnswer(id && last ? { id, info: last.info } : null)
+    const last = SessionFacts.peek(id)
+    setAnswer(id && last ? { id, info: last } : null)
     if (!id) return
     if (document.hidden) owed.current = "due"
     else load(false)
@@ -232,5 +215,8 @@ function useSessionInfo(row: SessionRow | null): SessionInfo | null {
 
   if (!id) return null
   if (answer?.id === id) return answer.info
-  return held.get(id)?.info ?? null
+  return SessionFacts.peek(id)
 }
+
+/** How long an answer stays fresh, as `SessionFacts` holds it. */
+const FRESH_MS = 60_000
