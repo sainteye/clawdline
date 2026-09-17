@@ -149,7 +149,9 @@ webview 之外，舊 app 的原生面：
 ## 下一步建議
 
 1. 唯讀 Swift store（`%843` 進行中）。
-2. overlay：Session 資訊、確認框、鍵盤說明（`%844` 進行中，只用現有路由）。
+2. overlay：Session 資訊、確認框、鍵盤說明——✅ `9eb0a58`（鍵盤卡 3,241 項 0 差異、確認框 0 差異、行為 22 項相同）。
+   **待 root 接線（等 `%843` 放開檔案）**：`Detail.tsx` 改用 `requestInfo`／`requestConfirm`／`useClosingId`、刪掉兩段式關閉
+   （逐行說明在 P1 報告的「需要 root 接上的 Detail.tsx」一節）；`overlays/legacy.ts` 的暫代匯出搬進 `bridge.ts`。
 3. 依畫面效益補後端：Session 資訊 sheet（`#info`）、開新 session（`#start`）、確認框（`#action-confirm`）、
    在 Mac 上顯示——這四個是詳情標頭與選單最常用的入口。
 3. 側欄頁面：用量頁的後端最接近（已有 `/v1/orchestrator/usage` 與 transcript 用量）。
