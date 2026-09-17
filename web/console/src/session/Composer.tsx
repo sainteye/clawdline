@@ -4,6 +4,8 @@ import type { SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
+import * as V from "../legacy/voice-bridge.js"
+import { toast } from "../overlays/toast.js"
 import { Waiting } from "./Waiting.js"
 
 /**
@@ -22,8 +24,11 @@ import { Waiting } from "./Waiting.js"
  *   parsed `menu` and answered through `POST /key`, as the original's is.
  * - `.shots`, `input#pick` and `button.attach`: the send route here takes text
  *   only (`SendRequest` is `{ text }`), so the attachment button is disabled.
- * - `.voice` and `button.mic`: there is no transcription route, so the
- *   microphone is disabled and its row stays hidden.
+ * - `.voice` and `button.mic`: dictation, through `POST /v1/voice`. The row is
+ *   built by `legacy/voice-bridge.ts` exactly as `input/voice.js` builds it —
+ *   once per state, so a tick does not take the buttons out from under a thumb
+ *   — and this component owns only the microphone's three attributes, the
+ *   element the row is drawn into, and where the words land.
  * - `.skill-menu`: there is no skills route, so the menu never opens.
  *
  * Two things differ from the original and are said here rather than hidden:
@@ -50,10 +55,18 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
   const [write, setWrite] = useState(true)
   const [failure, setFailure] = useState("")
   const sendWidth = useRef({ word: "", px: 0 })
+  const voiceRow = useRef<HTMLDivElement>(null)
+  const form = useRef<HTMLFormElement>(null)
+  // What the microphone is doing, which is the whole of what `renderComposer`
+  // reads back from `Voice`: `voiceBusy` for the two waits, `voiceLive` for
+  // the one control that must stay alive through them.
+  const [voice, setVoice] = useState<V.VoiceState>(V.voiceState)
 
   useKeyboardBar(msg)
 
   const on = write && !!row
+  const voiceBusy = voice !== "off"
+  const voiceLive = voice === "recording"
   let placeholder = T.placeholder
   if (row?.assistant === "codex") {
     placeholder = placeholder.replace("Claude Code", "Codex").replace("Claude", "Codex")
@@ -113,6 +126,57 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
     selection.addRange(range)
   }
 
+  /**
+   * `input/composer.js`'s `appendMsg`: what dictation does with the words.
+   *
+   * **It stops here.** Nothing on the voice path sends, which is the whole
+   * design rather than a step that was left out — a dictation that heard the
+   * wrong thing is then a typo rather than an incident. The join rule is the
+   * copied `core/compose-text.js`, so a sentence dictated after a typed one is
+   * a sentence and not one long word, and a box holding the `<br>` a browser
+   * left behind does not get a leading space.
+   */
+  const appendMsg = (said: string) => {
+    const el = msg.current
+    if (!el || !said) return
+    // Whitespace only is nothing.
+    const had = rawText().trim() ? rawText() : ""
+    if (document.activeElement === el) {
+      caretToEnd()
+      insertText(V.appendGap(had) + said)
+    } else {
+      el.textContent = V.appendedText(had, said)
+    }
+    changed()
+    // The box scrolls at 140px and a dictated paragraph is longer than that.
+    // The end is the part worth seeing: it is what just arrived, and it is
+    // where the next word would go.
+    el.scrollTop = el.scrollHeight
+  }
+  const sink = useRef(appendMsg)
+  sink.current = appendMsg
+
+  // The microphone, attached once. `Voice` is a module rather than a hook for
+  // the reason the original is one object: there is one recorder on the page,
+  // so there is one of these at a time, and a second composer mounting must
+  // not open a second stream.
+  useEffect(() => {
+    const host = voiceRow.current
+    if (!host) return
+    V.attachVoice({ say: toast, changed: setVoice })
+    V.attachComposerVoice({
+      host,
+      composer: form.current,
+      sink: (said) => sink.current(said),
+      // **The composer has gone**, which is the original's `els.composer.hidden`:
+      // a microphone left open behind a row that is no longer on the page is
+      // one with no button left to shut it. Asked of the element rather than
+      // of React, because by then React has already let go of it.
+      guard: () => !host.isConnected,
+    })
+    return () => V.attachComposerVoice(null)
+  }, [])
+
   const submit = async () => {
     if (inFlight.current) return
     const said = rawText().trim()
@@ -153,6 +217,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
 
   return (
     <form
+      ref={form}
       className="composer"
       id="composer"
       data-write={write ? "on" : "off"}
@@ -165,7 +230,12 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
     >
       <Waiting row={row} write={write} />
       <div className="shots" id="shots"></div>
-      <div className="voice" id="voice" role="status" hidden></div>
+      {/* Empty here and built in `voice-bridge.ts`, as the original builds it
+          in `voice.js`: React renders no children into this row, so it never
+          diffs away the meter, the count or the two ways out. `opening` is the
+          browser's own permission sheet, which is on top of the page and says
+          more than this row could, so the row stays hidden for it. */}
+      <div className="voice" id="voice" role="status" hidden={voice === "off" || voice === "opening"} ref={voiceRow}></div>
       {/* The original's label is English in every language; the catalog has no key for it. */}
       <div
         className="skill-menu"
@@ -186,14 +256,29 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
         >
           +
         </button>
+        {/* Two icons and never a label — the words are the `aria-label`, which
+            is swapped for "stop" while it records so that a screen reader is
+            told what the second press will do.
+
+            **Except while it is recording, it goes dead for the two waits.**
+            The microphone takes the same permission as the attachment beside
+            it, and during a transcription it is not the control that does
+            anything — the row above carries the Cancel for exactly that
+            stretch. But a session that closes under an open microphone must
+            not disable the only control that can shut it: the light would stay
+            on with nothing left on screen to press. */}
         <button
           className="mic"
           id="mic"
           type="button"
-          aria-label={T.webVoiceStart}
-          title={T.webVoiceStart}
-          aria-pressed="false"
-          disabled
+          aria-label={voiceLive ? T.webVoiceStop : T.webVoiceStart}
+          title={voiceLive ? T.webVoiceStop : T.webVoiceStart}
+          aria-pressed={voiceLive ? "true" : "false"}
+          disabled={voiceLive ? false : !on || sending || voiceBusy}
+          onClick={() => V.press()}
+          // Pressing it must not take the focus off the box somebody is typing
+          // in; the click still lands.
+          onMouseDown={(e) => e.preventDefault()}
         >
           <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect>
@@ -250,7 +335,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
           className="send"
           id="send"
           type="submit"
-          disabled={!on || sending || !text.trim()}
+          disabled={!on || sending || voiceBusy || !text.trim()}
           title={keyboard ? T.webSendTip : ""}
           style={pinned}
           onMouseDown={(e) => e.preventDefault()}

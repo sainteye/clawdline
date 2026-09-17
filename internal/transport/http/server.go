@@ -166,6 +166,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/usage/analytics.json", s.usageAnalyticsRoute)
 	mux.HandleFunc("/v1/orchestrator/usage/project-worktrees", s.usageWorktreesRoute)
 	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
+	// Said out loud rather than typed (voice.go). Not a session route and not
+	// a send: this machine transcribes and answers with the text, and what
+	// happens to it afterwards is the composer's business.
+	mux.HandleFunc("/v1/voice", s.voiceRoute)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			s.boardWrite(w, r)

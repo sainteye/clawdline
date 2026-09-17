@@ -43,6 +43,8 @@
     "js/core/visibility.js": "a9866c5195b96016",
     "js/core/layout-diagnostics.js": "1bcd062b7dcb1a99",
     "js/core/failure-text.js": "837136c3c2ac44a2",
+    "js/core/buzz.js": "98ca7956a951edb4",
+    "js/core/compose-text.js": "e6dc293509225fd3",
     "js/net/cloud-failure.js": "2f2409a848a0c79b",
     "js/session/selection.js": "8ddd312681b50047",
     "js/session/ui.js": "5b4ed1293afbea71",
