@@ -1,7 +1,7 @@
 # 第八波：圖片、語音、選單（2026-09-17 規劃，9/18 04:00 額度重置後平行開工）
 
 使用者 2026-09-17 問：圖片上傳與拖拉、session 右上角選單、語音輸入是不是都還沒做，並指出這些本來可以平行。
-三項確實都沒做（見下表），而且彼此獨立。當時 Claude 7 天額度 96%，使用者選擇「重置後一起開」。
+三項確實都沒做（見下表），而且彼此獨立。使用者接著發現「在新版瀏覽器裡沒辦法選擇回答問題」，這是第四項（F）。當時 Claude 7 天額度 96%，使用者選擇「重置後一起開」。
 
 | 項目 | 新版現況（master `813daf5`） | 舊版 |
 |---|---|---|
@@ -10,12 +10,13 @@
 | 在 Mac 上顯示、即時畫面 | `#tx-focus`、`#session-focus`、`#session-screen` 停用 | `/v1/sessions/<id>/focus`、`/screen`，`#screen-panel` |
 | Git 變更、commit、push | 子選單開得出來，三項停用 | `input/git-panel.js` 127 行、`/v1/sessions/<id>/git`，commit／push 走確認框 |
 | 文件、我傳出的訊息 | `#session-documents`、`#session-user-messages` 停用 | `view/documents.js` 318 行、`document-render.js`、`/documents` 系列路由；`input/user-messages.js` |
+| 在瀏覽器回答問題（AskUserQuestion 等選單） | `#waiting` 一直隱藏；session 列沒有 `menu`；沒有 `/key` | `view/composer.js` 的等待卡；session 列的 `menu`（`RemoteServer.swift` 約 5353 行 `menuObject`，由畫面解析）；`POST /v1/sessions/<id>/key` 送選項的數字鍵 |
 
 可用的：Session 資訊、關閉 session。常用句在舊版讀不到時本來就是隱藏，不在這一波。
 
 ## 怎麼平行
 
-五個 child，**每個都在自己的隔離 worktree**（`isolation: "worktree"`）。原因：A 與 B 都要改
+六個 child，**每個都在自己的隔離 worktree**（`isolation: "worktree"`）。原因：A 與 B 都要改
 `session/Composer.tsx`，C、D、E 都要改 `session/Detail.tsx`，大家都會在 `server.go` 加路由；共用樹上同時改同一個檔
 會互相蓋掉。各自在 worktree 改，root 依序合併、解衝突、統一重生契約。
 
@@ -28,6 +29,7 @@
 | C | 7763 | 在 Mac 上顯示＋即時畫面 |
 | D | 7764 | Git 面板＋commit／push |
 | E | 7765 | 文件＋我傳出的訊息 |
+| F | 7766 | 在瀏覽器回答問題：等待卡、`menu`、`/key` |
 
 ### 共用前言（每份派工都放在最前面）
 
@@ -119,8 +121,22 @@ Go：文件路由。**這是讀檔的路由，路徑穿越是頭號風險**：�
 照舊版的掛法）、`web/console/src/session/`（新增 user messages sheet）、`web/console/src/legacy/`、
 `internal/transport/http/`（新增 `documents.go`）、`internal/adapters/documents/`（新）、`api/v1/`。
 
+### F 在瀏覽器回答問題
+
+舊版：`view/composer.js` 的等待卡（`#waiting`：問題、選項按鈕、多選、送出、步驟、`answeredMenu` 的「已送出」狀態、
+`menuKey` 的「揮掉這個選單」）；session 列的 `menu`（`RemoteServer.swift` 約 5353 行的 `menuObject`，以及它從畫面
+解析選單的程式，找出是哪個檔）；`POST /v1/sessions/<id>/key`（`ITerm.keystroke`、`Tmux.keystroke` 送一個原始位元組，
+不包 bracketed paste）。舊版的註解記錄過：用 `/send` 回答選單會送錯選項（"Tea" 變成 "Water"），所以**回答只能走 `/key`**。
+Go：`internal/adapters/terminal` 加 keystroke；讀畫面解析 `menu`，放進 `/v1/sessions` 的列（`inventory.go` 已經會讀畫面）；
+`/key` 路由要求 write 權限，只接受舊版允許的按鍵。前端照舊版畫等待卡。
+測試：**只用可拋棄的 session**：在 `/tmp` 下開一個新分頁跑 claude，請它用 AskUserQuestion 問一個無害的問題，
+從你的 port 的頁面按選項回答，確認畫面上選到的是你按的那一個；單選、多選各一次。不要對使用者的 session 按任何鍵。
+可改：`web/console/src/session/Composer.tsx`（只改 `#waiting` 那段）、`web/console/src/session/`（新增 `Waiting.tsx`）、
+`web/console/src/legacy/`、`internal/transport/http/`（新增 `keys.go`、`sessions.go` 的 `menu`）、`internal/app/`、
+`internal/adapters/terminal/`、`api/v1/`。與 C 都會改 `internal/adapters/terminal/`，由 root 合併。
+
 ## 整合（root）
 
 依完成順序合併；`Composer.tsx`、`Detail.tsx`、`server.go`、`bridge.ts`、`MANIFEST.json` 的衝突由 root 解。
 每合一個：重生契約並 `-check`、`go vet`／`build`、`tsc`、`check-legacy-css.sh`，提交，landing。
-五個都合完後，重建 7727，派一個 reviewer 審這五項。
+六個都合完後，重建 7727，派一個 reviewer 審這六項。
