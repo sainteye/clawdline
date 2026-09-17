@@ -246,8 +246,24 @@ func goType(s *schema, optional bool) string {
 		}
 		return d.name
 	}
-	if optional && s.Ref == "" && s.Type == "string" && s.Nullable {
-		return "*string"
+	// A nullable field that is not in `required` is the pair this generator
+	// already uses for "the key is always there and its value may be null":
+	// the tag keeps no omitempty, and TypeScript gets `T | null`. Go needs a
+	// pointer to say the same thing, and it needed one for every scalar, not
+	// only for a string — `"additions": null` and `"additions": 0` are the
+	// difference between nothing counted and a count of nothing, and an int64
+	// can only send the second.
+	if optional && s.Ref == "" && s.Nullable {
+		switch s.Type {
+		case "string":
+			return "*string"
+		case "integer":
+			return "*int64"
+		case "number":
+			return "*float64"
+		case "boolean":
+			return "*bool"
+		}
 	}
 	switch s.Type {
 	case "string":

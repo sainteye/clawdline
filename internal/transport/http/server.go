@@ -133,6 +133,12 @@ func (s *Server) Handler() http.Handler {
 			s.sessionInfoRoute(w, r, id)
 			return
 		}
+		// A read as well, and the second one under this prefix (git.go): what
+		// the session's repository has changed, asked for when its panel opens.
+		if id, ok := gitPath(r); ok {
+			s.sessionGitRoute(w, r, id)
+			return
+		}
 		s.sessionAction(w, r)
 	})
 	mux.HandleFunc("/v1/events", s.events)
