@@ -18,7 +18,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" \
   -o "$APP/Contents/MacOS/clawdline" ./cmd/clawdline
-swiftc -O -o "$APP/Contents/MacOS/$NAME" shell/darwin/main.swift
+swiftc -O -o "$APP/Contents/MacOS/$NAME" shell/darwin/*.swift
+
+# The shell's own files — the mascot packs its menu lists. Copied, like the
+# console below: nothing in the bundle points outside it.
+cp -R shell/darwin/Resources/. "$APP/Contents/Resources/"
 
 # The console travels with the app, copied and never linked: a bundle that
 # depends on a directory outside itself is not a bundle.
@@ -47,6 +51,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleName</key><string>$NAME</string>
+  <key>CFBundleDisplayName</key><string>$NAME</string>
   <key>CFBundleIdentifier</key><string>$ID</string>
   <key>CFBundleExecutable</key><string>$NAME</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
@@ -54,8 +59,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <!-- clawdline-next://open, so any tool can summon the window. Not clawdline://,
+       which the Swift app owns and which both apps would then answer. -->
+  <key>CFBundleURLTypes</key>
+  <array><dict>
+    <key>CFBundleURLName</key><string>$ID</string>
+    <key>CFBundleURLSchemes</key><array><string>clawdline-next</string></array>
+  </dict></array>
 </dict></plist>
 PLIST
+
+# Signed ad hoc, as one bundle. The linker signs each binary on its own, but
+# launch at login (SMAppService) asks about the application, and an unsigned
+# bundle is one it may refuse.
+codesign --force --sign - "$APP/Contents/MacOS/clawdline"
+codesign --force --sign - "$APP"
 
 echo "built $APP ($(du -sh "$APP" | cut -f1))"
 
