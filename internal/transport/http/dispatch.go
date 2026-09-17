@@ -73,8 +73,8 @@ func (s *Server) dispatch(w http.ResponseWriter, r *http.Request) {
 
 // settleRoute asks whether a task has written its result.
 func (s *Server) settleRoute(w http.ResponseWriter, r *http.Request) {
-	rest := strings.TrimPrefix(r.URL.Path, "/v1/orchestrator/tasks/")
-	id := strings.TrimSuffix(rest, "/settle")
+	rest := strings.TrimPrefix(routePath(r), "/v1/orchestrator/tasks/")
+	id := decodeSegment(strings.TrimSuffix(rest, "/settle"))
 	if id == "" || id == rest {
 		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a task action")
 		return

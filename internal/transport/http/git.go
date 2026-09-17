@@ -12,18 +12,10 @@ import (
 )
 
 // gitPath recognises GET /v1/sessions/{id}/git and returns the id, decoded —
-// `r.URL.Path` is already unescaped, which is what makes a tmux pane's `%195`
-// a name here rather than a control character.
+// one segment of the path the mux dispatched by, which is what makes a tmux
+// pane's `%195` a name here rather than a separator or a control character.
 func gitPath(r *http.Request) (string, bool) {
-	if r.Method != http.MethodGet {
-		return "", false
-	}
-	rest, ok := strings.CutPrefix(r.URL.Path, "/v1/sessions/")
-	if !ok {
-		return "", false
-	}
-	id, ok := strings.CutSuffix(rest, "/git")
-	return id, ok && id != ""
+	return sessionVerbIs(r, "git", http.MethodGet)
 }
 
 // sessionGitRoute answers the Git panel: the branch line and the changed files
@@ -78,6 +70,11 @@ func writeGitRefusal(w http.ResponseWriter, err error) {
 	case errors.Is(err, git.ErrTimedOut):
 		writeRefusal(w, http.StatusGatewayTimeout, "git_timeout",
 			"That repository did not answer inside the Git read deadline")
+	case errors.Is(err, git.ErrTooLarge):
+		// Not a failure of git and not a fact about the session: this daemon
+		// declined to hold that much of somebody's repository in memory.
+		writeRefusal(w, http.StatusInternalServerError, "git_too_large",
+			"That repository answered with more than this reads")
 	case errors.Is(err, git.ErrUnavailable):
 		// Not 404: this machine said nothing about that directory.
 		writeRefusal(w, http.StatusNotImplemented, "git_unavailable",

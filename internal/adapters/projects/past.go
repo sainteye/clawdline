@@ -297,6 +297,18 @@ func comparable(raw string) string {
 // app's is: there is nothing to pick back up that this machine can prove.
 var ErrCodexUnavailable = errors.New("codex_unavailable")
 
+// codexServers bounds how many `codex app-server` processes this reading may
+// have running at once.
+//
+// **This route is a GET that starts a program.** `GET /v1/places/{id}/sessions/codex`
+// is read-level — it draws the list of conversations to pick back up — and it
+// has no cache in front of it, so without a bound N simultaneous reads are N
+// Node processes, each for up to twenty seconds. Opening a session already
+// queues for one slot (`admitOpening`); this is the same idea for the reading
+// beside it. Two at a time, and a third waits rather than forking: the answer
+// is worth a wait and is not worth a machine.
+var codexServers = make(chan struct{}, 2)
+
 // CodexPast is StartPoints.past(in:assistant: .codex): Codex's own thread
 // index for this directory, through `codex app-server`, which owns it.
 // `open` is every Codex conversation id something is writing to now.
@@ -304,6 +316,15 @@ func CodexPast(ctx context.Context, place Place, open map[string]bool, limit int
 	exe := codexExecutable()
 	if exe == "" {
 		return nil, ErrCodexUnavailable
+	}
+	select {
+	case codexServers <- struct{}{}:
+		defer func() { <-codexServers }()
+	case <-ctx.Done():
+		// The caller went away while waiting, so nothing was started and
+		// nothing is owed. The empty listing is what the app being replicated
+		// answers when Codex cannot be read.
+		return nil, errors.Join(ErrCodexUnavailable, ctx.Err())
 	}
 	scan := 400
 	response, err := codexThreadList(ctx, exe, place.Path, scan)

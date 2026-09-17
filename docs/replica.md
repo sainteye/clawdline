@@ -51,6 +51,44 @@
   瀏覽器裡的裝置一律 403，Dashboard 的派工按鈕也是（舊版同樣不讓配對的裝置派工）。
 - 沒帶 token 的回應是舊版的原文：`401 {"error":{"code":"unauthorized","message":"This needs a paired device.",…}}`。
 
+### 閘門看的那一份路徑（2026-09-18，reviewer 第四輪 F1）
+
+**授權判斷與路由分派看同一個字串。** 舊版的 `request.path` 是原始的 request target，它的閘門與 switch
+比對的是同一份；Go 版的閘門本來讀 `r.URL.Path`（net/http 已經解過碼），而 `http.ServeMux` 比對的是
+`cleanPath(EscapedPath())`，於是 `/v1/sessions/..%2F..%2Fv1%2Fauth%2Fx/git` 在閘門眼裡是公開的
+`/v1/auth/…`，在 mux 眼裡仍是一個 session id——**不帶任何 token 就跑進 handler**，而 `/git`、`/info`
+在查表前會先盤點整台機器（ps、tmux、osascript）。同一類第二種拼法是 `…/documents/../../../../v1/health`：
+閘門清乾淨之後看到公開的 `/v1/health`，`withDocuments`（在 mux 前面、比對原始路徑）仍然認得是文件路由。
+
+修法（`internal/transport/http/gate.go`）：
+
+- `routePath(r)`＝`cleanPath(r.URL.EscapedPath())`，**閘門與每一處用路徑做決定的地方都讀這一份**
+  （`openPath`、`machineScoped`、`taskSecretRoute`、`writePolicy`、`authRoute`、session 的
+  `{id}/{verb}`、`/v1/places/`、`/v1/projects/`、`/v1/artifacts/images/`、`/v1/orchestrator/tasks/`）。
+  要名字的地方一律「先切段、再解碼一段」，never 整條路徑解完再切。
+- `readablePath`：任何一段解碼後含 `/`、`\`、NUL，或本身是 `.`／`..`（含 `%2e%2e`、`%2F`、`%2f` 等拼法），
+  在閘門最前面回舊版的 `400 {"error":{"code":"bad_request","message":"Could not read that request"}}`
+  （`RemoteServer.response(for:)` 的 `.badRequest`）。舊版對同樣四個請求是 401，因為它沒有這條規則、
+  單純過不了 token；新版多這一道，**這是刻意的差異**。
+- 回歸測試：`gate_test.go` 的 `TestGateReadsAPathOneWay`、`TestReadablePath`（修正前 12 個拼法有 8 個直接 200）。
+
+### 文件頁的到達方式（F2）
+
+舊版 `main.js` 的 `navigate` 對文件頁固定 `Pages.go(name, {hash:false})`——**不寫位址**。Go 版原本反過來
+寫 `location.hash="#page=documents"` 再靠 hashchange 繞回來，在手機寬度（<900）等於沒有實作：寫 hash 是
+same-document navigation，會發 `popstate`，而 `popstate` 在這頁是手機的返回手勢
+（`input/action-confirm.js`），於是 `closeDetail` 把剛寫進去的位址用 `replaceState` 換掉，接著才輪到
+hashchange，讀到的是空的，就回到清單。現在改成 `requestPage({page, hash:false})`，App 直接 `Pages.go`，
+760 與 1129 都會開，而且兩種寬度都不再改 hash——與舊版一致。
+
+### 文件的 project root（F11）
+
+`<session cwd>/artifacts` 是 symlink 時，舊版無條件跟隨（`ProjectArtifact.projectRoot`），這台機器也真的
+這樣用（`~/code/clawdline/artifacts -> ../clawdline-cloud/artifacts`，文件頁 101 列）。所以**預設仍然跟隨**，
+但加了一道地板：解析後的 root 不可以是家目錄、不可以包含 session 自己的工作目錄、不可以是檔案系統根
+（`ln -s ~ artifacts` 那一條就是被這道擋掉的）。要完全不跟隨的機器，在自己的 `config.json` 寫
+`documents_contain_project_root: true`。
+
 ## 進度
 
 ### Session 清單頁（主畫面）

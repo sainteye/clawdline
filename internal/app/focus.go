@@ -36,7 +36,11 @@ func (a Actions) Focus(ctx context.Context, id string) (session.Session, error) 
 		if _, no := err.(terminal.Unsupported); no {
 			return s, Refusal{Code: "backend_unsupported", Detail: err.Error()}
 		}
-		return s, Refusal{Code: "terminal_io_failed", Detail: err.Error()}
+		// The original's sentence for this, as `/key` already writes it
+		// (keys.go): a terminal command that did not complete, and what the
+		// terminal itself said about it.
+		return s, Refusal{Code: "terminal_io_failed",
+			Detail: "The terminal command did not complete: " + err.Error()}
 	}
 	a.record(ctx, "session.focus", s.ID, nil)
 	return s, nil

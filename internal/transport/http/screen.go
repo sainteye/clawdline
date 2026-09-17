@@ -17,15 +17,7 @@ import (
 // session, and a POST would put it behind the send gate, which is about running
 // code on this machine. A device that may only read must still be able to look.
 func screenPath(r *http.Request) (string, bool) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		return "", false
-	}
-	rest, ok := strings.CutPrefix(r.URL.Path, "/v1/sessions/")
-	if !ok {
-		return "", false
-	}
-	id, ok := strings.CutSuffix(rest, "/screen")
-	return id, ok && id != ""
+	return sessionVerbIs(r, "screen", http.MethodGet, http.MethodHead)
 }
 
 // screenWire is contract.Screen as it is sent. It exists for the three keys the

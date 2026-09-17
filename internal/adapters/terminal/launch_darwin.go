@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -81,10 +82,18 @@ func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) 
 		// both are something on the Mac's screen waiting for a person.
 		attention := strings.Contains(said, "-1712") || strings.Contains(said, "-1743") ||
 			ctx.Err() == context.DeadlineExceeded
-		if said == "" {
-			said = "iTerm2 would not open a tab: " + err.Error()
+		// **osascript's own words are read here and go no further.** They carry
+		// the script, the interpreter's path and an Apple Event error number,
+		// and the app being replicated never sends any of it: its iTerm2
+		// failures carry the script's `error` field or a fixed sentence
+		// (`ITerm.terminalFailure(_:fallback:)`). So the reader of this
+		// machine's log gets the diagnosis and the device gets the sentence.
+		if said != "" {
+			log.Printf("iterm: osascript refused: %s", said)
+		} else {
+			log.Printf("iterm: osascript failed: %v", err)
 		}
-		return "", Failure{Attention: attention, Message: said}
+		return "", Failure{Attention: attention, Message: "iTerm2 would not open a tab."}
 	}
 	var answer struct {
 		OK    bool   `json:"ok"`

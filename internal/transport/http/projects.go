@@ -263,7 +263,13 @@ func (s *Server) projectCatalogRoute(w http.ResponseWriter, r *http.Request) {
 // projectsRoute is ProjectWorktreeHTTP's read and refresh, and nothing else:
 // the cleanup preview and apply are not routes on this daemon.
 func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/v1/projects/"), "/")
+	// The string the mux dispatched by, split before anything is decoded, so
+	// this route and the gate's `machineScoped` read the same shape
+	// (routePath, gate.go).
+	parts := strings.Split(strings.TrimPrefix(routePath(r), "/v1/projects/"), "/")
+	for i, part := range parts {
+		parts[i] = decodeSegment(part)
+	}
 	if len(parts) < 2 || parts[0] == "" || parts[1] != "worktrees" || len(parts) > 3 ||
 		(len(parts) == 3 && parts[2] != "refresh") {
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such route")

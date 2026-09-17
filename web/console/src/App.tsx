@@ -10,6 +10,7 @@ import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
 import {
   ActionConfirm,
+  GO_PAGE,
   Info,
   OPEN_CONFIRM,
   OPEN_INFO,
@@ -22,6 +23,7 @@ import {
   shown,
   toggleKeys,
   type ConfirmRequest,
+  type PageRequest,
 } from "./overlays/index.js"
 
 /**
@@ -402,6 +404,22 @@ export default function App() {
   // The presses that open an overlay from a component that does not own it
   // (`overlays/events.ts`). `#detail-info` and the menu's Session info row
   // open nothing while no session is open, as there.
+  // A page asked for by a component that does not own the router
+  // (`requestPage`, overlays/events.ts): `Pages.go` with the options it was
+  // given, and no address written when it said not to. The Documents page asks
+  // this way because `main.js` does, and because writing the address is a
+  // same-document navigation that the phone's back gesture below cannot tell
+  // from a gesture.
+  useEffect(() => {
+    const onGo = (ev: Event) => {
+      const want = (ev as CustomEvent<PageRequest | undefined>).detail
+      if (!want?.page || !knows(want.page)) return
+      goRef.current(want.page, { hash: want.hash })
+    }
+    document.addEventListener(GO_PAGE, onGo)
+    return () => document.removeEventListener(GO_PAGE, onGo)
+  }, [])
+
   useEffect(() => {
     const onInfo = () => {
       if (openRef.current) Info.open()

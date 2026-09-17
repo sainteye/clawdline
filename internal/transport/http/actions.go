@@ -14,21 +14,57 @@ import (
 	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
-// sessionAction routes /v1/sessions/{id}/{verb}.
+// sessionVerb reads `/v1/sessions/{id}/{verb}` off the string the mux
+// dispatched by (routePath, gate.go), and gives the id back as a name: one
+// segment, split first and decoded once.
 //
 // The id is taken off the path rather than out of a body because it identifies
 // the thing being acted on, and a terminal id can contain a percent sign — tmux
 // panes are `%195` — so it arrives percent-encoded and is decoded here. Reading
 // it raw turned `%195` into a control character and answered `not_found`, which
 // is the wrong answer to the wrong question.
+//
+// **Split, then decode — never the other way round.** Decoding the whole path
+// first is how `..%2F..%2Fv1%2Fauth%2Fx` became four segments to one reader and
+// one id to another; here it is one segment holding a separator, which the gate
+// has already refused and which would not parse as a route in any case.
+func sessionVerb(r *http.Request) (id, verb string, ok bool) {
+	rest, cut := strings.CutPrefix(routePath(r), "/v1/sessions/")
+	if !cut {
+		return "", "", false
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return decodeSegment(parts[0]), parts[1], true
+}
+
+// sessionVerbIs is sessionVerb for one named verb, asked for by the methods
+// that route answers. Each caller names its own: a route that says GET and not
+// HEAD keeps saying that.
+func sessionVerbIs(r *http.Request, verb string, methods ...string) (string, bool) {
+	asked := false
+	for _, method := range methods {
+		if r.Method == method {
+			asked = true
+			break
+		}
+	}
+	if !asked {
+		return "", false
+	}
+	id, got, ok := sessionVerb(r)
+	return id, ok && got == verb
+}
+
+// sessionAction routes /v1/sessions/{id}/{verb}.
 func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
-	rest := strings.TrimPrefix(r.URL.Path, "/v1/sessions/")
-	cut := strings.LastIndex(rest, "/")
-	if cut < 0 {
+	id, verb, ok := sessionVerb(r)
+	if !ok {
 		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a session action")
 		return
 	}
-	id, verb := rest[:cut], rest[cut+1:]
 	if r.Method != http.MethodPost {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed",
 			"a session action is a POST; a GET would make it something a link could do by accident")
