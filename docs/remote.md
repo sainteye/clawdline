@@ -49,10 +49,14 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
 
 1. 設定、用量、專案三頁（已落地：c9f60c1、303c9e4、ef77892）。
 2. 免費版配對與認證的 Go 核心，加上原生殼的最小接線（token、配對 alert）。在隔離的 worktree 裡做，
-   這樣閘門不會在其他 child 量 7727 的途中上線。**做完了，在分支 `free-auth`（0e5baf0），還沒合進 master**：
-   先由另一個模型（Codex）做一次安全審查；合進去之後，下一次重建 7727 閘門就會生效，量測要改用
-   `clawdline open`（見分支裡的 replica.md）。已知還沒做：React console 的配對畫面、Dashboard 的派工按鈕
-   （會 403）、send 的 Idempotency-Key、`/v1/health` 的 auth 欄位。
+   這樣閘門不會在其他 child 量 7727 的途中上線。**已合進 master（`5cca6b1`）。** Codex 的安全審查
+   （task 0c82534e）找到 1 high、4 medium、1 low，全部修正後才合併（`f2caa6a`）。下一次重建 7727 閘門就會生效，
+   瀏覽器要用 `clawdline open` 取得 cookie（見 replica.md 的量測段落）。
+   刻意的取捨：密碼錯誤（24 小時 10 次）與配對猜錯（24 小時 5 次）是全體共用的額度，連得到 port 的人可以讓
+   密碼登入或新配對停一天（已配對的裝置不受影響）；額度只存在記憶體，重啟會歸零。
+   配對猜錯次數跨配對累計，**與 Swift 不同**：Swift 每個配對各 5 次、換新配對就歸零，舊 app 仍有這個缺口。
+   已知還沒做：React console 的配對畫面、Dashboard 的派工按鈕（會 403）、send 的 Idempotency-Key、
+   公開 health 的版本、真實 cloudflared 與原生殼寫入的驗證。
 3. 配對的網頁入口（照抄 `door/door.js`、`door.css`）與原生殼的 Remote 設定。
 4. tunnel：跑使用者自己安裝的 cloudflared，一律帶 `--config`，還沒配對任何裝置就拒絕啟動。
 5. Cloud bridge：先讀 PROTOCOL.md，拆成傳輸與加密一波、27 種操作分兩三波，用假的 relay 測。
