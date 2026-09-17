@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/pbkdf2"
 	"crypto/sha256"
 	"errors"
@@ -17,15 +18,41 @@ const (
 	// PairingLifetime is long enough to walk to the Mac, short enough that a
 	// code left on a screen is not a key somebody finds later.
 	PairingLifetime = 2 * time.Minute
-	// PairingGuesses is how many wrong codes end a pairing. A million codes and
-	// five tries is not a number anybody grinds through.
+	// PairingGuesses is how many wrong codes pairing takes in a
+	// PairingGuessWindow, counted across every pairing rather than per
+	// pairing. A million codes and five tries is not a number anybody grinds
+	// through — but only while asking again does not hand out five more, which
+	// in the Swift app it does: there, three requests every ten minutes were
+	// fifteen guesses every ten minutes, over half the code space in a year.
 	PairingGuesses = 5
+	// PairingGuessWindow is how long a wrong code counts. A day, so the
+	// steady rate is five guesses a day, about one chance in 550 a year.
+	// Anybody who can reach the pairing route can use the five up and keep
+	// pairing closed; they could already, with three requests every ten
+	// minutes, so the long window takes nothing away that was there.
+	PairingGuessWindow = 24 * time.Hour
 	// PairingWindow and PairingRequests bound the one route that has to be
 	// reachable without a token and that puts an alert on somebody's screen.
 	PairingWindow   = 10 * time.Minute
 	PairingRequests = 3
+	// PasswordFailures is how many wrong passwords the password door takes in
+	// a PasswordWindow, from everybody together: through a tunnel every
+	// request comes from 127.0.0.1, so there is nobody else to count them by.
+	// A check under way counts against it until it is known to have passed,
+	// which is also what bounds how many can wait for their turn.
+	PasswordFailures = 10
+	PasswordWindow   = 24 * time.Hour
 	// PasswordIterations is PBKDF2-HMAC-SHA256's cost: slow on purpose.
 	PasswordIterations = 600_000
+	// MinPasswordIterations and MaxPasswordIterations are the counts a stored
+	// password may carry. Below, the hash is not doing its job; above, one
+	// guess would hold the machine for seconds.
+	MinPasswordIterations = 100_000
+	MaxPasswordIterations = 10_000_000
+	// PasswordHashBytes and PasswordSaltBytes are the stored password's sizes,
+	// which both apps write.
+	PasswordHashBytes = 32
+	PasswordSaltBytes = 16
 	// LocalName is what the machine's own device is called.
 	LocalName = "This Mac"
 	// DefaultName is what an unnamed device is called.
@@ -55,15 +82,23 @@ type Authority struct {
 	password     *Password
 	pending      *pairing
 	pairingTimes []time.Time
-	watchers     map[int]chan PairingNotice
-	nextWatcher  int
-	cachedLocal  string
+	// pairingMisses is every wrong code in the last PairingGuessWindow,
+	// whichever pairing it was typed into. A new pairing does not clear it.
+	pairingMisses []time.Time
+	// passwordMisses is every wrong password in the last PasswordWindow, and
+	// passwordChecks the checks admitted and not yet finished.
+	passwordMisses []time.Time
+	passwordChecks int
+	watchers       map[int]chan PairingNotice
+	nextWatcher    int
+	cachedLocal    string
 
-	// derive is serialised. The Swift server answers on one queue, so a second
-	// password attempt waited for the first; handlers here run concurrently, and
-	// without this a burst of guesses would be a burst of 600,000-round hashes
-	// at once.
-	derive sync.Mutex
+	// derive is one password check at a time. The Swift server answers on one
+	// queue, so a second attempt waited for the first; handlers here run
+	// concurrently, and without this a burst of guesses would be a burst of
+	// 600,000-round hashes at once. A channel rather than a mutex, so a caller
+	// who has gone away stops waiting.
+	derive chan struct{}
 }
 
 // Options replace the clock and the random source, for tests.
@@ -74,7 +109,9 @@ type Options struct {
 
 // New loads the store. A store that exists and cannot be read is a refusal,
 // not an empty device list: the Swift app treats it as empty and its next save
-// throws the unreadable file away, which is the one outcome worth refusing.
+// throws the unreadable file away, which is the one outcome worth refusing. A
+// store that reads and does not make sense is refused the same way
+// (ErrInvalidState), before anything could be written over it.
 func New(store Store, opts Options) (*Authority, error) {
 	a := &Authority{
 		store:    store,
@@ -82,6 +119,7 @@ func New(store Store, opts Options) (*Authority, error) {
 		random:   opts.Random,
 		devices:  map[string]Device{},
 		watchers: map[int]chan PairingNotice{},
+		derive:   make(chan struct{}, 1),
 	}
 	if a.now == nil {
 		a.now = time.Now
@@ -93,14 +131,88 @@ func New(store Store, opts Options) (*Authority, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkState(state); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidState, err)
+	}
 	for _, d := range state.Devices {
-		if d.ID == "" || d.Hash == "" {
-			continue
-		}
 		a.devices[d.ID] = d
 	}
 	a.password = state.Password
 	return a, nil
+}
+
+// checkState is what a loaded state must be before anything acts on it: every
+// device named once and keyed by a digest no other device has, at most one of
+// them this machine's own, and a password this package could have written.
+func checkState(s State) error {
+	ids := map[string]bool{}
+	hashes := map[string]bool{}
+	locals := 0
+	for _, d := range s.Devices {
+		if d.ID == "" {
+			return errors.New("a device has no id")
+		}
+		if ids[d.ID] {
+			return fmt.Errorf("device id %q appears twice", d.ID)
+		}
+		ids[d.ID] = true
+		if !isDigest(d.Hash) {
+			return fmt.Errorf("device %q has no SHA-256 digest", d.ID)
+		}
+		if hashes[d.Hash] {
+			return fmt.Errorf("device %q shares its digest with another device", d.ID)
+		}
+		hashes[d.Hash] = true
+		for _, c := range d.Caps {
+			if _, ok := ParseCapability(string(c)); !ok {
+				return fmt.Errorf("device %q has an unknown capability", d.ID)
+			}
+		}
+		if d.Local {
+			locals++
+			if !d.Approved {
+				return fmt.Errorf("this machine's device %q is not approved", d.ID)
+			}
+		}
+	}
+	if locals > 1 {
+		return fmt.Errorf("%d devices say they are this machine's own", locals)
+	}
+	if p := s.Password; p != nil {
+		if len(p.Hash) != PasswordHashBytes || len(p.Salt) != PasswordSaltBytes {
+			return fmt.Errorf("the password record is %d hash and %d salt bytes, not %d and %d",
+				len(p.Hash), len(p.Salt), PasswordHashBytes, PasswordSaltBytes)
+		}
+		if p.Iterations < MinPasswordIterations || p.Iterations > MaxPasswordIterations {
+			return fmt.Errorf("the password record's %d iterations are outside %d to %d",
+				p.Iterations, MinPasswordIterations, MaxPasswordIterations)
+		}
+	}
+	return nil
+}
+
+// isDigest is a SHA-256 in lowercase hex, the only spelling Hash produces.
+func isDigest(s string) bool {
+	if len(s) != sha256.Size*2 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !('0' <= s[i] && s[i] <= '9' || 'a' <= s[i] && s[i] <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// recent keeps the times within window of now, in place.
+func recent(times []time.Time, now time.Time, window time.Duration) []time.Time {
+	kept := times[:0]
+	for _, t := range times {
+		if now.Sub(t) < window {
+			kept = append(kept, t)
+		}
+	}
+	return kept
 }
 
 // snapshot is the state as it would be saved, from a given device map.
@@ -225,17 +337,18 @@ type Started struct {
 // One at a time, and a new request replaces the old rather than joining it:
 // two live codes are two chances to guess, and the person at the Mac is
 // looking at one alert. Three requests in ten minutes, then ErrRateLimited
-// until the window rolls; a refused request does not count against it.
+// until the window rolls; a refused request does not count against it. While
+// the wrong codes have used up PairingGuesses, ErrPairingLocked: a code nobody
+// may try is not worth putting on anybody's screen.
 func (a *Authority) BeginPairing(name string) (Started, error) {
 	now := a.now()
 	a.mu.Lock()
-	kept := a.pairingTimes[:0]
-	for _, t := range a.pairingTimes {
-		if now.Sub(t) < PairingWindow {
-			kept = append(kept, t)
-		}
+	a.pairingMisses = recent(a.pairingMisses, now, PairingGuessWindow)
+	if len(a.pairingMisses) >= PairingGuesses {
+		a.mu.Unlock()
+		return Started{}, ErrPairingLocked
 	}
-	a.pairingTimes = kept
+	a.pairingTimes = recent(a.pairingTimes, now, PairingWindow)
 	if len(a.pairingTimes) >= PairingRequests {
 		a.mu.Unlock()
 		return Started{}, ErrRateLimited
@@ -263,8 +376,12 @@ func (a *Authority) BeginPairing(name string) (Started, error) {
 	}
 
 	a.mu.Lock()
-	// Checked again: another request may have taken the last place while this
-	// one was drawing random numbers.
+	// Checked again: another request may have taken the last place, or the
+	// last guess, while this one was drawing random numbers.
+	if len(a.pairingMisses) >= PairingGuesses {
+		a.mu.Unlock()
+		return Started{}, ErrPairingLocked
+	}
 	if len(a.pairingTimes) >= PairingRequests {
 		a.mu.Unlock()
 		return Started{}, ErrRateLimited
@@ -280,29 +397,34 @@ func (a *Authority) BeginPairing(name string) (Started, error) {
 	return Started{ID: entry.ID, Expires: entry.Expires}, nil
 }
 
-// ConfirmPairing checks a code. Five wrong guesses and the pairing is gone; the
-// counter is on the pending record rather than on a connection, so retrying
-// from somewhere else does not reset it. A pairing that is not the open one,
-// or has lapsed, is Expired.
+// ConfirmPairing checks a code. The wrong ones are counted on the authority,
+// not on the pairing and not on a connection, so neither asking again nor
+// retrying from somewhere else hands out more: the fifth wrong code in a
+// PairingGuessWindow ends the open pairing and keeps pairing closed until the
+// oldest of them is a window old. (The Swift app counts on the pairing, and a
+// new request starts the count again; see PairingGuesses.) A pairing that is
+// not the open one, or has lapsed, is Expired.
 func (a *Authority) ConfirmPairing(id, code string) (PairResult, error) {
 	now := a.now()
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.pairingMisses = recent(a.pairingMisses, now, PairingGuessWindow)
 	entry := a.pending
-	if entry == nil || entry.ID != id || !entry.Expires.After(now) {
+	if entry == nil || entry.ID != id || !entry.Expires.After(now) || len(a.pairingMisses) >= PairingGuesses {
 		if entry != nil && entry.ID == id {
 			a.pending = nil
 		}
 		return PairResult{Kind: Expired}, nil
 	}
 	if !ConstantTimeEquals(entry.Code, trimSpaces(code)) {
-		entry.attempts++
-		if entry.attempts >= PairingGuesses {
+		a.pairingMisses = append(a.pairingMisses, now)
+		left := PairingGuesses - len(a.pairingMisses)
+		if left <= 0 {
 			a.pending = nil
 			a.store.Audit("pair.locked", map[string]string{"device": entry.Name})
 			return PairResult{Kind: Expired}, nil
 		}
-		return PairResult{Kind: WrongCode, Left: PairingGuesses - entry.attempts}, nil
+		return PairResult{Kind: WrongCode, Left: left}, nil
 	}
 	next := a.copyDevices()
 	next[entry.ID] = Device{
@@ -386,7 +508,9 @@ func (a *Authority) revoke(d Device) error {
 // moment they do not want to be reading a list.
 //
 // Unlike the Swift app, the machine's own device survives it, for the reason
-// Revoke gives. The count is of what was removed.
+// Revoke gives. The count is of what was removed. The wrong codes and wrong
+// passwords already counted stay counted: taking every key away is no reason
+// to let more guesses in.
 func (a *Authority) RevokeAll() (int, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -504,7 +628,7 @@ func (a *Authority) SetPassword(plain string) error {
 		a.store.Audit("password.clear", map[string]string{})
 		return nil
 	}
-	salt := make([]byte, 16)
+	salt := make([]byte, PasswordSaltBytes)
 	if _, err := io.ReadFull(a.random, salt); err != nil {
 		return fmt.Errorf("no randomness for a salt: %w", err)
 	}
@@ -527,24 +651,71 @@ func (a *Authority) SetPassword(plain string) error {
 // cannot be replayed against a device already paired, and revoking a device
 // does not mean changing it. ok is false for a wrong password and for no
 // password at all.
-func (a *Authority) Exchange(plain, deviceName string) (token string, ok bool, err error) {
+//
+// It is the one route that runs a deliberately slow hash for anybody who asks,
+// so what it will do is decided before the hash runs:
+//
+//   - ErrRateLimited once the wrong passwords of the last PasswordWindow and
+//     the checks under way together reach PasswordFailures. Nothing is hashed
+//     and nothing is written for a refused attempt. The Swift app has no such
+//     limit; there, one queue made guesses wait, and waiting is not a limit.
+//   - The checks admitted wait for one another, and a caller whose ctx ends
+//     while waiting leaves without hashing and without counting.
+//   - The device name is cut to what DeviceName allows before it is written
+//     anywhere, the audit included.
+func (a *Authority) Exchange(ctx context.Context, plain, deviceName string) (token string, ok bool, err error) {
+	name := DeviceName(deviceName)
 	a.mu.Lock()
 	stored := a.password
-	a.mu.Unlock()
 	if stored == nil {
+		a.mu.Unlock()
 		return "", false, nil
 	}
-	a.derive.Lock()
+	a.passwordMisses = recent(a.passwordMisses, a.now(), PasswordWindow)
+	if len(a.passwordMisses)+a.passwordChecks >= PasswordFailures {
+		a.mu.Unlock()
+		return "", false, ErrRateLimited
+	}
+	a.passwordChecks++
+	a.mu.Unlock()
+
+	missed := false
+	defer func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.passwordChecks--
+		if !missed {
+			return
+		}
+		now := a.now()
+		a.passwordMisses = append(recent(a.passwordMisses, now, PasswordWindow), now)
+		if len(a.passwordMisses) == PasswordFailures {
+			// Once per closing, not once per refusal: a refused attempt
+			// writes nothing.
+			a.store.Audit("password.locked", map[string]string{})
+		}
+	}()
+
+	select {
+	case a.derive <- struct{}{}:
+	case <-ctx.Done():
+		return "", false, ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		<-a.derive
+		return "", false, err
+	}
 	attempt, err := derive(plain, stored.Salt, stored.Iterations)
-	a.derive.Unlock()
+	<-a.derive
 	if err != nil {
 		return "", false, err
 	}
 	if !ConstantTimeEquals(string(attempt), string(stored.Hash)) {
-		a.store.Audit("password.fail", map[string]string{"device": deviceName})
+		missed = true
+		a.store.Audit("password.fail", map[string]string{"device": name})
 		return "", false, nil
 	}
-	_, token, err = a.AddDevice(DeviceName(deviceName), NewCaps(Read), false)
+	_, token, err = a.AddDevice(name, NewCaps(Read), false)
 	if err != nil {
 		return "", false, err
 	}
@@ -601,10 +772,11 @@ func offer(ch chan PairingNotice, n PairingNotice) {
 }
 
 func derive(plain string, salt []byte, iterations int) ([]byte, error) {
-	if iterations <= 0 {
-		return nil, errors.New("password record has no iteration count")
+	if iterations < MinPasswordIterations || iterations > MaxPasswordIterations {
+		return nil, fmt.Errorf("the password record's %d iterations are outside %d to %d",
+			iterations, MinPasswordIterations, MaxPasswordIterations)
 	}
-	return pbkdf2.Key(sha256.New, plain, salt, iterations, 32)
+	return pbkdf2.Key(sha256.New, plain, salt, iterations, PasswordHashBytes)
 }
 
 // DeviceName is what a device asking to be let in is called: trimmed, never

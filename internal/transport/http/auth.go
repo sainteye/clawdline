@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -94,6 +95,11 @@ func (g *gate) beginPairing(w http.ResponseWriter, r *http.Request) {
 			"Too many pairing attempts. Try again in a few minutes.")
 		return
 	}
+	if errors.Is(err, auth.ErrPairingLocked) {
+		writeAuthRefusal(w, http.StatusTooManyRequests, "rate_limited",
+			"Too many wrong codes. Pairing is closed for now.")
+		return
+	}
 	if err != nil {
 		log.Printf("auth: a pairing could not be opened: %v", err)
 		writeAuthRefusal(w, http.StatusInternalServerError, "internal", "The pairing could not be opened.")
@@ -154,8 +160,16 @@ func (g *gate) exchangePassword(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		name = auth.DefaultName
 	}
-	token, ok, err := g.auth.Exchange(password, name)
-	if err != nil {
+	token, ok, err := g.auth.Exchange(r.Context(), password, name)
+	switch {
+	case errors.Is(err, auth.ErrRateLimited):
+		writeAuthRefusal(w, http.StatusTooManyRequests, "rate_limited",
+			"Too many wrong passwords. Try again later.")
+		return
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		// The caller has gone; there is nobody to answer.
+		return
+	case err != nil:
 		writeStoreFailure(w, err)
 		return
 	}

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,9 +24,23 @@ import (
 )
 
 // The gate is in front of every route, and it is the Swift app's
-// RemoteServer.dispatch preamble, rule for rule: the two refusals about who is
-// allowed to be asking at all, then a token for everything that is not on the
-// open list, then the Origin check for anything that changes something.
+// RemoteServer.dispatch preamble: the two refusals about who is allowed to be
+// asking at all, then a token for everything that is not on the open list,
+// then, for anything that changes something, the Origin check, the capability
+// it needs, and the body's type.
+//
+// The change checks are stricter than the Swift app's, which compares only
+// the Origin's host. A browser keeps one cookie per host whatever the port, so
+// a page on any other 127.0.0.1 port was "our page" there, and its plain-text
+// form post carried this daemon's cookie into a board write. Here:
+//
+//   - An Origin must be this request's own origin: scheme, host and port.
+//   - A change carried by the cookie must say where it came from — an Origin,
+//     and a Sec-Fetch-Site of same-origin when there is one. The cookie is sent
+//     whether or not the page asking wanted it sent; a header token is not.
+//   - A change's body is JSON or nothing. A page elsewhere can post a form or
+//     plain text without asking; it cannot send application/json without the
+//     browser first asking this daemon, which does not answer yes.
 //
 // There is no exception for loopback. Through a tunnel every request comes
 // from 127.0.0.1, and a web page the person is visiting can reach a local port
@@ -51,7 +67,7 @@ type gate struct {
 	err error
 	// hostname is `remote_hostname` from this app's config.json, read when the
 	// daemon starts: the one name besides loopback and a quick tunnel that the
-	// Host and Origin checks accept.
+	// Host check accepts. The Origin check follows the Host that passed.
 	hostname string
 	port     int
 
@@ -176,16 +192,22 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 			writeAuthRefusal(w, http.StatusUnauthorized, "unauthorized", "This needs a paired device.")
 			return
 		}
-		// A cookie is sent whether or not the page asking wanted it sent, so a
-		// change must also come from our own page. Reads are exempt: they are
-		// already gated by the token.
-		if r.Method != http.MethodGet && r.Header.Get("Origin") != "" && !g.isOurs(r.Header.Get("Origin")) {
-			writeAuthRefusal(w, http.StatusForbidden, "forbidden", "That request did not come from this page.")
-			return
-		}
-		if status, code, msg := writePolicy(r.Method, p, machine, verdict); status != 0 {
-			writeAuthRefusal(w, status, code, msg)
-			return
+		// Reads are exempt from what follows: they are already gated by the
+		// token, and a page elsewhere cannot read the answer.
+		if isChange(r.Method) {
+			if !fromThisPage(r) {
+				writeAuthRefusal(w, http.StatusForbidden, "forbidden", "That request did not come from this page.")
+				return
+			}
+			if status, code, msg := writePolicy(r.Method, p, machine, verdict); status != 0 {
+				writeAuthRefusal(w, status, code, msg)
+				return
+			}
+			if !jsonOrNothing(r) {
+				writeAuthRefusal(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
+					"A change is sent as application/json.")
+				return
+			}
 		}
 		// The credential stops here. Nothing behind the gate needs it, and the
 		// proxy behind it would otherwise hand this daemon's token to the Swift
@@ -265,7 +287,7 @@ func taskSecretRoute(method, p string) bool {
 // (actions.go), as do dispatch and settle (dispatch.go), each with the Swift
 // app's sentence.
 func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, string) {
-	if method == http.MethodGet || method == http.MethodHead {
+	if !isChange(method) {
 		return 0, "", ""
 	}
 	send := v.Allowed && v.Caps.Has(auth.Send)
@@ -351,31 +373,126 @@ func isAllowedHost(header, hostname string) bool {
 	return strings.HasSuffix(host, ".trycloudflare.com")
 }
 
-// isOurs is whether an Origin is a page this daemon served. As in the Swift
-// app it compares the host and not the port.
-func (g *gate) isOurs(origin string) bool {
-	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
+// isChange is every method but the two that only read.
+func isChange(method string) bool {
+	return method != http.MethodGet && method != http.MethodHead
+}
+
+// fromThisPage is the Origin half of a change. A request with an Origin must
+// have been sent by a page with this request's own origin. A request that
+// carries this daemon's cookie, and no header token, must have an Origin —
+// every browser sends one on a change — and a Sec-Fetch-Site, when it has one,
+// of same-origin. A script with a header token needs neither: a page elsewhere
+// cannot add that header without asking first.
+func fromThisPage(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin != "" && !sameOrigin(origin, r) {
 		return false
 	}
-	host := u.Hostname()
-	if host == "127.0.0.1" || host == "localhost" {
+	if !cookieCarried(r) {
 		return true
 	}
-	if g.hostname != "" && host == g.hostname {
-		return true
+	if origin == "" {
+		return false
 	}
-	return strings.HasSuffix(host, ".trycloudflare.com")
+	site := r.Header.Get("Sec-Fetch-Site")
+	return site == "" || site == "same-origin"
+}
+
+// cookieCarried is whether the credential a request would be judged by is
+// this daemon's cookie: there is one, and there is no header token in front
+// of it.
+func cookieCarried(r *http.Request) bool {
+	if headerBearer(r) != "" {
+		return false
+	}
+	_, err := r.Cookie(sessionCookie)
+	return err == nil
+}
+
+// sameOrigin is whether origin is the origin this request was addressed to.
+// Everything is compared — scheme, host and port — because a browser keeps
+// cookies per host and not per port, and so a page on another port of this
+// host is exactly the page the cookie cannot tell apart.
+func sameOrigin(origin string, r *http.Request) bool {
+	got, ok := originOf(origin)
+	if !ok {
+		return false
+	}
+	want, ok := requestOrigin(r)
+	return ok && got == want
+}
+
+// requestOrigin is how a browser spells the origin this request went to: the
+// scheme — https when the tunnel in front says so, since this daemon itself
+// speaks only http — then the Host it asked for, with the port written out.
+// X-Forwarded-Proto cannot be set by a page elsewhere without asking first,
+// and a local caller who sets it is only describing its own request.
+func requestOrigin(r *http.Request) (string, bool) {
+	scheme := "http"
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		scheme = "https"
+	}
+	return canonicalOrigin(scheme, r.Host)
+}
+
+// originOf reads an Origin header: a scheme, a host and perhaps a port, and
+// nothing else. "null" and anything with a path are not origins.
+func originOf(header string) (string, bool) {
+	u, err := url.Parse(header)
+	if err != nil || u.Opaque != "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", false
+	}
+	return canonicalOrigin(scheme, u.Host)
+}
+
+// canonicalOrigin is scheme://host:port, lowercase, with the scheme's default
+// port written out, so that two spellings of one origin compare equal.
+func canonicalOrigin(scheme, hostport string) (string, bool) {
+	u := url.URL{Host: hostport}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return "", false
+	}
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443"}[scheme]
+	}
+	return scheme + "://" + net.JoinHostPort(host, port), true
+}
+
+// jsonOrNothing is the body half of a change: application/json, or no body
+// and no type. A form, plain text and a typeless body are the three a page
+// elsewhere can send without asking.
+func jsonOrNothing(r *http.Request) bool {
+	ct := r.Header.Get("Content-Type")
+	if ct == "" {
+		return r.ContentLength == 0
+	}
+	mt, _, err := mime.ParseMediaType(ct)
+	return err == nil && mt == "application/json"
 }
 
 // bearer is the token a request carries: the header, which a script uses, or
 // the cookie, which exists because EventSource cannot set a header at all.
 func bearer(r *http.Request) string {
-	if h := r.Header.Get("Authorization"); len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
-		return strings.TrimSpace(h[7:])
+	if t := headerBearer(r); t != "" {
+		return t
 	}
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		return strings.TrimSpace(c.Value)
+	}
+	return ""
+}
+
+// headerBearer is the Authorization header's bearer token, or "".
+func headerBearer(r *http.Request) string {
+	if h := r.Header.Get("Authorization"); len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
+		return strings.TrimSpace(h[7:])
 	}
 	return ""
 }

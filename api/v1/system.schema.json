@@ -19,6 +19,18 @@
       }
     },
     "Health": {
+      "description": "GET /v1/health, open without a token: that this daemon is alive and which implementation it is, and nothing else. No path, no port, nothing about the work; those are in Diagnostics.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "ok", "served_by"],
+      "properties": {
+        "at": { "type": "integer" },
+        "ok": { "type": "boolean" },
+        "served_by": { "description": "Which implementation answered. This is how a reader tells the Go daemon from the Swift app on the same port.", "type": "string" }
+      }
+    },
+    "Diagnostics": {
+      "description": "GET /v1/diagnostics, this machine's own token only (a paired device is 403): what health used to carry about the process — its state directory, its ports and the clock's last pass.",
       "type": "object",
       "additionalProperties": false,
       "required": ["at", "dir", "ok", "port", "scheduler", "served_by", "upstream"],
@@ -28,7 +40,7 @@
         "ok": { "type": "boolean" },
         "port": { "type": "integer" },
         "scheduler": { "$ref": "#/$defs/SchedulerPulse" },
-        "served_by": { "description": "Which implementation answered. This is how a reader tells the Go daemon from the Swift app on the same port.", "type": "string" },
+        "served_by": { "type": "string" },
         "upstream": { "type": "integer" }
       }
     },

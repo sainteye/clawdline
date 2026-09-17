@@ -153,9 +153,13 @@ type Verdict struct {
 // Refusals an Authority gives, each one a code a caller may branch on.
 var (
 	ErrRateLimited = errors.New("rate_limited")
-	ErrNotFound    = errors.New("not_found")
-	ErrLocalDevice = errors.New("local_device")
-	ErrBadCaps     = errors.New("bad_caps")
+	// ErrPairingLocked is pairing closed by wrong codes; see PairingGuesses.
+	ErrPairingLocked = errors.New("pairing_locked")
+	ErrNotFound      = errors.New("not_found")
+	ErrLocalDevice   = errors.New("local_device")
+	ErrBadCaps       = errors.New("bad_caps")
+	// ErrInvalidState is a stored state that reads and does not make sense.
+	ErrInvalidState = errors.New("invalid_state")
 )
 
 // PairResult is how a confirmation went.
@@ -180,12 +184,11 @@ const (
 // pairing route, and only somebody who can see this machine's screen can
 // finish it.
 type pairing struct {
-	ID       string
-	Name     string
-	Code     string
-	token    string
-	Expires  time.Time
-	attempts int
+	ID      string
+	Name    string
+	Code    string
+	token   string
+	Expires time.Time
 }
 
 // Hash is the stored form of a token.

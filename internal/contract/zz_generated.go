@@ -519,15 +519,16 @@ var AssistantValues = []Assistant{AssistantClaude, AssistantCodex}
 // part a client may branch on; `message` is English, for a person.
 type AuthError struct {
 	// unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request,
-	// not_found, store_unavailable.
+	// not_found, store_unavailable, unsupported_media_type.
 	Code    string `json:"code"`
 	Message string `json:"message"`
 
 	// A fresh lowercase UUID per refusal, for finding it in a log.
 	RequestID string `json:"request_id"`
 
-	// Only on wrong_code: how many guesses this pairing has left, so a page need not
-	// count for itself.
+	// Only on wrong_code: how many guesses pairing has left, so a page need not count
+	// for itself. The count is across pairings, not per pairing: asking again does not
+	// refill it.
 	TriesLeft int64 `json:"tries_left,omitempty"`
 }
 
@@ -838,6 +839,19 @@ type DeviceList struct {
 	Password   bool           `json:"password"`
 }
 
+// GET /v1/diagnostics, this machine's own token only (a paired device is 403):
+// what health used to carry about the process — its state directory, its
+// ports and the clock's last pass.
+type Diagnostics struct {
+	At        int64          `json:"at"`
+	Dir       string         `json:"dir"`
+	OK        bool           `json:"ok"`
+	Port      int64          `json:"port"`
+	Scheduler SchedulerPulse `json:"scheduler"`
+	ServedBy  string         `json:"served_by"`
+	Upstream  int64          `json:"upstream"`
+}
+
 type DispatchRequest struct {
 	Assistant Assistant `json:"assistant"`
 
@@ -896,17 +910,16 @@ const (
 // EvidenceValues is every value the contract allows, in contract order.
 var EvidenceValues = []Evidence{EvidenceStructured, EvidenceTranscript, EvidenceProcess, EvidenceScreen, EvidenceRegistry, EvidenceNone}
 
+// GET /v1/health, open without a token: that this daemon is alive and which
+// implementation it is, and nothing else. No path, no port, nothing about the
+// work; those are in Diagnostics.
 type Health struct {
-	At        int64          `json:"at"`
-	Dir       string         `json:"dir"`
-	OK        bool           `json:"ok"`
-	Port      int64          `json:"port"`
-	Scheduler SchedulerPulse `json:"scheduler"`
+	At int64 `json:"at"`
+	OK bool  `json:"ok"`
 
 	// Which implementation answered. This is how a reader tells the Go daemon from the
 	// Swift app on the same port.
 	ServedBy string `json:"served_by"`
-	Upstream int64  `json:"upstream"`
 }
 
 // A project's mark: rows of `#RRGGBB`, with null for transparent. It is derived
@@ -1029,15 +1042,18 @@ type ObligationList struct {
 	Stuck int64 `json:"stuck"`
 }
 
-// POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left;
-// the fifth wrong code, a lapsed pairing and a replaced one are 403 expired.
+// POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left.
+// Five wrong codes in a day, whichever pairings they were typed into, close
+// pairing: the fifth, and every confirmation after it, is 403 expired, as are a
+// lapsed pairing and a replaced one.
 type PairConfirm struct {
 	Code      string `json:"code"`
 	PairingID string `json:"pairing_id"`
 }
 
 // POST /v1/auth/pair. Open without a token. Three in ten minutes, then 429
-// rate_limited.
+// rate_limited; also 429 rate_limited while five wrong codes in the last day
+// keep pairing closed.
 type PairRequest struct {
 	// What to call the device; trimmed, at most forty characters, `A browser` when
 	// empty.
@@ -1076,7 +1092,10 @@ type PairingNotice struct {
 	PairingID string `json:"pairing_id"`
 }
 
-// POST /v1/auth/password: a correct password mints a new read-only device.
+// POST /v1/auth/password: a correct password mints a new read-only device. Ten
+// wrong passwords in a day, from everybody together, and the checks still under
+// way count toward the same ten; past it, 429 rate_limited before any hashing.
+// `name` is cut to forty characters before it is stored or audited.
 type PasswordRequest struct {
 	Name     string `json:"name,omitempty"`
 	Password string `json:"password"`

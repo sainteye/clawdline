@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "auth.schema.json",
   "title": "Who may ask",
-  "description": "The gate in front of every route, pairing, the local token and the device list. A port of the Swift app's RemoteAuth and RemoteServer: the bodies, the sentences and the cookie are the ones its page (net/fetch.js, door/door.js) already reads, which is why a refusal here is the Swift envelope `{\"error\":{\"code\",\"message\",\"request_id\"}}` rather than this daemon's flat Refusal. Open without a token: the page, its bundle (/app/, /assets/, /strings/), the icons, /v1/health, /v1/strings and /v1/auth/*. Everything else needs `Authorization: Bearer <token>` or the `clawdline-next` cookie. The cookie is not called `clawdline`, as the Swift app's is, because a browser does not separate cookies by port: one name on 127.0.0.1 would make each app sign the other out.",
+  "description": "The gate in front of every route, pairing, the local token and the device list. A port of the Swift app's RemoteAuth and RemoteServer: the bodies, the sentences and the cookie are the ones its page (net/fetch.js, door/door.js) already reads, which is why a refusal here is the Swift envelope `{\"error\":{\"code\",\"message\",\"request_id\"}}` rather than this daemon's flat Refusal. Open without a token: the page, its bundle (/app/, /assets/, /strings/), the icons, /v1/health, /v1/strings and /v1/auth/*. Everything else needs `Authorization: Bearer <token>` or the `clawdline-next` cookie. Anything but GET and HEAD is a change, and the gate asks three more things of it: an Origin, when there is one, is this request's own (scheme, host and port); a change carried by the cookie has an Origin, and a Sec-Fetch-Site of same-origin when it has one; and its body is application/json or nothing at all, else 415 unsupported_media_type. The cookie is not called `clawdline`, as the Swift app's is, because a browser does not separate cookies by port: one name on 127.0.0.1 would make each app sign the other out.",
   "$defs": {
     "AuthError": {
       "description": "The inside of every refusal the gate and the auth routes give. `code` is the part a client may branch on; `message` is English, for a person.",
@@ -10,10 +10,10 @@
       "additionalProperties": false,
       "required": ["code", "message", "request_id"],
       "properties": {
-        "code": { "description": "unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request, not_found, store_unavailable.", "type": "string" },
+        "code": { "description": "unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request, not_found, store_unavailable, unsupported_media_type.", "type": "string" },
         "message": { "type": "string" },
         "request_id": { "description": "A fresh lowercase UUID per refusal, for finding it in a log.", "type": "string" },
-        "tries_left": { "description": "Only on wrong_code: how many guesses this pairing has left, so a page need not count for itself.", "type": "integer" }
+        "tries_left": { "description": "Only on wrong_code: how many guesses pairing has left, so a page need not count for itself. The count is across pairings, not per pairing: asking again does not refill it.", "type": "integer" }
       }
     },
     "AuthRefusal": {
@@ -25,7 +25,7 @@
       }
     },
     "PairRequest": {
-      "description": "POST /v1/auth/pair. Open without a token. Three in ten minutes, then 429 rate_limited.",
+      "description": "POST /v1/auth/pair. Open without a token. Three in ten minutes, then 429 rate_limited; also 429 rate_limited while five wrong codes in the last day keep pairing closed.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -43,7 +43,7 @@
       }
     },
     "PairConfirm": {
-      "description": "POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left; the fifth wrong code, a lapsed pairing and a replaced one are 403 expired.",
+      "description": "POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left. Five wrong codes in a day, whichever pairings they were typed into, close pairing: the fifth, and every confirmation after it, is 403 expired, as are a lapsed pairing and a replaced one.",
       "type": "object",
       "additionalProperties": false,
       "required": ["code", "pairing_id"],
@@ -62,7 +62,7 @@
       }
     },
     "PasswordRequest": {
-      "description": "POST /v1/auth/password: a correct password mints a new read-only device.",
+      "description": "POST /v1/auth/password: a correct password mints a new read-only device. Ten wrong passwords in a day, from everybody together, and the checks still under way count toward the same ten; past it, 429 rate_limited before any hashing. `name` is cut to forty characters before it is stored or audited.",
       "type": "object",
       "additionalProperties": false,
       "required": ["password"],

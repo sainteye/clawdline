@@ -1,11 +1,15 @@
 package auth
 
 import (
+	"context"
+	"crypto/pbkdf2"
+	"crypto/sha256"
 	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 type memStore struct {
@@ -296,16 +300,17 @@ func TestFailedSaveChangesNothing(t *testing.T) {
 func TestPassword(t *testing.T) {
 	store := &memStore{}
 	a, _ := newAuthority(t, store)
-	if _, ok, _ := a.Exchange("anything", "x"); ok {
+	ctx := context.Background()
+	if _, ok, _ := a.Exchange(ctx, "anything", "x"); ok {
 		t.Fatal("no password set, and one was accepted")
 	}
 	if err := a.SetPassword("correct horse"); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := a.Exchange("wrong", "laptop"); ok {
+	if _, ok, _ := a.Exchange(ctx, "wrong", "laptop"); ok {
 		t.Fatal("wrong password accepted")
 	}
-	token, ok, err := a.Exchange("correct horse", "laptop")
+	token, ok, err := a.Exchange(ctx, "correct horse", "laptop")
 	if err != nil || !ok {
 		t.Fatalf("right password: %v", err)
 	}
@@ -318,5 +323,213 @@ func TestPassword(t *testing.T) {
 	}
 	if !strings.Contains(joined, "password.fail device=laptop") {
 		t.Fatalf("audit: %s", joined)
+	}
+}
+
+// A new pairing does not hand out new guesses: the wrong codes typed into the
+// one it replaced still count, and five of them close pairing for a day,
+// through a revoke-all, whichever pairing they went to.
+func TestWrongCodesOutliveReplacement(t *testing.T) {
+	store := &memStore{}
+	a, c := newAuthority(t, store)
+	first, _ := a.BeginPairing("first")
+	firstCode := codeFor(t, a, first.ID)
+	for want := 4; want >= 2; want-- {
+		if r, _ := a.ConfirmPairing(first.ID, wrong(firstCode)); r.Kind != WrongCode || r.Left != want {
+			t.Fatalf("first pairing, %d left: %+v", want, r)
+		}
+	}
+	second, err := a.BeginPairing("second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := codeFor(t, a, second.ID)
+	if r, _ := a.ConfirmPairing(second.ID, wrong(code)); r.Kind != WrongCode || r.Left != 1 {
+		t.Fatalf("the replacement started a fresh count: %+v", r)
+	}
+	if r, _ := a.ConfirmPairing(second.ID, wrong(code)); r.Kind != Expired {
+		t.Fatalf("fifth wrong code overall: %+v", r)
+	}
+	if r, _ := a.ConfirmPairing(second.ID, code); r.Kind != Expired {
+		t.Fatalf("right code after the fifth: %+v", r)
+	}
+	if _, err := a.BeginPairing("third"); !errors.Is(err, ErrPairingLocked) {
+		t.Fatalf("a request while closed: %v", err)
+	}
+	if _, err := a.RevokeAll(); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(PairingGuessWindow - time.Minute)
+	if _, err := a.BeginPairing("fourth"); !errors.Is(err, ErrPairingLocked) {
+		t.Fatalf("closed for less than a day: %v", err)
+	}
+	c.t = c.t.Add(time.Minute)
+	next, err := a.BeginPairing("fifth")
+	if err != nil {
+		t.Fatalf("a day after the first wrong code: %v", err)
+	}
+	if r, _ := a.ConfirmPairing(next.ID, codeFor(t, a, next.ID)); r.Kind != Paired {
+		t.Fatalf("pairing after the window: %+v", r)
+	}
+	if !strings.Contains(strings.Join(store.audit, "\n"), "pair.locked device=second") {
+		t.Fatalf("audit: %v", store.audit)
+	}
+}
+
+// fastPassword is a stored password at the lowest cost a store may carry, so
+// a test can check it many times.
+func fastPassword(t *testing.T, plain string) *Password {
+	t.Helper()
+	salt := []byte("0123456789abcdef")
+	hash, err := pbkdf2.Key(sha256.New, plain, salt, MinPasswordIterations, PasswordHashBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &Password{Hash: hash, Salt: salt, Iterations: MinPasswordIterations}
+}
+
+func countAudit(store *memStore, event string) int {
+	n := 0
+	for _, line := range store.audit {
+		if line == event || strings.HasPrefix(line, event+" ") {
+			n++
+		}
+	}
+	return n
+}
+
+// Ten wrong passwords close the door for everybody, the right password
+// included, and a refused attempt hashes and writes nothing.
+func TestPasswordBudget(t *testing.T) {
+	store := &memStore{state: State{Password: fastPassword(t, "right")}}
+	a, c := newAuthority(t, store)
+	ctx := context.Background()
+	for i := 0; i < PasswordFailures; i++ {
+		if _, ok, err := a.Exchange(ctx, "wrong", "guesser"); ok || err != nil {
+			t.Fatalf("wrong password %d: ok=%v err=%v", i+1, ok, err)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		if _, ok, err := a.Exchange(ctx, "right", "owner"); ok || !errors.Is(err, ErrRateLimited) {
+			t.Fatalf("past the budget: ok=%v err=%v", ok, err)
+		}
+	}
+	if n := countAudit(store, "password.fail"); n != PasswordFailures {
+		t.Fatalf("%d password.fail lines, want %d", n, PasswordFailures)
+	}
+	if n := countAudit(store, "password.locked"); n != 1 {
+		t.Fatalf("%d password.locked lines, want 1", n)
+	}
+	c.t = c.t.Add(PasswordWindow)
+	if _, ok, err := a.Exchange(ctx, "right", "owner"); !ok || err != nil {
+		t.Fatalf("a window later: ok=%v err=%v", ok, err)
+	}
+}
+
+func checksUnderWay(a *Authority) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.passwordChecks
+}
+
+// Checks wait for one another, the ones waiting count against the budget so
+// the queue cannot grow past it, and a caller who leaves while waiting is
+// neither hashed nor counted.
+func TestPasswordChecksWaitBoundedAndGiveUp(t *testing.T) {
+	store := &memStore{state: State{Password: fastPassword(t, "right")}}
+	a, _ := newAuthority(t, store)
+	a.derive <- struct{}{} // somebody else's check is running
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errs := make(chan error, PasswordFailures)
+	for i := 0; i < PasswordFailures; i++ {
+		go func() {
+			_, _, err := a.Exchange(ctx, "wrong", "waiting")
+			errs <- err
+		}()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for checksUnderWay(a) < PasswordFailures {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d checks admitted, want %d", checksUnderWay(a), PasswordFailures)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, _, err := a.Exchange(context.Background(), "right", "owner"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("a check past the waiting ones: %v", err)
+	}
+	cancel()
+	for i := 0; i < PasswordFailures; i++ {
+		if err := <-errs; !errors.Is(err, context.Canceled) {
+			t.Fatalf("a waiter whose caller left: %v", err)
+		}
+	}
+	<-a.derive
+	if n := checksUnderWay(a); n != 0 {
+		t.Fatalf("%d checks still counted", n)
+	}
+	if n := countAudit(store, "password.fail"); n != 0 {
+		t.Fatalf("callers who left were audited %d times", n)
+	}
+	if _, ok, err := a.Exchange(context.Background(), "right", "owner"); !ok || err != nil {
+		t.Fatalf("the budget after they left: ok=%v err=%v", ok, err)
+	}
+}
+
+// Whatever name a caller sends, what is audited and stored is DeviceName's.
+func TestPasswordNameIsCut(t *testing.T) {
+	store := &memStore{state: State{Password: fastPassword(t, "right")}}
+	a, _ := newAuthority(t, store)
+	long := strings.Repeat("N", 60_000)
+	if _, ok, _ := a.Exchange(context.Background(), "wrong", long); ok {
+		t.Fatal("wrong password accepted")
+	}
+	if len(store.audit) != 1 || utf8.RuneCountInString(store.audit[0]) > len("password.fail device=")+nameLimit {
+		t.Fatalf("audit line of %d bytes", len(store.audit[0]))
+	}
+	if _, ok, _ := a.Exchange(context.Background(), "right", long); !ok {
+		t.Fatal("right password refused")
+	}
+	for _, d := range store.state.Devices {
+		if utf8.RuneCountInString(d.Name) > nameLimit {
+			t.Fatalf("stored a %d-character name", utf8.RuneCountInString(d.Name))
+		}
+	}
+}
+
+// A state that reads but does not make sense is refused before anything acts
+// on it.
+func TestNewRefusesInvalidState(t *testing.T) {
+	good := func(id string, local bool) Device {
+		return Device{ID: id, Name: id, Hash: Hash(id), Caps: NewCaps(Read), Approved: true, Local: local}
+	}
+	pw := fastPassword(t, "x")
+	cases := map[string]State{
+		"empty id":        {Devices: []Device{good("", false)}},
+		"duplicate id":    {Devices: []Device{good("a", false), good("a", false)}},
+		"short digest":    {Devices: []Device{{ID: "a", Hash: "abc", Approved: true}}},
+		"uppercase":       {Devices: []Device{{ID: "a", Hash: strings.ToUpper(Hash("a")), Approved: true}}},
+		"shared digest":   {Devices: []Device{good("a", false), {ID: "b", Hash: Hash("a"), Approved: true}}},
+		"unknown cap":     {Devices: []Device{{ID: "a", Hash: Hash("a"), Caps: Caps{"root"}, Approved: true}}},
+		"two locals":      {Devices: []Device{good("a", true), good("b", true)}},
+		"local pending":   {Devices: []Device{{ID: "a", Hash: Hash("a"), Caps: NewCaps(Read), Local: true}}},
+		"short salt":      {Password: &Password{Hash: pw.Hash, Salt: pw.Salt[:8], Iterations: pw.Iterations}},
+		"short hash":      {Password: &Password{Hash: pw.Hash[:16], Salt: pw.Salt, Iterations: pw.Iterations}},
+		"zero iterations": {Password: &Password{Hash: pw.Hash, Salt: pw.Salt, Iterations: 0}},
+		"too many":        {Password: &Password{Hash: pw.Hash, Salt: pw.Salt, Iterations: MaxPasswordIterations + 1}},
+		"negative":        {Password: &Password{Hash: pw.Hash, Salt: pw.Salt, Iterations: -1}},
+	}
+	for name, state := range cases {
+		store := &memStore{state: state}
+		if _, err := New(store, Options{}); !errors.Is(err, ErrInvalidState) {
+			t.Errorf("%s: %v", name, err)
+		}
+		if store.saves != 0 {
+			t.Errorf("%s: saved over a state it refused", name)
+		}
+	}
+	ok := State{Devices: []Device{good("a", true), good("b", false)}, Password: pw}
+	if _, err := New(&memStore{state: ok}, Options{}); err != nil {
+		t.Fatalf("a sound state: %v", err)
 	}
 }

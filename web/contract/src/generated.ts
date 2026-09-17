@@ -672,7 +672,7 @@ export const AssistantValues: readonly Assistant[] = ["claude", "codex"] as cons
 export interface AuthError {
   /**
    * unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request,
-   * not_found, store_unavailable.
+   * not_found, store_unavailable, unsupported_media_type.
    */
   code: string
   message: string
@@ -683,8 +683,9 @@ export interface AuthError {
   request_id: string
 
   /**
-   * Only on wrong_code: how many guesses this pairing has left, so a page need not
-   * count for itself.
+   * Only on wrong_code: how many guesses pairing has left, so a page need not count
+   * for itself. The count is across pairings, not per pairing: asking again does
+   * not refill it.
    */
   tries_left?: number
 }
@@ -1045,6 +1046,21 @@ export interface DeviceList {
   password: boolean
 }
 
+/**
+ * GET /v1/diagnostics, this machine's own token only (a paired device is 403): what
+ * health used to carry about the process — its state directory, its ports and the
+ * clock's last pass.
+ */
+export interface Diagnostics {
+  at: number
+  dir: string
+  ok: boolean
+  port: number
+  scheduler: SchedulerPulse
+  served_by: string
+  upstream: number
+}
+
 export interface DispatchRequest {
   assistant: Assistant
 
@@ -1105,19 +1121,20 @@ export type Evidence =
 
 export const EvidenceValues: readonly Evidence[] = ["structured", "transcript", "process", "screen", "registry", "none"] as const
 
+/**
+ * GET /v1/health, open without a token: that this daemon is alive and which
+ * implementation it is, and nothing else. No path, no port, nothing about the work;
+ * those are in Diagnostics.
+ */
 export interface Health {
   at: number
-  dir: string
   ok: boolean
-  port: number
-  scheduler: SchedulerPulse
 
   /**
    * Which implementation answered. This is how a reader tells the Go daemon from
    * the Swift app on the same port.
    */
   served_by: string
-  upstream: number
 }
 
 /**
@@ -1240,8 +1257,10 @@ export interface ObligationList {
 }
 
 /**
- * POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left; the
- * fifth wrong code, a lapsed pairing and a replaced one are 403 expired.
+ * POST /v1/auth/pair/confirm. A wrong code is 403 wrong_code with tries_left. Five
+ * wrong codes in a day, whichever pairings they were typed into, close pairing: the
+ * fifth, and every confirmation after it, is 403 expired, as are a lapsed pairing
+ * and a replaced one.
  */
 export interface PairConfirm {
   code: string
@@ -1250,7 +1269,8 @@ export interface PairConfirm {
 
 /**
  * POST /v1/auth/pair. Open without a token. Three in ten minutes, then 429
- * rate_limited.
+ * rate_limited; also 429 rate_limited while five wrong codes in the last day keep
+ * pairing closed.
  */
 export interface PairRequest {
   /**
@@ -1305,7 +1325,10 @@ export interface PairingNotice {
 }
 
 /**
- * POST /v1/auth/password: a correct password mints a new read-only device.
+ * POST /v1/auth/password: a correct password mints a new read-only device. Ten
+ * wrong passwords in a day, from everybody together, and the checks still under way
+ * count toward the same ten; past it, 429 rate_limited before any hashing. `name`
+ * is cut to forty characters before it is stored or audited.
  */
 export interface PasswordRequest {
   name?: string
