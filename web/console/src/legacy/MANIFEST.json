@@ -55,7 +55,10 @@
     "js/input/coordinator-actions.js": "678c8c20e14a79b6",
     "js/view/usage.js": "73b5b1c8dc87dbb3",
     "js/view/projects.js": "1520a08e08b7e38e",
-    "js/view/worktrees.js": "050fafa6e4a46c59"
+    "js/view/worktrees.js": "050fafa6e4a46c59",
+    "js/view/devices.js": "d9de9358d519f908",
+    "js/view/plan.js": "fa7a621929fe58ab",
+    "js/net/billing.js": "ebe94bc98d31048f"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {

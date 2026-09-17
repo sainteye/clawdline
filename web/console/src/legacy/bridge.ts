@@ -292,3 +292,7 @@ export * from "./usage-bridge.js"
 
 /* The projects page's part of the bridge. */
 export * from "./projects-bridge.js"
+
+/* The devices and plan pages' parts of the bridge. */
+export * from "./devices-bridge.js"
+export * from "./plan-bridge.js"

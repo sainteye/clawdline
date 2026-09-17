@@ -1,0 +1,95 @@
+import { useLayoutEffect, useRef, type MouseEvent } from "react"
+import type { PageModule } from "./types.js"
+import { bindDevices, type DevicesPage } from "../legacy/devices-bridge.js"
+import sectionMarkup from "./devices/section.html?raw"
+
+/**
+ * The Devices page: `section#devices` in the Swift app's `index.html`, drawn
+ * by its `view/devices.js`.
+ *
+ * The fragment beside this file is that section's markup between its own tags
+ * (index.html lines 898–911), whitespace included, and the copied module fills
+ * it: the heading's words, the status line and one card per machine. React
+ * owns the section element and nothing inside it.
+ *
+ * On the page the Mac serves there is one card, this Mac, because the
+ * original's local transport answers with that one machine and nothing else —
+ * see legacy/devices-bridge.ts.
+ *
+ * What the original's `main.js` and page registry do for this page is done
+ * here: bind once, `enter` on arrival, `leave` on departure, the keyboard lands
+ * on the heading (`focus: "devices-title"`), and the close button's
+ * `data-page-to` goes where it says (`core/pages.js`'s delegate). Escape is
+ * App's, which leaves any page but the list, as `input/keys.js` does.
+ *
+ * "New session" on the card goes back to the Session list. The original then
+ * opens the Start sheet for that machine; this console has no Start sheet yet.
+ */
+function DevicesPageView({ shown }: { shown: boolean }) {
+  const page = useRef<DevicesPage | null>(null)
+  const was = useRef(false)
+
+  useLayoutEffect(() => {
+    if (!page.current) page.current = bindDevices(document, () => navigate("sessions"))
+  }, [])
+
+  useLayoutEffect(() => {
+    if (shown === was.current) return
+    was.current = shown
+    if (!shown) {
+      page.current?.leave()
+      return
+    }
+    // The words arrive in App's effect, which runs after this one on a cold
+    // start at `#page=devices`; the page is still covered (`booting`) until
+    // then, and `enter` paints the heading from them, so arrival waits.
+    const arrive = () => {
+      if (!was.current) return
+      page.current?.enter()
+      document.getElementById("devices-title")?.focus({ preventScroll: true })
+    }
+    const root = document.documentElement
+    if (!root.classList.contains("booting")) {
+      arrive()
+      return
+    }
+    const watch = new MutationObserver(() => {
+      if (root.classList.contains("booting")) return
+      watch.disconnect()
+      arrive()
+    })
+    watch.observe(root, { attributes: true, attributeFilter: ["class"] })
+    return () => watch.disconnect()
+  }, [shown])
+
+  return (
+    <section
+      className="page devices"
+      id="devices"
+      data-page-view="devices"
+      aria-labelledby="devices-title"
+      hidden={!shown}
+      onClick={followPageLink}
+      dangerouslySetInnerHTML={{ __html: sectionMarkup }}
+    />
+  )
+}
+
+/** The page router, as the drawer moves: its row for that page, clicked. */
+function navigate(name: string): void {
+  const row = document.querySelector<HTMLButtonElement>(`#sidebar [data-page-to="${name}"]`)
+  if (row && !row.disabled) row.click()
+}
+
+/** `core/pages.js`'s delegate for the close button, which names its page in `data-page-to`. */
+function followPageLink(ev: MouseEvent<HTMLElement>): void {
+  const node = (ev.target as Element).closest?.("[data-page-to]")
+  if (!node || !ev.currentTarget.contains(node)) return
+  const name = node.getAttribute("data-page-to")
+  const row = document.querySelector<HTMLButtonElement>(`#sidebar [data-page-to="${name}"]`)
+  if (!row || row.disabled) return
+  ev.preventDefault()
+  row.click()
+}
+
+export const page: PageModule = { id: "devices", Component: DevicesPageView }

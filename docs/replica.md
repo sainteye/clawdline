@@ -51,7 +51,8 @@
 | task chip 與子任務縮排（`S.tasks`） | 舊版要 `{id,title,state,created,finishedAt,child.terminalId,root.terminalId}`；Go store 沒有 title、child 分頁、完成時間，要改 store 結構。兩個 app 的 store 刻意分開，所以這台機器上只會對 clawdline-go 自己派的任務顯示，畫面效益低 |
 | ⋯ 選單的「在 Mac 上顯示／Session 資訊／即時畫面／Git」 | 各自需要後端路由，目前 disabled 而非移除 |
 | composer 的附圖、語音、skill menu | 同上 |
-| 多個 :7727 分頁會吃滿 Chrome 對同一 host:port 的 6 條連線 | child C 觀察到一個請求排隊 95 秒。舊版架構相同，是否也會發生尚未比對 |
+| 裝置頁本機那台機器的 `platform` 寫死 `macos`（照舊版 `net/live.js`，在 `legacy/devices-bridge.ts` 的 `localMachines`） | 本頁不顯示這個欄位，所以畫面相同；但 Go 核心在 Linux／Windows 上跑時應換成實際的作業系統（連帶 `name`／`label` 的「這台 Mac」），待三平台時處理 |
+| 多個 :7727 分頁會吃滿 Chrome 對同一 host:port 的 6 條連線 | child C 觀察到一個請求排隊 95 秒。**舊版也會**：裝置頁 child（3f2a0d24）量測時 7717 在 Chrome 裡排隊超過 5 秒，同一時間 curl 7 ms 就回來；是瀏覽器對同一 host:port 的連線上限，不是新版的退化 |
 
 ### 其他頁面（側欄）
 
