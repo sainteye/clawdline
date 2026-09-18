@@ -3,13 +3,18 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/logs"
+	adapterpush "github.com/sainteye/clawdline-go/internal/adapters/push"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
@@ -92,10 +97,62 @@ func (s *Server) capacity() *capacityBeat {
 	return b.(*capacityBeat)
 }
 
+// daemonLogs is the log file each state directory's daemon writes, set by
+// `clawdline serve` once it has moved the log there. A process that never did
+// (a test, a CLI command) has none, and the row says so.
+var daemonLogs sync.Map // dir -> *logs.Writer
+
+// SetDaemonLog records the log file this process writes for dir, so the
+// register can measure it.
+func SetDaemonLog(dir string, w *logs.Writer) { daemonLogs.Store(dir, w) }
+
 // capacityMeasures is one measurement per registered row, each the adapter's
 // own and each cheap: a stat, a length, a count kept in memory.
 func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		capacity.LogDaemon: func() capacity.Reading {
+			w, ok := daemonLogs.Load(s.cfg.Dir)
+			if !ok {
+				return capacity.Unmeasured("this process writes its log to stderr, not to a file")
+			}
+			return w.(*logs.Writer).Reading()
+		},
+		capacity.DevicesList: func() capacity.Reading {
+			g := s.gate()
+			if g.files == nil {
+				return capacity.Unmeasured(fmt.Sprint(g.err))
+			}
+			return g.files.DevicesReading()
+		},
+		capacity.PushSubscriptions: func() capacity.Reading {
+			// Measuring does not make the push directory: a machine nobody
+			// has asked to notify them holds no subscriptions, and that is a
+			// known zero rather than a store opened to find out.
+			if _, held := pushStores.Load(s.cfg.Dir); !held {
+				_, err := os.Lstat(filepath.Join(s.cfg.Dir, adapterpush.DirName, adapterpush.SubscriptionsFile))
+				if errors.Is(err, os.ErrNotExist) {
+					return capacity.Reading{Known: true, Note: "nothing has subscribed on this machine"}
+				}
+			}
+			store, err := s.push()
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return store.Reading()
+		},
+		capacity.CacheTranscriptUsage: func() capacity.Reading {
+			if s.ledger == nil {
+				return capacity.Unmeasured("this server keeps no usage ledger")
+			}
+			return s.ledger.Reading()
+		},
+		capacity.CacheTranscriptTitles: func() capacity.Reading {
+			h, ok := s.inventory.Identity.(*transcript.Host)
+			if !ok {
+				return capacity.Unmeasured("this inventory does not keep conversation titles")
+			}
+			return h.Titles().Reading()
+		},
 		capacity.AuditSecurity: func() capacity.Reading {
 			g := s.gate()
 			if g.files == nil {

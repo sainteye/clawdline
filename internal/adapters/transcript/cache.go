@@ -3,6 +3,8 @@ package transcript
 import (
 	"os"
 	"sync"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // Ledger keeps what has already been counted, so a transcript is read once
@@ -17,9 +19,13 @@ import (
 // before — truncated, replaced, or a different session reusing the name — so
 // the totals are thrown away and it is counted again from the start. Continuing
 // would add a new file's numbers to an old file's.
+//
+// It holds the register's `cache.transcript_usage` rows at most, letting go of
+// the one read longest ago; a session it let go of is counted again from the
+// start the next time it is asked for.
 type Ledger struct {
 	mu   sync.Mutex
-	seen map[string]*counted
+	seen *lru[*counted]
 }
 
 type counted struct {
@@ -27,7 +33,21 @@ type counted struct {
 	usage  Usage
 }
 
-func NewLedger() *Ledger { return &Ledger{seen: map[string]*counted{}} }
+func NewLedger() *Ledger { return &Ledger{seen: newLRU[*counted](capacity.CacheTranscriptUsage)} }
+
+// SetLimit is the capacity override for `cache.transcript_usage`.
+func (l *Ledger) SetLimit(n int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.seen.setLimit(n)
+}
+
+// Reading is the `cache.transcript_usage` row.
+func (l *Ledger) Reading() capacity.Reading {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.seen.reading()
+}
 
 // Claude returns this conversation's usage, reading only what is new.
 func (l *Ledger) Claude(path string) (Usage, error) {
@@ -37,7 +57,7 @@ func (l *Ledger) Claude(path string) (Usage, error) {
 	}
 
 	l.mu.Lock()
-	prev := l.seen[path]
+	prev, _ := l.seen.get(path)
 	l.mu.Unlock()
 
 	from := int64(0)
@@ -55,7 +75,7 @@ func (l *Ledger) Claude(path string) (Usage, error) {
 		return base, err
 	}
 	l.mu.Lock()
-	l.seen[path] = &counted{offset: read, usage: grown}
+	l.seen.put(path, &counted{offset: read, usage: grown})
 	l.mu.Unlock()
 	// The caller gets its own copy. Sharing the slice would let a later read
 	// change a number somebody is already holding, so two readings taken at

@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/logs"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
+	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/config"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/capacity"
@@ -25,7 +28,16 @@ func capacityServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	return &Server{cfg: config.Config{Dir: dir}, store: st}
+	// What `clawdline serve` builds that the register measures: the log moved
+	// into the directory, and the inventory's and usage route's caches.
+	w, err := logs.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = w.Close(); daemonLogs.Delete(dir) })
+	SetDaemonLog(dir, w)
+	return &Server{cfg: config.Config{Dir: dir}, store: st, ledger: transcript.NewLedger(),
+		inventory: app.Inventory{Identity: transcript.NewHost()}}
 }
 
 // The register guard's other half (limits §4.1): every registered row has a

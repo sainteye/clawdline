@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/devices"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/auth"
 )
@@ -64,9 +65,11 @@ func (s *Server) authRoute(w http.ResponseWriter, r *http.Request) {
 
 // readBody is the Swift app's reading of a body: a JSON object or nothing.
 // A body that is not one is an empty object, and the route then says which
-// field it is missing.
+// field it is missing. A body larger than authBodyLimit never gets here: it is
+// refused whole with 413 before the route runs (body.go), rather than cut and
+// read as something it is not.
 func readBody(r *http.Request) map[string]any {
-	data, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	data, err := io.ReadAll(io.LimitReader(r.Body, authBodyLimit))
 	if err != nil {
 		return map[string]any{}
 	}
@@ -411,6 +414,14 @@ func writeDeviceChange(w http.ResponseWriter, err error) {
 }
 
 func writeStoreFailure(w http.ResponseWriter, err error) {
+	if errors.Is(err, devices.ErrDeviceListFull) || errors.Is(err, devices.ErrDeviceListTooLarge) {
+		// Full, not broken: the register's `devices.list` row, which only a
+		// person makes room in, by revoking a device.
+		log.Printf("auth: a device was not added: %v", err)
+		writeAuthRefusal(w, http.StatusInsufficientStorage, "device_list_full",
+			"This machine already has as many paired devices as it keeps. Remove one you no longer use, then try again.")
+		return
+	}
 	log.Printf("auth: the device store could not be written: %v", err)
 	writeAuthRefusal(w, http.StatusServiceUnavailable, "store_unavailable",
 		"The device store could not be written; nothing was changed.")

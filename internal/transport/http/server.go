@@ -33,6 +33,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/config"
 	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 	"github.com/sainteye/clawdline-go/internal/domain/icon"
 )
 
@@ -128,6 +129,11 @@ func New(cfg config.Config) (*Server, error) {
 			Identity:  transcript.NewHost(),
 			Screen:    terminal.NewScreens(),
 		},
+	}
+	// The two transcript caches hold their register rows' limits.
+	srv.ledger.SetLimit(CapacityLimit(capacity.CacheTranscriptUsage))
+	if h, ok := srv.inventory.Identity.(*transcript.Host); ok {
+		h.Titles().SetLimit(CapacityLimit(capacity.CacheTranscriptTitles))
 	}
 	// The live screens, and the FIFO directory that is their ownership record.
 	// A pane this daemon piped and did not take back is a `%N.fifo` left in
@@ -277,13 +283,13 @@ func (s *Server) Handler() http.Handler {
 			// launch images are drawn, and everything else there is a file in
 			// the bundle that `page` already serves.
 			mux.Handle("/", s.withPWA(&fallback{page: newPage(root), miss: s.notImplemented}))
-			return gate.wrap(s.withDocuments(mux))
+			return gate.wrap(s.withDocuments(boundBodies(mux)))
 		}
 		mux.Handle("/", http.HandlerFunc(s.notImplemented))
-		return gate.wrap(s.withDocuments(mux))
+		return gate.wrap(s.withDocuments(boundBodies(mux)))
 	}
 	mux.Handle("/", s.proxy)
-	return gate.wrap(s.withDocuments(mux))
+	return gate.wrap(s.withDocuments(boundBodies(mux)))
 }
 
 // health is the first route this daemon owns. It answers for itself and says so,

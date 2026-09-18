@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -33,6 +35,38 @@ import (
 // rather than a zero value so that "nothing yet" cannot be read as "empty
 // result".
 var ErrNoResult = errors.New("no result yet")
+
+// ErrTooLarge is a file a child wrote that is larger than the broker reads
+// (limits N9). It is refused whole rather than read in part: a result cut at a
+// byte count is a different result, and a truncated progress note is a
+// different note.
+var ErrTooLarge = errors.New("larger than the broker reads")
+
+// The most of each child-written file the broker reads. A result is a
+// paragraph, a list of names and at most a review's three axes of 32 findings;
+// the rest are one sentence or one hash. Far past what they hold, short of what
+// a mistake could make of them.
+const (
+	resultLimit = 4 << 20
+	noteLimit   = 64 << 10
+)
+
+// readBounded is a whole file, refused with ErrTooLarge past limit bytes.
+func readBounded(path string, limit int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	body, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("%s: %w (%d bytes)", filepath.Base(path), ErrTooLarge, limit)
+	}
+	return body, nil
+}
 
 // ErrResultExists is an adoption that found result.json already there. The
 // file that is there is the child's own, renamed into place, and adoption
@@ -169,7 +203,7 @@ func writeOwned(path string, body []byte) error {
 // recorded as having failed for a reason nobody can read.
 func (r Root) ReadResult(id string) (Result, []byte, error) {
 	path := filepath.Join(r.Path(id), "result.json")
-	body, err := os.ReadFile(path)
+	body, err := readBounded(path, resultLimit)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Result{}, nil, ErrNoResult
@@ -192,7 +226,7 @@ func (r Root) ReadResult(id string) (Result, []byte, error) {
 // that says so.
 func (r Root) ReadReady(id string) (Result, []byte, bool) {
 	dir := r.Path(id)
-	markerBody, err := os.ReadFile(filepath.Join(dir, "result.json.ready"))
+	markerBody, err := readBounded(filepath.Join(dir, "result.json.ready"), noteLimit)
 	if err != nil {
 		return Result{}, nil, false
 	}
@@ -200,7 +234,7 @@ func (r Root) ReadReady(id string) (Result, []byte, bool) {
 	if json.Unmarshal(markerBody, &m) != nil || !m.Ready || m.TaskID != id || m.SHA256 == "" {
 		return Result{}, nil, false
 	}
-	body, err := os.ReadFile(filepath.Join(dir, "result.json.tmp"))
+	body, err := readBounded(filepath.Join(dir, "result.json.tmp"), resultLimit)
 	if err != nil {
 		return Result{}, nil, false
 	}
@@ -259,7 +293,7 @@ func (r Root) ReadProgress(id string) (Progress, os.FileInfo, bool) {
 	if err != nil {
 		return Progress{}, nil, false
 	}
-	body, err := os.ReadFile(path)
+	body, err := readBounded(path, noteLimit)
 	if err != nil {
 		return Progress{}, nil, false
 	}
@@ -275,7 +309,7 @@ func (r Root) ReadProgress(id string) (Progress, os.FileInfo, bool) {
 // progress.json. The caller verifies the secret, for the reason ReadProgress
 // gives.
 func (r Root) ReadAccepted(id string) (Progress, bool) {
-	body, err := os.ReadFile(filepath.Join(r.Path(id), "accepted.json"))
+	body, err := readBounded(filepath.Join(r.Path(id), "accepted.json"), noteLimit)
 	if err != nil {
 		return Progress{}, false
 	}

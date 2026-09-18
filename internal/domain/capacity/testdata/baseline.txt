@@ -24,6 +24,11 @@
 # the scan found are not on it: internal/adapters/board.MaximumItems and
 # MaximumProjects (limits N25, design-decisions G35), declared and never used.
 # The guard was red on them first; C1 deleted them.
+#
+# C2 (2026-09-18) registered five rows (log.daemon, devices.list,
+# push.subscriptions and the two transcript caches); the device list's and the
+# subscriptions' read bounds left this list to become their rows' sources. The
+# lines it added are the admission and read bounds of limits N9 and N27.
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -43,11 +48,10 @@ internal/adapters/cloud.MaximumBackoff # parameter: the reconnect wait's ceiling
 internal/adapters/cloud.maxRelayURLBytes # admission: the relay URL setting
 internal/adapters/cloud.maxResponseBytes # read: one control-plane answer
 internal/adapters/cloudkeys.secretLimit # read: one key file
-internal/adapters/devices.auditFieldLimit # admission: one audit value, cut to 256 bytes (limits N12's silent cut; C2 splits the audit)
+internal/adapters/devices.auditFieldLimit # admission: one audit value, cut to 256 bytes (limits N12's silent cut, C3; C2 split the audit from the journal)
 internal/adapters/devices.idLimit # admission: a device id
 internal/adapters/devices.machineTokenLimit # read: the machine token file
 internal/adapters/devices.storedNameLimit # admission: a device name
-internal/adapters/devices.storeLimit # read: the device list, auth fails at startup past it (limits N13): C2 registers the device list and makes it warn first
 internal/adapters/devices.tokenLimit # read: the local token file
 internal/adapters/documents.MaximumBytes # page: one document served
 internal/adapters/documents.MaximumDepth # page: how deep a document listing walks
@@ -60,13 +64,12 @@ internal/adapters/projects.changedPathLimit # page: changed paths in one project
 internal/adapters/projects.codexThreadList:chan(16) # lane: lines from one codex app-server read
 internal/adapters/projects.dirtyPathLimit # page: dirty paths in one project row
 internal/adapters/projects.package:chan(2) # lane: codex app-server readers, two at a time
-internal/adapters/projects.projectCacheLimit # store: the project reading cache (limits N18 cache class, C2 LRU)
+internal/adapters/projects.projectCacheLimit # store: the project reading cache, 32 rows, the least recently written let go (limits N18, cache class); already bounded, and not registered by C2, which measured the two transcript caches
 internal/adapters/projects.restatementLimit # parameter: the title restatement rule's word count
 internal/adapters/projects.rowLimit # page: project rows in one answer
 internal/adapters/projects.statusEntryLimit # read: git status entries read for one project
 internal/adapters/push.MaxPayload # admission: one push payload
 internal/adapters/push.secretLimit # read: the VAPID key file
-internal/adapters/push.subscriptionsLimit # read: the subscription file, every push fails past it (limits N14): C2 registers the subscriptions and makes them warn first
 internal/adapters/swiftstore.maxBytes # read: one of the Swift app's files, read-only
 internal/adapters/transcript.recordReadLimit # read: the tail of one transcript (limits N17)
 internal/app/cloudops.cloudEnvelopeCiphertextLimit # admission: one Cloud answer's ciphertext
@@ -120,3 +123,9 @@ internal/transport/http.keyBodyLimit # admission: one keys request body
 internal/transport/http.package:chan(4) # lane: terminal openings waiting (start.go)
 internal/transport/http.sendBodyLimit # admission: one send body
 internal/transport/http.voiceBodyLimit # admission: one voice body
+internal/adapters/push.endpointLimit # admission: one push endpoint, refused past 2 KiB; it is what keeps push.subscriptions' limit at its longest under half its read bound
+internal/adapters/taskdir.resultLimit # read: one result.json or result.json.tmp, refused whole past it (limits N9); the child's /complete answers result_unreadable
+internal/adapters/taskdir.noteLimit # read: one progress.json, accepted.json or result.json.ready, refused whole past it (limits N9)
+internal/transport/http.commandBodyLimit # admission: every owned route's body without a bound of its own, 413 body_too_large past it before the route runs (limits N27)
+internal/transport/http.authBodyLimit # admission: an auth or push body, 413 past it rather than cut and read as {} (limits N27)
+internal/transport/http.scheduleImportBodyLimit # admission: one batch of schedule files moved in (limits N27)

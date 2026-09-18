@@ -15,6 +15,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // ClaudeRegistry is one row of ~/.claude/sessions/<pid>.json: Claude Code's own
@@ -101,9 +103,12 @@ const titleTail = 512_000
 // The fleet list asks on every reading, for every session, and the answer
 // changes only when the file does. So the answer is kept against the file's
 // size and modification time, and an unchanged transcript is not opened.
+//
+// It holds the register's `cache.transcript_titles` rows at most, letting go
+// of the one read longest ago.
 type Titles struct {
 	mu   sync.Mutex
-	seen map[string]titleReading
+	seen *lru[titleReading]
 }
 
 type titleReading struct {
@@ -113,7 +118,21 @@ type titleReading struct {
 	custom string
 }
 
-func NewTitles() *Titles { return &Titles{seen: map[string]titleReading{}} }
+func NewTitles() *Titles { return &Titles{seen: newLRU[titleReading](capacity.CacheTranscriptTitles)} }
+
+// SetLimit is the capacity override for `cache.transcript_titles`.
+func (t *Titles) SetLimit(n int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.seen.setLimit(n)
+}
+
+// Reading is the `cache.transcript_titles` row.
+func (t *Titles) Reading() capacity.Reading {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.seen.reading()
+}
 
 // Read returns the conversation's effective title — the last `customTitle` a
 // `/rename` wrote, otherwise the last `aiTitle` — and the `customTitle` on its
@@ -131,7 +150,7 @@ func (t *Titles) Read(path string) (title, custom string) {
 	size, mod := st.Size(), st.ModTime()
 
 	t.mu.Lock()
-	prev, had := t.seen[path]
+	prev, had := t.seen.get(path)
 	t.mu.Unlock()
 	if had && prev.size == size && prev.mod.Equal(mod) {
 		return prev.title, prev.custom
@@ -157,7 +176,7 @@ func (t *Titles) Read(path string) (title, custom string) {
 	}
 
 	t.mu.Lock()
-	t.seen[path] = titleReading{size: size, mod: mod, title: title, custom: custom}
+	t.seen.put(path, titleReading{size: size, mod: mod, title: title, custom: custom})
 	t.mu.Unlock()
 	return title, custom
 }

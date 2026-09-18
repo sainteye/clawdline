@@ -97,6 +97,17 @@ var ErrUnreadable = errors.New("the device file cannot be read")
 // a directory, or anything else but a plain file.
 var ErrNotRegular = errors.New("not a plain file")
 
+// ErrDeviceListFull is a save that would add a device past the register's
+// `devices.list` limit. Nothing was written. Each device is somebody's access,
+// so the daemon never makes room by removing one: a person revokes.
+var ErrDeviceListFull = errors.New("device_list_full")
+
+// ErrDeviceListTooLarge is a save whose file would be larger than Load reads.
+// Written, it would stop the daemon at its next start (limits N13); so it is
+// not written. The row limit keeps a save from getting here — a test holds
+// that — and this is the floor under it.
+var ErrDeviceListTooLarge = errors.New("the device list would be larger than the daemon reads")
+
 // Files is one directory's worth of credentials. One per process per
 // directory; its lock orders this process's writers.
 type Files struct {
@@ -114,6 +125,15 @@ type Files struct {
 	// not be where it should be, which the register reports as exhausted.
 	appendErr error
 	rotateErr error
+
+	// The device list's limit, how many devices the file held when this
+	// process last read or wrote it (-1 before either), and the saves the
+	// limit refused. All under mu.
+	deviceLimit  int64
+	stored       int
+	refused      int64
+	lastRefusal  time.Time
+	lastRefusedN int
 }
 
 // Open prepares dir, refusing it when it is, or resolves into, any of foreign.
@@ -134,7 +154,7 @@ func Open(dir string, foreign ...string) (*Files, error) {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return nil, err
 	}
-	f := &Files{dir: dir}
+	f := &Files{dir: dir, stored: -1}
 	// Each file is tightened through its own descriptor, opened as the file it
 	// is: a link called remote.json is somebody else's file, and a chmod by
 	// path would have been done to whatever it points at.
@@ -274,6 +294,7 @@ func (f *Files) Load() (auth.State, error) {
 	defer f.mu.Unlock()
 	data, err := f.read(StoreFile, storeLimit)
 	if errors.Is(err, os.ErrNotExist) {
+		f.stored = 0
 		return auth.State{}, nil
 	}
 	if err != nil {
@@ -283,6 +304,7 @@ func (f *Files) Load() (auth.State, error) {
 	if err != nil {
 		return auth.State{}, fmt.Errorf("%w: %s is not a device list: %v", ErrUnreadable, f.path(StoreFile), err)
 	}
+	f.stored = len(state.Devices)
 	return state, nil
 }
 
@@ -417,6 +439,13 @@ func (p passwordIn) password() (*auth.Password, error) {
 }
 
 // Save writes the device list atomically.
+//
+// Two refusals, both before anything is written. A save that would hold more
+// devices than the register's `devices.list` limit, and more than the file
+// holds now, is ErrDeviceListFull: adding is refused at the limit, while a
+// revoke or a change to a device already there is not — a list over its limit
+// (an override lowered it) can still be made shorter. And a file larger than
+// Load reads is ErrDeviceListTooLarge, whatever the count.
 func (f *Files) Save(state auth.State) error {
 	file := storedFile{Version: storeVersion, Devices: []storedDevice{}}
 	for _, d := range state.Devices {
@@ -446,9 +475,64 @@ func (f *Files) Save(state auth.State) error {
 	if err != nil {
 		return err
 	}
+	body = append(body, '\n')
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.writeAtomically(StoreFile, append(body, '\n'))
+	count := len(state.Devices)
+	if limit := f.deviceListLimit(); int64(count) > limit && count > f.stored {
+		f.refuse(count)
+		return fmt.Errorf("%w: %d devices, the limit is %d; revoke one to add another", ErrDeviceListFull, count, limit)
+	}
+	if len(body) > storeLimit {
+		f.refuse(count)
+		return fmt.Errorf("%w: %d bytes, and %s is read up to %d", ErrDeviceListTooLarge, len(body), StoreFile, storeLimit)
+	}
+	if err := f.writeAtomically(StoreFile, body); err != nil {
+		return err
+	}
+	f.stored = count
+	return nil
+}
+
+// SetDeviceLimit is the capacity override for `devices.list`. Zero or less is
+// the register's default.
+func (f *Files) SetDeviceLimit(n int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deviceLimit = n
+}
+
+func (f *Files) deviceListLimit() int64 {
+	if f.deviceLimit > 0 {
+		return f.deviceLimit
+	}
+	return capacity.Default(capacity.DevicesList)
+}
+
+// refuse counts a save the limit turned away. Under mu.
+func (f *Files) refuse(count int) {
+	f.refused++
+	f.lastRefusal = time.Now()
+	f.lastRefusedN = count
+}
+
+// DevicesReading is the `devices.list` row: how many devices the file holds,
+// as this process last read or wrote it — every write goes through Save — and
+// the additions refused. Before the file has been read the count is unknown,
+// and says so.
+func (f *Files) DevicesReading() capacity.Reading {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r := capacity.Reading{Counters: capacity.Counters{Refused: f.refused, LastActionAt: f.lastRefusal}}
+	if f.stored < 0 {
+		r.Err = "the device list has not been read by this process"
+		return r
+	}
+	r.Known, r.Used = true, int64(f.stored)
+	if f.refused > 0 {
+		r.Note = fmt.Sprintf("the last refused save would have held %d devices", f.lastRefusedN)
+	}
+	return r
 }
 
 // ReadLocalToken returns the token file's contents as written.
@@ -528,6 +612,58 @@ func usableMachineToken(path string, data []byte) (string, error) {
 	}
 	return token, nil
 }
+
+// The audit is two records (docs/limits.md §4.2, design-decisions D25).
+//
+// The security audit is this file: who may reach this machine and with what —
+// pairing, devices, the password, push destinations — and a remote write that
+// sets up work this machine will later start by itself. It rotates and is never
+// deleted.
+//
+// The operational journal is what the scheduler did on its own: a run, a skip,
+// a refusal, a row it could not read. That is the store's `events`, not this
+// file. The Swift app's audit was 80.8% `orchestrator.*` bytes, and a record
+// that is never deleted must not grow with every pass of a clock.
+//
+// Both lists are closed, and a test reads every event name this repository
+// passes to an audit function and requires it to be in exactly one of them.
+var (
+	securityPrefixes = []string{"pair.", "device.", "password.", "push.", "capacity."}
+	securityEvents   = map[string]bool{
+		"orchestrator.schedule.created":  true,
+		"orchestrator.schedule.updated":  true,
+		"orchestrator.schedule.deleted":  true,
+		"orchestrator.schedule.imported": true,
+		"schedule_webhook.bind":          true,
+	}
+	journalEvents = map[string]bool{
+		"orchestrator.schedule.run":               true,
+		"orchestrator.schedule.skipped":           true,
+		"orchestrator.schedule.refused":           true,
+		"orchestrator.schedule.brief_undelivered": true,
+		"orchestrator.schedule.invalid":           true,
+		"orchestrator.schedule.spent":             true,
+	}
+)
+
+// SecurityEvent reports whether an event is named as the security audit's.
+func SecurityEvent(event string) bool {
+	if securityEvents[event] {
+		return true
+	}
+	for _, p := range securityPrefixes {
+		if strings.HasPrefix(event, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// JournalEvent reports whether an event is named as the operational journal's.
+// An event on neither list is not the journal's: the caller keeps it in the
+// security audit, where nothing is deleted, rather than guess it is safe to
+// put anywhere else (DG-7).
+func JournalEvent(event string) bool { return journalEvents[event] && !SecurityEvent(event) }
 
 // Audit appends one line: the time, the event and the fields, keys sorted, as
 // the Swift app writes it. The callers pass names and ids only; no token and

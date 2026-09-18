@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,7 +19,8 @@ import (
 
 // capacityCommand is `clawdline doctor capacity --drill <row>`: fill one row
 // of the capacity register on purpose, through its real write path, and show
-// that it says so (docs/limits.md §4.7, layer 3).
+// that it says so (docs/limits.md §4.7, layer 3). The rows it can fill, and
+// what each one's at-limit behaviour is expected to move, are in doctor.go.
 //
 // **Only in a throwaway directory.** By default it makes a new temporary one
 // and removes it afterwards. A directory given with --dir must be empty or not
@@ -30,34 +30,39 @@ import (
 // store (limits §3.5).
 //
 // It exits 0 only when the row went ok → warn → critical → full, its at-limit
-// behaviour happened exactly once, and exactly one notice was produced.
+// behaviour happened exactly once — a refusal as the row's own typed error —
+// and exactly one notice was produced.
 func capacityCommand(args []string) {
 	fs := flag.NewFlagSet("doctor capacity", flag.ContinueOnError)
-	drill := fs.String("drill", "", "the row to fill on purpose: audit.security")
+	name := fs.String("drill", "", "the row to fill on purpose: "+strings.Join(drillNames(), ", "))
 	dir := fs.String("dir", "", "a throwaway state directory, empty or not there yet (default: a new temporary one)")
-	limit := fs.String("limit", "4KiB", "the limit to run the row at; it may only be lower than the register's")
+	limit := fs.String("limit", "", "the limit to run the row at; it may only be lower than the register's (default: 4KiB for a row of bytes, 20 for a row of rows)")
 	keep := fs.Bool("keep", false, "leave the directory behind to look at")
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
 	}
-	if *drill == "" {
-		fmt.Fprintln(os.Stderr, "usage: clawdline doctor capacity --drill audit.security [--dir D] [--limit 4KiB] [--keep]")
+	if *name == "" {
+		fmt.Fprintf(os.Stderr, "usage: clawdline doctor capacity --drill <%s> [--dir D] [--limit N] [--keep]\n", strings.Join(drillNames(), "|"))
 		os.Exit(2)
 	}
-	if *drill != capacity.AuditSecurity {
-		// Named, not ignored: the register has the row, the drill does not
-		// fill it yet.
-		fmt.Fprintf(os.Stderr, "clawdline: %s has no drill yet; the rows with one are: %s\n", *drill, capacity.AuditSecurity)
+	d, ok := drills[*name]
+	if !ok {
+		// Named, not ignored: the register may have the row, and the drill
+		// does not fill it.
+		fmt.Fprintf(os.Stderr, "clawdline: %s has no drill; the rows with one are: %s\n", *name, strings.Join(drillNames(), ", "))
 		os.Exit(2)
 	}
-	resolved, problems := capacity.Resolve(capacity.Register(), *drill+"="+*limit)
+	if *limit == "" {
+		*limit = d.limit
+	}
+	resolved, problems := capacity.Resolve(capacity.Register(), *name+"="+*limit)
 	if len(problems) > 0 {
 		fmt.Fprintf(os.Stderr, "clawdline: %s\n", strings.Join(problems, "; "))
 		os.Exit(2)
 	}
 	var row capacity.Resolved
 	for _, r := range resolved {
-		if r.Entry.Name == *drill {
+		if r.Entry.Name == *name {
 			row = r
 		}
 	}
@@ -68,19 +73,18 @@ func capacityCommand(args []string) {
 		os.Exit(2)
 	}
 	defer cleanup()
-	files, err := devices.Open(path)
+	write, read, err := d.open(path, row.Limit)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)
 	}
-	files.SetAuditLimit(row.Limit)
 
 	tracker := capacity.NewTracker()
 	states := []string{}
 	notices := []string{}
 	var last capacity.Status
 	observe := func() {
-		st, events := tracker.Observe(row, files.AuditReading(), time.Now())
+		st, events := tracker.Observe(row, read(), time.Now())
 		if n := len(states); n == 0 || states[n-1] != string(st.State) {
 			states = append(states, string(st.State))
 		}
@@ -92,19 +96,38 @@ func capacityCommand(args []string) {
 		last = st
 	}
 	observe()
-	// Twice the lines the limit could hold at the shortest line this writes,
-	// so a row that never rotates ends the drill instead of running forever.
-	budget := int(row.Limit/40)*2 + 10
+	// Twice what the limit could hold at the smallest write any drill makes,
+	// so a row that never acts ends the drill instead of running forever.
+	budget := int(row.Limit)*2 + 10
+	if row.Entry.Unit == capacity.Bytes {
+		budget = int(row.Limit/40)*2 + 10
+	}
 	written := 0
-	for ; written < budget && last.Reading.Counters.Rotated == 0; written++ {
-		files.Audit("capacity.drill", map[string]string{"n": strconv.Itoa(written)})
+	var refusal, unexpected error
+	for ; written < budget && counterOf(last.Reading, d.action) == 0; written++ {
+		if err := write(written); err != nil {
+			if d.refusal != nil && errors.Is(err, d.refusal) {
+				refusal = err
+			} else {
+				unexpected = err
+			}
+		}
 		observe()
+		if unexpected != nil {
+			break
+		}
 	}
 
 	fmt.Printf("dir       %s\n", path)
 	fmt.Printf("row       %s (%s), limit %d %s, at the limit: %s\n", row.Entry.Name, row.Entry.Class, row.Limit, row.Entry.Unit, row.Entry.AtLimit)
-	fmt.Printf("wrote     %d audit lines through the audit's own writer\n", written)
-	fmt.Printf("states    %s → rotated=%d\n", strings.Join(states, " → "), last.Reading.Counters.Rotated)
+	fmt.Printf("wrote     %d times through the row's own writer\n", written)
+	fmt.Printf("states    %s → %s=%d\n", strings.Join(states, " → "), d.action, counterOf(last.Reading, d.action))
+	if refusal != nil {
+		fmt.Printf("refusal   %v\n", refusal)
+	}
+	if unexpected != nil {
+		fmt.Printf("error     %v\n", unexpected)
+	}
 	fmt.Printf("notices   %d", len(notices))
 	if len(notices) > 0 {
 		fmt.Printf(" (%s; %d more held back by the one-a-day rule)", strings.Join(notices, ", "), last.Suppressed)
@@ -115,8 +138,10 @@ func capacityCommand(args []string) {
 
 	want := []string{"ok", "warn", "critical", "full"}
 	climbed := len(states) >= len(want) && strings.Join(states[:len(want)], ",") == strings.Join(want, ",")
-	if !climbed || last.Reading.Counters.Rotated != 1 || len(notices) != 1 || last.Reading.Failing {
-		fmt.Println("result    FAILED: the row did not go ok → warn → critical → full, rotate exactly once and produce exactly one notice")
+	refusedAsTyped := d.refusal == nil || refusal != nil
+	if !climbed || counterOf(last.Reading, d.action) != 1 || !refusedAsTyped || unexpected != nil ||
+		len(notices) != 1 || last.Reading.Failing {
+		fmt.Printf("result    FAILED: the row did not go ok → warn → critical → full, act (%s) exactly once and produce exactly one notice\n", d.action)
 		os.Exit(1)
 	}
 	fmt.Println("result    ok")

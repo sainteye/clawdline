@@ -23,6 +23,10 @@ func NewHost() *Host {
 	return &Host{Home: home, titles: NewTitles(), shells: NewShells()}
 }
 
+// Titles is the conversation-title cache, for the capacity register's
+// `cache.transcript_titles` row and its override.
+func (h *Host) Titles() *Titles { return h.titles }
+
 // Refresh reads both indexes once per inventory rather than once per row.
 func (h *Host) Refresh() {
 	h.claude = ClaudeRegistryByPID(h.Home)
