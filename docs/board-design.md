@@ -1,3 +1,5 @@
+> **實作依據是 [`docs/design-decisions.md`](design-decisions.md)（2026-09-18 起）；本文保留為分析材料，與它衝突之處以它為準。**
+
 # 看板（Project Board）：照搬什麼、改什麼、重做什麼
 
 > 問的是：舊版看板的設計值不值得原封不動搬進 clawdline-go。
