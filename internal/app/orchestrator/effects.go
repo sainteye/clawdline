@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -36,6 +37,14 @@ const (
 	// EffectMessage types one session's message into another's composer,
 	// and answers the request that asked for it (D03).
 	EffectMessage = "session.message"
+	// EffectDeadLetterPush tells the person that a completion notice went
+	// unacknowledged through its whole ladder (D24). The Swift app told
+	// nobody: a dead letter there was a closeability reason on a row, found
+	// only by somebody who already suspected it.
+	EffectDeadLetterPush = "notice.dead_letter.push"
+	// EffectWaitDelivery types a file wait's request into its owner, or its
+	// release into a waiter (waits.go).
+	EffectWaitDelivery = "wait.delivery"
 )
 
 // ErrEffectInsideWrite is an effect asked for from inside a write
@@ -88,6 +97,10 @@ var effectHandlers = map[string]effectHandler{
 	EffectWorktree:   {idempotent: true, run: runWorktree},
 	EffectCloseChild: {idempotent: true, run: runCloseChild},
 	EffectMessage:    {idempotent: false, run: runMessage},
+	// A push cannot be asked afterwards whether it arrived, so a recovery
+	// never sends one a second time.
+	EffectDeadLetterPush: {idempotent: false, run: runDeadLetterPush},
+	EffectWaitDelivery:   {idempotent: false, run: runWaitDelivery},
 }
 
 func (b *Broker) fault(point string, e store.Effect) {
@@ -334,4 +347,53 @@ func runMessage(ctx context.Context, b *Broker, e store.Effect) effectResult {
 		answer: &store.ReceiptAnswer{Status: http.StatusOK, Body: body},
 		events: []store.Event{{Kind: "session.message", Subject: target.ID, Payload: payload}},
 	}
+}
+
+// --- notice.dead_letter.push ----------------------------------------------
+
+type deadLetterEffect struct {
+	Notice   string `json:"notice"`
+	Attempts int    `json:"attempts"`
+}
+
+// deadLetterTitle and deadLetterBody are server strings, in the one language
+// this daemon's own pushes speak today (push.go's pushTestBody).
+const (
+	deadLetterTitle = "完成通知沒有送達"
+	deadLetterBody  = "「%s」已經結束（%s），但通知送了 %d 次都沒有被收下。打開那個 session 讀 result.json；" +
+		"修好原因後可以用 POST /v1/orchestrator/completions/reconcile 重送。"
+)
+
+// runDeadLetterPush sends the one push a dead letter owes. Tapping it opens
+// the root the notice was for, when this machine is watching it.
+func runDeadLetterPush(ctx context.Context, b *Broker, e store.Effect) effectResult {
+	var d deadLetterEffect
+	_ = json.Unmarshal(e.Payload, &d)
+	r, _, err := b.Record(ctx, e.Subject)
+	if err != nil {
+		return effectResult{state: store.EffectFailed, outcome: "task unreadable: " + err.Error()}
+	}
+	if b.Push == nil {
+		return effectResult{state: store.EffectFailed, outcome: "this daemon cannot push"}
+	}
+	title := r.Title
+	if title == "" {
+		title = r.ID
+	}
+	sent, failed, err := b.Push(ctx, deadLetterTitle,
+		fmt.Sprintf(deadLetterBody, title, r.State, d.Attempts), r.RootTerminalID, "dead-letter-"+r.ID)
+	body, _ := json.Marshal(map[string]any{"task": r.ID, "notice": d.Notice, "sent": sent, "failed": failed})
+	events := []store.Event{{Kind: "task.completion.dead_letter.pushed", Subject: r.ID, Payload: body}}
+	switch {
+	case err != nil:
+		return effectResult{state: store.EffectFailed, outcome: err.Error(), events: events}
+	case sent == 0 && failed == 0:
+		// Nobody asked to be notified. There is nothing to retry: the dead
+		// letter is still counted in /v1/diagnostics and listed by
+		// /v1/orchestrator/completions.
+		return effectResult{state: store.EffectDone, outcome: "not_subscribed", events: events}
+	case sent == 0:
+		return effectResult{state: store.EffectFailed, outcome: "no push service accepted it", events: events}
+	}
+	return effectResult{state: store.EffectDone, outcome: "pushed", events: events}
 }

@@ -253,6 +253,38 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return s.pictures.drops.Reading()
 		},
+		// W5's three rows, read from the store the broker writes them to.
+		capacity.LeasesQueue: func() capacity.Reading {
+			leases, err := s.store.Leases(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			r := capacity.Reading{Known: true}
+			for _, l := range leases {
+				if n := int64(len(l.Waiters)); n > r.Used {
+					r.Used, r.Note = n, "longest line: "+l.Resource
+				}
+			}
+			return r
+		},
+		capacity.CoordinatorAliases: func() capacity.Reading {
+			rec, _, err := s.store.Coordinator(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			r := capacity.Reading{Known: true}
+			if rec != nil {
+				r.Used = int64(len(rec.Aliases))
+			}
+			return r
+		},
+		capacity.WaitsOpen: func() capacity.Reading {
+			n, err := s.store.OpenWaitCount(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: int64(n)}
+		},
 	}
 }
 

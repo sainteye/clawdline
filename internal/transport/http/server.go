@@ -234,6 +234,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/messages", s.brokerMessages)
 	mux.HandleFunc("/v1/orchestrator/whoami", s.brokerWhoAmI)
 	mux.HandleFunc("/v1/orchestrator/sessions/", s.brokerSessionRoute)
+	// The coordination plane (W5): the machine role, file waits, leases (the
+	// compile slot and landing), the completion ledger's manual path, and
+	// detached automation (coordinator.go, waits.go).
+	mux.HandleFunc("/v1/orchestrator/coordinator", s.orchestratorCoordinatorRoute)
+	mux.HandleFunc("/v1/orchestrator/coordinator/", s.orchestratorCoordinatorRoute)
+	mux.HandleFunc("/v1/orchestrator/waits", s.waitsRoute)
+	mux.HandleFunc("/v1/orchestrator/waits/", s.waitsRoute)
+	mux.HandleFunc("/v1/orchestrator/leases", s.leasesRoute)
+	mux.HandleFunc("/v1/orchestrator/leases/", s.leasesRoute)
+	mux.HandleFunc("/v1/orchestrator/completions", s.completionsRoute)
+	mux.HandleFunc("/v1/orchestrator/completions/", s.completionsRoute)
+	mux.HandleFunc("/v1/orchestrator/detached-tasks", s.brokerDetached)
 	mux.HandleFunc("/v1/strings", s.strings)
 	mux.HandleFunc("/v1/settings", s.settingsRoute)
 	mux.HandleFunc("/v1/places", s.placesRoute)

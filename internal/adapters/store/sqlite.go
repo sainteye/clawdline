@@ -23,8 +23,6 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
-
-	"github.com/sainteye/clawdline-go/internal/domain/coordinator"
 )
 
 type Store struct {
@@ -81,18 +79,6 @@ CREATE TABLE IF NOT EXISTS schedules (
   last_run   INTEGER NOT NULL DEFAULT 0,
   last_task  TEXT    NOT NULL DEFAULT '',
   first_seen INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS coordinator (
-  id              INTEGER PRIMARY KEY CHECK (id = 1),
-  record_id       TEXT    NOT NULL,
-  label           TEXT    NOT NULL,
-  session_id      TEXT    NOT NULL,
-  conversation_id TEXT    NOT NULL,
-  assistant       TEXT    NOT NULL,
-  pid             INTEGER NOT NULL,
-  registered_at   INTEGER NOT NULL,
-  rebound_at      INTEGER NOT NULL DEFAULT 0,
-  generation      INTEGER NOT NULL
 );
 `
 
@@ -191,6 +177,9 @@ func Open(dir string) (*Store, error) {
 	if err := openTodos(db); err != nil {
 		return nil, err
 	}
+	if err := openCoordination(db); err != nil {
+		return nil, err
+	}
 	// The directory is already 0700, but the files carry receipts and the
 	// subjects of somebody's work, and defence in depth is two lines here.
 	// SQLite creates them through the process umask, which is not ours to
@@ -220,50 +209,6 @@ func (s *Store) Append(ctx context.Context, e Event) error {
 		}
 		return 1, nil
 	})
-}
-
-// Coordinator returns the machine role's binding, if one exists.
-//
-// A missing record, a corrupt one and one written by a version we cannot read
-// must not project the same tuple as "nobody has the role": the first is a fact
-// and the others are ignorance. A read error is returned as an error, never as
-// a nil record.
-func (s *Store) Coordinator(ctx context.Context) (*coordinator.Record, error) {
-	var r coordinator.Record
-	var registered, rebound int64
-	err := s.db.QueryRowContext(ctx,
-		`SELECT record_id, label, session_id, conversation_id, assistant, pid,
-		        registered_at, rebound_at, generation
-		 FROM coordinator WHERE id = 1`).
-		Scan(&r.ID, &r.Label, &r.SessionID, &r.ConversationID, &r.Assistant, &r.PID,
-			&registered, &rebound, &r.Generation)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	r.RegisteredAt = time.Unix(registered, 0)
-	if rebound > 0 {
-		r.ReboundAt = time.Unix(rebound, 0)
-	}
-	return &r, nil
-}
-
-// SaveCoordinator writes the binding.
-func (s *Store) SaveCoordinator(ctx context.Context, r coordinator.Record) error {
-	rebound := int64(0)
-	if !r.ReboundAt.IsZero() {
-		rebound = r.ReboundAt.Unix()
-	}
-	_, err := s.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO coordinator
-		 (id, record_id, label, session_id, conversation_id, assistant, pid,
-		  registered_at, rebound_at, generation)
-		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.Label, r.SessionID, r.ConversationID, r.Assistant, r.PID,
-		r.RegisteredAt.Unix(), rebound, r.Generation)
-	return err
 }
 
 // Counts is what `doctor` reports about the store: how many facts it holds,

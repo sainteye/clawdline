@@ -84,6 +84,12 @@ func (b *Broker) ReadDraft(id string) (Record, error) {
 // readDraft is ReadDraft for either door: a brief a caller wrote, or one the
 // broker wrote itself from a stored schedule's template (scheduled.go).
 func (b *Broker) readDraft(id string, scheduled bool) (Record, error) {
+	return b.readDraftAs(id, scheduled, false)
+}
+
+// readDraftAs is readDraft for the detached route too: a detached brief is
+// admitted only with `root.session_id: null` and `root.poll_only: true`.
+func (b *Broker) readDraftAs(id string, scheduled, detached bool) (Record, error) {
 	path := filepath.Join(b.Tasks.Path(id), "task.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -95,7 +101,7 @@ func (b *Broker) readDraft(id string, scheduled bool) (Record, error) {
 		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task",
 			"No readable task.json under "+b.Tasks.Path(id)+"/.")
 	}
-	return b.admit(id, d, scheduled)
+	return b.admit(id, d, scheduled, detached)
 }
 
 // admit turns a parsed brief into a record, or names the first thing wrong
@@ -111,7 +117,7 @@ func (b *Broker) readDraft(id string, scheduled bool) (Record, error) {
 // declared" and the dispatch warns, rather than reading it as "writes nothing".
 // Every other field meets the same checks a caller's brief meets, so a template
 // asking for something this broker does not do is refused by name.
-func (b *Broker) admit(id string, d draft, scheduled bool) (Record, error) {
+func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, error) {
 	bad := func(msg string) (Record, error) {
 		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task", msg)
 	}
@@ -167,7 +173,13 @@ func (b *Broker) admit(id string, d draft, scheduled bool) (Record, error) {
 	}
 
 	var root *RootRef
-	if !scheduled {
+	switch {
+	case scheduled:
+	case detached:
+		if err := admitDetached(d.Root); err != nil {
+			return Record{}, err
+		}
+	default:
 		admitted, err := admitRoot(d.Root)
 		if err != nil {
 			return Record{}, err
@@ -334,6 +346,30 @@ func admitRoot(raw *json.RawMessage) (*RootRef, error) {
 		ProjectDir: d.ProjectDir,
 		Label:      truncate(d.Label, rootLabelLimit),
 	}, nil
+}
+
+// admitDetached is the detached route's half of the root check, the Swift
+// app's `detached_task_required`: that route runs unattended automation only,
+// and a brief naming an owner, or not saying it polls, is an owned child sent
+// to the wrong door.
+func admitDetached(raw *json.RawMessage) error {
+	wrong := refuse(http.StatusUnprocessableEntity, "detached_task_required",
+		"POST /v1/orchestrator/detached-tasks runs unattended automation only: task.json must carry "+
+			"root.session_id null and root.poll_only true. An owned child goes through POST /v1/orchestrator/tasks.")
+	if raw == nil {
+		return wrong
+	}
+	var d draftRoot
+	if err := json.Unmarshal(*raw, &d); err != nil {
+		return refuse(http.StatusUnprocessableEntity, "bad_task", "root must be an object")
+	}
+	if d.SessionID != nil && strings.TrimSpace(*d.SessionID) != "" {
+		return wrong
+	}
+	if d.PollOnly == nil || !*d.PollOnly {
+		return wrong
+	}
+	return nil
 }
 
 const (

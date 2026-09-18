@@ -2,62 +2,87 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "coordinator.schema.json",
   "title": "The machine role",
-  "description": "GET and POST /v1/coordinator. Registering is never a takeover. Rebinding is a three-field compare-and-swap that refuses while the holder is online, and refuses again when liveness is unknown.",
+  "description": "GET /v1/next/coordinator: the machine role as the Dashboard reads it. It is a read of the same record GET /v1/orchestrator/coordinator answers (coordination.schema.json); registering and rebinding are only there — this route no longer takes a POST, so the role has one door. A session is its conversation id (`conversationId`); `terminalId` is where it is now (broker-design #36).",
   "$defs": {
     "Liveness": {
       "description": "What a current inventory says about the bound process. An incomplete reading answers `unknown`, never `offline`: absence of evidence is not proof of death.",
       "type": "string",
-      "enum": ["online", "offline", "unknown"]
+      "enum": [
+        "online",
+        "offline",
+        "unknown"
+      ]
     },
     "CoordinatorRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["assistant", "conversationId", "generation", "id", "label", "pid", "registeredAt", "sessionId"],
+      "required": [
+        "assistant",
+        "conversationId",
+        "generation",
+        "id",
+        "label",
+        "pid",
+        "registeredAt",
+        "terminalId"
+      ],
       "properties": {
-        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
-        "conversationId": { "type": "string" },
-        "generation": { "description": "Increments on every rebind, so a stale caller holding an old view cannot move a role that has already moved.", "type": "integer" },
-        "id": { "type": "string" },
-        "label": { "type": "string" },
-        "pid": { "type": "integer" },
-        "reboundAt": { "type": "integer" },
-        "registeredAt": { "type": "integer" },
-        "sessionId": { "type": "string" }
+        "assistant": {
+          "$ref": "common.schema.json#/$defs/Assistant"
+        },
+        "conversationId": {
+          "type": "string"
+        },
+        "generation": {
+          "description": "Increments on every rebind, so a stale caller holding an old view cannot move a role that has already moved.",
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "reboundAt": {
+          "type": "integer"
+        },
+        "registeredAt": {
+          "type": "integer"
+        },
+        "terminalId": {
+          "description": "The terminal the bound session is in now. A place, not a session.",
+          "type": "string"
+        }
       }
     },
     "CoordinatorSnapshot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["candidates", "liveness", "registered"],
+      "required": [
+        "candidates",
+        "liveness",
+        "registered"
+      ],
       "properties": {
-        "candidates": { "type": "array", "items": { "type": "string" } },
-        "liveness": { "$ref": "#/$defs/Liveness" },
-        "record": { "nullable": true, "$ref": "#/$defs/CoordinatorRecord" },
-        "registered": { "type": "boolean" }
-      }
-    },
-    "CoordinatorResult": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["ok", "record"],
-      "properties": {
-        "ok": { "type": "boolean" },
-        "record": { "$ref": "#/$defs/CoordinatorRecord" }
-      }
-    },
-    "CoordinatorRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["operation"],
-      "properties": {
-        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
-        "conversationId": { "type": "string" },
-        "expectGeneration": { "type": "integer" },
-        "expectId": { "type": "string" },
-        "label": { "type": "string" },
-        "operation": { "type": "string", "enum": ["register", "rebind"] },
-        "pid": { "type": "integer" },
-        "sessionId": { "type": "string" }
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "liveness": {
+          "$ref": "#/$defs/Liveness"
+        },
+        "record": {
+          "nullable": true,
+          "$ref": "#/$defs/CoordinatorRecord"
+        },
+        "registered": {
+          "type": "boolean"
+        }
       }
     }
   }

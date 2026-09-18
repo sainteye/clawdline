@@ -710,6 +710,26 @@ export type Backend =
 
 export const BackendValues: readonly Backend[] = ["iterm", "tmux", "owned"] as const
 
+export interface BearingsLanding {
+  age_seconds: number
+  obligation: string
+  task_id: string
+  title: string
+}
+
+export interface BearingsSource {
+  freshness: string
+  observed_at: number
+  provenance: string
+}
+
+export interface BearingsSources {
+  landings: BearingsSource
+  sessions: BearingsSource
+  tasks: BearingsSource
+  waits: BearingsSource
+}
+
 export interface BoardSnapshot {
   at: number
   projects: Project[]
@@ -1978,6 +1998,44 @@ export type CloseabilityState =
 export const CloseabilityStateValues: readonly CloseabilityState[] = ["safe", "blocked", "needs_attestation", "unknown"] as const
 
 /**
+ * GET /v1/orchestrator/completions?pending=true|false. `pending=true` (the default)
+ * is every envelope not yet acknowledged, dead letters included; `pending=false`
+ * adds the acknowledged ones of the last seven days.
+ */
+export interface CompletionList {
+  at: number
+  completions: CompletionRow[]
+  pending_only: boolean
+}
+
+export interface CompletionReconcileRequest {
+  include_dead_letter?: boolean
+  task_id?: string
+}
+
+/**
+ * Re-arming puts an envelope back at the start of its ladder with its notice id
+ * kept: state pending, attempts 0, next retry now. At most 25 per call.
+ */
+export interface CompletionReconcileResult {
+  batch_limit: number
+  limited: boolean
+  ok: boolean
+  rearmed: string[]
+}
+
+/**
+ * One completion envelope as the manual path reads it.
+ */
+export interface CompletionRow {
+  delivery: BrokerNotice
+  root_session_id?: string
+  task_id: string
+  task_state: string
+  title: string
+}
+
+/**
  * One file-ownership wait between sessions, from the Swift store's
  * `coordination_waits`, as Orchestrator.coordination(forTerminal:) shapes it. On
  * the waiting side it carries `reason` and `waiterCreatedAt`; on the owner's side
@@ -1998,6 +2056,82 @@ export interface CoordinationWaitRow {
   waiterSessionId?: string
 }
 
+/**
+ * Where this machine's work stands, as the role reads it before it answers anybody.
+ * The session work-state and closeability counts of the Swift app's bearings are
+ * not projected here yet (they are the session list's; W5 report).
+ */
+export interface CoordinatorBearings {
+  active_task_count: number
+  coordinator_lifecycle: CoordinatorLifecycle
+  dead_letter_count: number
+  held_leases: number
+  observed_at: number
+  open_wait_count: number
+  pending_landing_count: number
+  pending_landings: BearingsLanding[]
+  sources: BearingsSources
+
+  /**
+   * The sources that could not be read in full for this answer.
+   */
+  unknown: string[]
+}
+
+/**
+ * GET /v1/orchestrator/coordinator.
+ */
+export interface CoordinatorInspection {
+  bearings: CoordinatorBearings
+  coordinator: CoordinatorMetadata
+  observed_at: number
+  registration: CoordinatorRegistration
+  store: CoordinatorStoreState
+  version: number
+}
+
+export type CoordinatorLifecycle =
+    "standby"
+  | "offline"
+  | "unknown"
+  | "unregistered"
+
+export const CoordinatorLifecycleValues: readonly CoordinatorLifecycle[] = ["standby", "offline", "unknown", "unregistered"] as const
+
+/**
+ * The role as Coordinator.swift's coordinatorMetadata projects it. Every field but
+ * `configured`, `scope`, `label`, `status` and `lifecycle` is absent while nothing
+ * is registered.
+ */
+export interface CoordinatorMetadata {
+  configured: boolean
+  generation?: number
+  id?: string
+  label: string
+  lifecycle: CoordinatorLifecycle
+  rebound_at?: number
+  registered_at?: number
+  scope: string
+  session?: CoordinatorSession
+  status: CoordinatorStatus
+}
+
+export interface CoordinatorRebindRequest {
+  expected_coordinator_id: string
+  expected_generation: number
+
+  /**
+   * The conversation id of the live session the role moves to.
+   */
+  session_id: string
+}
+
+export interface CoordinatorRebindResult {
+  coordinator: CoordinatorMetadata
+  ok: boolean
+  rebound: boolean
+}
+
 export interface CoordinatorRecord {
   assistant: Assistant
   conversationId: string
@@ -2012,23 +2146,44 @@ export interface CoordinatorRecord {
   pid: number
   reboundAt?: number
   registeredAt: number
-  sessionId: string
+
+  /**
+   * The terminal the bound session is in now. A place, not a session.
+   */
+  terminalId: string
 }
 
-export interface CoordinatorRequest {
-  assistant?: Assistant
-  conversationId?: string
-  expectGeneration?: number
-  expectId?: string
-  label?: string
-  operation: string
-  pid?: number
-  sessionId?: string
+export interface CoordinatorRegisterRequest {
+  /**
+   * The conversation id of the live session to bind.
+   */
+  session_id: string
 }
 
-export interface CoordinatorResult {
+export interface CoordinatorRegisterResult {
+  coordinator: CoordinatorMetadata
+  created: boolean
   ok: boolean
-  record: CoordinatorRecord
+}
+
+/**
+ * `available` while nothing is registered and the store is readable; `blocked` when
+ * the store holds a row nobody can vouch for.
+ */
+export interface CoordinatorRegistration {
+  state: string
+}
+
+/**
+ * The bound session. `session_id` is its conversation id; `terminal_id` is the
+ * terminal it is in now.
+ */
+export interface CoordinatorSession {
+  assistant: Assistant
+  cwd?: string
+  label: string
+  session_id: string
+  terminal_id: string
 }
 
 export interface CoordinatorSnapshot {
@@ -2036,6 +2191,21 @@ export interface CoordinatorSnapshot {
   liveness: Liveness
   record: CoordinatorRecord | null
   registered: boolean
+}
+
+/**
+ * What a current reading says about the bound process. `unknown` is never absence.
+ */
+export type CoordinatorStatus =
+    "online"
+  | "offline"
+  | "unknown"
+  | "unregistered"
+
+export const CoordinatorStatusValues: readonly CoordinatorStatus[] = ["online", "offline", "unknown", "unregistered"] as const
+
+export interface CoordinatorStoreState {
+  status: string
 }
 
 /**
@@ -2425,6 +2595,114 @@ export interface InventorySession {
  */
 export interface KeyRequest {
   key: string
+}
+
+export interface LeaseHolder {
+  acquired_at: number
+  held_seconds: number
+  holder: string
+  lease_id: string
+  liveness: LeaseLiveness
+
+  /**
+   * proving, process_running, session_live, heartbeat_lapsed, owner_gone or
+   * evidence_unknown.
+   */
+  liveness_reason: string
+  phase?: string
+  pid?: number
+  reason: string
+  renewal_age_seconds: number
+  renewed_at: number
+  request_id: string
+  session_id?: string
+}
+
+export interface LeaseList {
+  at: number
+  leases: LeaseRecord[]
+}
+
+export type LeaseLiveness =
+    "alive"
+  | "gone"
+  | "unknown"
+
+export const LeaseLivenessValues: readonly LeaseLiveness[] = ["alive", "gone", "unknown"] as const
+
+/**
+ * POST /v1/orchestrator/leases/renew, /release or /cancel.
+ */
+export interface LeaseOwnerRequest {
+  checkout?: string
+  phase?: string
+  request_id: string
+  resource: LeaseResource
+}
+
+export interface LeaseRecord {
+  holder: LeaseHolder | null
+  key: string
+  queue: LeaseWaiter[]
+  queue_depth: number
+  resource: LeaseResource
+}
+
+export interface LeaseReply {
+  /**
+   * queued_behind_others, holder_proving or evidence_unknown.
+   */
+  hold_reason?: string
+  lease: LeaseRecord
+  lease_id?: string
+  ok: boolean
+  position?: number
+  retry_after_seconds?: number
+  state: string
+}
+
+/**
+ * POST /v1/orchestrator/leases: ask, or ask again. Idempotent on `request_id`,
+ * which is the one proof of ownership. A holder names what proves it alive: a
+ * renewal every 20 seconds, `pid` (with `process_start`, epoch seconds),
+ * `session_id` (a conversation id), or any of them.
+ */
+export interface LeaseRequest {
+  /**
+   * landing only: the absolute path of the checkout being landed into.
+   */
+  checkout?: string
+  holder: string
+  phase?: string
+  pid?: number
+  process_start?: number
+  reason?: string
+  request_id: string
+  resource: LeaseResource
+  session_id?: string
+}
+
+export type LeaseResource =
+    "heavy_compile"
+  | "landing"
+
+export const LeaseResourceValues: readonly LeaseResource[] = ["heavy_compile", "landing"] as const
+
+export interface LeaseWaiter {
+  holder: string
+  pid?: number
+
+  /**
+   * Place among the waiters still asking; absent for one that stopped asking and is
+   * passed over.
+   */
+  position?: number
+  proving: boolean
+  reason: string
+  request_id: string
+  requested_at: number
+  session_id?: string
+  waited_seconds: number
 }
 
 /**
@@ -4723,6 +5001,72 @@ export interface VoiceRequest {
 export interface VoiceResult {
   ms: number
   text: string
+}
+
+/**
+ * One file wait, in the Swift app's camelCase. `ownerSessionId` and each waiter's
+ * `sessionId` are conversation ids.
+ */
+export interface Wait {
+  createdAt: number
+  id: string
+  ownerSessionId: string
+  paths: string[]
+  releaseCondition: string
+  repository: string
+  waiters: WaitWaiter[]
+}
+
+export interface WaitCancelRequest {
+  waiter_session_id: string
+}
+
+export interface WaitCancelResult {
+  id: string
+  ok: boolean
+}
+
+export interface WaitList {
+  at: number
+  waits: Wait[]
+}
+
+export interface WaitReleaseRequest {
+  commit?: string
+  note?: string
+  owner_session_id: string
+}
+
+export interface WaitReleaseResult {
+  id: string
+  ok: boolean
+  released: number
+}
+
+/**
+ * POST /v1/orchestrator/waits. Both sessions are conversation ids.
+ */
+export interface WaitRequest {
+  owner_session_id: string
+  paths: string[]
+  reason: string
+  release_condition: string
+  repository: string
+  waiter_session_id: string
+}
+
+export interface WaitResult {
+  deduplicated: boolean
+  ok: boolean
+  wait: Wait
+}
+
+export interface WaitWaiter {
+  createdAt: number
+  reason: string
+  releaseDeliveredAt?: number
+  requestDeliveredAt?: number
+  sessionId: string
 }
 
 /**

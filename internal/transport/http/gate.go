@@ -319,10 +319,6 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !machine && !send {
 			return http.StatusForbidden, "forbidden", "This device may only read the board."
 		}
-	case p == "/v1/next/coordinator":
-		if !machine {
-			return http.StatusForbidden, "forbidden", "Moving the machine coordinator needs the orchestrator token."
-		}
 	case p == "/v1/settings":
 		// The Swift app has no such route: its settings are a native window.
 		// Here they are the hotkey, a global keyboard grab, so only this

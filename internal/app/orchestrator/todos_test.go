@@ -555,7 +555,7 @@ func TestARestartNeitherMissesNorDuplicates(t *testing.T) {
 func TestTodosNeverReachAPerson(t *testing.T) {
 	b, ctx, clock := newTodoBroker(t)
 	pushes := 0
-	b.Notify = func(context.Context, string, string, string) (int, int, error) { pushes++; return 1, 0, nil }
+	b.Push = func(context.Context, string, string, string, string) (int, int, error) { pushes++; return 1, 0, nil }
 	h := db(t, b)
 	r := t2Task("70d00080-0000-4000-8000-000000000080", []string{"a.go"}, clock.now())
 	admit(t, b, ctx, r)

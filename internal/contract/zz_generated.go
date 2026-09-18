@@ -554,6 +554,26 @@ const (
 // BackendValues is every value the contract allows, in contract order.
 var BackendValues = []Backend{BackendIterm, BackendTmux, BackendOwned}
 
+type BearingsLanding struct {
+	AgeSeconds int64  `json:"age_seconds"`
+	Obligation string `json:"obligation"`
+	TaskID     string `json:"task_id"`
+	Title      string `json:"title"`
+}
+
+type BearingsSource struct {
+	Freshness  string `json:"freshness"`
+	ObservedAt int64  `json:"observed_at"`
+	Provenance string `json:"provenance"`
+}
+
+type BearingsSources struct {
+	Landings BearingsSource `json:"landings"`
+	Sessions BearingsSource `json:"sessions"`
+	Tasks    BearingsSource `json:"tasks"`
+	Waits    BearingsSource `json:"waits"`
+}
+
 type BoardSnapshot struct {
 	At            int64       `json:"at"`
 	Projects      []Project   `json:"projects"`
@@ -1628,6 +1648,38 @@ const (
 // CloseabilityStateValues is every value the contract allows, in contract order.
 var CloseabilityStateValues = []CloseabilityState{CloseabilityStateSafe, CloseabilityStateBlocked, CloseabilityStateNeedsAttestation, CloseabilityStateUnknown}
 
+// GET /v1/orchestrator/completions?pending=true|false. `pending=true` (the
+// default) is every envelope not yet acknowledged, dead letters included;
+// `pending=false` adds the acknowledged ones of the last seven days.
+type CompletionList struct {
+	At          int64           `json:"at"`
+	Completions []CompletionRow `json:"completions"`
+	PendingOnly bool            `json:"pending_only"`
+}
+
+type CompletionReconcileRequest struct {
+	IncludeDeadLetter bool   `json:"include_dead_letter,omitempty"`
+	TaskID            string `json:"task_id,omitempty"`
+}
+
+// Re-arming puts an envelope back at the start of its ladder with its notice id
+// kept: state pending, attempts 0, next retry now. At most 25 per call.
+type CompletionReconcileResult struct {
+	BatchLimit int64    `json:"batch_limit"`
+	Limited    bool     `json:"limited"`
+	OK         bool     `json:"ok"`
+	Rearmed    []string `json:"rearmed"`
+}
+
+// One completion envelope as the manual path reads it.
+type CompletionRow struct {
+	Delivery      BrokerNotice `json:"delivery"`
+	RootSessionID string       `json:"root_session_id,omitempty"`
+	TaskID        string       `json:"task_id"`
+	TaskState     string       `json:"task_state"`
+	Title         string       `json:"title"`
+}
+
 // One file-ownership wait between sessions, from the Swift store's
 // `coordination_waits`, as Orchestrator.coordination(forTerminal:) shapes it.
 // On the waiting side it carries `reason` and `waiterCreatedAt`; on the owner's
@@ -1647,6 +1699,76 @@ type CoordinationWaitRow struct {
 	WaiterSessionID  string   `json:"waiterSessionId,omitempty"`
 }
 
+// Where this machine's work stands, as the role reads it before it answers
+// anybody. The session work-state and closeability counts of the Swift app's
+// bearings are not projected here yet (they are the session list's; W5 report).
+type CoordinatorBearings struct {
+	ActiveTaskCount      int64                `json:"active_task_count"`
+	CoordinatorLifecycle CoordinatorLifecycle `json:"coordinator_lifecycle"`
+	DeadLetterCount      int64                `json:"dead_letter_count"`
+	HeldLeases           int64                `json:"held_leases"`
+	ObservedAt           int64                `json:"observed_at"`
+	OpenWaitCount        int64                `json:"open_wait_count"`
+	PendingLandingCount  int64                `json:"pending_landing_count"`
+	PendingLandings      []BearingsLanding    `json:"pending_landings"`
+	Sources              BearingsSources      `json:"sources"`
+
+	// The sources that could not be read in full for this answer.
+	Unknown []string `json:"unknown"`
+}
+
+// GET /v1/orchestrator/coordinator.
+type CoordinatorInspection struct {
+	Bearings     CoordinatorBearings     `json:"bearings"`
+	Coordinator  CoordinatorMetadata     `json:"coordinator"`
+	ObservedAt   int64                   `json:"observed_at"`
+	Registration CoordinatorRegistration `json:"registration"`
+	Store        CoordinatorStoreState   `json:"store"`
+	Version      int64                   `json:"version"`
+}
+
+type CoordinatorLifecycle string
+
+const (
+	CoordinatorLifecycleStandby      CoordinatorLifecycle = "standby"
+	CoordinatorLifecycleOffline      CoordinatorLifecycle = "offline"
+	CoordinatorLifecycleUnknown      CoordinatorLifecycle = "unknown"
+	CoordinatorLifecycleUnregistered CoordinatorLifecycle = "unregistered"
+)
+
+// CoordinatorLifecycleValues is every value the contract allows, in contract order.
+var CoordinatorLifecycleValues = []CoordinatorLifecycle{CoordinatorLifecycleStandby, CoordinatorLifecycleOffline, CoordinatorLifecycleUnknown, CoordinatorLifecycleUnregistered}
+
+// The role as Coordinator.swift's coordinatorMetadata projects it. Every field
+// but `configured`, `scope`, `label`, `status` and `lifecycle` is absent while
+// nothing is registered.
+type CoordinatorMetadata struct {
+	Configured   bool                 `json:"configured"`
+	Generation   int64                `json:"generation,omitempty"`
+	ID           string               `json:"id,omitempty"`
+	Label        string               `json:"label"`
+	Lifecycle    CoordinatorLifecycle `json:"lifecycle"`
+	ReboundAt    int64                `json:"rebound_at,omitempty"`
+	RegisteredAt int64                `json:"registered_at,omitempty"`
+	Scope        string               `json:"scope"`
+	Session      *CoordinatorSession  `json:"session,omitempty"`
+	Status       CoordinatorStatus    `json:"status"`
+}
+
+type CoordinatorRebindRequest struct {
+	ExpectedCoordinatorID string `json:"expected_coordinator_id"`
+	ExpectedGeneration    int64  `json:"expected_generation"`
+
+	// The conversation id of the live session the role moves to.
+	SessionID string `json:"session_id"`
+}
+
+type CoordinatorRebindResult struct {
+	Coordinator CoordinatorMetadata `json:"coordinator"`
+	OK          bool                `json:"ok"`
+	Rebound     bool                `json:"rebound"`
+}
+
 type CoordinatorRecord struct {
 	Assistant      Assistant `json:"assistant"`
 	ConversationID string    `json:"conversationId"`
@@ -1659,23 +1781,36 @@ type CoordinatorRecord struct {
 	PID          int64  `json:"pid"`
 	ReboundAt    int64  `json:"reboundAt,omitempty"`
 	RegisteredAt int64  `json:"registeredAt"`
-	SessionID    string `json:"sessionId"`
+
+	// The terminal the bound session is in now. A place, not a session.
+	TerminalID string `json:"terminalId"`
 }
 
-type CoordinatorRequest struct {
-	Assistant        Assistant `json:"assistant,omitempty"`
-	ConversationID   string    `json:"conversationId,omitempty"`
-	ExpectGeneration int64     `json:"expectGeneration,omitempty"`
-	ExpectID         string    `json:"expectId,omitempty"`
-	Label            string    `json:"label,omitempty"`
-	Operation        string    `json:"operation"`
-	PID              int64     `json:"pid,omitempty"`
-	SessionID        string    `json:"sessionId,omitempty"`
+type CoordinatorRegisterRequest struct {
+	// The conversation id of the live session to bind.
+	SessionID string `json:"session_id"`
 }
 
-type CoordinatorResult struct {
-	OK     bool              `json:"ok"`
-	Record CoordinatorRecord `json:"record"`
+type CoordinatorRegisterResult struct {
+	Coordinator CoordinatorMetadata `json:"coordinator"`
+	Created     bool                `json:"created"`
+	OK          bool                `json:"ok"`
+}
+
+// `available` while nothing is registered and the store is readable; `blocked`
+// when the store holds a row nobody can vouch for.
+type CoordinatorRegistration struct {
+	State string `json:"state"`
+}
+
+// The bound session. `session_id` is its conversation id; `terminal_id` is the
+// terminal it is in now.
+type CoordinatorSession struct {
+	Assistant  Assistant `json:"assistant"`
+	CWD        string    `json:"cwd,omitempty"`
+	Label      string    `json:"label"`
+	SessionID  string    `json:"session_id"`
+	TerminalID string    `json:"terminal_id"`
 }
 
 type CoordinatorSnapshot struct {
@@ -1683,6 +1818,24 @@ type CoordinatorSnapshot struct {
 	Liveness   Liveness           `json:"liveness"`
 	Record     *CoordinatorRecord `json:"record"`
 	Registered bool               `json:"registered"`
+}
+
+// What a current reading says about the bound process. `unknown` is never
+// absence.
+type CoordinatorStatus string
+
+const (
+	CoordinatorStatusOnline       CoordinatorStatus = "online"
+	CoordinatorStatusOffline      CoordinatorStatus = "offline"
+	CoordinatorStatusUnknown      CoordinatorStatus = "unknown"
+	CoordinatorStatusUnregistered CoordinatorStatus = "unregistered"
+)
+
+// CoordinatorStatusValues is every value the contract allows, in contract order.
+var CoordinatorStatusValues = []CoordinatorStatus{CoordinatorStatusOnline, CoordinatorStatusOffline, CoordinatorStatusUnknown, CoordinatorStatusUnregistered}
+
+type CoordinatorStoreState struct {
+	Status string `json:"status"`
 }
 
 // GET /v1/auth/devices. This machine's own token only; a paired device is
@@ -2016,6 +2169,110 @@ type InventorySession struct {
 // Return after them confirms whatever is highlighted.
 type KeyRequest struct {
 	Key string `json:"key"`
+}
+
+type LeaseHolder struct {
+	AcquiredAt  int64         `json:"acquired_at"`
+	HeldSeconds int64         `json:"held_seconds"`
+	Holder      string        `json:"holder"`
+	LeaseID     string        `json:"lease_id"`
+	Liveness    LeaseLiveness `json:"liveness"`
+
+	// proving, process_running, session_live, heartbeat_lapsed, owner_gone or
+	// evidence_unknown.
+	LivenessReason    string `json:"liveness_reason"`
+	Phase             string `json:"phase,omitempty"`
+	PID               int64  `json:"pid,omitempty"`
+	Reason            string `json:"reason"`
+	RenewalAgeSeconds int64  `json:"renewal_age_seconds"`
+	RenewedAt         int64  `json:"renewed_at"`
+	RequestID         string `json:"request_id"`
+	SessionID         string `json:"session_id,omitempty"`
+}
+
+type LeaseList struct {
+	At     int64         `json:"at"`
+	Leases []LeaseRecord `json:"leases"`
+}
+
+type LeaseLiveness string
+
+const (
+	LeaseLivenessAlive   LeaseLiveness = "alive"
+	LeaseLivenessGone    LeaseLiveness = "gone"
+	LeaseLivenessUnknown LeaseLiveness = "unknown"
+)
+
+// LeaseLivenessValues is every value the contract allows, in contract order.
+var LeaseLivenessValues = []LeaseLiveness{LeaseLivenessAlive, LeaseLivenessGone, LeaseLivenessUnknown}
+
+// POST /v1/orchestrator/leases/renew, /release or /cancel.
+type LeaseOwnerRequest struct {
+	Checkout  string        `json:"checkout,omitempty"`
+	Phase     string        `json:"phase,omitempty"`
+	RequestID string        `json:"request_id"`
+	Resource  LeaseResource `json:"resource"`
+}
+
+type LeaseRecord struct {
+	Holder     *LeaseHolder  `json:"holder"`
+	Key        string        `json:"key"`
+	Queue      []LeaseWaiter `json:"queue"`
+	QueueDepth int64         `json:"queue_depth"`
+	Resource   LeaseResource `json:"resource"`
+}
+
+type LeaseReply struct {
+	// queued_behind_others, holder_proving or evidence_unknown.
+	HoldReason        string      `json:"hold_reason,omitempty"`
+	Lease             LeaseRecord `json:"lease"`
+	LeaseID           string      `json:"lease_id,omitempty"`
+	OK                bool        `json:"ok"`
+	Position          int64       `json:"position,omitempty"`
+	RetryAfterSeconds int64       `json:"retry_after_seconds,omitempty"`
+	State             string      `json:"state"`
+}
+
+// POST /v1/orchestrator/leases: ask, or ask again. Idempotent on `request_id`,
+// which is the one proof of ownership. A holder names what proves it alive: a
+// renewal every 20 seconds, `pid` (with `process_start`, epoch seconds),
+// `session_id` (a conversation id), or any of them.
+type LeaseRequest struct {
+	// landing only: the absolute path of the checkout being landed into.
+	Checkout     string        `json:"checkout,omitempty"`
+	Holder       string        `json:"holder"`
+	Phase        string        `json:"phase,omitempty"`
+	PID          int64         `json:"pid,omitempty"`
+	ProcessStart int64         `json:"process_start,omitempty"`
+	Reason       string        `json:"reason,omitempty"`
+	RequestID    string        `json:"request_id"`
+	Resource     LeaseResource `json:"resource"`
+	SessionID    string        `json:"session_id,omitempty"`
+}
+
+type LeaseResource string
+
+const (
+	LeaseResourceHeavyCompile LeaseResource = "heavy_compile"
+	LeaseResourceLanding      LeaseResource = "landing"
+)
+
+// LeaseResourceValues is every value the contract allows, in contract order.
+var LeaseResourceValues = []LeaseResource{LeaseResourceHeavyCompile, LeaseResourceLanding}
+
+type LeaseWaiter struct {
+	Holder string `json:"holder"`
+	PID    int64  `json:"pid,omitempty"`
+
+	// Place among the waiters still asking; absent for one that stopped asking and is
+	// passed over.
+	Position      int64  `json:"position,omitempty"`
+	Proving       bool   `json:"proving"`
+	Reason        string `json:"reason"`
+	RequestID     string `json:"request_id"`
+	RequestedAt   int64  `json:"requested_at"`
+	SessionID     string `json:"session_id,omitempty"`
+	WaitedSeconds int64  `json:"waited_seconds"`
 }
 
 // What a current inventory says about the bound process. An incomplete reading
@@ -3797,6 +4054,68 @@ type VoiceRequest struct {
 type VoiceResult struct {
 	Ms   int64  `json:"ms"`
 	Text string `json:"text"`
+}
+
+// One file wait, in the Swift app's camelCase. `ownerSessionId` and each
+// waiter's `sessionId` are conversation ids.
+type Wait struct {
+	CreatedAt        int64        `json:"createdAt"`
+	ID               string       `json:"id"`
+	OwnerSessionID   string       `json:"ownerSessionId"`
+	Paths            []string     `json:"paths"`
+	ReleaseCondition string       `json:"releaseCondition"`
+	Repository       string       `json:"repository"`
+	Waiters          []WaitWaiter `json:"waiters"`
+}
+
+type WaitCancelRequest struct {
+	WaiterSessionID string `json:"waiter_session_id"`
+}
+
+type WaitCancelResult struct {
+	ID string `json:"id"`
+	OK bool   `json:"ok"`
+}
+
+type WaitList struct {
+	At    int64  `json:"at"`
+	Waits []Wait `json:"waits"`
+}
+
+type WaitReleaseRequest struct {
+	Commit         string `json:"commit,omitempty"`
+	Note           string `json:"note,omitempty"`
+	OwnerSessionID string `json:"owner_session_id"`
+}
+
+type WaitReleaseResult struct {
+	ID       string `json:"id"`
+	OK       bool   `json:"ok"`
+	Released int64  `json:"released"`
+}
+
+// POST /v1/orchestrator/waits. Both sessions are conversation ids.
+type WaitRequest struct {
+	OwnerSessionID   string   `json:"owner_session_id"`
+	Paths            []string `json:"paths"`
+	Reason           string   `json:"reason"`
+	ReleaseCondition string   `json:"release_condition"`
+	Repository       string   `json:"repository"`
+	WaiterSessionID  string   `json:"waiter_session_id"`
+}
+
+type WaitResult struct {
+	Deduplicated bool `json:"deduplicated"`
+	OK           bool `json:"ok"`
+	Wait         Wait `json:"wait"`
+}
+
+type WaitWaiter struct {
+	CreatedAt          int64  `json:"createdAt"`
+	Reason             string `json:"reason"`
+	ReleaseDeliveredAt int64  `json:"releaseDeliveredAt,omitempty"`
+	RequestDeliveredAt int64  `json:"requestDeliveredAt,omitempty"`
+	SessionID          string `json:"sessionId"`
 }
 
 // What a finished row delivered, present only with `milestone_complete` or

@@ -309,7 +309,7 @@ function Coordinator() {
       {data?.record && (
         <div className="row">
           <span className="k">{data.record.assistant}</span>
-          <span className="grow">{data.record.label || data.record.sessionId}</span>
+          <span className="grow">{data.record.label || data.record.terminalId}</span>
           <span className="v">gen {data.record.generation}</span>
         </div>
       )}

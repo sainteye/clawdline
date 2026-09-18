@@ -177,16 +177,45 @@ func (b *Broker) moveNotice(ctx context.Context, taskID string, seen Notice, kin
 		"task": taskID, "notice": seen.ID, "attempt": next.Attempts, "state": next.State,
 		"error": errorCode(next.LastError),
 	})
-	applied, err := b.Store.UpdateBrokerNotice(ctx,
+	// A notice entering dead letter owes the person a push (D24): the one
+	// line of this machine that nobody acknowledged is exactly what a person
+	// must hear about, and the root it was for has not. It is recorded as
+	// intent in the move's own transaction and sent after it commits.
+	var effects []store.Effect
+	if next.State == NoticeDeadLetter && seen.State != NoticeDeadLetter {
+		body, _ := json.Marshal(deadLetterEffect{Notice: seen.ID, Attempts: next.Attempts})
+		effects = append(effects, store.Effect{Kind: EffectDeadLetterPush, Subject: taskID, Payload: body})
+	}
+	applied, ids, err := b.Store.UpdateBrokerNoticeWith(ctx,
 		store.NoticeExpect{State: string(seen.State), Attempts: seen.Attempts},
 		noticeRow(taskID, next),
-		[]store.Event{{Kind: kind, Subject: taskID, Payload: payload}})
+		[]store.Event{{Kind: kind, Subject: taskID, Payload: payload}}, effects)
 	if err != nil {
 		log.Printf("orchestrator: notice %s for task %s could not be recorded: %v", seen.ID, taskID, err)
 		return false
 	}
+	if applied && len(ids) > 0 {
+		// Not on this pass. A push is a request to a push service with its
+		// own retries, up to half a minute; the beat that decided the dead
+		// letter would be that much late, and three ticks late is `stalled`
+		// on /v1/health — an alarm about the beat raised by a phone's
+		// provider. The intent is already durable: a process that dies first
+		// leaves the effect for RecoverEffects.
+		go func() {
+			pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deadLetterPushDeadline)
+			defer cancel()
+			b.runRecorded(pctx, ids)
+			if b.pushed != nil {
+				b.pushed()
+			}
+		}()
+	}
 	return applied
 }
+
+// deadLetterPushDeadline bounds the one push a dead letter owes, retries and
+// all.
+const deadLetterPushDeadline = 2 * time.Minute
 
 func errorCode(e *NoticeError) string {
 	if e == nil {
