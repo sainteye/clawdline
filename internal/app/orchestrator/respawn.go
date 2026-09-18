@@ -86,13 +86,14 @@ func (b *Broker) Respawn(ctx context.Context, id, supplied string) (Respawned, e
 	}
 	fresh := uuidLike()
 	brief["task_id"] = fresh
-	if err := b.writeRespawnBrief(fresh, brief); err != nil {
+	if err := b.writeBriefOnce(fresh, brief); err != nil {
 		return Respawned{}, refuse(http.StatusInternalServerError, "internal",
 			"Could not write the respawned task file.")
 	}
 	out, err := b.Dispatch(ctx, DispatchRequest{
 		TaskID: fresh, Secret: secret,
-		Respawn: &RespawnOrigin{TaskID: id, Generation: origin.RespawnGeneration + 1},
+		Respawn:  &RespawnOrigin{TaskID: id, Generation: origin.RespawnGeneration + 1},
+		Schedule: scheduleOf(origin),
 	})
 	if err != nil {
 		// A refused respawn leaves its directory behind for the ordinary
@@ -109,10 +110,11 @@ func (b *Broker) Respawn(ctx context.Context, id, supplied string) (Respawned, e
 	return Respawned{Dispatched: out, Secret: secret, From: id, Original: original}, nil
 }
 
-// writeRespawnBrief puts the copied task.json in the new task's directory,
-// with the same modes an ordinary brief gets: 0700 directory, 0600 file, the
-// mode passed to the create rather than applied after it.
-func (b *Broker) writeRespawnBrief(id string, brief map[string]any) error {
+// writeBriefOnce puts a task.json the broker made — a respawn's copy, a
+// schedule's template (scheduled.go) — in a new task's directory, with the same
+// modes an ordinary brief gets: 0700 directory, 0600 file, the mode passed to
+// the create rather than applied after it, and never over a file already there.
+func (b *Broker) writeBriefOnce(id string, brief map[string]any) error {
 	dir := b.Tasks.Path(id)
 	if err := os.MkdirAll(filepath.Join(dir, "artifacts"), 0o700); err != nil {
 		return err

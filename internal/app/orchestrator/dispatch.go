@@ -35,6 +35,19 @@ type DispatchRequest struct {
 	// caller asked to retry a task, not to start new work, and the task.json
 	// it runs is the one the original dispatch was already admitted with.
 	Respawn *RespawnOrigin
+	// Schedule is set only by DispatchScheduled: the schedule whose
+	// occurrence this is. Such a dispatch has no root and carries no
+	// inventory receipt — nobody read an inventory, a clock did — and its
+	// task.json is the one the broker wrote from the stored template.
+	// Everything else is the same door: the same arbitration, the same
+	// record, briefing, clock and collection (D07).
+	Schedule *ScheduleOrigin
+}
+
+// ScheduleOrigin is the schedule a scheduled dispatch belongs to.
+type ScheduleOrigin struct {
+	ID    string
+	Title string
 }
 
 // RespawnOrigin is where a respawned task came from.
@@ -100,9 +113,13 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 			"secret must be 64 hex characters.")
 	}
 
-	record, err := b.ReadDraft(req.TaskID)
+	record, err := b.readDraft(req.TaskID, req.Schedule != nil)
 	if err != nil {
 		return Dispatched{}, err
+	}
+	if req.Schedule != nil {
+		record.ScheduleID = req.Schedule.ID
+		record.ScheduleTitle = truncate(req.Schedule.Title, rootLabelLimit)
 	}
 	// Fixed before anything is arbitrated, so the arbitration below asks the
 	// same question of this task that it asks of every live one (D21).
@@ -114,11 +131,12 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// The inventory receipt is checked once the brief is readable, because the
 	// refusal has to carry the inventory for *this task's* repository and the
 	// brief is where that repository is named.
-	if req.Respawn == nil {
+	switch {
+	case req.Respawn == nil && req.Schedule == nil:
 		if err := b.checkGeneration(ctx, record.ProjectDir, req); err != nil {
 			return Dispatched{}, err
 		}
-	} else {
+	case req.Respawn != nil:
 		record.RespawnOf = req.Respawn.TaskID
 		record.RespawnGeneration = req.Respawn.Generation
 	}
@@ -201,7 +219,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 			map[string]any{
 				"blocking_task":  other.ID,
 				"title":          other.Title,
-				"root_label":     rootLabelOf(other.Root),
+				"root_label":     labelOf(other),
 				"created":        other.CreatedAt.Unix(),
 				"conflict_paths": sortedUnique(shared),
 				"retry_after":    60,
@@ -371,11 +389,17 @@ const claimsMissingMessage = "This task declared no claims, so nothing reserves 
 	"and no other root can be told to stay off them. Add \"claims\" to task.json — the relative paths this task " +
 	"may write — or \"claims\": [] to say it writes nothing."
 
-func rootLabelOf(root *RootRef) any {
-	if root == nil || root.Label == "" {
-		return nil
+// labelOf is the name a person knows a task's owner by: its root's label, or
+// — for a task a schedule started, which has no root — the schedule's title,
+// as the Swift app labels one (`rootLabel: schedule?.title`).
+func labelOf(r Record) any {
+	switch {
+	case r.Root != nil && r.Root.Label != "":
+		return r.Root.Label
+	case r.Root == nil && r.ScheduleTitle != "":
+		return r.ScheduleTitle
 	}
-	return root.Label
+	return nil
 }
 
 // checkGeneration is the stale-inventory door.

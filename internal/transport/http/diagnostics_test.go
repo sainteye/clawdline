@@ -268,18 +268,18 @@ func TestAStoppedCapacityBeatTurnsHealthRed(t *testing.T) {
 // of evictions, one event each.
 func TestAPassRecordsItsEvents(t *testing.T) {
 	s := capacityServer(t)
-	before, _, _, err := s.store.Counts(context.Background())
+	before, _, err := s.store.Counts(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	b := fakeBeat(t, s, map[string]capacity.Reading{capacity.StoreDB: {Known: true, Used: 10}}, map[string]int64{capacity.StoreDB: 10})
-	after, _, _, _ := s.store.Counts(context.Background())
+	after, _, _ := s.store.Counts(context.Background())
 	// store.db first seen full: one state event and one notice.
 	if after-before != 2 {
 		t.Fatalf("%d events for a row first seen full", after-before)
 	}
 	b.pass(context.Background())
-	again, _, _, _ := s.store.Counts(context.Background())
+	again, _, _ := s.store.Counts(context.Background())
 	if again != after {
 		t.Fatalf("a pass that saw nothing new wrote %d events", again-after)
 	}

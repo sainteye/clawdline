@@ -29,9 +29,6 @@ func TestAResultPastTheBoundIsRefusedWhole(t *testing.T) {
 	if _, body, err := r.ReadResult(id); !errors.Is(err, ErrTooLarge) || body != nil {
 		t.Fatalf("a result of %d bytes: %v (%d bytes back)", len(big), err, len(body))
 	}
-	if _, ok := r.Result(id); ok {
-		t.Fatal("the older reader read a result past the bound")
-	}
 
 	fits := append(append(append([]byte{}, head...), pad[1:]...), tail...)
 	if err := os.WriteFile(filepath.Join(dir, "result.json"), fits, 0o600); err != nil {

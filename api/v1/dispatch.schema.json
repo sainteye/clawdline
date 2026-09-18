@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "dispatch.schema.json",
   "title": "Dispatching work",
-  "description": "POST /v1/orchestrator/tasks and POST /v1/orchestrator/tasks/{id}/settle. The intent is recorded durably before the session is opened, so a crash between the two leaves a task that is known and unstarted rather than one running and unrecorded.",
+  "description": "Retired (docs/design-decisions.md D07). These were the bodies of the older dispatch skeleton: POST /v1/orchestrator/tasks is the broker's now (orchestrator.schema.json, BrokerDispatchRequest) and POST /v1/orchestrator/tasks/{id}/settle is gone — a result is collected from result.json by the broker's beat. No route serves these shapes. They stay only while web/core's client still names them, and go with it.",
   "$defs": {
     "DispatchRequest": {
       "type": "object",

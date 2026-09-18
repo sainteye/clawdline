@@ -2,12 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 	"github.com/sainteye/clawdline-go/internal/domain/schedule"
-	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
 // Pulse is what one pass of the scheduler says about itself.
@@ -107,8 +108,11 @@ func (b *ScheduleBook) Beat(ctx context.Context) Pulse {
 		if fire.IsZero() {
 			continue
 		}
+		// Whether a run is still working is the broker's answer, read off its
+		// row: its beat has already collected the result or run the timeout,
+		// so a run that never wrote a result stops holding this schedule back
+		// the moment its clock runs out (D07, D53).
 		list := runs[s.ID]
-		b.settle(ctx, list)
 		o := schedule.Occurrence{Now: now, Fire: fire, FirstSeen: h.f.FirstSeen, Handled: h.f.LastFire}
 		for _, r := range list {
 			if r.Created.After(o.LastRun) {
@@ -146,8 +150,11 @@ func (b *ScheduleBook) Beat(ctx context.Context) Pulse {
 // written down as decided before the dispatch is attempted, so a daemon that
 // dies halfway through does not run it again when it comes back. A one-shot is
 // spent only by a session that was really accepted; a refusal consumes the
-// occurrence and leaves no stamp, except `over_capacity`, which is handed back
-// so the next minute retries while the window lasts.
+// occurrence and leaves no stamp, except backpressure — `over_capacity`, and
+// `terminal_busy`, the Swift app's full terminal queue — which is handed back
+// so the next minute retries while the window lasts. That is the broker's
+// admission speaking (G30): the lane this book holds only keeps a decision and
+// the dispatch it makes together, and the broker is what says "not now".
 func (b *ScheduleBook) fireOne(ctx context.Context, decided schedule.Schedule, fire, before time.Time) bool {
 	fresh, ok, err := b.named(ctx, decided.ID)
 	if err != nil {
@@ -174,12 +181,12 @@ func (b *ScheduleBook) fireOne(ctx context.Context, decided schedule.Schedule, f
 		"fire": fmt.Sprint(fire.Unix())})
 	taskID, _, _, warning, err := b.dispatch(ctx, s, fire, "timer")
 	if err != nil {
-		var refusal task.Refusal
 		code := "dispatch_failed"
-		if ok := asRefusal(err, &refusal); ok {
+		var refusal orchestrator.Refusal
+		if errors.As(err, &refusal) {
 			code = refusal.Code
 		}
-		if code == "over_capacity" {
+		if backpressure(code) {
 			_ = b.Store.RestoreScheduleFire(ctx, s.ID, fire, before)
 		}
 		b.audit("orchestrator.schedule.refused", map[string]string{"schedule": s.ID, "code": code, "why": err.Error()})
@@ -198,10 +205,8 @@ func (b *ScheduleBook) fireOne(ctx context.Context, decided schedule.Schedule, f
 	return true
 }
 
-func asRefusal(err error, into *task.Refusal) bool {
-	if r, ok := err.(task.Refusal); ok {
-		*into = r
-		return true
-	}
-	return false
+// backpressure is a refusal that says "not now" rather than "no": the machine
+// is full, and the same occurrence may run a minute later.
+func backpressure(code string) bool {
+	return code == "over_capacity" || code == "terminal_busy"
 }

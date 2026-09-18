@@ -46,8 +46,13 @@
 派到一半 daemon 死掉，重開不會再派一次；兩個 daemon 指向同一個 state、或計時器與手動執行撞在一起，只有一方拿得到。
 只有 `over_capacity` 會把它還回去，讓下一分鐘在窗內重試（舊版規則）。手動執行同理：在某次之後按下的那一次先佔住它，
 被拒就還回去。存檔與刪除也走同一條派工 lane（`ScheduleBook.mu`），所以不會在「計時器最後看一眼」與「開分頁」之間把
-排程改期或刪掉，只跑一次的排程的 `fired_at` 也只會蓋在仍然指向那一次的檔上。派工走既有的 `Dispatcher.Dispatch`（claims
-仲裁照舊），task 由排程的 `task` 範本產生；只跑一次的排程在 session 真的被接受後寫 `fired_at` 進 body。
+排程改期或刪掉，只跑一次的排程的 `fired_at` 也只會蓋在仍然指向那一次的檔上。**派工走 broker（W4，`design-decisions.md` D07）**：
+排程的 `task` 範本加上 broker 自己的三個鍵（`clawdline_protocol`、`task_id`、`root: {session_id: null, label: <排程標題>}`）
+寫成 task.json，交給 `Broker.DispatchScheduled`，跟任何派工走同一道門——同一個 claims 仲裁（排程的 run 與 broker task
+互相擋，`409 workspace_busy`，在開任何東西之前）、同一份紀錄、CHILD.md、自己的 secret、`timeout_minutes`（範本沒寫就 30）、
+同一個 beat 收 `result.json`。與一般派工只差兩處（照舊版 `dispatch(taskID:secret:schedule:)`）：沒有 root，範本可以不寫 claims
+（記成「未宣告」並警告，不當成「什麼都不寫」）。`over_capacity` 與 `terminal_busy`（滿了）把這一次還給時鐘，下一分鐘在窗內重試；
+其他拒絕照舊用掉這一次。只跑一次的排程在 session 真的開起來後寫 `fired_at` 進 body。
 
 **重啟**：`last_fire` 在 SQLite，所以重開後同一次不會再跑；停機期間錯過、而且這支 daemon 早就看過的那一次，
 重開後第一跳補跑一次——永遠只有最近那一次，不會補一整批。
@@ -100,15 +105,16 @@ python3 migrate-schedules.py verify /tmp/schedules-copy 7727 <state>  # 三種�
 | orchestrator token 的拒絕句 | 最後一句教人去手寫檔案路徑 | 拿掉那半句 | 這裡對應手寫檔的是匯入路由，預設關 |
 | 第一次看見的時間 | — | 無條件進位到下一秒 | 存的是秒；09:00:00.4 看見的列存成 09:00:00 會讓 09:00 那次「不早於看見」而當場發射 |
 | 開了分頁但第一句打不進去 | — | 算這個排程的一次 run（不記 `spawn_failed`），回應帶 `warnings` | 分頁真的在；記成沒開會讓它不算「還在跑」，也不會寫 `fired_at` |
-| 一個排程的 run 還在 `queued` | 由 broker 的心跳推進 | 時鐘每跳先替該排程的未結束 run 讀 `result.json`（既有 `Settle`）；派工記錄後開分頁失敗的 run 記成 `spawn_failed` | 否則一個永遠 `queued` 的 run 會擋住之後每一次 |
+| 一個排程的 run 還沒結束 | 由 broker 的心跳推進 | 同樣由 broker 的 beat 推進（收 `result.json`、跑逾時）；「還在跑嗎」直接讀 broker 那一列的 state | 一個不寫 result 的 run 在自己的逾時到時結束，放行下一次（D53） |
 | webhook 綁定 | Cloud 指令在 app 內處理 | 同樣的帳本與規則，走本機路由 | 這個 daemon 的 Cloud 線以路由接本機能力 |
 
 ## 還沒有的（依賴別的工作線）
 
-- **派工本身還是 Go 的第一版**：沒有 CHILD.md、task secret、`timeout_minutes`、`model`、`permission_mode`、
-  worktree 隔離、`close_tab`——這些是 broker 第一波（task `0ca0b8c0`）的範圍。排程只負責「在對的時間、
-  用對的範本、呼叫一次派工」。沒有逾時，所以一個從不寫 `result.json` 的 run 會一直算「還在跑」，擋住該排程之後的每一次，
-  直到 A2（逾時）落地。
+- ~~派工本身還是 Go 的第一版~~：W4 起排程走 broker，有 CHILD.md、task secret、`timeout_minutes`、`model`、
+  `permission_mode`、worktree 隔離。**還沒有的**：`close_tab`（結束後關分頁屬於 linger，W6）；排程 run 以
+  failure／timeout／spawn_failed 結束時的推播（舊版 `scheduleNotifyFailure`，要等 broker 的推播接上，W5／D24）；
+  範本裡 broker 還不支援的欄位（`serialize`、`graph`、`reasoning_effort`）會在發射時被具名拒絕（`bad_task`），
+  不再像舊骨架那樣安靜地忽略。
 - **webhook 的啟用與投遞**：綁定寫進本機帳本後，要向 Cloud 啟用 hook；這個 daemon 沒有 Cloud 帳號用戶端，
   所以回舊版遇到「沒有機器憑證」時的 `401 no_machine_credential`（綁定本身仍留著，與舊版相同）。Cloud 送來的
   delivery（claim／lease／receipt）整段沒有做。

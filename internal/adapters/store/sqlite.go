@@ -25,7 +25,6 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/sainteye/clawdline-go/internal/domain/coordinator"
-	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
 type Store struct {
@@ -51,16 +50,17 @@ type Event struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
-// Receipt is the durable answer to "did this command already happen".
-type Receipt struct {
-	CommandID string    `json:"command_id"`
-	At        time.Time `json:"at"`
-	Seq       int64     `json:"seq"`
-	// Replayed is true when this command had already been accepted. A retry
-	// gets the original answer rather than a second effect.
-	Replayed bool `json:"replayed"`
-}
-
+// schema is what a fresh store is made with.
+//
+// Five tables an older store may still hold are not in it, and nothing reads
+// or writes them any more (docs/design-decisions.md D07, D38): `tasks`,
+// `obligations` and `receipts`, which were the older dispatch skeleton's —
+// a second table of tasks the broker's claims could not see, a second copy of
+// what is owed, a second spelling of a receipt — and `board` and
+// `board_commands`, a board revision and its command receipts that no route
+// ever wrote. A store that has them keeps them, untouched: removing a table
+// from somebody's database is not this daemon's decision to make on the way
+// past, and an unread table harms nobody.
 const schema = `
 CREATE TABLE IF NOT EXISTS events (
   seq     INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,37 +69,6 @@ CREATE TABLE IF NOT EXISTS events (
   subject TEXT    NOT NULL,
   payload TEXT    NOT NULL DEFAULT ''
 );
-CREATE TABLE IF NOT EXISTS receipts (
-  command_id TEXT    PRIMARY KEY,
-  at         INTEGER NOT NULL,
-  seq        INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS obligations (
-  id         TEXT    PRIMARY KEY,
-  kind       TEXT    NOT NULL,
-  subject    TEXT    NOT NULL,
-  mover_kind TEXT    NOT NULL,
-  mover_id   TEXT    NOT NULL DEFAULT '',
-  opened_at  INTEGER NOT NULL,
-  evidence   TEXT    NOT NULL,
-  note       TEXT    NOT NULL DEFAULT '',
-  closed_at  INTEGER
-);
-CREATE INDEX IF NOT EXISTS obligations_open ON obligations(closed_at, opened_at);
-CREATE TABLE IF NOT EXISTS tasks (
-  id         TEXT    PRIMARY KEY,
-  assistant  TEXT    NOT NULL,
-  project    TEXT    NOT NULL,
-  claims     TEXT    NOT NULL DEFAULT '[]',
-  state      TEXT    NOT NULL,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS tasks_state ON tasks(state);
-CREATE TABLE IF NOT EXISTS board (
-  id       INTEGER PRIMARY KEY CHECK (id = 1),
-  revision INTEGER NOT NULL
-);
-INSERT OR IGNORE INTO board (id, revision) VALUES (1, 0);
 CREATE TABLE IF NOT EXISTS schedules (
   id        TEXT    PRIMARY KEY,
   name      TEXT    NOT NULL,
@@ -124,12 +93,6 @@ CREATE TABLE IF NOT EXISTS coordinator (
   registered_at   INTEGER NOT NULL,
   rebound_at      INTEGER NOT NULL DEFAULT 0,
   generation      INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS board_commands (
-  request_id  TEXT    PRIMARY KEY,
-  fingerprint TEXT    NOT NULL,
-  revision    INTEGER NOT NULL,
-  at          INTEGER NOT NULL
 );
 `
 
@@ -240,22 +203,6 @@ func Open(dir string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-// Change is one edit to a projection.
-type Change struct {
-	Open    *task.Obligation
-	Close   string     // an obligation id
-	Task    *task.Task // insert or replace a task row
-	SetTask [2]string  // {id, state}
-}
-
-// Commit records events, applies the projection they imply, and writes the
-// receipt — all in one transaction.
-//
-// A command already accepted writes nothing and returns its original receipt.
-// That is what makes a retry safe, and it is why the caller's acknowledgement
-// means the intent committed rather than that the work finished: the effects
-// those events imply run afterwards, in reactors, and report their own results
-// back as further commands.
 // Append records one thing that happened.
 //
 // It is deliberately not Commit. Commit is for a command: it carries a
@@ -273,207 +220,6 @@ func (s *Store) Append(ctx context.Context, e Event) error {
 		}
 		return 1, nil
 	})
-}
-
-func (s *Store) Commit(ctx context.Context, commandID string, events []Event, changes []Change) (Receipt, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return Receipt{}, err
-	}
-	defer tx.Rollback()
-
-	var at int64
-	var seq int64
-	err = tx.QueryRowContext(ctx,
-		`SELECT at, seq FROM receipts WHERE command_id = ?`, commandID).Scan(&at, &seq)
-	if err == nil {
-		return Receipt{CommandID: commandID, At: time.Unix(at, 0), Seq: seq, Replayed: true}, nil
-	}
-	if err != sql.ErrNoRows {
-		return Receipt{}, err
-	}
-
-	now := time.Now()
-	last := int64(0)
-	for _, e := range events {
-		payload := string(e.Payload)
-		res, err := tx.ExecContext(ctx,
-			`INSERT INTO events (at, kind, subject, payload) VALUES (?, ?, ?, ?)`,
-			now.Unix(), e.Kind, e.Subject, payload)
-		if err != nil {
-			return Receipt{}, err
-		}
-		if last, err = res.LastInsertId(); err != nil {
-			return Receipt{}, err
-		}
-	}
-
-	for _, c := range changes {
-		switch {
-		case c.Open != nil:
-			o := c.Open
-			if _, err := tx.ExecContext(ctx,
-				`INSERT OR REPLACE INTO obligations
-				 (id, kind, subject, mover_kind, mover_id, opened_at, evidence, note, closed_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-				o.ID, string(o.Kind), o.Subject, string(o.Mover.Kind), o.Mover.ID,
-				o.OpenedAt.Unix(), string(o.Evidence), o.Note); err != nil {
-				return Receipt{}, err
-			}
-		case c.Task != nil:
-			claims, _ := json.Marshal(c.Task.Claims)
-			if _, err := tx.ExecContext(ctx,
-				`INSERT OR REPLACE INTO tasks
-				 (id, assistant, project, claims, state, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?)`,
-				c.Task.ID, string(c.Task.Assistant), c.Task.ProjectDir,
-				string(claims), string(c.Task.State), c.Task.CreatedAt.Unix()); err != nil {
-				return Receipt{}, err
-			}
-		case c.SetTask[0] != "":
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE tasks SET state = ? WHERE id = ?`, c.SetTask[1], c.SetTask[0]); err != nil {
-				return Receipt{}, err
-			}
-		case c.Close != "":
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE obligations SET closed_at = ? WHERE id = ? AND closed_at IS NULL`,
-				now.Unix(), c.Close); err != nil {
-				return Receipt{}, err
-			}
-		}
-	}
-
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO receipts (command_id, at, seq) VALUES (?, ?, ?)`,
-		commandID, now.Unix(), last); err != nil {
-		return Receipt{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Receipt{}, err
-	}
-	return Receipt{CommandID: commandID, At: now, Seq: last}, nil
-}
-
-// OpenObligations returns everything still owed, oldest first.
-func (s *Store) OpenObligations(ctx context.Context) ([]task.Obligation, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, kind, subject, mover_kind, mover_id, opened_at, evidence, note
-		 FROM obligations WHERE closed_at IS NULL ORDER BY opened_at ASC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := []task.Obligation{}
-	for rows.Next() {
-		var o task.Obligation
-		var kind, moverKind, evidence string
-		var openedAt int64
-		if err := rows.Scan(&o.ID, &kind, &o.Subject, &moverKind, &o.Mover.ID,
-			&openedAt, &evidence, &o.Note); err != nil {
-			return nil, err
-		}
-		o.Kind = task.Kind(kind)
-		o.Mover.Kind = task.MoverKind(moverKind)
-		o.Evidence = task.Evidence(evidence)
-		o.OpenedAt = time.Unix(openedAt, 0)
-		out = append(out, o)
-	}
-	return out, rows.Err()
-}
-
-// LiveTasks returns the tasks that have not reached a terminal state.
-//
-// This is what a dispatch is arbitrated against. It reads the projection rather
-// than replaying the log, because the question — "is anybody already writing
-// there" — is about now, and a reader that has to replay history to answer it
-// will be asked to skip the replay the first time it is slow.
-func (s *Store) LiveTasks(ctx context.Context) ([]task.Task, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, assistant, project, claims, state, created_at FROM tasks
-		 WHERE state IN ('queued','spawning','briefed') ORDER BY created_at ASC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []task.Task{}
-	for rows.Next() {
-		var t task.Task
-		var assistant, claims, state string
-		var created int64
-		if err := rows.Scan(&t.ID, &assistant, &t.ProjectDir, &claims, &state, &created); err != nil {
-			return nil, err
-		}
-		t.Assistant = task.Assistant(assistant)
-		t.State = task.State(state)
-		t.CreatedAt = time.Unix(created, 0)
-		_ = json.Unmarshal([]byte(claims), &t.Claims)
-		out = append(out, t)
-	}
-	return out, rows.Err()
-}
-
-// BoardRevision is the number a writer must have read before it may write.
-func (s *Store) BoardRevision(ctx context.Context) (int64, error) {
-	var n int64
-	err := s.db.QueryRowContext(ctx, `SELECT revision FROM board WHERE id = 1`).Scan(&n)
-	return n, err
-}
-
-// BoardSeen returns the request ids already applied, with what each one asked
-// for, so a retry can be told apart from a reused name.
-func (s *Store) BoardSeen(ctx context.Context) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT request_id, fingerprint FROM board_commands`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]string{}
-	for rows.Next() {
-		var id, fp string
-		if err := rows.Scan(&id, &fp); err != nil {
-			return nil, err
-		}
-		out[id] = fp
-	}
-	return out, rows.Err()
-}
-
-// ApplyBoardCommand records a command and moves the revision, in one
-// transaction with the events it produced.
-func (s *Store) ApplyBoardCommand(ctx context.Context, requestID, fingerprint string, events []Event) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-
-	var revision int64
-	if err := tx.QueryRowContext(ctx, `SELECT revision FROM board WHERE id = 1`).Scan(&revision); err != nil {
-		return 0, err
-	}
-	revision++
-	if _, err := tx.ExecContext(ctx, `UPDATE board SET revision = ? WHERE id = 1`, revision); err != nil {
-		return 0, err
-	}
-	now := time.Now().Unix()
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO board_commands (request_id, fingerprint, revision, at) VALUES (?, ?, ?, ?)`,
-		requestID, fingerprint, revision, now); err != nil {
-		return 0, err
-	}
-	for _, e := range events {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO events (at, kind, subject, payload) VALUES (?, ?, ?, ?)`,
-			now, e.Kind, e.Subject, string(e.Payload)); err != nil {
-			return 0, err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	return revision, nil
 }
 
 // Coordinator returns the machine role's binding, if one exists.
@@ -520,8 +266,9 @@ func (s *Store) SaveCoordinator(ctx context.Context, r coordinator.Record) error
 	return err
 }
 
-// Counts is what `doctor` reports about the store.
-func (s *Store) Counts(ctx context.Context) (events, receipts, open int, err error) {
+// Counts is what `doctor` reports about the store: how many facts it holds,
+// and how many tasks the broker has recorded.
+func (s *Store) Counts(ctx context.Context) (events, tasks int, err error) {
 	q := func(sql string) (int, error) {
 		var n int
 		e := s.db.QueryRowContext(ctx, sql).Scan(&n)
@@ -530,9 +277,6 @@ func (s *Store) Counts(ctx context.Context) (events, receipts, open int, err err
 	if events, err = q(`SELECT COUNT(*) FROM events`); err != nil {
 		return
 	}
-	if receipts, err = q(`SELECT COUNT(*) FROM receipts`); err != nil {
-		return
-	}
-	open, err = q(`SELECT COUNT(*) FROM obligations WHERE closed_at IS NULL`)
+	tasks, err = q(`SELECT COUNT(*) FROM broker_tasks`)
 	return
 }

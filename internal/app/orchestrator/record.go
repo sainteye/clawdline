@@ -327,6 +327,13 @@ type Record struct {
 	// respawn.go for why a depth cannot enforce it.
 	RespawnOf         string `json:"respawn_of,omitempty"`
 	RespawnGeneration int    `json:"respawn_generation,omitempty"`
+	// ScheduleID is the schedule whose occurrence this task is, and
+	// ScheduleTitle that schedule's title — the Swift app's `schedule_id` and
+	// the root label it gives a scheduled task. A scheduled task has no root:
+	// nobody dispatched it, and nobody is waiting on its tab (D07). Empty on
+	// every task a session asked for.
+	ScheduleID    string `json:"schedule_id,omitempty"`
+	ScheduleTitle string `json:"schedule_title,omitempty"`
 	// Dispatcher is the store handle that admitted this task — its process
 	// and a nonce (store.Owner). Only that process ever holds the plaintext
 	// secret, so a task still `queued` after it has provably gone can never be

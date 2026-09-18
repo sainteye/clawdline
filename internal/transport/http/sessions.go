@@ -70,15 +70,12 @@ type sessionsSnapshotWire struct {
 func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
 	inv := s.inventory.Read(ctx)
 
-	// One reading of what is owed, for the whole list. Asking per row would
-	// ask the same question eight times and let two rows disagree about the
-	// same moment.
-	owed, owedErr := s.store.OpenObligations(ctx)
-	if _, liveErr := s.store.LiveTasks(ctx); liveErr != nil {
-		// One unreadable input makes the projection incomplete, not wrong in
-		// one place: it is carried as missing evidence rather than as zero.
-		owedErr = liveErr
-	}
+	// One reading of what is owed, for the whole list, against this same
+	// reading of the sessions. Asking per row would ask the same question
+	// eight times and let two rows disagree about the same moment. An
+	// unreadable broker makes the projection incomplete, not wrong in one
+	// place: it is carried as missing evidence rather than as zero.
+	owed, owedErr := s.owed(ctx, inv.Sessions)
 	// One reading of the Swift app's store, for the same reason.
 	swift := s.swift.Read()
 
@@ -270,7 +267,7 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		// Without the store there is no reading of the task, the delivery or
 		// the declaration behind a state, and the honest projection is the
 		// daemon's own with that evidence marked missing.
-		row.WorkState = contract.WorkState(workState(item, in.owed, errSwiftUnknown, nil))
+		row.WorkState = contract.WorkState(workState(item, in.owed, errSwiftUnknown))
 		row.WorkProvenance = contract.WorkProvenanceBroker
 	}
 
@@ -302,9 +299,10 @@ func ownWaitingOnPeer(item session.Session, owed []task.Obligation) bool {
 	return false
 }
 
-// ownCloseReasons carries this daemon's own obligations into the closeability
-// projection beside the Swift store's, as Swift's `additionalObligations`. An
-// unreadable list is evidence, so the row reads unknown rather than short.
+// ownCloseReasons carries this daemon's own obligations — the broker's pending
+// landings (D01) — into the closeability projection beside the Swift store's,
+// as Swift's `additionalObligations`. An unreadable list is evidence, so the
+// row reads unknown rather than short.
 func ownCloseReasons(item session.Session, owed []task.Obligation, err error) []contract.CloseReason {
 	if err != nil {
 		return []contract.CloseReason{{
@@ -364,7 +362,7 @@ func wireMover(m task.Mover) contract.Mover {
 // workState is this daemon's own projection, used only when the Swift store
 // cannot be read: it gathers this session's axes and hands them to the
 // projection.
-func workState(item session.Session, owed []task.Obligation, owedErr error, live []task.Task) task.WorkState {
+func workState(item session.Session, owed []task.Obligation, owedErr error) task.WorkState {
 	in := task.WorkInputs{
 		AskedOnScreen:          item.State == session.StateWaiting,
 		EvidenceMissing:        owedErr != nil || item.State == session.StateUnknown,
@@ -380,7 +378,6 @@ func workState(item session.Session, owed []task.Obligation, owedErr error, live
 			// link recorded yet this cannot claim the session, so it does not.
 		}
 	}
-	_ = live
 	return task.ProjectWorkState(in)
 }
 

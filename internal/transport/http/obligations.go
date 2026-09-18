@@ -1,10 +1,12 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
@@ -15,8 +17,13 @@ import (
 // has to move" is read rather than broadcast — the alternative costs one turn
 // from every recipient and has already produced seventeen replies all saying
 // nothing was wrong.
+//
+// What is owed is read off the broker's own records — one row per landing
+// still pending — and not off a table of its own (D01): the table this used to
+// read was written by a dispatch path the broker never took, so a delivery
+// waiting to land was never on it.
 func (s *Server) obligations(w http.ResponseWriter, r *http.Request) {
-	open, err := s.store.OpenObligations(r.Context())
+	open, err := s.owed(r.Context(), s.inventory.Read(r.Context()).Sessions)
 	if err != nil {
 		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
@@ -42,4 +49,13 @@ func (s *Server) obligations(w http.ResponseWriter, r *http.Request) {
 		Stuck:       int64(len(task.Stuck(open, now, task.DefaultThresholds))),
 		At:          now.Unix(),
 	})
+}
+
+// owed is what every session on the machine still owes, against one reading of
+// the sessions: the broker's pending landings, each named against the terminal
+// its root is in now (orchestrator.Owed). The session list, the close action
+// and this route all ask it, so a row that reads blocked is the close that
+// refuses, for the same reason.
+func (s *Server) owed(ctx context.Context, sessions []session.Session) ([]task.Obligation, error) {
+	return s.broker.Owed(ctx, sessions)
 }

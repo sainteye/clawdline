@@ -148,7 +148,10 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 // actions builds the action surface for one request.
 func (s *Server) actions() app.Actions {
 	return app.Actions{Inventory: s.inventory, Terminals: s.terminals, Store: s.store,
-		Pictures: app.Pictures{Drops: s.pictures.drops, Pasteboard: s.pictures.pasteboard}}
+		Pictures: app.Pictures{Drops: s.pictures.drops, Pasteboard: s.pictures.pasteboard},
+		Owed: func(ctx context.Context) ([]task.Obligation, error) {
+			return s.owed(ctx, s.inventory.Read(ctx).Sessions)
+		}}
 }
 
 // writeActionRefusal gives each typed refusal the status that describes it, and

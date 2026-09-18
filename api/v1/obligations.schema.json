@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "obligations.schema.json",
   "title": "What is still owed",
-  "description": "GET /v1/obligations. The route that replaces asking: every row names who can clear it, how long it has been owed, and how loud it has become.",
+  "description": "GET /v1/next/obligations. The route that replaces asking: every row names who can clear it, how long it has been owed, and how loud it has become. Every row is a projection of the broker's own records — one per task whose landing is still pending, named against the terminal its root is in now, or a person for a task with no root — recomputed at every read and stored nowhere else (docs/design-decisions.md D01). A broker ledger holding a row it cannot decode is answered as a refusal, never as a shorter list.",
   "$defs": {
     "Escalation": {
       "description": "How loud an obligation has become. Escalation changes visibility, never verdict: nothing here ever declares a session dead.",

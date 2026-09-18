@@ -25,7 +25,6 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/process"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
-	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/app"
@@ -38,12 +37,11 @@ import (
 )
 
 type Server struct {
-	cfg        config.Config
-	proxy      *httputil.ReverseProxy
-	inventory  app.Inventory
-	store      *store.Store
-	dispatcher app.Dispatcher
-	terminals  []ports.TerminalHost
+	cfg       config.Config
+	proxy     *httputil.ReverseProxy
+	inventory app.Inventory
+	store     *store.Store
+	terminals []ports.TerminalHost
 	// ledger remembers what has already been counted, so a transcript is read
 	// once rather than once per request.
 	ledger *transcript.Ledger
@@ -109,14 +107,9 @@ func New(cfg config.Config) (*Server, error) {
 		return nil, fmt.Errorf("could not open the store at %s: %w", cfg.Dir, err)
 	}
 	srv := &Server{
-		store: st,
-		cfg:   cfg,
-		proxy: proxy,
-		dispatcher: app.Dispatcher{
-			Store:    st,
-			Tasks:    taskdir.New(cfg.Dir),
-			Terminal: terminal.NewTmux(),
-		},
+		store:     st,
+		cfg:       cfg,
+		proxy:     proxy,
 		terminals: terminal.Hosts(),
 		ledger:    transcript.NewLedger(),
 		facts:     transcript.NewRecordFacts(),
@@ -175,10 +168,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/cloud/pairing/offer", s.cloudPairingOfferRoute)
 	mux.HandleFunc("/v1/cloud/devices/revoke", s.cloudDeviceRoute)
 	mux.HandleFunc("/v1/cloud/keys/rotate", s.cloudRotateRoute)
-	// A shadow route, not the real one. It runs beside /v1/sessions so both can
-	// be read for the same machine at the same moment; the real route is taken
-	// over only once the payloads agree.
-	mux.HandleFunc("/v1/next/sessions", s.nextSessions)
 	mux.HandleFunc("/v1/sessions", s.sessions)
 	// Everything under a session id is about that session: its info, which is
 	// a read, and otherwise an action on it. One handler rather than a route
@@ -211,13 +200,15 @@ func (s *Server) Handler() http.Handler {
 	// What this feature has done to the machine, published (screen.go).
 	mux.HandleFunc("/v1/screens", s.screensRoute)
 	mux.HandleFunc("/v1/events", s.events)
+	// Two `/v1/next/` names are still the only spelling of what they serve,
+	// and the Dashboard reads both: what is owed (obligations.go, now the
+	// broker's own records, D01) and the machine coordinator. The shadows
+	// that had a real name beside them — sessions, schedules, board — are
+	// gone (D07): a second spelling nobody reads is a second thing to keep
+	// in step with nothing.
 	mux.HandleFunc("/v1/next/obligations", s.obligations)
-	mux.HandleFunc("/v1/next/schedules", s.schedules)
 	mux.HandleFunc("/v1/next/coordinator", s.coordinatorRoute)
 
-	// The console asks for these by their real names. They were served under
-	// /v1/next/ while they were being proved beside the app; the shadow names
-	// stay so a reader can still compare the two, but these are the routes.
 	mux.HandleFunc("/v1/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			s.boardWrite(w, r)
@@ -266,13 +257,6 @@ func (s *Server) Handler() http.Handler {
 	// Web Push: the key, the subscription, the test and the way back out
 	// (push.go). Read-level, as in the Swift app.
 	mux.HandleFunc("/v1/push/", s.pushRoute)
-	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			s.boardWrite(w, r)
-			return
-		}
-		s.boardRead(w, r)
-	})
 	// Standalone refuses what it has not implemented instead of borrowing it.
 	// Proxying is a scaffold, and a scaffold that never says what it is holding
 	// up cannot be removed on purpose.
@@ -332,38 +316,6 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		Upstream:  int64(s.cfg.UpstreamPort),
 		Dir:       s.cfg.Dir,
 		At:        time.Now().Unix(),
-	})
-}
-
-// nextSessions publishes this daemon's own reading of the machine.
-func (s *Server) nextSessions(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	inv := s.inventory.Read(ctx)
-	rows := make([]contract.InventorySession, 0, len(inv.Sessions))
-	for _, item := range inv.Sessions {
-		rows = append(rows, contract.InventorySession{
-			ID:             item.ID,
-			Backend:        contract.Backend(item.Backend),
-			TTY:            item.TTY,
-			PID:            int64(item.PID),
-			Assistant:      contract.Assistant(item.Assistant),
-			CWD:            item.CWD,
-			Label:          item.Label,
-			State:          contract.SessionState(item.State),
-			Evidence:       contract.Evidence(item.Evidence),
-			ConversationID: item.ConversationID,
-		})
-	}
-	writeJSON(w, contract.Inventory{
-		ServedBy: servedBy,
-		Sessions: rows,
-		Scan: contract.InventoryScan{
-			Complete:   inv.Complete,
-			Provenance: inv.Provenance,
-			Notes:      inv.Notes,
-		},
-		At: inv.ObservedAt.Unix(),
 	})
 }
 

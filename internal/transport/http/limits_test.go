@@ -92,7 +92,7 @@ func TestTheAuditIsSplitByEvent(t *testing.T) {
 		return string(data)
 	}
 	events := func() int {
-		n, _, _, err := s.store.Counts(ctx)
+		n, _, err := s.store.Counts(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}

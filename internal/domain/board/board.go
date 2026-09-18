@@ -1,11 +1,17 @@
-// Package board is the project board's domain: what is being worked on, and the
-// rules that keep two writers from silently overwriting each other.
+// Package board is the project board's domain: what is being worked on.
+//
+// It used to hold the rules for writing the board too — a Command with an
+// expected revision and a request id, and Decide — beside a store table and a
+// command ledger for them. Nothing ever called any of it (D38): the board this
+// daemon shows is the Swift app's, read-only, and the board it will write is
+// designed afresh (docs/board-redesign.md) with its own receipts (D03). They
+// are gone rather than kept for later, because a later that finds them will
+// find the second spelling of a receipt that D03 removed.
 package board
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"sort"
 	"strings"
 )
@@ -54,66 +60,4 @@ func name(path string) string {
 func ID(prefix, path string) string {
 	sum := sha256.Sum256([]byte(path))
 	return prefix + "-" + hex.EncodeToString(sum[:])[:24]
-}
-
-// Command is a request to change the board.
-type Command struct {
-	Operation        string          `json:"operation"`
-	RequestID        string          `json:"requestId"`
-	ExpectedRevision int64           `json:"expectedRevision"`
-	Actor            string          `json:"actor"`
-	Body             json.RawMessage `json:"body,omitempty"`
-}
-
-// Fingerprint identifies a command by what it asks for, not by when it was
-// asked. Two sends of the same request are the same command; the same id
-// carrying different words is a different one wearing a used name.
-func (c Command) Fingerprint() string {
-	h := sha256.New()
-	h.Write([]byte(c.Operation))
-	h.Write([]byte{0})
-	h.Write([]byte(c.Actor))
-	h.Write([]byte{0})
-	h.Write(c.Body)
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// Refusal is a typed reason a command was not applied.
-type Refusal struct {
-	Code   string `json:"code"`
-	Detail string `json:"detail"`
-}
-
-func (r Refusal) Error() string { return r.Code + ": " + r.Detail }
-
-// Decide applies the two rules that let several writers share one board.
-//
-//   - A command is compared against the revision its author last saw. If the
-//     board has moved, the command is refused rather than applied to a state
-//     nobody wrote it for. This is the difference between "I am editing what I
-//     read" and "I am overwriting whatever is there".
-//   - A request id already seen replays its original outcome when it carries
-//     the same words, and conflicts when it does not. Retries are then free,
-//     and a reused id cannot smuggle a second change past the first one's
-//     receipt.
-func Decide(current int64, seen map[string]string, c Command) (applied bool, err error) {
-	if c.RequestID == "" {
-		return false, Refusal{"bad_request", "a board command needs a request id"}
-	}
-	if c.Operation == "" {
-		return false, Refusal{"bad_request", "a board command needs an operation"}
-	}
-	if prior, ok := seen[c.RequestID]; ok {
-		if prior == c.Fingerprint() {
-			// The same command arriving twice changes nothing twice.
-			return false, nil
-		}
-		return false, Refusal{"request_conflict",
-			"that request id was already used for a different command"}
-	}
-	if c.ExpectedRevision != current {
-		return false, Refusal{"revision_conflict",
-			"the board has moved since you read it"}
-	}
-	return true, nil
 }

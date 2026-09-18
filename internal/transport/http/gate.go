@@ -260,14 +260,15 @@ func openPath(p string) bool {
 
 // machineScoped is where the orchestrator credential is accepted in place of a
 // device: the orchestrator's own routes, the board, and the worktree reads.
-// The `/v1/next/` names are this daemon's shadows of the orchestrator's routes
-// and are treated as the routes they shadow.
+// `/v1/next/coordinator` is the one `/v1/next/` name left that the
+// orchestrator's credential opens; the shadows of the board and the schedules
+// are gone (D07).
 func machineScoped(p string) bool {
 	if strings.HasPrefix(p, "/v1/orchestrator/") {
 		return true
 	}
 	switch p {
-	case "/v1/board", "/v1/next/board", "/v1/next/schedules", "/v1/next/coordinator":
+	case "/v1/board", "/v1/next/coordinator":
 		return true
 	case "/v1/artifacts/images":
 		// Storing a session's pictures is the orchestrator's (images.go); the
@@ -282,8 +283,7 @@ func machineScoped(p string) bool {
 }
 
 // taskSecretRoute is where a child reports with its own task secret, which
-// the handler checks. No such handler exists on this daemon yet — children
-// write result.json — so today these paths reach settleRoute's not_found.
+// the broker's handler checks (orchestrator.go).
 func taskSecretRoute(method, p string) bool {
 	if !strings.HasPrefix(p, "/v1/orchestrator/tasks/") {
 		return false
@@ -301,22 +301,21 @@ func taskSecretRoute(method, p string) bool {
 
 // writePolicy is the capability each changing route needs, for the routes
 // whose handlers this gate does not own. Session actions check it themselves
-// (actions.go), as do dispatch and settle (dispatch.go), each with the Swift
-// app's sentence.
+// (actions.go), as does dispatch (orchestrator.go), each with the Swift app's
+// sentence.
 func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, string) {
 	if !isChange(method) {
 		return 0, "", ""
 	}
 	send := v.Allowed && v.Caps.Has(auth.Send)
 	switch {
-	case p == "/v1/orchestrator/schedules" || p == "/v1/next/schedules" ||
-		strings.HasPrefix(p, "/v1/orchestrator/schedules/"):
+	case p == "/v1/orchestrator/schedules" || strings.HasPrefix(p, "/v1/orchestrator/schedules/"):
 		// Two doors, as in the Swift app: a device that may send, or this
 		// machine's orchestrator.
 		if !machine && !send {
 			return http.StatusForbidden, "forbidden", "This device may read, and not send."
 		}
-	case p == "/v1/board" || p == "/v1/next/board":
+	case p == "/v1/board":
 		if !machine && !send {
 			return http.StatusForbidden, "forbidden", "This device may only read the board."
 		}

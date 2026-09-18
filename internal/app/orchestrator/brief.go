@@ -61,8 +61,16 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 
 	w("# Clawdline child briefing — task %s", r.ID)
 	w("")
-	w("You are a CHILD session working for a Clawdline root session. Your one job is the task")
-	w("described in %s/task.json — read that file now.", dir)
+	if r.Root == nil && r.ScheduleID != "" {
+		// A scheduled task has nobody to report back to (D07): it was started
+		// by a clock, and saying "a root session" would send it looking for one.
+		w("You are a CHILD session started by the schedule %q on this machine. No session", r.ScheduleTitle)
+		w("dispatched you and none is waiting on this tab: `result.json` is how the schedule learns")
+		w("you finished. Your one job is the task described in %s/task.json — read that file now.", dir)
+	} else {
+		w("You are a CHILD session working for a Clawdline root session. Your one job is the task")
+		w("described in %s/task.json — read that file now.", dir)
+	}
 	w("")
 	w("## Language, and the first thing you say")
 	w("")
