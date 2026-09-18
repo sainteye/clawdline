@@ -496,6 +496,14 @@ func (b *Broker) mutate(ctx context.Context, id, kind string, change func(r *Rec
 // as intent and run after the commit. The effect ids come back, this
 // broker's to run.
 func (b *Broker) mutateTx(ctx context.Context, id, kind string, change func(tx *store.Tx, r *Record) ([]store.Effect, error)) (Record, []int64, error) {
+	return b.mutateEvent(ctx, id, kind, nil, change)
+}
+
+// mutateEvent is mutateTx whose event says more than the state it left the
+// task in: extra is merged into the event's payload, for a change whose
+// meaning is in the values it replaced — a landing corrected from one commit
+// to another is that pair, and the pair is what the event keeps (D18).
+func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[string]any, change func(tx *store.Tx, r *Record) ([]store.Effect, error)) (Record, []int64, error) {
 	var out Record
 	// decided is the error this broker's own code answered from inside the
 	// transaction — a refusal, errAlreadyTerminal — which is returned as it
@@ -541,7 +549,11 @@ func (b *Broker) mutateTx(ctx context.Context, id, kind string, change func(tx *
 			decided = errNoticeOutsideLedger
 			return nil, decided
 		}
-		payload, _ := json.Marshal(map[string]any{"state": r.State, "task": r.ID})
+		body := map[string]any{"state": r.State, "task": r.ID}
+		for k, v := range extra {
+			body[k] = v
+		}
+		payload, _ := json.Marshal(body)
 		out = r
 		return &store.BrokerWrite{
 			Row:     b.storedRow(r),

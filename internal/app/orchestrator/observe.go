@@ -389,6 +389,16 @@ type observations struct {
 	deferred   map[string]time.Time
 	progress   map[string]string
 	accepted   map[string]string
+	// seen is who the last reading showed, for a pending landing's owner
+	// (landing.go). Replaced whole by every pass.
+	seen presence
+}
+
+// presence is the last reading's account of who is here.
+func (o *observations) presence() presence {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.seen
 }
 
 // deferredUntil is when a deferred notice may be tried again, zero when it is
@@ -560,6 +570,7 @@ func (b *Broker) observe(ctx context.Context, rd reading, live []Record) {
 	o.complete = rd.complete
 	o.sources = rd.sources
 	o.sessions = len(rd.sessions)
+	o.seen = presenceOf(rd)
 	if o.executors == nil {
 		o.executors = map[string]Executor{}
 	}

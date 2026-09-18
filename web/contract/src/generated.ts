@@ -931,18 +931,66 @@ export interface BrokerInflightRow {
 }
 
 /**
- * What became of a delivery. Delivered is not reviewed and reviewed is not landed;
- * `landed` is the one rung a caller cannot assert on its own word, because the
- * broker proves it by asking git for ancestry.
+ * What became of a delivery, and the one record of it: every other answer to "did
+ * this land" is read from this one. Delivered is not reviewed and reviewed is not
+ * landed; `landed` is the one rung a caller cannot assert on its own word, because
+ * the broker proves that this task's work — an isolated task's branch head, or
+ * for a task in the shared checkout a commit made after it was dispatched — is on
+ * the target, by asking git for ancestry. The commit the task was dispatched from,
+ * or anything already under it, is refused as `unverified_landing` with reason
+ * `predates_dispatch`.
  */
 export interface BrokerLanding {
   at?: number
+
+  /**
+   * The commit the task was dispatched from, which the landed commit was proved not
+   * to be under.
+   */
+  base?: string
   commit?: string
+
+  /**
+   * The settled landing this one replaced. A resend that says what the record says
+   * is a replay and writes nothing; one that differs passes the same gate, and what
+   * it replaced is kept here and in a `landing.corrected` event. One level deep.
+   */
+  corrected_from?: BrokerLanding
+
+  /**
+   * The isolated branch's head the landed commit was proved to carry.
+   */
+  delivery_head?: string
   note?: string
+  obligation?: BrokerLandingObligation
   repo?: string
   state: BrokerLandingState
+
+  /**
+   * The branch the root named the first time it recorded this landing. Absent until
+   * then: not decided, and never read as the repository's HEAD.
+   */
   target?: string
+
+  /**
+   * What the target branch named when `landed` was proved.
+   */
+  target_commit?: string
 }
+
+/**
+ * What a pending landing means now, derived from the broker's last reading of the
+ * machine and never stored. `pending_live`: the root that owes it is running.
+ * `pending_orphaned`: nothing can land it — the task has no root, or the process
+ * table answered completely, named every assistant in it, and the root is not one.
+ * `pending_unknown`: neither could be shown, which is not a kind of either.
+ */
+export type BrokerLandingObligation =
+    "pending_live"
+  | "pending_orphaned"
+  | "pending_unknown"
+
+export const BrokerLandingObligationValues: readonly BrokerLandingObligation[] = ["pending_live", "pending_orphaned", "pending_unknown"] as const
 
 export type BrokerLandingState =
     "pending"
@@ -1284,6 +1332,13 @@ export interface BrokerTask {
   declared_writes?: string[]
   deliverables?: string[]
   dir: string
+
+  /**
+   * Where the repository stood when a task that writes the shared checkout was
+   * admitted: a commit it lands must not be under this line. Absent for an isolated
+   * task, whose line is worktree.base, and when it could not be read.
+   */
+  dispatch_base?: string
   executor?: BrokerExecutor
   finishedAt?: number
   id: string

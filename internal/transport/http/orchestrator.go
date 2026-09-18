@@ -421,7 +421,7 @@ func (s *Server) inflightPayload(r *http.Request, repo string, rows []orchestrat
 			item.Worktree = brokerWorktree(record)
 		}
 		if record.Landing != nil {
-			item.Landing = brokerLanding(record.Landing)
+			item.Landing = brokerLanding(record.Landing, s.broker.Obligation(record))
 		}
 		out.Inflight = append(out.Inflight, item)
 	}
@@ -593,6 +593,7 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		Assistant:      contract.Assistant(r.Assistant),
 		ProjectDir:     r.ProjectDir,
 		Repository:     r.Repository,
+		DispatchBase:   r.DispatchBase,
 		Created:        r.CreatedAt.Unix(),
 		Dir:            r.Dir,
 		Permission:     r.PermissionMode,
@@ -645,7 +646,7 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		row.Worktree = brokerWorktree(r)
 	}
 	if r.Landing != nil {
-		row.Landing = brokerLanding(r.Landing)
+		row.Landing = brokerLanding(r.Landing, s.broker.Obligation(r))
 	}
 	if r.Notice != nil {
 		row.CompletionDelivery = brokerNotice(r.Notice)
@@ -687,16 +688,25 @@ func brokerWorktree(r orchestrator.Record) *contract.BrokerWorktree {
 	}
 }
 
-func brokerLanding(l *orchestrator.Landing) *contract.BrokerLanding {
+// brokerLanding is the landing record as the wire carries it, with what a
+// pending one means now beside it — derived for this answer, never stored.
+func brokerLanding(l *orchestrator.Landing, obligation orchestrator.Obligation) *contract.BrokerLanding {
 	out := &contract.BrokerLanding{
-		State:  contract.BrokerLandingState(l.State),
-		Target: l.Target,
-		Commit: l.Commit,
-		Repo:   l.Repo,
-		Note:   l.Note,
+		State:        contract.BrokerLandingState(l.State),
+		Target:       l.Target,
+		Commit:       l.Commit,
+		Repo:         l.Repo,
+		Note:         l.Note,
+		TargetCommit: l.TargetCommit,
+		DeliveryHead: l.DeliveryHead,
+		Base:         l.Base,
+		Obligation:   contract.BrokerLandingObligation(obligation),
 	}
 	if !l.At.IsZero() {
 		out.At = l.At.Unix()
+	}
+	if l.CorrectedFrom != nil {
+		out.CorrectedFrom = brokerLanding(l.CorrectedFrom, "")
 	}
 	return out
 }

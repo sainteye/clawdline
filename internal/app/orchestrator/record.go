@@ -94,6 +94,14 @@ const (
 // started from, and a reader asking "did this branch produce anything" compares
 // head against it; recomputing base later would answer that question with the
 // wrong past.
+//
+// `head` is the delivery: the branch's own commit, read from git when the task
+// settles and again when its landing is proved (D17). At creation it is the
+// base, because that is where the branch was made. The first version of this
+// broker wrote it once, there, and never again, so every reader of it — the
+// inventory, the landing — saw the base and called it the delivery (G17).
+// Empty means the branch could not be read when it was last asked: unknown,
+// which is not the base and not "nothing delivered".
 type Worktree struct {
 	Repository string `json:"repository"`
 	Path       string `json:"path"`
@@ -112,14 +120,69 @@ type RootRef struct {
 }
 
 // Landing is what became of the delivery.
+//
+// It is the one record of whether a task's work reached its target (D01).
+// Anything else that says "landed" reads it rather than keeping its own copy:
+// the inventory does (W3); a session's count of open obligations and the board
+// are to (W4, T3).
 type Landing struct {
-	State  LandingState `json:"state"`
-	Target string       `json:"target,omitempty"`
-	Commit string       `json:"commit,omitempty"`
-	Repo   string       `json:"repo,omitempty"`
-	At     time.Time    `json:"at,omitempty"`
-	Note   string       `json:"note,omitempty"`
+	State LandingState `json:"state"`
+	// Target is the branch the root named, the first time it named one
+	// (D19). Until then it is empty, and empty is "not decided", which no
+	// reader may fill in with the repository's HEAD.
+	Target string    `json:"target,omitempty"`
+	Commit string    `json:"commit,omitempty"`
+	Repo   string    `json:"repo,omitempty"`
+	At     time.Time `json:"at,omitempty"`
+	Note   string    `json:"note,omitempty"`
+
+	// What a `landed` was proved against (D17), kept because none of it can
+	// be read back later: the target moves on, and the branch may go.
+	// TargetCommit is what the target branch named when the proof ran;
+	// DeliveryHead is the isolated branch's head the proof showed the commit
+	// carries; Base is the commit the dispatch started from, which the landed
+	// commit was shown not to be under.
+	TargetCommit string `json:"target_commit,omitempty"`
+	DeliveryHead string `json:"delivery_head,omitempty"`
+	Base         string `json:"base,omitempty"`
+
+	// CorrectedFrom is the settled landing this one replaced (D18): a
+	// resend that disagrees with a settled record is a write, it passes the
+	// gate the first one passed, and what it replaced is kept here rather
+	// than overwritten. One level: the one before that is in the
+	// `landing.corrected` event that recorded it, not nested here without end.
+	CorrectedFrom *Landing `json:"corrected_from,omitempty"`
 }
+
+// sameAs is whether two landings say the same thing, ignoring when each was
+// said and what each replaced. It is what tells a resend from a correction.
+func (l Landing) sameAs(o Landing) bool {
+	return l.State == o.State && l.Target == o.Target && l.Commit == o.Commit && l.Note == o.Note
+}
+
+// replaced is the landing as a correction keeps it: itself, without the one
+// it had replaced in turn.
+func (l Landing) replaced() *Landing {
+	l.CorrectedFrom = nil
+	return &l
+}
+
+// Obligation is what a `pending` landing means now, derived from whether its
+// owner is still here (broker-design #35, O1). It is never stored: it is a
+// reading of the machine, and the next reading may say otherwise (D04).
+//
+// `pending` alone used to be the word for both "somebody is working on it"
+// and "the session that owed it is gone", and a line sat fourteen hours behind
+// one because the two looked alike. Unknown is the third answer and not a
+// kind of either: a machine this broker cannot fully read has not said the
+// owner is gone (DG-7).
+type Obligation string
+
+const (
+	ObligationLive     Obligation = "pending_live"
+	ObligationOrphaned Obligation = "pending_orphaned"
+	ObligationUnknown  Obligation = "pending_unknown"
+)
 
 // NoticeState is where the completion notice to the root has got to.
 type NoticeState string
@@ -219,9 +282,15 @@ type Record struct {
 	LeaseScope string `json:"lease_scope,omitempty"`
 
 	// What has happened since.
-	State           State     `json:"state"`
-	Dir             string    `json:"dir"`
-	Repository      string    `json:"repository"`
+	State      State  `json:"state"`
+	Dir        string `json:"dir"`
+	Repository string `json:"repository"`
+	// DispatchBase is the repository's HEAD when a task that writes the
+	// shared checkout was admitted (D17): the line between what was there
+	// before it and what it could have made. An isolated task's is its
+	// Worktree.Base. Empty when it could not be read, or on a record stored
+	// before W3 — and a landing cannot be proved against an unknown line.
+	DispatchBase    string    `json:"dispatch_base,omitempty"`
 	Worktree        *Worktree `json:"worktree,omitempty"`
 	ChildTerminalID string    `json:"child_terminal_id,omitempty"`
 	ChildBackend    string    `json:"child_backend,omitempty"`

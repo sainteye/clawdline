@@ -506,8 +506,9 @@ func TestAnIsolatedTaskKeepsItsDeclaredWrites(t *testing.T) {
 	}
 
 	// The isolated one finished (its tab never opened here) and owes a
-	// landing once its branch carries work — an empty branch is droppable,
-	// which is B1's rule and W6's to revisit (D13). The unlanded row carries
+	// landing. Its record says pending and names no target, so it is unlanded
+	// whatever its branch holds (W3, D01, D19); B1 filed an empty branch as
+	// droppable on the word of the checkout's HEAD. The unlanded row carries
 	// the declared list as its write set.
 	commit := exec.Command("git", "commit", "-q", "--allow-empty", "-m", "work")
 	commit.Dir = r.Worktree.Path

@@ -224,10 +224,18 @@ type LandingRequest struct {
 
 // Land settles the obligation a delivery leaves behind.
 //
-// `landed` is proved, never asserted. The proof is ancestry, asked of git, in
-// the repository the work was done in — a branch existing, a diff being empty
-// and a delivery being marked done are all compatible with the work never
-// having reached the target.
+// `landed` is proved, never asserted, and what it proves is that **this
+// task's** work reached the target (D17, landing.go) — not merely that some
+// commit is on it, which the task's own base always is.
+//
+// A settled landing can be corrected and cannot be overwritten in silence
+// (D18). A resend that says what the record says is a replay: nothing is
+// written, nothing is re-proved, and the answer is the record. A resend that
+// differs is a write, and a write has two honest answers — applied or refused
+// — so it passes the gate the first one passed, and what it replaced is kept
+// as `corrected_from` and in a `landing.corrected` event. The Swift app once
+// answered `ok` to a correction it had not applied, and a record on that
+// machine came to name another task's commit for good.
 func (b *Broker) Land(ctx context.Context, id string, req LandingRequest) (Record, error) {
 	r, hash, err := b.Record(ctx, id)
 	if err != nil {
@@ -268,23 +276,41 @@ func (b *Broker) Land(ctx context.Context, id string, req LandingRequest) (Recor
 			"Only a terminal task can settle its landing obligation.")
 	}
 
-	next := &Landing{State: LandingState(req.State), Target: req.Target, Note: req.Note}
-	if r.Landing != nil && next.Target == "" {
-		next.Target = r.Landing.Target
+	var prev *Landing
+	if r.Landing != nil && r.Landing.State != "" {
+		held := *r.Landing
+		prev = &held
 	}
-	if r.Landing != nil && r.Landing.State != LandingPending && r.Landing.State != "" {
-		if r.Landing.State != next.State {
+	// Settled is every state but pending: a claim about the repository that
+	// stands until it is corrected through its own gate.
+	settled := prev != nil && prev.State != LandingPending
+
+	next := &Landing{State: LandingState(req.State), Target: req.Target, Note: req.Note}
+	// The target is the record's once the root has named one (D19): a
+	// request that leaves it out means the one on the record, and one that
+	// names another on a settled landing is a different claim.
+	if prev != nil && next.Target == "" {
+		next.Target = prev.Target
+	}
+	// A note left out of a resend of the same state is the note on the
+	// record. Moving to another state starts that state's own sentence.
+	if prev != nil && prev.State == next.State && next.Note == "" {
+		next.Note = prev.Note
+	}
+	if settled {
+		if prev.State != next.State {
 			return Record{}, refuse(http.StatusConflict, "invalid_transition",
 				"A settled obligation cannot move to another state; open a new task.")
 		}
-		if next.State == LandingLanded && next.Target != r.Landing.Target {
+		if next.State == LandingLanded && next.Target != prev.Target {
 			return Record{}, refuseWith(http.StatusConflict, "landing_conflict",
 				"This obligation is already settled with a different target. A landing aimed somewhere "+
 					"else is another claim rather than a correction of this one; record it against its own task.",
-				map[string]any{"field": "target", "stored": r.Landing.Target, "requested": next.Target})
+				map[string]any{"field": "target", "stored": prev.Target, "requested": next.Target})
 		}
 	}
 
+	var head branchHead
 	switch next.State {
 	case LandingLanded:
 		if req.Commit == "" {
@@ -299,35 +325,89 @@ func (b *Broker) Land(ctx context.Context, id string, req LandingRequest) (Recor
 		if r.Worktree != nil && r.Worktree.Repository != "" {
 			repo = r.Worktree.Repository
 		}
-		commit, target, err := b.proveLanding(ctx, repo, req.Commit, next.Target)
+		// The replay is recognised by what git says the commit is, not by
+		// its spelling: a short id of the recorded commit is the same claim.
+		// It is not proved again — the record stands on the proof it was
+		// written with, and a target that has moved on since does not make
+		// a resend of it a lie.
+		if settled {
+			if c, err := b.Git.ResolveCommit(ctx, repo, req.Commit); err == nil && c == prev.Commit &&
+				next.Note == prev.Note {
+				return r, nil
+			}
+		}
+		var proof landingProof
+		proof, head, err = b.proveDelivery(ctx, r, req.Commit, next.Target)
 		if err != nil {
 			return Record{}, err
 		}
 		// The ids git resolved replace the caller's text. A record that keeps
 		// what somebody typed is a record that cannot be compared with the
 		// repository later.
-		next.Commit = commit
+		next.Commit = proof.commit
 		next.Repo = repo
+		next.TargetCommit = proof.targetCommit
+		next.DeliveryHead = proof.deliveryHead
+		next.Base = proof.base
 		next.At = b.now()
-		_ = target
 	case LandingNothingToLand:
+		if settled && next.sameAs(*prev) {
+			return r, nil
+		}
+		// A correction of it is held to the same gate as the claim itself.
 		if why := b.nothingToLandRefusal(ctx, r); why != "" {
 			return Record{}, refuse(http.StatusConflict, "wrote_to_repository",
 				"nothing_to_land says this task wrote nothing to land, and "+why+".")
 		}
 		next.At = b.now()
 	case LandingAbandoned:
+		if settled && next.sameAs(*prev) {
+			return r, nil
+		}
 		next.At = b.now()
+	case LandingPending:
+		if prev != nil && next.sameAs(*prev) {
+			return r, nil
+		}
 	}
 
-	return b.mutate(ctx, id, "landing."+req.State, func(now *Record) error {
+	kind := "landing." + req.State
+	extra := map[string]any{"landing": string(next.State), "target": next.Target}
+	if next.Commit != "" {
+		extra["commit"] = next.Commit
+	}
+	if settled {
+		// A correction keeps what it replaced; and when only the words
+		// changed, the work landed when it landed, not when it was annotated.
+		next.CorrectedFrom = prev.replaced()
+		if prev.Commit == next.Commit && !prev.At.IsZero() {
+			next.At = prev.At
+		}
+		kind = "landing.corrected"
+		// The commit pair is the fact; the words it replaced are on the
+		// record's corrected_from, and prose is not copied into events.
+		extra["previous_commit"] = prev.Commit
+	}
+
+	record, _, err := b.mutateEvent(ctx, id, kind, extra, func(_ *store.Tx, now *Record) ([]store.Effect, error) {
 		if now.State != readState || landingKey(now.Landing) != readLanding {
-			return refuse(http.StatusConflict, "stale_write",
+			// Another caller wrote this landing while the proof ran. If what
+			// it wrote is what this one says, this is a replay of it;
+			// anything else was decided against a record that is gone.
+			if now.Landing != nil && now.Landing.sameAs(*next) {
+				return nil, errUnchanged
+			}
+			return nil, refuse(http.StatusConflict, "stale_write",
 				"The landing changed while its target was being verified; retry.")
 		}
 		now.Landing = next
-		return nil
+		// What the proof read of the branch is the delivery now (G17).
+		if head.known && head.commit != "" && now.Worktree != nil && now.Worktree.Branch == head.branch {
+			now.Worktree.Head = head.commit
+		}
+		return nil, nil
 	})
+	return record, err
 }
 
 // landingKey is a landing's identity, for noticing that it moved.
@@ -335,29 +415,7 @@ func landingKey(l *Landing) string {
 	if l == nil {
 		return ""
 	}
-	return string(l.State) + "\x00" + l.Target + "\x00" + l.Commit
-}
-
-// proveLanding asks git the only question that means "landed".
-func (b *Broker) proveLanding(ctx context.Context, repo, commit, target string) (string, string, error) {
-	unverified := refuse(http.StatusConflict, "unverified_landing",
-		"The commit must resolve in the task repository and be contained by the named local target branch.")
-	if repo == "" || !b.Git.ValidBranchName(ctx, target) {
-		return "", "", unverified
-	}
-	commitID, err := b.Git.ResolveCommit(ctx, repo, commit)
-	if err != nil {
-		return "", "", unverified
-	}
-	targetID, err := b.Git.ResolveCommit(ctx, repo, "refs/heads/"+target)
-	if err != nil {
-		return "", "", unverified
-	}
-	ok, err := b.Git.IsAncestor(ctx, repo, commitID, targetID)
-	if err != nil || !ok {
-		return "", "", unverified
-	}
-	return commitID, targetID, nil
+	return string(l.State) + "\x00" + l.Target + "\x00" + l.Commit + "\x00" + l.Note
 }
 
 // nothingToLandRefusal is the sentence that says a task did write something.

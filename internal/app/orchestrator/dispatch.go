@@ -217,6 +217,16 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// week later must not depend on the directory still existing.
 	if repo, err := b.Git.Toplevel(ctx, record.ProjectDir); err == nil {
 		record.Repository = repo
+		// And where that repository stood, for a task that will write it in
+		// place (D17). A commit this task lands has to be one it could have
+		// made, and everything already under this line was there before it
+		// was admitted. Unreadable stays empty: an unknown line proves
+		// nothing, and the landing says so rather than guessing one.
+		if record.Isolation != IsolationWorktree {
+			if head, err := b.Git.ResolveCommit(ctx, repo, "HEAD"); err == nil {
+				record.DispatchBase = head
+			}
+		}
 	}
 
 	cwd := record.ProjectDir
@@ -677,6 +687,10 @@ func (b *Broker) Settle(ctx context.Context, id string, state State, why string,
 // answers their ids for the caller to run after the commit.
 func (b *Broker) settle(ctx context.Context, id string, state State, why string, result *taskdir.Result, effects ...store.Effect) (Record, []int64, error) {
 	now := b.now()
+	// What the delivery branch holds as the task ends, asked of git before the
+	// write right is taken (D08) and applied inside it only to the branch it
+	// was read from (D17, G17).
+	head := b.settlementHead(ctx, id)
 	return b.mutateTx(ctx, id, "task."+string(state), func(_ *store.Tx, r *Record) ([]store.Effect, error) {
 		if r.State.Terminal() {
 			return nil, errAlreadyTerminal
@@ -688,10 +702,20 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 		} else if why != "" {
 			r.Verdict = truncate(why, summaryLimit)
 		}
+		// Empty when the branch is gone or could not be read: the base it
+		// held at creation is no longer a claim anybody can stand on.
+		if head.asked && r.Worktree != nil && r.Worktree.Branch == head.branch {
+			r.Worktree.Head = head.commit
+		}
 		// A task that reserved paths in the shared tree still owes a landing,
 		// and so does an isolated one, whose declared paths became its landing
 		// write set. Delivered is not landed, and the obligation is what keeps
 		// the difference visible to the next root rather than to nobody.
+		//
+		// It opens with no target (D19): which branch the work belongs on is
+		// the root's to say, the first time it records this landing, and
+		// until then every reader treats the target as not decided — never as
+		// whatever the repository's HEAD happens to be.
 		if r.Landing == nil && (len(r.Claims) > 0 || r.Worktree != nil) {
 			r.Landing = &Landing{State: LandingPending, Note: "not yet on its target"}
 		}
