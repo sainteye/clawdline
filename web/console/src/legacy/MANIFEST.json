@@ -68,7 +68,10 @@
     "js/view/document-render.js": "d5b8cc533155d4d4",
     "js/net/cloud-crypto.js": "1ed51a5f2634e23b",
     "js/net/document-links.js": "434ad37d1c146669",
-    "js/view/documents.js": "130ecb29731148d3"
+    "js/view/documents.js": "130ecb29731148d3",
+    "js/view/board.js": "9c62cd4509f913b0",
+    "js/net/client.js": "6f70ec765b174a9e",
+    "js/net/session-links.js": "c2d622b5198add08"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {
