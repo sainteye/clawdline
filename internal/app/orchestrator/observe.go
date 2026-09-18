@@ -371,9 +371,11 @@ type Observations struct {
 	Generation int64
 	At         time.Time
 	Complete   bool
-	Sessions   int
-	Executors  map[string]Executor
-	Deferred   int
+	// Sources is each source's own completeness in that reading (D05 ③).
+	Sources   map[string]bool
+	Sessions  int
+	Executors map[string]Executor
+	Deferred  int
 }
 
 type observations struct {
@@ -381,10 +383,12 @@ type observations struct {
 	generation int64
 	at         time.Time
 	complete   bool
+	sources    map[string]bool
 	sessions   int
 	executors  map[string]Executor
 	deferred   map[string]time.Time
 	progress   map[string]string
+	accepted   map[string]string
 }
 
 // deferredUntil is when a deferred notice may be tried again, zero when it is
@@ -439,6 +443,24 @@ func (o *observations) settleProgress(taskID, body string) {
 	o.progress[taskID] = body
 }
 
+// acceptedKnown and settleAccepted are progressKnown and settleProgress for
+// accepted.json: a receipt body refused once is not re-checked every pass.
+func (o *observations) acceptedKnown(taskID, secret string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	v, ok := o.accepted[taskID]
+	return ok && v == secret
+}
+
+func (o *observations) settleAccepted(taskID, secret string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.accepted == nil {
+		o.accepted = map[string]string{}
+	}
+	o.accepted[taskID] = secret
+}
+
 // Observed reads the beat's current observations.
 func (b *Broker) Observed() Observations {
 	o := &b.observed
@@ -447,6 +469,10 @@ func (b *Broker) Observed() Observations {
 	out := Observations{
 		Generation: o.generation, At: o.at, Complete: o.complete, Sessions: o.sessions,
 		Executors: make(map[string]Executor, len(o.executors)), Deferred: len(o.deferred),
+		Sources: make(map[string]bool, len(o.sources)),
+	}
+	for name, complete := range o.sources {
+		out.Sources[name] = complete
 	}
 	for id, e := range o.executors {
 		out.Executors[id] = e
@@ -466,7 +492,12 @@ func (b *Broker) ExecutorOf(taskID string) (Executor, bool) {
 type reading struct {
 	sessions map[string]session.Session
 	complete bool
-	at       time.Time
+	// sources is each source's own completeness, by backend name ("tmux",
+	// "iterm", "ps"). A question about one tab is answered by the source that
+	// owns it (D05 ③); nil means the reading did not say, which answers no
+	// such question.
+	sources map[string]bool
+	at      time.Time
 }
 
 func (r reading) session(terminalID string) (session.Session, bool) {
@@ -474,13 +505,22 @@ func (r reading) session(terminalID string) (session.Session, bool) {
 	return s, ok
 }
 
-// seen is whether the reading saw any terminal at all.
-func (r reading) seen() bool { return len(r.sessions) > 0 }
+// sourceComplete is whether the source that owns backend answered completely.
+// A backend the reading has no word about is not complete: unknown is not
+// "listed, and absent".
+func (r reading) sourceComplete(backend string) bool {
+	if backend == "" {
+		return false
+	}
+	complete, said := r.sources[backend]
+	return said && complete
+}
 
 // read takes one reading for a pass. Completeness is the reading's own claim;
 // a fallback reading with no sessions at all is never complete, because "a
 // reading with no terminals in it at all" is not allowed to decide anybody is
-// gone (the Swift app's `3a7adb8e`).
+// gone (the Swift app's `3a7adb8e`). A fallback also carries no per-source
+// completeness, so nothing about one tab's absence is decided from it.
 func (b *Broker) read(ctx context.Context) reading {
 	out := reading{sessions: map[string]session.Session{}, at: b.now()}
 	var rows []session.Session
@@ -488,6 +528,7 @@ func (b *Broker) read(ctx context.Context) reading {
 	case b.Reading != nil:
 		inv := b.Reading(ctx)
 		rows, out.complete = inv.Sessions, inv.Complete
+		out.sources = inv.Sources
 	case b.Live != nil:
 		rows = b.Live(ctx)
 		out.complete = true
@@ -517,6 +558,7 @@ func (b *Broker) observe(ctx context.Context, rd reading, live []Record) {
 	o.generation++
 	o.at = rd.at
 	o.complete = rd.complete
+	o.sources = rd.sources
 	o.sessions = len(rd.sessions)
 	if o.executors == nil {
 		o.executors = map[string]Executor{}
@@ -564,6 +606,11 @@ func (b *Broker) observe(ctx context.Context, rd reading, live []Record) {
 	for id := range o.progress {
 		if !keep[id] {
 			delete(o.progress, id)
+		}
+	}
+	for id := range o.accepted {
+		if !keep[id] {
+			delete(o.accepted, id)
 		}
 	}
 	o.mu.Unlock()

@@ -79,7 +79,24 @@ func (s *Server) brokerDiagnostics(ctx context.Context) *contract.BrokerDiagnost
 			TimedOut:    int64(beat.Pulse.TimedOut),
 			SpawnFailed: int64(beat.Pulse.SpawnFail),
 			StoreError:  beat.StoreErr,
+			// Three quiet failures made loud (D05 ②, G34, D11): rows the
+			// pass could not decode, notes it refused, tabs it closed.
+			Unreadable:   int64(beat.Pulse.Unreadable),
+			NotesRefused: int64(beat.Pulse.NotesRefused),
+			Closed:       int64(beat.Pulse.Closed),
 		},
+	}
+	if s.broker.Lanes != nil {
+		st := s.broker.Lanes.Stats()
+		out.Lanes = &contract.BrokerLanes{
+			Admitted: int64(st.Admitted), Limit: int64(st.Limit), Terminals: int64(st.Keys), Refused: st.Refused,
+		}
+	}
+	if p, ok := s.broker.PolicyRead(); ok {
+		out.Policy = &contract.BrokerPolicy{
+			Chars: int64(p.Chars), Limit: int64(p.Limit), BaseChars: int64(p.BaseChars),
+			LocalChars: int64(p.LocalChars), Cut: p.Cut, NearLimit: p.NearLimit, At: stamp(p.At),
+		}
 	}
 	if beat.InPass {
 		out.Beat.PassBeganAt = stamp(beat.Began)
@@ -132,6 +149,15 @@ func (s *Server) brokerDiagnostics(ctx context.Context) *contract.BrokerDiagnost
 		Sessions:        int64(seen.Sessions),
 		DeferredNotices: int64(seen.Deferred),
 		Executors:       []contract.BrokerExecutor{},
+	}
+	sources := make([]string, 0, len(seen.Sources))
+	for name := range seen.Sources {
+		sources = append(sources, name)
+	}
+	sort.Strings(sources)
+	for _, name := range sources {
+		out.Observations.Sources = append(out.Observations.Sources,
+			contract.BrokerSourceReading{Source: name, Complete: seen.Sources[name]})
 	}
 	ids := make([]string, 0, len(seen.Executors))
 	for id := range seen.Executors {

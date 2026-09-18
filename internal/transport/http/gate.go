@@ -289,7 +289,8 @@ func taskSecretRoute(method, p string) bool {
 	switch method {
 	case http.MethodPost:
 		return strings.HasSuffix(p, "/complete") || strings.HasSuffix(p, "/notify") ||
-			strings.HasSuffix(p, "/landing") || strings.HasSuffix(p, "/progress")
+			strings.HasSuffix(p, "/landing") || strings.HasSuffix(p, "/progress") ||
+			strings.HasSuffix(p, "/accepted")
 	case http.MethodGet:
 		return strings.HasSuffix(p, "/inflight")
 	}

@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 )
 
 // What a running task says about itself, and what settles it afterwards.
@@ -71,22 +72,81 @@ func (b *Broker) Notes(ctx context.Context, id string) ([]store.BrokerNote, erro
 	return b.Store.BrokerNotes(ctx, id, progressKept)
 }
 
-// Complete is the child announcing its own outcome.
+// Accept is the child signing for its briefing (docs/design-decisions.md D10).
 //
-// `status` is not validated. Anything that is not `success` is a failure —
-// including a missing field and a word nobody can read — because the safe
-// reading of an unreadable outcome is that the work did not land.
-func (b *Broker) Complete(ctx context.Context, id, secret, status, summary string) error {
+// It is the first rung of the receipt chain — accepted, executed, delivered,
+// observed, acknowledged — and until it existed that rung was empty. What
+// stood in for it was weaker on both sides: bytes reaching a tty prove
+// nothing was read (the shell once answered a briefing with
+// `command not found: Your`), and a tab that starts a turn proves only that
+// something is running — it may be a dialog, or a child that was already busy.
+// Both of those are kept as evidence of **life** (observe.go), and neither
+// moves a task to `briefed` any more. A progress note still does: it is signed
+// with the same secret, so it says the same thing and more.
+//
+// Idempotent. A child retrying a receipt it is unsure landed has done nothing
+// wrong, and the second one changes nothing.
+func (b *Broker) Accept(ctx context.Context, id, secret string) (Record, error) {
 	if _, _, err := b.Authenticate(ctx, id, secret); err != nil {
+		return Record{}, err
+	}
+	now := b.now()
+	return b.mutate(ctx, id, "task.accepted", func(r *Record) error {
+		if r.State.Terminal() {
+			return refuse(http.StatusConflict, "not_live",
+				"This task is over; a receipt for its briefing changes nothing now.")
+		}
+		changed := false
+		if r.AcceptedAt.IsZero() {
+			r.AcceptedAt = now
+			changed = true
+		}
+		if r.State == StateSpawning || r.State == StateQueued {
+			r.State = StateBriefed
+			changed = true
+		}
+		if !changed {
+			return errUnchanged
+		}
+		return nil
+	})
+}
+
+// Complete is the child asking for its result to be collected now.
+//
+// It carries nothing and settles nothing by itself (D15). `result.json` is the
+// one completion signal: the first version of this route took `status` and
+// `summary` from the request body and settled on them, and because it usually
+// arrived before the beat's five-second look at the file, the beat then found
+// the task finished and skipped it — so the child's `symbols`, `artifacts`,
+// `verification` and a review node's typed verdict never reached the record.
+// Now this does exactly what the beat would do a few seconds later, and says
+// plainly when there is nothing to collect.
+func (b *Broker) Complete(ctx context.Context, id, secret string) error {
+	r, _, err := b.Authenticate(ctx, id, secret)
+	if err != nil {
 		return err
 	}
-	state := StateFailure
-	if status == "success" {
-		state = StateSuccess
-	}
-	_, err := b.Settle(ctx, id, state, summary, nil)
-	if errors.Is(err, errAlreadyTerminal) {
+	if r.State.Terminal() {
 		return refuse(http.StatusConflict, "already_done", "That task already finished.")
+	}
+	settled, err := b.collect(ctx, r)
+	switch {
+	case settled, errors.Is(err, errAlreadyTerminal):
+		// The beat may have collected the same file a moment ago; either way
+		// the file this caller wrote is what the record now says.
+		return nil
+	case errors.Is(err, taskdir.ErrNoResult):
+		return refuse(http.StatusConflict, "result_not_written",
+			"There is no result.json to collect. It is the completion signal: validate it and rename it "+
+				"into place first; this route only asks for it to be collected now rather than on the next beat.")
+	case errors.Is(err, errResultNotAuthentic):
+		return refuse(http.StatusConflict, "result_rejected",
+			"result.json is there but is not this task's: its protocol, task_id, status or task_secret "+
+				"does not match. Nothing was settled.")
+	case errors.Is(err, errResultUnreadable):
+		return refuse(http.StatusConflict, "result_unreadable",
+			"result.json is there but is not readable JSON. Nothing was settled.")
 	}
 	return err
 }
@@ -99,6 +159,9 @@ func (b *Broker) Complete(ctx context.Context, id, secret, status, summary strin
 func (b *Broker) Acknowledge(ctx context.Context, id, noticeID string) (changed bool, err error) {
 	if _, _, err := b.Record(ctx, id); err != nil {
 		if ref, ok := err.(Refusal); ok && ref.Code == "orchestrator_store_unavailable" {
+			return false, err
+		}
+		if IsUnreadable(err) {
 			return false, err
 		}
 		// The one route whose 404 names the id, as the Swift app's does.
@@ -297,7 +360,8 @@ func (b *Broker) proveLanding(ctx context.Context, repo, commit, target string) 
 // nothingToLandRefusal is the sentence that says a task did write something.
 // Empty means the claim is admitted.
 func (b *Broker) nothingToLandRefusal(ctx context.Context, r Record) string {
-	if n := len(r.Claims); n > 0 {
+	// The lease, as in landingAdvice: an isolated task's branch answers this.
+	if n := len(r.Lease()); n > 0 {
 		return "this task declared " + strconv.Itoa(n) + " path(s) to write"
 	}
 	if r.Landing != nil && r.Landing.Target != "" {
@@ -406,7 +470,7 @@ func (b *Broker) Inflight(ctx context.Context, repo, exclude string) ([]Inventor
 			continue
 		}
 		switch row.Section {
-		case VisibilityLive:
+		case VisibilityLive, VisibilityUnreadable:
 			out = append(out, row)
 		case VisibilityUnlanded:
 			row.Section = VisibilityUnmerged

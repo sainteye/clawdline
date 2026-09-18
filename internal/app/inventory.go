@@ -28,7 +28,11 @@ type Inventory struct {
 //
 // Completeness is the AND of its sources: one unreadable source makes the whole
 // reading non-authoritative, because what it casts doubt on is whether the list
-// is complete at all — not one row in it.
+// is complete at all — not one row in it. Each source's own answer is kept
+// beside the AND (Sources), because "is this tmux pane gone" is a question
+// only tmux can answer, and the AND would let an iTerm2 that cannot be asked
+// veto it for ever — or, read the other way, let a reading with iTerm2 rows
+// in it stand in for a tmux listing that failed.
 func (in Inventory) Read(ctx context.Context) session.Inventory {
 	// The identity source is refreshed here rather than by whoever calls this.
 	// It used to be the caller's job, and of the six places that read an
@@ -45,6 +49,7 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 		ObservedAt: time.Now(),
 		Provenance: "merged",
 		Complete:   true,
+		Sources:    map[string]bool{},
 	}
 
 	byTTY := map[string]session.Session{}
@@ -53,6 +58,13 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 	add := func(src session.Inventory) {
 		if !src.Complete {
 			merged.Complete = false
+		}
+		// Two sources with one name are one source: either failing makes it
+		// incomplete.
+		if prev, seen := merged.Sources[src.Provenance]; seen {
+			merged.Sources[src.Provenance] = prev && src.Complete
+		} else {
+			merged.Sources[src.Provenance] = src.Complete
 		}
 		merged.Notes = append(merged.Notes, src.Notes...)
 		for _, s := range src.Sessions {

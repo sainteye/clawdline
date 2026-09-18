@@ -50,6 +50,7 @@ function run(argv) {
 `
 
 func (i *ITerm) keyScript(ctx context.Context, args ...string) (map[string]any, error) {
+	defer effect()()
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", append([]string{"-l", "JavaScript", "-"}, args...)...)

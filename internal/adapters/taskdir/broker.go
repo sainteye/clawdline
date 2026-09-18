@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,6 +16,8 @@ import (
 //
 //	task.json          the brief, written once, 0600
 //	CHILD.md           the protocol the child is told to follow, 0600
+//	accepted.json      the child's signed receipt for its briefing, when it
+//	                   cannot reach loopback (D10)
 //	progress.json      a material boundary change, rewritten in place
 //	result.json.ready  the child's validator said the bytes below are valid
 //	result.json        the completion signal, and the only one
@@ -30,6 +33,11 @@ import (
 // rather than a zero value so that "nothing yet" cannot be read as "empty
 // result".
 var ErrNoResult = errors.New("no result yet")
+
+// ErrResultExists is an adoption that found result.json already there. The
+// file that is there is the child's own, renamed into place, and adoption
+// stands aside for it rather than writing over it (D16).
+var ErrResultExists = errors.New("result.json already exists")
 
 // Brief is what goes into task.json. The field names are the protocol: a child
 // reads this file with its own tools, and every assistant on this machine has
@@ -207,12 +215,37 @@ func (r Root) ReadReady(id string) (Result, []byte, bool) {
 	return out, body, true
 }
 
-// AdoptReady publishes a validated result its child never renamed.
-func (r Root) AdoptReady(id string) error {
+// AdoptReady publishes a validated result its child never renamed: body is
+// the exact bytes the marker bound (ReadReady), and result.json is created
+// only if it is absent (docs/design-decisions.md D16).
+//
+// The first version renamed result.json.tmp over result.json, and a rename
+// replaces whatever is there — so a child that renamed its own result between
+// the broker's look and the broker's rename had it overwritten by the older
+// validated copy. Now the bytes go to a file of the broker's own and are
+// linked into place, and a link fails rather than replaces: whichever of the
+// two arrives second finds the name taken. The bytes are written apart from
+// the child's tmp so that the published file never shares an inode with a
+// file the child may still be writing.
+//
+// There is deliberately no waiting window before adoption. The Swift app's
+// thirty seconds and two observations have no written reason and recovered
+// nothing in thirty-one days; the marker's SHA-256 already binds the bytes.
+func (r Root) AdoptReady(id string, body []byte) error {
 	dir := r.Path(id)
-	if err := os.Rename(filepath.Join(dir, "result.json.tmp"), filepath.Join(dir, "result.json")); err != nil {
+	final := filepath.Join(dir, "result.json")
+	staged := filepath.Join(dir, "result.json.adopting")
+	if err := os.WriteFile(staged, body, 0o600); err != nil {
 		return err
 	}
+	defer os.Remove(staged)
+	if err := os.Link(staged, final); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return ErrResultExists
+		}
+		return err
+	}
+	_ = os.Remove(filepath.Join(dir, "result.json.tmp"))
 	return os.Remove(filepath.Join(dir, "result.json.ready"))
 }
 
@@ -235,6 +268,22 @@ func (r Root) ReadProgress(id string) (Progress, os.FileInfo, bool) {
 		return Progress{}, nil, false
 	}
 	return out, info, true
+}
+
+// ReadAccepted reads the receipt a child writes when it cannot reach the
+// broker over loopback: accepted.json, `{"task_secret": …}`, the shape of
+// progress.json. The caller verifies the secret, for the reason ReadProgress
+// gives.
+func (r Root) ReadAccepted(id string) (Progress, bool) {
+	body, err := os.ReadFile(filepath.Join(r.Path(id), "accepted.json"))
+	if err != nil {
+		return Progress{}, false
+	}
+	var out Progress
+	if json.Unmarshal(body, &out) != nil || out.Secret == "" {
+		return Progress{}, false
+	}
+	return out, true
 }
 
 // Artifacts is where a child puts what it wants kept.

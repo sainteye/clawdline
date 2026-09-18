@@ -80,8 +80,18 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// twice. This is checked before the rate window and before the inventory
 	// receipt, because a caller retrying a dispatch it is unsure landed must
 	// not be punished for asking again.
-	if held, _, err := b.Record(ctx, req.TaskID); err == nil {
+	//
+	// Only "never heard of it" goes on. A row that is there and cannot be
+	// read is not an absent one (409 task_unreadable), and a store that did
+	// not answer has said nothing about the id at all (503): the first version
+	// of this check let both through, and the save at the end upserted a new
+	// task over the row it had failed to read.
+	held, _, err := b.Record(ctx, req.TaskID)
+	switch {
+	case err == nil:
 		return Dispatched{Record: held, Replayed: true}, nil
+	case !isNotFound(err):
+		return Dispatched{}, err
 	}
 	if !IsTaskSecret(req.Secret) {
 		return Dispatched{}, refuse(http.StatusUnprocessableEntity, "bad_task",
@@ -91,6 +101,12 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	record, err := b.ReadDraft(req.TaskID)
 	if err != nil {
 		return Dispatched{}, err
+	}
+	// Fixed before anything is arbitrated, so the arbitration below asks the
+	// same question of this task that it asks of every live one (D21).
+	record.LeaseScope = LeaseShared
+	if record.Isolation == IsolationWorktree {
+		record.LeaseScope = LeaseWorktree
 	}
 
 	// The inventory receipt is checked once the brief is readable, because the
@@ -153,11 +169,17 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 			map[string]any{"retry_after": 60})
 	}
 
-	// Claims arbitration. An overlap with a task belonging to a **different**
-	// root blocks; one within the same root is a warning, because a root
-	// splitting its own work across two tabs already knows.
+	// Claims arbitration, lease against lease. An overlap with a task
+	// belonging to a **different** root blocks; one within the same root is a
+	// warning, because a root splitting its own work across two tabs already
+	// knows. An isolated task has no lease here in either direction: it writes
+	// its own checkout, which is the Swift app's order too — it drops the
+	// lease before it compares (Orchestrator.swift, retainLandingPaths then
+	// claimsOverlaps). The first version of this broker compared first and
+	// dropped after, so an isolated dispatch was blocked by a lease it could
+	// never have collided with.
 	for _, other := range live {
-		shared := overlapWith(other.Claims, record.Claims)
+		shared := overlapWith(other.Lease(), record.Lease())
 		if len(shared) == 0 {
 			continue
 		}
@@ -204,16 +226,18 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		warnings = append(warnings, more...)
 		record.Worktree = w
 		record.Repository = w.Repository
-		// The claims move from a lease to a landing write set. They reserved
-		// nothing in the shared tree the moment the work went somewhere else,
-		// and leaving them as a lease blocks the next task for no reason.
+		// The claims hold no lease in the shared tree — the work went
+		// somewhere else — and they are **kept**, unchanged, as the declared
+		// write set this branch lands (D21). The first version of this broker
+		// emptied them here and stored nothing in their place, while its own
+		// comment and the schema both said they were kept.
 		if len(record.Claims) > 0 {
 			warnings = append(warnings, Warning{
-				Code:    "claims_ignored_for_worktree",
-				Paths:   sortedUnique(record.Claims),
-				Message: "Claims inside project_dir were ignored because this task uses an isolated worktree.",
+				Code:  "claims_ignored_for_worktree",
+				Paths: sortedUnique(record.Claims),
+				Message: "Claims inside project_dir reserve nothing in the shared tree because this task uses an " +
+					"isolated worktree; they are kept as its declared_writes, the set its branch lands.",
 			})
-			record.Claims = []string{}
 		}
 		rel, relErr := filepath.Rel(w.Repository, record.ProjectDir)
 		if relErr != nil || strings.HasPrefix(rel, "..") {
@@ -222,14 +246,30 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		cwd = filepath.Clean(filepath.Join(w.Path, rel))
 	}
 
+	// Opening a tab is a terminal write and takes a turn like every other one
+	// (D22). It is taken before the record is written, so a full machine is a
+	// 429 with nothing recorded, and given back the moment the tab is open —
+	// the briefing that follows takes the child's own lane.
+	opening := func() {}
+	if b.Lanes != nil {
+		release, err := b.Lanes.Acquire(ctx, "open:child:"+record.ID)
+		if err != nil {
+			return Dispatched{}, refuseWith(http.StatusTooManyRequests, "terminal_busy",
+				"This Mac already has as many terminal writes in hand as it admits; nothing was recorded or opened.",
+				map[string]any{"retry_after": 5})
+		}
+		opening = release
+	}
+	defer opening()
+
 	record.CreatedAt = b.now()
 	record.Dir = b.Tasks.Path(record.ID)
 	record.State = StateQueued
 
 	// Written before anything is opened. From here on the task exists whatever
-	// happens to this process.
+	// happens to this process. A create, not a save: see create.
 	hash := HashSecret(req.Secret)
-	if err := b.save(ctx, record, hash, "task.queued"); err != nil {
+	if err := b.create(ctx, record, hash); err != nil {
 		return Dispatched{}, err
 	}
 	refund = false
@@ -244,7 +284,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		return Dispatched{Record: settled, Warnings: warnings}, nil
 	}
 
-	spawned := b.spawn(ctx, record, cwd, req.Secret)
+	spawned := b.spawn(ctx, record, cwd, req.Secret, opening)
 	if spawned.State == StateSpawnFailed {
 		settled, _ := b.Settle(ctx, record.ID, StateSpawnFailed, spawned.SpawnError, nil)
 		return Dispatched{Record: settled, Warnings: warnings}, nil
@@ -390,7 +430,8 @@ func shortCommit(v string) string {
 // The dispatch succeeded — the task exists and is recorded — and what failed is
 // the machine's ability to put a session in front of it, which is a fact about
 // the task rather than about the request.
-func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string) Record {
+func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened func()) Record {
+	defer opened()
 	launch, err := projects.Admit(projects.LaunchRequest{
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
@@ -441,6 +482,8 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string) Record
 	default:
 		openErr = terminal.Failure{Message: "tmux is the terminal for new sessions in Settings, and there is no tmux on this Mac."}
 	}
+	// The tab is open, or will not be: the opening's turn ends here.
+	opened()
 	if openErr != nil {
 		r.State = StateSpawnFailed
 		r.SpawnError = openErr.Error()
@@ -585,7 +628,12 @@ var errAlreadyTerminal = errors.New("already terminal")
 // arrive for one task, and before this was a precondition inside mutate they
 // both settled it — and minted two notice ids, the second overwriting the one
 // the root had already been told to acknowledge.
-func (b *Broker) Settle(ctx context.Context, id string, state State, summary string, result *taskdir.Result) (Record, error) {
+//
+// A result is recorded only as the child wrote it. With none, `why` is the
+// broker's own sentence and is kept as that (Record.Verdict); the first version
+// of this function wrapped it in a Result, which is how a `/complete` body
+// came to stand in for the file (D15).
+func (b *Broker) Settle(ctx context.Context, id string, state State, why string, result *taskdir.Result) (Record, error) {
 	now := b.now()
 	return b.mutate(ctx, id, "task."+string(state), func(r *Record) error {
 		if r.State.Terminal() {
@@ -593,16 +641,10 @@ func (b *Broker) Settle(ctx context.Context, id string, state State, summary str
 		}
 		r.State = state
 		r.FinishedAt = now
-		switch {
-		case result != nil:
+		if result != nil {
 			r.Result = result
-		case r.Result == nil && summary != "":
-			r.Result = &taskdir.Result{
-				Protocol: Protocol,
-				TaskID:   r.ID,
-				Status:   string(state),
-				Summary:  truncate(summary, summaryLimit),
-			}
+		} else if why != "" {
+			r.Verdict = truncate(why, summaryLimit)
 		}
 		// A task that reserved paths in the shared tree still owes a landing,
 		// and so does an isolated one, whose declared paths became its landing

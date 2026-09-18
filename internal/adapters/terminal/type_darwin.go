@@ -43,6 +43,7 @@ func (i *ITerm) Type(ctx context.Context, s session.Session, text string) error 
 	if text == "" {
 		return nil
 	}
+	defer effect()()
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-", s.ID, text)

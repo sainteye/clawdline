@@ -639,9 +639,11 @@ type BrokerChild struct {
 // notice ledger, the store, and what the beat has only observed.
 type BrokerDiagnostics struct {
 	Beat         BrokerBeat         `json:"beat"`
+	Lanes        *BrokerLanes       `json:"lanes,omitempty"`
 	Notices      BrokerNoticeCounts `json:"notices"`
 	Observations BrokerObservations `json:"observations"`
 	Pass         BrokerPass         `json:"pass"`
+	Policy       *BrokerPolicy      `json:"policy,omitempty"`
 	Store        BrokerStoreHealth  `json:"store"`
 }
 
@@ -718,16 +720,19 @@ type BrokerInflight struct {
 
 // One line of work outstanding in a repository. `visibility` is `live` while
 // the task is running and `unmerged` once it has finished with a branch nobody
-// has taken; settled work is not listed at all.
+// has taken; settled work is not listed at all. A stored row this daemon cannot
+// decode is `unreadable` in both `visibility` and `state`, with only its id and
+// the columns stored beside the record: it is listed because it is not absent.
 type BrokerInflightRow struct {
 	AgeSeconds     int64           `json:"age_seconds"`
 	Assistant      Assistant       `json:"assistant"`
 	Claims         []string        `json:"claims"`
 	ClaimsDeclared bool            `json:"claims_declared"`
 	Created        int64           `json:"created"`
+	DeclaredWrites []string        `json:"declared_writes,omitempty"`
 	ID             string          `json:"id"`
 	Landing        *BrokerLanding  `json:"landing,omitempty"`
-	LandingPaths   []string        `json:"landing_paths,omitempty"`
+	LeaseScope     string          `json:"lease_scope,omitempty"`
 	ProjectDir     string          `json:"project_dir"`
 	RootKey        string          `json:"root_key,omitempty"`
 	RootLabel      string          `json:"root_label,omitempty"`
@@ -760,6 +765,16 @@ const (
 
 // BrokerLandingStateValues is every value the contract allows, in contract order.
 var BrokerLandingStateValues = []BrokerLandingState{BrokerLandingStatePending, BrokerLandingStateLanded, BrokerLandingStateAbandoned, BrokerLandingStateNothingToLand}
+
+// The terminal lanes: one writer per terminal, and one machine-wide ceiling on
+// writes held or waiting. A write past the ceiling is refused (429) before
+// anything is typed; `refused` counts those since this process started.
+type BrokerLanes struct {
+	Admitted  int64 `json:"admitted"`
+	Limit     int64 `json:"limit"`
+	Refused   int64 `json:"refused"`
+	Terminals int64 `json:"terminals"`
+}
 
 type BrokerMessageRequest struct {
 	// The sender, named by its terminal id or by its conversation id: it is describing
@@ -838,11 +853,16 @@ type BrokerObservations struct {
 	At       int64 `json:"at,omitempty"`
 	Complete bool  `json:"complete"`
 
-	// Notices waiting, in memory, for a root that was showing a menu.
+	// Notices waiting, in memory, for a root that was showing a menu or whose terminal
+	// was busy.
 	DeferredNotices int64            `json:"deferred_notices"`
 	Executors       []BrokerExecutor `json:"executors"`
 	Generation      int64            `json:"generation"`
 	Sessions        int64            `json:"sessions"`
+
+	// Each source's own completeness in the same reading. `complete` above is their
+	// AND; whether one child's tab is gone is asked of the source that owns it.
+	Sources []BrokerSourceReading `json:"sources,omitempty"`
 }
 
 type BrokerPage struct {
@@ -858,17 +878,43 @@ type BrokerPage struct {
 
 // What the last finished pass did.
 type BrokerPass struct {
-	At          int64 `json:"at,omitempty"`
-	Notes       int64 `json:"notes"`
-	Notices     int64 `json:"notices"`
-	Settled     int64 `json:"settled"`
-	SpawnFailed int64 `json:"spawn_failed"`
+	At int64 `json:"at,omitempty"`
+
+	// Child sessions closed this pass after a spawn_failed verdict, each proved to be
+	// the task's own by its pane.
+	Closed int64 `json:"closed,omitempty"`
+	Notes  int64 `json:"notes"`
+
+	// progress.json bodies refused for good this pass — too long, empty or not
+	// signed by the task — each also one `task.progress.refused` event.
+	NotesRefused int64 `json:"notes_refused,omitempty"`
+	Notices      int64 `json:"notices"`
+	Settled      int64 `json:"settled"`
+	SpawnFailed  int64 `json:"spawn_failed"`
 
 	// Why the pass could not read the store. A pass that could not read is not a pass
 	// that found nothing.
 	StoreError string `json:"store_error,omitempty"`
 	TimedOut   int64  `json:"timed_out"`
-	Watched    int64  `json:"watched"`
+
+	// Stored rows the pass could not decode. They are listed by the task list and the
+	// inventory; this is the count.
+	Unreadable int64 `json:"unreadable,omitempty"`
+	Watched    int64 `json:"watched"`
+}
+
+// This Mac's house rules as the last briefing carried them, counted in
+// characters. Over `limit` the base is cut at a paragraph break and the local
+// file is always kept whole; `near_limit` is true past 90% of `limit`, before
+// anything has to be cut.
+type BrokerPolicy struct {
+	At         int64 `json:"at,omitempty"`
+	BaseChars  int64 `json:"base_chars"`
+	Chars      int64 `json:"chars"`
+	Cut        bool  `json:"cut"`
+	Limit      int64 `json:"limit"`
+	LocalChars int64 `json:"local_chars"`
+	NearLimit  bool  `json:"near_limit"`
 }
 
 // One accepted progress note. `seq` is its row in the store: increasing and
@@ -950,6 +996,11 @@ type BrokerSessionDelivery struct {
 	OK          bool              `json:"ok"`
 }
 
+type BrokerSourceReading struct {
+	Complete bool   `json:"complete"`
+	Source   string `json:"source"`
+}
+
 // The store's own account. `writes` counts write transactions that committed
 // something since this process opened the store, and `changes` is SQLite's
 // count of rows this process changed in any table: both stand still while the
@@ -981,27 +1032,40 @@ var BrokerStoreStatusValues = []BrokerStoreStatus{BrokerStoreStatusReady, Broker
 
 // One dispatched piece of work, as the console and a dispatching root read it.
 type BrokerTask struct {
-	Assistant Assistant    `json:"assistant"`
-	Child     *BrokerChild `json:"child,omitempty"`
-	Claims    []string     `json:"claims"`
+	// When the child signed for its briefing with its own secret — POST
+	// …/accepted, or accepted.json. The only proof the briefing was read; a tab that
+	// starts a turn proves only that something is running.
+	AcceptedAt int64        `json:"accepted_at,omitempty"`
+	Assistant  Assistant    `json:"assistant"`
+	Child      *BrokerChild `json:"child,omitempty"`
+	Claims     []string     `json:"claims"`
 
 	// Whether the dispatch said anything about claims at all. `I declared none` and `I
 	// did not say` are different requests, and only one of them can be arbitrated.
-	ClaimsDeclared     bool            `json:"claims_declared"`
-	CompletionDelivery *BrokerNotice   `json:"completion_delivery,omitempty"`
-	Created            int64           `json:"created"`
-	Deliverables       []string        `json:"deliverables,omitempty"`
-	Dir                string          `json:"dir"`
-	Executor           *BrokerExecutor `json:"executor,omitempty"`
-	FinishedAt         int64           `json:"finishedAt,omitempty"`
-	ID                 string          `json:"id"`
-	Isolation          string          `json:"isolation"`
-	Kind               string          `json:"kind"`
-	Landing            *BrokerLanding  `json:"landing,omitempty"`
+	ClaimsDeclared     bool          `json:"claims_declared"`
+	CompletionDelivery *BrokerNotice `json:"completion_delivery,omitempty"`
+	Created            int64         `json:"created"`
 
-	// What an isolated task's claims became: not a lease on the shared tree, but the
-	// write set whoever lands this branch is answering for.
-	LandingPaths      []string             `json:"landing_paths,omitempty"`
+	// What the dispatch declared this task would write — its landing write set —
+	// fixed at dispatch and never cleared, whatever its lease became. Absent when that
+	// cannot be known: nothing was declared, or an isolated task was stored before
+	// this field existed by a broker that erased its list.
+	DeclaredWrites []string        `json:"declared_writes,omitempty"`
+	Deliverables   []string        `json:"deliverables,omitempty"`
+	Dir            string          `json:"dir"`
+	Executor       *BrokerExecutor `json:"executor,omitempty"`
+	FinishedAt     int64           `json:"finishedAt,omitempty"`
+	ID             string          `json:"id"`
+	Isolation      string          `json:"isolation"`
+	Kind           string          `json:"kind"`
+	Landing        *BrokerLanding  `json:"landing,omitempty"`
+
+	// Whether `declared_writes` also reserve those paths against other roots
+	// (`shared`: the task writes the shared checkout, and `claims` is that list) or
+	// not (`worktree`: it writes its own checkout, and `claims` is empty).
+	LeaseScope string `json:"lease_scope,omitempty"`
+
+	// The ceiling the dispatch asked for; `full` when task.json said nothing.
 	Permission        string               `json:"permission"`
 	Progress          []BrokerProgressNote `json:"progress,omitempty"`
 	ProjectDir        string               `json:"projectDir"`
@@ -1009,16 +1073,26 @@ type BrokerTask struct {
 	RespawnGeneration int64                `json:"respawn_generation,omitempty"`
 
 	// The spawn_failed task this one retried.
-	RespawnOf      string          `json:"respawn_of,omitempty"`
-	Result         *BrokerResult   `json:"result,omitempty"`
-	Root           *BrokerRoot     `json:"root,omitempty"`
-	SpawnError     string          `json:"spawn_error,omitempty"`
-	SpawnedAt      int64           `json:"spawnedAt,omitempty"`
-	State          TaskState       `json:"state"`
-	Summary        string          `json:"summary,omitempty"`
-	TimeoutMinutes int64           `json:"timeout_minutes,omitempty"`
-	Title          string          `json:"title"`
-	Worktree       *BrokerWorktree `json:"worktree,omitempty"`
+	RespawnOf  string        `json:"respawn_of,omitempty"`
+	Result     *BrokerResult `json:"result,omitempty"`
+	Root       *BrokerRoot   `json:"root,omitempty"`
+	SpawnError string        `json:"spawn_error,omitempty"`
+	SpawnedAt  int64         `json:"spawnedAt,omitempty"`
+	State      TaskState     `json:"state"`
+	Summary    string        `json:"summary,omitempty"`
+
+	// The task's whole budget, on the wall clock, counted from `created` — when the
+	// dispatch was admitted, not when the child was briefed — with no grace and no
+	// pause while the daemon is down. Past it the task is `timeout` whatever it is
+	// doing.
+	TimeoutMinutes int64  `json:"timeout_minutes,omitempty"`
+	Title          string `json:"title"`
+
+	// The broker's own sentence when it ended a task the child did not (a timeout, a
+	// tab that never opened). Never a result: `result` is only ever what the child
+	// wrote.
+	Verdict  string          `json:"verdict,omitempty"`
+	Worktree *BrokerWorktree `json:"worktree,omitempty"`
 }
 
 type BrokerTaskEnvelope struct {
@@ -3322,6 +3396,10 @@ type TaskRow struct {
 	WorkPhase        string     `json:"workPhase,omitempty"`
 }
 
+// Where a task is. `unreadable` is not a state a task moves through: it is a
+// stored row this daemon wrote and cannot decode, listed as such because it is
+// not absent — its id is taken, and a dispatch reusing it is refused (409
+// `task_unreadable`).
 type TaskState string
 
 const (
@@ -3333,10 +3411,11 @@ const (
 	TaskStateTimeout     TaskState = "timeout"
 	TaskStateCancelled   TaskState = "cancelled"
 	TaskStateSpawnFailed TaskState = "spawn_failed"
+	TaskStateUnreadable  TaskState = "unreadable"
 )
 
 // TaskStateValues is every value the contract allows, in contract order.
-var TaskStateValues = []TaskState{TaskStateQueued, TaskStateSpawning, TaskStateBriefed, TaskStateSuccess, TaskStateFailure, TaskStateTimeout, TaskStateCancelled, TaskStateSpawnFailed}
+var TaskStateValues = []TaskState{TaskStateQueued, TaskStateSpawning, TaskStateBriefed, TaskStateSuccess, TaskStateFailure, TaskStateTimeout, TaskStateCancelled, TaskStateSpawnFailed, TaskStateUnreadable}
 
 // What the child spent. `costUsd` is absent where nothing priced it, which is
 // always the case for Codex.

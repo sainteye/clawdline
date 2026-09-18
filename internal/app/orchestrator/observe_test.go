@@ -500,31 +500,6 @@ func TestAnAcceptedNoteReachesTheStream(t *testing.T) {
 	}
 }
 
-// The four-minute clock may call a vanished tab spawn_failed from any reading
-// that saw terminals — complete or not, because on a Mac whose iTerm2 cannot
-// be asked no reading is ever complete (measured on this machine: "iTerm2
-// apple event failed") — but never from a reading that saw nothing at all.
-func TestTheSpawnClockNeedsAReadingThatSawSomething(t *testing.T) {
-	b, ctx := newTestBroker(t)
-	now := time.Date(2026, 9, 18, 9, 0, 0, 0, time.UTC)
-	b.Clock = func() time.Time { return now }
-	id := "71111111-1111-4111-8111-111111111111"
-	r := Record{Protocol: Protocol, ID: id, Assistant: "claude", State: StateSpawning, CreatedAt: now,
-		Claims: []string{}, TimeoutMinutes: 240, ChildTerminalID: "%9", SpawnedAt: now.Add(-5 * time.Minute)}
-	if err := b.save(ctx, r, HashSecret("s"), "task.spawned"); err != nil {
-		t.Fatal(err)
-	}
-	var inv session.Inventory
-	b.Reading = func(context.Context) session.Inventory { return inv }
-	inv = session.Inventory{Complete: true}
-	b.Pass(ctx)
-	if after, _, _ := b.Record(ctx, id); after.State != StateSpawning {
-		t.Fatalf("an empty reading decided %q", after.State)
-	}
-	inv = session.Inventory{Complete: false, Sessions: []session.Session{
-		{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation}}}
-	b.Pass(ctx)
-	if after, _, _ := b.Record(ctx, id); after.State != StateSpawnFailed {
-		t.Fatalf("a tab missing from an incomplete reading left the task %q", after.State)
-	}
-}
+// The four-minute clock's rules — "a reading with nothing in it decides
+// nothing", and D05 ③'s replacement for "any reading that saw a terminal may
+// decide" — are TestTheSpawnClockAsksTheTabsOwnSource (w1_test.go).

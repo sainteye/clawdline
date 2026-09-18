@@ -11,6 +11,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/app/lane"
 	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
@@ -29,6 +30,45 @@ type Actions struct {
 	// Pictures is what a send with pictures needs besides a terminal. A zero
 	// value refuses pictures rather than dropping them.
 	Pictures Pictures
+	// Lanes is where every write to a terminal takes its turn: one writer per
+	// terminal, one ceiling for the machine (lane, D22). Nil means the
+	// process-wide set, so an Actions built anywhere still shares the one
+	// lane per terminal — two sets of lanes would be two writers again.
+	Lanes *lane.Lanes
+}
+
+// laneWait is the longest a write waits for its terminal's turn.
+var laneWait = 10 * time.Second
+
+// terminalLanes is the process-wide set an Actions with no Lanes uses.
+var terminalLanes = lane.New(lane.DefaultLimit)
+
+// TerminalLanes is the process-wide set, for a daemon that wires one Lanes
+// through every writer and wants it to be this one.
+func TerminalLanes() *lane.Lanes { return terminalLanes }
+
+func (a Actions) lanes() *lane.Lanes {
+	if a.Lanes != nil {
+		return a.Lanes
+	}
+	return terminalLanes
+}
+
+// turn takes the terminal's lane for one whole write. A full machine, or a
+// caller that gave up waiting, is `busy` — the Swift app's code for a full
+// terminal queue, answered 429 — and nothing was typed.
+func (a Actions) turn(ctx context.Context, s session.Session) (func(), error) {
+	// The wait is bounded apart from the caller's own deadline: the broker's
+	// notice pump runs inside its beat, and a beat held longer than three
+	// ticks is reported stalled. Ten seconds is past any single send and
+	// short of a picture send, which is a caller that can try again.
+	wait, cancel := context.WithTimeout(ctx, laneWait)
+	defer cancel()
+	release, err := a.lanes().Acquire(wait, lane.TerminalKey(string(s.Backend), s.ID))
+	if err != nil {
+		return nil, Refusal{Code: "busy", Detail: err.Error(), Cause: err}
+	}
+	return release, nil
 }
 
 // Refusal is a typed no, in the shape every refusal on this daemon has.
@@ -38,9 +78,15 @@ type Refusal struct {
 	// Reasons is filled when a close is refused, so the caller can say what is
 	// in the way rather than only that something is.
 	Reasons []task.CloseReason
+	// Cause is the typed error underneath, when there is one — a lane.Busy,
+	// so a caller that treats backpressure differently from failure can tell.
+	Cause error
 }
 
 func (r Refusal) Error() string { return r.Code + ": " + r.Detail }
+
+// Unwrap exposes Cause to errors.As.
+func (r Refusal) Unwrap() error { return r.Cause }
 
 // Find resolves one session id against a current reading of the machine.
 //
@@ -98,6 +144,11 @@ func (a Actions) Send(ctx context.Context, id, text string) (session.Session, er
 	if err != nil {
 		return session.Session{}, err
 	}
+	release, err := a.turn(ctx, s)
+	if err != nil {
+		return s, err
+	}
+	defer release()
 	if err := h.Send(ctx, s, text); err != nil {
 		return s, Refusal{Code: "send_failed", Detail: err.Error()}
 	}
@@ -227,11 +278,20 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 		}
 		return strings.Join(parts, " ")
 	}
-	byPath := func() (string, error) {
+	sendPaths := func() (string, error) {
 		if err := h.Send(ctx, s, asPaths(paths)); err != nil {
 			return "", Refusal{Code: "send_failed", Detail: err.Error()}
 		}
 		return "path", nil
+	}
+	// Paths are one line, typed in the terminal's own turn (D22).
+	byPath := func() (string, error) {
+		release, err := a.turn(ctx, s)
+		if err != nil {
+			return "", err
+		}
+		defer release()
+		return sendPaths()
 	}
 	keys, canKey := h.(ports.KeyHost)
 	typer, canType := h.(typist)
@@ -247,6 +307,17 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 		return "", err
 	}
 	defer release()
+	// Then the terminal's turn, for the whole prompt — words, pastes, Return
+	// — because a notice typed between two of its pieces would land inside
+	// it. Always in this order, pasteboard then terminal: a send holding a
+	// terminal never waits for the pasteboard, so the two cannot wait on
+	// each other, and the pasteboard's own queue (1 + 4, then busy) is still
+	// the first thing a picture send meets.
+	turn, err := a.turn(ctx, s)
+	if err != nil {
+		return "", err
+	}
+	defer turn()
 	// Once the pasteboard is ours the prompt is typed to the end, whatever the
 	// caller does meanwhile: half a prompt left in somebody's input line is
 	// worse than a late answer.
@@ -255,7 +326,7 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 	borrowed, err := lender.Borrow(work)
 	if err != nil {
 		log.Printf("send: the pasteboard could not be borrowed, sending paths: %v", err)
-		return byPath()
+		return sendPaths()
 	}
 	defer func() {
 		time.Sleep(submitSettle)
@@ -346,6 +417,11 @@ func (a Actions) Interrupt(ctx context.Context, id string) (session.Session, err
 	if err != nil {
 		return session.Session{}, err
 	}
+	release, err := a.turn(ctx, s)
+	if err != nil {
+		return s, err
+	}
+	defer release()
 	if err := h.Interrupt(ctx, s); err != nil {
 		return s, Refusal{Code: "interrupt_failed", Detail: err.Error()}
 	}

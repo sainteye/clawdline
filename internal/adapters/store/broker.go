@@ -76,6 +76,12 @@ type BrokerRow struct {
 // read failure, which proves nothing about whether the task exists.
 var ErrNoTask = errors.New("no such task")
 
+// ErrTaskExists is a create that found a row already holding that id. It says
+// nothing about whether that row is readable, and it changed nothing: a
+// dispatch that could not read the row it collided with must not be able to
+// write over it (docs/design-decisions.md D05 ②).
+var ErrTaskExists = errors.New("a task with that id is already stored")
+
 // openBroker creates the broker's tables. Called from Open, once.
 func openBroker(db *sql.DB) error {
 	if _, err := db.Exec(brokerSchema); err != nil {
@@ -145,6 +151,59 @@ func (s *Store) SaveBrokerTaskWithNotice(ctx context.Context, row BrokerRow, not
 		}
 		return changed + int64(len(events)), nil
 	})
+}
+
+// CreateBrokerTask writes a task that must not exist yet, with its events, in
+// one transaction, and answers ErrTaskExists without writing anything when the
+// id is already taken.
+//
+// It is apart from SaveBrokerTask because the two questions are different. A
+// save rewrites the record a caller has just read; a create is the first write
+// of an id, and the upsert under SaveBrokerTask would let a dispatch that
+// failed to read an existing row — a row it could not decode, a read that
+// errored — replace that row with a new task under the same id.
+func (s *Store) CreateBrokerTask(ctx context.Context, row BrokerRow, events []Event) error {
+	// A collision is a refusal, not a failed write: it is carried out of the
+	// timed write rather than through it, so the store's health does not count
+	// a caller's resend as the store failing.
+	taken := false
+	err := s.timedWrite(func() (int64, error) {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return 0, err
+		}
+		defer tx.Rollback()
+		if row.UpdatedAt.IsZero() {
+			row.UpdatedAt = time.Now()
+		}
+		res, err := tx.ExecContext(ctx,
+			`INSERT INTO broker_tasks
+			   (id, project, repository, assistant, state, created_at, updated_at, secret_hash, record)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO NOTHING`,
+			row.ID, row.Project, row.Repository, row.Assistant, row.State,
+			row.CreatedAt.Unix(), row.UpdatedAt.Unix(), row.SecretHash, string(row.Record))
+		if err != nil {
+			return 0, err
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return 0, err
+		} else if n == 0 {
+			taken = true
+			return 0, nil
+		}
+		if err := insertEvents(ctx, tx, events); err != nil {
+			return 0, err
+		}
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
+		return 1 + int64(len(events)), nil
+	})
+	if err == nil && taken {
+		return ErrTaskExists
+	}
+	return err
 }
 
 // insertEvents appends events inside a transaction somebody else owns.

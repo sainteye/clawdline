@@ -33,7 +33,9 @@ func InventoryPayload(inv Inventory) map[string]any {
 			"root_label":  nullable(row.RootLabel),
 			"root_key":    nullable(row.RootKey),
 			"branch":      nullable(row.Branch),
+			"lease_scope": row.LeaseScope,
 		}
+		addDeclared(item, row)
 		// `overlaps` appears only when the caller asked with `claims=`. An
 		// empty array would say "nothing of yours is in the way", which is a
 		// different answer from "you did not ask".
@@ -44,7 +46,7 @@ func InventoryPayload(inv Inventory) map[string]any {
 	}
 	unlanded := make([]map[string]any, 0, len(inv.Unlanded))
 	for _, row := range inv.Unlanded {
-		unlanded = append(unlanded, map[string]any{
+		item := map[string]any{
 			"task":        row.Task,
 			"title":       row.Title,
 			"state":       string(row.State),
@@ -55,6 +57,25 @@ func InventoryPayload(inv Inventory) map[string]any {
 			"head":        nullable(row.Head),
 			"landing":     nullable(string(row.Landing)),
 			"why":         nullable(row.Why),
+			"lease_scope": row.LeaseScope,
+		}
+		addDeclared(item, row)
+		unlanded = append(unlanded, item)
+	}
+	// A row this daemon stored and cannot decode (D05 ②). No `claims`, no
+	// `title`, no `branch`: those are inside the part that cannot be read,
+	// and an empty value in their place would be a claim about them.
+	unreadable := make([]map[string]any, 0, len(inv.Unreadable))
+	for _, row := range inv.Unreadable {
+		unreadable = append(unreadable, map[string]any{
+			"task":         row.Task,
+			"state":        string(StateUnreadable),
+			"stored_state": nullable(row.StoredState),
+			"assistant":    nullable(row.Assistant),
+			"age_seconds":  row.Age,
+			"do":           row.Do,
+			"why":          row.Why,
+			"cause":        row.Cause,
 		})
 	}
 	droppable := make([]map[string]any, 0, len(inv.Droppable))
@@ -81,6 +102,7 @@ func InventoryPayload(inv Inventory) map[string]any {
 		"live":           live,
 		"unlanded":       unlanded,
 		"droppable":      droppable,
+		"unreadable":     unreadable,
 		"digest": map[string]any{
 			"sealed":   DigestSealed,
 			"excluded": DigestExcluded,
@@ -88,6 +110,17 @@ func InventoryPayload(inv Inventory) map[string]any {
 		"task_root": inv.TaskRoot,
 		"at":        inv.At.Unix(),
 	}
+}
+
+// addDeclared puts a row's declared write set on it: the list when it is
+// known, null when it is not — an isolated task stored before W1 had its list
+// erased, and `[]` in its place would say it wrote nothing.
+func addDeclared(item map[string]any, row InventoryRow) {
+	if row.DeclaredWrites == nil {
+		item["declared_writes"] = nil
+		return
+	}
+	item["declared_writes"] = row.DeclaredWrites
 }
 
 // nullable is how an unset string reaches the wire: present, and null.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/app/ports"
@@ -162,7 +163,24 @@ func (i *ITerm) Close(ctx context.Context, s session.Session) error {
 	return errUnsupported("close")
 }
 
+// appleEvents serialises every iTerm2 Apple Event that has an effect —
+// writing into a session, a keystroke, opening a tab, selecting one — across
+// this whole process (docs/design-decisions.md D22). The caller's lane already
+// keeps one writer per session; this is the adapter's own half, because two
+// scripts that each ask iTerm2 for "the current window" and then act on it can
+// interleave inside iTerm2 whatever sessions they were aimed at. Reading the
+// session list and a screen stay outside it: they change nothing, and a
+// twenty-second tab opening must not stall the list every page is drawn from.
+var appleEvents sync.Mutex
+
+// effect takes appleEvents and answers its release, for `defer effect()()`.
+func effect() func() {
+	appleEvents.Lock()
+	return appleEvents.Unlock
+}
+
 func (i *ITerm) script(ctx context.Context, format string, args ...any) error {
+	defer effect()()
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript")
 	cmd.Stdin = strings.NewReader(fmt.Sprintf(format, args...))
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")

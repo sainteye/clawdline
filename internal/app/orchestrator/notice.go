@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/app/lane"
 )
 
 // Telling the root its child finished, and keeping at it until somebody says
@@ -61,7 +63,7 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	resultPath := filepath.Join(b.Tasks.Path(r.ID), "result.json")
 	line := fmt.Sprintf("[clawdline] task %s (%s) finished: %s — read %s",
 		short, r.Title, r.State, resultPath)
-	if r.State == StateTimeout && len(r.Claims) > 0 {
+	if r.State == StateTimeout && len(r.Lease()) > 0 {
 		line += " — claims released; child tab may still be writing"
 	}
 	if r.Landing != nil && r.Landing.State == LandingPending {
@@ -87,8 +89,8 @@ func (b *Broker) NoticeWire(r Record) (string, error) {
 		Task:     noticeTask{ID: r.ID, Title: r.Title},
 		State:    string(r.State),
 		Result:   filepath.Join(b.Tasks.Path(r.ID), "result.json"),
-		Released: r.State == StateTimeout && len(r.Claims) > 0,
-		MayWrite: r.State == StateTimeout && len(r.Claims) > 0,
+		Released: r.State == StateTimeout && len(r.Lease()) > 0,
+		MayWrite: r.State == StateTimeout && len(r.Lease()) > 0,
 		Body:     b.FinishedLine(r, r.Notice.ID),
 		NoticeID: r.Notice.ID,
 		AckPath:  "/v1/orchestrator/tasks/" + r.ID + "/completion/ack",
@@ -291,6 +293,15 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		return fail("transport_failed", "this daemon cannot type into a terminal")
 	}
 	if err := b.Type(ctx, target.ID, wire); err != nil {
+		// Backpressure, not an attempt, for the same reason as a chooser: the
+		// root's terminal was being written to by somebody else (its lane,
+		// D22), and nothing was typed. Counting it would walk a notice toward
+		// dead letter for being polite.
+		var busy lane.Busy
+		if errors.As(err, &busy) {
+			b.observed.deferNotice(seen.ID, at.Add(10*time.Second))
+			return false
+		}
 		return fail("transport_failed", err.Error())
 	}
 

@@ -116,8 +116,9 @@ if (Object.hasOwn(result, "review")) validateReview(result.review);
 
 // A child normally renames the result immediately. If its shell stalls after validation, this
 // task-owned marker lets the broker recover later without treating age as consent. It binds the
-// exact bytes that passed validation; the broker additionally checks the stored task-secret hash
-// and requires an unchanged observation window before publishing the final result.
+// exact bytes that passed validation; the broker additionally checks the stored task-secret hash,
+// publishes those bytes only where no result.json exists yet, and waits for no observation window:
+// the hash is the consent, and a window with no written reason is not kept (D16).
 if (readyPath) {
     const marker = {
         clawdline_protocol: 1,

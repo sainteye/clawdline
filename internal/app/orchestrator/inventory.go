@@ -37,6 +37,10 @@ const (
 	VisibilityUnlanded Visibility = "unlanded"
 	VisibilitySettled  Visibility = "settled"
 	VisibilityUnmerged Visibility = "unmerged"
+	// VisibilityUnreadable is a stored row nobody can decode (D05 ②). It is a
+	// section of its own because it belongs to none of the others: whether it
+	// is running, delivered or settled is exactly what cannot be read.
+	VisibilityUnreadable Visibility = "unreadable"
 )
 
 // The `do` a row suggests.
@@ -48,6 +52,9 @@ const (
 	WhyMergedClean   = "merged_and_clean"
 	WhyBranchEmpty   = "branch_empty"
 	WhyOrphanedCheck = "checkout_orphaned"
+	// DoInspect is the one `do` no route can carry out: a person has to look
+	// at the row. The safe default while nobody does is that it stays.
+	DoInspect = "inspect"
 )
 
 // InventoryRow is one row of one section, in the wire's own vocabulary.
@@ -75,6 +82,19 @@ type InventoryRow struct {
 	OnDisk    bool
 	Branched  bool
 	Overlaps  []string
+	// DeclaredWrites is what the task said at dispatch it would write — the
+	// landing write set — whatever its lease became (D21). Nil when it cannot
+	// be known: an unreadable row, or one written before W1 by a broker that
+	// erased an isolated task's list.
+	DeclaredWrites []string
+	LeaseScope     string
+	// StoredState and Cause are an unreadable row's lifted state column and
+	// the decoder's own sentence; Project and Created are the columns stored
+	// beside its record, which stay readable when the record does not.
+	StoredState string
+	Cause       string
+	Project     string
+	Created     time.Time
 }
 
 // Inventory is the whole answer.
@@ -85,6 +105,7 @@ type Inventory struct {
 	Live       []InventoryRow
 	Unlanded   []InventoryRow
 	Droppable  []InventoryRow
+	Unreadable []InventoryRow
 	At         time.Time
 	// TaskRoot is where this daemon's task directories live. **It is this
 	// daemon's own addition**: the Swift broker hardcodes /tmp/.clawdline, and
@@ -97,7 +118,8 @@ type Inventory struct {
 // Digest fields, published so a reader can see what the receipt is over.
 var (
 	DigestSealed   = []string{"section", "task", "branch", "why", "do", "claims"}
-	DigestExcluded = []string{"age_seconds", "created", "state", "head", "dirty", "title", "root_label", "overlaps", "at"}
+	DigestExcluded = []string{"age_seconds", "created", "state", "head", "dirty", "title", "root_label", "overlaps", "at",
+		"declared_writes", "lease_scope", "stored_state", "cause"}
 )
 
 // ReadInventory builds the answer for one repository.
@@ -118,6 +140,7 @@ func (b *Broker) ReadInventory(ctx context.Context, project string, claims []str
 		Live:       []InventoryRow{},
 		Unlanded:   []InventoryRow{},
 		Droppable:  []InventoryRow{},
+		Unreadable: []InventoryRow{},
 	}
 	for _, row := range rows {
 		switch row.Section {
@@ -126,6 +149,8 @@ func (b *Broker) ReadInventory(ctx context.Context, project string, claims []str
 			inv.Live = append(inv.Live, row)
 		case VisibilityUnlanded:
 			inv.Unlanded = append(inv.Unlanded, row)
+		case VisibilityUnreadable:
+			inv.Unreadable = append(inv.Unreadable, row)
 		}
 		if row.Do == DoDispose {
 			inv.Droppable = append(inv.Droppable, row)
@@ -153,7 +178,7 @@ func (b *Broker) repositoryOf(ctx context.Context, project string) (string, erro
 // rows reads every task this broker holds for a repository and decides what
 // each one is.
 func (b *Broker) rows(ctx context.Context, repo string) ([]InventoryRow, error) {
-	records, err := b.records(ctx)
+	records, bad, err := b.ledger(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +189,24 @@ func (b *Broker) rows(ctx context.Context, repo string) ([]InventoryRow, error) 
 			continue
 		}
 		out = append(out, b.row(ctx, r, now))
+	}
+	for _, u := range bad {
+		home := u.Repository
+		if home == "" {
+			home = u.Project
+		}
+		if home != repo && !strings.HasPrefix(home, repo+"/") {
+			continue
+		}
+		age := int(now.Sub(u.CreatedAt).Seconds())
+		if age < 0 {
+			age = 0
+		}
+		out = append(out, InventoryRow{
+			Section: VisibilityUnreadable, Task: u.ID, State: StateUnreadable, Assistant: u.Assistant,
+			Age: age, Do: DoInspect, Why: "record_unreadable", StoredState: u.StoredState, Cause: u.Cause,
+			Project: u.Project, Created: u.CreatedAt,
+		})
 	}
 	// Ascending by id, which is what the Swift app sorts by and what makes the
 	// digest reproducible without sorting inside it.
@@ -194,11 +237,15 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 		Title:     r.Title,
 		State:     r.State,
 		Assistant: r.Assistant,
-		Claims:    r.Claims,
-		Age:       r.Age(now),
+		// `claims` is the lease: what this task reserves in the shared tree.
+		// An isolated task reserves nothing there, and its declared list
+		// travels as declared_writes instead (D21).
+		Claims:     r.Lease(),
+		Age:        r.Age(now),
+		LeaseScope: r.Scope(),
 	}
-	if row.Claims == nil {
-		row.Claims = []string{}
+	if declared, known := r.DeclaredWrites(); known {
+		row.DeclaredWrites = declared
 	}
 	if r.Root != nil {
 		row.RootLabel = r.Root.Label
@@ -291,7 +338,10 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 // purpose: "this task declared paths" and "its branch carries commits" send a
 // person to two different places.
 func landingAdvice(r Record, commits int, commitsKnown, dirty, dirtyKnown bool) (string, string) {
-	if n := len(r.Claims); n > 0 {
+	// The lease, not the declared list: for a task in the shared tree they
+	// are the same paths, and for an isolated one its branch is the evidence
+	// of what it wrote, as it was before D21 kept the list.
+	if n := len(r.Lease()); n > 0 {
 		return DoLandOrAbandon, "this task declared " + strconv.Itoa(n) + " path(s) to write"
 	}
 	if r.Landing != nil && r.Landing.Target != "" {

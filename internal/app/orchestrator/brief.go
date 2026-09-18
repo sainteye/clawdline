@@ -77,6 +77,24 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("Then, once you have read task.json, one more line saying in your own words what you are")
 	w("about to do and where the output will go.")
 	w("")
+	w("## Sign for this briefing, before you start the work")
+	w("")
+	w("Once you have read task.json, tell the broker you have it. This receipt is the only thing")
+	w("that proves the briefing reached you: typing it into your terminal proved nothing, and your")
+	w("tab starting a turn proves only that something is running. Send it once; a repeat is harmless.")
+	w("")
+	w("```bash")
+	w("curl --fail-with-body -sS -X POST %s/accepted \\", base)
+	w(`  -H "X-Clawdline-Task-Secret: <TASK_SECRET>"`)
+	w("```")
+	w("")
+	w("If that `curl` cannot connect — some sandboxes have no loopback — write %s/accepted.json", dir)
+	w("instead, and the broker collects it:")
+	w("")
+	w("```json")
+	w(`{"task_secret": "<the TASK_SECRET value from your first message>"}`)
+	w("```")
+	w("")
 	w("## Rules")
 	w("")
 	w("- Work inside %s. Put non-repository artifacts in %s/artifacts/.", cwd, dir)
@@ -88,7 +106,8 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("- Do not read any task directory but your own.")
 	w("- Landing records belong to the root after delivery; a child does not call its own `/landing`.")
 	w("- Do not do work the task did not ask for.")
-	w("- You have %d minutes before the task is marked timed out.", r.TimeoutMinutes)
+	w("- You have %d minutes before the task is marked timed out, counted on the wall clock from", r.TimeoutMinutes)
+	w("  when this task was dispatched — not from when you read this.")
 	w("")
 
 	if r.Worktree != nil {
@@ -219,22 +238,16 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("that builds JSON gets refused by command screening on its own shape, and that refusal is a")
 	w("prompt with no \"always allow\" on a tab nobody is watching.")
 	w("")
-	w("Optionally, you may also announce it over HTTP; the file alone is enough, so when this call")
-	w("fails the work is already reported and there is nothing to repair:")
+	w("Optionally, once `result.json` is in place, you may ask for it to be collected now rather than")
+	w("on the broker's next look, a few seconds later. The call carries nothing: the file is the")
+	w("result, and a call made before the file exists is refused and settles nothing. The file alone")
+	w("is enough, so when this call fails the work is already reported and there is nothing to repair:")
 	w("")
 	w("```bash")
 	w("curl --fail-with-body -sS -X POST %s/complete \\", base)
-	w(`  -H "X-Clawdline-Task-Secret: <TASK_SECRET>" -H 'Content-Type: application/json' \`)
-	w(`  -d '{"status":"success","summary":"..."}'`)
+	w(`  -H "X-Clawdline-Task-Secret: <TASK_SECRET>"`)
 	w("```")
 	return s.String()
-}
-
-func (b *Broker) policy() string {
-	if b.Policy == nil {
-		return ""
-	}
-	return strings.TrimSpace(b.Policy())
 }
 
 var _ = strconv.Itoa

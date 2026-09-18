@@ -162,14 +162,17 @@
         "repository": { "type": "string" },
         "created": { "type": "integer" },
         "dir": { "type": "string" },
-        "permission": { "type": "string" },
+        "permission": { "description": "The ceiling the dispatch asked for; `full` when task.json said nothing.", "type": "string", "enum": ["ask", "edits", "full"] },
         "isolation": { "type": "string" },
-        "timeout_minutes": { "type": "integer" },
+        "timeout_minutes": { "description": "The task's whole budget, on the wall clock, counted from `created` — when the dispatch was admitted, not when the child was briefed — with no grace and no pause while the daemon is down. Past it the task is `timeout` whatever it is doing.", "type": "integer" },
         "claims": { "type": "array", "items": { "type": "string" } },
         "claims_declared": { "description": "Whether the dispatch said anything about claims at all. `I declared none` and `I did not say` are different requests, and only one of them can be arbitrated.", "type": "boolean" },
-        "landing_paths": { "description": "What an isolated task's claims became: not a lease on the shared tree, but the write set whoever lands this branch is answering for.", "type": "array", "items": { "type": "string" } },
+        "declared_writes": { "description": "What the dispatch declared this task would write — its landing write set — fixed at dispatch and never cleared, whatever its lease became. Absent when that cannot be known: nothing was declared, or an isolated task was stored before this field existed by a broker that erased its list.", "type": "array", "items": { "type": "string" } },
+        "lease_scope": { "description": "Whether `declared_writes` also reserve those paths against other roots (`shared`: the task writes the shared checkout, and `claims` is that list) or not (`worktree`: it writes its own checkout, and `claims` is empty).", "type": "string", "enum": ["shared", "worktree"] },
         "deliverables": { "type": "array", "items": { "type": "string" } },
         "spawnedAt": { "type": "integer" },
+        "accepted_at": { "description": "When the child signed for its briefing with its own secret — POST …/accepted, or accepted.json. The only proof the briefing was read; a tab that starts a turn proves only that something is running.", "type": "integer" },
+        "verdict": { "description": "The broker's own sentence when it ended a task the child did not (a timeout, a tab that never opened). Never a result: `result` is only ever what the child wrote.", "type": "string" },
         "finishedAt": { "type": "integer" },
         "child": { "$ref": "#/$defs/BrokerChild" },
         "root": { "$ref": "#/$defs/BrokerRoot" },
@@ -277,7 +280,7 @@
       }
     },
     "BrokerInflightRow": {
-      "description": "One line of work outstanding in a repository. `visibility` is `live` while the task is running and `unmerged` once it has finished with a branch nobody has taken; settled work is not listed at all.",
+      "description": "One line of work outstanding in a repository. `visibility` is `live` while the task is running and `unmerged` once it has finished with a branch nobody has taken; settled work is not listed at all. A stored row this daemon cannot decode is `unreadable` in both `visibility` and `state`, with only its id and the columns stored beside the record: it is listed because it is not absent.",
       "type": "object",
       "additionalProperties": false,
       "required": ["age_seconds", "assistant", "claims", "claims_declared", "created", "id", "project_dir", "state", "title", "visibility"],
@@ -292,7 +295,8 @@
         "age_seconds": { "type": "integer" },
         "claims": { "type": "array", "items": { "type": "string" } },
         "claims_declared": { "type": "boolean" },
-        "landing_paths": { "type": "array", "items": { "type": "string" } },
+        "declared_writes": { "type": "array", "items": { "type": "string" } },
+        "lease_scope": { "type": "string", "enum": ["shared", "worktree"] },
         "root_label": { "type": "string" },
         "root_key": { "type": "string" },
         "landing": { "$ref": "#/$defs/BrokerLanding" },
@@ -420,8 +424,45 @@
         "at": { "type": "integer" },
         "complete": { "type": "boolean" },
         "sessions": { "type": "integer" },
-        "deferred_notices": { "description": "Notices waiting, in memory, for a root that was showing a menu.", "type": "integer" },
-        "executors": { "type": "array", "items": { "$ref": "#/$defs/BrokerExecutor" } }
+        "deferred_notices": { "description": "Notices waiting, in memory, for a root that was showing a menu or whose terminal was busy.", "type": "integer" },
+        "executors": { "type": "array", "items": { "$ref": "#/$defs/BrokerExecutor" } },
+        "sources": { "description": "Each source's own completeness in the same reading. `complete` above is their AND; whether one child's tab is gone is asked of the source that owns it.", "type": "array", "items": { "$ref": "#/$defs/BrokerSourceReading" } }
+      }
+    },
+    "BrokerSourceReading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "source"],
+      "properties": {
+        "source": { "type": "string" },
+        "complete": { "type": "boolean" }
+      }
+    },
+    "BrokerLanes": {
+      "description": "The terminal lanes: one writer per terminal, and one machine-wide ceiling on writes held or waiting. A write past the ceiling is refused (429) before anything is typed; `refused` counts those since this process started.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["admitted", "limit", "refused", "terminals"],
+      "properties": {
+        "admitted": { "type": "integer" },
+        "limit": { "type": "integer" },
+        "terminals": { "type": "integer" },
+        "refused": { "type": "integer" }
+      }
+    },
+    "BrokerPolicy": {
+      "description": "This Mac's house rules as the last briefing carried them, counted in characters. Over `limit` the base is cut at a paragraph break and the local file is always kept whole; `near_limit` is true past 90% of `limit`, before anything has to be cut.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_chars", "chars", "cut", "limit", "local_chars", "near_limit"],
+      "properties": {
+        "chars": { "type": "integer" },
+        "limit": { "type": "integer" },
+        "base_chars": { "type": "integer" },
+        "local_chars": { "type": "integer" },
+        "cut": { "type": "boolean" },
+        "near_limit": { "type": "boolean" },
+        "at": { "type": "integer" }
       }
     },
     "BrokerBeatPanic": {
@@ -471,6 +512,9 @@
         "notices": { "type": "integer" },
         "timed_out": { "type": "integer" },
         "spawn_failed": { "type": "integer" },
+        "unreadable": { "description": "Stored rows the pass could not decode. They are listed by the task list and the inventory; this is the count.", "type": "integer" },
+        "notes_refused": { "description": "progress.json bodies refused for good this pass — too long, empty or not signed by the task — each also one `task.progress.refused` event.", "type": "integer" },
+        "closed": { "description": "Child sessions closed this pass after a spawn_failed verdict, each proved to be the task's own by its pane.", "type": "integer" },
         "store_error": { "description": "Why the pass could not read the store. A pass that could not read is not a pass that found nothing.", "type": "string" }
       }
     },
@@ -520,7 +564,9 @@
         "pass": { "$ref": "#/$defs/BrokerPass" },
         "notices": { "$ref": "#/$defs/BrokerNoticeCounts" },
         "store": { "$ref": "#/$defs/BrokerStoreHealth" },
-        "observations": { "$ref": "#/$defs/BrokerObservations" }
+        "observations": { "$ref": "#/$defs/BrokerObservations" },
+        "lanes": { "$ref": "#/$defs/BrokerLanes" },
+        "policy": { "$ref": "#/$defs/BrokerPolicy" }
       }
     },
     "BrokerProgressEvent": {

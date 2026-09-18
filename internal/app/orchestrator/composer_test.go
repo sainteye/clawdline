@@ -71,19 +71,22 @@ func TestAStartingSessionIsNeitherReadyNorChoosing(t *testing.T) {
 // The first version of this clock read silence as failure, and task
 // 69c21384 — a child that had been briefed, was alive, and had simply been
 // told not to send heartbeat notes — was recorded as `spawn_failed` while its
-// tab sat there working. Silence is not evidence; the tab is.
+// tab sat there working. Silence is not evidence; the tab is, and "the tab is
+// gone" is evidence only from the source that owns the tab (D11).
 func TestSilenceFromALiveChildIsNotASpawnFailure(t *testing.T) {
 	for _, c := range []struct {
-		name            string
-		alive, choosing bool
-		want            State
-		decided         bool
+		name                              string
+		present, sourceComplete, choosing bool
+		want                              State
+		decided                           bool
 	}{
-		{"the tab is gone", false, false, StateSpawnFailed, true},
-		{"the tab is holding a dialog", true, true, StateSpawnFailed, true},
-		{"the tab is alive and quiet", true, false, "", false},
+		{"the tab is gone from a complete listing of its terminal", false, true, false, StateSpawnFailed, true},
+		{"the tab is missing but its terminal could not be listed", false, false, false, "", false},
+		{"the tab is holding a dialog", true, true, true, StateSpawnFailed, true},
+		{"the tab is holding a dialog, listing incomplete elsewhere", true, false, true, StateSpawnFailed, true},
+		{"the tab is alive and quiet", true, true, false, "", false},
 	} {
-		state, why, decided := spawnVerdict(c.alive, c.choosing)
+		state, why, decided := spawnVerdict(c.present, c.sourceComplete, c.choosing)
 		if decided != c.decided || state != c.want {
 			t.Errorf("%s: got %q/%v, want %q/%v", c.name, state, decided, c.want, c.decided)
 		}

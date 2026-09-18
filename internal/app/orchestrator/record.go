@@ -74,6 +74,19 @@ const (
 	IsolationWorktree = "worktree"
 )
 
+// Lease scopes (docs/design-decisions.md D21). A task declares one list of
+// paths it will write, once, and that list is never cleared. Whether the list
+// also reserves those paths against other roots is a separate fact, the scope:
+// a task writing the shared checkout holds them as a lease; an isolated one
+// writes its own checkout at a different spelling and reserves nothing here.
+// The first version of this broker answered both questions by emptying the
+// list, so a delivery that wrote twenty-six files read exactly like a review
+// that wrote none.
+const (
+	LeaseShared   = "shared"
+	LeaseWorktree = "worktree"
+)
+
 // Worktree is the checkout a task with `isolation: "worktree"` was given.
 //
 // `base` is recorded at creation and never recomputed. It is what the branch
@@ -181,11 +194,14 @@ func RetryDelay(attempts int) time.Duration {
 // is the protocol and a second spelling of the same field is how two halves of
 // one system stop agreeing.
 type Record struct {
-	Protocol       int       `json:"clawdline_protocol"`
-	ID             string    `json:"task_id"`
-	Kind           string    `json:"kind"`
-	Assistant      string    `json:"assistant"`
-	PermissionMode string    `json:"permission_mode"`
+	Protocol       int    `json:"clawdline_protocol"`
+	ID             string `json:"task_id"`
+	Kind           string `json:"kind"`
+	Assistant      string `json:"assistant"`
+	PermissionMode string `json:"permission_mode"`
+	// Claims is the declared write set, as task.json spells it — D21's
+	// `declared_writes`. It is written once at dispatch and never changed;
+	// Lease is what it reserves, and that depends on LeaseScope.
 	Claims         []string  `json:"claims"`
 	Isolation      string    `json:"isolation"`
 	ProjectDir     string    `json:"project_dir"`
@@ -197,18 +213,31 @@ type Record struct {
 	CreatedAt      time.Time `json:"created_at"`
 	Root           *RootRef  `json:"root,omitempty"`
 
+	// LeaseScope is `shared` or `worktree`, fixed at dispatch. Empty on a
+	// record written before it existed; Scope reads those.
+	LeaseScope string `json:"lease_scope,omitempty"`
+
 	// What has happened since.
-	State           State           `json:"state"`
-	Dir             string          `json:"dir"`
-	Repository      string          `json:"repository"`
-	Worktree        *Worktree       `json:"worktree,omitempty"`
-	ChildTerminalID string          `json:"child_terminal_id,omitempty"`
-	ChildBackend    string          `json:"child_backend,omitempty"`
-	RootTerminalID  string          `json:"root_terminal_id,omitempty"`
-	SpawnedAt       time.Time       `json:"spawned_at,omitempty"`
-	FinishedAt      time.Time       `json:"finished_at,omitempty"`
-	Result          *taskdir.Result `json:"result,omitempty"`
-	Landing         *Landing        `json:"landing,omitempty"`
+	State           State     `json:"state"`
+	Dir             string    `json:"dir"`
+	Repository      string    `json:"repository"`
+	Worktree        *Worktree `json:"worktree,omitempty"`
+	ChildTerminalID string    `json:"child_terminal_id,omitempty"`
+	ChildBackend    string    `json:"child_backend,omitempty"`
+	RootTerminalID  string    `json:"root_terminal_id,omitempty"`
+	SpawnedAt       time.Time `json:"spawned_at,omitempty"`
+	// AcceptedAt is when the child signed for its briefing (D10): the first
+	// rung of the receipt chain, and the only thing that proves the briefing
+	// was read rather than typed.
+	AcceptedAt time.Time       `json:"accepted_at,omitempty"`
+	FinishedAt time.Time       `json:"finished_at,omitempty"`
+	Result     *taskdir.Result `json:"result,omitempty"`
+	// Verdict is the broker's own sentence when it ended a task the child did
+	// not — a timeout, a tab that never opened. It is never dressed up as a
+	// Result: a result is what the child wrote, and one this broker wrote in
+	// its name is the second source of completion D15 removed.
+	Verdict string   `json:"verdict,omitempty"`
+	Landing *Landing `json:"landing,omitempty"`
 	// Notice is the completion envelope, read from its own ledger
 	// (store/broker_notices.go) and never written with the record. It is here
 	// so that a reader holds one task as one value; the only way it changes
@@ -258,6 +287,44 @@ func (r Record) Brief() taskdir.Brief {
 	return b
 }
 
+// Scope is the record's lease scope, reading a record written before the
+// field existed by the only thing that decided it then: whether it had a
+// checkout of its own.
+func (r Record) Scope() string {
+	if r.LeaseScope != "" {
+		return r.LeaseScope
+	}
+	if r.Worktree != nil || r.Isolation == IsolationWorktree {
+		return LeaseWorktree
+	}
+	return LeaseShared
+}
+
+// Lease is the paths this task reserves in the shared tree against other
+// roots: its declared writes when it writes there, nothing when it has a
+// checkout of its own. Never nil, because an empty lease is an answer.
+func (r Record) Lease() []string {
+	if r.Scope() == LeaseWorktree || r.Claims == nil {
+		return []string{}
+	}
+	return r.Claims
+}
+
+// DeclaredWrites is the landing write set: what the task said it would write,
+// whatever its lease became. The second answer is false when that cannot be
+// known — a task that declared nothing at all, or an isolated one stored
+// before W1 by the broker that erased its list on the way in. Unknown is not
+// "writes nothing", which is what an empty list would say.
+func (r Record) DeclaredWrites() ([]string, bool) {
+	if r.Claims == nil {
+		return nil, false
+	}
+	if r.LeaseScope == "" && r.Scope() == LeaseWorktree {
+		return nil, false
+	}
+	return r.Claims, true
+}
+
 // Age is how long this task has existed, never negative.
 func (r Record) Age(now time.Time) int {
 	age := int(now.Sub(r.CreatedAt).Seconds())
@@ -267,7 +334,15 @@ func (r Record) Age(now time.Time) int {
 	return age
 }
 
-// Deadline is when this task is considered timed out.
+// Deadline is when this task is considered timed out: a wall clock started
+// when the task was admitted (`created_at`), with no grace of any kind
+// (docs/design-decisions.md D12).
+//
+// Not from the moment the child was briefed, and not paused while this daemon
+// is down: the budget is an upper bound on the whole task, including a tab
+// that was slow to open, and a restart is not time the child did not have. The
+// Swift app's twenty-second restart grace belongs to closing a finished tab
+// (linger), never to this clock.
 func (r Record) Deadline() time.Time {
 	if r.TimeoutMinutes <= 0 {
 		return time.Time{}
