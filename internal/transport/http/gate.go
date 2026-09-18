@@ -267,6 +267,11 @@ func machineScoped(p string) bool {
 	if strings.HasPrefix(p, "/v1/orchestrator/") {
 		return true
 	}
+	// The new board (work.go): a session reads it, and relays a person's
+	// words to it under their run; the handler refuses a session's own.
+	if strings.HasPrefix(p, "/v1/work/") {
+		return true
+	}
 	switch p {
 	case "/v1/board", "/v1/next/coordinator":
 		return true
@@ -316,6 +321,10 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 			return http.StatusForbidden, "forbidden", "This device may read, and not send."
 		}
 	case p == "/v1/board":
+		if !machine && !send {
+			return http.StatusForbidden, "forbidden", "This device may only read the board."
+		}
+	case strings.HasPrefix(p, "/v1/work/"):
 		if !machine && !send {
 			return http.StatusForbidden, "forbidden", "This device may only read the board."
 		}

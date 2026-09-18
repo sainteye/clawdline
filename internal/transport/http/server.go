@@ -217,6 +217,9 @@ func (s *Server) Handler() http.Handler {
 		s.boardRead(w, r)
 	})
 	mux.HandleFunc("/v1/board/tracks", s.boardTracks)
+	// The new board and its Backlog (work.go, design-decisions T3): the
+	// three structures' own resource, beside the old cards' read-only view.
+	mux.HandleFunc("/v1/work/", s.workRoute)
 	mux.HandleFunc("/v1/orchestrator/schedules", s.schedules)
 	// One schedule, its save, its removal and its run; the Cloud bind
 	// command's local half; and moving schedules in and out (schedules.go).
@@ -290,6 +293,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	s.brokerHealth(&h)
 	s.capacityHealth(&h)
+	s.workHealth(&h)
 	writeJSON(w, h)
 }
 

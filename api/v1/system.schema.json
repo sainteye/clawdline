@@ -48,9 +48,9 @@
       }
     },
     "HealthReason": {
-      "description": "Why /v1/health says ok:false. `broker_beat_stalled`: the broker's loop has not finished a pass in more than three ticks. `capacity_exhausted`: an evidence or security-audit row of the capacity register is full with nothing making room, or its last write failed (docs/limits.md §4.5). `capacity_beat_stalled`: the loop that measures the register has not finished a pass in more than three ticks, so nothing is watching whether anything is full. When two hold, the first in this list is given.",
+      "description": "Why /v1/health says ok:false. `broker_beat_stalled`: the broker's loop has not finished a pass in more than three ticks. `capacity_exhausted`: an evidence or security-audit row of the capacity register is full with nothing making room, or its last write failed (docs/limits.md §4.5). `capacity_beat_stalled`: the loop that measures the register has not finished a pass in more than three ticks, so nothing is watching whether anything is full. `work_sweep_stalled`: the board's sweep has not finished a pass in more than three ticks, so a landing or a delivery would not move the board (design-decisions T3). When two hold, the first in this list is given.",
       "type": "string",
-      "enum": ["broker_beat_stalled", "capacity_exhausted", "capacity_beat_stalled"]
+      "enum": ["broker_beat_stalled", "capacity_exhausted", "capacity_beat_stalled", "work_sweep_stalled"]
     },
     "CapacityDiagnostics": {
       "description": "/v1/diagnostics.capacity: every row of the capacity register (internal/domain/capacity) as the last pass of its beat read it. Each row answers the four questions: its limit, what happens when it is full, who is told, and who decides what is let go (docs/limits.md §4.1, design-guidelines DG-2).",

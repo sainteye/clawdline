@@ -284,7 +284,7 @@ func TestRegisterRowsAnswerTheFourQuestions(t *testing.T) {
 	// The rows that do not yet do what their class requires, by name. A new
 	// one is a decision to write down here, not a string to add to a row.
 	sort.Strings(deviating)
-	if want := []string{BoardReceipts, StoreDB}; strings.Join(deviating, ",") != strings.Join(want, ",") {
+	if want := []string{StoreDB}; strings.Join(deviating, ",") != strings.Join(want, ",") {
 		t.Errorf("rows deviating from their class: %v, want %v", deviating, want)
 	}
 }

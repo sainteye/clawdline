@@ -1909,17 +1909,20 @@ type Health struct {
 // making room, or its last write failed (docs/limits.md §4.5).
 // `capacity_beat_stalled`: the loop that measures the register has not finished
 // a pass in more than three ticks, so nothing is watching whether anything is
-// full. When two hold, the first in this list is given.
+// full. `work_sweep_stalled`: the board's sweep has not finished a pass in more
+// than three ticks, so a landing or a delivery would not move the board
+// (design-decisions T3). When two hold, the first in this list is given.
 type HealthReason string
 
 const (
 	HealthReasonBrokerBeatStalled   HealthReason = "broker_beat_stalled"
 	HealthReasonCapacityExhausted   HealthReason = "capacity_exhausted"
 	HealthReasonCapacityBeatStalled HealthReason = "capacity_beat_stalled"
+	HealthReasonWorkSweepStalled    HealthReason = "work_sweep_stalled"
 )
 
 // HealthReasonValues is every value the contract allows, in contract order.
-var HealthReasonValues = []HealthReason{HealthReasonBrokerBeatStalled, HealthReasonCapacityExhausted, HealthReasonCapacityBeatStalled}
+var HealthReasonValues = []HealthReason{HealthReasonBrokerBeatStalled, HealthReasonCapacityExhausted, HealthReasonCapacityBeatStalled, HealthReasonWorkSweepStalled}
 
 // A project's mark: rows of `#RRGGBB`, with null for transparent. It is derived
 // from the project path and the machine's icon registry by the same rules the

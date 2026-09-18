@@ -58,8 +58,8 @@ const (
 // Two of the Swift app's ceilings are deliberately not here. Its 2,000 items
 // and 200 projects bound a store this daemon does not write — it writes no
 // items — so they were declared and never enforced (docs/limits.md N25), a
-// limit in name only. The receipt ledger's ceiling is the capacity register's
-// `board.receipts` row, read in settings.go.
+// limit in name only. The board commands' receipts are the store's receipt
+// table (D37), bounded by the capacity register's `board.receipts` row.
 
 // Entitlement is what `board.entitlement` carries.
 //
