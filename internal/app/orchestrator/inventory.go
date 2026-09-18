@@ -88,6 +88,16 @@ type InventoryRow struct {
 	// erased an isolated task's list.
 	DeclaredWrites []string
 	LeaseScope     string
+	// Target is the branch the landing record names, empty while the root
+	// has not named one (D19). Merged is whether the delivery branch is on
+	// that target — nil when it cannot be said, which includes every row
+	// with no target: the repository's HEAD is not a stand-in for a
+	// decision nobody made.
+	Target string
+	Merged *bool
+	// Obligation is what a pending landing means now (#35), derived from the
+	// beat's last reading and never stored.
+	Obligation Obligation
 	// StoredState and Cause are an unreadable row's lifted state column and
 	// the decoder's own sentence; Project and Created are the columns stored
 	// beside its record, which stay readable when the record does not.
@@ -119,7 +129,7 @@ type Inventory struct {
 var (
 	DigestSealed   = []string{"section", "task", "branch", "why", "do", "claims"}
 	DigestExcluded = []string{"age_seconds", "created", "state", "head", "dirty", "title", "root_label", "overlaps", "at",
-		"declared_writes", "lease_scope", "stored_state", "cause"}
+		"declared_writes", "lease_scope", "stored_state", "cause", "target", "merged", "obligation"}
 )
 
 // ReadInventory builds the answer for one repository.
@@ -259,6 +269,8 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 	}
 	if r.Landing != nil {
 		row.Landing = r.Landing.State
+		row.Target = r.Landing.Target
+		row.Obligation = b.Obligation(r)
 	}
 
 	if !r.State.Terminal() {
@@ -281,9 +293,17 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 
 	exists, branchKnown := b.Git.BranchExists(ctx, r.Worktree.Repository, r.Worktree.Branch)
 	row.Branched = exists
+	// Merged into the target the record names, and into nothing else (D19).
+	// The first version asked about the main checkout's HEAD, which is
+	// whatever branch somebody last checked out there: a delivery could read
+	// as merged because a person was standing on it, and as unmerged because
+	// they were not. No target on the record is no answer.
 	merged, mergedKnown := false, false
-	if branchKnown && exists {
-		merged, mergedKnown = b.Git.Merged(ctx, r.Worktree.Repository, r.Worktree.Branch, "HEAD")
+	if branchKnown && exists && row.Target != "" {
+		merged, mergedKnown = b.Git.Merged(ctx, r.Worktree.Repository, r.Worktree.Branch, "refs/heads/"+row.Target)
+	}
+	if mergedKnown {
+		row.Merged = &merged
 	}
 	commits, commitsKnown := b.Git.Commits(ctx, r.Worktree.Repository, r.Worktree.Base, r.Worktree.Branch)
 	dirty, dirtyKnown := false, false
@@ -294,7 +314,14 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 	// Droppable is decided first and fails safe: the branch must have been
 	// readable, and the checkout must have been readable and clean. Anything
 	// unknown is not permission.
-	if branchKnown && dirtyKnown && !dirty {
+	//
+	// And never while the landing record says pending (D01): that record is
+	// the one answer to "did this land", and a row filed as settled because
+	// git shows the branch merged would be a second answer beside it — the
+	// shape of the Swift app's 53 / 24 / 17. A merged branch whose landing
+	// is still pending is unlanded, with `merged: true` saying what is left
+	// to do: record it.
+	if row.Landing != LandingPending && branchKnown && dirtyKnown && !dirty {
 		switch {
 		case !exists && row.OnDisk:
 			row.Do = DoDispose

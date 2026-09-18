@@ -742,17 +742,58 @@ type BrokerInflightRow struct {
 	Worktree       *BrokerWorktree `json:"worktree,omitempty"`
 }
 
-// What became of a delivery. Delivered is not reviewed and reviewed is not
-// landed; `landed` is the one rung a caller cannot assert on its own word,
-// because the broker proves it by asking git for ancestry.
+// What became of a delivery, and the one record of it: every other answer to
+// "did this land" is read from this one. Delivered is not reviewed and reviewed
+// is not landed; `landed` is the one rung a caller cannot assert on its own
+// word, because the broker proves that this task's work — an isolated task's
+// branch head, or for a task in the shared checkout a commit made after it was
+// dispatched — is on the target, by asking git for ancestry. The commit the
+// task was dispatched from, or anything already under it, is refused as
+// `unverified_landing` with reason `predates_dispatch`.
 type BrokerLanding struct {
-	At     int64              `json:"at,omitempty"`
-	Commit string             `json:"commit,omitempty"`
-	Note   string             `json:"note,omitempty"`
-	Repo   string             `json:"repo,omitempty"`
-	State  BrokerLandingState `json:"state"`
-	Target string             `json:"target,omitempty"`
+	At int64 `json:"at,omitempty"`
+
+	// The commit the task was dispatched from, which the landed commit was proved not
+	// to be under.
+	Base   string `json:"base,omitempty"`
+	Commit string `json:"commit,omitempty"`
+
+	// The settled landing this one replaced. A resend that says what the record says
+	// is a replay and writes nothing; one that differs passes the same gate, and what
+	// it replaced is kept here and in a `landing.corrected` event. One level deep.
+	CorrectedFrom *BrokerLanding `json:"corrected_from,omitempty"`
+
+	// The isolated branch's head the landed commit was proved to carry.
+	DeliveryHead string                  `json:"delivery_head,omitempty"`
+	Note         string                  `json:"note,omitempty"`
+	Obligation   BrokerLandingObligation `json:"obligation,omitempty"`
+	Repo         string                  `json:"repo,omitempty"`
+	State        BrokerLandingState      `json:"state"`
+
+	// The branch the root named the first time it recorded this landing. Absent until
+	// then: not decided, and never read as the repository's HEAD.
+	Target string `json:"target,omitempty"`
+
+	// What the target branch named when `landed` was proved.
+	TargetCommit string `json:"target_commit,omitempty"`
 }
+
+// What a pending landing means now, derived from the broker's last reading of
+// the machine and never stored. `pending_live`: the root that owes it is
+// running. `pending_orphaned`: nothing can land it — the task has no root, or
+// the process table answered completely, named every assistant in it, and the
+// root is not one. `pending_unknown`: neither could be shown, which is not a
+// kind of either.
+type BrokerLandingObligation string
+
+const (
+	BrokerLandingObligationPendingLive     BrokerLandingObligation = "pending_live"
+	BrokerLandingObligationPendingOrphaned BrokerLandingObligation = "pending_orphaned"
+	BrokerLandingObligationPendingUnknown  BrokerLandingObligation = "pending_unknown"
+)
+
+// BrokerLandingObligationValues is every value the contract allows, in contract order.
+var BrokerLandingObligationValues = []BrokerLandingObligation{BrokerLandingObligationPendingLive, BrokerLandingObligationPendingOrphaned, BrokerLandingObligationPendingUnknown}
 
 type BrokerLandingState string
 
@@ -1050,15 +1091,20 @@ type BrokerTask struct {
 	// fixed at dispatch and never cleared, whatever its lease became. Absent when that
 	// cannot be known: nothing was declared, or an isolated task was stored before
 	// this field existed by a broker that erased its list.
-	DeclaredWrites []string        `json:"declared_writes,omitempty"`
-	Deliverables   []string        `json:"deliverables,omitempty"`
-	Dir            string          `json:"dir"`
-	Executor       *BrokerExecutor `json:"executor,omitempty"`
-	FinishedAt     int64           `json:"finishedAt,omitempty"`
-	ID             string          `json:"id"`
-	Isolation      string          `json:"isolation"`
-	Kind           string          `json:"kind"`
-	Landing        *BrokerLanding  `json:"landing,omitempty"`
+	DeclaredWrites []string `json:"declared_writes,omitempty"`
+	Deliverables   []string `json:"deliverables,omitempty"`
+	Dir            string   `json:"dir"`
+
+	// Where the repository stood when a task that writes the shared checkout was
+	// admitted: a commit it lands must not be under this line. Absent for an isolated
+	// task, whose line is worktree.base, and when it could not be read.
+	DispatchBase string          `json:"dispatch_base,omitempty"`
+	Executor     *BrokerExecutor `json:"executor,omitempty"`
+	FinishedAt   int64           `json:"finishedAt,omitempty"`
+	ID           string          `json:"id"`
+	Isolation    string          `json:"isolation"`
+	Kind         string          `json:"kind"`
+	Landing      *BrokerLanding  `json:"landing,omitempty"`
 
 	// Whether `declared_writes` also reserve those paths against other roots
 	// (`shared`: the task writes the shared checkout, and `claims` is that list) or

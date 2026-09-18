@@ -60,22 +60,32 @@
       }
     },
     "BrokerLanding": {
-      "description": "What became of a delivery. Delivered is not reviewed and reviewed is not landed; `landed` is the one rung a caller cannot assert on its own word, because the broker proves it by asking git for ancestry.",
+      "description": "What became of a delivery, and the one record of it: every other answer to \"did this land\" is read from this one. Delivered is not reviewed and reviewed is not landed; `landed` is the one rung a caller cannot assert on its own word, because the broker proves that this task's work — an isolated task's branch head, or for a task in the shared checkout a commit made after it was dispatched — is on the target, by asking git for ancestry. The commit the task was dispatched from, or anything already under it, is refused as `unverified_landing` with reason `predates_dispatch`.",
       "type": "object",
       "additionalProperties": false,
       "required": ["state"],
       "properties": {
         "state": { "$ref": "#/$defs/BrokerLandingState" },
-        "target": { "type": "string" },
+        "target": { "description": "The branch the root named the first time it recorded this landing. Absent until then: not decided, and never read as the repository's HEAD.", "type": "string" },
         "commit": { "type": "string" },
         "repo": { "type": "string" },
         "note": { "type": "string" },
-        "at": { "type": "integer" }
+        "at": { "type": "integer" },
+        "target_commit": { "description": "What the target branch named when `landed` was proved.", "type": "string" },
+        "delivery_head": { "description": "The isolated branch's head the landed commit was proved to carry.", "type": "string" },
+        "base": { "description": "The commit the task was dispatched from, which the landed commit was proved not to be under.", "type": "string" },
+        "corrected_from": { "description": "The settled landing this one replaced. A resend that says what the record says is a replay and writes nothing; one that differs passes the same gate, and what it replaced is kept here and in a `landing.corrected` event. One level deep.", "$ref": "#/$defs/BrokerLanding" },
+        "obligation": { "$ref": "#/$defs/BrokerLandingObligation" }
       }
     },
     "BrokerLandingState": {
       "type": "string",
       "enum": ["pending", "landed", "abandoned", "nothing_to_land"]
+    },
+    "BrokerLandingObligation": {
+      "description": "What a pending landing means now, derived from the broker's last reading of the machine and never stored. `pending_live`: the root that owes it is running. `pending_orphaned`: nothing can land it — the task has no root, or the process table answered completely, named every assistant in it, and the root is not one. `pending_unknown`: neither could be shown, which is not a kind of either.",
+      "type": "string",
+      "enum": ["pending_live", "pending_orphaned", "pending_unknown"]
     },
     "BrokerNoticeState": {
       "description": "Where the completion notice has got to. `delivered` means bytes reached a composer, which is not observation — only `acknowledged` stops the resend.",
@@ -160,6 +170,7 @@
         "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
         "projectDir": { "type": "string" },
         "repository": { "type": "string" },
+        "dispatch_base": { "description": "Where the repository stood when a task that writes the shared checkout was admitted: a commit it lands must not be under this line. Absent for an isolated task, whose line is worktree.base, and when it could not be read.", "type": "string" },
         "created": { "type": "integer" },
         "dir": { "type": "string" },
         "permission": { "description": "The ceiling the dispatch asked for; `full` when task.json said nothing.", "type": "string", "enum": ["ask", "edits", "full"] },

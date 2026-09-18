@@ -58,6 +58,15 @@ func InventoryPayload(inv Inventory) map[string]any {
 			"landing":     nullable(string(row.Landing)),
 			"why":         nullable(row.Why),
 			"lease_scope": row.LeaseScope,
+			// The landing's own target, null until the root names one; and
+			// whether the branch is on it, null when that cannot be said —
+			// including whenever there is no target to ask about (D19).
+			"target":     nullable(row.Target),
+			"merged":     nil,
+			"obligation": nullable(string(row.Obligation)),
+		}
+		if row.Merged != nil {
+			item["merged"] = *row.Merged
 		}
 		addDeclared(item, row)
 		unlanded = append(unlanded, item)
