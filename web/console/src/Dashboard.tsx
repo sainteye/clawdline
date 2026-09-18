@@ -260,30 +260,31 @@ function Schedules() {
       {error && <p className="refusal">{error}</p>}
       {pending && !data && <p className="empty">讀取中…</p>}
       {data?.schedules.length === 0 && <p className="empty">沒有排程。</p>}
-      {data?.schedules.map((s) => <ScheduleRowView key={s.id} row={s} />)}
+      {data?.schedules.map((s) => <ScheduleRowView key={s.id ?? s.file} row={s} />)}
     </section>
   )
 }
 
 function ScheduleRowView({ row }: { row: ScheduleRow }) {
-  // An unreadable schedule is switched off by the daemon, not by a person, and
-  // the two must not look alike: one is a decision, the other is a thing to fix.
-  if (row.unreadable) {
+  // A row the daemon could not parse is listed as the file it is, not as a
+  // schedule somebody switched off: one is a decision, the other a thing to fix.
+  if (row.state === "invalid") {
     return (
       <div className="row unreadable">
         <span className="k">讀不懂</span>
         <span className="grow">
-          {row.name} — 存的是 <code>{row.when}</code>
+          {row.file} — {row.error}
         </span>
         <span className="v">已停用</span>
       </div>
     )
   }
+  const next = row.next_fire ? new Date(row.next_fire * 1000).toLocaleString() : "—"
   return (
     <div className="row" style={{ opacity: row.enabled ? 1 : 0.5 }}>
-      <span className="k">{row.when}</span>
-      <span className="grow">{row.name}</span>
-      <span className="v">{row.lastRun === 0 ? "還沒跑過" : ago(row.lastRun)}</span>
+      <span className="k">{next}</span>
+      <span className="grow">{row.title}</span>
+      <span className="v">{row.last_run ? ago(row.last_run.at) : "還沒跑過"}</span>
     </div>
   )
 }

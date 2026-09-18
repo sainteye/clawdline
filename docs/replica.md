@@ -268,6 +268,13 @@ webview 之外，舊 app 的原生面：
 `(none) token-cookies-here=0`；網址列、上一頁、`target=_blank`、外部頁面導向 console 被拒、console 的外連結
 交給系統瀏覽器，都各驗過一次。詳見 task `03e6be52` 的 `artifacts/report.md`。
 
+### 排程（2026-09-18，task `1f9ca362`）
+
+清單 `details#schedules`、`#schedule-history`、`#schedule-form`、`#schedule-delete-confirm` 照
+`view/schedules.js`、`net/schedules.js`、`input/schedule.js`、`input/schedule-history.js` 逐行移植到
+`pages/schedules.tsx`（六個原檔照抄進 `legacy/js/`，守衛 72 檔相符）。對 7796 實際操作過：清單、執行紀錄、
+編輯存檔、`+` 建立、刪除確認。**沒有和 7717 做畫面逐屬性比對**。
+
 ## 下一步建議
 
 1. 唯讀 Swift store——✅ `b3959bf`：同一秒 13 列 260 欄只差 8 欄（皆與 store 無關）；task 列表 1,045 欄 0 差異；
@@ -286,7 +293,7 @@ webview 之外，舊 app 的原生面：
 
 - 原生：導覽（`Onboarding.swift` 1,468 行）、聽寫（`Voice.swift` 633 行）、瀏海島（`NotchIsland.swift` 1,148 行）、
   原生 Remote 設定。
-- 頁面與 sheet：看板、驗證帳本、開新 session（`#start`）、`#command`、`#schedule-form`、Git 面板、即時畫面、
+- 頁面與 sheet：看板、驗證帳本、開新 session（`#start`）、`#command`、Git 面板、即時畫面、
   在 Mac 上顯示、常用句、附圖。
 - 遠端：網頁的配對入口（`door.js`）、tunnel、Cloud bridge（`docs/remote.md`）。
 

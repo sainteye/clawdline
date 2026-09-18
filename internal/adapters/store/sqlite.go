@@ -24,7 +24,6 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/sainteye/clawdline-go/internal/domain/coordinator"
-	"github.com/sainteye/clawdline-go/internal/domain/schedule"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
@@ -195,6 +194,9 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	if err := migrate(db); err != nil {
+		return nil, err
+	}
+	if err := openSchedules(db); err != nil {
 		return nil, err
 	}
 	// The directory is already 0700, but the files carry receipts and the
@@ -438,131 +440,6 @@ func (s *Store) ApplyBoardCommand(ctx context.Context, requestID, fingerprint st
 		return 0, err
 	}
 	return revision, nil
-}
-
-// SaveSchedule stores or replaces one schedule.
-func (s *Store) SaveSchedule(ctx context.Context, sc schedule.Schedule) error {
-	claims, _ := json.Marshal(sc.Claims)
-	enabled := 0
-	if sc.Enabled {
-		enabled = 1
-	}
-	_, err := s.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO schedules
-		 (id, name, spec, assistant, dir, brief, claims, enabled, last_run, last_task, first_seen)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		sc.ID, sc.Name, sc.When.String(), sc.Assistant, sc.Dir, sc.Brief,
-		string(claims), enabled, unixOrZero(sc.LastRun), sc.LastTask,
-		unixOrZero(firstSeenOrNow(sc.FirstSeen)))
-	return err
-}
-
-// Schedules returns everything stored, stamping anything it is seeing for the
-// first time.
-//
-// The stamp is written here rather than at save time because a row can enter
-// this store without passing through save: restored from a backup, copied from
-// another machine, or written by hand. Those are exactly the rows that used to
-// fire the instant the clock ticked, so the sighting is recorded wherever the
-// row is first read.
-func (s *Store) Schedules(ctx context.Context) ([]schedule.Schedule, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, spec, assistant, dir, brief, claims, enabled, last_run, last_task, first_seen
-		 FROM schedules ORDER BY name ASC`)
-	if err != nil {
-		return nil, err
-	}
-	out := []schedule.Schedule{}
-	unseen := []string{}
-	now := time.Now()
-	for rows.Next() {
-		var sc schedule.Schedule
-		var spec, claims string
-		var enabled, last, seen int64
-		if err := rows.Scan(&sc.ID, &sc.Name, &spec, &sc.Assistant, &sc.Dir,
-			&sc.Brief, &claims, &enabled, &last, &sc.LastTask, &seen); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		if seen > 0 {
-			sc.FirstSeen = time.Unix(seen, 0)
-		} else {
-			sc.FirstSeen = now
-			unseen = append(unseen, sc.ID)
-		}
-		sc.Spec = spec
-		if last > 0 {
-			sc.LastRun = time.Unix(last, 0)
-		}
-		_ = json.Unmarshal([]byte(claims), &sc.Claims)
-
-		when, err := schedule.ParseWhen(spec)
-		if err != nil {
-			// A schedule whose spelling we cannot read is disabled rather than
-			// guessed at: firing it on a guessed clock is worse than not
-			// firing it and saying so. It is still returned, carrying the
-			// spelling it actually has, because a row that vanishes is a row
-			// nobody can fix.
-			sc.Enabled = false
-			sc.Unreadable = true
-			out = append(out, sc)
-			continue
-		}
-		sc.When = when
-		sc.Enabled = enabled == 1
-		out = append(out, sc)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
-	}
-	// The cursor is closed before writing, because this store holds a single
-	// connection: an UPDATE issued while the rows are still open would wait for
-	// a reader that is waiting for it.
-	rows.Close()
-
-	for _, id := range unseen {
-		if _, err := s.db.ExecContext(ctx,
-			`UPDATE schedules SET first_seen = ? WHERE id = ? AND first_seen = 0`,
-			now.Unix(), id); err != nil {
-			// A sighting that could not be recorded is not fatal to reading,
-			// but it must not silently become "seen": the value returned above
-			// already says `now`, so this read will not fire it, and the next
-			// read will try to stamp it again.
-			return out, nil
-		}
-	}
-	return out, nil
-}
-
-// firstSeenOrNow stamps a schedule that arrives without a sighting.
-func firstSeenOrNow(t time.Time) time.Time {
-	if t.IsZero() {
-		return time.Now()
-	}
-	return t
-}
-
-// unixOrZero keeps a never-run schedule at 0 rather than at the Unix value of
-// year one, which reads as a timestamp 63 billion seconds in the past.
-func unixOrZero(t time.Time) int64 {
-	if t.IsZero() {
-		return 0
-	}
-	return t.Unix()
-}
-
-// MarkScheduleTask records which task a run produced.
-func (s *Store) MarkScheduleTask(ctx context.Context, id, taskID string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE schedules SET last_task = ? WHERE id = ?`, taskID, id)
-	return err
-}
-
-// MarkScheduleRun records that a schedule fired.
-func (s *Store) MarkScheduleRun(ctx context.Context, id string, at time.Time) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE schedules SET last_run = ? WHERE id = ?`, at.Unix(), id)
-	return err
 }
 
 // Coordinator returns the machine role's binding, if one exists.

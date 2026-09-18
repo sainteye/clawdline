@@ -68,7 +68,13 @@
     "js/view/document-render.js": "d5b8cc533155d4d4",
     "js/net/cloud-crypto.js": "1ed51a5f2634e23b",
     "js/net/document-links.js": "434ad37d1c146669",
-    "js/view/documents.js": "130ecb29731148d3"
+    "js/view/documents.js": "130ecb29731148d3",
+    "js/view/schedules.js": "11e99a41970bb344",
+    "js/net/schedules.js": "c0993a27eaf78c58",
+    "js/net/schedule-webhooks.js": "6b59e590cdb79034",
+    "js/input/schedule-run.js": "4a7213cac6954c85",
+    "js/input/schedule.js": "80e190d9ffe36e22",
+    "js/input/schedule-history.js": "56dd8682b4bcf0e7"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {

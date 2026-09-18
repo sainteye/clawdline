@@ -303,7 +303,8 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 	}
 	send := v.Allowed && v.Caps.Has(auth.Send)
 	switch {
-	case p == "/v1/orchestrator/schedules" || p == "/v1/next/schedules":
+	case p == "/v1/orchestrator/schedules" || p == "/v1/next/schedules" ||
+		strings.HasPrefix(p, "/v1/orchestrator/schedules/"):
 		// Two doors, as in the Swift app: a device that may send, or this
 		// machine's orchestrator.
 		if !machine && !send {
