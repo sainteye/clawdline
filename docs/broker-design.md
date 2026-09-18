@@ -961,6 +961,28 @@ turn(repository)    = 第一個 ready candidate（推導）
 - **§5 的 O1–O11 是舊 repo 的 backlog 狀態，沒有一條一條重現。**
 - **第一波的 child（`0ca0b8c0`）還在進行中。**本文讀了它的分支 head `29a5cf5`，但沒有動它的檔案。
 
+### 9.1 B2／B3 落地後實測（2026-09-18 09:06–09:24，task `eb6b34eb`）
+
+以下只記量到的事實。量法：獨立 daemon `:7797`、獨立 `CLAWDLINE_NEXT_DIR`、tick 5 秒；child 與 root 都是
+`/tmp` 下可拋棄的 haiku session。證據檔在該 task 的 `artifacts/`。
+
+- **§9 那條推論，Go 版量到了。** 5 個 briefed child、121 秒、25 次 pass：觀察的 generation 18 → 43、
+  每個 child 的 `observed_at` 每一次 pass 都前進；同一段時間 store 的寫入交易 **0**、`total_changes()` **0**、
+  events **0**，DB 與 WAL 檔的 mtime、大小都沒動。SSE 在這段時間送出的 `orchestrator` frame 也是 **0**。
+- **心跳停了，`/v1/health` 說得出來。** 用 `CLAWDLINE_NEXT_BEAT_FAULT=stall@4` 讓第 4 次 pass 永不返回：
+  pass 在 09:06:35 開始，`/v1/health` 在 09:06:46 變成 `{"ok":false,"reason":"broker_beat_stalled"}`（**11 秒**）。
+  `panic@3` 與 `exit@3` 則被 supervisor 接住、1 秒後重啟，health 全程 `ok:true`，diagnostics 的 `restarts` 是 1，
+  store 各有一筆 `broker.beat.panicked`／`broker.beat.exited`。
+- **拔掉 root 的分頁再接回來，notice 只送一次。** root 分頁關掉後完成 child：4 次 `root_missing`（5／10／20／40 秒的梯子，
+  中間重啟 daemon 一次，notice id 不變）；root 用 `claude --resume` 在新分頁 `%924` 回來後，下一次到期的嘗試打進 `%924`，
+  root 的 transcript 裡帶這個 notice id 的 user turn **正好 1 則**；ACK 之後 90 秒內沒有再送。
+  store 的 events：`task.completion.attempt` 4、`delivered` 1、`acknowledged` 1。
+- **這台機器的 session 讀數從來不是 complete。** `/v1/next/sessions` 的 scan 是
+  `{"complete":false,"notes":["iTerm2 apple event failed: exit status 1"]}`。所以依 E6「兩次完整觀察」判定的
+  `executor_missing` 在這台機器上**不會成立**；實測時 4 個自行結束的 child 一直停在最後一次的 `observed`。
+- **一個從沒有對話過的 Claude session 不能 `--resume`**（`No conversation found with session ID`），因為 transcript
+  要等第一個 turn 才寫。拿來當 root 的可拋棄 session，要先讓它回一句話。
+
 ---
 
 ## 附錄：數字從哪裡來

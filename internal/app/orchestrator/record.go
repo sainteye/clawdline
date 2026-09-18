@@ -209,9 +209,20 @@ type Record struct {
 	FinishedAt      time.Time       `json:"finished_at,omitempty"`
 	Result          *taskdir.Result `json:"result,omitempty"`
 	Landing         *Landing        `json:"landing,omitempty"`
-	Notice          *Notice         `json:"notice,omitempty"`
+	// Notice is the completion envelope, read from its own ledger
+	// (store/broker_notices.go) and never written with the record. It is here
+	// so that a reader holds one task as one value; the only way it changes
+	// is through the ledger's compare-and-set, which is what stops an attempt
+	// that read the task a moment ago from writing over an ACK.
+	Notice *Notice `json:"-"`
 	// SpawnError is the terminal's own sentence when the tab did not open.
 	SpawnError string `json:"spawn_error,omitempty"`
+	// RespawnOf is the spawn_failed task this one retried, and
+	// RespawnGeneration how far down that chain it is: 0 for an original.
+	// The limit is counted over the family, not read from this number — see
+	// respawn.go for why a depth cannot enforce it.
+	RespawnOf         string `json:"respawn_of,omitempty"`
+	RespawnGeneration int    `json:"respawn_generation,omitempty"`
 }
 
 // Brief is the task.json this record would write.

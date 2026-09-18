@@ -61,6 +61,8 @@ func (s *Server) orchestratorTaskRoute(w http.ResponseWriter, r *http.Request) {
 		s.brokerLanding(w, r, id)
 	case action == "notify" && r.Method == http.MethodPost:
 		s.brokerNotify(w, r, id)
+	case action == "respawn" && r.Method == http.MethodPost:
+		s.brokerRespawn(w, r, id)
 	case action == "settle" && r.Method == http.MethodPost:
 		s.settleRoute(w, r)
 	default:
@@ -283,6 +285,38 @@ func (s *Server) brokerNotify(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 	writeJSON(w, contract.BrokerNotifyResult{OK: true, Sent: int64(out.Sent), Failed: int64(out.Failed)})
+}
+
+// brokerRespawn retries a task whose tab never opened. Local credential only,
+// like dispatch itself: this opens a session.
+func (s *Server) brokerRespawn(w http.ResponseWriter, r *http.Request, id string) {
+	if !machineAuthed(r) {
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "Respawning a task needs the orchestrator token.")
+		return
+	}
+	// The body is optional and has one key; anything unreadable is read as
+	// "no secret supplied", as the Swift app reads it.
+	var body struct {
+		Secret string `json:"secret"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	// Opening a tab outlives the caller's patience, as a dispatch does.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 3*time.Minute)
+	defer cancel()
+	out, err := s.broker.Respawn(ctx, id, body.Secret)
+	if err != nil {
+		writeBrokerError(w, err)
+		return
+	}
+	writeJSON(w, contract.BrokerRespawnResult{
+		OK:           true,
+		Task:         s.brokerTaskRow(ctx, out.Record),
+		Replayed:     out.Replayed,
+		Warnings:     brokerWarnings(out.Warnings),
+		Secret:       out.Secret,
+		RespawnOf:    out.From,
+		OriginalTask: out.Original,
+	})
 }
 
 // brokerInflightForTask is the per-task form: the repository comes from the
@@ -521,6 +555,15 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		ClaimsDeclared: r.Claims != nil,
 		Deliverables:   r.Deliverables,
 		SpawnError:     r.SpawnError,
+		RespawnOf:      r.RespawnOf,
+	}
+	if r.RespawnGeneration > 0 {
+		row.RespawnGeneration = int64(r.RespawnGeneration)
+	}
+	// What the beat last saw of the child's session: live, from memory, and
+	// never from the store (observe.go).
+	if e, ok := s.broker.ExecutorOf(r.ID); ok && !r.State.Terminal() {
+		row.Executor = brokerExecutor("", e)
 	}
 	if !r.SpawnedAt.IsZero() {
 		row.SpawnedAt = r.SpawnedAt.Unix()

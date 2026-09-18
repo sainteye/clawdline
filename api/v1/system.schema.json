@@ -26,16 +26,18 @@
       "properties": {
         "at": { "type": "integer" },
         "ok": { "type": "boolean" },
+        "reason": { "description": "Why `ok` is false, when it is. `broker_beat_stalled`: the broker's loop has not finished a pass in more than three ticks. Absent when ok.", "type": "string" },
         "served_by": { "description": "Which implementation answered. This is how a reader tells the Go daemon from the Swift app on the same port.", "type": "string" }
       }
     },
     "Diagnostics": {
-      "description": "GET /v1/diagnostics, this machine's own token only (a paired device is 403): what health used to carry about the process — its state directory, its ports and the clock's last pass.",
+      "description": "GET /v1/diagnostics, this machine's own token only (a paired device is 403): what health used to carry about the process — its state directory, its ports, the clock's last pass and the broker's own account of itself.",
       "type": "object",
       "additionalProperties": false,
       "required": ["at", "dir", "ok", "port", "scheduler", "served_by", "upstream"],
       "properties": {
         "at": { "type": "integer" },
+        "broker": { "$ref": "orchestrator.schema.json#/$defs/BrokerDiagnostics" },
         "dir": { "type": "string" },
         "ok": { "type": "boolean" },
         "port": { "type": "integer" },

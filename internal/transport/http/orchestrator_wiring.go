@@ -30,6 +30,10 @@ func newBroker(s *Server) *orchestrator.Broker {
 		Live: func(ctx context.Context) []session.Session {
 			return s.inventory.Read(ctx).Sessions
 		},
+		Reading: func(ctx context.Context) session.Inventory {
+			return s.inventory.Read(ctx)
+		},
+		Fault: beatFault(),
 		Type: func(ctx context.Context, terminalID, text string) error {
 			_, err := s.actions().Send(ctx, terminalID, text)
 			return err
@@ -141,7 +145,8 @@ func brokerMaxChildren(s *Server) int {
 	return 5
 }
 
-// StartBroker runs the beat that collects results and pumps notices.
+// StartBroker runs the beat that collects results and pumps notices, under
+// the supervisor that recovers it when it panics (orchestrator/observe.go).
 //
 // It is started by the daemon rather than by the first request, because a child
 // that finished while nobody was looking has still finished, and its root is
@@ -153,7 +158,7 @@ func (s *Server) StartBroker(ctx context.Context) {
 			tick = d
 		}
 	}
-	go s.broker.Watch(ctx, tick, func(p orchestrator.Pulse) {
+	go s.broker.Run(ctx, tick, func(p orchestrator.Pulse) {
 		s.beat.Store(&p)
 	})
 }

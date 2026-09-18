@@ -41,6 +41,17 @@ type Broker struct {
 	// which terminal is this conversation, is the root still there — is about
 	// now and is wrong if it is a second old.
 	Live func(ctx context.Context) []session.Session
+	// Reading is the same reading with its completeness attached, for the
+	// beat: one per pass, shared by every task the pass looks at, because a
+	// verdict about a child's executor may be drawn only from a reading that
+	// says it saw everything (observe.go). Nil falls back to Live, read as
+	// complete only when it is not empty.
+	Reading func(ctx context.Context) session.Inventory
+	// Fault is a failure-injection seam, called at the top of every pass with
+	// the pass's number. Nil in production; set only from
+	// CLAWDLINE_NEXT_BEAT_FAULT, so the alarms this broker raises about its own
+	// beat can be shown to fire on the real daemon and not only in a test.
+	Fault func(pass int64)
 	// Type types one line into a terminal and submits it.
 	Type func(ctx context.Context, terminalID, text string) error
 	// Choosing reports whether a terminal is showing a menu. Typing into one
@@ -88,6 +99,17 @@ type Broker struct {
 	// afterwards, and a plaintext secret at rest is a credential nobody meant
 	// to keep.
 	secrets map[string]string
+
+	// beat is the loop's account of itself (observe.go). In memory only: it
+	// describes this process, and a restart is a new beat.
+	beat beatState
+	// observed is what the beat last saw of each child's executor, and
+	// deferred is when a notice whose root was showing a menu may be tried
+	// again. Both are observations — recomputed by the next reading, useless
+	// after a restart — and so neither is ever written (observe.go).
+	observed observations
+	// progress carries each accepted note to whoever is streaming.
+	progress progressBus
 }
 
 const (
@@ -157,11 +179,16 @@ func SecretMatches(storedHash, presented string) bool {
 // Swift app's.
 func (b *Broker) Records(ctx context.Context) ([]Record, error) { return b.records(ctx) }
 
-// records reads every task this broker holds.
+// records reads every task this broker holds, each joined to its completion
+// envelope.
 func (b *Broker) records(ctx context.Context) ([]Record, error) {
 	rows, err := b.Store.BrokerTasks(ctx, "")
 	if err != nil {
-		return nil, err
+		return nil, storeUnavailable(err)
+	}
+	notices, err := b.Store.BrokerNotices(ctx)
+	if err != nil {
+		return nil, storeUnavailable(err)
 	}
 	out := make([]Record, 0, len(rows))
 	for _, row := range rows {
@@ -171,6 +198,9 @@ func (b *Broker) records(ctx context.Context) ([]Record, error) {
 			// naming, but it must not make the whole list unreadable: the rows
 			// beside it are somebody's running work.
 			continue
+		}
+		if n, ok := notices[r.ID]; ok {
+			r.Notice = noticeOf(n)
 		}
 		out = append(out, r)
 	}
@@ -184,19 +214,42 @@ func (b *Broker) Record(ctx context.Context, id string) (Record, string, error) 
 		return Record{}, "", notFoundTask()
 	}
 	if err != nil {
-		return Record{}, "", err
+		return Record{}, "", storeUnavailable(err)
 	}
 	r, err := Decode(row.Record)
 	if err != nil {
 		return Record{}, "", err
 	}
+	n, err := b.Store.BrokerNotice(ctx, id)
+	switch {
+	case err == nil:
+		r.Notice = noticeOf(n)
+	case !errors.Is(err, store.ErrNoNotice):
+		return Record{}, "", storeUnavailable(err)
+	}
 	return r, row.SecretHash, nil
+}
+
+// storeUnavailable is a store that did not answer, said as the Swift app says
+// it. It is never an empty answer: "I could not read the tasks" and "there
+// are no tasks" are different sentences, and a phone told the second when the
+// first was true tells its person their work is gone.
+func storeUnavailable(err error) Refusal {
+	return refuseWith(http.StatusServiceUnavailable, "orchestrator_store_unavailable",
+		"The broker's store could not be read; nothing was changed.",
+		map[string]any{"cause": err.Error()})
 }
 
 // save writes a record back, with the event that explains the change.
 func (b *Broker) save(ctx context.Context, r Record, secretHash string, kind string) error {
+	return b.saveWith(ctx, r, secretHash, kind, nil)
+}
+
+// saveWith is save that also opens the task's completion envelope, in the
+// same transaction, when notice is not nil.
+func (b *Broker) saveWith(ctx context.Context, r Record, secretHash string, kind string, notice *store.BrokerNotice) error {
 	payload, _ := json.Marshal(map[string]any{"state": r.State, "task": r.ID})
-	return b.Store.SaveBrokerTask(ctx, store.BrokerRow{
+	return b.Store.SaveBrokerTaskWithNotice(ctx, store.BrokerRow{
 		ID:         r.ID,
 		Project:    r.ProjectDir,
 		Repository: r.Repository,
@@ -206,8 +259,14 @@ func (b *Broker) save(ctx context.Context, r Record, secretHash string, kind str
 		UpdatedAt:  b.now(),
 		SecretHash: secretHash,
 		Record:     r.Encode(),
-	}, []store.Event{{Kind: kind, Subject: r.ID, Payload: payload}})
+	}, notice, []store.Event{{Kind: kind, Subject: r.ID, Payload: payload}})
 }
+
+// errNoticeOutsideLedger is a change function that edited an existing notice.
+// Notices move only through the ledger's compare-and-set (notice.go); a record
+// rewrite that carried one along would be the lost update the ledger exists
+// to make impossible, so it is refused rather than quietly dropped.
+var errNoticeOutsideLedger = errors.New("a completion notice changes only through its ledger")
 
 // errUnchanged tells mutate that the change it was asked for is already true,
 // or no longer applies, and nothing should be written.
@@ -237,13 +296,29 @@ func (b *Broker) mutate(ctx context.Context, id, kind string, change func(r *Rec
 	if err != nil {
 		return Record{}, err
 	}
+	var before *Notice
+	if r.Notice != nil {
+		copied := *r.Notice
+		before = &copied
+	}
 	if err := change(&r); err != nil {
 		if errors.Is(err, errUnchanged) {
 			return r, nil
 		}
 		return r, err
 	}
-	if err := b.save(ctx, r, hash, kind); err != nil {
+	// The one notice a record rewrite may carry is a new one: the envelope a
+	// settlement opens, stored in the same transaction as the state it
+	// announces. Anything else about a notice is the ledger's to change.
+	var opened *store.BrokerNotice
+	switch {
+	case before == nil && r.Notice != nil:
+		row := noticeRow(r.ID, *r.Notice)
+		opened = &row
+	case before != nil && (r.Notice == nil || !sameNotice(*before, *r.Notice)):
+		return r, errNoticeOutsideLedger
+	}
+	if err := b.saveWith(ctx, r, hash, kind, opened); err != nil {
 		return r, err
 	}
 	return r, nil
