@@ -1,6 +1,7 @@
 package push
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // The on-disk half, whose manners are internal/adapters/cloudkeys's because
@@ -62,6 +65,16 @@ var ErrNotRegular = errors.New("not a plain file")
 // ErrUnreadable is the answer for a file that exists and cannot be read.
 var ErrUnreadable = errors.New("the file cannot be read")
 
+// ErrSubscriptionsFull is an Add that would store a subscription past the
+// register's `push.subscriptions` limit. Nothing was written. A subscription is
+// somebody's standing request to be told, so the daemon never makes room by
+// dropping one: a person unsubscribes a device, or revokes it.
+var ErrSubscriptionsFull = errors.New("subscriptions_full")
+
+// ErrSubscriptionsTooLarge is a save whose file would be larger than load
+// reads. Past that bound every push fails (limits N14), so it is not written.
+var ErrSubscriptionsTooLarge = errors.New("the subscriptions file would be larger than the daemon reads")
+
 // Store is this daemon's push state: one VAPID identity and the subscriptions
 // browsers have handed over.
 type Store struct {
@@ -77,6 +90,12 @@ type Store struct {
 	// Log is where a replaced identity and a dropped subscription are said out
 	// loud. nil means the standard logger.
 	Log func(format string, args ...any)
+
+	// limit is the `push.subscriptions` override; refused and refusedAt count
+	// the additions it turned away. Under mu.
+	limit     int64
+	refused   int64
+	refusedAt time.Time
 }
 
 // Open prepares the push directory under root, refusing it when root is, or
@@ -222,19 +241,64 @@ func (s *Store) ForDevice(device string) ([]Subscription, error) {
 // endpoint across a reinstall; keeping the old row then sends both the
 // declarative message and a legacy notification to the same phone, and leaves
 // the test button reporting two sends.
+//
+// A subscription that replaces none is refused at the register's limit with
+// ErrSubscriptionsFull, and nothing changes. One that replaces a row never is:
+// the count does not grow.
 func (s *Store) Add(subscription Subscription) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.load(); err != nil {
 		return err
 	}
+	next := make(map[string]Subscription, len(s.rows)+1)
 	for id, existing := range s.rows {
 		if existing.Endpoint == subscription.Endpoint || existing.Device == subscription.Device {
-			delete(s.rows, id)
+			continue
 		}
+		next[id] = existing
 	}
-	s.rows[subscription.ID] = subscription
-	return s.save()
+	next[subscription.ID] = subscription
+	if limit := s.subscriptionLimit(); int64(len(next)) > limit && len(next) > len(s.rows) {
+		s.refused++
+		s.refusedAt = time.Now()
+		return fmt.Errorf("%w: %d subscriptions, the limit is %d", ErrSubscriptionsFull, len(next), limit)
+	}
+	previous := s.rows
+	s.rows = next
+	if err := s.save(); err != nil {
+		s.rows = previous
+		return err
+	}
+	return nil
+}
+
+// SetLimit is the capacity override for `push.subscriptions`. Zero or less
+// is the register's default.
+func (s *Store) SetLimit(n int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.limit = n
+}
+
+func (s *Store) subscriptionLimit() int64 {
+	if s.limit > 0 {
+		return s.limit
+	}
+	return capacity.Default(capacity.PushSubscriptions)
+}
+
+// Reading is the `push.subscriptions` row: how many subscriptions are stored,
+// and the additions refused. The file is read once per run, so after the
+// first reading this is a length.
+func (s *Store) Reading() capacity.Reading {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.load(); err != nil {
+		return capacity.Unmeasured(err.Error())
+	}
+	return capacity.Reading{Known: true, Used: int64(len(s.rows)),
+		Counters: capacity.Counters{Refused: s.refused, LastActionAt: s.refusedAt}}
 }
 
 // Remove drops one subscription by id. A row that was not there is not an
@@ -380,14 +444,25 @@ func (s *Store) save() error {
 			Created:  float64(row.Created.Unix()),
 		})
 	}
-	body, err := json.MarshalIndent(struct {
+	// Without HTML escaping: an `&` in an endpoint's query is one byte on
+	// disk, not six, which is what the row limit's arithmetic assumes.
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(struct {
 		Version       int         `json:"version"`
 		Subscriptions []storedRow `json:"subscriptions"`
-	}{Version: storeVersion, Subscriptions: rows}, "", "  ")
-	if err != nil {
+	}{Version: storeVersion, Subscriptions: rows}); err != nil {
 		return err
 	}
-	return s.writeAtomically(SubscriptionsFile, append(body, '\n'))
+	body := out.Bytes()
+	if len(body) > subscriptionsLimit {
+		s.refused++
+		s.refusedAt = time.Now()
+		return fmt.Errorf("%w: %d bytes, and %s is read up to %d", ErrSubscriptionsTooLarge, len(body), SubscriptionsFile, subscriptionsLimit)
+	}
+	return s.writeAtomically(SubscriptionsFile, body)
 }
 
 // readSecret reads one base64 line and requires it to decode to exactly want

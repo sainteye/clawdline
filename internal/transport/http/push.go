@@ -4,14 +4,18 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/devices"
 	adapterpush "github.com/sainteye/clawdline-go/internal/adapters/push"
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // The /v1/push/* routes, which are the Swift app's (`RemoteServer.swift`, the
@@ -75,6 +79,9 @@ func (s *Server) push() (*adapterpush.Store, error) {
 	store, err := adapterpush.Open(s.cfg.Dir, swiftDirs()...)
 	if err != nil {
 		log.Printf("push: the store at %s could not be opened: %v", s.cfg.Dir, err)
+	} else {
+		// A new subscription is refused at the register's limit.
+		store.SetLimit(CapacityLimit(capacity.PushSubscriptions))
 	}
 	pushStores.Store(s.cfg.Dir, &pushHold{store: store, err: err})
 	return store, err
@@ -146,7 +153,7 @@ func (s *Server) pushSubscribeRoute(w http.ResponseWriter, r *http.Request) {
 	// destination for notices about what somebody is working on, which is
 	// exactly the kind of change the question "what did they do while they
 	// were in" needs an answer for.
-	s.auditPush("push.subscribe", map[string]string{
+	s.audit("push.subscribe", map[string]string{
 		"id": subscription.ID, "device": device, "host": subscription.Host(),
 	})
 	writeJSON(w, contract.PushSubscribed{OK: true, ID: subscription.ID})
@@ -202,7 +209,7 @@ func (s *Server) pushTestRoute(w http.ResponseWriter, r *http.Request) {
 		writePushStoreFailure(w, err)
 		return
 	}
-	s.auditPush("push.test", map[string]string{"device": device, "url": url})
+	s.audit("push.test", map[string]string{"device": device, "url": url})
 	writeJSON(w, contract.PushSent{
 		OK: delivery.Sent > 0, Sent: int64(delivery.Sent), Failed: int64(delivery.Failed),
 	})
@@ -249,7 +256,7 @@ func (s *Server) pushUnsubscribeRoute(w http.ResponseWriter, r *http.Request) {
 			writePushStoreFailure(w, err)
 			return
 		}
-		s.auditPush("push.unsubscribe", map[string]string{"id": id, "device": row.Device})
+		s.audit("push.unsubscribe", map[string]string{"id": id, "device": row.Device})
 		break
 	}
 	// Ok either way. Unsubscribing twice is what a reload of the page looks
@@ -313,10 +320,26 @@ func pushDevice(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return v.Device, true
 }
 
-// auditPush writes one line to the same audit log the device routes use. A
-// store that could not be opened is not a reason to fail the request that
-// already happened.
-func (s *Server) auditPush(event string, fields map[string]string) {
+// audit records one event in whichever of the two records it belongs to
+// (devices.SecurityEvent, design-decisions D25): the security audit, which is
+// the file the device routes write, or the operational journal, which is the
+// store's `events`. An event on neither list is kept in the security audit,
+// where nothing is deleted. A record that could not be written is not a reason
+// to fail the request that already happened; each writer counts its own
+// failures.
+func (s *Server) audit(event string, fields map[string]string) {
+	if devices.JournalEvent(event) {
+		payload, err := json.Marshal(fields)
+		if err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			err = s.store.Append(ctx, store.Event{Kind: event, Subject: fields["schedule"], Payload: payload})
+		}
+		if err != nil {
+			log.Printf("journal: could not record %s: %v", event, err)
+		}
+		return
+	}
 	if g := s.gate(); g != nil && g.files != nil {
 		g.files.Audit(event, fields)
 	}
@@ -341,6 +364,11 @@ func newPushID() string {
 func writePushStoreFailure(w http.ResponseWriter, err error) {
 	log.Printf("push: %v", err)
 	switch {
+	case errors.Is(err, adapterpush.ErrSubscriptionsFull), errors.Is(err, adapterpush.ErrSubscriptionsTooLarge):
+		// Full, not broken: the register's `push.subscriptions` row, which
+		// only a person makes room in.
+		writeAuthRefusal(w, http.StatusInsufficientStorage, "subscriptions_full",
+			"This machine already notifies as many devices as it keeps. Turn notifications off on one you no longer use, then try again.")
 	case errors.Is(err, adapterpush.ErrNotRegular), errors.Is(err, adapterpush.ErrUnreadable),
 		errors.Is(err, adapterpush.ErrForeignDir):
 		writeAuthRefusal(w, http.StatusServiceUnavailable, "store_unavailable",

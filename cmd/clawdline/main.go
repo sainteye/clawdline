@@ -83,6 +83,8 @@ func serve() {
 		os.Exit(2)
 	}
 	cfg.Port = port
+	// The log goes where it is bounded before anything else is said.
+	daemonLog(cfg)
 	srv, err := httptransport.New(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)

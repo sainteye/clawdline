@@ -123,6 +123,12 @@ const (
 	VAPIDSeedBytes = 32
 )
 
+// endpointLimit is the longest endpoint a subscription may name. The push
+// services' own run to a few hundred characters; the bound is what keeps the
+// register's `push.subscriptions` limit, every row at its longest, under half
+// of what the subscriptions file is read up to (a test holds that).
+const endpointLimit = 2048
+
 // The ways one message can be refused before it ever reaches the network. Each
 // of these is a thing a push service answers with a 400 and an opaque body, so
 // it is worth catching here where the reason is still in front of us.
@@ -204,8 +210,16 @@ func (s Subscription) Host() string {
 // a perfectly plausible thing for a client to send and the resulting failure is
 // otherwise a crypto error thrown an hour later with no mention of where the
 // data came from.
+//
+// And its size and spelling: at most endpointLimit bytes, and only the
+// characters a URL is written in — no spaces, controls, quotes, backslashes or
+// angle brackets, and nothing outside ASCII — so a stored row is as long on
+// disk as it was on the wire.
 func FromBrowser(body map[string]any, id, device, rawOrigin string) (Subscription, bool) {
 	raw, _ := body["endpoint"].(string)
+	if len(raw) > endpointLimit || !urlText(raw) {
+		return Subscription{}, false
+	}
 	endpoint, err := url.Parse(raw)
 	if err != nil || !strings.EqualFold(endpoint.Scheme, "https") || endpoint.Hostname() == "" {
 		return Subscription{}, false
@@ -314,4 +328,16 @@ func DecodeBase64URL(text string) ([]byte, error) {
 		swapped += strings.Repeat("=", 4-pad)
 	}
 	return base64.StdEncoding.DecodeString(swapped)
+}
+
+// urlText reports whether s is written only in characters a URL is: printable
+// ASCII other than the space, the quote, the backslash and the angle brackets.
+func urlText(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c <= 0x20 || c >= 0x7f || c == '"' || c == '\\' || c == '<' || c == '>' {
+			return false
+		}
+	}
+	return true
 }

@@ -148,6 +148,12 @@ const (
 	BoardReceipts   = "board.receipts"
 	CloudRelayQueue = "cloud.relay_queue"
 	StoreReceipts   = "store.receipts"
+	// C2: the things that had no limit at all (limits §3.3, §7.2 wave 2).
+	LogDaemon             = "log.daemon"
+	DevicesList           = "devices.list"
+	PushSubscriptions     = "push.subscriptions"
+	CacheTranscriptUsage  = "cache.transcript_usage"
+	CacheTranscriptTitles = "cache.transcript_titles"
 )
 
 // Entry is one row of the register.
@@ -191,9 +197,10 @@ var namePattern = regexp.MustCompile(`^[a-z]+(\.[a-z_]+)+$`)
 // Register is every row this daemon measures. It is a function rather than a
 // variable so nobody can edit the table they were handed.
 //
-// C1 registers the four rows docs/limits.md §7.1 names. The rest of the
-// bounded things in this repository are on the guard's baseline, each with the
-// limits.md row that will register it.
+// C1 registered the four rows docs/limits.md §7.1 names; C2 the five that had
+// no limit at all (§7.2 wave 2). The rest of the bounded things in this
+// repository are on the guard's baseline, each with the limits.md row that
+// will register it.
 func Register() []Entry {
 	return []Entry{
 		{
@@ -243,6 +250,63 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice, CloudStatus, Log},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/transport/cloud.(*Relay).start:chan(r.depth())"},
+		},
+		{
+			// CLAWDLINE_NEXT_DIR/logs/daemon.log (limits N29). At this size it
+			// becomes a segment and a new file is begun; the daemon keeps the
+			// newest of those segments and deletes the rest, so the whole log
+			// is at most the current file and maxSegments more.
+			Name: LogDaemon, Class: DiagnosticLog, Unit: Bytes,
+			Limit: 10 << 20, AtLimit: Rotate,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/logs.maxSegments"},
+		},
+		{
+			// remote.json's paired devices (limits N13). Each is somebody's
+			// access, so only a person lets one go: at the limit a new
+			// pairing, password sign-in or browser device is refused with
+			// 507 device_list_full, and revoking still works. The read bound
+			// is registered here too: the most rows this limit allows,
+			// written at their longest, stay far under it (a test holds
+			// that), so the file cannot grow past what the daemon reads at
+			// startup — the limit speaks first.
+			Name: DevicesList, Class: Evidence, Unit: Rows,
+			Limit: 512, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/devices.storeLimit"},
+		},
+		{
+			// push/subscriptions.json (limits N14). A person's standing
+			// request to be told, one row per device: at the limit a new
+			// subscription is refused with 507 subscriptions_full rather
+			// than one being dropped, and the read bound is registered for
+			// the same reason as the device list's.
+			Name: PushSubscriptions, Class: Evidence, Unit: Rows,
+			Limit: 128, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/push.subscriptionsLimit"},
+		},
+		{
+			// What each live session's transcript has been counted to, so
+			// the usage route reads only what is new (limits N18). A miss
+			// reads the transcript again from its start.
+			Name: CacheTranscriptUsage, Class: Cache, Unit: Rows,
+			Limit: 256, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+		},
+		{
+			// Each conversation's title as last read, keyed on the file's size
+			// and time (limits N18). A miss reads the transcript's tail again.
+			Name: CacheTranscriptTitles, Class: Cache, Unit: Rows,
+			Limit: 256, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
 		},
 	}
 }

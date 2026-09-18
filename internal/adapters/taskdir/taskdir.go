@@ -47,9 +47,10 @@ func (r Root) Create(t task.Task) (string, error) {
 //
 // Absence is not failure: a task that has not answered yet and one that never
 // will look identical here, and telling them apart is the caller's job with a
-// clock, not this reader's with a guess.
+// clock, not this reader's with a guess. A file past the broker's read bound
+// is not read (ErrTooLarge), and answers as not there.
 func (r Root) Result(id string) (task.Result, bool) {
-	body, err := os.ReadFile(filepath.Join(r.Path(id), "result.json"))
+	body, err := readBounded(filepath.Join(r.Path(id), "result.json"), resultLimit)
 	if err != nil {
 		return task.Result{}, false
 	}

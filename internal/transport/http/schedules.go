@@ -79,7 +79,7 @@ func (s *Server) scheduleBook() *app.ScheduleBook {
 			on, ok := v.Bool("schedule_imports_enabled")
 			return ok && on
 		},
-		Audit: s.auditPush,
+		Audit: s.audit,
 		Notify: func(ctx context.Context, title, body, tag string) {
 			// A push that could not be sent is logged by the sender; the run
 			// it is about has already been decided and recorded.
@@ -294,7 +294,7 @@ func (s *Server) scheduleImportRoute(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Files map[string]string `json:"files"`
 	}
-	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 4<<20))
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, scheduleImportBodyLimit))
 	if err != nil || json.Unmarshal(raw, &body) != nil || len(body.Files) == 0 {
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", `Send {"files": {"<schedule-id>.json": "<file contents>"}}.`)
 		return

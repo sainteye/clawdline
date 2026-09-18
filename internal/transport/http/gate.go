@@ -118,8 +118,10 @@ func openGate(cfg config.Config) *gate {
 		return g
 	}
 	g.files = files
-	// The audit rotates at the capacity register's `audit.security` size.
+	// The audit rotates at the capacity register's `audit.security` size, and
+	// the device list refuses an addition at its `devices.list` limit.
 	files.SetAuditLimit(CapacityLimit(capacity.AuditSecurity))
+	files.SetDeviceLimit(CapacityLimit(capacity.DevicesList))
 	a, err := auth.New(files, auth.Options{})
 	if err != nil {
 		g.err = fmt.Errorf("the device store at %s could not be read: %w", cfg.Dir, err)
