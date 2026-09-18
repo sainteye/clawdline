@@ -34,6 +34,12 @@ const (
 	KeyAPIBase = "cloud_api_base"
 	// KeyMachineName is what the person will see in their machine list.
 	KeyMachineName = "cloud_machine_name"
+	// KeyAppOrigin is where the hosted console lives. It is a separate key
+	// from the api and the relay because a pairing link is the one thing this
+	// machine hands to a **person**: they open it in a browser, so it has to
+	// name the site they will be looking at, not the control plane behind it.
+	// Empty means the default.
+	KeyAppOrigin = "cloud_app_origin"
 	// KeyCommands is whether a Cloud viewer may cause an effect here at all —
 	// type into a session, close one, start one. It is a **second** switch on
 	// purpose, the same shape as `remote` and `remote_write` on the free path:
@@ -46,6 +52,11 @@ const (
 const (
 	DefaultRelayURL = "wss://relay.clawdline.com/v1/connect"
 	DefaultAPIBase  = "https://api.clawdline.com"
+	// DefaultAppOrigin is the hosted console, `cloud-onboarding.js`'s
+	// CLOUD_APP_ORIGIN. A pairing QR carries this origin and the browser
+	// reading it checks the origin before it will treat the fragment as a
+	// pairing invitation at all.
+	DefaultAppOrigin = "https://app.clawdline.com"
 )
 
 // MasterKeyID is the key id this machine seals with, `CloudBridgeLifecycle.swift:396`.
@@ -59,6 +70,7 @@ type Settings struct {
 	Commands    bool
 	RelayURL    string
 	APIBase     string
+	AppOrigin   string
 	MachineName string
 }
 
@@ -73,7 +85,7 @@ func ReadSettings(file *nextconfig.File) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
-	settings := Settings{RelayURL: DefaultRelayURL, APIBase: DefaultAPIBase}
+	settings := Settings{RelayURL: DefaultRelayURL, APIBase: DefaultAPIBase, AppOrigin: DefaultAppOrigin}
 
 	if raw, ok := values.Raw[KeyEnabled]; ok {
 		var enabled bool
@@ -100,6 +112,12 @@ func ReadSettings(file *nextconfig.File) (Settings, error) {
 			return Settings{}, err
 		}
 		settings.APIBase = base
+	}
+	if origin, ok := values.String(KeyAppOrigin); ok && origin != "" {
+		if err := ValidateAppOrigin(origin); err != nil {
+			return Settings{}, err
+		}
+		settings.AppOrigin = origin
 	}
 	if name, ok := values.String(KeyMachineName); ok {
 		settings.MachineName = name
@@ -174,6 +192,43 @@ func ValidateRelayURL(raw string) error {
 		return nil
 	}
 	return fmt.Errorf("%s must end in /v1/connect, not %q", KeyRelayURL, parsed.Path)
+}
+
+// ValidateAppOrigin refuses a console origin this build will not put in front
+// of a person.
+//
+// It is the same shape as ValidateAPIBase and it is a separate function because
+// what it protects is different: this string ends up in a link somebody clicks
+// with a one-time pairing secret in its fragment, so a path, a query or a
+// fragment already on it would either be dropped or would carry that secret
+// somewhere it was not meant to go.
+func ValidateAppOrigin(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s is not a URL: %w", KeyAppOrigin, err)
+	}
+	switch parsed.Scheme {
+	case "https":
+	case "http":
+		if !isLoopback(parsed.Hostname()) {
+			return fmt.Errorf("%s may only be http:// for a console on this machine; %s needs https://", KeyAppOrigin, parsed.Hostname())
+		}
+	default:
+		return fmt.Errorf("%s must be http:// or https://, not %q", KeyAppOrigin, parsed.Scheme)
+	}
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("%s names no host", KeyAppOrigin)
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("%s must not carry a user or password", KeyAppOrigin)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("%s must be an origin, with no query or fragment", KeyAppOrigin)
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return fmt.Errorf("%s must be an origin, not %q", KeyAppOrigin, parsed.Path)
+	}
+	return nil
 }
 
 // ValidateAPIBase refuses a control-plane base this build will not post to.

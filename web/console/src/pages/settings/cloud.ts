@@ -22,6 +22,30 @@ export type CloudViewer = {
   name?: string
   caps?: string[]
   fingerprint?: string
+  /**
+   * Whether this Mac itself handed that browser the account key, or whether it
+   * is only on the account's list. Both are admitted today, and they are
+   * different amounts of evidence, so the card says which.
+   */
+  pinned?: boolean
+  paired_at?: number
+  revoked?: boolean
+  revoked_at?: number
+}
+
+/** The handover in progress: idle | waiting | sealing | paired | failed. */
+export type CloudPairing = {
+  phase: string
+  invitation_id?: string
+  /** The link to open in the browser being paired. Its fragment is a secret. */
+  link?: string
+  expires_at?: number
+  machine_fingerprint?: string
+  viewer_device_id?: string
+  viewer_fingerprint?: string
+  paired_at?: number
+  error?: string
+  error_at?: number
 }
 
 export type CloudStatus = {
@@ -53,6 +77,9 @@ export type CloudStatus = {
   queue_dropped: number
   devices?: CloudViewer[]
   roster_readable: boolean
+  pinned_readable?: boolean
+  pinned_error?: string
+  pairing?: CloudPairing
   commandset?: string[]
 }
 
@@ -76,4 +103,53 @@ export async function readCloudStatus(): Promise<CloudStatus | null> {
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * The pairing routes, which unlike the status route **change** something.
+ *
+ * They are behind this machine's own token for a reason worth restating where
+ * the calls are: `POST /v1/cloud/pairing` answers a link whose fragment hands
+ * the account's master secret to whoever opens it. A refusal is thrown rather
+ * than swallowed here — the card has to be able to say why, because "nothing
+ * happened" is the one answer a person cannot act on.
+ */
+async function cloudCall<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(client.url(path), {
+    method,
+    headers: body === undefined ? undefined : { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const text = await res.text()
+  let parsed: unknown = null
+  try {
+    parsed = text ? JSON.parse(text) : null
+  } catch {
+    parsed = null
+  }
+  if (!res.ok) {
+    const refusal = parsed as { error?: { message?: string; code?: string } } | null
+    throw new Error(refusal?.error?.message || `${path} 回答 ${res.status}`)
+  }
+  return parsed as T
+}
+
+/** Show a fresh one-time link. Whatever was waiting is replaced. */
+export function beginCloudPairing(): Promise<CloudPairing> {
+  return cloudCall<CloudPairing>("POST", "/v1/cloud/pairing")
+}
+
+/** Stop waiting. The link is left to expire on its own; nothing withdraws one. */
+export function cancelCloudPairing(): Promise<CloudPairing> {
+  return cloudCall<CloudPairing>("DELETE", "/v1/cloud/pairing")
+}
+
+/** Finish from the code a desktop browser is showing, which has no camera to point. */
+export function offerCloudPairing(code: string): Promise<CloudPairing> {
+  return cloudCall<CloudPairing>("POST", "/v1/cloud/pairing/offer", { offer: code })
+}
+
+/** Throw one browser out of this Mac. Local, immediate, and not the account's list. */
+export function revokeCloudViewer(device: string): Promise<{ device: string; revoked: boolean }> {
+  return cloudCall("POST", "/v1/cloud/devices/revoke", { device })
 }

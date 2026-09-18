@@ -62,7 +62,15 @@ type vectorFile struct {
 		Offer    string `json:"offer"`
 		Handover string `json:"handover"`
 		AAD      string `json:"aad"`
-		Wrapper  struct {
+		// The fixture publishes both ephemeral private keys, the fixed nonce
+		// and the clock it was built at, which is what makes the whole
+		// handover reproducible rather than merely checkable.
+		OfferFragment              string `json:"offer_fragment"`
+		MachineEphemeralPrivateKey string `json:"machine_ephemeral_private_key"`
+		ViewerEphemeralPrivateKey  string `json:"viewer_ephemeral_private_key"`
+		SenderDeviceID             string `json:"sender_device_id"`
+		NowMilliseconds            int64  `json:"now_milliseconds"`
+		Wrapper                    struct {
 			V              int    `json:"v"`
 			Phase          string `json:"phase"`
 			PairingID      string `json:"pairing_id"`
