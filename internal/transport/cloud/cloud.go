@@ -102,8 +102,28 @@ func AnswerChannel(machine, session string) string {
 	return "t/" + cloudops.ChannelSegment(machine) + "/" + cloudops.ChannelSegment(session)
 }
 
+// Refuser is a transport whose queue can turn a request away (Relay). Service
+// answers each one it turned away, so the person who sent it hears "busy"
+// rather than nothing (limits N20).
+type Refuser interface {
+	// Refused is closed when the transport is finished, as Requests is.
+	Refused() <-chan Inbound
+	// QueueDepth is what a refusal's detail reports as the limit.
+	QueueDepth() int
+	// Unanswered records a refused request whose sender could not be told.
+	Unanswered(in Inbound, why string)
+}
+
 // Run answers requests until the transport's channel closes or ctx is done.
+//
+// Refusals are answered on a goroutine of their own. The queue is full exactly
+// when the bridge is slow, and a busy answer that waited behind the slow
+// request would reach its sender when there was no longer anything to be busy
+// about.
 func (s Service) Run(ctx context.Context) error {
+	if r, ok := s.Transport.(Refuser); ok {
+		go s.refuse(ctx, r)
+	}
 	requests := s.Transport.Requests()
 	for {
 		select {
@@ -155,6 +175,51 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 		s.logf("cloud: %s was not delivered: %v", answer.Name, err)
 	}
 	return answer
+}
+
+// refuse tells every request the transport turned away that it was.
+func (s Service) refuse(ctx context.Context, r Refuser) {
+	refused := r.Refused()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case request, open := <-refused:
+			if !open {
+				return
+			}
+			if why := s.Busy(ctx, request, r.QueueDepth()); why != "" {
+				r.Unanswered(request, why)
+			}
+		}
+	}
+}
+
+// Busy answers one request the queue turned away with `cloud_ingress_busy`,
+// on the channel its sender waits on. It returns why the sender could not be
+// told, or "" when the answer was handed to the transport.
+func (s Service) Busy(ctx context.Context, request Inbound, limit int) string {
+	answer := s.Bridge.Busy(cloudops.Command{
+		Channel:   request.Channel,
+		Class:     cloudops.Class(request.Class),
+		Sender:    request.Sender,
+		Sequence:  request.Sequence,
+		Plaintext: request.Plaintext,
+	}, limit)
+	if !answer.Published() {
+		return "the request names no waiter a refusal may be published to (" + answer.Code + ")"
+	}
+	channel := AnswerChannel(s.MachineID, answer.Session)
+	if err := cloud.ProducibleChannel(channel); err != nil {
+		return err.Error()
+	}
+	out := Outbound{Channel: channel, Class: string(cloud.ClassStream), Payload: answer.Payload,
+		Reply: Reply{Sender: request.Sender, Sequence: request.Sequence, Name: answer.Name,
+			Status: answer.Status, Code: answer.Code}}
+	if err := s.Transport.Publish(ctx, out); err != nil {
+		return "the refusal could not be sent: " + err.Error()
+	}
+	return ""
 }
 
 func (s Service) logf(format string, args ...any) {

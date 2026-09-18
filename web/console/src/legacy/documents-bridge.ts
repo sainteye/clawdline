@@ -40,6 +40,7 @@ import {
   normalizeDocumentLocator,
 } from "./js/net/document-links.js"
 import { bindDocumentsPage as bindDocumentsPageOriginal } from "./js/view/documents.js"
+import { nextWord } from "../next-strings.js"
 
 /** The identity a listing is asked for: one Mac, one Session. */
 export interface DocumentIdentity {
@@ -148,15 +149,55 @@ function wrongMachine(): Error & { code?: string } {
   return wrong
 }
 
-/** `net/live.js`'s `documents(value)`. */
+/**
+ * `net/live.js`'s `documents(value)`, and one thing more: a listing shorter
+ * than what is there says so under the rows (limits N28).
+ *
+ * The daemon puts that in `X-Clawdline-Truncated` because the body is the
+ * Swift app's one-key object, which `localDocumentListing` refuses to widen.
+ * The note is this page's own element, beside the copied rows rather than in
+ * them, so the copied module never paints over it; it is hidden with the list
+ * when a document is open, and cleared by every listing that is not cut. The
+ * Swift app cut the same listing and drew nothing.
+ */
 async function list(value: unknown): Promise<{ documents: DocumentLocator[] }> {
   const identity = (normalizeDocumentIdentity as (v: unknown) => DocumentIdentity)(value)
   if (identity.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
-  const body = await jsonFetch("/v1/sessions/" + encodeURIComponent(identity.session) + "/documents")
-  return (localDocumentListing as (b: unknown, i: DocumentIdentity) => { documents: DocumentLocator[] })(
+  sayCut(null)
+  const headers: Headers[] = []
+  const body = await jsonFetch("/v1/sessions/" + encodeURIComponent(identity.session) + "/documents", headers)
+  const listing = (localDocumentListing as (b: unknown, i: DocumentIdentity) => { documents: DocumentLocator[] })(
     body,
     identity,
   )
+  sayCut(headers[0]?.get("X-Clawdline-Truncated") ?? null)
+  return listing
+}
+
+/** The note under the rows, made once beside them. */
+let cutNote: HTMLElement | null = null
+
+/** Say how the listing was cut, or nothing. */
+function sayCut(header: string | null): void {
+  if (!cutNote) return
+  const said = header ? cutWords(header) : ""
+  cutNote.textContent = said
+  cutNote.hidden = !said
+}
+
+/** `listed=12; walked=4000; tasks=3` as sentences, the parts that are there. */
+export function cutWords(header: string): string {
+  const parts = new Map<string, number>()
+  for (const part of header.split(";")) {
+    const [name, raw] = part.split("=").map((x) => x.trim())
+    const n = Number(raw)
+    if (name && Number.isFinite(n) && n > 0) parts.set(name, n)
+  }
+  const said: string[] = []
+  if (parts.has("listed")) said.push(nextWord("documentsListed", { count: parts.get("listed")! }))
+  if (parts.has("tasks")) said.push(nextWord("documentsTasks", { count: parts.get("tasks")! }))
+  if (parts.has("walked")) said.push(nextWord("documentsWalked", { entries: parts.get("walked")!.toLocaleString() }))
+  return said.join(" ")
 }
 
 /** `net/live.js`'s `document(value)`: bytes, and the same validator the Cloud answer gets. */
@@ -199,13 +240,14 @@ async function read(value: unknown): Promise<unknown> {
 }
 
 /** `jsonFetch` (`net/live.js`), reduced to the one shape this page asks for. */
-async function jsonFetch(path: string): Promise<unknown> {
+async function jsonFetch(path: string, headers?: Headers[]): Promise<unknown> {
   let response: Response
   try {
     response = await fetch(path, { cache: "no-store" })
   } catch {
     throw typed(words().webOffline, "offline")
   }
+  headers?.push(response.headers)
   const text = await response.text()
   let body: unknown = null
   try {
@@ -241,6 +283,15 @@ function words(): Record<string, string> {
 export function bindDocuments(doc: Document, navigate: (page: string) => void): DocumentsPage {
   const table: Record<string, Element | null> = {}
   for (const [slot, id] of Object.entries(DOCUMENTS_ELEMENTS)) table[slot] = doc.getElementById(id)
+  const listView = table.listView
+  if (listView && !cutNote) {
+    cutNote = doc.createElement("p")
+    cutNote.id = "documents-cut"
+    cutNote.className = "documents-status"
+    cutNote.setAttribute("role", "note")
+    cutNote.hidden = true
+    listView.appendChild(cutNote)
+  }
   return (bindDocumentsPageOriginal as (e: unknown, s: unknown) => DocumentsPage)(table, {
     document: doc,
     language: () => doc.documentElement.lang || navigator.language || "en",

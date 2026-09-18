@@ -141,13 +141,21 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
-		case moved := <-screens:
-			payload, err := json.Marshal(moved)
-			if err != nil {
-				continue
+		case <-screens.ready:
+			// Whatever is waiting, newest revision of each screen that moved.
+			for _, moved := range s.screenBus.take(screens) {
+				payload, err := json.Marshal(moved)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(w, "event: screen\ndata: %s\n\n", payload)
 			}
-			fmt.Fprintf(w, "event: screen\ndata: %s\n\n", payload)
 			flusher.Flush()
+		case <-screens.gone:
+			// The bus ended this stream: too many screens moved while it was
+			// not reading. Ending the response is how the page learns it; its
+			// EventSource reconnects and everything is read afresh (N19).
+			return
 		case note := <-feed.notes:
 			feed.write(w, flusher, note)
 		case <-ticker.C:

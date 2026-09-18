@@ -37,6 +37,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/cloudkeys"
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/app/cloudops"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
 )
 
@@ -100,10 +101,13 @@ type Status struct {
 	// answered with a refusal code. Both are process-lifetime.
 	Answered int `json:"answered"`
 	Refused  int `json:"refused"`
-	// QueueDropped counts requests the bridge never saw because the queue was
-	// full. It is separate from the transport's own drop counters, which are
-	// about envelopes that never authenticated.
-	QueueDropped int `json:"queue_dropped"`
+	// QueueRefused counts requests the bridge never saw because the queue was
+	// full; each sender was answered `cloud_ingress_busy`. QueueUnanswered is
+	// those of them whose refusal could not be sent, the only requests that
+	// reached nobody. Both are separate from the transport's own drop
+	// counters, which are about envelopes that never authenticated.
+	QueueRefused    int `json:"queue_refused"`
+	QueueUnanswered int `json:"queue_unanswered"`
 
 	// Devices is the account's enrolled viewers as this machine last read them.
 	Devices []Viewer `json:"devices,omitempty"`
@@ -654,12 +658,12 @@ func hasAny(have []string, want ...string) bool {
 // RelayQueue is the request queue's reading for the capacity register. ok is
 // false when this link has no queue: its line has never been built, because
 // the switch is off or the machine is not enrolled.
-func (l *Link) RelayQueue() (waiting, depth, dropped int, ok bool) {
+func (l *Link) RelayQueue() (waiting, depth int, counters capacity.Counters, ok bool) {
 	if l.relay == nil {
-		return 0, 0, 0, false
+		return 0, 0, capacity.Counters{}, false
 	}
-	waiting, depth, dropped = l.relay.Queue()
-	return waiting, depth, dropped, true
+	waiting, depth, counters = l.relay.Queue()
+	return waiting, depth, counters, true
 }
 
 // Status is what the status route answers.
@@ -687,7 +691,7 @@ func (l *Link) Status() Status {
 	out.Commands = l.allowCommands()
 	out.Commandset = cloudops.Implemented()
 	if l.relay != nil {
-		out.QueueDropped = l.relay.Dropped()
+		out.QueueRefused, out.QueueUnanswered = l.relay.Refusals()
 	}
 	// The viewer list is the two sources joined, in the order that decides
 	// admission: this machine's own pins, then the account's roster for

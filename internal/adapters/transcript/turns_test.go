@@ -253,3 +253,55 @@ func TestTailWindowDropsItsCutLine(t *testing.T) {
 		t.Fatalf("limit keeps the newest: %+v", page.Entries)
 	}
 }
+
+// limits N17: the read looks at only the record's last ReadBudget bytes. When
+// that window runs out before the page is full, the page says how much was
+// never read; the Swift app cuts the same window and says nothing, so its page
+// reads as if the conversation began at its first entry.
+func TestAReadWindowThatRunsOutSaysHowMuchWasNotRead(t *testing.T) {
+	var b strings.Builder
+	write := func(row m) {
+		line, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Write(line)
+		b.WriteByte('\n')
+	}
+	write(claudeRow("user", "the first thing anybody said"))
+	// Rows that yield no entry, past the window: what a long tool-heavy
+	// conversation's middle is to this reader.
+	filler := m{"type": "progress", "data": strings.Repeat("x", 4000)}
+	for b.Len() < ReadBudget+(1<<20) {
+		write(filler)
+	}
+	write(claudeRow("user", "the newest question"))
+	write(claudeRow("assistant", []m{{"type": "text", "text": "the newest answer"}}))
+	path := filepath.Join(t.TempDir(), "long.jsonl")
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	size := int64(b.Len())
+
+	page, err := ReadClaude(path, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Entries) != 2 {
+		t.Fatalf("read %d entries, want the two inside the window", len(page.Entries))
+	}
+	if page.Unread < size-ReadBudget || page.Unread > size {
+		t.Fatalf("unread %d of %d bytes; want at least the %d before the window", page.Unread, size, size-ReadBudget)
+	}
+
+	// Asked for no more than the window holds: the page is what was asked
+	// for, and nothing is owed.
+	if page, _ := ReadClaude(path, 2); page.Unread != 0 || len(page.Entries) != 2 {
+		t.Fatalf("a full page reads unread=%d entries=%d", page.Unread, len(page.Entries))
+	}
+	// A record the window covers whole has nothing unread.
+	short := writeRecord(t, claudeRow("user", "hello"))
+	if page, _ := ReadClaude(short, 200); page.Unread != 0 || len(page.Entries) != 1 {
+		t.Fatalf("a short record reads unread=%d entries=%d", page.Unread, len(page.Entries))
+	}
+}

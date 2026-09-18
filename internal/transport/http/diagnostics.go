@@ -69,6 +69,14 @@ type capacityBeat struct {
 	record   func(context.Context, store.Event) error
 	since    time.Time
 
+	// poke asks for a pass now rather than at the next tick: a write that
+	// failed, a picture stored. One slot, because two pokes before a pass are
+	// one pass.
+	poke chan struct{}
+	// passMu is held for the length of one pass, so a poke and a tick never
+	// measure at once and never record one transition twice.
+	passMu sync.Mutex
+
 	mu        sync.Mutex
 	started   time.Time
 	tick      time.Duration
@@ -95,8 +103,19 @@ func (s *Server) capacity() *capacityBeat {
 		measure:  s.capacityMeasures(),
 		record:   s.store.Append,
 		since:    time.Now(),
+		poke:     make(chan struct{}, 1),
 	})
 	return b.(*capacityBeat)
+}
+
+// nudge asks the beat to measure now. It never blocks: a pass already asked
+// for is the pass this one wanted. A beat that is not running is not started
+// by it; the next pass, whenever it comes, sees what happened.
+func (b *capacityBeat) nudge() {
+	select {
+	case b.poke <- struct{}{}:
+	default:
+	}
 }
 
 // daemonLogs is the log file each state directory's daemon writes, set by
@@ -162,7 +181,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return g.files.AuditReading()
 		},
-		capacity.StoreDB: func() capacity.Reading { return store.DBReading(s.cfg.Dir) },
+		// The file's size and the disk's room, and this handle's own account
+		// of the writes the database refused (limits N2).
+		capacity.StoreDB: func() capacity.Reading { return s.store.Reading(s.cfg.Dir) },
 		capacity.StoreReceipts: func() capacity.Reading {
 			uses, err := s.store.ReceiptUses(context.Background(), store.ReceiptWindow, time.Now())
 			if err != nil {
@@ -191,21 +212,46 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 				return capacity.Reading{Known: true, Note: "the Cloud line is off: there is no queue"}
 			}
 			q, ok := line.(interface {
-				RelayQueue() (waiting, depth, dropped int, ok bool)
+				RelayQueue() (waiting, depth int, counters capacity.Counters, ok bool)
 			})
 			if !ok {
 				return capacity.Unmeasured("this Cloud line does not report its queue")
 			}
-			waiting, depth, dropped, ok := q.RelayQueue()
+			waiting, depth, counters, ok := q.RelayQueue()
 			if !ok {
 				return capacity.Reading{Known: true, Note: "the Cloud line was never built: there is no queue"}
 			}
-			r := capacity.Reading{Known: true, Used: int64(waiting),
-				Counters: capacity.Counters{Dropped: int64(dropped)}}
+			r := capacity.Reading{Known: true, Used: int64(waiting), Counters: counters}
 			if limit := CapacityLimit(capacity.CloudRelayQueue); int64(depth) != limit {
 				r.Note = fmt.Sprintf("the queue holds %d, not the register's %d", depth, limit)
 			}
 			return r
+		},
+		capacity.SSEScreenPending: func() capacity.Reading {
+			if s.screenBus == nil {
+				return capacity.Unmeasured("this server publishes no event stream")
+			}
+			return s.screenBus.reading()
+		},
+		capacity.ArtifactsImages: func() capacity.Reading {
+			if s.pictures.store == nil {
+				return capacity.Unmeasured("this server keeps no picture store")
+			}
+			count, _ := s.pictures.store.Readings(time.Now())
+			return count
+		},
+		capacity.ArtifactsImageSize: func() capacity.Reading {
+			if s.pictures.store == nil {
+				return capacity.Unmeasured("this server keeps no picture store")
+			}
+			_, bytes := s.pictures.store.Readings(time.Now())
+			return bytes
+		},
+		capacity.ArtifactsDrops: func() capacity.Reading {
+			if s.pictures.drops == nil {
+				return capacity.Unmeasured("this server keeps no drop cache")
+			}
+			return s.pictures.drops.Reading()
 		},
 	}
 }
@@ -222,6 +268,15 @@ func (s *Server) StartCapacity(ctx context.Context) {
 	}
 	b.started, b.tick = time.Now(), tick
 	b.mu.Unlock()
+	// A write the store refused is measured at once, not a tick later: the
+	// store.db row turns failing, and /v1/health says so, on the pass this
+	// starts (limits N2). A picture stored is measured at once for the same
+	// reason, so the warning about a store that is filling comes before the
+	// write that makes it let the oldest go (limits N15, N16).
+	s.store.ObserveFailing(func(bool) { b.nudge() })
+	if s.pictures.store != nil && s.pictures.drops != nil {
+		s.pictures.changed(b.nudge)
+	}
 	go func() {
 		b.pass(ctx)
 		t := time.NewTicker(tick)
@@ -231,6 +286,8 @@ func (s *Server) StartCapacity(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				b.pass(ctx)
+			case <-b.poke:
 				b.pass(ctx)
 			}
 		}
@@ -242,6 +299,8 @@ func (s *Server) StartCapacity(ctx context.Context) {
 // panics is logged and does not count as one: the next tick tries again, and
 // a beat that keeps panicking is a stalled beat, which health says.
 func (b *capacityBeat) pass(ctx context.Context) {
+	b.passMu.Lock()
+	defer b.passMu.Unlock()
 	defer func() {
 		if v := recover(); v != nil {
 			log.Printf("capacity: a pass panicked: %v", v)
@@ -371,6 +430,7 @@ func CapacityEntry(st capacity.Status) contract.CapacityEntry {
 		Refused: st.Reading.Counters.Refused, Evicted: st.Reading.Counters.Evicted,
 		Expired: st.Reading.Counters.Expired, Rotated: st.Reading.Counters.Rotated,
 		Dropped: st.Reading.Counters.Dropped, WriteErrors: st.Reading.Counters.WriteErrors,
+		Coalesced: st.Reading.Counters.Coalesced, Disconnected: st.Reading.Counters.Disconnected,
 		LastActionAt:    unix(st.Reading.Counters.LastActionAt),
 		CountersDurable: st.Reading.DurableCounters,
 		OldestAt:        unix(st.Reading.OldestAt),

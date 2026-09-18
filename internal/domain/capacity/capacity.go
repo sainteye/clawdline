@@ -128,6 +128,10 @@ const (
 	CloudStatus Channel = "cloud_status"
 	// Log is the daemon's log.
 	Log Channel = "log"
+	// Sender is whoever sent the thing the row turned away, told in the
+	// answer to that very request: a Cloud request refused at a full queue
+	// comes back `cloud_ingress_busy` on the channel the viewer is waiting on.
+	Sender Channel = "sender"
 )
 
 // Decider is who decides what a full row lets go of.
@@ -154,6 +158,11 @@ const (
 	PushSubscriptions     = "push.subscriptions"
 	CacheTranscriptUsage  = "cache.transcript_usage"
 	CacheTranscriptTitles = "cache.transcript_titles"
+	// C3: the quiet failures made loud (limits §3.2, §7.2 wave 3).
+	SSEScreenPending   = "sse.screen_pending"
+	ArtifactsImages    = "artifacts.images"
+	ArtifactsImageSize = "artifacts.image_bytes"
+	ArtifactsDrops     = "artifacts.drops"
 )
 
 // Entry is one row of the register.
@@ -198,7 +207,8 @@ var namePattern = regexp.MustCompile(`^[a-z]+(\.[a-z_]+)+$`)
 // variable so nobody can edit the table they were handed.
 //
 // C1 registered the four rows docs/limits.md §7.1 names; C2 the five that had
-// no limit at all (§7.2 wave 2). The rest of the bounded things in this
+// no limit at all (§7.2 wave 2); C3 the four whose failure was quiet (§7.2
+// wave 3). The rest of the bounded things in this
 // repository are on the guard's baseline, each with the limits.md row that
 // will register it.
 func Register() []Entry {
@@ -244,10 +254,14 @@ func Register() []Entry {
 		},
 		{
 			// Decrypted Cloud requests waiting for the bridge (limits N20).
+			// At the limit the new request is refused and nothing already
+			// taken is let go: the sender is answered 429 cloud_ingress_busy
+			// with a retry_after on the channel it is waiting on (C3). Only a
+			// refusal that could not itself be sent reaches nobody, and that
+			// is counted as dropped.
 			Name: CloudRelayQueue, Class: Buffer, Unit: Rows,
-			Limit: 64, AtLimit: EvictOldest,
-			Deviation: "limits N20 (C3): a queue of instructions refuses the new request and tells the sender to retry; today the oldest waiting request is dropped and a line is logged.",
-			Told:      []Channel{Diagnostics, Notice, CloudStatus, Log},
+			Limit: 64, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, CloudStatus, Log, Sender},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/transport/cloud.(*Relay).start:chan(r.depth())"},
 		},
@@ -306,6 +320,50 @@ func Register() []Entry {
 			Name: CacheTranscriptTitles, Class: Cache, Unit: Rows,
 			Limit: 256, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+		},
+		{
+			// The screens one event stream has been told moved and has not
+			// yet written out (limits N19). Each screen holds one frame, its
+			// newest: a newer revision replaces a waiting one and is counted
+			// as coalesced, so a slow stream is told late and never told
+			// wrong. Past this many different screens waiting on one stream
+			// the stream is ended, counted as disconnected, and the page's
+			// reconnect reads every screen afresh. Used is the most any one
+			// stream has waiting now.
+			Name: SSEScreenPending, Class: Buffer, Unit: Rows,
+			Limit: 64, AtLimit: Disconnect,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+		},
+		{
+			// Pictures behind <clawdline-image id> (limits N15). Every one
+			// was stored to be shown in a reply, so every live one is
+			// referenced. The daemon measures after each store, so warn and
+			// critical are said before the store is full and before the
+			// oldest is let go; a picture let go is counted, logged, and its
+			// tombstone says why to whoever asks for it.
+			Name: ArtifactsImages, Class: UserInput, Unit: Rows,
+			Limit: 64, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice, Log},
+			EvictedBy: Daemon,
+		},
+		{
+			// The same pictures' bytes, the store's second bound (limits
+			// N15): whichever of the two is reached lets the oldest go.
+			Name: ArtifactsImageSize, Class: UserInput, Unit: Bytes,
+			Limit: 64 << 20, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice, Log},
+			EvictedBy: Daemon,
+		},
+		{
+			// Pictures written out for a terminal program to read, each one
+			// already typed into a prompt as a path (limits N16). Measured
+			// after each write, like the images, so the warning comes before
+			// the oldest file is removed.
+			Name: ArtifactsDrops, Class: UserInput, Unit: Rows,
+			Limit: 40, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice, Log},
 			EvictedBy: Daemon,
 		},
 	}

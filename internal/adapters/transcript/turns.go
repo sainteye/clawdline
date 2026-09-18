@@ -172,18 +172,24 @@ type NoticeOverlap struct {
 type Page struct {
 	Entries   []Entry
 	Signature string
+	// Unread is how many bytes before the read window were never looked at,
+	// when the window ran out before `limit` entries were found: the
+	// conversation goes back further than Entries shows. Zero when the read
+	// reached the record's start, or found all it was asked for first. The
+	// Swift app cuts the same window and does not say so (limits N17).
+	Unread int64
 }
 
 // ReadClaude returns the newest `limit` entries of a Claude conversation.
 func ReadClaude(path string, limit int) (Page, error) {
-	return readPage(path, func(r io.ReaderAt, size int64) []Entry {
+	return readPage(path, func(r io.ReaderAt, size int64) ([]Entry, int64) {
 		return parseClaude(r, size, limit)
 	})
 }
 
 // ReadCodex returns the newest `limit` entries of a Codex thread.
 func ReadCodex(path string, limit int) (Page, error) {
-	return readPage(path, func(r io.ReaderAt, size int64) []Entry {
+	return readPage(path, func(r io.ReaderAt, size int64) ([]Entry, int64) {
 		return parseCodex(r, size, limit)
 	})
 }
@@ -191,7 +197,7 @@ func ReadCodex(path string, limit int) (Page, error) {
 // readPage reads one stable snapshot: if the file moved while its tail was
 // being read, it is read once more, so the entries and the signature describe
 // the same bytes.
-func readPage(path string, parse func(io.ReaderAt, int64) []Entry) (Page, error) {
+func readPage(path string, parse func(io.ReaderAt, int64) ([]Entry, int64)) (Page, error) {
 	var page Page
 	for attempt := 0; attempt < 2; attempt++ {
 		f, err := os.Open(path)
@@ -203,9 +209,11 @@ func readPage(path string, parse func(io.ReaderAt, int64) []Entry) (Page, error)
 			f.Close()
 			return Page{}, err
 		}
+		entries, unread := parse(f, before.Size())
 		page = Page{
-			Entries:   parse(f, before.Size()),
+			Entries:   entries,
 			Signature: signature(before),
+			Unread:    unread,
 		}
 		f.Close()
 		after, err := os.Stat(path)
@@ -227,7 +235,13 @@ func signature(info os.FileInfo) string {
 // back the answer is rather than how large the file is. The first line of a
 // window that does not start at byte zero was almost certainly cut by the
 // seek, and is dropped — as the Swift app drops it.
-func eachLineFromEnd(r io.ReaderAt, size int64, body func([]byte) bool) {
+//
+// It answers how many bytes it never handed over because the window ran out
+// before body had what it wanted: everything before the window, and the line
+// the seek cut. Zero when body said it was done, or the window reached the
+// start of the record. That number is what the Swift app's reader throws away
+// without a word (limits N17), and a page that shows it can say so.
+func eachLineFromEnd(r io.ReaderAt, size int64, body func([]byte) bool) (unread int64) {
 	floor := size - ReadBudget
 	if floor < 0 {
 		floor = 0
@@ -242,7 +256,9 @@ func eachLineFromEnd(r io.ReaderAt, size int64, body func([]byte) bool) {
 		pos -= step
 		buf := make([]byte, step, step+int64(len(carry)))
 		if _, err := r.ReadAt(buf, pos); err != nil && err != io.EOF {
-			return
+			// Everything from here back is unread, and nothing says whether
+			// the answer was in it.
+			return pos + step
 		}
 		data := append(buf, carry...)
 		// Everything after the first newline is whole; what comes before it
@@ -257,7 +273,7 @@ func eachLineFromEnd(r io.ReaderAt, size int64, body func([]byte) bool) {
 			cut := bytes.LastIndexByte(rest, '\n')
 			line := rest[cut+1:]
 			if len(line) > 0 && !body(line) {
-				return
+				return 0
 			}
 			if cut < 0 {
 				break
@@ -266,14 +282,18 @@ func eachLineFromEnd(r io.ReaderAt, size int64, body func([]byte) bool) {
 		}
 		carry = data[:first]
 	}
-	if floor == 0 && len(carry) > 0 {
-		body(carry)
+	if floor == 0 {
+		if len(carry) > 0 {
+			body(carry)
+		}
+		return 0
 	}
+	return floor + int64(len(carry))
 }
 
 // ---------- Claude ----------
 
-func parseClaude(r io.ReaderAt, size int64, limit int) []Entry {
+func parseClaude(r io.ReaderAt, size int64, limit int) ([]Entry, int64) {
 	var newestFirst []Entry
 	// While a turn is running, Claude records a queued cross-session message
 	// and later its delivered peer turn, sometimes a whole busy turn apart. The
@@ -283,7 +303,7 @@ func parseClaude(r io.ReaderAt, size int64, limit int) []Entry {
 	deliveredKeys := map[string]bool{}
 	queuedKeys := map[string]bool{}
 
-	eachLineFromEnd(r, size, func(line []byte) bool {
+	unread := eachLineFromEnd(r, size, func(line []byte) bool {
 		rowEntries := claudeEntries(line)
 		for i := len(rowEntries) - 1; i >= 0; i-- {
 			e := rowEntries[i]
@@ -322,7 +342,7 @@ func parseClaude(r io.ReaderAt, size int64, limit int) []Entry {
 		}
 		return len(newestFirst) < limit
 	})
-	return oldestFirst(newestFirst, limit)
+	return oldestFirst(newestFirst, limit), unread
 }
 
 func oldestFirst(newestFirst []Entry, limit int) []Entry {
@@ -828,9 +848,9 @@ func tagAttribute(name, tag string) string {
 
 // ---------- Codex ----------
 
-func parseCodex(r io.ReaderAt, size int64, limit int) []Entry {
+func parseCodex(r io.ReaderAt, size int64, limit int) ([]Entry, int64) {
 	var newestFirst []Entry
-	eachLineFromEnd(r, size, func(line []byte) bool {
+	unread := eachLineFromEnd(r, size, func(line []byte) bool {
 		// Only two row shapes can yield anything, and both spell their marker
 		// literally. Skipping the rest unparsed is most of what a rollout is.
 		if !bytes.Contains(line, []byte("item_completed")) && !bytes.Contains(line, []byte("tools.update_plan(")) {
@@ -842,7 +862,7 @@ func parseCodex(r io.ReaderAt, size int64, limit int) []Entry {
 		}
 		return len(newestFirst) < limit
 	})
-	return oldestFirst(newestFirst, limit)
+	return oldestFirst(newestFirst, limit), unread
 }
 
 // codexEntries is the Swift app's `Codex.entries(inRow:)`: finished

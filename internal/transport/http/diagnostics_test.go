@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline-go/internal/adapters/logs"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
@@ -37,7 +38,9 @@ func capacityServer(t *testing.T) *Server {
 	t.Cleanup(func() { _ = w.Close(); daemonLogs.Delete(dir) })
 	SetDaemonLog(dir, w)
 	return &Server{cfg: config.Config{Dir: dir}, store: st, ledger: transcript.NewLedger(),
-		inventory: app.Inventory{Identity: transcript.NewHost()}}
+		inventory: app.Inventory{Identity: transcript.NewHost()},
+		screenBus: newScreenBus(),
+		pictures:  pictures{store: artifacts.NewStore(dir), drops: artifacts.NewDrops(dir)}}
 }
 
 // The register guard's other half (limits §4.1): every registered row has a

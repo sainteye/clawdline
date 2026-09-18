@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -89,7 +90,8 @@ func TestFileRefusesASymlinkOutOfTheRoot(t *testing.T) {
 	}
 	// And the walk does not offer it either, which is the property that makes
 	// the listing safe to turn into links.
-	for _, row := range Walk(context.Background(), root) {
+	found, _ := Walk(context.Background(), root)
+	for _, row := range found {
 		if row.Path == "escape.md" {
 			t.Fatal("the listing offered a document the read refuses")
 		}
@@ -211,7 +213,10 @@ func TestFileRefusesSomethingTooLarge(t *testing.T) {
 // makes a row safe to turn into a link, and it is checked rather than assumed.
 func TestWalkOffersOnlyWhatTheReadServes(t *testing.T) {
 	_, root := fixture(t)
-	found := Walk(context.Background(), root)
+	found, cut := Walk(context.Background(), root)
+	if cut.Any() {
+		t.Fatalf("a folder of three documents reads as cut: %+v", cut)
+	}
 	if len(found) != 3 {
 		t.Fatalf("expected the three readable documents, got %d: %v", len(found), found)
 	}
@@ -258,3 +263,43 @@ func TestResolvedPathIsAFixedPoint(t *testing.T) {
 		t.Fatalf("resolving twice moved: %q -> %q", once, twice)
 	}
 }
+
+// limits N28: a listing shorter than what is there says so. Past
+// MaximumListed the newest are kept and the count of the rest is carried; a
+// walk that stops at MaximumWalked says that part of the folder was never
+// looked at. Both used to read exactly like a folder that held no more.
+func TestAListingShorterThanTheFolderSaysSo(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "artifacts")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < MaximumListed+5; i++ {
+		write(t, filepath.Join(root, "note-"+strings.Repeat("0", 3-len(itoa(i)))+itoa(i)+".md"), "n")
+	}
+	found, cut := Walk(context.Background(), ProjectRoot(dir, false))
+	if len(found) != MaximumListed || cut.Listed != 5 || cut.Walked {
+		t.Fatalf("listed %d, cut %+v; want %d and five left off", len(found), cut, MaximumListed)
+	}
+	if got := cut.Header(); got != "listed=5" {
+		t.Fatalf("header %q", got)
+	}
+
+	// Past the walk's own bound: plain files the walk counts but does not
+	// list, so only the walk's stop can explain what is missing.
+	for i := 0; i < MaximumWalked; i++ {
+		write(t, filepath.Join(root, "z-"+itoa(i)+".bin"), "")
+	}
+	_, cut = Walk(context.Background(), ProjectRoot(dir, false))
+	if !cut.Walked {
+		t.Fatalf("a walk past %d entries did not say it stopped: %+v", MaximumWalked, cut)
+	}
+	if got := cut.Header(); !strings.Contains(got, "walked="+itoa(MaximumWalked)) {
+		t.Fatalf("header %q", got)
+	}
+	if !(Cut{Tasks: 2}).Add(Cut{Listed: 1}).Any() || (Cut{}).Any() {
+		t.Fatal("Add and Any disagree about what is cut")
+	}
+}
+
+func itoa(i int) string { return strconv.Itoa(i) }

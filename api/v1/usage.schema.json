@@ -171,8 +171,19 @@
         "reason": { "description": "transcript_byte_budget.", "type": "string" }
       }
     },
+    "TranscriptUnread": {
+      "description": "This read looked at only the newest `windowBytes` of the record and ran out of them before it had as many entries as were asked for, so the conversation goes back further than the first entry here: `bytes` older bytes were not read at all. The Swift app cuts the same window and says nothing; this is the flag it lacks (docs/limits.md N17), so a page drawn from it can say that older content was not loaded instead of looking complete.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "reason", "windowBytes"],
+      "properties": {
+        "bytes": { "description": "How many bytes before the window were not read. Always more than zero.", "type": "integer" },
+        "reason": { "description": "transcript_read_window.", "type": "string" },
+        "windowBytes": { "description": "How much of the record's end one read looks at.", "type": "integer" }
+      }
+    },
     "TranscriptPage": {
-      "description": "`entries`, `signature` and `truncation` are the Swift app's transcript payload; `evidence`, `path` and `note` say where the reading came from.",
+      "description": "`entries`, `signature` and `truncation` are the Swift app's transcript payload; `evidence`, `path` and `note` say where the reading came from; `unread` is this daemon's own, and says the read window stopped short of the conversation's start.",
       "type": "object",
       "additionalProperties": false,
       "required": ["entries", "evidence", "id", "signature"],
@@ -183,7 +194,8 @@
         "note": { "type": "string" },
         "path": { "description": "Which file this was read from. A reading that cannot name its source is not evidence.", "type": "string" },
         "signature": { "description": "The record's size and modification time, `<bytes>-<unix seconds>`, and empty when nothing was read. It changes whenever the entries could have.", "type": "string" },
-        "truncation": { "$ref": "#/$defs/TranscriptTruncation" }
+        "truncation": { "$ref": "#/$defs/TranscriptTruncation" },
+        "unread": { "$ref": "#/$defs/TranscriptUnread" }
       }
     }
   }

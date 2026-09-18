@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // Drops is `Drop.store` and `Drop.prune`: pictures written out so a terminal
@@ -28,6 +30,44 @@ type Drops struct {
 	Dir  string
 	Keep int
 	mu   sync.Mutex
+
+	// What pruning let go since this process began, and who hears that a
+	// picture was written (limits N16). Guarded by mu.
+	evicted   int64
+	evictedAt time.Time
+	stored    func()
+}
+
+// OnStored hands f every picture written, after the cache has let go of its
+// lock, so the capacity register measures it before the next write can
+// remove the oldest. f must not block.
+func (d *Drops) OnStored(f func()) {
+	d.mu.Lock()
+	d.stored = f
+	d.mu.Unlock()
+}
+
+// Reading is the `artifacts.drops` row: the pictures in the cache, each
+// already typed into somebody's prompt as a path, and how many pruning let go.
+// One directory listing.
+func (d *Drops) Reading() capacity.Reading {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	r := capacity.Reading{Known: true, Counters: capacity.Counters{Evicted: d.evicted, LastActionAt: d.evictedAt}}
+	entries, err := os.ReadDir(d.Dir)
+	if errors.Is(err, os.ErrNotExist) {
+		r.Note = "no picture has been sent from a page on this machine"
+		return r
+	}
+	if err != nil {
+		return capacity.Unmeasured(err.Error())
+	}
+	for _, e := range entries {
+		if e.Type().IsRegular() && dropName.MatchString(e.Name()) {
+			r.Used++
+		}
+	}
+	return r
 }
 
 // DropsKeep is the Swift app's `prune(keeping: 40)`.
@@ -50,17 +90,23 @@ var dropName = regexp.MustCompile(`^clawdline-\d{8}-\d{6}-\d{3}-[0-9a-f]{8}-[0-9
 // Store writes one PNG and returns its absolute path.
 func (d *Drops) Store(data []byte, now time.Time) (string, error) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if err := ensurePrivateDir(d.Dir); err != nil {
+		d.mu.Unlock()
 		return "", err
 	}
 	name := "clawdline-" + now.Format("20060102-150405.000") + "-" + newUUID() + ".png"
 	name = strings.Replace(name, ".", "-", 1)
 	path := filepath.Join(d.Dir, name)
 	if err := writePrivate(path, data); err != nil {
+		d.mu.Unlock()
 		return "", err
 	}
-	d.pruneLocked()
+	d.pruneLocked(now)
+	stored := d.stored
+	d.mu.Unlock()
+	if stored != nil {
+		stored()
+	}
 	return path, nil
 }
 
@@ -78,7 +124,7 @@ func (d *Drops) Discard(paths []string) {
 	}
 }
 
-func (d *Drops) pruneLocked() {
+func (d *Drops) pruneLocked(now time.Time) {
 	entries, err := os.ReadDir(d.Dir)
 	if err != nil {
 		return
@@ -96,13 +142,20 @@ func (d *Drops) pruneLocked() {
 	if len(names) <= keep {
 		return
 	}
-	// The name starts with the time, so this is oldest first.
+	// The name starts with the time, so this is oldest first. Each one
+	// removed was typed into a prompt as a path, so it is counted, and the
+	// register — which measured this cache as it filled — has it on the row.
 	sort.Strings(names)
 	extra := len(names) - keep
+	removed := 0
 	for _, n := range names[:extra] {
-		_ = os.Remove(filepath.Join(d.Dir, n))
+		if os.Remove(filepath.Join(d.Dir, n)) == nil {
+			removed++
+		}
 	}
-	log.Printf("drops: pruned %d, kept %d", extra, keep)
+	d.evicted += int64(removed)
+	d.evictedAt = now
+	log.Printf("drops: pruned %d, kept %d", removed, keep)
 }
 
 // ensurePrivateDir makes dir 0700, and makes an existing one 0700 too: a cache

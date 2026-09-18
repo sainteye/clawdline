@@ -235,3 +235,65 @@ func TestDropsPruneAndDiscardOnlyTheirOwn(t *testing.T) {
 		}
 	}
 }
+
+// limits N15: a picture let go at the store's limit is counted against the
+// limit that made it go, the store hears of every picture it keeps (which is
+// how the register warns before the limit is reached), and the tombstone says
+// why, so whoever asks for it later is told it was let go to make room.
+func TestAPictureLetGoAtTheLimitIsCountedAndSaysWhy(t *testing.T) {
+	s := NewStore(t.TempDir())
+	s.Policy.MaxCount = 3
+	stored := 0
+	s.OnStored(func() { stored++ })
+	src := writePNG(t, t.TempDir(), "a.png", 2, 2)
+	now := time.Now()
+	var first string
+	for i := 0; i < 4; i++ {
+		got, err := s.ImportPaths(context.Background(), []string{src}, now.Add(time.Duration(i)*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			first = got[0].Artifact.ID
+		}
+		count, _ := s.Readings(now)
+		if want := int64(min(i+1, 3)); count.Used != want {
+			t.Fatalf("after %d stores the row reads %d, want %d", i+1, count.Used, want)
+		}
+	}
+	if stored != 4 {
+		t.Fatalf("heard %d stores, want 4", stored)
+	}
+	count, bytes := s.Readings(now)
+	if count.Counters.Evicted != 1 || bytes.Counters.Evicted != 0 || count.Counters.LastActionAt.IsZero() {
+		t.Fatalf("count row %+v, bytes row %+v; want one eviction, by count", count.Counters, bytes.Counters)
+	}
+	if bytes.Used <= 0 {
+		t.Fatalf("bytes row reads %d", bytes.Used)
+	}
+	found := s.Lookup(first, now.Add(5*time.Second))
+	if found.State != Expired || !found.Evicted {
+		t.Fatalf("the picture let go reads %+v; want expired and evicted", found)
+	}
+}
+
+// limits N16: every picture the drop cache removes was typed into a prompt as
+// a path, so each removal is counted and the row is measurable before it.
+func TestDropsCountWhatTheyPrune(t *testing.T) {
+	d := &Drops{Dir: filepath.Join(t.TempDir(), "drops"), Keep: 2}
+	if r := d.Reading(); !r.Known || r.Used != 0 {
+		t.Fatalf("an empty cache reads %+v", r)
+	}
+	heard := 0
+	d.OnStored(func() { heard++ })
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		if _, err := d.Store([]byte("png"), now.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := d.Reading()
+	if r.Used != 2 || r.Counters.Evicted != 1 || heard != 3 {
+		t.Fatalf("after three stores into two: %+v, heard %d", r, heard)
+	}
+}

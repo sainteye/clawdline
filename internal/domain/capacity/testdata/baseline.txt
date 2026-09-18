@@ -29,6 +29,12 @@
 # push.subscriptions and the two transcript caches); the device list's and the
 # subscriptions' read bounds left this list to become their rows' sources. The
 # lines it added are the admission and read bounds of limits N9 and N27.
+#
+# C3 (2026-09-18) registered four rows (sse.screen_pending, artifacts.images,
+# artifacts.image_bytes, artifacts.drops) and turned cloud.relay_queue from
+# evicting to refusing. The screen bus's channel of sixteen left this list: it
+# is a map of one waiting frame per screen now, bounded by that row. The line
+# it added is the Cloud refusal lane.
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -55,10 +61,10 @@ internal/adapters/devices.storedNameLimit # admission: a device name
 internal/adapters/devices.tokenLimit # read: the local token file
 internal/adapters/documents.MaximumBytes # page: one document served
 internal/adapters/documents.MaximumDepth # page: how deep a document listing walks
-internal/adapters/documents.MaximumListed # page: rows in one document listing (limits N28, C3 adds the truncation flag)
+internal/adapters/documents.MaximumListed # page: rows in one document listing; past it the listing says how many it left off in X-Clawdline-Truncated (limits N28, C3)
 internal/adapters/documents.maximumPath # admission: a document path
 internal/adapters/documents.MaximumTasksListed # page: task documents listed
-internal/adapters/documents.MaximumWalked # page: entries one listing walks (limits N28)
+internal/adapters/documents.MaximumWalked # page: entries one listing walks; a walk that stops there says so in X-Clawdline-Truncated (limits N28, C3)
 internal/adapters/git.outputLimit # read: one git command's output
 internal/adapters/projects.changedPathLimit # page: changed paths in one project row
 internal/adapters/projects.codexThreadList:chan(16) # lane: lines from one codex app-server read
@@ -116,7 +122,7 @@ internal/domain/schedule.TitleLimit # admission: a schedule title
 internal/domain/task.MaxAge # parameter: how long a closeability answer stays true
 internal/transport/cloud.InventoryLimit # page: sessions in one Cloud inventory
 internal/transport/cloud.NewFake:chan(depth) # lane: the test fake's request queue
-internal/transport/http.(*screenBus).subscribe:chan(16) # store: a screen subscriber's buffer, full drops silently (limits N19, C3 coalesces)
+internal/transport/cloud.(*Relay).start:chan(refusalLane) # lane: requests the full queue turned away, waiting for their cloud_ingress_busy answer; past it the sender is not told and cloud.relay_queue counts it dropped (limits N20, C3)
 internal/transport/http.(*Server).pastRoute.limit # page: past conversations in one answer
 internal/transport/http.(*Server).projectReaders:chan(4) # lane: project readers at a time
 internal/transport/http.keyBodyLimit # admission: one keys request body

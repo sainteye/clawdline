@@ -3,7 +3,9 @@ package artifacts
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // Store is `SessionImageArtifactStore`, owned by this daemon: normalized PNGs
@@ -25,6 +29,27 @@ import (
 type Store struct {
 	Dir    string
 	Policy Policy
+
+	// What the store let go at its limits, since this process began, and
+	// who hears that it stored something (limits N15). Guarded by storeLock.
+	evictedCount int64
+	evictedBytes int64
+	evictedAt    time.Time
+	stored       func()
+}
+
+// Evicted is the reason a tombstone gives when the picture was let go to make
+// room, rather than because its day was up or it was deleted.
+const Evicted = "evicted"
+
+// OnStored hands f every successful store, after the store has let go of its
+// lock. It is how the capacity register measures this store the moment it
+// grows, so the warning that it is filling comes before the store that makes
+// it let the oldest go. f must not block.
+func (s *Store) OnStored(f func()) {
+	storeLock.Lock()
+	s.stored = f
+	storeLock.Unlock()
 }
 
 // storeLock is process-wide, as the Swift store's is: two Store values over one
@@ -56,6 +81,9 @@ type Found struct {
 	State    State
 	Artifact Artifact
 	Data     []byte
+	// Evicted says an expired picture was let go to make room for newer
+	// ones, not because its day was up: the reason a reader is owed.
+	Evicted bool
 }
 
 // Marker is the literal a session pastes into its own reply to show a stored
@@ -78,6 +106,10 @@ type metadata struct {
 	Artifact  Artifact `json:"artifact"`
 	CreatedAt float64  `json:"createdAt"`
 	DeletedAt *float64 `json:"deletedAt,omitempty"`
+	// Reason is why a tombstone is one, when it is not the ordinary expiry:
+	// `evicted`. The Swift app's records have no such field; this daemon's
+	// store is its own directory, and a record without it reads as before.
+	Reason string `json:"reason,omitempty"`
 }
 
 // metadataLimit bounds one record. A real one is under 300 bytes.
@@ -130,7 +162,14 @@ func (s *Store) ImportPaths(ctx context.Context, paths []string, now time.Time) 
 	}
 
 	storeLock.Lock()
-	defer storeLock.Unlock()
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			unlocked = true
+			storeLock.Unlock()
+		}
+	}
+	defer unlock()
 	if err := ensurePrivateDir(s.Dir); err != nil {
 		return nil, storageFailed("Clawdline could not open its image-artifact store.")
 	}
@@ -161,6 +200,11 @@ func (s *Store) ImportPaths(ctx context.Context, paths []string, now time.Time) 
 		written = append(written, Stored{Artifact: a, File: file})
 	}
 	s.pruneLocked(now)
+	stored := s.stored
+	unlock()
+	if stored != nil {
+		stored()
+	}
 	return written, nil
 }
 
@@ -252,7 +296,7 @@ func (s *Store) livenessLocked(id string, now time.Time) Found {
 		if m.DeletedAt == nil {
 			s.tombstoneLocked(m, now)
 		}
-		return Found{State: Expired}
+		return Found{State: Expired, Evicted: m.Reason == Evicted}
 	}
 	return Found{State: Live, Artifact: m.Artifact}
 }
@@ -368,13 +412,69 @@ func (s *Store) pruneLocked(now time.Time) {
 	for _, m := range live {
 		bytes += m.Artifact.ByteCount
 	}
+	// Past a limit the oldest live picture goes, and every one that goes is
+	// counted against the limit that made it go, logged, and tombstoned with
+	// the reason, so whoever asks for it later is told it was let go to make
+	// room rather than that its day was up (limits N15). The register has
+	// already heard the store was filling: it measures on every store.
+	var byCount, byBytes int64
 	for len(live) > 0 && (len(live) > s.Policy.MaxCount || bytes > s.Policy.MaxTotalBytes) {
 		oldest := live[0]
+		if len(live) > s.Policy.MaxCount {
+			byCount++
+		} else {
+			byBytes++
+		}
 		live = live[1:]
 		bytes -= oldest.Artifact.ByteCount
+		oldest.Reason = Evicted
 		s.tombstoneLocked(oldest, now)
 	}
+	if byCount+byBytes > 0 {
+		s.evictedCount += byCount
+		s.evictedBytes += byBytes
+		s.evictedAt = now
+		log.Printf("images: let go of %d picture(s) still shown in a conversation to make room (the store keeps %d, %d bytes); asking for one now answers that it was let go",
+			byCount+byBytes, s.Policy.MaxCount, s.Policy.MaxTotalBytes)
+	}
 	s.pruneTombstonesLocked(now)
+}
+
+// Readings are the `artifacts.images` and `artifacts.image_bytes` rows: the
+// live pictures by count and by bytes, and what each limit has let go.
+//
+// A directory listing and a stat per picture, never a metadata record read:
+// a live picture is one whose `<id>.png` is still there, because letting one
+// go removes the file and keeps the record as a tombstone. A picture whose
+// day is up but that nobody has asked for since is still counted: it is
+// still taking the room.
+func (s *Store) Readings(now time.Time) (count, bytes capacity.Reading) {
+	storeLock.Lock()
+	defer storeLock.Unlock()
+	entries, err := os.ReadDir(s.Dir)
+	if errors.Is(err, os.ErrNotExist) {
+		count = capacity.Reading{Known: true, Note: "no picture has been stored on this machine"}
+		bytes = count
+	} else if err != nil {
+		return capacity.Unmeasured(err.Error()), capacity.Unmeasured(err.Error())
+	} else {
+		count, bytes = capacity.Reading{Known: true}, capacity.Reading{Known: true}
+		for _, e := range entries {
+			id, ok := strings.CutSuffix(e.Name(), ".png")
+			if !ok || !IsID(id) || !e.Type().IsRegular() {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			count.Used++
+			bytes.Used += info.Size()
+		}
+	}
+	count.Counters = capacity.Counters{Evicted: s.evictedCount, LastActionAt: s.evictedAt}
+	bytes.Counters = capacity.Counters{Evicted: s.evictedBytes, LastActionAt: s.evictedAt}
+	return count, bytes
 }
 
 func (s *Store) pruneTombstonesLocked(now time.Time) {

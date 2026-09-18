@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // pictures is everything this daemon keeps of pictures, and the Swift app's
@@ -25,12 +27,25 @@ type pictures struct {
 }
 
 func newPictures(stateDir string) pictures {
+	// The two stores run at the capacity register's limits, which are the
+	// Swift app's numbers unless CLAWDLINE_NEXT_CAPACITY lowers them.
+	store := artifacts.NewStore(stateDir)
+	store.Policy.MaxCount = int(CapacityLimit(capacity.ArtifactsImages))
+	store.Policy.MaxTotalBytes = int(CapacityLimit(capacity.ArtifactsImageSize))
+	drops := artifacts.NewDrops(stateDir)
+	drops.Keep = int(CapacityLimit(capacity.ArtifactsDrops))
 	return pictures{
-		store:      artifacts.NewStore(stateDir),
-		drops:      artifacts.NewDrops(stateDir),
+		store:      store,
+		drops:      drops,
 		pasteboard: artifacts.NewPasteboard(),
 		swift:      swiftstore.OpenImages(swiftstore.ImageDir()),
 	}
+}
+
+// changed hands f every picture either store keeps.
+func (p pictures) changed(f func()) {
+	p.store.OnStored(f)
+	p.drops.OnStored(f)
 }
 
 // sendBodyLimit is the Swift server's `bodyLimit`: twenty megabytes, which the
@@ -78,6 +93,14 @@ func (s *Server) imageRoute(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(data)
 		}
 	case artifacts.Expired:
+		if found.Evicted {
+			// Same code, so every reader that branches on it still does; the
+			// sentence says which of the two happened (limits N15).
+			writeRefusal(w, http.StatusGone, "artifact_expired",
+				"That image artifact was let go to make room for newer pictures: this Mac keeps the newest "+
+					strconv.Itoa(s.pictures.store.Policy.MaxCount)+".")
+			return
+		}
 		writeRefusal(w, http.StatusGone, "artifact_expired", "That image artifact has expired or been pruned.")
 	default:
 		writeRefusal(w, http.StatusNotFound, "artifact_not_found", "No image artifact named that.")

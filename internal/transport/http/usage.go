@@ -169,6 +169,17 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 			BudgetBytes:         transcriptBudget,
 		}
 	}
+	if read.Unread > 0 {
+		// The read window ran out before the page was full: there is more
+		// conversation before the first entry, and the page must not look
+		// as if it began there (limits N17). The Swift app's payload has no
+		// such key; it is this daemon's own, and additive.
+		page.Unread = &contract.TranscriptUnread{
+			Reason:      "transcript_read_window",
+			Bytes:       read.Unread,
+			WindowBytes: transcript.ReadBudget,
+		}
+	}
 	writeJSON(w, page)
 }
 
