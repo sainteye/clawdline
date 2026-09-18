@@ -299,6 +299,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		At:       time.Now().Unix(),
 	}
 	s.brokerHealth(&h)
+	s.capacityHealth(&h)
 	writeJSON(w, h)
 }
 
@@ -314,9 +315,11 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	broker := s.brokerDiagnostics(r.Context())
+	capacity, capacityOK := s.capacityDiagnostics()
 	writeJSON(w, contract.Diagnostics{
-		OK:        broker == nil || !broker.Beat.Stalled,
+		OK:        (broker == nil || !broker.Beat.Stalled) && capacityOK,
 		Broker:    broker,
+		Capacity:  capacity,
 		Scheduler: s.schedulerPulse(),
 		ServedBy:  servedBy,
 		Port:      int64(s.cfg.Port),
@@ -362,12 +365,7 @@ func (s *Server) nextSessions(w http.ResponseWriter, r *http.Request) {
 // the daemon rather than by the first request, because a schedule nobody
 // happens to visit is still due.
 func (s *Server) StartScheduler(ctx context.Context) {
-	tick := time.Minute
-	if v := os.Getenv("CLAWDLINE_NEXT_TICK"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			tick = d
-		}
-	}
+	tick := schedulerTick()
 	s.tick = tick
 	go app.Scheduler{
 		Book:   s.scheduleBook(),
@@ -375,6 +373,17 @@ func (s *Server) StartScheduler(ctx context.Context) {
 		Report: func(p app.Pulse) { s.pulse.Store(&p) },
 	}.Run(ctx)
 	log.Printf("scheduler ticking every %s", tick)
+}
+
+// schedulerTick is the clock's period: a minute, or CLAWDLINE_NEXT_TICK. The
+// capacity beat keeps the same one (docs/limits.md §4.6).
+func schedulerTick() time.Duration {
+	if v := os.Getenv("CLAWDLINE_NEXT_TICK"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return time.Minute
 }
 
 // schedulerPulse is what /v1/diagnostics says about the clock.

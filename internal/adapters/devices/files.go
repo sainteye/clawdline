@@ -48,6 +48,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline-go/internal/domain/auth"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 const (
@@ -58,8 +59,14 @@ const (
 	// MachineTokenFile is the orchestrator credential: dispatch and every
 	// write under /v1/orchestrator/.
 	MachineTokenFile = "orchestrator-token"
-	// AuditFile is one JSON object per line, append-only.
+	// AuditFile is one JSON object per line, append-only. At the capacity
+	// register's `audit.security` size it is closed and renamed to a segment,
+	// AuditSegmentPrefix + a UTC time + ".jsonl", and a new one is begun.
+	// Segments are never deleted here: only a person removes one.
 	AuditFile = "remote-audit.jsonl"
+	// AuditSegmentPrefix begins every closed segment's name, so that
+	// `ls remote-audit.*` is the whole audit, current file included.
+	AuditSegmentPrefix = "remote-audit."
 
 	machineTokenLimit = 512
 	// storeVersion is the device file's version, the one Save writes and the
@@ -95,6 +102,18 @@ var ErrNotRegular = errors.New("not a plain file")
 type Files struct {
 	dir string
 	mu  sync.Mutex
+
+	// The audit's segment size, and what its writer has done since this
+	// process opened the directory. All under mu.
+	auditLimit   int64
+	rotations    int64
+	auditErrors  int64
+	lastRotation time.Time
+	// appendErr and rotateErr are the last append's and the last rotation's
+	// failure, nil once one succeeds. Either one means a security event may
+	// not be where it should be, which the register reports as exhausted.
+	appendErr error
+	rotateErr error
 }
 
 // Open prepares dir, refusing it when it is, or resolves into, any of foreign.
@@ -515,8 +534,16 @@ func usableMachineToken(path string, data []byte) (string, error) {
 // no code is ever handed to this function. Each value is cut to
 // auditFieldLimit bytes, whatever the caller passed.
 //
+// A file already at its segment size is rotated first, so a line is never
+// split across two segments and a segment runs past the size by at most the
+// one line that reached it. A rotation that fails does not cost the line: it
+// is appended to the file as it is, and the failure is counted and reported
+// (AuditReading), because a security event not written is worse than a
+// segment that is too long.
+//
 // A failed append is logged and not returned. What it records has already
-// happened, and failing the request would not undo it.
+// happened, and failing the request would not undo it. It is counted, and the
+// register turns it into ok:false on /v1/health.
 func (f *Files) Audit(event string, fields map[string]string) {
 	row := map[string]any{"at": time.Now().Unix(), "event": event}
 	for k, v := range fields {
@@ -531,15 +558,109 @@ func (f *Files) Audit(event string, fields map[string]string) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.rotateAudit()
 	out, err := f.open(AuditFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
+		f.auditFailed(&f.appendErr, err)
 		log.Printf("audit: could not open %s: %v", f.path(AuditFile), err)
 		return
 	}
 	defer out.Close()
 	if _, err := out.WriteString(line.String()); err != nil {
+		f.auditFailed(&f.appendErr, err)
 		log.Printf("audit: could not append %s: %v", event, err)
+		return
 	}
+	f.appendErr = nil
+}
+
+// SetAuditLimit is the capacity override for `audit.security`: the size at
+// which the audit file becomes a segment. Zero or less is the register's
+// default.
+func (f *Files) SetAuditLimit(n int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.auditLimit = n
+}
+
+func (f *Files) auditSegmentLimit() int64 {
+	if f.auditLimit > 0 {
+		return f.auditLimit
+	}
+	return capacity.Default(capacity.AuditSecurity)
+}
+
+// rotateAudit renames the audit file to a new segment when it has reached its
+// size. Under mu. Nothing that is not a plain file is renamed, and a segment
+// name that exists is never written over.
+func (f *Files) rotateAudit() {
+	path := f.path(AuditFile)
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err == nil && !info.Mode().IsRegular() {
+		err = fmt.Errorf("%w: %s is %s", ErrNotRegular, path, kindOf(info.Mode()))
+	}
+	if err != nil {
+		f.auditFailed(&f.rotateErr, err)
+		log.Printf("audit: could not rotate: %v", err)
+		return
+	}
+	if info.Size() < f.auditSegmentLimit() {
+		return
+	}
+	now := time.Now().UTC()
+	segment := f.path(AuditSegmentPrefix + now.Format("20060102T150405.000000000Z") + ".jsonl")
+	if _, err := os.Lstat(segment); !errors.Is(err, os.ErrNotExist) {
+		err = fmt.Errorf("segment %s already exists", segment)
+		f.auditFailed(&f.rotateErr, err)
+		log.Printf("audit: could not rotate: %v", err)
+		return
+	}
+	if err := os.Rename(path, segment); err != nil {
+		f.auditFailed(&f.rotateErr, err)
+		log.Printf("audit: could not rotate %s: %v", path, err)
+		return
+	}
+	syncDir(f.dir)
+	f.rotateErr = nil
+	f.rotations++
+	f.lastRotation = now
+	log.Printf("audit: %s reached %d bytes and is now %s", AuditFile, info.Size(), filepath.Base(segment))
+}
+
+func (f *Files) auditFailed(slot *error, err error) {
+	*slot = err
+	f.auditErrors++
+}
+
+// AuditReading is the `audit.security` row: the current segment's size, and
+// what the writer has done. A stat, nothing read.
+func (f *Files) AuditReading() capacity.Reading {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r := capacity.Reading{Counters: capacity.Counters{
+		Rotated: f.rotations, WriteErrors: f.auditErrors, LastActionAt: f.lastRotation,
+	}}
+	switch {
+	case f.appendErr != nil:
+		r.Failing, r.Note = true, "the last audit line was not written: "+f.appendErr.Error()
+	case f.rotateErr != nil:
+		r.Failing, r.Note = true, "the last rotation failed: "+f.rotateErr.Error()
+	}
+	info, err := os.Lstat(f.path(AuditFile))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		r.Known = true
+	case err != nil:
+		r.Err = err.Error()
+	case !info.Mode().IsRegular():
+		r.Err = fmt.Sprintf("%s is %s", f.path(AuditFile), kindOf(info.Mode()))
+	default:
+		r.Known, r.Used = true, info.Size()
+	}
+	return r
 }
 
 func (f *Files) writeAtomically(name string, body []byte) (err error) {

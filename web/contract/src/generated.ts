@@ -1332,6 +1332,262 @@ export interface BrowserRequest {
 }
 
 /**
+ * `none`: nothing is refused, removed or rotated; the limit is only reported. No
+ * class allows it, so a row that does it has a `deviation`.
+ */
+export type CapacityAction =
+    "refuse"
+  | "evict_oldest"
+  | "expire"
+  | "rotate"
+  | "summarize"
+  | "coalesce"
+  | "disconnect"
+  | "none"
+
+export const CapacityActionValues: readonly CapacityAction[] = ["refuse", "evict_oldest", "expire", "rotate", "summarize", "coalesce", "disconnect", "none"] as const
+
+/**
+ * The loop that measures the register. It is observable because a loop that stopped
+ * and a loop with nothing to say are the same silence from outside (DG-1).
+ */
+export interface CapacityBeat {
+  /**
+   * When the last pass finished. Absent before the first.
+   */
+  at?: number
+
+  /**
+   * Events this beat could not write to the store.
+   */
+  event_errors: number
+  last_event_error?: string
+  passes: number
+
+  /**
+   * Whether this process started the beat. A daemon that did not has every row
+   * `unknown`.
+   */
+  running: boolean
+
+  /**
+   * No pass has finished in more than three ticks.
+   */
+  stalled: boolean
+  started_at?: number
+  tick_seconds: number
+}
+
+/**
+ * diagnostics: this route, always. health: /v1/health says capacity_exhausted,
+ * never the name or the numbers. notice: a capacity.notify event, a push once C4
+ * wires it. cloud_status: /v1/cloud/status. log: the daemon's log.
+ */
+export type CapacityChannel =
+    "diagnostics"
+  | "health"
+  | "notice"
+  | "cloud_status"
+  | "log"
+
+export const CapacityChannelValues: readonly CapacityChannel[] = ["diagnostics", "health", "notice", "cloud_status", "log"] as const
+
+/**
+ * What kind of data a row holds; it decides which at-limit behaviours are allowed
+ * (docs/limits.md §4.2).
+ */
+export type CapacityClass =
+    "evidence"
+  | "security_audit"
+  | "idempotency"
+  | "user_input"
+  | "narrative"
+  | "progress"
+  | "observation"
+  | "journal"
+  | "work"
+  | "cache"
+  | "diagnostic_log"
+  | "buffer"
+
+export const CapacityClassValues: readonly CapacityClass[] = ["evidence", "security_audit", "idempotency", "user_input", "narrative", "progress", "observation", "journal", "work", "cache", "diagnostic_log", "buffer"] as const
+
+/**
+ * person: the daemon lets nothing go; only a person removes it. daemon: the daemon
+ * lets go by the rule in at_limit.
+ */
+export type CapacityDecider =
+    "person"
+  | "daemon"
+
+export const CapacityDeciderValues: readonly CapacityDecider[] = ["person", "daemon"] as const
+
+/**
+ * /v1/diagnostics.capacity: every row of the capacity register
+ * (internal/domain/capacity) as the last pass of its beat read it. Each row answers
+ * the four questions: its limit, what happens when it is full, who is told, and who
+ * decides what is let go (docs/limits.md §4.1, design-guidelines DG-2).
+ */
+export interface CapacityDiagnostics {
+  beat: CapacityBeat
+
+  /**
+   * When this process began counting. Every counter on a row counts from here
+   * unless the row says `counters_durable`.
+   */
+  counting_since: number
+  entries: CapacityEntry[]
+
+  /**
+   * Parts of CLAWDLINE_NEXT_CAPACITY this process refused — an override that
+   * would raise a limit, name no row, or not read as one. The default stood for
+   * each.
+   */
+  override_problems?: string[]
+}
+
+/**
+ * One row of the capacity register.
+ */
+export interface CapacityEntry {
+  /**
+   * What happens today when the row is full.
+   */
+  at_limit: CapacityAction
+  class: CapacityClass
+
+  /**
+   * The counters survive a restart: the row's own store keeps them.
+   */
+  counters_durable?: boolean
+
+  /**
+   * Present when `at_limit` is not what the row's class requires: what it requires,
+   * and which decision brings it.
+   */
+  deviation?: string
+
+  /**
+   * Free space on the disk the row is on, when it is a file and that could be read.
+   */
+  disk_free_bytes?: number
+  dropped: number
+
+  /**
+   * Why the row could not be measured, when `state` is unknown.
+   */
+  error?: string
+  evicted: number
+
+  /**
+   * Who decides what the full row lets go of.
+   */
+  evicted_by: CapacityDecider
+
+  /**
+   * The fact /v1/health turns on: an evidence or security-audit row, full with
+   * nothing making room, or failing to write.
+   */
+  exhausted: boolean
+  expired: number
+
+  /**
+   * The last write to the row, or its last at-limit action, failed.
+   */
+  failing?: boolean
+
+  /**
+   * Growth over this process's samples, at least an hour of them, on a row that
+   * projects.
+   */
+  growth_per_day?: number
+
+  /**
+   * When the row last refused, evicted, rotated or dropped something.
+   */
+  last_action_at?: number
+  last_notice_at?: number
+
+  /**
+   * The limit this process runs the row at, in `unit`.
+   */
+  limit: number
+  measured_at?: number
+  name: string
+
+  /**
+   * Anything a reader should know about a reading that is not an error.
+   */
+  note?: string
+
+  /**
+   * Notification intents this row produced: a `capacity.notify` event on entering
+   * critical or full and on recovering, at most one a day.
+   */
+  notices: number
+
+  /**
+   * Notices the one-a-day rule held back.
+   */
+  notices_suppressed: number
+  oldest_at?: number
+
+  /**
+   * CLAWDLINE_NEXT_CAPACITY lowered this row's limit.
+   */
+  overridden: boolean
+
+  /**
+   * When the row reaches its limit at `growth_per_day`. Two weeks before, the row
+   * is warn whatever its ratio.
+   */
+  projected_full_at?: number
+
+  /**
+   * used / limit. Null when the row could not be measured, which is not zero.
+   */
+  ratio: number | null
+  refused: number
+  rotated: number
+  state: CapacityState
+
+  /**
+   * The channels a full row reaches.
+   */
+  told: CapacityChannel[]
+  unit: CapacityUnit
+
+  /**
+   * How much the row holds, in `unit`. Null when it could not be measured, which is
+   * not zero.
+   */
+  used: number | null
+  warn_at: number
+  window_seconds?: number
+  write_errors: number
+}
+
+/**
+ * ok below warn_at, warn below 95%, critical below 100%, full at or past it. Going
+ * down needs five points under a threshold. unknown: the row could not be measured,
+ * which is not ok.
+ */
+export type CapacityState =
+    "ok"
+  | "warn"
+  | "critical"
+  | "full"
+  | "unknown"
+
+export const CapacityStateValues: readonly CapacityState[] = ["ok", "warn", "critical", "full", "unknown"] as const
+
+export type CapacityUnit =
+    "bytes"
+  | "rows"
+
+export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "rows"] as const
+
+/**
  * POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other
  * grant. Local token only.
  */
@@ -1626,6 +1882,7 @@ export interface DeviceList {
 export interface Diagnostics {
   at: number
   broker?: BrokerDiagnostics
+  capacity: CapacityDiagnostics
   dir: string
   ok: boolean
   port: number
@@ -1852,10 +2109,10 @@ export interface Health {
   ok: boolean
 
   /**
-   * Why `ok` is false, when it is. `broker_beat_stalled`: the broker's loop has not
-   * finished a pass in more than three ticks. Absent when ok.
+   * Why `ok` is false, when it is. Absent when ok. The name only: what is behind it
+   * is in Diagnostics.
    */
-  reason?: string
+  reason?: HealthReason
 
   /**
    * Which implementation answered. This is how a reader tells the Go daemon from
@@ -1863,6 +2120,22 @@ export interface Health {
    */
   served_by: string
 }
+
+/**
+ * Why /v1/health says ok:false. `broker_beat_stalled`: the broker's loop has not
+ * finished a pass in more than three ticks. `capacity_exhausted`: an evidence or
+ * security-audit row of the capacity register is full with nothing making room, or
+ * its last write failed (docs/limits.md §4.5). `capacity_beat_stalled`: the loop
+ * that measures the register has not finished a pass in more than three ticks, so
+ * nothing is watching whether anything is full. When two hold, the first in this
+ * list is given.
+ */
+export type HealthReason =
+    "broker_beat_stalled"
+  | "capacity_exhausted"
+  | "capacity_beat_stalled"
+
+export const HealthReasonValues: readonly HealthReason[] = ["broker_beat_stalled", "capacity_exhausted", "capacity_beat_stalled"] as const
 
 /**
  * A project's mark: rows of `#RRGGBB`, with null for transparent. It is derived

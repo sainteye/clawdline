@@ -1,0 +1,119 @@
+# Bounded declarations that are not registered rows yet.
+#
+# The register guard (guard_test.go) scans internal/ and cmd/ for constants
+# and variables named max…, Maximum… or …Limit and for buffered channels. Each
+# one must be a registered row's source (capacity.Register) or a line here,
+# with the reason it is not registered. A new bounded thing that is neither is
+# a failing test; so is a line here whose declaration has gone.
+#
+# The reasons use five words:
+#   store      it accumulates: a row to register, with the limits.md row (N…)
+#              and the wave (C2, C3, T…) that registers it
+#   read       it bounds one read of a file or an answer; past it the read is
+#              refused. limits §3.3: a read bound must be registered when what
+#              it reads grows without one (N13, N14) — named where it does
+#   admission  it refuses one oversized request, field or body at the door;
+#              nothing fills (limits N27 is the request-body sweep)
+#   page       it cuts one answer to a size; nothing fills (the truncation
+#              flags are limits N17, N28, C3)
+#   lane       a concurrency slot or a small in-process buffer between two
+#              goroutines of one request (D06 gathers them into one primitive)
+#   parameter  a time, a retry count or a numeric range: not a capacity at all
+#
+# C1 (2026-09-18) wrote this list from the scan's first run. Two declarations
+# the scan found are not on it: internal/adapters/board.MaximumItems and
+# MaximumProjects (limits N25, design-decisions G35), declared and never used.
+# The guard was red on them first; C1 deleted them.
+
+internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
+internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
+internal/adapters/analytics.MaxScannedRows # read: rows one analytics query scans
+internal/adapters/artifacts.metadataLimit # read: one picture metadata record
+internal/adapters/board.DefaultPageLimit # page: the board's default page size
+internal/adapters/board.MaximumCommandBytes # admission: one board command body
+internal/adapters/board.MaximumPageLimit # page: the board's largest page size
+internal/adapters/board.MaximumResponseBytes # page: one board answer
+internal/adapters/board.MaximumSnapshotBytes # page: the board snapshot budget, published as snapshotBudgetBytes
+internal/adapters/board.MaximumSnapshotItems # page: items in one board snapshot
+internal/adapters/board.MaximumStoreBytes # store: the board document read bound, 503 past it (limits N26, a(far)); registered as board.store with warn_at 8 MiB when the board moves (D02, T3)
+internal/adapters/cloud.fenceLimit # read: the sequence fence file
+internal/adapters/cloud.maxFrameBytes # admission: one WebSocket frame from the relay
+internal/adapters/cloud.MaximumBackoff # parameter: the reconnect wait's ceiling
+internal/adapters/cloud.maxRelayURLBytes # admission: the relay URL setting
+internal/adapters/cloud.maxResponseBytes # read: one control-plane answer
+internal/adapters/cloudkeys.secretLimit # read: one key file
+internal/adapters/devices.auditFieldLimit # admission: one audit value, cut to 256 bytes (limits N12's silent cut; C2 splits the audit)
+internal/adapters/devices.idLimit # admission: a device id
+internal/adapters/devices.machineTokenLimit # read: the machine token file
+internal/adapters/devices.storedNameLimit # admission: a device name
+internal/adapters/devices.storeLimit # read: the device list, auth fails at startup past it (limits N13): C2 registers the device list and makes it warn first
+internal/adapters/devices.tokenLimit # read: the local token file
+internal/adapters/documents.MaximumBytes # page: one document served
+internal/adapters/documents.MaximumDepth # page: how deep a document listing walks
+internal/adapters/documents.MaximumListed # page: rows in one document listing (limits N28, C3 adds the truncation flag)
+internal/adapters/documents.maximumPath # admission: a document path
+internal/adapters/documents.MaximumTasksListed # page: task documents listed
+internal/adapters/documents.MaximumWalked # page: entries one listing walks (limits N28)
+internal/adapters/git.outputLimit # read: one git command's output
+internal/adapters/projects.changedPathLimit # page: changed paths in one project row
+internal/adapters/projects.codexThreadList:chan(16) # lane: lines from one codex app-server read
+internal/adapters/projects.dirtyPathLimit # page: dirty paths in one project row
+internal/adapters/projects.package:chan(2) # lane: codex app-server readers, two at a time
+internal/adapters/projects.projectCacheLimit # store: the project reading cache (limits N18 cache class, C2 LRU)
+internal/adapters/projects.restatementLimit # parameter: the title restatement rule's word count
+internal/adapters/projects.rowLimit # page: project rows in one answer
+internal/adapters/projects.statusEntryLimit # read: git status entries read for one project
+internal/adapters/push.MaxPayload # admission: one push payload
+internal/adapters/push.secretLimit # read: the VAPID key file
+internal/adapters/push.subscriptionsLimit # read: the subscription file, every push fails past it (limits N14): C2 registers the subscriptions and makes them warn first
+internal/adapters/swiftstore.maxBytes # read: one of the Swift app's files, read-only
+internal/adapters/transcript.recordReadLimit # read: the tail of one transcript (limits N17)
+internal/app/cloudops.cloudEnvelopeCiphertextLimit # admission: one Cloud answer's ciphertext
+internal/app/orchestrator.(*Broker).SubscribeProgress:chan(64) # store: a progress subscriber's buffer (limits N19 buffer class, C3)
+internal/app/orchestrator.AttemptLimit # parameter: completion notice attempts before dead letter (limits N7: C4 makes the dead letter heard)
+internal/app/orchestrator.instructionsLimit # admission: a dispatch's instructions
+internal/app/orchestrator.kindLimit # admission: a dispatch's kind (limits N8's silent cut, C3)
+internal/app/orchestrator.messageTextLimit # admission: one relayed message
+internal/app/orchestrator.notifyBodyLimit # admission: one agent push body
+internal/app/orchestrator.notifyHourLimit # parameter: agent pushes an hour, refused past it (limits N6, ✓)
+internal/app/orchestrator.notifyTaskLimit # parameter: agent pushes a task, refused past it (limits N6, ✓)
+internal/app/orchestrator.notifyTitleLimit # admission: one agent push title
+internal/app/orchestrator.progressLimit # admission: one progress note (limits N5: the file path drops it silently, W1 G34)
+internal/app/orchestrator.readyLimit # parameter: how long a child has to reach a prompt
+internal/app/orchestrator.RespawnLimit # parameter: retries descending from one dispatch
+internal/app/orchestrator.rootLabelLimit # admission: a root label (limits N8's silent cut, C3)
+internal/app/orchestrator.sessionSummaryLimit # admission: a delivery receipt's sentence
+internal/app/orchestrator.summaryLimit # admission: a child summary, cut silently (limits N8: W2 stores it whole, D25)
+internal/app/orchestrator.titleLimit # admission: a dispatch title (limits N8's silent cut, C3)
+internal/app/orchestrator.trimStack.limit # page: a panic stack kept in diagnostics
+internal/domain/auth.MaxPasswordIterations # parameter: the password hash's cost range
+internal/domain/auth.nameLimit # admission: a device name
+internal/domain/cloud.LedgerFairnessActorLimit # store: the Cloud command ledger, not wired (limits N23, G32): registered when it is
+internal/domain/cloud.LedgerGCBatchLimit # parameter: expiry work one admission pays for
+internal/domain/cloud.LedgerGlobalHardLimit # store: the Cloud command ledger, not wired (limits N23, G32): registered when it is
+internal/domain/cloud.LedgerNormalActorLimit # store: the Cloud command ledger, not wired (limits N23, G32): registered when it is
+internal/domain/cloud.MaxChannelBytes # admission: an envelope's channel
+internal/domain/cloud.MaxCiphertextBytes # admission: an envelope's ciphertext
+internal/domain/cloud.MaxClockDiscontinuity # parameter: clock drift tolerated between two readings
+internal/domain/cloud.MaxKeyIDBytes # admission: an envelope's key id
+internal/domain/cloud.MaxNestingDepth # admission: canonical JSON nesting
+internal/domain/cloud.MaxPairingBodyBytes # admission: one pairing document
+internal/domain/cloud.maxPairingIDBytes # admission: an id in a pairing document
+internal/domain/cloud.MaxSafeInteger # parameter: the largest integer JSON carries exactly
+internal/domain/cloud.MaxSegmentBytes # admission: one channel segment
+internal/domain/cloud.MaxServerWallDifference # parameter: how far a server clock sample may be
+internal/domain/cloud.MaxTimestampSkew # parameter: the relay's clock skew window
+internal/domain/cloud.MaxTrackedSenders # store: the replay window's senders, refuses new ones until restart (limits N21, a): C3
+internal/domain/icon.SplashLimit # admission: a launch image's size
+internal/domain/schedule.MaxCatchUpHours # parameter: how far back a schedule catches up
+internal/domain/schedule.TitleLimit # admission: a schedule title
+internal/domain/task.MaxAge # parameter: how long a closeability answer stays true
+internal/transport/cloud.InventoryLimit # page: sessions in one Cloud inventory
+internal/transport/cloud.NewFake:chan(depth) # lane: the test fake's request queue
+internal/transport/http.(*screenBus).subscribe:chan(16) # store: a screen subscriber's buffer, full drops silently (limits N19, C3 coalesces)
+internal/transport/http.(*Server).pastRoute.limit # page: past conversations in one answer
+internal/transport/http.(*Server).projectReaders:chan(4) # lane: project readers at a time
+internal/transport/http.keyBodyLimit # admission: one keys request body
+internal/transport/http.package:chan(4) # lane: terminal openings waiting (start.go)
+internal/transport/http.sendBodyLimit # admission: one send body
+internal/transport/http.voiceBodyLimit # admission: one voice body

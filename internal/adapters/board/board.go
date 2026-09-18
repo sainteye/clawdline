@@ -48,18 +48,18 @@ const (
 	// MaximumStoreBytes refuses a board file larger than this rather than
 	// reading it. 32 MiB is the Swift app's number.
 	MaximumStoreBytes = 32 * 1024 * 1024
-	// MaximumItems and MaximumProjects bound what this daemon's own store may
-	// grow to.
-	MaximumItems    = 2_000
-	MaximumProjects = 200
-	// MaximumReceipts bounds the request-id ledger that makes a retry free.
-	MaximumReceipts = 4_096
 	// DefaultPageLimit and MaximumPageLimit bound `?audience=&limit=`.
 	DefaultPageLimit = 30
 	MaximumPageLimit = 200
 	// MaximumCommandBytes is the admission boundary for one command body.
 	MaximumCommandBytes = 64 * 1024
 )
+
+// Two of the Swift app's ceilings are deliberately not here. Its 2,000 items
+// and 200 projects bound a store this daemon does not write — it writes no
+// items — so they were declared and never enforced (docs/limits.md N25), a
+// limit in name only. The receipt ledger's ceiling is the capacity register's
+// `board.receipts` row, read in settings.go.
 
 // Entitlement is what `board.entitlement` carries.
 //
