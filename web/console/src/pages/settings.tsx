@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { PageModule } from "./types.js"
 import * as L from "../legacy/bridge.js"
 import {
@@ -11,6 +11,8 @@ import {
   settingsNewestFirst,
 } from "../legacy/settings-bridge.js"
 import { client } from "../client.js"
+import { pushShape, sendPushTest, startPush, subscribePush, togglePush } from "../push/push.js"
+import { legacyState } from "../legacy/overlay-bridge.js"
 import { ShellBlocks } from "./settings/ShellBlocks.js"
 
 /**
@@ -21,9 +23,10 @@ import { ShellBlocks } from "./settings/ShellBlocks.js"
  * what the original shows against this daemon, which differs from the Swift
  * app's in what it owns:
  *
- * - **Notifications**: this daemon has no push route (`api.pushKey`), which the
- *   original answers as `unsupported` — the sentence, and no buttons. Push is a
- *   device-and-Cloud feature and is not built here.
+ * - **Notifications**: `Settings.drawNotify` and `Settings.test`, drawn from
+ *   the state `push/push.ts` worked out. Four states and only one of them is
+ *   "on", so the block says which; the test button appears only where there is
+ *   something subscribed for it to reach.
  * - **Assistant icons** and **Transcript** are this browser's own, as there.
  * - **Project Board**: `BoardControls.apply` draws only from an answer that
  *   carries `board.enabled`. This daemon's `/v1/board` does not, so the block
@@ -43,6 +46,24 @@ import { ShellBlocks } from "./settings/ShellBlocks.js"
 function goToPage(name: string): void {
   const row = document.querySelector<HTMLButtonElement>(`#sidebar [data-page-to="${name}"]`)
   if (row && !row.disabled) row.click()
+}
+
+/** `Settings.drawNotify`'s sentence: one per state, and "" for a state with none. */
+function notifySay(T: Record<string, string>, state: string): string {
+  switch (state) {
+    case "homescreen":
+      return T.webNotifyHomeScreen
+    case "unsupported":
+      return T.webNotifyUnsupported
+    case "blocked":
+      return T.webNotifyBlocked
+    case "on":
+      return T.webNotifyOn
+    case "off":
+      return T.webNotifySheetOff
+    default:
+      return ""
+  }
 }
 
 /** `words(en, zh)` (`input/board-settings.js`, `view/timeline.js`): the page's language decides. */
@@ -72,6 +93,9 @@ function SettingsPage({ shown }: { shown: boolean }) {
   const [boardStatus, setBoardStatus] = useState("")
   const [version, setVersion] = useState("")
   const closeRef = useRef<HTMLButtonElement>(null)
+  // `Push.redraw()` from `Settings.enter`: the notifications block is drawn
+  // from the one state the module worked out, wherever it changed.
+  const push = useSyncExternalStore(subscribePush, pushShape)
   const presses = useRef(0)
   const idle = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reading = useRef(false)
@@ -80,6 +104,12 @@ function SettingsPage({ shown }: { shown: boolean }) {
   useEffect(() => {
     if (!shown) return
     setEntered(true)
+    // `Push.start()` is the page's, not boot's, for the same reason the
+    // original's is: registering a worker is a thing this browser is asked to
+    // do, and nothing should ask before a reader has opened the place where
+    // the answer is shown. The footer calls it too, and the second call is a
+    // no-op.
+    startPush()
     setIcons(settingsAssistantIcons())
     setNewest(settingsNewestFirst())
     const v = settingsBuildVersion(
@@ -156,6 +186,26 @@ function SettingsPage({ shown }: { shown: boolean }) {
     }
   }
 
+  /**
+   * `Settings.test`: the session on screen, and **failing that the one the list
+   * is pointing at** — because on a phone the first of those is never true when
+   * this button can be pressed. `.pane-detail` is `position: fixed; inset: 0;
+   * z-index: 40` there, so an open transcript covers the header this page is
+   * reached through: `S.openId` and "the reader can see this control" are
+   * mutually exclusive on the one device the whole lever exists for.
+   *
+   * `S.selectedId` survives `closeDetail`, is set by opening a session and by
+   * the first list highlighting its top row, and the list clears it the moment
+   * that session leaves. So it names something live or it names nothing, and
+   * the daemon checks it again before promising an address. `openId` still wins
+   * when both are set: on a desktop the pane and the header are on screen
+   * together, and there the transcript in front of the reader is the better
+   * answer.
+   */
+  const pressTest = () => {
+    sendPushTest(legacyState.openId || legacyState.selectedId || null)
+  }
+
   const toggleIcons = () => {
     const on = !settingsAssistantIcons()
     setSettingsAssistantIcons(on)
@@ -194,17 +244,45 @@ function SettingsPage({ shown }: { shown: boolean }) {
         <div className="block">
           <b id="settings-notify-title">{T.webSettingsNotify}</b>
           <p className="say" id="settings-notify-say">
-            {T.webNotifyUnsupported}
+            {notifySay(T, push.state)}
           </p>
           <div className="row">
-            <button className="chip" id="settings-notify-go" type="button" hidden>
-              {T.webNotifyGo}
+            <button
+              className={push.state === "on" ? "chip on" : "chip"}
+              id="settings-notify-go"
+              type="button"
+              hidden={!(push.state === "off" || push.state === "on")}
+              disabled={push.busy}
+              onClick={togglePush}
+            >
+              {push.state === "on"
+                ? push.busy
+                  ? T.webNotifyStopping
+                  : T.webNotifyStop
+                : push.busy
+                  ? T.webNotifyAsking
+                  : T.webNotifyGo}
             </button>
-            <button className="chip" id="settings-notify-test" type="button" hidden>
-              {T.webNotifyTest}
+            {/* Only offered where there is something subscribed for it to reach. */}
+            <button
+              className="chip"
+              id="settings-notify-test"
+              type="button"
+              hidden={push.state !== "on"}
+              disabled={push.testing}
+              onClick={pressTest}
+            >
+              {push.testing ? T.webSending : T.webNotifyTest}
             </button>
           </div>
-          <p className="said" id="settings-notify-said" role="status" aria-live="polite"></p>
+          <p
+            className={push.saidCalm ? "said calm" : "said"}
+            id="settings-notify-said"
+            role="status"
+            aria-live="polite"
+          >
+            {push.said}
+          </p>
         </div>
 
         <div className="block">

@@ -1,0 +1,24 @@
+{
+  "start_url" : "\/",
+  "display" : "standalone",
+  "icons" : [
+    {
+      "src" : "\/icon-192.png",
+      "sizes" : "192x192",
+      "purpose" : "any maskable",
+      "type" : "image\/png"
+    },
+    {
+      "type" : "image\/png",
+      "src" : "\/icon-512.png",
+      "purpose" : "any maskable",
+      "sizes" : "512x512"
+    }
+  ],
+  "id" : "\/",
+  "name" : "Clawdline",
+  "theme_color" : "#0e0e11",
+  "scope" : "\/",
+  "short_name" : "Clawdline",
+  "background_color" : "#0e0e11"
+}

@@ -6,6 +6,7 @@ import { Row } from "./session/List.js"
 import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { Starting } from "./session/Starting.js"
+import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 
 /**
  * The session list page: the list, and the conversation beside it.
@@ -240,29 +241,60 @@ export function SessionsPage({
             </div>
             <Schedules list={schedules} />
           </div>
-          {/* Whether this device is told when a session waits. It stays hidden
-              until `Push` has decided, and this daemon serves no push key or
-              subscription, so nothing decides and it stays as marked up. */}
-          <div className="notify" id="notify" hidden>
-            <button className="go" id="notify-go" type="button" hidden>
-              <svg className="bell" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                <circle cx="8" cy="1.7" r="1" fill="currentColor"></circle>
-                <path
-                  fill="currentColor"
-                  d="M8 2.2a3.9 3.9 0 0 1 3.9 3.9v2.6l1.05 1.75H3.05L4.1 8.7V6.1A3.9 3.9 0 0 1 8 2.2Z"
-                ></path>
-                <path fill="currentColor" d="M6.3 11.6h3.4a1.7 1.7 0 0 1-3.4 0Z"></path>
-              </svg>
-              <span id="notify-go-label">{T.webNotifyGo}</span>
-            </button>
-            <span className="say" id="notify-say"></span>
-          </div>
+          <NotifyFooter />
         </section>
 
         <Detail row={open} onBack={onBack} onDid={onDid} listUnknown={listUnknown} />
       </main>
       <StartSheet />
     </>
+  )
+}
+
+/**
+ * `Push.draw`'s footer half (`input/push.js`): whether this device is told when
+ * a session waits.
+ *
+ * **Only the two states somebody can act on from here keep a place in the
+ * flow.** Off is an offer and needs a button; on iOS in a tab there is no
+ * button to have, and the one sentence that gets somebody to a working
+ * notification is the whole feature until they have read it. Everything else —
+ * already on, blocked, this browser cannot — is a fact rather than a thing to
+ * do, and a fact does not get a permanent row of the screen.
+ *
+ * `settled` first: a footer that has not been decided yet is not in the flow,
+ * whatever the placeholder state says. Appearing a few frames late is a layout
+ * shift; appearing and then vanishing is a fault.
+ */
+function NotifyFooter() {
+  const T = L.strings
+  const push = useSyncExternalStore(subscribePush, pushShape)
+  useEffect(startPush, [])
+  const inFlow = push.settled && (push.state === "off" || push.state === "homescreen")
+  return (
+    <div className="notify" id="notify" hidden={!inFlow} data-state={push.state}>
+      <button
+        className="go"
+        id="notify-go"
+        type="button"
+        hidden={push.state !== "off"}
+        disabled={push.busy}
+        onClick={togglePush}
+      >
+        <svg className="bell" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <circle cx="8" cy="1.7" r="1" fill="currentColor"></circle>
+          <path
+            fill="currentColor"
+            d="M8 2.2a3.9 3.9 0 0 1 3.9 3.9v2.6l1.05 1.75H3.05L4.1 8.7V6.1A3.9 3.9 0 0 1 8 2.2Z"
+          ></path>
+          <path fill="currentColor" d="M6.3 11.6h3.4a1.7 1.7 0 0 1-3.4 0Z"></path>
+        </svg>
+        <span id="notify-go-label">{push.busy ? T.webNotifyAsking : T.webNotifyGo}</span>
+      </button>
+      <span className="say" id="notify-say">
+        {push.state === "homescreen" ? T.webNotifyHomeScreen : T.webNotifyOff}
+      </span>
+    </div>
   )
 }
 

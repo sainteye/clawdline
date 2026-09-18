@@ -74,5 +74,39 @@
   "strings": {
     "public/strings/zh-Hant.json": "d69538841570f7f9"
   },
-  "stringsSource": "~/code/clawdline/Resources/web/strings"
+  "stringsSource": "~/code/clawdline/Resources/web/strings",
+  "inlined": {
+    "note": "Copies whose source is not a file: a Swift string literal, or the bytes a Swift function draws. tools/check-legacy-css.sh cannot check any of these. sw.js is checkable with tools/extract-service-worker.py --check; the four drawn assets are not, because reproducing them needs AppKit. swiftSource/swiftSymbol say where each came from and copySha is what was taken, so a re-copy can be compared with what is here.",
+    "web/console/public/sw.js": {
+      "swiftSource": "~/code/clawdline/Sources/RemotePage.swift",
+      "swiftSymbol": "RemotePage.serviceWorker()",
+      "swiftSha": "7def202a8bcd10fc",
+      "copySha": "96bfdfa244dbe318",
+      "extractedWith": "tools/extract-service-worker.py"
+    },
+    "web/console/public/icon-192.png": {
+      "swiftSource": "~/code/clawdline/Sources/RemoteIcon.swift",
+      "swiftSymbol": "RemoteIcon.png(size:192)",
+      "copySha": "3dbe82bd4ad6560f",
+      "takenFrom": "GET http://127.0.0.1:7717/icon-192.png (the running Swift daemon, 2026-09-18)"
+    },
+    "web/console/public/icon-512.png": {
+      "swiftSource": "~/code/clawdline/Sources/RemoteIcon.swift",
+      "swiftSymbol": "RemoteIcon.png(size:512)",
+      "copySha": "2c74eb89341da8f9",
+      "takenFrom": "GET http://127.0.0.1:7717/icon-512.png (the running Swift daemon, 2026-09-18)"
+    },
+    "web/console/public/favicon.ico": {
+      "swiftSource": "~/code/clawdline/Sources/RemoteIcon.swift",
+      "swiftSymbol": "RemoteIcon.ico(size:64)",
+      "copySha": "20cd73f0ac137bd2",
+      "takenFrom": "GET http://127.0.0.1:7717/favicon.ico (the running Swift daemon, 2026-09-18)"
+    },
+    "web/console/public/manifest.webmanifest": {
+      "swiftSource": "~/code/clawdline/Sources/RemotePage.swift",
+      "swiftSymbol": "RemotePage.manifest()",
+      "copySha": "7cb265495319e6d3",
+      "takenFrom": "GET http://127.0.0.1:7717/manifest.webmanifest (the running Swift daemon, 2026-09-18)"
+    }
+  }
 }

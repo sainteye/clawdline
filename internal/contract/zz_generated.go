@@ -1456,6 +1456,78 @@ type ProjectWorktreesUnattributed struct {
 	Worktrees int64           `json:"worktrees"`
 }
 
+// GET /v1/push/key. The application server key the page passes to `subscribe({
+// applicationServerKey })`: base64url of the uncompressed P-256 public point.
+// It is an identity rather than a session — every subscription a browser
+// makes is bound to it, so minting a new one silently unsubscribes every
+// device.
+type PushKey struct {
+	Key string `json:"key"`
+}
+
+// A push route that has nothing to report but that it did the thing.
+type PushOK struct {
+	OK bool `json:"ok"`
+}
+
+// What a send actually achieved. `sent` is push services that accepted,
+// `failed` is every other outcome including a subscription that was dropped as
+// gone — a route that promised content to a person must not confuse 'the send
+// was started' with 'a service accepted it'.
+type PushSent struct {
+	Failed int64 `json:"failed"`
+	OK     bool  `json:"ok"`
+	Sent   int64 `json:"sent"`
+}
+
+// POST /v1/push/subscribe. The subscription goes up exactly as the browser
+// wrote it — anything reshaped on the way is a chance to get a credential
+// wrong. It is validated rather than stored as given: `endpoint` is a URL this
+// machine will POST to from inside its own network whenever a session changes,
+// so an unchecked one is a request-forgery primitive handed to whoever holds a
+// token.
+type PushSubscribeRequest struct {
+	// https only, and a real host. Not an allowlist of vendors: Apple, Mozilla, Google
+	// and anything self-hosted all have to work.
+	Endpoint string               `json:"endpoint"`
+	Keys     PushSubscriptionKeys `json:"keys"`
+}
+
+// What subscribing answers. `id` is this machine's name for the row, and the
+// page keeps it so it can take the subscription back after a reload.
+type PushSubscribed struct {
+	ID string `json:"id"`
+	OK bool   `json:"ok"`
+}
+
+// The browser's half of the encryption, exactly as `PushSubscription.toJSON()`
+// wrote it. `p256dh` is a public key and `auth` is a secret this machine cannot
+// use to read anything, only to write to that one device.
+type PushSubscriptionKeys struct {
+	// base64url of 16 octets, RFC 8291 §3.2.
+	Auth string `json:"auth"`
+
+	// base64url of an uncompressed P-256 point: 65 octets starting 0x04.
+	P256dh string `json:"p256dh"`
+}
+
+// POST /v1/push/test. Reaches the asking device and nothing else: a test whose
+// blast radius is larger than the thing being tested teaches you to be careful
+// with it, which is the opposite of what a test button is for. `session_id` is
+// optional and is what turns a light into a loop — without it the button
+// answers half a question (did a notification arrive) and the half that
+// actually goes wrong is the other one (does tapping one get me back to my
+// session).
+type PushTestRequest struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
+// POST /v1/push/unsubscribe. The id this machine gave back when the browser
+// subscribed.
+type PushUnsubscribeRequest struct {
+	ID string `json:"id"`
+}
+
 // Every refusal on this daemon has this shape. A caller reads `error` as the
 // code and never parses `detail`.
 type Refusal struct {

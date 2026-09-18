@@ -6,9 +6,84 @@
 <html lang="en" class="booting">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark light" />
+    <!-- The viewport is the Swift page's, and both halves of it are deliberate.
+
+         `user-scalable=no` is a trade against accessibility, made because this is a thing you add
+         to a home screen and use as an app rather than a page you visit. Pinch zoom there is
+         almost always an accident. What it costs is paid for in the layout instead: nothing here
+         needs magnifying to be read, every text field is at least 16px on a touch screen so that
+         focusing one cannot zoom the page either, and the page never scrolls sideways.
+
+         **No `viewport-fit=cover`.** It was here, and on an iPhone added to the home screen it
+         leaves a strip of dead page along the bottom of every screen — measured on a 15 Pro at 59
+         points, which is the *top* inset: iOS hands the web app the safe height and then draws it
+         from the top of the display, so the shortfall comes out at the far end, and no padding
+         inside the page can fill something the page does not extend into. Without `cover`, iOS
+         lays the view out inside the safe area itself and every `env(safe-area-inset-*)` is zero
+         by definition — which is what the copied stylesheet was written against, and it says so
+         in `legacy/tokens.css` and `legacy/composer.css`. -->
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="clawdline" />
+    <!-- `black` rather than `black-translucent`: see the viewport note. Translucent is what put
+         the view's top edge under the clock, and this page is `#0e0e11`, so a black strip above
+         it is a shade nobody can pick out. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="theme-color" content="#0e0e11" />
     <title>clawdline</title>
+    <link rel="manifest" href="/manifest.webmanifest" id="manifest-link" />
+
+    <!-- The launch image, twenty times over.
+         iOS will not derive one from the manifest, and without these a page added to the home
+         screen opens on a black rectangle for a second or more while the WebKit process starts —
+         which reads as an app that failed to launch rather than as one that is launching. There
+         is no wildcard: a tag is matched by the exact geometry of the screen, so every geometry
+         needs its own, and the daemon draws whichever size is asked for (`internal/domain/icon`,
+         `internal/transport/http/pwa.go`) rather than shipping twenty files.
+         iPhones only, deliberately. This is the screen people add this to a home screen from, and
+         twenty tags is already a wall of markup; an iPad that matches none of them falls back to
+         the black it has today, which is where it started. -->
+    <link rel="apple-touch-startup-image" href="/splash-1320x2868.png"
+          media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-2868x1320.png"
+          media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" />
+    <link rel="apple-touch-startup-image" href="/splash-1290x2796.png"
+          media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-2796x1290.png"
+          media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" />
+    <link rel="apple-touch-startup-image" href="/splash-1284x2778.png"
+          media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-2778x1284.png"
+          media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" />
+    <link rel="apple-touch-startup-image" href="/splash-1206x2622.png"
+          media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-2622x1206.png"
+          media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" />
+    <link rel="apple-touch-startup-image" href="/splash-1179x2556.png"
+          media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-2556x1179.png"
+          media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" />
+    <link rel="apple-touch-startup-image" href="/splash-1170x2532.png"
+          media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-2532x1170.png"
+          media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" />
+    <link rel="apple-touch-startup-image" href="/splash-1125x2436.png"
+          media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-2436x1125.png"
+          media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" />
+    <link rel="apple-touch-startup-image" href="/splash-1242x2688.png"
+          media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-2688x1242.png"
+          media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" />
+    <link rel="apple-touch-startup-image" href="/splash-828x1792.png"
+          media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-1792x828.png"
+          media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" />
+    <link rel="apple-touch-startup-image" href="/splash-750x1334.png"
+          media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash-1334x750.png"
+          media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" />
     <!-- The interface's words, written in by the server rather than asked for.
          The daemon replaces the comment below with one line setting
          `window.__strings`, the same slot the Swift app's page uses. It was the
