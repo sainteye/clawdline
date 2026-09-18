@@ -116,7 +116,46 @@ func newBroker(s *Server) *orchestrator.Broker {
 		Dir:          s.cfg.Dir,
 		Language:     brokerLanguage(s),
 		MaxChildren:  brokerMaxChildren(s),
+		// W6 (handover.go): the finished child's linger, and the sweep.
+		ChildLinger:  func() time.Duration { return brokerChildLinger(s) },
+		ReclaimAuto:  os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",
+		ReclaimGrace: reclaimGrace(),
 	}
+}
+
+// brokerChildLinger is the `orchestrator_child_linger` setting in seconds;
+// -1 leaves a finished child open for good, and absent is the Swift app's
+// three minutes.
+func brokerChildLinger(s *Server) time.Duration {
+	values, err := nextconfig.Open(s.cfg.Dir).Read()
+	if err == nil {
+		if n, ok := values.Number("orchestrator_child_linger"); ok {
+			if n < 0 {
+				return -1
+			}
+			return time.Duration(n) * time.Second
+		}
+	}
+	return orchestrator.LingerDefault
+}
+
+// reclaimGrace is CLAWDLINE_NEXT_RECLAIM_GRACE, for a disposable daemon's
+// walk of the sweep: a Go duration, where "0s" is no grace at all. Unset is
+// the broker's default of twenty-four hours.
+func reclaimGrace() time.Duration {
+	raw := os.Getenv("CLAWDLINE_NEXT_RECLAIM_GRACE")
+	if raw == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < 0 {
+		log.Printf("orchestrator: CLAWDLINE_NEXT_RECLAIM_GRACE=%q is not a duration; the default grace stands", raw)
+		return 0
+	}
+	if d == 0 {
+		return -1
+	}
+	return d
 }
 
 // dispatchPolicy is this Mac's house rules, read at every dispatch so that a

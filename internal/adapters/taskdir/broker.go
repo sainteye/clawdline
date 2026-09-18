@@ -94,6 +94,10 @@ type Brief struct {
 	// WorkID is the work item the dispatch named, kept in the file so a
 	// respawn — which copies this file — is the same work (D36).
 	WorkID string `json:"work_id,omitempty"`
+	// Graph is the task graph this task is a node of, kept in the file for the
+	// child's own validator — a review node owes a closed review receipt —
+	// and for a respawn, which copies this file.
+	Graph json.RawMessage `json:"graph,omitempty"`
 }
 
 // RootRef is who the task is working for. `poll_only` is carried even when

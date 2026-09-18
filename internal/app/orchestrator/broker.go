@@ -104,6 +104,21 @@ type Broker struct {
 	// override may only lower them. Zero is the registered default.
 	LeaseLine int
 	OpenWaits int
+	// ChildLinger is the `orchestrator_child_linger` setting: how long a
+	// finished child's tab stays open before this broker closes it (#26).
+	// Negative leaves it open for good — the session becomes a root of its
+	// own. Nil is the Swift app's default, three minutes (linger.go).
+	ChildLinger func() time.Duration
+	// ReclaimAuto lets the beat start a reclamation sweep every six hours
+	// (reclaim.go); ReclaimGrace is how long after a task ends its checkout
+	// and directory are left alone — zero is the default of twenty-four
+	// hours, negative is none (for a disposable daemon's walk only).
+	ReclaimAuto  bool
+	ReclaimGrace time.Duration
+	// ProcessCWDs is every process's working directory, as the kernel
+	// answers it — the sweep's proof that nobody is working inside a
+	// checkout it is about to remove. Nil asks `lsof` (reclaim.go).
+	ProcessCWDs func(ctx context.Context) ([]string, error)
 	// Clock is injectable so a test does not wait out a real deadline.
 	Clock func() time.Time
 	// NewID makes a task id when a caller does not.
@@ -143,6 +158,11 @@ type Broker struct {
 	observed observations
 	// progress carries each accepted note to whoever is streaming.
 	progress progressBus
+	// reclaim is the sweep's own memory, and lingerStarted when this process
+	// began closing tabs — the moment a deadline that passed while no broker
+	// ran is measured from (reclaim.go, linger.go).
+	reclaim       reclaimState
+	lingerStarted time.Time
 	// todosOwed is a start's reconcile of the to-do list (todos.go), owed
 	// from Run until one succeeds. In memory: a restart is exactly when it is
 	// owed again. A pass run by hand owes none, so its cost stays the live

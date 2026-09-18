@@ -57,11 +57,13 @@ type draft struct {
 	Model          string           `json:"model"`
 	WorkID         json.RawMessage  `json:"work_id"`
 
-	// Accepted by the Swift broker and not by this one yet. They are read only
-	// so that their presence can be refused by name: a broker that silently
-	// drops `serialize` starts a task the caller asked to wait, and one that
-	// drops `graph` records a node nobody can find again. Ignoring a field the
-	// protocol documents is a quieter way of doing something else.
+	// Graph is a node's place in a task graph (graphs.go, W6).
+	//
+	// The rest are accepted by the Swift broker and not by this one yet. They
+	// are read only so that their presence can be refused by name: a broker
+	// that silently drops `serialize` starts a task the caller asked to wait.
+	// Ignoring a field the protocol documents is a quieter way of doing
+	// something else.
 	Serialize       json.RawMessage `json:"serialize"`
 	Graph           json.RawMessage `json:"graph"`
 	AttachSession   json.RawMessage `json:"attach_session"`
@@ -187,7 +189,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		root = admitted
 	}
 	for name, raw := range map[string]json.RawMessage{
-		"serialize": d.Serialize, "graph": d.Graph,
+		"serialize":      d.Serialize,
 		"attach_session": d.AttachSession, "reasoning_effort": d.ReasoningEffort,
 	} {
 		if len(raw) > 0 && string(raw) != "null" {
@@ -199,6 +201,10 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		return bad("model must be a model name: lower-case letters, digits, . _ -, at most 64 characters")
 	}
 	workID, err := admitWorkID(d.WorkID)
+	if err != nil {
+		return Record{}, err
+	}
+	graph, err := admitGraph(d.Graph)
 	if err != nil {
 		return Record{}, err
 	}
@@ -228,6 +234,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		Root:           root,
 		Model:          model,
 		WorkID:         workID,
+		Graph:          graph,
 		State:          StateQueued,
 	}, nil
 }

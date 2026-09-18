@@ -281,6 +281,9 @@ type Record struct {
 	// the dispatch named none, and then the work is only its root's — a
 	// to-do, never a card somebody else has to find.
 	WorkID string `json:"work_id,omitempty"`
+	// Graph is the task graph this task is a node of, `current_node` naming
+	// which (graphs.go). Nil for a task that is no graph's.
+	Graph *Graph `json:"graph,omitempty"`
 
 	// LeaseScope is `shared` or `worktree`, fixed at dispatch. Empty on a
 	// record written before it existed; Scope reads those.
@@ -389,6 +392,9 @@ func (r Record) Brief() taskdir.Brief {
 		TimeoutMinutes: r.TimeoutMinutes,
 		CreatedAt:      r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		WorkID:         r.WorkID,
+	}
+	if r.Graph != nil {
+		b.Graph, _ = json.Marshal(r.Graph)
 	}
 	if r.Root != nil {
 		b.Root = &taskdir.RootRef{

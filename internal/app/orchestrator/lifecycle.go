@@ -432,7 +432,14 @@ func (b *Broker) nothingToLandRefusal(ctx context.Context, r Record) string {
 		return ""
 	}
 	commits, commitsKnown := b.Git.Commits(ctx, r.Worktree.Repository, r.Worktree.Base, r.Worktree.Branch)
-	dirty, dirtyKnown := b.Git.Dirty(ctx, r.Worktree.Path)
+	var dirty, dirtyKnown bool
+	kept := ""
+	if dirExists(r.Worktree.Path) {
+		dirty, dirtyKnown = b.Git.Dirty(ctx, r.Worktree.Path)
+	} else {
+		// Taken by the sweep, which recorded what it held (reclaim.go).
+		dirty, kept, dirtyKnown = b.reclaimedDirty(ctx, r.ID)
+	}
 	if !commitsKnown || !dirtyKnown {
 		return "this Mac has no commit count for its checkout, and an unknown count is not permission"
 	}
@@ -440,6 +447,9 @@ func (b *Broker) nothingToLandRefusal(ctx context.Context, r Record) string {
 		return "its branch carries " + strconv.Itoa(commits) + " commit(s)"
 	}
 	if dirty {
+		if kept != "" {
+			return "its checkout had uncommitted changes, kept on the branch " + kept + " when it was reclaimed"
+		}
 		return "its checkout has uncommitted changes"
 	}
 	return ""
