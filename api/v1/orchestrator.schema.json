@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orchestrator.schema.json",
+  "title": "The broker",
+  "description": "The loop from a root asking for work to a child reporting that the work is done. These are the routes every agent session on this machine is dispatched, briefed, watched, collected and acknowledged through. The inventory's own body is assembled in the application rather than generated here, because the 409 that refuses a stale receipt carries the whole 200 body inside its error object and the two have to be the same bytes.",
+  "$defs": {
+    "BrokerDispatchRequest": {
+      "description": "The whole body of POST /v1/orchestrator/tasks. The brief is not in it: a caller writes <task_root>/<task_id>/task.json first, and this names it. The secret travels one way — it is never returned, and the child receives it in the one line typed into its composer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["secret", "task_id"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "secret": { "description": "64 lowercase hex characters, the caller's own. Only its SHA-256 is stored.", "type": "string" },
+        "inventory_generation": { "description": "The receipt from the inventory this dispatch was decided from. Absent is refused: a dispatch that read nothing cannot have been arbitrated against what is already running.", "type": "string" }
+      }
+    },
+    "BrokerWarning": {
+      "description": "Something the dispatcher should know that did not stop the work. A warning is never a refusal — by the time one is written the task is recorded and its tab is opening.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "task": { "type": "string" },
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "age_seconds": { "type": "integer" },
+        "root_key": { "type": "string" }
+      }
+    },
+    "BrokerRoot": {
+      "description": "The session a task was dispatched by. `poll_only` is carried even when false: a reader that has to infer it cannot tell an attended root from one that was never recorded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "poll_only", "session_id"],
+      "properties": {
+        "session_id": { "type": "string" },
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "project_dir": { "type": "string" },
+        "label": { "type": "string" },
+        "poll_only": { "type": "boolean" }
+      }
+    },
+    "BrokerWorktree": {
+      "description": "The isolated checkout a task was given. `base` is recorded once and never recomputed: a reader asking whether this branch produced anything compares head against it, and recomputing would answer against a tree that has moved.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base", "branch", "path", "repository"],
+      "properties": {
+        "repository": { "type": "string" },
+        "path": { "type": "string" },
+        "branch": { "type": "string" },
+        "base": { "type": "string" },
+        "head": { "type": "string" },
+        "commits": { "description": "Commits the branch carries over its base, or null when git could not be asked. Unknown is never permission to dispose of anything.", "type": "integer", "nullable": true },
+        "dirty": { "type": "boolean", "nullable": true },
+        "branch_exists": { "type": "boolean", "nullable": true },
+        "merged": { "type": "boolean", "nullable": true }
+      }
+    },
+    "BrokerLanding": {
+      "description": "What became of a delivery. Delivered is not reviewed and reviewed is not landed; `landed` is the one rung a caller cannot assert on its own word, because the broker proves it by asking git for ancestry.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "$ref": "#/$defs/BrokerLandingState" },
+        "target": { "type": "string" },
+        "commit": { "type": "string" },
+        "repo": { "type": "string" },
+        "note": { "type": "string" },
+        "at": { "type": "integer" }
+      }
+    },
+    "BrokerLandingState": {
+      "type": "string",
+      "enum": ["pending", "landed", "abandoned", "nothing_to_land"]
+    },
+    "BrokerNoticeState": {
+      "description": "Where the completion notice has got to. `delivered` means bytes reached a composer, which is not observation — only `acknowledged` stops the resend.",
+      "type": "string",
+      "enum": ["pending", "delivered", "acknowledged", "dead_letter"]
+    },
+    "BrokerNoticeError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "at": { "type": "integer" }
+      }
+    },
+    "BrokerNotice": {
+      "description": "The durable envelope for telling a root its child finished. It is a ledger rather than a flag because what it records is a promise to somebody who is not here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempts", "created_at", "notice_id", "state"],
+      "properties": {
+        "notice_id": { "type": "string" },
+        "state": { "$ref": "#/$defs/BrokerNoticeState" },
+        "attempts": { "type": "integer" },
+        "created_at": { "type": "integer" },
+        "last_attempt_at": { "type": "integer" },
+        "next_retry_at": { "type": "integer" },
+        "transport_delivered_at": { "type": "integer" },
+        "observed_at": { "type": "integer" },
+        "acknowledged_at": { "type": "integer" },
+        "dead_letter_at": { "type": "integer" },
+        "recipient": { "type": "string" },
+        "last_error": { "$ref": "#/$defs/BrokerNoticeError" }
+      }
+    },
+    "BrokerProgressNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "note"],
+      "properties": {
+        "note": { "type": "string" },
+        "at": { "type": "integer" }
+      }
+    },
+    "BrokerVerification": {
+      "description": "A child's own account of what it ran. It is the child speaking, not a measurement this daemon made.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["last", "runs", "scope", "seconds"],
+      "properties": {
+        "runs": { "type": "integer" },
+        "seconds": { "type": "integer" },
+        "last": { "type": "string" },
+        "scope": { "type": "string" }
+      }
+    },
+    "BrokerResult": {
+      "description": "What a child wrote about itself. The secret it authenticated with is never carried here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string" },
+        "summary": { "type": "string" },
+        "symbols": { "type": "array", "items": { "type": "string" } },
+        "artifacts": { "type": "array", "items": { "type": "string" } },
+        "finished_at": { "type": "string" },
+        "verification": { "$ref": "#/$defs/BrokerVerification" }
+      }
+    },
+    "BrokerTask": {
+      "description": "One dispatched piece of work, as the console and a dispatching root read it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "claims", "claims_declared", "created", "dir", "id", "isolation", "kind", "permission", "projectDir", "state", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "state": { "$ref": "tasks.schema.json#/$defs/TaskState" },
+        "kind": { "type": "string" },
+        "title": { "type": "string" },
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "projectDir": { "type": "string" },
+        "repository": { "type": "string" },
+        "created": { "type": "integer" },
+        "dir": { "type": "string" },
+        "permission": { "type": "string" },
+        "isolation": { "type": "string" },
+        "timeout_minutes": { "type": "integer" },
+        "claims": { "type": "array", "items": { "type": "string" } },
+        "claims_declared": { "description": "Whether the dispatch said anything about claims at all. `I declared none` and `I did not say` are different requests, and only one of them can be arbitrated.", "type": "boolean" },
+        "landing_paths": { "description": "What an isolated task's claims became: not a lease on the shared tree, but the write set whoever lands this branch is answering for.", "type": "array", "items": { "type": "string" } },
+        "deliverables": { "type": "array", "items": { "type": "string" } },
+        "spawnedAt": { "type": "integer" },
+        "finishedAt": { "type": "integer" },
+        "child": { "$ref": "#/$defs/BrokerChild" },
+        "root": { "$ref": "#/$defs/BrokerRoot" },
+        "worktree": { "$ref": "#/$defs/BrokerWorktree" },
+        "landing": { "$ref": "#/$defs/BrokerLanding" },
+        "completion_delivery": { "$ref": "#/$defs/BrokerNotice" },
+        "progress": { "type": "array", "items": { "$ref": "#/$defs/BrokerProgressNote" } },
+        "result": { "$ref": "#/$defs/BrokerResult" },
+        "summary": { "type": "string" },
+        "spawn_error": { "type": "string" }
+      }
+    },
+    "BrokerChild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terminalId"],
+      "properties": {
+        "terminalId": { "type": "string" },
+        "backend": { "$ref": "common.schema.json#/$defs/Backend" }
+      }
+    },
+    "BrokerDispatchResult": {
+      "description": "The intent committed and a tab was asked for. `replayed` is how a caller tells a fresh dispatch from one it had already made; `warnings` is omitted when empty rather than sent as an empty array, so that `there is nothing to tell you` never looks like a list somebody forgot to fill.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "task"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "task": { "$ref": "#/$defs/BrokerTask" },
+        "replayed": { "type": "boolean" },
+        "warnings": { "type": "array", "items": { "$ref": "#/$defs/BrokerWarning" } }
+      }
+    },
+    "BrokerTaskList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "tasks"],
+      "properties": {
+        "tasks": { "type": "array", "items": { "$ref": "#/$defs/BrokerTask" } },
+        "page": { "$ref": "#/$defs/BrokerPage" },
+        "at": { "type": "integer" }
+      }
+    },
+    "BrokerPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cursor", "finished", "limit", "unfinished"],
+      "properties": {
+        "cursor": { "type": "integer" },
+        "limit": { "type": "integer" },
+        "unfinished": { "description": "Unfinished work is never paged: it rides on every page, because a caller reading page two is still answerable for what is running.", "type": "integer" },
+        "finished": { "type": "integer" },
+        "nextCursor": { "type": "integer", "nullable": true }
+      }
+    },
+    "BrokerTaskEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task"],
+      "properties": {
+        "task": { "$ref": "#/$defs/BrokerTask" }
+      }
+    },
+    "BrokerProgressResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "task"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "task": { "$ref": "#/$defs/BrokerTask" }
+      }
+    },
+    "BrokerAccepted": {
+      "description": "The answer to POST /complete: the outcome was recorded. Deliberately bare — what the task did belongs in its result, which the broker already holds.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" }
+      }
+    },
+    "BrokerAckResult": {
+      "description": "`changed` false is a successful second acknowledgement, not a refusal: a caller that is unsure its ACK landed must be able to send it again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acknowledged", "changed", "notice_id", "ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "acknowledged": { "type": "boolean" },
+        "changed": { "type": "boolean" },
+        "notice_id": { "type": "string" }
+      }
+    },
+    "BrokerNotifyResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["failed", "ok", "sent"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "sent": { "type": "integer" },
+        "failed": { "type": "integer" }
+      }
+    },
+    "BrokerInflightRow": {
+      "description": "One line of work outstanding in a repository. `visibility` is `live` while the task is running and `unmerged` once it has finished with a branch nobody has taken; settled work is not listed at all.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["age_seconds", "assistant", "claims", "claims_declared", "created", "id", "project_dir", "state", "title", "visibility"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "state": { "$ref": "tasks.schema.json#/$defs/TaskState" },
+        "visibility": { "type": "string" },
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "project_dir": { "type": "string" },
+        "created": { "type": "integer" },
+        "age_seconds": { "type": "integer" },
+        "claims": { "type": "array", "items": { "type": "string" } },
+        "claims_declared": { "type": "boolean" },
+        "landing_paths": { "type": "array", "items": { "type": "string" } },
+        "root_label": { "type": "string" },
+        "root_key": { "type": "string" },
+        "landing": { "$ref": "#/$defs/BrokerLanding" },
+        "worktree": { "$ref": "#/$defs/BrokerWorktree" }
+      }
+    },
+    "BrokerInflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "inflight", "repository"],
+      "properties": {
+        "repository": { "type": "string" },
+        "inflight": { "type": "array", "items": { "$ref": "#/$defs/BrokerInflightRow" } },
+        "at": { "type": "integer" }
+      }
+    },
+    "BrokerMessageRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from_session", "text", "to_session"],
+      "properties": {
+        "from_session": { "description": "The sender, named by its terminal id or by its conversation id: it is describing itself and knows both.", "type": "string" },
+        "to_session": { "description": "The recipient, named by terminal id only. A message addressed to a conversation would follow it into whichever tab holds it, and the sender meant the tab.", "type": "string" },
+        "text": { "type": "string" }
+      }
+    },
+    "BrokerMessageResult": {
+      "description": "`ok` means the bytes reached a composer. It never means the assistant read them — that is a later fact with its own evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted_at", "at", "ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "accepted_at": { "type": "integer" },
+        "at": { "type": "integer" }
+      }
+    },
+    "BrokerWhoAmI": {
+      "description": "Which tab a conversation is in. Five fields and no more: what that session is working on is not the broker's to hand to whoever knows a conversation id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "at", "conversation_id", "provenance", "terminal_id"],
+      "properties": {
+        "conversation_id": { "type": "string" },
+        "terminal_id": { "type": "string" },
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "provenance": { "$ref": "#/$defs/BrokerProvenance" },
+        "at": { "type": "integer" }
+      }
+    },
+    "BrokerProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consistency", "registry_complete", "source"],
+      "properties": {
+        "source": { "type": "string" },
+        "registry_complete": { "type": "boolean" },
+        "registry_observed_at": { "type": "integer" },
+        "consistency": { "type": "string" }
+      }
+    },
+    "BrokerSessionDelivery": {
+      "description": "A root's own receipt: one sentence saying this turn delivered something. It produces the check that means `delivered, awaiting approval`, and can never produce `landed`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created", "disposition", "ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "created": { "type": "boolean" },
+        "disposition": { "$ref": "#/$defs/BrokerDisposition" }
+      }
+    },
+    "BrokerDisposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "receiptAt", "scope", "title"],
+      "properties": {
+        "scope": { "type": "string" },
+        "title": { "type": "string" },
+        "evidence": { "type": "string" },
+        "receiptAt": { "type": "integer" }
+      }
+    }
+  }
+}

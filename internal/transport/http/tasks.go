@@ -75,6 +75,38 @@ func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.
 			// empty rather than guessed, and no child tab is known.
 		})
 	}
+	// The broker's own tasks, which live in this daemon's store rather than in
+	// the Swift app's. Without this the console would show a child this daemon
+	// dispatched only while the Swift app also happened to know about it, which
+	// it never does.
+	if records, err := s.broker.Records(ctx); err == nil {
+		for _, t := range records {
+			claims := t.Claims
+			if claims == nil {
+				claims = []string{}
+			}
+			created := t.CreatedAt.Unix()
+			row := contract.TaskRow{
+				ID:             t.ID,
+				TaskID:         t.ID,
+				Assistant:      contract.Assistant(t.Assistant),
+				ProjectDir:     t.ProjectDir,
+				Claims:         claims,
+				ClaimsDeclared: t.Claims != nil,
+				State:          contract.TaskState(t.State),
+				Created:        created,
+				CreatedAt:      created,
+				Dir:            t.Dir,
+				Title:          t.Title,
+				Kind:           t.Kind,
+			}
+			if !t.FinishedAt.IsZero() {
+				row.FinishedAt = t.FinishedAt.Unix()
+			}
+			own = append(own, row)
+		}
+	}
+
 	snap := s.swift.Read()
 	rows, page := snap.TaskPage(s.screen(ctx), own, cursor, limit)
 	return contract.TaskList{

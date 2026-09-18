@@ -740,6 +740,369 @@ export interface BoardWriteResult {
 }
 
 /**
+ * The answer to POST /complete: the outcome was recorded. Deliberately bare —
+ * what the task did belongs in its result, which the broker already holds.
+ */
+export interface BrokerAccepted {
+  ok: boolean
+}
+
+/**
+ * `changed` false is a successful second acknowledgement, not a refusal: a caller
+ * that is unsure its ACK landed must be able to send it again.
+ */
+export interface BrokerAckResult {
+  acknowledged: boolean
+  changed: boolean
+  notice_id: string
+  ok: boolean
+}
+
+export interface BrokerChild {
+  backend?: Backend
+  terminalId: string
+}
+
+/**
+ * The whole body of POST /v1/orchestrator/tasks. The brief is not in it: a caller
+ * writes <task_root>/<task_id>/task.json first, and this names it. The secret
+ * travels one way — it is never returned, and the child receives it in the one
+ * line typed into its composer.
+ */
+export interface BrokerDispatchRequest {
+  /**
+   * The receipt from the inventory this dispatch was decided from. Absent is
+   * refused: a dispatch that read nothing cannot have been arbitrated against what
+   * is already running.
+   */
+  inventory_generation?: string
+
+  /**
+   * 64 lowercase hex characters, the caller's own. Only its SHA-256 is stored.
+   */
+  secret: string
+  task_id: string
+}
+
+/**
+ * The intent committed and a tab was asked for. `replayed` is how a caller tells a
+ * fresh dispatch from one it had already made; `warnings` is omitted when empty
+ * rather than sent as an empty array, so that `there is nothing to tell you` never
+ * looks like a list somebody forgot to fill.
+ */
+export interface BrokerDispatchResult {
+  ok: boolean
+  replayed?: boolean
+  task: BrokerTask
+  warnings?: BrokerWarning[]
+}
+
+export interface BrokerDisposition {
+  evidence: string
+  receiptAt: number
+  scope: string
+  title: string
+}
+
+export interface BrokerInflight {
+  at: number
+  inflight: BrokerInflightRow[]
+  repository: string
+}
+
+/**
+ * One line of work outstanding in a repository. `visibility` is `live` while the
+ * task is running and `unmerged` once it has finished with a branch nobody has
+ * taken; settled work is not listed at all.
+ */
+export interface BrokerInflightRow {
+  age_seconds: number
+  assistant: Assistant
+  claims: string[]
+  claims_declared: boolean
+  created: number
+  id: string
+  landing?: BrokerLanding
+  landing_paths?: string[]
+  project_dir: string
+  root_key?: string
+  root_label?: string
+  state: TaskState
+  title: string
+  visibility: string
+  worktree?: BrokerWorktree
+}
+
+/**
+ * What became of a delivery. Delivered is not reviewed and reviewed is not landed;
+ * `landed` is the one rung a caller cannot assert on its own word, because the
+ * broker proves it by asking git for ancestry.
+ */
+export interface BrokerLanding {
+  at?: number
+  commit?: string
+  note?: string
+  repo?: string
+  state: BrokerLandingState
+  target?: string
+}
+
+export type BrokerLandingState =
+    "pending"
+  | "landed"
+  | "abandoned"
+  | "nothing_to_land"
+
+export const BrokerLandingStateValues: readonly BrokerLandingState[] = ["pending", "landed", "abandoned", "nothing_to_land"] as const
+
+export interface BrokerMessageRequest {
+  /**
+   * The sender, named by its terminal id or by its conversation id: it is
+   * describing itself and knows both.
+   */
+  from_session: string
+  text: string
+
+  /**
+   * The recipient, named by terminal id only. A message addressed to a conversation
+   * would follow it into whichever tab holds it, and the sender meant the tab.
+   */
+  to_session: string
+}
+
+/**
+ * `ok` means the bytes reached a composer. It never means the assistant read them
+ * — that is a later fact with its own evidence.
+ */
+export interface BrokerMessageResult {
+  accepted_at: number
+  at: number
+  ok: boolean
+}
+
+/**
+ * The durable envelope for telling a root its child finished. It is a ledger rather
+ * than a flag because what it records is a promise to somebody who is not here.
+ */
+export interface BrokerNotice {
+  acknowledged_at?: number
+  attempts: number
+  created_at: number
+  dead_letter_at?: number
+  last_attempt_at?: number
+  last_error?: BrokerNoticeError
+  next_retry_at?: number
+  notice_id: string
+  observed_at?: number
+  recipient?: string
+  state: BrokerNoticeState
+  transport_delivered_at?: number
+}
+
+export interface BrokerNoticeError {
+  at: number
+  code: string
+  message: string
+}
+
+/**
+ * Where the completion notice has got to. `delivered` means bytes reached a
+ * composer, which is not observation — only `acknowledged` stops the resend.
+ */
+export type BrokerNoticeState =
+    "pending"
+  | "delivered"
+  | "acknowledged"
+  | "dead_letter"
+
+export const BrokerNoticeStateValues: readonly BrokerNoticeState[] = ["pending", "delivered", "acknowledged", "dead_letter"] as const
+
+export interface BrokerNotifyResult {
+  failed: number
+  ok: boolean
+  sent: number
+}
+
+export interface BrokerPage {
+  cursor: number
+  finished: number
+  limit: number
+  nextCursor: number | null
+
+  /**
+   * Unfinished work is never paged: it rides on every page, because a caller
+   * reading page two is still answerable for what is running.
+   */
+  unfinished: number
+}
+
+export interface BrokerProgressNote {
+  at: number
+  note: string
+}
+
+export interface BrokerProgressResult {
+  ok: boolean
+  task: BrokerTask
+}
+
+export interface BrokerProvenance {
+  consistency: string
+  registry_complete: boolean
+  registry_observed_at?: number
+  source: string
+}
+
+/**
+ * What a child wrote about itself. The secret it authenticated with is never
+ * carried here.
+ */
+export interface BrokerResult {
+  artifacts?: string[]
+  finished_at?: string
+  status: string
+  summary?: string
+  symbols?: string[]
+  verification?: BrokerVerification
+}
+
+/**
+ * The session a task was dispatched by. `poll_only` is carried even when false: a
+ * reader that has to infer it cannot tell an attended root from one that was never
+ * recorded.
+ */
+export interface BrokerRoot {
+  assistant: Assistant
+  label?: string
+  poll_only: boolean
+  project_dir?: string
+  session_id: string
+}
+
+/**
+ * A root's own receipt: one sentence saying this turn delivered something. It
+ * produces the check that means `delivered, awaiting approval`, and can never
+ * produce `landed`.
+ */
+export interface BrokerSessionDelivery {
+  created: boolean
+  disposition: BrokerDisposition
+  ok: boolean
+}
+
+/**
+ * One dispatched piece of work, as the console and a dispatching root read it.
+ */
+export interface BrokerTask {
+  assistant: Assistant
+  child?: BrokerChild
+  claims: string[]
+
+  /**
+   * Whether the dispatch said anything about claims at all. `I declared none` and
+   * `I did not say` are different requests, and only one of them can be arbitrated.
+   */
+  claims_declared: boolean
+  completion_delivery?: BrokerNotice
+  created: number
+  deliverables?: string[]
+  dir: string
+  finishedAt?: number
+  id: string
+  isolation: string
+  kind: string
+  landing?: BrokerLanding
+
+  /**
+   * What an isolated task's claims became: not a lease on the shared tree, but the
+   * write set whoever lands this branch is answering for.
+   */
+  landing_paths?: string[]
+  permission: string
+  progress?: BrokerProgressNote[]
+  projectDir: string
+  repository?: string
+  result?: BrokerResult
+  root?: BrokerRoot
+  spawn_error?: string
+  spawnedAt?: number
+  state: TaskState
+  summary?: string
+  timeout_minutes?: number
+  title: string
+  worktree?: BrokerWorktree
+}
+
+export interface BrokerTaskEnvelope {
+  task: BrokerTask
+}
+
+export interface BrokerTaskList {
+  at: number
+  page?: BrokerPage
+  tasks: BrokerTask[]
+}
+
+/**
+ * A child's own account of what it ran. It is the child speaking, not a measurement
+ * this daemon made.
+ */
+export interface BrokerVerification {
+  last: string
+  runs: number
+  scope: string
+  seconds: number
+}
+
+/**
+ * Something the dispatcher should know that did not stop the work. A warning is
+ * never a refusal — by the time one is written the task is recorded and its tab
+ * is opening.
+ */
+export interface BrokerWarning {
+  age_seconds?: number
+  code: string
+  message: string
+  paths?: string[]
+  root_key?: string
+  task?: string
+}
+
+/**
+ * Which tab a conversation is in. Five fields and no more: what that session is
+ * working on is not the broker's to hand to whoever knows a conversation id.
+ */
+export interface BrokerWhoAmI {
+  assistant: Assistant
+  at: number
+  conversation_id: string
+  provenance: BrokerProvenance
+  terminal_id: string
+}
+
+/**
+ * The isolated checkout a task was given. `base` is recorded once and never
+ * recomputed: a reader asking whether this branch produced anything compares head
+ * against it, and recomputing would answer against a tree that has moved.
+ */
+export interface BrokerWorktree {
+  base: string
+  branch: string
+  branch_exists: boolean | null
+
+  /**
+   * Commits the branch carries over its base, or null when git could not be asked.
+   * Unknown is never permission to dispose of anything.
+   */
+  commits: number | null
+  dirty: boolean | null
+  head?: string
+  merged: boolean | null
+  path: string
+  repository: string
+}
+
+/**
  * A device minted for a browser on this machine. `url` carries the token in its
  * fragment, which a browser never sends and never logs; the page trades it for the
  * cookie with /v1/auth/adopt.

@@ -579,6 +579,328 @@ type BoardWriteResult struct {
 	Revision int64 `json:"revision"`
 }
 
+// The answer to POST /complete: the outcome was recorded. Deliberately bare —
+// what the task did belongs in its result, which the broker already holds.
+type BrokerAccepted struct {
+	OK bool `json:"ok"`
+}
+
+// `changed` false is a successful second acknowledgement, not a refusal: a
+// caller that is unsure its ACK landed must be able to send it again.
+type BrokerAckResult struct {
+	Acknowledged bool   `json:"acknowledged"`
+	Changed      bool   `json:"changed"`
+	NoticeID     string `json:"notice_id"`
+	OK           bool   `json:"ok"`
+}
+
+type BrokerChild struct {
+	Backend    Backend `json:"backend,omitempty"`
+	TerminalID string  `json:"terminalId"`
+}
+
+// The whole body of POST /v1/orchestrator/tasks. The brief is not in it: a
+// caller writes <task_root>/<task_id>/task.json first, and this names it. The
+// secret travels one way — it is never returned, and the child receives it in
+// the one line typed into its composer.
+type BrokerDispatchRequest struct {
+	// The receipt from the inventory this dispatch was decided from. Absent is
+	// refused: a dispatch that read nothing cannot have been arbitrated against what
+	// is already running.
+	InventoryGeneration string `json:"inventory_generation,omitempty"`
+
+	// 64 lowercase hex characters, the caller's own. Only its SHA-256 is stored.
+	Secret string `json:"secret"`
+	TaskID string `json:"task_id"`
+}
+
+// The intent committed and a tab was asked for. `replayed` is how a caller
+// tells a fresh dispatch from one it had already made; `warnings` is omitted
+// when empty rather than sent as an empty array, so that `there is nothing to
+// tell you` never looks like a list somebody forgot to fill.
+type BrokerDispatchResult struct {
+	OK       bool            `json:"ok"`
+	Replayed bool            `json:"replayed,omitempty"`
+	Task     BrokerTask      `json:"task"`
+	Warnings []BrokerWarning `json:"warnings,omitempty"`
+}
+
+type BrokerDisposition struct {
+	Evidence  string `json:"evidence"`
+	ReceiptAt int64  `json:"receiptAt"`
+	Scope     string `json:"scope"`
+	Title     string `json:"title"`
+}
+
+type BrokerInflight struct {
+	At         int64               `json:"at"`
+	Inflight   []BrokerInflightRow `json:"inflight"`
+	Repository string              `json:"repository"`
+}
+
+// One line of work outstanding in a repository. `visibility` is `live` while
+// the task is running and `unmerged` once it has finished with a branch nobody
+// has taken; settled work is not listed at all.
+type BrokerInflightRow struct {
+	AgeSeconds     int64           `json:"age_seconds"`
+	Assistant      Assistant       `json:"assistant"`
+	Claims         []string        `json:"claims"`
+	ClaimsDeclared bool            `json:"claims_declared"`
+	Created        int64           `json:"created"`
+	ID             string          `json:"id"`
+	Landing        *BrokerLanding  `json:"landing,omitempty"`
+	LandingPaths   []string        `json:"landing_paths,omitempty"`
+	ProjectDir     string          `json:"project_dir"`
+	RootKey        string          `json:"root_key,omitempty"`
+	RootLabel      string          `json:"root_label,omitempty"`
+	State          TaskState       `json:"state"`
+	Title          string          `json:"title"`
+	Visibility     string          `json:"visibility"`
+	Worktree       *BrokerWorktree `json:"worktree,omitempty"`
+}
+
+// What became of a delivery. Delivered is not reviewed and reviewed is not
+// landed; `landed` is the one rung a caller cannot assert on its own word,
+// because the broker proves it by asking git for ancestry.
+type BrokerLanding struct {
+	At     int64              `json:"at,omitempty"`
+	Commit string             `json:"commit,omitempty"`
+	Note   string             `json:"note,omitempty"`
+	Repo   string             `json:"repo,omitempty"`
+	State  BrokerLandingState `json:"state"`
+	Target string             `json:"target,omitempty"`
+}
+
+type BrokerLandingState string
+
+const (
+	BrokerLandingStatePending       BrokerLandingState = "pending"
+	BrokerLandingStateLanded        BrokerLandingState = "landed"
+	BrokerLandingStateAbandoned     BrokerLandingState = "abandoned"
+	BrokerLandingStateNothingToLand BrokerLandingState = "nothing_to_land"
+)
+
+// BrokerLandingStateValues is every value the contract allows, in contract order.
+var BrokerLandingStateValues = []BrokerLandingState{BrokerLandingStatePending, BrokerLandingStateLanded, BrokerLandingStateAbandoned, BrokerLandingStateNothingToLand}
+
+type BrokerMessageRequest struct {
+	// The sender, named by its terminal id or by its conversation id: it is describing
+	// itself and knows both.
+	FromSession string `json:"from_session"`
+	Text        string `json:"text"`
+
+	// The recipient, named by terminal id only. A message addressed to a conversation
+	// would follow it into whichever tab holds it, and the sender meant the tab.
+	ToSession string `json:"to_session"`
+}
+
+// `ok` means the bytes reached a composer. It never means the assistant read
+// them — that is a later fact with its own evidence.
+type BrokerMessageResult struct {
+	AcceptedAt int64 `json:"accepted_at"`
+	At         int64 `json:"at"`
+	OK         bool  `json:"ok"`
+}
+
+// The durable envelope for telling a root its child finished. It is a ledger
+// rather than a flag because what it records is a promise to somebody who is
+// not here.
+type BrokerNotice struct {
+	AcknowledgedAt       int64              `json:"acknowledged_at,omitempty"`
+	Attempts             int64              `json:"attempts"`
+	CreatedAt            int64              `json:"created_at"`
+	DeadLetterAt         int64              `json:"dead_letter_at,omitempty"`
+	LastAttemptAt        int64              `json:"last_attempt_at,omitempty"`
+	LastError            *BrokerNoticeError `json:"last_error,omitempty"`
+	NextRetryAt          int64              `json:"next_retry_at,omitempty"`
+	NoticeID             string             `json:"notice_id"`
+	ObservedAt           int64              `json:"observed_at,omitempty"`
+	Recipient            string             `json:"recipient,omitempty"`
+	State                BrokerNoticeState  `json:"state"`
+	TransportDeliveredAt int64              `json:"transport_delivered_at,omitempty"`
+}
+
+type BrokerNoticeError struct {
+	At      int64  `json:"at"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// Where the completion notice has got to. `delivered` means bytes reached a
+// composer, which is not observation — only `acknowledged` stops the resend.
+type BrokerNoticeState string
+
+const (
+	BrokerNoticeStatePending      BrokerNoticeState = "pending"
+	BrokerNoticeStateDelivered    BrokerNoticeState = "delivered"
+	BrokerNoticeStateAcknowledged BrokerNoticeState = "acknowledged"
+	BrokerNoticeStateDeadLetter   BrokerNoticeState = "dead_letter"
+)
+
+// BrokerNoticeStateValues is every value the contract allows, in contract order.
+var BrokerNoticeStateValues = []BrokerNoticeState{BrokerNoticeStatePending, BrokerNoticeStateDelivered, BrokerNoticeStateAcknowledged, BrokerNoticeStateDeadLetter}
+
+type BrokerNotifyResult struct {
+	Failed int64 `json:"failed"`
+	OK     bool  `json:"ok"`
+	Sent   int64 `json:"sent"`
+}
+
+type BrokerPage struct {
+	Cursor     int64  `json:"cursor"`
+	Finished   int64  `json:"finished"`
+	Limit      int64  `json:"limit"`
+	NextCursor *int64 `json:"nextCursor"`
+
+	// Unfinished work is never paged: it rides on every page, because a caller reading
+	// page two is still answerable for what is running.
+	Unfinished int64 `json:"unfinished"`
+}
+
+type BrokerProgressNote struct {
+	At   int64  `json:"at"`
+	Note string `json:"note"`
+}
+
+type BrokerProgressResult struct {
+	OK   bool       `json:"ok"`
+	Task BrokerTask `json:"task"`
+}
+
+type BrokerProvenance struct {
+	Consistency        string `json:"consistency"`
+	RegistryComplete   bool   `json:"registry_complete"`
+	RegistryObservedAt int64  `json:"registry_observed_at,omitempty"`
+	Source             string `json:"source"`
+}
+
+// What a child wrote about itself. The secret it authenticated with is never
+// carried here.
+type BrokerResult struct {
+	Artifacts    []string            `json:"artifacts,omitempty"`
+	FinishedAt   string              `json:"finished_at,omitempty"`
+	Status       string              `json:"status"`
+	Summary      string              `json:"summary,omitempty"`
+	Symbols      []string            `json:"symbols,omitempty"`
+	Verification *BrokerVerification `json:"verification,omitempty"`
+}
+
+// The session a task was dispatched by. `poll_only` is carried even when false:
+// a reader that has to infer it cannot tell an attended root from one that was
+// never recorded.
+type BrokerRoot struct {
+	Assistant  Assistant `json:"assistant"`
+	Label      string    `json:"label,omitempty"`
+	PollOnly   bool      `json:"poll_only"`
+	ProjectDir string    `json:"project_dir,omitempty"`
+	SessionID  string    `json:"session_id"`
+}
+
+// A root's own receipt: one sentence saying this turn delivered something. It
+// produces the check that means `delivered, awaiting approval`, and can never
+// produce `landed`.
+type BrokerSessionDelivery struct {
+	Created     bool              `json:"created"`
+	Disposition BrokerDisposition `json:"disposition"`
+	OK          bool              `json:"ok"`
+}
+
+// One dispatched piece of work, as the console and a dispatching root read it.
+type BrokerTask struct {
+	Assistant Assistant    `json:"assistant"`
+	Child     *BrokerChild `json:"child,omitempty"`
+	Claims    []string     `json:"claims"`
+
+	// Whether the dispatch said anything about claims at all. `I declared none` and `I
+	// did not say` are different requests, and only one of them can be arbitrated.
+	ClaimsDeclared     bool           `json:"claims_declared"`
+	CompletionDelivery *BrokerNotice  `json:"completion_delivery,omitempty"`
+	Created            int64          `json:"created"`
+	Deliverables       []string       `json:"deliverables,omitempty"`
+	Dir                string         `json:"dir"`
+	FinishedAt         int64          `json:"finishedAt,omitempty"`
+	ID                 string         `json:"id"`
+	Isolation          string         `json:"isolation"`
+	Kind               string         `json:"kind"`
+	Landing            *BrokerLanding `json:"landing,omitempty"`
+
+	// What an isolated task's claims became: not a lease on the shared tree, but the
+	// write set whoever lands this branch is answering for.
+	LandingPaths   []string             `json:"landing_paths,omitempty"`
+	Permission     string               `json:"permission"`
+	Progress       []BrokerProgressNote `json:"progress,omitempty"`
+	ProjectDir     string               `json:"projectDir"`
+	Repository     string               `json:"repository,omitempty"`
+	Result         *BrokerResult        `json:"result,omitempty"`
+	Root           *BrokerRoot          `json:"root,omitempty"`
+	SpawnError     string               `json:"spawn_error,omitempty"`
+	SpawnedAt      int64                `json:"spawnedAt,omitempty"`
+	State          TaskState            `json:"state"`
+	Summary        string               `json:"summary,omitempty"`
+	TimeoutMinutes int64                `json:"timeout_minutes,omitempty"`
+	Title          string               `json:"title"`
+	Worktree       *BrokerWorktree      `json:"worktree,omitempty"`
+}
+
+type BrokerTaskEnvelope struct {
+	Task BrokerTask `json:"task"`
+}
+
+type BrokerTaskList struct {
+	At    int64        `json:"at"`
+	Page  *BrokerPage  `json:"page,omitempty"`
+	Tasks []BrokerTask `json:"tasks"`
+}
+
+// A child's own account of what it ran. It is the child speaking, not a
+// measurement this daemon made.
+type BrokerVerification struct {
+	Last    string `json:"last"`
+	Runs    int64  `json:"runs"`
+	Scope   string `json:"scope"`
+	Seconds int64  `json:"seconds"`
+}
+
+// Something the dispatcher should know that did not stop the work. A warning is
+// never a refusal — by the time one is written the task is recorded and its
+// tab is opening.
+type BrokerWarning struct {
+	AgeSeconds int64    `json:"age_seconds,omitempty"`
+	Code       string   `json:"code"`
+	Message    string   `json:"message"`
+	Paths      []string `json:"paths,omitempty"`
+	RootKey    string   `json:"root_key,omitempty"`
+	Task       string   `json:"task,omitempty"`
+}
+
+// Which tab a conversation is in. Five fields and no more: what that session is
+// working on is not the broker's to hand to whoever knows a conversation id.
+type BrokerWhoAmI struct {
+	Assistant      Assistant        `json:"assistant"`
+	At             int64            `json:"at"`
+	ConversationID string           `json:"conversation_id"`
+	Provenance     BrokerProvenance `json:"provenance"`
+	TerminalID     string           `json:"terminal_id"`
+}
+
+// The isolated checkout a task was given. `base` is recorded once and never
+// recomputed: a reader asking whether this branch produced anything compares
+// head against it, and recomputing would answer against a tree that has moved.
+type BrokerWorktree struct {
+	Base         string `json:"base"`
+	Branch       string `json:"branch"`
+	BranchExists *bool  `json:"branch_exists"`
+
+	// Commits the branch carries over its base, or null when git could not be asked.
+	// Unknown is never permission to dispose of anything.
+	Commits    *int64 `json:"commits"`
+	Dirty      *bool  `json:"dirty"`
+	Head       string `json:"head,omitempty"`
+	Merged     *bool  `json:"merged"`
+	Path       string `json:"path"`
+	Repository string `json:"repository"`
+}
+
 // A device minted for a browser on this machine. `url` carries the token in its
 // fragment, which a browser never sends and never logs; the page trades it for
 // the cookie with /v1/auth/adopt.
