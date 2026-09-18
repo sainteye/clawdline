@@ -982,3 +982,129 @@ Node 伺服器把三者收在同一個 origin `https://127.0.0.1:8443`（console
   這個 daemon 還沒有算那個簽章，所以 console 要靠自己的重讀節奏。
 - 正式環境（`relay.clawdline.com`／`api.clawdline.com`）一個位元組都沒連過。
 - entitlements、推播、`ctlr/` 回覆軌、交接通道都沒動。
+
+---
+
+## 17. 第五階段：配對的機器半邊（2026-09-18 實測）
+
+§8.3 當時寫「這一波不做，規格先寫下來」，§16.6 又記了一次「配對沒做，是用 devtools 種金鑰」。
+這一節把那個洞補起來：**Go daemon 現在自己產生交接資料、自己封裝帳號金鑰、自己釘住瀏覽器的公鑰**，
+第四階段那三件事（看得到 session 清單、打得開對話、送得進訊息）在**沒有任何 devtools**
+的前提下重做了一遍。
+
+### 17.1 走的是哪一條：三呼叫的相容路徑，不是四階段
+
+PROTOCOL.md 同時有兩條：
+
+| | 路徑 | 這一版 |
+|---|---|---|
+| 相容 | `pairing/invitations/start` ＋ `/accept` ＋ `/poll`，然後 `pairing/start` ＋ `/complete` ＋ `/claim` | **做了** |
+| 嚴格身分 | `pairing/identity/start` ＋ `/phases/:phase` ＋ `/poll`，四階段 `offer → grant → activate → confirm` | 沒做 |
+
+選相容那條的理由只有一個，而且是可驗證的：**部署中的 hosted console 走的就是它**。
+`Resources/web/app/js/net/cloud-boot.js:485-600` 只呼叫 `pairing/start`、`invitations/accept`、
+`pairing/claim`；`cloud-pairing.js` 的 `openPairingHandover` 只接受 `phase == "grant"` 的
+七成員 wrapper。做四階段等於做一個今天沒有對手的東西。四階段仍是之後的事，
+它的向量（`pairing_handover`）已經是這一版逐位元對照的那一份。
+
+### 17.2 一次配對，機器這一半
+
+```
+1. 機器抽 32 bytes secret  →  只把 SHA-256 給 cloud（invitations/start）
+                           →  把 secret 放在 fragment 裡給人：
+                              https://<app-origin>/#pair=<base64url(canonical JSON)>
+2. 瀏覽器（已登入同一個帳號）讀 fragment → 跟 cloud 要 pairing_id 與 claim_nonce
+                           → 造 offer（自己的 Ed25519 公鑰＋新的 X25519 公鑰）
+                           → 用 QR secret 封起來丟回 invitations/accept
+3. 機器 invitations/poll 拿到密文 → 用自己的 secret 解開 → 得到 offer fragment
+4. 機器 X25519(自己的臨時私鑰, offer 的臨時公鑰) → HKDF → grant phase key
+                           → 封 handover（account_id、machine_id、機器簽章公鑰＋指紋、
+                             key_id、master_secret）→ pairing/complete
+5. 機器比對 complete 回來的 fingerprint 與 offer 裡的 viewer_fingerprint
+6. 相符才**釘住** viewer 的公鑰
+7. 瀏覽器 pairing/claim 取走那一份，一次，記錄即毀
+```
+
+cloud 全程看到的是：一個雜湊、兩段它讀不懂的 bytes、兩個 device id。
+
+**第 5 步不是顯示，是檢查。** 控制面在瀏覽器呼叫 `pairing/start` 的時候就記下了它的指紋；
+如果它跟這台 Mac 剛剛封裝的那份 offer 不一致，那份 offer 就不是開啟這個 pairing 的那一份——
+這正是「兩個螢幕比對指紋」的人看不到的那種替換。
+
+**第 6 步在第 5 步之後，不在之前。** 釘住等於允許那個瀏覽器驅動這台 Mac；沒收到金鑰的瀏覽器
+本來就發不出指令，所以先釘只會在每一次失敗的交付後面留下一個被釘住的 viewer。
+
+### 17.3 信任的根從雲端搬回本機
+
+第四階段的 `roster.go` 是讀 `GET /v1/devices` 拿 viewer 公鑰。那是**雲端告訴機器該相信誰**，
+跟 PROTOCOL.md §3 講的相反。`internal/adapters/cloud/pinned.go` 是本機那一份：
+
+```
+paired-devices-v1.json  （0600，放在 cloudkeys 目錄，裡面只有公鑰、id、時間）
+```
+
+`Link.publicKeyFor` 的順序是三條，順序本身就是規格：
+
+1. **這台 Mac 撤銷過的，一律拒絕**，其他任何來源都推翻不了它。
+2. **釘住的優先**：那把公鑰是從這台 Mac 自己解開的 offer 裡拿出來的，雲端沒有看過明文，
+   所以它無法替換。
+3. **roster 是後備**，給在這個檔案存在之前就配對好的 viewer。它是比較弱的答案，
+   所以設定頁會標出哪幾列是釘住的、哪幾列只是在帳號清單上。
+
+**讀不出來的釘住檔案不是空的**：整個 daemon 在那個狀態下不接受任何 sender，因為「掉回去讀雲端」
+正是這些釘子要防的那個替換。
+
+實測（`artifacts/revoke.txt`）：撤銷之後，那個瀏覽器送出的訊息**沒有到**，daemon 記成
+`inbound_dropped.unknown_sender`，而同一時間 `GET /v1/devices` 仍然把它列為 `revoked_at: null` ——
+本機的撤銷贏過雲端的清單，這一句是量到的，不是設計意圖。
+
+### 17.4 金鑰輪替會把線拉下來再接回去
+
+relay 是拿 device token 裡的 `pk` 去驗每一個 envelope 的簽章。所以換簽章金鑰**不能**塞進正在
+跑的 transport：那條連線的後半段會用一把 relay 剛剛停止接受的金鑰去簽。`Link.Run` 因此是一個
+迴圈——輪替把內層 context 取消，`wire()` 重新建一次，線再上來。spool 跟著重建，這是故意的：
+舊金鑰簽的 envelope 送出去也是被拒，還會白白花掉一個序號。
+
+順序是「先問控制面現在的 epoch → 鑄新的 → CAS 交換 → 成功才寫檔案」。先寫檔案的話，
+一次被拒的交換會留下一台持有帳號沒聽過的金鑰的機器，而那看起來跟被撤銷一模一樣。
+
+**代價要先講清楚**：每一個釘住舊金鑰的瀏覽器都會停止能驗證這台 Mac，必須重新配對。所以
+`POST /v1/cloud/keys/rotate` 沒有 `{"confirm": true}` 就拒絕，`GET` 會先回答「會弄壞哪幾個瀏覽器」，
+CLI 也是先把那幾行印出來再問。實測（`artifacts/rotation.txt`）：
+`AC4B-H7AK-M4O6-L3JT → 4JU3-XJLG-EGL6-BEG5`，key epoch 1→2，線在 18 秒內自己回來，
+而那個瀏覽器的 console 說 `This browser cannot decrypt Sessions` / `未配對`——**代價也是量到的**。
+
+### 17.5 五條路由，全部只認這台 Mac 自己的 token
+
+| | |
+|---|---|
+| `GET/POST/DELETE /v1/cloud/pairing` | 讀、產生、停止等待 |
+| `POST /v1/cloud/pairing/offer` | 桌機路徑：把瀏覽器畫面上那串配對碼貼進來 |
+| `POST /v1/cloud/devices/revoke` | 把一個瀏覽器趕出這台 Mac |
+| `GET/POST /v1/cloud/keys/rotate` | 先看代價，再換 |
+
+`POST /v1/cloud/pairing` 回答的連結，fragment 裡帶著把帳號主金鑰交出去的一次性 secret。
+通道進來的手機或 Cloud viewer 如果構得到這條，就等於一個「能讀 session」的人可以自己鑄一個
+完整配對的瀏覽器出來。所以是 `requireLocal`，跟 `/v1/cloud/status` 同一條規矩。
+
+CLI 是 `clawdline cloud pair|devices|revoke|rotate`，**都是打 daemon 的這幾條路由**，
+不是自己讀檔案：配對只有一份在途狀態，兩個行程各拿一份等於兩個碼在兩個螢幕上。
+
+### 17.6 新設定鍵：`cloud_app_origin`
+
+預設 `https://app.clawdline.com`（`cloud-onboarding.js` 的 `CLOUD_APP_ORIGIN`）。
+它跟 api、relay 分開，因為配對連結是這台 Mac 唯一交到**人**手上的字串——他要在瀏覽器裡打開它，
+所以它得指那個人會看到的站，不是後面的控制面。驗證比照 `cloud_api_base`，另外拒絕路徑、
+query 與 fragment：那些要嘛會被丟掉，要嘛會把一次性 secret 帶到不該去的地方。
+
+### 17.7 這一階段沒有做也沒有量的
+
+- **四階段嚴格身分配對**沒做（§17.1）。`identity_epoch`／`capability_epoch`／`jwks_generation`
+  這一組 claim 也還沒有進 Go 端的判斷。
+- **正式環境**一個位元組都沒連過。
+- **QR 圖**沒有畫。產生的是同樣內容的連結（`https://<app-origin>/#pair=<fragment>`），
+  設定頁顯示它並提供複製；手機掃 QR 那條路徑靠的是同一個 fragment，所以畫圖是純顯示層的補完。
+- **`account-master-secret` 的輪替**沒做。輪替的是簽章金鑰；換內容金鑰要讓每一個 viewer 重新
+  拿一次，PROTOCOL.md 自己也說 content-key rotation 是 lazy 的。
+- **多台機器**沒測。一台 Mac、三次配對、兩把瀏覽器金鑰。
+- **重開機後**沒測（spool 與 ledger 仍在記憶體，第二階段的已知缺口沒有變）。
