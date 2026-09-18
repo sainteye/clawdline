@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -70,6 +71,14 @@ type BrokerRow struct {
 	UpdatedAt  time.Time
 	SecretHash string
 	Record     json.RawMessage
+	// Version is the row's compare-and-set counter: what a writer read, and
+	// what its write must still find (D08). A new row is 0.
+	Version int64
+	// Texts is the task's long prose — its instructions, its summary — which
+	// lives in its own table (D25, D26) so that nothing on the hot path reads
+	// or decodes it. Nil on a row read without it (the beat's, the list's);
+	// on a write, each field present is stored and an empty one removed.
+	Texts map[string]string
 }
 
 // ErrNoTask is "this store has never heard of that id". It is distinct from a
@@ -93,13 +102,15 @@ func openBroker(db *sql.DB) error {
 	return migrateBrokerNotices(db)
 }
 
-// SaveBrokerTask writes or replaces one task's record, with the events that
-// explain the change, in one transaction.
+// SaveBrokerTask writes one task's record, with the events that explain the
+// change, in one transaction — **only if the row is still at row.Version**.
 //
-// The events and the row move together for the same reason the rest of this
-// store does: a projection that can be updated without its event is a
-// projection that will be, and then replay produces a different machine from
-// the one a reader saw.
+// It used to be an unconditional upsert, and that was the lost update this
+// store exists to make impossible: the broker's own writers were held off by a
+// mutex in one process, and anybody else — a CLI, a second daemon, a test
+// harness on the same file — wrote over the row without being stopped or
+// noticed (G13). Now a writer holding a stale copy is told ErrConflict and
+// nothing is written. A row that does not exist yet is created at version 0.
 func (s *Store) SaveBrokerTask(ctx context.Context, row BrokerRow, events []Event) error {
 	return s.SaveBrokerTaskWithNotice(ctx, row, nil, events)
 }
@@ -114,29 +125,40 @@ func (s *Store) SaveBrokerTask(ctx context.Context, row BrokerRow, events []Even
 // notice id for one task is the root being told to acknowledge something that
 // no longer acknowledges anything.
 func (s *Store) SaveBrokerTaskWithNotice(ctx context.Context, row BrokerRow, notice *BrokerNotice, events []Event) error {
-	return s.timedWrite(func() (int64, error) {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return 0, err
-		}
-		defer tx.Rollback()
-		now := time.Now()
+	conflict := false
+	err := s.write(ctx, func(tx *sql.Tx) (int64, error) {
 		if row.UpdatedAt.IsZero() {
-			row.UpdatedAt = now
+			row.UpdatedAt = time.Now()
 		}
-		if _, err := tx.ExecContext(ctx,
+		res, err := tx.ExecContext(ctx,
 			`INSERT INTO broker_tasks
-			   (id, project, repository, assistant, state, created_at, updated_at, secret_hash, record)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			   (id, project, repository, assistant, state, created_at, updated_at, secret_hash, record, version)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(id) DO UPDATE SET
 			   project=excluded.project, repository=excluded.repository,
 			   assistant=excluded.assistant, state=excluded.state,
-			   updated_at=excluded.updated_at, record=excluded.record`,
+			   updated_at=excluded.updated_at, record=excluded.record,
+			   version=broker_tasks.version + 1
+			 WHERE broker_tasks.version = excluded.version`,
 			row.ID, row.Project, row.Repository, row.Assistant, row.State,
-			row.CreatedAt.Unix(), row.UpdatedAt.Unix(), row.SecretHash, string(row.Record)); err != nil {
+			row.CreatedAt.Unix(), row.UpdatedAt.Unix(), row.SecretHash, string(row.Record), row.Version)
+		if err != nil {
 			return 0, err
 		}
+		if n, err := res.RowsAffected(); err != nil {
+			return 0, err
+		} else if n == 0 {
+			conflict = true
+			return 0, nil
+		}
 		changed := int64(1)
+		if row.Texts != nil {
+			n, err := writeTexts(ctx, tx, row.ID, row.Texts)
+			if err != nil {
+				return 0, err
+			}
+			changed += n
+		}
 		if notice != nil {
 			if err := insertNotice(ctx, tx, *notice); err != nil {
 				return 0, err
@@ -146,40 +168,38 @@ func (s *Store) SaveBrokerTaskWithNotice(ctx context.Context, row BrokerRow, not
 		if err := insertEvents(ctx, tx, events); err != nil {
 			return 0, err
 		}
-		if err := tx.Commit(); err != nil {
-			return 0, err
-		}
 		return changed + int64(len(events)), nil
 	})
+	if err == nil && conflict {
+		return ErrConflict
+	}
+	return err
 }
 
-// CreateBrokerTask writes a task that must not exist yet, with its events, in
-// one transaction, and answers ErrTaskExists without writing anything when the
-// id is already taken.
+// CreateBrokerTask writes a task that must not exist yet, with its events and
+// the effects its creation owes (outbox.go), in one transaction, and answers
+// ErrTaskExists without writing anything when the id is already taken. The
+// effects come back with their ids, owned by this handle.
 //
 // It is apart from SaveBrokerTask because the two questions are different. A
 // save rewrites the record a caller has just read; a create is the first write
-// of an id, and the upsert under SaveBrokerTask would let a dispatch that
-// failed to read an existing row — a row it could not decode, a read that
-// errored — replace that row with a new task under the same id.
-func (s *Store) CreateBrokerTask(ctx context.Context, row BrokerRow, events []Event) error {
+// of an id, and must not let a dispatch that failed to read an existing row —
+// a row it could not decode, a read that errored — replace that row with a new
+// task under the same id.
+func (s *Store) CreateBrokerTask(ctx context.Context, row BrokerRow, events []Event, effects ...Effect) ([]int64, error) {
 	// A collision is a refusal, not a failed write: it is carried out of the
 	// timed write rather than through it, so the store's health does not count
 	// a caller's resend as the store failing.
 	taken := false
-	err := s.timedWrite(func() (int64, error) {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return 0, err
-		}
-		defer tx.Rollback()
+	var ids []int64
+	err := s.write(ctx, func(tx *sql.Tx) (int64, error) {
 		if row.UpdatedAt.IsZero() {
 			row.UpdatedAt = time.Now()
 		}
 		res, err := tx.ExecContext(ctx,
 			`INSERT INTO broker_tasks
-			   (id, project, repository, assistant, state, created_at, updated_at, secret_hash, record)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			   (id, project, repository, assistant, state, created_at, updated_at, secret_hash, record, version)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
 			 ON CONFLICT(id) DO NOTHING`,
 			row.ID, row.Project, row.Repository, row.Assistant, row.State,
 			row.CreatedAt.Unix(), row.UpdatedAt.Unix(), row.SecretHash, string(row.Record))
@@ -192,18 +212,30 @@ func (s *Store) CreateBrokerTask(ctx context.Context, row BrokerRow, events []Ev
 			taken = true
 			return 0, nil
 		}
+		changed := int64(1)
+		if row.Texts != nil {
+			n, err := writeTexts(ctx, tx, row.ID, row.Texts)
+			if err != nil {
+				return 0, err
+			}
+			changed += n
+		}
 		if err := insertEvents(ctx, tx, events); err != nil {
 			return 0, err
 		}
-		if err := tx.Commit(); err != nil {
-			return 0, err
+		for _, e := range effects {
+			id, err := s.insertEffect(ctx, tx, e)
+			if err != nil {
+				return 0, err
+			}
+			ids = append(ids, id)
 		}
-		return 1 + int64(len(events)), nil
+		return changed + int64(len(events)+len(effects)), nil
 	})
 	if err == nil && taken {
-		return ErrTaskExists
+		return nil, ErrTaskExists
 	}
-	return err
+	return ids, err
 }
 
 // insertEvents appends events inside a transaction somebody else owns.
@@ -219,12 +251,23 @@ func insertEvents(ctx context.Context, tx *sql.Tx, events []Event) error {
 	return nil
 }
 
-// BrokerTask reads one task.
+const brokerColumns = `id, project, repository, assistant, state, created_at, updated_at, secret_hash, record, version`
+
+// BrokerTask reads one task, long prose and all.
 func (s *Store) BrokerTask(ctx context.Context, id string) (BrokerRow, error) {
-	row := s.db.QueryRowContext(ctx,
-		`SELECT id, project, repository, assistant, state, created_at, updated_at, secret_hash, record
-		 FROM broker_tasks WHERE id = ?`, id)
-	return scanBroker(row)
+	if err := reading(); err != nil {
+		return BrokerRow{}, err
+	}
+	row, err := scanBroker(s.db.QueryRowContext(ctx,
+		`SELECT `+brokerColumns+` FROM broker_tasks WHERE id = ?`, id))
+	if err != nil {
+		return BrokerRow{}, err
+	}
+	s.reads.records.Add(1)
+	if row.Texts, err = s.readTexts(ctx, s.db, id); err != nil {
+		return BrokerRow{}, err
+	}
+	return row, nil
 }
 
 type scanner interface {
@@ -236,7 +279,7 @@ func scanBroker(sc scanner) (BrokerRow, error) {
 	var created, updated int64
 	var record string
 	err := sc.Scan(&row.ID, &row.Project, &row.Repository, &row.Assistant, &row.State,
-		&created, &updated, &row.SecretHash, &record)
+		&created, &updated, &row.SecretHash, &record, &row.Version)
 	if err == sql.ErrNoRows {
 		return BrokerRow{}, ErrNoTask
 	}
@@ -250,16 +293,44 @@ func scanBroker(sc scanner) (BrokerRow, error) {
 }
 
 // BrokerTasks reads every task, newest first, optionally narrowed to one
-// repository.
+// repository, without its long prose. It is the whole table: nothing on a
+// loop may call it (G33) — the beat reads BrokerTasksInState, and the lists
+// read BrokerTaskHeads and fetch only the records they have not decoded.
 func (s *Store) BrokerTasks(ctx context.Context, repository string) ([]BrokerRow, error) {
-	query := `SELECT id, project, repository, assistant, state, created_at, updated_at, secret_hash, record
-	          FROM broker_tasks`
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	query := `SELECT ` + brokerColumns + ` FROM broker_tasks`
 	args := []any{}
 	if repository != "" {
 		query += ` WHERE repository = ?`
 		args = append(args, repository)
 	}
 	query += ` ORDER BY created_at DESC, id DESC`
+	return s.queryBroker(ctx, query, args...)
+}
+
+// BrokerTasksInState reads the tasks whose state column is one of states,
+// oldest first, without their long prose. It is the beat's read: its cost is
+// the number of tasks in those states, not the length of the history (G33).
+func (s *Store) BrokerTasksInState(ctx context.Context, states []string) ([]BrokerRow, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	if len(states) == 0 {
+		return []BrokerRow{}, nil
+	}
+	marks := strings.TrimSuffix(strings.Repeat("?,", len(states)), ",")
+	args := make([]any, len(states))
+	for i, v := range states {
+		args[i] = v
+	}
+	return s.queryBroker(ctx,
+		`SELECT `+brokerColumns+` FROM broker_tasks WHERE state IN (`+marks+`) ORDER BY created_at ASC, id ASC`,
+		args...)
+}
+
+func (s *Store) queryBroker(ctx context.Context, query string, args ...any) ([]BrokerRow, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -273,7 +344,75 @@ func (s *Store) BrokerTasks(ctx context.Context, repository string) ([]BrokerRow
 		}
 		out = append(out, row)
 	}
+	s.reads.records.Add(int64(len(out)))
 	return out, rows.Err()
+}
+
+// BrokerHead is a task row without its record: the columns lifted beside it,
+// and the version that says whether a copy decoded earlier is still this row.
+type BrokerHead struct {
+	ID         string
+	Project    string
+	Repository string
+	Assistant  string
+	State      string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	Version    int64
+}
+
+// BrokerTaskHeads reads every row's head, newest first. No record is read and
+// nothing is decoded: a reader that already holds a row at this version has
+// nothing more to fetch.
+func (s *Store) BrokerTaskHeads(ctx context.Context) ([]BrokerHead, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, project, repository, assistant, state, created_at, updated_at, version
+		 FROM broker_tasks ORDER BY created_at DESC, id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BrokerHead{}
+	for rows.Next() {
+		var h BrokerHead
+		var created, updated int64
+		if err := rows.Scan(&h.ID, &h.Project, &h.Repository, &h.Assistant, &h.State,
+			&created, &updated, &h.Version); err != nil {
+			return nil, err
+		}
+		h.CreatedAt, h.UpdatedAt = time.Unix(created, 0), time.Unix(updated, 0)
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// BrokerTaskRecords reads the rows named, without their long prose, keyed by
+// id. An id with no row is absent from the answer.
+func (s *Store) BrokerTaskRecords(ctx context.Context, ids []string) (map[string]BrokerRow, error) {
+	out := map[string]BrokerRow{}
+	for len(ids) > 0 {
+		batch := ids
+		if len(batch) > 256 {
+			batch = batch[:256]
+		}
+		ids = ids[len(batch):]
+		marks := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		args := make([]any, len(batch))
+		for i, v := range batch {
+			args[i] = v
+		}
+		rows, err := s.queryBroker(ctx, `SELECT `+brokerColumns+` FROM broker_tasks WHERE id IN (`+marks+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			out[r.ID] = r
+		}
+	}
+	return out, nil
 }
 
 // AppendBrokerNote records one progress note.
@@ -287,6 +426,9 @@ func (s *Store) BrokerTasks(ctx context.Context, repository string) ([]BrokerRow
 func (s *Store) AppendBrokerNote(ctx context.Context, taskID, note string) (BrokerNote, bool, error) {
 	var out BrokerNote
 	added := false
+	if InsideWrite() {
+		return out, false, ErrNestedWrite
+	}
 	err := s.timedWrite(func() (int64, error) {
 		at := time.Now()
 		res, err := s.db.ExecContext(ctx,
@@ -315,6 +457,9 @@ func (s *Store) AppendBrokerNote(ctx context.Context, taskID, note string) (Brok
 // it re-read from progress.json: re-reading an unchanged file is an
 // observation, and an observation is not a reason to open a write.
 func (s *Store) HasBrokerNote(ctx context.Context, taskID, note string) (bool, error) {
+	if err := reading(); err != nil {
+		return false, err
+	}
 	var n int
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM broker_notes WHERE task_id = ? AND note = ?`, taskID, note).Scan(&n)
@@ -360,11 +505,14 @@ func (s *Store) BrokerNotes(ctx context.Context, taskID string, limit int) ([]Br
 // protocol states, and a caller that has to ask for them separately will
 // check one of them against a moment the other has already moved past.
 func (s *Store) RecordNotification(ctx context.Context, taskID, title, body string) (perTask, perHour int, err error) {
+	if InsideWrite() {
+		return 0, 0, ErrNestedWrite
+	}
 	began := time.Now()
 	defer func() { s.stats.record(time.Since(began), 1, err) }()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, classify(err)
 	}
 	defer tx.Rollback()
 	now := time.Now()

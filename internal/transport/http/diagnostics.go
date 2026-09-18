@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -104,6 +106,25 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return g.files.AuditReading()
 		},
 		capacity.StoreDB: func() capacity.Reading { return store.DBReading(s.cfg.Dir) },
+		capacity.StoreReceipts: func() capacity.Reading {
+			uses, err := s.store.ReceiptUses(context.Background(), store.ReceiptWindow, time.Now())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			r := capacity.Reading{Known: true}
+			tombstones := 0
+			for _, u := range uses {
+				if int64(u.Live) > r.Used {
+					r.Used = int64(u.Live)
+					r.Note = "fullest scope: " + u.Scope
+				}
+				tombstones += u.Tombstones
+			}
+			if tombstones > 0 {
+				r.Note = strings.TrimPrefix(r.Note+"; ", "; ") + strconv.Itoa(tombstones) + " expired key(s) kept as tombstones"
+			}
+			return r
+		},
 		capacity.BoardReceipts: func() capacity.Reading {
 			return s.board().settings.ReceiptReading()
 		},

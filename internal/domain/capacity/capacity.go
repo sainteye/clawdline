@@ -147,6 +147,7 @@ const (
 	StoreDB         = "store.db"
 	BoardReceipts   = "board.receipts"
 	CloudRelayQueue = "cloud.relay_queue"
+	StoreReceipts   = "store.receipts"
 )
 
 // Entry is one row of the register.
@@ -221,6 +222,18 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
 			Projects:  true,
+		},
+		{
+			// The store's request receipts (D03, W2): per scope, inside each
+			// receipt's window. At the limit a new request in that scope is
+			// refused with a Retry-After; nothing inside its window is
+			// evicted, and an answered receipt past it keeps only its key and
+			// digest. Used is the fullest scope.
+			Name: StoreReceipts, Class: Idempotency, Unit: Rows,
+			Limit: 4_096, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.ReceiptLimit"},
 		},
 		{
 			// Decrypted Cloud requests waiting for the bridge (limits N20).

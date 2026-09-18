@@ -38,26 +38,29 @@ func (b *Broker) Progress(ctx context.Context, id, secret, note string) (Record,
 		stored store.BrokerNote
 		added  bool
 	)
-	record, err := b.mutate(ctx, id, "task.briefed", func(r *Record) error {
+	at := b.now()
+	record, _, err := b.mutateTx(ctx, id, "task.briefed", func(tx *store.Tx, r *Record) ([]store.Effect, error) {
 		if r.State.Terminal() {
-			return refuse(http.StatusConflict, "not_live",
+			return nil, refuse(http.StatusConflict, "not_live",
 				"This task is over; what it did belongs in its summary.")
 		}
 		// A repeated sentence is accepted and ignored rather than refused: a
 		// child retrying a note it is unsure landed has done nothing wrong, and
-		// the same sentence twice on a person's screen is noise.
+		// the same sentence twice on a person's screen is noise. The note and
+		// what it proves are one transaction.
 		var err error
-		if stored, added, err = b.Store.AppendBrokerNote(ctx, id, trimmed); err != nil {
-			return err
+		if stored, added, err = tx.AppendNote(id, trimmed, at); err != nil {
+			return nil, err
 		}
 		// A note proves the child read its briefing, which is the one thing a
 		// spawn cannot prove by itself: bytes reaching a tty are not evidence
 		// anybody read them, and an authenticated sentence is.
 		if r.State != StateSpawning && r.State != StateQueued {
-			return errUnchanged
+			// The record stays as it is; the note, if new, still commits.
+			return nil, errUnchanged
 		}
 		r.State = StateBriefed
-		return nil
+		return nil, nil
 	})
 	if err == nil && added {
 		// After the note is durable, never before: a stream that shows a note
@@ -434,6 +437,9 @@ func (b *Broker) AgentNotify(ctx context.Context, id, secret, title, body string
 	label := r.Title
 	if label == "" && r.Root != nil {
 		label = r.Root.Label
+	}
+	if err := outside(); err != nil {
+		return NotifyResult{}, err
 	}
 	sent, failed, err := b.Notify(ctx, label+": "+title, body, "agent-task-"+id)
 	if err != nil {

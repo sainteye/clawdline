@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -31,6 +32,12 @@ type Store struct {
 	db *sql.DB
 	// stats is the account of this process's writes; see health.go.
 	stats *writeStats
+	// reads is what this handle has handed back to readers (G33).
+	reads readStats
+	// owner names this handle on the effects it runs (outbox.go): the process
+	// and a nonce minted at Open, so a restart is a different owner even if
+	// the operating system hands it the same pid.
+	owner owner
 }
 
 // Event is one persisted fact. Events are never edited and never deleted: a
@@ -139,6 +146,9 @@ func migrate(db *sql.DB) error {
 		table, column, ddl string
 	}{
 		{"schedules", "first_seen", "ALTER TABLE schedules ADD COLUMN first_seen INTEGER NOT NULL DEFAULT 0"},
+		// The row's version, for the compare-and-set every rewrite of a task
+		// now is (D08, G13). A row from before it is version 0.
+		{"broker_tasks", "version", "ALTER TABLE broker_tasks ADD COLUMN version INTEGER NOT NULL DEFAULT 0"},
 	}
 	for _, step := range steps {
 		has, err := hasColumn(db, step.table, step.column)
@@ -178,21 +188,27 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	path := filepath.Join(dir, DBFile)
-	db, err := sql.Open("sqlite", path)
+	// Every setting rides on the DSN, so it is applied to each connection the
+	// pool opens and not only to the first: a pragma run once with db.Exec is
+	// lost the day the pool replaces that connection. `_txlock=immediate`
+	// makes every transaction BEGIN IMMEDIATE — the write right is taken when
+	// the transaction starts, before its first read, so a read that decides
+	// and the write it decides on cannot be split by another writer (D08).
+	// `_busy_timeout` is how long a writer waits for another connection's
+	// lock before ErrBusy (D25).
+	dsn := path + "?_txlock=immediate&_busy_timeout=" + strconv.Itoa(busyTimeoutMS) +
+		"&_journal_mode=WAL&_synchronous=FULL&_foreign_keys=1"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	// One writer. The whole point of this store is that the three writes below
-	// cannot interleave with anybody else's.
+	// One connection per handle. Writers in this process queue for it rather
+	// than meeting each other as SQLITE_BUSY; writers in another process —
+	// a CLI, a second daemon — meet this one at SQLite's lock, and whoever
+	// waits past busy_timeout is told so (ErrBusy) rather than let through.
 	db.SetMaxOpenConns(1)
-	for _, pragma := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA synchronous=FULL",
-		"PRAGMA foreign_keys=ON",
-	} {
-		if _, err := db.Exec(pragma); err != nil {
-			return nil, fmt.Errorf("%s: %w", pragma, err)
-		}
+	if err := db.Ping(); err != nil {
+		return nil, classify(err)
 	}
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
@@ -206,6 +222,9 @@ func Open(dir string) (*Store, error) {
 	if err := openSchedules(db); err != nil {
 		return nil, err
 	}
+	if err := openW2(db); err != nil {
+		return nil, err
+	}
 	// The directory is already 0700, but the files carry receipts and the
 	// subjects of somebody's work, and defence in depth is two lines here.
 	// SQLite creates them through the process umask, which is not ours to
@@ -213,7 +232,7 @@ func Open(dir string) (*Store, error) {
 	for _, suffix := range []string{"", "-wal", "-shm"} {
 		_ = os.Chmod(path+suffix, 0o600)
 	}
-	return &Store{db: db, stats: newWriteStats()}, nil
+	return &Store{db: db, stats: newWriteStats(), owner: newOwner()}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 )
 
@@ -252,6 +253,38 @@ type Record struct {
 	// respawn.go for why a depth cannot enforce it.
 	RespawnOf         string `json:"respawn_of,omitempty"`
 	RespawnGeneration int    `json:"respawn_generation,omitempty"`
+	// Dispatcher is the store handle that admitted this task — its process
+	// and a nonce (store.Owner). Only that process ever holds the plaintext
+	// secret, so a task still `queued` after it has provably gone can never be
+	// briefed, and is settled rather than left to its timeout.
+	Dispatcher string `json:"dispatcher,omitempty"`
+}
+
+// stored is the record as the store keeps it: the record without its long
+// prose, and the prose apart (D25). The record half is what every beat and
+// every list decodes, so it carries a title and never an essay.
+func (r Record) stored() (json.RawMessage, map[string]string) {
+	texts := map[string]string{store.TextInstructions: r.Instructions, store.TextSummary: ""}
+	r.Instructions = ""
+	if r.Result != nil {
+		result := *r.Result
+		texts[store.TextSummary] = result.Summary
+		result.Summary = ""
+		r.Result = &result
+	}
+	return r.Encode(), texts
+}
+
+// applyTexts puts a task's long prose back into a record read without it.
+// A record from before the prose had its own table still carries it inline,
+// and a body that is not in the table leaves that inline copy alone.
+func (r *Record) applyTexts(texts map[string]string) {
+	if v, ok := texts[store.TextInstructions]; ok {
+		r.Instructions = v
+	}
+	if v, ok := texts[store.TextSummary]; ok && r.Result != nil {
+		r.Result.Summary = v
+	}
 }
 
 // Brief is the task.json this record would write.

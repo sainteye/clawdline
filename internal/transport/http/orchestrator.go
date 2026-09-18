@@ -439,7 +439,8 @@ func (s *Server) brokerMessages(w http.ResponseWriter, r *http.Request) {
 			"Relaying a session message needs the orchestrator token.")
 		return
 	}
-	if strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if key == "" {
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "That needs an Idempotency-Key header.")
 		return
 	}
@@ -453,12 +454,17 @@ func (s *Server) brokerMessages(w http.ResponseWriter, r *http.Request) {
 			"The closed body needs only from_session, to_session, 0…100000 characters of text and optional images.")
 		return
 	}
-	at, err := s.broker.Relay(r.Context(), orchestrator.Message{From: body.From, To: body.To, Text: body.Text})
+	// The key is a receipt (D03): the same key and body answers what the
+	// first request answered, and types nothing a second time.
+	sent, err := s.broker.Relay(r.Context(), orchestrator.Message{From: body.From, To: body.To, Text: body.Text}, key)
 	if err != nil {
 		writeBrokerError(w, err)
 		return
 	}
-	writeJSON(w, contract.BrokerMessageResult{OK: true, AcceptedAt: at.Unix(), At: at.Unix()})
+	if sent.Replayed {
+		w.Header().Set("Idempotent-Replayed", "true")
+	}
+	writeJSON(w, contract.BrokerMessageResult{OK: true, AcceptedAt: sent.At.Unix(), At: sent.At.Unix()})
 }
 
 // brokerWhoAmI answers which tab a conversation is in.
