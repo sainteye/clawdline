@@ -167,6 +167,8 @@ const (
 	LeasesQueue        = "leases.queue"
 	CoordinatorAliases = "coordinator.aliases"
 	WaitsOpen          = "waits.open"
+	// T3: the board and the Backlog.
+	WorkOpen = "work.open"
 )
 
 // Entry is one row of the register.
@@ -236,10 +238,13 @@ func Register() []Entry {
 			Projects:  true,
 		},
 		{
-			// project-board.json's (actor, requestId) receipts (limits N24).
+			// The board commands' (actor, requestId) receipts (limits N24):
+			// the store's receipt table, scope `board`, since the board's
+			// settings moved into clawdline.sqlite3 (D37, T3). They expire by
+			// time, and a full window refuses a new command with 429 rather
+			// than evicting a receipt somebody may still retry against.
 			Name: BoardReceipts, Class: Idempotency, Unit: Rows,
-			Limit: 4_096, AtLimit: EvictOldest,
-			Deviation: "D03 (W2): receipts expire by time and a full window refuses new commands (429); today the oldest receipt is evicted by count, which can evict one still inside its retry window.",
+			Limit: 4_096, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
 			Projects:  true,
@@ -406,6 +411,20 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app/orchestrator.WaitsOpenLimit"},
+			// Open work items (design-decisions T3): on the board and not
+			// closed, or planned in the Backlog. Each is a person's plan or
+			// a commitment somebody made, so nothing is let go at the limit:
+			// a new item is refused with 507 work_full, and only a person
+			// closes or drops one. Every board item has an exit (a landing,
+			// the closure queue, three quiet days back to the Backlog); the
+			// Backlog's exit is a person, by design (board-redesign §5.3).
+			// Moves are append-only and ride on store.db.
+			Name: WorkOpen, Class: Evidence, Unit: Rows,
+			Limit: 2_000, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/store.WorkOpenLimit"},
 		},
 	}
 }

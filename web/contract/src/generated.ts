@@ -2474,15 +2474,18 @@ export interface Health {
  * security-audit row of the capacity register is full with nothing making room, or
  * its last write failed (docs/limits.md §4.5). `capacity_beat_stalled`: the loop
  * that measures the register has not finished a pass in more than three ticks, so
- * nothing is watching whether anything is full. When two hold, the first in this
- * list is given.
+ * nothing is watching whether anything is full. `work_sweep_stalled`: the board's
+ * sweep has not finished a pass in more than three ticks, so a landing or a
+ * delivery would not move the board (design-decisions T3). When two hold, the first
+ * in this list is given.
  */
 export type HealthReason =
     "broker_beat_stalled"
   | "capacity_exhausted"
   | "capacity_beat_stalled"
+  | "work_sweep_stalled"
 
-export const HealthReasonValues: readonly HealthReason[] = ["broker_beat_stalled", "capacity_exhausted", "capacity_beat_stalled"] as const
+export const HealthReasonValues: readonly HealthReason[] = ["broker_beat_stalled", "capacity_exhausted", "capacity_beat_stalled", "work_sweep_stalled"] as const
 
 /**
  * A project's mark: rows of `#RRGGBB`, with null for transparent. It is derived

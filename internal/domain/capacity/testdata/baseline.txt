@@ -40,6 +40,12 @@
 # to-do read; the table itself is rows in clawdline.sqlite3, measured by
 # store.db, and every row still owed has an exit (a landing fact, or 24 hours
 # after its owner is positively gone), so nothing it holds waits for ever.
+#
+# T3 (2026-09-18) added the board and the Backlog, and registered one row,
+# work.open (open items: refused at the limit, let go only by a person). The
+# lines it added are the fields and the body of a board command (admission)
+# and the rows one board read derives (read: the open items are bounded by
+# work.open, the recently closed by the seven-day window on top of them).
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -52,7 +58,7 @@ internal/adapters/board.MaximumPageLimit # page: the board's largest page size
 internal/adapters/board.MaximumResponseBytes # page: one board answer
 internal/adapters/board.MaximumSnapshotBytes # page: the board snapshot budget, published as snapshotBudgetBytes
 internal/adapters/board.MaximumSnapshotItems # page: items in one board snapshot
-internal/adapters/board.MaximumStoreBytes # store: the board document read bound, 503 past it (limits N26, a(far)); registered as board.store with warn_at 8 MiB when the board moves (D02, T3)
+internal/adapters/board.MaximumStoreBytes # read: the old board-settings document, read once to carry it into clawdline.sqlite3 and never written (D37, T3); 503 past it. The board itself moved into the store (D02) and is measured by store.db and work.open
 internal/adapters/cloud.fenceLimit # read: the sequence fence file
 internal/adapters/cloud.maxFrameBytes # admission: one WebSocket frame from the relay
 internal/adapters/cloud.MaximumBackoff # parameter: the reconnect wait's ceiling
@@ -141,3 +147,10 @@ internal/adapters/taskdir.noteLimit # read: one progress.json, accepted.json or 
 internal/transport/http.commandBodyLimit # admission: every owned route's body without a bound of its own, 413 body_too_large past it before the route runs (limits N27)
 internal/transport/http.authBodyLimit # admission: an auth or push body, 413 past it rather than cut and read as {} (limits N27)
 internal/transport/http.scheduleImportBodyLimit # admission: one batch of schedule files moved in (limits N27)
+internal/app.workAcceptLimit # admission: a work item's acceptance text
+internal/app.workActorLimit # admission: who a board command says it was
+internal/app.workOwnerLimit # admission: a board item's owner
+internal/app.workProjectLimit # admission: a work item's project
+internal/app.workScanLimit # read: board rows one read derives; past it the answer says truncated
+internal/app.workTitleLimit # admission: a work item's title
+internal/transport/http.workBodyLimit # admission: one board command body

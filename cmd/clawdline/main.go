@@ -95,6 +95,9 @@ func serve() {
 	// The capacity register's beat: every bounded thing measured on the same
 	// tick, and health red when evidence has nowhere left to go.
 	srv.StartCapacity(context.Background())
+	// The board's sweep: a landing closes its item, a delivery waits to be
+	// closed, three quiet days send an item back to the Backlog.
+	srv.StartWork(context.Background())
 	startCloudLine(context.Background(), cfg, srv)
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)

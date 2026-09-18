@@ -14,7 +14,6 @@ import (
 	boardstore "github.com/sainteye/clawdline-go/internal/adapters/board"
 	"github.com/sainteye/clawdline-go/internal/domain/auth"
 	domainboard "github.com/sainteye/clawdline-go/internal/domain/board"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // The board: `GET /v1/board` in the Swift app's envelope, and `POST /v1/board`
@@ -38,11 +37,10 @@ func (s *Server) board() *boardDeps {
 	if d, ok := boardByServer.Load(s); ok {
 		return d.(*boardDeps)
 	}
-	settings := boardstore.OpenSettings(s.cfg.Dir)
-	settings.SetReceiptLimit(CapacityLimit(capacity.BoardReceipts))
+	// settings is the old document, read once to carry it over (D37).
 	d, _ := boardByServer.LoadOrStore(s, &boardDeps{
 		legacy:   boardstore.OpenLegacy(boardstore.LegacyPath()),
-		settings: settings,
+		settings: boardstore.OpenSettings(s.cfg.Dir),
 	})
 	return d.(*boardDeps)
 }
@@ -105,7 +103,7 @@ func (s *Server) boardRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d := s.board()
-	settings, err := d.settings.Read()
+	settings, err := s.boardSettings(r.Context())
 	if err != nil {
 		writeBoardRefusal(w, err, false)
 		return
@@ -176,15 +174,14 @@ func (s *Server) boardWrite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d := s.board()
-	outcome, err := d.settings.Apply(viewer.ID, c, raw)
-	if err != nil {
-		writeBoardRefusal(w, err, false)
+	outcome, answered := s.boardApply(w, r, viewer.ID, c, raw)
+	if answered {
 		return
 	}
 
 	// The answer is the board as it now stands, plus a small receipt that
 	// cannot be mistaken for a stale read.
-	settings, err := d.settings.Read()
+	settings, err := s.boardSettings(r.Context())
 	if err != nil {
 		writeBoardRefusal(w, err, true)
 		return

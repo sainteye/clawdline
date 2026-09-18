@@ -11,42 +11,23 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
-// Settings is this daemon's own board document: the board-level facts it may
-// change, and the receipts that make a retry of that change free.
+// Settings is this daemon's old board document, `project-board.json`, read
+// and never written (design-decisions D37).
 //
-// It is deliberately only board-level. Work items are not written here yet,
-// because where an item lives is the open question in docs/board-design.md
-// (C1, C2) and writing one now would lock that answer into the code before the
-// person who owns the decision has read it. The two commands this accepts are
-// exactly the two the settings page issues.
-//
-// State and receipts are one document written in one atomic rename. That is the
-// Swift app's reason for keeping receipts in the aggregate, and it is kept here
-// for the same reason: a receipt and the change it acknowledges that could
-// land separately would make the idempotency guard lie in one direction or the
-// other.
+// The two board-level facts it held — whether the board is on, and which
+// assistant may read it for narratives — live in clawdline.sqlite3 now, with
+// their revision, and a command's receipt is the store's one receipt table
+// (D03). The receipts this document kept were evicted oldest first by count
+// and replayed with whatever revision the board had reached since; both are
+// gone with it. What is left here is the reading: once, when the store has no
+// row yet, so that a person's setting is carried over rather than reset — and
+// the rules a command is checked by, which do not depend on where the answer
+// is kept.
 type Settings struct {
 	path string
 	mu   sync.Mutex
-	// receipts is the most receipts the document keeps; zero is the capacity
-	// register's default for `board.receipts`.
-	receipts int
-	// seen is the receipt count as of the file's last known size and time, so
-	// that measuring the ledger is a stat and not a parse.
-	seen receiptTally
-}
-
-// receiptTally is one reading of the ledger, and the file it was read from.
-type receiptTally struct {
-	valid     bool
-	size      int64
-	modified  time.Time
-	count     int
-	evictions int
 }
 
 type settingsFile struct {
@@ -99,18 +80,6 @@ func (s *Settings) load() (settingsFile, error) {
 	return f, nil
 }
 
-// Read returns the current board-level facts.
-func (s *Settings) Read() (SettingsState, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	f, err := s.load()
-	if err != nil {
-		return SettingsState{}, err
-	}
-	return SettingsState{Revision: f.Revision, Enabled: f.Enabled,
-		NarrativeConsent: f.NarrativeConsent, UpdatedAt: f.UpdatedAt}, nil
-}
-
 // Command is one board write, in the Swift app's envelope.
 type Command struct {
 	Operation        string `json:"operation"`
@@ -148,182 +117,100 @@ var boardOperations = map[string]bool{
 // ManageOperations need `viewer.canManage`, not only `canWrite`.
 var ManageOperations = map[string]bool{"set_enabled": true, "set_ai_consent": true, "accept_artifact": true}
 
-// Apply performs one command under compare-and-swap on the revision the caller
-// last read, with `(actor, requestId)` replay.
-func (s *Settings) Apply(actor string, c Command, raw []byte) (Outcome, error) {
+// ValidateCommand is the part of a command that is about the command alone:
+// its envelope, and whether this daemon performs that operation at all.
+func ValidateCommand(actor string, c Command) error {
 	if c.Operation == "" || len(c.Operation) > 64 || c.RequestID == "" ||
 		len(c.RequestID) > 200 || c.ExpectedRevision == nil || *c.ExpectedRevision < 0 ||
 		actor == "" || len(actor) > 300 {
-		return Outcome{}, refuse(400, "invalid_command",
+		return refuse(400, "invalid_command",
 			"A board command needs an operation, a requestId and an expectedRevision.")
 	}
 	if !boardOperations[c.Operation] {
-		return Outcome{}, refuse(400, "unknown_operation", "That is not a board operation.")
+		return refuse(400, "unknown_operation", "That is not a board operation.")
 	}
 	if c.Operation != "set_enabled" && c.Operation != "set_ai_consent" {
-		return Outcome{}, refuse(501, "board_item_writes_pending_design",
-			"This daemon does not write board items yet: where an item is stored is an open design decision (docs/board-design.md C1, C2). Cards from the Swift app are shown read-only.")
+		return refuse(501, "board_item_writes_pending_design",
+			"The old cards are shown read-only (design-decisions D32); the new board's items are written through /v1/work.")
 	}
+	return nil
+}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	f, err := s.load()
-	if err != nil {
-		return Outcome{}, err
-	}
+// SettingsRow is the board-level facts with the epoch that revokes
+// presentation work in flight.
+type SettingsRow struct {
+	Revision          int64
+	Enabled           bool
+	NarrativeConsent  *string
+	PresentationEpoch int
+	UpdatedAt         float64
+}
 
-	digest := commandDigest(raw)
-	for _, r := range f.Receipts {
-		if r.Actor == actor && r.RequestID == c.RequestID {
-			if r.Digest == digest {
-				// The same command twice changes nothing twice.
-				return Outcome{Revision: f.Revision, Replayed: true}, nil
-			}
-			return Outcome{}, refuse(409, "request_id_conflict",
-				"That requestId was already used for a different command.")
-		}
-	}
-	if *c.ExpectedRevision != f.Revision {
-		return Outcome{}, refuse(409, "revision_conflict",
+// Transition is what a valid command does to the board-level facts, under
+// compare-and-set on the revision the caller last read. The answer's
+// revision is the next one.
+func Transition(cur SettingsRow, c Command, now time.Time) (SettingsRow, error) {
+	if *c.ExpectedRevision != cur.Revision {
+		return SettingsRow{}, refuse(409, "revision_conflict",
 			"The board has moved since you read it.")
 	}
-
+	next := cur
 	switch c.Operation {
 	case "set_enabled":
 		if c.Enabled == nil {
-			return Outcome{}, refuse(400, "invalid_command", "set_enabled needs enabled.")
+			return SettingsRow{}, refuse(400, "invalid_command", "set_enabled needs enabled.")
 		}
-		f.Enabled = *c.Enabled
-		if !f.Enabled {
+		next.Enabled = *c.Enabled
+		if !next.Enabled {
 			// Turning the board off revokes any in-flight presentation work.
-			f.PresentationEpoch++
+			next.PresentationEpoch++
 		}
 	case "set_ai_consent":
 		if c.Enabled == nil || c.Provider == nil || c.Policy == nil ||
 			(*c.Provider != "codex" && *c.Provider != "claude") || *c.Policy != "board-reading-v1" {
-			return Outcome{}, refuse(400, "invalid_command",
+			return SettingsRow{}, refuse(400, "invalid_command",
 				"set_ai_consent needs enabled, a provider of codex or claude, and policy board-reading-v1.")
 		}
 		if *c.Enabled {
 			provider := *c.Provider
-			f.NarrativeConsent = &provider
+			next.NarrativeConsent = &provider
 		} else {
-			f.NarrativeConsent = nil
+			next.NarrativeConsent = nil
 		}
 		// Revocation and grant both advance the epoch, so a result generated
 		// under an older consent cannot commit after the answer changed.
-		f.PresentationEpoch++
+		next.PresentationEpoch++
 	}
-
-	f.Revision++
-	f.UpdatedAt = float64(time.Now().UnixNano()) / 1e9
-	f.Receipts = append(f.Receipts, StoredReceipt{Actor: actor, Digest: digest, ItemID: "",
-		RequestID: c.RequestID, Revision: f.Revision, Status: 200})
-	// Oldest first, by count: the Swift app's rule, kept until receipts expire
-	// by time (design-decisions D03, W2). The register row says so.
-	if over := len(f.Receipts) - s.receiptLimit(); over > 0 {
-		f.Receipts = f.Receipts[over:]
-		f.ReceiptEvictions += over
-	}
-	f.SchemaVersion = StorageSchemaVersion
-	if err := s.persist(f); err != nil {
-		s.seen.valid = false
-		return Outcome{}, refuse(503, "board_persistence_failed", err.Error())
-	}
-	s.remember(f)
-	return Outcome{Revision: f.Revision}, nil
+	next.Revision = cur.Revision + 1
+	next.UpdatedAt = float64(now.UnixNano()) / 1e9
+	return next, nil
 }
 
-// SetReceiptLimit is the capacity override for `board.receipts`. Zero or less
-// is the register's default.
-func (s *Settings) SetReceiptLimit(n int64) {
+// Document reads the old document for the one import: its facts, and false
+// when there is no document (nothing was ever written, and there is nothing to
+// carry over). A document that cannot be read is a refusal, never a fresh
+// board: carrying over "enabled" from a file nobody could read would reset a
+// person's setting without telling them.
+func (s *Settings) Document() (SettingsRow, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.receipts = int(n)
+	if _, err := os.Stat(s.path); errors.Is(err, os.ErrNotExist) {
+		return SettingsRow{}, false, nil
+	}
+	f, err := s.load()
+	if err != nil {
+		return SettingsRow{}, false, err
+	}
+	return SettingsRow{Revision: f.Revision, Enabled: f.Enabled, NarrativeConsent: f.NarrativeConsent,
+		PresentationEpoch: f.PresentationEpoch, UpdatedAt: f.UpdatedAt}, true, nil
 }
 
-func (s *Settings) receiptLimit() int {
-	if s.receipts > 0 {
-		return s.receipts
-	}
-	return int(capacity.Default(capacity.BoardReceipts))
-}
+// Path is where the old document is, for the record of where an import
+// came from.
+func (s *Settings) Path() string { return s.path }
 
-// remember notes the ledger just written, with the file's size and time, so the
-// next measurement of an unchanged file answers without opening it.
-func (s *Settings) remember(f settingsFile) {
-	info, err := os.Stat(s.path)
-	if err != nil {
-		s.seen.valid = false
-		return
-	}
-	s.seen = receiptTally{valid: true, size: info.Size(), modified: info.ModTime(),
-		count: len(f.Receipts), evictions: f.ReceiptEvictions}
-}
-
-// ReceiptReading is the `board.receipts` row: how many receipts the document
-// holds and how many it has evicted, a count the document itself keeps and so
-// one that survives a restart.
-//
-// It costs a stat while the file is the one this process last wrote or read;
-// a changed file is read once. A document that cannot be read is an unknown
-// reading, never an empty ledger.
-func (s *Settings) ReceiptReading() capacity.Reading {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	info, err := os.Stat(s.path)
-	if errors.Is(err, os.ErrNotExist) {
-		return capacity.Reading{Known: true, DurableCounters: true,
-			Note: "no board document yet; nothing has been written"}
-	}
-	if err != nil {
-		return capacity.Unmeasured(err.Error())
-	}
-	if !s.seen.valid || s.seen.size != info.Size() || !s.seen.modified.Equal(info.ModTime()) {
-		f, err := s.load()
-		if err != nil {
-			s.seen.valid = false
-			return capacity.Unmeasured(err.Error())
-		}
-		s.seen = receiptTally{valid: true, size: info.Size(), modified: info.ModTime(),
-			count: len(f.Receipts), evictions: f.ReceiptEvictions}
-	}
-	return capacity.Reading{Known: true, Used: int64(s.seen.count), DurableCounters: true,
-		Counters: capacity.Counters{Evicted: int64(s.seen.evictions)}}
-}
-
-// persist writes the whole document to a temporary file beside it and renames
-// it into place, 0600, then syncs — the Swift app's `persist` in shape.
-func (s *Settings) persist(f settingsFile) error {
-	body, err := json.Marshal(f)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".project-board-*.json")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(body); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), s.path)
-}
+// CommandDigest identifies a command by what it asks for, for its receipt.
+func CommandDigest(raw []byte) string { return commandDigest(raw) }
 
 // commandDigest identifies a command by what it asks for. Keys are sorted so
 // the same object sent twice with its fields in another order is the same

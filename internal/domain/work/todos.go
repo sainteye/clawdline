@@ -155,6 +155,11 @@ type TaskFacts struct {
 	Landing string
 	// Attempt is how far down a respawn chain the task is: 0 for an original.
 	Attempt int
+	// FinishedAt and LandedAt are when the task ended and when its landing
+	// was recorded; zero while neither has happened. The board's clock reads
+	// them (board.go); the to-do rules do not.
+	FinishedAt time.Time
+	LandedAt   time.Time
 }
 
 // owed is what a task's facts say about its to-do: still owed, or closed and

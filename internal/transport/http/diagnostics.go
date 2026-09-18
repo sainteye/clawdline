@@ -203,9 +203,14 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return r
 		},
-		capacity.BoardReceipts: func() capacity.Reading {
-			return s.board().settings.ReceiptReading()
+		capacity.WorkOpen: func() capacity.Reading {
+			n, err := s.store.WorkOpenCount(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: n}
 		},
+		capacity.BoardReceipts: func() capacity.Reading { return s.boardReceiptReading() },
 		capacity.CloudRelayQueue: func() capacity.Reading {
 			line, ok := cloudLines.Load(s.cfg.Dir)
 			if !ok {
