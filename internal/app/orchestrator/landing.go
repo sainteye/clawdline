@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
 // Landing has one record, and it proves what it says (W3: D17, D18, D19, D51,
@@ -233,15 +235,35 @@ func (b *Broker) Obligation(r Record) Obligation {
 	if r.Root == nil || r.Root.SessionID == "" {
 		return ObligationOrphaned
 	}
-	p := b.observed.presence()
-	if p.at.IsZero() || b.now().Sub(p.at) > presenceFresh {
-		return ObligationUnknown
-	}
-	if a, ok := p.conversations[r.Root.SessionID]; ok && (r.Root.Assistant == "" || a == r.Root.Assistant) {
+	switch b.ownerLiveness(r.Root.SessionID, r.Root.Assistant) {
+	case work.Live:
 		return ObligationLive
-	}
-	if p.processes && !p.anonymous {
+	case work.Gone:
 		return ObligationOrphaned
 	}
 	return ObligationUnknown
+}
+
+// ownerLiveness is where the beat's last reading places one conversation: the
+// one answer to "is the session that owes this still here", read by a pending
+// landing and by a to-do alike (todos.go), in the three-valued vocabulary the
+// board's tracks use (internal/domain/work).
+//
+// Live is the conversation in a fresh reading. Gone is a fresh reading whose
+// process table answered completely and named every assistant it listed,
+// without it. Anything short of that — a stale reading, a partial process
+// table, an assistant nobody could name — is unknown, and unknown never
+// proves anybody left.
+func (b *Broker) ownerLiveness(conversation, assistant string) work.Liveness {
+	p := b.observed.presence()
+	if p.at.IsZero() || b.now().Sub(p.at) > presenceFresh {
+		return work.Unknown
+	}
+	if a, ok := p.conversations[conversation]; ok && (assistant == "" || a == assistant) {
+		return work.Live
+	}
+	if p.processes && !p.anonymous {
+		return work.Gone
+	}
+	return work.Unknown
 }

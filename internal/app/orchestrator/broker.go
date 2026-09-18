@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/git"
@@ -128,6 +129,11 @@ type Broker struct {
 	observed observations
 	// progress carries each accepted note to whoever is streaming.
 	progress progressBus
+	// todosOwed is a start's reconcile of the to-do list (todos.go), owed
+	// from Run until one succeeds. In memory: a restart is exactly when it is
+	// owed again. A pass run by hand owes none, so its cost stays the live
+	// tasks' (G33).
+	todosOwed atomic.Bool
 }
 
 const (
@@ -383,7 +389,8 @@ func (b *Broker) save(ctx context.Context, r Record, secretHash string, kind str
 func (b *Broker) create(ctx context.Context, r Record, secretHash string, effects ...store.Effect) ([]int64, error) {
 	payload, _ := json.Marshal(map[string]any{"state": r.State, "task": r.ID})
 	record, texts := r.stored()
-	ids, err := b.Store.CreateBrokerTask(ctx, store.BrokerRow{
+	at := b.now()
+	ids, err := b.Store.CreateBrokerTaskTx(ctx, store.BrokerRow{
 		ID:         r.ID,
 		Project:    r.ProjectDir,
 		Repository: r.Repository,
@@ -394,7 +401,10 @@ func (b *Broker) create(ctx context.Context, r Record, secretHash string, effect
 		SecretHash: secretHash,
 		Record:     record,
 		Texts:      texts,
-	}, []store.Event{{Kind: "task.queued", Subject: r.ID, Payload: payload}}, effects...)
+	}, []store.Event{{Kind: "task.queued", Subject: r.ID, Payload: payload}}, effects,
+		// Its root's to-do is made with it: a task nobody is reminded of is
+		// the one that finishes into silence (todos.go).
+		func(tx *store.Tx) error { return followTodo(tx, r, at, nil) })
 	if errors.Is(err, store.ErrTaskExists) {
 		return nil, refuseWith(http.StatusConflict, "task_exists",
 			"A task with this id was stored while this dispatch was being admitted; nothing was written over it.",
@@ -535,6 +545,11 @@ func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[str
 				return nil, nil
 			}
 			decided = err
+			return nil, err
+		}
+		// The root's to-do follows the fact in the fact's own transaction
+		// (todos.go): a landing and the to-do it closes are one write.
+		if err := followTodo(tx, r, b.now(), nil); err != nil {
 			return nil, err
 		}
 		// The one notice a record rewrite may carry is a new one: the envelope a

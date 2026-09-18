@@ -51,6 +51,9 @@ type Pulse struct {
 	// Recovered is how many effects a dead broker left unfinished that this
 	// pass settled — run once, or recorded as unknown (effects.go).
 	Recovered int
+	// Todos is how many session to-dos this pass moved: made or followed on
+	// the first pass, handed off, returned or dropped on a reading (todos.go).
+	Todos int
 	// StoreErr is why the pass could not read the store, when it could not.
 	// A pass that read nothing because it could not read is not a pass that
 	// found nothing, and the two must not look alike from outside.
@@ -152,6 +155,8 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	if still, err := b.liveTasks(ctx); err == nil {
 		b.observe(ctx, rd, still)
 	}
+	// After the reading is recorded, so an owner's presence is this pass's.
+	p.Todos = b.tendTodos(ctx)
 	p.Notices = b.PumpNotices(ctx)
 	return p
 }

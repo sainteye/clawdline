@@ -152,6 +152,9 @@ func (b *Broker) Run(ctx context.Context, tick time.Duration, report func(Pulse)
 	b.beat.tick = tick
 	b.beat.started = b.now()
 	b.beat.mu.Unlock()
+	// A start owes the to-do list its reconcile (todos.go): whatever was
+	// recorded while no broker kept it is made now, on the first pass.
+	b.todosOwed.Store(true)
 	delay := restartBase
 	for {
 		b.beat.mu.Lock()

@@ -506,6 +506,11 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 	if i := strings.Index(rest, "/"); i >= 0 {
 		terminal, action = rest[:i], rest[i+1:]
 	}
+	// The to-do list is named by conversation id, not by terminal (todos.go).
+	if action == "todos" && r.Method == http.MethodGet {
+		s.sessionTodos(w, r, decodeSegment(terminal))
+		return
+	}
 	if action != "complete" || r.Method != http.MethodPost {
 		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a session action")
 		return

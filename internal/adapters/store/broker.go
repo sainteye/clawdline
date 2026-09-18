@@ -187,6 +187,15 @@ func (s *Store) SaveBrokerTaskWithNotice(ctx context.Context, row BrokerRow, not
 // a row it could not decode, a read that errored — replace that row with a new
 // task under the same id.
 func (s *Store) CreateBrokerTask(ctx context.Context, row BrokerRow, events []Event, effects ...Effect) ([]int64, error) {
+	return s.CreateBrokerTaskTx(ctx, row, events, effects, nil)
+}
+
+// CreateBrokerTaskTx is CreateBrokerTask that also runs also, when it is not
+// nil, inside the same transaction once the row is written — for what the
+// task's creation is, in the same breath, to somebody else: its root's to-do
+// (todos.go). An error from also writes nothing at all.
+func (s *Store) CreateBrokerTaskTx(ctx context.Context, row BrokerRow, events []Event, effects []Effect,
+	also func(tx *Tx) error) ([]int64, error) {
 	// A collision is a refusal, not a failed write: it is carried out of the
 	// timed write rather than through it, so the store's health does not count
 	// a caller's resend as the store failing.
@@ -230,10 +239,20 @@ func (s *Store) CreateBrokerTask(ctx context.Context, row BrokerRow, events []Ev
 			}
 			ids = append(ids, id)
 		}
+		if also != nil {
+			t := &Tx{ctx: ctx, tx: tx, s: s}
+			if err := also(t); err != nil {
+				return 0, err
+			}
+			changed += t.wrote
+		}
 		return changed + int64(len(events)+len(effects)), nil
 	})
 	if err == nil && taken {
 		return nil, ErrTaskExists
+	}
+	if err != nil {
+		ids = nil
 	}
 	return ids, err
 }
