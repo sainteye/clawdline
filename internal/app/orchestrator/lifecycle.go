@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,8 +25,7 @@ import (
 
 // Progress records one material boundary change.
 func (b *Broker) Progress(ctx context.Context, id, secret, note string) (Record, error) {
-	r, hash, err := b.Authenticate(ctx, id, secret)
-	if err != nil {
+	if _, _, err := b.Authenticate(ctx, id, secret); err != nil {
 		return Record{}, err
 	}
 	trimmed := strings.TrimSpace(note)
@@ -33,26 +33,26 @@ func (b *Broker) Progress(ctx context.Context, id, secret, note string) (Record,
 		return Record{}, refuse(http.StatusBadRequest, "bad_request",
 			"note must be a non-empty sentence of at most "+strconv.Itoa(progressLimit)+" characters.")
 	}
-	if r.State.Terminal() {
-		return Record{}, refuse(http.StatusConflict, "not_live",
-			"This task is over; what it did belongs in its summary.")
-	}
-	// A repeated sentence is accepted and ignored rather than refused: a child
-	// retrying a note it is unsure landed has done nothing wrong, and the same
-	// sentence twice on a person's screen is noise.
-	if _, err := b.Store.AppendBrokerNote(ctx, id, trimmed); err != nil {
-		return Record{}, err
-	}
-	// A note proves the child read its briefing, which is the one thing a
-	// spawn cannot prove by itself: bytes reaching a tty are not evidence
-	// anybody read them, and an authenticated sentence is.
-	if r.State == StateSpawning || r.State == StateQueued {
-		r.State = StateBriefed
-		if err := b.save(ctx, r, hash, "task.briefed"); err != nil {
-			return Record{}, err
+	return b.mutate(ctx, id, "task.briefed", func(r *Record) error {
+		if r.State.Terminal() {
+			return refuse(http.StatusConflict, "not_live",
+				"This task is over; what it did belongs in its summary.")
 		}
-	}
-	return r, nil
+		// A repeated sentence is accepted and ignored rather than refused: a
+		// child retrying a note it is unsure landed has done nothing wrong, and
+		// the same sentence twice on a person's screen is noise.
+		if _, err := b.Store.AppendBrokerNote(ctx, id, trimmed); err != nil {
+			return err
+		}
+		// A note proves the child read its briefing, which is the one thing a
+		// spawn cannot prove by itself: bytes reaching a tty are not evidence
+		// anybody read them, and an authenticated sentence is.
+		if r.State != StateSpawning && r.State != StateQueued {
+			return errUnchanged
+		}
+		r.State = StateBriefed
+		return nil
+	})
 }
 
 // Notes reads what a task has said.
@@ -66,18 +66,17 @@ func (b *Broker) Notes(ctx context.Context, id string) ([]store.BrokerNote, erro
 // including a missing field and a word nobody can read — because the safe
 // reading of an unreadable outcome is that the work did not land.
 func (b *Broker) Complete(ctx context.Context, id, secret, status, summary string) error {
-	r, hash, err := b.Authenticate(ctx, id, secret)
-	if err != nil {
+	if _, _, err := b.Authenticate(ctx, id, secret); err != nil {
 		return err
-	}
-	if r.State.Terminal() {
-		return refuse(http.StatusConflict, "already_done", "That task already finished.")
 	}
 	state := StateFailure
 	if status == "success" {
 		state = StateSuccess
 	}
-	_, err = b.Settle(ctx, r, hash, state, summary)
+	_, err := b.Settle(ctx, id, state, summary, nil)
+	if errors.Is(err, errAlreadyTerminal) {
+		return refuse(http.StatusConflict, "already_done", "That task already finished.")
+	}
 	return err
 }
 
@@ -87,35 +86,41 @@ func (b *Broker) Complete(ctx context.Context, id, secret, status, summary strin
 // accepted, executed, delivered, observed, acknowledged. A transport success
 // proves the fourth at best, so this is the only thing that ends the resend.
 func (b *Broker) Acknowledge(ctx context.Context, id, noticeID string) (changed bool, err error) {
-	r, hash, err := b.Record(ctx, id)
-	if err != nil {
+	if _, _, err := b.Record(ctx, id); err != nil {
 		// The one route whose 404 names the id, as the Swift app's does.
 		return false, refuse(http.StatusNotFound, "not_found", "No task named "+id+".")
 	}
-	if r.Notice == nil {
-		return false, refuse(http.StatusConflict, "completion_not_reconciled",
-			"This terminal task has no durable completion envelope; reconcile it or poll result.json.")
-	}
-	if !constantEqual(r.Notice.ID, strings.ToLower(noticeID)) {
-		return false, refuse(http.StatusConflict, "completion_notice_mismatch",
-			"The notice id does not identify this task's completion envelope.")
-	}
-	if r.Notice.State == NoticeAcknowledged {
-		return false, nil
-	}
 	now := b.now()
-	if r.Notice.ObservedAt.IsZero() {
-		r.Notice.ObservedAt = now
-	}
-	r.Notice.AcknowledgedAt = now
-	r.Notice.State = NoticeAcknowledged
-	r.Notice.NextRetryAt = zeroTime
-	r.Notice.LastError = nil
-	if err := b.save(ctx, r, hash, "task.completion.acknowledged"); err != nil {
+	_, err = b.mutate(ctx, id, "task.completion.acknowledged", func(r *Record) error {
+		if r.Notice == nil {
+			return refuse(http.StatusConflict, "completion_not_reconciled",
+				"This terminal task has no durable completion envelope; reconcile it or poll result.json.")
+		}
+		if !constantEqual(r.Notice.ID, strings.ToLower(noticeID)) {
+			return refuse(http.StatusConflict, "completion_notice_mismatch",
+				"The notice id does not identify this task's completion envelope.")
+		}
+		if r.Notice.State == NoticeAcknowledged {
+			return errUnchanged
+		}
+		if r.Notice.ObservedAt.IsZero() {
+			r.Notice.ObservedAt = now
+		}
+		r.Notice.AcknowledgedAt = now
+		r.Notice.State = NoticeAcknowledged
+		r.Notice.NextRetryAt = zeroTime
+		r.Notice.LastError = nil
+		changed = true
+		return nil
+	})
+	if err != nil {
+		if _, ok := err.(Refusal); ok {
+			return false, err
+		}
 		return false, refuse(http.StatusInternalServerError, "completion_store_failed",
 			"The acknowledgement could not be persisted; retry it.")
 	}
-	return true, nil
+	return changed, nil
 }
 
 // LandingRequest is the body of the landing route.
@@ -142,6 +147,11 @@ func (b *Broker) Land(ctx context.Context, id string, req LandingRequest) (Recor
 	if err != nil {
 		return Record{}, err
 	}
+	// What the checks below were decided against. The proof asks git, which
+	// is slow, so the write re-reads the record and refuses if either of these
+	// moved in the meantime — the Swift app's `stale_write`.
+	readState := r.State
+	readLanding := landingKey(r.Landing)
 	machineOnly := req.State == string(LandingLanded) || req.State == string(LandingNothingToLand)
 	if machineOnly {
 		if !req.Machine {
@@ -224,11 +234,22 @@ func (b *Broker) Land(ctx context.Context, id string, req LandingRequest) (Recor
 		next.At = b.now()
 	}
 
-	r.Landing = next
-	if err := b.save(ctx, r, hash, "landing."+req.State); err != nil {
-		return Record{}, err
+	return b.mutate(ctx, id, "landing."+req.State, func(now *Record) error {
+		if now.State != readState || landingKey(now.Landing) != readLanding {
+			return refuse(http.StatusConflict, "stale_write",
+				"The landing changed while its target was being verified; retry.")
+		}
+		now.Landing = next
+		return nil
+	})
+}
+
+// landingKey is a landing's identity, for noticing that it moved.
+func landingKey(l *Landing) string {
+	if l == nil {
+		return ""
 	}
-	return r, nil
+	return string(l.State) + "\x00" + l.Target + "\x00" + l.Commit
 }
 
 // proveLanding asks git the only question that means "landed".

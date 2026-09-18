@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -31,19 +30,19 @@ var zeroTime time.Time
 // whose encoding must be one physical line: a newline inside it would split the
 // message into two things the far side cannot parse.
 type noticeBody struct {
-	Protocol  string     `json:"protocol"`
-	Version   int        `json:"version"`
-	Kind      string     `json:"kind"`
-	Audience  string     `json:"audience"`
-	Task      noticeTask `json:"task"`
-	State     string     `json:"state"`
-	Result    string     `json:"result_path"`
-	Outstand  int        `json:"outstanding"`
-	Released  bool       `json:"claims_released"`
-	MayWrite  bool       `json:"child_may_still_write"`
-	Body      string     `json:"body"`
-	NoticeID  string     `json:"notice_id"`
-	AckPath   string     `json:"ack_path"`
+	Protocol string     `json:"protocol"`
+	Version  int        `json:"version"`
+	Kind     string     `json:"kind"`
+	Audience string     `json:"audience"`
+	Task     noticeTask `json:"task"`
+	State    string     `json:"state"`
+	Result   string     `json:"result_path"`
+	Outstand int        `json:"outstanding"`
+	Released bool       `json:"claims_released"`
+	MayWrite bool       `json:"child_may_still_write"`
+	Body     string     `json:"body"`
+	NoticeID string     `json:"notice_id"`
+	AckPath  string     `json:"ack_path"`
 }
 
 type noticeTask struct {
@@ -136,31 +135,50 @@ func (b *Broker) PumpNotices(ctx context.Context) int {
 }
 
 // attemptNotice delivers one notice, or records why it did not.
+//
+// The typing happens outside mutate, because it takes seconds and holds a
+// terminal. What it learned is then applied only if the notice is still the one
+// that was attempted and nobody has acknowledged it meanwhile: an ACK that
+// lands while this is typing wins, and the attempt is discarded rather than
+// written back over it.
 func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
-	_, hash, err := b.Record(ctx, r.ID)
-	if err != nil {
-		return false
+	noticeID := r.Notice.ID
+	stillOpen := func(now *Record) bool {
+		return now.Notice != nil && now.Notice.ID == noticeID &&
+			now.Notice.State != NoticeAcknowledged && now.Notice.State != NoticeDeadLetter
 	}
-	now := b.now()
+	record := func(kind string, change func(n *Notice)) {
+		_, _ = b.mutate(ctx, r.ID, kind, func(now *Record) error {
+			if !stillOpen(now) {
+				return errUnchanged
+			}
+			change(now.Notice)
+			return nil
+		})
+	}
+	at := b.now()
+
 	if r.Notice.Attempts >= AttemptLimit {
-		r.Notice.State = NoticeDeadLetter
-		r.Notice.DeadLetterAt = now
-		r.Notice.NextRetryAt = zeroTime
-		r.Notice.LastError = &NoticeError{
-			Code:    "acknowledgement_timeout",
-			Message: "No root acknowledgement arrived within the bounded retry budget.",
-			At:      now,
-		}
-		_ = b.save(ctx, r, hash, "task.completion.dead_letter")
+		record("task.completion.dead_letter", func(n *Notice) {
+			n.State = NoticeDeadLetter
+			n.DeadLetterAt = at
+			n.NextRetryAt = zeroTime
+			n.LastError = &NoticeError{
+				Code:    "acknowledgement_timeout",
+				Message: "No root acknowledgement arrived within the bounded retry budget.",
+				At:      at,
+			}
+		})
 		return false
 	}
 
 	fail := func(code, message string) bool {
-		r.Notice.Attempts++
-		r.Notice.LastAttemptAt = now
-		r.Notice.LastError = &NoticeError{Code: code, Message: message, At: now}
-		r.Notice.NextRetryAt = now.Add(RetryDelay(r.Notice.Attempts))
-		_ = b.save(ctx, r, hash, "task.completion.attempt")
+		record("task.completion.attempt", func(n *Notice) {
+			n.Attempts++
+			n.LastAttemptAt = at
+			n.LastError = &NoticeError{Code: code, Message: message, At: at}
+			n.NextRetryAt = at.Add(RetryDelay(n.Attempts))
+		})
 		return false
 	}
 
@@ -178,8 +196,9 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 	// notice typed into its menu. Waiting costs a pass; typing costs an answer
 	// nobody gave.
 	if b.Choosing != nil && b.Choosing(ctx, target.ID) {
-		r.Notice.NextRetryAt = now.Add(10 * time.Second)
-		_ = b.save(ctx, r, hash, "task.completion.deferred")
+		record("task.completion.deferred", func(n *Notice) {
+			n.NextRetryAt = at.Add(10 * time.Second)
+		})
 		return false
 	}
 	wire, err := b.NoticeWire(r)
@@ -193,18 +212,17 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		return fail("transport_failed", err.Error())
 	}
 
-	r.Notice.Attempts++
-	r.Notice.LastAttemptAt = now
-	r.Notice.State = NoticeDelivered
-	r.Notice.Recipient = target.ID
-	r.Notice.LastError = nil
-	if r.Notice.DeliveredAt.IsZero() {
-		r.Notice.DeliveredAt = now
-	}
-	// Armed again on purpose. Delivered is not observed.
-	r.Notice.NextRetryAt = now.Add(RetryDelay(r.Notice.Attempts))
-	if err := b.save(ctx, r, hash, "task.completion.delivered"); err != nil {
-		log.Printf("orchestrator: could not record a delivered notice for %s: %v", r.ID, err)
-	}
+	record("task.completion.delivered", func(n *Notice) {
+		n.Attempts++
+		n.LastAttemptAt = at
+		n.State = NoticeDelivered
+		n.Recipient = target.ID
+		n.LastError = nil
+		if n.DeliveredAt.IsZero() {
+			n.DeliveredAt = at
+		}
+		// Armed again on purpose. Delivered is not observed.
+		n.NextRetryAt = at.Add(RetryDelay(n.Attempts))
+	})
 	return true
 }

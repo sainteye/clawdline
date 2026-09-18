@@ -224,19 +224,33 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		// The caller's task.json is already there; failing to add CHILD.md is
 		// still a failure to brief, and a child told to read a file that is not
 		// there is worse than one that never started.
-		record.State = StateSpawnFailed
-		record.SpawnError = err.Error()
-		record.FinishedAt = b.now()
-		_ = b.save(ctx, record, hash, "task.spawn_failed")
-		return Dispatched{Record: record, Warnings: warnings}, nil
+		settled, _ := b.Settle(ctx, record.ID, StateSpawnFailed, "Could not write CHILD.md: "+err.Error(), nil)
+		return Dispatched{Record: settled, Warnings: warnings}, nil
 	}
 
 	spawned := b.spawn(ctx, record, cwd, req.Secret)
-	record = spawned
-	_ = b.save(ctx, record, hash, "task."+string(record.State))
-	if record.State == StateBriefed || record.State == StateSpawning {
-		b.forgetSecret(record.ID)
+	if spawned.State == StateSpawnFailed {
+		settled, _ := b.Settle(ctx, record.ID, StateSpawnFailed, spawned.SpawnError, nil)
+		return Dispatched{Record: settled, Warnings: warnings}, nil
 	}
+	// What the spawn learned is applied to the record as it is **now**. The
+	// beat may already have moved it on — a progress note proves `briefed`
+	// while this request was still typing — and writing this copy back whole
+	// would put `spawning` over that proof.
+	record, err = b.mutate(ctx, record.ID, "task.spawned", func(r *Record) error {
+		r.ChildTerminalID = spawned.ChildTerminalID
+		r.ChildBackend = spawned.ChildBackend
+		r.SpawnedAt = spawned.SpawnedAt
+		r.SpawnError = spawned.SpawnError
+		if r.State == StateQueued {
+			r.State = spawned.State
+		}
+		return nil
+	})
+	if err != nil {
+		return Dispatched{}, err
+	}
+	b.forgetSecret(record.ID)
 	return Dispatched{Record: record, Warnings: warnings}, nil
 }
 
@@ -364,6 +378,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string) Record
 	launch, err := projects.Admit(projects.LaunchRequest{
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
+		Model:       r.Model,
 	})
 	if err != nil {
 		r.State = StateSpawnFailed
@@ -545,38 +560,52 @@ func (b *Broker) composerReady(ctx context.Context, terminalID string) (bool, er
 	return true, nil
 }
 
+// errAlreadyTerminal is Settle finding that somebody settled the task first.
+var errAlreadyTerminal = errors.New("already terminal")
+
 // Settle records a terminal outcome and opens the notice that tells the root.
-func (b *Broker) Settle(ctx context.Context, r Record, hash string, state State, summary string) (Record, error) {
-	r.State = state
-	r.FinishedAt = b.now()
-	if r.Result == nil && summary != "" {
-		r.Result = &taskdir.Result{
-			Protocol: Protocol,
-			TaskID:   r.ID,
-			Status:   string(state),
-			Summary:  truncate(summary, summaryLimit),
+//
+// Exactly once. A `/complete` and the beat's collection of result.json can both
+// arrive for one task, and before this was a precondition inside mutate they
+// both settled it — and minted two notice ids, the second overwriting the one
+// the root had already been told to acknowledge.
+func (b *Broker) Settle(ctx context.Context, id string, state State, summary string, result *taskdir.Result) (Record, error) {
+	now := b.now()
+	return b.mutate(ctx, id, "task."+string(state), func(r *Record) error {
+		if r.State.Terminal() {
+			return errAlreadyTerminal
 		}
-	}
-	// A task that reserved paths in the shared tree still owes a landing, and
-	// so does an isolated one, whose declared paths became its landing write
-	// set. Delivered is not landed, and the obligation is what keeps the
-	// difference visible to the next root rather than to nobody.
-	if r.Landing == nil && (len(r.Claims) > 0 || r.Worktree != nil) {
-		r.Landing = &Landing{State: LandingPending, Note: "not yet on its target"}
-	}
-	if r.Root != nil && r.Notice == nil {
-		r.Notice = &Notice{
-			ID:          b.newID(),
-			State:       NoticePending,
-			CreatedAt:   r.FinishedAt,
-			NextRetryAt: r.FinishedAt,
+		r.State = state
+		r.FinishedAt = now
+		switch {
+		case result != nil:
+			r.Result = result
+		case r.Result == nil && summary != "":
+			r.Result = &taskdir.Result{
+				Protocol: Protocol,
+				TaskID:   r.ID,
+				Status:   string(state),
+				Summary:  truncate(summary, summaryLimit),
+			}
 		}
-	}
-	b.forgetSecret(r.ID)
-	if err := b.save(ctx, r, hash, "task."+string(state)); err != nil {
-		return r, err
-	}
-	return r, nil
+		// A task that reserved paths in the shared tree still owes a landing,
+		// and so does an isolated one, whose declared paths became its landing
+		// write set. Delivered is not landed, and the obligation is what keeps
+		// the difference visible to the next root rather than to nobody.
+		if r.Landing == nil && (len(r.Claims) > 0 || r.Worktree != nil) {
+			r.Landing = &Landing{State: LandingPending, Note: "not yet on its target"}
+		}
+		if r.Root != nil && r.Notice == nil {
+			r.Notice = &Notice{
+				ID:          b.newID(),
+				State:       NoticePending,
+				CreatedAt:   now,
+				NextRetryAt: now,
+			}
+		}
+		b.forgetSecret(r.ID)
+		return nil
+	})
 }
 
 func (b *Broker) newID() string {

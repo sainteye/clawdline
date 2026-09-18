@@ -98,6 +98,7 @@ func (b *Broker) collectNote(ctx context.Context, r *Record) bool {
 	if err != nil || !SecretMatches(hash, note.Secret) {
 		return false
 	}
+	_ = hash
 	trimmed := strings.TrimSpace(note.Note)
 	if trimmed == "" || utf8.RuneCountInString(trimmed) > progressLimit {
 		return false
@@ -106,11 +107,23 @@ func (b *Broker) collectNote(ctx context.Context, r *Record) bool {
 	if err != nil || !added {
 		return false
 	}
-	if r.State == StateSpawning || r.State == StateQueued {
-		r.State = StateBriefed
-		_ = b.save(ctx, *r, hash, "task.briefed")
+	if now, err := b.promote(ctx, r.ID); err == nil {
+		*r = now
 	}
 	return true
+}
+
+// promote moves a task that has proved it read its briefing from `spawning`
+// to `briefed`, and leaves every other state alone. Under mutate, so a
+// promotion never lands on a task that finished in the meantime.
+func (b *Broker) promote(ctx context.Context, id string) (Record, error) {
+	return b.mutate(ctx, id, "task.briefed", func(r *Record) error {
+		if r.State != StateSpawning && r.State != StateQueued {
+			return errUnchanged
+		}
+		r.State = StateBriefed
+		return nil
+	})
 }
 
 // collectResult settles a task whose child wrote one.
@@ -139,15 +152,12 @@ func (b *Broker) collectResult(ctx context.Context, r Record) bool {
 	if !b.authentic(ctx, r, result) {
 		return false
 	}
-	_, hash, err := b.Record(ctx, r.ID)
-	if err != nil {
-		return false
-	}
 	result.Secret = ""
-	r.Result = &result
 	_ = raw
-	if _, err := b.Settle(ctx, r, hash, SettleState(result.Status), result.Summary); err != nil {
-		log.Printf("orchestrator: task %s could not be settled: %v", r.ID, err)
+	if _, err := b.Settle(ctx, r.ID, SettleState(result.Status), result.Summary, &result); err != nil {
+		if !errors.Is(err, errAlreadyTerminal) {
+			log.Printf("orchestrator: task %s could not be settled: %v", r.ID, err)
+		}
 		return false
 	}
 	return true
@@ -205,10 +215,6 @@ func spawnVerdict(alive, choosing bool) (State, string, bool) {
 // terminal.
 func (b *Broker) runClocks(ctx context.Context, r Record, p *Pulse) bool {
 	now := b.now()
-	_, hash, err := b.Record(ctx, r.ID)
-	if err != nil {
-		return false
-	}
 	if r.State == StateSpawning && !r.SpawnedAt.IsZero() && now.Sub(r.SpawnedAt) > readyLimit {
 		alive := false
 		if s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID); ok && s.IsAssistant() {
@@ -221,15 +227,15 @@ func (b *Broker) runClocks(ctx context.Context, r Record, p *Pulse) bool {
 			}
 		}
 		if state, why, decided := spawnVerdict(alive, choosing); decided {
-			if _, err := b.Settle(ctx, r, hash, state, why); err == nil {
+			if _, err := b.Settle(ctx, r.ID, state, why, nil); err == nil {
 				p.SpawnFail++
 				return true
 			}
 		}
 	}
 	if deadline := r.Deadline(); !deadline.IsZero() && now.After(deadline) {
-		if _, err := b.Settle(ctx, r, hash, StateTimeout,
-			"The task passed its timeout without writing a result."); err == nil {
+		if _, err := b.Settle(ctx, r.ID, StateTimeout,
+			"The task passed its timeout without writing a result.", nil); err == nil {
 			p.TimedOut++
 			return true
 		}
@@ -252,10 +258,10 @@ func (b *Broker) proveBriefing(ctx context.Context, r *Record) bool {
 	if !ok || !s.IsAssistant() || s.State != session.StateWorking {
 		return false
 	}
-	_, hash, err := b.Record(ctx, r.ID)
+	now, err := b.promote(ctx, r.ID)
 	if err != nil {
 		return false
 	}
-	r.State = StateBriefed
-	return b.save(ctx, *r, hash, "task.briefed") == nil
+	*r = now
+	return true
 }

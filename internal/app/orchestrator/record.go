@@ -181,18 +181,19 @@ func RetryDelay(attempts int) time.Duration {
 // is the protocol and a second spelling of the same field is how two halves of
 // one system stop agreeing.
 type Record struct {
-	Protocol       int      `json:"clawdline_protocol"`
-	ID             string   `json:"task_id"`
-	Kind           string   `json:"kind"`
-	Assistant      string   `json:"assistant"`
-	PermissionMode string   `json:"permission_mode"`
-	Claims         []string `json:"claims"`
-	Isolation      string   `json:"isolation"`
-	ProjectDir     string   `json:"project_dir"`
-	Title          string   `json:"title"`
-	Instructions   string   `json:"instructions"`
-	Deliverables   []string `json:"deliverables,omitempty"`
-	TimeoutMinutes int      `json:"timeout_minutes"`
+	Protocol       int       `json:"clawdline_protocol"`
+	ID             string    `json:"task_id"`
+	Kind           string    `json:"kind"`
+	Assistant      string    `json:"assistant"`
+	PermissionMode string    `json:"permission_mode"`
+	Claims         []string  `json:"claims"`
+	Isolation      string    `json:"isolation"`
+	ProjectDir     string    `json:"project_dir"`
+	Title          string    `json:"title"`
+	Instructions   string    `json:"instructions"`
+	Deliverables   []string  `json:"deliverables,omitempty"`
+	TimeoutMinutes int       `json:"timeout_minutes"`
+	Model          string    `json:"model,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	Root           *RootRef  `json:"root,omitempty"`
 

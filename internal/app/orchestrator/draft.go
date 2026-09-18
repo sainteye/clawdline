@@ -54,6 +54,17 @@ type draft struct {
 	Deliverables   []string         `json:"deliverables"`
 	TimeoutMinutes *int             `json:"timeout_minutes"`
 	Root           *json.RawMessage `json:"root"`
+	Model          string           `json:"model"`
+
+	// Accepted by the Swift broker and not by this one yet. They are read only
+	// so that their presence can be refused by name: a broker that silently
+	// drops `serialize` starts a task the caller asked to wait, and one that
+	// drops `graph` records a node nobody can find again. Ignoring a field the
+	// protocol documents is a quieter way of doing something else.
+	Serialize       json.RawMessage `json:"serialize"`
+	Graph           json.RawMessage `json:"graph"`
+	AttachSession   json.RawMessage `json:"attach_session"`
+	ReasoningEffort json.RawMessage `json:"reasoning_effort"`
 }
 
 type draftRoot struct {
@@ -138,6 +149,18 @@ func (b *Broker) admit(id string, d draft) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	for name, raw := range map[string]json.RawMessage{
+		"serialize": d.Serialize, "graph": d.Graph,
+		"attach_session": d.AttachSession, "reasoning_effort": d.ReasoningEffort,
+	} {
+		if len(raw) > 0 && string(raw) != "null" {
+			return bad(name + " is not supported by this broker yet; dispatch without it, or through the Swift app")
+		}
+	}
+	model := strings.TrimSpace(d.Model)
+	if model != "" && !modelName(model) {
+		return bad("model must be a model name: lower-case letters, digits, . _ -, at most 64 characters")
+	}
 
 	kind := truncate(strings.TrimSpace(d.Kind), kindLimit)
 	if kind == "" {
@@ -162,8 +185,23 @@ func (b *Broker) admit(id string, d draft) (Record, error) {
 		Deliverables:   d.Deliverables,
 		TimeoutMinutes: timeout,
 		Root:           root,
+		Model:          model,
 		State:          StateQueued,
 	}, nil
+}
+
+// modelName is SessionLaunchPolicy.modelName: `[a-z0-9._-]`, 1…64, never
+// opening with `-`. No string it admits holds a character a shell reads.
+func modelName(v string) bool {
+	if v == "" || len(v) > 64 || strings.HasPrefix(v, "-") {
+		return false
+	}
+	for _, r := range v {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // claimsRequiredMessage is the Swift app's, verbatim: it is the one refusal

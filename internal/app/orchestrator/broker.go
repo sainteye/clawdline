@@ -80,6 +80,8 @@ type Broker struct {
 	// the strongest evidence that the loop stopped.
 	mu         sync.Mutex
 	dispatches []time.Time
+	// writeMu serialises every change to a stored record. See mutate.
+	writeMu sync.Mutex
 	// spawning holds the plaintext secret between admitting a task and typing
 	// it into the child. It is in memory only and is dropped the moment the
 	// briefing is typed: the hash on disk is what authenticates the child
@@ -205,6 +207,46 @@ func (b *Broker) save(ctx context.Context, r Record, secretHash string, kind str
 		SecretHash: secretHash,
 		Record:     r.Encode(),
 	}, []store.Event{{Kind: kind, Subject: r.ID, Payload: payload}})
+}
+
+// errUnchanged tells mutate that the change it was asked for is already true,
+// or no longer applies, and nothing should be written.
+var errUnchanged = errors.New("unchanged")
+
+// mutate is the one way a stored record changes: read it, change it, write it,
+// with nothing else able to write in between.
+//
+// It exists because the first version of this broker did not have it, and had
+// four ways to lose an update. The beat read every record, then spent seconds
+// typing a notice into a terminal, then saved its copy — over an ACK that had
+// arrived in the meantime, putting an acknowledged notice back on the resend
+// ladder. A `/complete` and the beat's own collection of result.json could both
+// settle one task and mint two notice ids. A dispatch still typing its briefing
+// could save `spawning` over the `briefed` that a progress note had just
+// proved. Every one of those is a read of an earlier moment written back as
+// though it were now.
+//
+// So a change is a function of the record **as it is when the change is
+// made**, never of a copy taken before something slow. Anything slow — typing,
+// asking git — happens outside, and the function here decides whether what it
+// learned still applies to the record it finds.
+func (b *Broker) mutate(ctx context.Context, id, kind string, change func(r *Record) error) (Record, error) {
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+	r, hash, err := b.Record(ctx, id)
+	if err != nil {
+		return Record{}, err
+	}
+	if err := change(&r); err != nil {
+		if errors.Is(err, errUnchanged) {
+			return r, nil
+		}
+		return r, err
+	}
+	if err := b.save(ctx, r, hash, kind); err != nil {
+		return r, err
+	}
+	return r, nil
 }
 
 // Authenticate resolves a task and proves the presented secret is its own.
