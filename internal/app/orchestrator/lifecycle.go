@@ -33,7 +33,11 @@ func (b *Broker) Progress(ctx context.Context, id, secret, note string) (Record,
 		return Record{}, refuse(http.StatusBadRequest, "bad_request",
 			"note must be a non-empty sentence of at most "+strconv.Itoa(progressLimit)+" characters.")
 	}
-	return b.mutate(ctx, id, "task.briefed", func(r *Record) error {
+	var (
+		stored store.BrokerNote
+		added  bool
+	)
+	record, err := b.mutate(ctx, id, "task.briefed", func(r *Record) error {
 		if r.State.Terminal() {
 			return refuse(http.StatusConflict, "not_live",
 				"This task is over; what it did belongs in its summary.")
@@ -41,7 +45,8 @@ func (b *Broker) Progress(ctx context.Context, id, secret, note string) (Record,
 		// A repeated sentence is accepted and ignored rather than refused: a
 		// child retrying a note it is unsure landed has done nothing wrong, and
 		// the same sentence twice on a person's screen is noise.
-		if _, err := b.Store.AppendBrokerNote(ctx, id, trimmed); err != nil {
+		var err error
+		if stored, added, err = b.Store.AppendBrokerNote(ctx, id, trimmed); err != nil {
 			return err
 		}
 		// A note proves the child read its briefing, which is the one thing a
@@ -53,6 +58,12 @@ func (b *Broker) Progress(ctx context.Context, id, secret, note string) (Record,
 		r.State = StateBriefed
 		return nil
 	})
+	if err == nil && added {
+		// After the note is durable, never before: a stream that shows a note
+		// the store does not hold is a stream a reconnect contradicts.
+		b.progress.publish(stored)
+	}
+	return record, err
 }
 
 // Notes reads what a task has said.
@@ -87,40 +98,49 @@ func (b *Broker) Complete(ctx context.Context, id, secret, status, summary strin
 // proves the fourth at best, so this is the only thing that ends the resend.
 func (b *Broker) Acknowledge(ctx context.Context, id, noticeID string) (changed bool, err error) {
 	if _, _, err := b.Record(ctx, id); err != nil {
+		if ref, ok := err.(Refusal); ok && ref.Code == "orchestrator_store_unavailable" {
+			return false, err
+		}
 		// The one route whose 404 names the id, as the Swift app's does.
 		return false, refuse(http.StatusNotFound, "not_found", "No task named "+id+".")
 	}
-	now := b.now()
-	_, err = b.mutate(ctx, id, "task.completion.acknowledged", func(r *Record) error {
+	// A compare-and-set against the transition this read saw, retried a few
+	// times because the pump may move the notice between the read and the
+	// write — and an ACK must not be lost to a race it would win on the next
+	// read. Whatever the pump learned in the meantime, the ACK is what ends
+	// the sequence.
+	for tries := 0; tries < 4; tries++ {
+		r, _, err := b.Record(ctx, id)
+		if err != nil {
+			return false, err
+		}
 		if r.Notice == nil {
-			return refuse(http.StatusConflict, "completion_not_reconciled",
+			return false, refuse(http.StatusConflict, "completion_not_reconciled",
 				"This terminal task has no durable completion envelope; reconcile it or poll result.json.")
 		}
 		if !constantEqual(r.Notice.ID, strings.ToLower(noticeID)) {
-			return refuse(http.StatusConflict, "completion_notice_mismatch",
+			return false, refuse(http.StatusConflict, "completion_notice_mismatch",
 				"The notice id does not identify this task's completion envelope.")
 		}
 		if r.Notice.State == NoticeAcknowledged {
-			return errUnchanged
+			return false, nil
 		}
-		if r.Notice.ObservedAt.IsZero() {
-			r.Notice.ObservedAt = now
+		now := b.now()
+		if b.moveNotice(ctx, id, *r.Notice, "task.completion.acknowledged", func(n *Notice) {
+			if n.ObservedAt.IsZero() {
+				n.ObservedAt = now
+			}
+			n.AcknowledgedAt = now
+			n.State = NoticeAcknowledged
+			n.NextRetryAt = zeroTime
+			n.LastError = nil
+		}) {
+			b.observed.forgetNotice(r.Notice.ID)
+			return true, nil
 		}
-		r.Notice.AcknowledgedAt = now
-		r.Notice.State = NoticeAcknowledged
-		r.Notice.NextRetryAt = zeroTime
-		r.Notice.LastError = nil
-		changed = true
-		return nil
-	})
-	if err != nil {
-		if _, ok := err.(Refusal); ok {
-			return false, err
-		}
-		return false, refuse(http.StatusInternalServerError, "completion_store_failed",
-			"The acknowledgement could not be persisted; retry it.")
 	}
-	return changed, nil
+	return false, refuse(http.StatusInternalServerError, "completion_store_failed",
+		"The acknowledgement could not be persisted; retry it.")
 }
 
 // LandingRequest is the body of the landing route.

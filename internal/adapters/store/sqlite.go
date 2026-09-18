@@ -28,7 +28,11 @@ import (
 	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db *sql.DB
+	// stats is the account of this process's writes; see health.go.
+	stats *writeStats
+}
 
 // Event is one persisted fact. Events are never edited and never deleted: a
 // correction is another event, so that replay produces the same state a reader
@@ -207,7 +211,7 @@ func Open(dir string) (*Store, error) {
 	for _, suffix := range []string{"", "-wal", "-shm"} {
 		_ = os.Chmod(path+suffix, 0o600)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, stats: newWriteStats()}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -236,10 +240,15 @@ type Change struct {
 // terminal, a session taken away — and a fact has no retry semantics. Writing
 // it through Commit would offer an idempotency this side cannot honour.
 func (s *Store) Append(ctx context.Context, e Event) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO events (at, kind, subject, payload) VALUES (?, ?, ?, ?)`,
-		time.Now().Unix(), e.Kind, e.Subject, string(e.Payload))
-	return err
+	return s.timedWrite(func() (int64, error) {
+		_, err := s.db.ExecContext(ctx,
+			`INSERT INTO events (at, kind, subject, payload) VALUES (?, ?, ?, ?)`,
+			time.Now().Unix(), e.Kind, e.Subject, string(e.Payload))
+		if err != nil {
+			return 0, err
+		}
+		return 1, nil
+	})
 }
 
 func (s *Store) Commit(ctx context.Context, commandID string, events []Event, changes []Change) (Receipt, error) {

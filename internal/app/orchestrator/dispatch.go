@@ -28,6 +28,17 @@ type DispatchRequest struct {
 	// Offered is whether the caller sent `inventory_generation` at all. Absent
 	// and wrong are two different sentences in the refusal.
 	Offered bool
+	// Respawn is set only by Respawn: the spawn_failed task this dispatch
+	// retries. Such a dispatch carries no inventory receipt of its own — the
+	// caller asked to retry a task, not to start new work, and the task.json
+	// it runs is the one the original dispatch was already admitted with.
+	Respawn *RespawnOrigin
+}
+
+// RespawnOrigin is where a respawned task came from.
+type RespawnOrigin struct {
+	TaskID     string
+	Generation int
 }
 
 // Warning is a non-blocking thing the dispatcher should know. It is not a
@@ -85,8 +96,13 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// The inventory receipt is checked once the brief is readable, because the
 	// refusal has to carry the inventory for *this task's* repository and the
 	// brief is where that repository is named.
-	if err := b.checkGeneration(ctx, record.ProjectDir, req); err != nil {
-		return Dispatched{}, err
+	if req.Respawn == nil {
+		if err := b.checkGeneration(ctx, record.ProjectDir, req); err != nil {
+			return Dispatched{}, err
+		}
+	} else {
+		record.RespawnOf = req.Respawn.TaskID
+		record.RespawnGeneration = req.Respawn.Generation
 	}
 	if err := b.admitDispatch(); err != nil {
 		return Dispatched{}, err

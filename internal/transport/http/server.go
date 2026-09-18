@@ -286,11 +286,13 @@ func (s *Server) Handler() http.Handler {
 // port, nothing about the work. What a person diagnosing this machine wants is
 // at /v1/diagnostics, behind this machine's own token.
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, contract.Health{
+	h := contract.Health{
 		OK:       true,
 		ServedBy: servedBy,
 		At:       time.Now().Unix(),
-	})
+	}
+	s.brokerHealth(&h)
+	writeJSON(w, h)
 }
 
 // diagnostics is what health used to say about this process: where its state
@@ -304,8 +306,10 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 	if !requireLocal(w, r) {
 		return
 	}
+	broker := s.brokerDiagnostics(r.Context())
 	writeJSON(w, contract.Diagnostics{
-		OK:        true,
+		OK:        broker == nil || !broker.Beat.Stalled,
+		Broker:    broker,
 		Scheduler: s.schedulerPulse(),
 		ServedBy:  servedBy,
 		Port:      int64(s.cfg.Port),

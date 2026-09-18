@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 )
 
 // Telling the root its child finished, and keeping at it until somebody says
@@ -101,32 +103,124 @@ func (b *Broker) NoticeWire(r Record) (string, error) {
 	return "<clawdline-notice>" + string(encoded) + "</clawdline-notice>", nil
 }
 
+// noticeOf is a ledger row as the broker reads it.
+func noticeOf(n store.BrokerNotice) *Notice {
+	out := &Notice{
+		ID:             n.ID,
+		State:          NoticeState(n.State),
+		Attempts:       n.Attempts,
+		CreatedAt:      n.CreatedAt,
+		LastAttemptAt:  n.LastAttemptAt,
+		NextRetryAt:    n.NextRetryAt,
+		DeliveredAt:    n.DeliveredAt,
+		ObservedAt:     n.ObservedAt,
+		AcknowledgedAt: n.AcknowledgedAt,
+		DeadLetterAt:   n.DeadLetterAt,
+		Recipient:      n.Recipient,
+	}
+	if n.ErrorCode != "" {
+		out.LastError = &NoticeError{Code: n.ErrorCode, Message: n.ErrorMessage, At: n.ErrorAt}
+	}
+	return out
+}
+
+// noticeRow is a notice as the ledger stores it.
+func noticeRow(taskID string, n Notice) store.BrokerNotice {
+	row := store.BrokerNotice{
+		ID: n.ID, TaskID: taskID, State: string(n.State), Attempts: n.Attempts,
+		CreatedAt: n.CreatedAt, LastAttemptAt: n.LastAttemptAt, NextRetryAt: n.NextRetryAt,
+		DeliveredAt: n.DeliveredAt, ObservedAt: n.ObservedAt, AcknowledgedAt: n.AcknowledgedAt,
+		DeadLetterAt: n.DeadLetterAt, Recipient: n.Recipient,
+	}
+	if n.LastError != nil {
+		row.ErrorCode, row.ErrorMessage, row.ErrorAt = n.LastError.Code, n.LastError.Message, n.LastError.At
+	}
+	return row
+}
+
+// sameNotice compares two readings of one envelope as the ledger would store
+// them, which is to the second: a record read back from the ledger has lost
+// the nanoseconds the value it was made from had.
+func sameNotice(a, b Notice) bool {
+	return sameStored(noticeRow("", a), noticeRow("", b))
+}
+
+func sameStored(a, b store.BrokerNotice) bool {
+	sec := func(t time.Time) int64 {
+		if t.IsZero() {
+			return 0
+		}
+		return t.Unix()
+	}
+	return a.ID == b.ID && a.State == b.State && a.Attempts == b.Attempts &&
+		sec(a.CreatedAt) == sec(b.CreatedAt) && sec(a.LastAttemptAt) == sec(b.LastAttemptAt) &&
+		sec(a.NextRetryAt) == sec(b.NextRetryAt) && sec(a.DeliveredAt) == sec(b.DeliveredAt) &&
+		sec(a.ObservedAt) == sec(b.ObservedAt) && sec(a.AcknowledgedAt) == sec(b.AcknowledgedAt) &&
+		sec(a.DeadLetterAt) == sec(b.DeadLetterAt) && a.Recipient == b.Recipient &&
+		a.ErrorCode == b.ErrorCode && a.ErrorMessage == b.ErrorMessage && sec(a.ErrorAt) == sec(b.ErrorAt)
+}
+
+// moveNotice is the one way a notice changes after it is opened: a
+// compare-and-set against the state and attempt count its writer read, with
+// the event that explains it. It answers whether the move happened; false
+// means somebody moved the notice first and this decision no longer applies.
+func (b *Broker) moveNotice(ctx context.Context, taskID string, seen Notice, kind string, change func(n *Notice)) bool {
+	next := seen
+	if seen.LastError != nil {
+		e := *seen.LastError
+		next.LastError = &e
+	}
+	change(&next)
+	payload, _ := json.Marshal(map[string]any{
+		"task": taskID, "notice": seen.ID, "attempt": next.Attempts, "state": next.State,
+		"error": errorCode(next.LastError),
+	})
+	applied, err := b.Store.UpdateBrokerNotice(ctx,
+		store.NoticeExpect{State: string(seen.State), Attempts: seen.Attempts},
+		noticeRow(taskID, next),
+		[]store.Event{{Kind: kind, Subject: taskID, Payload: payload}})
+	if err != nil {
+		log.Printf("orchestrator: notice %s for task %s could not be recorded: %v", seen.ID, taskID, err)
+		return false
+	}
+	return applied
+}
+
+func errorCode(e *NoticeError) string {
+	if e == nil {
+		return "none"
+	}
+	return e.Code
+}
+
 // PumpNotices makes one pass over the notices that are due.
 //
 // At most eight per pass, oldest deadline first, so a machine that was asleep
 // for an hour does not type sixty lines into one composer the moment it wakes.
 func (b *Broker) PumpNotices(ctx context.Context) int {
-	records, err := b.records(ctx)
+	now := b.now()
+	due, err := b.Store.DueBrokerNotices(ctx, now, 32)
 	if err != nil {
 		return 0
 	}
-	now := b.now()
-	due := []Record{}
-	for _, r := range records {
-		n := r.Notice
-		if n == nil || n.State == NoticeAcknowledged || n.State == NoticeDeadLetter {
+	sent := 0
+	tried := 0
+	for _, n := range due {
+		if tried >= 8 {
+			break
+		}
+		// A root that was showing a menu is asked again after its deferral,
+		// which lives in memory: "it was still choosing ten seconds ago" is
+		// an observation, and writing it down every pass is the Swift app's
+		// six-megabyte clock over again.
+		if b.observed.deferredUntil(n.ID, now).After(now) {
 			continue
 		}
-		if n.NextRetryAt.IsZero() || !n.NextRetryAt.After(now) {
-			due = append(due, r)
+		r, _, err := b.Record(ctx, n.TaskID)
+		if err != nil || r.Notice == nil || r.Notice.ID != n.ID {
+			continue
 		}
-	}
-	sort.Slice(due, func(i, j int) bool { return due[i].Notice.NextRetryAt.Before(due[j].Notice.NextRetryAt) })
-	if len(due) > 8 {
-		due = due[:8]
-	}
-	sent := 0
-	for _, r := range due {
+		tried++
 		if b.attemptNotice(ctx, r) {
 			sent++
 		}
@@ -136,47 +230,37 @@ func (b *Broker) PumpNotices(ctx context.Context) int {
 
 // attemptNotice delivers one notice, or records why it did not.
 //
-// The typing happens outside mutate, because it takes seconds and holds a
-// terminal. What it learned is then applied only if the notice is still the one
-// that was attempted and nobody has acknowledged it meanwhile: an ACK that
-// lands while this is typing wins, and the attempt is discarded rather than
-// written back over it.
+// The typing happens outside any lock, because it takes seconds and holds a
+// terminal. What it learned is then recorded only if the notice is still in
+// the state and at the attempt count it was read at: an ACK that lands while
+// this is typing wins, and the attempt is discarded rather than written back
+// over it — by the ledger's compare-and-set, not by anybody remembering to
+// re-read.
 func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
-	noticeID := r.Notice.ID
-	stillOpen := func(now *Record) bool {
-		return now.Notice != nil && now.Notice.ID == noticeID &&
-			now.Notice.State != NoticeAcknowledged && now.Notice.State != NoticeDeadLetter
-	}
-	record := func(kind string, change func(n *Notice)) {
-		_, _ = b.mutate(ctx, r.ID, kind, func(now *Record) error {
-			if !stillOpen(now) {
-				return errUnchanged
-			}
-			change(now.Notice)
-			return nil
-		})
-	}
+	seen := *r.Notice
 	at := b.now()
 
-	if r.Notice.Attempts >= AttemptLimit {
-		record("task.completion.dead_letter", func(n *Notice) {
-			n.State = NoticeDeadLetter
-			n.DeadLetterAt = at
-			n.NextRetryAt = zeroTime
-			n.LastError = &NoticeError{
-				Code:    "acknowledgement_timeout",
-				Message: "No root acknowledgement arrived within the bounded retry budget.",
-				At:      at,
-			}
+	if seen.Attempts >= AttemptLimit {
+		b.moveNotice(ctx, r.ID, seen, "task.completion.dead_letter", func(n *Notice) {
+			deadLetter(n, at)
 		})
 		return false
 	}
 
 	fail := func(code, message string) bool {
-		record("task.completion.attempt", func(n *Notice) {
+		b.moveNotice(ctx, r.ID, seen, "task.completion.attempt", func(n *Notice) {
 			n.Attempts++
 			n.LastAttemptAt = at
 			n.LastError = &NoticeError{Code: code, Message: message, At: at}
+			// The Swift app's rule: the attempt that uses the last of the
+			// budget ends the sequence then, rather than one ladder rung
+			// later.
+			if n.Attempts >= AttemptLimit {
+				n.State = NoticeDeadLetter
+				n.DeadLetterAt = at
+				n.NextRetryAt = zeroTime
+				return
+			}
 			n.NextRetryAt = at.Add(RetryDelay(n.Attempts))
 		})
 		return false
@@ -194,11 +278,9 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 	}
 	// Backpressure, not an attempt: a root showing a chooser would have the
 	// notice typed into its menu. Waiting costs a pass; typing costs an answer
-	// nobody gave.
+	// nobody gave. The wait is remembered in memory only.
 	if b.Choosing != nil && b.Choosing(ctx, target.ID) {
-		record("task.completion.deferred", func(n *Notice) {
-			n.NextRetryAt = at.Add(10 * time.Second)
-		})
+		b.observed.deferNotice(seen.ID, at.Add(10*time.Second))
 		return false
 	}
 	wire, err := b.NoticeWire(r)
@@ -212,7 +294,7 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		return fail("transport_failed", err.Error())
 	}
 
-	record("task.completion.delivered", func(n *Notice) {
+	b.moveNotice(ctx, r.ID, seen, "task.completion.delivered", func(n *Notice) {
 		n.Attempts++
 		n.LastAttemptAt = at
 		n.State = NoticeDelivered
@@ -225,4 +307,15 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		n.NextRetryAt = at.Add(RetryDelay(n.Attempts))
 	})
 	return true
+}
+
+func deadLetter(n *Notice, at time.Time) {
+	n.State = NoticeDeadLetter
+	n.DeadLetterAt = at
+	n.NextRetryAt = zeroTime
+	n.LastError = &NoticeError{
+		Code:    "acknowledgement_timeout",
+		Message: "No root acknowledgement arrived within the bounded retry budget.",
+		At:      at,
+	}
 }

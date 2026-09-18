@@ -594,9 +594,55 @@ type BrokerAckResult struct {
 	OK           bool   `json:"ok"`
 }
 
+// The loop reporting itself. `stalled` is decided from outside the loop —
+// more than three ticks since the last finished pass — because a loop that
+// has stopped cannot say so.
+type BrokerBeat struct {
+	// When the last pass finished. Absent before the first.
+	At             int64             `json:"at,omitempty"`
+	BackoffUntil   int64             `json:"backoff_until,omitempty"`
+	InPass         bool              `json:"in_pass"`
+	LastDurationMs int64             `json:"last_duration_ms,omitempty"`
+	Overlaps       int64             `json:"overlaps"`
+	P99DurationMs  int64             `json:"p99_duration_ms,omitempty"`
+	Panics         []BrokerBeatPanic `json:"panics,omitempty"`
+	PassBeganAt    int64             `json:"pass_began_at,omitempty"`
+	Passes         int64             `json:"passes"`
+
+	// Seconds since the last finished pass, or since the start before the first.
+	QuietSeconds int64 `json:"quiet_seconds,omitempty"`
+
+	// How many times the supervisor recovered the loop after a panic or an unasked
+	// exit.
+	Restarts int64 `json:"restarts"`
+
+	// Whether the daemon started the beat at all.
+	Running     bool  `json:"running"`
+	Stalled     bool  `json:"stalled"`
+	StartedAt   int64 `json:"started_at,omitempty"`
+	TickSeconds int64 `json:"tick_seconds"`
+}
+
+type BrokerBeatPanic struct {
+	At    int64  `json:"at"`
+	Pass  int64  `json:"pass"`
+	Stack string `json:"stack,omitempty"`
+	Value string `json:"value"`
+}
+
 type BrokerChild struct {
 	Backend    Backend `json:"backend,omitempty"`
 	TerminalID string  `json:"terminalId"`
+}
+
+// The broker block of /v1/diagnostics: the beat, what its last pass did, the
+// notice ledger, the store, and what the beat has only observed.
+type BrokerDiagnostics struct {
+	Beat         BrokerBeat         `json:"beat"`
+	Notices      BrokerNoticeCounts `json:"notices"`
+	Observations BrokerObservations `json:"observations"`
+	Pass         BrokerPass         `json:"pass"`
+	Store        BrokerStoreHealth  `json:"store"`
 }
 
 // The whole body of POST /v1/orchestrator/tasks. The brief is not in it: a
@@ -631,6 +677,38 @@ type BrokerDisposition struct {
 	Scope     string `json:"scope"`
 	Title     string `json:"title"`
 }
+
+type BrokerExecutor struct {
+	FirstUnseenAt int64 `json:"first_unseen_at,omitempty"`
+
+	// The beat's reading number when it was last seen. It moves on every pass while
+	// nothing is written, which is the point.
+	Generation int64 `json:"generation"`
+
+	// The last reading that showed it; absent when none has.
+	ObservedAt   int64                `json:"observed_at,omitempty"`
+	SessionState string               `json:"session_state,omitempty"`
+	Status       BrokerExecutorStatus `json:"status"`
+	TaskID       string               `json:"task_id,omitempty"`
+	TerminalID   string               `json:"terminal_id"`
+}
+
+// What the beat last saw of the session running a task. `not_seen` is one
+// complete reading without it; `executor_missing` is two complete readings at
+// least a minute apart in one process epoch, the Swift app's rule; `unknown` is
+// no complete reading yet. An observation, held in memory and never written:
+// only a crossing into or out of `executor_missing` is recorded, as an event.
+type BrokerExecutorStatus string
+
+const (
+	BrokerExecutorStatusObserved        BrokerExecutorStatus = "observed"
+	BrokerExecutorStatusNotSeen         BrokerExecutorStatus = "not_seen"
+	BrokerExecutorStatusExecutorMissing BrokerExecutorStatus = "executor_missing"
+	BrokerExecutorStatusUnknown         BrokerExecutorStatus = "unknown"
+)
+
+// BrokerExecutorStatusValues is every value the contract allows, in contract order.
+var BrokerExecutorStatusValues = []BrokerExecutorStatus{BrokerExecutorStatusObserved, BrokerExecutorStatusNotSeen, BrokerExecutorStatusExecutorMissing, BrokerExecutorStatusUnknown}
 
 type BrokerInflight struct {
 	At         int64               `json:"at"`
@@ -720,6 +798,14 @@ type BrokerNotice struct {
 	TransportDeliveredAt int64              `json:"transport_delivered_at,omitempty"`
 }
 
+type BrokerNoticeCounts struct {
+	Acknowledged      int64 `json:"acknowledged"`
+	DeadLetter        int64 `json:"dead_letter"`
+	Delivered         int64 `json:"delivered"`
+	OldestOpenSeconds int64 `json:"oldest_open_seconds,omitempty"`
+	Pending           int64 `json:"pending"`
+}
+
 type BrokerNoticeError struct {
 	At      int64  `json:"at"`
 	Code    string `json:"code"`
@@ -746,6 +832,19 @@ type BrokerNotifyResult struct {
 	Sent   int64 `json:"sent"`
 }
 
+// The beat's in-memory reading of the machine: what it observed rather than
+// what it decided.
+type BrokerObservations struct {
+	At       int64 `json:"at,omitempty"`
+	Complete bool  `json:"complete"`
+
+	// Notices waiting, in memory, for a root that was showing a menu.
+	DeferredNotices int64            `json:"deferred_notices"`
+	Executors       []BrokerExecutor `json:"executors"`
+	Generation      int64            `json:"generation"`
+	Sessions        int64            `json:"sessions"`
+}
+
 type BrokerPage struct {
 	Cursor     int64  `json:"cursor"`
 	Finished   int64  `json:"finished"`
@@ -755,6 +854,38 @@ type BrokerPage struct {
 	// Unfinished work is never paged: it rides on every page, because a caller reading
 	// page two is still answerable for what is running.
 	Unfinished int64 `json:"unfinished"`
+}
+
+// What the last finished pass did.
+type BrokerPass struct {
+	At          int64 `json:"at,omitempty"`
+	Notes       int64 `json:"notes"`
+	Notices     int64 `json:"notices"`
+	Settled     int64 `json:"settled"`
+	SpawnFailed int64 `json:"spawn_failed"`
+
+	// Why the pass could not read the store. A pass that could not read is not a pass
+	// that found nothing.
+	StoreError string `json:"store_error,omitempty"`
+	TimedOut   int64  `json:"timed_out"`
+	Watched    int64  `json:"watched"`
+}
+
+// One accepted progress note. `seq` is its row in the store: increasing and
+// never reused, so it is the note's identity on the stream.
+type BrokerProgressEvent struct {
+	At     int64  `json:"at"`
+	Note   string `json:"note"`
+	Seq    int64  `json:"seq"`
+	TaskID string `json:"task_id"`
+}
+
+// The `orchestrator-progress` event on /v1/events. The first one on a
+// connection carries the newest notes of every live task, so a page that
+// reconnects is level without asking; after that, one per accepted note. A note
+// is never sent twice on one connection.
+type BrokerProgressFrame struct {
+	Notes []BrokerProgressEvent `json:"notes"`
 }
 
 type BrokerProgressNote struct {
@@ -772,6 +903,20 @@ type BrokerProvenance struct {
 	RegistryComplete   bool   `json:"registry_complete"`
 	RegistryObservedAt int64  `json:"registry_observed_at,omitempty"`
 	Source             string `json:"source"`
+}
+
+// POST /v1/orchestrator/tasks/:id/respawn: a spawn_failed task's task.json
+// copied under a fresh id and dispatched. `secret` is the new task's, returned
+// because the caller may not have chosen it; `original_task` is the first task
+// of the respawn family the limit of two is counted over.
+type BrokerRespawnResult struct {
+	OK           bool            `json:"ok"`
+	OriginalTask string          `json:"original_task"`
+	Replayed     bool            `json:"replayed,omitempty"`
+	RespawnOf    string          `json:"respawn_of"`
+	Secret       string          `json:"secret"`
+	Task         BrokerTask      `json:"task"`
+	Warnings     []BrokerWarning `json:"warnings,omitempty"`
 }
 
 // What a child wrote about itself. The secret it authenticated with is never
@@ -805,6 +950,35 @@ type BrokerSessionDelivery struct {
 	OK          bool              `json:"ok"`
 }
 
+// The store's own account. `writes` counts write transactions that committed
+// something since this process opened the store, and `changes` is SQLite's
+// count of rows this process changed in any table: both stand still while the
+// beat only observes.
+type BrokerStoreHealth struct {
+	Busy        int64             `json:"busy"`
+	Changes     int64             `json:"changes"`
+	Error       string            `json:"error,omitempty"`
+	Failures    int64             `json:"failures"`
+	LastError   string            `json:"last_error,omitempty"`
+	LastErrorAt int64             `json:"last_error_at,omitempty"`
+	LastWriteAt int64             `json:"last_write_at,omitempty"`
+	Rows        int64             `json:"rows"`
+	Status      BrokerStoreStatus `json:"status"`
+	Tasks       int64             `json:"tasks"`
+	WriteP99Ms  int64             `json:"write_p99_ms,omitempty"`
+	Writes      int64             `json:"writes"`
+}
+
+type BrokerStoreStatus string
+
+const (
+	BrokerStoreStatusReady       BrokerStoreStatus = "ready"
+	BrokerStoreStatusUnavailable BrokerStoreStatus = "unavailable"
+)
+
+// BrokerStoreStatusValues is every value the contract allows, in contract order.
+var BrokerStoreStatusValues = []BrokerStoreStatus{BrokerStoreStatusReady, BrokerStoreStatusUnavailable}
+
 // One dispatched piece of work, as the console and a dispatching root read it.
 type BrokerTask struct {
 	Assistant Assistant    `json:"assistant"`
@@ -813,33 +987,38 @@ type BrokerTask struct {
 
 	// Whether the dispatch said anything about claims at all. `I declared none` and `I
 	// did not say` are different requests, and only one of them can be arbitrated.
-	ClaimsDeclared     bool           `json:"claims_declared"`
-	CompletionDelivery *BrokerNotice  `json:"completion_delivery,omitempty"`
-	Created            int64          `json:"created"`
-	Deliverables       []string       `json:"deliverables,omitempty"`
-	Dir                string         `json:"dir"`
-	FinishedAt         int64          `json:"finishedAt,omitempty"`
-	ID                 string         `json:"id"`
-	Isolation          string         `json:"isolation"`
-	Kind               string         `json:"kind"`
-	Landing            *BrokerLanding `json:"landing,omitempty"`
+	ClaimsDeclared     bool            `json:"claims_declared"`
+	CompletionDelivery *BrokerNotice   `json:"completion_delivery,omitempty"`
+	Created            int64           `json:"created"`
+	Deliverables       []string        `json:"deliverables,omitempty"`
+	Dir                string          `json:"dir"`
+	Executor           *BrokerExecutor `json:"executor,omitempty"`
+	FinishedAt         int64           `json:"finishedAt,omitempty"`
+	ID                 string          `json:"id"`
+	Isolation          string          `json:"isolation"`
+	Kind               string          `json:"kind"`
+	Landing            *BrokerLanding  `json:"landing,omitempty"`
 
 	// What an isolated task's claims became: not a lease on the shared tree, but the
 	// write set whoever lands this branch is answering for.
-	LandingPaths   []string             `json:"landing_paths,omitempty"`
-	Permission     string               `json:"permission"`
-	Progress       []BrokerProgressNote `json:"progress,omitempty"`
-	ProjectDir     string               `json:"projectDir"`
-	Repository     string               `json:"repository,omitempty"`
-	Result         *BrokerResult        `json:"result,omitempty"`
-	Root           *BrokerRoot          `json:"root,omitempty"`
-	SpawnError     string               `json:"spawn_error,omitempty"`
-	SpawnedAt      int64                `json:"spawnedAt,omitempty"`
-	State          TaskState            `json:"state"`
-	Summary        string               `json:"summary,omitempty"`
-	TimeoutMinutes int64                `json:"timeout_minutes,omitempty"`
-	Title          string               `json:"title"`
-	Worktree       *BrokerWorktree      `json:"worktree,omitempty"`
+	LandingPaths      []string             `json:"landing_paths,omitempty"`
+	Permission        string               `json:"permission"`
+	Progress          []BrokerProgressNote `json:"progress,omitempty"`
+	ProjectDir        string               `json:"projectDir"`
+	Repository        string               `json:"repository,omitempty"`
+	RespawnGeneration int64                `json:"respawn_generation,omitempty"`
+
+	// The spawn_failed task this one retried.
+	RespawnOf      string          `json:"respawn_of,omitempty"`
+	Result         *BrokerResult   `json:"result,omitempty"`
+	Root           *BrokerRoot     `json:"root,omitempty"`
+	SpawnError     string          `json:"spawn_error,omitempty"`
+	SpawnedAt      int64           `json:"spawnedAt,omitempty"`
+	State          TaskState       `json:"state"`
+	Summary        string          `json:"summary,omitempty"`
+	TimeoutMinutes int64           `json:"timeout_minutes,omitempty"`
+	Title          string          `json:"title"`
+	Worktree       *BrokerWorktree `json:"worktree,omitempty"`
 }
 
 type BrokerTaskEnvelope struct {
@@ -1165,15 +1344,16 @@ type DeviceList struct {
 
 // GET /v1/diagnostics, this machine's own token only (a paired device is 403):
 // what health used to carry about the process — its state directory, its
-// ports and the clock's last pass.
+// ports, the clock's last pass and the broker's own account of itself.
 type Diagnostics struct {
-	At        int64          `json:"at"`
-	Dir       string         `json:"dir"`
-	OK        bool           `json:"ok"`
-	Port      int64          `json:"port"`
-	Scheduler SchedulerPulse `json:"scheduler"`
-	ServedBy  string         `json:"served_by"`
-	Upstream  int64          `json:"upstream"`
+	At        int64              `json:"at"`
+	Broker    *BrokerDiagnostics `json:"broker,omitempty"`
+	Dir       string             `json:"dir"`
+	OK        bool               `json:"ok"`
+	Port      int64              `json:"port"`
+	Scheduler SchedulerPulse     `json:"scheduler"`
+	ServedBy  string             `json:"served_by"`
+	Upstream  int64              `json:"upstream"`
 }
 
 type DispatchRequest struct {
@@ -1359,6 +1539,10 @@ type GitSnapshot struct {
 type Health struct {
 	At int64 `json:"at"`
 	OK bool  `json:"ok"`
+
+	// Why `ok` is false, when it is. `broker_beat_stalled`: the broker's loop has not
+	// finished a pass in more than three ticks. Absent when ok.
+	Reason string `json:"reason,omitempty"`
 
 	// Which implementation answered. This is how a reader tells the Go daemon from the
 	// Swift app on the same port.

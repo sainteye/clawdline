@@ -758,9 +758,67 @@ export interface BrokerAckResult {
   ok: boolean
 }
 
+/**
+ * The loop reporting itself. `stalled` is decided from outside the loop — more
+ * than three ticks since the last finished pass — because a loop that has stopped
+ * cannot say so.
+ */
+export interface BrokerBeat {
+  /**
+   * When the last pass finished. Absent before the first.
+   */
+  at?: number
+  backoff_until?: number
+  in_pass: boolean
+  last_duration_ms?: number
+  overlaps: number
+  p99_duration_ms?: number
+  panics?: BrokerBeatPanic[]
+  pass_began_at?: number
+  passes: number
+
+  /**
+   * Seconds since the last finished pass, or since the start before the first.
+   */
+  quiet_seconds?: number
+
+  /**
+   * How many times the supervisor recovered the loop after a panic or an unasked
+   * exit.
+   */
+  restarts: number
+
+  /**
+   * Whether the daemon started the beat at all.
+   */
+  running: boolean
+  stalled: boolean
+  started_at?: number
+  tick_seconds: number
+}
+
+export interface BrokerBeatPanic {
+  at: number
+  pass: number
+  stack?: string
+  value: string
+}
+
 export interface BrokerChild {
   backend?: Backend
   terminalId: string
+}
+
+/**
+ * The broker block of /v1/diagnostics: the beat, what its last pass did, the notice
+ * ledger, the store, and what the beat has only observed.
+ */
+export interface BrokerDiagnostics {
+  beat: BrokerBeat
+  notices: BrokerNoticeCounts
+  observations: BrokerObservations
+  pass: BrokerPass
+  store: BrokerStoreHealth
 }
 
 /**
@@ -803,6 +861,40 @@ export interface BrokerDisposition {
   scope: string
   title: string
 }
+
+export interface BrokerExecutor {
+  first_unseen_at?: number
+
+  /**
+   * The beat's reading number when it was last seen. It moves on every pass while
+   * nothing is written, which is the point.
+   */
+  generation: number
+
+  /**
+   * The last reading that showed it; absent when none has.
+   */
+  observed_at?: number
+  session_state?: string
+  status: BrokerExecutorStatus
+  task_id?: string
+  terminal_id: string
+}
+
+/**
+ * What the beat last saw of the session running a task. `not_seen` is one complete
+ * reading without it; `executor_missing` is two complete readings at least a minute
+ * apart in one process epoch, the Swift app's rule; `unknown` is no complete
+ * reading yet. An observation, held in memory and never written: only a crossing
+ * into or out of `executor_missing` is recorded, as an event.
+ */
+export type BrokerExecutorStatus =
+    "observed"
+  | "not_seen"
+  | "executor_missing"
+  | "unknown"
+
+export const BrokerExecutorStatusValues: readonly BrokerExecutorStatus[] = ["observed", "not_seen", "executor_missing", "unknown"] as const
 
 export interface BrokerInflight {
   at: number
@@ -899,6 +991,14 @@ export interface BrokerNotice {
   transport_delivered_at?: number
 }
 
+export interface BrokerNoticeCounts {
+  acknowledged: number
+  dead_letter: number
+  delivered: number
+  oldest_open_seconds?: number
+  pending: number
+}
+
 export interface BrokerNoticeError {
   at: number
   code: string
@@ -923,6 +1023,23 @@ export interface BrokerNotifyResult {
   sent: number
 }
 
+/**
+ * The beat's in-memory reading of the machine: what it observed rather than what it
+ * decided.
+ */
+export interface BrokerObservations {
+  at?: number
+  complete: boolean
+
+  /**
+   * Notices waiting, in memory, for a root that was showing a menu.
+   */
+  deferred_notices: number
+  executors: BrokerExecutor[]
+  generation: number
+  sessions: number
+}
+
 export interface BrokerPage {
   cursor: number
   finished: number
@@ -934,6 +1051,46 @@ export interface BrokerPage {
    * reading page two is still answerable for what is running.
    */
   unfinished: number
+}
+
+/**
+ * What the last finished pass did.
+ */
+export interface BrokerPass {
+  at?: number
+  notes: number
+  notices: number
+  settled: number
+  spawn_failed: number
+
+  /**
+   * Why the pass could not read the store. A pass that could not read is not a pass
+   * that found nothing.
+   */
+  store_error?: string
+  timed_out: number
+  watched: number
+}
+
+/**
+ * One accepted progress note. `seq` is its row in the store: increasing and never
+ * reused, so it is the note's identity on the stream.
+ */
+export interface BrokerProgressEvent {
+  at: number
+  note: string
+  seq: number
+  task_id: string
+}
+
+/**
+ * The `orchestrator-progress` event on /v1/events. The first one on a connection
+ * carries the newest notes of every live task, so a page that reconnects is level
+ * without asking; after that, one per accepted note. A note is never sent twice on
+ * one connection.
+ */
+export interface BrokerProgressFrame {
+  notes: BrokerProgressEvent[]
 }
 
 export interface BrokerProgressNote {
@@ -951,6 +1108,22 @@ export interface BrokerProvenance {
   registry_complete: boolean
   registry_observed_at?: number
   source: string
+}
+
+/**
+ * POST /v1/orchestrator/tasks/:id/respawn: a spawn_failed task's task.json copied
+ * under a fresh id and dispatched. `secret` is the new task's, returned because the
+ * caller may not have chosen it; `original_task` is the first task of the respawn
+ * family the limit of two is counted over.
+ */
+export interface BrokerRespawnResult {
+  ok: boolean
+  original_task: string
+  replayed?: boolean
+  respawn_of: string
+  secret: string
+  task: BrokerTask
+  warnings?: BrokerWarning[]
 }
 
 /**
@@ -991,6 +1164,33 @@ export interface BrokerSessionDelivery {
 }
 
 /**
+ * The store's own account. `writes` counts write transactions that committed
+ * something since this process opened the store, and `changes` is SQLite's count of
+ * rows this process changed in any table: both stand still while the beat only
+ * observes.
+ */
+export interface BrokerStoreHealth {
+  busy: number
+  changes: number
+  error?: string
+  failures: number
+  last_error?: string
+  last_error_at?: number
+  last_write_at?: number
+  rows: number
+  status: BrokerStoreStatus
+  tasks: number
+  write_p99_ms?: number
+  writes: number
+}
+
+export type BrokerStoreStatus =
+    "ready"
+  | "unavailable"
+
+export const BrokerStoreStatusValues: readonly BrokerStoreStatus[] = ["ready", "unavailable"] as const
+
+/**
  * One dispatched piece of work, as the console and a dispatching root read it.
  */
 export interface BrokerTask {
@@ -1007,6 +1207,7 @@ export interface BrokerTask {
   created: number
   deliverables?: string[]
   dir: string
+  executor?: BrokerExecutor
   finishedAt?: number
   id: string
   isolation: string
@@ -1022,6 +1223,12 @@ export interface BrokerTask {
   progress?: BrokerProgressNote[]
   projectDir: string
   repository?: string
+  respawn_generation?: number
+
+  /**
+   * The spawn_failed task this one retried.
+   */
+  respawn_of?: string
   result?: BrokerResult
   root?: BrokerRoot
   spawn_error?: string
@@ -1413,11 +1620,12 @@ export interface DeviceList {
 
 /**
  * GET /v1/diagnostics, this machine's own token only (a paired device is 403): what
- * health used to carry about the process — its state directory, its ports and the
- * clock's last pass.
+ * health used to carry about the process — its state directory, its ports, the
+ * clock's last pass and the broker's own account of itself.
  */
 export interface Diagnostics {
   at: number
+  broker?: BrokerDiagnostics
   dir: string
   ok: boolean
   port: number
@@ -1642,6 +1850,12 @@ export interface GitSnapshot {
 export interface Health {
   at: number
   ok: boolean
+
+  /**
+   * Why `ok` is false, when it is. `broker_beat_stalled`: the broker's loop has not
+   * finished a pass in more than three ticks. Absent when ok.
+   */
+  reason?: string
 
   /**
    * Which implementation answered. This is how a reader tells the Go daemon from

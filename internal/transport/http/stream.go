@@ -126,12 +126,16 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 	// authenticated GET, exactly as a transcript append is.
 	token, screens := s.screenBus.subscribe()
 	defer s.screenBus.unsubscribe(token)
+	// The broker's progress notes ride here too (events.go, progressFeed).
+	feed := s.openProgress()
+	defer feed.close()
 
 	// The first frame goes out at once. A client that had to wait one tick to
 	// see anything would show an empty fleet for two seconds, and an empty
 	// fleet is a statement.
 	send()
 	sendTasks()
+	feed.snapshot(r.Context(), s, w, flusher)
 
 	for {
 		select {
@@ -144,6 +148,8 @@ func (s *Server) ownEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			fmt.Fprintf(w, "event: screen\ndata: %s\n\n", payload)
 			flusher.Flush()
+		case note := <-feed.notes:
+			feed.write(w, flusher, note)
 		case <-ticker.C:
 			send()
 			sendTasks()

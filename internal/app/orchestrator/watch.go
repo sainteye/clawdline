@@ -33,9 +33,14 @@ type Pulse struct {
 	Notices   int
 	TimedOut  int
 	SpawnFail int
+	// StoreErr is why the pass could not read the store, when it could not.
+	// A pass that read nothing because it could not read is not a pass that
+	// found nothing, and the two must not look alike from outside.
+	StoreErr string
 }
 
-// Watch runs the beat until the context is cancelled.
+// Watch runs the beat until the context is cancelled. Run is the same loop
+// under a supervisor, which is how the daemon starts it.
 func (b *Broker) Watch(ctx context.Context, tick time.Duration, report func(Pulse)) {
 	if tick <= 0 {
 		tick = 5 * time.Second
@@ -57,28 +62,64 @@ func (b *Broker) Watch(ctx context.Context, tick time.Duration, report func(Puls
 
 // Pass is one beat, exposed so a test — and a person with a debugger — can run
 // exactly one.
+//
+// Every task in the pass is decided against **one** reading of the machine,
+// taken once at the top. Asking the machine again per task was both slower —
+// each reading is a process-table and terminal scan — and less honest: a
+// terminal that appeared mid-pass made two tasks in one pass disagree about
+// the same moment.
 func (b *Broker) Pass(ctx context.Context) Pulse {
+	number := b.beat.begin(b.now())
+	// Recorded as finished only when it finished. A pass that panicked or
+	// exited is not a pass that ended; the supervisor closes it instead
+	// (observe.go), and until then it is the pass in progress.
+	finished := false
+	var p Pulse
+	defer func() {
+		if finished {
+			b.beat.end(b.now(), p)
+		}
+	}()
+	p = b.pass(ctx, number)
+	finished = true
+	return p
+}
+
+func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	p := Pulse{At: b.now()}
+	if b.Fault != nil {
+		b.Fault(number)
+	}
 	records, err := b.records(ctx)
 	if err != nil {
+		p.StoreErr = err.Error()
 		return p
 	}
+	live := []Record{}
 	for _, r := range records {
-		if r.State.Terminal() {
-			continue
+		if !r.State.Terminal() {
+			live = append(live, r)
 		}
+	}
+	rd := b.read(ctx)
+	for _, r := range live {
 		p.Watched++
 		if b.collectNote(ctx, &r) {
 			p.Notes++
 		}
-		b.proveBriefing(ctx, &r)
+		b.proveBriefing(ctx, rd, &r)
 		if settled := b.collectResult(ctx, r); settled {
 			p.Settled++
 			continue
 		}
-		if b.runClocks(ctx, r, &p) {
+		if b.runClocks(ctx, rd, r, &p) {
 			continue
 		}
+	}
+	// Observed after the pass has changed what it was going to change, so a
+	// task settled above is not observed as though it were still running.
+	if still, err := b.liveTasks(ctx); err == nil {
+		b.observe(ctx, rd, still)
 	}
 	p.Notices = b.PumpNotices(ctx)
 	return p
@@ -94,19 +135,41 @@ func (b *Broker) collectNote(ctx context.Context, r *Record) bool {
 	if !ok {
 		return false
 	}
-	_, hash, err := b.Record(ctx, r.ID)
-	if err != nil || !SecretMatches(hash, note.Secret) {
-		return false
-	}
-	_ = hash
 	trimmed := strings.TrimSpace(note.Note)
-	if trimmed == "" || utf8.RuneCountInString(trimmed) > progressLimit {
+	// The same file read again is an observation, not a note: it was offered
+	// to the store the first time it was seen, and offering it every five
+	// seconds after that would open a write transaction per child per pass
+	// to be told "already have it". The key includes the secret, so a file
+	// rewritten with the right secret after a wrong one is looked at afresh.
+	key := note.Secret + "\x00" + trimmed
+	if b.observed.progressKnown(r.ID, key) {
 		return false
 	}
-	added, err := b.Store.AppendBrokerNote(ctx, r.ID, trimmed)
-	if err != nil || !added {
+	_, hash, err := b.Record(ctx, r.ID)
+	if err != nil {
 		return false
 	}
+	if !SecretMatches(hash, note.Secret) || trimmed == "" || utf8.RuneCountInString(trimmed) > progressLimit {
+		b.observed.settleProgress(r.ID, key)
+		return false
+	}
+	had, err := b.Store.HasBrokerNote(ctx, r.ID, trimmed)
+	if err != nil {
+		return false
+	}
+	if had {
+		b.observed.settleProgress(r.ID, key)
+		return false
+	}
+	stored, added, err := b.Store.AppendBrokerNote(ctx, r.ID, trimmed)
+	if err != nil {
+		return false
+	}
+	b.observed.settleProgress(r.ID, key)
+	if !added {
+		return false
+	}
+	b.progress.publish(stored)
 	if now, err := b.promote(ctx, r.ID); err == nil {
 		*r = now
 	}
@@ -213,11 +276,11 @@ func spawnVerdict(alive, choosing bool) (State, string, bool) {
 
 // runClocks is the two deadlines. It answers true when the task became
 // terminal.
-func (b *Broker) runClocks(ctx context.Context, r Record, p *Pulse) bool {
+func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) bool {
 	now := b.now()
 	if r.State == StateSpawning && !r.SpawnedAt.IsZero() && now.Sub(r.SpawnedAt) > readyLimit {
 		alive := false
-		if s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID); ok && s.IsAssistant() {
+		if s, ok := rd.session(r.ChildTerminalID); ok && s.IsAssistant() {
 			alive = true
 		}
 		choosing := false
@@ -226,10 +289,19 @@ func (b *Broker) runClocks(ctx context.Context, r Record, p *Pulse) bool {
 				choosing = Choosing(screen)
 			}
 		}
-		if state, why, decided := spawnVerdict(alive, choosing); decided {
-			if _, err := b.Settle(ctx, r.ID, state, why, nil); err == nil {
-				p.SpawnFail++
-				return true
+		// A reading with no terminals in it at all cannot say the tab is
+		// gone (the Swift app's `3a7adb8e`): that verdict waits for one that
+		// sees something. Completeness is deliberately not required here —
+		// on a Mac whose iTerm2 cannot be asked, no reading is ever
+		// complete, and requiring it would turn a four-minute verdict into a
+		// wait for the task's own timeout. The timeout below still runs,
+		// because it is a clock on the record, not a reading of the machine.
+		if alive || rd.seen() {
+			if state, why, decided := spawnVerdict(alive, choosing); decided {
+				if _, err := b.Settle(ctx, r.ID, state, why, nil); err == nil {
+					p.SpawnFail++
+					return true
+				}
 			}
 		}
 	}
@@ -250,11 +322,11 @@ func (b *Broker) runClocks(ctx context.Context, r Record, p *Pulse) bool {
 // Swift app's — which reads the child's own transcript for the task marker. It
 // can be fooled by a child that was already working on something else, which is
 // why it only ever moves `spawning` to `briefed` and never settles anything.
-func (b *Broker) proveBriefing(ctx context.Context, r *Record) bool {
+func (b *Broker) proveBriefing(ctx context.Context, rd reading, r *Record) bool {
 	if r.State != StateSpawning || r.ChildTerminalID == "" {
 		return false
 	}
-	s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID)
+	s, ok := rd.session(r.ChildTerminalID)
 	if !ok || !s.IsAssistant() || s.State != session.StateWorking {
 		return false
 	}

@@ -179,7 +179,10 @@
         "progress": { "type": "array", "items": { "$ref": "#/$defs/BrokerProgressNote" } },
         "result": { "$ref": "#/$defs/BrokerResult" },
         "summary": { "type": "string" },
-        "spawn_error": { "type": "string" }
+        "spawn_error": { "type": "string" },
+        "executor": { "$ref": "#/$defs/BrokerExecutor" },
+        "respawn_of": { "description": "The spawn_failed task this one retried.", "type": "string" },
+        "respawn_generation": { "type": "integer" }
       }
     },
     "BrokerChild": {
@@ -371,6 +374,174 @@
         "title": { "type": "string" },
         "evidence": { "type": "string" },
         "receiptAt": { "type": "integer" }
+      }
+    },
+    "BrokerRespawnResult": {
+      "description": "POST /v1/orchestrator/tasks/:id/respawn: a spawn_failed task's task.json copied under a fresh id and dispatched. `secret` is the new task's, returned because the caller may not have chosen it; `original_task` is the first task of the respawn family the limit of two is counted over.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "original_task", "respawn_of", "secret", "task"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "task": { "$ref": "#/$defs/BrokerTask" },
+        "replayed": { "type": "boolean" },
+        "warnings": { "type": "array", "items": { "$ref": "#/$defs/BrokerWarning" } },
+        "secret": { "type": "string" },
+        "respawn_of": { "type": "string" },
+        "original_task": { "type": "string" }
+      }
+    },
+    "BrokerExecutorStatus": {
+      "description": "What the beat last saw of the session running a task. `not_seen` is one complete reading without it; `executor_missing` is two complete readings at least a minute apart in one process epoch, the Swift app's rule; `unknown` is no complete reading yet. An observation, held in memory and never written: only a crossing into or out of `executor_missing` is recorded, as an event.",
+      "type": "string",
+      "enum": ["observed", "not_seen", "executor_missing", "unknown"]
+    },
+    "BrokerExecutor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation", "status", "terminal_id"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "status": { "$ref": "#/$defs/BrokerExecutorStatus" },
+        "terminal_id": { "type": "string" },
+        "session_state": { "type": "string" },
+        "observed_at": { "description": "The last reading that showed it; absent when none has.", "type": "integer" },
+        "generation": { "description": "The beat's reading number when it was last seen. It moves on every pass while nothing is written, which is the point.", "type": "integer" },
+        "first_unseen_at": { "type": "integer" }
+      }
+    },
+    "BrokerObservations": {
+      "description": "The beat's in-memory reading of the machine: what it observed rather than what it decided.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "deferred_notices", "executors", "generation", "sessions"],
+      "properties": {
+        "generation": { "type": "integer" },
+        "at": { "type": "integer" },
+        "complete": { "type": "boolean" },
+        "sessions": { "type": "integer" },
+        "deferred_notices": { "description": "Notices waiting, in memory, for a root that was showing a menu.", "type": "integer" },
+        "executors": { "type": "array", "items": { "$ref": "#/$defs/BrokerExecutor" } }
+      }
+    },
+    "BrokerBeatPanic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "pass", "value"],
+      "properties": {
+        "at": { "type": "integer" },
+        "pass": { "type": "integer" },
+        "value": { "type": "string" },
+        "stack": { "type": "string" }
+      }
+    },
+    "BrokerBeat": {
+      "description": "The loop reporting itself. `stalled` is decided from outside the loop — more than three ticks since the last finished pass — because a loop that has stopped cannot say so.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["in_pass", "overlaps", "passes", "restarts", "running", "stalled", "tick_seconds"],
+      "properties": {
+        "running": { "description": "Whether the daemon started the beat at all.", "type": "boolean" },
+        "tick_seconds": { "type": "integer" },
+        "started_at": { "type": "integer" },
+        "at": { "description": "When the last pass finished. Absent before the first.", "type": "integer" },
+        "passes": { "type": "integer" },
+        "in_pass": { "type": "boolean" },
+        "pass_began_at": { "type": "integer" },
+        "last_duration_ms": { "type": "integer" },
+        "p99_duration_ms": { "type": "integer" },
+        "overlaps": { "type": "integer" },
+        "restarts": { "description": "How many times the supervisor recovered the loop after a panic or an unasked exit.", "type": "integer" },
+        "backoff_until": { "type": "integer" },
+        "stalled": { "type": "boolean" },
+        "quiet_seconds": { "description": "Seconds since the last finished pass, or since the start before the first.", "type": "integer" },
+        "panics": { "type": "array", "items": { "$ref": "#/$defs/BrokerBeatPanic" } }
+      }
+    },
+    "BrokerPass": {
+      "description": "What the last finished pass did.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notes", "notices", "settled", "spawn_failed", "timed_out", "watched"],
+      "properties": {
+        "at": { "type": "integer" },
+        "watched": { "type": "integer" },
+        "settled": { "type": "integer" },
+        "notes": { "type": "integer" },
+        "notices": { "type": "integer" },
+        "timed_out": { "type": "integer" },
+        "spawn_failed": { "type": "integer" },
+        "store_error": { "description": "Why the pass could not read the store. A pass that could not read is not a pass that found nothing.", "type": "string" }
+      }
+    },
+    "BrokerNoticeCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acknowledged", "dead_letter", "delivered", "pending"],
+      "properties": {
+        "pending": { "type": "integer" },
+        "delivered": { "type": "integer" },
+        "dead_letter": { "type": "integer" },
+        "acknowledged": { "type": "integer" },
+        "oldest_open_seconds": { "type": "integer" }
+      }
+    },
+    "BrokerStoreStatus": {
+      "type": "string",
+      "enum": ["ready", "unavailable"]
+    },
+    "BrokerStoreHealth": {
+      "description": "The store's own account. `writes` counts write transactions that committed something since this process opened the store, and `changes` is SQLite's count of rows this process changed in any table: both stand still while the beat only observes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["busy", "changes", "failures", "rows", "status", "tasks", "writes"],
+      "properties": {
+        "status": { "$ref": "#/$defs/BrokerStoreStatus" },
+        "error": { "type": "string" },
+        "tasks": { "type": "integer" },
+        "writes": { "type": "integer" },
+        "rows": { "type": "integer" },
+        "changes": { "type": "integer" },
+        "failures": { "type": "integer" },
+        "busy": { "type": "integer" },
+        "write_p99_ms": { "type": "integer" },
+        "last_write_at": { "type": "integer" },
+        "last_error": { "type": "string" },
+        "last_error_at": { "type": "integer" }
+      }
+    },
+    "BrokerDiagnostics": {
+      "description": "The broker block of /v1/diagnostics: the beat, what its last pass did, the notice ledger, the store, and what the beat has only observed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beat", "notices", "observations", "pass", "store"],
+      "properties": {
+        "beat": { "$ref": "#/$defs/BrokerBeat" },
+        "pass": { "$ref": "#/$defs/BrokerPass" },
+        "notices": { "$ref": "#/$defs/BrokerNoticeCounts" },
+        "store": { "$ref": "#/$defs/BrokerStoreHealth" },
+        "observations": { "$ref": "#/$defs/BrokerObservations" }
+      }
+    },
+    "BrokerProgressEvent": {
+      "description": "One accepted progress note. `seq` is its row in the store: increasing and never reused, so it is the note's identity on the stream.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "note", "seq", "task_id"],
+      "properties": {
+        "seq": { "type": "integer" },
+        "task_id": { "type": "string" },
+        "note": { "type": "string" },
+        "at": { "type": "integer" }
+      }
+    },
+    "BrokerProgressFrame": {
+      "description": "The `orchestrator-progress` event on /v1/events. The first one on a connection carries the newest notes of every live task, so a page that reconnects is level without asking; after that, one per accepted note. A note is never sent twice on one connection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notes"],
+      "properties": {
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/BrokerProgressEvent" } }
       }
     }
   }

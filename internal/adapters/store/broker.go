@@ -78,8 +78,13 @@ var ErrNoTask = errors.New("no such task")
 
 // openBroker creates the broker's tables. Called from Open, once.
 func openBroker(db *sql.DB) error {
-	_, err := db.Exec(brokerSchema)
-	return err
+	if _, err := db.Exec(brokerSchema); err != nil {
+		return err
+	}
+	if _, err := db.Exec(brokerNoticeSchema); err != nil {
+		return err
+	}
+	return migrateBrokerNotices(db)
 }
 
 // SaveBrokerTask writes or replaces one task's record, with the events that
@@ -90,35 +95,69 @@ func openBroker(db *sql.DB) error {
 // projection that will be, and then replay produces a different machine from
 // the one a reader saw.
 func (s *Store) SaveBrokerTask(ctx context.Context, row BrokerRow, events []Event) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	now := time.Now()
-	if row.UpdatedAt.IsZero() {
-		row.UpdatedAt = now
-	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO broker_tasks
-		   (id, project, repository, assistant, state, created_at, updated_at, secret_hash, record)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(id) DO UPDATE SET
-		   project=excluded.project, repository=excluded.repository,
-		   assistant=excluded.assistant, state=excluded.state,
-		   updated_at=excluded.updated_at, record=excluded.record`,
-		row.ID, row.Project, row.Repository, row.Assistant, row.State,
-		row.CreatedAt.Unix(), row.UpdatedAt.Unix(), row.SecretHash, string(row.Record)); err != nil {
-		return err
-	}
+	return s.SaveBrokerTaskWithNotice(ctx, row, nil, events)
+}
+
+// SaveBrokerTaskWithNotice is SaveBrokerTask that also opens the task's
+// completion envelope, when notice is not nil, in the same transaction.
+//
+// A task that settled and the notice that tells its root are one fact: stored
+// apart, a crash between them leaves either a finished task nobody will be
+// told about or a notice about a task that has not finished. The insert fails
+// on an envelope that already exists rather than replacing it — a second
+// notice id for one task is the root being told to acknowledge something that
+// no longer acknowledges anything.
+func (s *Store) SaveBrokerTaskWithNotice(ctx context.Context, row BrokerRow, notice *BrokerNotice, events []Event) error {
+	return s.timedWrite(func() (int64, error) {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return 0, err
+		}
+		defer tx.Rollback()
+		now := time.Now()
+		if row.UpdatedAt.IsZero() {
+			row.UpdatedAt = now
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO broker_tasks
+			   (id, project, repository, assistant, state, created_at, updated_at, secret_hash, record)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET
+			   project=excluded.project, repository=excluded.repository,
+			   assistant=excluded.assistant, state=excluded.state,
+			   updated_at=excluded.updated_at, record=excluded.record`,
+			row.ID, row.Project, row.Repository, row.Assistant, row.State,
+			row.CreatedAt.Unix(), row.UpdatedAt.Unix(), row.SecretHash, string(row.Record)); err != nil {
+			return 0, err
+		}
+		changed := int64(1)
+		if notice != nil {
+			if err := insertNotice(ctx, tx, *notice); err != nil {
+				return 0, err
+			}
+			changed++
+		}
+		if err := insertEvents(ctx, tx, events); err != nil {
+			return 0, err
+		}
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
+		return changed + int64(len(events)), nil
+	})
+}
+
+// insertEvents appends events inside a transaction somebody else owns.
+func insertEvents(ctx context.Context, tx *sql.Tx, events []Event) error {
+	now := time.Now().Unix()
 	for _, e := range events {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO events (at, kind, subject, payload) VALUES (?, ?, ?, ?)`,
-			now.Unix(), e.Kind, e.Subject, string(e.Payload)); err != nil {
+			now, e.Kind, e.Subject, string(e.Payload)); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // BrokerTask reads one task.
@@ -183,29 +222,60 @@ func (s *Store) BrokerTasks(ctx context.Context, repository string) ([]BrokerRow
 // `INSERT OR IGNORE` against the unique pair is the protocol's own rule: the
 // same sentence twice is ignored rather than refused, because a child retrying
 // a note it is unsure landed should not be told it did something wrong.
-// The answer says which of the two happened.
-func (s *Store) AppendBrokerNote(ctx context.Context, taskID, note string) (bool, error) {
-	res, err := s.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO broker_notes (task_id, at, note) VALUES (?, ?, ?)`,
-		taskID, time.Now().Unix(), note)
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
+// The answer says which of the two happened, and for a new note its sequence
+// number — the note's identity on the event stream, where a reader that has
+// seen number n has seen every note up to it.
+func (s *Store) AppendBrokerNote(ctx context.Context, taskID, note string) (BrokerNote, bool, error) {
+	var out BrokerNote
+	added := false
+	err := s.timedWrite(func() (int64, error) {
+		at := time.Now()
+		res, err := s.db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO broker_notes (task_id, at, note) VALUES (?, ?, ?)`,
+			taskID, at.Unix(), note)
+		if err != nil {
+			return 0, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil || n == 0 {
+			return 0, err
+		}
+		seq, err := res.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
+		added = true
+		out = BrokerNote{Seq: seq, TaskID: taskID, At: time.Unix(at.Unix(), 0), Note: note}
+		return n, nil
+	})
+	return out, added, err
+}
+
+// HasBrokerNote answers whether this exact sentence is already recorded for
+// the task, without writing anything. The beat asks it before offering a note
+// it re-read from progress.json: re-reading an unchanged file is an
+// observation, and an observation is not a reason to open a write.
+func (s *Store) HasBrokerNote(ctx context.Context, taskID, note string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM broker_notes WHERE task_id = ? AND note = ?`, taskID, note).Scan(&n)
 	return n > 0, err
 }
 
 // BrokerNote is one note as it is read back.
 type BrokerNote struct {
-	At   time.Time
-	Note string
+	// Seq is the note's row id: increasing, never reused.
+	Seq    int64
+	TaskID string
+	At     time.Time
+	Note   string
 }
 
 // BrokerNotes returns the newest `limit` notes for a task, oldest first.
 func (s *Store) BrokerNotes(ctx context.Context, taskID string, limit int) ([]BrokerNote, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT at, note FROM (
-		   SELECT id, at, note FROM broker_notes WHERE task_id = ? ORDER BY id DESC LIMIT ?
+		`SELECT id, task_id, at, note FROM (
+		   SELECT id, task_id, at, note FROM broker_notes WHERE task_id = ? ORDER BY id DESC LIMIT ?
 		 ) ORDER BY id ASC`, taskID, limit)
 	if err != nil {
 		return nil, err
@@ -215,7 +285,7 @@ func (s *Store) BrokerNotes(ctx context.Context, taskID string, limit int) ([]Br
 	for rows.Next() {
 		var n BrokerNote
 		var at int64
-		if err := rows.Scan(&at, &n.Note); err != nil {
+		if err := rows.Scan(&n.Seq, &n.TaskID, &at, &n.Note); err != nil {
 			return nil, err
 		}
 		n.At = time.Unix(at, 0)
@@ -231,6 +301,8 @@ func (s *Store) BrokerNotes(ctx context.Context, taskID string, limit int) ([]Br
 // protocol states, and a caller that has to ask for them separately will
 // check one of them against a moment the other has already moved past.
 func (s *Store) RecordNotification(ctx context.Context, taskID, title, body string) (perTask, perHour int, err error) {
+	began := time.Now()
+	defer func() { s.stats.record(time.Since(began), 1, err) }()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, 0, err
