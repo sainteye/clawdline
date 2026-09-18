@@ -355,12 +355,8 @@ func newTaskID() string {
 }
 
 func usage() {
-<<<<<<< HEAD
 	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|dispatch|settle|land|send|interrupt|close|open|pair|cloud|board|version>")
-=======
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|dispatch|settle|land|send|interrupt|close|open|pair|cloud|version>")
 	fmt.Fprintln(os.Stderr, "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so")
->>>>>>> clawdline/task/ad569f63-bece-4927-84ab-150c942e1d2e
 	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")
 	fmt.Fprintln(os.Stderr, "  pair [--watch]            show the code when a device asks to pair")
 	fmt.Fprintln(os.Stderr, "  cloud <status|on|off|login|connect>   the line to app.clawdline.com; off by default")
