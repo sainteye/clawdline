@@ -219,6 +219,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		s.boardRead(w, r)
 	})
+	mux.HandleFunc("/v1/board/tracks", s.boardTracks)
 	mux.HandleFunc("/v1/orchestrator/schedules", s.schedules)
 	// One schedule, its save, its removal and its run; the Cloud bind
 	// command's local half; and moving schedules in and out (schedules.go).
