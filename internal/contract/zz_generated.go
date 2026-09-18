@@ -2197,15 +2197,16 @@ type DeviceList struct {
 // what health used to carry about the process — its state directory, its
 // ports, the clock's last pass and the broker's own account of itself.
 type Diagnostics struct {
-	At        int64               `json:"at"`
-	Broker    *BrokerDiagnostics  `json:"broker,omitempty"`
-	Capacity  CapacityDiagnostics `json:"capacity"`
-	Dir       string              `json:"dir"`
-	OK        bool                `json:"ok"`
-	Port      int64               `json:"port"`
-	Scheduler SchedulerPulse      `json:"scheduler"`
-	ServedBy  string              `json:"served_by"`
-	Upstream  int64               `json:"upstream"`
+	At        int64                `json:"at"`
+	Broker    *BrokerDiagnostics   `json:"broker,omitempty"`
+	Capacity  CapacityDiagnostics  `json:"capacity"`
+	Dir       string               `json:"dir"`
+	OK        bool                 `json:"ok"`
+	Port      int64                `json:"port"`
+	Proposals *ProposalDiagnostics `json:"proposals,omitempty"`
+	Scheduler SchedulerPulse       `json:"scheduler"`
+	ServedBy  string               `json:"served_by"`
+	Upstream  int64                `json:"upstream"`
 }
 
 type DispatchRequest struct {
@@ -2937,6 +2938,32 @@ type ProjectWorktreesReply struct {
 type ProjectWorktreesUnattributed struct {
 	Reasons   AnalyticsCounts `json:"reasons"`
 	Worktrees int64           `json:"worktrees"`
+}
+
+// /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what
+// the server decided about asking a person in the conversation, and what the
+// sessions reported doing, counted from the proposals table — durable, the
+// same after a restart. `ask_true` is the proposals the server let be asked;
+// `asked_inline` the ones a session reported asking; `asked_inline_unprompted`
+// those of them the server had said not to ask, which is a briefing not
+// followed. `matched` is `asked_inline == ask_true` with none unprompted; an
+// ask a session has not reported yet also reads as unmatched.
+type ProposalDiagnostics struct {
+	AskFalse              int64 `json:"ask_false"`
+	AskTrue               int64 `json:"ask_true"`
+	AskedInline           int64 `json:"asked_inline"`
+	AskedInlineUnprompted int64 `json:"asked_inline_unprompted"`
+
+	// The counts could not be read; every number beside it is zero and means nothing.
+	Error   string `json:"error,omitempty"`
+	Matched bool   `json:"matched"`
+
+	// When the proposal waiting longest was made. Absent when none waits.
+	OldestPendingAt int64 `json:"oldest_pending_at,omitempty"`
+
+	// Proposals waiting for an answer: the "to confirm" area and the ones asked in a
+	// conversation.
+	Pending int64 `json:"pending"`
 }
 
 // GET /v1/push/key. The application server key the page passes to `subscribe({

@@ -112,10 +112,14 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			ctx, more = context.WithTimeout(r.Context(), 45*time.Second)
 			defer more()
 		}
-		if _, err := s.actions().SendWithPictures(ctx, id, body.Text, body.Images); err != nil {
+		sent, err := s.actions().SendWithPictures(ctx, id, body.Text, body.Images)
+		if err != nil {
 			writeActionRefusal(w, err)
 			return
 		}
+		// A person wrote to this session: the one reading that says they
+		// are there (proposals.go, board-redesign §4.3).
+		s.heardFrom(sent)
 		writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "typed"})
 	case "interrupt":
 		if _, err := s.actions().Interrupt(ctx, id); err != nil {

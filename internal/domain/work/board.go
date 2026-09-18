@@ -155,9 +155,14 @@ type Item struct {
 	EvidenceAt time.Time
 	// AskedAt is when a person was asked about a delivery waiting to be
 	// closed (T4's digest). Zero until somebody asks.
-	AskedAt      time.Time
-	ClosedReason string
-	ClosedAt     time.Time
+	AskedAt time.Time
+	// DecisionSince is when the oldest decision still waiting for a person
+	// on this item was asked; zero when none waits. While one waits, the
+	// quiet clock does not run: an item waiting on a person has not stalled
+	// (§5.1, "沒有等人的決定"). Read with the item; never stored on it.
+	DecisionSince time.Time
+	ClosedReason  string
+	ClosedAt      time.Time
 
 	// StartOn is the planned start date, YYYY-MM-DD, or empty.
 	StartOn string
@@ -351,7 +356,7 @@ func Derive(it Item, tasks []TaskFacts, p Policy, now time.Time) Derived {
 	// dispatched for yet: until that date has passed, its commitment is the
 	// date, and schedule_missed is the rule that answers for it.
 	waitingForDate := it.Commitment == CommitScheduled && it.StartOn != "" && total == 0
-	if d.State == ItemActive && live == 0 && !waitingForDate {
+	if d.State == ItemActive && live == 0 && !waitingForDate && it.DecisionSince.IsZero() {
 		d.StallAt = d.LastEvidenceAt.Add(p.Stall)
 	}
 	return d
@@ -379,6 +384,9 @@ type Change struct {
 	StartOn      *string
 	Rank         *int64
 	Reviewed     bool
+	// Asked records that a person was asked about a delivery waiting to be
+	// closed (T4's digest): the closure wait runs from here.
+	Asked bool
 }
 
 // Apply is the item after a change, at time at.
@@ -415,6 +423,9 @@ func (c Change) Apply(it Item, at time.Time) Item {
 	}
 	if c.Reviewed {
 		next.ReviewedAt = at
+	}
+	if c.Asked {
+		next.AskedAt = at
 	}
 	if c.State.Closed() {
 		next.ClosedReason, next.ClosedAt = c.ClosedReason, at

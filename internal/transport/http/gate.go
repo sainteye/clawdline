@@ -290,6 +290,11 @@ func machineScoped(p string) bool {
 // taskSecretRoute is where a child reports with its own task secret, which
 // the broker's handler checks (orchestrator.go).
 func taskSecretRoute(method, p string) bool {
+	// A child's proposal (proposals.go): the handler authenticates the
+	// secret, and records it for the child's root.
+	if method == http.MethodPost && p == "/v1/orchestrator/proposals" {
+		return true
+	}
 	if !strings.HasPrefix(p, "/v1/orchestrator/tasks/") {
 		return false
 	}
@@ -341,6 +346,9 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		}
 	case p == "/v1/orchestrator/tasks" || strings.HasPrefix(p, "/v1/orchestrator/tasks/"):
 		// dispatch.go, and the task-secret routes.
+	case p == "/v1/orchestrator/proposals":
+		// proposals.go: the orchestrator token, or a child's task secret,
+		// which the handler checks.
 	case strings.HasPrefix(p, "/v1/orchestrator/"):
 		if !machine {
 			return http.StatusForbidden, "forbidden", "That needs the orchestrator token."

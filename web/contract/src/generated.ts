@@ -2609,6 +2609,7 @@ export interface Diagnostics {
   dir: string
   ok: boolean
   port: number
+  proposals?: ProposalDiagnostics
   scheduler: SchedulerPulse
   served_by: string
   upstream: number
@@ -3469,6 +3470,40 @@ export interface ProjectWorktreesReply {
 export interface ProjectWorktreesUnattributed {
   reasons: AnalyticsCounts
   worktrees: number
+}
+
+/**
+ * /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what the
+ * server decided about asking a person in the conversation, and what the sessions
+ * reported doing, counted from the proposals table — durable, the same after a
+ * restart. `ask_true` is the proposals the server let be asked; `asked_inline` the
+ * ones a session reported asking; `asked_inline_unprompted` those of them the
+ * server had said not to ask, which is a briefing not followed. `matched` is
+ * `asked_inline == ask_true` with none unprompted; an ask a session has not
+ * reported yet also reads as unmatched.
+ */
+export interface ProposalDiagnostics {
+  ask_false: number
+  ask_true: number
+  asked_inline: number
+  asked_inline_unprompted: number
+
+  /**
+   * The counts could not be read; every number beside it is zero and means nothing.
+   */
+  error?: string
+  matched: boolean
+
+  /**
+   * When the proposal waiting longest was made. Absent when none waits.
+   */
+  oldest_pending_at?: number
+
+  /**
+   * Proposals waiting for an answer: the "to confirm" area and the ones asked in a
+   * conversation.
+   */
+  pending: number
 }
 
 /**

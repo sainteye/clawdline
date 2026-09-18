@@ -147,7 +147,8 @@ func MoveOf(id string, c work.Change, at time.Time) WorkMove {
 const workColumns = `w.id, w.project_id, w.title, COALESCE(w.acceptance, ''), w.created_at, w.created_by,
   w.placed_at, w.version,
   b.state, b.owner, b.commitment, b.cycle_since, b.evidence_at, b.asked_at, b.closed_reason, b.closed_at, b.start_on,
-  k.state, k.rank, k.start_on, k.reviewed_at, k.dropped_at`
+  k.state, k.rank, k.start_on, k.reviewed_at, k.dropped_at,
+  (SELECT MIN(d.created_at) FROM decisions d WHERE d.work_id = w.id AND d.state = 'open')`
 
 const workFrom = ` FROM work w LEFT JOIN board_items b ON b.work_id = w.id LEFT JOIN backlog k ON k.work_id = w.id`
 
@@ -155,10 +156,10 @@ func scanWork(sc scanner) (work.Item, error) {
 	var it work.Item
 	var created, placed int64
 	var bState, bOwner, bCommit, bReason, bStart, kState, kStart sql.NullString
-	var bSince, bEvidence, bAsked, bClosed, kRank, kReviewed, kDropped sql.NullInt64
+	var bSince, bEvidence, bAsked, bClosed, kRank, kReviewed, kDropped, decided sql.NullInt64
 	err := sc.Scan(&it.ID, &it.Project, &it.Title, &it.Acceptance, &created, &it.CreatedBy, &placed, &it.Version,
 		&bState, &bOwner, &bCommit, &bSince, &bEvidence, &bAsked, &bReason, &bClosed, &bStart,
-		&kState, &kRank, &kStart, &kReviewed, &kDropped)
+		&kState, &kRank, &kStart, &kReviewed, &kDropped, &decided)
 	if err == sql.ErrNoRows {
 		return work.Item{}, ErrNoWork
 	}
@@ -172,6 +173,9 @@ func scanWork(sc scanner) (work.Item, error) {
 		}
 		return time.Unix(v.Int64, 0)
 	}
+	// The oldest decision waiting for a person on this item (T4): read with
+	// the item, never stored on it.
+	it.DecisionSince = at(decided)
 	switch {
 	case bState.Valid:
 		it.Place, it.State = work.PlaceBoard, work.ItemState(bState.String)

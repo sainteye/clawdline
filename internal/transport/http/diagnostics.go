@@ -19,6 +19,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
 // The capacity register on this daemon (docs/limits.md §4, design-decisions
@@ -205,6 +206,28 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		},
 		capacity.WorkOpen: func() capacity.Reading {
 			n, err := s.store.WorkOpenCount(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: n}
+		},
+		// T4's three rows (proposals.go).
+		capacity.ProposalsOpen: func() capacity.Reading {
+			c, err := s.participation().Counts(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: c.Pending, OldestAt: c.Oldest}
+		},
+		capacity.DecisionsOpen: func() capacity.Reading {
+			counts, err := s.store.DecisionCounts(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: counts[work.DecisionOpen]}
+		},
+		capacity.WorkDigests: func() capacity.Reading {
+			n, err := s.store.DigestCount(context.Background())
 			if err != nil {
 				return capacity.Unmeasured(err.Error())
 			}
