@@ -11,6 +11,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/projects"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
+	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
@@ -34,6 +35,10 @@ func newBroker(s *Server) *orchestrator.Broker {
 			return s.inventory.Read(ctx)
 		},
 		Fault: beatFault(),
+		// Every line the broker types — a briefing, a completion notice, a
+		// relayed message — goes through the same Actions.Send a person's send
+		// does, and so through that terminal's one lane (D22): the broker and a
+		// person can no longer type into one terminal at once.
 		Type: func(ctx context.Context, terminalID, text string) error {
 			_, err := s.actions().Send(ctx, terminalID, text)
 			return err
@@ -59,6 +64,7 @@ func newBroker(s *Server) *orchestrator.Broker {
 			return "", false
 		},
 		Launcher: terminal.NewLauncher(),
+		Lanes:    app.TerminalLanes(),
 		Terminal: func() projects.TerminalChoice {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()
 			if err != nil {
@@ -76,50 +82,30 @@ func newBroker(s *Server) *orchestrator.Broker {
 }
 
 // dispatchPolicy is this Mac's house rules, read at every dispatch so that a
-// person editing them does not have to restart anything.
+// person editing them does not have to restart anything: the base file and the
+// person's local one, apart, because only the broker's composition knows which
+// of the two may be cut (orchestrator.ComposePolicy, D23 ①).
 //
 // Both files are the Swift app's own paths, and they are read rather than
 // copied: they are the person's words about how work is handed out on this
 // machine, and a second copy under this daemon's directory would be a second
 // set of house rules nobody meant to write. Nothing else under that directory
-// is opened — see plan.md §4 for the read-only rules this keeps.
-func dispatchPolicy() string {
+// is opened — plan.md §4 lists these two among the read-only paths (D23 ②).
+// A file that cannot be read is an empty one here, which is the Swift app's
+// reading too: the policy is advice to a child, and its absence is not a fault.
+func dispatchPolicy() (base, local string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	out := ""
-	for _, name := range []string{"dispatch-policy.md", "dispatch-policy.local.md"} {
+	read := func(name string) string {
 		body, err := os.ReadFile(filepath.Join(home, ".config", "clawdline", name))
 		if err != nil {
-			continue
+			return ""
 		}
-		if out != "" {
-			out += "\n\n"
-		}
-		out += string(body)
+		return string(body)
 	}
-	// The Swift app cuts this at 16,000 characters at a paragraph break,
-	// because it is pasted beside the task's own instructions and every line of
-	// it competes with them for a child's attention.
-	const ceiling = 16000
-	if len(out) > ceiling {
-		cut := out[:ceiling]
-		if i := lastParagraph(cut); i > 0 {
-			cut = cut[:i]
-		}
-		out = cut
-	}
-	return out
-}
-
-func lastParagraph(v string) int {
-	for i := len(v) - 2; i > 0; i-- {
-		if v[i] == '\n' && v[i+1] == '\n' {
-			return i
-		}
-	}
-	return 0
+	return read("dispatch-policy.md"), read("dispatch-policy.local.md")
 }
 
 func brokerLanguage(s *Server) string {

@@ -176,4 +176,8 @@ type Launcher interface {
 	// NewTmuxSession starts a server with a detached session named name, the
 	// same way. The answer is the pane id.
 	NewTmuxSession(ctx context.Context, cwd, name, command string) (string, error)
+	// CloseTmuxSession closes the session called name only while paneID is
+	// one of its panes, and answers whether it closed anything. The pane is
+	// the proof of ownership: a name alone is not.
+	CloseTmuxSession(ctx context.Context, paneID, name string) (bool, error)
 }

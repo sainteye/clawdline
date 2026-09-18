@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -63,8 +64,7 @@ func (l Launcher) TmuxReach(ctx context.Context) int {
 		}
 		return 1
 	}
-	said := stderr.String()
-	if strings.Contains(said, "no server running") || strings.Contains(said, "error connecting") {
+	if NoServer(stderr.String()) {
 		return 1
 	}
 	return 2
@@ -111,13 +111,64 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	if !strings.HasPrefix(id, "%") {
 		return "", Failure{Message: "tmux returned no new pane id."}
 	}
+	// A pane this call made and could not start anything in is closed here,
+	// by the id tmux just gave it: nobody else holds that id, and a shell left
+	// open in a pane nobody recorded is the next spawn's failure (the Swift
+	// app's `3e37e8ec`). A pane this call did not make is never touched.
 	if _, err := runTmux(ctx, bin, "send-keys", "-t", id, "-l", command); err != nil {
+		l.discard(ctx, bin, id)
 		return "", Failure{Message: "tmux would not type into the pane it just made."}
 	}
 	if _, err := runTmux(ctx, bin, "send-keys", "-t", id, "Enter"); err != nil {
+		l.discard(ctx, bin, id)
 		return "", Failure{Message: "tmux typed the line but Enter did not land."}
 	}
 	return id, nil
+}
+
+// discard kills a pane openPane made and did not hand out. Its failure is
+// only logged: the caller is already reporting the failure that led here.
+func (l Launcher) discard(ctx context.Context, bin, paneID string) {
+	if _, err := runTmux(context.WithoutCancel(ctx), bin, "kill-pane", "-t", paneID); err != nil {
+		log.Printf("tmux: the pane %s this spawn made could not be closed: %v", paneID, err)
+	}
+}
+
+// CloseTmuxSession closes the session called name, and only when paneID is
+// one of its panes — the proof that it is the session this daemon opened for
+// that pane (docs/design-decisions.md D11). It answers whether it closed
+// anything; a pane that is gone, or that now belongs to a session of another
+// name, closes nothing and is not an error.
+//
+// The session is closed by the id tmux reports for that pane, never by name:
+// a name is matched by prefix when it is not exact, and the id cannot be.
+func (l Launcher) CloseTmuxSession(ctx context.Context, paneID, name string) (bool, error) {
+	if !strings.HasPrefix(paneID, "%") || name == "" {
+		return false, nil
+	}
+	bin := l.binary()
+	if bin == "" {
+		return false, nil
+	}
+	out, err := runTmux(ctx, bin, "display-message", "-p", "-t", paneID, "#{session_id} #{session_name}")
+	if err != nil {
+		// "can't find pane" is the pane being gone, which leaves nothing of
+		// ours to close; any other failure is reported, and nothing is closed.
+		if strings.Contains(err.Error(), "can't find") || NoServer(err.Error()) {
+			return false, nil
+		}
+		return false, err
+	}
+	// A space, not a tab: under LC_ALL=C tmux rewrites control characters in
+	// format output, and a session id never contains a space.
+	parts := strings.SplitN(strings.TrimRight(out, "\n"), " ", 2)
+	if len(parts) != 2 || !strings.HasPrefix(parts[0], "$") || parts[1] != name {
+		return false, nil
+	}
+	if _, err := runTmux(ctx, bin, "kill-session", "-t", parts[0]); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // runTmux is one bounded tmux call, carrying tmux's own sentence on failure.

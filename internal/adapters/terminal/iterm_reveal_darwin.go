@@ -98,6 +98,7 @@ function run(argv) {
 `
 
 func itermReveal(ctx context.Context, args ...string) (map[string]any, error) {
+	defer effect()()
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript",

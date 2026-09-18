@@ -29,6 +29,13 @@ func (t *Tmux) Name() string { return "tmux" }
 // above all — has no authority to prove a pane absent, so it sets Complete to
 // false and says why. The two are the same list and two different amounts of
 // evidence.
+//
+// "No server" is read from what tmux says, not from its exit status: tmux
+// exits 1 for nearly every failure, and a socket directory with the wrong
+// permissions ("has unsafe permissions") exits 1 exactly as an absent server
+// does. Reading every exit 1 as "no server" made a listing that failed an
+// authoritative "there are no panes" — the one answer that lets the broker
+// call a live child's tab gone (docs/design-decisions.md D05 ③).
 func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 	inv := session.Inventory{
 		ObservedAt: time.Now(),
@@ -52,14 +59,21 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 	// separator alone; the locale stays C for everything else.
 	cmd := exec.CommandContext(ctx, t.Binary, "-u", "list-panes", "-a", "-F", format)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		if strings.Contains(err.Error(), "exit status 1") {
+		said := strings.TrimSpace(stderr.String())
+		if strings.Contains(err.Error(), "exit status 1") && NoServer(said) {
 			// No server running: an authoritative empty answer.
 			return inv, nil
 		}
 		inv.Complete = false
-		inv.Notes = append(inv.Notes, "tmux list-panes failed: "+err.Error())
+		why := err.Error()
+		if said != "" {
+			why = said
+		}
+		inv.Notes = append(inv.Notes, "tmux list-panes failed: "+why)
 		return inv, nil
 	}
 
@@ -86,6 +100,16 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 		inv.Sessions = append(inv.Sessions, s)
 	}
 	return inv, nil
+}
+
+// NoServer is whether tmux's own sentence says there is no server to ask —
+// the one failure that is an answer. tmux 3.6a says "no server running on
+// <socket>" when the socket is there and nobody listens, and "error connecting
+// to <socket> (No such file or directory)" when there is no socket at all.
+// Anything else it says is a failure to read.
+func NoServer(said string) bool {
+	return strings.Contains(said, "no server running") ||
+		(strings.Contains(said, "error connecting to") && strings.Contains(said, "No such file or directory"))
 }
 
 // Capture returns what is currently drawn in a pane. It is read-only: nothing

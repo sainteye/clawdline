@@ -5,8 +5,9 @@
   "description": "GET /v1/orchestrator/tasks, in the Swift app's shape (OrchestratorTaskList.swift): every unfinished task, then one page of finished ones, newest first. The rows are the Swift app's own tasks, read from its store, joined by the tasks this daemon dispatched; an id appears once. Claims are the paths a task reserved at dispatch time; they are compared by ancestry, never by string equality.",
   "$defs": {
     "TaskState": {
+      "description": "Where a task is. `unreadable` is not a state a task moves through: it is a stored row this daemon wrote and cannot decode, listed as such because it is not absent — its id is taken, and a dispatch reusing it is refused (409 `task_unreadable`).",
       "type": "string",
-      "enum": ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled", "spawn_failed"]
+      "enum": ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled", "spawn_failed", "unreadable"]
     },
     "TaskRoot": {
       "description": "The session that asked for the task. `terminalId` is not stored: it is resolved on every read against the sessions on screen — the parent task's child terminal first, otherwise the one live session whose conversation is `sessionId` — and is absent when that is not exactly one.",

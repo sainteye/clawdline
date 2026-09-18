@@ -53,6 +53,8 @@ func (s *Server) orchestratorTaskRoute(w http.ResponseWriter, r *http.Request) {
 		s.brokerInflightForTask(w, r, id)
 	case action == "progress" && r.Method == http.MethodPost:
 		s.brokerProgress(w, r, id)
+	case action == "accepted" && r.Method == http.MethodPost:
+		s.brokerAccepted(w, r, id)
 	case action == "complete" && r.Method == http.MethodPost:
 		s.brokerComplete(w, r, id)
 	case action == "completion/ack" && r.Method == http.MethodPost:
@@ -182,18 +184,31 @@ func (s *Server) brokerProgress(w http.ResponseWriter, r *http.Request, id strin
 	writeJSON(w, contract.BrokerProgressResult{OK: true, Task: s.brokerTaskRow(r.Context(), record)})
 }
 
+// brokerAccepted is the child signing for its briefing (D10). Header only: it
+// is a new route, and the Swift app's body-secret fallback exists for routes
+// older children already call that way.
+func (s *Server) brokerAccepted(w http.ResponseWriter, r *http.Request, id string) {
+	record, err := s.broker.Accept(r.Context(), id, taskSecret(r))
+	if err != nil {
+		writeBrokerError(w, err)
+		return
+	}
+	writeJSON(w, contract.BrokerProgressResult{OK: true, Task: s.brokerTaskRow(r.Context(), record)})
+}
+
+// brokerComplete asks for the task's result.json to be collected now (D15).
+// A body is read only for the secret an older child may put there; `status`
+// and `summary` in it are ignored, because the file is the result.
 func (s *Server) brokerComplete(w http.ResponseWriter, r *http.Request, id string) {
 	var body struct {
-		Status  string `json:"status"`
-		Summary string `json:"summary"`
-		Secret  string `json:"secret"`
+		Secret string `json:"secret"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	secret := taskSecret(r)
 	if secret == "" {
 		secret = body.Secret
 	}
-	if err := s.broker.Complete(r.Context(), id, secret, body.Status, body.Summary); err != nil {
+	if err := s.broker.Complete(r.Context(), id, secret); err != nil {
 		writeBrokerError(w, err)
 		return
 	}
@@ -357,8 +372,31 @@ func (s *Server) inflightPayload(r *http.Request, repo string, rows []orchestrat
 		At:         time.Now().Unix(),
 	}
 	for _, row := range rows {
+		// A row the inventory could not decode is listed from what the
+		// inventory has of it, never skipped: skipping it here is how it would
+		// vanish from the one answer a child is told to read before it starts
+		// (D05 ②).
+		if row.Section == orchestrator.VisibilityUnreadable {
+			out.Inflight = append(out.Inflight, contract.BrokerInflightRow{
+				ID:         row.Task,
+				State:      contract.TaskState(orchestrator.StateUnreadable),
+				Visibility: string(row.Section),
+				Assistant:  contract.Assistant(row.Assistant),
+				ProjectDir: row.Project,
+				Created:    row.Created.Unix(),
+				AgeSeconds: int64(row.Age),
+				Claims:     []string{},
+			})
+			continue
+		}
 		record, _, err := s.broker.Record(r.Context(), row.Task)
 		if err != nil {
+			// Read a moment ago and unreadable now: still not absent.
+			out.Inflight = append(out.Inflight, contract.BrokerInflightRow{
+				ID: row.Task, State: contract.TaskState(orchestrator.StateUnreadable),
+				Visibility: string(orchestrator.VisibilityUnreadable), Assistant: contract.Assistant(row.Assistant),
+				AgeSeconds: int64(row.Age), Claims: []string{},
+			})
 			continue
 		}
 		item := contract.BrokerInflightRow{
@@ -374,6 +412,10 @@ func (s *Server) inflightPayload(r *http.Request, repo string, rows []orchestrat
 			ClaimsDeclared: record.Claims != nil,
 			RootLabel:      row.RootLabel,
 			RootKey:        row.RootKey,
+			LeaseScope:     record.Scope(),
+		}
+		if declared, known := record.DeclaredWrites(); known {
+			item.DeclaredWrites = declared
 		}
 		if record.Worktree != nil {
 			item.Worktree = brokerWorktree(record)
@@ -534,10 +576,9 @@ func writeBrokerRefusal(w http.ResponseWriter, ref orchestrator.Refusal) {
 
 // brokerTaskRow projects a record onto the wire.
 func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contract.BrokerTask {
-	claims := r.Claims
-	if claims == nil {
-		claims = []string{}
-	}
+	// `claims` is the lease; the declared list travels as declared_writes
+	// (D21), so an isolated task's list is never read as "writes nothing".
+	claims := r.Lease()
 	row := contract.BrokerTask{
 		ID:             r.ID,
 		State:          contract.TaskState(r.State),
@@ -556,6 +597,14 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		Deliverables:   r.Deliverables,
 		SpawnError:     r.SpawnError,
 		RespawnOf:      r.RespawnOf,
+		LeaseScope:     r.Scope(),
+		Verdict:        r.Verdict,
+	}
+	if declared, known := r.DeclaredWrites(); known {
+		row.DeclaredWrites = declared
+	}
+	if !r.AcceptedAt.IsZero() {
+		row.AcceptedAt = r.AcceptedAt.Unix()
 	}
 	if r.RespawnGeneration > 0 {
 		row.RespawnGeneration = int64(r.RespawnGeneration)
@@ -609,6 +658,10 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 			}
 		}
 		row.Summary = r.Result.Summary
+	} else if r.Verdict != "" {
+		// What the console shows as a finished task's line. The broker's own
+		// sentence is shown as that, under `verdict`, and never as a result.
+		row.Summary = r.Verdict
 	}
 	if notes, err := s.broker.Notes(ctx, r.ID); err == nil && len(notes) > 0 {
 		for _, n := range notes {

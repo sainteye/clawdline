@@ -20,6 +20,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/projects"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline-go/internal/app/lane"
 	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
@@ -64,10 +65,18 @@ type Broker struct {
 	Screen func(ctx context.Context, terminalID string) (string, bool)
 	// Launcher opens the child's tab.
 	Launcher ports.Launcher
+	// Lanes is the machine's terminal lanes (lane, D22) — the same set the
+	// daemon's Type goes through. A dispatch takes its admission here before
+	// it writes anything, so a machine that is full answers 429 rather than
+	// recording a task it cannot open a tab for. Nil admits everything, which
+	// only a test wants.
+	Lanes *lane.Lanes
 	// Terminal is the machine's `terminal` setting.
 	Terminal func() projects.TerminalChoice
-	// Policy is this Mac's dispatch policy, pasted into every child briefing.
-	Policy func() string
+	// Policy is this Mac's dispatch policy — the base file and the person's
+	// local one, read at every dispatch — pasted into every child briefing
+	// through ComposePolicy (policy.go).
+	Policy func() (base, local string)
 	// Port is this daemon's own port, for the curl recipes in a briefing.
 	Port int
 	// Dir is the daemon's state root; isolated checkouts live under it.
@@ -174,29 +183,58 @@ func SecretMatches(storedHash, presented string) bool {
 	return subtle.ConstantTimeCompare([]byte(storedHash), []byte(HashSecret(presented))) == 1
 }
 
-// Records reads every task this broker holds, newest first. It is exported for
-// the console's task list, which shows this daemon's own children beside the
-// Swift app's.
-func (b *Broker) Records(ctx context.Context) ([]Record, error) { return b.records(ctx) }
+// Records reads every task this broker holds, newest first, and every stored
+// row it could not decode. It is exported for the console's task list, which
+// shows this daemon's own children beside the Swift app's — and which must
+// show a row it cannot read as exactly that, not leave it out.
+func (b *Broker) Records(ctx context.Context) ([]Record, []Unreadable, error) {
+	return b.ledger(ctx)
+}
 
-// records reads every task this broker holds, each joined to its completion
-// envelope.
-func (b *Broker) records(ctx context.Context) ([]Record, error) {
+// Unreadable is a stored row this daemon wrote and cannot decode.
+//
+// It is not a state a task moves through. It is what the row is called while
+// nobody can say what it holds, and it is listed rather than skipped because
+// "I could not read that task" and "there is no such task" are different
+// sentences (docs/design-decisions.md D05 ②): the first time this broker met a
+// row it could not read, it `continue`d past it, and the next dispatch with the
+// same id upserted a new task over it. The columns lifted beside the record
+// are still readable, so they are carried — they say where and whose the row
+// was, never what it claims or how far it got.
+type Unreadable struct {
+	ID         string
+	Project    string
+	Repository string
+	Assistant  string
+	// StoredState is the state column as last written. It is a hint, not the
+	// task's state: the record it summarised is the part that cannot be read.
+	StoredState string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Cause       string
+}
+
+// StateUnreadable is how an Unreadable row is spelled wherever a task state
+// is expected (the task list, the inventory).
+const StateUnreadable State = "unreadable"
+
+// ledger reads every task this broker holds, each joined to its completion
+// envelope, and names every row it could not decode.
+func (b *Broker) ledger(ctx context.Context) ([]Record, []Unreadable, error) {
 	rows, err := b.Store.BrokerTasks(ctx, "")
 	if err != nil {
-		return nil, storeUnavailable(err)
+		return nil, nil, storeUnavailable(err)
 	}
 	notices, err := b.Store.BrokerNotices(ctx)
 	if err != nil {
-		return nil, storeUnavailable(err)
+		return nil, nil, storeUnavailable(err)
 	}
 	out := make([]Record, 0, len(rows))
+	bad := []Unreadable{}
 	for _, row := range rows {
 		r, err := Decode(row.Record)
 		if err != nil {
-			// A record this daemon wrote and cannot read is a fault worth
-			// naming, but it must not make the whole list unreadable: the rows
-			// beside it are somebody's running work.
+			bad = append(bad, unreadableRow(row, err))
 			continue
 		}
 		if n, ok := notices[r.ID]; ok {
@@ -204,10 +242,29 @@ func (b *Broker) records(ctx context.Context) ([]Record, error) {
 		}
 		out = append(out, r)
 	}
-	return out, nil
+	return out, bad, nil
 }
 
-// Record reads one task, or says this store has never heard of it.
+func unreadableRow(row store.BrokerRow, err error) Unreadable {
+	return Unreadable{
+		ID: row.ID, Project: row.Project, Repository: row.Repository, Assistant: row.Assistant,
+		StoredState: row.State, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Cause: err.Error(),
+	}
+}
+
+// records is ledger for the callers that act on a record's contents — the
+// beat, respawn, the message route — and that have nothing they could do
+// with a row whose contents are unknown. The rows it leaves out are still
+// listed, counted and refused by id elsewhere; see Unreadable.
+func (b *Broker) records(ctx context.Context) ([]Record, error) {
+	out, _, err := b.ledger(ctx)
+	return out, err
+}
+
+// Record reads one task, or says this store has never heard of it, or says
+// the row is there and cannot be read — three answers, and the third is a 409
+// rather than a 404 or a 500: the id is taken, and nothing may be done to it
+// until somebody can say what it holds.
 func (b *Broker) Record(ctx context.Context, id string) (Record, string, error) {
 	row, err := b.Store.BrokerTask(ctx, id)
 	if errors.Is(err, store.ErrNoTask) {
@@ -218,7 +275,7 @@ func (b *Broker) Record(ctx context.Context, id string) (Record, string, error) 
 	}
 	r, err := Decode(row.Record)
 	if err != nil {
-		return Record{}, "", err
+		return Record{}, "", taskUnreadable(unreadableRow(row, err))
 	}
 	n, err := b.Store.BrokerNotice(ctx, id)
 	switch {
@@ -228,6 +285,20 @@ func (b *Broker) Record(ctx context.Context, id string) (Record, string, error) 
 		return Record{}, "", storeUnavailable(err)
 	}
 	return r, row.SecretHash, nil
+}
+
+// taskUnreadable is the refusal every route gives for an Unreadable row.
+func taskUnreadable(u Unreadable) Refusal {
+	return refuseWith(http.StatusConflict, "task_unreadable",
+		"A task with this id is stored and cannot be read. It is not absent, so nothing was changed "+
+			"and nothing may reuse the id; the row stays as it is for a person to inspect.",
+		map[string]any{"task": u.ID, "stored_state": u.StoredState, "cause": u.Cause})
+}
+
+// IsUnreadable reports whether err is the refusal for an Unreadable row.
+func IsUnreadable(err error) bool {
+	ref, ok := err.(Refusal)
+	return ok && ref.Code == "task_unreadable"
 }
 
 // storeUnavailable is a store that did not answer, said as the Swift app says
@@ -243,6 +314,33 @@ func storeUnavailable(err error) Refusal {
 // save writes a record back, with the event that explains the change.
 func (b *Broker) save(ctx context.Context, r Record, secretHash string, kind string) error {
 	return b.saveWith(ctx, r, secretHash, kind, nil)
+}
+
+// create writes a task's first record. Unlike save it never replaces a row:
+// an id that is already stored — readable or not — is refused, because the
+// row it would have replaced is somebody's work (D05 ②).
+func (b *Broker) create(ctx context.Context, r Record, secretHash string) error {
+	payload, _ := json.Marshal(map[string]any{"state": r.State, "task": r.ID})
+	err := b.Store.CreateBrokerTask(ctx, store.BrokerRow{
+		ID:         r.ID,
+		Project:    r.ProjectDir,
+		Repository: r.Repository,
+		Assistant:  r.Assistant,
+		State:      string(r.State),
+		CreatedAt:  r.CreatedAt,
+		UpdatedAt:  b.now(),
+		SecretHash: secretHash,
+		Record:     r.Encode(),
+	}, []store.Event{{Kind: "task.queued", Subject: r.ID, Payload: payload}})
+	if errors.Is(err, store.ErrTaskExists) {
+		return refuseWith(http.StatusConflict, "task_exists",
+			"A task with this id was stored while this dispatch was being admitted; nothing was written over it.",
+			map[string]any{"task": r.ID})
+	}
+	if err != nil {
+		return storeUnavailable(err)
+	}
+	return nil
 }
 
 // saveWith is save that also opens the task's completion envelope, in the

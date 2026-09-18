@@ -68,6 +68,13 @@ func (a Actions) Key(ctx context.Context, id, key string) (session.Session, erro
 		return s, Refusal{Code: "backend_unsupported",
 			Detail: fmt.Sprintf("nothing on this machine types keys into a %q session", s.Backend)}
 	}
+	// Answering a menu is several keystrokes read back one at a time; it is
+	// one write to the terminal, taken as one turn.
+	release, err := a.turn(ctx, s)
+	if err != nil {
+		return s, err
+	}
+	defer release()
 	p := presser{keys: keys, screen: a.Inventory.Screen, s: s, note: map[string]any{"key": key}}
 	switch {
 	case key == "submit":

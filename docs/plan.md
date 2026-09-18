@@ -225,6 +225,11 @@ React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`�
   （目錄 0700、檔案 0600），複製前後比對兩個檔的 size、mtime、inode，變了就重來；只開副本，讀完即刪。
   依 stamp 快取，最多每 5 秒複製一次。重試仍失敗就沿用上次讀數（stale），沒有就回「未知」，不回空。
   沒有這個檔（Linux、Windows、沒跑過舊 app 的 Mac）時用量頁退回 transcript 計算。
+- **家規** `~/.config/clawdline/dispatch-policy.md` 與 `dispatch-policy.local.md`（broker，2026-09-18 補登，
+  `docs/design-decisions.md` D23 ②）：每次派工時各讀一次，貼進 child 的 CHILD.md；`/v1/diagnostics` 的
+  `broker.policy` 也讀同兩個檔算字數。放在 `internal/transport/http/orchestrator_wiring.go` 的 `dispatchPolicy`，
+  組合規則在 `internal/app/orchestrator/policy.go`：以**字元**計、上限 16,000，超過時只切 base（段落邊界），
+  local 永遠完整。讀不到就當空的（家規是給 child 的建議，缺了不是錯）。退役前改由新 app 自己的 base 投影（D23 ③，W5）。
 
 規則：
 - **只讀。** 不寫、不 rename、不建立或觸碰 `.lock`。

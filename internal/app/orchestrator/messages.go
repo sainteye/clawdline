@@ -3,12 +3,14 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/app/lane"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
@@ -115,6 +117,12 @@ func (b *Broker) Relay(ctx context.Context, m Message) (time.Time, error) {
 			"this daemon cannot type into a terminal")
 	}
 	if err := b.Type(ctx, target.ID, wire); err != nil {
+		var busy lane.Busy
+		if errors.As(err, &busy) {
+			return zeroTime, refuseWith(http.StatusTooManyRequests, "terminal_busy",
+				"The target's terminal was being written to and did not come free; nothing was typed.",
+				map[string]any{"retry_after": 5})
+		}
 		return zeroTime, refuse(http.StatusBadGateway, "delivery_failed", err.Error())
 	}
 	at := b.now()

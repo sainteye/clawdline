@@ -124,6 +124,13 @@ type Inventory struct {
 	// Notes records why a reading is incomplete, in the reading itself, so a
 	// reader never has to guess whether empty means empty.
 	Notes []string `json:"notes,omitempty"`
+	// Sources is each source's own completeness, keyed by its provenance
+	// ("ps", "tmux", "iterm"), on a merged reading. Complete is their AND,
+	// which is the right answer to "is this list all there is" and the wrong
+	// one to "is this tmux pane gone": that is tmux's question alone, and on a
+	// Mac whose iTerm2 cannot be asked the AND is never true
+	// (docs/design-decisions.md D05 ③). Not on the wire.
+	Sources map[string]bool `json:"-"`
 }
 
 func (i Inventory) Assistants() []Session {

@@ -815,9 +815,11 @@ export interface BrokerChild {
  */
 export interface BrokerDiagnostics {
   beat: BrokerBeat
+  lanes?: BrokerLanes
   notices: BrokerNoticeCounts
   observations: BrokerObservations
   pass: BrokerPass
+  policy?: BrokerPolicy
   store: BrokerStoreHealth
 }
 
@@ -905,7 +907,9 @@ export interface BrokerInflight {
 /**
  * One line of work outstanding in a repository. `visibility` is `live` while the
  * task is running and `unmerged` once it has finished with a branch nobody has
- * taken; settled work is not listed at all.
+ * taken; settled work is not listed at all. A stored row this daemon cannot decode
+ * is `unreadable` in both `visibility` and `state`, with only its id and the
+ * columns stored beside the record: it is listed because it is not absent.
  */
 export interface BrokerInflightRow {
   age_seconds: number
@@ -913,9 +917,10 @@ export interface BrokerInflightRow {
   claims: string[]
   claims_declared: boolean
   created: number
+  declared_writes?: string[]
   id: string
   landing?: BrokerLanding
-  landing_paths?: string[]
+  lease_scope?: string
   project_dir: string
   root_key?: string
   root_label?: string
@@ -946,6 +951,18 @@ export type BrokerLandingState =
   | "nothing_to_land"
 
 export const BrokerLandingStateValues: readonly BrokerLandingState[] = ["pending", "landed", "abandoned", "nothing_to_land"] as const
+
+/**
+ * The terminal lanes: one writer per terminal, and one machine-wide ceiling on
+ * writes held or waiting. A write past the ceiling is refused (429) before anything
+ * is typed; `refused` counts those since this process started.
+ */
+export interface BrokerLanes {
+  admitted: number
+  limit: number
+  refused: number
+  terminals: number
+}
 
 export interface BrokerMessageRequest {
   /**
@@ -1032,12 +1049,19 @@ export interface BrokerObservations {
   complete: boolean
 
   /**
-   * Notices waiting, in memory, for a root that was showing a menu.
+   * Notices waiting, in memory, for a root that was showing a menu or whose
+   * terminal was busy.
    */
   deferred_notices: number
   executors: BrokerExecutor[]
   generation: number
   sessions: number
+
+  /**
+   * Each source's own completeness in the same reading. `complete` above is their
+   * AND; whether one child's tab is gone is asked of the source that owns it.
+   */
+  sources?: BrokerSourceReading[]
 }
 
 export interface BrokerPage {
@@ -1058,7 +1082,19 @@ export interface BrokerPage {
  */
 export interface BrokerPass {
   at?: number
+
+  /**
+   * Child sessions closed this pass after a spawn_failed verdict, each proved to be
+   * the task's own by its pane.
+   */
+  closed?: number
   notes: number
+
+  /**
+   * progress.json bodies refused for good this pass — too long, empty or not
+   * signed by the task — each also one `task.progress.refused` event.
+   */
+  notes_refused?: number
   notices: number
   settled: number
   spawn_failed: number
@@ -1069,7 +1105,29 @@ export interface BrokerPass {
    */
   store_error?: string
   timed_out: number
+
+  /**
+   * Stored rows the pass could not decode. They are listed by the task list and the
+   * inventory; this is the count.
+   */
+  unreadable?: number
   watched: number
+}
+
+/**
+ * This Mac's house rules as the last briefing carried them, counted in characters.
+ * Over `limit` the base is cut at a paragraph break and the local file is always
+ * kept whole; `near_limit` is true past 90% of `limit`, before anything has to be
+ * cut.
+ */
+export interface BrokerPolicy {
+  at?: number
+  base_chars: number
+  chars: number
+  cut: boolean
+  limit: number
+  local_chars: number
+  near_limit: boolean
 }
 
 /**
@@ -1163,6 +1221,11 @@ export interface BrokerSessionDelivery {
   ok: boolean
 }
 
+export interface BrokerSourceReading {
+  complete: boolean
+  source: string
+}
+
 /**
  * The store's own account. `writes` counts write transactions that committed
  * something since this process opened the store, and `changes` is SQLite's count of
@@ -1194,6 +1257,12 @@ export const BrokerStoreStatusValues: readonly BrokerStoreStatus[] = ["ready", "
  * One dispatched piece of work, as the console and a dispatching root read it.
  */
 export interface BrokerTask {
+  /**
+   * When the child signed for its briefing with its own secret — POST
+   * …/accepted, or accepted.json. The only proof the briefing was read; a tab
+   * that starts a turn proves only that something is running.
+   */
+  accepted_at?: number
   assistant: Assistant
   child?: BrokerChild
   claims: string[]
@@ -1205,6 +1274,14 @@ export interface BrokerTask {
   claims_declared: boolean
   completion_delivery?: BrokerNotice
   created: number
+
+  /**
+   * What the dispatch declared this task would write — its landing write set —
+   * fixed at dispatch and never cleared, whatever its lease became. Absent when
+   * that cannot be known: nothing was declared, or an isolated task was stored
+   * before this field existed by a broker that erased its list.
+   */
+  declared_writes?: string[]
   deliverables?: string[]
   dir: string
   executor?: BrokerExecutor
@@ -1215,10 +1292,15 @@ export interface BrokerTask {
   landing?: BrokerLanding
 
   /**
-   * What an isolated task's claims became: not a lease on the shared tree, but the
-   * write set whoever lands this branch is answering for.
+   * Whether `declared_writes` also reserve those paths against other roots
+   * (`shared`: the task writes the shared checkout, and `claims` is that list) or
+   * not (`worktree`: it writes its own checkout, and `claims` is empty).
    */
-  landing_paths?: string[]
+  lease_scope?: string
+
+  /**
+   * The ceiling the dispatch asked for; `full` when task.json said nothing.
+   */
   permission: string
   progress?: BrokerProgressNote[]
   projectDir: string
@@ -1235,8 +1317,22 @@ export interface BrokerTask {
   spawnedAt?: number
   state: TaskState
   summary?: string
+
+  /**
+   * The task's whole budget, on the wall clock, counted from `created` — when the
+   * dispatch was admitted, not when the child was briefed — with no grace and no
+   * pause while the daemon is down. Past it the task is `timeout` whatever it is
+   * doing.
+   */
   timeout_minutes?: number
   title: string
+
+  /**
+   * The broker's own sentence when it ended a task the child did not (a timeout, a
+   * tab that never opened). Never a result: `result` is only ever what the child
+   * wrote.
+   */
+  verdict?: string
   worktree?: BrokerWorktree
 }
 
@@ -3842,6 +3938,12 @@ export interface TaskRow {
   workPhase?: string
 }
 
+/**
+ * Where a task is. `unreadable` is not a state a task moves through: it is a stored
+ * row this daemon wrote and cannot decode, listed as such because it is not absent
+ * — its id is taken, and a dispatch reusing it is refused (409
+ * `task_unreadable`).
+ */
 export type TaskState =
     "queued"
   | "spawning"
@@ -3851,8 +3953,9 @@ export type TaskState =
   | "timeout"
   | "cancelled"
   | "spawn_failed"
+  | "unreadable"
 
-export const TaskStateValues: readonly TaskState[] = ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled", "spawn_failed"] as const
+export const TaskStateValues: readonly TaskState[] = ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled", "spawn_failed", "unreadable"] as const
 
 /**
  * What the child spent. `costUsd` is absent where nothing priced it, which is

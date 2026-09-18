@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
@@ -79,12 +80,33 @@ func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.
 	// the Swift app's. Without this the console would show a child this daemon
 	// dispatched only while the Swift app also happened to know about it, which
 	// it never does.
-	if records, err := s.broker.Records(ctx); err == nil {
+	//
+	// A broker that could not be read is an error, not an empty section: the
+	// list used to drop the whole section silently, which on a phone reads as
+	// "your children are gone". And a row it could not decode is listed as
+	// `unreadable` — unfinished, so it rides on every page — never skipped
+	// (D05 ②).
+	records, unreadable, err := s.broker.Records(ctx)
+	if err != nil {
+		return contract.TaskList{}, err
+	}
+	{
+		for _, u := range unreadable {
+			created := u.CreatedAt.Unix()
+			own = append(own, contract.TaskRow{
+				ID:         u.ID,
+				TaskID:     u.ID,
+				Assistant:  contract.Assistant(u.Assistant),
+				ProjectDir: u.Project,
+				Claims:     []string{},
+				State:      contract.TaskState(orchestrator.StateUnreadable),
+				Created:    created,
+				CreatedAt:  created,
+				Dir:        s.broker.Tasks.Path(u.ID),
+			})
+		}
 		for _, t := range records {
-			claims := t.Claims
-			if claims == nil {
-				claims = []string{}
-			}
+			claims := t.Lease()
 			created := t.CreatedAt.Unix()
 			row := contract.TaskRow{
 				ID:             t.ID,

@@ -39,6 +39,12 @@ var (
 // notFoundTask is the 404 every route but the ACK uses.
 func notFoundTask() Refusal { return errNoTask }
 
+// isNotFound is the one answer that proves an id is free.
+func isNotFound(err error) bool {
+	ref, ok := err.(Refusal)
+	return ok && ref.Code == errNoTask.Code && ref.Status == errNoTask.Status
+}
+
 // badSecret is the 403 a wrong task secret gets. It says nothing about whether
 // the task exists — the task is looked up first, so a caller with a bad secret
 // has already been told the id is real, which is the Swift app's order and is
