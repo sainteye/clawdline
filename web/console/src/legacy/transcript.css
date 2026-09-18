@@ -177,6 +177,16 @@
     position: relative;
     display: grid; place-items: center;
     width: min(1100px, 100%); height: min(820px, 100%);
+    /* The zoom arithmetic assumes the picture's middle is this frame's middle, and `place-items`
+       alone keeps that promise only while the picture fits. A long screenshot at reading width
+       is taller than the frame, its row grows to match, and a row with nowhere to go starts at
+       the top: the picture sat (height - frame) / 2 lower than the arithmetic believed, so it
+       opened with a black band above it and its last (height - frame) / 2 could never be dragged
+       into view. `unsafe` keeps the row centred when it overflows instead of pinning it to the
+       start, which is what a scroll container — `overflow: hidden` makes this one — may otherwise
+       do. The plain line is for an engine that does not know the keyword. */
+    align-content: center;
+    align-content: unsafe center;
     /* This rectangle is what the pan bounds in `transcript-images.js` are measured against, so it
        is also where an enlarged picture stops being drawn. Without the clip the two disagree: the
        picture spills over the padding a press lands on to close the preview, and the part of it
