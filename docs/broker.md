@@ -18,7 +18,15 @@
 | `POST /v1/orchestrator/messages` | orchestrator token＋`Idempotency-Key` | `messages.go` |
 | `GET /v1/orchestrator/whoami?conversation_id=` | orchestrator token | `messages.go` |
 | `POST /v1/orchestrator/sessions/<terminal>/complete` | orchestrator token | `messages.go` |
+| `GET /v1/orchestrator/sessions/<conversation>/todos?state=outstanding\|closed\|all&cursor=` | orchestrator token | `todos.go`（T2：Session 待辦，只讀；terminal id 回 `409 session_id_is_terminal`） |
 | 完成通知（`<clawdline-notice>`）與重送 | — | `notice.go`、`watch.go` |
+
+**Session 待辦（T2，design-decisions D36、board-redesign §5.2）**：每次派工替 root 開一筆 `dispatch:<task id>`，
+與 task 同一筆交易寫入；之後每一筆 broker 事實（結算、landing）在它自己的交易裡推進待辦——`landed`／`nothing_to_land`／
+`abandoned`／沒有落地義務的結束→`done`，寫不進待辦就連事實一起不寫。root 被讀數**確定**不在→`handed_off`，
+回來→`open`，移交 24 小時仍確定不在→`dropped`；讀不到（unknown）什麼都不動。daemon 啟動的第一個 beat 補齊沒有待辦的
+task、跟上還沒結束的待辦。不問人、不推播、不進看板；升級訊號（`cross_session`／`long_lived`／`repeated_failure`）只放在
+回應裡給 T4 用。派工的 `task.json` 可帶 `work_id`（小寫 UUID），respawn 會沿用。
 
 錯誤碼與文字照舊版，包括信封：`{"error":{"code","message","request_id", …extra}}`，**extra 放在 `error` 裡面**。
 `stale_inventory` 因此能把整份 inventory 帶回來，重送只要一次來回。

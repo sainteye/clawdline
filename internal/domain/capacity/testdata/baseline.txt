@@ -35,6 +35,11 @@
 # evicting to refusing. The screen bus's channel of sixteen left this list: it
 # is a map of one waiting frame per screen now, bounded by that row. The line
 # it added is the Cloud refusal lane.
+#
+# T2 (2026-09-18) added the session to-do list. Its one bound is the page of a
+# to-do read; the table itself is rows in clawdline.sqlite3, measured by
+# store.db, and every row still owed has an exit (a landing fact, or 24 hours
+# after its owner is positively gone), so nothing it holds waits for ever.
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -95,6 +100,7 @@ internal/app/orchestrator.rootLabelLimit # admission: a root label (limits N8's 
 internal/app/orchestrator.sessionSummaryLimit # admission: a delivery receipt's sentence
 internal/app/orchestrator.summaryLimit # admission: a child summary, cut silently (limits N8: W2 stores it whole, D25)
 internal/app/orchestrator.titleLimit # admission: a dispatch title (limits N8's silent cut, C3)
+internal/app/orchestrator.todoPageLimit # page: one read of a session's to-do list (T2); the rest are a cursor away, and the table is inside store.db's row
 internal/app/orchestrator.trimStack.limit # page: a panic stack kept in diagnostics
 internal/app/lane.DefaultLimit # admission: writers to terminals at once; a full lane refuses at the door with 429 and nothing accumulates
 internal/app/orchestrator.PolicyLimit # admission: the characters of house rules a briefing carries; past 90% it says near_limit and only the base is cut, never the person's own section

@@ -91,6 +91,9 @@ type Brief struct {
 	TimeoutMinutes int      `json:"timeout_minutes"`
 	CreatedAt      string   `json:"created_at"`
 	Root           *RootRef `json:"root,omitempty"`
+	// WorkID is the work item the dispatch named, kept in the file so a
+	// respawn — which copies this file — is the same work (D36).
+	WorkID string `json:"work_id,omitempty"`
 }
 
 // RootRef is who the task is working for. `poll_only` is carried even when

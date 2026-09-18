@@ -276,6 +276,11 @@ type Record struct {
 	Model          string    `json:"model,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	Root           *RootRef  `json:"root,omitempty"`
+	// WorkID is the work item this task is for (D36): the key a task and a
+	// board item are bound by, in place of guessing from titles. Empty when
+	// the dispatch named none, and then the work is only its root's — a
+	// to-do, never a card somebody else has to find.
+	WorkID string `json:"work_id,omitempty"`
 
 	// LeaseScope is `shared` or `worktree`, fixed at dispatch. Empty on a
 	// record written before it existed; Scope reads those.
@@ -376,6 +381,7 @@ func (r Record) Brief() taskdir.Brief {
 		Deliverables:   r.Deliverables,
 		TimeoutMinutes: r.TimeoutMinutes,
 		CreatedAt:      r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		WorkID:         r.WorkID,
 	}
 	if r.Root != nil {
 		b.Root = &taskdir.RootRef{

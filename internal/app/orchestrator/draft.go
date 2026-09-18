@@ -55,6 +55,7 @@ type draft struct {
 	TimeoutMinutes *int             `json:"timeout_minutes"`
 	Root           *json.RawMessage `json:"root"`
 	Model          string           `json:"model"`
+	WorkID         json.RawMessage  `json:"work_id"`
 
 	// Accepted by the Swift broker and not by this one yet. They are read only
 	// so that their presence can be refused by name: a broker that silently
@@ -161,6 +162,10 @@ func (b *Broker) admit(id string, d draft) (Record, error) {
 	if model != "" && !modelName(model) {
 		return bad("model must be a model name: lower-case letters, digits, . _ -, at most 64 characters")
 	}
+	workID, err := admitWorkID(d.WorkID)
+	if err != nil {
+		return Record{}, err
+	}
 
 	kind := truncate(strings.TrimSpace(d.Kind), kindLimit)
 	if kind == "" {
@@ -186,8 +191,26 @@ func (b *Broker) admit(id string, d draft) (Record, error) {
 		TimeoutMinutes: timeout,
 		Root:           root,
 		Model:          model,
+		WorkID:         workID,
 		State:          StateQueued,
 	}, nil
+}
+
+// admitWorkID reads the work item a dispatch names (D36). Absent or null
+// names none, which is allowed: the task is then only its root's to-do. A
+// value that is there and is not a work id is refused by name — a broker that
+// dropped it would bind the work to nothing while its caller believed
+// otherwise.
+func admitWorkID(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var v string
+	if err := json.Unmarshal(raw, &v); err != nil || !IsTaskID(v) {
+		return "", refuse(http.StatusUnprocessableEntity, "bad_task",
+			"work_id must be a lowercase UUID naming a work item, or left out")
+	}
+	return v, nil
 }
 
 // modelName is SessionLaunchPolicy.modelName: `[a-z0-9._-]`, 1…64, never
