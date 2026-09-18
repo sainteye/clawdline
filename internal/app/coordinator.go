@@ -129,7 +129,7 @@ type State struct {
 func (c *Coordinator) State(ctx context.Context) (State, error) {
 	rec, status, err := c.Store.Coordinator(ctx)
 	if err != nil {
-		return State{}, storeRefusal(err)
+		return State{}, coordinatorStoreRefusal(err)
 	}
 	seen := c.seeing(ctx)
 	st := State{Status: status, Record: rec, Seen: seen, Liveness: coordinator.Unknown}
@@ -206,7 +206,7 @@ func (c *Coordinator) Register(ctx context.Context, conversation string) (State,
 			return st, false, RoleRefusal{Status: http.StatusConflict, Code: "coordinator_exists",
 				Message: "Another session registered the role while this one was being decided."}
 		}
-		return st, false, storeRefusal(err)
+		return st, false, coordinatorStoreRefusal(err)
 	}
 	st.Record, st.Status, st.Liveness = &next, store.CoordinatorReady, coordinator.Online
 	return st, true, nil
@@ -250,7 +250,7 @@ func (c *Coordinator) Rebind(ctx context.Context, expectID string, expectGenerat
 			Message: "The role moved while this rebind was being decided; read it again."}
 	}
 	if err != nil {
-		return st, false, storeRefusal(err)
+		return st, false, coordinatorStoreRefusal(err)
 	}
 	st.Record, st.Liveness = &next, coordinator.Online
 	return st, true, nil
@@ -273,7 +273,7 @@ func (c *Coordinator) refusal(err error, st State) error {
 	return out
 }
 
-func storeRefusal(err error) error {
+func coordinatorStoreRefusal(err error) error {
 	if errors.Is(err, store.ErrBusy) {
 		return RoleRefusal{Status: http.StatusServiceUnavailable, Code: "orchestrator_store_busy",
 			Message: "Another writer held the store longer than this one waits; nothing was changed. Retry.",
