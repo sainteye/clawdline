@@ -28,17 +28,17 @@ var itemLinkKinds = map[string]bool{"related": true, "blocks": true, "coordinate
 
 // Progress is what a card carries about where the work stands.
 type Progress struct {
-	State               string          `json:"state"`
-	Label               string          `json:"label"`
-	Reason              string          `json:"reason"`
-	Group               string          `json:"group"`
-	BasisCodes          []string        `json:"basisCodes"`
-	WarningCodes        []string        `json:"warningCodes"`
-	LifecycleApplicable bool            `json:"lifecycleApplicable"`
-	Active              bool            `json:"active"`
-	Historical          bool            `json:"historical"`
-	AttemptCounts       map[string]int  `json:"attemptCounts"`
-	EvidenceCounts      map[string]int  `json:"evidenceCounts"`
+	State               string         `json:"state"`
+	Label               string         `json:"label"`
+	Reason              string         `json:"reason"`
+	Group               string         `json:"group"`
+	BasisCodes          []string       `json:"basisCodes"`
+	WarningCodes        []string       `json:"warningCodes"`
+	LifecycleApplicable bool           `json:"lifecycleApplicable"`
+	Active              bool           `json:"active"`
+	Historical          bool           `json:"historical"`
+	AttemptCounts       map[string]int `json:"attemptCounts"`
+	EvidenceCounts      map[string]int `json:"evidenceCounts"`
 }
 
 // eventOrder is the total order the store puts events in. A known timestamp

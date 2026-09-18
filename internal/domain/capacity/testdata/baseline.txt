@@ -30,6 +30,7 @@ internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
 internal/adapters/analytics.MaxScannedRows # read: rows one analytics query scans
 internal/adapters/artifacts.metadataLimit # read: one picture metadata record
 internal/adapters/board.DefaultPageLimit # page: the board's default page size
+internal/adapters/board.MaximumHistoryFileBytes # read: one card's log, refused past it rather than cut short; the log itself is the old app's, bounded there (limits N15)
 internal/adapters/board.MaximumCommandBytes # admission: one board command body
 internal/adapters/board.MaximumPageLimit # page: the board's largest page size
 internal/adapters/board.MaximumResponseBytes # page: one board answer

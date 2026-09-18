@@ -10,26 +10,26 @@ import (
 // Envelope is `GET /v1/board`'s `board` object: the 19 keys the Swift app
 // publishes, plus `truncation` when one project is selected.
 type Envelope struct {
-	SchemaVersion        int               `json:"schemaVersion"`
-	Revision             int64             `json:"revision"`
-	Enabled              bool              `json:"enabled"`
-	Mode                 string            `json:"mode"`
-	UpdatedAt            float64           `json:"updatedAt"`
-	Available            bool              `json:"available"`
-	Entitlement          Entitlement       `json:"entitlement"`
-	NarrativeConsent     *string           `json:"narrativeConsent"`
-	Projects             []ProjectRow      `json:"projects"`
-	Items                []Card            `json:"items"`
-	Item                 *Card             `json:"item"`
-	Truncated            bool              `json:"truncated"`
-	Truncation           *Truncation       `json:"truncation,omitempty"`
-	SnapshotBudgetBytes  int               `json:"snapshotBudgetBytes"`
-	AutomaticMutation    map[string]any    `json:"automaticMutation"`
-	SourceIngestion      map[string]any    `json:"sourceIngestion"`
-	Source               map[string]any    `json:"source"`
-	ReadState            ReadState         `json:"readState"`
-	ResponsibilitySource map[string]any    `json:"responsibilitySource"`
-	Viewer               Viewer            `json:"viewer"`
+	SchemaVersion        int            `json:"schemaVersion"`
+	Revision             int64          `json:"revision"`
+	Enabled              bool           `json:"enabled"`
+	Mode                 string         `json:"mode"`
+	UpdatedAt            float64        `json:"updatedAt"`
+	Available            bool           `json:"available"`
+	Entitlement          Entitlement    `json:"entitlement"`
+	NarrativeConsent     *string        `json:"narrativeConsent"`
+	Projects             []ProjectRow   `json:"projects"`
+	Items                []Card         `json:"items"`
+	Item                 *Card          `json:"item"`
+	Truncated            bool           `json:"truncated"`
+	Truncation           *Truncation    `json:"truncation,omitempty"`
+	SnapshotBudgetBytes  int            `json:"snapshotBudgetBytes"`
+	AutomaticMutation    map[string]any `json:"automaticMutation"`
+	SourceIngestion      map[string]any `json:"sourceIngestion"`
+	Source               map[string]any `json:"source"`
+	ReadState            ReadState      `json:"readState"`
+	ResponsibilitySource map[string]any `json:"responsibilitySource"`
+	Viewer               Viewer         `json:"viewer"`
 }
 
 // Truncation says what this list left out, and why. It describes this list —
@@ -501,7 +501,7 @@ func catalog(legacy *StoredState, byProject map[string][]Card, in Inputs, now fl
 			HumanItemCount: humanCount, CurrentHumanItemCount: currentHuman,
 			HumanLandedItemCount: humanLanded, AgentRecordCount: agentCount,
 			ArchivedRecordCount: len(cards) - groups["active"] - groups["waiting"] - groups["planning"],
-			Revision: in.Settings.Revision, UpdatedAt: updated, ObservedAt: now,
+			Revision:            in.Settings.Revision, UpdatedAt: updated, ObservedAt: now,
 			Summary: map[string]any{
 				"active": active, "waiting": waiting, "landed": landed, "history": history,
 				"settled": settled, "coordination": coordination, "needsClarity": needsClarity,

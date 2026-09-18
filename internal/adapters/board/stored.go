@@ -83,11 +83,11 @@ type StoredItem struct {
 	CurrentLandingEvidenceID      *string `json:"currentLandingEvidenceId,omitempty"`
 	CurrentArtifactAcceptanceID   *string `json:"currentArtifactAcceptanceId,omitempty"`
 
-	ScopeRevision      *int64  `json:"scopeRevision,omitempty"`
-	ScopeEventAt       *float64 `json:"scopeEventAt,omitempty"`
-	ScopeEventOrdinal  *int64  `json:"scopeEventOrdinal,omitempty"`
-	InferredSourceKey  *string `json:"inferredSourceKey,omitempty"`
-	HistoryDroppedCount *int   `json:"historyDroppedCount,omitempty"`
+	ScopeRevision       *int64   `json:"scopeRevision,omitempty"`
+	ScopeEventAt        *float64 `json:"scopeEventAt,omitempty"`
+	ScopeEventOrdinal   *int64   `json:"scopeEventOrdinal,omitempty"`
+	InferredSourceKey   *string  `json:"inferredSourceKey,omitempty"`
+	HistoryDroppedCount *int     `json:"historyDroppedCount,omitempty"`
 
 	PendingHandoff     *StoredHandoff            `json:"pendingHandoff,omitempty"`
 	SessionDeliveries  []StoredSessionDelivery   `json:"sessionDeliveries,omitempty"`
@@ -123,23 +123,23 @@ type StoredArtifact struct {
 // StoredLink joins this item to a task, a session, a worktree or another item.
 // The broker's task links are the main input to the progress projection.
 type StoredLink struct {
-	ID                  string   `json:"id"`
-	Kind                string   `json:"kind"`
-	TargetID            string   `json:"targetId"`
-	Label               string   `json:"label"`
-	Source              *string  `json:"source,omitempty"`
-	Phase               *string  `json:"phase,omitempty"`
-	Head                *string  `json:"head,omitempty"`
-	AttemptState        *string  `json:"attemptState,omitempty"`
-	StartedAt           *float64 `json:"startedAt,omitempty"`
-	FinishedAt          *float64 `json:"finishedAt,omitempty"`
-	SourceTaskID        *string  `json:"sourceTaskId,omitempty"`
-	GraphID             *string  `json:"graphId,omitempty"`
-	GraphNodeID         *string  `json:"graphNodeId,omitempty"`
-	EventAt             *float64 `json:"eventAt,omitempty"`
-	EventOrdinal        *int64   `json:"eventOrdinal,omitempty"`
-	LandingDisposition  *string  `json:"landingDisposition,omitempty"`
-	StatusObservedAt    *float64 `json:"statusObservedAt,omitempty"`
+	ID                 string   `json:"id"`
+	Kind               string   `json:"kind"`
+	TargetID           string   `json:"targetId"`
+	Label              string   `json:"label"`
+	Source             *string  `json:"source,omitempty"`
+	Phase              *string  `json:"phase,omitempty"`
+	Head               *string  `json:"head,omitempty"`
+	AttemptState       *string  `json:"attemptState,omitempty"`
+	StartedAt          *float64 `json:"startedAt,omitempty"`
+	FinishedAt         *float64 `json:"finishedAt,omitempty"`
+	SourceTaskID       *string  `json:"sourceTaskId,omitempty"`
+	GraphID            *string  `json:"graphId,omitempty"`
+	GraphNodeID        *string  `json:"graphNodeId,omitempty"`
+	EventAt            *float64 `json:"eventAt,omitempty"`
+	EventOrdinal       *int64   `json:"eventOrdinal,omitempty"`
+	LandingDisposition *string  `json:"landingDisposition,omitempty"`
+	StatusObservedAt   *float64 `json:"statusObservedAt,omitempty"`
 }
 
 // StoredObligation is something still owed.
