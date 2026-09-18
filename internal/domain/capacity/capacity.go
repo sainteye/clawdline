@@ -411,6 +411,8 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app/orchestrator.WaitsOpenLimit"},
+		},
+		{
 			// Open work items (design-decisions T3): on the board and not
 			// closed, or planned in the Backlog. Each is a person's plan or
 			// a commitment somebody made, so nothing is let go at the limit:
