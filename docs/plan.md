@@ -209,6 +209,12 @@ React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`�
   原始標記文字。做法（`images.go`）：`O_RDONLY` 開 `<id>.json` 與 `<id>.png`，比對 byteCount，過期或 `deletedAt`
   就回「過期」。**舊 app 讀到過期記錄時會順手寫墓碑，本讀取器不寫**——過期是答案，不是要改的狀態。
   自己存的圖在自己的 `CLAWDLINE_NEXT_DIR/session-images`，先查自己的、查不到才問舊的。
+- **看板** `~/Library/Application Support/Clawdline/project-board.json`（`CLAWDLINE_BOARD_STORE` 可改；2026-09-18）：
+  舊 app 的 776 張卡，`/v1/board` 唯讀顯示（`internal/adapters/board/source.go` 的 `Legacy`）。`O_RDONLY` 讀整份、
+  依 size＋mtime 快取，讀壞或版本不認得就沿用上一次好的讀數並把 `readState.status` 標成 `stale`，沒有就回 `error`，
+  **不回空看板**。這一條放在 `internal/adapters/board` 而不是 `swiftstore`，因為它是那個 task 的認領範圍；
+  整條拿掉的方式相同。新版自己的看板設定寫在 `CLAWDLINE_NEXT_DIR/project-board.json`（0600），只有 board 級的
+  `enabled`／`narrativeConsent`；項目寫入等 `docs/board-design.md` 的 C1／C2 決定。
 - **用量帳本** `~/Library/Application Support/Clawdline/Observability/usage.sqlite3`
   （`CLAWDLINE_OBSERVABILITY_DIR` 可改；2026-09-17 使用者決定）：用量頁的列（`UsageLedger`，`usagedb.go`）。
   它是 WAL 模式的 SQLite，舊 app 隨時在寫，所以**從不開原檔**——`mode=ro` 仍會對 `-shm` 加鎖、也可能建立它。

@@ -184,6 +184,16 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/board",
 		query: map[string]string{"project": "clawdline-go"},
 	}, {
+		// The same path as board; the query shape is the whole difference, and
+		// the Swift app sends all four parameters every time.
+		word: "board.items",
+		body: map[string]any{"type": "board.items", "session": machine, "request": "req-items",
+			"project": "clawdline-go", "audience": "human", "cursor": 0, "limit": 50},
+		session: machine, name: "read:req-items",
+		method: "GET", path: "/v1/board",
+		query: map[string]string{"project": "clawdline-go", "audience": "human",
+			"cursor": "0", "limit": "50"},
+	}, {
 		word: "send",
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",
 			"text": "hello", "images": []any{}},
@@ -252,11 +262,6 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		word:    "skills",
 		body:    map[string]any{"type": "skills", "session": pane},
 		session: pane, name: "skills", code: "unknown_command", status: 400,
-	}, {
-		word: "board.items",
-		body: map[string]any{"type": "board.items", "session": machine, "request": "req-items",
-			"project": "clawdline-go", "audience": "human", "cursor": 0, "limit": 50},
-		session: machine, name: "read:req-items", code: "unknown_command", status: 400,
 	}, {
 		word: "timeline",
 		body: map[string]any{"type": "timeline", "session": machine, "request": "req-timeline",
@@ -839,14 +844,14 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 	}
 	// The daemon's published list must not promise what it refuses.
 	for _, word := range []string{"agent", "shell", "skills", "snippets", "timeline",
-		"schedule", "board.items", "diagnostics.report", "diagnostics.events", "dispatch"} {
+		"schedule", "diagnostics.report", "diagnostics.events", "dispatch"} {
 		if implemented[word] {
 			t.Fatalf("%s is advertised and has no local capability", word)
 		}
 	}
 	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
 		"transcript", "info", "git", "screen", "image", "documents", "document", "places",
-		"schedules", "board"} {
+		"schedules", "board", "board.items"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}
@@ -898,5 +903,31 @@ func TestChannelSegmentIsEncodeURIComponent(t *testing.T) {
 		if got := ChannelSegment(in); got != want {
 			t.Fatalf("%q encoded to %q, wanted %q", in, got, want)
 		}
+	}
+}
+
+// TestBoardItemsRoutesTheWholeQuery holds the one rule board.items has that
+// board does not: the Swift app sends all four parameters, always, and the two
+// words share one path. A route that dropped a zero cursor would read page one
+// as "no cursor" — the same answer today, a different one the day a default
+// changes.
+func TestBoardItemsRoutesTheWholeQuery(t *testing.T) {
+	o := catalog["board.items"]
+	if o.route == nil {
+		t.Fatal("board.items has no route")
+	}
+	got := o.route(plan{project: "project-b542053a6fe9f75722f3a24a", audience: "human", offset: 0, limit: 30})
+	want := map[string]string{"project": "project-b542053a6fe9f75722f3a24a", "audience": "human",
+		"cursor": "0", "limit": "30"}
+	if got.Method != "GET" || got.Path != "/v1/board" {
+		t.Fatalf("route = %s %s, want GET /v1/board", got.Method, got.Path)
+	}
+	for k, v := range want {
+		if got.Query[k] != v {
+			t.Fatalf("query[%s] = %q, want %q (whole query %v)", k, got.Query[k], v, got.Query)
+		}
+	}
+	if len(got.Query) != len(want) {
+		t.Fatalf("query carries %v, want exactly %v", got.Query, want)
 	}
 }
