@@ -46,7 +46,7 @@ type Pulse struct {
 	// `task.progress.refused` event, once per distinct body.
 	NotesRefused int
 	// Closed is how many child sessions this pass closed after judging them
-	// spawn_failed on positive evidence (D11).
+	// spawn_failed on positive evidence (D11), or after their linger (#26).
 	Closed int
 	// Recovered is how many effects a dead broker left unfinished that this
 	// pass settled — run once, or recorded as unknown (effects.go).
@@ -129,6 +129,7 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	}
 	p.Unreadable = len(bad)
 	rd := b.read(ctx)
+	b.keepReading(rd)
 	for _, r := range live {
 		p.Watched++
 		switch b.collectNote(ctx, &r) {
@@ -158,6 +159,10 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	// After the reading is recorded, so an owner's presence is this pass's.
 	p.Todos = b.tendTodos(ctx)
 	p.Notices = b.PumpNotices(ctx)
+	// Finished children's tabs whose linger is over (linger.go), and — off
+	// the beat, when one is due — the reclamation sweep (reclaim.go).
+	p.Closed += b.closeLingers(ctx, rd)
+	b.reclaimDue(ctx)
 	return p
 }
 

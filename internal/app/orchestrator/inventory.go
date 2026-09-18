@@ -309,6 +309,10 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 	dirty, dirtyKnown := false, false
 	if row.OnDisk {
 		dirty, dirtyKnown = b.Git.Dirty(ctx, r.Worktree.Path)
+	} else {
+		// A checkout the sweep took is not unknown: what it held was
+		// recorded before it went (reclaim.go).
+		dirty, _, dirtyKnown = b.reclaimedDirty(ctx, r.ID)
 	}
 
 	// Droppable is decided first and fails safe: the branch must have been
@@ -333,6 +337,14 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 			} else {
 				row.Why = WhyMergedClean
 			}
+		}
+	}
+	// And never while the session that worked in the checkout may still be
+	// there (D13, G22): `dispose` is advice to remove it, and advice the
+	// sweep would refuse is not advice. The beat's last reading answers.
+	if row.Do == DoDispose {
+		if gone, _, _ := b.ownerGone(ctx, b.lastReading(), r, r.Worktree.Path); !gone {
+			row.Do, row.Why = "", ""
 		}
 	}
 	if row.Do == DoDispose {

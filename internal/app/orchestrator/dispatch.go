@@ -145,6 +145,12 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		record.RespawnOf = req.Respawn.TaskID
 		record.RespawnGeneration = req.Respawn.Generation
 	}
+	// A node of a graph is admitted only where the graph can take it now
+	// (graphs.go): not running twice, not done twice, not ahead of what it
+	// depends on.
+	if err := b.checkGraph(ctx, record); err != nil {
+		return Dispatched{}, err
+	}
 	if err := b.admitDispatch(); err != nil {
 		return Dispatched{}, err
 	}
@@ -431,10 +437,11 @@ func (b *Broker) checkGeneration(ctx context.Context, project string, req Dispat
 	return refuseWith(http.StatusConflict, "stale_inventory",
 		clause+" GET /v1/orchestrator/inventory?project="+inv.Repository+" answers "+inv.Generation+
 			"; the whole of it is in this error, so read it and resend with that value.",
-		map[string]any{
+		withRemedy(map[string]any{
 			"inventory_generation": inv.Generation,
 			"inventory":            InventoryPayload(inv),
-		})
+			"project":              inv.Repository,
+		}, "stale_inventory"))
 }
 
 // planWorktree decides the isolated checkout — repository, base, path, branch
@@ -720,7 +727,7 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 	// write right is taken (D08) and applied inside it only to the branch it
 	// was read from (D17, G17).
 	head := b.settlementHead(ctx, id)
-	return b.mutateTx(ctx, id, "task."+string(state), func(_ *store.Tx, r *Record) ([]store.Effect, error) {
+	return b.mutateTx(ctx, id, "task."+string(state), func(tx *store.Tx, r *Record) ([]store.Effect, error) {
 		if r.State.Terminal() {
 			return nil, errAlreadyTerminal
 		}
@@ -754,6 +761,14 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 				State:       NoticePending,
 				CreatedAt:   now,
 				NextRetryAt: now,
+			}
+		}
+		// The child's tab is owed a close a little later, and the debt is
+		// written with the settlement that incurs it, so a restart in
+		// between cannot forget it (#26, linger.go).
+		if l, ok := b.lingerFor(*r, now); ok {
+			if err := tx.PutLinger(l); err != nil {
+				return nil, err
 			}
 		}
 		b.forgetSecret(r.ID)

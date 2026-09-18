@@ -423,6 +423,28 @@ func TestTheInventoryReadsTheRecordedTarget(t *testing.T) {
 	}
 	// Once the record says landed, a clean checkout of a merged branch is
 	// droppable again: the rule was only ever kept from overruling a record.
+	//
+	// And only once its owner is provably gone (D13, G22, W6): with no
+	// reading of the machine the advice is withheld — the control — and it
+	// is given when the child's own source answered completely without its
+	// tab and no process works inside the checkout.
+	for _, d := range inv.Droppable {
+		if d.Task == id {
+			t.Fatalf("droppable with no reading of the machine: %+v", d)
+		}
+	}
+	if _, err := b.mutate(ctx, id, "task.test", func(r *Record) error {
+		r.ChildTerminalID, r.ChildBackend = "%77", "tmux"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.keepReading(reading{sessions: map[string]session.Session{"%1": {ID: "%1", Assistant: session.AssistantClaude}},
+		sources: map[string]bool{"tmux": true}, complete: true})
+	b.ProcessCWDs = func(context.Context) ([]string, error) { return []string{"/"}, nil }
+	if inv, err = b.ReadInventory(ctx, repo, nil); err != nil {
+		t.Fatal(err)
+	}
 	dropped := false
 	for _, d := range inv.Droppable {
 		dropped = dropped || (d.Task == id && d.Why == WhyMergedClean)

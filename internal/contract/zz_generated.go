@@ -614,6 +614,16 @@ type BrokerAckResult struct {
 	OK           bool   `json:"ok"`
 }
 
+// The five things a Feature Root is briefed with, and nothing else: each
+// 1–8192 bytes, not blank, no NUL; 32768 bytes together.
+type BrokerAssignment struct {
+	Acceptance         string `json:"acceptance"`
+	Constraints        string `json:"constraints"`
+	Objective          string `json:"objective"`
+	RelevantReferences string `json:"relevant_references"`
+	Scope              string `json:"scope"`
+}
+
 // The loop reporting itself. `stalled` is decided from outside the loop —
 // more than three ticks since the last finished pass — because a loop that
 // has stopped cannot say so.
@@ -731,6 +741,145 @@ const (
 
 // BrokerExecutorStatusValues is every value the contract allows, in contract order.
 var BrokerExecutorStatusValues = []BrokerExecutorStatus{BrokerExecutorStatusObserved, BrokerExecutorStatusNotSeen, BrokerExecutorStatusExecutorMissing, BrokerExecutorStatusUnknown}
+
+// One task graph as its tasks say it is now. `frontier` is the nodes a dispatch
+// may take now; `conflicts` names every task whose graph disagrees with the
+// first definition read.
+type BrokerGraph struct {
+	Conflicts   []string          `json:"conflicts,omitempty"`
+	Destination string            `json:"destination"`
+	Frontier    []string          `json:"frontier"`
+	ID          string            `json:"id"`
+	Nodes       []BrokerGraphNode `json:"nodes"`
+}
+
+type BrokerGraphList struct {
+	At     int64         `json:"at"`
+	Graphs []BrokerGraph `json:"graphs"`
+}
+
+type BrokerGraphNode struct {
+	Acceptance []string             `json:"acceptance"`
+	DependsOn  []string             `json:"depends_on"`
+	ID         string               `json:"id"`
+	Kind       BrokerGraphNodeKind  `json:"kind"`
+	State      BrokerGraphNodeState `json:"state"`
+	TaskID     string               `json:"task_id,omitempty"`
+	Title      string               `json:"title"`
+}
+
+type BrokerGraphNodeKind string
+
+const (
+	BrokerGraphNodeKindDecision     BrokerGraphNodeKind = "decision"
+	BrokerGraphNodeKindDelivery     BrokerGraphNodeKind = "delivery"
+	BrokerGraphNodeKindReview       BrokerGraphNodeKind = "review"
+	BrokerGraphNodeKindCorrection   BrokerGraphNodeKind = "correction"
+	BrokerGraphNodeKindVerification BrokerGraphNodeKind = "verification"
+	BrokerGraphNodeKindLanding      BrokerGraphNodeKind = "landing"
+)
+
+// BrokerGraphNodeKindValues is every value the contract allows, in contract order.
+var BrokerGraphNodeKindValues = []BrokerGraphNodeKind{BrokerGraphNodeKindDecision, BrokerGraphNodeKindDelivery, BrokerGraphNodeKindReview, BrokerGraphNodeKindCorrection, BrokerGraphNodeKindVerification, BrokerGraphNodeKindLanding}
+
+// Read from the node's latest task every time it is asked, never stored. `done`
+// for a node whose work lands needs the landing's proof (D17), not the word
+// `landed` alone.
+type BrokerGraphNodeState string
+
+const (
+	BrokerGraphNodeStateReady           BrokerGraphNodeState = "ready"
+	BrokerGraphNodeStateBlocked         BrokerGraphNodeState = "blocked"
+	BrokerGraphNodeStateActive          BrokerGraphNodeState = "active"
+	BrokerGraphNodeStateFailed          BrokerGraphNodeState = "failed"
+	BrokerGraphNodeStateDone            BrokerGraphNodeState = "done"
+	BrokerGraphNodeStateChangesRequired BrokerGraphNodeState = "changes_required"
+	BrokerGraphNodeStateAwaitingLanding BrokerGraphNodeState = "awaiting_landing"
+)
+
+// BrokerGraphNodeStateValues is every value the contract allows, in contract order.
+var BrokerGraphNodeStateValues = []BrokerGraphNodeState{BrokerGraphNodeStateReady, BrokerGraphNodeStateBlocked, BrokerGraphNodeStateActive, BrokerGraphNodeStateFailed, BrokerGraphNodeStateDone, BrokerGraphNodeStateChangesRequired, BrokerGraphNodeStateAwaitingLanding}
+
+// One handoff. `type_attempted_at` is recorded before the line is typed and is
+// why it is never typed twice; `receipt` is what the sender was told, once, as
+// a `handoff_receipt` notice.
+type BrokerHandoff struct {
+	Assistant               string `json:"assistant"`
+	CoordinatorPlainHandoff bool   `json:"coordinator_plain_handoff"`
+	Created                 int64  `json:"created"`
+	DeliveredAt             int64  `json:"delivered_at,omitempty"`
+
+	// The package's directory.
+	Dir             string               `json:"dir"`
+	Failure         string               `json:"failure,omitempty"`
+	FromSession     string               `json:"from_session"`
+	FromTerminal    string               `json:"from_terminal,omitempty"`
+	HandoffID       string               `json:"handoff_id"`
+	Model           string               `json:"model,omitempty"`
+	Opened          *BrokerOpenedSession `json:"opened,omitempty"`
+	ProjectDir      string               `json:"project_dir"`
+	Receipt         string               `json:"receipt,omitempty"`
+	State           BrokerHandoffState   `json:"state"`
+	Title           string               `json:"title,omitempty"`
+	TypeAttemptedAt int64                `json:"type_attempted_at,omitempty"`
+}
+
+type BrokerHandoffEnvelope struct {
+	Handoff BrokerHandoff `json:"handoff"`
+}
+
+// The newest handoffs first, at most 200.
+type BrokerHandoffList struct {
+	At       int64           `json:"at"`
+	Handoffs []BrokerHandoff `json:"handoffs"`
+
+	// Where a sender writes `<handoff_id>/handoff.md`. This daemon's own addition: the
+	// Swift broker hardcodes /tmp/.clawdline/handoffs.
+	PackageRoot string `json:"package_root"`
+}
+
+// POST /v1/orchestrator/handoffs, a closed body. The package is written first
+// at `<package_root>/<handoff_id>/handoff.md` (REFERENCES, VERIFICATION, OPEN
+// THREADS). `coordinator_plain_handoff` must be the JSON value true: the
+// machine role's holder hands over by succession instead.
+type BrokerHandoffRequest struct {
+	// claude (the default) or codex.
+	Assistant               string `json:"assistant,omitempty"`
+	CoordinatorPlainHandoff bool   `json:"coordinator_plain_handoff"`
+
+	// The sender's conversation id; it must be one live session on this machine.
+	FromSession string `json:"from_session"`
+
+	// A lowercase UUID the sender chose; a resend with it is the same handoff.
+	HandoffID  string `json:"handoff_id"`
+	Model      string `json:"model,omitempty"`
+	ProjectDir string `json:"project_dir"`
+
+	// At most 200 characters.
+	Title string `json:"title,omitempty"`
+}
+
+type BrokerHandoffResult struct {
+	Handoff BrokerHandoff `json:"handoff"`
+	OK      bool          `json:"ok"`
+
+	// True when this handoff_id was already opened; nothing was opened or typed again.
+	Replayed bool `json:"replayed"`
+}
+
+// Where a handoff is: `opening` until the receiver's tab has a composer, then
+// `delivered` when the one line was typed into it (typed, not read — the
+// receiver's first turn is the read), or `spawn_failed` when it could not be.
+type BrokerHandoffState string
+
+const (
+	BrokerHandoffStateOpening     BrokerHandoffState = "opening"
+	BrokerHandoffStateDelivered   BrokerHandoffState = "delivered"
+	BrokerHandoffStateSpawnFailed BrokerHandoffState = "spawn_failed"
+)
+
+// BrokerHandoffStateValues is every value the contract allows, in contract order.
+var BrokerHandoffStateValues = []BrokerHandoffState{BrokerHandoffStateOpening, BrokerHandoffStateDelivered, BrokerHandoffStateSpawnFailed}
 
 type BrokerInflight struct {
 	At         int64               `json:"at"`
@@ -926,6 +1075,13 @@ type BrokerObservations struct {
 	Sources []BrokerSourceReading `json:"sources,omitempty"`
 }
 
+// A tab this broker opened for somebody who is not its child.
+type BrokerOpenedSession struct {
+	Backend    string `json:"backend"`
+	OpenedAt   int64  `json:"opened_at"`
+	TerminalID string `json:"terminal_id"`
+}
+
 type BrokerPage struct {
 	Cursor     int64  `json:"cursor"`
 	Finished   int64  `json:"finished"`
@@ -1012,6 +1168,130 @@ type BrokerProvenance struct {
 	Source             string `json:"source"`
 }
 
+type BrokerReclaimDecision struct {
+	Bytes    int64                  `json:"bytes"`
+	Evidence *BrokerReclaimEvidence `json:"evidence,omitempty"`
+	Outcome  BrokerReclaimOutcome   `json:"outcome"`
+	Path     string                 `json:"path"`
+
+	// removed: landed, empty, committed_on_branch, preserved, work_scratch. kept:
+	// task_live, within_grace, owner_present, owner_unknown, path_not_owned,
+	// unreadable, nested_repository, filters_present, preserve_failed,
+	// changed_during_sweep, intent_not_recorded, remove_failed.
+	Reason  string               `json:"reason"`
+	Subject BrokerReclaimSubject `json:"subject"`
+	Task    string               `json:"task"`
+}
+
+// What a decision rested on. Every key is optional: a kept decision carries the
+// answer that was missing, a removal every answer it needed.
+type BrokerReclaimEvidence struct {
+	Backend            string `json:"backend,omitempty"`
+	Base               string `json:"base,omitempty"`
+	Branch             string `json:"branch,omitempty"`
+	BranchTip          string `json:"branch_tip,omitempty"`
+	CommitsOverBase    *int64 `json:"commits_over_base"`
+	Dirty              *bool  `json:"dirty"`
+	Head               string `json:"head,omitempty"`
+	HeadOnTarget       *bool  `json:"head_on_target"`
+	HeadTree           string `json:"head_tree,omitempty"`
+	LandingCommit      string `json:"landing_commit,omitempty"`
+	LandingTarget      string `json:"landing_target,omitempty"`
+	Nested             string `json:"nested,omitempty"`
+	Patch              string `json:"patch,omitempty"`
+	PatchBytes         int64  `json:"patch_bytes,omitempty"`
+	PatchGivesTree     string `json:"patch_gives_tree,omitempty"`
+	PatchSha256        string `json:"patch_sha256,omitempty"`
+	PreservationBranch string `json:"preservation_branch,omitempty"`
+	PreservationCommit string `json:"preservation_commit,omitempty"`
+
+	// The error that left a question unanswered, when one did.
+	Problem      string `json:"problem,omitempty"`
+	ProcessTable string `json:"process_table,omitempty"`
+	Repository   string `json:"repository,omitempty"`
+
+	// `absent_from_complete_source` or `never_opened`.
+	Tab          string `json:"tab,omitempty"`
+	TargetCommit string `json:"target_commit,omitempty"`
+	Terminal     string `json:"terminal,omitempty"`
+	Tree         string `json:"tree,omitempty"`
+
+	// A process working directory inside the subject — the reason it was kept.
+	WorkingInside string `json:"working_inside,omitempty"`
+}
+
+// `removing` is the intent recorded before a removal is attempted; the `would_`
+// pair is a dry run's.
+type BrokerReclaimOutcome string
+
+const (
+	BrokerReclaimOutcomeRemoved                BrokerReclaimOutcome = "removed"
+	BrokerReclaimOutcomePreservedAndRemoved    BrokerReclaimOutcome = "preserved_and_removed"
+	BrokerReclaimOutcomeKept                   BrokerReclaimOutcome = "kept"
+	BrokerReclaimOutcomeRemoving               BrokerReclaimOutcome = "removing"
+	BrokerReclaimOutcomeWouldRemove            BrokerReclaimOutcome = "would_remove"
+	BrokerReclaimOutcomeWouldPreserveAndRemove BrokerReclaimOutcome = "would_preserve_and_remove"
+)
+
+// BrokerReclaimOutcomeValues is every value the contract allows, in contract order.
+var BrokerReclaimOutcomeValues = []BrokerReclaimOutcome{BrokerReclaimOutcomeRemoved, BrokerReclaimOutcomePreservedAndRemoved, BrokerReclaimOutcomeKept, BrokerReclaimOutcomeRemoving, BrokerReclaimOutcomeWouldRemove, BrokerReclaimOutcomeWouldPreserveAndRemove}
+
+// One sweep. `foreign` names at most 64 entries under the checkout and task
+// roots that no record names — never touched — and `foreign_count` is all
+// of them.
+type BrokerReclaimReport struct {
+	At           int64                   `json:"at"`
+	BytesFreed   int64                   `json:"bytes_freed"`
+	Decisions    []BrokerReclaimDecision `json:"decisions"`
+	Deferred     int64                   `json:"deferred"`
+	DryRun       bool                    `json:"dry_run"`
+	Foreign      []string                `json:"foreign"`
+	ForeignCount int64                   `json:"foreign_count"`
+	Kept         int64                   `json:"kept"`
+	Preserved    int64                   `json:"preserved"`
+	Removed      int64                   `json:"removed"`
+	Unreadable   int64                   `json:"unreadable"`
+}
+
+// POST /v1/orchestrator/reclaim. A dry run unless `dry_run` is false: the
+// request that removes files is the one that has to say so.
+type BrokerReclaimRequest struct {
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// A decision as it stands, and since when. Said once: its event is written when
+// it is new or changes, never every sweep (#46).
+type BrokerReclaimStanding struct {
+	Bytes    int64                  `json:"bytes"`
+	Evidence *BrokerReclaimEvidence `json:"evidence,omitempty"`
+	LastSeen int64                  `json:"last_seen"`
+	Outcome  BrokerReclaimOutcome   `json:"outcome"`
+	Reason   string                 `json:"reason"`
+	Since    int64                  `json:"since"`
+	Subject  BrokerReclaimSubject   `json:"subject"`
+	Task     string                 `json:"task"`
+}
+
+// GET /v1/orchestrator/reclaim: the last real sweep (null before the first),
+// every standing decision, and where checkouts and preserved patches live.
+type BrokerReclaimState struct {
+	At            int64                   `json:"at"`
+	Decisions     []BrokerReclaimStanding `json:"decisions"`
+	Last          *BrokerReclaimReport    `json:"last"`
+	ReclaimedRoot string                  `json:"reclaimed_root"`
+	WorktreeRoot  string                  `json:"worktree_root"`
+}
+
+type BrokerReclaimSubject string
+
+const (
+	BrokerReclaimSubjectWorktree BrokerReclaimSubject = "worktree"
+	BrokerReclaimSubjectTaskDir  BrokerReclaimSubject = "task_dir"
+)
+
+// BrokerReclaimSubjectValues is every value the contract allows, in contract order.
+var BrokerReclaimSubjectValues = []BrokerReclaimSubject{BrokerReclaimSubjectWorktree, BrokerReclaimSubjectTaskDir}
+
 // POST /v1/orchestrator/tasks/:id/respawn: a spawn_failed task's task.json
 // copied under a fresh id and dispatched. `secret` is the new task's, returned
 // because the caller may not have chosen it; `original_task` is the first task
@@ -1047,6 +1327,71 @@ type BrokerRoot struct {
 	ProjectDir string    `json:"project_dir,omitempty"`
 	SessionID  string    `json:"session_id"`
 }
+
+// One independently owned Feature Root. It carries no child lineage — no
+// task, parent, secret, timeout, result or landing — and a reader can tell by
+// its shape. The brief is the file at `brief_path`; the one line typed names
+// it. `brief_attempted_at` is durable before the keystroke, so the brief is
+// typed at most once.
+type BrokerRootAssignment struct {
+	Assignment       BrokerAssignment          `json:"assignment"`
+	Assistant        string                    `json:"assistant"`
+	BriefAttemptedAt int64                     `json:"brief_attempted_at,omitempty"`
+	BriefPath        string                    `json:"brief_path"`
+	BriefedAt        int64                     `json:"briefed_at,omitempty"`
+	CreatedAt        int64                     `json:"created_at"`
+	Executor         *BrokerOpenedSession      `json:"executor,omitempty"`
+	Failure          string                    `json:"failure,omitempty"`
+	ID               string                    `json:"id"`
+	Label            string                    `json:"label"`
+	Model            string                    `json:"model"`
+	Ownership        string                    `json:"ownership"`
+	ProjectDir       string                    `json:"project_dir"`
+	RequestID        string                    `json:"request_id"`
+	State            BrokerRootAssignmentState `json:"state"`
+}
+
+type BrokerRootAssignmentEnvelope struct {
+	RootAssignment BrokerRootAssignment `json:"root_assignment"`
+}
+
+type BrokerRootAssignmentList struct {
+	At              int64                  `json:"at"`
+	RootAssignments []BrokerRootAssignment `json:"root_assignments"`
+}
+
+// POST /v1/orchestrator/root-assignments, a closed body, with an
+// `Idempotency-Key` header equal to `request_id`. The same request resent is
+// replayed; another assignment under the same request_id is 409
+// `request_conflict`.
+type BrokerRootAssignmentRequest struct {
+	Assignment BrokerAssignment `json:"assignment"`
+	Assistant  string           `json:"assistant"`
+	Label      string           `json:"label"`
+
+	// "default" or a model name.
+	Model      string `json:"model,omitempty"`
+	ProjectDir string `json:"project_dir"`
+	RequestID  string `json:"request_id"`
+}
+
+type BrokerRootAssignmentResult struct {
+	OK             bool                 `json:"ok"`
+	Replayed       bool                 `json:"replayed"`
+	RootAssignment BrokerRootAssignment `json:"root_assignment"`
+}
+
+type BrokerRootAssignmentState string
+
+const (
+	BrokerRootAssignmentStateAccepted       BrokerRootAssignmentState = "accepted"
+	BrokerRootAssignmentStateTerminalOpened BrokerRootAssignmentState = "terminal_opened"
+	BrokerRootAssignmentStateBriefed        BrokerRootAssignmentState = "briefed"
+	BrokerRootAssignmentStateFailed         BrokerRootAssignmentState = "failed"
+)
+
+// BrokerRootAssignmentStateValues is every value the contract allows, in contract order.
+var BrokerRootAssignmentStateValues = []BrokerRootAssignmentState{BrokerRootAssignmentStateAccepted, BrokerRootAssignmentStateTerminalOpened, BrokerRootAssignmentStateBriefed, BrokerRootAssignmentStateFailed}
 
 // A root's own receipt: one sentence saying this turn delivered something. It
 // produces the check that means `delivered, awaiting approval`, and can never

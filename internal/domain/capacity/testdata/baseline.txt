@@ -92,6 +92,18 @@ internal/adapters/transcript.recordReadLimit # read: the tail of one transcript 
 internal/app/cloudops.cloudEnvelopeCiphertextLimit # admission: one Cloud answer's ciphertext
 internal/app/orchestrator.(*Broker).SubscribeProgress:chan(64) # store: a progress subscriber's buffer (limits N19 buffer class, C3)
 internal/app/orchestrator.AttemptLimit # parameter: completion notice attempts before dead letter (limits N7: C4 makes the dead letter heard)
+internal/app/orchestrator.assignmentFieldLimit # admission: one Root Assignment field, refused past it (W6; the Swift app's 8192 bytes)
+internal/app/orchestrator.assignmentLabelLimit # admission: a Root Assignment's label, refused past it (W6)
+internal/app/orchestrator.assignmentListLimit # page: one read of the Root Assignments; the rows ride on store.db (W6)
+internal/app/orchestrator.assignmentTotalLimit # admission: a Root Assignment's five fields together, refused past it (W6)
+internal/app/orchestrator.graphDestinationLimit # admission: a task graph's destination, refused past it (W6)
+internal/app/orchestrator.graphLineLimit # admission: one acceptance, unknown or out-of-scope line of a task graph (W6)
+internal/app/orchestrator.graphListLimit # admission: how many acceptance, unknown or out-of-scope lines a node or graph carries (W6)
+internal/app/orchestrator.graphNodeLimit # admission: nodes in one task graph, refused past it (W6; the Swift app's 32)
+internal/app/orchestrator.graphTitleLimit # admission: a task graph node's title, refused past it (W6)
+internal/app/orchestrator.handoffFromLimit # admission: a handoff's from_session, refused past it (W6)
+internal/app/orchestrator.handoffListLimit # page: one read of the handoffs; the rows ride on store.db (W6)
+internal/app/orchestrator.handoffTitleLimit # admission: a handoff's title, refused past it (W6)
 internal/app/orchestrator.instructionsLimit # admission: a dispatch's instructions
 internal/app/orchestrator.kindLimit # admission: a dispatch's kind (limits N8's silent cut, C3)
 internal/app/orchestrator.messageTextLimit # admission: one relayed message
@@ -102,6 +114,8 @@ internal/app/orchestrator.notifyTitleLimit # admission: one agent push title
 internal/app/orchestrator.progressLimit # admission: one progress note (limits N5: the file path drops it silently, W1 G34)
 internal/app/orchestrator.readyLimit # parameter: how long a child has to reach a prompt
 internal/app/orchestrator.RespawnLimit # parameter: retries descending from one dispatch
+internal/app/orchestrator.reclaimForeignLimit # page: foreign checkouts one sweep report names; the count is whole (W6, limits N11)
+internal/app/orchestrator.reclaimSweepLimit # parameter: subjects one reclamation sweep asks git about; the rest are the next sweep's (W6, broker-design #29)
 internal/app/orchestrator.rootLabelLimit # admission: a root label (limits N8's silent cut, C3)
 internal/app/orchestrator.sessionSummaryLimit # admission: a delivery receipt's sentence
 internal/app/orchestrator.summaryLimit # admission: a child summary, cut silently (limits N8: W2 stores it whole, D25)

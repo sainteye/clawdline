@@ -249,6 +249,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/completions", s.completionsRoute)
 	mux.HandleFunc("/v1/orchestrator/completions/", s.completionsRoute)
 	mux.HandleFunc("/v1/orchestrator/detached-tasks", s.brokerDetached)
+	// The hand-over plane (handoffs.go, W6).
+	mux.HandleFunc("/v1/orchestrator/handoffs", s.handoffsRoute)
+	mux.HandleFunc("/v1/orchestrator/handoffs/", s.handoffsRoute)
+	mux.HandleFunc("/v1/orchestrator/root-assignments", s.rootAssignmentsRoute)
+	mux.HandleFunc("/v1/orchestrator/root-assignments/", s.rootAssignmentsRoute)
+	mux.HandleFunc("/v1/orchestrator/graphs", s.graphsRoute)
+	mux.HandleFunc("/v1/orchestrator/reclaim", s.reclaimRoute)
 	mux.HandleFunc("/v1/strings", s.strings)
 	mux.HandleFunc("/v1/settings", s.settingsRoute)
 	mux.HandleFunc("/v1/places", s.placesRoute)

@@ -779,6 +779,18 @@ export interface BrokerAckResult {
 }
 
 /**
+ * The five things a Feature Root is briefed with, and nothing else: each 1–8192
+ * bytes, not blank, no NUL; 32768 bytes together.
+ */
+export interface BrokerAssignment {
+  acceptance: string
+  constraints: string
+  objective: string
+  relevant_references: string
+  scope: string
+}
+
+/**
  * The loop reporting itself. `stalled` is decided from outside the loop — more
  * than three ticks since the last finished pass — because a loop that has stopped
  * cannot say so.
@@ -917,6 +929,160 @@ export type BrokerExecutorStatus =
   | "unknown"
 
 export const BrokerExecutorStatusValues: readonly BrokerExecutorStatus[] = ["observed", "not_seen", "executor_missing", "unknown"] as const
+
+/**
+ * One task graph as its tasks say it is now. `frontier` is the nodes a dispatch may
+ * take now; `conflicts` names every task whose graph disagrees with the first
+ * definition read.
+ */
+export interface BrokerGraph {
+  conflicts?: string[]
+  destination: string
+  frontier: string[]
+  id: string
+  nodes: BrokerGraphNode[]
+}
+
+export interface BrokerGraphList {
+  at: number
+  graphs: BrokerGraph[]
+}
+
+export interface BrokerGraphNode {
+  acceptance: string[]
+  depends_on: string[]
+  id: string
+  kind: BrokerGraphNodeKind
+  state: BrokerGraphNodeState
+  task_id?: string
+  title: string
+}
+
+export type BrokerGraphNodeKind =
+    "decision"
+  | "delivery"
+  | "review"
+  | "correction"
+  | "verification"
+  | "landing"
+
+export const BrokerGraphNodeKindValues: readonly BrokerGraphNodeKind[] = ["decision", "delivery", "review", "correction", "verification", "landing"] as const
+
+/**
+ * Read from the node's latest task every time it is asked, never stored. `done` for
+ * a node whose work lands needs the landing's proof (D17), not the word `landed`
+ * alone.
+ */
+export type BrokerGraphNodeState =
+    "ready"
+  | "blocked"
+  | "active"
+  | "failed"
+  | "done"
+  | "changes_required"
+  | "awaiting_landing"
+
+export const BrokerGraphNodeStateValues: readonly BrokerGraphNodeState[] = ["ready", "blocked", "active", "failed", "done", "changes_required", "awaiting_landing"] as const
+
+/**
+ * One handoff. `type_attempted_at` is recorded before the line is typed and is why
+ * it is never typed twice; `receipt` is what the sender was told, once, as a
+ * `handoff_receipt` notice.
+ */
+export interface BrokerHandoff {
+  assistant: string
+  coordinator_plain_handoff: boolean
+  created: number
+  delivered_at?: number
+
+  /**
+   * The package's directory.
+   */
+  dir: string
+  failure?: string
+  from_session: string
+  from_terminal?: string
+  handoff_id: string
+  model?: string
+  opened?: BrokerOpenedSession
+  project_dir: string
+  receipt?: string
+  state: BrokerHandoffState
+  title?: string
+  type_attempted_at?: number
+}
+
+export interface BrokerHandoffEnvelope {
+  handoff: BrokerHandoff
+}
+
+/**
+ * The newest handoffs first, at most 200.
+ */
+export interface BrokerHandoffList {
+  at: number
+  handoffs: BrokerHandoff[]
+
+  /**
+   * Where a sender writes `<handoff_id>/handoff.md`. This daemon's own addition:
+   * the Swift broker hardcodes /tmp/.clawdline/handoffs.
+   */
+  package_root: string
+}
+
+/**
+ * POST /v1/orchestrator/handoffs, a closed body. The package is written first at
+ * `<package_root>/<handoff_id>/handoff.md` (REFERENCES, VERIFICATION, OPEN
+ * THREADS). `coordinator_plain_handoff` must be the JSON value true: the machine
+ * role's holder hands over by succession instead.
+ */
+export interface BrokerHandoffRequest {
+  /**
+   * claude (the default) or codex.
+   */
+  assistant?: string
+  coordinator_plain_handoff: boolean
+
+  /**
+   * The sender's conversation id; it must be one live session on this machine.
+   */
+  from_session: string
+
+  /**
+   * A lowercase UUID the sender chose; a resend with it is the same handoff.
+   */
+  handoff_id: string
+  model?: string
+  project_dir: string
+
+  /**
+   * At most 200 characters.
+   */
+  title?: string
+}
+
+export interface BrokerHandoffResult {
+  handoff: BrokerHandoff
+  ok: boolean
+
+  /**
+   * True when this handoff_id was already opened; nothing was opened or typed
+   * again.
+   */
+  replayed: boolean
+}
+
+/**
+ * Where a handoff is: `opening` until the receiver's tab has a composer, then
+ * `delivered` when the one line was typed into it (typed, not read — the
+ * receiver's first turn is the read), or `spawn_failed` when it could not be.
+ */
+export type BrokerHandoffState =
+    "opening"
+  | "delivered"
+  | "spawn_failed"
+
+export const BrokerHandoffStateValues: readonly BrokerHandoffState[] = ["opening", "delivered", "spawn_failed"] as const
 
 export interface BrokerInflight {
   at: number
@@ -1132,6 +1298,15 @@ export interface BrokerObservations {
   sources?: BrokerSourceReading[]
 }
 
+/**
+ * A tab this broker opened for somebody who is not its child.
+ */
+export interface BrokerOpenedSession {
+  backend: string
+  opened_at: number
+  terminal_id: string
+}
+
 export interface BrokerPage {
   cursor: number
   finished: number
@@ -1236,6 +1411,141 @@ export interface BrokerProvenance {
   source: string
 }
 
+export interface BrokerReclaimDecision {
+  bytes: number
+  evidence?: BrokerReclaimEvidence
+  outcome: BrokerReclaimOutcome
+  path: string
+
+  /**
+   * removed: landed, empty, committed_on_branch, preserved, work_scratch. kept:
+   * task_live, within_grace, owner_present, owner_unknown, path_not_owned,
+   * unreadable, nested_repository, filters_present, preserve_failed,
+   * changed_during_sweep, intent_not_recorded, remove_failed.
+   */
+  reason: string
+  subject: BrokerReclaimSubject
+  task: string
+}
+
+/**
+ * What a decision rested on. Every key is optional: a kept decision carries the
+ * answer that was missing, a removal every answer it needed.
+ */
+export interface BrokerReclaimEvidence {
+  backend?: string
+  base?: string
+  branch?: string
+  branch_tip?: string
+  commits_over_base: number | null
+  dirty: boolean | null
+  head?: string
+  head_on_target: boolean | null
+  head_tree?: string
+  landing_commit?: string
+  landing_target?: string
+  nested?: string
+  patch?: string
+  patch_bytes?: number
+  patch_gives_tree?: string
+  patch_sha256?: string
+  preservation_branch?: string
+  preservation_commit?: string
+
+  /**
+   * The error that left a question unanswered, when one did.
+   */
+  problem?: string
+  process_table?: string
+  repository?: string
+
+  /**
+   * `absent_from_complete_source` or `never_opened`.
+   */
+  tab?: string
+  target_commit?: string
+  terminal?: string
+  tree?: string
+
+  /**
+   * A process working directory inside the subject — the reason it was kept.
+   */
+  working_inside?: string
+}
+
+/**
+ * `removing` is the intent recorded before a removal is attempted; the `would_`
+ * pair is a dry run's.
+ */
+export type BrokerReclaimOutcome =
+    "removed"
+  | "preserved_and_removed"
+  | "kept"
+  | "removing"
+  | "would_remove"
+  | "would_preserve_and_remove"
+
+export const BrokerReclaimOutcomeValues: readonly BrokerReclaimOutcome[] = ["removed", "preserved_and_removed", "kept", "removing", "would_remove", "would_preserve_and_remove"] as const
+
+/**
+ * One sweep. `foreign` names at most 64 entries under the checkout and task roots
+ * that no record names — never touched — and `foreign_count` is all of them.
+ */
+export interface BrokerReclaimReport {
+  at: number
+  bytes_freed: number
+  decisions: BrokerReclaimDecision[]
+  deferred: number
+  dry_run: boolean
+  foreign: string[]
+  foreign_count: number
+  kept: number
+  preserved: number
+  removed: number
+  unreadable: number
+}
+
+/**
+ * POST /v1/orchestrator/reclaim. A dry run unless `dry_run` is false: the request
+ * that removes files is the one that has to say so.
+ */
+export interface BrokerReclaimRequest {
+  dry_run?: boolean
+}
+
+/**
+ * A decision as it stands, and since when. Said once: its event is written when it
+ * is new or changes, never every sweep (#46).
+ */
+export interface BrokerReclaimStanding {
+  bytes: number
+  evidence?: BrokerReclaimEvidence
+  last_seen: number
+  outcome: BrokerReclaimOutcome
+  reason: string
+  since: number
+  subject: BrokerReclaimSubject
+  task: string
+}
+
+/**
+ * GET /v1/orchestrator/reclaim: the last real sweep (null before the first), every
+ * standing decision, and where checkouts and preserved patches live.
+ */
+export interface BrokerReclaimState {
+  at: number
+  decisions: BrokerReclaimStanding[]
+  last: BrokerReclaimReport | null
+  reclaimed_root: string
+  worktree_root: string
+}
+
+export type BrokerReclaimSubject =
+    "worktree"
+  | "task_dir"
+
+export const BrokerReclaimSubjectValues: readonly BrokerReclaimSubject[] = ["worktree", "task_dir"] as const
+
 /**
  * POST /v1/orchestrator/tasks/:id/respawn: a spawn_failed task's task.json copied
  * under a fresh id and dispatched. `secret` is the new task's, returned because the
@@ -1277,6 +1587,72 @@ export interface BrokerRoot {
   project_dir?: string
   session_id: string
 }
+
+/**
+ * One independently owned Feature Root. It carries no child lineage — no task,
+ * parent, secret, timeout, result or landing — and a reader can tell by its
+ * shape. The brief is the file at `brief_path`; the one line typed names it.
+ * `brief_attempted_at` is durable before the keystroke, so the brief is typed at
+ * most once.
+ */
+export interface BrokerRootAssignment {
+  assignment: BrokerAssignment
+  assistant: string
+  brief_attempted_at?: number
+  brief_path: string
+  briefed_at?: number
+  created_at: number
+  executor?: BrokerOpenedSession
+  failure?: string
+  id: string
+  label: string
+  model: string
+  ownership: string
+  project_dir: string
+  request_id: string
+  state: BrokerRootAssignmentState
+}
+
+export interface BrokerRootAssignmentEnvelope {
+  root_assignment: BrokerRootAssignment
+}
+
+export interface BrokerRootAssignmentList {
+  at: number
+  root_assignments: BrokerRootAssignment[]
+}
+
+/**
+ * POST /v1/orchestrator/root-assignments, a closed body, with an `Idempotency-Key`
+ * header equal to `request_id`. The same request resent is replayed; another
+ * assignment under the same request_id is 409 `request_conflict`.
+ */
+export interface BrokerRootAssignmentRequest {
+  assignment: BrokerAssignment
+  assistant: string
+  label: string
+
+  /**
+   * "default" or a model name.
+   */
+  model?: string
+  project_dir: string
+  request_id: string
+}
+
+export interface BrokerRootAssignmentResult {
+  ok: boolean
+  replayed: boolean
+  root_assignment: BrokerRootAssignment
+}
+
+export type BrokerRootAssignmentState =
+    "accepted"
+  | "terminal_opened"
+  | "briefed"
+  | "failed"
+
+export const BrokerRootAssignmentStateValues: readonly BrokerRootAssignmentState[] = ["accepted", "terminal_opened", "briefed", "failed"] as const
 
 /**
  * A root's own receipt: one sentence saying this turn delivered something. It
