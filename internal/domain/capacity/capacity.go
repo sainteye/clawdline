@@ -169,6 +169,10 @@ const (
 	WaitsOpen          = "waits.open"
 	// T3: the board and the Backlog.
 	WorkOpen = "work.open"
+	// T4: where a person takes part.
+	ProposalsOpen = "proposals.open"
+	DecisionsOpen = "decisions.open"
+	WorkDigests   = "work.digests"
 )
 
 // Entry is one row of the register.
@@ -427,6 +431,43 @@ func Register() []Entry {
 			EvictedBy: Person,
 			Projects:  true,
 			Sources:   []string{"internal/adapters/store.WorkOpenLimit"},
+		},
+		{
+			// Proposals waiting for a person's answer — the "to confirm"
+			// area (design-decisions T4, board-redesign §4.4). At the limit a
+			// new proposal is refused with 429 proposals_full in the answer
+			// to the session that made it; none waiting is let go early. The
+			// work it was about stays with its to-dos, which is also what an
+			// unanswered proposal comes to: each one waiting leaves after
+			// seven days with that answer (§10 #4). Answered and expired
+			// proposals are a person's answers and ride on store.db.
+			Name: ProposalsOpen, Class: Buffer, Unit: Rows,
+			Limit: 500, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.ProposalOpenLimit"},
+		},
+		{
+			// Decisions a session asked and nobody has answered (T4). At the
+			// limit a new one is refused with 429 decisions_full in the answer
+			// to the session asking; none open is let go early. Each leaves
+			// by its due — at most seven days — with the default it named.
+			Name: DecisionsOpen, Class: Buffer, Unit: Rows,
+			Limit: 256, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.DecisionOpenLimit"},
+		},
+		{
+			// The daily and weekly digests (T4, board-redesign §8), one row
+			// each: about two years of them. Past the limit the oldest is let
+			// go in the transaction that writes the newest; every fact one
+			// summarised is still in moves, proposals and decisions.
+			Name: WorkDigests, Class: Journal, Unit: Rows,
+			Limit: 800, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.DigestKeepLimit"},
 		},
 	}
 }

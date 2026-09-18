@@ -39,12 +39,29 @@
         "at": { "type": "integer" },
         "broker": { "$ref": "orchestrator.schema.json#/$defs/BrokerDiagnostics" },
         "capacity": { "$ref": "#/$defs/CapacityDiagnostics" },
+        "proposals": { "$ref": "#/$defs/ProposalDiagnostics" },
         "dir": { "type": "string" },
         "ok": { "type": "boolean" },
         "port": { "type": "integer" },
         "scheduler": { "$ref": "#/$defs/SchedulerPulse" },
         "served_by": { "type": "string" },
         "upstream": { "type": "integer" }
+      }
+    },
+    "ProposalDiagnostics": {
+      "description": "/v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what the server decided about asking a person in the conversation, and what the sessions reported doing, counted from the proposals table — durable, the same after a restart. `ask_true` is the proposals the server let be asked; `asked_inline` the ones a session reported asking; `asked_inline_unprompted` those of them the server had said not to ask, which is a briefing not followed. `matched` is `asked_inline == ask_true` with none unprompted; an ask a session has not reported yet also reads as unmatched.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ask_true", "ask_false", "asked_inline", "asked_inline_unprompted", "pending", "matched"],
+      "properties": {
+        "ask_true": { "type": "integer" },
+        "ask_false": { "type": "integer" },
+        "asked_inline": { "type": "integer" },
+        "asked_inline_unprompted": { "type": "integer" },
+        "pending": { "type": "integer", "description": "Proposals waiting for an answer: the \"to confirm\" area and the ones asked in a conversation." },
+        "matched": { "type": "boolean" },
+        "oldest_pending_at": { "type": "integer", "description": "When the proposal waiting longest was made. Absent when none waits." },
+        "error": { "type": "string", "description": "The counts could not be read; every number beside it is zero and means nothing." }
       }
     },
     "HealthReason": {

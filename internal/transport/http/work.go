@@ -65,6 +65,8 @@ func (s *Server) work() *app.WorkBoard {
 	}
 	w := app.NewWorkBoard(s.store)
 	w.OpenLimit = CapacityLimit(capacity.WorkOpen)
+	// The participation points ride the same clock (proposals.go, T4).
+	w.Also = s.participationSweep
 	got, _ := workByServer.LoadOrStore(s, w)
 	return got.(*app.WorkBoard)
 }

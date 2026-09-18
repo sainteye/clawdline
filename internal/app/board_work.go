@@ -49,6 +49,10 @@ type WorkBoard struct {
 	Now   func() time.Time
 	// OpenLimit is the register's `work.open`; zero is store.WorkOpenLimit.
 	OpenLimit int64
+	// Also runs at the end of every pass, on the same clock: the parts of
+	// the board a person takes part in (T4 — a proposal's wait, a decision's
+	// due, the digest). Its error is the pass's.
+	Also func(ctx context.Context) error
 
 	mu    sync.Mutex
 	pulse WorkPulse
@@ -119,6 +123,7 @@ func Facts(rows []store.BrokerRow) ([]work.TaskFacts, int) {
 		}
 		if r.Landing != nil {
 			f.Landing, f.LandedAt = string(r.Landing.State), seconds(r.Landing.At)
+			f.LandingTarget = r.Landing.Target
 		}
 		out = append(out, f)
 	}
@@ -184,6 +189,11 @@ func (w *WorkBoard) Sweep(ctx context.Context) WorkPulse {
 		}
 		if moved {
 			p.Moved++
+		}
+	}
+	if w.Also != nil {
+		if err := w.Also(ctx); err != nil && p.Err == "" {
+			p.Err = err.Error()
 		}
 	}
 	return p

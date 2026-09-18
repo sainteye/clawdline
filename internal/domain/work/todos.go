@@ -160,6 +160,10 @@ type TaskFacts struct {
 	// them (board.go); the to-do rules do not.
 	FinishedAt time.Time
 	LandedAt   time.Time
+	// LandingTarget is the branch the landing record names, empty until a
+	// root named one (D19). T4's I3 reads it: a landing on a default branch
+	// is an effect outside this machine.
+	LandingTarget string
 }
 
 // owed is what a task's facts say about its to-do: still owed, or closed and

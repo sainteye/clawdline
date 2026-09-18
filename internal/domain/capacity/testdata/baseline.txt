@@ -46,6 +46,16 @@
 # lines it added are the fields and the body of a board command (admission)
 # and the rows one board read derives (read: the open items are bounded by
 # work.open, the recently closed by the seven-day window on top of them).
+#
+# T4 (2026-09-19) added where a person takes part, and registered three rows:
+# proposals.open and decisions.open (what waits for a person: refused at the
+# limit, each leaving by its own wait with its safe default) and work.digests
+# (the daily and weekly digest, oldest let go). Answered proposals and closed
+# decisions are a person's answers and ride on store.db, as moves do. The
+# lines it added are a decision's fields (admission), one digest's lines and
+# the moves it reads (page, read), and the decision push budget (parameter).
+# The memory of when a person last wrote to a session (app.Heard) has no
+# constant: it keeps only the last thirty minutes, pruned on every write.
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -154,3 +164,11 @@ internal/app.workProjectLimit # admission: a work item's project
 internal/app.workScanLimit # read: board rows one read derives; past it the answer says truncated
 internal/app.workTitleLimit # admission: a work item's title
 internal/transport/http.workBodyLimit # admission: one board command body
+internal/app.decisionPushHourLimit # parameter: blocking decisions pushed per hour, the agent notifications' 30 counted apart (board-redesign §4.3); over it a decision is recorded over_budget and waits on the board
+internal/app.digestLineLimit # page: the lines one digest section lists; its total is always there
+internal/app.digestMoveLimit # read: the moves one daily digest reads, and past it the digest says moves_truncated
+internal/domain/work.decisionOptionsLimit # admission: the options one decision offers
+internal/domain/work.decisionQuestionLimit # admission: a decision's question
+internal/domain/work.optionIDLimit # admission: an option's id
+internal/domain/work.optionLabelLimit # admission: an option's label
+internal/app.ruleLineLimit # page: the named lines one sweep pass proposes by rule; the rest are the next pass's

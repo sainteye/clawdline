@@ -220,6 +220,8 @@ func (s *Server) Handler() http.Handler {
 	// The new board and its Backlog (work.go, design-decisions T3): the
 	// three structures' own resource, beside the old cards' read-only view.
 	mux.HandleFunc("/v1/work/", s.workRoute)
+	// Where a person takes part: proposals, decisions, digests (proposals.go, T4).
+	s.participationRoutes(mux)
 	mux.HandleFunc("/v1/orchestrator/schedules", s.schedules)
 	// One schedule, its save, its removal and its run; the Cloud bind
 	// command's local half; and moving schedules in and out (schedules.go).
@@ -326,6 +328,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		OK:        (broker == nil || !broker.Beat.Stalled) && capacityOK,
 		Broker:    broker,
 		Capacity:  capacity,
+		Proposals: s.proposalDiagnostics(r.Context()),
 		Scheduler: s.schedulerPulse(),
 		ServedBy:  servedBy,
 		Port:      int64(s.cfg.Port),
