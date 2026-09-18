@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -617,9 +618,10 @@ func init() {
 			}},
 
 		op{name: "board", read: true,
-			divergence: "this daemon's /v1/board is a snapshot of the projects derived from " +
-				"what is running on this machine; the hosted console was written against the " +
-				"Swift app's board envelope, with items, a revision and an audience",
+			divergence: "the envelope and cards are the Swift app's; the report, collection, " +
+				"catalog-search and session selectors are refused by name " +
+				"(board_selector_not_implemented), and item writes are refused pending " +
+				"docs/board-design.md",
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request", "project", "item") {
 					return plan{}, false
@@ -730,6 +732,14 @@ func init() {
 				p.project, p.audience = project, audience
 				p.offset, p.limit = cursor, limit
 				return p, true
+			},
+			// The Swift app sends all four, always (`CloudLocalRoute.swift:123-128`):
+			// board and board.items share one path and differ only by query shape.
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/board", Query: map[string]string{
+					"project": p.project, "audience": p.audience,
+					"cursor": strconv.FormatInt(p.offset, 10), "limit": strconv.FormatInt(p.limit, 10),
+				}}
 			}},
 
 		op{name: "timeline", read: true,

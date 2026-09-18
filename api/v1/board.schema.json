@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "board.schema.json",
   "title": "The board",
-  "description": "GET and POST /v1/board. Writes are compare-and-swap on `revision` with a request fingerprint: same id and same body is a replay, same id and a different body is a conflict.",
+  "description": "GET and POST /v1/board. Since 2026-09-18 the route answers the Swift app's envelope (19 keys: schemaVersion, revision, enabled, mode, updatedAt, available, entitlement, narrativeConsent, projects, items, item, truncated, snapshotBudgetBytes, automaticMutation, sourceIngestion, source, readState, responsibilitySource, viewer; plus truncation when a project is selected), with cards narrowed by that app's BoardCardContract allow-list. Those types live in internal/adapters/board until the item store design (docs/board-design.md C1/C2) settles; the $defs below are the earlier derived-projects snapshot and are no longer served on /v1/board. Writes are compare-and-swap on `revision` with an (actor, requestId) receipt: same id and same body is a replay, same id and a different body is request_id_conflict. Only set_enabled and set_ai_consent are applied; item operations answer 501 board_item_writes_pending_design.",
   "$defs": {
     "Project": {
       "type": "object",
