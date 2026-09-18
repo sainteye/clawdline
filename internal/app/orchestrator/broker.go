@@ -86,10 +86,24 @@ type Broker struct {
 	Language string
 	// MaxChildren is the per-root ceiling; the machine's is four times it.
 	MaxChildren int
-	// Notify sends one push, and reports how many devices took it. A daemon
-	// with no push implementation leaves this nil, and /notify then answers
-	// `not_subscribed` — which is the truth, not a stub.
-	Notify func(ctx context.Context, title, body, tag string) (sent, failed int, err error)
+	// ProcessStart is when a process started, asked of the kernel, or zero
+	// when it could not be read. A lease names its holder's process by pid and
+	// start time, so a later process given the same pid is not taken for the
+	// one that asked (leases.go). Nil leaves the start unchecked.
+	ProcessStart func(pid int) time.Time
+	// Push sends one notification to every device that asked for them, and
+	// reports how many took it. terminal, when it names a session this
+	// machine is watching, is where tapping it lands. A daemon with no push
+	// leaves this nil, and /notify answers `not_subscribed` — the truth.
+	Push func(ctx context.Context, title, body, terminal, tag string) (sent, failed int, err error)
+	// pushed is a test's signal that a dead letter's push, which runs off the
+	// beat's pass, has finished. Nil in production.
+	pushed func()
+	// LeaseLine and OpenWaits are the two coordination ceilings as the
+	// capacity register resolved them (`leases.queue`, `waits.open`): an
+	// override may only lower them. Zero is the registered default.
+	LeaseLine int
+	OpenWaits int
 	// Clock is injectable so a test does not wait out a real deadline.
 	Clock func() time.Time
 	// NewID makes a task id when a caller does not.

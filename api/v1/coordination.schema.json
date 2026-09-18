@@ -1,0 +1,416 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coordination.schema.json",
+  "title": "The coordination plane",
+  "description": "The machine role (Clawdfather), the leases (the compile slot and one checkout's landing), file waits between sessions, detached automation and the manual path for a completion notice nobody acknowledged (docs/design-decisions.md §6 W5). A session is named by its conversation id everywhere here (broker-design #36): a terminal id is where a session is, and a value that is not a conversation id is refused as `session_id_is_terminal` rather than read the other way.",
+  "$defs": {
+    "CoordinatorSession": {
+      "description": "The bound session. `session_id` is its conversation id; `terminal_id` is the terminal it is in now.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "label", "session_id", "terminal_id"],
+      "properties": {
+        "session_id": { "type": "string" },
+        "terminal_id": { "type": "string" },
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "label": { "type": "string" },
+        "cwd": { "type": "string" }
+      }
+    },
+    "CoordinatorStatus": {
+      "description": "What a current reading says about the bound process. `unknown` is never absence.",
+      "type": "string",
+      "enum": ["online", "offline", "unknown", "unregistered"]
+    },
+    "CoordinatorLifecycle": {
+      "type": "string",
+      "enum": ["standby", "offline", "unknown", "unregistered"]
+    },
+    "CoordinatorMetadata": {
+      "description": "The role as Coordinator.swift's coordinatorMetadata projects it. Every field but `configured`, `scope`, `label`, `status` and `lifecycle` is absent while nothing is registered.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["configured", "label", "lifecycle", "scope", "status"],
+      "properties": {
+        "configured": { "type": "boolean" },
+        "id": { "type": "string" },
+        "scope": { "type": "string" },
+        "label": { "type": "string" },
+        "registered_at": { "type": "integer" },
+        "rebound_at": { "type": "integer" },
+        "generation": { "type": "integer" },
+        "status": { "$ref": "#/$defs/CoordinatorStatus" },
+        "lifecycle": { "$ref": "#/$defs/CoordinatorLifecycle" },
+        "session": { "$ref": "#/$defs/CoordinatorSession" }
+      }
+    },
+    "CoordinatorStoreState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "enum": ["absent", "ready", "corrupt", "unsupported"] }
+      }
+    },
+    "CoordinatorRegistration": {
+      "description": "`available` while nothing is registered and the store is readable; `blocked` when the store holds a row nobody can vouch for.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "type": "string", "enum": ["available", "configured", "blocked"] }
+      }
+    },
+    "BearingsSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["freshness", "observed_at", "provenance"],
+      "properties": {
+        "observed_at": { "type": "integer" },
+        "provenance": { "type": "string" },
+        "freshness": { "type": "string", "enum": ["current", "stale", "missing"] }
+      }
+    },
+    "BearingsSources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["landings", "sessions", "tasks", "waits"],
+      "properties": {
+        "sessions": { "$ref": "#/$defs/BearingsSource" },
+        "tasks": { "$ref": "#/$defs/BearingsSource" },
+        "landings": { "$ref": "#/$defs/BearingsSource" },
+        "waits": { "$ref": "#/$defs/BearingsSource" }
+      }
+    },
+    "BearingsLanding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["age_seconds", "obligation", "task_id", "title"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "title": { "type": "string" },
+        "age_seconds": { "type": "integer" },
+        "obligation": { "type": "string" }
+      }
+    },
+    "CoordinatorBearings": {
+      "description": "Where this machine's work stands, as the role reads it before it answers anybody. The session work-state and closeability counts of the Swift app's bearings are not projected here yet (they are the session list's; W5 report).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active_task_count", "coordinator_lifecycle", "dead_letter_count", "held_leases", "observed_at", "open_wait_count", "pending_landing_count", "pending_landings", "sources", "unknown"],
+      "properties": {
+        "observed_at": { "type": "integer" },
+        "coordinator_lifecycle": { "$ref": "#/$defs/CoordinatorLifecycle" },
+        "active_task_count": { "type": "integer" },
+        "pending_landing_count": { "type": "integer" },
+        "pending_landings": { "type": "array", "items": { "$ref": "#/$defs/BearingsLanding" } },
+        "open_wait_count": { "type": "integer" },
+        "dead_letter_count": { "type": "integer" },
+        "held_leases": { "type": "integer" },
+        "unknown": { "description": "The sources that could not be read in full for this answer.", "type": "array", "items": { "type": "string" } },
+        "sources": { "$ref": "#/$defs/BearingsSources" }
+      }
+    },
+    "CoordinatorInspection": {
+      "description": "GET /v1/orchestrator/coordinator.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bearings", "coordinator", "observed_at", "registration", "store", "version"],
+      "properties": {
+        "version": { "type": "integer" },
+        "observed_at": { "type": "integer" },
+        "store": { "$ref": "#/$defs/CoordinatorStoreState" },
+        "registration": { "$ref": "#/$defs/CoordinatorRegistration" },
+        "coordinator": { "$ref": "#/$defs/CoordinatorMetadata" },
+        "bearings": { "$ref": "#/$defs/CoordinatorBearings" }
+      }
+    },
+    "CoordinatorRegisterRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id"],
+      "properties": {
+        "session_id": { "description": "The conversation id of the live session to bind.", "type": "string" }
+      }
+    },
+    "CoordinatorRegisterResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinator", "created", "ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "created": { "type": "boolean" },
+        "coordinator": { "$ref": "#/$defs/CoordinatorMetadata" }
+      }
+    },
+    "CoordinatorRebindRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_coordinator_id", "expected_generation", "session_id"],
+      "properties": {
+        "expected_coordinator_id": { "type": "string" },
+        "expected_generation": { "type": "integer" },
+        "session_id": { "description": "The conversation id of the live session the role moves to.", "type": "string" }
+      }
+    },
+    "CoordinatorRebindResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinator", "ok", "rebound"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "rebound": { "type": "boolean" },
+        "coordinator": { "$ref": "#/$defs/CoordinatorMetadata" }
+      }
+    },
+    "LeaseResource": {
+      "type": "string",
+      "enum": ["heavy_compile", "landing"]
+    },
+    "LeaseRequest": {
+      "description": "POST /v1/orchestrator/leases: ask, or ask again. Idempotent on `request_id`, which is the one proof of ownership. A holder names what proves it alive: a renewal every 20 seconds, `pid` (with `process_start`, epoch seconds), `session_id` (a conversation id), or any of them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["holder", "request_id", "resource"],
+      "properties": {
+        "request_id": { "type": "string" },
+        "resource": { "$ref": "#/$defs/LeaseResource" },
+        "checkout": { "description": "landing only: the absolute path of the checkout being landed into.", "type": "string" },
+        "holder": { "type": "string" },
+        "reason": { "type": "string" },
+        "session_id": { "type": "string" },
+        "pid": { "type": "integer" },
+        "process_start": { "type": "integer" },
+        "phase": { "type": "string" }
+      }
+    },
+    "LeaseOwnerRequest": {
+      "description": "POST /v1/orchestrator/leases/renew, /release or /cancel.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "resource"],
+      "properties": {
+        "request_id": { "type": "string" },
+        "resource": { "$ref": "#/$defs/LeaseResource" },
+        "checkout": { "type": "string" },
+        "phase": { "type": "string" }
+      }
+    },
+    "LeaseLiveness": {
+      "type": "string",
+      "enum": ["alive", "gone", "unknown"]
+    },
+    "LeaseHolder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acquired_at", "held_seconds", "holder", "lease_id", "liveness", "liveness_reason", "reason", "renewal_age_seconds", "renewed_at", "request_id"],
+      "properties": {
+        "lease_id": { "type": "string" },
+        "request_id": { "type": "string" },
+        "holder": { "type": "string" },
+        "reason": { "type": "string" },
+        "session_id": { "type": "string" },
+        "pid": { "type": "integer" },
+        "acquired_at": { "type": "integer" },
+        "renewed_at": { "type": "integer" },
+        "phase": { "type": "string" },
+        "held_seconds": { "type": "integer" },
+        "renewal_age_seconds": { "type": "integer" },
+        "liveness": { "$ref": "#/$defs/LeaseLiveness" },
+        "liveness_reason": { "description": "proving, process_running, session_live, heartbeat_lapsed, owner_gone or evidence_unknown.", "type": "string" }
+      }
+    },
+    "LeaseWaiter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["holder", "proving", "reason", "request_id", "requested_at", "waited_seconds"],
+      "properties": {
+        "request_id": { "type": "string" },
+        "holder": { "type": "string" },
+        "reason": { "type": "string" },
+        "session_id": { "type": "string" },
+        "pid": { "type": "integer" },
+        "position": { "description": "Place among the waiters still asking; absent for one that stopped asking and is passed over.", "type": "integer" },
+        "requested_at": { "type": "integer" },
+        "waited_seconds": { "type": "integer" },
+        "proving": { "type": "boolean" }
+      }
+    },
+    "LeaseRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["holder", "key", "queue", "queue_depth", "resource"],
+      "properties": {
+        "resource": { "$ref": "#/$defs/LeaseResource" },
+        "key": { "type": "string" },
+        "holder": { "nullable": true, "$ref": "#/$defs/LeaseHolder" },
+        "queue": { "type": "array", "items": { "$ref": "#/$defs/LeaseWaiter" } },
+        "queue_depth": { "type": "integer" }
+      }
+    },
+    "LeaseReply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lease", "ok", "state"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "state": { "type": "string", "enum": ["granted", "queued", "renewed", "released", "cancelled"] },
+        "lease_id": { "type": "string" },
+        "position": { "type": "integer" },
+        "hold_reason": { "description": "queued_behind_others, holder_proving or evidence_unknown.", "type": "string" },
+        "retry_after_seconds": { "type": "integer" },
+        "lease": { "$ref": "#/$defs/LeaseRecord" }
+      }
+    },
+    "LeaseList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "leases"],
+      "properties": {
+        "leases": { "type": "array", "items": { "$ref": "#/$defs/LeaseRecord" } },
+        "at": { "type": "integer" }
+      }
+    },
+    "WaitRequest": {
+      "description": "POST /v1/orchestrator/waits. Both sessions are conversation ids.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner_session_id", "paths", "reason", "release_condition", "repository", "waiter_session_id"],
+      "properties": {
+        "repository": { "type": "string" },
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "owner_session_id": { "type": "string" },
+        "waiter_session_id": { "type": "string" },
+        "reason": { "type": "string" },
+        "release_condition": { "type": "string" }
+      }
+    },
+    "WaitReleaseRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner_session_id"],
+      "properties": {
+        "owner_session_id": { "type": "string" },
+        "commit": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "WaitCancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["waiter_session_id"],
+      "properties": {
+        "waiter_session_id": { "type": "string" }
+      }
+    },
+    "WaitWaiter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["createdAt", "reason", "sessionId"],
+      "properties": {
+        "sessionId": { "type": "string" },
+        "reason": { "type": "string" },
+        "createdAt": { "type": "integer" },
+        "requestDeliveredAt": { "type": "integer" },
+        "releaseDeliveredAt": { "type": "integer" }
+      }
+    },
+    "Wait": {
+      "description": "One file wait, in the Swift app's camelCase. `ownerSessionId` and each waiter's `sessionId` are conversation ids.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["createdAt", "id", "ownerSessionId", "paths", "releaseCondition", "repository", "waiters"],
+      "properties": {
+        "id": { "type": "string" },
+        "repository": { "type": "string" },
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "ownerSessionId": { "type": "string" },
+        "releaseCondition": { "type": "string" },
+        "createdAt": { "type": "integer" },
+        "waiters": { "type": "array", "items": { "$ref": "#/$defs/WaitWaiter" } }
+      }
+    },
+    "WaitResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deduplicated", "ok", "wait"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "deduplicated": { "type": "boolean" },
+        "wait": { "$ref": "#/$defs/Wait" }
+      }
+    },
+    "WaitReleaseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ok", "released"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "id": { "type": "string" },
+        "released": { "type": "integer" }
+      }
+    },
+    "WaitCancelResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "id": { "type": "string" }
+      }
+    },
+    "WaitList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "waits"],
+      "properties": {
+        "waits": { "type": "array", "items": { "$ref": "#/$defs/Wait" } },
+        "at": { "type": "integer" }
+      }
+    },
+    "CompletionRow": {
+      "description": "One completion envelope as the manual path reads it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivery", "task_id", "task_state", "title"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "task_state": { "type": "string" },
+        "title": { "type": "string" },
+        "root_session_id": { "type": "string" },
+        "delivery": { "$ref": "orchestrator.schema.json#/$defs/BrokerNotice" }
+      }
+    },
+    "CompletionList": {
+      "description": "GET /v1/orchestrator/completions?pending=true|false. `pending=true` (the default) is every envelope not yet acknowledged, dead letters included; `pending=false` adds the acknowledged ones of the last seven days.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "completions", "pending_only"],
+      "properties": {
+        "completions": { "type": "array", "items": { "$ref": "#/$defs/CompletionRow" } },
+        "pending_only": { "type": "boolean" },
+        "at": { "type": "integer" }
+      }
+    },
+    "CompletionReconcileRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_id": { "type": "string" },
+        "include_dead_letter": { "type": "boolean" }
+      }
+    },
+    "CompletionReconcileResult": {
+      "description": "Re-arming puts an envelope back at the start of its ladder with its notice id kept: state pending, attempts 0, next retry now. At most 25 per call.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["batch_limit", "limited", "ok", "rearmed"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "rearmed": { "type": "array", "items": { "type": "string" } },
+        "limited": { "type": "boolean" },
+        "batch_limit": { "type": "integer" }
+      }
+    }
+  }
+}

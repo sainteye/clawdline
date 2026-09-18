@@ -42,6 +42,11 @@ type DispatchRequest struct {
 	// Everything else is the same door: the same arbitration, the same
 	// record, briefing, clock and collection (D07).
 	Schedule *ScheduleOrigin
+	// Detached is set only by POST /v1/orchestrator/detached-tasks: unattended
+	// automation with no root, which nobody is told about when it finishes —
+	// whoever started it polls. It carries the inventory receipt like any
+	// caller's dispatch, because a caller did read an inventory.
+	Detached bool
 }
 
 // ScheduleOrigin is the schedule a scheduled dispatch belongs to.
@@ -113,7 +118,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 			"secret must be 64 hex characters.")
 	}
 
-	record, err := b.readDraft(req.TaskID, req.Schedule != nil)
+	record, err := b.readDraftAs(req.TaskID, req.Schedule != nil, req.Detached)
 	if err != nil {
 		return Dispatched{}, err
 	}

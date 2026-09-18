@@ -163,6 +163,10 @@ const (
 	ArtifactsImages    = "artifacts.images"
 	ArtifactsImageSize = "artifacts.image_bytes"
 	ArtifactsDrops     = "artifacts.drops"
+	// W5: the coordination plane (design-decisions §6 W5).
+	LeasesQueue        = "leases.queue"
+	CoordinatorAliases = "coordinator.aliases"
+	WaitsOpen          = "waits.open"
 )
 
 // Entry is one row of the register.
@@ -365,6 +369,43 @@ func Register() []Entry {
 			Limit: 40, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice, Log},
 			EvictedBy: Daemon,
+		},
+		{
+			// The askers waiting for one lease — the compile slot, or one
+			// checkout's landing (D06 ②, D20). At the limit a new asker is
+			// refused with 429 queue_full and a retry_after, in the answer
+			// to its own ask; nobody already in line is let go. A waiter that
+			// stops asking is passed over at once and forgotten after half an
+			// hour. Used is the longest line.
+			Name: LeasesQueue, Class: Buffer, Unit: Rows,
+			Limit: 32, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app/orchestrator.LeaseQueueLimit"},
+		},
+		{
+			// The machine role's earlier bindings, kept only to route a
+			// completion notice for a task an earlier binding dispatched
+			// (Coordinator.swift keeps the last 32). A rebind past the limit
+			// lets the oldest go; every rebind is also an event in the store,
+			// so nothing is lost but the routing.
+			Name: CoordinatorAliases, Class: Journal, Unit: Rows,
+			Limit: 32, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/domain/coordinator.AliasLimit"},
+		},
+		{
+			// File waits not yet fully released: one session's paths held,
+			// others waiting to be let go. The Swift app had no limit. At
+			// this one a new wait is refused with 429 waits_full in the
+			// answer to the session asking; an open wait is never dropped —
+			// only its owner releases it, or its waiters leave.
+			Name: WaitsOpen, Class: Buffer, Unit: Rows,
+			Limit: 256, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app/orchestrator.WaitsOpenLimit"},
 		},
 	}
 }

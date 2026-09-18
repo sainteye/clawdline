@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/limits"
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline-go/internal/domain/coordinator"
 	"github.com/sainteye/clawdline-go/internal/domain/icon"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
@@ -78,6 +80,12 @@ func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
 	owed, owedErr := s.owed(ctx, inv.Sessions)
 	// One reading of the Swift app's store, for the same reason.
 	swift := s.swift.Read()
+	// And of this daemon's own machine role (W5): when it holds one, the
+	// crown is drawn from it and from nothing else — one role, one source.
+	// An unreadable role draws no crown of its own and falls back to the
+	// Swift store's, as before this daemon had a role at all.
+	role, roleStatus, _ := s.store.Coordinator(ctx)
+	ownRole := roleStatus == store.CoordinatorReady
 
 	// Only assistant sessions are rows. A terminal running an ordinary shell is
 	// not a session in this contract — the Swift app carries shells as an
@@ -123,6 +131,8 @@ func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
 			inv:        inv,
 			now:        now,
 			generation: gen,
+			role:       role,
+			ownRole:    ownRole,
 		}))
 	}
 
@@ -217,6 +227,10 @@ type rowInput struct {
 	inv        session.Inventory
 	now        time.Time
 	generation int64
+	// role is this daemon's own machine role, and ownRole whether it holds
+	// one; see sessionsPayload.
+	role    *coordinator.Record
+	ownRole bool
 }
 
 // sessionRow renders one session in the shape the console reads.
@@ -262,13 +276,19 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		row.Disposition = work.Disposition
 		row.RootAssignment = in.swift.RootAssignment(in.live)
 		row.Coordination = in.swift.Coordination(item.ID, in.labelOf)
-		row.Coordinator = in.swift.CoordinatorFor(in.live)
+		if !in.ownRole {
+			row.Coordinator = in.swift.CoordinatorFor(in.live)
+		}
 	} else {
 		// Without the store there is no reading of the task, the delivery or
 		// the declaration behind a state, and the honest projection is the
 		// daemon's own with that evidence marked missing.
 		row.WorkState = contract.WorkState(workState(item, in.owed, errSwiftUnknown))
 		row.WorkProvenance = contract.WorkProvenanceBroker
+	}
+
+	if in.ownRole {
+		row.Coordinator = ownCrown(in.role, in.live)
 	}
 
 	row.Closeability = in.swift.Closeability(swiftstore.CloseInput{

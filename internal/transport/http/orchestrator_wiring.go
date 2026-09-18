@@ -11,10 +11,12 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/adapters/projects"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
@@ -98,39 +100,44 @@ func newBroker(s *Server) *orchestrator.Broker {
 			choice, _ := values.String("terminal")
 			return projects.ParseTerminalChoice(choice)
 		},
-		Policy:      dispatchPolicy,
-		Port:        s.cfg.Port,
-		Dir:         s.cfg.Dir,
-		Language:    brokerLanguage(s),
-		MaxChildren: brokerMaxChildren(s),
+		Policy: func() (string, string) { return dispatchPolicy(s.cfg.Dir) },
+		// Both of the broker's pushes — a child's own /notify and a dead
+		// letter (D24) — go the way every push from this daemon goes: the
+		// subscription store with its register limit, the sender with its
+		// bounded retries (push.go, after C2).
+		Push: func(ctx context.Context, title, body, terminal, tag string) (int, int, error) {
+			d, err := s.PushSend(ctx, title, body, terminal, tag, "")
+			return d.Sent, d.Failed, err
+		},
+		ProcessStart: swiftstore.ProcessStart,
+		LeaseLine:    int(CapacityLimit(capacity.LeasesQueue)),
+		OpenWaits:    int(CapacityLimit(capacity.WaitsOpen)),
+		Port:         s.cfg.Port,
+		Dir:          s.cfg.Dir,
+		Language:     brokerLanguage(s),
+		MaxChildren:  brokerMaxChildren(s),
 	}
 }
 
 // dispatchPolicy is this Mac's house rules, read at every dispatch so that a
-// person editing them does not have to restart anything: the base file and the
-// person's local one, apart, because only the broker's composition knows which
-// of the two may be cut (orchestrator.ComposePolicy, D23 ①).
+// person editing them does not have to restart anything: the base and the
+// person's local file, apart, because only the broker's composition knows
+// which of the two may be cut (orchestrator.ComposePolicy, D23 ①).
 //
-// Both files are the Swift app's own paths, and they are read rather than
-// copied: they are the person's words about how work is handed out on this
-// machine, and a second copy under this daemon's directory would be a second
-// set of house rules nobody meant to write. Nothing else under that directory
-// is opened — plan.md §4 lists these two among the read-only paths (D23 ②).
-// A file that cannot be read is an empty one here, which is the Swift app's
-// reading too: the policy is advice to a child, and its absence is not a fault.
-func dispatchPolicy() (base, local string) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", ""
+// The base is this daemon's own, shipped in the repository and projected into
+// its directory at start (orchestrator.ProjectPolicy, D23 ③). The local file
+// is the person's and is never written here; until they have one in this
+// daemon's directory, the Swift app's is read in its place, read-only — the
+// one file under ~/.config/clawdline this broker still opens, and only while
+// its own is missing (U8). A file that cannot be read is an empty one, which
+// is the Swift app's reading too: the policy is advice to a child.
+func dispatchPolicy(dir string) (base, local string) {
+	legacy := ""
+	if home, err := os.UserHomeDir(); err == nil {
+		legacy = filepath.Join(home, ".config", "clawdline")
 	}
-	read := func(name string) string {
-		body, err := os.ReadFile(filepath.Join(home, ".config", "clawdline", name))
-		if err != nil {
-			return ""
-		}
-		return string(body)
-	}
-	return read("dispatch-policy.md"), read("dispatch-policy.local.md")
+	base, local, _ = orchestrator.ReadPolicy(dir, legacy)
+	return base, local
 }
 
 func brokerLanguage(s *Server) string {
@@ -163,6 +170,12 @@ func brokerMaxChildren(s *Server) int {
 // that finished while nobody was looking has still finished, and its root is
 // waiting for a line in its own tab.
 func (s *Server) StartBroker(ctx context.Context) {
+	// The shipped house rules, where a person can read them (D23 ③).
+	if wrote, err := orchestrator.ProjectPolicy(s.cfg.Dir); err != nil {
+		log.Printf("orchestrator: the dispatch policy could not be projected into %s: %v", s.cfg.Dir, err)
+	} else if wrote {
+		log.Printf("orchestrator: projected the shipped dispatch policy into %s", s.cfg.Dir)
+	}
 	tick := 5 * time.Second
 	if v := os.Getenv("CLAWDLINE_NEXT_BEAT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {

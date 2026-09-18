@@ -476,7 +476,7 @@ func (b *Broker) AgentNotify(ctx context.Context, id, secret, title, body string
 		return NotifyResult{}, refuse(http.StatusBadRequest, "bad_request",
 			"body must be non-empty and at most 500 characters.")
 	}
-	if b.Notify == nil {
+	if b.Push == nil {
 		return NotifyResult{}, refuse(http.StatusConflict, "not_subscribed",
 			"No device has asked for notifications yet.")
 	}
@@ -499,7 +499,9 @@ func (b *Broker) AgentNotify(ctx context.Context, id, secret, title, body string
 	if err := outside(); err != nil {
 		return NotifyResult{}, err
 	}
-	sent, failed, err := b.Notify(ctx, label+": "+title, body, "agent-task-"+id)
+	// Tapping it opens the root the task reports to, when that root is a
+	// session this machine is watching (D24).
+	sent, failed, err := b.Push(ctx, label+": "+title, body, r.RootTerminalID, "agent-task-"+id)
 	if err != nil {
 		return NotifyResult{}, refuse(http.StatusBadGateway, "push_failed",
 			"One or more push services did not accept the notification.")
