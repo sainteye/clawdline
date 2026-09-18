@@ -2,55 +2,180 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "schedules.schema.json",
   "title": "Schedules",
-  "description": "GET and POST /v1/schedules. A schedule dispatches work, so it declares claims like any other dispatch, and it does not come due while its own last run is still working.",
+  "description": "The Swift app's schedule routes, field for field (its docs/schedules.md and RemoteServer.swift): GET and POST /v1/orchestrator/schedules, GET, PATCH and DELETE /v1/orchestrator/schedules/:id, POST /v1/orchestrator/schedules/:id/run. The stored schedule is the Swift app's schedule file; see ScheduleFile. The generator has no union type, so `days` is typed only in its array spelling — the routes also accept and return the string `daily` there.",
   "$defs": {
-    "ScheduleRow": {
+    "ScheduleLastRun": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["assistant", "dir", "enabled", "id", "lastRun", "lastTask", "name", "when"],
+      "required": ["at", "state", "task_id"],
       "properties": {
-        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
-        "dir": { "type": "string" },
+        "at": { "description": "When the run's task was created, Unix seconds.", "type": "integer" },
+        "state": { "description": "The task's state: queued, spawning, briefed, success, failure, timeout, cancelled or spawn_failed.", "type": "string" },
+        "task_id": { "type": "string" }
+      }
+    },
+    "ScheduleRow": {
+      "description": "One row of the list, in one of two shapes. A valid schedule carries id, title and enabled, and whichever of the rest apply. A schedule this daemon cannot parse carries only file, state (`invalid`), error and error_kind (`schema`, `project_unavailable` or `unreadable_json`) — it is listed rather than hidden, because a row that vanishes is a row nobody can fix. No task-template field is listed but project_dir.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
         "enabled": { "type": "boolean" },
+        "error": { "type": "string" },
+        "error_kind": { "type": "string" },
+        "file": { "type": "string" },
+        "fired_at": { "description": "A schedule that runs once, and has: when its session opened. Such a schedule never fires again.", "type": "integer" },
         "id": { "type": "string" },
-        "lastRun": { "description": "0 means never run, rather than the Unix value of the zero time.", "type": "integer" },
-        "lastTask": { "type": "string" },
-        "name": { "type": "string" },
-        "unreadable": { "description": "Present and true when this schedule's stored spelling did not parse. It is switched off, and `when` carries the spelling as written rather than a parsed value — otherwise an unreadable row renders as `every 0s`, which reads like a setting somebody chose.", "type": "boolean" },
-        "when": { "type": "string" }
+        "last_missed_at": { "description": "The most recent occurrence that expired outside its catch-up window.", "type": "integer" },
+        "last_run": { "$ref": "#/$defs/ScheduleLastRun" },
+        "next_fire": { "description": "The next local fire, Unix seconds. Absent for a schedule that will not fire again.", "type": "integer" },
+        "once": { "description": "Present and true for a schedule that runs once (`when.on`).", "type": "boolean" },
+        "project_dir": { "type": "string" },
+        "state": { "description": "`invalid` on a row that could not be parsed; absent otherwise.", "type": "string" },
+        "title": { "type": "string" }
       }
     },
     "ScheduleList": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schedules"],
+      "required": ["at", "schedules"],
       "properties": {
+        "at": { "type": "integer" },
         "schedules": { "type": "array", "items": { "$ref": "#/$defs/ScheduleRow" } }
       }
     },
-    "ScheduleSaved": {
+    "ScheduleWhen": {
+      "description": "`when` in the file's own spelling: `at` (HH:MM, local time) and exactly one of `days` (`daily`, or weekday names sun…sat) or `on` (YYYY-MM-DD, a schedule that runs once).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "ok", "when"],
+      "required": ["at"],
       "properties": {
+        "at": { "type": "string" },
+        "days": { "type": "array", "items": { "type": "string" } },
+        "on": { "type": "string" }
+      }
+    },
+    "ScheduleRun": {
+      "description": "One task a schedule made, newest first in the detail. `summary` is what the task wrote when it finished.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "created", "project_dir", "state", "task_id"],
+      "properties": {
+        "assistant": { "type": "string" },
+        "created": { "type": "integer" },
+        "finished_at": { "type": "integer" },
+        "project_dir": { "type": "string" },
+        "session_id": { "type": "string" },
+        "state": { "type": "string" },
+        "summary": { "type": "string" },
+        "task_id": { "type": "string" },
+        "terminal_id": { "type": "string" }
+      }
+    },
+    "ScheduleRecord": {
+      "description": "GET /v1/orchestrator/schedules/:id: one schedule in full — the template and the retained runs the list leaves out. `webhook_binding_availability` is `active` (with `webhook_hook_id`), `unbound`, or `binding_store_unavailable`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["catch_up_hours", "close_tab", "enabled", "file", "id", "notify_on_failure", "runs", "task", "title", "webhook_binding_availability", "when"],
+      "properties": {
+        "catch_up_hours": { "type": "integer" },
+        "close_tab": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "file": { "type": "string" },
+        "fired_at": { "type": "integer" },
         "id": { "type": "string" },
-        "ok": { "type": "boolean" },
-        "when": { "type": "string" }
+        "last_missed_at": { "type": "integer" },
+        "last_run": { "$ref": "#/$defs/ScheduleLastRun" },
+        "next_fire": { "type": "integer" },
+        "notify_on_failure": { "type": "boolean" },
+        "once": { "type": "boolean" },
+        "runs": { "type": "array", "items": { "$ref": "#/$defs/ScheduleRun" } },
+        "runs_may_be_truncated": { "type": "boolean" },
+        "task": { "$ref": "#/$defs/ScheduleTask" },
+        "title": { "type": "string" },
+        "webhook_binding_availability": { "type": "string" },
+        "webhook_hook_id": { "type": "string" },
+        "when": { "$ref": "#/$defs/ScheduleWhen" }
+      }
+    },
+    "ScheduleDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schedule"],
+      "properties": { "schedule": { "$ref": "#/$defs/ScheduleRecord" } }
+    },
+    "ScheduleTask": {
+      "description": "The task template, as the file carries it. The fields a request may never name — project_dir, claims, permission_mode and the rest — are set in the file and carried across every save.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "instructions", "project_dir"],
+      "properties": {
+        "assistant": { "type": "string" },
+        "claims": { "type": "array", "items": { "type": "string" } },
+        "deliverables": { "type": "array", "items": { "type": "string" } },
+        "isolation": { "type": "string" },
+        "isolation_base": { "type": "string" },
+        "instructions": { "type": "string" },
+        "kind": { "type": "string" },
+        "model": { "type": "string" },
+        "permission_mode": { "type": "string" },
+        "plan": { "type": "string" },
+        "project_dir": { "type": "string" },
+        "reasoning_effort": { "type": "string" },
+        "serialize": { "type": "array", "items": { "type": "string" } },
+        "timeout_minutes": { "type": "integer" },
+        "title": { "type": "string" }
       }
     },
     "ScheduleRequest": {
-      "description": "The body POST /v1/schedules accepts. `claims` absent is refused rather than read as none: a dispatch that declared nothing and a dispatch that declared an empty set are different requests.",
+      "description": "The body POST /v1/orchestrator/schedules and PATCH /v1/orchestrator/schedules/:id take — the form's fields, flattened. `place_id` is an id from GET /v1/places, never a path. Exactly one of `days` and `on`; `days` is not defaulted. schedule_id, created_at, when_changed_at, fired_at and project_dir are the machine's and are refused as unknown fields. Writes need an Idempotency-Key and either a device that may send or, for a schedule that runs once, this machine's orchestrator token.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["assistant", "brief", "dir", "id", "name", "when"],
+      "required": ["assistant", "at", "instructions", "place_id", "title"],
       "properties": {
-        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
-        "brief": { "type": "string" },
-        "claims": { "type": "array", "items": { "type": "string" } },
-        "dir": { "type": "string" },
+        "assistant": { "type": "string" },
+        "at": { "type": "string" },
+        "catch_up_hours": { "type": "integer" },
+        "close_tab": { "type": "string" },
+        "days": { "type": "array", "items": { "type": "string" } },
+        "enabled": { "type": "boolean" },
+        "instructions": { "type": "string" },
+        "model": { "description": "No key leaves the model alone; an empty string takes it off.", "type": "string" },
+        "notify_on_failure": { "type": "boolean" },
+        "on": { "type": "string" },
+        "place_id": { "type": "string" },
+        "timeout_minutes": { "type": "integer" },
+        "title": { "type": "string" }
+      }
+    },
+    "ScheduleSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "id", "title"],
+      "properties": {
+        "enabled": { "type": "boolean" },
         "id": { "type": "string" },
-        "name": { "type": "string" },
-        "when": { "type": "string" }
+        "next_fire": { "type": "integer" },
+        "title": { "type": "string" }
+      }
+    },
+    "ScheduleSaved": {
+      "description": "A made or saved schedule. `dispatch_enabled` rides beside a made one only: writing a schedule is not dispatching, and with task dispatch switched off nothing runs it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "schedule"],
+      "properties": {
+        "dispatch_enabled": { "type": "boolean" },
+        "ok": { "type": "boolean" },
+        "schedule": { "$ref": "#/$defs/ScheduleSummary" }
+      }
+    },
+    "ScheduleDeleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deleted", "ok"],
+      "properties": {
+        "deleted": { "type": "string" },
+        "ok": { "type": "boolean" }
       }
     }
   }

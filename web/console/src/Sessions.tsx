@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
-import type { ScheduleRow, SessionRow, TaskRow } from "@clawdline/contract"
+import type { SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { Row } from "./session/List.js"
@@ -7,6 +7,7 @@ import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { Starting } from "./session/Starting.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
+import { ScheduleSection } from "./pages/schedules.js"
 
 /**
  * The session list page: the list, and the conversation beside it.
@@ -143,7 +144,6 @@ export function SessionsPage({
   const ptrRef = useRef<HTMLDivElement>(null)
   const ptrWord = usePullToRefresh(scrollRef, ptrRef, onDid)
   useOrderHold(scrollRef)
-  const schedules = useSchedules(arrived)
 
   return (
     <>
@@ -239,7 +239,7 @@ export function SessionsPage({
                 </>
               ) : null}
             </div>
-            <Schedules list={schedules} />
+            <ScheduleSection arrived={arrived} onOpen={onOpen} />
           </div>
           <NotifyFooter />
         </section>
@@ -451,12 +451,6 @@ function usePullToRefresh(
 }
 
 /**
- * The schedule inventory, read as `net/schedules.js` reads it: not before a
- * list has arrived, then once a minute while the page is visible, and at once
- * on return if a minute was missed. A failed read draws nothing — the section
- * stays absent before any answer and keeps the last truthful list after one.
- */
-/**
  * The dispatched-work list, `S.tasks` in the original.
  *
  * The original is handed the whole list on its stream's `orchestrator` frame,
@@ -541,176 +535,4 @@ function useTasks(arrived: boolean, rows: SessionRow[]): TaskRow[] | null {
     readRef.current()
   }, [shape])
   return list
-}
-
-function useSchedules(arrived: boolean): ScheduleRow[] | null {
-  const [list, setList] = useState<ScheduleRow[] | null>(null)
-  useEffect(() => {
-    if (!arrived) return
-    const LANE_MS = 60000
-    let alive = true
-    let inFlight = false
-    let last = 0
-    const read = () => {
-      if (inFlight) return
-      inFlight = true
-      last = Date.now()
-      client
-        .schedules()
-        .then((d) => {
-          if (alive) setList(d.schedules ?? [])
-        })
-        .catch(() => {})
-        .finally(() => {
-          inFlight = false
-        })
-    }
-    read()
-    let lane: ReturnType<typeof setInterval> | null = document.hidden ? null : setInterval(read, LANE_MS)
-    const onVisibility = () => {
-      if (document.hidden) {
-        if (lane !== null) clearInterval(lane)
-        lane = null
-        return
-      }
-      if (lane !== null) return
-      lane = setInterval(read, LANE_MS)
-      if (Date.now() - last >= LANE_MS) read()
-    }
-    document.addEventListener("visibilitychange", onVisibility)
-    return () => {
-      alive = false
-      if (lane !== null) clearInterval(lane)
-      document.removeEventListener("visibilitychange", onVisibility)
-    }
-  }, [arrived])
-  return list
-}
-
-/**
- * `details#schedules`, `renderSchedules` (`view/schedules.js`).
- *
- * Hidden until an answer lands, and then hidden only when it is empty and this
- * browser may not write. This daemon's `/v1/health` carries no `write` flag and
- * the composer treats the page as writable until a send is refused, so the
- * section is shown for an empty answer as well.
- *
- * The `+` and each row lead to the schedule form and the run-history sheet,
- * which this page does not have, so the `+` is disabled and a row does nothing
- * when pressed. The rows keep the original's `role="button"` shape.
- */
-function Schedules({ list }: { list: ScheduleRow[] | null }) {
-  const T = L.strings
-  const schedules = list ?? []
-  // "Schedules" and the list's name are English in the original's markup and
-  // nothing paints them, so they are English here.
-  return (
-    <details className="schedules" id="schedules" open hidden={list === null}>
-      <summary
-        onClick={(ev) => {
-          // The button sits inside the summary; its press must not fold the list.
-          if ((ev.target as Element).closest("#schedule-new")) ev.preventDefault()
-        }}
-      >
-        <span>Schedules</span>
-        <span className="count" id="schedules-count">
-          {schedules.length ? String(schedules.length) : ""}
-        </span>
-        <button
-          className="add"
-          id="schedule-new"
-          type="button"
-          title={T.webScheduleNew}
-          aria-label={T.webScheduleNew}
-          disabled
-        >
-          <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
-            <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"></path>
-          </svg>
-        </button>
-      </summary>
-      <ul className="schedule-rows" id="schedule-rows" aria-label="Scheduled tasks">
-        {schedules.map((s) => (s.unreadable ? <InvalidSchedule key={s.id} row={s} /> : <ScheduleItem key={s.id} row={s} />))}
-      </ul>
-    </details>
-  )
-}
-
-/**
- * `validRow`. What this wire does not carry is left out rather than guessed:
- * there is no last-run outcome (only its task id), so the result is the
- * original's "—"; no next firing time, so the next-run line is empty rather
- * than claiming there is none; no missed-run time; and no project record, so
- * the project is the schedule's own directory, named by its last component as
- * `scheduleRunsHTML` names a run's, with no mark to draw.
- */
-function ScheduleItem({ row }: { row: ScheduleRow }) {
-  const T = L.strings
-  const parts = row.dir.split("/").filter(Boolean)
-  const label = row.dir === "/" ? "/" : (parts.pop() ?? "")
-  const project = row.dir ? { label, path: row.dir } : null
-  // `nextLine` in the original; empty because nothing here says when it fires next.
-  const nextLine: string = ""
-  return (
-    <li className="schedule-row" data-id={row.id} role="button" tabIndex={0} style={{ cursor: "pointer" }}>
-      <div className="schedule-name">
-        <span
-          className="enabled-dot"
-          data-enabled={row.enabled ? "1" : "0"}
-          role="img"
-          aria-label={row.enabled ? T.webScheduleEnabled : T.webScheduleDisabled}
-        ></span>
-        <span className="schedule-title">{row.name || "Untitled schedule"}</span>
-      </div>
-      <span className="schedule-result" data-state="none">
-        —
-      </span>
-      <div className="schedule-meta">
-        {project && (
-          <span className="schedule-project">
-            <ScheduleMark />
-            <span className="schedule-project-name" title={project.path}>
-              {project.label}
-            </span>
-          </span>
-        )}
-        {project && nextLine && (
-          <span className="schedule-meta-sep" aria-hidden="true">
-            {" · "}
-          </span>
-        )}
-        <time className="schedule-next">{nextLine}</time>
-      </div>
-    </li>
-  )
-}
-
-/** The project mark, drawn by the rows' code; with no icon it draws nothing and is marked so. */
-function ScheduleMark() {
-  const ref = useRef<HTMLCanvasElement>(null)
-  const [none, setNone] = useState(false)
-  useEffect(() => {
-    setNone(!L.paintIcon(ref.current, undefined, 3))
-  }, [])
-  return <canvas className={none ? "schedule-project-mark none" : "schedule-project-mark"} aria-hidden="true" ref={ref} />
-}
-
-/**
- * `invalidRow`. The original names the file and the parse error; this wire has
- * neither, so the row is named by the schedule and the error is the
- * original's own fallback sentence (English in its source, as here).
- */
-function InvalidSchedule({ row }: { row: ScheduleRow }) {
-  return (
-    <li className="schedule-row invalid">
-      <div className="schedule-name">
-        <span className="enabled-dot" data-enabled="invalid" role="img" aria-label="Invalid"></span>
-        <span className="schedule-title">{row.name || "Invalid schedule"}</span>
-      </div>
-      <span className="schedule-result" data-state="invalid">
-        invalid
-      </span>
-      <p className="schedule-error">The schedule could not be read.</p>
-    </li>
-  )
 }

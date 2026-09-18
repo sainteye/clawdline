@@ -2,10 +2,10 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/domain/schedule"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
@@ -32,23 +32,20 @@ type Pulse struct {
 	Note string
 }
 
-// Scheduler fires stored templates when they come due.
+// Scheduler is the minute timer: it asks the book what each schedule's latest
+// occurrence calls for, and runs, skips or records it.
 type Scheduler struct {
-	Store      *store.Store
-	Dispatcher Dispatcher
-	Tick       time.Duration
-	NewID      func() string
+	Book *ScheduleBook
+	Tick time.Duration
 	// Report is called once per pass, whatever the pass did. Nil is allowed so
 	// a caller that does not watch the clock need not pretend to.
 	Report func(Pulse)
 }
 
-// Run watches the clock until the context ends.
-//
-// Firing marks the run before dispatching rather than after. A dispatch that
-// fails has still consumed its turn: retrying it on the next tick would give a
-// broken schedule a tight loop, and the honest record of "it was due, it was
-// tried" is what a reader needs either way.
+// Run watches the clock until the context ends. The first pass is one tick
+// after start, never at start: a daemon that has just come up has not been
+// asked to do anything yet, and the catch-up rule below already covers an
+// occurrence it slept through.
 func (s Scheduler) Run(ctx context.Context) {
 	tick := s.Tick
 	if tick == 0 {
@@ -60,69 +57,151 @@ func (s Scheduler) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-t.C:
-			s.fireDue(ctx, now)
+		case <-t.C:
+			p := s.Book.Beat(ctx)
+			if s.Report != nil {
+				s.Report(p)
+			}
 		}
 	}
 }
 
-func (s Scheduler) fireDue(ctx context.Context, now time.Time) {
+// Beat is one pass: `scheduleBeat` and `runScheduledFire` in the Swift app,
+// on one lane with manual runs.
+//
+// Only the latest occurrence of each schedule is ever asked about, so a daemon
+// that was down for three days runs at most one catch-up per schedule, inside
+// its window, and never a batch. The occurrence it decides is written down
+// before anything else happens and survives a restart, so the same occurrence
+// is never decided twice.
+func (b *ScheduleBook) Beat(ctx context.Context) Pulse {
+	now := b.now()
 	pulse := Pulse{At: now}
-	defer func() {
-		if s.Report != nil {
-			s.Report(pulse)
-		}
-	}()
+	if !b.dispatchEnabled() {
+		pulse.Note = "task dispatch is switched off"
+		return pulse
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-	all, err := s.Store.Schedules(ctx)
+	inv, err := b.load(ctx)
 	if err != nil {
 		log.Printf("schedules unreadable: %v", err)
 		pulse.Note = "schedules unreadable"
-		return
+		return pulse
 	}
-	pulse.Considered = len(all)
-	live, err := s.Store.LiveTasks(ctx)
+	pulse.Considered = len(inv.valid)
+	runs, err := b.runsBySchedule(ctx)
 	if err != nil {
-		log.Printf("live tasks unreadable, firing nothing: %v", err)
-		pulse.Note = "live tasks unreadable"
-		return
-	}
-	running := map[string]bool{}
-	for _, t := range live {
-		running[t.ID] = true
+		log.Printf("schedule runs unreadable, firing nothing: %v", err)
+		pulse.Note = "schedule runs unreadable"
+		return pulse
 	}
 
-	for _, sc := range all {
-		if !sc.Due(now, running[sc.LastTask]) {
+	for _, h := range inv.valid {
+		s := h.s
+		if !s.Enabled {
 			continue
 		}
-		pulse.Due++
-		if err := s.Store.MarkScheduleRun(ctx, sc.ID, now); err != nil {
-			log.Printf("schedule %s: could not record the run: %v", sc.ID, err)
+		fire := s.When.LatestFire(now, b.loc())
+		if fire.IsZero() {
 			continue
 		}
-		t := task.Task{
-			ID:         s.NewID(),
-			Assistant:  task.Assistant(sc.Assistant),
-			ProjectDir: sc.Dir,
-			Brief:      sc.Brief,
-			Claims:     sc.Claims,
+		list := runs[s.ID]
+		b.settle(ctx, list)
+		o := schedule.Occurrence{Now: now, Fire: fire, FirstSeen: h.f.FirstSeen, Handled: h.f.LastFire}
+		for _, r := range list {
+			if r.Created.After(o.LastRun) {
+				o.LastRun = r.Created
+			}
+			if r.State != "" && !finished(r.State) {
+				o.Active = true
+			}
 		}
-		if t.Claims == nil {
-			t.Claims = []string{}
+		switch s.Decide(o) {
+		case schedule.Run:
+			pulse.Due++
+			if b.fireOne(ctx, s, fire, h.f.LastFire) {
+				pulse.Fired++
+			}
+		case schedule.Active:
+			_ = b.Store.MarkScheduleFire(ctx, s.ID, fire, false)
+			b.audit("orchestrator.schedule.skipped", map[string]string{"schedule": s.ID, "why": "active"})
+		case schedule.Missed:
+			_ = b.Store.MarkScheduleFire(ctx, s.ID, fire, true)
+			b.audit("orchestrator.schedule.skipped", map[string]string{"schedule": s.ID, "why": "missed"})
+			if s.NotifyOnFailure && b.Notify != nil {
+				b.Notify(ctx, s.Title, "Scheduled run missed its catch-up window.", "schedule-"+s.ID+"-missed")
+			}
 		}
-		if _, _, err := s.Dispatcher.Dispatch(ctx, t, string(t.Assistant)); err != nil {
-			// A refusal is the ordinary outcome when the paths are busy, and it
-			// is recorded rather than retried into a loop.
-			log.Printf("schedule %s (%s): %v", sc.Name, sc.ID, err)
-			continue
-		}
-		if err := s.Store.MarkScheduleTask(ctx, sc.ID, t.ID); err != nil {
-			log.Printf("schedule %s: could not record its task: %v", sc.ID, err)
-		}
-		pulse.Fired++
-		log.Printf("schedule %s fired: task %s", sc.Name, t.ID)
 	}
+	return pulse
 }
 
-var _ = schedule.Schedule{}
+// fireOne dispatches one decided occurrence and reports whether a task was
+// accepted.
+//
+// The row is read again first: the occurrence was decided a moment ago, and a
+// delete or a save that moved it can land in between. The occurrence is then
+// written down as decided before the dispatch is attempted, so a daemon that
+// dies halfway through does not run it again when it comes back. A one-shot is
+// spent only by a session that was really accepted; a refusal consumes the
+// occurrence and leaves no stamp, except `over_capacity`, which is handed back
+// so the next minute retries while the window lasts.
+func (b *ScheduleBook) fireOne(ctx context.Context, decided schedule.Schedule, fire, before time.Time) bool {
+	fresh, ok, err := b.named(ctx, decided.ID)
+	if err != nil {
+		return false
+	}
+	if !ok || fresh.s.Stale(fire) {
+		why := "retimed"
+		if !ok {
+			why = "removed"
+		}
+		b.audit("orchestrator.schedule.skipped", map[string]string{"schedule": decided.ID, "why": why})
+		return false
+	}
+	s := fresh.s
+	claimed, err := b.Store.ClaimScheduleFire(ctx, s.ID, fire)
+	if err != nil || !claimed {
+		// Not written down by this pass means not this pass's to run: either
+		// the store refused, and running anyway is how a restart would run it
+		// a second time, or something else decided it first.
+		log.Printf("schedule %s: occurrence %s not claimed, not firing: %v", s.ID, fire.Format(time.RFC3339), err)
+		return false
+	}
+	b.audit("orchestrator.schedule.run", map[string]string{"schedule": s.ID, "how": "timer",
+		"fire": fmt.Sprint(fire.Unix())})
+	taskID, _, _, warning, err := b.dispatch(ctx, s, fire, "timer")
+	if err != nil {
+		var refusal task.Refusal
+		code := "dispatch_failed"
+		if ok := asRefusal(err, &refusal); ok {
+			code = refusal.Code
+		}
+		if code == "over_capacity" {
+			_ = b.Store.RestoreScheduleFire(ctx, s.ID, fire, before)
+		}
+		b.audit("orchestrator.schedule.refused", map[string]string{"schedule": s.ID, "code": code, "why": err.Error()})
+		if s.NotifyOnFailure && b.Notify != nil {
+			b.Notify(ctx, s.Title, "Scheduled run could not start: "+code, "schedule-"+s.ID+"-refused")
+		}
+		return false
+	}
+	if s.When.Once() {
+		b.markFired(ctx, s.ID, fire)
+	}
+	if warning != "" {
+		b.audit("orchestrator.schedule.brief_undelivered", map[string]string{"schedule": s.ID, "task": taskID})
+	}
+	log.Printf("schedule %s (%s) fired: task %s for %s", s.Title, s.ID, taskID, fire.Format(time.RFC3339))
+	return true
+}
+
+func asRefusal(err error, into *task.Refusal) bool {
+	if r, ok := err.(task.Refusal); ok {
+		*into = r
+		return true
+	}
+	return false
+}

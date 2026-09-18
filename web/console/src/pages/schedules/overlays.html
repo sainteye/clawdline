@@ -1,0 +1,154 @@
+<div class="overlay" id="schedule-history" hidden>
+    <div class="sheet schedule-history-sheet" id="schedule-history-sheet" role="dialog"
+         aria-modal="true" aria-labelledby="schedule-history-title">
+        <div class="schedule-history-head">
+            <div class="schedule-history-heading">
+                <h2 id="schedule-history-title">Schedule</h2>
+                <p id="schedule-history-meta"></p>
+            </div>
+            <button class="chip" id="schedule-history-edit" type="button">Edit schedule</button>
+        </div>
+        <p class="said" id="schedule-history-said" role="status" aria-live="polite"></p>
+        <section class="schedule-webhook" id="schedule-webhook" hidden>
+            <h3 id="schedule-webhook-title">Cloud webhook</h3>
+            <p id="schedule-webhook-note"></p>
+            <p class="schedule-webhook-warning" id="schedule-webhook-warning"></p>
+            <div class="buttons">
+                <button class="chip" id="schedule-webhook-generate" type="button">Generate webhook</button>
+                <button class="chip" id="schedule-webhook-copy" type="button" hidden>Copy URL</button>
+                <button class="chip" id="schedule-webhook-rotate" type="button" hidden>Rotate URL</button>
+                <button class="chip" id="schedule-webhook-disable" type="button" hidden>Disable webhook</button>
+            </div>
+            <p id="schedule-webhook-status" role="status" aria-live="polite"></p>
+            <ol class="schedule-webhook-timeline" id="schedule-webhook-timeline"></ol>
+        </section>
+        <h3 id="schedule-history-runs-label">Which conversation?</h3>
+        <ul class="schedule-run-rows" id="schedule-run-rows"></ul>
+        <p class="schedule-history-empty" id="schedule-history-empty" hidden></p>
+        <p class="schedule-history-capped" id="schedule-history-capped" hidden></p>
+        <div class="buttons">
+            <button class="chip" id="schedule-history-close" type="button">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Making a schedule, which until now meant writing a JSON file by hand. Every field here is
+     one the file has, named the same way, so that what somebody fills in and what the parser
+     reads back are the same list — see `Orchestrator.schedule(from:)`, which is the authority on
+     all of it and rejects anything this form should not have sent.
+
+     The same sheet is what a spoken schedule lands in: the planner fills what it heard, and
+     whatever it could not work out is left for a person, which is the whole reason the form
+     exists before the voice does.
+
+     A third door opens it already filled in, from Edit on the schedule history sheet — `GET
+     /v1/orchestrator/schedules/:id` read first, then the same fields, the same PATCH this sheet's
+     Save now sends instead of POST, and the Delete button `#schedule-delete` gains once there is
+     something to delete. See `openEdit` in `input/schedule.js`. -->
+<div class="overlay" id="schedule-form" hidden>
+    <div class="sheet schedule-sheet" id="schedule-sheet" role="dialog" aria-modal="true"
+         aria-labelledby="schedule-form-title">
+        <h2 id="schedule-form-title">New schedule</h2>
+        <p class="say" id="schedule-form-say"></p>
+
+        <div class="block">
+            <span class="field-label" id="schedule-title-label">Title</span>
+            <input class="find" id="schedule-title" type="text" maxlength="120"
+                   autocomplete="off" autocapitalize="sentences" spellcheck="false"
+                   data-1p-ignore data-lpignore="true" data-bwignore>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-at-label">At</span>
+            <input class="find time" id="schedule-at" type="time" required>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-days-label">On</span>
+            <div class="row" id="schedule-days"></div>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-where-label">Where</span>
+            <!-- Collapsed to one line, and the reason is the phone. The project list is long
+                 enough to fill the screen and it scrolls inside itself, so a finger on it moves
+                 the list rather than the sheet — and everything below (the assistant, the
+                 message, the buttons) reads as though it were not there at all. -->
+            <button class="picked" id="schedule-picked" type="button"
+                    aria-expanded="false" aria-controls="schedule-places"></button>
+            <ul class="places" id="schedule-places" hidden></ul>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-with-label">With</span>
+            <div class="row" id="schedule-with"></div>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-first-label">First message</span>
+            <textarea class="find" id="schedule-instructions" rows="4"
+                      spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore></textarea>
+        </div>
+
+        <!-- Folded, because every one of these has a working default and a first schedule should
+             not have to read six of them to be made. -->
+        <details class="more" id="schedule-more">
+            <summary id="schedule-more-label">More</summary>
+            <div class="block">
+                <span class="field-label" id="schedule-close-label">When it finishes</span>
+                <div class="row" id="schedule-close"></div>
+            </div>
+            <div class="block">
+                <div class="row" id="schedule-flags"></div>
+            </div>
+            <div class="block nums">
+                <label class="num" id="schedule-catch-label">
+                    <span class="field-label">Catch up within</span>
+                    <input class="find" id="schedule-catch" type="number" min="0" max="168" step="1">
+                </label>
+                <label class="num" id="schedule-timeout-label">
+                    <span class="field-label">Give up after</span>
+                    <input class="find" id="schedule-timeout" type="number" min="1" max="240" step="1">
+                </label>
+            </div>
+            <!-- Same judgement the planner makes for a spoken one, offered here for a typed or an
+                 edited schedule. Hidden along with the assistant chips: a model name only means
+                 anything for Claude this round — see `Schedule.drawModel`. -->
+            <div class="block">
+                <span class="field-label" id="schedule-model-label">Model</span>
+                <div class="row" id="schedule-model"></div>
+            </div>
+        </details>
+
+        <p class="said" id="schedule-said" role="status" aria-live="polite"></p>
+
+        <div class="buttons">
+            <!-- Hidden until `openEdit` has something to delete — a schedule being made has
+                 nothing behind it yet. Pushed to the far side of Cancel/Save by `.danger` in
+                 sheets.css, the same way a destructive action sits apart from the other two in
+                 every list of them this page draws. -->
+            <button class="chip danger" id="schedule-delete" type="button" hidden>Delete</button>
+            <button class="chip" id="schedule-cancel" type="button">Cancel</button>
+            <button class="chip confirm-go" id="schedule-go" type="button">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Deleting a schedule, asked about first. Behind `#schedule-form`'s own overlay slot rather
+     than stacked over it — one dialog on screen at a time, the same rule
+     `input/action-confirm.js` follows for its own confirm over `#session-actions` — so cancelling
+     this leaves the edit sheet exactly as it was instead of two backdrops deep. There is no undo
+     route once this is sent, which is the whole reason it exists rather than Delete sending
+     straight through like every other field on the sheet above it. -->
+<div class="overlay" id="schedule-delete-confirm" hidden>
+    <div class="sheet confirm-sheet" id="schedule-delete-confirm-sheet" role="alertdialog"
+         aria-modal="true" aria-labelledby="schedule-delete-confirm-title"
+         aria-describedby="schedule-delete-confirm-say" data-kind="schedule-delete">
+        <h2 id="schedule-delete-confirm-title">Delete schedule</h2>
+        <p class="say" id="schedule-delete-confirm-say">This cannot be undone.</p>
+        <div class="buttons">
+            <button class="chip" id="schedule-delete-confirm-cancel" type="button">Cancel</button>
+            <button class="chip confirm-go" id="schedule-delete-confirm-go" type="button">Delete</button>
+        </div>
+    </div>
+</div>

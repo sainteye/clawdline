@@ -220,6 +220,12 @@ func (s *Server) Handler() http.Handler {
 		s.boardRead(w, r)
 	})
 	mux.HandleFunc("/v1/orchestrator/schedules", s.schedules)
+	// One schedule, its save, its removal and its run; the Cloud bind
+	// command's local half; and moving schedules in and out (schedules.go).
+	mux.HandleFunc("/v1/orchestrator/schedules/", s.scheduleRoute)
+	mux.HandleFunc("/v1/orchestrator/schedule-webhooks/bind", s.scheduleWebhookBindRoute)
+	mux.HandleFunc("/v1/orchestrator/schedule-imports", s.scheduleImportRoute)
+	mux.HandleFunc("/v1/orchestrator/schedule-exports", s.scheduleExportRoute)
 	mux.HandleFunc("/v1/orchestrator/tasks", s.tasksRoute)
 	// The broker (orchestrator.go): everything under a task id, plus the five
 	// routes beside it. A child's own routes are let through the gate by
@@ -359,11 +365,9 @@ func (s *Server) StartScheduler(ctx context.Context) {
 	}
 	s.tick = tick
 	go app.Scheduler{
-		Store:      s.store,
-		Dispatcher: s.dispatcher,
-		Tick:       tick,
-		NewID:      newID,
-		Report:     func(p app.Pulse) { s.pulse.Store(&p) },
+		Book:   s.scheduleBook(),
+		Tick:   tick,
+		Report: func(p app.Pulse) { s.pulse.Store(&p) },
 	}.Run(ctx)
 	log.Printf("scheduler ticking every %s", tick)
 }

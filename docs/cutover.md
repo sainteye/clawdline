@@ -78,7 +78,7 @@ Timeline 1,456、WebPush＋SmartNotification 1,318。
 | `graphs` | 多節點派工圖 | ❌ | split-and-join 無法宣告 | 新 daemon | 4 |
 | `detached-tasks` | `root.session_id: null` 的無人值守自動化 | ❌ | 排程的自動任務沒有載體 | 新 daemon | 3 |
 | `coordinator`（Clawdfather） | 註冊、rebind、bearings、successions；機器層級的角色 | 🔶 `/v1/next/coordinator` 有 read／POST 與候選清單，實測 `registered:false` | 新 daemon 沒有接手這個角色；皇冠目前靠唯讀舊 store | 新 daemon | 3 |
-| `schedules` 與 `schedule-webhooks` | 6 個排程檔（5 個啟用，全部是真的營運工作：文章發布、production 錯誤巡檢、a private venture對應、a private venture 巡檢）＋webhook bind／delivery | 🔶 有 `/v1/orchestrator/schedules` 與自己的時鐘（`domain/schedule`，first-seen 規則），**實測回 `{"schedules":[]}`** | **5 個每天在跑的營運排程會停**。遷移＝把 6 個 JSON 換成新格式並重新設定 | 新 daemon＋使用者確認 | 2 |
+| `schedules` 與 `schedule-webhooks` | 6 個排程檔（5 個啟用，全部是真的營運工作：文章發布、production 錯誤巡檢、a private venture對應、a private venture 巡檢）＋webhook bind／delivery | ✅🔧 2026-09-18（task `1f9ca362`，`docs/schedules.md`）：舊版檔案格式、六條路由、webhook 綁定帳本、匯入／匯出；時鐘在 7796 實測發射、重啟不連發、停機錯過的那一次補跑一次。派工本身仍是 Go 第一版（見 A1、A2） | **5 個每天在跑的營運排程會停**。遷移＝把 6 個 JSON 換成新格式並重新設定 | 新 daemon＋使用者確認 | 2 |
 | `durable-reports/promotions` | 把 task 報告升級成不可變、可跨裝置讀的文件（`~/Library/Application Support/Clawdline/durable-reports/`） | ❌ | 報告只剩本機檔案 | 新 daemon | 5 |
 | `storage` / `maintenance/restart` | store 健康度、重啟維護窗（讓 app 可以安全重啟而不殺掉 in-flight） | ❌ | 新 daemon 重啟沒有保護 | 新 daemon | 4 |
 | `whoami` / `assistants` / `waits` | session 自我識別、可用助理、協調等待 | ❌ | 協調等待（畫面上的「等待中」）沒有來源 | 新 daemon | 3 |
@@ -256,10 +256,11 @@ claims `internal/app/orchestrator`、`internal/adapters/store`、`taskdir`、`su
 - [ ] **A7 Clawdfather 可以在新 daemon 上註冊並被畫出來。**
       驗：`POST /v1/next/coordinator` 註冊後，`registered:true`，清單上出現皇冠，
       **而且此時 `swiftstore` 是關掉的**（否則證明不了來源）。
-- [ ] **A8 排程真的會在新 daemon 上發射。** 驗：建一個 `every 1h` 的排程，
+- [ ] **A8 排程真的會在新 daemon 上發射。**（2026-09-18 在隔離的 7796 實測通過，證據在 task `1f9ca362` 的 artifacts；
+      規則已換成舊版的「時刻＋補跑窗」，`every 1h` 不再存在，驗法改成「建一個一分鐘後的排程」。在 7727 上仍待重建後驗） 驗：建一個 `every 1h` 的排程，
       確認 `first_seen` 規則生效（**第一次在一小時後**，不是立刻），
       到期時真的開了分頁，`/v1/diagnostics` 的 `due` 與 `fired` 對得起來。
-- [ ] **A9 五個營運排程搬過去而且各跑成功一次。**
+- [ ] **A9 五個營運排程搬過去而且各跑成功一次。**（匯入與內容一致已用複本驗過 6/6；「各跑成功一次」要真的切換，見 `docs/schedules.md` 的順序）
       清單：文章發布、a private venture發布、dual production 錯誤巡檢、a private venture餐廳對應與 production 錯誤、
       a private venture 內容修正與對話異常巡檢。**這一項要使用者自己確認結果對**，不是看它有沒有開分頁。
 - [ ] **A10 編譯插槽鎖存在。** 驗：同時要求兩次驗證，第二個排隊而不是同時開 `swift-frontend`。

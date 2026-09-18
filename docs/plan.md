@@ -155,6 +155,9 @@ React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`�
 一個人現在建立 `every 1h`，第一次跑在一小時後——那正好是他選的時間，
 比「立刻跑」更符合原本那個理由。
 
+**2026-09-18：模型換成舊版的檔案（時刻＋補跑窗），這條規則原樣保留**，成為決策的第 4 關：比這支 daemon
+第一次看見那一列還早的那一次，不跑也不算 missed。見 `docs/schedules.md`。
+
 ### 這條規則有人看著它
 
 - `internal/domain/schedule/schedule_test.go`：本 repo 的第一個測試，

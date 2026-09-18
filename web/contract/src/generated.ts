@@ -2300,52 +2300,201 @@ export interface ScanCompleted {
   sequence: number
 }
 
+export interface ScheduleDeleted {
+  deleted: string
+  ok: boolean
+}
+
+export interface ScheduleDetail {
+  schedule: ScheduleRecord
+}
+
+export interface ScheduleLastRun {
+  /**
+   * When the run's task was created, Unix seconds.
+   */
+  at: number
+
+  /**
+   * The task's state: queued, spawning, briefed, success, failure, timeout,
+   * cancelled or spawn_failed.
+   */
+  state: string
+  task_id: string
+}
+
 export interface ScheduleList {
+  at: number
   schedules: ScheduleRow[]
 }
 
 /**
- * The body POST /v1/schedules accepts. `claims` absent is refused rather than read
- * as none: a dispatch that declared nothing and a dispatch that declared an empty
- * set are different requests.
+ * GET /v1/orchestrator/schedules/:id: one schedule in full — the template and the
+ * retained runs the list leaves out. `webhook_binding_availability` is `active`
+ * (with `webhook_hook_id`), `unbound`, or `binding_store_unavailable`.
+ */
+export interface ScheduleRecord {
+  catch_up_hours: number
+  close_tab: string
+  enabled: boolean
+  file: string
+  fired_at?: number
+  id: string
+  last_missed_at?: number
+  last_run?: ScheduleLastRun
+  next_fire?: number
+  notify_on_failure: boolean
+  once?: boolean
+  runs: ScheduleRun[]
+  runs_may_be_truncated?: boolean
+  task: ScheduleTask
+  title: string
+  webhook_binding_availability: string
+  webhook_hook_id?: string
+  when: ScheduleWhen
+}
+
+/**
+ * The body POST /v1/orchestrator/schedules and PATCH /v1/orchestrator/schedules/:id
+ * take — the form's fields, flattened. `place_id` is an id from GET /v1/places,
+ * never a path. Exactly one of `days` and `on`; `days` is not defaulted.
+ * schedule_id, created_at, when_changed_at, fired_at and project_dir are the
+ * machine's and are refused as unknown fields. Writes need an Idempotency-Key and
+ * either a device that may send or, for a schedule that runs once, this machine's
+ * orchestrator token.
  */
 export interface ScheduleRequest {
-  assistant: Assistant
-  brief: string
-  claims?: string[]
-  dir: string
-  id: string
-  name: string
-  when: string
+  assistant: string
+  at: string
+  catch_up_hours?: number
+  close_tab?: string
+  days?: string[]
+  enabled?: boolean
+  instructions: string
+
+  /**
+   * No key leaves the model alone; an empty string takes it off.
+   */
+  model?: string
+  notify_on_failure?: boolean
+  on?: string
+  place_id: string
+  timeout_minutes?: number
+  title: string
 }
 
+/**
+ * One row of the list, in one of two shapes. A valid schedule carries id, title and
+ * enabled, and whichever of the rest apply. A schedule this daemon cannot parse
+ * carries only file, state (`invalid`), error and error_kind (`schema`,
+ * `project_unavailable` or `unreadable_json`) — it is listed rather than hidden,
+ * because a row that vanishes is a row nobody can fix. No task-template field is
+ * listed but project_dir.
+ */
 export interface ScheduleRow {
-  assistant: Assistant
-  dir: string
+  enabled?: boolean
+  error?: string
+  error_kind?: string
+  file?: string
+
+  /**
+   * A schedule that runs once, and has: when its session opened. Such a schedule
+   * never fires again.
+   */
+  fired_at?: number
+  id?: string
+
+  /**
+   * The most recent occurrence that expired outside its catch-up window.
+   */
+  last_missed_at?: number
+  last_run?: ScheduleLastRun
+
+  /**
+   * The next local fire, Unix seconds. Absent for a schedule that will not fire
+   * again.
+   */
+  next_fire?: number
+
+  /**
+   * Present and true for a schedule that runs once (`when.on`).
+   */
+  once?: boolean
+  project_dir?: string
+
+  /**
+   * `invalid` on a row that could not be parsed; absent otherwise.
+   */
+  state?: string
+  title?: string
+}
+
+/**
+ * One task a schedule made, newest first in the detail. `summary` is what the task
+ * wrote when it finished.
+ */
+export interface ScheduleRun {
+  assistant: string
+  created: number
+  finished_at?: number
+  project_dir: string
+  session_id?: string
+  state: string
+  summary?: string
+  task_id: string
+  terminal_id?: string
+}
+
+/**
+ * A made or saved schedule. `dispatch_enabled` rides beside a made one only:
+ * writing a schedule is not dispatching, and with task dispatch switched off
+ * nothing runs it.
+ */
+export interface ScheduleSaved {
+  dispatch_enabled?: boolean
+  ok: boolean
+  schedule: ScheduleSummary
+}
+
+export interface ScheduleSummary {
   enabled: boolean
   id: string
-
-  /**
-   * 0 means never run, rather than the Unix value of the zero time.
-   */
-  lastRun: number
-  lastTask: string
-  name: string
-
-  /**
-   * Present and true when this schedule's stored spelling did not parse. It is
-   * switched off, and `when` carries the spelling as written rather than a parsed
-   * value — otherwise an unreadable row renders as `every 0s`, which reads like a
-   * setting somebody chose.
-   */
-  unreadable?: boolean
-  when: string
+  next_fire?: number
+  title: string
 }
 
-export interface ScheduleSaved {
-  id: string
-  ok: boolean
-  when: string
+/**
+ * The task template, as the file carries it. The fields a request may never name
+ * — project_dir, claims, permission_mode and the rest — are set in the file and
+ * carried across every save.
+ */
+export interface ScheduleTask {
+  assistant: string
+  claims?: string[]
+  deliverables?: string[]
+  instructions: string
+  isolation?: string
+  isolation_base?: string
+  kind?: string
+  model?: string
+  permission_mode?: string
+  plan?: string
+  project_dir: string
+  reasoning_effort?: string
+  serialize?: string[]
+  timeout_minutes?: number
+  title?: string
+}
+
+/**
+ * `when` in the file's own spelling: `at` (HH:MM, local time) and exactly one of
+ * `days` (`daily`, or weekday names sun…sat) or `on` (YYYY-MM-DD, a schedule that
+ * runs once).
+ */
+export interface ScheduleWhen {
+  at: string
+  days?: string[]
+  on?: string
 }
 
 /**

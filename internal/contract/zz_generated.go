@@ -1897,46 +1897,171 @@ type ScanCompleted struct {
 	Sequence int64 `json:"sequence"`
 }
 
+type ScheduleDeleted struct {
+	Deleted string `json:"deleted"`
+	OK      bool   `json:"ok"`
+}
+
+type ScheduleDetail struct {
+	Schedule ScheduleRecord `json:"schedule"`
+}
+
+type ScheduleLastRun struct {
+	// When the run's task was created, Unix seconds.
+	At int64 `json:"at"`
+
+	// The task's state: queued, spawning, briefed, success, failure, timeout,
+	// cancelled or spawn_failed.
+	State  string `json:"state"`
+	TaskID string `json:"task_id"`
+}
+
 type ScheduleList struct {
+	At        int64         `json:"at"`
 	Schedules []ScheduleRow `json:"schedules"`
 }
 
-// The body POST /v1/schedules accepts. `claims` absent is refused rather than
-// read as none: a dispatch that declared nothing and a dispatch that declared
-// an empty set are different requests.
+// GET /v1/orchestrator/schedules/:id: one schedule in full — the template and
+// the retained runs the list leaves out. `webhook_binding_availability` is
+// `active` (with `webhook_hook_id`), `unbound`, or `binding_store_unavailable`.
+type ScheduleRecord struct {
+	CatchUpHours               int64            `json:"catch_up_hours"`
+	CloseTab                   string           `json:"close_tab"`
+	Enabled                    bool             `json:"enabled"`
+	File                       string           `json:"file"`
+	FiredAt                    int64            `json:"fired_at,omitempty"`
+	ID                         string           `json:"id"`
+	LastMissedAt               int64            `json:"last_missed_at,omitempty"`
+	LastRun                    *ScheduleLastRun `json:"last_run,omitempty"`
+	NextFire                   int64            `json:"next_fire,omitempty"`
+	NotifyOnFailure            bool             `json:"notify_on_failure"`
+	Once                       bool             `json:"once,omitempty"`
+	Runs                       []ScheduleRun    `json:"runs"`
+	RunsMayBeTruncated         bool             `json:"runs_may_be_truncated,omitempty"`
+	Task                       ScheduleTask     `json:"task"`
+	Title                      string           `json:"title"`
+	WebhookBindingAvailability string           `json:"webhook_binding_availability"`
+	WebhookHookID              string           `json:"webhook_hook_id,omitempty"`
+	When                       ScheduleWhen     `json:"when"`
+}
+
+// The body POST /v1/orchestrator/schedules and PATCH
+// /v1/orchestrator/schedules/:id take — the form's fields, flattened.
+// `place_id` is an id from GET /v1/places, never a path. Exactly one of `days`
+// and `on`; `days` is not defaulted. schedule_id, created_at, when_changed_at,
+// fired_at and project_dir are the machine's and are refused as unknown fields.
+// Writes need an Idempotency-Key and either a device that may send or, for a
+// schedule that runs once, this machine's orchestrator token.
 type ScheduleRequest struct {
-	Assistant Assistant `json:"assistant"`
-	Brief     string    `json:"brief"`
-	Claims    []string  `json:"claims,omitempty"`
-	Dir       string    `json:"dir"`
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	When      string    `json:"when"`
+	Assistant    string   `json:"assistant"`
+	At           string   `json:"at"`
+	CatchUpHours int64    `json:"catch_up_hours,omitempty"`
+	CloseTab     string   `json:"close_tab,omitempty"`
+	Days         []string `json:"days,omitempty"`
+	Enabled      bool     `json:"enabled,omitempty"`
+	Instructions string   `json:"instructions"`
+
+	// No key leaves the model alone; an empty string takes it off.
+	Model           string `json:"model,omitempty"`
+	NotifyOnFailure bool   `json:"notify_on_failure,omitempty"`
+	On              string `json:"on,omitempty"`
+	PlaceID         string `json:"place_id"`
+	TimeoutMinutes  int64  `json:"timeout_minutes,omitempty"`
+	Title           string `json:"title"`
 }
 
+// One row of the list, in one of two shapes. A valid schedule carries id, title
+// and enabled, and whichever of the rest apply. A schedule this daemon cannot
+// parse carries only file, state (`invalid`), error and error_kind (`schema`,
+// `project_unavailable` or `unreadable_json`) — it is listed rather than
+// hidden, because a row that vanishes is a row nobody can fix. No task-template
+// field is listed but project_dir.
 type ScheduleRow struct {
-	Assistant Assistant `json:"assistant"`
-	Dir       string    `json:"dir"`
-	Enabled   bool      `json:"enabled"`
-	ID        string    `json:"id"`
+	Enabled   bool   `json:"enabled,omitempty"`
+	Error     string `json:"error,omitempty"`
+	ErrorKind string `json:"error_kind,omitempty"`
+	File      string `json:"file,omitempty"`
 
-	// 0 means never run, rather than the Unix value of the zero time.
-	LastRun  int64  `json:"lastRun"`
-	LastTask string `json:"lastTask"`
-	Name     string `json:"name"`
+	// A schedule that runs once, and has: when its session opened. Such a schedule
+	// never fires again.
+	FiredAt int64  `json:"fired_at,omitempty"`
+	ID      string `json:"id,omitempty"`
 
-	// Present and true when this schedule's stored spelling did not parse. It is
-	// switched off, and `when` carries the spelling as written rather than a parsed
-	// value — otherwise an unreadable row renders as `every 0s`, which reads like a
-	// setting somebody chose.
-	Unreadable bool   `json:"unreadable,omitempty"`
-	When       string `json:"when"`
+	// The most recent occurrence that expired outside its catch-up window.
+	LastMissedAt int64            `json:"last_missed_at,omitempty"`
+	LastRun      *ScheduleLastRun `json:"last_run,omitempty"`
+
+	// The next local fire, Unix seconds. Absent for a schedule that will not fire
+	// again.
+	NextFire int64 `json:"next_fire,omitempty"`
+
+	// Present and true for a schedule that runs once (`when.on`).
+	Once       bool   `json:"once,omitempty"`
+	ProjectDir string `json:"project_dir,omitempty"`
+
+	// `invalid` on a row that could not be parsed; absent otherwise.
+	State string `json:"state,omitempty"`
+	Title string `json:"title,omitempty"`
 }
 
+// One task a schedule made, newest first in the detail. `summary` is what the
+// task wrote when it finished.
+type ScheduleRun struct {
+	Assistant  string `json:"assistant"`
+	Created    int64  `json:"created"`
+	FinishedAt int64  `json:"finished_at,omitempty"`
+	ProjectDir string `json:"project_dir"`
+	SessionID  string `json:"session_id,omitempty"`
+	State      string `json:"state"`
+	Summary    string `json:"summary,omitempty"`
+	TaskID     string `json:"task_id"`
+	TerminalID string `json:"terminal_id,omitempty"`
+}
+
+// A made or saved schedule. `dispatch_enabled` rides beside a made one only:
+// writing a schedule is not dispatching, and with task dispatch switched off
+// nothing runs it.
 type ScheduleSaved struct {
-	ID   string `json:"id"`
-	OK   bool   `json:"ok"`
-	When string `json:"when"`
+	DispatchEnabled bool            `json:"dispatch_enabled,omitempty"`
+	OK              bool            `json:"ok"`
+	Schedule        ScheduleSummary `json:"schedule"`
+}
+
+type ScheduleSummary struct {
+	Enabled  bool   `json:"enabled"`
+	ID       string `json:"id"`
+	NextFire int64  `json:"next_fire,omitempty"`
+	Title    string `json:"title"`
+}
+
+// The task template, as the file carries it. The fields a request may never
+// name — project_dir, claims, permission_mode and the rest — are set in the
+// file and carried across every save.
+type ScheduleTask struct {
+	Assistant       string   `json:"assistant"`
+	Claims          []string `json:"claims,omitempty"`
+	Deliverables    []string `json:"deliverables,omitempty"`
+	Instructions    string   `json:"instructions"`
+	Isolation       string   `json:"isolation,omitempty"`
+	IsolationBase   string   `json:"isolation_base,omitempty"`
+	Kind            string   `json:"kind,omitempty"`
+	Model           string   `json:"model,omitempty"`
+	PermissionMode  string   `json:"permission_mode,omitempty"`
+	Plan            string   `json:"plan,omitempty"`
+	ProjectDir      string   `json:"project_dir"`
+	ReasoningEffort string   `json:"reasoning_effort,omitempty"`
+	Serialize       []string `json:"serialize,omitempty"`
+	TimeoutMinutes  int64    `json:"timeout_minutes,omitempty"`
+	Title           string   `json:"title,omitempty"`
+}
+
+// `when` in the file's own spelling: `at` (HH:MM, local time) and exactly one
+// of `days` (`daily`, or weekday names sun…sat) or `on` (YYYY-MM-DD, a
+// schedule that runs once).
+type ScheduleWhen struct {
+	At   string   `json:"at"`
+	Days []string `json:"days,omitempty"`
+	On   string   `json:"on,omitempty"`
 }
 
 // What the clock says about its own last pass. A pass that fired nothing and a
