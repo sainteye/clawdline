@@ -63,4 +63,9 @@ export function setConfirmSpin(canvas: HTMLCanvasElement | null): void {
 }
 
 /** The fields of the copied state object the overlays read. */
-export const legacyState = S as unknown as { openId: string | null; agent: unknown; replyComposerIdentity?: unknown }
+export const legacyState = S as unknown as {
+  openId: string | null
+  selectedId: string | null
+  agent: unknown
+  replyComposerIdentity?: unknown
+}

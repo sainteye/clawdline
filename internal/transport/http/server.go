@@ -226,6 +226,9 @@ func (s *Server) Handler() http.Handler {
 	// a send: this machine transcribes and answers with the text, and what
 	// happens to it afterwards is the composer's business.
 	mux.HandleFunc("/v1/voice", s.voiceRoute)
+	// Web Push: the key, the subscription, the test and the way back out
+	// (push.go). Read-level, as in the Swift app.
+	mux.HandleFunc("/v1/push/", s.pushRoute)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			s.boardWrite(w, r)
@@ -239,7 +242,10 @@ func (s *Server) Handler() http.Handler {
 	if standalone() {
 		if root := WebRoot(); root != "" {
 			mux.Handle("/app/", newPage(root))
-			mux.Handle("/", &fallback{page: newPage(root), miss: s.notImplemented})
+			// The home-screen shell in front of the console (pwa.go): the
+			// launch images are drawn, and everything else there is a file in
+			// the bundle that `page` already serves.
+			mux.Handle("/", s.withPWA(&fallback{page: newPage(root), miss: s.notImplemented}))
 			return gate.wrap(s.withDocuments(mux))
 		}
 		mux.Handle("/", http.HandlerFunc(s.notImplemented))
