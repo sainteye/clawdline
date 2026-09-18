@@ -26,7 +26,7 @@
       "properties": {
         "at": { "type": "integer" },
         "ok": { "type": "boolean" },
-        "reason": { "description": "Why `ok` is false, when it is. `broker_beat_stalled`: the broker's loop has not finished a pass in more than three ticks. Absent when ok.", "type": "string" },
+        "reason": { "description": "Why `ok` is false, when it is. Absent when ok. The name only: what is behind it is in Diagnostics.", "$ref": "#/$defs/HealthReason" },
         "served_by": { "description": "Which implementation answered. This is how a reader tells the Go daemon from the Swift app on the same port.", "type": "string" }
       }
     },
@@ -34,10 +34,11 @@
       "description": "GET /v1/diagnostics, this machine's own token only (a paired device is 403): what health used to carry about the process — its state directory, its ports, the clock's last pass and the broker's own account of itself.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "dir", "ok", "port", "scheduler", "served_by", "upstream"],
+      "required": ["at", "capacity", "dir", "ok", "port", "scheduler", "served_by", "upstream"],
       "properties": {
         "at": { "type": "integer" },
         "broker": { "$ref": "orchestrator.schema.json#/$defs/BrokerDiagnostics" },
+        "capacity": { "$ref": "#/$defs/CapacityDiagnostics" },
         "dir": { "type": "string" },
         "ok": { "type": "boolean" },
         "port": { "type": "integer" },
@@ -45,6 +46,110 @@
         "served_by": { "type": "string" },
         "upstream": { "type": "integer" }
       }
+    },
+    "HealthReason": {
+      "description": "Why /v1/health says ok:false. `broker_beat_stalled`: the broker's loop has not finished a pass in more than three ticks. `capacity_exhausted`: an evidence or security-audit row of the capacity register is full with nothing making room, or its last write failed (docs/limits.md §4.5). `capacity_beat_stalled`: the loop that measures the register has not finished a pass in more than three ticks, so nothing is watching whether anything is full. When two hold, the first in this list is given.",
+      "type": "string",
+      "enum": ["broker_beat_stalled", "capacity_exhausted", "capacity_beat_stalled"]
+    },
+    "CapacityDiagnostics": {
+      "description": "/v1/diagnostics.capacity: every row of the capacity register (internal/domain/capacity) as the last pass of its beat read it. Each row answers the four questions: its limit, what happens when it is full, who is told, and who decides what is let go (docs/limits.md §4.1, design-guidelines DG-2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beat", "counting_since", "entries"],
+      "properties": {
+        "beat": { "$ref": "#/$defs/CapacityBeat" },
+        "counting_since": { "description": "When this process began counting. Every counter on a row counts from here unless the row says `counters_durable`.", "type": "integer" },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/CapacityEntry" } },
+        "override_problems": { "description": "Parts of CLAWDLINE_NEXT_CAPACITY this process refused — an override that would raise a limit, name no row, or not read as one. The default stood for each.", "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "CapacityBeat": {
+      "description": "The loop that measures the register. It is observable because a loop that stopped and a loop with nothing to say are the same silence from outside (DG-1).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_errors", "passes", "running", "stalled", "tick_seconds"],
+      "properties": {
+        "at": { "description": "When the last pass finished. Absent before the first.", "type": "integer" },
+        "event_errors": { "description": "Events this beat could not write to the store.", "type": "integer" },
+        "last_event_error": { "type": "string" },
+        "passes": { "type": "integer" },
+        "running": { "description": "Whether this process started the beat. A daemon that did not has every row `unknown`.", "type": "boolean" },
+        "stalled": { "description": "No pass has finished in more than three ticks.", "type": "boolean" },
+        "started_at": { "type": "integer" },
+        "tick_seconds": { "type": "integer" }
+      }
+    },
+    "CapacityEntry": {
+      "description": "One row of the capacity register.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at_limit", "class", "dropped", "evicted", "evicted_by", "exhausted", "expired", "limit", "name", "notices", "notices_suppressed", "overridden", "refused", "rotated", "state", "told", "unit", "warn_at", "write_errors"],
+      "properties": {
+        "at_limit": { "description": "What happens today when the row is full.", "$ref": "#/$defs/CapacityAction" },
+        "class": { "$ref": "#/$defs/CapacityClass" },
+        "counters_durable": { "description": "The counters survive a restart: the row's own store keeps them.", "type": "boolean" },
+        "deviation": { "description": "Present when `at_limit` is not what the row's class requires: what it requires, and which decision brings it.", "type": "string" },
+        "disk_free_bytes": { "description": "Free space on the disk the row is on, when it is a file and that could be read.", "type": "integer" },
+        "dropped": { "type": "integer" },
+        "error": { "description": "Why the row could not be measured, when `state` is unknown.", "type": "string" },
+        "evicted": { "type": "integer" },
+        "evicted_by": { "description": "Who decides what the full row lets go of.", "$ref": "#/$defs/CapacityDecider" },
+        "exhausted": { "description": "The fact /v1/health turns on: an evidence or security-audit row, full with nothing making room, or failing to write.", "type": "boolean" },
+        "expired": { "type": "integer" },
+        "failing": { "description": "The last write to the row, or its last at-limit action, failed.", "type": "boolean" },
+        "growth_per_day": { "description": "Growth over this process's samples, at least an hour of them, on a row that projects.", "type": "number" },
+        "last_action_at": { "description": "When the row last refused, evicted, rotated or dropped something.", "type": "integer" },
+        "last_notice_at": { "type": "integer" },
+        "limit": { "description": "The limit this process runs the row at, in `unit`.", "type": "integer" },
+        "measured_at": { "type": "integer" },
+        "name": { "type": "string" },
+        "note": { "description": "Anything a reader should know about a reading that is not an error.", "type": "string" },
+        "notices": { "description": "Notification intents this row produced: a `capacity.notify` event on entering critical or full and on recovering, at most one a day.", "type": "integer" },
+        "notices_suppressed": { "description": "Notices the one-a-day rule held back.", "type": "integer" },
+        "oldest_at": { "type": "integer" },
+        "overridden": { "description": "CLAWDLINE_NEXT_CAPACITY lowered this row's limit.", "type": "boolean" },
+        "projected_full_at": { "description": "When the row reaches its limit at `growth_per_day`. Two weeks before, the row is warn whatever its ratio.", "type": "integer" },
+        "ratio": { "description": "used / limit. Null when the row could not be measured, which is not zero.", "type": "number", "nullable": true },
+        "refused": { "type": "integer" },
+        "rotated": { "type": "integer" },
+        "state": { "$ref": "#/$defs/CapacityState" },
+        "told": { "description": "The channels a full row reaches.", "type": "array", "items": { "$ref": "#/$defs/CapacityChannel" } },
+        "unit": { "$ref": "#/$defs/CapacityUnit" },
+        "used": { "description": "How much the row holds, in `unit`. Null when it could not be measured, which is not zero.", "type": "integer", "nullable": true },
+        "warn_at": { "type": "number" },
+        "window_seconds": { "type": "integer" },
+        "write_errors": { "type": "integer" }
+      }
+    },
+    "CapacityClass": {
+      "description": "What kind of data a row holds; it decides which at-limit behaviours are allowed (docs/limits.md §4.2).",
+      "type": "string",
+      "enum": ["evidence", "security_audit", "idempotency", "user_input", "narrative", "progress", "observation", "journal", "work", "cache", "diagnostic_log", "buffer"]
+    },
+    "CapacityAction": {
+      "description": "`none`: nothing is refused, removed or rotated; the limit is only reported. No class allows it, so a row that does it has a `deviation`.",
+      "type": "string",
+      "enum": ["refuse", "evict_oldest", "expire", "rotate", "summarize", "coalesce", "disconnect", "none"]
+    },
+    "CapacityState": {
+      "description": "ok below warn_at, warn below 95%, critical below 100%, full at or past it. Going down needs five points under a threshold. unknown: the row could not be measured, which is not ok.",
+      "type": "string",
+      "enum": ["ok", "warn", "critical", "full", "unknown"]
+    },
+    "CapacityUnit": {
+      "type": "string",
+      "enum": ["bytes", "rows"]
+    },
+    "CapacityChannel": {
+      "description": "diagnostics: this route, always. health: /v1/health says capacity_exhausted, never the name or the numbers. notice: a capacity.notify event, a push once C4 wires it. cloud_status: /v1/cloud/status. log: the daemon's log.",
+      "type": "string",
+      "enum": ["diagnostics", "health", "notice", "cloud_status", "log"]
+    },
+    "CapacityDecider": {
+      "description": "person: the daemon lets nothing go; only a person removes it. daemon: the daemon lets go by the rule in at_limit.",
+      "type": "string",
+      "enum": ["person", "daemon"]
     },
     "InventoryScan": {
       "type": "object",

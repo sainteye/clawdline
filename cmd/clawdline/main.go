@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/app/ports"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 
 	"github.com/sainteye/clawdline-go/internal/config"
@@ -41,6 +42,10 @@ func main() {
 	case "serve":
 		serve()
 	case "doctor":
+		if len(os.Args) > 2 && os.Args[2] == "capacity" {
+			capacityCommand(os.Args[3:])
+			return
+		}
 		doctor()
 	case "dispatch":
 		dispatchCommand(os.Args[2:])
@@ -91,6 +96,9 @@ func serve() {
 	// The broker's beat: collect what children wrote, run the two clocks, and
 	// keep telling a root its child finished until somebody acknowledges it.
 	srv.StartBroker(context.Background())
+	// The capacity register's beat: every bounded thing measured on the same
+	// tick, and health red when evidence has nowhere left to go.
+	srv.StartCapacity(context.Background())
 	startCloudLine(context.Background(), cfg, srv)
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
@@ -127,6 +135,8 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		},
 		Version: version,
 		Log:     func(format string, args ...any) { log.Printf(format, args...) },
+		// The request queue is the register's `cloud.relay_queue` row.
+		QueueDepth: int(httptransport.CapacityLimit(capacity.CloudRelayQueue)),
 	})
 	if err != nil {
 		// A malformed cloud setting is loud and is not fatal. Falling back to
@@ -344,6 +354,7 @@ func newTaskID() string {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|dispatch|settle|land|send|interrupt|close|open|pair|cloud|version>")
+	fmt.Fprintln(os.Stderr, "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so")
 	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")
 	fmt.Fprintln(os.Stderr, "  pair [--watch]            show the code when a device asks to pair")
 	fmt.Fprintln(os.Stderr, "  cloud <status|on|off|login|connect>   the line to app.clawdline.com; off by default")

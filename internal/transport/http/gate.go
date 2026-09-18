@@ -21,6 +21,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/config"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/auth"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // The gate is in front of every route, and it is the Swift app's
@@ -117,6 +118,8 @@ func openGate(cfg config.Config) *gate {
 		return g
 	}
 	g.files = files
+	// The audit rotates at the capacity register's `audit.security` size.
+	files.SetAuditLimit(CapacityLimit(capacity.AuditSecurity))
 	a, err := auth.New(files, auth.Options{})
 	if err != nil {
 		g.err = fmt.Errorf("the device store at %s could not be read: %w", cfg.Dir, err)

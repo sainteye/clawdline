@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,5 +183,136 @@ func TestAuditClipsValues(t *testing.T) {
 	}
 	if info, _ := os.Stat(filepath.Join(dir, AuditFile)); info.Mode().Perm() != 0o600 {
 		t.Fatalf("audit mode %v", info.Mode().Perm())
+	}
+}
+
+// auditFiles is the audit as it lies on disk: the current file and every
+// closed segment, each with its lines.
+func auditFiles(t *testing.T, dir string) (current []string, segments map[string][]string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segments = map[string][]string{}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, AuditSegmentPrefix) {
+			continue
+		}
+		info, err := os.Lstat(filepath.Join(dir, name))
+		if err != nil || info.Mode().Perm() != 0o600 || !info.Mode().IsRegular() {
+			t.Fatalf("%s: %v %v", name, info.Mode(), err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+		for _, line := range lines {
+			if !strings.HasPrefix(line, "{") || !strings.HasSuffix(line, "}") {
+				t.Fatalf("%s holds a broken line %q", name, line)
+			}
+		}
+		if name == AuditFile {
+			current = lines
+		} else {
+			segments[name] = lines
+		}
+	}
+	return current, segments
+}
+
+// At its size the audit becomes a segment and a new file begins: on the write
+// after the one that reached the size, so a line is never split and a full
+// file is something a reader can see. Nothing is deleted, every segment is
+// owner-only, and every line written is in exactly one file.
+func TestAuditRotatesBySizeAndKeepsEverySegment(t *testing.T) {
+	dir := t.TempDir()
+	f, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const limit = 400
+	f.SetAuditLimit(limit)
+	written := 0
+	write := func() {
+		f.Audit("device.add", map[string]string{"device": "phone", "id": fmt.Sprintf("d%04d", written)})
+		written++
+	}
+	for f.AuditReading().Used < limit {
+		write()
+		if r := f.AuditReading(); r.Counters.Rotated != 0 {
+			t.Fatalf("rotated at %d bytes, under the limit", r.Used)
+		}
+	}
+	full := f.AuditReading()
+	if !full.Known || full.Used < limit || full.Used > limit+200 || full.Failing {
+		t.Fatalf("the file that reached the limit: %+v", full)
+	}
+	write()
+	after := f.AuditReading()
+	if after.Counters.Rotated != 1 || after.Used >= limit || after.Failing || after.Counters.LastActionAt.IsZero() {
+		t.Fatalf("after the next line: %+v", after)
+	}
+	current, segments := auditFiles(t, dir)
+	if len(segments) != 1 || len(current) != 1 {
+		t.Fatalf("%d segments, %d current lines", len(segments), len(current))
+	}
+	for i := 0; i < 40; i++ {
+		write()
+	}
+	current, segments = auditFiles(t, dir)
+	total := len(current)
+	for _, lines := range segments {
+		total += len(lines)
+	}
+	if r := f.AuditReading(); int(r.Counters.Rotated) != len(segments) || total != written {
+		t.Fatalf("%d rotations, %d segments, %d of %d lines", r.Counters.Rotated, len(segments), total, written)
+	}
+}
+
+// A rotation that cannot happen does not cost the line. The line is appended
+// to the file as it is, and the reading says the audit is failing — which is
+// what turns /v1/health red — until a rotation succeeds.
+func TestAFailedRotationKeepsTheLineAndSaysSo(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root renames in a read-only directory")
+	}
+	dir := t.TempDir()
+	f, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.SetAuditLimit(100)
+	for f.AuditReading().Used < 100 {
+		f.Audit("device.add", map[string]string{"device": "phone"})
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o700)
+	before := f.AuditReading().Used
+	f.Audit("device.revoke", map[string]string{"device": "phone"})
+	r := f.AuditReading()
+	if r.Counters.Rotated != 0 || !r.Failing || r.Counters.WriteErrors != 1 || r.Used <= before {
+		t.Fatalf("a rotation into a read-only directory: %+v", r)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.Audit("device.add", map[string]string{"device": "phone"})
+	r = f.AuditReading()
+	if r.Counters.Rotated != 1 || r.Failing {
+		t.Fatalf("once the directory is writable again: %+v", r)
+	}
+	current, segments := auditFiles(t, dir)
+	for _, lines := range segments {
+		if !strings.Contains(lines[len(lines)-1], "device.revoke") {
+			t.Fatalf("the line written while rotation failed is not the segment's last: %v", lines)
+		}
+	}
+	if len(current) != 1 {
+		t.Fatalf("current: %v", current)
 	}
 }

@@ -1096,6 +1096,221 @@ type BrowserRequest struct {
 	Send bool `json:"send,omitempty"`
 }
 
+// `none`: nothing is refused, removed or rotated; the limit is only reported.
+// No class allows it, so a row that does it has a `deviation`.
+type CapacityAction string
+
+const (
+	CapacityActionRefuse      CapacityAction = "refuse"
+	CapacityActionEvictOldest CapacityAction = "evict_oldest"
+	CapacityActionExpire      CapacityAction = "expire"
+	CapacityActionRotate      CapacityAction = "rotate"
+	CapacityActionSummarize   CapacityAction = "summarize"
+	CapacityActionCoalesce    CapacityAction = "coalesce"
+	CapacityActionDisconnect  CapacityAction = "disconnect"
+	CapacityActionNone        CapacityAction = "none"
+)
+
+// CapacityActionValues is every value the contract allows, in contract order.
+var CapacityActionValues = []CapacityAction{CapacityActionRefuse, CapacityActionEvictOldest, CapacityActionExpire, CapacityActionRotate, CapacityActionSummarize, CapacityActionCoalesce, CapacityActionDisconnect, CapacityActionNone}
+
+// The loop that measures the register. It is observable because a loop that
+// stopped and a loop with nothing to say are the same silence from outside
+// (DG-1).
+type CapacityBeat struct {
+	// When the last pass finished. Absent before the first.
+	At int64 `json:"at,omitempty"`
+
+	// Events this beat could not write to the store.
+	EventErrors    int64  `json:"event_errors"`
+	LastEventError string `json:"last_event_error,omitempty"`
+	Passes         int64  `json:"passes"`
+
+	// Whether this process started the beat. A daemon that did not has every row
+	// `unknown`.
+	Running bool `json:"running"`
+
+	// No pass has finished in more than three ticks.
+	Stalled     bool  `json:"stalled"`
+	StartedAt   int64 `json:"started_at,omitempty"`
+	TickSeconds int64 `json:"tick_seconds"`
+}
+
+// diagnostics: this route, always. health: /v1/health says capacity_exhausted,
+// never the name or the numbers. notice: a capacity.notify event, a push once
+// C4 wires it. cloud_status: /v1/cloud/status. log: the daemon's log.
+type CapacityChannel string
+
+const (
+	CapacityChannelDiagnostics CapacityChannel = "diagnostics"
+	CapacityChannelHealth      CapacityChannel = "health"
+	CapacityChannelNotice      CapacityChannel = "notice"
+	CapacityChannelCloudStatus CapacityChannel = "cloud_status"
+	CapacityChannelLog         CapacityChannel = "log"
+)
+
+// CapacityChannelValues is every value the contract allows, in contract order.
+var CapacityChannelValues = []CapacityChannel{CapacityChannelDiagnostics, CapacityChannelHealth, CapacityChannelNotice, CapacityChannelCloudStatus, CapacityChannelLog}
+
+// What kind of data a row holds; it decides which at-limit behaviours are
+// allowed (docs/limits.md §4.2).
+type CapacityClass string
+
+const (
+	CapacityClassEvidence      CapacityClass = "evidence"
+	CapacityClassSecurityAudit CapacityClass = "security_audit"
+	CapacityClassIdempotency   CapacityClass = "idempotency"
+	CapacityClassUserInput     CapacityClass = "user_input"
+	CapacityClassNarrative     CapacityClass = "narrative"
+	CapacityClassProgress      CapacityClass = "progress"
+	CapacityClassObservation   CapacityClass = "observation"
+	CapacityClassJournal       CapacityClass = "journal"
+	CapacityClassWork          CapacityClass = "work"
+	CapacityClassCache         CapacityClass = "cache"
+	CapacityClassDiagnosticLog CapacityClass = "diagnostic_log"
+	CapacityClassBuffer        CapacityClass = "buffer"
+)
+
+// CapacityClassValues is every value the contract allows, in contract order.
+var CapacityClassValues = []CapacityClass{CapacityClassEvidence, CapacityClassSecurityAudit, CapacityClassIdempotency, CapacityClassUserInput, CapacityClassNarrative, CapacityClassProgress, CapacityClassObservation, CapacityClassJournal, CapacityClassWork, CapacityClassCache, CapacityClassDiagnosticLog, CapacityClassBuffer}
+
+// person: the daemon lets nothing go; only a person removes it. daemon: the
+// daemon lets go by the rule in at_limit.
+type CapacityDecider string
+
+const (
+	CapacityDeciderPerson CapacityDecider = "person"
+	CapacityDeciderDaemon CapacityDecider = "daemon"
+)
+
+// CapacityDeciderValues is every value the contract allows, in contract order.
+var CapacityDeciderValues = []CapacityDecider{CapacityDeciderPerson, CapacityDeciderDaemon}
+
+// /v1/diagnostics.capacity: every row of the capacity register
+// (internal/domain/capacity) as the last pass of its beat read it. Each row
+// answers the four questions: its limit, what happens when it is full, who is
+// told, and who decides what is let go (docs/limits.md §4.1, design-guidelines
+// DG-2).
+type CapacityDiagnostics struct {
+	Beat CapacityBeat `json:"beat"`
+
+	// When this process began counting. Every counter on a row counts from here unless
+	// the row says `counters_durable`.
+	CountingSince int64           `json:"counting_since"`
+	Entries       []CapacityEntry `json:"entries"`
+
+	// Parts of CLAWDLINE_NEXT_CAPACITY this process refused — an override that would
+	// raise a limit, name no row, or not read as one. The default stood for each.
+	OverrideProblems []string `json:"override_problems,omitempty"`
+}
+
+// One row of the capacity register.
+type CapacityEntry struct {
+	// What happens today when the row is full.
+	AtLimit CapacityAction `json:"at_limit"`
+	Class   CapacityClass  `json:"class"`
+
+	// The counters survive a restart: the row's own store keeps them.
+	CountersDurable bool `json:"counters_durable,omitempty"`
+
+	// Present when `at_limit` is not what the row's class requires: what it requires,
+	// and which decision brings it.
+	Deviation string `json:"deviation,omitempty"`
+
+	// Free space on the disk the row is on, when it is a file and that could be read.
+	DiskFreeBytes int64 `json:"disk_free_bytes,omitempty"`
+	Dropped       int64 `json:"dropped"`
+
+	// Why the row could not be measured, when `state` is unknown.
+	Error   string `json:"error,omitempty"`
+	Evicted int64  `json:"evicted"`
+
+	// Who decides what the full row lets go of.
+	EvictedBy CapacityDecider `json:"evicted_by"`
+
+	// The fact /v1/health turns on: an evidence or security-audit row, full with
+	// nothing making room, or failing to write.
+	Exhausted bool  `json:"exhausted"`
+	Expired   int64 `json:"expired"`
+
+	// The last write to the row, or its last at-limit action, failed.
+	Failing bool `json:"failing,omitempty"`
+
+	// Growth over this process's samples, at least an hour of them, on a row that
+	// projects.
+	GrowthPerDay float64 `json:"growth_per_day,omitempty"`
+
+	// When the row last refused, evicted, rotated or dropped something.
+	LastActionAt int64 `json:"last_action_at,omitempty"`
+	LastNoticeAt int64 `json:"last_notice_at,omitempty"`
+
+	// The limit this process runs the row at, in `unit`.
+	Limit      int64  `json:"limit"`
+	MeasuredAt int64  `json:"measured_at,omitempty"`
+	Name       string `json:"name"`
+
+	// Anything a reader should know about a reading that is not an error.
+	Note string `json:"note,omitempty"`
+
+	// Notification intents this row produced: a `capacity.notify` event on entering
+	// critical or full and on recovering, at most one a day.
+	Notices int64 `json:"notices"`
+
+	// Notices the one-a-day rule held back.
+	NoticesSuppressed int64 `json:"notices_suppressed"`
+	OldestAt          int64 `json:"oldest_at,omitempty"`
+
+	// CLAWDLINE_NEXT_CAPACITY lowered this row's limit.
+	Overridden bool `json:"overridden"`
+
+	// When the row reaches its limit at `growth_per_day`. Two weeks before, the row is
+	// warn whatever its ratio.
+	ProjectedFullAt int64 `json:"projected_full_at,omitempty"`
+
+	// used / limit. Null when the row could not be measured, which is not zero.
+	Ratio   *float64      `json:"ratio"`
+	Refused int64         `json:"refused"`
+	Rotated int64         `json:"rotated"`
+	State   CapacityState `json:"state"`
+
+	// The channels a full row reaches.
+	Told []CapacityChannel `json:"told"`
+	Unit CapacityUnit      `json:"unit"`
+
+	// How much the row holds, in `unit`. Null when it could not be measured, which is
+	// not zero.
+	Used          *int64  `json:"used"`
+	WarnAt        float64 `json:"warn_at"`
+	WindowSeconds int64   `json:"window_seconds,omitempty"`
+	WriteErrors   int64   `json:"write_errors"`
+}
+
+// ok below warn_at, warn below 95%, critical below 100%, full at or past it.
+// Going down needs five points under a threshold. unknown: the row could not be
+// measured, which is not ok.
+type CapacityState string
+
+const (
+	CapacityStateOK       CapacityState = "ok"
+	CapacityStateWarn     CapacityState = "warn"
+	CapacityStateCritical CapacityState = "critical"
+	CapacityStateFull     CapacityState = "full"
+	CapacityStateUnknown  CapacityState = "unknown"
+)
+
+// CapacityStateValues is every value the contract allows, in contract order.
+var CapacityStateValues = []CapacityState{CapacityStateOK, CapacityStateWarn, CapacityStateCritical, CapacityStateFull, CapacityStateUnknown}
+
+type CapacityUnit string
+
+const (
+	CapacityUnitBytes CapacityUnit = "bytes"
+	CapacityUnitRows  CapacityUnit = "rows"
+)
+
+// CapacityUnitValues is every value the contract allows, in contract order.
+var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitRows}
+
 // POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other
 // grant. Local token only.
 type CapsRequest struct {
@@ -1346,14 +1561,15 @@ type DeviceList struct {
 // what health used to carry about the process — its state directory, its
 // ports, the clock's last pass and the broker's own account of itself.
 type Diagnostics struct {
-	At        int64              `json:"at"`
-	Broker    *BrokerDiagnostics `json:"broker,omitempty"`
-	Dir       string             `json:"dir"`
-	OK        bool               `json:"ok"`
-	Port      int64              `json:"port"`
-	Scheduler SchedulerPulse     `json:"scheduler"`
-	ServedBy  string             `json:"served_by"`
-	Upstream  int64              `json:"upstream"`
+	At        int64               `json:"at"`
+	Broker    *BrokerDiagnostics  `json:"broker,omitempty"`
+	Capacity  CapacityDiagnostics `json:"capacity"`
+	Dir       string              `json:"dir"`
+	OK        bool                `json:"ok"`
+	Port      int64               `json:"port"`
+	Scheduler SchedulerPulse      `json:"scheduler"`
+	ServedBy  string              `json:"served_by"`
+	Upstream  int64               `json:"upstream"`
 }
 
 type DispatchRequest struct {
@@ -1540,14 +1756,32 @@ type Health struct {
 	At int64 `json:"at"`
 	OK bool  `json:"ok"`
 
-	// Why `ok` is false, when it is. `broker_beat_stalled`: the broker's loop has not
-	// finished a pass in more than three ticks. Absent when ok.
-	Reason string `json:"reason,omitempty"`
+	// Why `ok` is false, when it is. Absent when ok. The name only: what is behind it
+	// is in Diagnostics.
+	Reason HealthReason `json:"reason,omitempty"`
 
 	// Which implementation answered. This is how a reader tells the Go daemon from the
 	// Swift app on the same port.
 	ServedBy string `json:"served_by"`
 }
+
+// Why /v1/health says ok:false. `broker_beat_stalled`: the broker's loop has
+// not finished a pass in more than three ticks. `capacity_exhausted`: an
+// evidence or security-audit row of the capacity register is full with nothing
+// making room, or its last write failed (docs/limits.md §4.5).
+// `capacity_beat_stalled`: the loop that measures the register has not finished
+// a pass in more than three ticks, so nothing is watching whether anything is
+// full. When two hold, the first in this list is given.
+type HealthReason string
+
+const (
+	HealthReasonBrokerBeatStalled   HealthReason = "broker_beat_stalled"
+	HealthReasonCapacityExhausted   HealthReason = "capacity_exhausted"
+	HealthReasonCapacityBeatStalled HealthReason = "capacity_beat_stalled"
+)
+
+// HealthReasonValues is every value the contract allows, in contract order.
+var HealthReasonValues = []HealthReason{HealthReasonBrokerBeatStalled, HealthReasonCapacityExhausted, HealthReasonCapacityBeatStalled}
 
 // A project's mark: rows of `#RRGGBB`, with null for transparent. It is derived
 // from the project path and the machine's icon registry by the same rules the

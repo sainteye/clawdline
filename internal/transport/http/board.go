@@ -14,6 +14,7 @@ import (
 	boardstore "github.com/sainteye/clawdline-go/internal/adapters/board"
 	"github.com/sainteye/clawdline-go/internal/domain/auth"
 	domainboard "github.com/sainteye/clawdline-go/internal/domain/board"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // The board: `GET /v1/board` in the Swift app's envelope, and `POST /v1/board`
@@ -37,9 +38,11 @@ func (s *Server) board() *boardDeps {
 	if d, ok := boardByServer.Load(s); ok {
 		return d.(*boardDeps)
 	}
+	settings := boardstore.OpenSettings(s.cfg.Dir)
+	settings.SetReceiptLimit(CapacityLimit(capacity.BoardReceipts))
 	d, _ := boardByServer.LoadOrStore(s, &boardDeps{
 		legacy:   boardstore.OpenLegacy(boardstore.LegacyPath()),
-		settings: boardstore.OpenSettings(s.cfg.Dir),
+		settings: settings,
 	})
 	return d.(*boardDeps)
 }

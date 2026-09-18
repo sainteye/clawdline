@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // Settings is this daemon's own board document: the board-level facts it may
@@ -30,6 +32,21 @@ import (
 type Settings struct {
 	path string
 	mu   sync.Mutex
+	// receipts is the most receipts the document keeps; zero is the capacity
+	// register's default for `board.receipts`.
+	receipts int
+	// seen is the receipt count as of the file's last known size and time, so
+	// that measuring the ledger is a stat and not a parse.
+	seen receiptTally
+}
+
+// receiptTally is one reading of the ledger, and the file it was read from.
+type receiptTally struct {
+	valid     bool
+	size      int64
+	modified  time.Time
+	count     int
+	evictions int
 }
 
 type settingsFile struct {
@@ -202,15 +219,77 @@ func (s *Settings) Apply(actor string, c Command, raw []byte) (Outcome, error) {
 	f.UpdatedAt = float64(time.Now().UnixNano()) / 1e9
 	f.Receipts = append(f.Receipts, StoredReceipt{Actor: actor, Digest: digest, ItemID: "",
 		RequestID: c.RequestID, Revision: f.Revision, Status: 200})
-	if over := len(f.Receipts) - MaximumReceipts; over > 0 {
+	// Oldest first, by count: the Swift app's rule, kept until receipts expire
+	// by time (design-decisions D03, W2). The register row says so.
+	if over := len(f.Receipts) - s.receiptLimit(); over > 0 {
 		f.Receipts = f.Receipts[over:]
 		f.ReceiptEvictions += over
 	}
 	f.SchemaVersion = StorageSchemaVersion
 	if err := s.persist(f); err != nil {
+		s.seen.valid = false
 		return Outcome{}, refuse(503, "board_persistence_failed", err.Error())
 	}
+	s.remember(f)
 	return Outcome{Revision: f.Revision}, nil
+}
+
+// SetReceiptLimit is the capacity override for `board.receipts`. Zero or less
+// is the register's default.
+func (s *Settings) SetReceiptLimit(n int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.receipts = int(n)
+}
+
+func (s *Settings) receiptLimit() int {
+	if s.receipts > 0 {
+		return s.receipts
+	}
+	return int(capacity.Default(capacity.BoardReceipts))
+}
+
+// remember notes the ledger just written, with the file's size and time, so the
+// next measurement of an unchanged file answers without opening it.
+func (s *Settings) remember(f settingsFile) {
+	info, err := os.Stat(s.path)
+	if err != nil {
+		s.seen.valid = false
+		return
+	}
+	s.seen = receiptTally{valid: true, size: info.Size(), modified: info.ModTime(),
+		count: len(f.Receipts), evictions: f.ReceiptEvictions}
+}
+
+// ReceiptReading is the `board.receipts` row: how many receipts the document
+// holds and how many it has evicted, a count the document itself keeps and so
+// one that survives a restart.
+//
+// It costs a stat while the file is the one this process last wrote or read;
+// a changed file is read once. A document that cannot be read is an unknown
+// reading, never an empty ledger.
+func (s *Settings) ReceiptReading() capacity.Reading {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	info, err := os.Stat(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return capacity.Reading{Known: true, DurableCounters: true,
+			Note: "no board document yet; nothing has been written"}
+	}
+	if err != nil {
+		return capacity.Unmeasured(err.Error())
+	}
+	if !s.seen.valid || s.seen.size != info.Size() || !s.seen.modified.Equal(info.ModTime()) {
+		f, err := s.load()
+		if err != nil {
+			s.seen.valid = false
+			return capacity.Unmeasured(err.Error())
+		}
+		s.seen = receiptTally{valid: true, size: info.Size(), modified: info.ModTime(),
+			count: len(f.Receipts), evictions: f.ReceiptEvictions}
+	}
+	return capacity.Reading{Known: true, Used: int64(s.seen.count), DurableCounters: true,
+		Counters: capacity.Counters{Evicted: int64(s.seen.evictions)}}
 }
 
 // persist writes the whole document to a temporary file beside it and renames

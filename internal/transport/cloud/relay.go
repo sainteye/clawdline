@@ -31,15 +31,16 @@ import (
 	"time"
 
 	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
 )
 
-// RelayQueueDepth is how many decrypted requests may wait for the bridge.
+// How many decrypted requests may wait for the bridge is the capacity
+// register's `cloud.relay_queue` row: 64 unless an override lowers it.
 //
 // It is small on purpose. A Cloud request is a person tapping something, and a
 // hundred of them behind a bridge that has stopped answering is not a backlog
 // worth keeping — it is a minute of stale taps that will all fire at once.
-const RelayQueueDepth = 64
 
 // Relay is the Transport implementation backed by a real relay connection.
 type Relay struct {
@@ -60,6 +61,8 @@ type Relay struct {
 	Now func() time.Time
 	// Log is one line per dropped request. Nil is silence.
 	Log func(format string, args ...any)
+	// Depth is how many requests may wait; zero is the register's default.
+	Depth int
 
 	once     sync.Once
 	requests chan Inbound
@@ -72,7 +75,14 @@ type Relay struct {
 var ErrRelayNotReady = errors.New("this relay has no queue yet")
 
 func (r *Relay) start() {
-	r.once.Do(func() { r.requests = make(chan Inbound, RelayQueueDepth) })
+	r.once.Do(func() { r.requests = make(chan Inbound, r.depth()) })
+}
+
+func (r *Relay) depth() int {
+	if r.Depth > 0 {
+		return r.Depth
+	}
+	return int(capacity.Default(capacity.CloudRelayQueue))
 }
 
 // Requests is the channel Service.Run reads.
@@ -124,6 +134,14 @@ func (r *Relay) Dropped() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.dropped
+}
+
+// Queue is the `cloud.relay_queue` row: requests waiting now, how many may,
+// and how many never reached the bridge. A length is a moment's reading of a
+// queue another goroutine drains; it is what a gauge is.
+func (r *Relay) Queue() (waiting, depth, dropped int) {
+	r.start()
+	return len(r.requests), cap(r.requests), r.Dropped()
 }
 
 func (r *Relay) count() {

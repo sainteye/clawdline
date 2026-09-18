@@ -169,6 +169,9 @@ type LinkOptions struct {
 	Log func(format string, args ...any)
 	// Now exists so a test can drive the clock.
 	Now func() time.Time
+	// QueueDepth is how many decrypted requests may wait for the bridge: the
+	// capacity register's `cloud.relay_queue` limit. Zero is its default.
+	QueueDepth int
 }
 
 // Link is one machine's Cloud line.
@@ -327,6 +330,7 @@ func (l *Link) wire() error {
 		KeyID:     adaptercloud.MasterKeyID,
 		Now:       opts.Now,
 		Log:       opts.Log,
+		Depth:     opts.QueueDepth,
 	}
 
 	transport, err := adaptercloud.New(adaptercloud.Options{
@@ -645,6 +649,17 @@ func hasAny(have []string, want ...string) bool {
 		}
 	}
 	return false
+}
+
+// RelayQueue is the request queue's reading for the capacity register. ok is
+// false when this link has no queue: its line has never been built, because
+// the switch is off or the machine is not enrolled.
+func (l *Link) RelayQueue() (waiting, depth, dropped int, ok bool) {
+	if l.relay == nil {
+		return 0, 0, 0, false
+	}
+	waiting, depth, dropped = l.relay.Queue()
+	return waiting, depth, dropped, true
 }
 
 // Status is what the status route answers.

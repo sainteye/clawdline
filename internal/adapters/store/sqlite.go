@@ -177,7 +177,7 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, "clawdline.sqlite3")
+	path := filepath.Join(dir, DBFile)
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
