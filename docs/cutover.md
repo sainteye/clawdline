@@ -1,3 +1,5 @@
+> **實作依據是 [`docs/design-decisions.md`](design-decisions.md)（2026-09-18 起）；本文保留為分析材料，與它衝突之處以它為準。**
+
 # 舊 app 退役：盤點、判準、切換順序
 
 > 使用者目標（2026-09-18 原話）：「舊的 app 退役，然後使用新的 app 來使用 https://app.clawdline.com/」
