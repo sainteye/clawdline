@@ -60,6 +60,8 @@ func main() {
 		pairCommand(os.Args[2:])
 	case "cloud":
 		cloudCommand(os.Args[2:])
+	case "board":
+		boardCommand(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println(version)
 	default:
@@ -343,8 +345,9 @@ func newTaskID() string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|dispatch|settle|land|send|interrupt|close|open|pair|cloud|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|dispatch|settle|land|send|interrupt|close|open|pair|cloud|board|version>")
 	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")
 	fmt.Fprintln(os.Stderr, "  pair [--watch]            show the code when a device asks to pair")
 	fmt.Fprintln(os.Stderr, "  cloud <status|on|off|login|connect>   the line to app.clawdline.com; off by default")
+	fmt.Fprintln(os.Stderr, "  board tracks [--rows] [--json]   the old cards on the three tracks, read-only")
 }
