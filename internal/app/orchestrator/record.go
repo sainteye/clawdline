@@ -202,6 +202,8 @@ type Record struct {
 	Repository      string          `json:"repository"`
 	Worktree        *Worktree       `json:"worktree,omitempty"`
 	ChildTerminalID string          `json:"child_terminal_id,omitempty"`
+	ChildBackend    string          `json:"child_backend,omitempty"`
+	RootTerminalID  string          `json:"root_terminal_id,omitempty"`
 	SpawnedAt       time.Time       `json:"spawned_at,omitempty"`
 	FinishedAt      time.Time       `json:"finished_at,omitempty"`
 	Result          *taskdir.Result `json:"result,omitempty"`

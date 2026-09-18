@@ -47,6 +47,10 @@ type Broker struct {
 	// answers the menu instead of delivering the message, so both the message
 	// route and the notice pump ask first.
 	Choosing func(ctx context.Context, terminalID string) bool
+	// Screen is what a terminal currently shows. The briefing path needs it
+	// because a new child's first screen may be a dialog, and a caret is not a
+	// composer — see composer.go for what that cost once.
+	Screen func(ctx context.Context, terminalID string) (string, bool)
 	// Launcher opens the child's tab.
 	Launcher ports.Launcher
 	// Terminal is the machine's `terminal` setting.

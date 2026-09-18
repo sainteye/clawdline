@@ -529,7 +529,10 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		row.FinishedAt = r.FinishedAt.Unix()
 	}
 	if r.ChildTerminalID != "" {
-		row.Child = &contract.BrokerChild{TerminalID: r.ChildTerminalID}
+		row.Child = &contract.BrokerChild{
+			TerminalID: r.ChildTerminalID,
+			Backend:    contract.Backend(r.ChildBackend),
+		}
 	}
 	if r.Root != nil {
 		row.Root = &contract.BrokerRoot{

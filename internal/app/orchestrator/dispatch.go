@@ -98,6 +98,18 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		}
 	}()
 
+	// The owner has to be a session that is actually here. A child grouped
+	// under a root nobody can find finishes into silence: the completion notice
+	// has no recipient, the close cascade has nothing to close, and the person
+	// who asked for the work never hears that it is done. Resolving it now
+	// turns that into a refusal the dispatcher can act on, rather than a
+	// discovery somebody makes an hour later.
+	rootTerminal, err := b.resolveRoot(ctx, record.Root)
+	if err != nil {
+		return Dispatched{}, err
+	}
+	record.RootTerminalID = rootTerminal
+
 	live, err := b.liveTasks(ctx)
 	if err != nil {
 		return Dispatched{}, err
@@ -226,6 +238,30 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		b.forgetSecret(record.ID)
 	}
 	return Dispatched{Record: record, Warnings: warnings}, nil
+}
+
+// resolveRoot proves the declared owner is one live session on this machine.
+func (b *Broker) resolveRoot(ctx context.Context, root *RootRef) (string, error) {
+	if root == nil {
+		return "", nil
+	}
+	s, err := b.terminalFor(ctx, root.SessionID, root.Assistant)
+	if err == nil {
+		return s.ID, nil
+	}
+	ref, ok := err.(Refusal)
+	if !ok {
+		return "", err
+	}
+	const tail = " Resolve the interactive Root with GET /v1/orchestrator/whoami and resend with the " +
+		"current process-bound conversation id; do not downgrade owned work to detached polling."
+	if ref.Code == "conversation_ambiguous" {
+		return "", refuse(http.StatusConflict, "conversation_ambiguous",
+			"More than one live process of the declared assistant proves root.session_id; no owner was selected."+tail)
+	}
+	return "", refuse(http.StatusUnprocessableEntity, "root_unresolved",
+		"root.session_id did not resolve to one live process-bound session; completion notification, "+
+			"grouping and close cascade are not guaranteed."+tail)
 }
 
 const claimsMissingMessage = "This task declared no claims, so nothing reserves the paths it is about to write " +
@@ -358,11 +394,15 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string) Record
 	case projects.PlanITerm:
 		terminalID, openErr = b.Launcher.NewITermTab(ctx, line)
 		backend = "iterm"
-	case projects.PlanTmux:
-		terminalID, openErr = b.Launcher.NewTmuxWindow(ctx, cwd, shellCommand(launch, r, b.Tasks.Dir))
-		backend = "tmux"
-	case projects.PlanTmuxDetached:
-		terminalID, openErr = b.Launcher.NewTmuxSession(ctx, cwd, TmuxSessionName,
+	case projects.PlanTmux, projects.PlanTmuxDetached:
+		// A **new detached session per child**, never a window on whichever
+		// session tmux happens to have used last. `new-window` with no target
+		// lands in the most recently used session, which on this machine is one
+		// somebody is working in — a broker that can put a child in front of
+		// your keyboard is a broker that can take it. This is the tmux
+		// equivalent of the iTerm tab above: its own place, named after the
+		// task, easy to find and easy to close.
+		terminalID, openErr = b.Launcher.NewTmuxSession(ctx, cwd, ChildSessionName(r.ID),
 			shellCommand(launch, r, b.Tasks.Dir))
 		backend = "tmux"
 	case projects.PlanNotRunning:
@@ -378,9 +418,9 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string) Record
 	}
 
 	r.ChildTerminalID = terminalID
+	r.ChildBackend = backend
 	r.SpawnedAt = b.now()
 	r.State = StateSpawning
-	_ = backend
 
 	// The composer needs the assistant to have drawn one before it can be
 	// typed into. Waiting here rather than in the watch beat keeps the whole
@@ -393,13 +433,17 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string) Record
 	return r
 }
 
-// TmuxSessionName is the detached tmux session this broker starts for children.
+// ChildSessionName is the tmux session one child is given.
 //
-// Deliberately not "clawdline": that is the Swift app's, and on this machine it
-// is a session with twenty-five windows somebody is working in. A broker that
-// adds windows to a session it did not create is a broker that can move
-// somebody's keyboard.
-const TmuxSessionName = "clawdline-next"
+// Deliberately not "clawdline": that is the Swift app's name, and on this
+// machine it is a session with twenty-five windows somebody is working in.
+func ChildSessionName(taskID string) string {
+	short := taskID
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	return "clawdline-task-" + short
+}
 
 // shellCommand is the one line the child's shell runs.
 func shellCommand(l projects.Launch, r Record, taskRoot string) string {
@@ -441,9 +485,13 @@ func permissionArgs(r Record) []string {
 
 // brief types the one line that carries the secret.
 //
-// It waits for a composer rather than typing immediately, because an assistant
-// that has not drawn one yet drops the bytes and the only evidence of that is a
-// child that never says anything.
+// It waits for a **composer**, not merely for an assistant process. A child
+// whose first screen is a dialog — Claude Code's workspace-trust question, for
+// one — would have the Return at the end of this line answer that dialog
+// instead, and the option under the highlight is "No, exit". See composer.go.
+//
+// The wait is bounded here and again by the four-minute clock in the beat, so a
+// child that never draws a prompt is reported rather than waited on for ever.
 func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 	if b.Type == nil {
 		return errors.New("this daemon cannot type into a terminal")
@@ -452,10 +500,15 @@ func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 	var last error
 	for b.now().Before(deadline) {
 		if s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID); ok && s.IsAssistant() {
-			if err := b.Type(ctx, r.ChildTerminalID, FirstLine(r, secret, b.Language)); err != nil {
-				last = err
-			} else {
-				return nil
+			ready, why := b.composerReady(ctx, r.ChildTerminalID)
+			if ready {
+				if err := b.Type(ctx, r.ChildTerminalID, FirstLine(r, secret, b.Language)); err != nil {
+					last = err
+				} else {
+					return nil
+				}
+			} else if why != nil {
+				last = why
 			}
 		}
 		select {
@@ -468,6 +521,28 @@ func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 		last = errors.New("the child session did not reach a prompt")
 	}
 	return last
+}
+
+// composerReady asks the child's own screen whether it is ready to be typed at.
+//
+// With no screen reader at all the answer is yes: a daemon that cannot see the
+// terminal it drives must still be able to brief a child, and the machines
+// where that is true are the ones with no dialogs to hit.
+func (b *Broker) composerReady(ctx context.Context, terminalID string) (bool, error) {
+	if b.Screen == nil {
+		return true, nil
+	}
+	screen, ok := b.Screen(ctx, terminalID)
+	if !ok {
+		return true, nil
+	}
+	if Choosing(screen) {
+		return false, errors.New("the child is showing a dialog; the briefing would have answered it")
+	}
+	if !ComposerReady(screen) {
+		return false, nil
+	}
+	return true, nil
 }
 
 // Settle records a terminal outcome and opens the notice that tells the root.

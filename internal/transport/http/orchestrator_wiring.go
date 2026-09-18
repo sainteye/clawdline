@@ -46,6 +46,14 @@ func newBroker(s *Server) *orchestrator.Broker {
 			}
 			return false
 		},
+		Screen: func(ctx context.Context, terminalID string) (string, bool) {
+			for _, item := range s.inventory.Read(ctx).Sessions {
+				if item.ID == terminalID {
+					return s.inventory.Screen.Capture(ctx, item)
+				}
+			}
+			return "", false
+		},
 		Launcher: terminal.NewLauncher(),
 		Terminal: func() projects.TerminalChoice {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()

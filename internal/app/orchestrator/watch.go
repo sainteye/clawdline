@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
 // The beat: what the broker does when nobody asked it anything.
@@ -70,6 +71,7 @@ func (b *Broker) Pass(ctx context.Context) Pulse {
 		if b.collectNote(ctx, &r) {
 			p.Notes++
 		}
+		b.proveBriefing(ctx, &r)
 		if settled := b.collectResult(ctx, r); settled {
 			p.Settled++
 			continue
@@ -173,6 +175,32 @@ func (b *Broker) authentic(ctx context.Context, r Record, result taskdir.Result)
 	return SecretMatches(hash, result.Secret)
 }
 
+// spawnVerdict decides what four minutes of silence from a child means.
+//
+// It used to mean `spawn_failed` on its own, and that was wrong in the ordinary
+// case: the briefing tells a child **not** to send heartbeat notes, so a
+// healthy child that is simply working says nothing, and a task that had
+// started perfectly well was recorded as one that never started. Silence is not
+// evidence of anything; what the tab is doing is.
+//
+//   - the tab is gone          -> spawn_failed, and the sentence says so
+//   - the tab is holding a dialog -> spawn_failed: the briefing could not be
+//     typed at it, and a keystroke would have answered the dialog instead
+//   - the tab is alive         -> nothing. The task's own timeout is the
+//     backstop, and `spawning` is the honest word for a child that has been
+//     typed at without anything coming back yet.
+func spawnVerdict(alive, choosing bool) (State, string, bool) {
+	switch {
+	case !alive:
+		return StateSpawnFailed, "The child session did not reach a prompt within 4 minutes. " +
+			"If several sessions were starting at once, they were competing for this Mac.", true
+	case choosing:
+		return StateSpawnFailed, "The child session is holding a dialog four minutes after it opened, " +
+			"so the briefing was never typed: answering that dialog is a person's decision, not this broker's.", true
+	}
+	return "", "", false
+}
+
 // runClocks is the two deadlines. It answers true when the task became
 // terminal.
 func (b *Broker) runClocks(ctx context.Context, r Record, p *Pulse) bool {
@@ -182,13 +210,21 @@ func (b *Broker) runClocks(ctx context.Context, r Record, p *Pulse) bool {
 		return false
 	}
 	if r.State == StateSpawning && !r.SpawnedAt.IsZero() && now.Sub(r.SpawnedAt) > readyLimit {
-		// A note would have promoted this to `briefed` above, so reaching here
-		// means nothing authenticated has ever come back from that tab.
-		if _, err := b.Settle(ctx, r, hash, StateSpawnFailed,
-			"The child session did not reach a prompt within 4 minutes. If several sessions were "+
-				"starting at once, they were competing for this Mac."); err == nil {
-			p.SpawnFail++
-			return true
+		alive := false
+		if s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID); ok && s.IsAssistant() {
+			alive = true
+		}
+		choosing := false
+		if alive && b.Screen != nil {
+			if screen, ok := b.Screen(ctx, r.ChildTerminalID); ok {
+				choosing = Choosing(screen)
+			}
+		}
+		if state, why, decided := spawnVerdict(alive, choosing); decided {
+			if _, err := b.Settle(ctx, r, hash, state, why); err == nil {
+				p.SpawnFail++
+				return true
+			}
 		}
 	}
 	if deadline := r.Deadline(); !deadline.IsZero() && now.After(deadline) {
@@ -199,4 +235,27 @@ func (b *Broker) runClocks(ctx context.Context, r Record, p *Pulse) bool {
 		}
 	}
 	return false
+}
+
+// proveBriefing promotes a child that has plainly taken the turn we typed.
+//
+// A turn that starts after the briefing was typed is the cheapest positive
+// evidence this daemon has that the bytes were read, and it is weaker than the
+// Swift app's — which reads the child's own transcript for the task marker. It
+// can be fooled by a child that was already working on something else, which is
+// why it only ever moves `spawning` to `briefed` and never settles anything.
+func (b *Broker) proveBriefing(ctx context.Context, r *Record) bool {
+	if r.State != StateSpawning || r.ChildTerminalID == "" {
+		return false
+	}
+	s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID)
+	if !ok || !s.IsAssistant() || s.State != session.StateWorking {
+		return false
+	}
+	_, hash, err := b.Record(ctx, r.ID)
+	if err != nil {
+		return false
+	}
+	r.State = StateBriefed
+	return b.save(ctx, *r, hash, "task.briefed") == nil
 }
