@@ -10,10 +10,10 @@ import {
   settingsMacVersion,
   settingsNewestFirst,
 } from "../legacy/settings-bridge.js"
-import { client } from "../client.js"
 import { pushShape, sendPushTest, startPush, subscribePush, togglePush } from "../push/push.js"
 import { legacyState } from "../legacy/overlay-bridge.js"
 import { ShellBlocks } from "./settings/ShellBlocks.js"
+import { BoardBlock } from "./settings/BoardBlock.js"
 
 /**
  * The settings page, `section#settings` in `index.html` and `input/settings.js`.
@@ -28,11 +28,9 @@ import { ShellBlocks } from "./settings/ShellBlocks.js"
  *   "on", so the block says which; the test button appears only where there is
  *   something subscribed for it to reach.
  * - **Assistant icons** and **Transcript** are this browser's own, as there.
- * - **Project Board**: `BoardControls.apply` draws only from an answer that
- *   carries `board.enabled`. This daemon's `/v1/board` does not, so the block
- *   stays as the markup has it — English, and its toggles "Loading…" and off —
- *   exactly as the original leaves it for such an answer. The drawing half is
- *   ported below so an answer that does carry it is drawn.
+ * - **Project Board**: `BoardBlock` (settings/BoardBlock.tsx) is
+ *   `BoardControls`: drawn from the last board answer that says whether the
+ *   board is on, and its two toggles send `set_enabled` and `set_ai_consent`.
  * - **Project Timeline**: `view/timeline.js` paints its three words when it is
  *   bound and draws its toggle only from a timeline it has read; with no
  *   project entered it has read none, so the toggle stays "Loading…" there too.
@@ -66,20 +64,9 @@ function notifySay(T: Record<string, string>, state: string): string {
   }
 }
 
-/** `words(en, zh)` (`input/board-settings.js`, `view/timeline.js`): the page's language decides. */
-function boardWords(en: string, zh: string): string {
-  return /^zh/i.test(document.documentElement.lang || navigator.language || "") ? zh : en
-}
+/** `words(en, zh)` (`view/timeline.js`): the page's language decides. */
 function timelineWords(en: string, zh: string): string {
   return /^zh(?:-|$)/i.test(String(document.documentElement.lang || "")) ? zh : en
-}
-
-/** What `BoardControls.apply` draws in this page from a board that says whether it is on. */
-interface BoardMode {
-  enabled: boolean
-  revision?: number
-  narrativeConsent?: string
-  viewer?: { canManage?: boolean; narrativeProvider?: string }
 }
 
 function SettingsPage({ shown }: { shown: boolean }) {
@@ -89,8 +76,6 @@ function SettingsPage({ shown }: { shown: boolean }) {
   const [entered, setEntered] = useState(false)
   const [icons, setIcons] = useState(settingsAssistantIcons)
   const [newest, setNewest] = useState(settingsNewestFirst)
-  const [board, setBoard] = useState<BoardMode | null>(null)
-  const [boardStatus, setBoardStatus] = useState("")
   const [version, setVersion] = useState("")
   const closeRef = useRef<HTMLButtonElement>(null)
   // `Push.redraw()` from `Settings.enter`: the notifications block is drawn
@@ -98,7 +83,6 @@ function SettingsPage({ shown }: { shown: boolean }) {
   const push = useSyncExternalStore(subscribePush, pushShape)
   const presses = useRef(0)
   const idle = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const reading = useRef(false)
 
   // `Settings.enter`, on every arrival however it happened.
   useEffect(() => {
@@ -117,28 +101,6 @@ function SettingsPage({ shown }: { shown: boolean }) {
       (window as { __clawdlineCloud?: { build?: string } }).__clawdlineCloud,
     )
     setVersion(v ? L.fillString(T.webSettingsVersion, { v }) : "")
-    // `BoardControls.refresh`: one read at a time, and its failure said in the block.
-    if (reading.current) return
-    reading.current = true
-    client
-      .board()
-      .then((answer) => {
-        const mode = (answer as { board?: BoardMode }).board
-        if (mode && typeof mode.enabled === "boolean") {
-          setBoard((prior) =>
-            prior && typeof mode.revision === "number" && typeof prior.revision === "number" && mode.revision < prior.revision
-              ? prior
-              : { ...mode, viewer: mode.viewer ?? prior?.viewer },
-          )
-        }
-        setBoardStatus("")
-      })
-      .catch((error: unknown) => {
-        setBoardStatus(L.failureSentence(error, boardWords("Board unavailable", "無法讀取看板設定")))
-      })
-      .finally(() => {
-        reading.current = false
-      })
   }, [shown])
 
   // `Pages.go` lands the keyboard on the page's own control, `settings-close`.
@@ -221,12 +183,6 @@ function SettingsPage({ shown }: { shown: boolean }) {
     const tx = document.getElementById("tx-scroll")
     if (tx) tx.scrollTop = 0
   }
-
-  // `BoardControls.apply`, the settings half of it.
-  const canManage = !!board?.viewer?.canManage
-  const provider = board?.viewer?.narrativeProvider
-  const providerName = provider === "codex" ? "OpenAI / Codex" : provider === "claude" ? "Anthropic / Claude" : ""
-  const aiAllowed = !!provider && board?.narrativeConsent === provider
 
   return (
     <section
@@ -341,67 +297,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
           </div>
         </div>
 
-        <div className="block" id="settings-board">
-          <b id="settings-board-title">
-            {board ? boardWords("Enable Project Board", "啟用看板系統") : "Enable Project Board"}
-          </b>
-          <p className="say" id="settings-board-say">
-            {board
-              ? boardWords(
-                  "Currently free. Organize work, sessions, usage and delivery under each Project. Disable to use the standard workflow; history is retained.",
-                  "目前免費。以 Project 項目整合派工、進度、用量與成果。關閉後使用一般流程，歷史紀錄仍保留。",
-                )
-              : "Currently free. Turn off to use the standard workflow; history is retained."}
-          </p>
-          <button
-            className={board?.enabled ? "chip on" : "chip"}
-            id="settings-board-toggle"
-            type="button"
-            aria-pressed={board ? String(board.enabled) as "true" | "false" : "true"}
-            disabled={!board || !canManage}
-          >
-            {board ? (board.enabled ? boardWords("Enabled", "已啟用") : boardWords("Disabled", "已關閉")) : "Loading…"}
-          </button>{" "}
-          <button
-            className="chip"
-            id="settings-board-history"
-            type="button"
-            data-page-to="projects"
-            onClick={() => goToPage("projects")}
-          >
-            {board ? boardWords("Open projects", "開啟專案") : "Open projects"}
-          </button>
-          <p className="say" id="settings-board-status" role="status">
-            {boardStatus}
-          </p>
-          <b id="settings-board-ai-title">{board ? boardWords("AI reading summaries", "AI 閱讀摘要") : "AI reading summaries"}</b>
-          <p className="say" id="settings-board-ai-say">
-            {board
-              ? boardWords(
-                  "Separate opt-in. Send stored Board titles, descriptions and documented outcomes to ",
-                  "獨立同意設定。將已儲存的看板標題、描述與成果文字送至 ",
-                ) +
-                providerName +
-                boardWords(
-                  " to summarize in your Clawdline language. Uses the configured naming model and its quota. No transcript, credential-file or attachment reading. Original text stays available; Board OFF stops generation.",
-                  "，以 Clawdline 設定語言整理；使用已設定的命名模型與其額度。不讀取完整對話、憑證檔或附件；原文保留，關閉看板即停止生成。",
-                )
-              : "Off until you consent to sending stored Board titles, descriptions and documented outcomes to your selected AI provider. No transcript or attachment reading."}
-          </p>
-          <button
-            className="chip"
-            id="settings-board-ai-toggle"
-            type="button"
-            aria-pressed={board ? String(aiAllowed) as "true" | "false" : "false"}
-            disabled={!board || !canManage || !providerName}
-          >
-            {board
-              ? aiAllowed
-                ? boardWords("Stop AI sharing", "停止 AI 外送整理")
-                : boardWords("Allow sharing with ", "同意送至 ") + providerName
-              : "Loading…"}
-          </button>
-        </div>
+        <BoardBlock shown={shown} goToPage={goToPage} />
         <div className="block" id="settings-timeline">
           <b id="settings-timeline-title">{timelineWords("Enable Project Timeline", "啟用專案時間軸")}</b>
           <p className="say" id="settings-timeline-say">

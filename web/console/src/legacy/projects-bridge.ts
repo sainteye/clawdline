@@ -11,9 +11,9 @@
 //   Project catalog, and hands the module the `{ board }` answer it expects. The
 //   original's `/v1/board` is the whole Board; this daemon's `/v1/board` is a
 //   different, older reading and is not touched here.
-// - `openBoard` is absent: this console has no Board page. A row therefore opens
-//   the Project here, which is exactly what the original does when its
-//   environment carries no Board (`openProject`), and asks the delivery join.
+// - `openBoard` is `BoardControls.open(place.boardProjectId, null, place)`, as
+//   there: a row that names a Board Project opens it on the Board page
+//   (`board-bridge.ts`). A row with no Board Project opens the Project here.
 // - `openWorktreeOwner` is absent: the original opens the owner in the Board's
 //   session viewer, which this console does not have. The owner button is still
 //   drawn, as the module draws it, and does nothing.
@@ -24,6 +24,7 @@ import { T } from "./js/core/i18n.js"
 import { drawIcon } from "./js/core/pixels.js"
 import { tint } from "./js/core/util.js"
 import { bindProjectsPage as bindProjectsPageOriginal, readProjectPlaces } from "./js/view/projects.js"
+import { openBoard } from "./board-bridge.js"
 
 /** `net/client.js`'s LOCAL_MACHINE: a page served by this daemon is looking at this machine. */
 const LOCAL_MACHINE = "this-mac"
@@ -173,6 +174,7 @@ export function bindProjects(doc: Document, navigate: (name: string) => void): P
     {
       carries: () => true,
       places: () => (readProjectPlaces as (t: unknown, onMode?: unknown) => Promise<unknown>)(transport, applyBoardMode),
+      openBoard: (place: Place) => openBoard(place.boardProjectId, null, place),
       projectWorktrees: (place: Place) => transport.projectWorktrees(place),
       lifecycleAvailable: () => true,
       projectWorktreeLifecycle: (place: Place) => transport.projectWorktreeLifecycle(place.boardProjectId || place.id),
