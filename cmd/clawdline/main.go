@@ -88,6 +88,9 @@ func serve() {
 		os.Exit(1)
 	}
 	srv.StartScheduler(context.Background())
+	// The broker's beat: collect what children wrote, run the two clocks, and
+	// keep telling a root its child finished until somebody acknowledges it.
+	srv.StartBroker(context.Background())
 	startCloudLine(context.Background(), cfg, srv)
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)

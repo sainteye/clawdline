@@ -29,6 +29,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/app"
+	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/config"
 	"github.com/sainteye/clawdline-go/internal/contract"
@@ -68,6 +69,13 @@ type Server struct {
 	screens *app.Screens
 	// screenBus carries a moved screen's revision to every open event stream.
 	screenBus *screenBus
+	// broker is the loop from a root asking for work to a child reporting that
+	// the work is done: /v1/orchestrator/*. It owns this daemon's own task
+	// records — the Swift store is read for the Swift app's tasks and never
+	// written (plan.md §4).
+	broker *orchestrator.Broker
+	// beat is the broker's account of its last pass, read by /v1/diagnostics.
+	beat atomic.Pointer[orchestrator.Pulse]
 	// pulse is the scheduler's own account of its last pass, read by
 	// /v1/diagnostics.
 	pulse atomic.Pointer[app.Pulse]
@@ -125,6 +133,7 @@ func New(cfg config.Config) (*Server, error) {
 	// A pane this daemon piped and did not take back is a `%N.fifo` left in
 	// there, which is why the directory is under this daemon's own state and
 	// not under a temporary one somebody else may empty.
+	srv.broker = newBroker(srv)
 	srv.screenBus = newScreenBus()
 	hosts := terminal.Hosts()
 	screenDir := filepath.Join(cfg.Dir, "screens")
@@ -205,7 +214,15 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/v1/orchestrator/schedules", s.schedules)
 	mux.HandleFunc("/v1/orchestrator/tasks", s.tasksRoute)
-	mux.HandleFunc("/v1/orchestrator/tasks/", s.settleRoute)
+	// The broker (orchestrator.go): everything under a task id, plus the five
+	// routes beside it. A child's own routes are let through the gate by
+	// `taskSecretRoute` and are authenticated by these handlers.
+	mux.HandleFunc("/v1/orchestrator/tasks/", s.orchestratorTaskRoute)
+	mux.HandleFunc("/v1/orchestrator/inventory", s.brokerInventory)
+	mux.HandleFunc("/v1/orchestrator/inflight", s.brokerInflight)
+	mux.HandleFunc("/v1/orchestrator/messages", s.brokerMessages)
+	mux.HandleFunc("/v1/orchestrator/whoami", s.brokerWhoAmI)
+	mux.HandleFunc("/v1/orchestrator/sessions/", s.brokerSessionRoute)
 	mux.HandleFunc("/v1/strings", s.strings)
 	mux.HandleFunc("/v1/settings", s.settingsRoute)
 	mux.HandleFunc("/v1/places", s.placesRoute)

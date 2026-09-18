@@ -194,6 +194,9 @@ func Open(dir string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}
+	if err := openBroker(db); err != nil {
+		return nil, err
+	}
 	if err := migrate(db); err != nil {
 		return nil, err
 	}

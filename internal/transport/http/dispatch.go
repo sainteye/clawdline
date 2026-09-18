@@ -14,7 +14,10 @@ import (
 // tasksRoute reads the tasks this daemon knows about, or accepts a new one.
 func (s *Server) tasksRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		s.dispatch(w, r)
+		// The broker owns dispatch now (orchestrator.go). The older handler
+		// below stays as `s.dispatch` because the scheduler still uses the
+		// application command it wraps; nothing routes to it.
+		s.brokerDispatch(w, r)
 		return
 	}
 	s.tasksList(w, r)
