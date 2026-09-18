@@ -294,14 +294,12 @@ func (s *Server) documentTaskRecordsCut(ctx context.Context, cwd string) ([]task
 		}
 		add(t.ID, filepath.Join(swiftTaskRoot, t.ID), t.Title, t.Created.Unix())
 	}
-	if live, err := s.store.LiveTasks(ctx); err == nil {
+	if live, err := s.broker.LiveRecords(ctx); err == nil {
 		for _, t := range live {
 			if t.ProjectDir != cwd {
 				continue
 			}
-			// This daemon records no title, so the row carries none rather
-			// than a guess.
-			add(t.ID, s.dispatcher.Tasks.Path(t.ID), "", t.CreatedAt.Unix())
+			add(t.ID, s.broker.Tasks.Path(t.ID), t.Title, t.CreatedAt.Unix())
 		}
 	}
 	sort.SliceStable(found, func(i, j int) bool { return found[i].created > found[j].created })

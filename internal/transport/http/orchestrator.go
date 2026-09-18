@@ -65,8 +65,6 @@ func (s *Server) orchestratorTaskRoute(w http.ResponseWriter, r *http.Request) {
 		s.brokerNotify(w, r, id)
 	case action == "respawn" && r.Method == http.MethodPost:
 		s.brokerRespawn(w, r, id)
-	case action == "settle" && r.Method == http.MethodPost:
-		s.settleRoute(w, r)
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a task action")
 	}

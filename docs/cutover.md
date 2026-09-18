@@ -262,6 +262,10 @@ claims `internal/app/orchestrator`、`internal/adapters/store`、`taskdir`、`su
       規則已換成舊版的「時刻＋補跑窗」，`every 1h` 不再存在，驗法改成「建一個一分鐘後的排程」。在 7727 上仍待重建後驗） 驗：建一個 `every 1h` 的排程，
       確認 `first_seen` 規則生效（**第一次在一小時後**，不是立刻），
       到期時真的開了分頁，`/v1/diagnostics` 的 `due` 與 `fired` 對得起來。
+      **驗法補一條（`design-decisions.md` D53，W4）**：排程的 run 走 broker——有自己的 secret、CHILD.md 與逾時；
+      一個不寫 result 的 run 要在自己的 `timeout_minutes` 到時變成 `timeout`，並放行同一排程的下一次；它的 claims
+      與 broker task 互相擋（`409 workspace_busy`，在開任何東西之前）。2026-09-18 在隔離的 7807（私有 tmux、假的
+      `claude`）實測通過，證據在 task `3a614643` 的 `artifacts/report.md`；7727 仍待重建後驗。
 - [ ] **A9 五個營運排程搬過去而且各跑成功一次。**（匯入與內容一致已用複本驗過 6/6；「各跑成功一次」要真的切換，見 `docs/schedules.md` 的順序）
       清單：文章發布、a private venture發布、dual production 錯誤巡檢、a private venture餐廳對應與 production 錯誤、
       a private venture 內容修正與對話異常巡檢。**這一項要使用者自己確認結果對**，不是看它有沒有開分頁。

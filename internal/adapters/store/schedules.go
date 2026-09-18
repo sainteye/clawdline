@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 )
@@ -255,8 +254,10 @@ type ScheduleRun struct {
 	Summary    string
 }
 
-// RecordScheduleRun links a task to the schedule that made it. Written after
-// the dispatch recorded the task, so the join below always finds one.
+// RecordScheduleRun links a task to the schedule that made it. Written before
+// the broker is asked to record the task, so a process that dies between the
+// two still leaves the schedule knowing its run; ForgetScheduleRun takes the
+// link back when the broker answers that it recorded nothing.
 func (s *Store) RecordScheduleRun(ctx context.Context, taskID, scheduleID string, created, fire time.Time, how string) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO schedule_runs (task_id, schedule_id, created_at, fire_at, how) VALUES (?, ?, ?, ?, ?)`,
@@ -265,20 +266,10 @@ func (s *Store) RecordScheduleRun(ctx context.Context, taskID, scheduleID string
 }
 
 // ForgetScheduleRun removes a link written ahead of a dispatch that then
-// recorded no task.
+// recorded no task — only on the broker's answer that there is none.
 func (s *Store) ForgetScheduleRun(ctx context.Context, taskID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM schedule_runs WHERE task_id = ?`, taskID)
 	return err
-}
-
-// TaskHasEvent reports whether one event kind was recorded for a task — the
-// way a caller tells "the tab never opened" (`task.spawn_failed`) from "the
-// tab opened and the first message could not be typed".
-func (s *Store) TaskHasEvent(ctx context.Context, taskID, kind string) (bool, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM events WHERE subject = ? AND kind = ?`, taskID, kind).Scan(&n)
-	return n > 0, err
 }
 
 // LegacyScheduleRows counts rows the retired interval model left behind.
@@ -291,9 +282,17 @@ func (s *Store) LegacyScheduleRows(ctx context.Context) (int, error) {
 // ScheduleRuns is every retained run, newest first. `scheduleID` empty means
 // every schedule's.
 func (s *Store) ScheduleRuns(ctx context.Context, scheduleID string) ([]ScheduleRun, error) {
+	// The task's state is the broker's, read from the same row its beat
+	// writes (D07): a run whose task timed out is finished here the moment
+	// the broker says so, with nothing to copy across. A run from before the
+	// broker ran schedules names a task no broker row holds, and reads with
+	// no state — the Swift registry's "record gone", which is not working.
 	q := `SELECT r.task_id, r.schedule_id, r.created_at, r.fire_at, r.how,
-	             COALESCE(t.state, ''), COALESCE(t.assistant, ''), COALESCE(t.project, '')
-	      FROM schedule_runs r LEFT JOIN tasks t ON t.id = r.task_id`
+	             COALESCE(t.state, ''), COALESCE(t.assistant, ''), COALESCE(t.project, ''),
+	             COALESCE(x.body, '')
+	      FROM schedule_runs r
+	      LEFT JOIN broker_tasks t ON t.id = r.task_id
+	      LEFT JOIN broker_task_texts x ON x.task_id = r.task_id AND x.field = '` + TextSummary + `'`
 	args := []any{}
 	if scheduleID != "" {
 		q += ` WHERE r.schedule_id = ?`
@@ -309,7 +308,7 @@ func (s *Store) ScheduleRuns(ctx context.Context, scheduleID string) ([]Schedule
 		var r ScheduleRun
 		var created, fire int64
 		if err := rows.Scan(&r.TaskID, &r.ScheduleID, &created, &fire, &r.How,
-			&r.State, &r.Assistant, &r.ProjectDir); err != nil {
+			&r.State, &r.Assistant, &r.ProjectDir, &r.Summary); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -321,27 +320,7 @@ func (s *Store) ScheduleRuns(ctx context.Context, scheduleID string) ([]Schedule
 	if err != nil {
 		return nil, err
 	}
-	for i := range out {
-		out[i].Summary = s.settledSummary(ctx, out[i].TaskID)
-	}
 	return out, nil
-}
-
-// settledSummary is the summary a finished task wrote, read off the event its
-// settlement recorded. Empty when it has not settled or said nothing.
-func (s *Store) settledSummary(ctx context.Context, taskID string) string {
-	var payload string
-	err := s.db.QueryRowContext(ctx,
-		`SELECT payload FROM events WHERE subject = ? AND kind IN ('task.success','task.failure')
-		 ORDER BY seq DESC LIMIT 1`, taskID).Scan(&payload)
-	if err != nil {
-		return ""
-	}
-	var r struct {
-		Summary string `json:"summary"`
-	}
-	_ = json.Unmarshal([]byte(payload), &r)
-	return r.Summary
 }
 
 // ErrBindingConflict is a hook or a schedule that is already bound elsewhere.

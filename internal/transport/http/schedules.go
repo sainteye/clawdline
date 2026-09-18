@@ -14,6 +14,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/app"
+	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 )
 
 // The schedule routes, as the Swift app serves them (`RemoteServer.swift`, the
@@ -47,8 +48,8 @@ func (s *Server) scheduleBook() *app.ScheduleBook {
 	}
 	dir := s.cfg.Dir
 	book := &app.ScheduleBook{
-		Store:      s.store,
-		Dispatcher: s.dispatcher,
+		Store:  s.store,
+		Broker: s.broker,
 		Places: func(ctx context.Context) []app.SchedulePlace {
 			list := s.projectReaders().places.List(s.liveDirectories(ctx), 40)
 			out := make([]app.SchedulePlace, 0, len(list))
@@ -102,6 +103,13 @@ func (s *Server) scheduleBook() *app.ScheduleBook {
 func writeScheduleReply(w http.ResponseWriter, reply app.ScheduleReply) {
 	if reply.OK() {
 		writeJSON(w, reply.Body)
+		return
+	}
+	if reply.Extra != nil {
+		// A broker refusal, carried whole: the same envelope, with what it
+		// says about the blocking task or the retry inside `error`.
+		writeBrokerRefusal(w, orchestrator.Refusal{
+			Status: reply.Status, Code: reply.Code, Message: reply.Message, Extra: reply.Extra})
 		return
 	}
 	writeAuthRefusal(w, reply.Status, reply.Code, reply.Message)

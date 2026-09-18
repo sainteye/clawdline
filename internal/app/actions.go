@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -27,6 +28,11 @@ type Actions struct {
 	Inventory Inventory
 	Terminals []ports.TerminalHost
 	Store     *store.Store
+	// Owed is what the sessions on this machine still owe — the broker's
+	// pending landings, read at the moment of asking (D01). Nil is a daemon
+	// that cannot say, and a close is then refused as unknown rather than
+	// let through: an unanswered question is not an empty list.
+	Owed func(ctx context.Context) ([]task.Obligation, error)
 	// Pictures is what a send with pictures needs besides a terminal. A zero
 	// value refuses pictures rather than dropping them.
 	Pictures Pictures
@@ -442,7 +448,7 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 	if err != nil {
 		return session.Session{}, err
 	}
-	owed, owedErr := a.Store.OpenObligations(ctx)
+	owed, owedErr := a.owed(ctx)
 	c := task.Closeability(s.ID, owed, owedErr)
 	switch c.State {
 	case task.CloseUnknown:
@@ -468,6 +474,15 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 	}
 	a.record(ctx, "session.closed", s.ID, map[string]any{"forced": force, "owed": len(c.Reasons)})
 	return s, nil
+}
+
+var errOwedUnwired = errors.New("this daemon has no reader for what sessions owe")
+
+func (a Actions) owed(ctx context.Context) ([]task.Obligation, error) {
+	if a.Owed == nil {
+		return nil, errOwedUnwired
+	}
+	return a.Owed(ctx)
 }
 
 // summarise names what is in the way, rather than counting it.

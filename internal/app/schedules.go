@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 	"github.com/sainteye/clawdline-go/internal/domain/schedule"
-	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
 // SchedulePlace is one row of `GET /v1/places`: a schedule names a project by
@@ -33,6 +33,11 @@ type ScheduleReply struct {
 	Code    string
 	Message string
 	Body    map[string]any
+	// Extra is what a broker refusal carries inside its error object — the
+	// blocking task of a `workspace_busy`, the `retry_after` of an
+	// `over_capacity` — passed through as the broker said it, so a manual
+	// run is refused in the same words a dispatch is.
+	Extra map[string]any
 }
 
 // OK reports whether the reply is a success.
@@ -48,8 +53,11 @@ func refusedSchedule(status int, code, message string) ScheduleReply {
 // the Swift app's `Orchestrator` schedule half and `ScheduleService`, over this
 // daemon's own store rather than `~/.config/clawdline/schedules`.
 type ScheduleBook struct {
-	Store      *store.Store
-	Dispatcher Dispatcher
+	Store *store.Store
+	// Broker is the one way a run is started: the broker's own dispatch
+	// path, so a scheduled run is arbitrated against, briefed, timed and
+	// collected exactly as a dispatched task is (docs/design-decisions.md D07).
+	Broker ScheduleBroker
 	// Places is the list a `place_id` is resolved against.
 	Places func(ctx context.Context) []SchedulePlace
 	// IsDirectory answers `task.project_dir must be … a directory`.
@@ -229,8 +237,18 @@ func (b *ScheduleBook) runsBySchedule(ctx context.Context) (map[string][]store.S
 	return out, nil
 }
 
+// ScheduleBroker is what a schedule needs of the broker: to hand it one
+// occurrence to run. It is an interface only so that the book can be read
+// apart from a whole broker; the daemon's is *orchestrator.Broker.
+type ScheduleBroker interface {
+	DispatchScheduled(ctx context.Context, run orchestrator.ScheduledRun) (orchestrator.ScheduledDispatch, error)
+}
+
+// finished is whether a run's task can still be working. The state is the
+// broker's; empty is a run whose task no broker row holds, which is not
+// working either.
 func finished(state string) bool {
-	return task.State(state).Terminal()
+	return orchestrator.State(state).Terminal()
 }
 
 // List is `scheduleRecords`: what exists, when it next fires and how the last
@@ -715,7 +733,9 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 	if err != nil {
 		return refusedSchedule(500, "store_unreadable", "The schedule's runs could not be read.")
 	}
-	b.settle(ctx, runs)
+	// No settling here: whether a run is finished is the broker's answer,
+	// kept current by its own beat — the result collected, the timeout run —
+	// and read straight off its row.
 	for _, r := range runs {
 		// A run whose task record is gone cannot be working; one still queued,
 		// spawning or briefed is.
@@ -739,9 +759,15 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 		if claimed {
 			_ = b.Store.RestoreScheduleFire(ctx, id, consumed, h.f.LastFire)
 		}
-		var refusal task.Refusal
+		var refusal orchestrator.Refusal
 		if errors.As(err, &refusal) {
-			return refusedSchedule(409, refusal.Code, refusal.Detail)
+			status := refusal.Status
+			if status == 0 {
+				status = 500
+			}
+			r := refusedSchedule(status, refusal.Code, refusal.Message)
+			r.Extra = refusal.Extra
+			return r
 		}
 		return refusedSchedule(500, "dispatch_failed", err.Error())
 	}
@@ -755,77 +781,61 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 	return answered(body)
 }
 
-// settle asks each unfinished run whether it has written its result, so a
-// finished run stops counting as "still working". It is the same question the
-// settle route answers, asked by the one clock that depends on the answer.
-func (b *ScheduleBook) settle(ctx context.Context, runs []store.ScheduleRun) {
-	for i, r := range runs {
-		if r.State == "" || finished(r.State) {
-			continue
-		}
-		if state, done, err := b.Dispatcher.Settle(ctx, r.TaskID); err == nil && done {
-			runs[i].State = string(state)
-		}
-	}
-}
-
-// dispatch materialises the template as an ordinary task and enters through
-// the same dispatch gate as every other request: no claims or arbitration rule
-// is repeated here.
+// dispatch hands one occurrence to the broker, which runs it as a task like
+// any other: the same claims arbitration, record, briefing, secret, timeout
+// and result collection (D07). No rule is repeated here.
 //
-// The run is linked to the schedule before the dispatch, so a process that
-// dies between the task being recorded and the link being written still leaves
-// the schedule knowing it made that task. A dispatch that recorded no task
-// takes the link back.
+// The run is linked to the schedule before the broker records the task, so a
+// process that dies between the two still leaves the schedule knowing it made
+// that task. The link is taken back only on the broker's answer that it
+// recorded nothing; a broker that could not say leaves the link, which names a
+// task that either exists or reads as "record gone" — never as working.
 //
-// A tab that opened and could not be given its first message is not a spawn
-// failure: the session exists, it counts as this schedule's run, and the
-// answer carries a warning. Only a tab that never opened is recorded as
-// `spawn_failed`, which is terminal — left `queued`, it would read as a run
-// still working and hold every later occurrence of this schedule.
+// A tab that never opened is the broker's `spawn_failed`, already terminal
+// and so not holding back the next occurrence; it is a run that could not
+// start, and is answered as a refusal. A tab that opened and could not be
+// given its first message is a run, answered with a warning: the broker's
+// beat decides what became of it, and its timeout ends it either way.
 func (b *ScheduleBook) dispatch(ctx context.Context, s schedule.Schedule, fire time.Time, how string) (string, string, bool, string, error) {
-	claims := []string{}
-	if raw, ok := s.Task["claims"]; ok {
-		if parsed, err := schedule.Claims(raw); err == nil {
-			claims = parsed
-		}
+	id := newUUID()
+	if b.Broker == nil {
+		return id, "", false, "", errors.New("this daemon has no broker to run a schedule through")
 	}
-	t := task.Task{
-		ID:         newUUID(),
-		Assistant:  task.Assistant(s.TaskString("assistant")),
-		ProjectDir: s.TaskString("project_dir"),
-		Brief:      s.TaskString("instructions"),
-		Claims:     claims,
-	}
-	if err := b.Store.RecordScheduleRun(ctx, t.ID, s.ID, b.now(), fire, how); err != nil {
+	if err := b.Store.RecordScheduleRun(ctx, id, s.ID, b.now(), fire, how); err != nil {
 		return "", "", false, "", fmt.Errorf("the run could not be recorded: %w", err)
 	}
-	opening, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+	// The broker waits for the child's composer before it types, and a tab
+	// that opens slowly is not this pass's fault; three minutes, as a
+	// dispatch route gives it, and never the caller's own deadline.
+	opening, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
 	defer cancel()
-	receipt, dir, err := b.Dispatcher.Dispatch(opening, t, string(t.Assistant))
-	if receipt.CommandID == "" {
-		_ = b.Store.ForgetScheduleRun(ctx, t.ID)
-		if err == nil {
-			err = fmt.Errorf("the dispatch recorded no task")
+	out, err := b.Broker.DispatchScheduled(opening, orchestrator.ScheduledRun{
+		TaskID: id, ScheduleID: s.ID, Title: s.Title, Template: s.Task,
+	})
+	if out.Absent {
+		_ = b.Store.ForgetScheduleRun(ctx, id)
+	}
+	if err != nil {
+		return id, "", false, "", err
+	}
+	record := out.Record
+	if record.State == orchestrator.StateSpawnFailed {
+		why := record.SpawnError
+		if why == "" {
+			why = record.Verdict
 		}
-		return t.ID, dir, false, "", err
+		return id, record.Dir, out.Replayed, "", orchestrator.Refusal{
+			Status: 500, Code: "spawn_failed", Message: "The session did not open: " + why,
+		}
 	}
 	warning := ""
-	if err != nil {
-		never, _ := b.Store.TaskHasEvent(ctx, t.ID, "task.spawn_failed")
-		if never {
-			payload, _ := json.Marshal(map[string]string{"schedule": s.ID, "why": err.Error()})
-			_, _ = b.Store.Commit(ctx, "schedule-spawn-failed:"+t.ID,
-				[]store.Event{{Kind: "schedule.run_spawn_failed", Subject: t.ID, Payload: payload}},
-				[]store.Change{{Close: "task:" + t.ID}, {SetTask: [2]string{t.ID, string(task.StateSpawnFailed)}}})
-			return t.ID, dir, receipt.Replayed, "", err
-		}
-		warning = "The session opened, and its first message could not be typed into it: " + err.Error()
-		log.Printf("schedule %s: task %s: %s", s.ID, t.ID, warning)
+	if record.SpawnError != "" {
+		warning = "The session opened, and its first message could not be typed into it: " + record.SpawnError
+		log.Printf("schedule %s: task %s: %s", s.ID, id, warning)
 	}
 	payload, _ := json.Marshal(map[string]any{"schedule": s.ID, "how": how, "fire": unixOrZero(fire), "warning": warning})
-	_ = b.Store.Append(ctx, store.Event{Kind: "schedule.fired", Subject: t.ID, Payload: payload})
-	return t.ID, dir, receipt.Replayed, warning, nil
+	_ = b.Store.Append(ctx, store.Event{Kind: "schedule.fired", Subject: id, Payload: payload})
+	return id, record.Dir, out.Replayed, warning, nil
 }
 
 func unixOrZero(t time.Time) int64 {

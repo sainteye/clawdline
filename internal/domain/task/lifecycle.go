@@ -1,32 +1,5 @@
 package task
 
-// State is where a dispatched task is.
-//
-// Eight states, four of them terminal, and one that is terminal without ever
-// having started. Only `briefed` means an assistant has actually received the
-// work: everything to the left of it is the broker still trying.
-type State string
-
-const (
-	StateQueued   State = "queued"
-	StateSpawning State = "spawning"
-	StateBriefed  State = "briefed"
-
-	StateSuccess     State = "success"
-	StateFailure     State = "failure"
-	StateTimeout     State = "timeout"
-	StateCancelled   State = "cancelled"
-	StateSpawnFailed State = "spawn_failed"
-)
-
-func (s State) Terminal() bool {
-	switch s {
-	case StateSuccess, StateFailure, StateTimeout, StateCancelled, StateSpawnFailed:
-		return true
-	}
-	return false
-}
-
 // Delivery is the rung a finished task's work has reached.
 //
 // It is deliberately a second machine rather than more states on the first.

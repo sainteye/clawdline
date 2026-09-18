@@ -15,6 +15,17 @@ import (
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
+// tasksRoute reads the tasks this daemon knows about, or accepts a new one.
+// A new one goes to the broker (orchestrator.go), which is the one way work is
+// dispatched on this daemon — a schedule's run included (D07).
+func (s *Server) tasksRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		s.brokerDispatch(w, r)
+		return
+	}
+	s.tasksList(w, r)
+}
+
 // tasksList publishes dispatched work in the Swift app's shape
 // (OrchestratorTaskList.swift): every unfinished task, then one page of
 // finished ones, newest first. The rows are the Swift app's own, read from its
@@ -50,32 +61,7 @@ func (s *Server) tasksList(w http.ResponseWriter, r *http.Request) {
 // tasksPayload builds the task list the route and the stream's `orchestrator`
 // frame both publish.
 func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.TaskList, error) {
-	live, err := s.store.LiveTasks(ctx)
-	if err != nil {
-		return contract.TaskList{}, err
-	}
-	own := make([]contract.TaskRow, 0, len(live))
-	for _, t := range live {
-		claims := t.Claims
-		if claims == nil {
-			claims = []string{}
-		}
-		created := t.CreatedAt.Unix()
-		own = append(own, contract.TaskRow{
-			ID:             t.ID,
-			TaskID:         t.ID,
-			Assistant:      contract.Assistant(t.Assistant),
-			ProjectDir:     t.ProjectDir,
-			Claims:         claims,
-			ClaimsDeclared: t.Claims != nil,
-			State:          contract.TaskState(t.State),
-			Created:        created,
-			CreatedAt:      created,
-			Dir:            s.dispatcher.Tasks.Path(t.ID),
-			// This daemon records no kind, title, permission or depth; they are
-			// empty rather than guessed, and no child tab is known.
-		})
-	}
+	own := []contract.TaskRow{}
 	// The broker's own tasks, which live in this daemon's store rather than in
 	// the Swift app's. Without this the console would show a child this daemon
 	// dispatched only while the Swift app also happened to know about it, which
@@ -121,6 +107,7 @@ func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.
 				Dir:            t.Dir,
 				Title:          t.Title,
 				Kind:           t.Kind,
+				ScheduleID:     t.ScheduleID,
 			}
 			if !t.FinishedAt.IsZero() {
 				row.FinishedAt = t.FinishedAt.Unix()

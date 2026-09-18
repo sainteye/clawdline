@@ -77,6 +77,12 @@ type draftRoot struct {
 
 // ReadDraft reads and validates the brief for one task id.
 func (b *Broker) ReadDraft(id string) (Record, error) {
+	return b.readDraft(id, false)
+}
+
+// readDraft is ReadDraft for either door: a brief a caller wrote, or one the
+// broker wrote itself from a stored schedule's template (scheduled.go).
+func (b *Broker) readDraft(id string, scheduled bool) (Record, error) {
 	path := filepath.Join(b.Tasks.Path(id), "task.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -88,13 +94,23 @@ func (b *Broker) ReadDraft(id string) (Record, error) {
 		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task",
 			"No readable task.json under "+b.Tasks.Path(id)+"/.")
 	}
-	return b.admit(id, d)
+	return b.admit(id, d, scheduled)
 }
 
 // admit turns a parsed brief into a record, or names the first thing wrong
 // with it. The order is the Swift app's, because a caller fixing one refusal at
 // a time should meet them in the same sequence on both brokers.
-func (b *Broker) admit(id string, d draft) (Record, error) {
+//
+// A scheduled brief differs in exactly the two places the Swift app's
+// `dispatch(taskID:secret:schedule:)` differs, and nowhere else: it has no
+// root — the broker wrote `root.session_id: null` itself, and nobody is waiting
+// on the tab — and its claims may be absent, because a stored template carries
+// a body no caller is holding to correct (`claimsRequirementRefusal`'s
+// `writtenForThisDispatch`). Absent stays absent: the record says "not
+// declared" and the dispatch warns, rather than reading it as "writes nothing".
+// Every other field meets the same checks a caller's brief meets, so a template
+// asking for something this broker does not do is refused by name.
+func (b *Broker) admit(id string, d draft, scheduled bool) (Record, error) {
 	bad := func(msg string) (Record, error) {
 		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task", msg)
 	}
@@ -114,12 +130,16 @@ func (b *Broker) admit(id string, d draft) (Record, error) {
 	if instructions == "" || len(d.Instructions) > instructionsLimit {
 		return bad("instructions must be non-empty and at most 16 KiB")
 	}
-	if d.Claims == nil {
+	var claims []string
+	switch {
+	case d.Claims != nil:
+		admitted, err := admitClaims(*d.Claims)
+		if err != nil {
+			return bad(err.Error())
+		}
+		claims = admitted
+	case !scheduled:
 		return Record{}, refuse(http.StatusUnprocessableEntity, "claims_required", claimsRequiredMessage)
-	}
-	claims, err := admitClaims(*d.Claims)
-	if err != nil {
-		return bad(err.Error())
 	}
 	isolation := d.Isolation
 	if isolation == "" {
@@ -145,9 +165,13 @@ func (b *Broker) admit(id string, d draft) (Record, error) {
 		return bad("timeout_minutes must be 1…240")
 	}
 
-	root, err := admitRoot(d.Root)
-	if err != nil {
-		return Record{}, err
+	var root *RootRef
+	if !scheduled {
+		admitted, err := admitRoot(d.Root)
+		if err != nil {
+			return Record{}, err
+		}
+		root = admitted
 	}
 	for name, raw := range map[string]json.RawMessage{
 		"serialize": d.Serialize, "graph": d.Graph,
