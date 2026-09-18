@@ -87,6 +87,8 @@ internal/app/orchestrator.sessionSummaryLimit # admission: a delivery receipt's 
 internal/app/orchestrator.summaryLimit # admission: a child summary, cut silently (limits N8: W2 stores it whole, D25)
 internal/app/orchestrator.titleLimit # admission: a dispatch title (limits N8's silent cut, C3)
 internal/app/orchestrator.trimStack.limit # page: a panic stack kept in diagnostics
+internal/app/lane.DefaultLimit # admission: writers to terminals at once; a full lane refuses at the door with 429 and nothing accumulates
+internal/app/orchestrator.PolicyLimit # admission: the characters of house rules a briefing carries; past 90% it says near_limit and only the base is cut, never the person's own section
 internal/domain/auth.MaxPasswordIterations # parameter: the password hash's cost range
 internal/domain/auth.nameLimit # admission: a device name
 internal/domain/cloud.LedgerFairnessActorLimit # store: the Cloud command ledger, not wired (limits N23, G32): registered when it is
