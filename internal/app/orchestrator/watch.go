@@ -48,6 +48,9 @@ type Pulse struct {
 	// Closed is how many child sessions this pass closed after judging them
 	// spawn_failed on positive evidence (D11).
 	Closed int
+	// Recovered is how many effects a dead broker left unfinished that this
+	// pass settled — run once, or recorded as unknown (effects.go).
+	Recovered int
 	// StoreErr is why the pass could not read the store, when it could not.
 	// A pass that read nothing because it could not read is not a pass that
 	// found nothing, and the two must not look alike from outside.
@@ -105,18 +108,23 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	if b.Fault != nil {
 		b.Fault(number)
 	}
-	records, bad, err := b.ledger(ctx)
+	// Answered receipts past their window become tombstones (D03), once every
+	// sixty passes: a late resend is told "expired" either way, and this only
+	// lets go of the answer it no longer owes anybody.
+	if number%60 == 1 {
+		_, _ = b.Store.ExpireReceipts(ctx, "", store.ReceiptPolicy{}, b.now())
+	}
+	// Effects a broker that has since died left unfinished are settled first
+	// (effects.go): a message it recorded and never typed is typed now, once.
+	p.Recovered = b.RecoverEffects(ctx)
+	// Only the live rows. The beat's cost is the number of tasks still
+	// running, not the length of the history (G33).
+	live, bad, err := b.liveLedger(ctx)
 	if err != nil {
 		p.StoreErr = err.Error()
 		return p
 	}
 	p.Unreadable = len(bad)
-	live := []Record{}
-	for _, r := range records {
-		if !r.State.Terminal() {
-			live = append(live, r)
-		}
-	}
 	rd := b.read(ctx)
 	for _, r := range live {
 		p.Watched++
@@ -129,6 +137,10 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 		b.collectAccepted(ctx, &r)
 		if settled := b.collectResult(ctx, r); settled {
 			p.Settled++
+			continue
+		}
+		if b.settleOrphan(ctx, r) {
+			p.SpawnFail++
 			continue
 		}
 		if b.runClocks(ctx, rd, r, &p) {
@@ -396,10 +408,14 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 		// about the one source that could have seen this tab.
 		complete := r.ChildTerminalID != "" && rd.sourceComplete(r.ChildBackend)
 		if state, why, decided := spawnVerdict(present, complete, choosing); decided {
-			if settled, err := b.Settle(ctx, r.ID, state, why, nil); err == nil {
+			// The session it opened is closed after the verdict is durable,
+			// and the verdict records that it is owed (closeChild).
+			if _, ids, err := b.settle(ctx, r.ID, state, why, nil, b.closeChild(r, present)...); err == nil {
 				p.SpawnFail++
-				if b.closeChild(ctx, settled, present) {
-					p.Closed++
+				for _, res := range b.runRecorded(ctx, ids) {
+					if res.state == store.EffectDone && res.outcome == "closed" {
+						p.Closed++
+					}
 				}
 				return true
 			}
@@ -415,8 +431,9 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 	return false
 }
 
-// closeChild closes what a spawn_failed dispatch opened (D11), and only what
-// it can prove it opened.
+// closeChild is the effect that closes what a spawn_failed dispatch opened
+// (D11), and only what it can prove it opened — nil when there is nothing
+// provably ours to close.
 //
 // The proof is the pane: the record holds the id tmux gave back when this
 // broker made it, and the adapter closes the session named for this task only
@@ -427,19 +444,29 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 // Swift app's `3e37e8ec` is why this is done at all: a tab left open was the
 // next spawn's failure.
 //
-// The verdict is recorded before this runs and the outcome after it, as one
-// event, so the store says what was decided even if the close does not happen.
-func (b *Broker) closeChild(ctx context.Context, r Record, present bool) bool {
+// It is an outbox effect (G14): recorded in the transaction that settles the
+// task, run after it, and — if this process dies in between — run by the next
+// broker, once, rather than never.
+func (b *Broker) closeChild(r Record, present bool) []store.Effect {
 	if !present || r.ChildBackend != "tmux" || r.ChildTerminalID == "" || b.Launcher == nil {
+		return nil
+	}
+	payload, _ := json.Marshal(closeChildEffect{Pane: r.ChildTerminalID, Session: ChildSessionName(r.ID)})
+	return []store.Effect{{Kind: EffectCloseChild, Subject: r.ID, Payload: payload}}
+}
+
+// settleOrphan settles a task still `queued` whose dispatcher has provably
+// gone. Only that process ever held the plaintext secret, so nothing can brief
+// the task now; leaving it to its timeout would hold its claims for hours
+// against a tab that will never open. "Provably" is the store's answer that
+// the process is not running — an owner this Mac cannot account for is left
+// alone (DG-7).
+func (b *Broker) settleOrphan(ctx context.Context, r Record) bool {
+	if r.State != StateQueued || r.Dispatcher == "" || !b.Store.OwnerGone(r.Dispatcher) {
 		return false
 	}
-	name := ChildSessionName(r.ID)
-	closed, err := b.Launcher.CloseTmuxSession(ctx, r.ChildTerminalID, name)
-	payload := map[string]any{"task": r.ID, "pane": r.ChildTerminalID, "session": name, "closed": closed}
-	if err != nil {
-		payload["error"] = err.Error()
-	}
-	body, _ := json.Marshal(payload)
-	_ = b.Store.Append(ctx, store.Event{Kind: "task.child.closed", Subject: r.ID, Payload: body})
-	return closed
+	_, err := b.Settle(ctx, r.ID, StateSpawnFailed,
+		"The daemon that admitted this task stopped before it opened the tab. Its secret is never kept at rest, "+
+			"so no broker can brief it now; dispatch it again.", nil)
+	return err == nil
 }

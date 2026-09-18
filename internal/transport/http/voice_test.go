@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/whisper"
 	"github.com/sainteye/clawdline-go/internal/config"
 	"github.com/sainteye/clawdline-go/internal/contract"
@@ -61,7 +62,15 @@ func voiceBody(seconds float64, rate int) string {
 
 func voiceServer(t *testing.T) *Server {
 	t.Helper()
-	return &Server{cfg: config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}}
+	dir := filepath.Join(t.TempDir(), "clawdline-next")
+	// The route files its answers in the store's receipts (D03), so the
+	// server under test has one, as the daemon does.
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	return &Server{cfg: config.Config{Dir: dir}, store: st}
 }
 
 // Everything this route decides before a second of anybody's CPU is spent.

@@ -151,12 +151,12 @@ func TestACreateNeverReplacesAStoredTask(t *testing.T) {
 	id := "c2222222-2222-4222-8222-222222222222"
 	first := Record{Protocol: Protocol, ID: id, Assistant: "claude", Title: "first", State: StateQueued,
 		CreatedAt: time.Now(), Claims: []string{}}
-	if err := b.create(ctx, first, HashSecret("s")); err != nil {
+	if _, err := b.create(ctx, first, HashSecret("s")); err != nil {
 		t.Fatal(err)
 	}
 	second := first
 	second.Title = "second"
-	if err := b.create(ctx, second, HashSecret("t")); refusalCode(err) != "task_exists" {
+	if _, err := b.create(ctx, second, HashSecret("t")); refusalCode(err) != "task_exists" {
 		t.Fatalf("a second create answered %v, want task_exists", err)
 	}
 	if got, _, _ := b.Record(ctx, id); got.Title != "first" {

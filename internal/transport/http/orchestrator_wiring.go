@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/git"
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/adapters/projects"
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/app"
@@ -23,11 +25,34 @@ import (
 // showing a menu, which terminal does this machine open — are all about *now*,
 // and a held answer is wrong by the time the next beat asks.
 
+// outboxFault is CLAWDLINE_NEXT_OUTBOX_FAULT: the name of an effect point
+// (orchestrator effects.go — "committed", "started") at which this daemon
+// kills itself, so that "the process died after the commit and before the
+// effect" can be made to happen on the real daemon rather than argued about.
+// Unset in every ordinary run.
+func outboxFault() func(point string, e store.Effect) {
+	want := os.Getenv("CLAWDLINE_NEXT_OUTBOX_FAULT")
+	if want == "" {
+		return nil
+	}
+	return func(point string, e store.Effect) {
+		if point != want {
+			return
+		}
+		log.Printf("orchestrator: CLAWDLINE_NEXT_OUTBOX_FAULT=%s: killing this daemon at effect %d", point, e.ID)
+		if self, err := os.FindProcess(os.Getpid()); err == nil {
+			_ = self.Kill()
+		}
+		select {}
+	}
+}
+
 func newBroker(s *Server) *orchestrator.Broker {
 	return &orchestrator.Broker{
-		Store: s.store,
-		Tasks: taskdir.New(s.cfg.Dir),
-		Git:   git.New(),
+		EffectFault: outboxFault(),
+		Store:       s.store,
+		Tasks:       taskdir.New(s.cfg.Dir),
+		Git:         git.New(),
 		Live: func(ctx context.Context) []session.Session {
 			return s.inventory.Read(ctx).Sessions
 		},

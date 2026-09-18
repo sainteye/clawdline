@@ -1,10 +1,12 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/whisper"
 	"github.com/sainteye/clawdline-go/internal/contract"
 )
@@ -96,37 +99,22 @@ func (s *Server) voiceWriting(w http.ResponseWriter, r *http.Request, body func(
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "That needs an Idempotency-Key header.")
 		return
 	}
-	entry, owner := replays.claim(accessOf(r).verdict.Device + "\x00voice\x00" + key)
-	if !owner {
-		select {
-		case <-entry.done:
-		case <-r.Context().Done():
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(entry.status)
-		_, _ = w.Write(entry.body)
+	// The recording is the request: its bytes are the digest, so a key
+	// reused for a different recording is refused rather than answered with
+	// what somebody said the first time (D03). Read once, here, up to one
+	// byte past the limit — voiceSamples still says 413 for the rest.
+	raw, err := io.ReadAll(io.LimitReader(r.Body, voiceBodyLimit+1))
+	if err != nil {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a recording")
 		return
 	}
-	rec := &recorder{header: http.Header{}}
-	func() {
-		defer func() {
-			if rec.status == 0 {
-				rec.status = http.StatusInternalServerError
-			}
-			entry.status, entry.body, entry.at = rec.status, rec.body.Bytes(), time.Now()
-			close(entry.done)
-			if rec.status == http.StatusTooManyRequests || rec.status == http.StatusServiceUnavailable {
-				replays.forget(entry)
-			}
-		}()
-		body(rec)
-	}()
-	for k, vs := range rec.header {
-		w.Header()[k] = vs
-	}
-	w.WriteHeader(rec.status)
-	_, _ = w.Write(rec.body.Bytes())
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	k := store.ReceiptKey{Scope: scopeVoice, Actor: accessOf(r).verdict.Device, Key: key}
+	s.receipted(w, r, k, requestDigest(raw),
+		func(status int) bool {
+			return status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable
+		},
+		body)
 }
 
 func (s *Server) transcribe(w http.ResponseWriter, r *http.Request) {

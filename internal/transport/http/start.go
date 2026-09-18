@@ -16,6 +16,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/adapters/projects"
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
@@ -188,9 +189,9 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 // writing is RemoteServer.writing for these routes: a device that may send, a
-// key, and the first answer to that key for ten minutes. A second request
-// with a key still being answered waits for that answer rather than opening
-// its own tab.
+// key, and the first answer to that key for the key's window (D03). A second
+// request with a key still being answered waits for that answer rather than
+// opening its own tab.
 func (s *Server) writing(w http.ResponseWriter, r *http.Request, body func(http.ResponseWriter)) {
 	if !maySend(r) {
 		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "This device may read, and not send.")
@@ -206,63 +207,18 @@ func (s *Server) writing(w http.ResponseWriter, r *http.Request, body func(http.
 	// same word for `POST /v1/places/A/start` and for
 	// `POST /v1/places/B/resume/<id>` is two different askings, and answering
 	// the second with the first's body is a session that never opened
-	// reported as one that did. The voice route binds its own key the same
-	// way (voice.go).
-	entry, owner := replays.claim(accessOf(r).verdict.Device + "\x00" + r.Method + "\x00" + routePath(r) + "\x00" + key)
-	if !owner {
-		select {
-		case <-entry.done:
-		case <-r.Context().Done():
-			return
-		}
-		if entry.status == 0 {
-			// The request holding this key went away before it answered —
-			// queued for the one opening slot, and its caller left. Nothing
-			// happened under this key, so this one is told what a full queue
-			// is told rather than being handed an answer nobody wrote.
-			writePlaceRefusal(w, http.StatusTooManyRequests, "terminal_busy",
-				"Other sessions are already being opened on this machine; try again shortly.", "")
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(entry.status)
-		_, _ = w.Write(entry.body)
-		return
-	}
-	rec := &recorder{header: http.Header{}}
-	func() {
-		defer func() {
-			// Nothing was written at all. That is not a failed request, it is
-			// a request whose caller went away while it queued (admitOpening
-			// returns without writing when the context ends), so there is no
-			// answer to file. Filing the 500 this used to invent left the same
-			// key reading that 500 for ten minutes, for a start that had never
-			// been attempted.
-			if rec.status == 0 {
-				replays.forget(entry)
-				close(entry.done)
-				return
-			}
-			entry.status, entry.body, entry.at = rec.status, rec.body.Bytes(), time.Now()
-			close(entry.done)
-			// A full queue is a fact about this moment, not about the request,
-			// and filing it would refuse the same key's retry for ten minutes.
-			if rec.status == http.StatusTooManyRequests {
-				replays.forget(entry)
-			}
-		}()
-		body(rec)
-	}()
-	if rec.status == 0 {
-		// Nobody is waiting for this answer and there is none to give.
-		return
-	}
-	for k, vs := range rec.header {
-		w.Header()[k] = vs
-	}
-	w.WriteHeader(rec.status)
-	_, _ = w.Write(rec.body.Bytes())
-	log.Printf("remote: %s %s by %s → %d", r.Method, r.URL.Path, accessOf(r).verdict.Device, rec.status)
+	// reported as one that did. So the route is the request's digest, and a
+	// key reused for another route is refused rather than answered (D03).
+	//
+	// The answer is filed in the store's receipts, not in this process: a
+	// retry after a restart must not open a second tab (G15).
+	k := store.ReceiptKey{Scope: scopePlaces, Actor: accessOf(r).verdict.Device, Key: key}
+	s.receipted(w, r, k, requestDigest([]byte(r.Method), []byte(routePath(r))),
+		// A full queue is a fact about this moment, not about the request,
+		// and filing it would refuse the same key's retry.
+		func(status int) bool { return status != http.StatusTooManyRequests },
+		body)
+	log.Printf("remote: %s %s by %s", r.Method, r.URL.Path, accessOf(r).verdict.Device)
 }
 
 // startReading is one look at the machine for one request: the places list's

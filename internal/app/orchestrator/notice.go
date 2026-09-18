@@ -292,7 +292,7 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 	if b.Type == nil {
 		return fail("transport_failed", "this daemon cannot type into a terminal")
 	}
-	if err := b.Type(ctx, target.ID, wire); err != nil {
+	if err := b.typeLine(ctx, target.ID, wire); err != nil {
 		// Backpressure, not an attempt, for the same reason as a chooser: the
 		// root's terminal was being written to by somebody else (its lane,
 		// D22), and nothing was typed. Counting it would walk a notice toward

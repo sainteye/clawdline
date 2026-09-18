@@ -100,8 +100,17 @@ type Broker struct {
 	// the strongest evidence that the loop stopped.
 	mu         sync.Mutex
 	dispatches []time.Time
-	// writeMu serialises every change to a stored record. See mutate.
-	writeMu sync.Mutex
+	// decoded is every record this broker has decoded, by id and version, so
+	// a list that is asked for every two seconds decodes only the rows that
+	// changed since it last looked (G33). It is replaced wholesale by each
+	// whole-table read, so it never holds a row the table no longer has.
+	decoded decodedRecords
+	// EffectFault is a failure-injection seam, called with the name of each
+	// point an effect passes — "committed" is after the intent is durable and
+	// before the effect is attempted. Nil in production; set only from
+	// CLAWDLINE_NEXT_OUTBOX_FAULT, so "the process died after the commit and
+	// before the effect" can be made to happen on the real daemon.
+	EffectFault func(point string, e store.Effect)
 	// spawning holds the plaintext secret between admitting a task and typing
 	// it into the child. It is in memory only and is dropped the moment the
 	// briefing is typed: the hash on disk is what authenticates the child
@@ -220,23 +229,45 @@ const StateUnreadable State = "unreadable"
 
 // ledger reads every task this broker holds, each joined to its completion
 // envelope, and names every row it could not decode.
+//
+// It reads every row's head — no record, nothing decoded — and fetches and
+// decodes only the rows whose version it has not decoded before (G33). The
+// long prose is never read here: a list shows titles, not instructions.
 func (b *Broker) ledger(ctx context.Context) ([]Record, []Unreadable, error) {
-	rows, err := b.Store.BrokerTasks(ctx, "")
+	heads, err := b.Store.BrokerTaskHeads(ctx)
 	if err != nil {
-		return nil, nil, storeUnavailable(err)
+		return nil, nil, storeError(err)
 	}
 	notices, err := b.Store.BrokerNotices(ctx)
 	if err != nil {
-		return nil, nil, storeUnavailable(err)
+		return nil, nil, storeError(err)
 	}
-	out := make([]Record, 0, len(rows))
-	bad := []Unreadable{}
-	for _, row := range rows {
-		r, err := Decode(row.Record)
+	decoded, stale := b.decoded.lookup(heads)
+	if len(stale) > 0 {
+		fetched, err := b.Store.BrokerTaskRecords(ctx, stale)
 		if err != nil {
-			bad = append(bad, unreadableRow(row, err))
+			return nil, nil, storeError(err)
+		}
+		for id, row := range fetched {
+			r, err := Decode(row.Record)
+			decoded[id] = decodedRecord{version: row.Version, record: r, err: err, row: row}
+		}
+	}
+	b.decoded.replace(decoded)
+	out := make([]Record, 0, len(heads))
+	bad := []Unreadable{}
+	for _, h := range heads {
+		d, ok := decoded[h.ID]
+		if !ok {
+			// Gone between the two reads: it is not in this answer, and the
+			// next read will say so either way.
 			continue
 		}
+		if d.err != nil {
+			bad = append(bad, unreadableRow(d.row, d.err))
+			continue
+		}
+		r := d.record
 		if n, ok := notices[r.ID]; ok {
 			r.Notice = noticeOf(n)
 		}
@@ -271,18 +302,19 @@ func (b *Broker) Record(ctx context.Context, id string) (Record, string, error) 
 		return Record{}, "", notFoundTask()
 	}
 	if err != nil {
-		return Record{}, "", storeUnavailable(err)
+		return Record{}, "", storeError(err)
 	}
 	r, err := Decode(row.Record)
 	if err != nil {
 		return Record{}, "", taskUnreadable(unreadableRow(row, err))
 	}
+	r.applyTexts(row.Texts)
 	n, err := b.Store.BrokerNotice(ctx, id)
 	switch {
 	case err == nil:
 		r.Notice = noticeOf(n)
 	case !errors.Is(err, store.ErrNoNotice):
-		return Record{}, "", storeUnavailable(err)
+		return Record{}, "", storeError(err)
 	}
 	return r, row.SecretHash, nil
 }
@@ -311,6 +343,31 @@ func storeUnavailable(err error) Refusal {
 		map[string]any{"cause": err.Error()})
 }
 
+// storeError is a store failure said as the refusal that fits it. A store
+// that was busy — another writer held it past busy_timeout — is contended,
+// not broken, and a caller told 503 `orchestrator_store_busy` with a
+// Retry-After knows to try again; a write that lost a compare-and-set is a
+// 409 `stale_write`, because what it decided was about a row that has since
+// changed (D08, G13, G16).
+func storeError(err error) error {
+	var ref Refusal
+	switch {
+	case errors.As(err, &ref):
+		return ref
+	case errors.Is(err, store.ErrNoTask):
+		return notFoundTask()
+	case errors.Is(err, store.ErrBusy):
+		return refuseWith(http.StatusServiceUnavailable, "orchestrator_store_busy",
+			"Another writer held the broker's store longer than this one waits; nothing was changed. Retry.",
+			map[string]any{"retry_after": 1, "cause": err.Error()})
+	case errors.Is(err, store.ErrConflict):
+		return refuseWith(http.StatusConflict, "stale_write",
+			"The task changed while this write was being decided; nothing was written. Read it again and retry.",
+			map[string]any{"cause": err.Error()})
+	}
+	return storeUnavailable(err)
+}
+
 // save writes a record back, with the event that explains the change.
 func (b *Broker) save(ctx context.Context, r Record, secretHash string, kind string) error {
 	return b.saveWith(ctx, r, secretHash, kind, nil)
@@ -319,9 +376,14 @@ func (b *Broker) save(ctx context.Context, r Record, secretHash string, kind str
 // create writes a task's first record. Unlike save it never replaces a row:
 // an id that is already stored — readable or not — is refused, because the
 // row it would have replaced is somebody's work (D05 ②).
-func (b *Broker) create(ctx context.Context, r Record, secretHash string) error {
+//
+// The effects are what the task's creation owes the world — its checkout —
+// recorded as intent in the same transaction and run after it (outbox.go in
+// the store, effects.go here). Their ids come back, owned by this broker.
+func (b *Broker) create(ctx context.Context, r Record, secretHash string, effects ...store.Effect) ([]int64, error) {
 	payload, _ := json.Marshal(map[string]any{"state": r.State, "task": r.ID})
-	err := b.Store.CreateBrokerTask(ctx, store.BrokerRow{
+	record, texts := r.stored()
+	ids, err := b.Store.CreateBrokerTask(ctx, store.BrokerRow{
 		ID:         r.ID,
 		Project:    r.ProjectDir,
 		Repository: r.Repository,
@@ -330,23 +392,32 @@ func (b *Broker) create(ctx context.Context, r Record, secretHash string) error 
 		CreatedAt:  r.CreatedAt,
 		UpdatedAt:  b.now(),
 		SecretHash: secretHash,
-		Record:     r.Encode(),
-	}, []store.Event{{Kind: "task.queued", Subject: r.ID, Payload: payload}})
+		Record:     record,
+		Texts:      texts,
+	}, []store.Event{{Kind: "task.queued", Subject: r.ID, Payload: payload}}, effects...)
 	if errors.Is(err, store.ErrTaskExists) {
-		return refuseWith(http.StatusConflict, "task_exists",
+		return nil, refuseWith(http.StatusConflict, "task_exists",
 			"A task with this id was stored while this dispatch was being admitted; nothing was written over it.",
 			map[string]any{"task": r.ID})
 	}
 	if err != nil {
-		return storeUnavailable(err)
+		return nil, storeError(err)
 	}
-	return nil
+	return ids, nil
 }
 
 // saveWith is save that also opens the task's completion envelope, in the
 // same transaction, when notice is not nil.
+//
+// It is a compare-and-set against version: a row that has moved since the
+// caller read it is ErrConflict, and nothing is written.
 func (b *Broker) saveWith(ctx context.Context, r Record, secretHash string, kind string, notice *store.BrokerNotice) error {
+	return b.saveAt(ctx, r, secretHash, kind, notice, 0)
+}
+
+func (b *Broker) saveAt(ctx context.Context, r Record, secretHash string, kind string, notice *store.BrokerNotice, version int64) error {
 	payload, _ := json.Marshal(map[string]any{"state": r.State, "task": r.ID})
+	record, texts := r.stored()
 	return b.Store.SaveBrokerTaskWithNotice(ctx, store.BrokerRow{
 		ID:         r.ID,
 		Project:    r.ProjectDir,
@@ -356,8 +427,26 @@ func (b *Broker) saveWith(ctx context.Context, r Record, secretHash string, kind
 		CreatedAt:  r.CreatedAt,
 		UpdatedAt:  b.now(),
 		SecretHash: secretHash,
-		Record:     r.Encode(),
+		Record:     record,
+		Texts:      texts,
+		Version:    version,
 	}, notice, []store.Event{{Kind: kind, Subject: r.ID, Payload: payload}})
+}
+
+// row is a record as the store holds it, for a write.
+func (b *Broker) storedRow(r Record) store.BrokerRow {
+	record, texts := r.stored()
+	return store.BrokerRow{
+		ID:         r.ID,
+		Project:    r.ProjectDir,
+		Repository: r.Repository,
+		Assistant:  r.Assistant,
+		State:      string(r.State),
+		CreatedAt:  r.CreatedAt,
+		UpdatedAt:  b.now(),
+		Record:     record,
+		Texts:      texts,
+	}
 }
 
 // errNoticeOutsideLedger is a change function that edited an existing notice.
@@ -387,39 +476,87 @@ var errUnchanged = errors.New("unchanged")
 // made**, never of a copy taken before something slow. Anything slow — typing,
 // asking git — happens outside, and the function here decides whether what it
 // learned still applies to the record it finds.
+//
+// "Nothing else able to write in between" used to be a mutex in this process.
+// It is now the store's write transaction (D08): the read, this function and
+// the write are one BEGIN IMMEDIATE, so a CLI or a second daemon on the same
+// file is held off too, and one that got past would meet a compare-and-set
+// and be told so rather than be written over. The function runs holding the
+// write right, and the effect guard (effects.go) refuses a terminal, a push or
+// a checkout asked for from inside it.
 func (b *Broker) mutate(ctx context.Context, id, kind string, change func(r *Record) error) (Record, error) {
-	b.writeMu.Lock()
-	defer b.writeMu.Unlock()
-	r, hash, err := b.Record(ctx, id)
-	if err != nil {
-		return Record{}, err
-	}
-	var before *Notice
-	if r.Notice != nil {
-		copied := *r.Notice
-		before = &copied
-	}
-	if err := change(&r); err != nil {
-		if errors.Is(err, errUnchanged) {
-			return r, nil
+	r, _, err := b.mutateTx(ctx, id, kind, func(_ *store.Tx, r *Record) ([]store.Effect, error) {
+		return nil, change(r)
+	})
+	return r, err
+}
+
+// mutateTx is mutate for a change that also writes through the transaction —
+// a note that proves a briefing — or owes the world an effect, recorded here
+// as intent and run after the commit. The effect ids come back, this
+// broker's to run.
+func (b *Broker) mutateTx(ctx context.Context, id, kind string, change func(tx *store.Tx, r *Record) ([]store.Effect, error)) (Record, []int64, error) {
+	var out Record
+	// decided is the error this broker's own code answered from inside the
+	// transaction — a refusal, errAlreadyTerminal — which is returned as it
+	// is. Anything else is the store's, and is said as a store refusal.
+	var decided error
+	_, ids, err := b.Store.UpdateBrokerTask(ctx, id, func(tx *store.Tx, row store.BrokerRow) (*store.BrokerWrite, error) {
+		r, err := Decode(row.Record)
+		if err != nil {
+			decided = taskUnreadable(unreadableRow(row, err))
+			return nil, decided
 		}
-		return r, err
+		r.applyTexts(row.Texts)
+		n, err := tx.Notice(id)
+		switch {
+		case err == nil:
+			r.Notice = noticeOf(n)
+		case !errors.Is(err, store.ErrNoNotice):
+			return nil, err
+		}
+		var before *Notice
+		if r.Notice != nil {
+			copied := *r.Notice
+			before = &copied
+		}
+		out = r
+		effects, err := change(tx, &r)
+		if err != nil {
+			if errors.Is(err, errUnchanged) {
+				return nil, nil
+			}
+			decided = err
+			return nil, err
+		}
+		// The one notice a record rewrite may carry is a new one: the envelope a
+		// settlement opens, stored in the same transaction as the state it
+		// announces. Anything else about a notice is the ledger's to change.
+		var opened *store.BrokerNotice
+		switch {
+		case before == nil && r.Notice != nil:
+			nr := noticeRow(r.ID, *r.Notice)
+			opened = &nr
+		case before != nil && (r.Notice == nil || !sameNotice(*before, *r.Notice)):
+			decided = errNoticeOutsideLedger
+			return nil, decided
+		}
+		payload, _ := json.Marshal(map[string]any{"state": r.State, "task": r.ID})
+		out = r
+		return &store.BrokerWrite{
+			Row:     b.storedRow(r),
+			Notice:  opened,
+			Events:  []store.Event{{Kind: kind, Subject: r.ID, Payload: payload}},
+			Effects: effects,
+		}, nil
+	})
+	if err != nil {
+		if decided != nil && errors.Is(err, decided) {
+			return out, nil, err
+		}
+		return out, nil, storeError(err)
 	}
-	// The one notice a record rewrite may carry is a new one: the envelope a
-	// settlement opens, stored in the same transaction as the state it
-	// announces. Anything else about a notice is the ledger's to change.
-	var opened *store.BrokerNotice
-	switch {
-	case before == nil && r.Notice != nil:
-		row := noticeRow(r.ID, *r.Notice)
-		opened = &row
-	case before != nil && (r.Notice == nil || !sameNotice(*before, *r.Notice)):
-		return r, errNoticeOutsideLedger
-	}
-	if err := b.saveWith(ctx, r, hash, kind, opened); err != nil {
-		return r, err
-	}
-	return r, nil
+	return out, ids, nil
 }
 
 // Authenticate resolves a task and proves the presented secret is its own.
@@ -485,18 +622,38 @@ func (b *Broker) refundDispatch() {
 }
 
 // liveTasks is every task that has not reached a terminal state.
+//
+// It asks the store for the rows whose state column is not terminal, and
+// nothing else: its cost is the number of live tasks, never the length of
+// the history (G33). A live row that cannot be decoded is left out here, as
+// it always was, and counted by the caller that asks for it (liveLedger).
 func (b *Broker) liveTasks(ctx context.Context) ([]Record, error) {
-	all, err := b.records(ctx)
+	out, _, err := b.liveLedger(ctx)
+	return out, err
+}
+
+// liveStates is every state a task can still move out of.
+var liveStates = []string{string(StateQueued), string(StateSpawning), string(StateBriefed)}
+
+// liveLedger is liveTasks with the live rows it could not decode.
+func (b *Broker) liveLedger(ctx context.Context) ([]Record, []Unreadable, error) {
+	rows, err := b.Store.BrokerTasksInState(ctx, liveStates)
 	if err != nil {
-		return nil, err
+		return nil, nil, storeError(err)
 	}
 	out := []Record{}
-	for _, r := range all {
+	bad := []Unreadable{}
+	for _, row := range rows {
+		r, err := Decode(row.Record)
+		if err != nil {
+			bad = append(bad, unreadableRow(row, err))
+			continue
+		}
 		if !r.State.Terminal() {
 			out = append(out, r)
 		}
 	}
-	return out, nil
+	return out, bad, nil
 }
 
 // terminalFor resolves a conversation id to the one live terminal that proves

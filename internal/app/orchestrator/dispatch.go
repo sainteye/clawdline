@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/projects"
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 )
@@ -218,11 +220,16 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	}
 
 	cwd := record.ProjectDir
+	var effects []store.Effect
 	if record.Isolation == IsolationWorktree {
-		w, more, err := b.prepareWorktree(ctx, record)
+		w, more, err := b.planWorktree(ctx, record)
 		if err != nil {
 			return Dispatched{}, err
 		}
+		// Made after the task is recorded, never before (G14): the checkout is
+		// an effect the task's creation owes, recorded with it as intent.
+		payload, _ := json.Marshal(worktreeEffect{Repository: w.Repository, Path: w.Path, Branch: w.Branch, Base: w.Base})
+		effects = append(effects, store.Effect{Kind: EffectWorktree, Subject: record.ID, Payload: payload})
 		warnings = append(warnings, more...)
 		record.Worktree = w
 		record.Repository = w.Repository
@@ -265,15 +272,31 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	record.CreatedAt = b.now()
 	record.Dir = b.Tasks.Path(record.ID)
 	record.State = StateQueued
+	record.Dispatcher = b.Store.Owner()
 
-	// Written before anything is opened. From here on the task exists whatever
-	// happens to this process. A create, not a save: see create.
+	// Written before anything is opened or made. From here on the task exists
+	// whatever happens to this process. A create, not a save: see create.
+	//
+	// The secret is held before the record exists, so there is no moment at
+	// which this process has a queued task it could brief and does not know
+	// it: the beat settles a queued task whose dispatcher is gone (watch.go),
+	// and it must never mistake this one for such a task.
 	hash := HashSecret(req.Secret)
-	if err := b.create(ctx, record, hash); err != nil {
+	b.rememberSecret(record.ID, req.Secret)
+	ids, err := b.create(ctx, record, hash, effects...)
+	if err != nil {
+		b.forgetSecret(record.ID)
 		return Dispatched{}, err
 	}
 	refund = false
-	b.rememberSecret(record.ID, req.Secret)
+
+	// The checkout, now that the task that owes it is durable.
+	for _, res := range b.runRecorded(ctx, ids) {
+		if res.state != store.EffectDone {
+			settled, _ := b.Settle(ctx, record.ID, StateSpawnFailed, "Could not make the isolated checkout: "+res.outcome, nil)
+			return Dispatched{Record: settled, Warnings: warnings}, nil
+		}
+	}
 
 	// The brief the child reads, beside the task.json the caller wrote.
 	if _, err := b.Tasks.Write(record.Brief(), b.ChildBrief(record, cwd)); err != nil {
@@ -375,13 +398,16 @@ func (b *Broker) checkGeneration(ctx context.Context, project string, req Dispat
 		})
 }
 
-// prepareWorktree makes the isolated checkout.
+// planWorktree decides the isolated checkout — repository, base, path, branch
+// — and refuses what can be refused before anything exists. It makes nothing:
+// the checkout itself is the `worktree.add` effect, run after the task that
+// owes it is recorded.
 //
 // The base commit is resolved and recorded here and never recomputed. A reader
 // asking later whether this branch produced anything compares its head against
 // this base; recomputing it would answer that question against a tree that has
 // moved.
-func (b *Broker) prepareWorktree(ctx context.Context, r Record) (*Worktree, []Warning, error) {
+func (b *Broker) planWorktree(ctx context.Context, r Record) (*Worktree, []Warning, error) {
 	bad := func(msg string) (*Worktree, []Warning, error) {
 		return nil, nil, refuse(http.StatusUnprocessableEntity, "bad_task", msg)
 	}
@@ -402,8 +428,9 @@ func (b *Broker) prepareWorktree(ctx context.Context, r Record) (*Worktree, []Wa
 		return nil, nil, err
 	}
 	branch := BranchName(r.ID)
-	if err := b.Git.AddWorktree(ctx, repo, path, branch, base); err != nil {
-		return nil, nil, refuse(http.StatusConflict, "worktree_unavailable", err.Error())
+	if exists, known := b.Git.BranchExists(ctx, repo, branch); !known || exists {
+		return nil, nil, refuse(http.StatusConflict, "worktree_unavailable",
+			"The delivery branch "+branch+" already exists, or this Mac could not tell whether it does.")
 	}
 	warnings := []Warning{}
 	if dirty, known := b.Git.Dirty(ctx, repo); known && dirty {
@@ -462,6 +489,13 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		backend    string
 		openErr    error
 	)
+	if err := outside(); err != nil {
+		opened()
+		r.State = StateSpawnFailed
+		r.SpawnError = err.Error()
+		r.FinishedAt = b.now()
+		return r
+	}
 	switch projects.ChoosePlan(choice, itermOpen, reach) {
 	case projects.PlanITerm:
 		terminalID, openErr = b.Launcher.NewITermTab(ctx, line)
@@ -576,7 +610,7 @@ func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 		if s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID); ok && s.IsAssistant() {
 			ready, why := b.composerReady(ctx, r.ChildTerminalID)
 			if ready {
-				if err := b.Type(ctx, r.ChildTerminalID, FirstLine(r, secret, b.Language)); err != nil {
+				if err := b.typeLine(ctx, r.ChildTerminalID, FirstLine(r, secret, b.Language)); err != nil {
 					last = err
 				} else {
 					return nil
@@ -634,10 +668,18 @@ var errAlreadyTerminal = errors.New("already terminal")
 // of this function wrapped it in a Result, which is how a `/complete` body
 // came to stand in for the file (D15).
 func (b *Broker) Settle(ctx context.Context, id string, state State, why string, result *taskdir.Result) (Record, error) {
+	r, _, err := b.settle(ctx, id, state, why, result)
+	return r, err
+}
+
+// settle is Settle that also records the effects the settlement owes — a
+// spawn_failed child's session to close — in the same transaction, and
+// answers their ids for the caller to run after the commit.
+func (b *Broker) settle(ctx context.Context, id string, state State, why string, result *taskdir.Result, effects ...store.Effect) (Record, []int64, error) {
 	now := b.now()
-	return b.mutate(ctx, id, "task."+string(state), func(r *Record) error {
+	return b.mutateTx(ctx, id, "task."+string(state), func(_ *store.Tx, r *Record) ([]store.Effect, error) {
 		if r.State.Terminal() {
-			return errAlreadyTerminal
+			return nil, errAlreadyTerminal
 		}
 		r.State = state
 		r.FinishedAt = now
@@ -662,7 +704,7 @@ func (b *Broker) Settle(ctx context.Context, id string, state State, why string,
 			}
 		}
 		b.forgetSecret(r.ID)
-		return nil
+		return effects, nil
 	})
 }
 

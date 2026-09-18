@@ -132,6 +132,9 @@ func insertNotice(ctx context.Context, tx *sql.Tx, n BrokerNotice) error {
 
 // BrokerNotice reads one task's completion envelope.
 func (s *Store) BrokerNotice(ctx context.Context, taskID string) (BrokerNotice, error) {
+	if err := reading(); err != nil {
+		return BrokerNotice{}, err
+	}
 	return scanNotice(s.db.QueryRowContext(ctx,
 		`SELECT `+noticeColumns+` FROM broker_notices WHERE task_id = ?`, taskID))
 }
@@ -185,12 +188,7 @@ func (s *Store) DueBrokerNotices(ctx context.Context, now time.Time, limit int) 
 // first", and the caller's decision — made about a notice that no longer
 // exists in that form — is discarded rather than written over theirs.
 func (s *Store) UpdateBrokerNotice(ctx context.Context, expect NoticeExpect, next BrokerNotice, events []Event) (applied bool, err error) {
-	err = s.timedWrite(func() (int64, error) {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return 0, err
-		}
-		defer tx.Rollback()
+	err = s.write(ctx, func(tx *sql.Tx) (int64, error) {
 		args := append(noticeArgs(next), next.ID, next.TaskID, expect.State, expect.Attempts)
 		res, err := tx.ExecContext(ctx,
 			`UPDATE broker_notices SET
@@ -209,9 +207,6 @@ func (s *Store) UpdateBrokerNotice(ctx context.Context, expect NoticeExpect, nex
 			return 0, nil
 		}
 		if err := insertEvents(ctx, tx, events); err != nil {
-			return 0, err
-		}
-		if err := tx.Commit(); err != nil {
 			return 0, err
 		}
 		applied = true

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -74,6 +75,9 @@ func (w *writeStats) record(d time.Duration, rows int64, err error) {
 // on its own because it is the one failure that says the store is contended
 // rather than broken.
 func isBusy(err error) bool {
+	if errors.Is(err, ErrBusy) {
+		return true
+	}
 	msg := err.Error()
 	return strings.Contains(msg, "SQLITE_BUSY") || strings.Contains(msg, "database is locked")
 }
