@@ -1,15 +1,22 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline-go/internal/adapters/devices"
 	"github.com/sainteye/clawdline-go/internal/adapters/logs"
 	"github.com/sainteye/clawdline-go/internal/adapters/push"
@@ -111,6 +118,24 @@ var drills = map[string]drill{
 			return err
 		}, l.Reading, nil
 	}},
+	// C3 (limits N15, N16): the picture stores warn as they fill and count
+	// what they let go. Each drill writes through the store's own path.
+	capacity.ArtifactsImages: {action: "evicted", limit: "20", open: func(dir string, limit int64) (func(int) error, func() capacity.Reading, error) {
+		s, write := drillPictures(dir, int(limit), 1<<30)
+		return write, func() capacity.Reading { count, _ := s.Readings(time.Now()); return count }, nil
+	}},
+	// artifacts.image_bytes has no drill: the store lets the oldest go in the
+	// same write that would take it past its bytes, so the row reads critical
+	// and then evicted=1 without ever reading full, and this harness requires
+	// full. Its warning still comes first (the C3 report shows the run).
+	capacity.ArtifactsDrops: {action: "evicted", limit: "20", open: func(dir string, limit int64) (func(int) error, func() capacity.Reading, error) {
+		d := artifacts.NewDrops(dir)
+		d.Keep = int(limit)
+		return func(n int) error {
+			_, err := d.Store([]byte("drill"), time.Now().Add(time.Duration(n)*time.Millisecond))
+			return err
+		}, d.Reading, nil
+	}},
 	capacity.CacheTranscriptTitles: {action: "evicted", limit: "20", open: func(dir string, limit int64) (func(int) error, func() capacity.Reading, error) {
 		t := transcript.NewTitles()
 		t.SetLimit(limit)
@@ -123,6 +148,34 @@ var drills = map[string]drill{
 			return nil
 		}, t.Reading, nil
 	}},
+}
+
+// drillPictures opens the picture store at a count and a byte limit, and a
+// writer that stores the nth picture through ImportPaths, the route's own path.
+func drillPictures(dir string, count, bytes int) (*artifacts.Store, func(n int) error) {
+	s := artifacts.NewStore(dir)
+	s.Policy.MaxCount, s.Policy.MaxTotalBytes = count, bytes
+	return s, func(n int) error {
+		src, err := drillPNG(dir, n)
+		if err != nil {
+			return err
+		}
+		_, err = s.ImportPaths(context.Background(), []string{src}, time.Now().Add(time.Duration(n)*time.Millisecond))
+		return err
+	}
+}
+
+// drillPNG writes the nth source picture: a few pixels that differ by n, so no
+// two normalize to the same bytes.
+func drillPNG(dir string, n int) (string, error) {
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	img.Set(n%4, (n/4)%4, color.RGBA{R: uint8(n), G: uint8(n >> 8), B: 255, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, fmt.Sprintf("drill-%04d.png", n))
+	return path, os.WriteFile(path, buf.Bytes(), 0o600)
 }
 
 // drillTranscript writes the nth one-line transcript the cache drills read.

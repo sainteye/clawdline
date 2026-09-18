@@ -38,6 +38,11 @@ func (f *fill) write() {
 		f.counters.Refused++
 	case Expire:
 		f.counters.Expired++
+	case Disconnect:
+		// The reader that fell behind is ended; what it had waiting goes
+		// with it, and it reads afresh when it comes back.
+		f.used = 1
+		f.counters.Disconnected++
 	case Nothing:
 		f.used++
 	}
@@ -101,7 +106,8 @@ func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 						t.Fatalf("20/20 is %s", st.State)
 					}
 				case 21:
-					acted := f.counters.Rotated + f.counters.Evicted + f.counters.Dropped + f.counters.Refused + f.counters.Expired
+					acted := f.counters.Rotated + f.counters.Evicted + f.counters.Dropped + f.counters.Refused + f.counters.Expired +
+						f.counters.Disconnected
 					if e.AtLimit != Nothing && acted != 1 {
 						t.Fatalf("the 21st write did not %s once: %+v", e.AtLimit, f.counters)
 					}
@@ -114,8 +120,9 @@ func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 				}
 			}
 			want := "ok→warn@16,warn→critical@19,critical→full@20"
-			if e.AtLimit == Rotate {
-				// The 21st line opened a new segment: back to ok in one step.
+			if e.AtLimit == Rotate || e.AtLimit == Disconnect {
+				// The 21st line opened a new segment, or the 21st frame ended
+				// the stream that had twenty waiting: back to ok in one step.
 				want += ",full→ok@21"
 			}
 			if got := strings.Join(transitions, ","); got != want {
@@ -127,7 +134,7 @@ func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 				t.Errorf("notices %s, want critical@19", got)
 			}
 			wantQuiet := int64(1)
-			if e.AtLimit == Rotate {
+			if e.AtLimit == Rotate || e.AtLimit == Disconnect {
 				wantQuiet = 2
 			}
 			if st.Notices != 1 || st.Suppressed != wantQuiet {

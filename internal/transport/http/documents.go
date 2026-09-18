@@ -104,9 +104,14 @@ func (s *Server) documentsRoute(w http.ResponseWriter, r *http.Request) {
 	cwd := item.CWD
 
 	if len(decoded) == 0 {
-		writeJSON(w, contract.DocumentList{
-			Documents: s.documentsPayload(ctx, cwd, sessionID),
-		})
+		rows, cut := s.documentsPayload(ctx, cwd, sessionID)
+		if cut.Any() {
+			// A listing shorter than what is there says so (limits N28). In a
+			// header, because the body is the Swift app's one-key object and
+			// both of its readers refuse a second key.
+			w.Header().Set(documents.TruncatedHeader, cut.Header())
+		}
+		writeJSON(w, contract.DocumentList{Documents: rows})
 		return
 	}
 	switch decoded[0] {
@@ -199,9 +204,11 @@ func documentRefusal(w http.ResponseWriter, err error) {
 // app gives: the list goes out on the event stream every time anything moves,
 // and walking two directory trees per session per beat is a filesystem walk a
 // second for a menu nobody has opened.
-func (s *Server) documentsPayload(ctx context.Context, cwd, sessionID string) []contract.DocumentRow {
+func (s *Server) documentsPayload(ctx context.Context, cwd, sessionID string) ([]contract.DocumentRow, documents.Cut) {
 	out := []contract.DocumentRow{}
-	rows := func(found []documents.Document, address, source string, task *contract.DocumentTask) {
+	var cut documents.Cut
+	rows := func(found []documents.Document, walk documents.Cut, address, source string, task *contract.DocumentTask) {
+		cut = cut.Add(walk)
 		for _, document := range found {
 			out = append(out, contract.DocumentRow{
 				Source:   contract.DocumentSource(source),
@@ -222,19 +229,24 @@ func (s *Server) documentsPayload(ctx context.Context, cwd, sessionID string) []
 			})
 		}
 	}
-	rows(documents.Walk(ctx, documents.ProjectRoot(cwd, s.containsProjectRoot())), "project", "project", nil)
-	for _, record := range s.documentTaskRecords(ctx, cwd) {
+	found, walk := documents.Walk(ctx, documents.ProjectRoot(cwd, s.containsProjectRoot()))
+	rows(found, walk, "project", "project", nil)
+	records, omitted := s.documentTaskRecordsCut(ctx, cwd)
+	cut.Tasks = omitted
+	for _, record := range records {
 		root := documents.TaskRoot(record.Dir)
 		if root == "" {
 			continue
 		}
 		task := contract.DocumentTask{ID: record.ID, Title: record.Title}
-		rows(documents.Walk(ctx, root), "task/"+documents.Escaped(record.ID), "task", &task)
+		found, walk := documents.Walk(ctx, root)
+		rows(found, walk, "task/"+documents.Escaped(record.ID), "task", &task)
 	}
 	if len(out) > documents.MaximumListed {
+		cut.Listed += len(out) - documents.MaximumListed
 		out = out[:documents.MaximumListed]
 	}
-	return out
+	return out, cut
 }
 
 // taskRecord is one task whose deliverables belong to a project.
@@ -255,6 +267,13 @@ type taskRecord struct {
 // it) and this daemon's own. An id in both is one record, the Swift one, since
 // that is the one whose directory the child was briefed with.
 func (s *Server) documentTaskRecords(ctx context.Context, cwd string) []taskRecord {
+	records, _ := s.documentTaskRecordsCut(ctx, cwd)
+	return records
+}
+
+// documentTaskRecordsCut is documentTaskRecords and how many older tasks were
+// left off it.
+func (s *Server) documentTaskRecordsCut(ctx context.Context, cwd string) ([]taskRecord, int) {
 	type dated struct {
 		taskRecord
 		created int64
@@ -286,14 +305,16 @@ func (s *Server) documentTaskRecords(ctx context.Context, cwd string) []taskReco
 		}
 	}
 	sort.SliceStable(found, func(i, j int) bool { return found[i].created > found[j].created })
+	omitted := 0
 	if len(found) > documents.MaximumTasksListed {
+		omitted = len(found) - documents.MaximumTasksListed
 		found = found[:documents.MaximumTasksListed]
 	}
 	out := make([]taskRecord, 0, len(found))
 	for _, row := range found {
 		out = append(out, row.taskRecord)
 	}
-	return out
+	return out, omitted
 }
 
 // swiftTaskRoot is where the Swift app puts a task's directory. The literal is

@@ -12,6 +12,7 @@ import (
 const (
 	layerPreflight = "mac_preflight"
 	layerRoute     = "mac_route"
+	layerTransport = "mac_transport"
 )
 
 // Refusal is a typed no, in the shape the whole Cloud path already has: a code
@@ -385,3 +386,43 @@ func mustJSON(value map[string]any) json.RawMessage {
 }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
+
+// Busy is the answer to a request this machine did not take because the queue
+// in front of the bridge was full (limits N20): the Swift bridge's
+// `consumeInboundRefusal` for a count cap, and the code the hosted console
+// already draws as "this Mac is busy" (`cloud_ingress_busy`, 429, retry after a
+// second). limit is the queue's depth, which the detail carries.
+//
+// It decides where the refusal goes and nothing else: no route is asked and no
+// body is acted on. A read is answered where its answer would have gone; a
+// command where a refusal of it always goes, and not at all when the write
+// switch is off, because telling a device to retry what it may never send is
+// the wrong sentence — the Swift bridge checks the switch first for the same
+// reason. A body that names no safe waiter is a notice, as every other refusal
+// of such a body is.
+func (b Bridge) Busy(cmd Command, limit int) Answer {
+	parsed, parseErr := decodeBody(cmd.Plaintext)
+	word, _ := parsed.str("type")
+	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
+		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
+			Message: "This Cloud request addresses another Mac."})
+	}
+	busy := Refusal{Status: 429, Code: "cloud_ingress_busy",
+		Message: "This request was not accepted because Cloud ingress is full; try again shortly.",
+		Detail:  map[string]any{"lane": "ingress", "limit": limit, "retry_after": 1},
+		Layer:   layerTransport}
+	if parseErr != nil || word == "" {
+		return b.notice(cmd, busy)
+	}
+	o, known := catalog[word]
+	if known && o.read && cmd.Class == ClassCtl {
+		if p, ok := o.decode(parsed); ok {
+			return b.publish(cmd, p, busy, nil)
+		}
+	}
+	if known && !o.read && !o.readLevel && !b.allowCommands() {
+		return b.refuse(cmd, parsed, word, Refusal{Status: 403, Code: "cloud_commands_disabled",
+			Message: "Cloud commands are disabled on this Mac."})
+	}
+	return b.refuse(cmd, parsed, word, busy)
+}

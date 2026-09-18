@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
@@ -44,6 +45,31 @@ func DBReading(dir string) capacity.Reading {
 		r.DiskFree, r.HasDiskFree = free, true
 	} else {
 		r.Note = "free disk space could not be read: " + err.Error()
+	}
+	return r
+}
+
+// Reading is DBReading with what this handle knows about its own writes
+// (limits N2): every write the database refused for a storage reason is a
+// write error, and the row is failing while the newest write that reached the
+// database was one. The file can be measured perfectly well while nothing can
+// be written to it — a full disk is exactly that — so the write account is
+// added to a reading that is known, and it is the part health turns on.
+func (s *Store) Reading(dir string) capacity.Reading {
+	r := DBReading(dir)
+	st := s.Stats()
+	r.Counters.WriteErrors = st.StorageFailures
+	if !st.StorageErrAt.IsZero() {
+		r.Counters.LastActionAt = st.StorageErrAt
+	}
+	if st.Failing {
+		r.Failing = true
+		why := "the newest write was refused: " + st.StorageErr
+		if r.Known {
+			r.Note = strings.TrimPrefix(r.Note+"; "+why, "; ")
+		} else {
+			r.Err += "; " + why
+		}
 	}
 	return r
 }

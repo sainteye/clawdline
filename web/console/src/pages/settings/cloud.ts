@@ -74,7 +74,10 @@ export type CloudStatus = {
   inbound_dropped?: Record<string, number>
   answered: number
   refused: number
-  queue_dropped: number
+  /** Requests turned away at a full queue; each sender was answered `cloud_ingress_busy`. */
+  queue_refused: number
+  /** Of those, the ones whose refusal could not be sent: the only requests that reached nobody. */
+  queue_unanswered: number
   devices?: CloudViewer[]
   roster_readable: boolean
   pinned_readable?: boolean

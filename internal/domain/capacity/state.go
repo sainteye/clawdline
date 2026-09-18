@@ -116,6 +116,13 @@ type Counters struct {
 	Rotated     int64
 	Dropped     int64
 	WriteErrors int64
+	// Coalesced is newer values that replaced a waiting one, on a buffer
+	// whose readers want only the latest: nothing was lost, and a reader was
+	// told once where it would have been told twice.
+	Coalesced int64
+	// Disconnected is readers a buffer ended because they were not keeping
+	// up, each to come back and read afresh.
+	Disconnected int64
 	// LastActionAt is when the adapter last refused, evicted, rotated or
 	// dropped something. Zero is never, or not recorded.
 	LastActionAt time.Time
@@ -340,6 +347,8 @@ func moved(name string, before, after Counters) []Event {
 		{"capacity.rotated", before.Rotated, after.Rotated},
 		{"capacity.dropped", before.Dropped, after.Dropped},
 		{"capacity.write_errors", before.WriteErrors, after.WriteErrors},
+		{"capacity.coalesced", before.Coalesced, after.Coalesced},
+		{"capacity.disconnected", before.Disconnected, after.Disconnected},
 	} {
 		if c.total > c.was {
 			out = append(out, Event{Kind: c.kind, Subject: name, Payload: map[string]any{

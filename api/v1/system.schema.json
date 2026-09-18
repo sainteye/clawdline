@@ -84,14 +84,16 @@
       "description": "One row of the capacity register.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["at_limit", "class", "dropped", "evicted", "evicted_by", "exhausted", "expired", "limit", "name", "notices", "notices_suppressed", "overridden", "refused", "rotated", "state", "told", "unit", "warn_at", "write_errors"],
+      "required": ["at_limit", "class", "coalesced", "disconnected", "dropped", "evicted", "evicted_by", "exhausted", "expired", "limit", "name", "notices", "notices_suppressed", "overridden", "refused", "rotated", "state", "told", "unit", "warn_at", "write_errors"],
       "properties": {
         "at_limit": { "description": "What happens today when the row is full.", "$ref": "#/$defs/CapacityAction" },
         "class": { "$ref": "#/$defs/CapacityClass" },
+        "coalesced": { "description": "Newer values that replaced a waiting one on a latest-value buffer. Nothing was lost: a reader was told once where it would have been told twice.", "type": "integer" },
         "counters_durable": { "description": "The counters survive a restart: the row's own store keeps them.", "type": "boolean" },
         "deviation": { "description": "Present when `at_limit` is not what the row's class requires: what it requires, and which decision brings it.", "type": "string" },
+        "disconnected": { "description": "Readers the row ended because they were not keeping up, each to come back and read afresh.", "type": "integer" },
         "disk_free_bytes": { "description": "Free space on the disk the row is on, when it is a file and that could be read.", "type": "integer" },
-        "dropped": { "type": "integer" },
+        "dropped": { "description": "Things that reached nobody: on a buffer, what was let go without the other side hearing of it.", "type": "integer" },
         "error": { "description": "Why the row could not be measured, when `state` is unknown.", "type": "string" },
         "evicted": { "type": "integer" },
         "evicted_by": { "description": "Who decides what the full row lets go of.", "$ref": "#/$defs/CapacityDecider" },
@@ -99,7 +101,7 @@
         "expired": { "type": "integer" },
         "failing": { "description": "The last write to the row, or its last at-limit action, failed.", "type": "boolean" },
         "growth_per_day": { "description": "Growth over this process's samples, at least an hour of them, on a row that projects.", "type": "number" },
-        "last_action_at": { "description": "When the row last refused, evicted, rotated or dropped something.", "type": "integer" },
+        "last_action_at": { "description": "When the row last refused, evicted, rotated, dropped, coalesced or disconnected something.", "type": "integer" },
         "last_notice_at": { "type": "integer" },
         "limit": { "description": "The limit this process runs the row at, in `unit`.", "type": "integer" },
         "measured_at": { "type": "integer" },
@@ -119,7 +121,7 @@
         "used": { "description": "How much the row holds, in `unit`. Null when it could not be measured, which is not zero.", "type": "integer", "nullable": true },
         "warn_at": { "type": "number" },
         "window_seconds": { "type": "integer" },
-        "write_errors": { "type": "integer" }
+        "write_errors": { "description": "Writes to the row that failed. On store.db, writes the database refused for a storage reason (full, read-only, I/O, corrupt); a busy or conflicting writer is not one.", "type": "integer" }
       }
     },
     "CapacityClass": {
@@ -142,9 +144,9 @@
       "enum": ["bytes", "rows"]
     },
     "CapacityChannel": {
-      "description": "diagnostics: this route, always. health: /v1/health says capacity_exhausted, never the name or the numbers. notice: a capacity.notify event, a push once C4 wires it. cloud_status: /v1/cloud/status. log: the daemon's log.",
+      "description": "diagnostics: this route, always. health: /v1/health says capacity_exhausted, never the name or the numbers. notice: a capacity.notify event, a push once C4 wires it. cloud_status: /v1/cloud/status. log: the daemon's log. sender: whoever sent what the row turned away, in the answer to that request.",
       "type": "string",
-      "enum": ["diagnostics", "health", "notice", "cloud_status", "log"]
+      "enum": ["diagnostics", "health", "notice", "cloud_status", "log", "sender"]
     },
     "CapacityDecider": {
       "description": "person: the daemon lets nothing go; only a person removes it. daemon: the daemon lets go by the rule in at_limit.",

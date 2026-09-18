@@ -21,6 +21,7 @@ import { client } from "../client.js"
 import { usePoll } from "../useFleet.js"
 import * as L from "../legacy/bridge.js"
 import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images-bridge.js"
+import { byteWords, nextWord } from "../next-strings.js"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -149,7 +150,16 @@ function TranscriptOf({ id }: { id: string }) {
   const failed = error ?? (data?.evidence === "none" ? data.note || T.webTranscriptFailed : null)
   if (failed && !entries.length) return <div className="tx-note err">{failed}</div>
   const notice = failed ? <div className="tx-note err">{failed}</div> : null
-  if (!entries.length) return <div className="tx-note">{T.noOutput}</div>
+  if (!entries.length) {
+    // A window that ran out before reaching a single entry is not a
+    // conversation with nothing in it.
+    return (
+      <>
+        {cutNote(data)}
+        <div className="tx-note">{T.noOutput}</div>
+      </>
+    )
+  }
 
   const who: Record<string, string> = {
     user: T.webWhoYou,
@@ -193,11 +203,45 @@ function TranscriptOf({ id }: { id: string }) {
   // order whichever way round the transcript is read. Keys are counted from
   // the oldest entry either way, so turning it over moves rows, not rebuilds them.
   if (newestFirst) drawn.reverse()
+  // The oldest end says when there is more before it (limits N17). The Swift
+  // app's page draws nothing here and reads as if the conversation began at
+  // its first entry; this is a deliberate difference, in the copied note's
+  // class, at whichever end is the oldest.
+  const cut = cutNote(data)
   return (
     <>
       {notice}
+      {cut && !newestFirst && cut}
       {drawn.flat()}
+      {cut && newestFirst && cut}
     </>
+  )
+}
+
+/**
+ * What the page says about the conversation before its first entry: that the
+ * read window ran out before the page was full (`unread`, this daemon's own),
+ * or that older entries did not fit in one page's bytes (`truncation`, the
+ * Swift app's key, which its page never drew). Null when the page begins where
+ * the conversation does.
+ */
+function cutNote(page: TranscriptPage | null | undefined): ReactElement | null {
+  if (!page) return null
+  const said: string[] = []
+  if (page.unread && page.unread.bytes > 0) {
+    said.push(nextWord("olderNotRead", { window: byteWords(page.unread.windowBytes), bytes: byteWords(page.unread.bytes) }))
+  }
+  if (page.truncation && page.truncation.entriesOmittedCount > 0) {
+    said.push(nextWord("olderLeftOut", {
+      count: page.truncation.entriesOmittedCount,
+      budget: byteWords(page.truncation.budgetBytes),
+    }))
+  }
+  if (!said.length) return null
+  return (
+    <div key="tx-cut" className="tx-note" data-cut={page.unread ? "unread" : "truncation"} role="note">
+      {said.join(" ")}
+    </div>
   )
 }
 

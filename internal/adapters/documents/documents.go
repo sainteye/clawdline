@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -327,9 +328,9 @@ func MediaType(path string) string {
 // per component. Without the context that whole walk carried on after the
 // phone that asked had closed the tab, on the request's own goroutine, and the
 // answer went nowhere. Now it stops where the request stopped.
-func Walk(ctx context.Context, root string) []Document {
+func Walk(ctx context.Context, root string) ([]Document, Cut) {
 	if root == "" {
-		return nil
+		return nil, Cut{}
 	}
 	base := ResolvedPath(root)
 	prefix := base
@@ -338,6 +339,7 @@ func Walk(ctx context.Context, root string) []Document {
 	}
 	out := []Document{}
 	walked := 0
+	var cut Cut
 	stop := errors.New("walked enough")
 	err := filepath.WalkDir(base, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -364,6 +366,7 @@ func Walk(ctx context.Context, root string) []Document {
 		}
 		walked++
 		if walked > MaximumWalked {
+			cut.Walked = true
 			return stop
 		}
 		if entry.IsDir() {
@@ -381,7 +384,7 @@ func Walk(ctx context.Context, root string) []Document {
 		return nil
 	})
 	if err != nil && !errors.Is(err, stop) {
-		return out
+		return out, cut
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Modified == out[j].Modified {
@@ -390,10 +393,58 @@ func Walk(ctx context.Context, root string) []Document {
 		return out[i].Modified > out[j].Modified
 	})
 	if len(out) > MaximumListed {
+		cut.Listed = len(out) - MaximumListed
 		out = out[:MaximumListed]
 	}
-	return out
+	return out, cut
 }
+
+// Cut is how a listing is shorter than what is there (limits N28). Both halves
+// used to be silent: the rows past MaximumListed, and a walk that stopped at
+// MaximumWalked entries, read exactly like a folder that held no more.
+type Cut struct {
+	// Listed is how many readable documents were found and left off because
+	// the listing keeps the newest MaximumListed.
+	Listed int
+	// Walked says the walk stopped at MaximumWalked entries, so part of the
+	// folder was never looked at and how much it held is not known.
+	Walked bool
+	// Tasks is how many tasks' folders were not walked at all because the
+	// listing takes only the newest MaximumTasksListed.
+	Tasks int
+}
+
+// Add is both cuts of one listing made of several walks.
+func (c Cut) Add(o Cut) Cut {
+	return Cut{Listed: c.Listed + o.Listed, Walked: c.Walked || o.Walked, Tasks: c.Tasks + o.Tasks}
+}
+
+// Any says the listing is shorter than what is there.
+func (c Cut) Any() bool { return c.Listed > 0 || c.Walked || c.Tasks > 0 }
+
+// Header is the cut as the listing's `X-Clawdline-Truncated` header spells it:
+// `listed=<n>` documents found and left off, `walked=<MaximumWalked>` when a
+// walk stopped before the end of its folder, `tasks=<n>` tasks not walked.
+// Only the parts that happened, joined by "; ". The listing's body cannot
+// carry it: the copied page and the Cloud bridge both refuse a listing object
+// with any key but `documents`.
+func (c Cut) Header() string {
+	parts := []string{}
+	if c.Listed > 0 {
+		parts = append(parts, "listed="+strconv.Itoa(c.Listed))
+	}
+	if c.Walked {
+		parts = append(parts, "walked="+strconv.Itoa(MaximumWalked))
+	}
+	if c.Tasks > 0 {
+		parts = append(parts, "tasks="+strconv.Itoa(c.Tasks))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// TruncatedHeader is the header a listing that is shorter than what is there
+// carries.
+const TruncatedHeader = "X-Clawdline-Truncated"
 
 // Escaped is the path as it appears in a URL, with the original's allowed set
 // (`CharacterSet.urlPathAllowed`) rather than Go's stricter one, so an ordinary

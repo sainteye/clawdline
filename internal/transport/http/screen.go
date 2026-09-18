@@ -2,13 +2,16 @@ package http
 
 import (
 	"context"
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // screenPath is GET /v1/sessions/{id}/screen.
@@ -157,27 +160,53 @@ func orEmpty(in []string) []string {
 // every device on that connection, and a terminal somebody else is watching has
 // no business on this phone's socket.
 //
-// A subscriber that is not keeping up is skipped rather than waited for. The
-// frame it misses costs it one stale revision, which the next signal or the
-// panel's own fifteen-second lease renewal corrects; blocking here would let one
-// slow client hold the goroutine that reads every pane's FIFO.
+// A subscriber that is not keeping up is never waited for — blocking here
+// would let one slow client hold the goroutine that reads every pane's FIFO —
+// and, since C3, never skipped either (limits N19). It used to be a channel of
+// sixteen that dropped whatever did not fit, without a count, so a slow page
+// could be left showing a screen that had moved on and nothing anywhere said
+// so. A revision is a latest value: what a stream is owed is the newest
+// revision of each screen, not every one in between. So each stream keeps one
+// waiting frame per screen, a newer revision replaces a waiting one (counted
+// as coalesced), and the stream writes whatever is waiting when it next can.
+// A stream with more different screens waiting than the register allows is
+// ended instead (counted as disconnected); the page's EventSource reconnects
+// and the panel reads each screen afresh, which is what the O26 rule asks of a
+// consumer that fell behind.
 type screenBus struct {
-	mu   sync.Mutex
-	next int
-	subs map[int]chan contract.ScreenEvent
+	mu    sync.Mutex
+	next  int
+	subs  map[int]*screenSub
+	limit int
+
+	coalesced    int64
+	disconnected int64
+	lastAt       time.Time
+}
+
+// screenSub is one stream's waiting frames.
+type screenSub struct {
+	// ready holds one token while anything is waiting: a signal, not a queue.
+	ready chan struct{}
+	// gone is closed when the bus ends this stream.
+	gone    chan struct{}
+	pending map[string]contract.ScreenEvent
+	// order is the screens waiting, in the order they first moved.
+	order []string
 }
 
 func newScreenBus() *screenBus {
-	return &screenBus{subs: map[int]chan contract.ScreenEvent{}}
+	return &screenBus{subs: map[int]*screenSub{}, limit: int(CapacityLimit(capacity.SSEScreenPending))}
 }
 
-func (b *screenBus) subscribe() (int, <-chan contract.ScreenEvent) {
+func (b *screenBus) subscribe() (int, *screenSub) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.next++
-	ch := make(chan contract.ScreenEvent, 16)
-	b.subs[b.next] = ch
-	return b.next, ch
+	sub := &screenSub{ready: make(chan struct{}, 1), gone: make(chan struct{}),
+		pending: map[string]contract.ScreenEvent{}}
+	b.subs[b.next] = sub
+	return b.next, sub
 }
 
 func (b *screenBus) unsubscribe(token int) {
@@ -190,10 +219,54 @@ func (b *screenBus) publish(id, revision string) {
 	event := contract.ScreenEvent{ID: id, Revision: revision, At: time.Now().Unix()}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for _, ch := range b.subs {
+	for token, sub := range b.subs {
+		if _, waiting := sub.pending[id]; waiting {
+			sub.pending[id] = event
+			b.coalesced++
+			b.lastAt = time.Now()
+		} else if len(sub.pending) >= b.limit {
+			delete(b.subs, token)
+			close(sub.gone)
+			b.disconnected++
+			b.lastAt = time.Now()
+			log.Printf("screen: a stream had %d screens waiting and was ended; its page reconnects and reads them afresh", len(sub.pending))
+			continue
+		} else {
+			sub.pending[id] = event
+			sub.order = append(sub.order, id)
+		}
 		select {
-		case ch <- event:
+		case sub.ready <- struct{}{}:
 		default:
 		}
 	}
+}
+
+// take is every frame waiting for one stream, oldest move first, and leaves
+// it with none.
+func (b *screenBus) take(sub *screenSub) []contract.ScreenEvent {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]contract.ScreenEvent, 0, len(sub.order))
+	for _, id := range sub.order {
+		out = append(out, sub.pending[id])
+	}
+	sub.order = sub.order[:0]
+	clear(sub.pending)
+	return out
+}
+
+// reading is the `sse.screen_pending` row: the most frames any one stream has
+// waiting now, and what the bus has coalesced and disconnected since it began.
+func (b *screenBus) reading() capacity.Reading {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	r := capacity.Reading{Known: true, Counters: capacity.Counters{
+		Coalesced: b.coalesced, Disconnected: b.disconnected, LastActionAt: b.lastAt,
+	}}
+	for _, sub := range b.subs {
+		r.Used = max(r.Used, int64(len(sub.pending)))
+	}
+	r.Note = strconv.Itoa(len(b.subs)) + " stream(s) open"
+	return r
 }

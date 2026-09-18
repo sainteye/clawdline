@@ -1477,7 +1477,8 @@ export interface CapacityBeat {
 /**
  * diagnostics: this route, always. health: /v1/health says capacity_exhausted,
  * never the name or the numbers. notice: a capacity.notify event, a push once C4
- * wires it. cloud_status: /v1/cloud/status. log: the daemon's log.
+ * wires it. cloud_status: /v1/cloud/status. log: the daemon's log. sender: whoever
+ * sent what the row turned away, in the answer to that request.
  */
 export type CapacityChannel =
     "diagnostics"
@@ -1485,8 +1486,9 @@ export type CapacityChannel =
   | "notice"
   | "cloud_status"
   | "log"
+  | "sender"
 
-export const CapacityChannelValues: readonly CapacityChannel[] = ["diagnostics", "health", "notice", "cloud_status", "log"] as const
+export const CapacityChannelValues: readonly CapacityChannel[] = ["diagnostics", "health", "notice", "cloud_status", "log", "sender"] as const
 
 /**
  * What kind of data a row holds; it decides which at-limit behaviours are allowed
@@ -1553,6 +1555,12 @@ export interface CapacityEntry {
   class: CapacityClass
 
   /**
+   * Newer values that replaced a waiting one on a latest-value buffer. Nothing was
+   * lost: a reader was told once where it would have been told twice.
+   */
+  coalesced: number
+
+  /**
    * The counters survive a restart: the row's own store keeps them.
    */
   counters_durable?: boolean
@@ -1564,9 +1572,20 @@ export interface CapacityEntry {
   deviation?: string
 
   /**
+   * Readers the row ended because they were not keeping up, each to come back and
+   * read afresh.
+   */
+  disconnected: number
+
+  /**
    * Free space on the disk the row is on, when it is a file and that could be read.
    */
   disk_free_bytes?: number
+
+  /**
+   * Things that reached nobody: on a buffer, what was let go without the other side
+   * hearing of it.
+   */
   dropped: number
 
   /**
@@ -1599,7 +1618,8 @@ export interface CapacityEntry {
   growth_per_day?: number
 
   /**
-   * When the row last refused, evicted, rotated or dropped something.
+   * When the row last refused, evicted, rotated, dropped, coalesced or disconnected
+   * something.
    */
   last_action_at?: number
   last_notice_at?: number
@@ -1660,6 +1680,12 @@ export interface CapacityEntry {
   used: number | null
   warn_at: number
   window_seconds?: number
+
+  /**
+   * Writes to the row that failed. On store.db, writes the database refused for a
+   * storage reason (full, read-only, I/O, corrupt); a busy or conflicting writer is
+   * not one.
+   */
   write_errors: number
 }
 
@@ -4423,7 +4449,8 @@ export interface TranscriptNoticeTask {
 
 /**
  * `entries`, `signature` and `truncation` are the Swift app's transcript payload;
- * `evidence`, `path` and `note` say where the reading came from.
+ * `evidence`, `path` and `note` say where the reading came from; `unread` is this
+ * daemon's own, and says the read window stopped short of the conversation's start.
  */
 export interface TranscriptPage {
   /**
@@ -4446,6 +4473,7 @@ export interface TranscriptPage {
    */
   signature: string
   truncation?: TranscriptTruncation
+  unread?: TranscriptUnread
 }
 
 export interface TranscriptPlanStep {
@@ -4469,6 +4497,31 @@ export interface TranscriptTruncation {
    * transcript_byte_budget.
    */
   reason: string
+}
+
+/**
+ * This read looked at only the newest `windowBytes` of the record and ran out of
+ * them before it had as many entries as were asked for, so the conversation goes
+ * back further than the first entry here: `bytes` older bytes were not read at all.
+ * The Swift app cuts the same window and says nothing; this is the flag it lacks
+ * (docs/limits.md N17), so a page drawn from it can say that older content was not
+ * loaded instead of looking complete.
+ */
+export interface TranscriptUnread {
+  /**
+   * How many bytes before the window were not read. Always more than zero.
+   */
+  bytes: number
+
+  /**
+   * transcript_read_window.
+   */
+  reason: string
+
+  /**
+   * How much of the record's end one read looks at.
+   */
+  windowBytes: number
 }
 
 /**

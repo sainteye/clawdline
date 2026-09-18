@@ -1212,7 +1212,8 @@ type CapacityBeat struct {
 
 // diagnostics: this route, always. health: /v1/health says capacity_exhausted,
 // never the name or the numbers. notice: a capacity.notify event, a push once
-// C4 wires it. cloud_status: /v1/cloud/status. log: the daemon's log.
+// C4 wires it. cloud_status: /v1/cloud/status. log: the daemon's log. sender:
+// whoever sent what the row turned away, in the answer to that request.
 type CapacityChannel string
 
 const (
@@ -1221,10 +1222,11 @@ const (
 	CapacityChannelNotice      CapacityChannel = "notice"
 	CapacityChannelCloudStatus CapacityChannel = "cloud_status"
 	CapacityChannelLog         CapacityChannel = "log"
+	CapacityChannelSender      CapacityChannel = "sender"
 )
 
 // CapacityChannelValues is every value the contract allows, in contract order.
-var CapacityChannelValues = []CapacityChannel{CapacityChannelDiagnostics, CapacityChannelHealth, CapacityChannelNotice, CapacityChannelCloudStatus, CapacityChannelLog}
+var CapacityChannelValues = []CapacityChannel{CapacityChannelDiagnostics, CapacityChannelHealth, CapacityChannelNotice, CapacityChannelCloudStatus, CapacityChannelLog, CapacityChannelSender}
 
 // What kind of data a row holds; it decides which at-limit behaviours are
 // allowed (docs/limits.md §4.2).
@@ -1284,6 +1286,10 @@ type CapacityEntry struct {
 	AtLimit CapacityAction `json:"at_limit"`
 	Class   CapacityClass  `json:"class"`
 
+	// Newer values that replaced a waiting one on a latest-value buffer. Nothing was
+	// lost: a reader was told once where it would have been told twice.
+	Coalesced int64 `json:"coalesced"`
+
 	// The counters survive a restart: the row's own store keeps them.
 	CountersDurable bool `json:"counters_durable,omitempty"`
 
@@ -1291,9 +1297,16 @@ type CapacityEntry struct {
 	// and which decision brings it.
 	Deviation string `json:"deviation,omitempty"`
 
+	// Readers the row ended because they were not keeping up, each to come back and
+	// read afresh.
+	Disconnected int64 `json:"disconnected"`
+
 	// Free space on the disk the row is on, when it is a file and that could be read.
 	DiskFreeBytes int64 `json:"disk_free_bytes,omitempty"`
-	Dropped       int64 `json:"dropped"`
+
+	// Things that reached nobody: on a buffer, what was let go without the other side
+	// hearing of it.
+	Dropped int64 `json:"dropped"`
 
 	// Why the row could not be measured, when `state` is unknown.
 	Error   string `json:"error,omitempty"`
@@ -1314,7 +1327,8 @@ type CapacityEntry struct {
 	// projects.
 	GrowthPerDay float64 `json:"growth_per_day,omitempty"`
 
-	// When the row last refused, evicted, rotated or dropped something.
+	// When the row last refused, evicted, rotated, dropped, coalesced or disconnected
+	// something.
 	LastActionAt int64 `json:"last_action_at,omitempty"`
 	LastNoticeAt int64 `json:"last_notice_at,omitempty"`
 
@@ -1356,7 +1370,11 @@ type CapacityEntry struct {
 	Used          *int64  `json:"used"`
 	WarnAt        float64 `json:"warn_at"`
 	WindowSeconds int64   `json:"window_seconds,omitempty"`
-	WriteErrors   int64   `json:"write_errors"`
+
+	// Writes to the row that failed. On store.db, writes the database refused for a
+	// storage reason (full, read-only, I/O, corrupt); a busy or conflicting writer is
+	// not one.
+	WriteErrors int64 `json:"write_errors"`
 }
 
 // ok below warn_at, warn below 95%, critical below 100%, full at or past it.
@@ -3564,7 +3582,9 @@ type TranscriptNoticeTask struct {
 }
 
 // `entries`, `signature` and `truncation` are the Swift app's transcript
-// payload; `evidence`, `path` and `note` say where the reading came from.
+// payload; `evidence`, `path` and `note` say where the reading came from;
+// `unread` is this daemon's own, and says the read window stopped short of the
+// conversation's start.
 type TranscriptPage struct {
 	// Oldest first.
 	Entries  []TranscriptEntry `json:"entries"`
@@ -3580,6 +3600,7 @@ type TranscriptPage struct {
 	// when nothing was read. It changes whenever the entries could have.
 	Signature  string                `json:"signature"`
 	Truncation *TranscriptTruncation `json:"truncation,omitempty"`
+	Unread     *TranscriptUnread     `json:"unread,omitempty"`
 }
 
 type TranscriptPlanStep struct {
@@ -3597,6 +3618,23 @@ type TranscriptTruncation struct {
 
 	// transcript_byte_budget.
 	Reason string `json:"reason"`
+}
+
+// This read looked at only the newest `windowBytes` of the record and ran out
+// of them before it had as many entries as were asked for, so the conversation
+// goes back further than the first entry here: `bytes` older bytes were not
+// read at all. The Swift app cuts the same window and says nothing; this is the
+// flag it lacks (docs/limits.md N17), so a page drawn from it can say that
+// older content was not loaded instead of looking complete.
+type TranscriptUnread struct {
+	// How many bytes before the window were not read. Always more than zero.
+	Bytes int64 `json:"bytes"`
+
+	// transcript_read_window.
+	Reason string `json:"reason"`
+
+	// How much of the record's end one read looks at.
+	WindowBytes int64 `json:"windowBytes"`
 }
 
 // The Swift app's `UsageQueryService` payload. The lossless `.json` export is
