@@ -62,6 +62,11 @@
 # scan does not read; the register is now where their defaults are spelled.
 # A capacity notice's push is an outbox row riding on store.db, at most one per
 # row a day; it added no declaration.
+#
+# The skill task (2026-09-19) added the guide, the skill install and the thin
+# commands (docs/skill.md). It registered no row: nothing it keeps
+# accumulates — one install record, one backup, one copy of the binary, each
+# replaced. The lines it added are what those commands read (read, admission).
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -199,3 +204,8 @@ internal/domain/work.optionLabelLimit # admission: an option's label
 internal/app.ruleLineLimit # page: the named lines one sweep pass proposes by rule; the rest are the next pass's
 cmd/clawdline.collectAnswerLimit # read: the broker's answer to `clawdline task finish` asking it to collect now, one refusal envelope (W7); result.json and task.json themselves are read under internal/adapters/taskdir.resultLimit
 internal/transport/http.workflowBodyLimit # admission: one command to the retired workflow route (W8), the Swift route's 64 KiB, which is what its helper checks before sending
+cmd/clawdline.brokerAnswerLimit # read: one daemon answer to a thin command (landings, assistants, send, notify, session report); the largest, landings, is tens of kilobytes
+cmd/clawdline.brokerTokenLimit # read: the orchestrator-token file the thin commands read, a few dozen bytes; the daemon's own read of it is internal/adapters/devices.tokenLimit
+cmd/clawdline.relayInputLimit # admission: the message `clawdline send` reads from stdin, at the daemon's 2 MiB body cap (limits N27); how many characters is the daemon's rule
+internal/adapters/skillfile.recordLimit # read: the skill install record, a few hundred bytes (docs/skill.md)
+internal/adapters/skillfile.stubLimit # read: the SKILL.md an install replaces or an uninstall restores; a stub is a few kilobytes, and a file past this is refused rather than backed up
