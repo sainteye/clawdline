@@ -61,7 +61,7 @@ function run(argv) {
   if (cmd !== "reveal" && cmd !== "revealtmux") {
     return JSON.stringify({ ok: false, error: "unknown command" });
   }
-  const hit = itermEach(it, function (s, win, tab) {
+  const walk = itermEach(it, function (s, win, tab) {
     if (cmd === "reveal") {
       if (String(s.id()) !== want) return false;
     } else {
@@ -72,10 +72,10 @@ function run(argv) {
     try { tab.select(); } catch (e) {}
     try { s.select(); } catch (e) {}
     return true;
-  }).stopped;
-  if (!hit) {
+  });
+  if (!walk.stopped) {
     return JSON.stringify({ ok: false, error: cmd === "reveal"
-      ? "That session is gone"
+      ? itermMissing(walk)
       : "iTerm2 is drawing no tmux window for pane %" + want });
   }
   if (activate) { try { it.activate(); } catch (e) {} }
@@ -95,14 +95,7 @@ func itermReveal(ctx context.Context, args ...string) (map[string]any, error) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		said := strings.TrimSpace(stderr.String())
-		if said == "" {
-			said = "iTerm2 did not answer: " + err.Error()
-		}
-		return nil, Failure{
-			Attention: strings.Contains(said, "-1712") || strings.Contains(said, "-1743"),
-			Message:   said,
-		}
+		return nil, osascriptFailure(ctx, stderr.String(), err, "iTerm2 would not show that session.")
 	}
 	var answer map[string]any
 	if json.Unmarshal(bytes.TrimSpace(out), &answer) != nil {

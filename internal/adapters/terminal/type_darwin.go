@@ -18,13 +18,13 @@ function run(argv) {
   const it = Application("iTerm2");
   if (!it.running()) return JSON.stringify({ ok: false, error: "iTerm2 is not running" });
   let done = false;
-  itermEach(it, function (s) {
+  const walk = itermEach(it, function (s) {
     if (String(s.id()) !== id) return false;
     s.write({ text: text, newline: false });
     done = true;
     return true;
   });
-  return JSON.stringify(done ? { ok: true } : { ok: false, error: "That session is gone" });
+  return JSON.stringify(done ? { ok: true } : { ok: false, error: itermMissing(walk) });
 }
 `
 

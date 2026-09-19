@@ -30,7 +30,10 @@ import (
 //
 // Only a tmux child is lingered: its session is one this broker made, named
 // for the task, and closed only while the pane it recorded is still one of its
-// panes (runCloseChild). An iTerm2 tab has no close this daemon can prove.
+// panes (runCloseChild). An iTerm2 session can be closed by the id iTerm2 gave
+// back (closeChild), but a finished child's tab is not lingered yet: a linger
+// is decided on a reading that answered completely for the tab's source, and
+// on a Mac with a window iTerm2 will not list, that source never does.
 
 // LingerDefault is the Swift app's `orchestrator_child_linger`, 180 seconds
 // (Config.swift:478).

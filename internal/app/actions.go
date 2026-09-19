@@ -12,6 +12,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/app/lane"
 	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
@@ -138,17 +139,24 @@ func (a Actions) host(s session.Session) (ports.TerminalHost, error) {
 // read them, and callers must not report it as delivery: whether a turn was
 // taken is a separate fact with its own evidence, and the fleet list is where
 // that answer lives.
+//
+// A refusal given before the first byte carries terminal.Unsent (or, for a
+// lane that never came free, lane.Busy); a send_failed carries the terminal's
+// own error. A caller deciding whether to type the same line again — the
+// broker's briefing — reads that, and only that: after an Unsent it may, and
+// after anything else the line may already be there.
 func (a Actions) Send(ctx context.Context, id, text string) (session.Session, error) {
 	if text == "" {
-		return session.Session{}, Refusal{Code: "empty_text", Detail: "there is nothing to type"}
+		return session.Session{}, Refusal{Code: "empty_text", Detail: "there is nothing to type",
+			Cause: terminal.Unsent{Why: "there is nothing to type"}}
 	}
 	s, err := a.Find(ctx, id)
 	if err != nil {
-		return session.Session{}, err
+		return session.Session{}, beforeTheFirstByte(err)
 	}
 	h, err := a.host(s)
 	if err != nil {
-		return session.Session{}, err
+		return session.Session{}, beforeTheFirstByte(err)
 	}
 	release, err := a.turn(ctx, s)
 	if err != nil {
@@ -156,10 +164,21 @@ func (a Actions) Send(ctx context.Context, id, text string) (session.Session, er
 	}
 	defer release()
 	if err := h.Send(ctx, s, text); err != nil {
-		return s, Refusal{Code: "send_failed", Detail: err.Error()}
+		return s, Refusal{Code: "send_failed", Detail: err.Error(), Cause: err}
 	}
 	a.record(ctx, "session.typed", s.ID, map[string]any{"bytes": len(text)})
 	return s, nil
+}
+
+// beforeTheFirstByte marks a refusal Send gave before writing anything as
+// terminal.Unsent, so it is not mistaken for a write that failed part way.
+func beforeTheFirstByte(err error) error {
+	r, ok := err.(Refusal)
+	if !ok || r.Cause != nil {
+		return err
+	}
+	r.Cause = terminal.Unsent{Why: r.Detail}
+	return r
 }
 
 // Pictures is where a send puts its pictures and how it lends them to Claude Code.

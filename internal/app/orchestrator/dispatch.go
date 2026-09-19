@@ -16,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
+	"github.com/sainteye/clawdline-go/internal/app/lane"
 )
 
 // DispatchRequest is the whole HTTP body: three fields.
@@ -591,9 +592,10 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	// typed into. Waiting here rather than in the watch beat keeps the whole
 	// spawn in one place; the beat's own 4-minute clock is the backstop.
 	if err := b.brief(ctx, r, secret); err != nil {
-		// A briefing that was typed and errored is not `spawn_failed`: the
-		// keystrokes may have landed, and the beat decides that with evidence.
-		// One that was never typed is decided already — Dispatch settles it.
+		// A briefing whose typing may have landed is not `spawn_failed`: the
+		// keystrokes may be in the child, and the beat decides that with
+		// evidence. One that was never typed — never tried, or refused before
+		// its first byte every time — is decided already: Dispatch settles it.
 		r.SpawnError = err.Error()
 		var never unbriefed
 		r.Unbriefed = errors.As(err, &never)
@@ -686,39 +688,47 @@ func permissionArgs(r Record) []string {
 // tab this daemon's reading never listed under the id the terminal gave back
 // is a different fault from a child that is still starting, and the record is
 // the only place either is ever said.
+//
+// Every failed attempt to type is one of two things, and they are opposite
+// instructions (the review of e54e338, F1 and F2):
+//
+//   - refused before its first byte (nothingTyped): the child is exactly as
+//     unbriefed as before, and the next round tries again. If the wait ends on
+//     such refusals the answer is unbriefed, with the last one as its reason —
+//     never `spawning` until a timeout that cannot be respawned;
+//   - anything else may have landed — all of the line, or the paste without
+//     its Return. It is never typed again: a second line is the child told its
+//     first sentence twice, or two briefings joined into one message. The
+//     answer is that failure, and the beat decides the rest on evidence.
 func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 	if b.Type == nil {
 		return unbriefed{errors.New("this daemon cannot type into a terminal")}
 	}
 	deadline := b.now().Add(90 * time.Second)
 	var last error
-	typed, listed := false, false
+	listed := false
 	for b.now().Before(deadline) {
 		if s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID); ok && s.IsAssistant() {
 			listed = true
 			ready, why := b.composerReady(ctx, r.ChildTerminalID)
 			if ready {
-				typed = true
-				if err := b.typeLine(ctx, r.ChildTerminalID, FirstLine(r, secret, b.Language)); err != nil {
-					last = err
-				} else {
+				err := b.typeLine(ctx, r.ChildTerminalID, FirstLine(r, secret, b.Language))
+				if err == nil {
 					return nil
 				}
+				if !nothingTyped(err) {
+					return err
+				}
+				last = err
 			} else if why != nil {
 				last = why
 			}
 		}
 		select {
 		case <-ctx.Done():
-			if !typed {
-				return unbriefed{ctx.Err()}
-			}
-			return ctx.Err()
+			return unbriefed{ctx.Err()}
 		case <-time.After(2 * time.Second):
 		}
-	}
-	if typed {
-		return last
 	}
 	switch {
 	case last != nil:
@@ -731,18 +741,40 @@ func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 	return unbriefed{last}
 }
 
+// nothingTyped is whether a failure to type is known to have put nothing on
+// the terminal: the terminal's lane never came free (lane.Busy), the write was
+// refused before its first byte (terminal.Unsent — the session was not found,
+// the terminal was not running), or this was asked from inside a write and
+// never reached the terminal at all. Everything else may have landed.
+//
+// The answer is read from typed errors only. A failure nobody classified is
+// "may have landed", which costs a verdict at the beat; the other default
+// costs a child briefed twice.
+func nothingTyped(err error) bool {
+	var busy lane.Busy
+	var unsent terminal.Unsent
+	return errors.As(err, &busy) || errors.As(err, &unsent) || errors.Is(err, ErrEffectInsideWrite)
+}
+
 // composerReady asks the child's own screen whether it is ready to be typed at.
 //
 // With no screen reader at all the answer is yes: a daemon that cannot see the
 // terminal it drives must still be able to brief a child, and the machines
 // where that is true are the ones with no dialogs to hit.
+//
+// A reader that is there and did not answer this time is not that machine
+// (the review of e54e338, F3). The capture timed out, or the reading it asked
+// did not list the tab this once, and the screen it could not show may be the
+// workspace-trust dialog whose highlighted answer is "No, exit". Not ready: the
+// next round asks again, and a wait that ends here says so.
 func (b *Broker) composerReady(ctx context.Context, terminalID string) (bool, error) {
 	if b.Screen == nil {
 		return true, nil
 	}
 	screen, ok := b.Screen(ctx, terminalID)
 	if !ok {
-		return true, nil
+		return false, errors.New("the child's screen could not be read, so whether it showed a prompt or a " +
+			"dialog was not known")
 	}
 	if Choosing(screen) {
 		return false, errors.New("the child is showing a dialog; the briefing would have answered it")

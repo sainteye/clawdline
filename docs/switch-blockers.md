@@ -33,3 +33,40 @@ composer 卻是空的，task 停在 `spawning`，最後以 `timeout` 結案。�
 
 測試：`internal/app/orchestrator/unbriefed_test.go`、`internal/adapters/terminal/iterm_scripts_darwin_test.go`
 （在 node 的 `vm` 裡用假的 iTerm2 物件模型跑真正的腳本字串，沒有 node 就 skip）。
+
+## Review of e54e338: what the correction changed
+
+An independent review returned `changes_required` (three important, five minor). The correction:
+
+- **F1, F2 — every failed typing is one of two things.** `brief` asks `nothingTyped`: a lane that
+  never came free (`lane.Busy`), a refusal before the first byte (`terminal.Unsent`: session not
+  found or not seen, terminal not running, nothing to type) or a write asked from inside a
+  transaction. Those try again, and a wait that ends on them is `unbriefed` → `spawn_failed` with
+  the refusal as its reason. Anything else may have landed and is **never typed again**; the
+  record stays `spawning` for the beat. `Actions.Send` now carries those typed causes (it used to
+  drop the terminal's error inside `send_failed`), and an iTerm2 script's `ok:false` is `Unsent`,
+  because every effect script answers it before it writes. The old test that used "the lane timed
+  out" as a typing that may have landed had it backwards: a lane is waited for before the first
+  byte.
+- **F3 — a screen that could not be read is not ready.** Only a daemon with no screen reader at
+  all types without looking; a capture that failed this once is asked again next round.
+- **F4** — the send script's second look recognises Claude Code's `❯` caret.
+- **F5** — an unbriefed iTerm2 child is closed by the session id iTerm2 gave back
+  (`CloseITermSession`, iterm.js's `close`: the session, never its tab). `ITerm.Close` is
+  implemented with the same script and a 10-second limit; a timeout or `-1712` is a typed
+  `Failure` with `Attention`.
+- **F6** — the tmux close kills the proven pane, not the session: a window somebody added
+  survives.
+- **F7** — a script that did not find its session past an unreadable window says "not seen",
+  not "gone".
+- **F8** — osascript's stderr goes to this machine's log; refusals and `spawn_error` carry a
+  sentence.
+
+Measured on an isolated daemon with a private tmux server: a child in an untrusted repository
+(trust dialog on screen) settled `spawn_failed` at 91 s with "the child is showing a dialog" in its
+verdict, and its pane was closed; a minimal task in a trusted checkout was briefed at 20 s and
+settled `success` at 26 s.
+
+Not done here: a finished iTerm2 child's tab is still not lingered-and-closed (its source never
+answers completely on a Mac with an unlistable window, and a linger decides only on one that
+does), and a schedule's `close_tab` is parsed and stored but nothing acts on it yet.

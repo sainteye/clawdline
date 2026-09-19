@@ -3,12 +3,17 @@
 package terminal
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
 // The iTerm2 scripts are run here, as they are, against a model of iTerm2 in
@@ -27,14 +32,24 @@ function session(id, tty, screen) {
     id: () => id, tty: () => tty, name: () => "shell", text: () => screen,
     write: (o) => { writes.push({ id: id, text: o.text, newline: o.newline }); },
     select: () => {}, variable: () => "",
+    close: () => { writes.push({ id: id, text: "<close>", newline: false }); },
   };
 }
 const unlisted = { tabs: () => null, select: () => {} };
+// GUID-C is Claude Code with the pasted briefing still in its composer, the
+// way it draws it: the caret is ❯, not >.
+const claude = [
+  "────────────────────────────────────────",
+  "❯ please read CHILD.md 0123456789abcdef0123456789abcdef",
+  "────────────────────────────────────────",
+  "  ? for shortcuts",
+].join("\n");
+const complete = process.env.COMPLETE === "1";
 const listed = { select: () => {}, tabs: () => [
-  { select: () => {}, sessions: () => null },
-  { select: () => {}, sessions: () => [session("GUID-A", "/dev/ttys031", "> ")] },
+  complete ? { select: () => {}, sessions: () => [] } : { select: () => {}, sessions: () => null },
+  { select: () => {}, sessions: () => [session("GUID-A", "/dev/ttys031", "> "), session("GUID-C", "/dev/ttys032", claude)] },
 ] };
-const app = { running: () => true, windows: () => [unlisted, listed], activate: () => {} };
+const app = { running: () => true, windows: () => complete ? [listed] : [unlisted, listed], activate: () => {} };
 const context = vm.createContext({ Application: () => app, delay: () => {}, JSON: JSON });
 const script = process.env.SCRIPT, argv = JSON.parse(process.env.ARGV || "null");
 const answer = argv === null
@@ -54,6 +69,13 @@ type modelRun struct {
 
 func runInModel(t *testing.T, script string, argv []string) modelRun {
 	t.Helper()
+	return runInModelWith(t, script, argv, false)
+}
+
+// runInModelWith runs the script against the model with every window
+// readable when complete is true.
+func runInModelWith(t *testing.T, script string, argv []string, complete bool) modelRun {
+	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is not installed; the iTerm2 scripts are run in node's vm")
@@ -64,6 +86,9 @@ func runInModel(t *testing.T, script string, argv []string) modelRun {
 	}
 	cmd := exec.Command(node, harness)
 	cmd.Env = append(os.Environ(), "SCRIPT="+script)
+	if complete {
+		cmd.Env = append(cmd.Env, "COMPLETE=1")
+	}
 	if argv != nil {
 		raw, _ := json.Marshal(argv)
 		cmd.Env = append(cmd.Env, "ARGV="+string(raw))
@@ -84,8 +109,8 @@ func runInModel(t *testing.T, script string, argv []string) modelRun {
 func TestTheITermListingSkipsAWindowThatWillNotListItsTabs(t *testing.T) {
 	run := runInModel(t, itermList, nil)
 	sessions, _ := run.Answer["sessions"].([]any)
-	if len(sessions) != 1 || sessions[0].(map[string]any)["id"] != "GUID-A" {
-		t.Fatalf("sessions %v, want the one listed session by its id", run.Answer["sessions"])
+	if len(sessions) != 2 || sessions[0].(map[string]any)["id"] != "GUID-A" || sessions[1].(map[string]any)["id"] != "GUID-C" {
+		t.Fatalf("sessions %v, want the listed sessions by their ids", run.Answer["sessions"])
 	}
 	if run.Answer["unreadable"] != float64(2) {
 		t.Fatalf("unreadable %v, want the window and the tab that would not list", run.Answer["unreadable"])
@@ -148,5 +173,115 @@ func TestAnITermAnswerOfNotDoneIsAFailure(t *testing.T) {
 		if err := itermAnswer([]byte(body)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s answered %v, want %q", body, err, want)
 		}
+	}
+}
+
+// F4: the Return that follows the paste can be swallowed, and the script looks
+// again and sends another only while the paste is still in the composer. It
+// used to look for ">" and "›" only, and Claude Code draws its composer with
+// "❯" — so for Claude the look never found a composer and never helped.
+func TestTheITermSendNudgesAClaudeComposerThatKeptThePaste(t *testing.T) {
+	run := runInModel(t, itermSendScript, []string{"GUID-C", "please read CHILD.md 0123456789abcdef0123456789abcdef"})
+	if run.Answer["ok"] != true || len(run.Writes) < 3 {
+		t.Fatalf("a Claude composer still holding the paste got no second Return: %+v", run)
+	}
+	for _, w := range run.Writes[1:] {
+		if w.Text != "\r" {
+			t.Fatalf("after the paste only Returns are sent, got %q", w.Text)
+		}
+	}
+}
+
+// F7: a session not found by a walk that could not read every window was not
+// seen, which is not the same as gone. Each script that looks for one session
+// says which; a complete walk still says gone.
+func TestAnITermScriptThatCouldNotReadEveryWindowDoesNotSayGone(t *testing.T) {
+	for name, argv := range map[string][]string{
+		"type":    nil,
+		"send":    nil,
+		"key":     {"key", "GUID-GONE", "27"},
+		"capture": {"capture", "GUID-GONE"},
+		"reveal":  {"reveal", "GUID-GONE", "0"},
+		"close":   {"GUID-GONE"},
+	} {
+		script := map[string]string{"type": itermTypeScript, "send": itermSendScript, "key": itermKeyScript,
+			"capture": itermKeyScript, "reveal": itermRevealScript, "close": itermCloseScript}[name]
+		if argv == nil {
+			argv = []string{"GUID-GONE", "hello"}
+		}
+		partial := runInModelWith(t, script, argv, false)
+		said, _ := partial.Answer["error"].(string)
+		if partial.Answer["ok"] != false || strings.Contains(said, "gone") || !strings.Contains(said, "could not be read") {
+			t.Errorf("%s past an unreadable window answered %+v", name, partial.Answer)
+		}
+		whole := runInModelWith(t, script, argv, true)
+		if said, _ := whole.Answer["error"].(string); whole.Answer["ok"] != false || !strings.Contains(said, "gone") {
+			t.Errorf("%s on a complete walk answered %+v", name, whole.Answer)
+		}
+		if len(partial.Writes)+len(whole.Writes) != 0 {
+			t.Errorf("%s wrote to a session it did not find", name)
+		}
+	}
+}
+
+// F5: the close finds its session by id past a window that will not list, and
+// closes that session only — not its tab, whose other panes are not ours.
+func TestTheITermCloseClosesOnlyTheSessionItNames(t *testing.T) {
+	run := runInModel(t, itermCloseScript, []string{"GUID-A"})
+	if run.Answer["ok"] != true || len(run.Writes) != 1 || run.Writes[0].ID != "GUID-A" || run.Writes[0].Text != "<close>" {
+		t.Fatalf("close: %+v", run)
+	}
+}
+
+// F2: an effect script that answered "not done" said so before its effect —
+// every one of them looks the session up first — so the failure is Unsent,
+// and a caller may type again. An answer that is not JSON came from a script
+// that ran, and is not.
+func TestAnITermNotDoneIsUnsentAndAnUnreadableAnswerIsNot(t *testing.T) {
+	var unsent Unsent
+	if err := itermAnswer([]byte(`{"ok":false,"error":"That session is gone"}`)); !errors.As(err, &unsent) {
+		t.Fatalf("not done answered %T %v, want Unsent", err, err)
+	}
+	if err := itermAnswer([]byte(`not json`)); errors.As(err, &unsent) {
+		t.Fatalf("an unreadable answer is not known to have sent nothing: %v", err)
+	}
+}
+
+// F8: osascript's own words — the script's position, the Apple Event error
+// number — stay in this machine's log. What travels on, into a refusal a phone
+// shows and a record's spawn_error, is a sentence. And a script that failed
+// part way is not Unsent: it may have written before it failed.
+func TestAnITermScriptFailureCarriesASentenceNotOsascriptsWords(t *testing.T) {
+	if _, err := exec.LookPath("/usr/bin/osascript"); err != nil {
+		t.Skip("no osascript")
+	}
+	// Runs no Apple Event: it throws before it could reach any application.
+	err := itermCall(context.Background(), `function run(argv) { throw new Error("internal-detail-7731"); }`, 10*time.Second)
+	if err == nil {
+		t.Fatal("a script that threw answered success")
+	}
+	if strings.Contains(err.Error(), "internal-detail-7731") || strings.Contains(err.Error(), "execution error") {
+		t.Fatalf("osascript's own words went out: %q", err.Error())
+	}
+	var unsent Unsent
+	if errors.As(err, &unsent) {
+		t.Fatalf("a script that failed part way is not known to have sent nothing: %v", err)
+	}
+}
+
+// ITerm.Close closes one session, through the same script the broker's close
+// uses. It used to answer Unsupported, so no iTerm2 tab was ever closed from
+// the list — five finished tasks' tabs stayed open on this Mac until a person
+// closed them. A session with no id is refused before any Apple Event, as a
+// write that sent nothing.
+func TestTheITermCloseIsImplemented(t *testing.T) {
+	err := NewITerm().Close(context.Background(), session.Session{Backend: session.BackendITerm})
+	var unsupported Unsupported
+	if errors.As(err, &unsupported) {
+		t.Fatalf("ITerm.Close still answers %v", err)
+	}
+	var unsent Unsent
+	if !errors.As(err, &unsent) {
+		t.Fatalf("a session with no id answered %T %v, want Unsent", err, err)
 	}
 }
