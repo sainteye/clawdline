@@ -13,8 +13,17 @@ import type { TranscriptPage } from "@clawdline/contract"
 import { RelayReader, TRANSCRIPT_EXPECT_MS, type CloudEvent, type CloudIdentity, type CloudRow } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
+// The copied client's own failure constructor: what the Mac's refusal really becomes.
+import { failureFromMac } from "../legacy/js/net/cloud-failure.js"
 
 type Call = [string, ...unknown[]]
+
+/** A question's name, as `session/fingerprint.ts` and `session.MenuFingerprint` write one. */
+const FINGERPRINT = "8eca80fffc9359d5f0fca31f3e36b741bd50218b658fc086f05931747bd4c5ce"
+/** The words the Go daemon's descriptor lists (`cloudops.Implemented`), the ones these tests use. */
+const GO_DAEMON = { machine: { commands: ["send", "answer", "key", "end", "focus"] } }
+/** The envelope a failure was sent under: sealed, written, and so possibly run. */
+const REF = { sender: "web_abcdef123456", seq: 12, request: null }
 
 function refusal(code: string, fields: Record<string, unknown> = {}) {
   return Object.assign(new Error(code + " (English, never shown)"), { code, layer: "mac_preflight", ...fields })
@@ -248,45 +257,31 @@ test("a refusal costs one fresh read, not a window of them; `no-store` always as
   assert.equal(client.transcriptAsks, 3, "a caller that must see the machine's answer is never handed an old one")
 })
 
-test("a waiting card's press is answered by the Mac when the Mac lists `answer`, by the relay otherwise", async () => {
+test("a waiting card's press is answered by the Mac itself, never by the relay's `delivered`", async () => {
   const client = new FakeClient()
   client.rows = [row("s1")]
-  const { reader } = seam(client)
-
-  // No descriptor, no cloud_status: the copied client's own path (the relay's `delivered`).
-  await reader.fetch("/v1/sessions/s1/key", post({ key: "2" }))
-  assert.deepEqual(client.calls.pop(), ["answer", { machine: "mac-a", session: "s1" }, "2"])
-
-  // The Go daemon: lists `answer`, publishes no cloud_status. Asked with a
-  // request id, settled by the Mac's own answer.
   client.descriptors.set("mac-a", { machine: { commands: ["send", "answer", "key"] } })
-  const res = await reader.fetch("/v1/sessions/s1/key", post({ key: "2" }))
+  const { reader } = seam(client)
+  // The Go daemon: lists `answer`, publishes no cloud_status. Asked with a
+  // request id, settled by the Mac's own answer; with no key from the card,
+  // the writer mints one.
+  const res = await reader.fetch("/v1/sessions/s1/key", post({ key: "2", expect: FINGERPRINT }))
   assert.equal(res.status, 200)
   assert.deepEqual(client.calls.pop(), [
-    "_read", { machine: "mac-a", session: "s1" }, "answer", { request: "req-1", answer: "2" }, "action:req-1", undefined,
-    { retireUncertain: true },
+    "_read", { machine: "mac-a", session: "s1" }, "answer", { request: "req-1", answer: "2", expect: FINGERPRINT },
+    "action:req-1", undefined, { retireUncertain: true },
   ])
-
-  // A Mac that has shown cloud_status: the copied `answer` already does exactly that.
-  client.macCapabilities.add("mac-a")
-  await reader.fetch("/v1/sessions/s1/key", post({ key: "3" }))
-  assert.deepEqual(client.calls.pop(), ["answer", { machine: "mac-a", session: "s1" }, "3"])
+  assert.ok(!client.calls.some((c) => c[0] === "answer"), "the copied `answer`, which settles on the relay, is never used")
 })
 
-test("a close carries force and the close gates last read; a blocked one keeps its reasons", async () => {
+test("a close carries force and the close gates last read", async () => {
   const client = new FakeClient()
   client.rows = [row("s1", { closeability: { version: "cv-7" } })]
   const { reader } = seam(client)
   await reader.fetch("/v1/sessions/s1/close", post({ force: true }))
   assert.deepEqual(client.calls.pop(), ["end", { machine: "mac-a", session: "s1" }, true, "cv-7"])
-
-  const reasons = [{ kind: "task", id: "t1" }]
-  client.fail.end = refusal("close_blocked", { status: 409, layer: "mac_route", reasons })
-  const res = await reader.fetch("/v1/sessions/s1/close", post({ force: false }))
-  assert.equal(res.status, 409)
-  const body = await json(res)
-  assert.equal(body.error, "close_blocked")
-  assert.deepEqual(body.reasons, reasons, "the sheet reopens with what blocked it")
+  // A blocked close's reasons: see the two F6 tests below, which go through
+  // the copied client's own failure path rather than an error built by hand.
 })
 
 test("start and resume go as the machine's words; a refusal keeps `app` in the nested spelling the sheet reads", async () => {
@@ -356,3 +351,144 @@ test("a transcript's picture is read as bytes through the Mac's `image`", async 
   const bare = await reader.fetch("/v1/artifacts/images/img-1")
   assert.equal((await json<{ error: { code: string } }>(bare)).error.code, "malformed_read")
 })
+
+// ---- F1, F2, F3, F5, F6, F12: what the writer must say, and send, and not send.
+
+
+test("F2: every attempt of one card is one Cloud request, the card's own", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await reader.fetch("/v1/sessions/s1/send", post({ text: "delete it" }, { "Idempotency-Key": "card-7" }))
+  }
+  const sends = client.calls.filter((c) => c[0] === "_read")
+  assert.equal(sends.length, 2, "each attempt is asked of the Mac and settled by its answer")
+  for (const call of sends) {
+    assert.deepEqual(call.slice(1, 5), [
+      { machine: "mac-a", session: "s1" }, "send", { request: "card-7", text: "delete it", images: [] }, "action:card-7",
+    ])
+  }
+})
+
+test("F1: a press names the question it answers, under the press's own request", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  client.descriptors.set("mac-a", GO_DAEMON)
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/sessions/s1/key", post({ key: "2", expect: FINGERPRINT }, { "Idempotency-Key": "press-3" }))
+  assert.equal(res.status, 200)
+  assert.deepEqual(client.calls.pop(), [
+    "_read", { machine: "mac-a", session: "s1" }, "answer", { request: "press-3", answer: "2", expect: FINGERPRINT },
+    "action:press-3", undefined, { retireUncertain: true },
+  ])
+})
+
+test("F1, F7: a press that cannot be checked against the Mac's screen is refused here, and nothing is sent", async () => {
+  const cases: [string, (c: FakeClient) => void, Record<string, unknown>][] = [
+    ["no question named", (c) => c.descriptors.set("mac-a", GO_DAEMON), { key: "2" }],
+    ["a Mac whose words are not known yet", () => {}, { key: "2", expect: FINGERPRINT }],
+    ["a Mac that answers without checking (a Swift app)", (c) => {
+      c.descriptors.set("mac-a", GO_DAEMON)
+      c.macCapabilities.add("mac-a")
+    }, { key: "2", expect: FINGERPRINT }],
+  ]
+  for (const [name, set, body] of cases) {
+    const client = new FakeClient()
+    client.rows = [row("s1")]
+    set(client)
+    const { reader } = seam(client)
+    const res = await reader.fetch("/v1/sessions/s1/key", post(body))
+    assert.equal(res.status, 428, name)
+    const refused = await json(res)
+    assert.equal(refused.error, "menu_unverified", name)
+    assert.equal(refused.outcome, "not_done", name)
+    assert.deepEqual(client.calls, [], name + ": nothing was sealed")
+  }
+})
+
+test("F3: a write is `not_done` only when this page can prove it never reached the Mac", async () => {
+  // [what failed, the outcome the page must be told]
+  const cases: [string, Error, string | undefined][] = [
+    ["never sealed: the copied client refused before publishing", refusal("cloud_read_only", { layer: "browser", ref: null }), "not_done"],
+    ["the relay said the Mac is not connected", refusal("machine_offline", { layer: "relay", ref: REF }), "not_done"],
+    ["the Mac refused before acting", refusal("cloud_commands_disabled", { layer: "mac_preflight", ref: REF }), "not_done"],
+    ["the Mac's queue was full", refusal("cloud_ingress_busy", { layer: "mac_transport", ref: REF }), "not_done"],
+    ["the socket dropped after the envelope was written", refusal("offline", { layer: "browser", ref: REF }), "unknown"],
+    ["the token was replaced mid-flight", refusal("token_superseded", { layer: "relay", ref: REF }), "unknown"],
+    ["the relay closed with an internal error", refusal("internal", { layer: "relay", ref: REF }), "unknown"],
+    ["an error nobody named", refusal("unexpected_error", { layer: "browser", ref: REF }), "unknown"],
+    ["the Mac ran it and the reply was lost", refusal("command_answer_undeliverable", { layer: "mac_reply", ref: REF }), "unknown"],
+    ["nothing answered in time", refusal("cloud_read_timeout", { layer: "browser", ref: null }), "unknown"],
+    // The route's own refusal is read by its code, as the same refusal from a
+    // daemon on this machine is (`session/outcome.ts`).
+    ["the Mac's route refused", refusal("terminal_io_failed", { layer: "mac_route", ref: REF }), undefined],
+  ]
+  for (const [name, failure, outcome] of cases) {
+    const client = new FakeClient()
+    client.rows = [row("s1")]
+    client.fail._read = failure
+    const { reader } = seam(client)
+    const body = await json(await reader.fetch("/v1/sessions/s1/send", post({ text: "hi" }, { "Idempotency-Key": "card-1" })))
+    assert.equal(body.outcome, outcome, name)
+  }
+})
+
+test("F5: a write for a session this page has no row for is refused here, not sent to the raw id", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/sessions/gone/send", post({ text: "hi" }, { "Idempotency-Key": "card-1" }))
+  assert.equal(res.status, 404)
+  const body = await json(res)
+  assert.equal(body.error, "session_not_found")
+  assert.equal(body.outcome, "not_done")
+  assert.deepEqual(client.calls, [])
+})
+
+test("F12: showing a session on the Mac does not make every poll re-read its transcript", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader, clock } = seam(client)
+  const read = async () => reader.fetch("/v1/transcript?session=s1&limit=200")
+  await read()
+  await reader.fetch("/v1/sessions/s1/focus", post({}))
+  for (let i = 0; i < 3; i++) {
+    clock.t += 4_000
+    await read()
+  }
+  assert.equal(client.transcriptAsks, 1, "focus changes nothing a transcript holds")
+})
+
+// F6. The Mac's refusal reaches the writer through the copied client's own
+// `failureFromMac`, which this test now uses instead of an error built by
+// hand — the hand-built one carried `reasons` the real path never does.
+test("F6: a blocked close, through the copied client's real failure path", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const reasons = [{ kind: "obligation", code: "landing", subject_id: "t1", subject_kind: "task" }]
+  client.fail.end = failureFromMac({ code: "close_blocked", layer: "mac_route", message: "still owed", reasons }, 409, REF)
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/sessions/s1/close", post({ force: false }))
+  assert.equal(res.status, 409)
+  const body = await json(res)
+  assert.equal(body.error, "close_blocked")
+  // What the page is really handed today. `cloud-failure.js` keeps only the
+  // §11.6 detail fields and `close_blocked` has none there, so the reasons
+  // stop at the copied client; the sheet reopens "blocked" with no list. The
+  // fix belongs in that copied file's source (the Swift app's console) and is
+  // named by the todo below.
+  assert.equal(body.reasons, undefined)
+})
+
+test("F6: a blocked close keeps its reasons across Clawdline Cloud",
+  { todo: "cloud-failure.js (copied byte for byte from the Swift app) drops them; fix it at its source" },
+  async () => {
+    const client = new FakeClient()
+    client.rows = [row("s1")]
+    const reasons = [{ kind: "obligation", code: "landing", subject_id: "t1", subject_kind: "task" }]
+    client.fail.end = failureFromMac({ code: "close_blocked", layer: "mac_route", message: "still owed", reasons }, 409, REF)
+    const { reader } = seam(client)
+    const body = await json(await reader.fetch("/v1/sessions/s1/close", post({ force: false })))
+    assert.deepEqual(body.reasons, reasons)
+  })

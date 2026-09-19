@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
 // body is one decoded request. It is a map rather than a struct per word
@@ -209,13 +211,15 @@ type plan struct {
 	id, scope, task, path             string
 	place, past, assistant, model     string
 	parts, priority, text, key, audio string
-	project, item, audience, entry    string
-	environment, category, cursor     string
-	images                            []string
-	upcoming, acceptLoss              bool
-	closeability                      string
-	rate, limit, byteWindow, offset   int64
-	document                          []byte
+	// expect is a menu answer's question, session.MenuFingerprint's hex.
+	expect                          string
+	project, item, audience, entry  string
+	environment, category, cursor   string
+	images                          []string
+	upcoming, acceptLoss            bool
+	closeability                    string
+	rate, limit, byteWindow, offset int64
+	document                        []byte
 }
 
 // op is one word of the vocabulary.
@@ -237,6 +241,9 @@ type op struct {
 	// refusal is a word this machine deliberately will not serve over Cloud
 	// even though it can serve it locally.
 	refusal *Refusal
+	// guard refuses one decoded request this machine will not serve over
+	// Cloud although the word is served: a menu answer that names no question.
+	guard func(p plan) *Refusal
 	// anyClass is the one word whose envelope class is not `ctl`: a dispatch
 	// is a class of its own, which the relay bills separately.
 	anyClass bool
@@ -826,10 +833,10 @@ func init() {
 					Body: jsonBody(map[string]any{"text": p.text, "images": p.images})}
 			}},
 
-		op{name: "answer", decode: decodeAnswer("answer"), route: routeAnswer},
+		op{name: "answer", decode: decodeAnswer("answer"), route: routeAnswer, guard: answerNamesItsQuestion},
 		// The Swift bridge takes `answer` and `key` as one case, and the
 		// hosted console still sends either depending on how old the tab is.
-		op{name: "key", decode: decodeAnswer("key"), route: routeAnswer},
+		op{name: "key", decode: decodeAnswer("key"), route: routeAnswer, guard: answerNamesItsQuestion},
 
 		op{name: "end",
 			divergence: "`expected_closeability_version` is carried and this daemon's close " +
@@ -1038,7 +1045,8 @@ func decodeAnswer(word string) func(b body) (plan, bool) {
 	}
 	return func(b body) (plan, bool) {
 		if !b.hasOneOf([]string{"type", "session", field},
-			[]string{"type", "session", field, "request"}) {
+			[]string{"type", "session", field, "request"},
+			[]string{"type", "session", field, "request", "expect"}) {
 			return plan{}, false
 		}
 		p, ok := actionPlan(b, true)
@@ -1050,16 +1058,46 @@ func decodeAnswer(word string) func(b body) (plan, bool) {
 			return plan{}, false
 		}
 		p.key = key
+		if _, named := b["expect"]; named {
+			expect, ok := b.str("expect")
+			if !ok || !session.ValidFingerprint(expect) {
+				return plan{}, false
+			}
+			p.expect = expect
+		}
 		return p, true
 	}
+}
+
+// answerNamesItsQuestion refuses a menu answer that does not say which
+// question it was chosen for (F1).
+//
+// A digit answers whatever picker is up when it lands. Across Clawdline Cloud
+// the reply is slow and can be lost, the row a page drew from is seconds old,
+// and a second device can answer first — so an unnamed "1" is how a
+// permission prompt gets approved for the next tool call, which nobody read.
+// The shapes without `expect` still decode, so the refusal reaches the page
+// that sent one by its code rather than as a malformed body; nothing is asked
+// of this machine's own route.
+func answerNamesItsQuestion(p plan) *Refusal {
+	if p.expect != "" {
+		return nil
+	}
+	return &Refusal{Status: 428, Code: "menu_unverified",
+		Message: "This Mac answers a menu over Clawdline Cloud only when the answer names the question it was chosen for. Reload the page and answer again."}
 }
 
 // routeAnswer is the menu-answer route, which is not `send`.
 //
 // The Swift app's own comment records why: answering a menu with `/send` sends
 // the wrong option — "Tea" arrived as "Water" — so an answer is one raw key
-// outside any bracketed paste, and the route allows a closed set of them.
+// outside any bracketed paste, and the route allows a closed set of them. The
+// question it names travels with it, and the route types nothing at any other.
 func routeAnswer(p plan) LocalRequest {
+	body := map[string]any{"key": p.key}
+	if p.expect != "" {
+		body["expect"] = p.expect
+	}
 	return LocalRequest{Method: "POST", Path: "/v1/sessions/" + segment(p.target) + "/key",
-		Body: jsonBody(map[string]any{"key": p.key})}
+		Body: jsonBody(body)}
 }

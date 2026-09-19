@@ -2,9 +2,20 @@ import { useEffect, useLayoutEffect, useRef } from "react"
 import type { SessionMenu, SessionMenuOption, SessionMenuStep, SessionMenuSubmit, SessionRow } from "@clawdline/contract"
 import { toast, toastFailure } from "../overlays/toast.js"
 import * as L from "../legacy/bridge.js"
-import { menuKey, pressKey, waitingHTML } from "../legacy/waiting-bridge.js"
+import { menuKey, pressKey, waitingHTML, type KeyFailure } from "../legacy/waiting-bridge.js"
+import { nextWord } from "../next-strings.js"
+import { menuFingerprint } from "./fingerprint.js"
+import { outcomeOf } from "./outcome.js"
+import { PressHolds } from "./press-holds.js"
 import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
+
+/**
+ * The page's presses, one per session, kept outside the card: switching to
+ * another session and back must not open the options under a press still on
+ * its way (`press-holds.ts`).
+ */
+const holds = new PressHolds()
 
 /**
  * How long a press may take before the card says it is on its way — the start
@@ -28,11 +39,18 @@ const PRESS_SHOWN_MS = 150
  * third option, sending the word "Tea" answered "Water". A digit outside a
  * paste is the only press that answers the question that was asked.
  *
+ * **A press names the question it answers** (`fingerprint.ts`), and the
+ * daemon types nothing at any other: a question that moved comes back as
+ * `menu_moved`, with nothing typed (F1).
+ *
  * **A press says where it has got to**, as a message does: on its way (the
  * card's line becomes `webSending` with the pending card's spinner, once the
- * press has taken longer than `PRESS_SHOWN_MS`), then `webMenuSent`, or the
- * refusal in a toast with every option live again. Across Clawdline Cloud the
- * first of those is a second or more (`cloud/relay-writer.ts`).
+ * press has taken longer than `PRESS_SHOWN_MS`), then `webMenuSent`. A refusal
+ * that proves nothing was typed is said in a toast with every option live
+ * again; any other failure may have answered, so the options stay shut and the
+ * line says it is not known, beside "choose again" (`press-holds.ts`, F3).
+ * Across Clawdline Cloud the first of those is a second or more
+ * (`cloud/relay-writer.ts`).
  *
  * Three things this daemon cannot do are drawn switched off rather than left
  * out: the refresh button (no `/v1/sessions/refresh` here, so
@@ -41,7 +59,7 @@ const PRESS_SHOWN_MS = 150
  */
 export function Waiting({ row, write }: { row: SessionRow | null; write: boolean }) {
   const box = useRef<HTMLDivElement>(null)
-  const state = useRef<CardState>({ drawn: null, answered: null, dismissed: null, folded: null, pressing: null })
+  const state = useRef<CardState>({ drawn: null, answered: null, dismissed: null, folded: null })
   const current = useRef<{ row: SessionRow | null; write: boolean }>({ row, write })
   current.current = { row, write }
 
@@ -67,17 +85,8 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
     if (st.folded && (!open || st.folded.key !== key || open.state !== "waiting")) st.folded = null
     // A press is held until the question it answered has gone — the session
     // moved on, or asks something else — or for ten seconds after the machine
-    // said yes, the same allowance `answered` has.
-    if (
-      st.pressing &&
-      (!open ||
-        st.pressing.key !== key ||
-        open.state !== "waiting" ||
-        st.pressing.menu !== menuKey(menu) ||
-        (st.pressing.done && Date.now() - st.pressing.at > 10000))
-    ) {
-      st.pressing = null
-    }
+    // said yes, the same allowance `answered` has (`press-holds.ts`).
+    const press = open ? holds.current(open.id, menuKey(menu), open.state === "waiting", Date.now()) : null
     const hushed = !!(st.dismissed && st.dismissed.menu === menuKey(menu))
     const folded = !!(st.folded && st.folded.menu === menuKey(menu))
     const sent = !rows && !!st.answered
@@ -97,7 +106,15 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
             rows,
             submit,
             sent,
-            pressing: !st.pressing ? null : st.pressing.done ? "sent" : st.pressing.shown ? "sending" : null,
+            pressing: !press
+              ? null
+              : press.state === "unknown"
+                ? "unknown"
+                : press.state === "sent"
+                  ? "sent"
+                  : press.shown
+                    ? "sending"
+                    : null,
             write: current.current.write,
             refresh: rows ? null : { busy: false, status: "", off: true },
             focusOff: true,
@@ -109,7 +126,7 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
     el.hidden = !want
     // A press still on its way holds every option, however often the card is
     // written again under it: a second tap would be a stray key in the next question.
-    if (st.pressing) {
+    if (press) {
       el.querySelectorAll<HTMLButtonElement>(".opt").forEach((b) => {
         b.disabled = true
       })
@@ -152,6 +169,15 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
         return
       }
 
+      // "Choose again" under a press that may have landed: the person's
+      // decision. The daemon still checks the next press against its screen.
+      if (target.closest("[data-press-again]")) {
+        if (open) holds.release(open.id)
+        st.answered = null
+        redraw()
+        return
+      }
+
       const opt = target.closest<HTMLButtonElement>("[data-key]")
       if (opt) {
         if (!open || opt.disabled) return
@@ -174,30 +200,34 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
         }
         const asked = open.id
         const T = L.strings
-        const press = { key: asked, menu: menuKey(open.menu), shown: false, done: false, at: Date.now() }
-        st.pressing = press
+        const expect = open.menu ? menuFingerprint(open.menu) : ""
+        const press = holds.start(asked, menuKey(open.menu), Date.now())
         setTimeout(() => {
-          if (st.pressing !== press) return
+          if (holds.current(asked, press.menu, true, Date.now()) !== press) return
           press.shown = true
           redraw()
         }, PRESS_SHOWN_MS)
-        pressKey(asked, opt.dataset.key || "")
+        pressKey(asked, opt.dataset.key || "", expect, press.request)
           .then(() => {
-            if (st.pressing === press) {
-              // Still held — the question has not gone yet — and now saying so.
-              press.done = true
-              press.at = Date.now()
-              redraw()
-            }
+            // Still held — the question has not gone yet — and now saying so.
+            holds.settled(press, Date.now())
+            redraw()
             if (current.current.row?.id === asked) toast(T.webMenuSent)
           })
-          .catch((err: unknown) => {
-            if (st.pressing === press) st.pressing = null
-            if (current.current.row?.id !== asked) return
-            toastFailure(err, T.webRequestFailed)
-            // Drawn again from scratch: the markup has not changed, so the
-            // guard would otherwise keep the dead buttons on screen.
-            st.answered = null
+          .catch((err: KeyFailure) => {
+            const code = typeof err?.code === "string" ? err.code : ""
+            const outcome = outcomeOf({ status: err?.status ?? null, code, said: err?.outcome })
+            holds.failed(press, outcome)
+            // Refused before anything was typed: the options are live again,
+            // drawn from scratch — the markup has not changed, so the guard
+            // would otherwise keep the dead buttons on screen. Otherwise the
+            // press may have answered and the card says so instead.
+            if (outcome === "not_done") st.answered = null
+            if (current.current.row?.id === asked) {
+              if (code === "menu_moved") toast(nextWord("menuMoved"))
+              else if (code === "menu_unverified") toast(nextWord("menuUnverified"))
+              else if (outcome === "not_done") toastFailure(err, T.webRequestFailed)
+            }
             redraw()
           })
         return
@@ -231,10 +261,4 @@ interface CardState {
   dismissed: { key: string | null; menu: string } | null
   /** A card folded out of the way (`foldedMenu`). */
   folded: { key: string | null; menu: string } | null
-  /**
-   * A press, from the tap until the question it answered has gone: `shown`
-   * once it has taken long enough to say it is on its way, `done` once the
-   * machine said yes (`at` is then when).
-   */
-  pressing: { key: string; menu: string; shown: boolean; done: boolean; at: number } | null
 }

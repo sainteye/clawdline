@@ -292,6 +292,11 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 	if o.refusal != nil {
 		return b.publish(cmd, plan, *o.refusal, nil)
 	}
+	if o.guard != nil {
+		if refusal := o.guard(plan); refusal != nil {
+			return b.publish(cmd, plan, *refusal, nil)
+		}
+	}
 	if o.route == nil {
 		return b.publish(cmd, plan, Refusal{Status: 400, Code: "unknown_command",
 			Message: "This Mac does not know that Cloud command."}, nil)

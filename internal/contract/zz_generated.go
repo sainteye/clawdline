@@ -2972,7 +2972,16 @@ type InventorySession struct {
 // up. Never a way to type text: words sent to a picker are thrown away and the
 // Return after them confirms whatever is highlighted.
 type KeyRequest struct {
-	Key string `json:"key"`
+	// The question this answer was chosen for: the SHA-256 (64 lowercase hex digits)
+	// of the menu's canonical form, as session.MenuFingerprint and
+	// web/console/src/session/fingerprint.ts compute it from the row's menu. When
+	// given, nothing is typed unless the question on the session's screen still has
+	// this fingerprint; otherwise the answer is refused as menu_moved (a different
+	// question, or none) or menu_unreadable (the screen could not be read). Omitted by
+	// older pages, which are answered as before on this route; a Cloud answer without
+	// it is refused as menu_unverified.
+	Expect string `json:"expect,omitempty"`
+	Key    string `json:"key"`
 }
 
 type LeaseHolder struct {

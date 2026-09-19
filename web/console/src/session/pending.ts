@@ -27,7 +27,13 @@
  * the part that talks to the daemon is `send.ts`.
  */
 
-export type PendingState = "sending" | "accepted" | "failed"
+/**
+ * Where a card has got to. `failed` is a refusal that proves nothing was typed;
+ * `unknown` is every other failure — no answer, an answer lost on the way back,
+ * a terminal that failed part-way — after which the words may be on the Mac,
+ * and the card says it does not know rather than that it failed (F3).
+ */
+export type PendingState = "sending" | "accepted" | "failed" | "unknown"
 
 export interface PendingSend {
   readonly token: string
@@ -35,9 +41,22 @@ export interface PendingSend {
   readonly text: string
   /** The pictures as `data:` URLs, kept so that sending again sends them too. */
   readonly pictures: readonly string[]
+  /**
+   * The one request every attempt of this card is sent under, as its
+   * Idempotency-Key (F2). The Mac answers a second attempt with the first
+   * one's answer rather than typing the words again, so "try again" after an
+   * answer that was lost is not the same message twice.
+   */
+  readonly request: string
   state: PendingState
-  /** The refusal's code, while `failed`. */
+  /** The refusal's code, while `failed` or `unknown`. */
   failure: string
+  /**
+   * An `unknown` card whose transcript was read, fresh, after it failed, and
+   * did not hold the turn. Only then is sending it again offered — under the
+   * same request, so an attempt still on its way is not doubled.
+   */
+  absent: boolean
   /** The last attempt, in milliseconds. */
   sentAt: number
   /** When the daemon said yes, in milliseconds; 0 before. */
@@ -59,6 +78,28 @@ export interface SeenTurn {
   imageCount?: number
   /** Unix seconds. */
   at?: number
+}
+
+/**
+ * A request id for a new card. `crypto.randomUUID` exists only in a secure
+ * context, and the console on a home network is served over plain http, so
+ * the random bytes are asked for directly when it is missing.
+ */
+export function newRequestID(): string {
+  const c = globalThis.crypto
+  if (typeof c?.randomUUID === "function") {
+    try {
+      return c.randomUUID()
+    } catch {
+      /* below */
+    }
+  }
+  const bytes = new Uint8Array(16)
+  c.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 /** `OPTIMISTIC_LIFETIME_SECONDS`: a card the transcript never confirms goes after this. */
@@ -132,8 +173,10 @@ export class PendingSends {
       session,
       text,
       pictures: [...pictures],
+      request: newRequestID(),
       state: "sending",
       failure: "",
+      absent: false,
       sentAt: now,
       acceptedAt: 0,
       known: occurrences(this.seen.get(session) ?? []),
@@ -154,13 +197,39 @@ export class PendingSends {
     this.changed()
   }
 
-  /** It did not go, or this end could not tell that it did. */
+  /** It did not go: the refusal proves nothing was typed. */
   failed(token: string, code: string): void {
     const card = this.find(token)
     if (!card) return
     card.state = "failed"
     card.failure = code
+    card.checking = false
+    card.absent = false
     this.changed()
+  }
+
+  /**
+   * It may have gone. Nothing this end heard says whether the words reached
+   * the terminal, so the card says that, and is looked at rather than sent
+   * again (F3). `absent` is what the last fresh read of the transcript said.
+   */
+  uncertain(token: string, code: string, absent = false): void {
+    const card = this.find(token)
+    if (!card) return
+    card.state = "unknown"
+    card.failure = code
+    card.checking = false
+    card.absent = absent
+    this.changed()
+  }
+
+  /** "Look": the card says it is reading the transcript. */
+  looking(token: string): PendingSend | null {
+    const card = this.find(token)
+    if (!card || card.state !== "unknown" || card.checking) return null
+    card.checking = true
+    this.changed()
+    return card
   }
 
   /** One card, if it is still on the page. */
@@ -178,7 +247,7 @@ export class PendingSends {
    */
   retrying(token: string): PendingSend | null {
     const card = this.find(token)
-    if (!card || card.state !== "failed") return null
+    if (!card || !(card.state === "failed" || (card.state === "unknown" && card.absent))) return null
     card.state = "sending"
     card.failure = ""
     card.checking = true
@@ -197,6 +266,7 @@ export class PendingSends {
     card.state = "sending"
     card.failure = ""
     card.checking = false
+    card.absent = false
     card.sentAt = now
     card.acceptedAt = 0
     card.known = occurrences(this.seen.get(card.session) ?? [])
@@ -230,7 +300,8 @@ export class PendingSends {
       }
     }
     const mine = this.of(session).filter((card) => !settled.has(card))
-    const order = [...mine.filter((card) => card.state !== "failed"), ...mine.filter((card) => card.state === "failed")]
+    const stopped = (card: PendingSend) => card.state === "failed" || card.state === "unknown"
+    const order = [...mine.filter((card) => !stopped(card)), ...mine.filter(stopped)]
     const used = new Set<number>()
     for (const card of order) {
       const want = turnWords(card.text, card.pictures.length)

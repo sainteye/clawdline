@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
@@ -85,44 +87,38 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 	case "send":
 		// Pictures travel inside this body, so it may be large; past the Swift
 		// server's limit it is refused with that server's words.
-		var body contract.SendRequest
-		limited := http.MaxBytesReader(w, r.Body, sendBodyLimit)
-		if err := json.NewDecoder(limited).Decode(&body); err != nil {
-			var tooLarge *http.MaxBytesError
-			if errors.As(err, &tooLarge) {
-				size := fmt.Sprintf("more than %d", tooLarge.Limit)
-				if r.ContentLength > 0 {
-					size = fmt.Sprint(r.ContentLength)
-				}
-				writeRefusal(w, http.StatusRequestEntityTooLarge, "too_large", fmt.Sprintf(
-					"That was %s bytes and the limit is %d. Send fewer or smaller pictures.", size, tooLarge.Limit))
+		s.sessionWrite(w, r, sendBodyLimit, func(size string, limit int64) string {
+			return fmt.Sprintf("That was %s bytes and the limit is %d. Send fewer or smaller pictures.", size, limit)
+		}, func(w http.ResponseWriter, raw []byte) {
+			var body contract.SendRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a send")
 				return
 			}
-			writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a send")
-			return
-		}
-		if body.Text == "" && len(body.Images) == 0 {
-			writeRefusal(w, http.StatusBadRequest, "empty_text", "there is nothing to type")
-			return
-		}
-		// The terminal half of a send with pictures can take a few seconds per
-		// picture; the read of the machine before it keeps the ordinary bound.
-		if len(body.Images) > 0 {
-			var more context.CancelFunc
-			ctx, more = context.WithTimeout(r.Context(), 45*time.Second)
-			defer more()
-		}
-		sent, err := s.actions().SendWithPictures(ctx, id, body.Text, body.Images)
-		if err != nil {
-			writeActionRefusal(w, err)
-			return
-		}
-		// A person wrote to this session: the one reading that says they
-		// are there (proposals.go, board-redesign §4.3), and the run the
-		// session relays their words under (runs.go, U4).
-		s.heardFrom(sent)
-		s.issueRun(ctx, r, sent)
-		writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "typed"})
+			if body.Text == "" && len(body.Images) == 0 {
+				writeRefusal(w, http.StatusBadRequest, "empty_text", "there is nothing to type")
+				return
+			}
+			ctx := ctx
+			// The terminal half of a send with pictures can take a few seconds per
+			// picture; the read of the machine before it keeps the ordinary bound.
+			if len(body.Images) > 0 {
+				var more context.CancelFunc
+				ctx, more = context.WithTimeout(r.Context(), 45*time.Second)
+				defer more()
+			}
+			sent, err := s.actions().SendWithPictures(ctx, id, body.Text, body.Images)
+			if err != nil {
+				writeActionRefusal(w, err)
+				return
+			}
+			// A person wrote to this session: the one reading that says they
+			// are there (proposals.go, board-redesign §4.3), and the run the
+			// session relays their words under (runs.go, U4).
+			s.heardFrom(sent)
+			s.issueRun(ctx, r, sent)
+			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "typed"})
+		})
 	case "interrupt":
 		if _, err := s.actions().Interrupt(ctx, id); err != nil {
 			writeActionRefusal(w, err)
@@ -130,25 +126,91 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "interrupted"})
 	case "key":
-		s.sessionKey(ctx, w, r, id)
+		s.sessionWrite(w, r, keyBodyLimit, func(string, int64) string {
+			return "That is larger than one key. A key is \"1\"…\"9\", \"tab\", \"shift+tab\" or \"submit\"."
+		}, func(w http.ResponseWriter, raw []byte) {
+			s.sessionKey(ctx, w, id, raw)
+		})
 	case "close":
-		var body contract.CloseRequest
-		// An absent body is an ordinary close. Only a malformed one is a
-		// refusal, because "no options" is a legitimate thing to mean.
-		if r.ContentLength > 0 {
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a close")
+		s.sessionWrite(w, r, closeBodyLimit, func(size string, limit int64) string {
+			return fmt.Sprintf("That was %s bytes and a close's options are at most %d.", size, limit)
+		}, func(w http.ResponseWriter, raw []byte) {
+			var body contract.CloseRequest
+			// An absent body is an ordinary close. Only a malformed one is a
+			// refusal, because "no options" is a legitimate thing to mean.
+			if len(raw) > 0 {
+				if err := json.Unmarshal(raw, &body); err != nil {
+					writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a close")
+					return
+				}
+			}
+			if _, err := s.actions().Close(ctx, id, body.Force); err != nil {
+				writeActionRefusal(w, err)
 				return
 			}
-		}
-		if _, err := s.actions().Close(ctx, id, body.Force); err != nil {
-			writeActionRefusal(w, err)
-			return
-		}
-		writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "closed", Forced: body.Force})
+			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "closed", Forced: body.Force})
+		})
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "no such action on a session")
 	}
+}
+
+// closeBodyLimit is what a close's options weigh: `{"force":true}` and the
+// closeability version a Cloud viewer carries, with room to spare.
+const closeBodyLimit = 16 << 10
+
+// scopeSessions is the receipt scope of a session's writes.
+const scopeSessions = "sessions"
+
+// sessionWrite answers one write to a session — a message, a menu answer, a
+// close — once per Idempotency-Key, when the caller names one (D03, F2).
+//
+// These are the writes a caller is least sure of. Across Clawdline Cloud the
+// answer can be lost after the Mac acted, and "try again" was then the same
+// words typed a second time. So a key names one request — the route and the
+// exact body — and a retry under it is answered with the first answer instead
+// of being carried out again; the same key with another body is refused.
+// Without a key a write is carried out each time it is asked, as an older page
+// expects.
+//
+// The body is read here, once, because it is part of what the key names.
+func (s *Server) sessionWrite(w http.ResponseWriter, r *http.Request, limit int64,
+	tooLargeWords func(size string, limit int64) string, act func(http.ResponseWriter, []byte)) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			size := fmt.Sprintf("more than %d", tooLarge.Limit)
+			if r.ContentLength > 0 {
+				size = fmt.Sprint(r.ContentLength)
+			}
+			writeRefusal(w, http.StatusRequestEntityTooLarge, "too_large", tooLargeWords(size, tooLarge.Limit))
+			return
+		}
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "that body could not be read")
+		return
+	}
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if key == "" || s.store == nil {
+		act(w, raw)
+		return
+	}
+	k := store.ReceiptKey{Scope: scopeSessions, Actor: accessOf(r).verdict.Device, Key: key}
+	s.receipted(w, r, k, requestDigest([]byte(r.Method), []byte(routePath(r)), raw), sessionWriteFiled,
+		func(w http.ResponseWriter) { act(w, raw) })
+}
+
+// sessionWriteFiled is which answers a key keeps.
+//
+// An answer given before the terminal was touched — a refusal, a full lane, a
+// question that moved — is about that moment, and the key is given back so the
+// retry is carried out. An answer after the terminal was touched is kept: the
+// words were typed, or the terminal failed part-way (`terminal_io_failed`, a
+// `send_failed` or `close_failed` behind a 500) and some of them may have been.
+// A retry of either is told what happened, never handed a second go.
+func sessionWriteFiled(status int) bool {
+	return status >= 200 && status < 300 ||
+		status == http.StatusBadGateway || status == http.StatusInternalServerError
 }
 
 // actions builds the action surface for one request.
@@ -209,6 +271,11 @@ func actionStatus(code string) int {
 	case "busy":
 		// The Swift app's answer when its terminal queue is full.
 		return http.StatusTooManyRequests
+	case "menu_moved", "menu_unreadable":
+		// The question answered is not the one on the screen, or the screen
+		// could not be read to say: nothing was typed, and asking again
+		// against a fresh reading is the remedy.
+		return http.StatusConflict
 	case "pictures_unavailable":
 		return http.StatusServiceUnavailable
 	case "backend_unsupported":

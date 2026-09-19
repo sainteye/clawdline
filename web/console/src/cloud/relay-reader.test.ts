@@ -195,3 +195,35 @@ test("the stream sends one frame per turn for this machine and none for another"
   assert.deepEqual(frames, ["sessions:1", "sessions:2"], "the retired client is not listened to")
   handle.close()
 })
+
+// F2: "try again" reads the transcript first, and a read already on its way
+// can be one asked before the attempt that failed. The copied client shares a
+// read with any other for the same session (`readKey`), so asking again while
+// one is in flight is handed that older answer. A `no-store` read waits for
+// the one on its way to finish and then asks the Mac anew.
+test("a fresh read is never handed an answer asked before it", async () => {
+  const client = new FakeClient()
+  client.rows = [row("mac-a", "s1")]
+  const clock = { t: 1000 }
+  const r = reader(client, clock)
+  // The copied client's sharing: while one ask is out, another gets its answer.
+  let release: (v: unknown) => void = () => {}
+  let out: Promise<unknown> | null = null
+  const stale = { id: "s1", entries: [], signature: "old", evidence: "transcript" }
+  const now = { id: "s1", entries: [{ role: "user", text: "yes" }], signature: "new", evidence: "transcript" }
+  client.answer = () => {
+    if (out) return out
+    out = new Promise((resolve) => { release = resolve }).then((v) => { out = null; return v })
+    return out
+  }
+  const polling = r.fetch("/v1/transcript?session=s1&limit=200")
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const fresh = r.fetch("/v1/transcript?session=s1&limit=200", { cache: "no-store" })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  release(stale)
+  await polling
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  release(now)
+  const page = await body<TranscriptPage>(await fresh)
+  assert.equal(page.signature, "new", "the fresh read was handed the answer asked before it")
+})
