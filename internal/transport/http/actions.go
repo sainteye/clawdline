@@ -118,8 +118,10 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// A person wrote to this session: the one reading that says they
-		// are there (proposals.go, board-redesign §4.3).
+		// are there (proposals.go, board-redesign §4.3), and the run the
+		// session relays their words under (runs.go, U4).
 		s.heardFrom(sent)
+		s.issueRun(ctx, r, sent)
 		writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "typed"})
 	case "interrupt":
 		if _, err := s.actions().Interrupt(ctx, id); err != nil {

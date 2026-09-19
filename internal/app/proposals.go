@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,6 +53,10 @@ type Participation struct {
 	ProposalLimit int64
 	DecisionLimit int64
 	DigestLimit   int64
+	// Bind puts a broker task on a line of work (orchestrator.BindWork). Nil
+	// is a daemon with no broker: a proposal about a task still records, and
+	// a task still owed is bound when a broker next starts on the same store.
+	Bind func(ctx context.Context, task, workID, from string) error
 }
 
 // NewParticipation is the participation points on a board, with the default
@@ -255,7 +260,13 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 		source = work.SourceChild + req.ChildTask
 	}
 	var out ProposalView
+	// bind is the task this proposal puts on its line, when the broker had
+	// not: a task stored before lines were bound at admission, or a step of
+	// other work the root chose to propose. It is written after the proposal,
+	// and only if the proposal was recorded (bindAfter).
+	var bind *lineBinding
 	err = p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		bind = nil
 		workID := req.WorkID
 		rows := []store.BrokerRow{}
 		if req.TaskID != "" {
@@ -266,26 +277,48 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 			if err != nil {
 				return err
 			}
-			facts, unknown := Facts([]store.BrokerRow{row})
-			if unknown > 0 {
+			r, err := orchestrator.Decode(row.Record)
+			if err != nil {
 				return workRefusal(409, "facts_unknown", "That task's record could not be read; nothing was recorded.")
 			}
+			facts, _ := Facts([]store.BrokerRow{row})
 			f := facts[0]
 			if f.Owner != req.Session {
 				return workRefusal(409, "not_the_root",
 					"A line of work is proposed for the root it belongs to, and that task's root is another session.")
 			}
+			line, from, bound := orchestrator.LineOf(r)
 			switch {
-			case workID == "":
-				workID = f.WorkID
-			case f.WorkID != "" && f.WorkID != workID:
-				return workRefusal(409, "work_id_mismatch", "That task was dispatched for another work_id.")
+			case bound && workID == "":
+				workID = line
+			case bound && line != workID:
+				return workRefusal(409, "work_id_mismatch", "That task is on another line of work ("+line+").")
+			case bound:
+			case workID != "":
+				// The root names the line this unbound task is part of.
+				bind = &lineBinding{task: r.ID, workID: workID, from: work.WorkNamed}
+			default:
+				// The line an earlier proposal about it named, or else the
+				// one the broker's rules put it on (lines.go); a step of
+				// other work the root chose to propose begins its own.
+				earlier, err := tx.PriorProposals("", r.ID)
+				if err != nil {
+					return err
+				}
+				if named := work.ProposedLine(earlier, r.ID); named != "" {
+					line, from = named, work.WorkProposal
+				}
+				if line == "" {
+					line, from = r.ID, work.WorkDispatch
+				}
+				workID = line
+				bind = &lineBinding{task: r.ID, workID: workID, from: from}
 			}
 			rows = append(rows, row)
 		}
 		if workID == "" {
-			// A dispatch that named no line of work: the proposal names one,
-			// and the root's next dispatches carry it.
+			// No task and no line named: the proposal names a new line, and
+			// the root's dispatches for it carry it.
 			workID = newWorkID()
 		} else {
 			bound, err := tx.Tasks(workID)
@@ -345,7 +378,28 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 		}
 		return nil
 	})
+	if err == nil {
+		p.bindAfter(ctx, bind)
+	}
 	return out, participationRefusal(err)
+}
+
+// lineBinding is a task to be put on a line of work by the broker.
+type lineBinding struct{ task, workID, from string }
+
+// bindAfter puts a task on the line a recorded proposal or answer named, in
+// the broker's own transaction (orchestrator.BindWork), after the change that
+// named it committed. Nothing is refused for it: the proposal stands, and the
+// same binding is asked again when the proposal is answered and, for a task
+// still owed, when the daemon starts — each time to the same line, so a
+// binding that did not happen once is not a different one later.
+func (p *Participation) bindAfter(ctx context.Context, b *lineBinding) {
+	if b == nil || p.Bind == nil {
+		return
+	}
+	if err := p.Bind(context.WithoutCancel(ctx), b.task, b.workID, b.from); err != nil {
+		log.Printf("proposals: task %s was not put on line %s: %v", b.task, b.workID, err)
+	}
 }
 
 // ReportAsked records that the session asked a proposal in the
@@ -382,17 +436,28 @@ func (p *Participation) ReportAsked(ctx context.Context, id, session string) (Pr
 // Answer is a person's answer to a proposal. Track and later make the work
 // item where the answer put it, with the move that records it, in this
 // transaction; no leaves the work with its to-dos.
+//
+// via is the run a session relayed the answer under (runs.go), already found
+// and checked as a run; nil when the person answered themselves. A proposal
+// is a question put to one root, so only a message to that root answers it.
 func (p *Participation) Answer(ctx context.Context, id string, answer work.Answer, actor, principal string,
-	file ProposalFiler) (ProposalView, error) {
-	if err := checkActor(actor); err != nil {
+	via *work.Run, file ProposalFiler) (ProposalView, error) {
+	if err := checkRelay(actor, via); err != nil {
 		return ProposalView{}, err
 	}
 	now := p.now()
 	var out ProposalView
+	var bind *lineBinding
 	err := p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		bind = nil
 		prev, err := tx.Proposal(id)
 		if err != nil {
 			return err
+		}
+		if via != nil {
+			if err := work.RelayTo(*via, prev.Session, prev.CreatedAt); err != nil {
+				return err
+			}
 		}
 		next, err := work.AnswerProposal(prev, answer, actor, now)
 		if err != nil {
@@ -421,6 +486,9 @@ func (p *Participation) Answer(ctx context.Context, id string, answer work.Answe
 				if principal != "" {
 					change.Evidence["principal"] = principal
 				}
+				if via != nil {
+					change.Evidence["run"] = via.Evidence()
+				}
 				if err := tx.Create(item, store.MoveOf(item.ID, change, now), p.Board.openLimit()); err != nil {
 					return err
 				}
@@ -428,6 +496,16 @@ func (p *Participation) Answer(ctx context.Context, id string, answer work.Answe
 				out.Item = &v
 			default:
 				return err
+			}
+			// The task the proposal was about is on the line the item now
+			// holds; asked again here in case the proposal's own binding
+			// did not happen (bindAfter).
+			if next.TaskID != "" {
+				from := work.WorkProposal
+				if next.TaskID == next.WorkID {
+					from = work.WorkDispatch
+				}
+				bind = &lineBinding{task: next.TaskID, workID: next.WorkID, from: from}
 			}
 		}
 		if err := tx.PutProposal(next, &prev, 0); err != nil {
@@ -441,6 +519,9 @@ func (p *Participation) Answer(ctx context.Context, id string, answer work.Answe
 		}
 		return nil
 	})
+	if err == nil {
+		p.bindAfter(ctx, bind)
+	}
 	return out, participationRefusal(err)
 }
 
@@ -645,10 +726,11 @@ func (p *Participation) PushDecision(ctx context.Context, id string) work.PushSt
 
 // AnswerDecision is a person's answer. On the board item the decision is
 // about, it is the item's newest fact, written as a move in this
-// transaction.
+// transaction. via is as Answer's: a decision is one root's question, and
+// only a message to that root answers it.
 func (p *Participation) AnswerDecision(ctx context.Context, id, option, actor, principal string,
-	file DecisionFiler) (work.Decision, error) {
-	if err := checkActor(actor); err != nil {
+	via *work.Run, file DecisionFiler) (work.Decision, error) {
+	if err := checkRelay(actor, via); err != nil {
 		return work.Decision{}, err
 	}
 	now := p.now()
@@ -657,6 +739,11 @@ func (p *Participation) AnswerDecision(ctx context.Context, id, option, actor, p
 		prev, err := tx.Decision(id)
 		if err != nil {
 			return err
+		}
+		if via != nil {
+			if err := work.RelayTo(*via, prev.Session, prev.CreatedAt); err != nil {
+				return err
+			}
 		}
 		next, err := work.AnswerDecision(prev, option, actor, now)
 		if err != nil {
@@ -667,7 +754,7 @@ func (p *Participation) AnswerDecision(ctx context.Context, id, option, actor, p
 		}
 		next.Version = prev.Version + 1
 		out = next
-		if err := p.decisionMove(tx, next, principal, now); err != nil {
+		if err := p.decisionMove(tx, next, principal, via, now); err != nil {
 			return err
 		}
 		if file != nil {
@@ -682,7 +769,8 @@ func (p *Participation) AnswerDecision(ctx context.Context, id, option, actor, p
 
 // decisionMove writes a closed decision's move on the open board item it is
 // about, if there is one.
-func (p *Participation) decisionMove(tx *store.WorkTx, d work.Decision, principal string, now time.Time) error {
+func (p *Participation) decisionMove(tx *store.WorkTx, d work.Decision, principal string, via *work.Run,
+	now time.Time) error {
 	if d.WorkID == "" {
 		return nil
 	}
@@ -699,6 +787,9 @@ func (p *Participation) decisionMove(tx *store.WorkTx, d work.Decision, principa
 	c := work.DecisionChange(d, it, now)
 	if principal != "" {
 		c.Evidence["principal"] = principal
+	}
+	if via != nil {
+		c.Evidence["run"] = via.Evidence()
 	}
 	return tx.Put(it, c.Apply(it, now), store.MoveOf(it.ID, c, now))
 }
@@ -782,7 +873,7 @@ func (p *Participation) Sweep(ctx context.Context) error {
 			if err := tx.PutDecision(next, &prev, 0); err != nil {
 				return err
 			}
-			return p.decisionMove(tx, next, "", now)
+			return p.decisionMove(tx, next, "", nil, now)
 		}))
 	}
 	stale, err := p.Board.Store.StalePushes(ctx, now.Add(-stalePush))
@@ -818,13 +909,15 @@ func (p *Participation) Sweep(ctx context.Context) error {
 // runs missed (board-redesign §3.1). Such a proposal is never asked in a
 // conversation: it waits in the "to confirm" area and the digest.
 //
-// Only a named line is proposed this way: one whose dispatches carry a
-// work_id that has no work item yet. A dispatch that named no line is its
-// root's to-do and nothing more; proposing each of them would put every
-// dispatch in front of a person, which is the clutter the redesign removes,
-// and the item a "track" made could not be bound to the task (its record
-// names no work_id). The gate's refusals stand: a line with no signal, or
-// one already proposed, is left alone and nothing is written.
+// A line is one whose tasks carry a work_id — every dispatch with a root is
+// on one from its admission (lines.go) — that has no work item yet and whose
+// to-do is still owed. Work that is over, landed or owing nothing, is never
+// put in front of a person. A line is proposed only once its root has had
+// the policy's RuleAfter to propose it itself: the root may ask in the
+// conversation while the person is there, and a rule's proposal first would
+// be the duplicate that takes that ask away. The gate's refusals stand: a
+// line with no signal, or one already proposed, is left alone and nothing is
+// written.
 func (p *Participation) RuleProposals(ctx context.Context) (int, error) {
 	lines, err := p.Board.Store.UnproposedLines(ctx, ruleLineLimit)
 	if err != nil {
@@ -848,6 +941,15 @@ func (p *Participation) RuleProposals(ctx context.Context) (int, error) {
 		// write; decided again inside the write.
 		facts, unknown := Facts(bound[l.WorkID])
 		if unknown > 0 || l.Project == "" || l.Title == "" {
+			continue
+		}
+		first := time.Time{}
+		for _, f := range facts {
+			if first.IsZero() || f.CreatedAt.Before(first) {
+				first = f.CreatedAt
+			}
+		}
+		if !work.RuleDue(first, p.Proposals, now) {
 			continue
 		}
 		if signals, _ := work.SignalsOf(facts, nil, nil, now); len(signals) == 0 {

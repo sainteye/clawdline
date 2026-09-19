@@ -276,11 +276,14 @@ type Record struct {
 	Model          string    `json:"model,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	Root           *RootRef  `json:"root,omitempty"`
-	// WorkID is the work item this task is for (D36): the key a task and a
-	// board item are bound by, in place of guessing from titles. Empty when
-	// the dispatch named none, and then the work is only its root's — a
-	// to-do, never a card somebody else has to find.
+	// WorkID is the line of work this task is on (D36): the key a task, its
+	// root's to-do and a board item are bound by, in place of guessing from
+	// titles. The dispatch names it, or the broker binds one by its rules
+	// (lines.go in internal/domain/work) when it admits the task. Empty for a
+	// task with no root, and for a step of other work whose line nobody named.
 	WorkID string `json:"work_id,omitempty"`
+	// WorkFrom is how WorkID was decided: named, respawn, graph or dispatch.
+	WorkFrom string `json:"work_from,omitempty"`
 	// Graph is the task graph this task is a node of, `current_node` naming
 	// which (graphs.go). Nil for a task that is no graph's.
 	Graph *Graph `json:"graph,omitempty"`

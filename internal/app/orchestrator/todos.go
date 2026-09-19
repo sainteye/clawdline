@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -93,6 +95,12 @@ func followTodo(tx *store.Tx, r Record, at time.Time, owner *work.Liveness) erro
 			events = append(events, todoEvent("todo."+string(tr.To), next, tr))
 		}
 	}
+	// The to-do is on the line its task is on (lines.go): a task bound after
+	// its to-do was made takes the to-do with it.
+	if bound, ok := work.Bound(next, f, at); ok {
+		next = bound
+		events = append(events, todoEvent("todo.bound", next, nil))
+	}
 	if len(events) == 0 {
 		return nil
 	}
@@ -103,6 +111,9 @@ func followTodo(tx *store.Tx, r Record, at time.Time, owner *work.Liveness) erro
 // to-do's id, so a to-do's history is one query.
 func todoEvent(kind string, t work.Todo, tr *work.Transition) store.Event {
 	body := map[string]any{"todo": t.ID, "task": t.Task, "owner": t.Owner, "state": t.State, "reason": t.Reason}
+	if t.WorkID != "" {
+		body["work_id"] = t.WorkID
+	}
 	if tr != nil {
 		body["from"] = tr.From
 	}
@@ -138,6 +149,14 @@ func (b *Broker) applyTodo(ctx context.Context, taskID string, owner *work.Liven
 // ones still owed against the facts as they are now. Run owes it once when
 // the daemon starts; running it again changes nothing.
 //
+// A task whose to-do is still owed and that is on no line of work — stored
+// before the broker bound lines at admission — is bound here: to the line a
+// proposal about it named, if one did, or else by the rule an admission would
+// have used (lines.go), so every owed to-do a session reads names the work it
+// is part of. A binding that fails leaves the reconcile owed, and the next
+// beat asks again. A task whose to-do is over is left as it is:
+// nothing is owed on it, and rewriting a finished record buys nobody anything.
+//
 // Its cost is the tasks with a root and no row — every one of them once in
 // its life, because it leaves each with a row — plus the to-dos still owed;
 // never the whole history. Each is decided from a read first and written only
@@ -162,7 +181,7 @@ func (b *Broker) ReconcileTodos(ctx context.Context) (int, error) {
 		return 0, storeError(err)
 	}
 	now := b.now()
-	moved := 0
+	moved, unbound := 0, 0
 	for _, id := range ids {
 		row, ok := rows[id]
 		if !ok {
@@ -173,16 +192,40 @@ func (b *Broker) ReconcileTodos(ctx context.Context) (int, error) {
 			continue
 		}
 		f := taskFacts(r)
+		owing := false
 		if t, ok := held[id]; ok {
-			if _, tr := work.Follow(t.Todo, f, now); tr == nil {
-				continue
+			next, tr := work.Follow(t.Todo, f, now)
+			_, rebound := work.Bound(next, f, now)
+			if (tr != nil || rebound) && b.applyTodo(ctx, id, nil) {
+				moved++
 			}
-		} else if _, owes := work.DispatchTodo(f, now); !owes {
+			owing = next.State.Outstanding()
+		} else if t, owes := work.DispatchTodo(f, now); owes {
+			if b.applyTodo(ctx, id, nil) {
+				moved++
+			}
+			owing = t.State.Outstanding()
+		}
+		if r.WorkID != "" || !owing {
 			continue
 		}
-		if b.applyTodo(ctx, id, nil) {
+		line, from, err := b.lineFor(ctx, r)
+		if err == nil && line != "" {
+			err = b.BindWork(ctx, id, line, from)
+		}
+		if err != nil {
+			// Kept owed: the next beat reconciles again rather than leave the
+			// task off its line until another start.
+			log.Printf("todos: task %s was not put on its line: %v", id, err)
+			unbound++
+			continue
+		}
+		if line != "" {
 			moved++
 		}
+	}
+	if unbound > 0 {
+		return moved, fmt.Errorf("%d owed task(s) were not put on their line", unbound)
 	}
 	return moved, nil
 }
@@ -327,10 +370,25 @@ func (b *Broker) SessionTodos(ctx context.Context, session string, filter TodoFi
 		}
 	}
 	now := b.now()
+	held := map[string]bool{}
+	for _, t := range rows {
+		if _, asked := held[t.WorkID]; !t.State.Outstanding() || t.WorkID == "" || asked {
+			continue
+		}
+		it, err := b.Store.WorkItem(ctx, t.WorkID)
+		switch {
+		case err == nil:
+			held[t.WorkID] = it.Place == work.PlaceBoard || it.Place == work.PlaceBacklog
+		case errors.Is(err, store.ErrNoWork):
+			held[t.WorkID] = false
+		default:
+			return TodoPage{}, storeError(err)
+		}
+	}
 	for _, t := range rows {
 		signals := []work.Signal{}
 		if f, ok := facts[t.Task]; ok {
-			signals = work.Escalation(t.Todo, f, now)
+			signals = work.Escalation(t.Todo, f, held[t.WorkID], now)
 		}
 		page.Todos = append(page.Todos, TodoView{Todo: t.Todo, Escalation: signals})
 	}

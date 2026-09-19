@@ -151,6 +151,12 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		record.RespawnOf = req.Respawn.TaskID
 		record.RespawnGeneration = req.Respawn.Generation
 	}
+	// The line of work it is on, decided from what the dispatch carries
+	// (lines.go in the domain), so its root's to-do is made on that line in
+	// the same transaction as the task.
+	if err := b.bindLine(ctx, &record); err != nil {
+		return Dispatched{}, err
+	}
 	// A node of a graph is admitted only where the graph can take it now
 	// (graphs.go): not running twice, not done twice, not ahead of what it
 	// depends on.

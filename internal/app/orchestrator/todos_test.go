@@ -510,15 +510,23 @@ func TestARestartNeitherMissesNorDuplicates(t *testing.T) {
 		return nb
 	}
 	b2 := start()
-	if p := b2.Pass(ctx); p.Todos != 3+history/2 {
-		t.Fatalf("the first pass moved %d to-dos, want %d (one made open, the rest recorded over, one followed)",
-			p.Todos, 3+history/2)
+	// Two more than the to-dos it makes and follows: the two still owed were
+	// stored on no line, and a start binds each to the line its dispatch
+	// would have been given (lines.go) — the one that is over is left alone.
+	if p := b2.Pass(ctx); p.Todos != 3+history/2+2 {
+		t.Fatalf("the first pass moved %d to-dos, want %d (one made open, the rest recorded over, one followed, two bound)",
+			p.Todos, 3+history/2+2)
 	}
-	expectTodo(t, b2, ctx, missed.ID, work.TodoStateOpen, work.ReasonDispatched)
-	expectTodo(t, b2, ctx, over.ID, work.TodoStateDone, work.ReasonNothingOwed)
+	if got := expectTodo(t, b2, ctx, missed.ID, work.TodoStateOpen, work.ReasonDispatched); got.WorkID != missed.ID {
+		t.Fatalf("the missed to-do is on line %q", got.WorkID)
+	}
+	if got := expectTodo(t, b2, ctx, over.ID, work.TodoStateDone, work.ReasonNothingOwed); got.WorkID != "" {
+		t.Fatalf("a to-do that is over was bound: %q", got.WorkID)
+	}
 	expectTodo(t, b2, ctx, behind.ID, work.TodoStateDone, work.ReasonAbandoned)
-	if after := todoOf(t, b2, ctx, kept.ID); after.Version != before.Version || after.State != before.State {
-		t.Fatalf("the kept to-do was rewritten: %+v -> %+v", before, after)
+	if after := todoOf(t, b2, ctx, kept.ID); after.Version != before.Version+1 || after.State != before.State ||
+		after.WorkID != kept.ID {
+		t.Fatalf("the kept to-do was rewritten beyond its binding: %+v -> %+v", before, after)
 	}
 	if _, err := st.Todo(ctx, work.TodoID(work.OriginDispatch, "70d20001-0000-4000-8000-000000000000")); !errors.Is(err, store.ErrNoTodo) {
 		t.Fatalf("a task with no root was given a to-do: %v", err)
@@ -548,6 +556,9 @@ func TestARestartNeitherMissesNorDuplicates(t *testing.T) {
 	}
 	if n := count(t, h, `SELECT COUNT(*) FROM events WHERE kind = 'todo.opened'`); n != 3 {
 		t.Fatalf("%d opened events, want 3", n)
+	}
+	if n := count(t, h, `SELECT COUNT(*) FROM events WHERE kind IN ('task.bound','todo.bound')`); n != 4 {
+		t.Fatalf("%d binding events, want 4: two tasks and their two to-dos, once each", n)
 	}
 }
 
@@ -607,10 +618,21 @@ func TestADispatchCarriesItsWorkID(t *testing.T) {
 	if err := json.Unmarshal(body, &brief); err != nil || brief["work_id"] != workID {
 		t.Fatalf("task.json lost the work id: %v %v", brief["work_id"], err)
 	}
-	// Control: none named, none carried.
+	if out.Record.WorkFrom != work.WorkNamed {
+		t.Fatalf("a named line says it came from %q", out.Record.WorkFrom)
+	}
+	// None named: the dispatch begins a line of its own, named by its task,
+	// and its to-do is on it from the transaction that made it (D36).
 	plain := "70d000a1-0000-4000-8000-0000000000a1"
-	if out, err := dispatch(plain, nil); err != nil || out.Record.WorkID != "" || todoOf(t, b, ctx, plain).WorkID != "" {
-		t.Fatalf("a dispatch with no work id carries %q (%v)", out.Record.WorkID, err)
+	if out, err := dispatch(plain, nil); err != nil || out.Record.WorkID != plain || out.Record.WorkFrom != work.WorkDispatch ||
+		todoOf(t, b, ctx, plain).WorkID != plain {
+		t.Fatalf("a dispatch with no work id carries %q from %q (%v)", out.Record.WorkID, out.Record.WorkFrom, err)
+	}
+	// Control: a step of other work nobody placed is on no line.
+	step := "70d000a2-0000-4000-8000-0000000000a2"
+	if out, err := dispatch(step, map[string]any{"kind": "code-review"}); err != nil || out.Record.WorkID != "" ||
+		todoOf(t, b, ctx, step).WorkID != "" {
+		t.Fatalf("an unplaced review carries %q (%v)", out.Record.WorkID, err)
 	}
 	// A respawn copies the brief, work id and all.
 	if out.Record.State != StateSpawnFailed {
@@ -673,5 +695,88 @@ func TestASessionReadsItsOwnTodos(t *testing.T) {
 	empty, err := b.SessionTodos(ctx, "9e9e9e9e-0000-4000-8000-000000000000", "", "")
 	if err != nil || len(empty.Todos) != 0 {
 		t.Fatalf("a session that owes nothing: %+v %v", empty, err)
+	}
+}
+
+// D36: a task stored on no line is bound once, and its to-do with it, in one
+// transaction; binding it again to the same line writes nothing, and to
+// another is refused. Its to-do says cross_session until a work item holds
+// the line — being on a line is not being followed.
+func TestBindingPutsATaskAndItsToDoOnALine(t *testing.T) {
+	b, ctx, clock := newTodoBroker(t)
+	legacy := t2Task("70d000b0-0000-4000-8000-0000000000b0", []string{"a.go"}, clock.now())
+	admit(t, b, ctx, legacy)
+	if got := todoOf(t, b, ctx, legacy.ID); got.WorkID != "" {
+		t.Fatalf("admitted without a dispatch, the to-do is on %q", got.WorkID)
+	}
+	line, from, bound := LineOf(legacy)
+	if bound || line != legacy.ID || from != work.WorkDispatch {
+		t.Fatalf("the rules put it on %q from %q (bound %v)", line, from, bound)
+	}
+	if err := b.BindWork(ctx, legacy.ID, line, from); err != nil {
+		t.Fatal(err)
+	}
+	r, _, err := b.Record(ctx, legacy.ID)
+	if err != nil || r.WorkID != line || r.WorkFrom != work.WorkDispatch {
+		t.Fatalf("the record: %q %q %v", r.WorkID, r.WorkFrom, err)
+	}
+	first := todoOf(t, b, ctx, legacy.ID)
+	if first.WorkID != line || first.State != work.TodoStateOpen {
+		t.Fatalf("the to-do: %+v", first.Todo)
+	}
+	if err := b.BindWork(ctx, legacy.ID, line, from); err != nil {
+		t.Fatalf("the same line again: %v", err)
+	}
+	if again := todoOf(t, b, ctx, legacy.ID); again.Version != first.Version {
+		t.Fatal("binding the same line again wrote the to-do")
+	}
+	if err := b.BindWork(ctx, legacy.ID, "0f0f0f0f-0000-4000-8000-0000000000b1", work.WorkNamed); refusalCode(err) != "work_id_mismatch" {
+		t.Fatalf("another line: %v", err)
+	}
+	page, err := b.SessionTodos(ctx, rootConversation, TodosOutstanding, "")
+	if err != nil || len(page.Todos) != 1 {
+		t.Fatalf("the list: %+v %v", page, err)
+	}
+	if s := page.Todos[0].Escalation; len(s) != 1 || s[0] != work.SignalCrossSession {
+		t.Fatalf("a line no work item holds carries %v", s)
+	}
+}
+
+// A task stored on no line that a proposal was already made about — before
+// the broker bound lines — is bound to the line that proposal named, so a
+// work item a person made from it follows the task; not to a line of the
+// rules' own that the item would never see.
+func TestAStartBindsATaskToTheLineAProposalNamed(t *testing.T) {
+	b, ctx, clock := newTodoBroker(t)
+	legacy := t2Task("70d000c0-0000-4000-8000-0000000000c0", []string{"a.go"}, clock.now())
+	admit(t, b, ctx, legacy)
+	named := "0f0f0f0f-0000-4000-8000-0000000000c1"
+	if err := b.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		return tx.PutProposal(work.Proposal{ID: "0f0f0f0f-0000-4000-8000-0000000000c2", WorkID: named, TaskID: legacy.ID,
+			Session: rootConversation, Source: work.SourceSession, Project: "/tmp", Title: "t", Signals: []work.Signal{},
+			Effects: []work.Effect{}, AskReason: work.AskHumanAbsent, Channel: work.ChannelToConfirm,
+			State: work.ProposalAnswered, Answer: work.AnswerTrack, AnsweredBy: "user", AnsweredAt: clock.now(),
+			CreatedAt: clock.now(), ExpiresAt: clock.now().Add(time.Hour)}, nil, 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ReconcileTodos(ctx); err != nil {
+		t.Fatal(err)
+	}
+	r, _, err := b.Record(ctx, legacy.ID)
+	if err != nil || r.WorkID != named || r.WorkFrom != work.WorkProposal {
+		t.Fatalf("bound to %q from %q (%v)", r.WorkID, r.WorkFrom, err)
+	}
+	if got := todoOf(t, b, ctx, legacy.ID); got.WorkID != named {
+		t.Fatalf("the to-do is on %q", got.WorkID)
+	}
+	// Control: one nobody proposed is on its own line.
+	plain := t2Task("70d000c3-0000-4000-8000-0000000000c3", []string{"a.go"}, clock.now())
+	admit(t, b, ctx, plain)
+	if _, err := b.ReconcileTodos(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := todoOf(t, b, ctx, plain.ID); got.WorkID != plain.ID {
+		t.Fatalf("the control is on %q", got.WorkID)
 	}
 }

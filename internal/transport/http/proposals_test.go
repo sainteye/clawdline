@@ -12,6 +12,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 	"github.com/sainteye/clawdline-go/internal/domain/auth"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
 // The participation routes over HTTP: the session's door and the person's,
@@ -27,6 +28,8 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	s := &Server{store: st}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/work/", s.workRoute)
+	mux.HandleFunc("/v1/orchestrator/sessions/", s.brokerSessionRoute)
+	mux.HandleFunc("/v1/orchestrator/runs/", s.runRoute)
 	s.participationRoutes(mux)
 	person := access{verdict: auth.Verdict{Allowed: true, Local: true}}
 	machine := access{machine: true}
@@ -164,14 +167,54 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	if rec := do(machine, http.MethodPost, path, "a1", `{"answer":"track"}`); code(rec) != "session_cannot_decide" {
 		t.Fatalf("a session answering: %d %s", rec.Code, rec.Body)
 	}
-	rec = do(machine, http.MethodPost, path, "a1", `{"answer":"track","via":{"run":"run-9"}}`)
+	// The run is one this daemon issued when the person's message was sent,
+	// and one said to this proposal's root: an invented run, and a message
+	// to another session, answer nothing and leave the proposal pending.
+	if rec := do(machine, http.MethodPost, path, "a1", `{"answer":"track","via":{"run":"run-9"}}`); rec.Code != 403 ||
+		code(rec) != "run_unknown" {
+		t.Fatalf("an invented run: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(machine, http.MethodGet, "/v1/orchestrator/sessions/root-conv/run", "", ""); rec.Code != 404 ||
+		code(rec) != "no_run" {
+		t.Fatalf("a session nobody wrote to: %d %s", rec.Code, rec.Body)
+	}
+	other, err := s.runs().Issue(context.Background(), session.Session{ID: "%8", ConversationID: "other-conv"}, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(machine, http.MethodPost, path, "a1", `{"answer":"track","via":{"run":"`+other.ID+`"}}`); rec.Code != 403 ||
+		code(rec) != "run_other_session" {
+		t.Fatalf("another session's run: %d %s", rec.Code, rec.Body)
+	}
+	mine, err := s.runs().Issue(context.Background(), session.Session{ID: "%4", ConversationID: "root-conv"}, "device:phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The session finds its run by its conversation id; anyone who may
+	// read finds what a run was by its id.
+	if rec := do(machine, http.MethodGet, "/v1/orchestrator/sessions/root-conv/run", "", ""); rec.Code != 200 ||
+		!strings.Contains(rec.Body.String(), `"id":"`+mine.ID+`"`) {
+		t.Fatalf("the session's run: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(person, http.MethodGet, "/v1/orchestrator/sessions/root-conv/run", "", ""); rec.Code != 403 {
+		t.Fatalf("a person reading a session's run route: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(person, http.MethodGet, "/v1/orchestrator/runs/"+mine.ID, "", ""); rec.Code != 200 ||
+		!strings.Contains(rec.Body.String(), `"session_id":"root-conv"`) || !strings.Contains(rec.Body.String(), `"principal":"device:phone"`) {
+		t.Fatalf("what the run was: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(person, http.MethodGet, "/v1/orchestrator/runs/run-9", "", ""); rec.Code != 404 || code(rec) != "run_unknown" {
+		t.Fatalf("a run nobody issued: %d %s", rec.Code, rec.Body)
+	}
+	rec = do(machine, http.MethodPost, path, "a1", `{"answer":"track","via":{"run":"`+mine.ID+`"}}`)
 	made := read(rec)
 	if rec.Code != 200 || made.Item == nil || made.Item.Place != "board" || made.Item.ID != lines[0] {
 		t.Fatalf("track: %d %s", rec.Code, rec.Body)
 	}
 	moves := do(person, http.MethodGet, "/v1/work/items/"+lines[0]+"/moves", "", "")
 	if !strings.Contains(moves.Body.String(), `"from":"proposal"`) ||
-		!strings.Contains(moves.Body.String(), `"actor":"user_via_session:run-9"`) {
+		!strings.Contains(moves.Body.String(), `"actor":"user_via_session:`+mine.ID+`"`) ||
+		!strings.Contains(moves.Body.String(), `"session":"root-conv"`) {
 		t.Fatalf("moves: %s", moves.Body)
 	}
 	// A decision on it, and the person's answer as the item's newest move.
