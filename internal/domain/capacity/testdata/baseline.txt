@@ -76,6 +76,7 @@ internal/adapters/board.MaximumSnapshotBytes # page: the board snapshot budget, 
 internal/adapters/board.MaximumSnapshotItems # page: items in one board snapshot
 internal/adapters/board.MaximumStoreBytes # read: the old board-settings document, read once to carry it into clawdline.sqlite3 and never written (D37, T3); 503 past it. The board itself moved into the store (D02) and is measured by store.db and work.open
 internal/adapters/cloud.fenceLimit # read: the sequence fence file
+internal/adapters/cloud.maxFailureCodeBytes # admission: one word the relay or the control plane sent, copied into a failure code (D1)
 internal/adapters/cloud.maxFrameBytes # admission: one WebSocket frame from the relay
 internal/adapters/cloud.MaximumBackoff # parameter: the reconnect wait's ceiling
 internal/adapters/cloud.maxRelayURLBytes # admission: the relay URL setting

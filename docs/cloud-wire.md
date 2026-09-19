@@ -1108,3 +1108,69 @@ query 與 fragment：那些要嘛會被丟掉，要嘛會把一次性 secret 帶
   拿一次，PROTOCOL.md 自己也說 content-key rotation 是 lazy 的。
 - **多台機器**沒測。一台 Mac、三次配對、兩把瀏覽器金鑰。
 - **重開機後**沒測（spool 與 ledger 仍在記憶體，第二階段的已知缺口沒有變）。
+
+## 18. D1：正式連線前的最後一步（2026-09-19）
+
+操作手冊在 `docs/cloud-cutover.md`。這一節只寫程式這一邊的規格。**正式環境仍然一個位元組都沒連過**，
+下面每一個「正式端會回什麼」都抄自 `~/code/clawdline-cloud` 的原始碼，不是量的。
+
+### 18.1 失敗的名字：一個對照，七個類別
+
+`FailureCode` 仍是封閉詞彙（§15 起），這一波加了：`api_<code>`／`api_http_<status>`（控制面的拒絕，
+`APIError`）、`incompatible`、`no_identity`、`identity_other_environment`、`login_denied`、`login_expired`、
+`login_timeout`、`invalid_token`、`switched_off`、`unreachable`、`tls_untrusted`、`connection_timeout`。
+從對面抄來的字只收 ≤64 bytes 的 snake_case（`maxFailureCodeBytes`，已登記），其餘變成 `…_unrecognized`。
+
+每個字屬於一個類別，**依「接下來該做什麼」分，不是依哪一端說不**（`internal/adapters/cloud/failure.go` 的
+`KindOfCode`，唯一的一張對照表；CLI、狀態路由、設定頁都讀它）：
+
+| 類別 | 代表字 | 這台 Mac 的行為 |
+|---|---|---|
+| `not_signed_in` | `no_identity`、`identity_other_environment`、`api_no_session`、`api_http_401` | 線不起來或停下 |
+| `device_not_approved` | `login_*`、`relay_forbidden`、`relay_*revoked`、`closed_4403` | 停下（`IsTerminalAuthorization` 不變） |
+| `entitlement` | `relay_over_capacity`、`relay_rate_limited`、`closed_4429`、`api_machine_limit_reached` | 退避重試，token 沿用 |
+| `version_mismatch` | `incompatible`、`api_not_found`、`upgrade_refused_{400,404,405,410,415,426}`、`relay_bad_request` | 退避重試 |
+| `relay_refused` | `relay_unauthorized`、`relay_token_superseded`、`identity_binding`、`upgrade_refused_{401,403}` | 退避重試；in-band `unauthorized` 每次重拿 token |
+| `unavailable` | `unreachable`、`tls_untrusted`、`connection_failed`、`relay_bad_gateway`、`api_internal` | 退避重試 |
+| `unknown` | 表裡沒有的 `api_` 字 | 照原樣顯示，不猜 |
+
+`token_rotation` 與 `switched_off` 是事件不是失敗，對照為空。**重試政策一行都沒改**（仍是 Swift 的，§15.3、
+`CloudTransport.swift:2238-2240`）；doc.go 原本說 `bad_request` 會停線，與程式不符，已改成照程式寫。
+
+版本不合原本不存在：握手的 `v≠1`、context 不對、ready 的 `v≠1`、控制面回非 JSON、poll 回沒寫過的狀態，
+現在都包 `ErrIncompatible`。正式端的 api 與 relay **都沒有版本協商路由**（grep 過 `api/src`、`relay/src`），
+所以版本不合只能從這些形狀推出來。
+
+### 18.2 控制面的拒絕有型別了
+
+`AccountClient.post` 對 ≥400 的回答讀 `{"error":{"code","message"}}`（`api/src/server.ts` 的 error handler）成 `APIError`；
+讀不出來的（代理的 HTML、空的 404）仍是 `APIError`，只是沒有 code。401／403 經 `Unwrap` 仍是
+`ErrUnauthorized`，所以 transport 停線的判斷不變。控制面對機器會回的碼（`routes/auth.ts`、`routes/tokens.ts`、
+`routes/guards.ts`）：`bad_machine`、`bad_public_key`、`bad_field`、`no_session`（撤銷或不認得的機器憑證，
+`machinePrincipal` 找不到就落到 `requireSession`）、`not_found`、`internal`。`machine_limit_reached` 只會出現在
+**瀏覽器的核准頁**（`approveDeviceCode` → `assertMachineSlotAvailable`），Mac 那邊看到的是一直 pending 到過期。
+
+### 18.3 登入的輪詢搬進 adapter
+
+`AccountClient.WaitForApproval` 取代 CLI 裡的迴圈，照伺服器的節奏（`interval`、`slow_down` 的
+`retry_after_seconds`），結果是具名的 `ErrLoginDenied`／`ErrLoginExpired`／`ErrLoginTimeout`。
+`cloud login` 成功後**用一次**機器憑證換 device token（`verified …`），證明核准生效；不連 relay。
+
+### 18.4 假扮正式端的測試夾具
+
+`internal/adapters/cloud/production_test.go`：自己簽一張 CA，簽 `api.clawdline.com` 與 `relay.clawdline.com`
+的憑證，起兩個本機 TLS 伺服器。**設定檔是空的**（所以走的是預設的正式端點），HTTP client 與 WebSocket
+撥號器都換成只認這兩個 `host:443` 的撥號器，其他位址一律拒絕並記錄；每個測試收尾時斷言紀錄裡沒有別的位址，
+`TestTheHarnessRefusesEveryOtherAddress` 是那個斷言會紅的對照。為此 `DialOptions` 加了 `NetDial`，
+transport 的 `Options` 加了 `TLSConfig`／`NetDial`，daemon 裡都是 nil。
+
+驗到的：預設設定、Host 與 SNI 都是正式名稱、TLS 驗證是開的（不信任的 CA → `tls_untrusted`，請求沒送出去），
+以及登入 7 種結局、連線 8 種拒絕各自的名字與對線的效果。`standin_test.go` 是同一組回答的 loopback 版，
+給人手動跑真的 CLI（它不是 TLS，TLS 那一半只在上面那個檔案裡）。
+
+### 18.5 還沒有的
+
+- 正式端的任何回答（所以表裡「正式端會回什麼」是讀原始碼的推論）。
+- 帳號層刪除一台 Mac 的介面：api 有 `DELETE /v1/machines/:id`，但只收瀏覽器 session，hosted console 沒有按鈕。
+- `cloud_enabled` 仍只在 daemon 啟動時讀；打開開關要重啟 daemon。
+- 設定頁沒有直接畫 `last_error_kind`；它顯示的 `last_error` 字串以類別開頭，所以不改前端也看得到。

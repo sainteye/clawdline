@@ -245,11 +245,14 @@ func decodeChallenge(data []byte) (ChallengeFrame, error) {
 	if err := json.Unmarshal(data, &frame); err != nil {
 		return ChallengeFrame{}, fmt.Errorf("a malformed challenge: %w", err)
 	}
+	// A relay at another protocol version or signing context is not a relay
+	// this build can answer, and nothing is signed for it: the version and
+	// the context are what make the signed string mean one thing.
 	if frame.V != 1 {
-		return ChallengeFrame{}, fmt.Errorf("a challenge at version %d", frame.V)
+		return ChallengeFrame{}, fmt.Errorf("%w: a challenge at version %d", ErrIncompatible, frame.V)
 	}
 	if frame.Context != ChallengeContext {
-		return ChallengeFrame{}, fmt.Errorf("a challenge in context %q", frame.Context)
+		return ChallengeFrame{}, fmt.Errorf("%w: a challenge in context %q", ErrIncompatible, frame.Context)
 	}
 	if frame.Account == "" || frame.Device == "" {
 		return ChallengeFrame{}, errors.New("a challenge naming no account or no device")
@@ -280,10 +283,13 @@ func decodeReady(data []byte, challenge ChallengeFrame, role string) (ReadyFrame
 	if err := json.Unmarshal(data, &frame); err != nil {
 		return ReadyFrame{}, fmt.Errorf("a malformed ready: %w", err)
 	}
+	if frame.V != 1 {
+		return ReadyFrame{}, fmt.Errorf("%w: a ready frame at version %d", ErrIncompatible, frame.V)
+	}
 	// The account and device are checked against the challenge, not against
 	// what this machine believes, so that a relay cannot hand a socket to a
 	// different identity halfway through one handshake.
-	if frame.V != 1 || frame.Role != role ||
+	if frame.Role != role ||
 		frame.Account != challenge.Account || frame.Device != challenge.Device {
 		return ReadyFrame{}, fmt.Errorf("%w: a ready frame for %s/%s as %s",
 			ErrUnexpectedFrame, frame.Account, frame.Device, frame.Role)

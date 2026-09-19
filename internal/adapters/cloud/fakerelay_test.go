@@ -57,6 +57,11 @@ type fakeRelay struct {
 	// silent makes the relay accept and then say nothing at all, for the
 	// liveness bound.
 	silent bool
+	// refuseAll answers every connection with this error frame, the way a
+	// plan that is full keeps refusing until a slot frees.
+	refuseAll *ErrorFrame
+	// challengeVersion is the `v` the challenge carries; zero means 1.
+	challengeVersion int
 }
 
 func newFakeRelay(account, device string, publicKey ed25519.PublicKey) *fakeRelay {
@@ -141,8 +146,15 @@ func (r *fakeRelay) serve(conn net.Conn, br *bufio.Reader) {
 	r.mu.Lock()
 	refuse := r.refuse
 	r.refuse = nil
+	if refuse == nil {
+		refuse = r.refuseAll
+	}
 	account, device, publicKey, silent := r.account, r.device, r.publicKey, r.silent
+	version := r.challengeVersion
 	r.mu.Unlock()
+	if version == 0 {
+		version = 1
+	}
 
 	if refuse != nil {
 		body, _ := json.Marshal(refuse)
@@ -156,7 +168,7 @@ func (r *fakeRelay) serve(conn net.Conn, br *bufio.Reader) {
 	}
 	challenge := base64.StdEncoding.EncodeToString(nonce)
 	body, _ := json.Marshal(ChallengeFrame{
-		Type: FrameChallenge, V: 1, Context: ChallengeContext,
+		Type: FrameChallenge, V: version, Context: ChallengeContext,
 		Account: account, Device: device, Challenge: challenge, ExpiresInMs: 15000,
 	})
 	if err := writeServerFrame(conn, opText, body); err != nil {
