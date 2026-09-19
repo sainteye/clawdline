@@ -56,6 +56,12 @@
 # the moves it reads (page, read), and the decision push budget (parameter).
 # The memory of when a person last wrote to a session (app.Heard) has no
 # constant: it keeps only the last thirty minutes, pruned on every write.
+#
+# C4 (2026-09-19) registered two rows, cloud.spool and cloud.spool_bytes (the
+# Cloud line's outbound spool, limits N22). Their caps are struct fields the
+# scan does not read; the register is now where their defaults are spelled.
+# A capacity notice's push is an outbox row riding on store.db, at most one per
+# row a day; it added no declaration.
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -101,7 +107,7 @@ internal/adapters/swiftstore.maxBytes # read: one of the Swift app's files, read
 internal/adapters/transcript.recordReadLimit # read: the tail of one transcript (limits N17)
 internal/app/cloudops.cloudEnvelopeCiphertextLimit # admission: one Cloud answer's ciphertext
 internal/app/orchestrator.(*Broker).SubscribeProgress:chan(64) # store: a progress subscriber's buffer (limits N19 buffer class, C3)
-internal/app/orchestrator.AttemptLimit # parameter: completion notice attempts before dead letter (limits N7: C4 makes the dead letter heard)
+internal/app/orchestrator.AttemptLimit # parameter: completion notice attempts before dead letter (limits N7: a dead letter is pushed once, W5, and counted on the Dashboard, C4)
 internal/app/orchestrator.assignmentFieldLimit # admission: one Root Assignment field, refused past it (W6; the Swift app's 8192 bytes)
 internal/app/orchestrator.assignmentLabelLimit # admission: a Root Assignment's label, refused past it (W6)
 internal/app/orchestrator.assignmentListLimit # page: one read of the Root Assignments; the rows ride on store.db (W6)

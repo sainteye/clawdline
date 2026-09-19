@@ -136,6 +136,9 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		Log:     func(format string, args ...any) { log.Printf(format, args...) },
 		// The request queue is the register's `cloud.relay_queue` row.
 		QueueDepth: int(httptransport.CapacityLimit(capacity.CloudRelayQueue)),
+		// The outbound spool is its `cloud.spool` and `cloud.spool_bytes` rows.
+		SpoolRows:  int(httptransport.CapacityLimit(capacity.CloudSpool)),
+		SpoolBytes: int(httptransport.CapacityLimit(capacity.CloudSpoolBytes)),
 	})
 	if err != nil {
 		// A malformed cloud setting is loud and is not fatal. Falling back to

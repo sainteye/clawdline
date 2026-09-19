@@ -101,6 +101,7 @@ var effectHandlers = map[string]effectHandler{
 	// never sends one a second time.
 	EffectDeadLetterPush: {idempotent: false, run: runDeadLetterPush},
 	EffectWaitDelivery:   {idempotent: false, run: runWaitDelivery},
+	EffectCapacityPush:   {idempotent: false, run: runCapacityPush},
 }
 
 func (b *Broker) fault(point string, e store.Effect) {

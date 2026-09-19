@@ -122,7 +122,8 @@ const (
 	Health Channel = "health"
 	// Notice is a notification intent: a `capacity.notify` event in the store
 	// on entering critical or full and on recovering, at most one per row per
-	// day. It becomes a push in C4.
+	// day, and the push it owes (notice.go, C4), recorded in the same
+	// transaction and sent after it commits.
 	Notice Channel = "notice"
 	// CloudStatus is /v1/cloud/status.
 	CloudStatus Channel = "cloud_status"
@@ -173,6 +174,9 @@ const (
 	ProposalsOpen = "proposals.open"
 	DecisionsOpen = "decisions.open"
 	WorkDigests   = "work.digests"
+	// C4: the Cloud answers waiting to leave (limits N22).
+	CloudSpool      = "cloud.spool"
+	CloudSpoolBytes = "cloud.spool_bytes"
 )
 
 // Entry is one row of the register.
@@ -218,7 +222,8 @@ var namePattern = regexp.MustCompile(`^[a-z]+(\.[a-z_]+)+$`)
 //
 // C1 registered the four rows docs/limits.md §7.1 names; C2 the five that had
 // no limit at all (§7.2 wave 2); C3 the four whose failure was quiet (§7.2
-// wave 3). The rest of the bounded things in this
+// wave 3); C4 the Cloud spool's two, whose refusals only a log heard (§7.2
+// wave 5). The rest of the bounded things in this
 // repository are on the guard's baseline, each with the limits.md row that
 // will register it.
 func Register() []Entry {
@@ -468,6 +473,31 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/store.DigestKeepLimit"},
+		},
+		{
+			// The Cloud line's outbound spool (limits N22): answers and
+			// snapshots sealed for the relay and not yet answered by it,
+			// tombstones of answered ones included until they are collected,
+			// because that is what a reservation is measured against. At the
+			// limit a new answer is refused and nothing already queued is let
+			// go — a queued row is somebody's answer — and the refusal is
+			// counted here rather than only logged. So are the rows the spool
+			// burns: an older snapshot replaced by a newer one (coalesced), a
+			// row too old to send (dropped), and a row written and never
+			// answered within its window, whose delivery is unknown (in the
+			// note: unknown is neither sent nor dropped).
+			Name: CloudSpool, Class: Buffer, Unit: Rows,
+			Limit: 2_000, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Log},
+			EvictedBy: Daemon,
+		},
+		{
+			// The same spool's bytes, its second bound: whichever of the two
+			// a new answer would cross refuses it.
+			Name: CloudSpoolBytes, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Log},
+			EvictedBy: Daemon,
 		},
 	}
 }
