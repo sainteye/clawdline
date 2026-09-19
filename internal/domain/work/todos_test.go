@@ -220,46 +220,67 @@ func TestAClosingFactOutranksAHandoff(t *testing.T) {
 
 func TestEscalationIsOnlyReported(t *testing.T) {
 	todo := openTodo(t)
+	todo.WorkID = "0f0f0f0f-0000-4000-8000-000000000001"
 	f := facts(nil)
-	got := Escalation(todo, f, todoT0.Add(time.Hour))
+	got := Escalation(todo, f, false, todoT0.Add(time.Hour))
 	if len(got) != 1 || got[0] != SignalCrossSession {
-		t.Fatalf("an unbound dispatch carries %v, want cross_session", got)
+		t.Fatalf("a dispatch on a line nobody follows carries %v, want cross_session", got)
 	}
-	// Bound to a work item: it is tracked already, nothing to ask.
+	// Held by a work item: it is tracked already, nothing to ask. Being on a
+	// line is not being followed — every dispatch is on one.
 	bound := todo
-	bound.WorkID = "0f0f0f0f-0000-4000-8000-000000000001"
-	if got := Escalation(bound, f, todoT0.Add(time.Hour)); len(got) != 0 {
-		t.Fatalf("a bound to-do carries %v", got)
+	if got := Escalation(bound, f, true, todoT0.Add(time.Hour)); len(got) != 0 {
+		t.Fatalf("a held to-do carries %v", got)
 	}
 	// I2 only past the line.
-	if got := Escalation(bound, f, todoT0.Add(LongLived)); len(got) != 0 {
+	if got := Escalation(bound, f, true, todoT0.Add(LongLived)); len(got) != 0 {
 		t.Fatalf("at exactly the line: %v", got)
 	}
-	if got := Escalation(bound, f, todoT0.Add(LongLived+time.Second)); len(got) != 1 || got[0] != SignalLongLived {
+	if got := Escalation(bound, f, true, todoT0.Add(LongLived+time.Second)); len(got) != 1 || got[0] != SignalLongLived {
 		t.Fatalf("past the line: %v", got)
 	}
 	// A second failed attempt, and its control: the first.
 	failed := facts(func(f *TaskFacts) { f.State, f.Ended, f.Landing, f.Attempt = "spawn_failed", true, "pending", 1 })
-	if got := Escalation(bound, failed, todoT0.Add(time.Hour)); len(got) != 1 || got[0] != SignalRepeatedFailure {
+	if got := Escalation(bound, failed, true, todoT0.Add(time.Hour)); len(got) != 1 || got[0] != SignalRepeatedFailure {
 		t.Fatalf("a respawn that failed too carries %v", got)
 	}
 	first := failed
 	first.Attempt = 0
-	if got := Escalation(bound, first, todoT0.Add(time.Hour)); len(got) != 0 {
+	if got := Escalation(bound, first, true, todoT0.Add(time.Hour)); len(got) != 0 {
 		t.Fatalf("a first failure carries %v", got)
 	}
 	// Never for a step of other work, and never for a to-do that is over.
 	for _, kind := range []string{"review", "code-review", "test_fix", "correction", "question", "clarification"} {
-		if got := Escalation(todo, facts(func(f *TaskFacts) { f.Kind = kind }), todoT0.Add(48*time.Hour)); len(got) != 0 {
+		if got := Escalation(todo, facts(func(f *TaskFacts) { f.Kind = kind }), false, todoT0.Add(48*time.Hour)); len(got) != 0 {
 			t.Fatalf("kind %q carries %v", kind, got)
 		}
 	}
-	if got := Escalation(todo, facts(func(f *TaskFacts) { f.Kind = "reviewer-onboarding" }), todoT0.Add(time.Hour)); len(got) == 0 {
+	if got := Escalation(todo, facts(func(f *TaskFacts) { f.Kind = "reviewer-onboarding" }), false, todoT0.Add(time.Hour)); len(got) == 0 {
 		t.Fatal("a kind that only contains a step's letters was read as a step")
 	}
 	done, _ := Follow(todo, facts(func(f *TaskFacts) { f.State, f.Ended = "success", true }), todoT0.Add(time.Minute))
-	if got := Escalation(done, f, todoT0.Add(48*time.Hour)); len(got) != 0 {
+	if got := Escalation(done, f, false, todoT0.Add(48*time.Hour)); len(got) != 0 {
 		t.Fatalf("a closed to-do carries %v", got)
+	}
+}
+
+// A to-do is on the line its task is on: bound when the task is, never moved
+// off it by a fact that names none, and the binding is not a state change.
+func TestAToDoFollowsItsTasksLine(t *testing.T) {
+	todo := openTodo(t)
+	line := "0f0f0f0f-0000-4000-8000-000000000002"
+	if _, moved := Bound(todo, facts(nil), todoT0.Add(time.Minute)); moved {
+		t.Fatal("a task on no line moved its to-do")
+	}
+	next, moved := Bound(todo, facts(func(f *TaskFacts) { f.WorkID = line }), todoT0.Add(time.Minute))
+	if !moved || next.WorkID != line || next.State != todo.State || next.Reason != todo.Reason {
+		t.Fatalf("binding gave %+v", next)
+	}
+	if _, again := Bound(next, facts(func(f *TaskFacts) { f.WorkID = line }), todoT0.Add(time.Hour)); again {
+		t.Fatal("the same line bound twice")
+	}
+	if _, off := Bound(next, facts(nil), todoT0.Add(time.Hour)); off {
+		t.Fatal("a fact naming no line moved the to-do off its line")
 	}
 }
 

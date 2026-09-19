@@ -42,9 +42,11 @@ import (
 //   - the orchestrator credential is a session, and a session never puts
 //     anything on a person's board of its own accord (#1). It may relay what a
 //     person said to it (design-decisions U4): the request then names the run
-//     that carried the person's message, and the move records
-//     `user_via_session:<run>` with `principal: machine` beside it, so whose
-//     word it was and which credential carried it are both on the record.
+//     that carried the person's message — one this daemon issued when the
+//     person sent it (runs.go), and refused by name when it did not — and the
+//     move records `user_via_session:<run>` with `principal: machine` and the
+//     run's session and time beside it, so whose word it was, where it was
+//     said and which credential carried it are all on the record.
 
 // workScope is the receipt scope of these routes.
 const workScope = "work"
@@ -466,45 +468,35 @@ type workCommandWire struct {
 	Via             *workViaWire `json:"via"`
 }
 
-// workActor is who a write says it was, and which credential carried it.
-// ok false means the request was answered with a refusal.
-func workActor(w http.ResponseWriter, r *http.Request, via *workViaWire) (actor, principal string, ok bool) {
+// workActor is who a write says it was, and which credential carried it;
+// for a session's relay, the id of the run it named. ok false means the
+// request was answered with a refusal.
+//
+// The run itself is found and checked by relayRun inside the write, after
+// the request's receipt is claimed: a retry of a relay that was answered is
+// the stored answer, whatever has happened to the run since.
+func workActor(w http.ResponseWriter, r *http.Request, via *workViaWire) (actor, principal, relay string, ok bool) {
 	a := accessOf(r)
 	if a.machine {
-		if via == nil || !runID(via.Run) {
+		if via == nil || strings.TrimSpace(via.Run) == "" {
 			writeRefusal(w, http.StatusForbidden, "session_cannot_decide",
 				"A session does not put anything on a person's board, or change it, of its own accord (#1). "+
-					"To relay what a person said in the session, name the run that carried their message: {\"via\":{\"run\":\"…\"}}.")
-			return "", "", false
+					"To relay what a person said in the session, name the run that carried their message: {\"via\":{\"run\":\"…\"}}; "+
+					"read it with GET /v1/orchestrator/sessions/<conversation id>/run.")
+			return "", "", "", false
 		}
-		return "user_via_session:" + via.Run, "machine", true
+		relay = strings.TrimSpace(via.Run)
+		return work.ActorViaSession + relay, "machine", relay, true
 	}
 	if via != nil {
 		writeRefusal(w, http.StatusBadRequest, "via_is_for_sessions", "via is how a session relays a person's words; a person writes as themselves.")
-		return "", "", false
+		return "", "", "", false
 	}
 	if !a.verdict.Allowed {
 		writeRefusal(w, http.StatusForbidden, "forbidden", "This needs a paired device.")
-		return "", "", false
+		return "", "", "", false
 	}
-	if a.verdict.Local {
-		return "user", "local", true
-	}
-	return "user", "device:" + a.verdict.Device, true
-}
-
-// runID is a run id as a session names it: a short token of letters,
-// digits, dots, dashes and underscores.
-func runID(s string) bool {
-	if s == "" || len(s) > 128 {
-		return false
-	}
-	for _, c := range s {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.' || c == ':') {
-			return false
-		}
-	}
-	return true
+	return "user", personPrincipal(r), "", true
 }
 
 // readWorkBody reads one command body, refusing an unknown field by name: a
@@ -642,7 +634,7 @@ func (s *Server) workCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	actor, principal, ok := workActor(w, r, body.Via)
+	actor, principal, relay, ok := workActor(w, r, body.Via)
 	if !ok {
 		return
 	}
@@ -651,9 +643,13 @@ func (s *Server) workCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.workWrite(w, r, k, raw, http.StatusCreated, func(file app.Filer) (app.WorkView, error) {
+		run, err := s.relayRun(r.Context(), relay)
+		if err != nil {
+			return app.WorkView{}, err
+		}
 		return s.work().Create(r.Context(), app.NewWork{Title: body.Title, Project: body.Project,
 			Acceptance: body.Acceptance, Place: work.Place(body.Place), Owner: body.Owner, StartOn: body.StartOn,
-			Rank: body.Rank, Actor: actor, Principal: principal}, file)
+			Rank: body.Rank, Actor: actor, Principal: principal, Via: run}, file)
 	})
 }
 
@@ -669,7 +665,7 @@ func (s *Server) workCommand(w http.ResponseWriter, r *http.Request, id string) 
 		writeRefusal(w, refused.Status, refused.Code, refused.Message)
 		return
 	}
-	actor, principal, ok := workActor(w, r, body.Via)
+	actor, principal, relay, ok := workActor(w, r, body.Via)
 	if !ok {
 		return
 	}
@@ -678,8 +674,12 @@ func (s *Server) workCommand(w http.ResponseWriter, r *http.Request, id string) 
 		return
 	}
 	s.workWrite(w, r, k, raw, http.StatusOK, func(file app.Filer) (app.WorkView, error) {
+		run, err := s.relayRun(r.Context(), relay)
+		if err != nil {
+			return app.WorkView{}, err
+		}
 		return s.work().Command(r.Context(), id, app.WorkCommand{
 			Command:   work.Command{Op: op, Actor: actor, Owner: body.Owner, StartOn: body.StartOn, Rank: body.Rank},
-			Principal: principal, ExpectedVersion: body.ExpectedVersion}, file)
+			Principal: principal, Via: run, ExpectedVersion: body.ExpectedVersion}, file)
 	})
 }

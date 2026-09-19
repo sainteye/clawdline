@@ -66,6 +66,11 @@ func (s *Server) participation() *app.Participation {
 		d, err := s.PushSend(ctx, title, body, "", tag, "")
 		return d.Sent, d.Failed, err
 	}
+	// A proposal or an answer about a task puts it on the line it names, in
+	// the broker's own transaction (orchestrator.BindWork).
+	if s.broker != nil {
+		p.Bind = s.broker.BindWork
+	}
 	got, _ := participationByServer.LoadOrStore(s, p)
 	return got.(*app.Participation)
 }
@@ -164,7 +169,8 @@ func proposalOf(p work.Proposal) proposalWire {
 const (
 	askInstructions = "Ask the person at the end of this turn, in the words of `question`, without waiting for the answer. " +
 		"Then POST /v1/orchestrator/proposals/{id}/asked. Relay their answer to POST /v1/work/proposals/{id} " +
-		"with {\"answer\":\"track\"|\"later\"|\"no\",\"via\":{\"run\":\"<the run that carried it>\"}}."
+		"with {\"answer\":\"track\"|\"later\"|\"no\",\"via\":{\"run\":\"<the run that carried it>\"}}, " +
+		"the run read from GET /v1/orchestrator/sessions/<your conversation id>/run after their reply arrives."
 	holdInstructions = "Do not ask about this in the conversation. It is in the person's \"to confirm\" area and their daily digest; " +
 		"if nobody answers by expires_at it stays with its to-dos."
 )
@@ -552,7 +558,7 @@ func (s *Server) workProposalsRoute(w http.ResponseWriter, r *http.Request) {
 			writeRefusal(w, refused.Status, refused.Code, refused.Message)
 			return
 		}
-		actor, principal, ok := workActor(w, r, body.Via)
+		actor, principal, relay, ok := workActor(w, r, body.Via)
 		if !ok {
 			return
 		}
@@ -562,7 +568,11 @@ func (s *Server) workProposalsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		k.Scope = participationScope
 		s.participationWrite(w, r, k, raw, func(file func(any) (store.ReceiptKey, store.ReceiptAnswer, bool)) error {
-			_, err := s.participation().Answer(r.Context(), id, answer, actor, principal,
+			run, err := s.relayRun(r.Context(), relay)
+			if err != nil {
+				return err
+			}
+			_, err = s.participation().Answer(r.Context(), id, answer, actor, principal, run,
 				func(v app.ProposalView) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 					return file(proposalAnswerOf(v, false))
 				})
@@ -621,7 +631,7 @@ func (s *Server) workDecisionsRoute(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		actor, principal, ok := workActor(w, r, body.Via)
+		actor, principal, relay, ok := workActor(w, r, body.Via)
 		if !ok {
 			return
 		}
@@ -632,7 +642,11 @@ func (s *Server) workDecisionsRoute(w http.ResponseWriter, r *http.Request) {
 		k.Scope = participationScope
 		option := strings.TrimSpace(body.Answer)
 		s.participationWrite(w, r, k, raw, func(file func(any) (store.ReceiptKey, store.ReceiptAnswer, bool)) error {
-			_, err := s.participation().AnswerDecision(r.Context(), id, option, actor, principal,
+			run, err := s.relayRun(r.Context(), relay)
+			if err != nil {
+				return err
+			}
+			_, err = s.participation().AnswerDecision(r.Context(), id, option, actor, principal, run,
 				func(d work.Decision) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 					return file(decisionOneWire{OK: true, Decision: decisionOf(d)})
 				})

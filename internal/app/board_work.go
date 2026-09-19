@@ -332,6 +332,9 @@ type WorkCommand struct {
 	// Principal is the credential that carried it (local, device:<id>,
 	// machine), recorded beside the actor in the move's evidence.
 	Principal string
+	// Via is the run a session relayed the person's words under, already
+	// checked (runs.go); nil when a person wrote as themselves.
+	Via *work.Run
 	// ExpectedVersion, when set, is the version the person decided from: a
 	// different one refuses the command rather than applying it to an item
 	// they have not seen.
@@ -345,7 +348,7 @@ type Filer func(WorkView) (store.ReceiptKey, store.ReceiptAnswer, bool)
 // Command carries out a person's command on one item, or refuses it and
 // writes nothing.
 func (w *WorkBoard) Command(ctx context.Context, id string, cmd WorkCommand, file Filer) (WorkView, error) {
-	if err := checkActor(cmd.Actor); err != nil {
+	if err := checkRelay(cmd.Actor, cmd.Via); err != nil {
 		return WorkView{}, err
 	}
 	if n := utf8.RuneCountInString(cmd.Owner); n > workOwnerLimit {
@@ -380,6 +383,9 @@ func (w *WorkBoard) Command(ctx context.Context, id string, cmd WorkCommand, fil
 		if cmd.Principal != "" {
 			c.Evidence["principal"] = cmd.Principal
 		}
+		if cmd.Via != nil {
+			c.Evidence["run"] = cmd.Via.Evidence()
+		}
 		next := c.Apply(it, now)
 		if err := tx.Put(it, next, store.MoveOf(id, c, now)); err != nil {
 			return err
@@ -403,6 +409,21 @@ func checkActor(actor string) error {
 	return nil
 }
 
+// checkRelay is checkActor for a write that may be relayed: an actor that
+// says a session carried a person's words is that run's, and comes with the
+// run it was checked under (runs.go) — never a name alone.
+func checkRelay(actor string, via *work.Run) error {
+	if err := checkActor(actor); err != nil {
+		return err
+	}
+	relayed := strings.HasPrefix(actor, work.ActorViaSession)
+	if relayed != (via != nil) || (via != nil && via.Actor() != actor) {
+		return workRefusal(400, "invalid_actor",
+			"A relayed actor is user_via_session:<run>, with the run it was checked under, and nothing else is.")
+	}
+	return nil
+}
+
 // NewWork is a person's new item.
 type NewWork struct {
 	Title      string
@@ -417,14 +438,17 @@ type NewWork struct {
 	Actor   string
 	// Principal is the credential that carried it.
 	Principal string
+	// Via is the run a session relayed the person's words under, already
+	// checked (runs.go); nil when a person wrote as themselves.
+	Via *work.Run
 }
 
 // Create makes a new item where the person put it, with its first move.
 func (w *WorkBoard) Create(ctx context.Context, n NewWork, file Filer) (WorkView, error) {
 	n.Title, n.Project, n.Acceptance = strings.TrimSpace(n.Title), strings.TrimSpace(n.Project), strings.TrimSpace(n.Acceptance)
 	switch {
-	case checkActor(n.Actor) != nil:
-		return WorkView{}, checkActor(n.Actor)
+	case checkRelay(n.Actor, n.Via) != nil:
+		return WorkView{}, checkRelay(n.Actor, n.Via)
 	case n.Title == "" || utf8.RuneCountInString(n.Title) > workTitleLimit:
 		return WorkView{}, workRefusal(400, "invalid_title", "title is 1 to "+strconv.Itoa(workTitleLimit)+" characters.")
 	case n.Project == "" || utf8.RuneCountInString(n.Project) > workProjectLimit:
@@ -447,6 +471,9 @@ func (w *WorkBoard) Create(ctx context.Context, n NewWork, file Filer) (WorkView
 		Evidence: map[string]any{"op": "create"}}
 	if n.Principal != "" {
 		c.Evidence["principal"] = n.Principal
+	}
+	if n.Via != nil {
+		c.Evidence["run"] = n.Via.Evidence()
 	}
 	switch n.Place {
 	case work.PlaceBoard:

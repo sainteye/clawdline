@@ -151,7 +151,7 @@ func TestADuplicateProposalIsRefused(t *testing.T) {
 	if _, err := propose(p, line, ""); codeOf(err) != work.RefuseDuplicate {
 		t.Fatalf("a second while the first waits: %v", err)
 	}
-	if _, err := p.Answer(ctx, first.Proposal.ID, work.AnswerNo, "user", "local", nil); err != nil {
+	if _, err := p.Answer(ctx, first.Proposal.ID, work.AnswerNo, "user", "local", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := propose(p, line, ""); codeOf(err) != work.RefuseDuplicate {
@@ -162,7 +162,7 @@ func TestADuplicateProposalIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a new signal after a no: %v", err)
 	}
-	if _, err := p.Answer(ctx, again.Proposal.ID, work.AnswerNo, "user", "local", nil); err != nil {
+	if _, err := p.Answer(ctx, again.Proposal.ID, work.AnswerNo, "user", "local", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	clock.at = clock.at.Add(48 * time.Hour)
@@ -195,7 +195,7 @@ func TestATrackedLineIsNotProposed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("control: %v", err)
 	}
-	if _, err := p.Answer(ctx, v.Proposal.ID, work.AnswerTrack, "user", "local", nil); err != nil {
+	if _, err := p.Answer(ctx, v.Proposal.ID, work.AnswerTrack, "user", "local", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := propose(p, line, "", "deploy"); codeOf(err) != work.RefuseAlreadyTracked {
@@ -299,10 +299,11 @@ func TestTheSignalsAreReadFromFacts(t *testing.T) {
 	}
 }
 
-// The rules propose a named line nobody proposed — once, into the "to
-// confirm" area, even with the person there — and leave alone a dispatch
-// that named no line, and a named line with nothing to say.
-func TestTheRulesProposeANamedLineOnce(t *testing.T) {
+// The rules propose a line nobody proposed — once, into the "to confirm"
+// area, even with the person there — but only after its root has had the
+// grace to propose it itself; and they leave alone a to-do on no line (a
+// task stored before lines were bound) and a line with nothing to say.
+func TestTheRulesProposeALineOnceAfterItsRootsGrace(t *testing.T) {
 	p, _, st, clock := newParticipation(t)
 	ctx := context.Background()
 	p.Heard.Mark(clock.at, theRoot)
@@ -313,6 +314,12 @@ func TestTheRulesProposeANamedLineOnce(t *testing.T) {
 	owes(t, st, taskID(2), "", theRoot, clock.at)
 	sent(t, st, taskID(3), steps, "code-review", theRoot, clock.at)
 	owes(t, st, taskID(3), steps, theRoot, clock.at)
+	// Inside the grace the line is its root's to propose.
+	clock.at = clock.at.Add(p.Proposals.RuleAfter - time.Second)
+	if n, err := p.RuleProposals(ctx); err != nil || n != 0 {
+		t.Fatalf("inside the grace the rules made %d: %v", n, err)
+	}
+	clock.at = clock.at.Add(time.Second)
 	if n, err := p.RuleProposals(ctx); err != nil || n != 1 {
 		t.Fatalf("the rules made %d: %v", n, err)
 	}
@@ -330,6 +337,92 @@ func TestTheRulesProposeANamedLineOnce(t *testing.T) {
 	}
 	if c, _ := p.Counts(ctx); c.AskTrue != 0 || c.AskFalse != 1 || !c.Matched {
 		t.Fatalf("counts: %+v", c)
+	}
+}
+
+// A proposal about a task stored on no line puts the task on the line it
+// names — the task's own, by the rules a dispatch is bound by — so the item a
+// "track" makes follows that task, and the task's landing closes it.
+func TestAProposalAboutAnUnboundTaskBindsIt(t *testing.T) {
+	p, w, st, clock := newParticipation(t)
+	ctx := context.Background()
+	task := sent(t, st, taskID(1), "", "custom", theRoot, clock.at)
+	bound := []string{}
+	p.Bind = func(_ context.Context, id, line, from string) error {
+		bound = append(bound, id+" "+line+" "+from)
+		r := task
+		r.WorkID, r.WorkFrom = line, from
+		putTask(t, st, r)
+		task = r
+		return nil
+	}
+	v, err := propose(p, "", task.ID)
+	if err != nil || v.Proposal.WorkID != task.ID {
+		t.Fatalf("propose: %+v %v", v.Proposal, err)
+	}
+	if len(bound) != 1 || bound[0] != task.ID+" "+task.ID+" "+work.WorkDispatch {
+		t.Fatalf("bindings: %v", bound)
+	}
+	answered, err := p.Answer(ctx, v.Proposal.ID, work.AnswerTrack, "user", "local", nil, nil)
+	if err != nil || answered.Item == nil {
+		t.Fatalf("track: %+v %v", answered, err)
+	}
+	if answered.Item.Derived.Tasks.Total != 1 || answered.Item.Derived.Reason != work.ReasonTaskRunning {
+		t.Fatalf("the item does not follow the task: %+v", answered.Item.Derived)
+	}
+	task.State, task.FinishedAt = orchestrator.StateSuccess, clock.at
+	task.Landing = &orchestrator.Landing{State: orchestrator.LandingLanded, Target: "main", At: clock.at, Commit: "abc"}
+	putTask(t, st, task)
+	clock.at = clock.at.Add(time.Minute)
+	if pass := w.Sweep(ctx); pass.Moved != 1 || pass.Err != "" {
+		t.Fatalf("the landing pass: %+v", pass)
+	}
+	if item, _ := w.Item(ctx, task.ID); item.Item.State != work.ItemDone || item.Item.ClosedReason != work.ClosedLanded {
+		t.Fatalf("after the landing: %+v", item.Item)
+	}
+	// Control: a task on another line is not moved to the one a proposal names.
+	other := sent(t, st, taskID(2), newWorkID(), "custom", theRoot, clock.at)
+	if _, err := propose(p, newWorkID(), other.ID); codeOf(err) != "work_id_mismatch" {
+		t.Fatalf("a task on another line: %v", err)
+	}
+}
+
+// A relayed answer rests on a run said to the proposal's own root: a message
+// to another session answers nothing here, and the move records whose word
+// it was, where and when.
+func TestARelayedAnswerIsTheRootsPersonsWord(t *testing.T) {
+	p, _, st, clock := newParticipation(t)
+	ctx := context.Background()
+	line := newWorkID()
+	sent(t, st, taskID(1), line, "custom", theRoot, clock.at)
+	v, err := propose(p, line, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := &work.Run{ID: newWorkID(), Session: "another-conv", Terminal: "%9", Principal: "local", At: clock.at}
+	if _, err := p.Answer(ctx, v.Proposal.ID, work.AnswerTrack, elsewhere.Actor(), "machine", elsewhere, nil); codeOf(err) != "run_other_session" {
+		t.Fatalf("a message to another session: %v", err)
+	}
+	if n := pendingCount(t, p); n != 1 {
+		t.Fatalf("a refused relay answered the proposal (%d pending)", n)
+	}
+	earlier := &work.Run{ID: newWorkID(), Session: theRoot, Terminal: "%1", Principal: "local", At: clock.at.Add(-time.Hour)}
+	if _, err := p.Answer(ctx, v.Proposal.ID, work.AnswerTrack, earlier.Actor(), "machine", earlier, nil); codeOf(err) != "run_before_question" {
+		t.Fatalf("a message from before the proposal: %v", err)
+	}
+	here := &work.Run{ID: newWorkID(), Session: theRoot, Terminal: "%1", Principal: "device:phone", At: clock.at}
+	answered, err := p.Answer(ctx, v.Proposal.ID, work.AnswerTrack, here.Actor(), "machine", here, nil)
+	if err != nil || answered.Item == nil {
+		t.Fatalf("the root's own run: %+v %v", answered, err)
+	}
+	m := moves(t, st, line)
+	var ev map[string]any
+	if len(m) != 1 || m[0].Actor != "user_via_session:"+here.ID || json.Unmarshal(m[0].Evidence, &ev) != nil {
+		t.Fatalf("the move: %+v", m)
+	}
+	run, _ := ev["run"].(map[string]any)
+	if run["session"] != theRoot || run["id"] != here.ID || run["principal"] != "device:phone" {
+		t.Fatalf("the move's run: %v", ev)
 	}
 }
 
@@ -414,7 +507,11 @@ func TestAProposalADecisionAndTheMovesEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	clock.at = clock.at.Add(time.Minute)
-	answered, err := p.Answer(ctx, v.Proposal.ID, work.AnswerTrack, "user_via_session:run-7", "machine", nil)
+	said := &work.Run{ID: newWorkID(), Session: theRoot, Terminal: "%1", Principal: "local", At: clock.at}
+	if _, err := p.Answer(ctx, v.Proposal.ID, work.AnswerTrack, said.Actor(), "machine", nil, nil); codeOf(err) != "invalid_actor" {
+		t.Fatalf("a relayed actor with no run behind it: %v", err)
+	}
+	answered, err := p.Answer(ctx, v.Proposal.ID, work.AnswerTrack, said.Actor(), "machine", said, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,11 +521,11 @@ func TestAProposalADecisionAndTheMovesEndToEnd(t *testing.T) {
 	}
 	m := moves(t, st, line)
 	if len(m) != 1 || m[0].From != work.PlaceProposal || m[0].To != work.PlaceBoard || m[0].Trigger != "proposal_track" ||
-		m[0].Actor != "user_via_session:run-7" {
+		m[0].Actor != said.Actor() {
 		t.Fatalf("the answer's move: %+v", m)
 	}
 	// The answer is recorded once; a second is refused.
-	if _, err := p.Answer(ctx, v.Proposal.ID, work.AnswerNo, "user", "local", nil); codeOf(err) != "proposal_answered" {
+	if _, err := p.Answer(ctx, v.Proposal.ID, work.AnswerNo, "user", "local", nil, nil); codeOf(err) != "proposal_answered" {
 		t.Fatalf("a second answer: %v", err)
 	}
 
@@ -453,10 +550,10 @@ func TestAProposalADecisionAndTheMovesEndToEnd(t *testing.T) {
 		t.Fatalf("the quiet one: %+v", d)
 	}
 	clock.at = clock.at.Add(time.Hour)
-	if _, err := p.AnswerDecision(ctx, blocking.ID, "c", "user", "local", nil); codeOf(err) != "invalid_answer" {
+	if _, err := p.AnswerDecision(ctx, blocking.ID, "c", "user", "local", nil, nil); codeOf(err) != "invalid_answer" {
 		t.Fatalf("an answer that is not an option: %v", err)
 	}
-	if _, err := p.AnswerDecision(ctx, blocking.ID, "b", "user", "local", nil); err != nil {
+	if _, err := p.AnswerDecision(ctx, blocking.ID, "b", "user", "local", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	m = moves(t, st, line)
@@ -532,7 +629,7 @@ func TestUnansweredDefaultsStand(t *testing.T) {
 	if got.State != work.DecisionDefaulted || got.Answer != "no" || got.AnsweredBy != work.ActorRule {
 		t.Fatalf("after its due: %+v", got)
 	}
-	if _, err := p.AnswerDecision(ctx, d.ID, "yes", "user", "local", nil); codeOf(err) != "decision_closed" {
+	if _, err := p.AnswerDecision(ctx, d.ID, "yes", "user", "local", nil, nil); codeOf(err) != "decision_closed" {
 		t.Fatalf("a late answer: %v", err)
 	}
 	if m := moves(t, st, tracked.Item.ID); len(m) != 2 || m[1].Trigger != "decision_defaulted" || m[1].Actor != work.ActorRule {
@@ -550,7 +647,7 @@ func TestUnansweredDefaultsStand(t *testing.T) {
 		t.Fatalf("an unanswered proposal made a work item: %v", err)
 	}
 	// A late answer is still a person's answer.
-	late, err := p.Answer(ctx, v.Proposal.ID, work.AnswerLater, "user", "local", nil)
+	late, err := p.Answer(ctx, v.Proposal.ID, work.AnswerLater, "user", "local", nil, nil)
 	if err != nil || late.Item == nil || late.Item.Item.Place != work.PlaceBacklog {
 		t.Fatalf("a late answer: %+v %v", late, err)
 	}
@@ -589,7 +686,7 @@ func TestAnOpenDecisionHoldsTheQuietClock(t *testing.T) {
 	if v, _ := w.Item(ctx, item.Item.ID); v.Item.Place != work.PlaceBoard || !v.Derived.StallAt.IsZero() {
 		t.Fatalf("waiting on a person: %+v %+v", v.Item, v.Derived)
 	}
-	if _, err := p.AnswerDecision(ctx, d.ID, "r", "user", "local", nil); err != nil {
+	if _, err := p.AnswerDecision(ctx, d.ID, "r", "user", "local", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	clock.at = clock.at.Add(3*24*time.Hour + time.Minute)
@@ -759,7 +856,7 @@ func TestWhatWaitsForAPersonIsBounded(t *testing.T) {
 	if n := pendingCount(t, p); n != 1 {
 		t.Fatalf("pending %d at the limit", n)
 	}
-	if _, err := p.Answer(ctx, first.Proposal.ID, work.AnswerNo, "user", "local", nil); err != nil {
+	if _, err := p.Answer(ctx, first.Proposal.ID, work.AnswerNo, "user", "local", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := propose(p, lines[1], ""); err != nil {

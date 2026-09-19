@@ -109,8 +109,9 @@ type Todo struct {
 	Origin TodoOrigin `json:"origin"`
 	// Task is the broker task this to-do follows.
 	Task string `json:"task_id"`
-	// WorkID is the work item the dispatch named (D36), empty when it named
-	// none: then the work is only this session's.
+	// WorkID is the line of work its task is on (D36, lines.go): the one the
+	// dispatch named, or the one the broker bound it to. Empty only for a step
+	// of other work whose line nobody named.
 	WorkID  string `json:"work_id,omitempty"`
 	Title   string `json:"title"`
 	Project string `json:"project"`
@@ -272,6 +273,18 @@ func Tend(t Todo, owner Liveness, at time.Time) (Todo, *Transition) {
 	return t, nil
 }
 
+// Bound is a to-do on the line its task is on now. A task is bound to its
+// line once — at admission, or when the broker binds one stored before it
+// did — and the to-do says what the task says, as it says the task's landing:
+// never a copy of an older answer. The second answer is true when it moved.
+func Bound(t Todo, f TaskFacts, at time.Time) (Todo, bool) {
+	if f.WorkID == "" || t.WorkID == f.WorkID {
+		return t, false
+	}
+	t.WorkID, t.UpdatedAt = f.WorkID, at
+	return t, true
+}
+
 func moved(t Todo, to TodoState, why string, at time.Time) (Todo, *Transition) {
 	tr := &Transition{From: t.State, To: to, Reason: why}
 	t.State, t.Reason, t.UpdatedAt = to, why, at
@@ -306,13 +319,15 @@ var auxiliaryKinds = map[string]bool{"review": true, "test": true, "correction":
 var failedStates = map[string]bool{"failure": true, "timeout": true, "spawn_failed": true}
 
 // Escalation is every signal an owed to-do carries, in a fixed order. A to-do
-// that is over, or whose task is a step of other work, carries none.
-func Escalation(t Todo, f TaskFacts, at time.Time) []Signal {
+// that is over, or whose task is a step of other work, carries none. held
+// says a work item on the board or in the Backlog holds the to-do's line:
+// every dispatch is on a line (lines.go), so having one is not being followed.
+func Escalation(t Todo, f TaskFacts, held bool, at time.Time) []Signal {
 	out := []Signal{}
 	if !t.State.Outstanding() || auxiliary(f.Kind) {
 		return out
 	}
-	if t.Origin == OriginDispatch && t.WorkID == "" {
+	if t.Origin == OriginDispatch && !held {
 		out = append(out, SignalCrossSession)
 	}
 	if !t.CreatedAt.IsZero() && at.Sub(t.CreatedAt) > LongLived {

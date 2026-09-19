@@ -262,6 +262,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/inflight", s.brokerInflight)
 	mux.HandleFunc("/v1/orchestrator/messages", s.brokerMessages)
 	mux.HandleFunc("/v1/orchestrator/whoami", s.brokerWhoAmI)
+	// What a run was: the message a person sent a session, which a relay of
+	// their words names (runs.go).
+	mux.HandleFunc("/v1/orchestrator/runs/", s.runRoute)
 	// The address book a wait, a relay or a handoff names sessions from, and
 	// under a session: its delivery receipt, its to-dos and the retired
 	// workflow route (workflow.go).

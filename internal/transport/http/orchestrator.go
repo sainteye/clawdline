@@ -510,6 +510,11 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 		s.sessionTodos(w, r, decodeSegment(terminal))
 		return
 	}
+	// The run a session relays its person's newest message under (runs.go).
+	if action == "run" {
+		s.sessionRun(w, r, decodeSegment(terminal))
+		return
+	}
 	// The retired per-message workflow step (workflow.go).
 	if action == "workflow" && decodeSegment(terminal) != "" {
 		s.brokerSessionWorkflow(w, r)

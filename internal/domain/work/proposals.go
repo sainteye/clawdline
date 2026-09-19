@@ -284,13 +284,27 @@ type ProposalPolicy struct {
 	// conversation per session per turn (1), and per day on this machine (3).
 	TurnAsks int
 	DayAsks  int
-	Location *time.Location
+	// RuleAfter is how long a line of work is its root's to propose before
+	// the rules propose it themselves (30 minutes, the same as Present). The
+	// root may ask in the conversation while the person is there; a rule's
+	// proposal first would take that ask away (it would be a duplicate), and
+	// once Present has passed the root's own proposal would only have gone to
+	// the "to confirm" area too. Work that is over by then — landed, or owing
+	// nothing — is never proposed at all.
+	RuleAfter time.Duration
+	Location  *time.Location
 }
 
 // DefaultProposalPolicy is board-redesign §4.3, §4.4 and §10 #4.
 func DefaultProposalPolicy() ProposalPolicy {
 	return ProposalPolicy{Present: 30 * time.Minute, Expiry: 7 * 24 * time.Hour, TurnAsks: 1, DayAsks: 3,
-		Location: time.Local}
+		RuleAfter: 30 * time.Minute, Location: time.Local}
+}
+
+// RuleDue says the rules may propose a line whose first task was dispatched
+// at first: its root has had RuleAfter to propose it.
+func RuleDue(first time.Time, p ProposalPolicy, now time.Time) bool {
+	return !first.IsZero() && now.Sub(first) >= p.RuleAfter
 }
 
 func (p ProposalPolicy) loc() *time.Location {

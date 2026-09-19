@@ -7,9 +7,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/domain/auth"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
 // The board's routes: a person writes as themselves, a session only relays a
@@ -84,8 +88,17 @@ func TestTheBoardRoutesAnswerOnceAndOnlyToWhoMayWrite(t *testing.T) {
 	if rec := do(person, http.MethodPost, item, "x2", `{"op":"mark_landed"}`); rec.Code != 422 || code(rec) != "landing_is_broker_fact" {
 		t.Fatalf("mark_landed: %d %s", rec.Code, rec.Body)
 	}
-	// A session relays a person's words under the run that carried them.
-	rec = do(machine, http.MethodPost, item, "r1", `{"op":"start","owner":"root-conv","via":{"run":"run-42"}}`)
+	// A session relays a person's words only under a run this daemon issued
+	// when the person sent their message: an invented one is refused by name,
+	// as it was accepted before runs had an issuer, and nothing is written.
+	if rec := do(machine, http.MethodPost, item, "r0", `{"op":"start","owner":"root-conv","via":{"run":"run-42"}}`); rec.Code != 403 || code(rec) != "run_unknown" {
+		t.Fatalf("an invented run: %d %s", rec.Code, rec.Body)
+	}
+	run, err := s.runs().Issue(context.Background(), session.Session{ID: "%4", ConversationID: "root-conv"}, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = do(machine, http.MethodPost, item, "r1", `{"op":"start","owner":"root-conv","via":{"run":"`+run.ID+`"}}`)
 	if rec.Code != 200 {
 		t.Fatalf("relayed start: %d %s", rec.Code, rec.Body)
 	}
@@ -98,8 +111,9 @@ func TestTheBoardRoutesAnswerOnceAndOnlyToWhoMayWrite(t *testing.T) {
 		} `json:"moves"`
 	}
 	_ = json.Unmarshal(moves.Body.Bytes(), &list)
-	if len(list.Moves) != 2 || list.Moves[1].Actor != "user_via_session:run-42" || list.Moves[1].Trigger != "start" ||
-		!strings.Contains(string(list.Moves[1].Evidence), `"principal":"machine"`) {
+	if len(list.Moves) != 2 || list.Moves[1].Actor != "user_via_session:"+run.ID || list.Moves[1].Trigger != "start" ||
+		!strings.Contains(string(list.Moves[1].Evidence), `"principal":"machine"`) ||
+		!strings.Contains(string(list.Moves[1].Evidence), `"session":"root-conv"`) {
 		t.Fatalf("moves %s", moves.Body)
 	}
 	// A refused command gives its key back: the same key is decided afresh.
@@ -118,5 +132,45 @@ func TestTheBoardRoutesAnswerOnceAndOnlyToWhoMayWrite(t *testing.T) {
 	}
 	if rec := do(person, http.MethodGet, "/v1/work/items/not-an-id", "", ""); rec.Code != 404 {
 		t.Fatalf("a malformed id: %d", rec.Code)
+	}
+}
+
+// A relay's run is checked inside the write, after its receipt is claimed: a
+// retry of a relay that was answered is its stored answer even once the run
+// is too old to carry a new one, and a new request under that run is refused.
+func TestARelayReplaysAfterItsRunExpires(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &Server{store: st}
+	at := time.Now()
+	runsByServer.Store(s, &app.Runs{Store: st, Now: func() time.Time { return at }})
+	machine := access{machine: true}
+	do := func(key, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/v1/work/items", strings.NewReader(body))
+		req.Header.Set("Idempotency-Key", key)
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{}, machine))
+		rec := httptest.NewRecorder()
+		s.workRoute(rec, req)
+		return rec
+	}
+	run, err := s.runs().Issue(context.Background(), session.Session{ID: "%4", ConversationID: "root-conv"}, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"title":"ship it","project":"/p","place":"backlog","via":{"run":"` + run.ID + `"}}`
+	first := do("k1", body)
+	if first.Code != 201 {
+		t.Fatalf("relayed create: %d %s", first.Code, first.Body)
+	}
+	at = at.Add(work.RelayWindow + time.Minute)
+	again := do("k1", body)
+	if again.Code != 201 || again.Body.String() != first.Body.String() || again.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("the retry: %d %s", again.Code, again.Body)
+	}
+	if rec := do("k2", body); rec.Code != 403 || !strings.Contains(rec.Body.String(), `"run_expired"`) {
+		t.Fatalf("a new request under an old run: %d %s", rec.Code, rec.Body)
 	}
 }
