@@ -290,7 +290,13 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 - [ ] **A7 Clawdfather 可以在新 daemon 上註冊並被畫出來。**
       驗：`POST /v1/next/coordinator` 註冊後，`registered:true`，清單上出現皇冠，
       **而且此時 `swiftstore` 是關掉的**（否則證明不了來源）。
-- [ ] **A8 排程真的會在新 daemon 上發射。**（2026-09-18 在隔離的 7796 實測通過，證據在那次排程交付的 task artifacts，不在 repo 裡；
+- [x] **A8 排程真的會在新 daemon 上發射。**
+      **2026-09-19 在 7727 上過了**（`9756f3d`）：13:21:45 建一個當天 13:25 的一次性排程，
+      13:25:19 以 `how: timer` 發射（鐘每分鐘走一次，所以晚 19 秒），開出自己的 task，
+      child 在 13:25:39 寫完 `result.json`，run 記成 `success`，一次性排程的 `next_fire` 變成 null。
+      建立它的過程本身也驗到四道具名拒絕：orchestrator token 只能動一次性排程、
+      `place_id` 要是 `/v1/places` 列出來的、`close_tab` 只吃 `on_success|always|never`、
+      而且寫入要帶 `Idempotency-Key`。測試用的那筆已經刪掉。（2026-09-18 在隔離的 7796 實測通過，證據在那次排程交付的 task artifacts，不在 repo 裡；
       規則已換成舊版的「時刻＋補跑窗」，`every 1h` 不再存在，驗法改成「建一個一分鐘後的排程」。在 7727 上仍待重建後驗） 驗：建一個 `every 1h` 的排程，
       確認 `first_seen` 規則生效（**第一次在一小時後**，不是立刻），
       到期時真的開了分頁，`/v1/diagnostics` 的 `due` 與 `fired` 對得起來。
