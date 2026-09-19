@@ -161,7 +161,7 @@ func kindOfHTTPStatus(status string, auth FailureKind) FailureKind {
 
 // kindByCode is every word FailureCode can answer that has a fixed kind, plus
 // the control plane's own codes on the routes this machine calls
-// (`clawdline-cloud/api/src`: routes/auth.ts, routes/tokens.ts, routes/guards.ts,
+// (the Cloud service's auth, token and guard routes,
 // services/devices.ts). Two words are deliberately absent: `token_rotation`
 // and `switched_off` are events, not failures, and answer "".
 var kindByCode = map[string]FailureKind{

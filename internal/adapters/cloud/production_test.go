@@ -12,9 +12,8 @@ package cloud
 // back to the person as a named failure with a remedy.
 //
 // The two servers here answer in the production shapes, copied from the
-// source that is deployed (`~/code/clawdline-cloud/api/src/routes/*.ts`, the
-// error handler in `server.ts`, `relay/src/errors.ts`,
-// `relay/src/lib/entitlements.ts`), under a certificate for the production
+// source that is deployed (the Cloud service's own routes, its error handler and its
+// entitlement rules), under a certificate for the production
 // hostnames issued by a CA that only this test trusts.
 //
 // **No byte leaves this machine.** Both clients dial through
@@ -236,7 +235,7 @@ func apiRefusal(w http.ResponseWriter, status int, code, message string) {
 }
 
 // serveAPI answers the three routes a machine calls, in the shapes
-// `clawdline-cloud/api/src/routes/auth.ts` and `routes/tokens.ts` answer.
+// the Cloud service's auth and token routes answer.
 func (fp *fakeProduction) serveAPI(w http.ResponseWriter, r *http.Request) {
 	fp.mu.Lock()
 	fp.apiHosts = append(fp.apiHosts, r.Host)

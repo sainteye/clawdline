@@ -267,7 +267,7 @@ func (c *AccountClient) post(ctx context.Context, path, bearer string, body any,
 }
 
 // APIError is the control plane's refusal, `{"error":{"code","message"}}`
-// (`clawdline-cloud/api/src/server.ts`'s error handler). The code is kept
+// (the Cloud service's own error handler). The code is kept
 // because it is the only part that says *which* refusal this was: a 409 is
 // `machine_limit_reached` on one route and `already_decided` on another, and
 // the person needs to know which.
