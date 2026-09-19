@@ -34,6 +34,12 @@ final class ConsoleWindow: NSWindow {
     /// under here would ever claim them. See Browser.swift.
     var onBack: (() -> Void)?
     var onForward: (() -> Void)?
+    /// ⌘+ ⌘- ⌘0 (1, -1, 0) and ⇧⌘O — the 顯示方式 menu's keys. Answered here
+    /// rather than left to the menu so that "+" pressed without shift, which
+    /// arrives as "=", zooms as well, and so that a key pressed at a limit
+    /// always beeps rather than depending on what a greyed item does with it.
+    var onZoom: ((Int) -> Void)?
+    var onOpenOutside: (() -> Void)?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if super.performKeyEquivalent(with: event) { return true }
@@ -57,10 +63,29 @@ final class ConsoleWindow: NSWindow {
             case "]":
                 onForward?()
                 return true
+            case "=", "+":
+                onZoom?(1)
+                return true
+            case "-":
+                onZoom?(-1)
+                return true
+            case "0":
+                onZoom?(0)
+                return true
             default: break
             }
-        } else if flags == shifted, key == "z" {
-            action = Selector(("redo:"))
+        } else if flags == shifted {
+            switch key {
+            case "z": action = Selector(("redo:"))
+            // Where "+" is the shifted "=", as on a US keyboard.
+            case "+":
+                onZoom?(1)
+                return true
+            case "o":
+                onOpenOutside?()
+                return true
+            default: break
+            }
         }
         guard let action else { return false }
         return NSApp.sendAction(action, to: nil, from: self)
@@ -364,6 +389,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         window.onReload = { [weak self] in self?.reloadActive() }
         window.onBack = { [weak self] in self?.browserBack() }
         window.onForward = { [weak self] in self?.browserForward() }
+        window.onZoom = { [weak self] step in self?.zoomActive(by: step) }
+        window.onOpenOutside = { [weak self] in self?.browserOpenOutside() }
         window.center()
     }
 
@@ -546,7 +573,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
     // MARK: - Main menu
 
-    /// The App, Window and Help menus, as the Swift app has them.
+    /// The App, Window and Help menus, as the Swift app has them, and 顯示方式
+    /// between the first two, which the Swift app has no need of: it is the
+    /// browser's menu (Browser.swift).
     private func installMainMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem(title: L.t.menuApplication, action: nil, keyEquivalent: "")
@@ -593,6 +622,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
                                    action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appItem.submenu = appMenu
         main.addItem(appItem)
+        main.addItem(browserMenuItem())
 
         let windowItem = NSMenuItem(title: L.t.menuWindow, action: nil, keyEquivalent: "")
         let windowMenu = NSMenu(title: L.t.menuWindow)
