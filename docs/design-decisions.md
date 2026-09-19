@@ -1,3 +1,5 @@
+> **看板項目、Session 待辦、Backlog、GitHub Issue 整套怎麼運作、哪些已經做到，一份講完在 [`docs/work-system.md`](work-system.md)；實作決定仍以本文為準。**
+
 # 設計決定：唯一的實作依據
 
 > **從 2026-09-18 起，實作只照這一份。** `docs/broker-design.md`、`docs/broker-design-challenge.md`、`docs/board-design.md`、
