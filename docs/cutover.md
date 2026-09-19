@@ -249,27 +249,43 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 
 ### A. broker（不過這一組就不能關舊 app）
 
-- [ ] **A1 一輪派工可以全程走完新 daemon。**
+- [x] **A1 一輪派工可以全程走完新 daemon。**
       驗：用新 daemon 派一個真的 child（`POST :7727/v1/orchestrator/tasks`，帶 orchestrator token），
       child 收到有 CHILD.md 的簡報、寫 `result.json`，**在沒有人手動呼叫 settle 的情況下**
       task 在 5 分鐘內變成 `success`。
-      **2026-09-19 第一次真的試了，沒過，而且這就是目前唯一擋住切換的東西。**
+      **2026-09-19 過了**（在 `9756f3d` 的 7727 上）：派出到 `success` 共 58 秒，沒有人手動 settle；
+      child 回報的 `git log` 就是那顆 commit，`TMUX` 是空的（launcher 有清掉），而且它抄回了簡報裡的家規原文——
+      所以 **A11 也在同一次過了**。
+      同一次量到的其他幾條：A2 `timeout_minutes: 1` 而且不寫 result 的 task 自己變成 `timeout`；
+      A5 帶一顆不存在的 commit 去 landing 回 `unverified_landing` / `commit_unresolved`；
+      A6 用舊的 generation 派工回 `stale_inventory`，而且錯誤 body 裡附著當下整份 inventory；
+      A4 的反例（錯的 secret 打 `/progress`）回 403。
+      **同一天第一次試的時候沒過**，值得留著：
       分頁有開、`claude` 有起來、`CHILD.md` 有寫進 task 目錄，但**沒有任何東西被打進去**：
       iTerm 開分頁回傳的是 session GUID，而這個 daemon 的清單把 iTerm 分頁列成 `ttysNNN`，
       `brief()` 拿 GUID 去對永遠對不上，90 秒後放棄。task 停在 `spawning` 直到自己的
       12 分鐘 `timeout_minutes` 到，才結成 `timeout`；`spawnError` 全程是 `null`，
-      也就是「沒被 brief」這個已知的事實沒有被保存。兩件事都在修（見 `docs/switch-blockers.md`）。
+      也就是「沒被 brief」這個已知的事實沒有被保存。**真因比這個猜測更深**：這台 Mac 有一個
+      `tabs()` 回 null 的 iTerm2 視窗，讓清單／打字／按鍵／擷取／reveal 五支 JXA 全部丟 TypeError，
+      iterm 來源每次失敗才退成讀 `ps` 的 tty；而且送字的腳本呼叫了字典裡沒有的方法、不送 Enter、
+      也不讀它拿到的 `sent:false`。兩個缺陷都修好了（`9756f3d`，見 `docs/switch-blockers.md`）。
       順帶量到的兩件事：新 daemon 的 task 目錄是它自己的（inventory 的 `task_root` 會說在哪），
       而且它**沒有 `cancel` 這個動作**，所以那件卡住的 task 收不掉，只能等鐘。
-- [ ] **A2 逾時會自己發生。** 驗：派一個 `timeout_minutes: 1` 而且不寫 result 的 task，
+- [x] **A2 逾時會自己發生。** 驗：派一個 `timeout_minutes: 1` 而且不寫 result 的 task，
       確認它自己變成 `timeout` 並關掉分頁。
 - [ ] **A3 claims 仲裁會擋。** 驗：兩筆 claims 重疊的派工，第二筆回 `409 workspace_busy`，
       而且**在開任何東西之前**（`plan.md` §3.2 已經量過一次，換到真 daemon 再量一次）。
+      **這條的驗法本身錯過一次（2026-09-19），修正如下**：擋的規則是「**不同 root** 之間才擋」，
+      同一個 root 把自己的工作拆成兩個分頁只會拿到 `claims_overlap` 警告（`dispatch.go` 的註解寫了為什麼：
+      同一個 root 已經知道自己在做什麼）。所以用同一個 root 派兩筆去驗，永遠驗不到拒絕，
+      而且會白開一個分頁。要用**兩個不同的 root**，或直接讀 `POST /v1/orchestrator/tasks` 的回應——
+      同 root 的那一筆回的是 `warnings: [{code: "claims_overlap", …}]`，不是錯誤。
 - [ ] **A4 child 可以用自己的 secret 做三件事**：`/progress`、`/notify`、`GET /inflight`。
       驗：三個請求各回 2xx，錯的 secret 回 403（用 `--fail-with-body` 看 exit code）。
-- [ ] **A5 landing 有路由而且會拒絕假的。** 驗：`POST …/landing` 帶一個**不是** branch 祖先的 commit，
+      **反例那一半 2026-09-19 過了**（錯的 secret 打 `/progress` 回 403）；三個 2xx 還沒量。
+- [x] **A5 landing 有路由而且會拒絕假的。** 驗：`POST …/landing` 帶一個**不是** branch 祖先的 commit，
       回 `unverified_landing`；帶真的，回成功並關掉義務。
-- [ ] **A6 inventory 有 `inventory_generation`，而且舊的 generation 會被拒。**
+- [x] **A6 inventory 有 `inventory_generation`，而且舊的 generation 會被拒。**
       驗：讀一次、故意用舊值派工、收到 `409 stale_inventory` 且回應帶回整份 inventory。
 - [ ] **A7 Clawdfather 可以在新 daemon 上註冊並被畫出來。**
       驗：`POST /v1/next/coordinator` 註冊後，`registered:true`，清單上出現皇冠，
@@ -286,7 +302,7 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
       清單就是使用者自己那 5 個（名稱只在他的機器上：兩個內容發布、兩個 production 錯誤巡檢、
       一個資料對應與內容修正）。**這一項要使用者自己確認結果對**，不是看它有沒有開分頁。
 - [ ] **A10 編譯插槽鎖存在。** 驗：同時要求兩次驗證，第二個排隊而不是同時開 `swift-frontend`。
-- [ ] **A11 dispatch-policy 會進 child 的簡報。** 驗：派一個 child，請它把簡報裡的家規原文回報一段。
+- [x] **A11 dispatch-policy 會進 child 的簡報。** 驗：派一個 child，請它把簡報裡的家規原文回報一段。
 
 ### B. 資料
 
