@@ -79,6 +79,9 @@ type Server struct {
 	// /v1/diagnostics.
 	pulse atomic.Pointer[app.Pulse]
 	tick  time.Duration
+	// retired counts the calls the retired workflow route still gets
+	// (workflow.go), for /v1/diagnostics.
+	retired retiredWorkflow
 }
 
 // servedBy names which implementation answered. It is how a reader tells the Go
@@ -244,7 +247,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/inflight", s.brokerInflight)
 	mux.HandleFunc("/v1/orchestrator/messages", s.brokerMessages)
 	mux.HandleFunc("/v1/orchestrator/whoami", s.brokerWhoAmI)
+	// The address book a wait, a relay or a handoff names sessions from, and
+	// under a session: its delivery receipt, its to-dos and the retired
+	// workflow route (workflow.go).
+	mux.HandleFunc("/v1/orchestrator/sessions", s.brokerAddressBook)
 	mux.HandleFunc("/v1/orchestrator/sessions/", s.brokerSessionRoute)
+	// What each assistant's account has left, every pending landing, a root's
+	// own notification, and the durable-report promotion this daemon does not
+	// keep (orchestrator.go).
+	mux.HandleFunc("/v1/orchestrator/assistants", s.brokerAssistants)
+	mux.HandleFunc("/v1/orchestrator/landings", s.brokerLandings)
+	mux.HandleFunc("/v1/orchestrator/notify", s.brokerMachineNotify)
+	mux.HandleFunc("/v1/orchestrator/durable-reports/promotions", s.brokerDurableReportPromotion)
 	// The coordination plane (W5): the machine role, file waits, leases (the
 	// compile slot and landing), the completion ledger's manual path, and
 	// detached automation (coordinator.go, waits.go).

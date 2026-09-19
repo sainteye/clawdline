@@ -194,3 +194,4 @@ internal/domain/work.optionIDLimit # admission: an option's id
 internal/domain/work.optionLabelLimit # admission: an option's label
 internal/app.ruleLineLimit # page: the named lines one sweep pass proposes by rule; the rest are the next pass's
 cmd/clawdline.collectAnswerLimit # read: the broker's answer to `clawdline task finish` asking it to collect now, one refusal envelope (W7); result.json and task.json themselves are read under internal/adapters/taskdir.resultLimit
+internal/transport/http.workflowBodyLimit # admission: one command to the retired workflow route (W8), the Swift route's 64 KiB, which is what its helper checks before sending

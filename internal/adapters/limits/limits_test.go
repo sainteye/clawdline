@@ -95,3 +95,82 @@ func TestAnOldOkReadingDecays(t *testing.T) {
 		t.Fatalf("fresh reading changed: %s %s", got.availability, names(got.windows))
 	}
 }
+
+// The assistants route prints what decay did, in the Swift app's words: a
+// `low` past its line is marked stale, an old `ok` becomes unknown with what it
+// last was, and an exhausted window that has reset is unknown, not fine.
+func TestDecaySaysWhatItDid(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	old := int64(1_000_000 - 7*3600)
+	pct := func(v float64) *float64 { return &v }
+	ahead, gone := int64(1_000_000+2*86_400+3*3600), int64(999_000)
+	cases := []struct {
+		name      string
+		q         quota
+		want      Availability
+		stale     bool
+		lastKnown Availability
+		detail    string
+	}{
+		{"low, old", quota{availability: Low, observedAt: &old,
+			windows: []Window{{Name: "7d", UsedPercent: pct(90), ResetsAt: &ahead}}},
+			Low, true, "", "7d 90%"},
+		{"ok, old, a window still open", quota{availability: OK, observedAt: &old,
+			windows: []Window{{Name: "7d", UsedPercent: pct(40), ResetsAt: &ahead}}},
+			Unknown, true, OK, "7d 40%; stale lower bound"},
+		{"ok, old, nothing open", quota{availability: OK, observedAt: &old,
+			windows: []Window{{Name: "5h", UsedPercent: pct(40), ResetsAt: &gone}}},
+			Unknown, false, OK, "unknown; last known ok"},
+		{"exhausted, reset since", quota{availability: Exhausted, observedAt: &old, resetsAt: &gone,
+			windows: []Window{{Name: "5h", UsedPercent: pct(100), ResetsAt: &gone, Hit: true}}},
+			Unknown, false, "", "unknown; the window that was exhausted has since reset"},
+		{"exhausted, still", quota{availability: Exhausted, observedAt: &old, resetsAt: &ahead,
+			windows: []Window{{Name: "7d", UsedPercent: pct(100), ResetsAt: &ahead, Hit: true}}},
+			Exhausted, false, "", "7d 100%; resets in 2d3h"},
+		{"nothing seen", quota{availability: Unknown, windows: []Window{}},
+			Unknown, false, "", "no signal yet"},
+	}
+	for _, c := range cases {
+		got := finished(c.q, false, now)
+		if got.availability != c.want || got.stale != c.stale || got.lastKnown != c.lastKnown || got.detail != c.detail {
+			t.Errorf("%s: %s stale=%v last=%q %q", c.name, got.availability, got.stale, got.lastKnown, got.detail)
+		}
+	}
+	if d := detailOf(nil, Exhausted, true, "", now); d != "premium credits exhausted; no windows reported" {
+		t.Errorf("credits with no windows: %q", d)
+	}
+	for secs, want := range map[float64]string{30: "1m", 3600: "1h", 5400: "1h30m", 86_400: "1d", 90_000: "1d1h"} {
+		if got := formatDuration(secs); got != want {
+			t.Errorf("formatDuration(%v) = %q, want %q", secs, got, want)
+		}
+	}
+}
+
+// One reading per assistant serves both the route and a session's windows,
+// and an assistant is installed when its home is a directory — read here from
+// a home that is not the person's.
+func TestTheQuotaReadingIsTheWindowsReading(t *testing.T) {
+	home := t.TempDir()
+	cache := filepath.Join(home, ".claude", "statusline-cache")
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	body := fmt.Sprintf(`{"at":%d,"rate_limits":{"five_hour":{"used_percentage":91,"resets_at":%d}}}`,
+		now.Unix()-60, now.Unix()+3600)
+	if err := os.WriteFile(filepath.Join(cache, "rate-limits.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := NewReader(home, func() Settings { return Settings{CodexHome: filepath.Join(home, "no-codex")} })
+	claude := r.Quota("claude", now)
+	if !claude.Installed || claude.Availability != Low || claude.ObservedAt == nil || names(claude.Windows) != "5h=91," {
+		t.Fatalf("claude: %+v", claude)
+	}
+	if m := r.Machine("claude", now); names(m.Windows) != names(claude.Windows) || m.At == nil || *m.At != *claude.ObservedAt {
+		t.Fatalf("the session's windows %s differ from the route's %s", names(m.Windows), names(claude.Windows))
+	}
+	codex := r.Quota("codex", now)
+	if codex.Installed || codex.Availability != Unknown || codex.Detail != "no signal yet" || len(codex.Windows) != 0 {
+		t.Fatalf("codex with no home: %+v", codex)
+	}
+}

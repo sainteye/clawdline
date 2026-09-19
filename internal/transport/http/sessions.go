@@ -70,7 +70,14 @@ type sessionsSnapshotWire struct {
 // publish. They are the same payload, so they are the same code: two builders
 // would drift, and the client would have no way to tell which one it got.
 func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
-	inv := s.inventory.Read(ctx)
+	return s.sessionsPayloadFrom(ctx, s.inventory.Read(ctx))
+}
+
+// sessionsPayloadFrom is that snapshot built from a reading the caller already
+// took, for the broker's lists that need the reading itself beside the rows
+// (orchestrator.go): one reading, so a row and the source completeness read
+// with it are of the same moment.
+func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory) sessionsSnapshotWire {
 
 	// One reading of what is owed, for the whole list, against this same
 	// reading of the sessions. Asking per row would ask the same question
@@ -460,6 +467,37 @@ var (
 	limitsReader *limits.Reader
 )
 
+// quotaReader is the one plan-window reader: a session's `/info` and the
+// assistants route read the same five-second reading of each account.
+func quotaReader() *limits.Reader {
+	limitsOnce.Do(func() {
+		home, _ := os.UserHomeDir()
+		config := swiftstore.OpenQuotaConfig(swiftstore.Dir())
+		limitsReader = limits.NewReader(home, func() limits.Settings {
+			q := config.Read()
+			return limits.Settings{StatusDir: q.StatusDir, CodexHome: q.CodexHome, LowThreshold: q.LowThreshold}
+		})
+	})
+	return limitsReader
+}
+
+// wireWindows is a reading's windows as the wire spells them, in both places
+// a window is sent.
+func wireWindows(windows []limits.Window) []contract.SessionLimitWindow {
+	out := make([]contract.SessionLimitWindow, 0, len(windows))
+	for _, w := range windows {
+		row := contract.SessionLimitWindow{Name: w.Name, Hit: w.Hit}
+		if w.UsedPercent != nil {
+			row.UsedPercent = *w.UsedPercent
+		}
+		if w.ResetsAt != nil {
+			row.ResetsAt = *w.ResetsAt
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
 // sessionLimits is what the Swift app's `/info` puts under `limits`: the
 // account-level plan windows of the session's assistant
 // (`AssistantQuota.machineLimits`), stamped with the moment they were read. A
@@ -469,25 +507,8 @@ func (s *Server) sessionLimits(assistant session.Assistant, now time.Time) *cont
 	if assistant != session.AssistantClaude && assistant != session.AssistantCodex {
 		return out
 	}
-	limitsOnce.Do(func() {
-		home, _ := os.UserHomeDir()
-		config := swiftstore.OpenQuotaConfig(swiftstore.Dir())
-		limitsReader = limits.NewReader(home, func() limits.Settings {
-			q := config.Read()
-			return limits.Settings{StatusDir: q.StatusDir, CodexHome: q.CodexHome, LowThreshold: q.LowThreshold}
-		})
-	})
-	read := limitsReader.Machine(string(assistant), now)
-	for _, w := range read.Windows {
-		row := contract.SessionLimitWindow{Name: w.Name, Hit: w.Hit}
-		if w.UsedPercent != nil {
-			row.UsedPercent = *w.UsedPercent
-		}
-		if w.ResetsAt != nil {
-			row.ResetsAt = *w.ResetsAt
-		}
-		out.Windows = append(out.Windows, row)
-	}
+	read := quotaReader().Machine(string(assistant), now)
+	out.Windows = append(out.Windows, wireWindows(read.Windows)...)
 	if read.At != nil {
 		out.At = *read.At
 	}

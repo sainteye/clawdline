@@ -21,6 +21,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -322,16 +323,24 @@ func minutesOf(name string) int64 {
 	return 10080
 }
 
-// quota is the part of `AssistantQuota` the windows depend on.
+// quota is `AssistantQuota` less the two fields no reading here fills
+// (`loggedIn`, `plan`: no identity probe runs, as in the Swift app).
 type quota struct {
 	availability Availability
 	observedAt   *int64
 	resetsAt     *int64
 	windows      []Window
+	// stale, lastKnown and detail are what decay says about the reading:
+	// `low` past its line is stale, an `ok` past it is unknown with lastKnown
+	// set, and detail is the sentence a client prints.
+	stale     bool
+	lastKnown Availability
+	detail    string
 }
 
-// decayed is `AssistantQuota.decayed(_:now:)`, as far as it changes which
-// windows are shown and when they were observed.
+// decayed is `AssistantQuota.decayed(_:now:)`. Where it writes a sentence of
+// its own, that sentence is final; otherwise detail is left for the reader to
+// fill from the windows.
 func decayed(q quota, now time.Time) quota {
 	if q.observedAt == nil {
 		return q
@@ -346,9 +355,14 @@ func decayed(q quota, now time.Time) quota {
 		if q.resetsAt != nil && float64(*q.resetsAt) <= epoch(now) {
 			q.availability = Unknown
 			q.observedAt, q.resetsAt, q.windows = nil, nil, []Window{}
+			q.stale, q.lastKnown = false, ""
+			q.detail = "unknown; the window that was exhausted has since reset"
 		}
+	case Low:
+		q.stale = age > staleAfter(window)
 	case OK:
 		if age > staleAfter(window) {
+			q.lastKnown = OK
 			q.availability = Unknown
 			live := []Window{}
 			for _, w := range q.windows {
@@ -358,16 +372,83 @@ func decayed(q quota, now time.Time) quota {
 			}
 			if len(live) == 0 {
 				q.observedAt, q.resetsAt, q.windows = nil, nil, []Window{}
+				q.stale = false
+				q.detail = "unknown; last known ok"
 			} else {
 				// A provider window still open stays visible as a stale lower
 				// bound.
 				q.windows = live
 				q.resetsAt = tightestResetsAt(live)
+				q.stale = true
+				q.detail = detailOf(live, Unknown, false, OK, now) + "; stale lower bound"
 			}
 		}
 	}
-	// `low` only gains a stale mark, and `unknown` is already the floor; the
-	// windows of neither change.
+	// `unknown` is already the floor.
+	return q
+}
+
+// formatDuration is `AssistantQuota.formatDuration(seconds:)`.
+func formatDuration(seconds float64) string {
+	total := int64(math.Max(0, seconds))
+	days, hours, minutes := total/86_400, (total%86_400)/3_600, (total%3_600)/60
+	switch {
+	case days > 0 && hours > 0:
+		return fmt.Sprintf("%dd%dh", days, hours)
+	case days > 0:
+		return fmt.Sprintf("%dd", days)
+	case hours > 0 && minutes > 0:
+		return fmt.Sprintf("%dh%dm", hours, minutes)
+	case hours > 0:
+		return fmt.Sprintf("%dh", hours)
+	}
+	if minutes < 1 {
+		minutes = 1
+	}
+	return fmt.Sprintf("%dm", minutes)
+}
+
+// detailOf is `AssistantQuota.detail(windows:availability:creditsExhausted:lastKnown:now:)`:
+// one sentence a person, or a client with no UI of its own, prints as it
+// stands.
+func detailOf(windows []Window, availability Availability, credits bool, lastKnown Availability, now time.Time) string {
+	if len(windows) == 0 {
+		if lastKnown != "" {
+			return "no fresh signal; last known " + string(lastKnown)
+		}
+		if credits {
+			return "premium credits exhausted; no windows reported"
+		}
+		return "no signal yet"
+	}
+	parts := make([]string, 0, len(windows))
+	for _, w := range windows {
+		pct := "?"
+		if w.UsedPercent != nil {
+			pct = fmt.Sprintf("%.0f%%", *w.UsedPercent)
+		}
+		parts = append(parts, w.Name+" "+pct)
+	}
+	text := strings.Join(parts, ", ")
+	if availability == Exhausted {
+		if w := tightest(windows); w != nil && w.ResetsAt != nil && float64(*w.ResetsAt) > epoch(now) {
+			text += "; resets in " + formatDuration(float64(*w.ResetsAt)-epoch(now))
+		}
+	}
+	if credits {
+		text += "; premium credits exhausted"
+	}
+	return text
+}
+
+// finished is a reading with its sentence: decay's own when it wrote one,
+// otherwise the windows'. The Swift app's `claude()` and `codex()` both end
+// this way.
+func finished(q quota, credits bool, now time.Time) quota {
+	q = decayed(q, now)
+	if q.detail == "" {
+		q.detail = detailOf(q.windows, q.availability, credits, q.lastKnown, now)
+	}
 	return q
 }
 
@@ -383,8 +464,28 @@ type Reader struct {
 }
 
 type cached struct {
-	until  time.Time
-	limits Limits
+	until time.Time
+	quota Quota
+}
+
+// Quota is `AssistantQuota` as GET /v1/orchestrator/assistants sends it: what
+// this Mac can say about one assistant's account. LoggedIn and Plan have no
+// field because nothing fills them — no identity probe runs, as in the Swift
+// app — and the route says null for both.
+type Quota struct {
+	Assistant    string
+	Installed    bool
+	Availability Availability
+	// ObservedAt is the provider record's own time; nil exactly when nothing
+	// usable has been seen.
+	ObservedAt *int64
+	ResetsAt   *int64
+	Windows    []Window
+	Stale      bool
+	// LastKnown is what an Unknown was before it aged out of OK; "" on an
+	// Unknown that is plain silence.
+	LastKnown Availability
+	Detail    string
 }
 
 // NewReader reads under home. settings is asked on every reading that is not
@@ -403,10 +504,22 @@ func (r *Reader) Machine(assistant string, now time.Time) Limits {
 	if assistant != "claude" && assistant != "codex" {
 		return Limits{Windows: []Window{}}
 	}
+	q := r.Quota(assistant, now)
+	return Limits{Windows: q.Windows, At: q.ObservedAt}
+}
+
+// Assistants is the order `AssistantQuota.all` answers in.
+var Assistants = []string{"claude", "codex"}
+
+// Quota is `AssistantQuota.current(for:now:)`: the whole machine-level
+// reading of one assistant, file-only and held for five seconds. The status
+// line's windows (Machine) are this reading's windows, so a session's `/info`
+// and the assistants route can never show one account two ways.
+func (r *Reader) Quota(assistant string, now time.Time) Quota {
 	r.mu.Lock()
 	if hit, ok := r.cache[assistant]; ok && hit.until.After(now) {
 		r.mu.Unlock()
-		return hit.limits
+		return hit.quota
 	}
 	r.mu.Unlock()
 
@@ -415,20 +528,42 @@ func (r *Reader) Machine(assistant string, now time.Time) Limits {
 		s.LowThreshold = defaultLowThreshold
 	}
 	var q quota
-	if assistant == "claude" {
+	var home string
+	switch assistant {
+	case "claude":
 		q = r.claude(s, now)
-	} else {
+		home = filepath.Join(r.home, ".claude")
+	case "codex":
 		q = r.codex(s, now)
+		home = r.codexHome(s)
+	default:
+		return Quota{Assistant: assistant, Availability: Unknown, Windows: []Window{}, Detail: "no signal yet"}
 	}
-	out := Limits{Windows: q.windows, At: q.observedAt}
+	out := Quota{
+		Assistant:    assistant,
+		Installed:    isDir(home),
+		Availability: q.availability,
+		ObservedAt:   q.observedAt,
+		ResetsAt:     q.resetsAt,
+		Windows:      q.windows,
+		Stale:        q.stale,
+		LastKnown:    q.lastKnown,
+		Detail:       q.detail,
+	}
 	if out.Windows == nil {
 		out.Windows = []Window{}
 	}
 
 	r.mu.Lock()
-	r.cache[assistant] = cached{until: now.Add(cacheFor), limits: out}
+	r.cache[assistant] = cached{until: now.Add(cacheFor), quota: out}
 	r.mu.Unlock()
 	return out
+}
+
+// isDir is `Assistant.isInstalled`: the assistant's home is a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // statusDir is `ProjectStatus.cacheDirectory`.
@@ -462,7 +597,7 @@ func (r *Reader) claude(s Settings, now time.Time) quota {
 		resetsAt:     tightestResetsAt(limits.Windows),
 		windows:      limits.Windows,
 	}
-	return decayed(q, now)
+	return finished(q, false, now)
 }
 
 // codex is `AssistantQuota.codex(sessionsRoot:now:)`.
@@ -514,7 +649,7 @@ func (r *Reader) codex(s Settings, now time.Time) quota {
 	}
 	q := quota{availability: availability, observedAt: observed,
 		resetsAt: tightestResetsAt(windows), windows: windows}
-	return decayed(q, now)
+	return finished(q, credits, now)
 }
 
 func at(p *int64) int64 {

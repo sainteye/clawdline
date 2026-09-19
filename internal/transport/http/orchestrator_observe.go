@@ -86,6 +86,7 @@ func (s *Server) brokerDiagnostics(ctx context.Context) *contract.BrokerDiagnost
 			Closed:       int64(beat.Pulse.Closed),
 		},
 	}
+	out.WorkflowRetired = s.retired.diagnostics()
 	if s.broker.Lanes != nil {
 		st := s.broker.Lanes.Stats()
 		out.Lanes = &contract.BrokerLanes{
