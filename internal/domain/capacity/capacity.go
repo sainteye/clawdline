@@ -177,6 +177,8 @@ const (
 	// C4: the Cloud answers waiting to leave (limits N22).
 	CloudSpool      = "cloud.spool"
 	CloudSpoolBytes = "cloud.spool_bytes"
+	// The slash menu's skills, per working directory and assistant.
+	CacheSessionSkills = "cache.session_skills"
 )
 
 // Entry is one row of the register.
@@ -497,6 +499,17 @@ func Register() []Entry {
 			Name: CloudSpoolBytes, Class: Buffer, Unit: Bytes,
 			Limit: 16 << 20, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Notice, Log},
+			EvictedBy: Daemon,
+		},
+		{
+			// The skills each session's slash menu offers, one reading per
+			// working directory (or Codex rollout) and assistant, served for
+			// five minutes as the Swift app's SessionLinksCache.skills serves
+			// them. Past the limit the reading used longest ago is let go; a
+			// miss walks the skills directories again.
+			Name: CacheSessionSkills, Class: Cache, Unit: Rows,
+			Limit: 64, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
 		},
 	}

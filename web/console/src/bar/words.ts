@@ -3,7 +3,9 @@
 // Copied from the Swift app's `Sources/Copy+Chinese.swift` (`TraditionalChinese`),
 // property for property and under the same names — the arrangement
 // `shell/darwin/Copy.swift` already uses for the menus. Nothing here is written
-// fresh: a word the original does not have is a word this bar does not show.
+// fresh: a word the original does not have is not in this file. The server
+// list says a few things the Swift row never had to — that this app runs none
+// of a project's commands — and those come from `../next-strings.ts` (D35).
 //
 // **Why not the catalog.** The console's words come from
 // `web/console/public/strings/zh-Hant.json`, which is a byte-for-byte copy of the
@@ -77,6 +79,9 @@ export const words = {
   sessionShellOne: "1 個 shell 在跑",
   /** `sessionShellMany`, with `{n}` */
   sessionShellMany: "{n} 個 shell 在跑",
+
+  /** `stackTip(up:total:)`, with `{total}` and `{up}` */
+  stackTip: "{total} 個伺服器，{up} 個活著——⌘S 打開清單",
 } as const
 
 /**
@@ -101,6 +106,11 @@ export function fillCount(template: string, n: number): string {
 /** `agentsSaid` (`Controller.swift`). */
 export function agentsSaid(count: number): string {
   return fillCount(words.sessionAgents, count)
+}
+
+/** `L.t.stackTip(up:total:)`. */
+export function stackTipSaid(up: number, total: number): string {
+  return words.stackTip.replaceAll("{total}", String(total)).replaceAll("{up}", String(up))
 }
 
 /** `shellsSaid` (`Controller.swift`). */

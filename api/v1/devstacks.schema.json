@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "devstacks.schema.json",
+  "title": "The dev servers the projects on this machine describe",
+  "description": "GET /v1/devstacks: the input bar's server list (⌘S), which the Swift app draws natively from `DevStack.swift` and `Controller.refreshStacks`. A project describes its stack in a `.devstack.json` at its root (docs/devstack.md in the Swift app's repository). The projects looked at are the ones the Swift app looks at: every directory `~/.claude/project-icons.json` names, and every live session's working directory, each walked up to the home directory for the file. **This daemon never runs a command that file names** — not `status`, and not `up`, `down`, `restart` or `logs`. The Swift app ran them only from its own native window, after a person had trusted the file's exact bytes; here every route is reachable by every paired device, and a route that runs a repository's commands would be code execution for all of them. So state is only what can be learned without running anything: whether something is listening on each port the file declares.",
+  "$defs": {
+    "DevStackState": {
+      "description": "`running`: every declared process answered. `partial`: some did. `stopped`: none did. `unknown`: nothing could be asked without running one of the project's commands, and `unknown` is never reported as `stopped` — a live site under a mark that says it is down is worse than no mark.",
+      "type": "string",
+      "enum": [
+        "running",
+        "partial",
+        "stopped",
+        "unknown"
+      ]
+    },
+    "DevStackUnknown": {
+      "description": "Why a stack's state is `unknown`. `status_not_run`: the file names a `status` command and declares no ports, so only running that command could tell, and this daemon does not run it. `nothing_declared`: the file names neither.",
+      "type": "string",
+      "enum": [
+        "status_not_run",
+        "nothing_declared"
+      ]
+    },
+    "DevStackCommand": {
+      "description": "A command a `.devstack.json` names. Listed so a reader can say which ones exist; none of them is run here.",
+      "type": "string",
+      "enum": [
+        "status",
+        "up",
+        "down",
+        "restart",
+        "logs",
+        "attach"
+      ]
+    },
+    "DevProcessState": {
+      "description": "The Swift app's six words for one process. A port probe can only say `running` (something accepted a connection on 127.0.0.1) or `stopped` (nothing did, or the process declares no port to ask); the other four come from a `status` command, which is not run here.",
+      "type": "string",
+      "enum": [
+        "healthy",
+        "running",
+        "starting",
+        "completed",
+        "exited",
+        "stopped"
+      ]
+    },
+    "DevProcess": {
+      "description": "One process the file declares under `processes`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "state"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/DevProcessState"
+        },
+        "port": {
+          "description": "The port it listens on, as declared. Absent when the file gives none.",
+          "type": "integer"
+        },
+        "url": {
+          "description": "The address the file gives for it, when it gives one — often a tunnel or a local hostname rather than the port.",
+          "type": "string"
+        }
+      }
+    },
+    "DevStack": {
+      "description": "One project's stack.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "root",
+        "state",
+        "processes",
+        "commands"
+      ],
+      "properties": {
+        "name": {
+          "description": "The file's `name`, else the name of the directory it is in.",
+          "type": "string"
+        },
+        "root": {
+          "description": "The directory the file was found in.",
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "common.schema.json#/$defs/Icon"
+        },
+        "state": {
+          "$ref": "#/$defs/DevStackState"
+        },
+        "unknown": {
+          "$ref": "#/$defs/DevStackUnknown"
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DevProcess"
+          }
+        },
+        "commands": {
+          "description": "The commands the file names, in this order: status, up, down, restart, logs, attach. None of them is run.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DevStackCommand"
+          }
+        }
+      }
+    },
+    "DevStacksReply": {
+      "description": "Every stack found, sorted by name and then by directory. A linked Git worktree found only through the icon registry is left out: it is a copy of a project already on the list, and the Swift app drew one indistinguishable row for each.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stacks",
+        "observedAt"
+      ],
+      "properties": {
+        "stacks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DevStack"
+          }
+        },
+        "observedAt": {
+          "description": "When the ports were asked, in seconds since 1970.",
+          "type": "number"
+        },
+        "truncated": {
+          "description": "The search stopped before every known directory was looked at, or more stacks were found than one answer carries. Absent when nothing was left out.",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
