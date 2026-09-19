@@ -86,7 +86,7 @@ func (c *collector) reset() {
 }
 
 const completeScan = `{"at":17,"scan":{"complete":true},"sessions":[
-  {"id":"%195","assistant":"claude","tty":"ttys001",
+  {"id":"%19","assistant":"claude","tty":"ttys001",
    "closeability":{"state":"open","observed_at":1,"session_generation":2,"source":{"freshness":"fresh","observed_at":3}}}]}`
 
 func newPublisher(router cloudops.LocalRouter, out *collector) *Publisher {
@@ -148,7 +148,7 @@ func TestTheInventoryNamesEveryRowItPublished(t *testing.T) {
 	if names[len(names)-1] != "s/mac-01/__clawdline_inventory_v1__" {
 		t.Errorf("the inventory was not published last: %v", names)
 	}
-	row := out.payload(t, "s/mac-01/%25195")
+	row := out.payload(t, "s/mac-01/%2519")
 	if _, ok := row["session"].(map[string]any); !ok {
 		t.Errorf("a row was not wrapped as {session,at,scan}: %v", row)
 	}
@@ -161,7 +161,7 @@ func TestTheInventoryNamesEveryRowItPublished(t *testing.T) {
 		t.Errorf("the inventory object must hold exactly version and sessions: %v", inventory)
 	}
 	ids, _ := inventory["sessions"].([]any)
-	if len(ids) != 1 || ids[0] != "%195" {
+	if len(ids) != 1 || ids[0] != "%19" {
 		t.Errorf("the inventory named %v", ids)
 	}
 	// `features` is only carried when this daemon can answer one, and it never
@@ -215,7 +215,7 @@ func TestAFreshnessOnlyChangeIsNotRepublished(t *testing.T) {
 	out.reset()
 	router.set(strings.Replace(completeScan, `"state":"open"`, `"state":"closing"`, 1))
 	publisher.Pass(context.Background())
-	if names := out.channels(); len(names) != 1 || names[0] != "s/mac-01/%25195" {
+	if names := out.channels(); len(names) != 1 || names[0] != "s/mac-01/%2519" {
 		t.Errorf("a changed row was not republished: %v", names)
 	}
 }

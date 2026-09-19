@@ -20,8 +20,8 @@ import (
 //
 // The id is taken off the path rather than out of a body because it identifies
 // the thing being acted on, and a terminal id can contain a percent sign — tmux
-// panes are `%195` — so it arrives percent-encoded and is decoded here. Reading
-// it raw turned `%195` into a control character and answered `not_found`, which
+// panes are `%19` — so it arrives percent-encoded and is decoded here. Reading
+// it raw turned `%19` into a control character and answered `not_found`, which
 // is the wrong answer to the wrong question.
 //
 // **Split, then decode — never the other way round.** Decoding the whole path

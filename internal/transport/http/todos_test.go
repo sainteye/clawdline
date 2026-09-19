@@ -102,7 +102,7 @@ func TestASessionsTodosAreReadWithTheMachineToken(t *testing.T) {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	const conv = "379d443c-db38-4d17-8ce2-b273dc748ea0"
+	const conv = "379d0000-0000-4000-8000-000000000001"
 	id := "70d0e001-0000-4000-8000-000000000001"
 	at := time.Unix(1_789_700_000, 0)
 	todo := work.Todo{ID: work.TodoID(work.OriginDispatch, id), Origin: work.OriginDispatch, Task: id,

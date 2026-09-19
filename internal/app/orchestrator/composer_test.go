@@ -32,7 +32,7 @@ const claudeComposer = `  ctrl+x ctrl+s to send now
 ────────────────────────────────────────────────────────────────────────────────
 ❯ Press up to edit queued messages
 ────────────────────────────────────────────────────────────────────────────────
-  ▀ ▄ ▀ 943eb744-2cb4-43ef-8431-a240471526ef
+  ▀ ▄ ▀ 943e0000-0000-4000-8000-000000000001
   ▀▀▀▀▀ ~/Library/Application Support/Clawdline/worktrees/clawdline-…  ctx 23%`
 
 func TestADialogIsNeverTypedInto(t *testing.T) {

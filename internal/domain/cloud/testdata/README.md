@@ -9,7 +9,7 @@ A byte-for-byte copy of the Swift app's published protocol vectors:
 | bytes | 186,557 |
 | copied | 2026-09-18, from the checkout at commit `85cf6003c7a4356058ec1fe1901d8d396533c73c` |
 | produced by | `~/code/clawdline/tools/generate-protocol-vectors.swift` |
-| mirrored as | `~/code/clawdline-cloud/contracts/cloud/v1/vectors.json` (same object, different formatting and therefore a different digest) |
+| mirrored as | the cloud service's own copy of the vectors (same object, different formatting and therefore a different digest) |
 
 **Every key and nonce in it is TEST-ONLY, on purpose.** Fixed AES-GCM nonces
 are what makes a cross-runtime fixture reproducible; reusing one under a real

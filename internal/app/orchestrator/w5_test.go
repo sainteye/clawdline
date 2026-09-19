@@ -142,7 +142,7 @@ func TestASilentWaiterAtTheHeadIsPassedOver(t *testing.T) {
 func TestTheLandingLeaseIsOneCheckoutsAndHoldsASecondRootBack(t *testing.T) {
 	b, ctx := newTestBroker(t)
 	repoX, repoY := t.TempDir(), t.TempDir()
-	root1, root2 := rootConversation, "4b9b8c2e-0f5a-4c43-9a8f-2d9d1c7f6e01"
+	root1, root2 := rootConversation, "4b9b0000-0000-4000-8000-000000000001"
 	if got := ask(t, b, ctx, LeaseRequest{Resource: ResourceLanding, Checkout: repoX, RequestID: askA, Session: root1}); got.State != "granted" {
 		t.Fatalf("root 1: %+v", got)
 	}
@@ -303,7 +303,7 @@ func TestAChildsNotifyPushesToItsRoot(t *testing.T) {
 // reaches every waiter, and a session named by its terminal is refused.
 func TestAFileWaitIsToldAndReleased(t *testing.T) {
 	b, ctx := newTestBroker(t)
-	owner, waiter, other := rootConversation, "4b9b8c2e-0f5a-4c43-9a8f-2d9d1c7f6e01", "5c9b8c2e-0f5a-4c43-9a8f-2d9d1c7f6e02"
+	owner, waiter, other := rootConversation, "4b9b0000-0000-4000-8000-000000000001", "5c9b0000-0000-4000-8000-000000000002"
 	menu := false
 	b.Live = func(context.Context) []session.Session {
 		return []session.Session{

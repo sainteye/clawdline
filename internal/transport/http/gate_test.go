@@ -292,8 +292,8 @@ func TestHealthAndDiagnostics(t *testing.T) {
 // One path, read one way — the gate and the mux, and every decision either of
 // them makes.
 //
-// The bypass this pins was real on 2026-09-18 (reviewer task 2315c043): the
-// gate decided on `r.URL.Path`, which net/http had already percent-decoded, so
+// The bypass this pins was real on 2026-09-18, found by an independent review:
+// the gate decided on `r.URL.Path`, which net/http had already percent-decoded, so
 // `/v1/sessions/..%2F..%2Fv1%2Fauth%2Fx/git` read as `/v1/auth/x/git` — on the
 // open list — while `http.ServeMux` matched the same request against
 // `/v1/sessions/` and ran the session handler. No token at all, and `/git` and
@@ -318,8 +318,8 @@ func TestGateReadsAPathOneWay(t *testing.T) {
 		{"the dots encoded too", "/v1/sessions/%2e%2e%2F%2e%2e%2Fv1%2Fauth%2Fx/git"},
 		{"a bare encoded separator", "/v1/sessions/a%2Fb/git"},
 		{"out of the open list with dots", "/v1/auth/x/..%2F..%2Fv1%2Fsessions"},
-		{"the documents matcher's own spelling", "/v1/sessions/%25798/documents/../../../../v1/health"},
-		{"a literal dot segment", "/v1/sessions/./%25798/git"},
+		{"the documents matcher's own spelling", "/v1/sessions/%2579/documents/../../../../v1/health"},
+		{"a literal dot segment", "/v1/sessions/./%2579/git"},
 		{"a backslash in a name", "/v1/sessions/a%5Cb/git"},
 		{"a NUL in a name", "/v1/sessions/a%00b/git"},
 	}
@@ -348,12 +348,12 @@ func TestGateReadsAPathOneWay(t *testing.T) {
 		headers    map[string]string
 		want       int
 	}{
-		{"a pane id, no credential", "/v1/sessions/%25798/git", nil, 401},
-		{"a pane id, a token", "/v1/sessions/%25798/git",
+		{"a pane id, no credential", "/v1/sessions/%2579/git", nil, 401},
+		{"a pane id, a token", "/v1/sessions/%2579/git",
 			map[string]string{"Authorization": "Bearer " + f.read}, 200},
 		{"a place, a token", "/v1/places/470885724e5330e1/sessions",
 			map[string]string{"Authorization": "Bearer " + f.read}, 200},
-		{"documents, a token", "/v1/sessions/%25798/documents/project/notes.md",
+		{"documents, a token", "/v1/sessions/%2579/documents/project/notes.md",
 			map[string]string{"Authorization": "Bearer " + f.read}, 200},
 		{"the open page", "/v1/health", nil, 200},
 		{"the door", "/v1/auth/open", nil, 200},
@@ -379,7 +379,7 @@ func TestReadablePath(t *testing.T) {
 	}{
 		{"/", true},
 		{"/v1/health", true},
-		{"/v1/sessions/%25798/git", true},
+		{"/v1/sessions/%2579/git", true},
 		{"/v1/auth/", true},
 		{"/v1/projects/project-abc/worktrees", true},
 		{"/assets/index-a.b.c.js", true},

@@ -57,7 +57,7 @@ func (r Router) Do(ctx context.Context, req cloudops.LocalRequest) (cloudops.Loc
 		method = http.MethodGet
 	}
 	// The path is already escaped where it needed to be — a tmux pane is
-	// `%195` — so the target is parsed rather than re-encoded, and the
+	// `%19` — so the target is parsed rather than re-encoded, and the
 	// original spelling is what the routes split on.
 	parsed, err := url.ParseRequestURI(target)
 	if err != nil {

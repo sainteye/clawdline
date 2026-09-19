@@ -138,7 +138,7 @@ func TestCloseTmuxSessionClosesOnlyWhatItsPaneProves(t *testing.T) {
 	if closed, err := l.CloseTmuxSession(ctx, other, "clawdline-task-aaaaaaaa"); closed || err != nil {
 		t.Fatalf("a pane from another session closed=%v err=%v", closed, err)
 	}
-	if closed, err := l.CloseTmuxSession(ctx, "%999", "clawdline-task-aaaaaaaa"); closed || err != nil {
+	if closed, err := l.CloseTmuxSession(ctx, "%99", "clawdline-task-aaaaaaaa"); closed || err != nil {
 		t.Fatalf("a pane that is gone closed=%v err=%v", closed, err)
 	}
 	if !alive("clawdline-task-aaaaaaaa") || !alive("clawdline-task-aaaaaaaa-other") {

@@ -80,10 +80,10 @@ func unreservedForSessionID(r byte) bool {
 //
 // **A session id is not URL text, and on this machine it usually is not even
 // close.** The sessions this daemon watches are tmux panes, and a pane id is
-// `%141`. Written straight into a fragment the address reads `/#session=%141`,
+// `%14`. Written straight into a fragment the address reads `/#session=%14`,
 // and the web app answers that with `decodeURIComponent`, which does not refuse
 // it: `%14` is a complete escape, so the id the page went looking for was
-// U+0014 followed by `1`. No session has ever had that id, and the tap stopped
+// U+0014. No session has ever had that id, and the tap stopped
 // on the list with nothing on screen to say why. iTerm ids — `w0t0p0:<UUID>` —
 // carry no per-cent and went through unharmed, which is why this only ever
 // happened on the machines that use tmux and never in a test.

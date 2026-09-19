@@ -28,7 +28,7 @@ import (
 // in this file.
 //
 // Ported from ~/code/clawdline/Sources/CloudEnvelope.swift and checked against
-// ~/code/clawdline-cloud/contracts/cloud/v1/. See docs/cloud-wire.md §2.
+// the cloud service's copy of the same contract. See docs/cloud-wire.md §2.
 
 // The wire's fixed sizes and bounds.
 const (
@@ -472,8 +472,8 @@ func (k channelKind) allows(c Class) bool {
 	return false
 }
 
-// channelKinds is the whole vocabulary, from
-// ~/code/clawdline-cloud/contracts/cloud/v1/vocabularies.json.
+// channelKinds is the whole vocabulary, as the cloud service's contract lists
+// it.
 //
 // ctlr is the response rail the contract pins and the relay already routes; the
 // Swift app has no branch for it (contract gap GAP-CTLR), so this reader

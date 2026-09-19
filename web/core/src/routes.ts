@@ -22,8 +22,8 @@ export const routes = {
 /**
  * Routes that act on one session.
  *
- * A terminal id can contain a percent sign — tmux panes are `%195` — so it is
- * encoded here rather than interpolated. Left raw, `%195` reaches the daemon as
+ * A terminal id can contain a percent sign — tmux panes are `%19` — so it is
+ * encoded here rather than interpolated. Left raw, `%19` reaches the daemon as
  * a control character and comes back `not_found`, which is a true answer to a
  * question nobody asked.
  */
