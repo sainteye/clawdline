@@ -218,3 +218,4 @@ cmd/clawdline.brokerTokenLimit # read: the orchestrator-token file the thin comm
 cmd/clawdline.relayInputLimit # admission: the message `clawdline send` reads from stdin, at the daemon's 2 MiB body cap (limits N27); how many characters is the daemon's rule
 internal/adapters/skillfile.recordLimit # read: the skill install record, a few hundred bytes (docs/skill.md)
 internal/adapters/skillfile.stubLimit # read: the SKILL.md an install replaces or an uninstall restores; a stub is a few kilobytes, and a file past this is refused rather than backed up
+internal/adapters/terminal.itermSendLimit # wait: the whole iTerm2 send script — the look for the paste, the looks after the Return, and the Apple Events between; a send that has not been confirmed by then is Unsubmitted rather than half-sent
