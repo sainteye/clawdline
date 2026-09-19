@@ -31,6 +31,11 @@ type Labeler func(path string) string
 // one instance is meant to live as long as the daemon.
 type Places struct {
 	Label Labeler
+	// Managed is ManagedWorktreeRoots: where a Clawdline broker makes its
+	// children's checkouts. Nothing at or below one of them is offered as a
+	// place, however it became known — a transcript folder, or a session
+	// running in it now.
+	Managed []string
 	// Fixture is StartPoints.fixtureForTesting's `places`: when set, it is the
 	// whole list, and nothing on this machine is read to build it. It exists so
 	// the start route can be driven in a directory made for the purpose — which
@@ -53,8 +58,8 @@ type resolvedFolder struct {
 // it is set, NewPlaces answers with exactly those. Test use only.
 const FixtureEnv = "CLAWDLINE_NEXT_PLACES_FIXTURE"
 
-func NewPlaces(label Labeler) *Places {
-	return &Places{Label: label, Fixture: fixtureFromEnv(),
+func NewPlaces(label Labeler, managed []string) *Places {
+	return &Places{Label: label, Managed: managed, Fixture: fixtureFromEnv(),
 		resolved: map[string]resolvedFolder{}, heads: map[string]codexHead{}}
 }
 
@@ -110,7 +115,7 @@ func (p *Places) List(live []string, limit int) []Place {
 		}
 		all = append(all, Place{ID: PlaceID(cwd), Path: cwd, Label: p.label(cwd), At: now})
 	}
-	return tidy(all, limit, isDirectory)
+	return tidy(all, limit, isDirectory, durableJudge(p.Managed))
 }
 
 func isDirectory(path string) bool {
@@ -131,11 +136,10 @@ func usable(path string) bool {
 	return true
 }
 
-// tidy is StartPoints.tidy: dedupe by path, drop what is not a directory any
-// more, newest first, and cap.
-func tidy(places []Place, limit int, isDir func(string) bool) []Place {
+// tidy is StartPoints.tidy: dedupe by path, drop what is not a durable
+// directory any more, newest first, and cap.
+func tidy(places []Place, limit int, isDir, durable func(string) bool) []Place {
 	best := map[string]Place{}
-	durable := durableJudge()
 	for _, place := range places {
 		if !usable(place.Path) || !durable(place.Path) || !isDir(place.Path) {
 			continue
@@ -164,19 +168,29 @@ func tidy(places []Place, limit int, isDir func(string) bool) []Place {
 // resolved is URL.standardizedFileURL.resolvingSymlinksInPath().path.
 func resolvedPath(path string) string { return canonicalFilesystemPath(path) }
 
-// scratchRoots is StartPoints.scratchRoots(home:temporary:).
-func scratchRoots(home, temporary string) []string {
-	return []string{home + "/.claude", home + "/.codex", home + "/Documents/Codex",
+// scratchRoots is StartPoints.scratchRoots(home:temporary:), and then
+// `managed`: the Swift app knew one broker, its own, and its list names that
+// broker's root; this daemon's is wherever its state directory is.
+func scratchRoots(home, temporary string, managed []string) []string {
+	roots := []string{home + "/.claude", home + "/.codex", home + "/Documents/Codex",
 		home + "/Library/Application Support/Clawdline/worktrees",
 		temporary, "/tmp", "/private/tmp"}
+	return append(roots, managed...)
 }
 
 // durableJudge is StartPoints.isDurablePlace, with its roots resolved once per
 // listing.
-func durableJudge() func(string) bool {
+//
+// A root is compared a whole component at a time, both sides with symlinks
+// followed: `<root>/x` is under it, and `<root>-old/x`, or a directory that
+// merely shares the root's last name, is not.
+func durableJudge(managed []string) func(string) bool {
 	h := resolvedPath(home())
 	var roots []string
-	for _, root := range scratchRoots(h, os.TempDir()) {
+	for _, root := range scratchRoots(h, os.TempDir(), managed) {
+		if root == "" {
+			continue
+		}
 		roots = append(roots, resolvedPath(root))
 	}
 	return func(path string) bool {
@@ -211,11 +225,18 @@ func Slug(path string) string {
 	return b.String()
 }
 
-// scratchMarks is StartPoints.scratchMarks.
-func scratchMarks() []string {
+// scratchMarks is StartPoints.scratchMarks, over scratchRoots with `managed`.
+//
+// Every child session leaves a transcript folder named for its checkout, so
+// without the managed roots here those folders would be scanned as plausible
+// projects and use up the folder budget before the person's own were reached.
+func scratchMarks(managed []string) []string {
 	h := home()
 	marks := map[string]bool{}
-	for _, root := range scratchRoots(h, os.TempDir()) {
+	for _, root := range scratchRoots(h, os.TempDir(), managed) {
+		if root == "" {
+			continue
+		}
 		clean := standardized(root)
 		for _, spelling := range []string{clean, resolvedPath(clean)} {
 			marks[Slug(spelling)] = true
@@ -267,7 +288,7 @@ func (p *Places) recorded(folders, scan int) []Place {
 	if err != nil {
 		return nil
 	}
-	marks := scratchMarks()
+	marks := scratchMarks(p.Managed)
 	type dir struct {
 		name      string
 		path      string

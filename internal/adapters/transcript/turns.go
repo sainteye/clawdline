@@ -196,18 +196,19 @@ func ReadCodex(path string, limit int) (Page, error) {
 
 // readPage reads one stable snapshot: if the file moved while its tail was
 // being read, it is read once more, so the entries and the signature describe
-// the same bytes.
+// the same bytes. A record that is not there is ErrNoRecord, and one that
+// could not be opened is an UnreadableError.
 func readPage(path string, parse func(io.ReaderAt, int64) ([]Entry, int64)) (Page, error) {
 	var page Page
 	for attempt := 0; attempt < 2; attempt++ {
 		f, err := os.Open(path)
 		if err != nil {
-			return Page{}, err
+			return Page{}, recordError(err)
 		}
 		before, err := f.Stat()
 		if err != nil {
 			f.Close()
-			return Page{}, err
+			return Page{}, recordError(err)
 		}
 		entries, unread := parse(f, before.Size())
 		page = Page{

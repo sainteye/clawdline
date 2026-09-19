@@ -36,28 +36,41 @@ type projectReaders struct {
 	busy chan struct{}
 }
 
+// projectReaderSets holds one set of readers per state directory, as
+// scheduleBooks does: what they leave off the list depends on where this
+// daemon's broker keeps its checkouts, and that is under its state directory.
 var (
-	projectOnce sync.Once
-	projectRead *projectReaders
+	projectMu         sync.Mutex
+	projectReaderSets = map[string]*projectReaders{}
 )
 
 func (s *Server) projectReaders() *projectReaders {
-	projectOnce.Do(func() {
-		projectRead = &projectReaders{
-			places:  projects.NewPlaces(s.icons.Label),
-			catalog: projects.NewCatalog(),
-			busy:    make(chan struct{}, 4),
-		}
-		projectRead.lifecycle = projects.NewLifecycle(projects.Ports{
-			ProjectDirectories: func() []string {
-				dirs := projects.RegistryPaths()
-				return append(dirs, s.taskProjectDirs()...)
-			},
-			Tasks: func() projects.TaskEvidence { return s.lifecycleEvidence() },
-			Live:  func() projects.LiveEvidence { return s.liveEvidence(context.Background()) },
-		})
+	projectMu.Lock()
+	defer projectMu.Unlock()
+	if r, ok := projectReaderSets[s.cfg.Dir]; ok {
+		return r
+	}
+	own := ""
+	if s.broker != nil {
+		own = s.broker.WorktreeRoot()
+	}
+	managed := projects.ManagedWorktreeRoots(own)
+	r := &projectReaders{
+		places:  projects.NewPlaces(s.icons.Label, managed),
+		catalog: projects.NewCatalog(),
+		busy:    make(chan struct{}, 4),
+	}
+	r.lifecycle = projects.NewLifecycle(projects.Ports{
+		ManagedWorktreeRoots: managed,
+		ProjectDirectories: func() []string {
+			dirs := projects.RegistryPaths()
+			return append(dirs, s.taskProjectDirs()...)
+		},
+		Tasks: func() projects.TaskEvidence { return s.lifecycleEvidence() },
+		Live:  func() projects.LiveEvidence { return s.liveEvidence(context.Background()) },
 	})
-	return projectRead
+	projectReaderSets[s.cfg.Dir] = r
+	return r
 }
 
 func secondsPtr(v *swiftstore.Seconds) *time.Time {

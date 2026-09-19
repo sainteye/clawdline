@@ -67,7 +67,7 @@ func NewRecordFacts() *RecordFacts { return &RecordFacts{held: map[factsKey]Fact
 func (r *RecordFacts) Read(path, assistant string) (Facts, error) {
 	st, err := os.Stat(path)
 	if err != nil {
-		return Facts{}, err
+		return Facts{}, recordError(err)
 	}
 	key := factsKey{path: path, assistant: assistant, size: st.Size(), mod: st.ModTime().UnixNano()}
 	r.mu.Lock()
@@ -80,7 +80,7 @@ func (r *RecordFacts) Read(path, assistant string) (Facts, error) {
 
 	data, complete, err := tailData(path, recordReadLimit)
 	if err != nil {
-		return Facts{}, err
+		return Facts{}, recordError(err)
 	}
 	var facts Facts
 	if assistant == "codex" {

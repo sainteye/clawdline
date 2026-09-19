@@ -124,12 +124,15 @@ type LiveEvidence struct {
 
 // Ports is every dependency the lifecycle reads, as in the Swift service.
 type Ports struct {
-	ManagedWorktreeRoot string
-	ProjectDirectories  func() []string
-	Tasks               func() TaskEvidence
-	Live                func() LiveEvidence
-	Now                 func() time.Time
-	StorageBytes        func(path string, timeout time.Duration) (int64, *Issue)
+	// ManagedWorktreeRoots is every root a broker makes checkouts under (the
+	// function of that name). The Swift service knew one, its own broker's;
+	// a checkout under any of them is managed.
+	ManagedWorktreeRoots []string
+	ProjectDirectories   func() []string
+	Tasks                func() TaskEvidence
+	Live                 func() LiveEvidence
+	Now                  func() time.Time
+	StorageBytes         func(path string, timeout time.Duration) (int64, *Issue)
 }
 
 // DefaultStorageBytes is measureStorageBytes: `du -sk`, bounded.
@@ -308,8 +311,8 @@ func NewLifecycle(p Ports) *Lifecycle {
 	if p.StorageBytes == nil {
 		p.StorageBytes = DefaultStorageBytes
 	}
-	if p.ManagedWorktreeRoot == "" {
-		p.ManagedWorktreeRoot = ManagedWorktreeRoot()
+	if len(p.ManagedWorktreeRoots) == 0 {
+		p.ManagedWorktreeRoots = ManagedWorktreeRoots("")
 	}
 	return &Lifecycle{ports: p, cache: map[string]observation{}}
 }
@@ -974,13 +977,26 @@ func lowerUUID(v string) string {
 	return strings.ToLower(v)
 }
 
+// managedRelative is relativePath from the first managed root that holds
+// path, which is already comparable.
+func (l *Lifecycle) managedRelative(path string) (string, bool) {
+	for _, root := range l.ports.ManagedWorktreeRoots {
+		if root == "" {
+			continue
+		}
+		if relative, inside := relativePath(comparablePath(root), path); inside {
+			return relative, true
+		}
+	}
+	return "", false
+}
+
 func (l *Lifecycle) resolveOwner(entry registered, isMain bool, tasks TaskEvidence) owner {
 	if isMain {
 		return owner{kind: "repository", evidence: "main_worktree"}
 	}
 	path := comparablePath(entry.path)
-	root := comparablePath(l.ports.ManagedWorktreeRoot)
-	relative, inside := relativePath(root, path)
+	relative, inside := l.managedRelative(path)
 	var components []string
 	if inside && relative != "" {
 		components = strings.Split(relative, "/")
@@ -1193,7 +1209,7 @@ func (l *Lifecycle) plan(r *row, target canonicalTarget, tasksAuthoritative bool
 			blockers = append(blockers, Issue{"landing_not_published", "The local target has commits the canonical remote does not."})
 		}
 	}
-	_, managed := relativePath(comparablePath(l.ports.ManagedWorktreeRoot), comparablePath(r.path))
+	_, managed := l.managedRelative(comparablePath(r.path))
 	indexDiffers := false
 	for _, e := range r.dirty {
 		if e.indexDiffersFromWorktree {
