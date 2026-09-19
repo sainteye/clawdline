@@ -43,7 +43,9 @@ type AnalyticsAttributionCapabilities struct {
 	Sources                     []string `json:"sources"`
 }
 
-// complete, or partial with scan_limit_reached.
+// complete, or partial with scan_limit_reached, or partial with
+// legacy_ledger_unreadable (the Swift usage ledger's history could not be
+// read).
 type AnalyticsAvailability struct {
 	Reason string `json:"reason,omitempty"`
 	Status string `json:"status"`
@@ -433,6 +435,18 @@ type AnalyticsScheduledWork struct {
 	Status            string                   `json:"status"`
 	UnknownOutputRuns int64                    `json:"unknownOutputRuns"`
 	UnknownSchedule   AnalyticsUnknownSchedule `json:"unknownSchedule"`
+}
+
+// Where the rows came from (cutover B2). `rows` is `transcripts`: this daemon's
+// own reading of the assistants' records, always. `legacyLedger` is how the
+// Swift app's usage ledger was read — current, stale, unreadable, absent or
+// disabled (CLAWDLINE_NEXT_LEGACY_STORE=off) — and it only adds the
+// conversations whose own records are gone; `legacyRows` is how many of this
+// answer's rows it added.
+type AnalyticsSource struct {
+	LegacyLedger string `json:"legacyLedger"`
+	LegacyRows   int64  `json:"legacyRows"`
+	Rows         string `json:"rows"`
 }
 
 // `UsageQueryService.summary` over a set of rows.
@@ -4107,18 +4121,24 @@ type StartPlaceList struct {
 }
 
 // Whether the Swift app's store was read for this answer: `current`; `stale`,
-// an earlier reading carried because the newest one was half-written; or
-// `unknown`, nothing could be read. Unknown is never the same as empty.
+// an earlier reading carried because the newest one was half-written;
+// `unknown`, nothing could be read; `absent`, there is no Swift store on this
+// machine; or `disabled`, this daemon was told not to read it
+// (CLAWDLINE_NEXT_LEGACY_STORE=off, cutover B1). Unknown is never the same as
+// empty; absent and disabled are known, and the list is then this daemon's own
+// tasks only.
 type StoreReading string
 
 const (
-	StoreReadingCurrent StoreReading = "current"
-	StoreReadingStale   StoreReading = "stale"
-	StoreReadingUnknown StoreReading = "unknown"
+	StoreReadingCurrent  StoreReading = "current"
+	StoreReadingStale    StoreReading = "stale"
+	StoreReadingUnknown  StoreReading = "unknown"
+	StoreReadingAbsent   StoreReading = "absent"
+	StoreReadingDisabled StoreReading = "disabled"
 )
 
 // StoreReadingValues is every value the contract allows, in contract order.
-var StoreReadingValues = []StoreReading{StoreReadingCurrent, StoreReadingStale, StoreReadingUnknown}
+var StoreReadingValues = []StoreReading{StoreReadingCurrent, StoreReadingStale, StoreReadingUnknown, StoreReadingAbsent, StoreReadingDisabled}
 
 // One stored picture and the literal to paste into a reply to show it:
 // `<clawdline-image id="…">`.
@@ -4469,6 +4489,7 @@ type UsageAnalytics struct {
 	RowCount       int64                    `json:"rowCount"`
 	Rows           []AnalyticsRow           `json:"rows"`
 	SchemaVersion  int64                    `json:"schemaVersion"`
+	Source         *AnalyticsSource         `json:"source,omitempty"`
 	Totals         AnalyticsSummary         `json:"totals"`
 	Trend          []AnalyticsTrendBucket   `json:"trend"`
 

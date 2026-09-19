@@ -47,7 +47,8 @@ export interface AnalyticsAttributionCapabilities {
 }
 
 /**
- * complete, or partial with scan_limit_reached.
+ * complete, or partial with scan_limit_reached, or partial with
+ * legacy_ledger_unreadable (the Swift usage ledger's history could not be read).
  */
 export interface AnalyticsAvailability {
   reason?: string
@@ -563,6 +564,19 @@ export interface AnalyticsScheduledWork {
   status: string
   unknownOutputRuns: number
   unknownSchedule: AnalyticsUnknownSchedule
+}
+
+/**
+ * Where the rows came from (cutover B2). `rows` is `transcripts`: this daemon's own
+ * reading of the assistants' records, always. `legacyLedger` is how the Swift app's
+ * usage ledger was read — current, stale, unreadable, absent or disabled
+ * (CLAWDLINE_NEXT_LEGACY_STORE=off) — and it only adds the conversations whose
+ * own records are gone; `legacyRows` is how many of this answer's rows it added.
+ */
+export interface AnalyticsSource {
+  legacyLedger: string | null
+  legacyRows: number
+  rows: string
 }
 
 /**
@@ -5008,15 +5022,20 @@ export interface StartPlaceList {
 
 /**
  * Whether the Swift app's store was read for this answer: `current`; `stale`, an
- * earlier reading carried because the newest one was half-written; or `unknown`,
- * nothing could be read. Unknown is never the same as empty.
+ * earlier reading carried because the newest one was half-written; `unknown`,
+ * nothing could be read; `absent`, there is no Swift store on this machine; or
+ * `disabled`, this daemon was told not to read it (CLAWDLINE_NEXT_LEGACY_STORE=off,
+ * cutover B1). Unknown is never the same as empty; absent and disabled are known,
+ * and the list is then this daemon's own tasks only.
  */
 export type StoreReading =
     "current"
   | "stale"
   | "unknown"
+  | "absent"
+  | "disabled"
 
-export const StoreReadingValues: readonly StoreReading[] = ["current", "stale", "unknown"] as const
+export const StoreReadingValues: readonly StoreReading[] = ["current", "stale", "unknown", "absent", "disabled"] as const
 
 /**
  * One stored picture and the literal to paste into a reply to show it:
@@ -5447,6 +5466,7 @@ export interface UsageAnalytics {
   rowCount: number
   rows: AnalyticsRow[]
   schemaVersion: number
+  source?: AnalyticsSource
   totals: AnalyticsSummary
   trend: AnalyticsTrendBucket[]
 
