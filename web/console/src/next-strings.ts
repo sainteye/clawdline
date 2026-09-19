@@ -28,6 +28,7 @@ const words = {
     stacksNone: "No project on this machine has a .devstack.json.",
     stacksFailed: "Could not read the server list.",
     stacksTruncated: "Some projects were not looked at; this list may be incomplete.",
+    sessionGone: "The session in this address is no longer on this machine, so here is the list.",
   },
   "zh-Hant": {
     olderNotRead: "更早的對話沒有載入：這一頁只讀對話記錄的最後 {window}，前面還有 {bytes} 沒有讀。",
@@ -44,6 +45,7 @@ const words = {
     stacksNone: "這台機器上的專案都沒有 .devstack.json。",
     stacksFailed: "讀不到伺服器清單。",
     stacksTruncated: "有些專案沒有看完，這份清單可能不完整。",
+    sessionGone: "網址裡的那個 session 已經不在這台機器上了，先回到清單。",
   },
 } as const
 
