@@ -54,6 +54,10 @@ func (c *collector) publish(_ context.Context, out Outbound) error {
 func (c *collector) channels() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.channelsLocked()
+}
+
+func (c *collector) channelsLocked() []string {
 	var names []string
 	for _, out := range c.out {
 		names = append(names, out.Channel)
@@ -75,7 +79,9 @@ func (c *collector) payload(t *testing.T, channel string) map[string]any {
 		}
 		return body
 	}
-	t.Fatalf("nothing was published on %s; saw %v", channel, c.channels())
+	// The lock is already held: asking channels() here would wait on it for
+	// ever, and a missing publication would hang the suite instead of failing.
+	t.Fatalf("nothing was published on %s; saw %v", channel, c.channelsLocked())
 	return nil
 }
 

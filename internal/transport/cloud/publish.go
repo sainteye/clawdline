@@ -116,6 +116,16 @@ type Publisher struct {
 	// is older than five minutes as stale and will not auto-select it
 	// (`cloud-client.js`'s MACHINE_INVENTORY_FRESH_MS), so silence is not free.
 	sent map[string]time.Time
+
+	// listed is the sessions a viewer holds rows for, which decides whether a
+	// finished task is still reachable (tasklist.go).
+	listed map[string]bool
+	// tasks is the task list as last projected, carried on the descriptor.
+	// Nil or empty is no `tasks` key at all.
+	tasks []map[string]any
+	// omitted is how many reachable records the last projection's bounds left
+	// out, so the log says it when it changes rather than every pass.
+	omitted int
 }
 
 // Heartbeat is how often an unchanged value is published anyway. The Linux
@@ -169,12 +179,23 @@ func (p *Publisher) Run(ctx context.Context) error {
 // request, when this daemon answers one, has something to call.
 func (p *Publisher) Pass(ctx context.Context) { p.pass(ctx) }
 
+// The sessions are read before the descriptor goes out and published after it:
+// which finished tasks the descriptor's task list carries depends on which
+// sessions a viewer will hold, and the descriptor still has to arrive first.
 func (p *Publisher) pass(ctx context.Context) {
+	reading, ok := p.readSessions(ctx)
+	if ok {
+		p.noteListed(reading.ids, reading.authoritative())
+	}
+	p.refreshTasks(ctx)
 	p.publishDescriptor(ctx)
-	p.publishSessions(ctx)
+	if ok {
+		p.publishSessions(ctx, reading)
+	}
 }
 
-// publishDescriptor puts this machine in the viewer's machine list.
+// publishDescriptor puts this machine in the viewer's machine list, with the
+// task list a viewer groups its sessions by (tasklist.go).
 func (p *Publisher) publishDescriptor(ctx context.Context) {
 	// `commands` is stated explicitly rather than left to be guessed from
 	// `platform`. A page with no `commands` array decides what to send by
@@ -190,6 +211,13 @@ func (p *Publisher) publishDescriptor(ctx context.Context) {
 			"commands": cloudops.Implemented(),
 		},
 	}
+	// A machine with no task a viewer can reach publishes the descriptor it
+	// always did. The hosted console replaces a machine's whole snapshot with
+	// each one it receives, so a missing `tasks` is read as none, the same as
+	// an empty list, and costs nothing on a machine that never dispatches.
+	if len(p.tasks) > 0 {
+		snapshot["tasks"] = p.tasks
+	}
 	body, err := json.Marshal(snapshot)
 	if err != nil {
 		p.logf("cloud: the machine descriptor could not be encoded: %v", err)
@@ -198,22 +226,39 @@ func (p *Publisher) publishDescriptor(ctx context.Context) {
 	// `at` moves every pass and nothing a viewer reads moves with it
 	// (`freshnessOnlyOrchestratorFields`), so the comparison is made without
 	// it and the heartbeat is what keeps the machine from going stale.
-	identity := map[string]any{"app": snapshot["app"], "machine": snapshot["machine"]}
+	identity := map[string]any{"app": snapshot["app"], "machine": snapshot["machine"], "tasks": snapshot["tasks"]}
 	if !p.changed(descriptorKey, mustJSON(identity)) {
 		return
 	}
 	p.send(ctx, "orch/"+cloudops.ChannelSegment(p.MachineID), body, "orch")
 }
 
-// publishSessions puts this machine's sessions in the viewer's list.
-func (p *Publisher) publishSessions(ctx context.Context) {
+// sessionReading is one reading of this machine's own session list.
+type sessionReading struct {
+	sessions []map[string]any
+	at, scan json.RawMessage
+	// ids are the sessions that will be published, in the order read.
+	ids []string
+	// complete and emptyAuthoritative are the scan's own words for whether
+	// the list is the whole set.
+	complete, emptyAuthoritative bool
+}
+
+// authoritative is whether this reading publishes the inventory, which is what
+// tombstones a row a viewer holds.
+func (r sessionReading) authoritative() bool {
+	return (r.complete || r.emptyAuthoritative) && len(r.ids) <= InventoryLimit
+}
+
+// readSessions reads this machine's sessions, or answers false.
+func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
 	res, err := p.Router.Do(ctx, cloudops.LocalRequest{Method: http.MethodGet, Path: "/v1/sessions"})
 	if err != nil || res.Status != http.StatusOK {
 		// A machine that cannot read its own sessions publishes nothing rather
 		// than an empty list: an empty inventory is a claim, and the claim
 		// "this Mac has no sessions" would tombstone every row a viewer holds.
 		p.logf("cloud: this machine's own session list could not be read: status=%d err=%v", res.Status, err)
-		return
+		return sessionReading{}, false
 	}
 	var root struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -226,18 +271,31 @@ func (p *Publisher) publishSessions(ctx context.Context) {
 	}
 	if err := json.Unmarshal(res.Body, &root); err != nil {
 		p.logf("cloud: this machine's own session list was unreadable: %v", err)
-		return
+		return sessionReading{}, false
 	}
 	_ = json.Unmarshal(root.Scan, &scan)
-
-	ids := make([]string, 0, len(root.Sessions))
+	reading := sessionReading{sessions: root.Sessions, at: root.At, scan: root.Scan,
+		complete: scan.Complete, emptyAuthoritative: scan.EmptyAuthoritative}
 	for _, session := range root.Sessions {
 		id, _ := session["id"].(string)
 		if id == "" || id == InventorySessionID {
 			continue
 		}
+		reading.ids = append(reading.ids, id)
+	}
+	return reading, true
+}
+
+// publishSessions puts this machine's sessions in the viewer's list.
+func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading) {
+	ids := make([]string, 0, len(reading.sessions))
+	for _, session := range reading.sessions {
+		id, _ := session["id"].(string)
+		if id == "" || id == InventorySessionID {
+			continue
+		}
 		ids = append(ids, id)
-		row, err := json.Marshal(map[string]any{"session": session, "at": root.At, "scan": root.Scan})
+		row, err := json.Marshal(map[string]any{"session": session, "at": reading.at, "scan": reading.scan})
 		if err != nil {
 			continue
 		}
@@ -255,7 +313,7 @@ func (p *Publisher) publishSessions(ctx context.Context) {
 	// bridge publishes it only from an authoritative reading
 	// (`CloudAppBridge.swift:1974-2031`) and so does this: a partial scan
 	// publishes its rows and says nothing about the set.
-	if !scan.Complete && !scan.EmptyAuthoritative {
+	if !reading.complete && !reading.emptyAuthoritative {
 		return
 	}
 	if len(ids) > InventoryLimit {

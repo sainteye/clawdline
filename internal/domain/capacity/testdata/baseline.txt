@@ -67,6 +67,12 @@
 # commands (docs/skill.md). It registered no row: nothing it keeps
 # accumulates — one install record, one backup, one copy of the binary, each
 # replaced. The lines it added are what those commands read (read, admission).
+#
+# The orch/ task list (2026-09-19) put the task records a hosted console
+# groups sessions by on the machine descriptor (transport/cloud tasklist.go).
+# It registered no row: the list is recomputed whole from the task route every
+# pass and nothing it holds accumulates. The lines it added are the two cuts
+# of one snapshot (page) and the page of finished tasks it reads (read).
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -173,6 +179,9 @@ internal/domain/schedule.MaxCatchUpHours # parameter: how far back a schedule ca
 internal/domain/schedule.TitleLimit # admission: a schedule title
 internal/domain/task.MaxAge # parameter: how long a closeability answer stays true
 internal/transport/cloud.InventoryLimit # page: sessions in one Cloud inventory
+internal/transport/cloud.TaskListLimit # page: task records in one orch/ snapshot, 100; past it the oldest finished are left out first, then the oldest unfinished, and the log says how many when that number changes. Each snapshot is recomputed whole, so nothing fills
+internal/transport/cloud.TaskListBytesLimit # page: those records' encoded bytes, 128 KiB, cut the same way; 100 records at the broker's 200-character title limit are 85,301 bytes, so it binds only on titles this daemon did not admit
+internal/transport/cloud.taskReadLimit # read: the finished tasks one orch/ pass reads, the page the local console's stream reads (50); unfinished tasks are all read, and are bounded by TaskListLimit on the way out
 internal/transport/cloud.NewFake:chan(depth) # lane: the test fake's request queue
 internal/transport/cloud.(*Relay).start:chan(refusalLane) # lane: requests the full queue turned away, waiting for their cloud_ingress_busy answer; past it the sender is not told and cloud.relay_queue counts it dropped (limits N20, C3)
 internal/transport/http.(*Server).pastRoute.limit # page: past conversations in one answer
