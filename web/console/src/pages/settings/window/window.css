@@ -580,6 +580,166 @@
   background: var(--sw-hairline);
 }
 
+/* --- the pairing QR ----------------------------------------------------- */
+
+/* The code is black on white whatever the window is: a camera needs the
+   contrast, and the quiet zone is part of the white square rather than of the
+   dark window around it. The SVG is sized by the page in whole pixels per
+   module (PairingQr.tsx), so nothing here may scale it. */
+.sw-qr {
+  padding: 12px 0 10px;
+}
+.sw-qr-fit {
+  width: 100%;
+}
+.sw-qr-code {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  line-height: 0;
+  cursor: zoom-in;
+}
+.sw-qr-code:focus-visible {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: 3px;
+}
+.sw-qr-svg {
+  display: block;
+  flex: none;
+}
+.sw-qr-countdown {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--sw-label);
+  font-variant-numeric: tabular-nums;
+}
+.sw-qr-countdown.hurry {
+  color: var(--sw-accent);
+}
+.sw-qr-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--sw-faint);
+}
+
+/* The order of steps sits right under the code and in the accent, because on
+   an iPhone the wrong order is discovered only after the work is done. */
+.sw-qr-order {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(217, 119, 87, 0.38);
+  background: rgba(217, 119, 87, 0.08);
+}
+.sw-qr-order-head {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sw-label);
+}
+.sw-qr-order ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--sw-soft);
+}
+.sw-qr-order-warn,
+.sw-qr-order-other {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--sw-soft);
+}
+.sw-qr-order-other {
+  color: var(--sw-faint);
+}
+
+/* An expired code leaves its place and a button the size of a decision. */
+.sw-qr-lapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 12px;
+  min-height: 160px;
+  padding: 18px 16px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+}
+.sw-qr-lapsed p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--sw-soft);
+}
+.sw-qr-renew {
+  appearance: none;
+  height: 34px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sw-accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sw-qr-renew:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sw-qr-renew:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* Enlarged: the whole window turns white, so the camera exposes for the code
+   and not for a dark room around a bright square. */
+.sw-qr-full {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #fff;
+  cursor: zoom-out;
+}
+.sw-qr-full-line {
+  margin: 0;
+  font-size: 13px;
+  color: #3a3a3c;
+  font-variant-numeric: tabular-nums;
+}
+.sw-qr-full-line.hurry {
+  color: #b4532f;
+}
+
+/* The pasted-code route: the field takes the width, the button says what it does. */
+.sw-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 2px;
+}
+.sw-code-field {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: 26px;
+}
+.sw-code-row + .sw-note {
+  margin-top: 8px;
+}
+
 /* Narrow enough that two columns would be two narrow columns: the original
    cannot be resized at all, and a shell window on a small screen can. */
 @media (max-width: 720px) {

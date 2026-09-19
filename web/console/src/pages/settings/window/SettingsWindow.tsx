@@ -26,6 +26,7 @@ import {
   type ShellState,
 } from "./bridge.js"
 import { Block, Chip, Head, MemoField, Mono, Note, PopUp, Row, Slider, Switch, TabStrip } from "./controls.js"
+import { PairingQr, expiredFailure } from "./PairingQr.js"
 
 /**
  * The native "Clawdline 設定" window, as a web page.
@@ -85,6 +86,9 @@ export function SettingsWindow() {
   const [pairingSaid, setPairingSaid] = useState("")
   const [pairingBusy, setPairingBusy] = useState(false)
   const [pairingCode, setPairingCode] = useState("")
+  // What went wrong with the last pasted pairing code, said under the field it
+  // was pasted into rather than at the top of the card.
+  const [codeSaid, setCodeSaid] = useState("")
   const [copied, setCopied] = useState(false)
   const rememberedScope = useRef("")
   const recordingRef = useRef(false)
@@ -694,28 +698,41 @@ export function SettingsWindow() {
    * and why the card is only ever drawn in this window.
    *
    * Two ways in, because there are two kinds of browser. A phone points its
-   * camera at the link; a laptop on the same desk has no camera to point, so
-   * it shows its own pairing code and that goes in the field at the bottom.
-   * The cryptography is identical either way.
+   * camera at the QR drawn from the link (PairingQr.tsx); a laptop on the same
+   * desk has no camera to point, so it shows its own pairing code and that goes
+   * in the field under this card. The cryptography is identical either way,
+   * and the code is the more forgiving of the two: it lives ten minutes to the
+   * QR's three.
    */
   function cloudPairingBlock() {
     if (!cloud || !cloud.enabled) return null
     const pairing = cloud.pairing ?? { phase: "idle" }
     const viewers = cloud.devices ?? []
 
-    const run = (what: () => Promise<unknown>) => {
+    const run = (what: () => Promise<unknown>, say: (text: string) => void = setPairingSaid) => {
       setPairingBusy(true)
       setPairingSaid("")
+      setCodeSaid("")
+      // Busy until the card has read what the press changed, not only until
+      // the press was answered: in between, the card would still be looking
+      // at the code that just expired, and would renew it a second time.
       void what().then(
-        () => {
-          setPairingBusy(false)
-          void readCloudStatus().then((answer) => setCloud(answer))
-        },
+        () =>
+          readCloudStatus().then((answer) => {
+            setCloud(answer)
+            setPairingBusy(false)
+          }),
         (error: unknown) => {
           setPairingBusy(false)
-          setPairingSaid(sentence(error))
+          say(sentence(error))
         },
       )
+    }
+    const sendCode = () => {
+      const code = pairingCode.trim()
+      if (!code) return
+      setPairingCode("")
+      run(() => offerCloudPairing(code), setCodeSaid)
     }
 
     const lines: { key: string; text: string; dot: "idle" | "warn" | "live" }[] = []
@@ -744,105 +761,114 @@ export function SettingsWindow() {
         })
         break
       case "failed":
-        lines.push({ key: "phase", text: fill(W.webCloudPairFailed, { why: pairing.error ?? "" }), dot: "warn" })
+        // A code that simply ran out is the QR card's to say, with the button
+        // that fixes it; any other failure is said here in the daemon's words.
+        if (!expiredFailure(pairing)) {
+          lines.push({ key: "phase", text: fill(W.webCloudPairFailed, { why: pairing.error ?? "" }), dot: "warn" })
+        }
         break
       default:
         if (viewers.length === 0) lines.push({ key: "phase", text: W.webCloudPairNone, dot: "idle" })
-    }
-    if (pairing.phase === "waiting" && pairing.expires_at) {
-      lines.push({
-        key: "expires",
-        text: fill(W.webCloudPairExpires, { at: new Date(pairing.expires_at * 1000).toLocaleTimeString() }),
-        dot: "idle",
-      })
-    }
-    if (pairing.phase === "waiting" && pairing.machine_fingerprint) {
-      lines.push({
-        key: "machine",
-        text: fill(W.webCloudPairMachineKey, { key: pairing.machine_fingerprint }),
-        dot: "idle",
-      })
     }
     if (pairingSaid) lines.push({ key: "said", text: pairingSaid, dot: "warn" })
 
     const waiting = pairing.phase === "waiting" || pairing.phase === "sealing"
     return (
-      <Block label={W.webCloudPair}>
-        {lines.map((line) => (
-          <Note key={line.key} dot={line.dot}>
-            {line.text}
-          </Note>
-        ))}
-        {waiting && pairing.link ? (
-          <>
-            <Note dot="idle">{W.webCloudPairOpen}</Note>
-            <Note
-              mono
-              dot="live"
-              trailing={
-                <Chip
-                  onClick={() => {
-                    // A clipboard a browser refuses is not an error worth a
-                    // dialog: the link is on screen and can be selected.
-                    void navigator.clipboard?.writeText(pairing.link ?? "").then(
-                      () => {
-                        setCopied(true)
-                        setTimeout(() => setCopied(false), 2_000)
-                      },
-                      () => setPairingSaid(W.webCloudPairCopy),
-                    )
-                  }}
-                >
-                  {copied ? W.webCloudPairCopied : W.webCloudPairCopy}
+      <>
+        <Block label={W.webCloudPair}>
+          {lines.map((line) => (
+            <Note key={line.key} dot={line.dot}>
+              {line.text}
+            </Note>
+          ))}
+          <PairingQr pairing={pairing} busy={pairingBusy} onRenew={() => run(beginCloudPairing)} />
+          {pairing.phase === "waiting" && pairing.machine_fingerprint ? (
+            <Note dot="idle">{fill(W.webCloudPairMachineKey, { key: pairing.machine_fingerprint })}</Note>
+          ) : null}
+          {waiting && pairing.link ? (
+            <>
+              <Note dot="idle">{W.webCloudPairOpen}</Note>
+              <Note
+                mono
+                dot="live"
+                trailing={
+                  <Chip
+                    onClick={() => {
+                      // A clipboard a browser refuses is not an error worth a
+                      // dialog: the link is on screen and can be selected.
+                      void navigator.clipboard?.writeText(pairing.link ?? "").then(
+                        () => {
+                          setCopied(true)
+                          setTimeout(() => setCopied(false), 2_000)
+                        },
+                        () => setPairingSaid(W.webCloudPairCopy),
+                      )
+                    }}
+                  >
+                    {copied ? W.webCloudPairCopied : W.webCloudPairCopy}
+                  </Chip>
+                }
+              >
+                {pairing.link}
+              </Note>
+            </>
+          ) : null}
+          <div className="sw-note">
+            <span className="sw-dot idle" aria-hidden="true" />
+            <span className="sw-note-text">
+              <Chip disabled={pairingBusy} onClick={() => run(beginCloudPairing)}>
+                {waiting ? W.webCloudPairAgain : W.webCloudPairStart}
+              </Chip>
+              {waiting ? (
+                <Chip disabled={pairingBusy} onClick={() => run(cancelCloudPairing)}>
+                  {W.webCloudPairCancel}
                 </Chip>
+              ) : null}
+            </span>
+          </div>
+          {viewers.map((viewer) => (
+            <Note
+              key={viewer.id}
+              dot={viewer.revoked ? "warn" : viewer.pinned ? "live" : "idle"}
+              trailing={
+                viewer.revoked ? undefined : (
+                  <Chip disabled={pairingBusy} onClick={() => run(() => revokeCloudViewer(viewer.id))}>
+                    {W.webCloudPairRevoke}
+                  </Chip>
+                )
               }
             >
-              {pairing.link}
+              {viewerLine(viewer)}
             </Note>
-          </>
-        ) : null}
-        <div className="sw-note">
-          <span className="sw-dot idle" aria-hidden="true" />
-          <span className="sw-note-text">
-            <Chip disabled={pairingBusy} onClick={() => run(beginCloudPairing)}>
-              {waiting ? W.webCloudPairAgain : W.webCloudPairStart}
+          ))}
+        </Block>
+        {/* The other way in, as a block of its own with a button that says what
+            it does. It used to be one row at the foot of the card that sent on
+            blur, which read as a setting and never as the ten-minute route. */}
+        <Block label={W.webCloudPairCodeHead} hint={W.webCloudPairCodeHint}>
+          <div className="sw-code-row">
+            <input
+              className="sw-field sw-code-field"
+              type="text"
+              aria-label={W.webCloudPairCodeLabel}
+              value={pairingCode}
+              placeholder="eyJhY2NvdW50X2lkIjoi…"
+              spellCheck={false}
+              autoComplete="off"
+              autoCapitalize="off"
+              disabled={pairingBusy}
+              onChange={(e) => setPairingCode(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") sendCode()
+              }}
+            />
+            <Chip disabled={pairingBusy || !pairingCode.trim()} onClick={sendCode}>
+              {W.webCloudPairCodeSend}
             </Chip>
-            {waiting ? (
-              <Chip disabled={pairingBusy} onClick={() => run(cancelCloudPairing)}>
-                {W.webCloudPairCancel}
-              </Chip>
-            ) : null}
-          </span>
-        </div>
-        {viewers.map((viewer) => (
-          <Note
-            key={viewer.id}
-            dot={viewer.revoked ? "warn" : viewer.pinned ? "live" : "idle"}
-            trailing={
-              viewer.revoked ? undefined : (
-                <Chip disabled={pairingBusy} onClick={() => run(() => revokeCloudViewer(viewer.id))}>
-                  {W.webCloudPairRevoke}
-                </Chip>
-              )
-            }
-          >
-            {viewerLine(viewer)}
-          </Note>
-        ))}
-        <Row label={W.webCloudPairCodeLabel} hint={W.webCloudPairCodeHint}>
-          <MemoField
-            label={W.webCloudPairCodeLabel}
-            value={pairingCode}
-            example="eyJhY2NvdW50X2lkIjoi…"
-            onCommit={(value) => {
-              const code = value.trim()
-              setPairingCode("")
-              if (!code) return
-              run(() => offerCloudPairing(code))
-            }}
-          />
-        </Row>
-      </Block>
+          </div>
+          {codeSaid ? <Note dot="warn">{codeSaid}</Note> : null}
+        </Block>
+      </>
     )
   }
 
