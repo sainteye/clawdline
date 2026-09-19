@@ -345,6 +345,11 @@ type Record struct {
 	// every task a session asked for.
 	ScheduleID    string `json:"schedule_id,omitempty"`
 	ScheduleTitle string `json:"schedule_title,omitempty"`
+	// ScheduleCloseTab is that schedule's close_tab when this run was
+	// dispatched — the Swift app's `schedule_close_tab` — and what the run's
+	// end does to its tab (tabPolicy). Empty on a record written before it
+	// existed, which reads as the schedule default, on_success.
+	ScheduleCloseTab string `json:"schedule_close_tab,omitempty"`
 	// Dispatcher is the store handle that admitted this task — its process
 	// and a nonce (store.Owner). Only that process ever holds the plaintext
 	// secret, so a task still `queued` after it has provably gone can never be

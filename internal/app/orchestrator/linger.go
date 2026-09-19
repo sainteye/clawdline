@@ -3,7 +3,8 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
@@ -24,16 +25,21 @@ import (
 //     machine is in before anything is decided — D12 puts that grace here,
 //     and nowhere near the task's own timeout;
 //   - "a reading with no terminals in it at all is no longer allowed to
-//     decide": a tab is closed, or its linger dropped as already gone, only
-//     on a reading that saw terminals and whose source for that tab answered
-//     completely. Anything else waits.
+//     decide": a tab is dropped as already gone only on a reading that saw
+//     terminals and whose source for that tab answered completely. Anything
+//     else waits.
 //
-// Only a tmux child is lingered: its session is one this broker made, named
-// for the task, and closed only while the pane it recorded is still one of its
-// panes (runCloseChild). An iTerm2 session can be closed by the id iTerm2 gave
-// back (closeChild), but a finished child's tab is not lingered yet: a linger
-// is decided on a reading that answered completely for the tab's source, and
-// on a Mac with a window iTerm2 will not list, that source never does.
+// Both backends are lingered, by one rule (lingerStepFor). A tmux child is
+// closed only while the pane it recorded is still one of the panes of the
+// session named for the task, and an iTerm2 child by the session id iTerm2
+// gave back, which it never gives to another session — after the child's own
+// job in it has been ended, because iTerm2 asks a person before it closes a
+// tab with a job running (runCloseChild, terminal/iterm_close_darwin.go). Until
+// this change only tmux was: a linger was decided on a reading that answered
+// completely for the tab's source, and on a Mac with a window iTerm2 will not
+// list that source never does — so every finished iTerm2 child stayed open,
+// and the session list only grew. A close needs no complete answer, only the
+// tab itself, seen, at rest; it is the tab's *absence* that needs one.
 
 // LingerDefault is the Swift app's `orchestrator_child_linger`, 180 seconds
 // (Config.swift:478).
@@ -42,6 +48,19 @@ const LingerDefault = 180 * time.Second
 // lingerRestartGrace is the Swift app's `restartGrace` (Orchestrator.swift:6567).
 const lingerRestartGrace = 20 * time.Second
 
+// itermCloseQuiet is how long no iTerm2 close is made after one iTerm2 did not
+// answer. Such a close has already held the beat for its whole limit, and
+// while iTerm2 is that busy — or holding a dialog for a person — the next
+// close would only do the same.
+const itermCloseQuiet = time.Minute
+
+// lingerGiveUp is how long past its deadline a linger nothing could decide is
+// still asked about. An iTerm2 tab a person closed is never seen again, and on
+// a Mac where one window will not list, never seen gone either; after a day
+// the row is dropped with the reason, and the tab — if it is there at all — is
+// left as it is.
+const lingerGiveUp = 24 * time.Hour
+
 func (b *Broker) childLinger() time.Duration {
 	if b.ChildLinger == nil {
 		return LingerDefault
@@ -49,36 +68,306 @@ func (b *Broker) childLinger() time.Duration {
 	return b.ChildLinger()
 }
 
-// lingerFor is the close a settlement owes its child's tab, if any: a tmux
-// child that ended in success or failure, on a machine whose setting does not
-// keep finished children open.
+// The tab policy: what a task's end does to its child's tab, decided in one
+// place (tabPolicy) and named by one of these rules. The rule is readable
+// where it matters: CHILD.md states it for the task before it starts
+// (tabPolicyBrief), the settlement's event carries the plan that applied, and a
+// close still owed is a row in the store.
+const (
+	// TabRuleLinger: an unscheduled task that ended in success or failure is
+	// closed `orchestrator_child_linger` after it ended.
+	TabRuleLinger = "child_linger"
+	// TabRuleLingerOff: `orchestrator_child_linger` is negative, and every
+	// finished unscheduled child is left open, a session of its own.
+	TabRuleLingerOff = "child_linger_off"
+	// TabRuleUnfinished: an unscheduled task that timed out or was cancelled
+	// is left open — its child may still be working, and a person may want to
+	// see why it did not finish.
+	TabRuleUnfinished = "unfinished_left_open"
+	// The three a scheduled task's `close_tab` names, the Swift app's
+	// `scheduledCloseAt`: closed as soon as it may be, after a success only,
+	// after any end, or never.
+	TabRuleScheduleOnSuccess = "schedule_on_success"
+	TabRuleScheduleAlways    = "schedule_always"
+	TabRuleScheduleNever     = "schedule_never"
+	// TabRuleSpawnFailed: a child that never started is closed at once when
+	// its tab is there (closeChild, D11), whatever else is set.
+	TabRuleSpawnFailed = "spawn_failed"
+)
+
+// The three values of a schedule's close_tab (domain/schedule.CloseTab), as a
+// scheduled task's record keeps them.
+const (
+	closeTabOnSuccess = "on_success"
+	closeTabAlways    = "always"
+	closeTabNever     = "never"
+)
+
+// TabPlan is what one end does to a task's child's tab: the rule that decided
+// it, whether the tab is closed, and how long after the end.
+type TabPlan struct {
+	Rule  string
+	Close bool
+	After time.Duration
+}
+
+// scheduleCloseTab is a scheduled task's close_tab. A record written before
+// the field existed reads as the schedule default, on_success.
+func (r Record) scheduleCloseTab() string {
+	switch r.ScheduleCloseTab {
+	case closeTabAlways, closeTabNever:
+		return r.ScheduleCloseTab
+	}
+	return closeTabOnSuccess
+}
+
+// tabPolicy is the whole policy. A close it asks for is still made only while
+// the tab is the child's own, at rest, and nobody has used it since the task
+// ended (lingerStepFor): the rule says when a close is owed, never that it
+// may be forced.
+func tabPolicy(r Record, end State, linger time.Duration) TabPlan {
+	if end == StateSpawnFailed {
+		return TabPlan{Rule: TabRuleSpawnFailed, Close: true}
+	}
+	if r.ScheduleID != "" {
+		switch r.scheduleCloseTab() {
+		case closeTabNever:
+			return TabPlan{Rule: TabRuleScheduleNever}
+		case closeTabAlways:
+			return TabPlan{Rule: TabRuleScheduleAlways, Close: true}
+		}
+		return TabPlan{Rule: TabRuleScheduleOnSuccess, Close: end == StateSuccess}
+	}
+	if linger < 0 {
+		return TabPlan{Rule: TabRuleLingerOff}
+	}
+	if end == StateSuccess || end == StateFailure {
+		return TabPlan{Rule: TabRuleLinger, Close: true, After: linger}
+	}
+	return TabPlan{Rule: TabRuleUnfinished}
+}
+
+// tabPlanPayload is a plan as a settlement's event carries it.
+func tabPlanPayload(p TabPlan) map[string]any {
+	return map[string]any{"rule": p.Rule, "close": p.Close, "after_seconds": int64(p.After / time.Second)}
+}
+
+// tabPolicyBrief is the policy as CHILD.md states it for one task: which rule,
+// and what each way of ending does to this tab.
+func tabPolicyBrief(r Record, linger time.Duration) []string {
+	intro := "For this task the rule is "
+	switch {
+	case r.ScheduleID != "":
+		intro += fmt.Sprintf("its schedule's `close_tab: %s`:", r.scheduleCloseTab())
+	case linger < 0:
+		intro += "`orchestrator_child_linger` = -1, which keeps every finished child open:"
+	default:
+		intro += fmt.Sprintf("`orchestrator_child_linger` = %d seconds:", int64(linger/time.Second))
+	}
+	lines := []string{intro, ""}
+	ends := []State{StateSuccess, StateFailure, StateTimeout, StateCancelled}
+	for i, end := range ends {
+		p := tabPolicy(r, end, linger)
+		what := "left open"
+		switch {
+		case p.Close && p.After > 0:
+			what = fmt.Sprintf("closed about %d seconds after it ends", int64(p.After/time.Second))
+		case p.Close:
+			what = "closed as soon as it is at rest"
+		}
+		stop := ";"
+		if i == len(ends)-1 {
+			stop = "."
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s (`%s`)%s", end, what, p.Rule, stop))
+	}
+	return lines
+}
+
+// lingerFor is the close a settlement owes its child's tab, if any: what
+// tabPolicy asks for, of a tab this broker can prove it opened and can close.
+// A spawn_failed child is closed by the settlement itself (closeChild), and
+// owes no linger.
 func (b *Broker) lingerFor(r Record, now time.Time) (store.Linger, bool) {
-	if r.State != StateSuccess && r.State != StateFailure {
+	plan := tabPolicy(r, r.State, b.childLinger())
+	if !plan.Close || r.State == StateSpawnFailed || r.ChildTerminalID == "" || b.Launcher == nil {
 		return store.Linger{}, false
 	}
-	if r.ChildBackend != "tmux" || r.ChildTerminalID == "" || b.Launcher == nil {
+	l := store.Linger{Task: r.ID, Backend: r.ChildBackend, Pane: r.ChildTerminalID,
+		Deadline: now.Add(plan.After), CreatedAt: now}
+	switch r.ChildBackend {
+	case "tmux":
+		l.Session = ChildSessionName(r.ID)
+	case "iterm":
+		if _, ok := b.Launcher.(itermCloser); !ok {
+			return store.Linger{}, false
+		}
+	default:
 		return store.Linger{}, false
 	}
-	d := b.childLinger()
-	if d < 0 {
-		return store.Linger{}, false
+	return l, true
+}
+
+// lingerWatch is what the beat has seen of one lingering tab since its task
+// ended. It is how "nobody has used it since" is told: the child's last turn
+// ends at rest, so a turn that begins after the tab was seen at rest, or a
+// different conversation in it, is somebody else's — a person who went on
+// working in the tab, a root that sent it a message. Such a tab is left to
+// them. Waiting is not counted: an assistant can put a question or a notice on
+// its own screen without anybody having typed, and it only holds the close
+// back. It is kept in memory: a restart forgets it, and the next close is then
+// decided on the tab's state alone, as before.
+type lingerWatch struct {
+	idle         bool
+	conversation string
+	takenOver    string
+}
+
+func (w *lingerWatch) see(s session.Session) {
+	if s.ConversationID != "" {
+		switch {
+		case w.conversation == "":
+			w.conversation = s.ConversationID
+		case s.ConversationID != w.conversation && w.takenOver == "":
+			w.takenOver = "another conversation is running in it"
+		}
 	}
-	return store.Linger{Task: r.ID, Backend: r.ChildBackend, Pane: r.ChildTerminalID,
-		Session: ChildSessionName(r.ID), Deadline: now.Add(d), CreatedAt: now}, true
+	switch s.State {
+	case session.StateIdle:
+		w.idle = true
+	case session.StateWorking:
+		if w.idle && w.takenOver == "" {
+			w.takenOver = "a turn began in it after the child's last one had ended"
+		}
+	}
+}
+
+// lingerMemory is what closeLingers keeps between passes: each lingering tab's
+// lingerWatch, and when an iTerm2 close may next be made. It is locked because
+// a pass that overlaps another is counted, not refused (observe.go), and two
+// passes writing one map at once would stop the daemon.
+type lingerMemory struct {
+	mu         sync.Mutex
+	watch      map[string]*lingerWatch
+	quietUntil time.Time
+}
+
+// observe records what this reading shows of every lingering tab, due or not,
+// and forgets the tabs no longer owed a close.
+func (m *lingerMemory) observe(rows []store.Linger, rd reading) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.watch == nil {
+		m.watch = map[string]*lingerWatch{}
+	}
+	owed := make(map[string]bool, len(rows))
+	for _, l := range rows {
+		owed[l.Task] = true
+		w := m.watch[l.Task]
+		if w == nil {
+			w = &lingerWatch{}
+			m.watch[l.Task] = w
+		}
+		if s, present := rd.session(l.Pane); present {
+			w.see(s)
+		}
+	}
+	for task := range m.watch {
+		if !owed[task] {
+			delete(m.watch, task)
+		}
+	}
+}
+
+// seen is a copy of what has been seen of one tab.
+func (m *lingerMemory) seen(task string) lingerWatch {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if w := m.watch[task]; w != nil {
+		return *w
+	}
+	return lingerWatch{}
+}
+
+func (m *lingerMemory) forget(task string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.watch, task)
+}
+
+// quiet is whether an iTerm2 close must wait at now; quietFor starts the wait.
+func (m *lingerMemory) quiet(now time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return now.Before(m.quietUntil)
+}
+
+func (m *lingerMemory) quietFor(now time.Time, d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.quietUntil = now.Add(d)
+}
+
+// lingerStep is what one due linger becomes on one reading.
+type lingerStep int
+
+const (
+	lingerWait  lingerStep = iota // decide on a later reading
+	lingerGone                    // nothing of the child's is left to close
+	lingerLeave                   // somebody else is using it; it is theirs
+	lingerClose
+)
+
+// lingerStepFor decides one due linger, for either backend.
+//
+//   - Absent is decided only by a reading that saw terminals and whose source
+//     for this tab answered completely. On a Mac where iTerm2 will not list
+//     one window, an iTerm2 tab not seen is not a tab gone, and it waits.
+//   - Present needs no complete answer: the tab was seen, by its own id. It is
+//     left alone for good when a different assistant is running in it or it
+//     has been used since the task ended (lingerWatch), and closed only while
+//     it is plainly at rest. Working is the child still finishing a turn;
+//     waiting is a question somebody may be about to answer; unknown is a
+//     screen this daemon could not read — and a close on unknown is the
+//     removal on unknown DG-7 forbids.
+func lingerStepFor(l store.Linger, rd reading, w lingerWatch, assistant string) (lingerStep, string) {
+	s, present := rd.session(l.Pane)
+	if !present {
+		if len(rd.sessions) > 0 && rd.sourceComplete(l.Backend) {
+			return lingerGone, "its terminal answered completely and the tab is not there"
+		}
+		return lingerWait, ""
+	}
+	if s.IsAssistant() && assistant != "" && string(s.Assistant) != assistant {
+		return lingerLeave, "a different assistant is running in it"
+	}
+	if w.takenOver != "" {
+		return lingerLeave, w.takenOver
+	}
+	if s.State != session.StateIdle {
+		return lingerWait, ""
+	}
+	return lingerClose, ""
 }
 
 // closeLingers closes the tabs whose linger is over, and answers how many
 // closes it recorded. It runs on the beat, against the pass's one reading.
+//
+// At most one iTerm2 close is made per pass, and none for itermCloseQuiet
+// after one iTerm2 did not answer: an iTerm2 close holds the beat for as long
+// as iTerm2 takes, and a busy iTerm2 would otherwise hold it once per tab.
 func (b *Broker) closeLingers(ctx context.Context, rd reading) int {
 	now := b.now()
 	if b.lingerStarted.IsZero() {
 		b.lingerStarted = now
 	}
 	rows, err := b.Store.Lingers(ctx)
-	if err != nil || len(rows) == 0 {
+	if err != nil {
 		return 0
 	}
+	b.lingers.observe(rows, rd)
 	n := 0
+	itermTaken := false
 	for _, l := range rows {
 		due := l.Deadline
 		if !due.After(b.lingerStarted) {
@@ -89,35 +378,65 @@ func (b *Broker) closeLingers(ctx context.Context, rd reading) int {
 		if now.Before(due) {
 			continue
 		}
-		if len(rd.sessions) == 0 || !rd.sourceComplete(l.Backend) {
-			continue
-		}
-		s, present := rd.session(l.Pane)
-		if present && s.State != session.StateIdle {
-			// Only a tab that is plainly at rest is closed. Working is the
-			// child still finishing a turn; waiting is a question on its
-			// screen somebody may be about to answer; unknown is a screen
-			// this daemon could not read — and a close on unknown is the
-			// removal on unknown DG-7 forbids. The linger stays owed and is
-			// asked again next pass.
-			continue
-		}
-		payload, _ := json.Marshal(map[string]any{"task": l.Task, "pane": l.Pane, "session": l.Session,
-			"deadline": l.Deadline.Unix(), "present": present})
-		var effects []store.Effect
-		kind := "task.child.linger.gone"
+		iterm := l.Backend == "iterm"
+		// The record is read only for a tab that is there: a row nothing can
+		// decide yet costs the pass nothing but this lookup.
+		var r Record
+		_, present := rd.session(l.Pane)
 		if present {
-			kind = "task.child.linger.due"
-			body, _ := json.Marshal(closeChildEffect{Pane: l.Pane, Session: l.Session})
-			effects = []store.Effect{{Kind: EffectCloseChild, Subject: l.Task, Payload: body}}
+			if held, _, err := b.Record(ctx, l.Task); err == nil {
+				r = held
+			}
 		}
-		ids, err := b.Store.TakeLinger(ctx, l.Task, []store.Event{{Kind: kind, Subject: l.Task, Payload: payload}}, effects)
-		if errors.Is(err, store.ErrNoLinger) || err != nil {
+		step, why := lingerStepFor(l, rd, b.lingers.seen(l.Task), r.Assistant)
+		if step == lingerClose && iterm && (itermTaken || b.lingers.quiet(now)) {
 			continue
+		}
+		body := map[string]any{"task": l.Task, "backend": l.Backend, "pane": l.Pane, "session": l.Session,
+			"deadline": l.Deadline.Unix(), "present": present}
+		if why != "" {
+			body["why"] = why
+		}
+		var effects []store.Effect
+		var kind string
+		switch step {
+		case lingerWait:
+			if now.Sub(l.Deadline) < lingerGiveUp {
+				continue
+			}
+			kind = "task.child.linger.expired"
+			body["why"] = "nothing decided it within a day of its deadline; the tab is left as it is"
+		case lingerGone:
+			kind = "task.child.linger.gone"
+		case lingerLeave:
+			kind = "task.child.linger.left"
+		case lingerClose:
+			kind = "task.child.linger.due"
+			c := closeChildEffect{Pane: l.Pane, Session: l.Session}
+			if iterm {
+				c = closeChildEffect{Backend: "iterm", Pane: l.Pane}
+				if !r.FinishedAt.IsZero() {
+					c.Before = r.FinishedAt.Unix()
+				}
+			}
+			raw, _ := json.Marshal(c)
+			effects = []store.Effect{{Kind: EffectCloseChild, Subject: l.Task, Payload: raw}}
+		}
+		payload, _ := json.Marshal(body)
+		ids, err := b.Store.TakeLinger(ctx, l.Task, []store.Event{{Kind: kind, Subject: l.Task, Payload: payload}}, effects)
+		if err != nil {
+			continue
+		}
+		b.lingers.forget(l.Task)
+		if iterm && step == lingerClose {
+			itermTaken = true
 		}
 		for _, res := range b.runRecorded(ctx, ids) {
 			if res.state == store.EffectDone && res.outcome == "closed" {
 				n++
+			}
+			if iterm && res.state == store.EffectUnknown {
+				b.lingers.quietFor(b.now(), itermCloseQuiet)
 			}
 		}
 	}

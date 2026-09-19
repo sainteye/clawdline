@@ -55,6 +55,9 @@ type DispatchRequest struct {
 type ScheduleOrigin struct {
 	ID    string
 	Title string
+	// CloseTab is the schedule's close_tab — on_success, always or never —
+	// which decides what the run's end does to its tab (tabPolicy).
+	CloseTab string
 }
 
 // RespawnOrigin is where a respawned task came from.
@@ -127,6 +130,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	if req.Schedule != nil {
 		record.ScheduleID = req.Schedule.ID
 		record.ScheduleTitle = truncate(req.Schedule.Title, rootLabelLimit)
+		record.ScheduleCloseTab = req.Schedule.CloseTab
 	}
 	// Fixed before anything is arbitrated, so the arbitration below asks the
 	// same question of this task that it asks of every live one (D21).
@@ -813,7 +817,11 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 	// write right is taken (D08) and applied inside it only to the branch it
 	// was read from (D17, G17).
 	head := b.settlementHead(ctx, id)
-	return b.mutateTx(ctx, id, "task."+string(state), func(tx *store.Tx, r *Record) ([]store.Effect, error) {
+	// The settlement's event says what the end did to the child's tab and by
+	// which rule (tabPolicy), so "why is this tab still open" has an answer
+	// in the store rather than only in this code.
+	extra := map[string]any{}
+	return b.mutateEvent(ctx, id, "task."+string(state), extra, func(tx *store.Tx, r *Record) ([]store.Effect, error) {
 		if r.State.Terminal() {
 			return nil, errAlreadyTerminal
 		}
@@ -852,6 +860,9 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 		// The child's tab is owed a close a little later, and the debt is
 		// written with the settlement that incurs it, so a restart in
 		// between cannot forget it (#26, linger.go).
+		if r.ChildTerminalID != "" {
+			extra["tab"] = tabPlanPayload(tabPolicy(*r, state, b.childLinger()))
+		}
 		if l, ok := b.lingerFor(*r, now); ok {
 			if err := tx.PutLinger(l); err != nil {
 				return nil, err

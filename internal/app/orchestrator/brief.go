@@ -136,6 +136,17 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("  when this task was dispatched — not from when you read this.")
 	w("")
 
+	// The tab policy, stated before the work starts (linger.go): what this
+	// task's end will do to this tab is read here, not inferred later.
+	w("## What happens to this tab when the task ends")
+	w("")
+	w("The broker closes a finished child's tab by one rule, and only while the tab is still the one")
+	w("it opened, is at rest at its prompt, and nobody has used it since the task ended.")
+	for _, line := range tabPolicyBrief(r, b.childLinger()) {
+		w("%s", line)
+	}
+	w("")
+
 	if r.Worktree != nil {
 		w("## Your isolated checkout")
 		w("")

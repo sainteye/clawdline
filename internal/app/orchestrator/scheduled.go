@@ -29,6 +29,9 @@ type ScheduledRun struct {
 	// Title is the schedule's title: the label a scheduled task is known by
 	// where a dispatched one shows its root.
 	Title string
+	// CloseTab is the schedule's close_tab: what the run's end does to the
+	// tab it opens (tabPolicy). Empty is the schedule default, on_success.
+	CloseTab string
 	// Template is the schedule's `task` object as it is stored. It becomes
 	// the task.json the task is admitted from, with the three keys the broker
 	// owns — protocol, id and root — set over whatever the template says.
@@ -76,7 +79,7 @@ func (b *Broker) DispatchScheduled(ctx context.Context, run ScheduledRun) (Sched
 	out, err := b.Dispatch(ctx, DispatchRequest{
 		TaskID:   run.TaskID,
 		Secret:   NewSecret(),
-		Schedule: &ScheduleOrigin{ID: run.ScheduleID, Title: run.Title},
+		Schedule: &ScheduleOrigin{ID: run.ScheduleID, Title: run.Title, CloseTab: run.CloseTab},
 	})
 	if err == nil {
 		return ScheduledDispatch{Dispatched: out}, nil
@@ -92,5 +95,5 @@ func scheduleOf(r Record) *ScheduleOrigin {
 	if r.ScheduleID == "" {
 		return nil
 	}
-	return &ScheduleOrigin{ID: r.ScheduleID, Title: r.ScheduleTitle}
+	return &ScheduleOrigin{ID: r.ScheduleID, Title: r.ScheduleTitle, CloseTab: r.ScheduleCloseTab}
 }

@@ -67,6 +67,94 @@ Measured on an isolated daemon with a private tmux server: a child in an untrust
 verdict, and its pane was closed; a minimal task in a trusted checkout was briefed at 20 s and
 settled `success` at 26 s.
 
-Not done here: a finished iTerm2 child's tab is still not lingered-and-closed (its source never
-answers completely on a Mac with an unlistable window, and a linger decides only on one that
-does), and a schedule's `close_tab` is parsed and stored but nothing acts on it yet.
+Not done in that correction: a finished iTerm2 child's tab was not lingered-and-closed, and a
+schedule's `close_tab` was parsed and stored but acted on nowhere. Both are the next section.
+
+## Finished children's tabs, and a schedule's `close_tab`
+
+Every finished tmux child was closed three minutes after it ended; no iTerm2 child ever was, so the
+session list only grew. A linger was decided on a reading whose source for the tab answered
+completely, and on a Mac with a window iTerm2 will not list, the iTerm2 source never does. And a
+schedule's `close_tab` (`on_success`, `always`, `never`) was parsed, stored and answered, and
+nothing did what it said.
+
+**The policy is one table** (`tabPolicy`, `internal/app/orchestrator/linger.go`), and every end has
+a row:
+
+| Task | Ends in | Tab | Rule |
+| --- | --- | --- | --- |
+| unscheduled | success, failure | closed `orchestrator_child_linger` after it ends (default 180 s) | `child_linger` |
+| unscheduled | timeout, cancelled | left open: the child may still be working | `unfinished_left_open` |
+| unscheduled, `orchestrator_child_linger` < 0 | anything | left open | `child_linger_off` |
+| scheduled, `close_tab: on_success` (the default) | success / anything else | closed as soon as it is at rest / left open | `schedule_on_success` |
+| scheduled, `close_tab: always` | anything | closed as soon as it is at rest | `schedule_always` |
+| scheduled, `close_tab: never` | anything | left open | `schedule_never` |
+| any | `spawn_failed` | closed at once when the tab is there (D11) | `spawn_failed` |
+
+It is readable in three places: CHILD.md states the rule for the task, per way of ending, before the
+work starts; the settlement's event (`task.success`, `task.failure`, …) carries
+`tab: {rule, close, after_seconds}`; and a close still owed is a `broker_lingers` row. A scheduled
+run's record keeps its schedule's `close_tab` as `schedule_close_tab`, the Swift app's name, and a
+respawn carries it.
+
+**A close the rule asks for is still made only while the tab is the child's.** Both backends are
+decided by one step (`lingerStepFor`):
+
+- The tab is found by the id its terminal gave back: the tmux pane, closed only while it is one of
+  the panes of the session named for the task (F6); the iTerm2 session id, which iTerm2 never gives
+  to another session.
+- *Absent* is decided only by a reading that saw terminals and whose source for that tab answered
+  completely. An iTerm2 tab not seen past a window that will not list is waited for, not dropped.
+- *Present* needs no complete answer — the tab was seen, by its own id. It is left open for good,
+  with the reason in a `task.child.linger.left` event, when a different assistant runs in it, a
+  different conversation is in it, or a turn began in it after it had been seen at rest (a person
+  went on in the tab, a root sent it a message). Waiting is not counted as use — an assistant can put
+  a notice on its own screen — and only holds the close back, as working and unknown do.
+- A linger nothing decides within a day of its deadline is let go (`task.child.linger.expired`) and
+  the tab left as it is.
+
+**iTerm2 asks a person before it closes a tab with a job running in it.** Measured on this Mac: the
+default profile's "Prompt Before Closing" is 2 (ask if there are jobs besides `rlogin`, `ssh`,
+`slogin`, `telnet`), and the scripting `close` has no way round it. Three closes of a tab running
+`sleep 300` each put "Close tab #N? This tab is running sleep." on the screen, held the Apple Event
+past its ten-second limit (killed at 14.4 s with the looks after it), and left the tab open until
+somebody answered. That is the whole story behind "a close that timed out closed the tab later". A
+tab whose shell is at its prompt closed in 0.14–0.15 s and asked nothing; looking for a missing id
+took 0.12–0.16 s. iTerm2's own `jobName` variable is not a reading to decide on: it still named
+`java_home`, a command the shell's startup had finished, while `sleep` was in front.
+
+So a child's iTerm2 tab is closed by a ladder (`CloseITermChild`,
+`internal/adapters/terminal/iterm_close_darwin.go`), as the Swift app's `Targets.end` did:
+
+1. find the session by id, and its tty (a reading, outside the effects' lock);
+2. ask the kernel for every process on that tty and its foreground group;
+3. if a job is in front — anything but the shell, which is the tty tree's root or `login`'s child —
+   end it with `SIGTERM` to its group **only when every process of the group started at least a
+   second before the task ended**: a command a person started in the tab afterwards is somebody
+   else's, and the tab is left open with that reason;
+4. wait up to five seconds for the group to be gone, as the kernel answers it; read the tty again,
+   and leave the tab open if anything else has come to the front;
+5. close the session by id.
+
+A close that still goes unanswered is looked for again (three looks, two seconds apart) and is
+`Unconfirmed` unless a walk that read every window finds it gone: recorded `unknown`, never counted
+done, never retried. One iTerm2 close is made per beat pass, and none for a minute after one went
+unanswered, so a busy iTerm2 holds the beat once rather than once per tab. The ten-second limit is
+kept: a close with nothing running answers in 0.15 s, and one that ran past ten was waiting for a
+person, which no longer limit cures.
+
+Measured on an isolated daemon (its own port and state directory, tasks with no root, children in
+iTerm2, `orchestrator_child_linger` 15 s):
+
+| Task | Settled | Closed | Effect |
+| --- | --- | --- | --- |
+| unscheduled, success | 14:38:07 | 14:38:22 → 14:38:24, gone | `child.close` done, closed |
+| unscheduled, failure | 14:39:20 | 14:39:37 → 14:39:39, gone | done, closed |
+| scheduled `never`, success | 14:40:42 | left open (`schedule_never`) | none |
+| scheduled `on_success`, success | 14:40:37 | 14:40:47 → 14:40:49, gone | done, closed |
+| scheduled `on_success`, failure | 14:40:41 | left open (`schedule_on_success`) | none |
+| never briefed (trust dialog), twice | 14:34:57 | at once, 1 s each | done, closed |
+
+Each close ended a running `claude` — with its MCP servers, which share its process group — before
+closing, and none put a question on the screen. Tests: `internal/app/orchestrator/tabclose_test.go`,
+`internal/adapters/terminal/iterm_close_darwin_test.go`.

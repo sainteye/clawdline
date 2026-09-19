@@ -21,3 +21,13 @@ func errUnsupported(op string) error { return Unsupported{Op: op} }
 type Unsent struct{ Why string }
 
 func (u Unsent) Error() string { return u.Why }
+
+// Unconfirmed is an effect that was asked for and not answered, and whose
+// outcome a look afterwards could not settle either way. It is neither a
+// success nor a failure: an iTerm2 close that ran out of time has been seen to
+// close its session later all the same — iTerm2 was asking a person first — so
+// a caller must not count it done, the tab may still be there, and must not ask
+// again as though it had failed.
+type Unconfirmed struct{ Why string }
+
+func (u Unconfirmed) Error() string { return u.Why }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -121,20 +122,148 @@ function run(argv) {
 }
 `
 
-// CloseITermSession closes the iTerm2 session with this id and answers whether
-// it closed anything. The id is the proof of ownership: it is the one iTerm2
-// answered when this daemon opened the tab (NewITermTab), and iTerm2 never
-// gives it to another session. A session that is gone — or not seen, past a
-// window that would not list — closes nothing and is not an error; anything
-// else, including a script that failed part way, is.
-func (l Launcher) CloseITermSession(ctx context.Context, id string) (bool, error) {
-	if id == "" {
-		return false, nil
-	}
+// itermCloseLooks and itermCloseLookGap are how a close that was not answered
+// is looked for afterwards: up to three looks, two seconds apart, each bounded
+// as a listing is (findITermSession).
+const (
+	itermCloseLooks   = 3
+	itermCloseLookGap = 2 * time.Second
+)
+
+// closeITermByID is the one close of an iTerm2 session by its id, for the
+// broker (CloseITermChild) and for a person's close (ITerm.Close) alike. It
+// answers nil when the session closed, Unsent when it was not there to close,
+// and Unconfirmed when iTerm2 did not answer and a look afterwards could not
+// find it gone.
+//
+// **A close that ran out of time is not a failed close.** Measured on this Mac
+// (docs/switch-blockers.md): the Apple Event was killed at its limit, and the
+// tab it named closed afterwards — iTerm2 had asked a person whether to close
+// a tab with a job running, and the close landed when they answered. So such a
+// close is neither counted done — the tab may still be there — nor asked
+// again, which would put a second question on the same screen. It is looked
+// for instead, by the same id, and only a walk that read every window says it
+// is gone: a session not seen past a window that will not list is not a
+// session closed. A child's tab is not closed this way with its job running
+// at all (CloseITermChild).
+//
+// Ten seconds, as every effect here: a close with nothing running in the tab
+// answered in 0.15 s, and one that ran past ten was waiting for a person —
+// which no longer limit cures.
+func closeITermByID(ctx context.Context, id string) error {
 	err := itermCall(ctx, itermCloseScript, 10*time.Second, id)
 	var unsent Unsent
-	if errors.As(err, &unsent) {
-		return false, nil
+	if err == nil || errors.As(err, &unsent) {
+		return err
 	}
-	return err == nil, err
+	return settleUnansweredClose(ctx, id, err, lookITermSession, itermCloseLooks, itermCloseLookGap)
+}
+
+// sighting is what one look for one iTerm2 session found.
+type sighting int
+
+const (
+	// sightingUnknown is a look that failed, or a walk that skipped a window
+	// it could not read and did not find the session: not seen, not gone.
+	sightingUnknown sighting = iota
+	sightingThere
+	// sightingGone is a walk that read every window and did not find it, or
+	// an iTerm2 that is not running.
+	sightingGone
+)
+
+// settleUnansweredClose looks again for a session whose close was not
+// answered, and answers nil once a look finds it gone. Anything else is
+// Unconfirmed, saying what the last look saw.
+func settleUnansweredClose(ctx context.Context, id string, asked error,
+	look func(context.Context, string) sighting, looks int, gap time.Duration) error {
+	last := sightingUnknown
+	for i := 0; i < looks; i++ {
+		if i > 0 && !pause(ctx, gap) {
+			break
+		}
+		if last = look(ctx, id); last == sightingGone {
+			log.Printf("iterm: the close of %s was not answered (%v), and the session is gone", id, asked)
+			return nil
+		}
+	}
+	if last == sightingThere {
+		return Unconfirmed{Why: asked.Error() + " The session was still open when it was looked for again, " +
+			"and a close iTerm2 has not answered can still land."}
+	}
+	return Unconfirmed{Why: asked.Error() + " Whether the session closed could not be seen afterwards."}
+}
+
+// pause waits d, or until ctx is done, and answers whether it waited it out.
+func pause(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// itermFindScript looks for one session by id and changes nothing. It answers
+// the session's tty when it finds it.
+const itermFindScript = itermEach + `
+function run(argv) {
+  const id = String(argv[0] || "");
+  const it = Application("iTerm2");
+  if (!it.running()) return JSON.stringify({ running: false, found: false, unreadable: 0 });
+  let tty = "";
+  const walk = itermEach(it, function (s) {
+    if (String(s.id()) !== id) return false;
+    try { tty = String(s.tty() || ""); } catch (e) { tty = ""; }
+    return true;
+  });
+  return JSON.stringify({ running: true, found: walk.stopped, unreadable: walk.unreadable, tty: tty });
+}
+`
+
+// lookITermSession is findITermSession without the tty.
+func lookITermSession(ctx context.Context, id string) sighting {
+	seen, _ := findITermSession(ctx, id)
+	return seen
+}
+
+// findITermSession runs itermFindScript. It is a reading and takes no turn
+// among the effects (appleEvents), as the listing does not: a look that
+// waited behind the close it is looking for would be no look at all.
+func findITermSession(ctx context.Context, id string) (sighting, string) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-", id)
+	cmd.Stdin = strings.NewReader(itermFindScript)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
+	if err != nil {
+		return sightingUnknown, ""
+	}
+	return readSighting(out)
+}
+
+// readSighting is what itermFindScript's answer says, and the tty of a
+// session it found.
+func readSighting(out []byte) (sighting, string) {
+	var answer struct {
+		Running    *bool  `json:"running"`
+		Found      bool   `json:"found"`
+		Unreadable int    `json:"unreadable"`
+		TTY        string `json:"tty"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(out), &answer) != nil || answer.Running == nil {
+		return sightingUnknown, ""
+	}
+	switch {
+	case !*answer.Running:
+		return sightingGone, ""
+	case answer.Found:
+		return sightingThere, answer.TTY
+	case answer.Unreadable == 0:
+		return sightingGone, ""
+	}
+	return sightingUnknown, ""
 }

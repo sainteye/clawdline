@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/app/lane"
 )
 
@@ -30,8 +32,9 @@ const (
 	// before the task existed, so a crash between the two left a checkout no
 	// record named (G14).
 	EffectWorktree = "worktree.add"
-	// EffectCloseChild closes the tmux session a spawn_failed child was
-	// given (D11). It was run after the verdict with nothing recording that
+	// EffectCloseChild closes the tab a child was given: a spawn_failed
+	// child's at once (D11), a finished child's when its linger is over
+	// (linger.go). It was run after the verdict with nothing recording that
 	// it was owed, so a crash in between left the tab open for good.
 	EffectCloseChild = "child.close"
 	// EffectMessage types one session's message into another's composer,
@@ -269,6 +272,10 @@ type closeChildEffect struct {
 	Backend string `json:"backend,omitempty"`
 	Pane    string `json:"pane"`
 	Session string `json:"session"`
+	// Before is when the task ended, in Unix seconds, for an iTerm2 child:
+	// a job still running in its tab is ended as the child's only when it
+	// began before then (terminal.Launcher.CloseITermChild). Zero ends none.
+	Before int64 `json:"before,omitempty"`
 }
 
 // runCloseChild closes the pane this broker made only while it is still one of
@@ -295,7 +302,11 @@ func runCloseChild(ctx context.Context, b *Broker, e store.Effect) effectResult 
 		if !ok {
 			return effectResult{state: store.EffectFailed, outcome: "this daemon cannot close an iTerm2 session"}
 		}
-		closed, err = closer.CloseITermSession(ctx, c.Pane)
+		var before time.Time
+		if c.Before > 0 {
+			before = time.Unix(c.Before, 0)
+		}
+		closed, err = closer.CloseITermChild(ctx, c.Pane, before)
 	default:
 		return effectResult{state: store.EffectFailed, outcome: "no close for a " + c.Backend + " child"}
 	}
@@ -310,6 +321,13 @@ func runCloseChild(ctx context.Context, b *Broker, e store.Effect) effectResult 
 	if err != nil {
 		body["error"] = err.Error()
 		res.state, res.outcome = store.EffectFailed, err.Error()
+		// A close the terminal did not answer, and a look afterwards could
+		// not settle: neither done nor failed, and not tried again.
+		var unconfirmed terminal.Unconfirmed
+		if errors.As(err, &unconfirmed) {
+			body["unconfirmed"] = true
+			res.state = store.EffectUnknown
+		}
 	}
 	payload, _ := json.Marshal(body)
 	res.events = []store.Event{{Kind: "task.child.closed", Subject: e.Subject, Payload: payload}}
