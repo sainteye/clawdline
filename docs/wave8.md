@@ -30,12 +30,12 @@ C 在 Mac 上顯示與即時畫面 `5814b35`、D Git 面板 `19d7838`、F 回答
 
 | child | port | 標題 |
 |---|---|---|
-| A | 7761 | 圖片：附圖、貼上、拖拉、上傳、對話裡的圖。**使用者要求提前，9/17 已派出**（task `709a46b3`，在共用樹做） |
+| A | 7761 | 圖片：附圖、貼上、拖拉、上傳、對話裡的圖。**使用者要求提前，9/17 已派出**（在共用樹做，不是隔離 worktree） |
 | B | 7762 | 語音輸入：錄音 → `/v1/voice` → whisper-cli |
 | C | 7763 | 在 Mac 上顯示＋即時畫面 |
 | D | 7764 | Git 面板＋commit／push |
 | E | 7765 | 文件＋我傳出的訊息 |
-| F | 7766 | 在瀏覽器回答問題：等待卡、`menu`、`/key`。**使用者要求提前，9/17 已派出並落地（`005b0e1`）**（task `c7000a81`，在共用樹做，不是隔離 worktree） |
+| F | 7766 | 在瀏覽器回答問題：等待卡、`menu`、`/key`。**使用者要求提前，9/17 已派出並落地（`005b0e1`）**（在共用樹做，不是隔離 worktree） |
 
 ### 共用前言（每份派工都放在最前面）
 
@@ -55,8 +55,8 @@ C 在 Mac 上顯示與即時畫面 `5814b35`、D Git 面板 `19d7838`、F 回答
   `tools/check-legacy-css.sh` 必須 exit 0）；React 只產出與舊版相同的 DOM 與 class；文字經 `legacy/bridge.ts`
   或你自己的 `legacy/<name>-bridge.ts`；字串只用 `zh-Hant.json` 已有的鍵。契約：新增或修改 `api/v1/*.schema.json`，
   在你的 worktree 跑 `go run ./tools/contract-gen` 與 `-check`。
-- 量測沿用 reviewer 的方法（`/tmp/.clawdline/618bd064-2d80-4367-a68e-b9ae365ee4f6/artifacts` 的 measure2.js、
-  diff2.mjs）：同一分頁輪流載入 7717 與你的 port，比 computed style、rect、文字、屬性；行為要實際操作。
+- 量測沿用 reviewer 的方法：在同一個分頁輪流載入 7717 與你的 port，各自把整棵 DOM 的 computed style、
+  rect、文字與屬性倒成 JSON，再逐節點 diff；行為的部分要實際操作，不能只比靜態畫面。
 - **不可以動 `~/code/clawdline`**，不可以寫 `~/.config/clawdline`，不可以讀任何 token 或 secret。
   **不可以對使用者正在用的 session 送訊息、中斷、關閉、commit 或 push。** 需要 session 時，開一個可拋棄的
   （在 `/tmp` 下的目錄開新分頁跑 assistant，測完關掉），或用 fake terminal host。
