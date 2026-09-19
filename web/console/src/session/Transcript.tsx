@@ -22,6 +22,9 @@ import { usePoll } from "../useFleet.js"
 import * as L from "../legacy/bridge.js"
 import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images-bridge.js"
 import { byteWords, nextWord } from "../next-strings.js"
+import type { PendingSend } from "./pending.js"
+import { pendingSends, resend } from "./send.js"
+import "./pending.css"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -40,13 +43,19 @@ import { byteWords, nextWord } from "../next-strings.js"
  * queue in the order they are drawn, and `legacy/images-bridge.ts` connects them
  * after the draw with the original's own `transcript-images.js`.
  *
- * Not drawn, because this daemon does not send it yet: the composer's
- * optimistic entries.
+ * The composer's pending turns are the original's `.entry.pending`, at the
+ * newest end, one per message this page sent and has not read back yet
+ * (`pending.ts`, which says where they differ from the original's).
  */
 
 /** Same as the original's `limit=200`, so both panes are reading the same stretch. */
 const LIMIT = 200
 const POLL_MS = 4000
+/**
+ * While a message is on its way the next read is the one that replaces its
+ * card, so it comes sooner (`followPendingTranscript` in the original).
+ */
+const FOLLOW_MS = 1000
 
 /** The mark an `AskUserQuestion` call's text starts with. */
 const ASK_MARK = "\u0001ask\u0001"
@@ -77,7 +86,22 @@ export function Transcript({ id }: { id: string }) {
 
 function TranscriptOf({ id }: { id: string }) {
   const read = useMemo(() => () => client.transcript(id, LIMIT), [id])
-  const { data, error } = usePoll<TranscriptPage>(read, POLL_MS)
+  useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
+  const cards = pendingSends.of(id)
+  const following = cards.some((card) => card.state !== "failed")
+  const { data, error } = usePoll<TranscriptPage>(read, following ? FOLLOW_MS : POLL_MS)
+  // Each read settles the cards it confirms before it is painted, so the turn
+  // and the card standing for it are never on screen together.
+  useLayoutEffect(() => {
+    if (data) pendingSends.reconcile(id, data.entries, Date.now())
+  }, [data, id])
+  // The cards' spinners turn on the page's one clock, drawn once now so they
+  // have their size before the clock's next tick.
+  useLayoutEffect(() => {
+    const spinners = [...document.querySelectorAll<HTMLCanvasElement>("#tx .entry.pending canvas.spin")]
+    for (const canvas of spinners) L.paintSpinner(canvas)
+    L.registerPendingSpinners(spinners)
+  })
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const session = useSession(id)
   const entries = useMemo<Entry[]>(() => (data ? data.entries.map((e) => ({ ...e })) : []), [data])
@@ -108,7 +132,10 @@ function TranscriptOf({ id }: { id: string }) {
   // leaves the browser's scroll anchoring nothing to hold, so a turn arriving
   // above the reader pushes what they were reading down. React keeps the
   // nodes and the browser would hold them still, so the number is put back.
-  const drawnSignature = skeleton || !data ? undefined : data.signature || null
+  // A card arriving, changing or going is a new draw too: a reader at the
+  // bottom when they pressed Send stays there to watch it.
+  const pendingSignature = cards.map((card) => card.token + ":" + card.state).join(",")
+  const drawnSignature = skeleton || !data ? undefined : data.signature ? data.signature + "|" + pendingSignature : null
   const shownSignature = useRef<string | null | undefined>(undefined)
   const stick = useRef(false)
   const held = useRef(0)
@@ -144,11 +171,20 @@ function TranscriptOf({ id }: { id: string }) {
 
   const T = L.strings
   if (skeleton) return <Skeleton />
-  if (!data && !error) return null
+  // Newest end: the bottom, or the top when the transcript reads newest first.
+  const pending = (newestFirst ? [...cards].reverse() : cards).map(pendingHTML)
+  if (!data && !error) return pending.length ? <>{pending}</> : null
   // The original has no "evidence: none"; a transcript it could not read is its
   // `view.error`, and that is how it is drawn.
   const failed = error ?? (data?.evidence === "none" ? data.note || T.webTranscriptFailed : null)
-  if (failed && !entries.length) return <div className="tx-note err">{failed}</div>
+  if (failed && !entries.length) {
+    return (
+      <>
+        <div className="tx-note err">{failed}</div>
+        {pending}
+      </>
+    )
+  }
   const notice = failed ? <div className="tx-note err">{failed}</div> : null
   if (!entries.length) {
     // A window that ran out before reaching a single entry is not a
@@ -157,6 +193,7 @@ function TranscriptOf({ id }: { id: string }) {
       <>
         {cutNote(data)}
         <div className="tx-note">{T.noOutput}</div>
+        {pending}
       </>
     )
   }
@@ -211,11 +248,80 @@ function TranscriptOf({ id }: { id: string }) {
   return (
     <>
       {notice}
+      {newestFirst && pending}
       {cut && !newestFirst && cut}
       {drawn.flat()}
       {cut && newestFirst && cut}
+      {!newestFirst && pending}
     </>
   )
+}
+
+/**
+ * `.entry.pending`, as `view/transcript.js` draws a turn the Mac has not
+ * written yet: the words, the pictures counted, and one line saying where the
+ * send has got to. A send that failed says so on that line, in the catalog's
+ * words, beside "try again" and a close button, and keeps its words.
+ */
+function pendingHTML(card: PendingSend): ReactElement {
+  const T = L.strings
+  const esc = L.escapeHTML
+  const n = card.pictures.length
+  let body = L.richTextHTML(card.text)
+  if (n) {
+    body +=
+      '<div class="pending-images">' +
+      esc(L.fillString(n === 1 ? T.webAttachedImage : T.webAttachedImages, { n })) +
+      "</div>"
+  }
+  if (card.state === "failed") {
+    const close = esc(T.webClose)
+    body +=
+      '<div class="pending-state" role="alert"><span>' +
+      esc(L.fillString(T.webFailWithTag, { text: T.sendFailed, tag: card.failure })) +
+      '</span><button type="button" class="go" data-pending-retry="' +
+      esc(card.token) +
+      '">' +
+      esc(T.webPlanRetry) +
+      '</button><button type="button" class="dismiss" data-pending-dismiss="' +
+      esc(card.token) +
+      '" aria-label="' +
+      close +
+      '" title="' +
+      close +
+      '">×</button></div>'
+  } else {
+    body +=
+      '<div class="pending-state" role="status"><canvas class="spin"></canvas><span>' +
+      esc(card.state === "accepted" ? T.webPromptAccepted : T.webSending) +
+      "</span></div>"
+  }
+  const at = Math.floor(card.sentAt / 1000)
+  return (
+    <div className="entry pending" data-role="user" data-send={card.state} key={"pending:" + card.token}>
+      <div className="who">
+        <span className="speaker">{T.webWhoYou}</span>
+        <time data-at={at}>{L.clock(at)}</time>
+      </div>
+      <div className="body" onClick={pendingAction} dangerouslySetInnerHTML={{ __html: body }} />
+    </div>
+  )
+}
+
+/** A press inside a pending card: try again, close it, or a code block's copy button. */
+function pendingAction(ev: MouseEvent<HTMLElement>) {
+  const target = ev.target as Element
+  const retry = target.closest?.("[data-pending-retry]")
+  if (retry) {
+    resend(retry.getAttribute("data-pending-retry") ?? "")
+    return
+  }
+  const close = target.closest?.("[data-pending-dismiss]")
+  if (close) {
+    pendingSends.dismiss(close.getAttribute("data-pending-dismiss") ?? "")
+    return
+  }
+  copyFrom(ev)
 }
 
 /**
