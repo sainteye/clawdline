@@ -1,0 +1,128 @@
+/* The board, the Backlog, and a session's to-dos (design-decisions T6, D35).
+
+   Not a copy: the Swift app has no screen for these three structures. So this
+   invents no palette and no furniture of its own — every colour is a token of
+   legacy/tokens.css, the page is the copied board.css's `.board-page`, the
+   buttons are its `.board-button` and detail.css's `.chip`, and the measures
+   are the ones those files already use.
+
+   What it does add is the one thing the design asks the eye to get at once
+   (board-redesign §3.3): three kinds of thing that must not look alike. The
+   board is cards with an edge coloured by what the card needs from you; the
+   Backlog is a plain ordered list with no edge at all; a session's to-dos are
+   a folded strip on the session's own page, never on this one. */
+
+.work-page .work-wrap { width: min(1080px, 100%); margin-inline: auto; }
+.work-page .board-head { gap: 10px; flex-wrap: wrap; }
+.work-tabs { display: inline-flex; gap: 6px; }
+.work-tab[aria-selected="true"] { color: var(--ink); border-color: var(--accent-ed); background: var(--accent-in); }
+.work-head-tools { display: inline-flex; align-items: center; gap: 8px; }
+.work-badge {
+    display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 8px;
+    border-radius: 999px; background: var(--accent); color: var(--bg); font: 600 11px/1 var(--mono);
+}
+.work-badge[data-zero] { background: var(--line); color: var(--faint); }
+.work-page h1 { margin: 0; font-size: clamp(30px, 5vw, 48px); line-height: 1.1; letter-spacing: -.04em; }
+.work-lede { margin: 14px 0 0; color: var(--dim); font-size: 14px; line-height: 1.7; }
+.work-status { min-height: 20px; margin: 12px 0 8px; color: var(--faint); font-size: 11px; line-height: 1.6; }
+.work-status[data-tone="warn"] { color: var(--warn); }
+
+/* A folded panel: the digest and the "to confirm" area, both above the board. */
+.work-fold { margin-top: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+.work-fold > summary {
+    display: flex; align-items: center; gap: 10px; padding: 14px 20px;
+    color: var(--dim); font-size: 13px; cursor: pointer; list-style: none;
+}
+.work-fold > summary::-webkit-details-marker { display: none; }
+.work-fold > summary::before { content: "›"; color: var(--faint); transition: transform 150ms; }
+.work-fold[open] > summary::before { transform: rotate(90deg); }
+.work-fold > summary strong { color: var(--ink); font-weight: 600; }
+.work-fold-body { padding: 0 20px 16px; }
+.work-fold-body > p { margin: 0 0 10px; color: var(--faint); font-size: 12px; line-height: 1.6; }
+.work-lines { margin: 0; padding: 0; list-style: none; }
+.work-lines > li { padding: 8px 0; border-top: 1px solid var(--line); color: var(--dim); font-size: 13px; line-height: 1.6; }
+.work-lines > li b { color: var(--ink); font-weight: 600; }
+.work-sub { display: block; color: var(--faint); font-size: 12px; }
+
+/* The board's four regions, top to bottom. */
+.work-section { margin-top: 28px; }
+.work-section-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; }
+.work-section-head h2 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 650; letter-spacing: .02em; }
+.work-count { color: var(--faint); font: 11px/1 var(--mono); }
+.work-empty { margin: 0; padding: 14px 0; color: var(--faint); font-size: 12px; border-top: 1px solid var(--line); }
+.work-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.work-section[data-section="decide"] { --work-edge: var(--accent); }
+.work-section[data-section="active"] { --work-edge: var(--ink); }
+.work-section[data-section="scheduled"] { --work-edge: var(--dim); }
+.work-section[data-section="done"] { --work-edge: var(--ok); }
+.work-card {
+    display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 18px 20px;
+    border: 1px solid var(--line); border-left: 3px solid var(--work-edge, var(--line)); border-radius: 16px;
+    background: var(--card); color: var(--ink);
+}
+.work-card h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.work-state { color: var(--work-edge, var(--dim)); font: 600 11px/1.4 var(--mono); letter-spacing: .04em; }
+.work-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--dim); font-size: 12px; line-height: 1.5; }
+.work-meta span { overflow-wrap: anywhere; }
+.work-clock { color: var(--faint); font: 11px/1.5 var(--mono); }
+.work-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.work-actions .chip { padding: 5px 10px; }
+.work-input {
+    min-height: 30px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; min-width: 0;
+}
+.work-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.work-note { margin: 0; color: var(--warn); font-size: 12px; line-height: 1.5; }
+.work-more { margin-top: 12px; }
+.work-done > summary { list-style: none; cursor: pointer; }
+.work-done > summary::-webkit-details-marker { display: none; }
+.work-done > summary h2::before { content: "› "; color: var(--faint); }
+.work-done[open] > summary h2::before { content: "⌄ "; }
+
+/* A new item. */
+.work-new { display: grid; gap: 8px; margin-top: 16px; padding: 16px 20px; border: 1px dashed var(--line); border-radius: 16px; }
+.work-new-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.work-new-row .work-input { flex: 1 1 220px; }
+.work-new label { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
+
+/* The Backlog: a list in its order, deliberately without the board's cards. */
+.work-backlog { margin: 20px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.work-backlog-row {
+    display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 6px 16px; align-items: start;
+    padding: 14px 0; border-bottom: 1px solid var(--line);
+}
+.work-backlog-row h3 { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.work-rank { padding-top: 2px; color: var(--faint); font: 11px/1.4 var(--mono); }
+.work-backlog-row .work-actions { justify-content: flex-end; }
+
+@media (max-width: 899px) {
+    .work-cards { grid-template-columns: minmax(0, 1fr); }
+    .work-backlog-row { grid-template-columns: minmax(0, 1fr); }
+    .work-backlog-row .work-actions { justify-content: flex-start; }
+}
+
+/* A session's to-dos: a folded strip under the session's header. Folded by
+   default — the reader of these is the session, and a person opens it only
+   when they want to see what the machine is keeping for itself. */
+.session-todos { flex: 0 0 auto; border-bottom: 1px solid var(--line); background: #101014; }
+.session-todos[hidden] { display: none; }
+.pane-detail[data-panel] > .session-todos { display: none; }
+.session-todos > summary {
+    display: flex; align-items: center; gap: 8px; padding: 7px 18px;
+    color: var(--faint); font-size: 12px; cursor: pointer; list-style: none;
+}
+.session-todos > summary::-webkit-details-marker { display: none; }
+.session-todos > summary::before { content: "›"; transition: transform 150ms; }
+.session-todos[open] > summary::before { transform: rotate(90deg); }
+.session-todos > summary b { color: var(--dim); font-weight: 600; }
+.session-todos-body { max-height: 40vh; overflow: auto; padding: 0 18px 10px; }
+.session-todos-body > p { margin: 0 0 6px; color: var(--faint); font-size: 11px; line-height: 1.6; }
+.session-todo {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px;
+    padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.5;
+}
+.session-todo b { color: var(--dim); font-weight: 600; overflow-wrap: anywhere; }
+.session-todo small { grid-column: 1 / -1; color: var(--faint); font: 11px/1.5 var(--mono); overflow-wrap: anywhere; }
+.session-todo[data-state="done"] b, .session-todo[data-state="dropped"] b { color: var(--faint); font-weight: 400; }
+.session-todo-state { color: var(--faint); font: 11px/1.5 var(--mono); }
+.session-todo[data-escalated] .session-todo-state { color: var(--accent); }

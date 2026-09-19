@@ -195,6 +195,11 @@ func (s *Server) Handler() http.Handler {
 			s.sessionFocusRoute(w, r, id)
 			return
 		}
+		// A read (todos.go): the session detail's to-do panel.
+		if id, ok := todosPath(r); ok {
+			s.sessionTodosRead(w, r, id)
+			return
+		}
 		s.sessionAction(w, r)
 	})
 	// What this feature has done to the machine, published (screen.go).

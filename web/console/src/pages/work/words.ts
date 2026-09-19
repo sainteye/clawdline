@@ -1,0 +1,263 @@
+/*
+ * The words of the board, the Backlog and a session's to-dos (design-decisions
+ * D35, T6).
+ *
+ * The Swift app never had these three structures, so its catalog has no words
+ * for them: "Backlog", "Session 待辦" and "等你決定" are board-redesign §3.5's
+ * names, and every sentence here says something the replicated screens never
+ * said. They live in this one file, beside the page that says them, and the
+ * copied `public/strings/zh-Hant.json` stays byte for byte. Where the catalog
+ * already has the word — 已落地, 做完了，沒有落地, 在跑, 載入中, 重新整理, 取消 —
+ * the page reads the catalog, not this.
+ *
+ * Holes are `{name}`, as the catalog's are.
+ */
+
+const words = {
+  en: {
+    nav: "Board",
+    tabBoard: "Board",
+    tabBacklog: "Backlog",
+    boardEyebrow: "BOARD · HAPPENING NOW",
+    boardTitle: "What is happening now",
+    boardLede:
+      "What you need to know now. What the machine follows by itself is not here: it is in each session's detail, under Session to-dos.",
+    backlogEyebrow: "BACKLOG · PLANNED",
+    backlogTitle: "Backlog",
+    backlogLede: "Planned, not yet scheduled. Nothing leaves it unless you say so.",
+    unreadable: "The board could not be read.",
+    sweepStalled: "The board's sweep has stopped: a landing will not close its item until it runs again.",
+    more: "{n} more",
+
+    sectionDecide: "Waiting for you",
+    sectionActive: "In progress",
+    sectionScheduled: "Scheduled this week",
+    sectionDone: "Recently finished",
+    sectionEmpty: "Nothing here right now.",
+    decideLede: "Deliveries waiting to be closed, and questions a session asked you.",
+
+    toConfirm: "To confirm",
+    toConfirmLede:
+      "Proposed by the rules and not answered yet. Unanswered for 7 days, the work stays with its session's to-dos.",
+    toConfirmNone: "Nothing to confirm.",
+    proposalWhy: "Proposed because {why}",
+    signalCrossSession: "it sent out another session",
+    signalLongLived: "its to-do has been open for more than 24 hours",
+    signalExternalEffect: "it has an effect outside this machine",
+    answerTrack: "Track",
+    answerLater: "Later (Backlog)",
+    answerNo: "No",
+
+    decisionDefault: "If nobody answers by {when}: {option}",
+    decisionBlocking: "Work is stopped until this is answered",
+    decisionFrom: "Asked by {session}",
+
+    digestTitle: "Daily digest",
+    digestFor: "{date}",
+    digestNone: "No digest yet. The first sweep of each day writes one for the day before.",
+    digestCompleted: "{n} finished, {landed} of them landed",
+    digestStalled: "{n} went quiet and back to the Backlog",
+    digestFromBacklog: "{n} came onto the board from the Backlog",
+    digestAutomatic: "{n} moved by a rule or a fact",
+    digestProposals: "{n} proposals to confirm",
+    digestDecisions: "{n} questions waiting for you",
+    digestAwaiting: "{n} deliveries waiting to be closed",
+    digestClosureAsked: "{n} deliveries asked about once; unanswered for 7 days, each closes as unconfirmed",
+    digestHandedOff: "{n} to-dos nobody took",
+    digestBacklogStale: "{n} Backlog items nobody has looked at for 30 days: keep them?",
+    digestQuiet: "Nothing happened that day.",
+    digestTruncated: "More moved that day than one digest reads; the totals are of the ones read.",
+
+    owner: "Owner: {owner}",
+    ownerYou: "you",
+    tasks: "{n} tasks",
+    tasksLive: "{n} running",
+    tasksDelivered: "{n} delivered",
+    tasksLanded: "{n} landed",
+    tasksFailed: "{n} failed",
+    tasksUnknown: "{n} unreadable",
+    noTasks: "Nothing dispatched yet",
+    lastEvidence: "Last evidence {when}",
+    stallClock: "Back to the Backlog if nothing new happens by {when}",
+    closureClock: "Closed as unconfirmed if nobody answers by {when}",
+    startOn: "Starts {date}",
+    reasonNoDispatch: "Nothing dispatched",
+    reasonAttemptsFailed: "Every attempt failed",
+    reasonRedispatched: "Dispatched again",
+    reasonAccepted: "Accepted by you",
+    reasonUnconfirmed: "Delivery not confirmed",
+    reasonDropped: "Dropped",
+    rankNone: "Unranked",
+    rank: "Rank {n}",
+
+    opStart: "Start",
+    opSchedule: "Schedule",
+    opDefer: "Back to Backlog",
+    opAccept: "Accept",
+    opRework: "Needs more work",
+    opDrop: "Drop",
+    opHandover: "Hand over",
+    opUntrack: "Stop following",
+    opRank: "Set rank",
+    opDiscard: "Discard",
+    handoverTo: "New owner (a session id, or user)",
+    scheduleOn: "Start date",
+    rankTo: "Rank (0 for none)",
+    apply: "Apply",
+
+    newItem: "New",
+    newTitle: "What is it",
+    newProject: "Project",
+    newToBoard: "On the board: it starts now",
+    newToBacklog: "In the Backlog: later",
+    create: "Create",
+
+    failed: "Not done: {detail}",
+    failedConflict: "It changed while you were deciding; nothing was done. The board has been read again.",
+    failedNetwork: "The daemon did not answer; nothing is known to have been done.",
+
+    todosTitle: "Session to-dos",
+    todosOpen: "{n} open",
+    todosLede: "Made and closed by the broker's facts. Nothing here needs tending.",
+    todosNone: "This session owes nothing.",
+    todosUnknown: "This session's conversation is not known yet, so its to-dos cannot be named.",
+    todosUnreadable: "This session's to-dos could not be read.",
+    todosShowClosed: "Show closed",
+    todosHideClosed: "Hide closed",
+    todoDispatch: "Collect and land",
+    todoOpen: "Open",
+    todoHandedOff: "Handed off",
+    todoDropped: "Let go",
+    todoEscalated: "Worth asking you about",
+  },
+  "zh-Hant": {
+    nav: "看板",
+    tabBoard: "看板",
+    tabBacklog: "Backlog",
+    boardEyebrow: "看板 · 現在正在發生",
+    boardTitle: "現在正在發生的事",
+    boardLede: "你現在需要知道的事。機器自己在追的待辦不在這裡，在各個 session 詳情的「Session 待辦」裡。",
+    backlogEyebrow: "BACKLOG · 規劃中",
+    backlogTitle: "Backlog",
+    backlogLede: "已規劃，尚未排入。除非你說，這裡的東西不會被拿掉。",
+    unreadable: "讀不到看板。",
+    sweepStalled: "看板的巡檢停了：在它恢復之前，落地不會自動收掉對應的項目。",
+    more: "還有 {n} 項",
+
+    sectionDecide: "等你決定",
+    sectionActive: "進行中",
+    sectionScheduled: "本週排入",
+    sectionDone: "最近完成",
+    sectionEmpty: "這一區目前沒有東西。",
+    decideLede: "等著收尾的交付，以及 session 問你的事。",
+
+    toConfirm: "待確認",
+    toConfirmLede: "依規則提出、還沒有人回答的提議。7 天沒有回答，這件事就只留在 session 的待辦裡。",
+    toConfirmNone: "沒有要確認的。",
+    proposalWhy: "提議的理由：{why}",
+    signalCrossSession: "它派出了另一個 session",
+    signalLongLived: "它的待辦已經開了超過 24 小時",
+    signalExternalEffect: "它有外部效果",
+    answerTrack: "追蹤",
+    answerLater: "之後（Backlog）",
+    answerNo: "不用",
+
+    decisionDefault: "到 {when} 還沒人回答，就照「{option}」",
+    decisionBlocking: "回答之前，工作停著",
+    decisionFrom: "{session} 問的",
+
+    digestTitle: "每日摘要",
+    digestFor: "{date}",
+    digestNone: "還沒有摘要。每天第一次巡檢時，會寫一份前一天的。",
+    digestCompleted: "完成 {n} 件，其中 {landed} 件已落地",
+    digestStalled: "{n} 件停擺，回到 Backlog",
+    digestFromBacklog: "{n} 件從 Backlog 移上看板",
+    digestAutomatic: "{n} 次由規則或事實自動移動",
+    digestProposals: "{n} 個提議待確認",
+    digestDecisions: "{n} 個決定等你回答",
+    digestAwaiting: "{n} 件交付等收尾",
+    digestClosureAsked: "{n} 件交付問過你一次；7 天沒回答就以「交付未確認」結束",
+    digestHandedOff: "{n} 筆待辦沒有人接",
+    digestBacklogStale: "{n} 件 Backlog 30 天沒人看過：要留嗎？",
+    digestQuiet: "那一天沒有發生什麼事。",
+    digestTruncated: "那一天的移動比一份摘要讀得多，上面的數字只算了讀到的部分。",
+
+    owner: "負責：{owner}",
+    ownerYou: "你",
+    tasks: "{n} 個 task",
+    tasksLive: "{n} 個在跑",
+    tasksDelivered: "{n} 個已交付",
+    tasksLanded: "{n} 個已落地",
+    tasksFailed: "{n} 個失敗",
+    tasksUnknown: "{n} 個讀不到",
+    noTasks: "還沒有派工",
+    lastEvidence: "最後一筆證據：{when}",
+    stallClock: "到 {when} 還沒有新證據，就回 Backlog",
+    closureClock: "到 {when} 還沒人回答，就以「交付未確認」結束",
+    startOn: "預計 {date} 開始",
+    reasonNoDispatch: "還沒有派工",
+    reasonAttemptsFailed: "嘗試都失敗了",
+    reasonRedispatched: "重新派工",
+    reasonAccepted: "你收下了",
+    reasonUnconfirmed: "交付未確認",
+    reasonDropped: "已放棄",
+    rankNone: "未排序",
+    rank: "第 {n} 順位",
+
+    opStart: "開始做",
+    opSchedule: "排入",
+    opDefer: "放回 Backlog",
+    opAccept: "收下",
+    opRework: "還要改",
+    opDrop: "放棄",
+    opHandover: "轉交",
+    opUntrack: "不用追蹤",
+    opRank: "排序",
+    opDiscard: "丟掉",
+    handoverTo: "交給誰（session id，或 user）",
+    scheduleOn: "開始日期",
+    rankTo: "順位（0 表示不排）",
+    apply: "套用",
+
+    newItem: "新增",
+    newTitle: "要做什麼",
+    newProject: "專案",
+    newToBoard: "放上看板：現在就做",
+    newToBacklog: "放進 Backlog：之後再做",
+    create: "建立",
+
+    failed: "沒有成功：{detail}",
+    failedConflict: "在你決定的時候它變了，所以什麼都沒做。看板已經重新讀過。",
+    failedNetwork: "daemon 沒有回應；不知道有沒有做成。",
+
+    todosTitle: "Session 待辦",
+    todosOpen: "{n} 項未完成",
+    todosLede: "由 broker 的事實自動建立、自動結束。你不需要整理它。",
+    todosNone: "這個 session 沒有欠任何事。",
+    todosUnknown: "還不知道這個 session 的對話是哪一個，所以說不出它的待辦。",
+    todosUnreadable: "讀不到這個 session 的待辦。",
+    todosShowClosed: "看已結束的",
+    todosHideClosed: "收起已結束的",
+    todoDispatch: "收結果、落地",
+    todoOpen: "未完成",
+    todoHandedOff: "已移交",
+    todoDropped: "已放掉",
+    todoEscalated: "值得問你",
+  },
+} as const
+
+export type WorkWord = keyof (typeof words)["en"]
+
+/** The page's language as the copied catalog set it, or the browser's (next-strings.ts). */
+function language(): "en" | "zh-Hant" {
+  const lang = (typeof document !== "undefined" && document.documentElement.lang) ||
+    (typeof navigator !== "undefined" && navigator.language) || "en"
+  return lang.toLowerCase().startsWith("zh") ? "zh-Hant" : "en"
+}
+
+/** One sentence, its holes filled. */
+export function workWord(key: WorkWord, holes: Record<string, string | number> = {}): string {
+  return words[language()][key].replace(/\{(\w+)\}/g, (all, name: string) =>
+    name in holes ? String(holes[name]) : all,
+  )
+}
