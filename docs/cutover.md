@@ -80,7 +80,7 @@ Timeline 1,456、WebPush＋SmartNotification 1,318。
 | `graphs` | 多節點派工圖 | ❌ | split-and-join 無法宣告 | 新 daemon | 4 |
 | `detached-tasks` | `root.session_id: null` 的無人值守自動化 | ❌ | 排程的自動任務沒有載體 | 新 daemon | 3 |
 | `coordinator`（Clawdfather） | 註冊、rebind、bearings、successions；機器層級的角色 | 🔶 `/v1/next/coordinator` 有 read／POST 與候選清單，實測 `registered:false` | 新 daemon 沒有接手這個角色；皇冠目前靠唯讀舊 store | 新 daemon | 3 |
-| `schedules` 與 `schedule-webhooks` | 6 個排程檔（5 個啟用，全部是使用者真的每天在跑的營運工作：兩個內容發布、兩個 production 錯誤巡檢、一個資料對應）＋webhook bind／delivery | ✅🔧 2026-09-18（一次隔離交付，`docs/schedules.md`）：舊版檔案格式、六條路由、webhook 綁定帳本、匯入／匯出；時鐘在 7796 實測發射、重啟不連發、停機錯過的那一次補跑一次。派工本身仍是 Go 第一版（見 A1、A2） | **5 個每天在跑的營運排程會停**。遷移＝把 6 個 JSON 換成新格式並重新設定 | 新 daemon＋使用者確認 | 2 |
+| `schedules` 與 `schedule-webhooks` | 5 個排程檔（全部啟用，全部是使用者真的每天在跑的營運工作：兩個內容發布、兩個 production 錯誤巡檢、一個資料對應；目錄裡另有 2 個 `.bak`，搬家時不帶）＋webhook bind／delivery | ✅🔧 2026-09-18（一次隔離交付，`docs/schedules.md`）：舊版檔案格式、六條路由、webhook 綁定帳本、匯入／匯出；時鐘在 7796 實測發射、重啟不連發、停機錯過的那一次補跑一次。派工本身仍是 Go 第一版（見 A1、A2） | **5 個每天在跑的營運排程會停**。遷移＝把 5 個 JSON 用 `tools/migrate-schedules.py` 匯入並 verify 三種都 SAME | 新 daemon＋使用者確認 | 2 |
 | `durable-reports/promotions` | 把 task 報告升級成不可變、可跨裝置讀的文件（`~/Library/Application Support/Clawdline/durable-reports/`） | ❌ | 報告只剩本機檔案 | 新 daemon | 5 |
 | `storage` / `maintenance/restart` | store 健康度、重啟維護窗（讓 app 可以安全重啟而不殺掉 in-flight） | ❌ | 新 daemon 重啟沒有保護 | 新 daemon | 4 |
 | `whoami` / `assistants` / `waits` | session 自我識別、可用助理、協調等待 | ❌ | 協調等待（畫面上的「等待中」）沒有來源 | 新 daemon | 3 |
