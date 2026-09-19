@@ -30,7 +30,7 @@ type itermLauncher struct {
 	itermClosed []string
 }
 
-func (l *itermLauncher) CloseITermSession(_ context.Context, id string) (bool, error) {
+func (l *itermLauncher) CloseITermChild(_ context.Context, id string, _ time.Time) (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.itermClosed = append(l.itermClosed, id)

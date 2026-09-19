@@ -484,7 +484,7 @@ func (b *Broker) closeChild(r Record, present bool) []store.Effect {
 		if _, ok := b.Launcher.(itermCloser); !ok {
 			return nil
 		}
-		c = closeChildEffect{Backend: "iterm", Pane: r.ChildTerminalID}
+		c = closeChildEffect{Backend: "iterm", Pane: r.ChildTerminalID, Before: b.now().Unix()}
 	default:
 		return nil
 	}
@@ -492,11 +492,13 @@ func (b *Broker) closeChild(r Record, present bool) []store.Effect {
 	return []store.Effect{{Kind: EffectCloseChild, Subject: r.ID, Payload: payload}}
 }
 
-// itermCloser is a launcher that can close one iTerm2 session by the id iTerm2
-// gave it (terminal.Launcher on macOS). It is asked for rather than required:
-// the launcher port is shared with the start route, which closes nothing.
+// itermCloser is a launcher that can close a child's iTerm2 session by the id
+// iTerm2 gave it, ending the child's job in it first when that job began
+// before startedBefore (terminal.Launcher on macOS). It is asked for rather
+// than required: the launcher port is shared with the start route, which
+// closes nothing.
 type itermCloser interface {
-	CloseITermSession(ctx context.Context, id string) (bool, error)
+	CloseITermChild(ctx context.Context, id string, startedBefore time.Time) (bool, error)
 }
 
 // settleOrphan settles a task still `queued` whose dispatcher has provably

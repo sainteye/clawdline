@@ -251,13 +251,13 @@ func (i *ITerm) Interrupt(ctx context.Context, s session.Session) error {
 // It is bounded like every effect here, and its failures are typed: a session
 // that was not found, or not seen, is Unsent, and closed nothing; an Apple
 // Event that timed out (-1712, which a close on this Mac has answered) or was
-// killed at the limit is a Failure with Attention, and the caller is not held
-// past the limit.
+// killed at the limit is looked for again, and is Unconfirmed unless it is
+// then gone (closeITermByID) — it may still close after its limit.
 func (i *ITerm) Close(ctx context.Context, s session.Session) error {
 	if s.ID == "" {
 		return Unsent{Why: "there is no iTerm2 session id to close"}
 	}
-	return itermCall(ctx, itermCloseScript, 10*time.Second, s.ID)
+	return closeITermByID(ctx, s.ID)
 }
 
 // appleEvents serialises every iTerm2 Apple Event that has an effect —

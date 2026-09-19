@@ -175,6 +175,10 @@ type Broker struct {
 	// ran is measured from (reclaim.go, linger.go).
 	reclaim       reclaimState
 	lingerStarted time.Time
+	// lingers is what the beat has seen of each lingering tab since its task
+	// ended, and when an iTerm2 close may next be tried (linger.go). Both are
+	// observations, kept in memory only.
+	lingers lingerMemory
 	// todosOwed is a start's reconcile of the to-do list (todos.go), owed
 	// from Run until one succeeds. In memory: a restart is exactly when it is
 	// owed again. A pass run by hand owes none, so its cost stays the live

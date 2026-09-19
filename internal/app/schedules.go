@@ -810,7 +810,7 @@ func (b *ScheduleBook) dispatch(ctx context.Context, s schedule.Schedule, fire t
 	opening, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
 	defer cancel()
 	out, err := b.Broker.DispatchScheduled(opening, orchestrator.ScheduledRun{
-		TaskID: id, ScheduleID: s.ID, Title: s.Title, Template: s.Task,
+		TaskID: id, ScheduleID: s.ID, Title: s.Title, Template: s.Task, CloseTab: string(s.CloseTab),
 	})
 	if out.Absent {
 		_ = b.Store.ForgetScheduleRun(ctx, id)
