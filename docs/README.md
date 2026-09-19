@@ -9,7 +9,8 @@ Every document in this directory, and what kind it is.
   because the code and the design notes cite them. Parts of them describe a state that has since
   changed, and where one disagrees with a design note, the design note wins.
 
-Two pages are in English. The rest are written in Traditional Chinese.
+Five pages are in English: the two that introduce the project, and the three design notes an
+outside reader judges it by. The rest are written in Traditional Chinese.
 
 ## Start here
 

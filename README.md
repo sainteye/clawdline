@@ -273,7 +273,8 @@ which are internal records of the move from the Swift app. Start with:
   and Cloud
 - [docs/architecture.md](docs/architecture.md): the whole system on one page
 
-Most design notes are written in Traditional Chinese. The English pages above point into them.
+The rules, the work structures and the cross-platform survey are in English; the remaining design
+notes are written in Traditional Chinese, and the English pages point into them.
 
 ## Contributing
 
