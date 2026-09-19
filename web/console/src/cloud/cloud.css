@@ -1,0 +1,26 @@
+/* The Cloud gate's two additions to the copied door (`legacy/door.css`): the
+   machine list, and the way back to it once a machine is on screen. Written in
+   the door's own tokens so it reads as the same card. */
+
+.cloud-machines { list-style: none; margin: 4px 0 6px 0; padding: 0; }
+.cloud-machines li { margin: 0 0 8px 0; }
+.cloud-machines button {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+    width: 100%; padding: 11px 12px;
+    background: #101014; border: 1px solid var(--line); border-radius: 10px;
+    color: var(--ink); text-align: left;
+}
+.cloud-machines button:hover:not(:disabled) { border-color: var(--accent-ed); }
+.cloud-machines button:disabled { opacity: 0.55; cursor: default; }
+.cloud-machine-name { font-size: 14px; font-weight: 600; }
+.cloud-machine-facts { font-size: 12px; color: var(--dim); }
+
+/* In the header, shaped like the connection light beside it (`legacy/header.css` `.conn`). */
+.cloud-switch {
+    flex: 0 1 auto; min-width: 0; max-width: 34vw;
+    padding: 5px 10px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+    color: var(--dim); font-size: 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cloud-switch:hover { color: var(--ink); background: var(--card-hi); }

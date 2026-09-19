@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { Icon } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client } from "./client.js"
@@ -140,7 +140,12 @@ function rowNode(id: string): HTMLElement | null {
   return null
 }
 
-export default function App() {
+/**
+ * `aside` is drawn in the header between the counts and the connection light.
+ * The daemon's console passes nothing; a console reading a machine through
+ * Clawdline Cloud puts which machine it is there (`cloud/CloudGate.tsx`).
+ */
+export default function App({ aside }: { aside?: ReactNode } = {}) {
   const fleet = useFleet(client)
   const [page, setPage] = useState<Page>("sessions")
   const [menu, setMenu] = useState(false)
@@ -621,6 +626,7 @@ export default function App() {
           <b>clawdline</b>
         </button>
         <Counts rows={rows} recovering={!!fleet.snapshot && !fleet.snapshot.scan.complete} />
+        {aside}
         <Conn live={fleet.live} onRetry={fleet.refresh} />
       </header>
 

@@ -43,10 +43,33 @@ import "./shell.css"
 const host = document.getElementById("root")
 if (!host) throw new Error("no #root in the document")
 
-// The door stands in front of the console: until this daemon says the browser
-// is let in, the console is not drawn at all (door/Door.tsx).
-createRoot(host).render(
-  <StrictMode>
-    <DoorGate />
-  </StrictMode>,
-)
+// Which console this build is. Served by the daemon it is that daemon's, and
+// the door stands in front of it: until the daemon says the browser is let in,
+// the console is not drawn at all (door/Door.tsx). Built for Clawdline Cloud it
+// reads a machine across the relay instead, and the Cloud gate stands there
+// (cloud/CloudGate.tsx). The discriminator is the build's declaration, never a
+// guess from the hostname — the daemon's own page is also served from hosts
+// that are not localhost, through a tunnel — which is the Swift console's rule
+// (`legacy/js/net/cloud-boot.js`). The declaration is the object that console's
+// build wrote into `window.__clawdlineCloud`, given here at build time:
+//
+//   VITE_HOSTED_CONSOLE='{"v":1,"app_origin":"https://…","api_origin":"https://…","relay_url":"wss://…"}' npm run build
+//
+// The gate is loaded only when declared, so the daemon's console does not
+// carry the relay client.
+const declared = import.meta.env.VITE_HOSTED_CONSOLE as string | undefined
+if (declared) {
+  void import("./cloud/CloudGate.js").then(({ CloudGate }) =>
+    createRoot(host).render(
+      <StrictMode>
+        <CloudGate declared={declared} />
+      </StrictMode>,
+    ),
+  )
+} else {
+  createRoot(host).render(
+    <StrictMode>
+      <DoorGate />
+    </StrictMode>,
+  )
+}

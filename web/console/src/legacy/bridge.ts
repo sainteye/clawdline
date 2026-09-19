@@ -79,8 +79,13 @@ export function publish(
   // this machine, so the local page supplies the identity rather than the
   // daemon repeating it on every row. Checked against the original, whose
   // payload has no such field either and whose rows still read "Mac 電腦 · 這台
-  // Mac" — the constant comes from the client there too.
-  state.sessions = sessions.map((s) => ({ ...s, machine: LOCAL_SESSION_MACHINE }))
+  // Mac" — the constant comes from the client there too. A row read across the
+  // relay does carry one, the machine it came from (`cloud/relay-reader.ts`),
+  // and keeps it: that row is not on this machine.
+  state.sessions = sessions.map((s) => {
+    const own = (s as { machine?: unknown }).machine
+    return { ...s, machine: typeof own === "string" && own ? own : LOCAL_SESSION_MACHINE }
+  })
   // The list orders by when a session last moved, and the page is what sees
   // it move (`session/activity.ts`), so every fleet that arrives is looked at.
   observeActivity(sessions)

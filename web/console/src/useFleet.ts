@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
-import {
-  ClawdlineClient,
-  FleetStore,
-  nativeEventSourceTransport,
-  type FleetState,
-} from "@clawdline/core"
+import { ClawdlineClient, FleetStore, type FleetState } from "@clawdline/core"
+import { fleetTransport } from "./client.js"
 
 /**
  * Binds the framework-free store to React.
@@ -14,7 +10,7 @@ import {
  * and it is nine lines.
  */
 export function useFleet(client: ClawdlineClient): FleetState & { refresh: () => void } {
-  const store = useMemo(() => new FleetStore(client, nativeEventSourceTransport()), [client])
+  const store = useMemo(() => new FleetStore(client, fleetTransport()), [client])
   useEffect(() => {
     void store.start()
     return () => store.stop()
