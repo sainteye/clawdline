@@ -253,6 +253,14 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
       驗：用新 daemon 派一個真的 child（`POST :7727/v1/orchestrator/tasks`，帶 orchestrator token），
       child 收到有 CHILD.md 的簡報、寫 `result.json`，**在沒有人手動呼叫 settle 的情況下**
       task 在 5 分鐘內變成 `success`。
+      **2026-09-19 第一次真的試了，沒過，而且這就是目前唯一擋住切換的東西。**
+      分頁有開、`claude` 有起來、`CHILD.md` 有寫進 task 目錄，但**沒有任何東西被打進去**：
+      iTerm 開分頁回傳的是 session GUID，而這個 daemon 的清單把 iTerm 分頁列成 `ttysNNN`，
+      `brief()` 拿 GUID 去對永遠對不上，90 秒後放棄。task 停在 `spawning` 直到自己的
+      12 分鐘 `timeout_minutes` 到，才結成 `timeout`；`spawnError` 全程是 `null`，
+      也就是「沒被 brief」這個已知的事實沒有被保存。兩件事都在修（見 `docs/switch-blockers.md`）。
+      順帶量到的兩件事：新 daemon 的 task 目錄是它自己的（inventory 的 `task_root` 會說在哪），
+      而且它**沒有 `cancel` 這個動作**，所以那件卡住的 task 收不掉，只能等鐘。
 - [ ] **A2 逾時會自己發生。** 驗：派一個 `timeout_minutes: 1` 而且不寫 result 的 task，
       確認它自己變成 `timeout` 並關掉分頁。
 - [ ] **A3 claims 仲裁會擋。** 驗：兩筆 claims 重疊的派工，第二筆回 `409 workspace_busy`，
