@@ -104,10 +104,11 @@ func TestAReworkStartsANewStay(t *testing.T) {
 	}
 }
 
-// #3a 瑣碎無人管理: an item nobody's facts touch is not rewritten by the
-// machine. The rules answer no change for an item whose facts did not
-// change, however often they are asked, so a sweep writes nothing — the old
-// board wrote 4,124 reconciliations, 75.5% of them planning⇄execution.
+// #3a "trivial, managed by nobody": an item nobody's facts touch is not
+// rewritten by the machine. The rules answer no change for an item whose
+// facts did not change, however often they are asked, so a sweep writes
+// nothing — the old board wrote 4,124 reconciliations, 75.5% of them
+// planning⇄execution.
 // And the rule that sends a quiet item back, taken out, leaves a stalled item
 // on a person's board for ever: the other half of #3a.
 func TestBrokenShape3aNothingSitsOnTheBoardUnmanaged(t *testing.T) {
@@ -138,11 +139,12 @@ func TestBrokenShape3aNothingSitsOnTheBoardUnmanaged(t *testing.T) {
 	}
 }
 
-// #3b 開始後沒人收尾、看不到進度: a dispatch that names the work item brings it
-// onto the board — its progress is on the item, not on a twin card — and a
-// commitment that goes quiet for three days goes back to the Backlog rather
-// than sitting as "in progress". A running task keeps it where it is: only
-// facts decide, never a declared span (there is no span input at all).
+// #3b "nobody closes it once started, progress cannot be seen": a dispatch
+// that names the work item brings it onto the board — its progress is on
+// the item, not on a twin card — and a commitment that goes quiet for three
+// days goes back to the Backlog rather than sitting as "in progress". A
+// running task keeps it where it is: only facts decide, never a declared
+// span (there is no span input at all).
 func TestBrokenShape3bADispatchBindsAndSilenceIsSaidOutLoud(t *testing.T) {
 	p := policy()
 	it := backlogItem()
@@ -187,9 +189,10 @@ func TestBrokenShape3bADispatchBindsAndSilenceIsSaidOutLoud(t *testing.T) {
 	}
 }
 
-// #3c 做完了但看板沒更新: the broker's landing record closes the item, with
-// nobody pressing anything; a delivery with no landing goes to the closure
-// queue, where a person can accept it — and accepting never says landed.
+// #3c "done, but the board was not updated": the broker's landing record
+// closes the item, with nobody pressing anything; a delivery with no landing
+// goes to the closure queue, where a person can accept it — and accepting
+// never says landed.
 func TestBrokenShape3cALandingClosesTheItem(t *testing.T) {
 	p := policy()
 	it := boardItem(ItemActive)

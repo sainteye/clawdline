@@ -841,7 +841,7 @@ func (s *Store) DecisionsClosedBetween(ctx context.Context, state work.DecisionS
 }
 
 // HandedOffTodos is how many to-dos are owed by a session that is gone and
-// nobody has taken: §6's "N 筆待辦沒有人接".
+// nobody has taken: §6's "N to-dos have no one".
 func (s *Store) HandedOffTodos(ctx context.Context) (int64, error) {
 	if err := reading(); err != nil {
 		return 0, err

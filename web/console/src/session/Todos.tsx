@@ -14,9 +14,9 @@ import "../pages/work/work.css"
  * **Folded, and on the session's page only.** Their reader is the session;
  * a person looks when they want to see what the machine keeps for itself, and
  * never has to tend it — every row is made and closed by a broker fact (§3.4:
- * "人永遠不需要編輯待辦"). So there are no buttons here, the strip is folded
- * until opened, and nothing of it is on the board: #5 is "not on the same
- * page", not "collapsed on it".
+ * "a person never needs to edit a to-do"). So there are no buttons here, the
+ * strip is folded until opened, and nothing of it is on the board: #5 is "not
+ * on the same page", not "collapsed on it".
  *
  * The count on the fold is read when the session is opened, and the list when
  * the fold is. A session whose conversation is not known yet, or a list that
@@ -137,7 +137,7 @@ function reasonWords(reason: string): string {
   return reason
 }
 
-/** A to-do's state in words: the catalog's 完成 for done, the wire's own word for one this page does not know. */
+/** A to-do's state in words: the catalog's "完成" for done, the wire's own word for one this page does not know. */
 function stateWords(state: string): string {
   if (state === "done") return L.strings.webTaskDone
   return STATE_WORD[state] ? workWord(STATE_WORD[state]) : state

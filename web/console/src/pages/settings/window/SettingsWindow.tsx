@@ -111,11 +111,11 @@ export function SettingsWindow() {
     ask({ kind: "state" })
   }, [read])
 
-  // The Cloud line, while the 遠端 tab is open. A line that is reconnecting
-  // changes on its own, so this card is the one thing in this window that is
-  // not simply a reading of the file — and it stops polling the moment the tab
-  // is left, because a settings window nobody is looking at should ask this
-  // daemon nothing.
+  // The Cloud line, while the Remote ("遠端") tab is open. A line that is
+  // reconnecting changes on its own, so this card is the one thing in this
+  // window that is not simply a reading of the file — and it stops polling the
+  // moment the tab is left, because a settings window nobody is looking at
+  // should ask this daemon nothing.
   useEffect(() => {
     if (tab !== 3) return
     let live = true

@@ -7,8 +7,9 @@ import { workWord } from "./words.js"
 
 /**
  * The Backlog tab (board-redesign §3.3, §5.3): the planned list in its order,
- * each row with 開始做 and 排入. It is a list rather than the board's cards on
- * purpose — nothing here is happening, and it should not look as if it were.
+ * each row with Start and Schedule. It is a list rather than the board's
+ * cards on purpose — nothing here is happening, and it should not look as if
+ * it were.
  * Nothing leaves it except by a person: start, schedule, or discard.
  */
 export function BacklogView({

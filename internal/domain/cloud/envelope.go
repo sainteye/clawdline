@@ -67,8 +67,8 @@ const (
 type Class string
 
 // The four classes. dispatch marks a work-dispatching command — the metadata
-// boundary already declares 派工次數 cloud-visible — and every other command
-// stays an indistinct ctl.
+// boundary already declares the number of dispatches cloud-visible — and
+// every other command stays an indistinct ctl.
 const (
 	ClassStream   Class = "stream"
 	ClassCtl      Class = "ctl"

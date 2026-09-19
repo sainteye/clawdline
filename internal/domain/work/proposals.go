@@ -102,7 +102,7 @@ func effectIndex(e Effect) int {
 }
 
 // Ignored is a task the signals did not count, and why: a step of other work,
-// or a task nobody's session owns (§4.2's "永遠不提議的").
+// or a task nobody's session owns (§4.2's "Never proposed").
 type Ignored struct {
 	Task string `json:"task_id"`
 	Why  string `json:"why"`
@@ -174,7 +174,7 @@ const (
 	ProposalExpired ProposalState = "expired"
 )
 
-// Answer is a person's answer to a proposal: 追蹤／之後（Backlog）／不用.
+// Answer is a person's answer to a proposal: Track / Later (backlog) / No.
 type Answer string
 
 const (
@@ -193,8 +193,8 @@ const (
 	// ChannelSession is the conversation: the session asks at the end of its
 	// turn, in the server's sentence, without blocking.
 	ChannelSession Channel = "session"
-	// ChannelToConfirm is the board's "to confirm" area (待確認區), and one line
-	// in the daily digest. Nothing is pushed.
+	// ChannelToConfirm is the board's "to confirm" area, and one line in the
+	// daily digest. Nothing is pushed.
 	ChannelToConfirm Channel = "to_confirm"
 )
 
@@ -211,8 +211,8 @@ const (
 	// nobody.
 	AskFromChild = "proposal_from_child"
 	// AskByRule: the rules made it, from the broker's facts, with no session
-	// in a turn to ask (§6's "Session 待辦 → 看板（升級）"). It waits in the
-	// "to confirm" area.
+	// in a turn to ask (§6's "Session to-do → board (escalation)"). It waits
+	// in the "to confirm" area.
 	AskByRule = "made_by_rule"
 )
 
@@ -405,7 +405,8 @@ var signalWords = map[Signal]string{
 }
 
 // Question is the one sentence a session asks with. It is the server's, so
-// that what is asked is what was decided (§4.4: "用回應裡的句子").
+// that what is asked is what was decided: §4.4 has the session ask
+// "using the sentence in the response".
 func Question(title string, signals []Signal, effects []Effect) string {
 	why := []string{}
 	for _, s := range signals {
@@ -528,7 +529,7 @@ type Option struct {
 	Label string `json:"label"`
 }
 
-// Decision is one thing a session needs a person to decide (等你決定).
+// Decision is one thing a session needs a person to decide ("Waiting on you").
 type Decision struct {
 	ID       string
 	Session  string
@@ -759,7 +760,8 @@ func BacklogStale(it Item, p DigestPolicy, now time.Time) bool {
 }
 
 // Automatic says a move was made by a rule or by the broker's facts rather
-// than by a person: D2's "自動的移動一定出現在每日摘要".
+// than by a person. D2 is why that matters: "an automatic move always
+// appears in the daily digest".
 func Automatic(actor string) bool {
 	return actor == ActorBroker || actor == ActorRule || strings.HasPrefix(actor, "root:")
 }

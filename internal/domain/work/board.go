@@ -159,7 +159,8 @@ type Item struct {
 	// DecisionSince is when the oldest decision still waiting for a person
 	// on this item was asked; zero when none waits. While one waits, the
 	// quiet clock does not run: an item waiting on a person has not stalled
-	// (§5.1, "沒有等人的決定"). Read with the item; never stored on it.
+	// (§5.1, "no decision waiting on a person"). Read with the item; never
+	// stored on it.
 	DecisionSince time.Time
 	ClosedReason  string
 	ClosedAt      time.Time
@@ -653,20 +654,20 @@ func newestRoot(tasks []TaskFacts, after time.Time) string {
 // ——— A person's commands (D31) ———
 
 // Op is a person's command. The list is closed: board-redesign §8's
-// "人能在看板上下的指令", less the two that belong to T4 (answering a
-// decision, and following a proposal).
+// "instructions a person can give on the board", less the two that belong
+// to T4 (answering a decision, and following a proposal).
 type Op string
 
 const (
-	OpStart    Op = "start"    // 開始做: Backlog → board, handed to an owner
-	OpTrack    Op = "track"    // 追蹤這個: an item nobody follows → board
-	OpSchedule Op = "schedule" // 排入: a start date; inside the short window it is on the board
-	OpDefer    Op = "defer"    // 放回 Backlog
-	OpAccept   Op = "accept"   // 收下: close a delivery as accepted — never as landed
-	OpRework   Op = "rework"   // 還要改: a delivery goes back to work
-	OpDrop     Op = "drop"     // 放棄
-	OpHandover Op = "handover" // 轉交
-	OpUntrack  Op = "untrack"  // 不用追蹤: off the board, left to the to-dos
+	OpStart    Op = "start"    // Start: Backlog → board, handed to an owner
+	OpTrack    Op = "track"    // Track this: an item nobody follows → board
+	OpSchedule Op = "schedule" // Schedule: a start date; inside the short window it is on the board
+	OpDefer    Op = "defer"    // Back to Backlog
+	OpAccept   Op = "accept"   // Accept: close a delivery as accepted — never as landed
+	OpRework   Op = "rework"   // Needs changes: a delivery goes back to work
+	OpDrop     Op = "drop"     // Drop
+	OpHandover Op = "handover" // Hand over
+	OpUntrack  Op = "untrack"  // Don't track: off the board, left to the to-dos
 	OpRank     Op = "rank"     // the Backlog's order
 )
 
@@ -852,10 +853,10 @@ func Decide(it Item, tasks []TaskFacts, cmd Command, p Policy, now time.Time) (C
 type Section string
 
 const (
-	SectionDecide    Section = "decide"    // 等你決定: deliveries waiting to be closed
-	SectionActive    Section = "active"    // 進行中
-	SectionScheduled Section = "scheduled" // 本週排入: on the board by date, nothing dispatched yet
-	SectionDone      Section = "done"      // 最近完成: closed inside the short window
+	SectionDecide    Section = "decide"    // Waiting on you: deliveries waiting to be closed
+	SectionActive    Section = "active"    // In progress
+	SectionScheduled Section = "scheduled" // Scheduled this week: on the board by date, nothing dispatched yet
+	SectionDone      Section = "done"      // Recently done: closed inside the short window
 )
 
 // Sections is their order.

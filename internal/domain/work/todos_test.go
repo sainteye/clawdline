@@ -84,7 +84,7 @@ func TestEachClosingFactClosesAndNothingElseDoes(t *testing.T) {
 }
 
 // A task whose child died with a landing owed is still owed: the death is
-// not a landing (board-redesign §9: "child 死掉").
+// not a landing (board-redesign §9: "a child dies").
 func TestAChildThatDiedOwingALandingStaysOwed(t *testing.T) {
 	todo := openTodo(t)
 	died := facts(func(f *TaskFacts) { f.State, f.Ended, f.Landing = "timeout", true, "pending" })
@@ -94,7 +94,7 @@ func TestAChildThatDiedOwingALandingStaysOwed(t *testing.T) {
 }
 
 // The order the facts arrive in is not a fact: the answer is the same for
-// every order (board-redesign §9: "落地比結果先到").
+// every order (board-redesign §9: "the landing arrives before the result").
 func TestTheOrderOfFactsDoesNotMatter(t *testing.T) {
 	type step struct {
 		ended   bool
