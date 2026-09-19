@@ -40,7 +40,7 @@ checkout, and the last column says how.
 | Handing work to another session (the broker) | Works. `serialize`, `attach_session` and `reasoning_effort` are refused by name, not ignored | `POST /v1/orchestrator/tasks` with one of them returns `bad_task` |
 | Board, backlog and a session's own to-do list | Works. A new install starts empty | `GET /v1/work/board` |
 | A browser on the same machine | Works | `clawdline open` |
-| A phone, without an account | **Not built.** Pairing codes and the request gate exist; the page a phone would type the code into and a tunnel launcher do not | [below](#from-a-browser-or-a-phone) |
+| A phone, without an account | **Works, over a tunnel you run.** The pairing page, the gate and a launcher for your own `cloudflared` are all in. A clean browser was driven through it end to end; no public tunnel has been raised from this repository | [below](#from-a-browser-or-a-phone) |
 | A phone, through Clawdline Cloud | **Preview.** The machine side is written and was driven end to end against a local copy of the service, not yet against the production service | [Free and Cloud](#free-and-cloud) |
 | Windows | The daemon cross-compiles and has not been run on Windows. It could not list or drive sessions there yet: no tmux, no ConPTY backend, no process inventory | `internal/adapters/process/ps_windows.go` |
 | Interface language | The console ships one catalog, Traditional Chinese. The command line is English | `web/console/public/strings/` |
@@ -148,9 +148,9 @@ This repository used to hold the Swift app. What changes for you:
   saved pictures, and the dispatch policy. It never reads the Swift app's secrets, tokens or
   keys. That read lives in one adapter, `internal/adapters/swiftstore`, so it can be removed in
   one piece.
-- **Not in this generation yet:** a bundled tunnel, the phone pairing page, Claude Code hook
-  installation, snippets, the skills menu, the dev-server list, the project timeline, and
-  interface languages other than Traditional Chinese.
+- **Not in this generation yet:** a bundled tunnel binary (you install `cloudflared` yourself),
+  Claude Code hook installation, snippets, the skills menu, the dev-server list, the project
+  timeline, and interface languages other than Traditional Chinese.
 
 ## Install and run
 
@@ -193,11 +193,15 @@ daemon bundled inside it, with the three variables set, and signs its own window
 **A browser on this machine.** `clawdline open` creates a device for that browser and opens the
 console signed in. That device can read. `clawdline open --send` also lets it type into sessions.
 
-**A phone.** Today, the only way a phone reaches this machine is Clawdline Cloud, which is a
-preview (next section). The account-free path is half built: the gate that checks every request
-and the six-digit pairing are in the daemon, and `clawdline pair --watch` prints each code as a
-device asks. There is not yet a page for a phone to type that code into, and nothing starts a
-tunnel.
+**A phone, without an account.** Start a tunnel with `clawdline tunnel`, which runs the
+`cloudflared` you installed and always passes its own `--config`, so it can never pick up another
+tunnel's configuration. It refuses to start while no device has been paired, or while remote is
+off. Open the address it prints on the phone and you meet the door: ask to pair, and
+`clawdline pair --watch` prints six digits on this machine only. Type them and the console opens.
+A newly paired phone can read; typing is a second permission.
+
+**A phone, through Clawdline Cloud.** The other way, with an account and no tunnel of your own:
+the next section.
 
 What stands in front of every request, in the order it meets them:
 

@@ -80,7 +80,7 @@ Timeline 1,456、WebPush＋SmartNotification 1,318。
 | `graphs` | 多節點派工圖 | ❌ | split-and-join 無法宣告 | 新 daemon | 4 |
 | `detached-tasks` | `root.session_id: null` 的無人值守自動化 | ❌ | 排程的自動任務沒有載體 | 新 daemon | 3 |
 | `coordinator`（Clawdfather） | 註冊、rebind、bearings、successions；機器層級的角色 | 🔶 `/v1/next/coordinator` 有 read／POST 與候選清單，實測 `registered:false` | 新 daemon 沒有接手這個角色；皇冠目前靠唯讀舊 store | 新 daemon | 3 |
-| `schedules` 與 `schedule-webhooks` | 6 個排程檔（5 個啟用，全部是真的營運工作：文章發布、production 錯誤巡檢、a private venture對應、a private venture 巡檢）＋webhook bind／delivery | ✅🔧 2026-09-18（一次隔離交付，`docs/schedules.md`）：舊版檔案格式、六條路由、webhook 綁定帳本、匯入／匯出；時鐘在 7796 實測發射、重啟不連發、停機錯過的那一次補跑一次。派工本身仍是 Go 第一版（見 A1、A2） | **5 個每天在跑的營運排程會停**。遷移＝把 6 個 JSON 換成新格式並重新設定 | 新 daemon＋使用者確認 | 2 |
+| `schedules` 與 `schedule-webhooks` | 6 個排程檔（5 個啟用，全部是使用者真的每天在跑的營運工作：兩個內容發布、兩個 production 錯誤巡檢、一個資料對應）＋webhook bind／delivery | ✅🔧 2026-09-18（一次隔離交付，`docs/schedules.md`）：舊版檔案格式、六條路由、webhook 綁定帳本、匯入／匯出；時鐘在 7796 實測發射、重啟不連發、停機錯過的那一次補跑一次。派工本身仍是 Go 第一版（見 A1、A2） | **5 個每天在跑的營運排程會停**。遷移＝把 6 個 JSON 換成新格式並重新設定 | 新 daemon＋使用者確認 | 2 |
 | `durable-reports/promotions` | 把 task 報告升級成不可變、可跨裝置讀的文件（`~/Library/Application Support/Clawdline/durable-reports/`） | ❌ | 報告只剩本機檔案 | 新 daemon | 5 |
 | `storage` / `maintenance/restart` | store 健康度、重啟維護窗（讓 app 可以安全重啟而不殺掉 in-flight） | ❌ | 新 daemon 重啟沒有保護 | 新 daemon | 4 |
 | `whoami` / `assistants` / `waits` | session 自我識別、可用助理、協調等待 | ❌ | 協調等待（畫面上的「等待中」）沒有來源 | 新 daemon | 3 |
@@ -275,8 +275,8 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
       與 broker task 互相擋（`409 workspace_busy`，在開任何東西之前）。2026-09-18 在隔離的 7807（私有 tmux、假的
       `claude`）實測通過，證據在那次交付的 `artifacts/report.md`（本機 task 目錄，不在 repo 裡）；7727 仍待重建後驗。
 - [ ] **A9 五個營運排程搬過去而且各跑成功一次。**（匯入與內容一致已用複本驗過 6/6；「各跑成功一次」要真的切換，見 `docs/schedules.md` 的順序）
-      清單：文章發布、a private venture發布、dual production 錯誤巡檢、a private venture餐廳對應與 production 錯誤、
-      a private venture 內容修正與對話異常巡檢。**這一項要使用者自己確認結果對**，不是看它有沒有開分頁。
+      清單就是使用者自己那 5 個（名稱只在他的機器上：兩個內容發布、兩個 production 錯誤巡檢、
+      一個資料對應與內容修正）。**這一項要使用者自己確認結果對**，不是看它有沒有開分頁。
 - [ ] **A10 編譯插槽鎖存在。** 驗：同時要求兩次驗證，第二個排隊而不是同時開 `swift-frontend`。
 - [ ] **A11 dispatch-policy 會進 child 的簡報。** 驗：派一個 child，請它把簡報裡的家規原文回報一段。
 
