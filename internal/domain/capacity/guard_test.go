@@ -234,14 +234,14 @@ func TestRegisterRowsAnswerTheFourQuestions(t *testing.T) {
 		if e.Unit != Bytes && e.Unit != Rows {
 			t.Errorf("%s: unit %q", e.Name, e.Unit)
 		}
-		// 上限
+		// The limit.
 		if e.Limit <= 0 {
 			t.Errorf("%s: no limit", e.Name)
 		}
 		if w := e.Warn(); w <= 0 || w >= criticalAt {
 			t.Errorf("%s: warn_at %v is not below critical", e.Name, w)
 		}
-		// 滿了怎樣
+		// What happens when it is full.
 		if e.AtLimit == "" {
 			t.Errorf("%s: nothing says what happens at the limit", e.Name)
 		}
@@ -253,7 +253,7 @@ func TestRegisterRowsAnswerTheFourQuestions(t *testing.T) {
 		} else if e.Deviation != "" {
 			t.Errorf("%s: a deviation on a row whose behaviour its class allows", e.Name)
 		}
-		// 誰會知道
+		// Who finds out.
 		told := map[Channel]bool{}
 		for _, c := range e.Told {
 			told[c] = true
@@ -264,14 +264,14 @@ func TestRegisterRowsAnswerTheFourQuestions(t *testing.T) {
 		if (e.Class == Evidence || e.Class == SecurityAudit) != told[Health] {
 			t.Errorf("%s: health is told exactly for evidence and security-audit rows", e.Name)
 		}
-		// 誰決定淘汰
+		// Who decides eviction.
 		if e.EvictedBy != Person && e.EvictedBy != Daemon {
 			t.Errorf("%s: nobody decides eviction", e.Name)
 		}
 		if (e.Class == Evidence || e.Class == SecurityAudit) && e.EvictedBy != Person {
 			t.Errorf("%s: only a person may let go of %s", e.Name, e.Class)
 		}
-		// 可注入：lowered by an override, and never raised.
+		// Injectable: lowered by an override, and never raised.
 		lower, problems := Resolve([]Entry{e}, e.Name+"="+itoa(e.Limit-1))
 		if len(problems) != 0 || lower[0].Limit != e.Limit-1 || !lower[0].Overridden {
 			t.Errorf("%s: the limit cannot be lowered: %v %v", e.Name, lower, problems)

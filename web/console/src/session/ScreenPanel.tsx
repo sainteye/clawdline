@@ -64,7 +64,7 @@ export function ScreenPanel({
   // first build refused any answer that was not the newest request, and on a
   // signalled backend the pane moves several times a second — so every answer
   // was stale before it arrived, the screen never landed, and the panel sat on
-  // 載入中⋯ while issuing thirty requests in five seconds. Measured on 7763 on
+  // "載入中⋯" while issuing thirty requests in five seconds. Measured on 7763 on
   // 2026-09-18 before this was split in two.
   const generation = useRef(0)
   const asked = useRef(0)

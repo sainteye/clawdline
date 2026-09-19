@@ -36,8 +36,9 @@ const SECTION_WORD: Record<Section, WorkWord> = {
 
 /**
  * The board tab (board-redesign §3.3), top to bottom: the daily digest and
- * the "to confirm" area, folded; then 等你決定, 進行中, 本週排入, and 最近完成
- * folded. Only `board_items` are here — a session's to-dos never are.
+ * the "to confirm" area, folded; then Waiting on you, In progress, Scheduled
+ * this week, and Recently done, folded. Only `board_items` are here — a
+ * session's to-dos never are.
  */
 export function BoardView({
   data,
@@ -248,7 +249,7 @@ function ItemCard({
   )
 }
 
-/** A question a session asked a person (等你決定): its options, and what stands if nobody answers. */
+/** A question a session asked a person (Waiting on you): its options, and what stands if nobody answers. */
 function DecisionCard({
   decision,
   busy,

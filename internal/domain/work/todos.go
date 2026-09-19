@@ -6,7 +6,7 @@ import (
 	"unicode"
 )
 
-// The session to-do list (Session 待辦): step 2 of board-redesign §9, T2 of
+// The session to-do list: step 2 of board-redesign §9, T2 of
 // docs/design-decisions.md §6.
 //
 // A to-do is what a session must not forget, and it is kept for that session

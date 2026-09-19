@@ -7,8 +7,8 @@
  * names, and every sentence here says something the replicated screens never
  * said. They live in this one file, beside the page that says them, and the
  * copied `public/strings/zh-Hant.json` stays byte for byte. Where the catalog
- * already has the word — 已落地, 做完了，沒有落地, 在跑, 載入中, 重新整理, 取消 —
- * the page reads the catalog, not this.
+ * already has the word — "已落地", "做完了，沒有落地", "在跑", "載入中",
+ * "重新整理", "取消" — the page reads the catalog, not this.
  *
  * Holes are `{name}`, as the catalog's are.
  */

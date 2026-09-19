@@ -1,8 +1,8 @@
 // Package work is the board's second design: three structures, each with one
 // reader (docs/board-redesign.md, adopted by docs/design-decisions.md D30).
 //
-//   - the board (看板): what a person needs to know now;
-//   - the session to-do list (Session 待辦): what a session must not forget,
+//   - the board: what a person needs to know now;
+//   - the session to-do list: what a session must not forget,
 //     made, tracked and closed by facts alone;
 //   - the Backlog: planned, with no commitment to start.
 //
@@ -193,7 +193,7 @@ var (
 		"correction": true, "review_testing": true}
 	// machineEventKinds are the old store recomputing its own projection:
 	// none of them is a new fact, so none of them moves the idle clock
-	// (board-redesign §1.1, "非機器的更新").
+	// (board-redesign §1.1, "non-machine update").
 	machineEventKinds = map[string]bool{"item_created": true, "automatic_state_reconciled": true,
 		"catalog_reconciled": true, "task_reattributed": true, "session_relation_confirmed": true}
 )
@@ -252,10 +252,10 @@ func FactsOf(c Card, presence Presence, now float64) Facts {
 	return f
 }
 
-// ghost is §1.4's "進行中是假的": the card is active only because a session
-// declared a span, and every session that declared an open one is gone. A
-// running broker attempt is work whatever the spans say. A session that may
-// or may not be running is not a dead one.
+// ghost is §1.4's "'In progress' is false": the card is active only because
+// a session declared a span, and every session that declared an open one is
+// gone. A running broker attempt is work whatever the spans say. A session
+// that may or may not be running is not a dead one.
 func ghost(c Card, presence Presence) (bool, Liveness) {
 	if !c.Progress.Active {
 		return false, ""
@@ -282,9 +282,9 @@ func ghost(c Card, presence Presence) (bool, Liveness) {
 	return true, Gone
 }
 
-// started is §1.1's "開始過": recorded work, not a declaration. A declared
-// span does not count, because the old workflow's begin template declares the
-// output phase the moment an item is registered (§1.7-3).
+// started is §1.1's "has started": recorded work, not a declaration. A
+// declared span does not count, because the old workflow's begin template
+// declares the output phase the moment an item is registered (§1.7-3).
 func started(c Card) bool {
 	for _, a := range c.Attempts {
 		if a.Source == "broker" {
