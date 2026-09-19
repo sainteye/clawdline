@@ -33,6 +33,7 @@ import {
   assistantName,
   drawIconOnce,
   drawSpinner,
+  setOptimisticSpinners,
   setSpinners,
   spinPhase,
 } from "./js/core/pixels.js"
@@ -40,9 +41,6 @@ import { LOCAL_SESSION_MACHINE, machinePresentationForFleet, sessionSelectionKey
 import { bindSessionUI as bindSessionUIOriginal } from "./js/session/ui.js"
 import {
   featureRootChip as featureRootChipOriginal,
-  freezeOrder as freezeOrderOriginal,
-  thawOrder as thawOrderOriginal,
-  ordered,
   projectSessionCloseability,
   projectSessionWorkState,
   rowDepth as rowDepthOriginal,
@@ -58,6 +56,7 @@ import {
   tasksOfRoot as tasksOfRootOriginal,
 } from "./js/view/derive.js"
 import { coordinatorForSession as coordinatorForSessionOriginal, coordinatorRowModel as coordinatorRowModelOriginal } from "./js/input/coordinator-actions.js"
+import { observeActivity } from "./order-bridge.js"
 
 /**
  * Put the current fleet where the copied modules look for it.
@@ -82,6 +81,9 @@ export function publish(
   // payload has no such field either and whose rows still read "Mac 電腦 · 這台
   // Mac" — the constant comes from the client there too.
   state.sessions = sessions.map((s) => ({ ...s, machine: LOCAL_SESSION_MACHINE }))
+  // The list orders by when a session last moved, and the page is what sees
+  // it move (`session/activity.ts`), so every fleet that arrives is looked at.
+  observeActivity(sessions)
   // The whole task list, replaced whole, as `handlers.tasks` does. A caller
   // with no answer yet passes nothing and the last list stands; the original
   // starts from an empty one, which leaves every task function answering as
@@ -96,10 +98,10 @@ export function publish(
   state.filter = filter
 }
 
-/** The list's own order and filter, so rows are arranged as the original arranges them. */
-export function orderedRows(): SessionRow[] {
-  return ordered() as SessionRow[]
-}
+/* The list's order is not the copied `ordered()`: it adds the time a session
+   last moved, inside each state, and so its hold is not the copied one either.
+   `orderedRows`, `freezeOrder` and `thawOrder` come from `order-bridge.ts`. */
+export { orderedRows, freezeOrder, thawOrder } from "./order-bridge.js"
 
 export function workState(row: SessionRow): { state: string } {
   return projectSessionWorkState(row) as { state: string }
@@ -164,6 +166,14 @@ export function paintSpinner(canvas: HTMLCanvasElement | null): void {
 export function registerSpinners(canvases: HTMLCanvasElement[]): void {
   setSpinners(canvases)
 }
+/**
+ * The transcript's pending cards' spinners, on the same clock. Their own list,
+ * as the original keeps it (`optimisticSpinners`): the list replaces its
+ * spinners on every draw, and a transcript card is not the list's to drop.
+ */
+export function registerPendingSpinners(canvases: HTMLCanvasElement[]): void {
+  setOptimisticSpinners(canvases)
+}
 export const path = shortPath as (cwd: string | undefined) => string
 export const accentTint = tint as (hex: string | undefined) => string
 export const strings = T as Record<string, string>
@@ -221,11 +231,7 @@ export const generatedMark = generatedMarkOriginal as (key: string | undefined) 
 /** The "my messages" copy in the page's language, from that module's own table. */
 export const userMessagesCopy = copyForUserMessages as (language: string) => { title: string } & Record<string, string>
 
-/* The list's order freeze and the render seam the copied modules call back through. */
-/** Hold the list's order while the reader's pointer is over it, as the original does. */
-export const freezeOrder = freezeOrderOriginal as () => void
-/** Release it; the copied module redraws through the seam bound below. */
-export const thawOrder = thawOrderOriginal as () => void
+/* The render seam the copied modules call back through (and `thawOrder` too). */
 /** Tell the copied modules how to redraw this page's list. */
 export const bindSessionUI = bindSessionUIOriginal as (ui: Record<string, () => void>) => void
 

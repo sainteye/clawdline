@@ -8,13 +8,13 @@ import {
   Shots,
   carriesFiles,
   carriesPicture,
-  sendWithPictures,
   shotsHTML,
   shotsVersion,
   subscribeShots,
 } from "../legacy/shots-bridge.js"
 import * as V from "../legacy/voice-bridge.js"
 import { toast } from "../overlays/toast.js"
+import { deliver, pendingSends } from "./send.js"
 import { Waiting } from "./Waiting.js"
 
 /**
@@ -44,8 +44,10 @@ import { Waiting } from "./Waiting.js"
  * - `.skill-menu`: there is no skills route, so the menu never opens.
  *
  * Two things differ from the original and are said here rather than hidden:
- * the original reports a failed send in a toast, and this page has no toast
- * element, so the failure is written on the `.why` line under the box; and the
+ * the original reports a failed send in a toast and the words are gone, and
+ * here a message that did not go stays on its card at the end of the
+ * transcript, saying so, with a way to send it again (`pending.ts`) — only a
+ * failed quit line, which has no card, is written on the `.why` line; and the
  * original's `write` flag comes from `/v1/health`, which this daemon's health
  * does not carry, so the box is writable until a send is refused with
  * `write_disabled` — the same correction the original makes to its own flag.
@@ -276,7 +278,9 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
     const quit = !pictures.length && said === (row.assistant === "codex" ? "/quit" : "/exit")
     // **The box empties here, before the request exists**, and nothing puts the
     // words or the pictures back: a send that fails at this end may already
-    // have been delivered.
+    // have been delivered. They move to a card at the end of the transcript
+    // instead (`pending.ts`), which says it is sending, that the Mac has it, or
+    // that it did not go — and then keeps them, with a way to send them again.
     if (msg.current) msg.current.textContent = ""
     if (document.activeElement === msg.current) caretToEnd()
     setText("")
@@ -285,15 +289,17 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
     inFlight.current = true
     setSending(true)
     try {
+      if (quit) {
+        await client.close(row.id)
+        onDid()
+        return
+      }
       // A resolved send means the bytes reached the tty, not that the assistant
-      // read them. Nothing is said on success — the turn appearing in the
-      // transcript is the answer.
-      await (quit
-        ? client.close(row.id)
-        : pictures.length
-          ? sendWithPictures(row.id, said, pictures)
-          : client.send(row.id, said))
-      onDid()
+      // read them. The card says the first; the turn appearing in the
+      // transcript, which takes the card's place, is the second.
+      const code = await deliver(pendingSends.add(row.id, said, pictures, Date.now()))
+      if (code === "write_disabled") setWrite(false)
+      if (!code) onDid()
     } catch (err) {
       const code = err instanceof RefusalError ? err.code : "unexpected_error"
       if (code === "write_disabled") setWrite(false)

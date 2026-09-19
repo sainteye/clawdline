@@ -1,0 +1,27 @@
+/* A pending card that did not go (`Transcript.tsx`, `pendingHTML`).
+
+   The card itself is the copied `.entry.pending` and is styled by
+   `legacy/transcript.css`. The Swift app never drew a send that failed — it
+   toasted, and the words were gone — so there is no rule over there to copy for
+   this state. Nothing below is a new look: each declaration is taken from a rule
+   that exists, named above it, and moved onto the card's state line. */
+
+/* `.tx-note.err`: the transcript's own colour for something that went wrong. */
+.entry.pending[data-send="failed"] .pending-state { color: #c58472; }
+
+/* `.composer .waiting .go`: the small rounded button a card above the box
+   already offers, less its top margin, since this one sits in a row. */
+.entry.pending .pending-state .go {
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--dim);
+    font-size: 11.5px; padding: 4px 10px;
+}
+.entry.pending .pending-state .go:hover { background: var(--card-hi); color: var(--ink); }
+
+/* `.composer .waiting .title .dismiss`: that card's close button, less the float. */
+.entry.pending .pending-state .dismiss {
+    padding: 2px 7px;
+    color: var(--faint); font-size: 15px; line-height: 1;
+    border-radius: 6px;
+}
+.entry.pending .pending-state .dismiss:hover { color: var(--ink); background: var(--card-hi); }
