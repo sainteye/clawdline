@@ -215,9 +215,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
     /// The settings page's key recorder, while it is listening.
     private var recorder: Any?
-    /// Whether the configured combination could not be registered the last
-    /// time this shell tried. Said on the settings page, under the chip.
-    private var hotKeyFailed = false
     /// The combination is let go while a new one is being recorded, and until
     /// the page has written it or given up.
     private var hotKeySuspended = false
@@ -230,7 +227,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         NSApp.setActivationPolicy(.regular)
 
         let config = NextConfig.shared
-        shellLog("launch: config=\(config.fileURL.path) hotkey=\(config.hotKey.isEmpty ? "(none)" : config.hotKey)"
+        shellLog("launch: config=\(config.fileURL.path) hotkey=\(hotKeyLogName(config))"
                  + " scope=\(config.scopeApp.isEmpty ? "(global)" : config.scopeApp)")
         if let problem = config.problem { shellLog("config: \(problem)") }
 
@@ -263,6 +260,19 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             self?.updateHotKeyScope()
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             self?.inputBar.appBecameFrontmost(app?.bundleIdentifier)
+        }
+        // The Swift app opened again, or put away. Carbon refuses neither app
+        // the shared combination, so nothing here fails; the log and the
+        // settings window say that one press now opens two bars (HotKey.swift).
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                guard app?.bundleIdentifier == HotKey.legacyBundleID else { return }
+                let launched = name == NSWorkspace.didLaunchApplicationNotification
+                shellLog("legacy app \(launched ? "launched" : "quit");"
+                         + " same hotkey: \(launched && HotKey.legacyHolds(NextConfig.shared.hotKey))")
+                SettingsWindowController.shared.refresh()
+            }
         }
         applyConfiguredHotKey(alertOnFailure: true)
 
@@ -503,35 +513,59 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
     private enum HotKeyOutcome { case none, registered, failed }
 
-    /// Register what the config names, or nothing when it names nothing.
+    /// The combination as the log names it, saying whether the file chose it.
+    private func hotKeyLogName(_ config: NextConfig) -> String {
+        if config.hotKey.isEmpty { return "(none)" }
+        return config.hotKeyIsDefault ? "\(config.hotKey) (default)" : config.hotKey
+    }
+
+    /// Take up what the config names, or nothing when it names nothing.
+    ///
+    /// The combination is asked about first and registered only where the
+    /// scope wants it. The Swift app registered it everywhere here and let the
+    /// scope take it back a moment later; with a default somebody never chose,
+    /// even that moment is ⌥Space taken from whatever app was in front.
     @discardableResult
     private func applyConfiguredHotKey(alertOnFailure: Bool) -> HotKeyOutcome {
         let config = NextConfig.shared
+        // A fresh reading of the file: what went wrong with the last one is
+        // not this one's trouble.
+        hotKey.turnOff()
+        hotKeyActive = false
         guard !config.hotKey.isEmpty else {
-            hotKey.unregister()
-            hotKeyActive = false
-            hotKeyFailed = false
-            shellLog("hotkey: none configured in \(config.fileURL.path); nothing registered")
+            shellLog("hotkey: set to none in \(config.fileURL.path); nothing registered")
             return .none
         }
-        hotKeyActive = hotKey.register(config.hotKey)
-        hotKeyFailed = !hotKeyActive
-        if hotKeyActive {
-            shellLog("hotkey registered: \(HotKey.display(config.hotKey))"
-                     + (config.scopeApp.isEmpty ? " (global)" : " (only in \(config.scopeApp))"))
+        if hotKey.check(config.hotKey) == nil {
             updateHotKeyScope()
+        }
+        guard let trouble = hotKey.trouble else {
+            shellLog("hotkey: \(HotKey.display(config.hotKey))"
+                     + (config.hotKeyIsDefault ? " (default)" : "")
+                     + (config.scopeApp.isEmpty ? " (global)" : " (only while \(config.scopeApp) or this app is in front)")
+                     + (hotKeyActive ? ", registered now" : ", not in front yet"))
+            if HotKey.legacyHolds(config.hotKey) {
+                shellLog("hotkey: the Swift app (\(HotKey.legacyBundleID)) is running with the same"
+                         + " combination; one press opens both input bars")
+            }
             return .registered
         }
-        shellLog("hotkey registration failed: \(config.hotKey)")
+        shellLog("hotkey registration failed: \(config.hotKey) — \(trouble)")
         if alertOnFailure {
-            // A failed registration almost always means something else owns
-            // the combination. Say so — otherwise somebody presses it for a
-            // while and concludes the app never started.
-            let a = NSAlert()
-            a.messageText = L.t.hotkeyFailedTitle(HotKey.display(config.hotKey))
-            a.informativeText = L.t.hotkeyFailedBody(config.fileURL.path)
-            a.alertStyle = .warning
-            a.runModal()
+            // Said, or somebody presses it for a while and concludes the app
+            // never started. Short, and without the file's path: the way round
+            // it is the menu bar, and the way to change it is the settings
+            // window. After the launch has finished rather than inside it, so
+            // an unanswered alert does not keep the daemon from starting.
+            let title = L.t.hotkeyFailedTitle(HotKey.display(config.hotKey))
+            let body = L.t.hotkeyFailedBody(system: trouble == .system)
+            DispatchQueue.main.async {
+                let a = NSAlert()
+                a.messageText = title
+                a.informativeText = body
+                a.alertStyle = .warning
+                a.runModal()
+            }
         }
         return .failed
     }
@@ -547,7 +581,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         guard !scope.isEmpty else {
             if !hotKeyActive {
                 hotKeyActive = hotKey.register(config.hotKey)
-                hotKeyFailed = !hotKeyActive
             }
             return
         }
@@ -562,7 +595,6 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
         if want, !hotKeyActive {
             hotKeyActive = hotKey.register(config.hotKey)
-            hotKeyFailed = !hotKeyActive
             shellLog("hotkey \(hotKeyActive ? "attached" : "could not attach") (frontmost: \(front))")
         } else if !want, hotKeyActive {
             hotKey.unregister()
@@ -1070,7 +1102,7 @@ extension Shell {
         statusItem.menu = buildMenu()
         refreshStatusItem()
         NotchIsland.shared.install()
-        shellLog("settings: applied hotkey=\(config.hotKey.isEmpty ? "(none)" : config.hotKey)"
+        shellLog("settings: applied hotkey=\(hotKeyLogName(config))"
                  + " registered=\(hotKey.isRegistered) scope=\(config.scopeApp.isEmpty ? "(global)" : config.scopeApp)")
         sendSettingsState()
     }
@@ -1083,7 +1115,7 @@ extension Shell {
             "hotkey": config.hotKey,
             "display": display,
             "registered": hotKey.isRegistered,
-            "failure": (!config.hotKey.isEmpty && hotKeyFailed) ? L.t.hotkeyFailedTitle(display) : "",
+            "failure": (!config.hotKey.isEmpty && hotKey.trouble != nil) ? L.t.hotkeyFailedTitle(display) : "",
             "scopeApp": config.scopeApp,
         ]
         dispatchToPage("clawdline-shell-settings", state)
@@ -1175,8 +1207,11 @@ extension Shell: SettingsWindowHost {
 extension Shell: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         guard menu === statusItem.menu else { return }
+        // No combination beside the item when there is none that works: a
+        // menu showing ⌥Space is a menu saying ⌥Space opens this.
         let spec = NextConfig.shared.hotKey
-        menu.item(at: 0)?.title = spec.isEmpty ? L.t.menuOpen : "\(L.t.menuOpen)   \(HotKey.display(spec))"
+        menu.item(at: 0)?.title = spec.isEmpty || hotKey.trouble != nil
+            ? L.t.menuOpen : "\(L.t.menuOpen)   \(HotKey.display(spec))"
         menu.item(at: 1)?.title = "\(L.t.menuReveal)   \(L.t.menuNoTarget)"
         menu.item(withTag: Self.mascotTag)?.submenu = buildMascotMenu()
         menu.item(withTag: Self.loginTag)?.state = (SMAppService.mainApp.status == .enabled) ? .on : .off

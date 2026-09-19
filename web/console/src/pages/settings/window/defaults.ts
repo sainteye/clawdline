@@ -5,13 +5,13 @@ import type { SettingsSnapshot } from "@clawdline/contract"
  *
  * The Swift app's `Config` declarations, value for value, because a window that
  * showed a different default from the one the program uses would be a window
- * that lies about the state it is in. Two differ on purpose and are marked:
- * this app is not the app holding ⌥Space.
+ * that lies about the state it is in.
  */
 export const DEFAULTS = {
-  /** No default. The Swift app is running and owns option+space; a second app taking it
-   *  breaks the one the person is using (shell/darwin/NextConfig.swift). */
-  hotkey: "",
+  /** The Swift app's default, now that it is retired and nothing else holds it. It
+   *  applies only when the file names no hotkey; an empty string there is a deliberate
+   *  "none" and is shown as off (shell/darwin/NextConfig.swift). */
+  hotkey: "option+space",
   scope_app: "com.googlecode.iterm2",
   language: "auto",
   mascot: "clawd",

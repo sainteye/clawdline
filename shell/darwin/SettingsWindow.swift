@@ -77,6 +77,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, WKNavigationDe
         if loaded { sendState() } else { load() }
     }
 
+    /// Say the machine's reading again, when something outside the page changed
+    /// it — the Swift app opening or quitting. Nothing when the page is not up.
+    func refresh() {
+        guard loaded, window?.isVisible == true else { return }
+        sendState()
+    }
+
     private func build() {
         let config = WKWebViewConfiguration()
         let content = WKUserContentController()
@@ -182,11 +189,24 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, WKNavigationDe
         let ids = config.scopeApp.split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+        // What went wrong the last time the combination was asked for — not
+        // whether it is registered this instant, which is false every time the
+        // scope has detached it and says nothing about a failure.
+        let trouble = config.hotKey.isEmpty ? nil : HotKey.shared?.trouble
+        var reading: [String: Any] = [:]
+        if let trouble {
+            reading["kind"] = trouble.kind
+            if case .refused(let status) = trouble { reading["status"] = Int(status) }
+        } else if !config.hotKey.isEmpty, HotKey.legacyHolds(config.hotKey) {
+            reading["kind"] = "legacy"
+        }
         let state: [String: Any] = [
             "hotkey": config.hotKey,
             "display": display,
+            "isDefault": config.hotKeyIsDefault,
             "registered": HotKey.shared?.isRegistered ?? false,
-            "failed": !config.hotKey.isEmpty && HotKey.shared?.isRegistered != true,
+            "failed": trouble != nil,
+            "trouble": reading.isEmpty ? NSNull() : reading,
             "scopeApp": config.scopeApp,
             "apps": ids.map(Self.describe),
             "runningApps": Self.runningApps(excluding: Set(ids)),
@@ -280,21 +300,25 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, WKNavigationDe
     /// app's own path. The Swift app's entries name `clawdline/hook.sh` and are
     /// a different string, so neither app can see or remove the other's — which
     /// is the property that has to hold before either may write that file.
+    ///
+    /// Those are read too, as `legacy`, because they are what somebody who used
+    /// the Swift app still has: Claude Code keeps running that script at every
+    /// hooked moment, and nothing in this build reads what it writes. The page
+    /// says so. Nothing here removes them — they are the Swift app's to remove.
     private static func hooksReading() -> [String: Any] {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")
         var installed = false
+        var legacy = false
         if let data = try? Data(contentsOf: url),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let hooks = obj["hooks"] as? [String: Any] {
-            outer: for (_, value) in hooks {
+            for (_, value) in hooks {
                 for group in (value as? [[String: Any]]) ?? [] {
                     for handler in (group["hooks"] as? [[String: Any]]) ?? [] {
-                        if let command = handler["command"] as? String,
-                           command.contains("clawdline-next/hook.sh") {
-                            installed = true
-                            break outer
-                        }
+                        guard let command = handler["command"] as? String else { continue }
+                        if command.contains("clawdline-next/hook.sh") { installed = true }
+                        if command.contains("/clawdline/hook.sh") { legacy = true }
                     }
                 }
             }
@@ -303,6 +327,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, WKNavigationDe
             "supported": false,
             "installed": installed,
             "heard": false,
+            "legacy": legacy,
             "path": tilde(url.path),
         ]
     }

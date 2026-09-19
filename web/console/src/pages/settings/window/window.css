@@ -188,6 +188,20 @@
   padding-bottom: 8px;
 }
 
+/* A short explanation under a heading — the hook tab, which has more to say
+   than a hint and nothing to set. Read as prose, so a notch brighter and
+   larger than a hint. */
+.sw-explain {
+  padding-top: 18px;
+  max-width: 600px; /* Metric.maxMeasure */
+}
+.sw-explain p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--sw-soft);
+}
+
 .sw-block {
   padding: 16px 0 0;
 }
