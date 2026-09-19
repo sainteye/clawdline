@@ -203,16 +203,17 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "answer",
 		body: map[string]any{"type": "answer", "session": pane, "request": "req-answer",
-			"answer": "2"},
+			"answer": "2", "expect": fingerprint},
 		session: pane, name: "action:req-answer",
 		method: "POST", path: "/v1/sessions/%2519/key",
-		body2: `{"key":"2"}`,
+		body2: `{"expect":"` + fingerprint + `","key":"2"}`,
 	}, {
-		word:    "key",
-		body:    map[string]any{"type": "key", "session": pane, "request": "req-key", "key": "submit"},
+		word: "key",
+		body: map[string]any{"type": "key", "session": pane, "request": "req-key", "key": "submit",
+			"expect": fingerprint},
 		session: pane, name: "action:req-key",
 		method: "POST", path: "/v1/sessions/%2519/key",
-		body2: `{"key":"submit"}`,
+		body2: `{"expect":"` + fingerprint + `","key":"submit"}`,
 	}, {
 		word: "end",
 		body: map[string]any{"type": "end", "session": pane, "request": "req-end",

@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/sainteye/clawdline-go/internal/app"
@@ -11,15 +10,9 @@ import (
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
-// sessionKey answers POST /v1/sessions/{id}/key: one key for the menu on a
-// session's screen. The caller has already passed the send permission.
-//
-// **The key is parsed before the session is looked up.** Not for secrecy — a
-// well-formed key still tells you whether a session exists — but because the
-// allowlist is what this route is for, and a check that runs after two other
-// steps is a check somebody will later move.
 // keyBodyLimit is what one key weighs. `{"key":"shift+tab"}` is twenty bytes;
-// four kilobytes is room for a body somebody wrote by hand and nothing else.
+// four kilobytes is room for a body somebody wrote by hand, and for the
+// question's sixty-four-digit fingerprint beside it, and nothing else.
 //
 // Every other body on this daemon is bounded — `/send` at the Swift server's
 // twenty megabytes (actions.go), `/voice` at its own (voice.go), `/v1/settings`
@@ -29,15 +22,20 @@ import (
 // liked. It needs send, which is exactly what a phone answering a menu has.
 const keyBodyLimit = 4 << 10
 
-func (s *Server) sessionKey(ctx context.Context, w http.ResponseWriter, r *http.Request, id string) {
+// sessionKey answers POST /v1/sessions/{id}/key: one key for the menu on a
+// session's screen. The caller has already passed the send permission.
+//
+// **The key is parsed before the session is looked up.** Not for secrecy — a
+// well-formed key still tells you whether a session exists — but because the
+// allowlist is what this route is for, and a check that runs after two other
+// steps is a check somebody will later move.
+//
+// **`expect` is the question the answer was chosen for** (app.Actions.Key):
+// given, the key is typed only at that question, and refused with nothing
+// typed at any other.
+func (s *Server) sessionKey(ctx context.Context, w http.ResponseWriter, id string, raw []byte) {
 	var body contract.KeyRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, keyBodyLimit)).Decode(&body); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			writeRefusal(w, http.StatusRequestEntityTooLarge, "too_large",
-				"That is larger than one key. A key is \"1\"…\"9\", \"tab\", \"shift+tab\" or \"submit\".")
-			return
-		}
+	if err := json.Unmarshal(raw, &body); err != nil {
 		writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a key")
 		return
 	}
@@ -46,7 +44,12 @@ func (s *Server) sessionKey(ctx context.Context, w http.ResponseWriter, r *http.
 			`key must be "1"…"9", "tab", "shift+tab" or "submit".`)
 		return
 	}
-	if _, err := s.actions().Key(ctx, id, body.Key); err != nil {
+	if body.Expect != "" && !session.ValidFingerprint(body.Expect) {
+		writeRefusal(w, http.StatusBadRequest, "bad_request",
+			"expect must be the fingerprint of the question being answered.")
+		return
+	}
+	if _, err := s.actions().Key(ctx, id, body.Key, body.Expect); err != nil {
 		writeActionRefusal(w, err)
 		return
 	}

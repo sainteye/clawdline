@@ -23,7 +23,7 @@ import * as L from "../legacy/bridge.js"
 import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images-bridge.js"
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
-import { pendingSends, resend } from "./send.js"
+import { look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
 
@@ -258,7 +258,9 @@ function TranscriptOf({ id }: { id: string }) {
  * `.entry.pending`, as `view/transcript.js` draws a turn the Mac has not
  * written yet: the words, the pictures counted, and one line saying where the
  * send has got to. A send that failed says so on that line, in the catalog's
- * words, beside "try again" and a close button, and keeps its words.
+ * words, beside "try again" and a close button, and keeps its words. A send
+ * that may have gone — nothing answered, or the answer was lost — says it does
+ * not know, beside "look" (F3).
  */
 function pendingHTML(card: PendingSend): ReactElement {
   const T = L.strings
@@ -271,8 +273,16 @@ function pendingHTML(card: PendingSend): ReactElement {
       esc(L.fillString(n === 1 ? T.webAttachedImage : T.webAttachedImages, { n })) +
       "</div>"
   }
+  const close = esc(T.webClose)
+  const dismiss =
+    '<button type="button" class="dismiss" data-pending-dismiss="' +
+    esc(card.token) +
+    '" aria-label="' +
+    close +
+    '" title="' +
+    close +
+    '">×</button>'
   if (card.state === "failed") {
-    const close = esc(T.webClose)
     body +=
       '<div class="pending-state" role="alert"><span>' +
       esc(L.fillString(T.webFailWithTag, { text: T.sendFailed, tag: card.failure })) +
@@ -280,13 +290,40 @@ function pendingHTML(card: PendingSend): ReactElement {
       esc(card.token) +
       '">' +
       esc(T.webPlanRetry) +
-      '</button><button type="button" class="dismiss" data-pending-dismiss="' +
-      esc(card.token) +
-      '" aria-label="' +
-      close +
-      '" title="' +
-      close +
-      '">×</button></div>'
+      "</button>" +
+      dismiss +
+      "</div>"
+  } else if (card.state === "unknown" && card.checking) {
+    body +=
+      '<div class="pending-state" role="status"><canvas class="spin"></canvas><span>' +
+      esc(nextWord("sendLooking")) +
+      "</span></div>"
+  } else if (card.state === "unknown") {
+    // F3: the words may be on the Mac. The card says it does not know and
+    // offers a look, not "try again"; only a look that read the transcript
+    // and found no turn offers sending — under the card's one request, which
+    // the Mac answers with the first attempt's answer if that one landed.
+    body +=
+      '<div class="pending-state" role="alert"><span>' +
+      esc(nextWord(card.absent ? "sendAbsent" : "sendUnknown", { code: card.failure })) +
+      "</span>" +
+      (card.absent
+        ? '<button type="button" class="go" data-pending-retry="' +
+          esc(card.token) +
+          '" title="' +
+          esc(nextWord("sendAgainTip")) +
+          '">' +
+          esc(nextWord("sendAgain")) +
+          "</button>"
+        : '<button type="button" class="go" data-pending-look="' +
+          esc(card.token) +
+          '" title="' +
+          esc(nextWord("sendLookTip")) +
+          '">' +
+          esc(nextWord("sendLook")) +
+          "</button>") +
+      dismiss +
+      "</div>"
   } else {
     body +=
       '<div class="pending-state" role="status"><canvas class="spin"></canvas><span>' +
@@ -305,12 +342,17 @@ function pendingHTML(card: PendingSend): ReactElement {
   )
 }
 
-/** A press inside a pending card: try again, close it, or a code block's copy button. */
+/** A press inside a pending card: try again, look, close it, or a code block's copy button. */
 function pendingAction(ev: MouseEvent<HTMLElement>) {
   const target = ev.target as Element
   const retry = target.closest?.("[data-pending-retry]")
   if (retry) {
     void resend(retry.getAttribute("data-pending-retry") ?? "")
+    return
+  }
+  const looked = target.closest?.("[data-pending-look]")
+  if (looked) {
+    void look(looked.getAttribute("data-pending-look") ?? "")
     return
   }
   const close = target.closest?.("[data-pending-dismiss]")

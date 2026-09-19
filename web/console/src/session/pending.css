@@ -9,6 +9,10 @@
 /* `.tx-note.err`: the transcript's own colour for something that went wrong. */
 .entry.pending[data-send="failed"] .pending-state { color: #c58472; }
 
+/* A card that may have gone (`unknown`): not an error, a thing to look at —
+   `.board-state-blocked`'s colour for "somebody has to look". */
+.entry.pending[data-send="unknown"] .pending-state { color: var(--warn); }
+
 /* `.composer .waiting .go`: the small rounded button a card above the box
    already offers, less its top margin, since this one sits in a row. */
 .entry.pending .pending-state .go {
@@ -17,6 +21,11 @@
     font-size: 11.5px; padding: 4px 10px;
 }
 .entry.pending .pending-state .go:hover { background: var(--card-hi); color: var(--ink); }
+
+/* A waiting card's answer that may have landed (`Waiting.tsx`), in the same
+   colour as a card that may have gone. */
+.composer .waiting .say[data-press="unknown"] { color: var(--warn); }
+.composer .waiting .say .go { margin-top: 0; margin-left: 6px; }
 
 /* A waiting card's answer on its way (`Waiting.tsx`): the card's own `.say`
    line, laid out as the pending card's state line above is

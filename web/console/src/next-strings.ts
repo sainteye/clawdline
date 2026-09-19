@@ -58,6 +58,17 @@ const words = {
     cloudNotCarried: "This cannot be done over Clawdline Cloud yet. Do it on the Mac itself.",
     cloudPastUnavailable:
       "This Mac cannot list its earlier sessions over Clawdline Cloud yet (it does not answer past-sessions), so none can be picked up from here. Pick it up on the Mac, or start a new session here.",
+    sendUnknown: "Not known whether this reached the Mac ({code}).",
+    sendLook: "Look",
+    sendLookTip: "Read the conversation on the Mac again: if this is there, the card goes.",
+    sendLooking: "Looking…",
+    sendAbsent: "Not in the conversation on the Mac ({code}).",
+    sendAgain: "Send again",
+    sendAgainTip: "If the first attempt reached the Mac after all, it is not typed a second time.",
+    menuUnknown: "Not known whether that answer reached the Mac. Waiting for the session to update.",
+    menuChooseAgain: "Choose again",
+    menuMoved: "The question changed before the answer landed, so nothing was typed. Read the new question and choose again.",
+    menuUnverified: "This Mac cannot check which question an answer is for over Clawdline Cloud, so menus are answered on the Mac itself.",
   },
   "zh-Hant": {
     olderNotRead: "更早的對話沒有載入：這一頁只讀對話記錄的最後 {window}，前面還有 {bytes} 沒有讀。",
@@ -100,6 +111,17 @@ const words = {
     cloudNotCarried: "這件事還不能經由 Clawdline Cloud 做，請直接在 Mac 上操作。",
     cloudPastUnavailable:
       "這台 Mac 還不能經由 Clawdline Cloud 列出以前的 session（它不回答 past-sessions），所以這裡沒辦法接續。請在 Mac 上接續，或在這裡開一個新的 session。",
+    sendUnknown: "不知道有沒有送到 Mac（{code}）。",
+    sendLook: "去看看",
+    sendLookTip: "重新讀一次 Mac 上的對話：如果已經在裡面，這張卡就會消失。",
+    sendLooking: "正在看…",
+    sendAbsent: "Mac 上的對話裡沒有這則（{code}）。",
+    sendAgain: "再送一次",
+    sendAgainTip: "如果第一次其實有送到，這次不會重打。",
+    menuUnknown: "不知道剛才的選擇有沒有送到 Mac，等畫面更新。",
+    menuChooseAgain: "重新選擇",
+    menuMoved: "送到之前題目已經換了，所以什麼都沒打。請看清楚新的題目再選。",
+    menuUnverified: "這台 Mac 經由 Clawdline Cloud 還無法確認答案對應哪一題，請直接在 Mac 上作答。",
   },
 } as const
 

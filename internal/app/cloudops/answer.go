@@ -48,12 +48,28 @@ var detailWhitelist = map[string]map[string]bool{
 	"document_too_large":        {"byte_count": true, "limit_bytes": true},
 }
 
-// errorObject is the `error` a payload carries: the route's own fields, plus
-// the layer and the sequence, plus whatever `detail` this code may show.
+// errorObject is the `error` a payload carries: the code and the sentence,
+// the layer and the sequence, and whatever this code may show (§11.6) —
+// whether the route put it in `detail` or beside the code.
+//
+// **Nothing else a route wrote crosses.** A local refusal is written for a
+// reader on this machine, and a field put beside its code — a route, a
+// directory, a blocked close's mover with its task's title — would otherwise
+// be sealed to every paired phone. The whitelist is the same one `detail`
+// has, applied to the top level too, and a blocked close's reasons cross as
+// what blocks it and nothing more (closeReasons).
 func errorObject(base map[string]any, code, layer string, sequence uint64, detail map[string]any) map[string]any {
+	allowed := detailWhitelist[code]
 	out := map[string]any{}
 	for k, v := range base {
-		out[k] = v
+		switch {
+		case k == "message":
+			out[k] = v
+		case k == "reasons" && code == "close_blocked":
+			out[k] = closeReasons(v)
+		case allowed[k]:
+			out[k] = v
+		}
 	}
 	out["code"] = code
 	if _, ok := out["message"]; !ok {
@@ -64,8 +80,6 @@ func errorObject(base map[string]any, code, layer string, sequence uint64, detai
 	}
 	out["layer"] = layer
 	out["seq"] = sequence
-	delete(out, "detail")
-	allowed := detailWhitelist[code]
 	filtered := map[string]any{}
 	for k, v := range detail {
 		if allowed[k] {
@@ -74,6 +88,28 @@ func errorObject(base map[string]any, code, layer string, sequence uint64, detai
 	}
 	if len(filtered) > 0 {
 		out["detail"] = filtered
+	}
+	return out
+}
+
+// closeReasons is a blocked close's reasons as they may cross: what kind of
+// thing is in the way and which one, by id. The mover's own record — a task's
+// title, a session's label — stays on this machine.
+func closeReasons(value any) []any {
+	raw, _ := value.([]any)
+	out := []any{}
+	for _, item := range raw {
+		reason, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		kept := map[string]any{}
+		for _, key := range []string{"kind", "code", "subject_id", "subject_kind"} {
+			if v, ok := reason[key].(string); ok {
+				kept[key] = v
+			}
+		}
+		out = append(out, kept)
 	}
 	return out
 }

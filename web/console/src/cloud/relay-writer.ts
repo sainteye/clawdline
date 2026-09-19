@@ -23,8 +23,11 @@
 // again. A write cannot be treated that way: the command may have reached the
 // Mac and run, and the page must be able to say which of those it knows. So
 // every write settles with a typed refusal in the spelling the route's own
-// reader takes, carrying the code, the layer and the envelope's `ref`, and
-// `outcome: "unknown"` when the Mac may have acted on it.
+// reader takes, carrying the code, the layer and the envelope's `ref`, and the
+// `outcome` this seam can vouch for (`outcomeOf` below): `not_done` only when
+// it can prove the envelope never reached the Mac, `unknown` otherwise, and
+// none at all for a refusal from the Mac's own route, whose code says it — as
+// the same refusal from a daemon on this machine does (`session/outcome.ts`).
 //
 // Nothing is imported at run time, so `node --test` loads it as it is.
 import type { CloudIdentity, CloudReadClient, CloudRow, SeamRow } from "./relay-reader.js"
@@ -129,12 +132,12 @@ const NO_CLOUD_WORD: Readonly<Record<string, string>> = {
 }
 
 /**
- * Codes after which the command may have been carried out even though this
- * page was not told so: the relay handed the envelope to the Mac and then the
- * answer did not come, or came back undeliverable (`cloud-failure.js`,
- * `_readTimedOut`). Trying again blindly could type the same words twice.
+ * Codes that mean the envelope went and no answer came back: the relay handed
+ * it to the Mac and then nothing, or the Mac ran it and its reply could not be
+ * delivered (`cloud-failure.js`, `_readTimedOut`). Whatever else the failure
+ * carries, the command may have been carried out.
  */
-const MAY_HAVE_RUN = new Set([
+const SENT_UNANSWERED = new Set([
   "cloud_read_timeout",
   "reply_not_received",
   "command_answer_undeliverable",
@@ -143,11 +146,35 @@ const MAY_HAVE_RUN = new Set([
   "receipt_expired",
   "ready_expired",
   "peer_rejected",
-  // A socket that dropped after the envelope was written.
-  "socket_error",
-  "cloud_reconnecting",
-  "going_away",
 ])
+
+/**
+ * Layers whose refusal is decided before anything is carried out: the Mac's
+ * admission (the write switch, the roster, the clock) and its transport (the
+ * queue was full).
+ */
+const REFUSED_BEFORE_RUNNING = new Set(["mac_preflight", "mac_transport"])
+
+/**
+ * What this seam can vouch for about a failed write (F3). The burden is on
+ * `not_done`, because it is what sends a person to "try again": it is said
+ * only when the envelope provably never reached the Mac — the copied client
+ * refused before sealing it (no sequence was spent, so no `ref`), the relay
+ * said the Mac was not connected, or the Mac refused it at the door. A refusal
+ * from the Mac's own route is left to its code (`undefined`). Everything else —
+ * a socket that dropped after the frame was written, a token replaced
+ * mid-flight, an error nobody named — is `unknown`.
+ */
+export function outcomeOf(error: CloudFailureLike): "not_done" | "unknown" | undefined {
+  const code = typeof error?.code === "string" ? error.code : ""
+  if (SENT_UNANSWERED.has(code)) return "unknown"
+  const seq = error?.ref?.seq
+  if (!Number.isSafeInteger(seq)) return "not_done"
+  if (error.layer === "relay" && code === "machine_offline") return "not_done"
+  if (typeof error.layer === "string" && REFUSED_BEFORE_RUNNING.has(error.layer)) return "not_done"
+  if (error.layer === "mac_route") return undefined
+  return "unknown"
+}
 
 /** The status a refusal is answered with when the failure carries none of its own. */
 const HTTP_STATUS: Readonly<Record<string, number>> = {
@@ -283,7 +310,9 @@ export class RelayWriter {
         const picture = body as { media_type: string; bytes: Uint8Array }
         return new Response(picture.bytes as BodyInit, { status: 200, headers: { "content-type": picture.media_type } })
       }
-      const session = sessionOf(route)
+      // Showing a session on the Mac changes nothing its transcript holds, so
+      // it does not set every poll re-reading it (F12).
+      const session = route.op === "focus" ? null : sessionOf(route)
       if (session) this.host.wrote(session, "done")
       this.host.note({ method, path, answer: "relay", word: route.word, ms })
       return json(200, cleanAnswer(body))
@@ -298,11 +327,22 @@ export class RelayWriter {
         const body = await bodyOf(init)
         const text = typeof body.text === "string" ? body.text : ""
         const images = Array.isArray(body.images) ? body.images.filter((x): x is string => typeof x === "string") : []
-        return client.send(await this.identity(client, route.session), text, images)
+        const identity = await this.identity(client, route.session)
+        // F2: the card's one request for every attempt, so the Mac answers a
+        // second attempt with the first one's answer (its receipt) instead of
+        // typing the words again. The copied `send` mints a new id per call,
+        // so the same read it makes is made here with the card's.
+        const request = headerOf(init, "idempotency-key")
+        if (request && typeof client._read === "function") {
+          return client._read(identity, "send", { request, text, images }, "action:" + request)
+        }
+        return client.send(identity, text, images)
       }
       case "answer": {
         const body = await bodyOf(init)
-        return this.press(client, await this.identity(client, route.session), String(body.key ?? ""))
+        const expect = typeof body.expect === "string" ? body.expect : ""
+        const identity = await this.identity(client, route.session)
+        return this.press(client, identity, String(body.key ?? ""), expect, headerOf(init, "idempotency-key"))
       }
       case "end": {
         const body = await bodyOf(init)
@@ -313,6 +353,12 @@ export class RelayWriter {
         const row = await this.row(client, route.session)
         const closeability = row?.closeability as { version?: unknown } | undefined
         const version = typeof closeability?.version === "string" ? closeability.version : ""
+        const request = headerOf(init, "idempotency-key")
+        if (request && typeof client._read === "function") {
+          return client._read(identity, "end", {
+            request, accept_loss: body.force === true, expected_closeability_version: version,
+          }, "action:" + request)
+        }
         return client.end(identity, body.force === true, version)
       }
       case "focus":
@@ -346,29 +392,36 @@ export class RelayWriter {
   }
 
   /**
-   * A waiting card's press, answered by the Mac rather than by the relay.
+   * A waiting card's press, answered by the Mac rather than by the relay, and
+   * only at the question it was chosen for (F1).
    *
-   * The copied `answer` sends a request id — and so waits for the Mac's own
-   * `action:<request>` answer — only to a Mac that has shown `cloud_status`,
-   * because an older Swift app checks the key set exactly and would refuse the
-   * extra key. To any other Mac it sends no id and resolves on the relay's
-   * `delivered`, which proves only that the envelope reached the Mac's socket.
+   * The press names that question — `expect`, the fingerprint of the menu the
+   * card drew (`session/fingerprint.ts`) — and the Mac types nothing unless the
+   * question on its screen still has it. So a press is sent only where that
+   * check happens: to a Mac that lists `answer` in its descriptor and has not
+   * shown `cloud_status`, which is the Go daemon (`decodeAnswer` in
+   * internal/app/cloudops/ops.go takes `expect`, and refuses an answer without
+   * one). Everywhere else it is refused here, before anything is sealed:
    *
-   * The Go daemon publishes no `cloud_status`, and it names `answer` in its
-   * descriptor and takes `request` beside it (`decodeAnswer` in
-   * internal/app/cloudops/ops.go). Sent without one, its refusal — writes
-   * switched off, a sender it does not know — has no channel to come back on,
-   * and the page would say "sent" for a key that was never pressed. So a Mac
-   * that lists the word is asked exactly as the copied client asks a capable
-   * one, through the same `_read`, and the press settles on what it did.
+   * - no `expect` — a page that could not name the question;
+   * - no descriptor yet — the Mac's words are not known, and the copied
+   *   `answer` would settle on the relay's `delivered`, which proves only
+   *   that the envelope reached the Mac's socket (F7);
+   * - a Mac that has shown `cloud_status` — the Swift app, whose `answer`
+   *   checks its key set exactly, would refuse `expect`, and without it would
+   *   press the digit at whatever question is up.
+   *
+   * The card's own key is the request when it sent one, so a press retried
+   * after its answer was lost is the same request to the Mac's receipt.
    */
-  private press(client: CloudWriteClient, identity: CloudIdentity, key: string): Promise<unknown> {
+  private press(client: CloudWriteClient, identity: CloudIdentity, key: string, expect: string, request: string): Promise<unknown> {
     const listed = declaredCommands(client, identity.machine)
-    if (client.macCapabilities?.has(identity.machine) || !listed?.includes("answer") || typeof client._read !== "function") {
-      return client.answer(identity, key)
+    const checks = !client.macCapabilities?.has(identity.machine) && !!listed?.includes("answer") && typeof client._read === "function"
+    if (!expect || !checks) {
+      return Promise.reject(failure("menu_unverified", "this press cannot be checked against the Mac's screen", 428))
     }
-    const request = this.requestID()
-    return client._read(identity, "answer", { request, answer: key }, "action:" + request, undefined, { retireUncertain: true })
+    const id = request || this.requestID()
+    return client._read!(identity, "answer", { request: id, answer: key, expect }, "action:" + id, undefined, { retireUncertain: true })
   }
 
   /**
@@ -393,12 +446,19 @@ export class RelayWriter {
     }
   }
 
-  /** The relay's name for a console row: its own identity when the client holds one. */
+  /**
+   * The relay's name for a console row: its own identity when the client
+   * holds one. A session this page holds no row for is refused rather than
+   * addressed by the raw id (F5): a terminal id outlives the conversation in
+   * it, and words for a row that has gone could land in whatever that
+   * terminal holds now.
+   */
   private async identity(client: CloudWriteClient, session: string): Promise<CloudIdentity> {
     const row = await this.row(client, session)
-    const identity = row?.identity
+    if (!row) throw failure("session_not_found", "this page holds no row for that session", 404)
+    const identity = row.identity
     if (identity && typeof identity.machine === "string" && typeof identity.session === "string") return identity
-    return { machine: this.host.machine, session: typeof row?.session === "string" ? row.session : session }
+    return { machine: this.host.machine, session: typeof row.session === "string" ? row.session : session }
   }
 
   private async row(client: CloudWriteClient, session: string): Promise<CloudRow | undefined> {
@@ -418,9 +478,9 @@ export class RelayWriter {
     const message = typeof error?.message === "string" ? error.message : code
     const status =
       typeof error?.status === "number" && error.status >= 400 && error.status < 600 ? error.status : (HTTP_STATUS[code] ?? 502)
-    const mayHaveRun = MAY_HAVE_RUN.has(code)
-    const session = sessionOf(route)
-    if (session) this.host.wrote(session, mayHaveRun ? "unknown" : "refused")
+    const outcome = outcomeOf(error)
+    const session = route.op === "focus" ? null : sessionOf(route)
+    if (session) this.host.wrote(session, outcome === "not_done" ? "refused" : "unknown")
     const ref = refOf(error)
     this.host.note({
       method,
@@ -435,9 +495,9 @@ export class RelayWriter {
       layer: typeof error?.layer === "string" ? error.layer : "browser",
       ...(ref ? { ref } : {}),
       retryable: error?.retryable === true,
-      // What the page may say about the effect: "unknown" is the honest word
-      // for a command that reached the Mac and was not answered.
-      outcome: mayHaveRun ? "unknown" : "not_done",
+      // What the page may say about the effect (`outcomeOf`): absent for the
+      // Mac's own route, whose code the page reads as it does locally.
+      ...(outcome ? { outcome } : {}),
       word: route.word,
     }
     // The fields each reader acts on, where the Mac sent them: a blocked

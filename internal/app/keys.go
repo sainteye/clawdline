@@ -49,11 +49,22 @@ func KeyName(key string) (bytes []byte, digit int, ok bool) {
 //
 // A nil error means the keystrokes reached the tty. Whether the question was
 // answered is the fleet list's to say, as for every other action.
-func (a Actions) Key(ctx context.Context, id, key string) (session.Session, error) {
+//
+// **`expect` names the question the answer was chosen for**
+// (session.MenuFingerprint of the menu the page drew). When it is given,
+// nothing is typed unless the question on the screen now still has that name:
+// a different question, no question, or a screen that cannot be read is a
+// refusal (`menu_moved`, `menu_unreadable`) with nothing sent. Empty is an
+// older page that named none, answered as before.
+func (a Actions) Key(ctx context.Context, id, key, expect string) (session.Session, error) {
 	bytes, digit, ok := KeyName(key)
 	if !ok {
 		return session.Session{}, Refusal{Code: "bad_request",
 			Detail: `key must be "1"…"9", "tab", "shift+tab" or "submit".`}
+	}
+	if expect != "" && !session.ValidFingerprint(expect) {
+		return session.Session{}, Refusal{Code: "bad_request",
+			Detail: "expect must be the fingerprint of the question being answered."}
 	}
 	s, err := a.Find(ctx, id)
 	if err != nil {
@@ -75,12 +86,25 @@ func (a Actions) Key(ctx context.Context, id, key string) (session.Session, erro
 		return s, err
 	}
 	defer release()
-	p := presser{keys: keys, screen: a.Inventory.Screen, s: s, note: map[string]any{"key": key}}
+	p := presser{keys: keys, screen: a.Inventory.Screen, s: s, note: map[string]any{"key": key},
+		refill: func(ctx context.Context, m session.Menu) session.Menu { return a.Inventory.refillMenu(ctx, s, m) }}
+	// Read once, before any byte, and that reading is the one the answer is
+	// decided on: a second read between the check and the keystroke would be
+	// a second moment for the question to change in.
+	var seen *session.Menu
+	if expect != "" {
+		menu, refusal := p.expected(ctx, expect)
+		if refusal != nil {
+			a.record(ctx, "session.key", s.ID, p.note)
+			return s, *refusal
+		}
+		seen = &menu
+	}
 	switch {
 	case key == "submit":
 		err = p.submitMenu(ctx)
 	case digit > 0:
-		err = p.answer(ctx, digit, bytes)
+		err = p.answer(ctx, digit, bytes, seen)
 	default:
 		err = p.press(ctx, bytes)
 	}
@@ -103,6 +127,10 @@ type presser struct {
 	screen ports.ScreenHost
 	s      session.Session
 	note   map[string]any
+	// refill gives a menu the words its session's transcript has for it, as
+	// the fleet list does (Inventory.refillMenu): the page named the question
+	// it was sent, which may be the refilled one.
+	refill func(ctx context.Context, m session.Menu) session.Menu
 }
 
 func (p presser) press(ctx context.Context, bytes []byte) error {
@@ -126,19 +154,65 @@ func (p presser) read(ctx context.Context) (session.Menu, bool) {
 	return session.ReadMenu(screen, assistant, true)
 }
 
+// expected is the menu on screen now, if it is the question the answer names.
+// Either reading of it counts — as the screen draws it, or with the words its
+// transcript gives it — because the fleet list sends whichever it could make,
+// and both are this screen's question. Anything else is a refusal, decided
+// before a byte is typed.
+func (p presser) expected(ctx context.Context, expect string) (session.Menu, *Refusal) {
+	if p.screen == nil {
+		p.note["verdict"] = "unreadable"
+		return session.Menu{}, &Refusal{Code: "menu_unreadable",
+			Detail: "Nothing on this machine reads that session's screen, so the question could not be checked. Nothing was typed."}
+	}
+	screen, ok := p.screen.Capture(ctx, p.s)
+	if !ok {
+		p.note["verdict"] = "unreadable"
+		return session.Menu{}, &Refusal{Code: "menu_unreadable",
+			Detail: "That session's screen could not be read, so the question could not be checked. Nothing was typed."}
+	}
+	assistant := p.s.Assistant
+	if assistant == "" {
+		assistant = session.AssistantClaude
+	}
+	menu, found := session.ReadMenu(screen, assistant, true)
+	if !found {
+		p.note["verdict"] = "menu_gone"
+		return session.Menu{}, &Refusal{Code: "menu_moved",
+			Detail: "That question is no longer on the session's screen. Nothing was typed."}
+	}
+	if session.MenuFingerprint(menu) == expect {
+		return menu, nil
+	}
+	if p.refill != nil && session.MenuFingerprint(p.refill(ctx, menu)) == expect {
+		return menu, nil
+	}
+	p.note["verdict"] = "menu_moved"
+	return session.Menu{}, &Refusal{Code: "menu_moved",
+		Detail: "The session is asking a different question from the one that was answered. Nothing was typed."}
+}
+
 // answer is Targets.answer: read which kind of picker this is before typing at
 // it, type the digit, and confirm only what the screen shows landed.
 //
 // A dialog drawn without numbers has numeric selection switched off, so the
 // digit would fall through into the composer; that one is answered by walking
 // the highlight. A capture that fails takes the numbered path, which is what a
-// dialog somebody is looking at right now almost always is.
-func (p presser) answer(ctx context.Context, want int, bytes []byte) error {
-	seen, read := p.read(ctx)
+// dialog somebody is looking at right now almost always is — for an answer
+// that named no question. One that did arrives with `seen`, the reading its
+// question was checked against, and is never typed blind.
+func (p presser) answer(ctx context.Context, want int, bytes []byte, seen *session.Menu) error {
+	read := seen != nil
+	if !read {
+		var menu session.Menu
+		if menu, read = p.read(ctx); read {
+			seen = &menu
+		}
+	}
 	p.note["read"] = read
 	var asked *session.Menu
 	if read {
-		asked = &seen
+		asked = seen
 		p.note["numbered"] = seen.Numbered
 		p.note["steps"] = len(seen.Steps)
 		p.note["submit"] = seen.Submit != nil
@@ -147,7 +221,7 @@ func (p presser) answer(ctx context.Context, want int, bytes []byte) error {
 		}
 	}
 	if read && !seen.Numbered {
-		return p.highlight(ctx, want, seen)
+		return p.highlight(ctx, want, *seen)
 	}
 	if err := p.press(ctx, bytes); err != nil {
 		return err

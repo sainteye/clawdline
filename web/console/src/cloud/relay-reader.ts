@@ -380,10 +380,22 @@ export class RelayReader {
     const rowKey = row ? keyOf(row) : ""
     const line = row && typeof row.line === "string" ? row.line : ""
     const now = this.now()
-    const held = this.transcripts.get(session)
+    let held = this.transcripts.get(session)
     // A read already on its way is shared — unless the caller must see an
-    // answer asked after it asked (`fresh`), which that one may predate.
+    // answer asked after it asked (`fresh`), which that one may predate. That
+    // caller waits it out and then asks anew: asking beside it is not a new
+    // read, because the copied client hands a second ask for the same session
+    // the answer of the first one on its way (`readKey`), and "try again"
+    // would be checking the words against a transcript from before they were
+    // sent (F2).
     if (held?.inflight && !fresh) return { page: await held.inflight, reused: true }
+    if (fresh && held?.inflight) {
+      const before = held.inflight
+      await before.catch(() => undefined)
+      held = this.transcripts.get(session)
+      // One asked after this caller asked may be shared: it cannot predate it.
+      if (held?.inflight && held.inflight !== before) return { page: await held.inflight, reused: true }
+    }
     const expecting = !!held && held.expectUntil > now && (held.answer?.signature ?? null) === held.expectFrom
     if (held?.answer && !fresh && !held.stale && !expecting) {
       const age = now - held.at
