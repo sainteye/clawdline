@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
 import * as L from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
 
 /**
  * Starting a session, and picking one back up — `input/start.js`, function for
@@ -63,6 +64,8 @@ let find = ""
 let resume = false
 let at: Place | null = null
 let pasts: PastRow[] | null = null
+/** The past list was asked for and not read: it is not empty, it is unknown, and the sheet must not say "no records". */
+let pastsUnread = false
 let capped = false
 let reading = false
 let wait: { id: string; from: string | null; late: boolean; place: Place } | null = null
@@ -139,12 +142,19 @@ function asked<A>(request: () => Promise<A>): Promise<A> {
   }
 }
 
-function why(e: Failure): string {
-  return L.failureSentence(e, { sentence: ownWhy(e), fallback: T().webStartFailed })
+function why(e: Failure, reading?: "past"): string {
+  return L.failureSentence(e, { sentence: ownWhy(e, reading), fallback: T().webStartFailed })
 }
 
-function ownWhy(e: Failure): string {
+function ownWhy(e: Failure, reading?: "past"): string {
   const code = e && e.code
+  // A Mac across Clawdline Cloud that does not list `past-sessions` among its
+  // commands — the Go daemon today — is refused that read by the client before
+  // it leaves. Said here, where it happens, with what can be done instead.
+  if (reading === "past" && (code === "cloud_feature_unavailable" || code === "cloud_machine_unsupported")) {
+    return nextWord("cloudPastUnavailable")
+  }
+  if (code === "cloud_not_carried") return nextWord("cloudNotCarried")
   if (code === "write_disabled") return T().webStartOff
   if (code === "not_found") return T().webStartGone
   if (e && e.app && code === "terminal_closed") return L.fillString(T().webStartTerminalClosed, { app: e.app })
@@ -376,9 +386,11 @@ function drawPast(list: HTMLElement, box: HTMLInputElement): void {
       ? T().webStartWaiting
       : reading && !pasts
         ? T().webLoading
-        : pasts && !pasts.length
-          ? T().webResumeEmpty
-          : T().webResumePick,
+        : pastsUnread
+          ? ""
+          : pasts && !pasts.length
+            ? T().webResumeEmpty
+            : T().webResumePick,
   )
 
   box.hidden = !(pasts && pasts.length > 1)
@@ -459,6 +471,7 @@ function load(): void {
 function enter(place: Place): void {
   at = place
   pasts = null
+  pastsUnread = false
   capped = false
   find = ""
   el<HTMLInputElement>("start-filter").value = ""
@@ -469,17 +482,19 @@ function enter(place: Place): void {
     .then((d) => {
       if (!at || at.id !== place.id) return
       pasts = (d && d.sessions) || []
+      pastsUnread = false
       capped = !!(d && d.more)
     })
     .catch((e: Failure) => {
       if (!at || at.id !== place.id) return
+      pastsUnread = !pasts
       pasts = pasts || []
       if (e && e.code === "not_found") {
         leave()
         places = null
         load()
       }
-      said(why(e), e)
+      said(why(e, "past"), e)
     })
     .then(() => {
       reading = false
@@ -490,6 +505,7 @@ function enter(place: Place): void {
 function leave(): void {
   at = null
   pasts = null
+  pastsUnread = false
   capped = false
   reading = false
   find = ""

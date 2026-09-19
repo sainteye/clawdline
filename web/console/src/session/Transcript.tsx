@@ -24,6 +24,7 @@ import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
 import { pendingSends, resend } from "./send.js"
+import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
 
 /*
@@ -97,11 +98,7 @@ function TranscriptOf({ id }: { id: string }) {
   }, [data, id])
   // The cards' spinners turn on the page's one clock, drawn once now so they
   // have their size before the clock's next tick.
-  useLayoutEffect(() => {
-    const spinners = [...document.querySelectorAll<HTMLCanvasElement>("#tx .entry.pending canvas.spin")]
-    for (const canvas of spinners) L.paintSpinner(canvas)
-    L.registerPendingSpinners(spinners)
-  })
+  useLayoutEffect(turnPendingSpinners)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const session = useSession(id)
   const entries = useMemo<Entry[]>(() => (data ? data.entries.map((e) => ({ ...e })) : []), [data])
@@ -118,7 +115,7 @@ function TranscriptOf({ id }: { id: string }) {
   const queue = useRef<NonNullable<TranscriptEntry["artifacts"]>>([])
   queue.current = []
   useEffect(() => {
-    tiles.current?.settle(document.getElementById("tx"), queue.current)
+    tiles.current?.settle(document.getElementById("tx"), queue.current, id)
   })
   useEffect(() => () => tiles.current?.release(), [])
 
@@ -313,7 +310,7 @@ function pendingAction(ev: MouseEvent<HTMLElement>) {
   const target = ev.target as Element
   const retry = target.closest?.("[data-pending-retry]")
   if (retry) {
-    resend(retry.getAttribute("data-pending-retry") ?? "")
+    void resend(retry.getAttribute("data-pending-retry") ?? "")
     return
   }
   const close = target.closest?.("[data-pending-dismiss]")

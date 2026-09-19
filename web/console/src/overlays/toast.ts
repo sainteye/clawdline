@@ -1,4 +1,5 @@
 import { failureSentence } from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
 
 /**
  * `toast` and `toastFailure` (`core/util.js`), against the `div#toast` that
@@ -27,5 +28,15 @@ export function toast(text: string, bad = false): void {
 }
 
 export function toastFailure(error: unknown, fallback: string): void {
-  toast(failureSentence(error, fallback), true)
+  toast(failureSentence(error, { sentence: ownSentence(error), fallback }), true)
+}
+
+/**
+ * The one code the copied catalog has no sentence for because the Swift app
+ * never said it: a request this console cannot carry over Clawdline Cloud
+ * (`cloud/relay-writer.ts`). Its tag still names the code.
+ */
+function ownSentence(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code
+  return code === "cloud_not_carried" ? nextWord("cloudNotCarried") : ""
 }

@@ -44,6 +44,12 @@ export interface PendingSend {
   acceptedAt: number
   /** Turns that were already in the transcript when the attempt began, counted by `occurrenceKey`. */
   known: Map<string, number>
+  /**
+   * "Try again" was pressed and the page is first reading the transcript, in
+   * case the attempt that failed arrived after all (`send.ts` `resend`). The
+   * card says it is sending; `known` is still the failed attempt's.
+   */
+  checking: boolean
 }
 
 /** One transcript entry, as much of it as settling reads. */
@@ -131,6 +137,7 @@ export class PendingSends {
       sentAt: now,
       acceptedAt: 0,
       known: occurrences(this.seen.get(session) ?? []),
+      checking: false,
     }
     this.cards.push(card)
     this.changed()
@@ -156,6 +163,29 @@ export class PendingSends {
     this.changed()
   }
 
+  /** One card, if it is still on the page. */
+  card(token: string): PendingSend | undefined {
+    return this.find(token)
+  }
+
+  /**
+   * "Try again", first half: the card says it is sending while the page reads
+   * the transcript once more. A failure at this end does not mean the words did
+   * not arrive — across Clawdline Cloud a Mac can run a command whose answer
+   * never comes back — and the read is what can tell. `known` is left as the
+   * failed attempt had it, so a turn that attempt produced still settles the
+   * card instead of being typed a second time.
+   */
+  retrying(token: string): PendingSend | null {
+    const card = this.find(token)
+    if (!card || card.state !== "failed") return null
+    card.state = "sending"
+    card.failure = ""
+    card.checking = true
+    this.changed()
+    return card
+  }
+
   /**
    * The same words again, as a new attempt. What the transcript holds now is
    * what the new attempt must not be mistaken for — including the first
@@ -163,9 +193,10 @@ export class PendingSends {
    */
   resend(token: string, now: number): PendingSend | null {
     const card = this.find(token)
-    if (!card || card.state !== "failed") return null
+    if (!card || (card.state !== "failed" && !card.checking)) return null
     card.state = "sending"
     card.failure = ""
+    card.checking = false
     card.sentAt = now
     card.acceptedAt = 0
     card.known = occurrences(this.seen.get(card.session) ?? [])

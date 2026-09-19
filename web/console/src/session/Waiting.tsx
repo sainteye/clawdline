@@ -3,6 +3,15 @@ import type { SessionMenu, SessionMenuOption, SessionMenuStep, SessionMenuSubmit
 import { toast, toastFailure } from "../overlays/toast.js"
 import * as L from "../legacy/bridge.js"
 import { menuKey, pressKey, waitingHTML } from "../legacy/waiting-bridge.js"
+import { turnPendingSpinners } from "./spinners.js"
+import "./pending.css"
+
+/**
+ * How long a press may take before the card says it is on its way — the start
+ * sheet's `startPress` rule, so a daemon on this machine, which answers inside
+ * a frame, never flashes the line.
+ */
+const PRESS_SHOWN_MS = 150
 
 /**
  * `div#waiting`: the line above the composer when the open session has
@@ -19,6 +28,12 @@ import { menuKey, pressKey, waitingHTML } from "../legacy/waiting-bridge.js"
  * third option, sending the word "Tea" answered "Water". A digit outside a
  * paste is the only press that answers the question that was asked.
  *
+ * **A press says where it has got to**, as a message does: on its way (the
+ * card's line becomes `webSending` with the pending card's spinner, once the
+ * press has taken longer than `PRESS_SHOWN_MS`), then `webMenuSent`, or the
+ * refusal in a toast with every option live again. Across Clawdline Cloud the
+ * first of those is a second or more (`cloud/relay-writer.ts`).
+ *
  * Three things this daemon cannot do are drawn switched off rather than left
  * out: the refresh button (no `/v1/sessions/refresh` here, so
  * `aria-disabled="true"`), "Show on Mac" and "Live screen" (no `/focus` or
@@ -26,7 +41,7 @@ import { menuKey, pressKey, waitingHTML } from "../legacy/waiting-bridge.js"
  */
 export function Waiting({ row, write }: { row: SessionRow | null; write: boolean }) {
   const box = useRef<HTMLDivElement>(null)
-  const state = useRef<CardState>({ drawn: null, answered: null, dismissed: null, folded: null })
+  const state = useRef<CardState>({ drawn: null, answered: null, dismissed: null, folded: null, pressing: null })
   const current = useRef<{ row: SessionRow | null; write: boolean }>({ row, write })
   current.current = { row, write }
 
@@ -50,6 +65,19 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
     }
     if (st.dismissed && (!open || st.dismissed.key !== key || open.state !== "waiting")) st.dismissed = null
     if (st.folded && (!open || st.folded.key !== key || open.state !== "waiting")) st.folded = null
+    // A press is held until the question it answered has gone — the session
+    // moved on, or asks something else — or for ten seconds after the machine
+    // said yes, the same allowance `answered` has.
+    if (
+      st.pressing &&
+      (!open ||
+        st.pressing.key !== key ||
+        open.state !== "waiting" ||
+        st.pressing.menu !== menuKey(menu) ||
+        (st.pressing.done && Date.now() - st.pressing.at > 10000))
+    ) {
+      st.pressing = null
+    }
     const hushed = !!(st.dismissed && st.dismissed.menu === menuKey(menu))
     const folded = !!(st.folded && st.folded.menu === menuKey(menu))
     const sent = !rows && !!st.answered
@@ -69,6 +97,7 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
             rows,
             submit,
             sent,
+            pressing: !st.pressing ? null : st.pressing.done ? "sent" : st.pressing.shown ? "sending" : null,
             write: current.current.write,
             refresh: rows ? null : { busy: false, status: "", off: true },
             focusOff: true,
@@ -78,6 +107,15 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
     st.drawn = want
     el.innerHTML = want
     el.hidden = !want
+    // A press still on its way holds every option, however often the card is
+    // written again under it: a second tap would be a stray key in the next question.
+    if (st.pressing) {
+      el.querySelectorAll<HTMLButtonElement>(".opt").forEach((b) => {
+        b.disabled = true
+      })
+    }
+    // A line on its way came or went with that write: the clock follows it.
+    turnPendingSpinners()
     if (!want) return
     if (restoreRefreshFocus) {
       const replacement = el.querySelector<HTMLElement>("[data-refresh]")
@@ -136,11 +174,25 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
         }
         const asked = open.id
         const T = L.strings
+        const press = { key: asked, menu: menuKey(open.menu), shown: false, done: false, at: Date.now() }
+        st.pressing = press
+        setTimeout(() => {
+          if (st.pressing !== press) return
+          press.shown = true
+          redraw()
+        }, PRESS_SHOWN_MS)
         pressKey(asked, opt.dataset.key || "")
           .then(() => {
+            if (st.pressing === press) {
+              // Still held — the question has not gone yet — and now saying so.
+              press.done = true
+              press.at = Date.now()
+              redraw()
+            }
             if (current.current.row?.id === asked) toast(T.webMenuSent)
           })
           .catch((err: unknown) => {
+            if (st.pressing === press) st.pressing = null
             if (current.current.row?.id !== asked) return
             toastFailure(err, T.webRequestFailed)
             // Drawn again from scratch: the markup has not changed, so the
@@ -179,4 +231,10 @@ interface CardState {
   dismissed: { key: string | null; menu: string } | null
   /** A card folded out of the way (`foldedMenu`). */
   folded: { key: string | null; menu: string } | null
+  /**
+   * A press, from the tap until the question it answered has gone: `shown`
+   * once it has taken long enough to say it is on its way, `done` once the
+   * machine said yes (`at` is then when).
+   */
+  pressing: { key: string; menu: string; shown: boolean; done: boolean; at: number } | null
 }

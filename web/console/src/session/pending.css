@@ -18,6 +18,13 @@
 }
 .entry.pending .pending-state .go:hover { background: var(--card-hi); color: var(--ink); }
 
+/* A waiting card's answer on its way (`Waiting.tsx`): the card's own `.say`
+   line, laid out as the pending card's state line above is
+   (`legacy/transcript.css`, `.entry.pending .pending-state`), in the card's
+   own colour and size. */
+.composer .waiting .say.pending-state { display: flex; align-items: center; gap: 7px; }
+.composer .waiting .say.pending-state canvas { flex: 0 0 auto; display: block; }
+
 /* `.composer .waiting .title .dismiss`: that card's close button, less the float. */
 .entry.pending .pending-state .dismiss {
     padding: 2px 7px;

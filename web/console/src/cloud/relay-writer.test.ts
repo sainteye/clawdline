@@ -1,0 +1,358 @@
+// The relay seam's writes: `node --test web/console/src/cloud/*.test.ts`.
+//
+// A fake CloudClient stands in for the copied one. Each method records what it
+// was asked and answers the way the copied client does: the Mac's own body on
+// success, a `CloudFailure`-shaped rejection otherwise — code, layer, status
+// and the envelope's `ref` — so what is asserted here is what the page's
+// readers (`ClawdlineClient`, `start-bridge.ts`, `waiting-bridge.ts`) are
+// handed.
+import { test } from "node:test"
+import assert from "node:assert/strict"
+import type { TranscriptPage } from "@clawdline/contract"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { RelayReader, TRANSCRIPT_EXPECT_MS, type CloudEvent, type CloudIdentity, type CloudRow } from "./relay-reader.ts"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
+
+type Call = [string, ...unknown[]]
+
+function refusal(code: string, fields: Record<string, unknown> = {}) {
+  return Object.assign(new Error(code + " (English, never shown)"), { code, layer: "mac_preflight", ...fields })
+}
+
+class FakeClient implements CloudWriteClient {
+  ready = true
+  allowWrites = true
+  macCapabilities = new Set<string>()
+  descriptors = new Map<string, { machine: { commands?: string[] } }>()
+  sessionInventoryByMachine = new Map<string, unknown>()
+  rows: CloudRow[] = []
+  calls: Call[] = []
+  transcriptAsks = 0
+  signature = "1-1"
+  fail: Record<string, Error | undefined> = {}
+  events(_listener: (event: CloudEvent) => void) {
+    return () => {}
+  }
+  async sessions() {
+    return { sessions: this.rows, at: 100, scan: { emptyAuthoritative: true, recovering: [], failures: [] } }
+  }
+  async transcript() {
+    this.transcriptAsks += 1
+    return { id: "s1", entries: [], signature: this.signature, evidence: "transcript" }
+  }
+  machineDescriptor(machine: string) {
+    return this.descriptors.get(machine) ?? null
+  }
+  private act(name: string, args: unknown[], body: unknown): Promise<unknown> {
+    this.calls.push([name, ...args])
+    const failure = this.fail[name]
+    return failure ? Promise.reject(failure) : Promise.resolve(body)
+  }
+  send(identity: CloudIdentity, text: string, images: string[]) {
+    return this.act("send", [identity, text, images], {
+      ok: true, id: identity.session, action: "typed", optimisticIdentity: identity, optimisticRequest: "r-1",
+    })
+  }
+  answer(identity: CloudIdentity, key: string) {
+    return this.act("answer", [identity, key], { type: "envelope" })
+  }
+  _read(identity: CloudIdentity, type: string, extra: Record<string, unknown>, answer: string, timeoutMs?: number, options?: unknown) {
+    return this.act("_read", [identity, type, extra, answer, timeoutMs, options], { ok: true, id: identity.session, action: "keyed" })
+  }
+  end(identity: CloudIdentity, acceptLoss: boolean, version: string) {
+    return this.act("end", [identity, acceptLoss, version], { ok: true, id: identity.session, action: "closed" })
+  }
+  focus(identity: CloudIdentity) {
+    return this.act("focus", [identity], { ok: true, id: identity.session })
+  }
+  places(machine: string) {
+    return this.act("places", [machine], { places: [{ id: "mac-a\u0000p1", label: "api" }], assistants: [{ id: "claude" }] })
+  }
+  pastSessions(place: string, assistant: string) {
+    return this.act("pastSessions", [place, assistant], { sessions: [] })
+  }
+  startPlace(place: string, assistant: string, model: string) {
+    return this.act("startPlace", [place, assistant, model], { ok: true, id: "new-1", backend: "iterm" })
+  }
+  resumePlace(place: string, past: string, assistant: string, requestId?: string) {
+    return this.act("resumePlace", [place, past, assistant, requestId], { ok: true, id: "new-2", backend: "iterm" })
+  }
+  voice(audio: string, rate: number) {
+    return this.act("voice", [audio, rate], { text: "hello there", ms: 900 })
+  }
+  setVoiceHost(machine: string) {
+    this.fail.voice = undefined
+    return this.act("setVoiceHost", [machine], {})
+  }
+  image(identity: CloudIdentity, id: string) {
+    return this.act("image", [identity, id], { id, media_type: "image/png", bytes: new Uint8Array([137, 80, 78, 71]) }) as Promise<{
+      id: string
+      media_type: string
+      bytes: Uint8Array
+    }>
+  }
+}
+
+function row(session: string, extra: Record<string, unknown> = {}): CloudRow {
+  return { id: session, machine: "mac-a", session, identity: { machine: "mac-a", session }, state: "idle", ...extra }
+}
+
+function seam(client: FakeClient, clock = { t: 1_000 }) {
+  const reader = new RelayReader("mac-a", { now: () => clock.t })
+  const writer = new RelayWriter(reader.writeHost, { now: () => clock.t, requestID: () => "req-1" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(client)
+  return { reader, clock }
+}
+
+const post = (body: unknown, headers: Record<string, string> = {}): RequestInit => ({
+  method: "POST",
+  headers: { "Content-Type": "application/json", ...headers },
+  body: JSON.stringify(body),
+})
+
+async function json<T = Record<string, unknown>>(res: Response): Promise<T> {
+  return (await res.json()) as T
+}
+
+test("each console route is the Cloud word the machine lists, and nothing else", () => {
+  const cases: [string, string, string | null][] = [
+    ["POST", "/v1/sessions/s%201/send", "send"],
+    ["POST", "/v1/sessions/s1/key", "answer"],
+    ["POST", "/v1/sessions/s1/close", "end"],
+    ["POST", "/v1/sessions/s1/focus", "focus"],
+    ["POST", "/v1/places/p1/start", "start"],
+    ["POST", "/v1/places/p1/start/codex/gpt-5", "start"],
+    ["POST", "/v1/places/p1/resume/abc", "resume"],
+    ["POST", "/v1/places/p1/resume/claude/abc", "resume"],
+    ["POST", "/v1/voice", "voice"],
+    ["GET", "/v1/places", "places"],
+    ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
+    ["GET", "/v1/artifacts/images/img-1", "image"],
+    ["POST", "/v1/sessions/s1/interrupt", "interrupt"],
+    ["GET", "/v1/sessions", null],
+    ["GET", "/v1/transcript", null],
+    ["POST", "/v1/orchestrator/tasks", null],
+    ["DELETE", "/v1/sessions/s1/send", null],
+    ["POST", "/v1/places/p1/resume", null],
+  ]
+  for (const [method, path, word] of cases) {
+    assert.equal(writeRoute(method, path)?.word ?? null, word, method + " " + path)
+  }
+  assert.deepEqual(writeRoute("POST", "/v1/sessions/s%201/send"), { op: "send", word: "send", session: "s 1" })
+  assert.deepEqual(writeRoute("POST", "/v1/places/p1/resume/claude/abc"), {
+    op: "resume", word: "resume", place: "p1", assistant: "claude", past: "abc",
+  })
+  assert.equal(writeRoute("POST", "/v1/sessions/s1/interrupt")?.op, "uncarried")
+})
+
+test("a send goes as the Mac's `send` under the row's own identity, and answers as the local route does", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/sessions/s1/send", post({ text: "hello", images: ["data:image/jpeg;base64,AA=="] }))
+  assert.equal(res.status, 200)
+  assert.deepEqual(await json(res), { ok: true, id: "s1", action: "typed" }, "the client's bookkeeping is taken off")
+  assert.deepEqual(client.calls, [["send", { machine: "mac-a", session: "s1" }, "hello", ["data:image/jpeg;base64,AA=="]]])
+  const last = reader.log[reader.log.length - 1]
+  assert.equal(last.word, "send")
+  assert.equal(last.answer, "relay")
+  assert.equal(typeof last.ms, "number")
+})
+
+test("a Mac's refusal comes back typed, in the flat spelling `ClawdlineClient` recognises", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  client.fail.send = refusal("cloud_commands_disabled", { status: 403, ref: { sender: "web_abcdef123456", seq: 12 } })
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/sessions/s1/send", post({ text: "hello" }))
+  assert.equal(res.status, 403)
+  const body = await json(res)
+  assert.equal(body.error, "cloud_commands_disabled")
+  assert.equal(typeof body.detail, "string", "`isRefusal` needs a string detail")
+  assert.equal(body.layer, "mac_preflight")
+  assert.equal(body.ref, "abcdef12·12")
+  assert.equal(body.outcome, "not_done")
+  assert.equal(reader.log[reader.log.length - 1].code, "cloud_commands_disabled")
+})
+
+test("a command the Mac may have run without answering says so, and nothing sent says that", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  client.fail.send = refusal("cloud_read_timeout", { layer: "browser" })
+  const { reader } = seam(client)
+  const timedOut = await json(await reader.fetch("/v1/sessions/s1/send", post({ text: "hi" })))
+  assert.equal(timedOut.error, "cloud_read_timeout")
+  assert.equal(timedOut.outcome, "unknown")
+
+  client.ready = false
+  const res = await reader.fetch("/v1/sessions/s1/send", post({ text: "hi" }))
+  assert.equal(res.status, 503, "a write with the line down is refused, not left to a transport error")
+  const offline = await json(res)
+  assert.equal(offline.error, "offline")
+  assert.equal(offline.outcome, "not_done")
+})
+
+test("after a send, the transcript is asked for on every poll until it changes, then reused again", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader, clock } = seam(client)
+  const read = async (init?: RequestInit) => json<TranscriptPage>(await reader.fetch("/v1/transcript?session=s1&limit=200", init))
+
+  await read()
+  clock.t += 4_000
+  await read()
+  assert.equal(client.transcriptAsks, 1, "nothing moved: reused")
+
+  await reader.fetch("/v1/sessions/s1/send", post({ text: "hi" }))
+  clock.t += 4_000
+  await read()
+  clock.t += 4_000
+  await read()
+  assert.equal(client.transcriptAsks, 3, "the turn is awaited: every poll asks")
+
+  client.signature = "2-2" // the turn arrived
+  clock.t += 4_000
+  await read()
+  clock.t += 4_000
+  await read()
+  assert.equal(client.transcriptAsks, 4, "it arrived: the ordinary rule again")
+
+  // An awaited change that never comes stops being awaited.
+  await reader.fetch("/v1/sessions/s1/send", post({ text: "again" }))
+  for (let t = 0; t <= TRANSCRIPT_EXPECT_MS + 8_000; t += 4_000) {
+    clock.t += 4_000
+    await read()
+  }
+  const asked = client.transcriptAsks
+  clock.t += 4_000
+  await read()
+  assert.equal(client.transcriptAsks, asked, "past the window the answer is reused")
+})
+
+test("a refusal costs one fresh read, not a window of them; `no-store` always asks", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  client.fail.send = refusal("cloud_commands_disabled", { status: 403 })
+  const { reader, clock } = seam(client)
+  const read = async (init?: RequestInit) => reader.fetch("/v1/transcript?session=s1&limit=200", init)
+  await read()
+  await reader.fetch("/v1/sessions/s1/send", post({ text: "hi" }))
+  clock.t += 4_000
+  await read()
+  clock.t += 4_000
+  await read()
+  assert.equal(client.transcriptAsks, 2, "one read after the refusal, then reuse")
+  await read({ cache: "no-store" })
+  assert.equal(client.transcriptAsks, 3, "a caller that must see the machine's answer is never handed an old one")
+})
+
+test("a waiting card's press is answered by the Mac when the Mac lists `answer`, by the relay otherwise", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+
+  // No descriptor, no cloud_status: the copied client's own path (the relay's `delivered`).
+  await reader.fetch("/v1/sessions/s1/key", post({ key: "2" }))
+  assert.deepEqual(client.calls.pop(), ["answer", { machine: "mac-a", session: "s1" }, "2"])
+
+  // The Go daemon: lists `answer`, publishes no cloud_status. Asked with a
+  // request id, settled by the Mac's own answer.
+  client.descriptors.set("mac-a", { machine: { commands: ["send", "answer", "key"] } })
+  const res = await reader.fetch("/v1/sessions/s1/key", post({ key: "2" }))
+  assert.equal(res.status, 200)
+  assert.deepEqual(client.calls.pop(), [
+    "_read", { machine: "mac-a", session: "s1" }, "answer", { request: "req-1", answer: "2" }, "action:req-1", undefined,
+    { retireUncertain: true },
+  ])
+
+  // A Mac that has shown cloud_status: the copied `answer` already does exactly that.
+  client.macCapabilities.add("mac-a")
+  await reader.fetch("/v1/sessions/s1/key", post({ key: "3" }))
+  assert.deepEqual(client.calls.pop(), ["answer", { machine: "mac-a", session: "s1" }, "3"])
+})
+
+test("a close carries force and the close gates last read; a blocked one keeps its reasons", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1", { closeability: { version: "cv-7" } })]
+  const { reader } = seam(client)
+  await reader.fetch("/v1/sessions/s1/close", post({ force: true }))
+  assert.deepEqual(client.calls.pop(), ["end", { machine: "mac-a", session: "s1" }, true, "cv-7"])
+
+  const reasons = [{ kind: "task", id: "t1" }]
+  client.fail.end = refusal("close_blocked", { status: 409, layer: "mac_route", reasons })
+  const res = await reader.fetch("/v1/sessions/s1/close", post({ force: false }))
+  assert.equal(res.status, 409)
+  const body = await json(res)
+  assert.equal(body.error, "close_blocked")
+  assert.deepEqual(body.reasons, reasons, "the sheet reopens with what blocked it")
+})
+
+test("start and resume go as the machine's words; a refusal keeps `app` in the nested spelling the sheet reads", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const places = await json(await reader.fetch("/v1/places"))
+  assert.deepEqual(client.calls.pop(), ["places", "mac-a"], "the places of the machine this page reads")
+  assert.ok(Array.isArray(places.places))
+
+  const started = await json(await reader.fetch("/v1/places/mac-a%00p1/start/codex/gpt-5", post({})))
+  assert.equal(started.id, "new-1")
+  assert.deepEqual(client.calls.pop(), ["startPlace", "mac-a\u0000p1", "codex", "gpt-5"])
+
+  await reader.fetch("/v1/places/p1/resume/claude/past-9", post({}, { "Idempotency-Key": "press-1" }))
+  assert.deepEqual(client.calls.pop(), ["resumePlace", "p1", "past-9", "claude", "press-1"], "one press, one request id")
+
+  client.fail.startPlace = refusal("terminal_closed", { status: 409, layer: "mac_route", detail: { app: "iTerm" } })
+  const res = await reader.fetch("/v1/places/p1/start", post({}))
+  const body = await json<{ error: { code: string; app?: string; outcome: string } }>(res)
+  assert.equal(body.error.code, "terminal_closed")
+  assert.equal(body.error.app, "iTerm")
+  assert.equal(body.error.outcome, "not_done")
+})
+
+test("a Mac without `past-sessions` refuses the resume list by the client's own code", async () => {
+  const client = new FakeClient()
+  client.fail.pastSessions = refusal("cloud_feature_unavailable", { layer: "browser" })
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/places/p1/sessions/claude")
+  assert.equal(res.status, 501)
+  const body = await json<{ error: { code: string; word: string } }>(res)
+  assert.equal(body.error.code, "cloud_feature_unavailable")
+  assert.equal(body.error.word, "past-sessions")
+})
+
+test("dictation picks the machine this page reads when the voice Mac is ambiguous, once", async () => {
+  const client = new FakeClient()
+  client.fail.voice = refusal("cloud_voice_host_ambiguous", { layer: "browser" })
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/voice", post({ audio: "AAAA", rate: 16000 }))
+  assert.equal(res.status, 200)
+  assert.deepEqual(await json(res), { text: "hello there", ms: 900 })
+  assert.deepEqual(client.calls.map((c) => c[0]), ["voice", "setVoiceHost", "voice"])
+  assert.equal(client.calls[1][1], "mac-a")
+})
+
+test("a route with no Cloud word is refused by name before anything is sealed", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/sessions/s1/interrupt", post({}))
+  assert.equal(res.status, 501)
+  const body = await json(res)
+  assert.equal(body.error, "cloud_not_carried")
+  assert.equal(body.word, "interrupt")
+  assert.deepEqual(client.calls, [])
+})
+
+test("a transcript's picture is read as bytes through the Mac's `image`", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/artifacts/images/img-1?session=s1")
+  assert.equal(res.status, 200)
+  assert.equal(res.headers.get("content-type"), "image/png")
+  assert.deepEqual([...new Uint8Array(await res.arrayBuffer())], [137, 80, 78, 71])
+  assert.deepEqual(client.calls.pop(), ["image", { machine: "mac-a", session: "s1" }, "img-1"])
+  const bare = await reader.fetch("/v1/artifacts/images/img-1")
+  assert.equal((await json<{ error: { code: string } }>(bare)).error.code, "malformed_read")
+})

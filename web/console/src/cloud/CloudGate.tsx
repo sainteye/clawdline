@@ -18,6 +18,7 @@ import {
 } from "./copied.js"
 import { readThroughRelay } from "./install.js"
 import { RelayReader } from "./relay-reader.js"
+import { RelayWriter, writeRoute } from "./relay-writer.js"
 import "./cloud.css"
 
 /**
@@ -33,8 +34,10 @@ import "./cloud.css"
  * then reads (`relay-reader.ts`).
  *
  * What the Swift console does at the same points and this does not, yet —
- * pairing a browser, recovering a device slot, sending anything — is said on
- * the screen where it would have happened rather than left as a dead end.
+ * pairing a browser, recovering a device slot — is said on the screen where it
+ * would have happened rather than left as a dead end. Acting on the machine —
+ * sending, answering, starting, ending — goes through the same seam as reading
+ * it (`relay-writer.ts`).
  */
 
 export type Declared =
@@ -180,6 +183,8 @@ export function CloudGate({ declared }: { declared: string }) {
     }
     const config = transport.kind === "cloud" ? transport.config : null
     const next = new RelayReader(machine.id, { strings: () => (config ? catalog(config) : Promise.resolve({})) })
+    const writer = new RelayWriter(next.writeHost)
+    next.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
     next.attach(current)
     reader.current = next
     readThroughRelay(next)
