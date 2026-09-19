@@ -189,7 +189,8 @@ body {
 
 /* `TargetRow`. The whole row is pressable here because a session row has no
    buttons on it — the rule `TargetRow` states ("a row must not be an invisible
-   button") is about the dev-stack rows, which this bar does not draw. */
+   button") is about the dev-stack rows, which `.bar-stack` below draws as
+   rows nothing presses. */
 .bar-row {
     display: flex;
     align-items: center;
@@ -319,6 +320,72 @@ body {
     display: inline-block;
     vertical-align: middle;
     margin-right: 7px;
+}
+
+/* ---- The skills list (`/`) ------------------------------------------- */
+
+/* `rebuildRows()` for `.skills`: the command is the row's title and is drawn
+   whole; the description after it takes what is left and is the part cut. */
+.bar-skill .bar-label {
+    flex: 0 0 auto;
+    max-width: 55%;
+}
+
+/* ---- The server list (⌘S) --------------------------------------------- */
+
+/* `stackRowText`. Not pressable: on the Swift row only its buttons act and its
+   links open, and this row has no buttons (bar/stacks.ts says why). */
+.bar-stack {
+    cursor: default;
+}
+
+/* The name at `listSize`, in the project's accent at 0.75, padded to ten
+   characters so the states line up the way `padding(toLength: 10)` makes them. */
+.bar-stack .stack-name {
+    flex: 0 0 auto;
+    min-width: 10ch;
+    opacity: 0.75;
+}
+
+.bar-stack .bar-detail > span {
+    margin-right: 12px;
+}
+
+/* `NSColor.systemGreen` / `.systemRed` in the dark appearance the panel draws
+   in; everything else on the row is tertiary, as there. */
+.bar-stack .stack-state[data-tone="ok"] {
+    color: rgb(48, 209, 88);
+}
+
+.bar-stack .stack-state[data-tone="bad"] {
+    color: rgb(255, 69, 58);
+}
+
+.bar-stack .stack-host {
+    color: var(--bar-label-2);
+}
+
+/* "Underlined, the way the footer marks its health link: a link that does not
+   look like one is a link nobody presses." Text in the shell, where it cannot
+   open, and so not underlined there. */
+.bar-stack a.stack-place {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: rgba(255, 255, 255, 0.25);
+    cursor: pointer;
+}
+
+/* The list's last line: what it does not do, or why it is empty. */
+.bar-note {
+    margin: 6px 0 2px;
+    padding: 0 var(--bar-pad-h) 0 calc(var(--bar-pad-h) + 36px);
+    font-size: calc(var(--bar-list-size) - 2px);
+    line-height: 1.45;
+    color: var(--bar-label-3);
+}
+
+.bar-note[data-warn="on"] {
+    color: var(--accent);
 }
 
 /* ---- The hint row ---------------------------------------------------- */

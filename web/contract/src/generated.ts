@@ -763,6 +763,25 @@ export type AssistantQuotaSource =
 export const AssistantQuotaSourceValues: readonly AssistantQuotaSource[] = ["observed", "probed", "self_reported"] as const
 
 /**
+ * One command the menu offers.
+ */
+export interface AssistantSkill {
+  /**
+   * The frontmatter's `description`, on one line and at most 240 characters. Empty
+   * when the file has no frontmatter: the first line of a skill's instructions is
+   * never offered in its place.
+   */
+  description: string
+
+  /**
+   * What follows the prefix: `/` for Claude, `$` for Codex. A plugin's skill keeps
+   * its namespace, `plugin:skill`.
+   */
+  name: string
+  source: SkillSource
+}
+
+/**
  * The inside of every refusal the gate and the auth routes give. `code` is the part
  * a client may branch on; `message` is English, for a person.
  */
@@ -2959,6 +2978,124 @@ export const CoordinatorStatusValues: readonly CoordinatorStatus[] = ["online", 
 
 export interface CoordinatorStoreState {
   status: string
+}
+
+/**
+ * One process the file declares under `processes`.
+ */
+export interface DevProcess {
+  name: string
+
+  /**
+   * The port it listens on, as declared. Absent when the file gives none.
+   */
+  port?: number
+  state: DevProcessState
+
+  /**
+   * The address the file gives for it, when it gives one — often a tunnel or a
+   * local hostname rather than the port.
+   */
+  url?: string
+}
+
+/**
+ * The Swift app's six words for one process. A port probe can only say `running`
+ * (something accepted a connection on 127.0.0.1) or `stopped` (nothing did, or the
+ * process declares no port to ask); the other four come from a `status` command,
+ * which is not run here.
+ */
+export type DevProcessState =
+    "healthy"
+  | "running"
+  | "starting"
+  | "completed"
+  | "exited"
+  | "stopped"
+
+export const DevProcessStateValues: readonly DevProcessState[] = ["healthy", "running", "starting", "completed", "exited", "stopped"] as const
+
+/**
+ * One project's stack.
+ */
+export interface DevStack {
+  /**
+   * The commands the file names, in this order: status, up, down, restart, logs,
+   * attach. None of them is run.
+   */
+  commands: DevStackCommand[]
+  icon?: Icon
+
+  /**
+   * The file's `name`, else the name of the directory it is in.
+   */
+  name: string
+  processes: DevProcess[]
+
+  /**
+   * The directory the file was found in.
+   */
+  root: string
+  state: DevStackState
+  unknown?: DevStackUnknown
+}
+
+/**
+ * A command a `.devstack.json` names. Listed so a reader can say which ones exist;
+ * none of them is run here.
+ */
+export type DevStackCommand =
+    "status"
+  | "up"
+  | "down"
+  | "restart"
+  | "logs"
+  | "attach"
+
+export const DevStackCommandValues: readonly DevStackCommand[] = ["status", "up", "down", "restart", "logs", "attach"] as const
+
+/**
+ * `running`: every declared process answered. `partial`: some did. `stopped`: none
+ * did. `unknown`: nothing could be asked without running one of the project's
+ * commands, and `unknown` is never reported as `stopped` — a live site under a
+ * mark that says it is down is worse than no mark.
+ */
+export type DevStackState =
+    "running"
+  | "partial"
+  | "stopped"
+  | "unknown"
+
+export const DevStackStateValues: readonly DevStackState[] = ["running", "partial", "stopped", "unknown"] as const
+
+/**
+ * Why a stack's state is `unknown`. `status_not_run`: the file names a `status`
+ * command and declares no ports, so only running that command could tell, and this
+ * daemon does not run it. `nothing_declared`: the file names neither.
+ */
+export type DevStackUnknown =
+    "status_not_run"
+  | "nothing_declared"
+
+export const DevStackUnknownValues: readonly DevStackUnknown[] = ["status_not_run", "nothing_declared"] as const
+
+/**
+ * Every stack found, sorted by name and then by directory. A linked Git worktree
+ * found only through the icon registry is left out: it is a copy of a project
+ * already on the list, and the Swift app drew one indistinguishable row for each.
+ */
+export interface DevStacksReply {
+  /**
+   * When the ports were asked, in seconds since 1970.
+   */
+  observedAt: number
+  stacks: DevStack[]
+
+  /**
+   * The search stopped before every known directory was looked at, or more stacks
+   * were found than one answer carries. Absent when nothing was left out.
+   */
+  truncated?: boolean
 }
 
 /**
@@ -5273,6 +5410,42 @@ export interface SettleResult {
 export interface SignedIn {
   ok: boolean
   token: string
+}
+
+/**
+ * Where a skill came from. Claude's are read from `.claude/skills` in the project
+ * (from the repository root down to the working directory), `~/.claude/skills` and
+ * installed plugins; Codex's are the catalog its rollout was started with, where
+ * `admin` and `system` can also appear.
+ */
+export type SkillSource =
+    "project"
+  | "personal"
+  | "plugin"
+  | "admin"
+  | "system"
+
+export const SkillSourceValues: readonly SkillSource[] = ["project", "personal", "plugin", "admin", "system"] as const
+
+/**
+ * The effective list, sorted by name, after the precedence a typed command follows:
+ * a personal skill replaces a project skill of the same name, a deeper project
+ * directory replaces an ancestor, and `skillOverrides: off` takes one out. Held for
+ * five minutes per working directory and assistant, as the Swift app holds it;
+ * `observedAt` says how old the reading is.
+ */
+export interface SkillsReply {
+  /**
+   * When this list was read, in seconds since 1970.
+   */
+  observedAt: number
+  skills: AssistantSkill[]
+
+  /**
+   * More skills were found than one answer carries, and the rest are not in
+   * `skills`. Absent when nothing was left out.
+   */
+  truncated?: boolean
 }
 
 export interface StartAssistant {

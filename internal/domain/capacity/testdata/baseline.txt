@@ -73,6 +73,13 @@
 # It registered no row: the list is recomputed whole from the task route every
 # pass and nothing it holds accumulates. The lines it added are the two cuts
 # of one snapshot (page) and the page of finished tasks it reads (read).
+#
+# The skills menu and the server list (2026-09-19) added GET
+# /v1/sessions/{id}/skills and GET /v1/devstacks. It registered one row,
+# cache.session_skills (each session's menu, held five minutes, the oldest
+# let go). The server list keeps nothing between asks. The lines it added are
+# what one menu or one list reads (read), what one answer carries (page) and
+# the ports asked at once (lane).
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -218,3 +225,16 @@ cmd/clawdline.brokerTokenLimit # read: the orchestrator-token file the thin comm
 cmd/clawdline.relayInputLimit # admission: the message `clawdline send` reads from stdin, at the daemon's 2 MiB body cap (limits N27); how many characters is the daemon's rule
 internal/adapters/skillfile.recordLimit # read: the skill install record, a few hundred bytes (docs/skill.md)
 internal/adapters/skillfile.stubLimit # read: the SKILL.md an install replaces or an uninstall restores; a stub is a few kilobytes, and a file past this is refused rather than backed up
+internal/adapters/skillmenu.MaxSkills # page: the skills one menu answer carries, sorted by name; past it the answer says truncated
+internal/adapters/skillmenu.maxDescriptionRunes # page: one skill's description, the menu's one line, as the Swift app cuts it
+internal/adapters/skillmenu.maxDirectoryEntries # read: one skills directory's listing; past it the rest of that directory is not looked at
+internal/adapters/skillmenu.maxHeadBytes # read: the top of one SKILL.md, where its frontmatter is; the body is never wanted
+internal/adapters/skillmenu.maxRolloutPrefix # read: the start of a Codex rollout, where its skills catalog is (CodexSkills' 4 MiB)
+internal/adapters/skillmenu.maxSettingsBytes # read: one Claude settings file or the plugin registry; a larger one is left out whole
+internal/adapters/devstack.MaxStacks # page: the stacks one server-list answer carries; past it the answer says truncated
+internal/adapters/devstack.maxCandidates # read: the directories one discovery walks up from; past it the answer says truncated
+internal/adapters/devstack.maxDeclared # page: the processes kept from one .devstack.json
+internal/adapters/devstack.maxNameRunes # page: a stack's or a process's name as a row draws it
+internal/adapters/devstack.maxSpecBytes # read: one .devstack.json; a larger file is not a spec and the walk goes on past it
+internal/adapters/devstack.maxProbeLanes # lane: the declared ports asked at once, each for ProbeTimeout
+internal/adapters/devstack.Read:chan(maxProbeLanes) # lane: the same slots, as the channel that holds them

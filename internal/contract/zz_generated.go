@@ -602,6 +602,19 @@ const (
 // AssistantQuotaSourceValues is every value the contract allows, in contract order.
 var AssistantQuotaSourceValues = []AssistantQuotaSource{AssistantQuotaSourceObserved, AssistantQuotaSourceProbed, AssistantQuotaSourceSelfReported}
 
+// One command the menu offers.
+type AssistantSkill struct {
+	// The frontmatter's `description`, on one line and at most 240 characters. Empty
+	// when the file has no frontmatter: the first line of a skill's instructions is
+	// never offered in its place.
+	Description string `json:"description"`
+
+	// What follows the prefix: `/` for Claude, `$` for Codex. A plugin's skill keeps
+	// its namespace, `plugin:skill`.
+	Name   string      `json:"name"`
+	Source SkillSource `json:"source"`
+}
+
 // The inside of every refusal the gate and the auth routes give. `code` is the
 // part a client may branch on; `message` is English, for a person.
 type AuthError struct {
@@ -2504,6 +2517,113 @@ type CoordinatorStoreState struct {
 	Status string `json:"status"`
 }
 
+// One process the file declares under `processes`.
+type DevProcess struct {
+	Name string `json:"name"`
+
+	// The port it listens on, as declared. Absent when the file gives none.
+	Port  int64           `json:"port,omitempty"`
+	State DevProcessState `json:"state"`
+
+	// The address the file gives for it, when it gives one — often a tunnel or a
+	// local hostname rather than the port.
+	URL string `json:"url,omitempty"`
+}
+
+// The Swift app's six words for one process. A port probe can only say
+// `running` (something accepted a connection on 127.0.0.1) or `stopped`
+// (nothing did, or the process declares no port to ask); the other four come
+// from a `status` command, which is not run here.
+type DevProcessState string
+
+const (
+	DevProcessStateHealthy   DevProcessState = "healthy"
+	DevProcessStateRunning   DevProcessState = "running"
+	DevProcessStateStarting  DevProcessState = "starting"
+	DevProcessStateCompleted DevProcessState = "completed"
+	DevProcessStateExited    DevProcessState = "exited"
+	DevProcessStateStopped   DevProcessState = "stopped"
+)
+
+// DevProcessStateValues is every value the contract allows, in contract order.
+var DevProcessStateValues = []DevProcessState{DevProcessStateHealthy, DevProcessStateRunning, DevProcessStateStarting, DevProcessStateCompleted, DevProcessStateExited, DevProcessStateStopped}
+
+// One project's stack.
+type DevStack struct {
+	// The commands the file names, in this order: status, up, down, restart, logs,
+	// attach. None of them is run.
+	Commands []DevStackCommand `json:"commands"`
+	Icon     *Icon             `json:"icon,omitempty"`
+
+	// The file's `name`, else the name of the directory it is in.
+	Name      string       `json:"name"`
+	Processes []DevProcess `json:"processes"`
+
+	// The directory the file was found in.
+	Root    string          `json:"root"`
+	State   DevStackState   `json:"state"`
+	Unknown DevStackUnknown `json:"unknown,omitempty"`
+}
+
+// A command a `.devstack.json` names. Listed so a reader can say which ones
+// exist; none of them is run here.
+type DevStackCommand string
+
+const (
+	DevStackCommandStatus  DevStackCommand = "status"
+	DevStackCommandUp      DevStackCommand = "up"
+	DevStackCommandDown    DevStackCommand = "down"
+	DevStackCommandRestart DevStackCommand = "restart"
+	DevStackCommandLogs    DevStackCommand = "logs"
+	DevStackCommandAttach  DevStackCommand = "attach"
+)
+
+// DevStackCommandValues is every value the contract allows, in contract order.
+var DevStackCommandValues = []DevStackCommand{DevStackCommandStatus, DevStackCommandUp, DevStackCommandDown, DevStackCommandRestart, DevStackCommandLogs, DevStackCommandAttach}
+
+// `running`: every declared process answered. `partial`: some did. `stopped`:
+// none did. `unknown`: nothing could be asked without running one of the
+// project's commands, and `unknown` is never reported as `stopped` — a live
+// site under a mark that says it is down is worse than no mark.
+type DevStackState string
+
+const (
+	DevStackStateRunning DevStackState = "running"
+	DevStackStatePartial DevStackState = "partial"
+	DevStackStateStopped DevStackState = "stopped"
+	DevStackStateUnknown DevStackState = "unknown"
+)
+
+// DevStackStateValues is every value the contract allows, in contract order.
+var DevStackStateValues = []DevStackState{DevStackStateRunning, DevStackStatePartial, DevStackStateStopped, DevStackStateUnknown}
+
+// Why a stack's state is `unknown`. `status_not_run`: the file names a `status`
+// command and declares no ports, so only running that command could tell, and
+// this daemon does not run it. `nothing_declared`: the file names neither.
+type DevStackUnknown string
+
+const (
+	DevStackUnknownStatusNotRun    DevStackUnknown = "status_not_run"
+	DevStackUnknownNothingDeclared DevStackUnknown = "nothing_declared"
+)
+
+// DevStackUnknownValues is every value the contract allows, in contract order.
+var DevStackUnknownValues = []DevStackUnknown{DevStackUnknownStatusNotRun, DevStackUnknownNothingDeclared}
+
+// Every stack found, sorted by name and then by directory. A linked Git
+// worktree found only through the icon registry is left out: it is a copy of a
+// project already on the list, and the Swift app drew one indistinguishable row
+// for each.
+type DevStacksReply struct {
+	// When the ports were asked, in seconds since 1970.
+	ObservedAt float64    `json:"observedAt"`
+	Stacks     []DevStack `json:"stacks"`
+
+	// The search stopped before every known directory was looked at, or more stacks
+	// were found than one answer carries. Absent when nothing was left out.
+	Truncated bool `json:"truncated,omitempty"`
+}
+
 // GET /v1/auth/devices. This machine's own token only; a paired device is
 // refused.
 type DeviceList struct {
@@ -4331,6 +4451,38 @@ type SettleResult struct {
 type SignedIn struct {
 	OK    bool   `json:"ok"`
 	Token string `json:"token"`
+}
+
+// Where a skill came from. Claude's are read from `.claude/skills` in the
+// project (from the repository root down to the working directory),
+// `~/.claude/skills` and installed plugins; Codex's are the catalog its rollout
+// was started with, where `admin` and `system` can also appear.
+type SkillSource string
+
+const (
+	SkillSourceProject  SkillSource = "project"
+	SkillSourcePersonal SkillSource = "personal"
+	SkillSourcePlugin   SkillSource = "plugin"
+	SkillSourceAdmin    SkillSource = "admin"
+	SkillSourceSystem   SkillSource = "system"
+)
+
+// SkillSourceValues is every value the contract allows, in contract order.
+var SkillSourceValues = []SkillSource{SkillSourceProject, SkillSourcePersonal, SkillSourcePlugin, SkillSourceAdmin, SkillSourceSystem}
+
+// The effective list, sorted by name, after the precedence a typed command
+// follows: a personal skill replaces a project skill of the same name, a deeper
+// project directory replaces an ancestor, and `skillOverrides: off` takes one
+// out. Held for five minutes per working directory and assistant, as the Swift
+// app holds it; `observedAt` says how old the reading is.
+type SkillsReply struct {
+	// When this list was read, in seconds since 1970.
+	ObservedAt float64          `json:"observedAt"`
+	Skills     []AssistantSkill `json:"skills"`
+
+	// More skills were found than one answer carries, and the rest are not in
+	// `skills`. Absent when nothing was left out.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 type StartAssistant struct {

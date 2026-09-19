@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import type { SessionRow } from "@clawdline/contract"
+import type { AssistantSkill, DevStacksReply, SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
 import { useBarFleet } from "./fleet.js"
@@ -16,6 +16,17 @@ import {
   type BarShellState,
 } from "./shell.js"
 import { historyBack, remember } from "./history.js"
+import {
+  clampSkillPickerIndex,
+  filterSkills,
+  heldSkills,
+  loadSkills,
+  selectedSkill,
+  skillPrefix,
+  skillQuery,
+} from "../legacy/skills-bridge.js"
+import { nextWord } from "../next-strings.js"
+import { STACKS_REFRESH_MS, readStacks, stackLinks, stackStateSaid, stackTip } from "./stacks.js"
 
 /**
  * The input bar: the Swift app's quick panel, drawn as a page.
@@ -52,6 +63,14 @@ import { historyBack, remember } from "./history.js"
 
 /** `Controller.show()` leaves the list closed; see the note above. */
 const LIST_OPEN_ON_SUMMON = true
+
+/**
+ * `Controller.ListMode`, less `mascots`, which this bar does not draw: which
+ * list is under the box. One at a time, as there — ⌘K and ⌘S each toggle their
+ * own and replace the other, and `/` puts the skills in their place.
+ */
+type ListMode = "none" | "sessions" | "stacks" | "skills"
+const SUMMONED_LIST: ListMode = LIST_OPEN_ON_SUMMON ? "sessions" : "none"
 /** `Controller.keysShown` starts false; see the note above. */
 const KEYS_SHOWN_ON_SUMMON = true
 
@@ -144,11 +163,92 @@ function detailFor(row: SessionRow): { html: string; busy: boolean } | null {
 /** `agentsSaid` has no input on this wire; kept imported so the omission is visible, not silent. */
 void agentsSaid
 
+/**
+ * `rebuildRows()` for `.stacks`: at most nine rows, one per project, and a last
+ * line that says what this list does not do. Not buttons: on the Swift row
+ * "the buttons are the only things on the row that act; links open; the rest
+ * is just text to read", and this row has no buttons (see `stacks.ts`).
+ *
+ * A port or an address is a link in a browser. In the Mac shell's bar window
+ * it is text: that window opens no new windows, so a link there would be a
+ * thing that does nothing when pressed.
+ */
+function StackList({
+  reading,
+  links,
+}: {
+  reading: { reply: DevStacksReply | null; failed: boolean }
+  links: boolean
+}) {
+  const list = reading.reply?.stacks ?? []
+  const place = (label: string, href: string) =>
+    links ? (
+      <a className="stack-place" href={href} target="_blank" rel="noopener noreferrer" title={href}>
+        {label}
+      </a>
+    ) : (
+      <span className="stack-place" title={href}>
+        {label}
+      </span>
+    )
+  let note: string
+  if (!reading.reply) note = reading.failed ? nextWord("stacksFailed") : words.scanning
+  else if (!list.length) note = nextWord("stacksNone")
+  else note = nextWord("stacksCommandsNotRun")
+  return (
+    <div className="bar-list bar-stacks" role="list">
+      {list.slice(0, MAX_ROWS).map((stack, at) => {
+        const state = stackStateSaid(stack)
+        const { ports, hosts } = stackLinks(stack)
+        return (
+          <div className="bar-row bar-stack" role="listitem" key={stack.root} title={stackTip(stack)}>
+            <span className="bar-badge">⌘{at + 1}</span>
+            <span className="bar-label stack-name" style={{ color: stack.icon?.accent }}>
+              {stack.name}
+            </span>
+            <span className="bar-detail">
+              <span className="stack-state" data-tone={state.tone}>
+                {state.text}
+              </span>
+              {ports.map((p) => (
+                <span className="stack-port" key={"p" + p.label}>
+                  {place(p.label, p.href)}
+                </span>
+              ))}
+              {hosts.map((h) => (
+                <span className="stack-host" key={"h" + h.href}>
+                  ↗ {place(h.label, h.href)}
+                </span>
+              ))}
+            </span>
+          </div>
+        )
+      })}
+      <p className="bar-note" data-warn={reading.failed ? "on" : "off"}>
+        {note}
+        {reading.reply?.truncated ? " " + nextWord("stacksTruncated") : ""}
+        {reading.reply && list.length > MAX_ROWS ? ` (${MAX_ROWS}/${list.length})` : ""}
+      </p>
+    </div>
+  )
+}
+
 export default function Bar() {
   const fleet = useBarFleet()
   const rows = useMemo(() => (fleet.snapshot?.sessions ?? []).slice(0, MAX_ROWS), [fleet.snapshot])
 
-  const [listOpen, setListOpen] = useState(LIST_OPEN_ON_SUMMON)
+  const [listMode, setListMode] = useState<ListMode>(SUMMONED_LIST)
+  const listOpen = listMode === "sessions"
+  // `skillMatches` and `skillIndex`: the menu's rows, and the highlighted one.
+  const [skillMatches, setSkillMatches] = useState<AssistantSkill[]>([])
+  const [skillIndex, setSkillIndex] = useState(0)
+  // Bumped when a catalog arrives, so the menu is drawn for the box as it is then.
+  const [skillsArrived, setSkillsArrived] = useState(0)
+  // `stackRows` and `stackCache`, as one answer: the list and its states.
+  const [stacks, setStacks] = useState<{ reply: DevStacksReply | null; failed: boolean }>({
+    reply: null,
+    failed: false,
+  })
   const [keysShown, setKeysShown] = useState(KEYS_SHOWN_ON_SUMMON)
   const [text, setText] = useState("")
   // `stickyID` (`Controller`): the selection is an id, not an index, so a list
@@ -176,10 +276,71 @@ export default function Bar() {
   rowsRef.current = rows
   const indexRef = useRef(index)
   indexRef.current = index
-  const listRefFlag = useRef(listOpen)
-  listRefFlag.current = listOpen
+  const listModeRef = useRef(listMode)
+  listModeRef.current = listMode
+  const skillsRef = useRef({ matches: skillMatches, index: skillIndex })
+  skillsRef.current = { matches: skillMatches, index: skillIndex }
+  const stacksRef = useRef(stacks)
+  stacksRef.current = stacks
   const shellRef = useRef(shell)
   shellRef.current = shell
+  const currentRef = useRef(current)
+  currentRef.current = current
+
+  /**
+   * `updateSkillSuggestions()`: the box as it is now decides whether the
+   * skills are the list. A catalog not yet held is asked for once per session,
+   * with the list already switched to it, as the Swift panel does; a catalog
+   * that arrives for a session no longer selected is kept and not drawn.
+   */
+  const skillTarget = current?.id ?? null
+  const skillAssistant = current?.assistant
+  useEffect(() => {
+    const q = skillTarget ? skillQuery(text, skillAssistant) : null
+    if (q === null || !skillTarget) {
+      setListMode((was) => (was === "skills" ? "none" : was))
+      setSkillMatches((was) => (was.length ? [] : was))
+      return
+    }
+    const held = heldSkills(skillTarget)
+    setListMode("skills")
+    if (!held) {
+      setSkillMatches([])
+      setSkillIndex(0)
+      let live = true
+      void loadSkills(skillTarget).then(() => {
+        if (live) setSkillsArrived((n) => n + 1)
+      })
+      return () => {
+        live = false
+      }
+    }
+    const matches = filterSkills(held, q)
+    setSkillMatches(matches)
+    setSkillIndex((at) => clampSkillPickerIndex(at, matches.length))
+  }, [text, skillTarget, skillAssistant, skillsArrived])
+
+  /** `refreshStacks()`: read when the list opens, and again while it stays open. */
+  const stacksOpen = listMode === "stacks"
+  useEffect(() => {
+    if (!stacksOpen) return
+    let live = true
+    const read = () => {
+      readStacks()
+        .then((reply) => {
+          if (live) setStacks({ reply, failed: false })
+        })
+        .catch(() => {
+          if (live) setStacks((was) => ({ reply: was.reply, failed: true }))
+        })
+    }
+    read()
+    const timer = setInterval(read, STACKS_REFRESH_MS)
+    return () => {
+      live = false
+      clearInterval(timer)
+    }
+  }, [stacksOpen])
 
   /** `setHint(_:warn:)`: the footer says one thing for a moment and then goes back to itself. */
   const say = useCallback((said: string, warn: boolean) => {
@@ -213,7 +374,7 @@ export default function Bar() {
       const list = rowsRef.current
       if (at < 0 || at >= list.length) return
       setStickyID(list[at].id)
-      if (closeList) setListOpen(false)
+      if (closeList) setListMode("none")
       follow(list[at])
     },
     [follow],
@@ -228,6 +389,54 @@ export default function Bar() {
       pick((at + (forward ? 1 : list.length - 1)) % list.length, false)
     },
     [pick],
+  )
+
+  /** `showList(_:)`: the same key opens its list and closes it; another key's list replaces it. */
+  const showList = useCallback((mode: ListMode) => {
+    setListMode((was) => (was === mode ? "none" : mode))
+  }, [])
+
+  /**
+   * `acceptSkill()`: complete, do not execute. The box becomes the invocation
+   * and a space; the next Return sends the finished line through the same path
+   * as every other prompt, because many skills take arguments.
+   */
+  const acceptSkill = useCallback((at?: number): boolean => {
+    if (listModeRef.current !== "skills") return false
+    const { matches, index } = skillsRef.current
+    const skill = selectedSkill(matches, at ?? index)
+    if (!skill) return false
+    const said = skillPrefix(currentRef.current?.assistant) + skill.name + " "
+    setText(said)
+    setListMode("none")
+    setSkillMatches([])
+    requestAnimationFrame(() => {
+      const box = boxRef.current
+      if (box) box.setSelectionRange(said.length, said.length)
+    })
+    return true
+  }, [])
+
+  /**
+   * `choose(_:)`: ⌘n is "the nth row of whatever is open". Over the server
+   * list the Swift app started or restarted that stack; this daemon runs none
+   * of a project's commands, so the key says so rather than doing nothing.
+   */
+  const choose = useCallback(
+    (at: number) => {
+      const mode = listModeRef.current
+      if (mode === "skills") {
+        acceptSkill(at)
+        return
+      }
+      if (mode === "stacks") {
+        const stack = stacksRef.current.reply?.stacks[at]
+        if (stack) say(nextWord("stackNoAction", { name: stack.name }), true)
+        return
+      }
+      pick(at)
+    },
+    [acceptSkill, pick, say],
   )
 
   /** `submit()`: send what is in the box to the session the bar points at, then go away. */
@@ -312,7 +521,7 @@ export default function Bar() {
     const canvases = Array.from(listRef.current?.querySelectorAll<HTMLCanvasElement>("canvas.spin") ?? [])
     for (const canvas of canvases) L.paintSpinner(canvas)
     L.registerSpinners(canvases)
-  }, [rows, listOpen])
+  }, [rows, listMode])
 
   /**
    * What the shell says, and what a summon means here.
@@ -328,7 +537,7 @@ export default function Bar() {
       if (next) setShell(next)
     }
     const onShown = () => {
-      setListOpen(LIST_OPEN_ON_SUMMON)
+      setListMode(SUMMONED_LIST)
       setKeysShown(KEYS_SHOWN_ON_SUMMON)
       setHint(null)
       historyBack.reset()
@@ -371,26 +580,34 @@ export default function Bar() {
         ev.preventDefault()
         // `onCancel`: the list closes first, and only a bar with nothing open
         // goes away. Esc is how you say "this one is done".
-        if (listRefFlag.current) setListOpen(false)
+        if (listModeRef.current !== "none") setListMode("none")
         else hideBar()
         return
       }
 
       if (key === "Tab") {
         ev.preventDefault()
+        // "Tab or Return completes an open suggestion before they keep their ordinary meanings."
+        if (acceptSkill()) return
         cycle(!ev.shiftKey)
         return
       }
 
       if (meta && key >= "1" && key <= "9") {
         ev.preventDefault()
-        pick(Number(key) - 1)
+        choose(Number(key) - 1)
         return
       }
 
       if (meta && (key === "k" || key === "K")) {
         ev.preventDefault()
-        setListOpen((on) => !on)
+        showList("sessions")
+        return
+      }
+
+      if (meta && (key === "s" || key === "S")) {
+        ev.preventDefault()
+        showList("stacks")
         return
       }
 
@@ -404,7 +621,13 @@ export default function Bar() {
         const delta = key === "ArrowDown" ? 1 : -1
         // `handleArrow`: with the list open the arrows move the selection; with
         // it closed they walk back through what has been sent.
-        if (listRefFlag.current) {
+        if (listModeRef.current === "skills") {
+          ev.preventDefault()
+          const count = skillsRef.current.matches.length
+          if (count) setSkillIndex((at) => Math.max(0, Math.min(count - 1, at + delta)))
+          return
+        }
+        if (listModeRef.current === "sessions") {
           ev.preventDefault()
           const at = indexRef.current < 0 ? 0 : indexRef.current
           pick(Math.max(0, Math.min(rowsRef.current.length - 1, at + delta)), false)
@@ -422,12 +645,15 @@ export default function Bar() {
       }
 
       if (key === "Enter" && !ev.shiftKey && !meta) {
+        // Not while an input method is mid-word: Return there takes the candidate.
+        if (ev.isComposing || ev.keyCode === 229) return
         ev.preventDefault()
+        if (acceptSkill()) return
         submit()
         return
       }
     },
-    [cycle, pick, submit],
+    [acceptSkill, choose, cycle, pick, showList, submit],
   )
   const keyRef = useRef(onKey)
   keyRef.current = onKey
@@ -517,6 +743,34 @@ export default function Bar() {
           })}
         </div>
       )}
+
+      {listMode === "skills" && skillMatches.length > 0 && (
+        // `rebuildRows()` for `.skills`: the command as it will be typed, and
+        // the one line of description after it.
+        <div className="bar-list" role="listbox" aria-label={`${current?.assistant === "codex" ? "Codex" : "Claude Code"} skills`}>
+          {skillMatches.map((skill, at) => (
+            <button
+              key={skill.name}
+              className="bar-row bar-skill"
+              type="button"
+              role="option"
+              aria-selected={at === skillIndex}
+              onMouseDown={(ev) => ev.preventDefault()}
+              onClick={() => acceptSkill(at)}
+            >
+              <span className="bar-badge">⌘{at + 1}</span>
+              <span className="bar-label">{skillPrefix(current?.assistant) + skill.name}</span>
+              {skill.description && (
+                <span className="bar-detail" title={skill.description}>
+                  {skill.description}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {listMode === "stacks" && <StackList reading={stacks} links={!inShell()} />}
 
       <div className="bar-hints">
         {/* `updateTargetLabel`, bottom left. A hint takes the whole footer for

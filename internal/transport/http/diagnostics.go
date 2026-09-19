@@ -214,6 +214,7 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return h.Titles().Reading()
 		},
+		capacity.CacheSessionSkills: func() capacity.Reading { return s.skillsReading() },
 		capacity.AuditSecurity: func() capacity.Reading {
 			g := s.gate()
 			if g.files == nil {

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { ReactNode, RefObject } from "react"
-import type { SessionRow } from "@clawdline/contract"
+import type { AssistantSkill, SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
@@ -14,6 +14,15 @@ import {
   subscribeShots,
 } from "../legacy/shots-bridge.js"
 import * as V from "../legacy/voice-bridge.js"
+import {
+  clampSkillPickerIndex,
+  filterSkills,
+  heldSkills,
+  loadSkills,
+  selectedSkill,
+  skillPrefix,
+  skillQuery,
+} from "../legacy/skills-bridge.js"
 import { toast } from "../overlays/toast.js"
 import { Waiting } from "./Waiting.js"
 
@@ -41,7 +50,11 @@ import { Waiting } from "./Waiting.js"
  *   once per state, so a tick does not take the buttons out from under a thumb
  *   — and this component owns only the microphone's three attributes, the
  *   element the row is drawn into, and where the words land.
- * - `.skill-menu`: there is no skills route, so the menu never opens.
+ * - `.skill-menu` is `SkillPicker` (`legacy/skills-bridge.ts`): typing `/`
+ *   (or Codex's `$`) as the whole box asks `GET /v1/sessions/<id>/skills`
+ *   once and draws the nine best matches; ↑↓ move, Tab or Return choose,
+ *   Esc closes, and choosing writes the invocation into the box — it never
+ *   sends.
  *
  * Two things differ from the original and are said here rather than hidden:
  * the original reports a failed send in a toast, and this page has no toast
@@ -77,6 +90,17 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
   // reads back from `Voice`: `voiceBusy` for the two waits, `voiceLive` for
   // the one control that must stay alive through them.
   const [voice, setVoice] = useState<V.VoiceState>(V.voiceState)
+  // `SkillPicker`'s three fields: the rows drawn, the highlighted one, and
+  // whether the menu is up. The catalog itself is held by the bridge.
+  const [skills, setSkills] = useState<{ shown: boolean; matches: AssistantSkill[]; selected: number }>({
+    shown: false,
+    matches: [],
+    selected: 0,
+  })
+  const skillMenu = useRef<HTMLDivElement>(null)
+  // The session a catalog that arrives late is compared against.
+  const rowRef = useRef(row)
+  rowRef.current = row
 
   useKeyboardBar(msg)
 
@@ -90,6 +114,8 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
   const openId = row?.id ?? null
   useEffect(() => {
     Shots.clear()
+    // The menu was about the session that was open; `session/open.js` closes it.
+    setSkills({ shown: false, matches: [], selected: 0 })
   }, [openId])
 
   // `input/shots.js`, the foot of the file: a paste anywhere on the page, and
@@ -175,7 +201,69 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
   const changed = () => {
     setText(rawText())
     setFailure("")
+    skillsChanged()
   }
+
+  /** `SkillPicker.hide()`. */
+  const hideSkills = () => setSkills((was) => (was.shown || was.matches.length ? { shown: false, matches: [], selected: 0 } : was))
+
+  /**
+   * `SkillPicker.changed()`: what the box says now decides whether the menu is
+   * up. A catalog not yet held is asked for once, and the menu is drawn when it
+   * arrives — if the box still asks for it and the same session is open.
+   */
+  const skillsChanged = () => {
+    const at = rowRef.current
+    const q = at ? skillQuery(rawText(), at.assistant) : null
+    if (q === null || !at) {
+      hideSkills()
+      return
+    }
+    const held = heldSkills(at.id)
+    if (held) {
+      const matches = filterSkills(held, q)
+      setSkills((was) =>
+        matches.length
+          ? { shown: true, matches, selected: clampSkillPickerIndex(was.selected, matches.length) }
+          : { shown: false, matches: [], selected: 0 },
+      )
+      return
+    }
+    hideSkills()
+    void loadSkills(at.id).then(() => {
+      if (rowRef.current?.id === at.id) skillsChanged()
+    })
+  }
+
+  /** `SkillPicker.move(delta)`: false when there is no menu to move in. */
+  const moveSkill = (delta: number): boolean => {
+    if (!skills.shown || !skills.matches.length) return false
+    setSkills((was) => ({ ...was, selected: Math.max(0, Math.min(was.matches.length - 1, was.selected + delta)) }))
+    return true
+  }
+
+  /**
+   * `SkillPicker.accept()`: complete, do not execute. The box becomes the
+   * invocation and a space, so the next Return sends the finished line through
+   * the ordinary path — many skills take arguments.
+   */
+  const acceptSkill = (at = skills.selected): boolean => {
+    const skill = skills.shown ? selectedSkill(skills.matches, at) : null
+    const el = msg.current
+    if (!skill || !el) return false
+    el.textContent = skillPrefix(row?.assistant) + skill.name + " "
+    setText(rawText())
+    setFailure("")
+    setSkills({ shown: false, matches: [], selected: 0 })
+    caretToEnd()
+    return true
+  }
+
+  // The highlighted row stays in view as the arrows walk past the menu's edge.
+  useEffect(() => {
+    const el = skillMenu.current?.children[skills.selected] as HTMLElement | undefined
+    el?.scrollIntoView?.({ block: "nearest" })
+  }, [skills.selected, skills.shown])
 
   const caretToEnd = () => {
     const el = msg.current
@@ -267,6 +355,8 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
     // A picture still shrinking is part of this message and has not arrived
     // yet; Return comes through here as well as the button.
     if (inFlight.current || Shots.busy()) return
+    // With the menu up, Return and the button choose the highlighted skill.
+    if (acceptSkill()) return
     const said = rawText().trim()
     const pictures = Shots.urls().slice()
     if ((!said && !pictures.length) || !row || !write) return
@@ -341,12 +431,30 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
       <div className="voice" id="voice" role="status" hidden={voice === "off" || voice === "opening"} ref={voiceRow}></div>
       {/* The original's label is English in every language; the catalog has no key for it. */}
       <div
+        ref={skillMenu}
         className="skill-menu"
         id="skill-menu"
         role="listbox"
         aria-label={`${row?.assistant === "codex" ? "Codex" : "Claude Code"} skills`}
-        hidden
-      ></div>
+        hidden={!skills.shown}
+      >
+        {skills.shown &&
+          skills.matches.map((skill, i) => (
+            <button
+              key={skill.name}
+              type="button"
+              className="skill-option"
+              role="option"
+              aria-selected={i === skills.selected ? "true" : "false"}
+              // Keep the soft keyboard open: the click still arrives, only the focus stays.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => acceptSkill(i)}
+            >
+              <span className="command">{skillPrefix(row?.assistant) + skill.name}</span>
+              <span className="description">{skill.description || ""}</span>
+            </button>
+          ))}
+      </div>
       <div className="box">
         <button
           className="attach"
@@ -429,7 +537,18 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
           onKeyDown={(e) => {
             // Not while an input method is mid-word: Return there accepts the candidate.
             if (e.nativeEvent.isComposing || e.keyCode === 229) return
+            // The menu's keys, before anything else sees them (`SkillPicker`).
+            if (e.key === "ArrowDown" && moveSkill(1)) return e.preventDefault()
+            if (e.key === "ArrowUp" && moveSkill(-1)) return e.preventDefault()
+            if (e.key === "Tab" && acceptSkill()) return e.preventDefault()
+            if (e.key === "Escape" && skills.shown) {
+              e.preventDefault()
+              hideSkills()
+              return
+            }
             if (e.key !== "Enter" || e.shiftKey) return
+            // Return chooses on every keyboard, a touch screen's included.
+            if (acceptSkill()) return e.preventDefault()
             // On a touch screen Return is a new line and the button is how you send.
             if (!L.keyboard()) return
             e.preventDefault()

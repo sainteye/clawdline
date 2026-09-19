@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/process"
+	"github.com/sainteye/clawdline-go/internal/adapters/skillmenu"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
@@ -59,6 +60,9 @@ type Server struct {
 	// pictures is this daemon's own picture stores, the pasteboard a send
 	// lends pictures to, and the Swift app's picture store, read-only.
 	pictures pictures
+	// skillMenu holds each session's slash-menu skills for five minutes
+	// (skills.go), at most the `cache.session_skills` row's limit of them.
+	skillMenu *skillmenu.Cache
 	// lastScreen is the sessions the last list was built from, so a task list
 	// can place a task under its root without scanning the machine again.
 	lastScreen atomic.Pointer[screenReading]
@@ -119,6 +123,7 @@ func New(cfg config.Config) (*Server, error) {
 		icons:     icon.NewRegistry(),
 		swift:     swiftstore.Open(swiftstore.Dir()),
 		pictures:  newPictures(cfg.Dir),
+		skillMenu: skillmenu.NewCache(),
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
@@ -126,8 +131,9 @@ func New(cfg config.Config) (*Server, error) {
 			Screen:    terminal.NewScreens(),
 		},
 	}
-	// The two transcript caches hold their register rows' limits.
+	// The transcript caches and the skills cache hold their register rows' limits.
 	srv.ledger.SetLimit(CapacityLimit(capacity.CacheTranscriptUsage))
+	srv.skillMenu.SetLimit(CapacityLimit(capacity.CacheSessionSkills))
 	if h, ok := srv.inventory.Identity.(*transcript.Host); ok {
 		h.Titles().SetLimit(CapacityLimit(capacity.CacheTranscriptTitles))
 	}
@@ -208,6 +214,11 @@ func (s *Server) Handler() http.Handler {
 			s.sessionTodosRead(w, r, id)
 			return
 		}
+		// A read (skills.go): the slash menu, asked for when `/` opens it.
+		if id, ok := skillsPath(r); ok {
+			s.sessionSkillsRoute(w, r, id)
+			return
+		}
 		s.sessionAction(w, r)
 	})
 	// What this feature has done to the machine, published (screen.go).
@@ -285,6 +296,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/strings", s.strings)
 	mux.HandleFunc("/v1/settings", s.settingsRoute)
 	mux.HandleFunc("/v1/places", s.placesRoute)
+	// The input bar's server list (devstacks.go): what the projects' own
+	// `.devstack.json` files declare, and which declared ports answer.
+	mux.HandleFunc("/v1/devstacks", s.devStacksRoute)
 	// Starting and resuming a session in a place, and what was said there (start.go).
 	mux.HandleFunc("/v1/places/", s.placeRoute)
 	mux.HandleFunc("/v1/projects", s.projectCatalogRoute)

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "skills.schema.json",
+  "title": "The skills one session can invoke, for the slash menu",
+  "description": "GET /v1/sessions/{id}/skills. The Swift app answers this from `ClaudeSkills.available(cwd:)` and `CodexSkills.available(in:)` behind `SessionLinksCache.skills`; the shape is its payload, key for key, because the composer's menu (`input/composer.js` `SkillPicker`) reads `answer.skills` directly. Metadata only: neither a local path nor the body of a SKILL.md is sent, and reading the menu never runs anything a skill contains. Choosing a row only writes the assistant's own invocation into the box; the assistant still resolves and runs it when the ordinary send happens.",
+  "$defs": {
+    "SkillSource": {
+      "description": "Where a skill came from. Claude's are read from `.claude/skills` in the project (from the repository root down to the working directory), `~/.claude/skills` and installed plugins; Codex's are the catalog its rollout was started with, where `admin` and `system` can also appear.",
+      "type": "string",
+      "enum": [
+        "project",
+        "personal",
+        "plugin",
+        "admin",
+        "system"
+      ]
+    },
+    "AssistantSkill": {
+      "description": "One command the menu offers.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "description",
+        "source"
+      ],
+      "properties": {
+        "name": {
+          "description": "What follows the prefix: `/` for Claude, `$` for Codex. A plugin's skill keeps its namespace, `plugin:skill`.",
+          "type": "string"
+        },
+        "description": {
+          "description": "The frontmatter's `description`, on one line and at most 240 characters. Empty when the file has no frontmatter: the first line of a skill's instructions is never offered in its place.",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/SkillSource"
+        }
+      }
+    },
+    "SkillsReply": {
+      "description": "The effective list, sorted by name, after the precedence a typed command follows: a personal skill replaces a project skill of the same name, a deeper project directory replaces an ancestor, and `skillOverrides: off` takes one out. Held for five minutes per working directory and assistant, as the Swift app holds it; `observedAt` says how old the reading is.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "skills",
+        "observedAt"
+      ],
+      "properties": {
+        "skills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantSkill"
+          }
+        },
+        "observedAt": {
+          "description": "When this list was read, in seconds since 1970.",
+          "type": "number"
+        },
+        "truncated": {
+          "description": "More skills were found than one answer carries, and the rest are not in `skills`. Absent when nothing was left out.",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
