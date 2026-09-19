@@ -1,5 +1,7 @@
 # Design guidelines
 
+> **The concrete implementation decisions are in [`docs/design-decisions.md`](design-decisions.md); this page holds the principles. Where the two disagree, follow that one and report the disagreement.**
+
 > The user's words (2026-09-18, translated from Chinese): "Take the problems you saw in this round of design and consolidate them into the guidelines we design systems by from now on…
 > They should be drawn from the general problems this round of design turned up, and organized into the most concise version possible."
 > Added: "Even our guidelines themselves have to be reasonable, and that includes being concise and being drawable. And they cannot grow without limit."
