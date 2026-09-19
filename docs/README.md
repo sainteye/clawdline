@@ -28,6 +28,7 @@ Two pages are in English. The rest are written in Traditional Chinese.
 | [coordination.md](coordination.md) | Public design note | Chinese | The coordinator role redesigned around one `Obligation` model for waits, landings, handoffs and dead letters |
 | [broker.md](broker.md) | Public design note | Chinese | The broker's routes and credentials, and where it differs from the Swift app on purpose. Written at its first wave; later waves added handoffs, leases and reclaim |
 | [board-redesign.md](board-redesign.md) | Public design note | Chinese | Board, backlog and session to-do: three structures, their lifecycles, and where a person joins in |
+| [github-issues.md](github-issues.md) | Public design note | Chinese | What GitHub Issues should take over, what stays local, and the three of its designs worth borrowing |
 | [schedules.md](schedules.md) | Public design note | Chinese | Schedules: the file format, the clock, catch-up, and importing |
 | [push.md](push.md) | Public design note | Chinese | Web Push: the three RFCs, what never leaves the machine, retries |
 | [remote.md](remote.md) | Public design note | Chinese | The line between the free product and Cloud, and the pairing promises. Its status table is dated |
