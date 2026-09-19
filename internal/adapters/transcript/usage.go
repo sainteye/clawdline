@@ -3,6 +3,7 @@ package transcript
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -100,7 +101,8 @@ func CodexPath(home, sessionID string) string {
 	return found
 }
 
-// ReadClaudeUsage sums what this conversation's own assistant turns used.
+// ReadClaudeUsage sums what this conversation's own assistant turns used. Its
+// errors are recordError's.
 func ReadClaudeUsage(path string) (Usage, error) {
 	u, _, err := readClaudeFrom(path, 0, Usage{Assistant: "claude", Path: path})
 	return u, err
@@ -115,12 +117,12 @@ func ReadClaudeUsage(path string) (Usage, error) {
 func readClaudeFrom(path string, from int64, out Usage) (Usage, int64, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return out, from, err
+		return out, from, recordError(err)
 	}
 	defer f.Close()
 	if from > 0 {
 		if _, err := f.Seek(from, io.SeekStart); err != nil {
-			return out, from, err
+			return out, from, recordError(err)
 		}
 	}
 
@@ -182,7 +184,7 @@ func readClaudeFrom(path string, from int64, out Usage) (Usage, int64, error) {
 		m.ThinkingTok += u.OutputDetails.ThinkingTokens
 	}
 	if err := sc.Err(); err != nil {
-		return out, from, err
+		return out, from, recordError(err)
 	}
 	out.Models = out.Models[:0]
 	for _, k := range order {
@@ -194,8 +196,11 @@ func readClaudeFrom(path string, from int64, out Usage) (Usage, int64, error) {
 // ReadCodexUsage reads Codex's cumulative thread total from the end of the file.
 func ReadCodexUsage(path string) (Usage, error) {
 	line, err := LastLineWith(path, []byte(`"type":"token_usage_record"`), 0)
-	if err != nil {
+	if errors.Is(err, ErrNotFound) {
 		return Usage{}, err
+	}
+	if err != nil {
+		return Usage{}, recordError(err)
 	}
 	var rec struct {
 		Payload struct {

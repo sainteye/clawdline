@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -54,41 +55,7 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 		if !item.IsAssistant() {
 			continue
 		}
-		row := contract.UsageRow{
-			ID:        item.ID,
-			Label:     item.Label,
-			Assistant: contract.Assistant(item.Assistant),
-			Models:    []contract.ModelUsage{},
-		}
-		path := recordPath(item)
-		if path == "" {
-			row.Evidence = contract.EvidenceNone
-			row.Note = "this session's own record could not be located"
-			rows = append(rows, row)
-			continue
-		}
-		u, err := s.readUsage(item, path)
-		if err != nil {
-			row.Evidence = contract.EvidenceNone
-			row.Note = err.Error()
-			rows = append(rows, row)
-			continue
-		}
-		// The assistant's own file, so the reading is as good as the assistant's
-		// own account and is labelled as exactly that.
-		row.Evidence = contract.EvidenceTranscript
-		for _, m := range u.Models {
-			row.Models = append(row.Models, contract.ModelUsage{
-				Model:            m.Model,
-				InputTokens:      m.InputTokens,
-				OutputTokens:     m.OutputTokens,
-				ThinkingTokens:   m.ThinkingTok,
-				CacheReadTokens:  m.CacheReadTok,
-				CacheWriteTokens: m.CacheWriteTok,
-			})
-		}
-		row.TotalTokens = u.Total()
-		row.Messages = u.Messages
+		row := s.usageRow(item)
 		total += row.TotalTokens
 		rows = append(rows, row)
 	}
@@ -97,6 +64,62 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 		TotalTokens: total,
 		At:          time.Now().Unix(),
 	})
+}
+
+// usageRow is one live assistant session's spend.
+func (s *Server) usageRow(item session.Session) contract.UsageRow {
+	row := contract.UsageRow{
+		ID:        item.ID,
+		Label:     item.Label,
+		Assistant: contract.Assistant(item.Assistant),
+		Models:    []contract.ModelUsage{},
+	}
+	path := recordPath(item)
+	if path == "" {
+		row.Evidence = contract.EvidenceNone
+		row.Note = "this session's own record could not be located"
+		return row
+	}
+	u, err := s.readUsage(item, path)
+	if err != nil {
+		row.Evidence = contract.EvidenceNone
+		row.Note = recordNote(err)
+		return row
+	}
+	// The assistant's own file, so the reading is as good as the assistant's
+	// own account and is labelled as exactly that.
+	row.Evidence = contract.EvidenceTranscript
+	for _, m := range u.Models {
+		row.Models = append(row.Models, contract.ModelUsage{
+			Model:            m.Model,
+			InputTokens:      m.InputTokens,
+			OutputTokens:     m.OutputTokens,
+			ThinkingTokens:   m.ThinkingTok,
+			CacheReadTokens:  m.CacheReadTok,
+			CacheWriteTokens: m.CacheWriteTok,
+		})
+	}
+	row.TotalTokens = u.Total()
+	row.Messages = u.Messages
+	return row
+}
+
+// recordNote is what a person reads when a session's record could not be
+// read: what went wrong, and never where. Both the transcript page and the
+// usage row reach paired devices over Cloud, and the operating system's own
+// error names the file under the person's home directory, so an error the
+// transcript readers did not type is not passed on in its own words.
+func recordNote(err error) string {
+	var unreadable *transcript.UnreadableError
+	switch {
+	case errors.As(err, &unreadable):
+		return unreadable.Error()
+	case errors.Is(err, transcript.ErrNoRecord):
+		return transcript.ErrNoRecord.Error()
+	case errors.Is(err, transcript.ErrNotFound):
+		return transcript.ErrNotFound.Error()
+	}
+	return "this session's record could not be read"
 }
 
 func (s *Server) readUsage(item session.Session, path string) (transcript.Usage, error) {
@@ -128,28 +151,39 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 		writeActionRefusal(w, err)
 		return
 	}
+	writeJSON(w, s.transcriptPage(id, item, limit))
+}
 
+// transcriptPage is the newest `limit` entries of one session's own record.
+func (s *Server) transcriptPage(id string, item session.Session, limit int) contract.TranscriptPage {
 	page := contract.TranscriptPage{ID: id, Entries: []contract.TranscriptEntry{}}
 	path := recordPath(item)
 	if path == "" {
 		page.Evidence = contract.EvidenceNone
 		page.Note = "this session's own record could not be located"
-		writeJSON(w, page)
-		return
+		return page
 	}
 	page.Path = path
 
 	var read transcript.Page
+	var err error
 	if item.Assistant == session.AssistantCodex {
 		read, err = transcript.ReadCodex(path, limit)
 	} else {
 		read, err = transcript.ReadClaude(path, limit)
 	}
+	if errors.Is(err, transcript.ErrNoRecord) {
+		// A session that has just started has not written its record yet.
+		// That is a conversation with nothing in it, answered as the Swift
+		// app answers it: no entries and an empty signature, read from where
+		// the record will be. The console draws its empty state for it.
+		page.Evidence = contract.EvidenceTranscript
+		return page
+	}
 	if err != nil {
 		page.Evidence = contract.EvidenceNone
-		page.Note = err.Error()
-		writeJSON(w, page)
-		return
+		page.Note = recordNote(err)
+		return page
 	}
 	page.Evidence = contract.EvidenceTranscript
 	page.Signature = read.Signature
@@ -180,7 +214,7 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 			WindowBytes: transcript.ReadBudget,
 		}
 	}
-	writeJSON(w, page)
+	return page
 }
 
 // transcriptBudget is what one transcript read may carry: the first-paint

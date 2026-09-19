@@ -53,7 +53,7 @@ func (l *Ledger) Reading() capacity.Reading {
 func (l *Ledger) Claude(path string) (Usage, error) {
 	st, err := os.Stat(path)
 	if err != nil {
-		return Usage{}, err
+		return Usage{}, recordError(err)
 	}
 
 	l.mu.Lock()

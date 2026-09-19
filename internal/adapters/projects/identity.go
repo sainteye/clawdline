@@ -154,9 +154,29 @@ func home() string {
 	return h
 }
 
-// ManagedWorktreeRoot is OrchestratorDraft.worktreeRoot.
-func ManagedWorktreeRoot() string {
+// SwiftWorktreeRoot is OrchestratorDraft.worktreeRoot: where the Swift app's
+// broker put the checkouts it made for its children. It is not where this
+// daemon puts its own (orchestrator.Broker.WorktreeRoot).
+func SwiftWorktreeRoot() string {
 	return filepath.Join(home(), "Library", "Application Support", "Clawdline", "worktrees")
+}
+
+// ManagedWorktreeRoots is every root a Clawdline broker makes checkouts
+// under: `own`, this daemon's broker's WorktreeRoot, and the Swift app's,
+// whose leftovers are still the Swift broker's. Empty `own` is left out.
+//
+// A broker is the only writer under its root, and it writes nothing there but
+// `<root>/<repository slug>/<task id>`: each directory at or below one is a
+// child's checkout, never a place somebody chose to keep a project. That is
+// why a path is judged by whether it lies under one of these, and never by
+// what it is called: a person's own directory named `worktrees`, or one
+// shaped like a checkout, lies under none of them.
+func ManagedWorktreeRoots(own string) []string {
+	var roots []string
+	if own != "" {
+		roots = append(roots, own)
+	}
+	return append(roots, SwiftWorktreeRoot())
 }
 
 // isTaskID is OrchestratorDraft.isTaskID.
