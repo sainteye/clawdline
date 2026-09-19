@@ -273,7 +273,14 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
       而且它**沒有 `cancel` 這個動作**，所以那件卡住的 task 收不掉，只能等鐘。
 - [x] **A2 逾時會自己發生。** 驗：派一個 `timeout_minutes: 1` 而且不寫 result 的 task，
       確認它自己變成 `timeout` 並關掉分頁。
-- [ ] **A3 claims 仲裁會擋。** 驗：兩筆 claims 重疊的派工，第二筆回 `409 workspace_busy`，
+- [x] **A3 claims 仲裁會擋。**
+      **2026-09-19 過了**，在一個隔離的 daemon 上（私有 `CLAWDLINE_NEXT_DIR`、私有 tmux server、
+      shell 是只會把指令寫進 log 的 stub，所以就算開了 pane 也不會有真的 assistant）：
+      root A 先派一筆 claims `[docs/a3-claims-probe.md]`（收下、`queued`）；
+      **不同的** root B 派同樣的 claims → `409 workspace_busy`，帶 `blocking_task`、`conflict_paths`、
+      `retry_after`；證明它擋在記錄與開分頁**之前**的是三件事：查 B 的 task 記錄回 404、
+      它的 task 目錄只有 `task.json` 沒有 `CHILD.md`、pane 清單前後一樣、stub log 裡沒有它那行。
+      root A 自己再派同樣的 claims → 200，`warnings: [{code: "claims_overlap"}]`。 驗：兩筆 claims 重疊的派工，第二筆回 `409 workspace_busy`，
       而且**在開任何東西之前**（`plan.md` §3.2 已經量過一次，換到真 daemon 再量一次）。
       **這條的驗法本身錯過一次（2026-09-19），修正如下**：擋的規則是「**不同 root** 之間才擋」，
       同一個 root 把自己的工作拆成兩個分頁只會拿到 `claims_overlap` 警告（`dispatch.go` 的註解寫了為什麼：
@@ -282,7 +289,10 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
       同 root 的那一筆回的是 `warnings: [{code: "claims_overlap", …}]`，不是錯誤。
 - [ ] **A4 child 可以用自己的 secret 做三件事**：`/progress`、`/notify`、`GET /inflight`。
       驗：三個請求各回 2xx，錯的 secret 回 403（用 `--fail-with-body` 看 exit code）。
-      **反例那一半 2026-09-19 過了**（錯的 secret 打 `/progress` 回 403）；三個 2xx 還沒量。
+      **2026-09-19 量了，差一點點**：一個真的 child 用自己的 secret 打 7727——`/progress` 200、
+      `GET /inflight` 200、錯的 secret 打 `/progress` 403（"That is not this task's secret."）。
+      `/notify` 回 **409 `not_subscribed`**：secret 通過了，是這台的新 daemon 還沒有任何裝置訂閱推播。
+      所以三條路由的**授權**都證明了，`notify` 的**送達**掛在 C3（推播）上，等手機那條接好再補這一格。
 - [x] **A5 landing 有路由而且會拒絕假的。** 驗：`POST …/landing` 帶一個**不是** branch 祖先的 commit，
       回 `unverified_landing`；帶真的，回成功並關掉義務。
 - [x] **A6 inventory 有 `inventory_generation`，而且舊的 generation 會被拒。**
@@ -448,6 +458,17 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 **退役不只是搬程式，也要搬這份家規**，而且它裡面提到的路由（`/v1/orchestrator/inventory`
 的 `409 stale_inventory`、`POST /v1/orchestrator/handoffs`、`root-assignments`、`detached-tasks`）
 **必須真的存在**，否則家規會教 child 去打不存在的門。這一項掛在判準 A11 與 A6。
+
+### 8.4b 在這台機器上測 broker 的一條規矩
+
+2026-09-19 的 A3 實測留下的：**隔離的測試 daemon 仍然會對「真的 root」投遞通知。**
+那次的 task 把 `root.session_id` 填成真的 root，於是私有 daemon 解析出使用者 tmux 的那個 pane 並試著投遞
+（各試 2 次）。那次因為它的 tmux 指向私有 server 而全部失敗，真的 root 什麼都沒收到——
+**但如果 root 在 iTerm，它會真的打字進去**。
+
+所以在這台機器上跑隔離的 broker 測試時：`root.session_id` 要填一個**不存在的**身分，
+或把 terminal 指到私有 tmux server（像那次一樣），兩者最好都做。
+隔離的是狀態目錄與 port，**不是這台機器上的終端機**。
 
 ### 8.5 退役日：照這個順序，每一步都說得出怎麼退回去
 
