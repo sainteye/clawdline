@@ -37,7 +37,10 @@ func TestAPersonReadsASessionsTodosFromItsRow(t *testing.T) {
 	ctx := context.Background()
 	const conv = "5a1d0c7e-0000-4000-8000-00000000c0de"
 	id := "70d0e002-0000-4000-8000-000000000002"
-	at := time.Unix(1_789_700_000, 0)
+	// Relative to now: a fixed instant ages past the long-lived threshold as
+	// the calendar moves, and turns this test red on a day nobody changed
+	// anything.
+	at := time.Now().Add(-time.Hour)
 	todo := work.Todo{ID: work.TodoID(work.OriginDispatch, id), Origin: work.OriginDispatch, Task: id,
 		Title: "t", Owner: conv, OwnerAssistant: "claude", State: work.TodoStateOpen,
 		Reason: work.ReasonDispatched, CreatedAt: at, UpdatedAt: at}
@@ -104,7 +107,10 @@ func TestASessionsTodosAreReadWithTheMachineToken(t *testing.T) {
 	ctx := context.Background()
 	const conv = "379d0000-0000-4000-8000-000000000001"
 	id := "70d0e001-0000-4000-8000-000000000001"
-	at := time.Unix(1_789_700_000, 0)
+	// Relative to now: a fixed instant ages past the long-lived threshold as
+	// the calendar moves, and turns this test red on a day nobody changed
+	// anything.
+	at := time.Now().Add(-time.Hour)
 	todo := work.Todo{ID: work.TodoID(work.OriginDispatch, id), Origin: work.OriginDispatch, Task: id,
 		Title: "t", Owner: conv, OwnerAssistant: "claude", State: work.TodoStateOpen,
 		Reason: work.ReasonDispatched, CreatedAt: at, UpdatedAt: at}
