@@ -5,14 +5,92 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
+	"github.com/sainteye/clawdline-go/internal/domain/auth"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
+
+// todoProcesses is a process table that answers one fixed reading.
+type todoProcesses struct{ inv session.Inventory }
+
+func (p todoProcesses) Scan(context.Context) (session.Inventory, error) { return p.inv, nil }
+
+// A person reads a session's to-dos from its detail (T6), by the id on its
+// row: the list is the conversation's, found through a reading of the machine,
+// and a session whose conversation is not known is said to be that — not
+// answered with an empty list.
+func TestAPersonReadsASessionsTodosFromItsRow(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	const conv = "5a1d0c7e-0000-4000-8000-00000000c0de"
+	id := "70d0e002-0000-4000-8000-000000000002"
+	at := time.Unix(1_789_700_000, 0)
+	todo := work.Todo{ID: work.TodoID(work.OriginDispatch, id), Origin: work.OriginDispatch, Task: id,
+		Title: "t", Owner: conv, OwnerAssistant: "claude", State: work.TodoStateOpen,
+		Reason: work.ReasonDispatched, CreatedAt: at, UpdatedAt: at}
+	if _, err := st.CreateBrokerTaskTx(ctx, store.BrokerRow{ID: id, Project: "/p", Assistant: "claude",
+		State: "briefed", CreatedAt: at, SecretHash: "h",
+		Record: []byte(`{"task_id":"` + id + `","kind":"custom","state":"briefed"}`)}, nil, nil,
+		func(tx *store.Tx) error { return tx.PutTodo(todo, nil) }); err != nil {
+		t.Fatal(err)
+	}
+	reading := session.Inventory{Provenance: "ps", Complete: true, Sessions: []session.Session{
+		{ID: "%91", TTY: "ttys091", Assistant: "claude", ConversationID: conv},
+		{ID: "%92", TTY: "ttys092", Assistant: "claude"},
+	}}
+	s := &Server{broker: &orchestrator.Broker{Store: st, Tasks: taskdir.New(dir), Dir: dir}, store: st,
+		inventory: app.Inventory{Process: todoProcesses{reading}}}
+	person := access{verdict: auth.Verdict{Allowed: true, Local: true, Caps: auth.NewCaps(auth.Read)}}
+	get := func(target, method string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, target, nil)
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{}, person))
+		rec := httptest.NewRecorder()
+		sid, ok := todosPath(req)
+		if !ok {
+			rec.Code = -1
+			return rec
+		}
+		s.sessionTodosRead(rec, req, sid)
+		return rec
+	}
+	rec := get("/v1/sessions/%2591/todos", http.MethodGet)
+	var body struct {
+		SessionID string `json:"session_id"`
+		Todos     []struct {
+			ID string `json:"id"`
+		} `json:"todos"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("a session with a conversation: %d %s", rec.Code, rec.Body)
+	}
+	if body.SessionID != conv || len(body.Todos) != 1 || body.Todos[0].ID != todo.ID {
+		t.Fatalf("answer %s", rec.Body)
+	}
+	if rec := get("/v1/sessions/%2592/todos", http.MethodGet); rec.Code != http.StatusConflict ||
+		!json.Valid(rec.Body.Bytes()) || !strings.Contains(rec.Body.String(), `"conversation_unknown"`) {
+		t.Fatalf("a session with no conversation: %d %s", rec.Code, rec.Body)
+	}
+	if rec := get("/v1/sessions/%2599/todos", http.MethodGet); rec.Code != http.StatusNotFound {
+		t.Fatalf("a session a complete reading does not hold: %d %s", rec.Code, rec.Body)
+	}
+	// Read, never written: a POST is not this route.
+	if rec := get("/v1/sessions/%2591/todos", http.MethodPost); rec.Code != -1 {
+		t.Fatalf("a POST was taken as the read: %d", rec.Code)
+	}
+}
 
 // The to-do list is the session's, read with the machine token that
 // dispatched the work — never a device's, and never written through a route.

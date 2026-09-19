@@ -8,6 +8,7 @@ import { toggleOrder } from "./session/Transcript.js"
 import Dashboard from "./Dashboard.js"
 import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
+import { workWord } from "./pages/work/words.js"
 import {
   ActionConfirm,
   GO_PAGE,
@@ -39,7 +40,7 @@ import {
  * rather than the conversation — so it is kept, as a page rather than as the
  * app.
  */
-type Page = "sessions" | "dashboard" | "devices" | "projects" | "board" | "usage" | "ledger" | "plan" | "settings"
+type Page = "sessions" | "dashboard" | "devices" | "projects" | "board" | "usage" | "ledger" | "plan" | "settings" | "work"
 
 // The drawer's rows as `index.html` has them: its order, its ids, and its
 // `hidden`. Pages whose backend this daemon does not own stay on screen and
@@ -672,6 +673,21 @@ export default function App() {
             onClick={() => go("dashboard")}
           >
             Dashboard
+          </button>
+          {/* The new board (design-decisions T6): not one of the original's pages
+              either, and where it belongs is not decided yet (U6), so it is a row
+              of its own at the end, and the original's rows — the Project Board's
+              among them — are left as they are. */}
+          <button
+            className="sidebar-item"
+            id="nav-work"
+            type="button"
+            data-page-to="work"
+            aria-current={page === "work" ? "page" : undefined}
+            disabled={!ready("work")}
+            onClick={() => go("work")}
+          >
+            {workWord("nav")}
           </button>
         </div>
       </nav>

@@ -19,6 +19,7 @@ import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
 import { ScreenPanel } from "./ScreenPanel.js"
 import { StatusLine } from "./StatusLine.js"
+import { Todos } from "./Todos.js"
 import { UserMessages } from "./UserMessages.js"
 
 /**
@@ -186,6 +187,8 @@ export function Detail({
       />
 
       <GitPanel row={row} open={gitOpen} onClose={closeGit} />
+      {/* Not in the original: the session's to-dos (T6), folded under its header. */}
+      <Todos row={row} />
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">

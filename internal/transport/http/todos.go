@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -54,6 +55,44 @@ func (s *Server) sessionTodos(w http.ResponseWriter, r *http.Request, session st
 		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "A session's to-do list needs the orchestrator token.")
 		return
 	}
+	s.writeTodos(w, r, session)
+}
+
+// todosPath recognises GET /v1/sessions/{id}/todos and returns the id, decoded,
+// as gitPath does.
+func todosPath(r *http.Request) (string, bool) {
+	return sessionVerbIs(r, "todos", http.MethodGet)
+}
+
+// sessionTodosRead is the same list for a person: the session detail's to-do
+// panel (T6, board-redesign §3.3 — "它在 session 詳情的一個面板裡"). It is a
+// read at the list's own level, never a write: nobody edits a to-do (§3.4), and
+// it is the session's page, not the board's, so nothing on a person's board
+// reads it (#5).
+//
+// A person names a session the way every other session route does, by the id
+// on its row; the list belongs to the conversation, which this resolves from a
+// reading of the machine. A session whose conversation is not known yet has
+// to-dos nobody can name, and that is said rather than answered with an empty
+// list (DG-7).
+func (s *Server) sessionTodosRead(w http.ResponseWriter, r *http.Request, id string) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	item, err := s.actions().Find(ctx, id)
+	if err != nil {
+		writeActionRefusal(w, err)
+		return
+	}
+	if item.ConversationID == "" {
+		writeRefusal(w, http.StatusConflict, "conversation_unknown",
+			"This session's conversation is not known yet, so the to-dos that belong to it cannot be named.")
+		return
+	}
+	s.writeTodos(w, r.WithContext(ctx), item.ConversationID)
+}
+
+// writeTodos answers one conversation's to-do list, whoever asked for it.
+func (s *Server) writeTodos(w http.ResponseWriter, r *http.Request, session string) {
 	q := r.URL.Query()
 	for key := range q {
 		if !todosQueryKeys[key] {
