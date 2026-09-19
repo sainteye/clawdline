@@ -239,3 +239,4 @@ internal/adapters/devstack.maxNameRunes # page: a stack's or a process's name as
 internal/adapters/devstack.maxSpecBytes # read: one .devstack.json; a larger file is not a spec and the walk goes on past it
 internal/adapters/devstack.maxProbeLanes # lane: the declared ports asked at once, each for ProbeTimeout
 internal/adapters/devstack.Read:chan(maxProbeLanes) # lane: the same slots, as the channel that holds them
+internal/transport/http.closeBodyLimit # admission: one close command's options, `{"force":true}` and its kin; a body past it is refused before it is read

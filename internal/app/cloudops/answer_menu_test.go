@@ -80,7 +80,7 @@ func TestAnExpectationThatIsNotAFingerprintIsMalformed(t *testing.T) {
 // local reader does not ride along to every paired phone.
 func TestARouteRefusalCarriesOnlyWhatItsCodeMayShow(t *testing.T) {
 	blocked := &router{status: 409, body: `{"error":"close_blocked","detail":"still owed: landing",` +
-		`"route":"/v1/sessions/%2519/close","cwd":"/Users/somebody/secret",` +
+		`"route":"/v1/sessions/%2519/close","cwd":"/Users/someone/secret",` +
 		`"reasons":[{"kind":"obligation","code":"landing","subject_id":"t1","subject_kind":"task",` +
 		`"mover":{"id":"t1","kind":"task","title":"Fix the thing for ACME Corp"}},"not an object"]}`}
 	answer := open(blocked).Handle(context.Background(), request(t, ClassCtl, map[string]any{
