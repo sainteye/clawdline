@@ -7,6 +7,7 @@ package main
 // somebody saying so out loud, in a file they can read.
 //
 //	clawdline cloud status              what the switch and the identity say
+//	clawdline cloud preflight           is the machine side ready for the person's step
 //	clawdline cloud on | off            the switch
 //	clawdline cloud commands on | off   whether a viewer may act on this Mac
 //	clawdline cloud login               register this machine, and wait for approval
@@ -42,6 +43,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/config"
 	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	cloudtransport "github.com/sainteye/clawdline-go/internal/transport/cloud"
 )
 
 func cloudCommand(args []string) {
@@ -52,6 +54,8 @@ func cloudCommand(args []string) {
 	switch args[0] {
 	case "status":
 		cloudStatusCommand()
+	case "preflight":
+		cloudPreflightCommand()
 	case "on":
 		cloudSwitchCommand(true)
 	case "off":
@@ -77,8 +81,9 @@ func cloudCommand(args []string) {
 }
 
 func cloudUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline cloud <status|on|off|commands|login|pair|devices|revoke|rotate|connect>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline cloud <status|preflight|on|off|commands|login|pair|devices|revoke|rotate|connect>")
 	fmt.Fprintln(os.Stderr, "  status                 the switch, the identity and the endpoints")
+	fmt.Fprintln(os.Stderr, "  preflight              check, without the network, that only the person's step is left")
 	fmt.Fprintln(os.Stderr, "  on | off               turn the cloud line on or off in the settings file")
 	fmt.Fprintln(os.Stderr, "  commands on | off      whether a paired viewer may act on this Mac; off by default")
 	fmt.Fprintln(os.Stderr, "  login [--wait 10m]     register this machine and wait for the approval")
@@ -156,6 +161,9 @@ func cloudStatusCommand() {
 		fmt.Printf("account    %s\n", identity.AccountID)
 		fmt.Printf("machine    %s\n", identity.MachineID)
 		fmt.Printf("registered %s\n", identity.APIBase)
+		if err := cloud.CheckEnvironment(identity, parts.settings); err != nil {
+			fmt.Printf("mismatch   %s\n", cloud.DescribeFailure(err))
+		}
 	}
 
 	key, found, err := parts.keys.DeviceKey()
@@ -244,74 +252,79 @@ func cloudLoginCommand(args []string) {
 		machineName = "clawdline-next"
 	}
 
+	// Signing in again over an identity is allowed — it is how a machine moves
+	// from a local test control plane to production — but it is said out loud.
+	if previous, found, err := parts.identity.Load(); err != nil {
+		cloudFail(err)
+	} else if found {
+		fmt.Printf("replacing  machine %s registered with %s\n", previous.MachineID, previous.APIBase)
+	}
+
 	client := cloud.NewAccountClient(parts.settings.APIBase)
 	ctx, cancel := context.WithTimeout(context.Background(), *wait+time.Minute)
 	defer cancel()
 
+	fmt.Printf("api        %s\n", parts.settings.APIBase)
 	start, err := client.StartLogin(ctx, machineName, runtime.GOOS, key.PublicKey(), version)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline:", err)
-		os.Exit(1)
+		cloudFail(err)
 	}
 	fmt.Printf("code       %s\n", start.UserCode)
 	fmt.Printf("approve at %s\n", start.VerificationURIComplete)
 	fmt.Printf("waiting    up to %s\n", wait.String())
 
-	interval := time.Duration(start.Interval) * time.Second
-	if interval <= 0 {
-		interval = 5 * time.Second
+	poll, err := client.WaitForApproval(ctx, start, *wait, nil)
+	if err != nil {
+		cloudFail(err)
 	}
-	deadline := time.Now().Add(*wait)
-	for {
-		if time.Now().After(deadline) {
-			fmt.Fprintln(os.Stderr, "clawdline: nobody approved this machine in time")
-			os.Exit(1)
-		}
-		time.Sleep(interval)
-		poll, err := client.PollLogin(ctx, start.DeviceCode)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "clawdline:", err)
-			os.Exit(1)
-		}
-		switch poll.Status {
-		case cloud.LoginPending:
-			continue
-		case cloud.LoginSlowDown:
-			// The server asking for a slower poll is an instruction, not a
-			// suggestion: ignoring it is what turns a poll into a rate limit.
-			if poll.RetryAfterSeconds > 0 {
-				interval = time.Duration(poll.RetryAfterSeconds) * time.Second
-			} else {
-				interval += time.Second
-			}
-			continue
-		case cloud.LoginDenied:
-			fmt.Fprintln(os.Stderr, "clawdline: the approval was declined")
-			os.Exit(1)
-		case cloud.LoginExpired:
-			fmt.Fprintln(os.Stderr, "clawdline: the code expired before it was approved")
-			os.Exit(1)
-		case cloud.LoginComplete:
-			identity := cloud.Identity{
-				AccountID:         poll.AccountID,
-				MachineID:         poll.MachineID,
-				MachineCredential: poll.MachineCredential,
-				APIBase:           parts.settings.APIBase,
-				Name:              machineName,
-			}
-			if err := parts.identity.Save(identity); err != nil {
-				fmt.Fprintln(os.Stderr, "clawdline:", err)
-				os.Exit(1)
-			}
-			fmt.Printf("account    %s\n", identity.AccountID)
-			fmt.Printf("machine    %s\n", identity.MachineID)
-			fmt.Printf("saved      %s\n", parts.identity.Path())
-			fmt.Printf("next       clawdline cloud on && clawdline cloud connect\n")
-			return
-		default:
-			fmt.Fprintf(os.Stderr, "clawdline: the control plane answered %q\n", poll.Status)
-			os.Exit(1)
-		}
+	identity := cloud.Identity{
+		AccountID:         poll.AccountID,
+		MachineID:         poll.MachineID,
+		MachineCredential: poll.MachineCredential,
+		APIBase:           parts.settings.APIBase,
+		Name:              machineName,
+	}
+	if err := parts.identity.Save(identity); err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("account    %s\n", identity.AccountID)
+	fmt.Printf("machine    %s\n", identity.MachineID)
+	fmt.Printf("saved      %s\n", parts.identity.Path())
+	// The approval is proven by using it once: the credential buys a device
+	// token or it does not. Nothing is connected — the relay is not dialled.
+	token, err := client.MintDeviceToken(ctx, identity.MachineCredential)
+	if err != nil {
+		cloudFail(err)
+	}
+	fmt.Printf("verified   the control plane issued a device token (expires %s)\n", token.ExpiresAt.Local().Format(time.RFC3339))
+	fmt.Printf("next       clawdline cloud on, then restart the daemon\n")
+}
+
+// cloudFail prints a failure by its name and what to do about it, and exits.
+func cloudFail(err error) {
+	failure := cloud.DescribeFailure(err)
+	if failure.Kind == "" {
+		fmt.Fprintln(os.Stderr, "clawdline:", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "clawdline: %s\n", failure)
+	fmt.Fprintf(os.Stderr, "what to do %s\n", failure.Remedy())
+	os.Exit(1)
+}
+
+// cloudPreflightCommand says whether the machine side of the production
+// cutover is done, touching nothing on the network.
+func cloudPreflightCommand() {
+	cfg := config.Load()
+	report := cloudtransport.Preflight(cloudtransport.LinkOptions{Dir: cfg.Dir, ForeignDirs: foreignDirs()})
+	for _, check := range report.Checks {
+		fmt.Printf("%-5s %-10s %s\n", check.Result, check.Name, check.Detail)
+	}
+	fmt.Printf("next       %s\n", report.Next)
+	fmt.Printf("network    nothing in this check was sent anywhere\n")
+	if !report.Ready {
+		os.Exit(1)
 	}
 }
 
@@ -341,13 +354,10 @@ func cloudConnectCommand(args []string) {
 		os.Exit(1)
 	}
 	if !found {
-		fmt.Fprintln(os.Stderr, "clawdline:", cloud.ErrNoIdentity, "— run `clawdline cloud login`")
-		os.Exit(1)
+		cloudFail(cloud.ErrNoIdentity)
 	}
-	if identity.APIBase != "" && identity.APIBase != parts.settings.APIBase {
-		fmt.Fprintf(os.Stderr, "clawdline: this machine registered with %s, the settings say %s\n",
-			identity.APIBase, parts.settings.APIBase)
-		os.Exit(1)
+	if err := cloud.CheckEnvironment(identity, parts.settings); err != nil {
+		cloudFail(err)
 	}
 
 	key, err := domaincloud.LoadOrCreateDeviceKey(parts.keys, rand.Reader)
@@ -505,6 +515,7 @@ func publishProbe(spool *cloud.Spool, transport *cloud.Transport, channel, machi
 
 func reportCloudExit(err error, status *cloud.StatusRecorder, asJSON bool) {
 	snapshot := status.Snapshot()
+	stopped := err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
 	if asJSON {
 		encoded, _ := json.MarshalIndent(snapshot, "", "  ")
 		fmt.Println(string(encoded))
@@ -513,12 +524,15 @@ func reportCloudExit(err error, status *cloud.StatusRecorder, asJSON bool) {
 		fmt.Printf("connects   %d (reconnects %d)\n", snapshot.Connects, snapshot.Reconnects)
 		fmt.Printf("published  %d, acked %d, refused %d\n", snapshot.Published, snapshot.Acked, snapshot.PublishErrors)
 		fmt.Printf("inbound    %d accepted, %v dropped\n", snapshot.InboundTotal, snapshot.InboundDropped)
-		if snapshot.LastClose != "" {
-			fmt.Printf("last close %s\n", snapshot.LastClose)
+		if last := (cloud.LineFailure{Kind: cloud.KindOfCode(snapshot.LastClose), Code: snapshot.LastClose}); last.Kind != "" {
+			fmt.Printf("last close %s\n", last)
+			if !stopped {
+				// A line that stopped says what to do once, below.
+				fmt.Printf("what to do %s\n", last.Remedy())
+			}
 		}
 	}
-	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-		fmt.Fprintln(os.Stderr, "clawdline:", err)
-		os.Exit(1)
+	if stopped {
+		cloudFail(err)
 	}
 }

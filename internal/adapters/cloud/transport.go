@@ -10,10 +10,12 @@ package cloud
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -58,6 +60,10 @@ type Options struct {
 	// Now and Jitter exist so a test can drive the clock.
 	Now    func() time.Time
 	Jitter func() float64
+	// TLSConfig and NetDial are passed to Dial. Both are nil in the daemon; a
+	// test sets them to answer as the production relay from this process.
+	TLSConfig *tls.Config
+	NetDial   func(network, address string) (net.Conn, error)
 }
 
 // Transport is one line to the relay.
@@ -233,6 +239,8 @@ func (t *Transport) session(ctx context.Context) error {
 	conn, err := Dial(t.connectURL(), DialOptions{
 		Header:           http.Header{"Authorization": []string{"Bearer " + token.Token}},
 		HandshakeTimeout: OpeningTimeout,
+		TLSConfig:        t.opts.TLSConfig,
+		NetDial:          t.opts.NetDial,
 	})
 	if err != nil {
 		// A 401/403 at the upgrade is the credential being wrong, and the

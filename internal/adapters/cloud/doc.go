@@ -17,11 +17,15 @@
 //
 // Three rules carried over intact, because each of them was a bug once:
 //
-//   - **A refusal is not a retry.** `unauthorized`, `forbidden` and
-//     `bad_request` mean the credential or the request is wrong; reconnecting
-//     with the same one is a loop that ends in a rate limit. Only
-//     `token_superseded` asks for a new token, and only `over_capacity`,
-//     `bad_gateway` and `internal` ask for the same one later.
+//   - **A refusal is not a retry.** `forbidden` and the three `revoked`
+//     spellings mean the account no longer accepts this machine, and so does a
+//     401/403 at the upgrade or from the token endpoint; reconnecting with the
+//     same credential is a loop that ends in a rate limit. An in-band
+//     `unauthorized`, `token_expired` or `token_superseded` asks for a new
+//     token, and everything else — `over_capacity`, `bad_gateway`, `internal`,
+//     and `bad_request` too — is retried on the backoff ladder, as the Swift
+//     transport does (`CloudTransport.swift:2238-2240`). `failure.go` names
+//     each of them for the person reading the status.
 //   - **A sequence number is spent when it is sent, not when it is
 //     acknowledged.** Re-sending a spooled envelope after a reconnect re-sends
 //     the *same* bytes with the same seq, because the relay's replay window

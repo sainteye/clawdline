@@ -84,8 +84,15 @@ type Status struct {
 	// the one that sends a person to the logs.
 	LastError   string `json:"last_error,omitempty"`
 	LastErrorAt int64  `json:"last_error_at,omitempty"`
+	// LastErrorKind is what to do about LastError, as one of the seven words
+	// of `adapters/cloud`'s FailureKind: not_signed_in, device_not_approved,
+	// entitlement, version_mismatch, relay_refused, unavailable, unknown.
+	// docs/cloud-cutover.md §6 has a row for each.
+	LastErrorKind string `json:"last_error_kind,omitempty"`
 	// LastClose is the transport's code for whatever ended the last socket.
 	LastClose string `json:"last_close,omitempty"`
+	// LastCloseKind is LastClose's kind, read through the same mapping.
+	LastCloseKind string `json:"last_close_kind,omitempty"`
 
 	ConnectedSince int64 `json:"connected_since,omitempty"`
 	TokenExpiresAt int64 `json:"token_expires_at,omitempty"`
@@ -206,6 +213,7 @@ type Link struct {
 	state       string
 	lastErr     string
 	lastErrAt   time.Time
+	lastKind    adaptercloud.FailureKind
 	answered    int
 	refused     int
 	fingerprint string
@@ -260,9 +268,8 @@ func Open(opts LinkOptions) (*Link, error) {
 		link.fail(adaptercloud.ErrNoIdentity)
 		return link, nil
 	}
-	if identity.APIBase != "" && identity.APIBase != settings.APIBase {
-		link.fail(errors.New("this machine registered with " + identity.APIBase +
-			", the settings say " + settings.APIBase))
+	if err := adaptercloud.CheckEnvironment(identity, settings); err != nil {
+		link.fail(err)
 		return link, nil
 	}
 	link.identity = identity
@@ -704,6 +711,7 @@ func (l *Link) Status() Status {
 		Answered:    l.answered,
 		Refused:     l.refused,
 	}
+	out.LastErrorKind = string(l.lastKind)
 	if !l.lastErrAt.IsZero() {
 		out.LastErrorAt = l.lastErrAt.Unix()
 	}
@@ -767,6 +775,7 @@ func (l *Link) Status() Status {
 		out.State = l.transport.State()
 		snapshot := l.transport.Status()
 		out.LastClose = snapshot.LastClose
+		out.LastCloseKind = string(adaptercloud.KindOfCode(snapshot.LastClose))
 		out.Connects, out.Reconnects = snapshot.Connects, snapshot.Reconnects
 		out.Published, out.Acked, out.PublishErrors = snapshot.Published, snapshot.Acked, snapshot.PublishErrors
 		out.InboundTotal, out.InboundDropped = snapshot.InboundTotal, snapshot.InboundDropped
@@ -780,14 +789,23 @@ func (l *Link) Status() Status {
 	return out
 }
 
-// fail records the most recent thing that went wrong.
+// fail records the most recent thing that went wrong, named.
+//
+// The kind leads the sentence because the settings page shows this string as
+// it is: "entitlement (relay_over_capacity): …" says what to do before it says
+// what happened.
 func (l *Link) fail(err error) {
 	if err == nil {
 		return
 	}
+	failure := adaptercloud.DescribeFailure(err)
+	text := failure.String()
+	if text == "" {
+		text = err.Error()
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.lastErr, l.lastErrAt = err.Error(), l.opts.Now()
+	l.lastErr, l.lastErrAt, l.lastKind = text, l.opts.Now(), failure.Kind
 }
 
 func (l *Link) lastError() string {

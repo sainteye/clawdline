@@ -40,7 +40,38 @@ var (
 	ErrNoIdentity = errors.New("this machine has no cloud identity yet")
 	// ErrInvalidToken is a token endpoint answer that cannot be used.
 	ErrInvalidToken = errors.New("the token response is unusable")
+
+	// ErrIncompatible is the far end answering in a shape this build does not
+	// speak: a challenge at another protocol version, a control plane that
+	// answers HTML, a poll status nobody wrote down. It is its own sentinel
+	// because the remedy — point at the right endpoint, or update this build —
+	// is nothing like the remedy for a refused credential.
+	ErrIncompatible = errors.New("the endpoint does not speak this build's protocol")
+	// ErrLoginDenied is the person declining the approval in the browser.
+	ErrLoginDenied = errors.New("the approval was declined in the browser")
+	// ErrLoginExpired is the one-time code expiring before anybody approved it.
+	// The Mac cannot see *why* nobody did: an approval page that refused
+	// because the plan is full (`machine_limit_reached`) looks exactly like a
+	// person who never opened it, so the remedy names both.
+	ErrLoginExpired = errors.New("the one-time code expired before it was approved")
+	// ErrLoginTimeout is this command's own wait running out first.
+	ErrLoginTimeout = errors.New("nobody approved this machine in time")
+	// ErrOtherEnvironment is an identity minted by one control plane meeting
+	// settings that name another. Its credential is meaningless there, and
+	// finding that out as `unauthorized` from the far end is the slow way.
+	ErrOtherEnvironment = errors.New("this machine signed in to a different control plane")
 )
+
+// CheckEnvironment refuses an identity that belongs to a control plane other
+// than the one the settings name. An identity that recorded no control plane
+// (written before the field existed) is accepted, as it always was.
+func CheckEnvironment(identity Identity, settings Settings) error {
+	if identity.APIBase == "" || identity.APIBase == settings.APIBase {
+		return nil
+	}
+	return fmt.Errorf("%w: it registered with %s, the settings say %s",
+		ErrOtherEnvironment, identity.APIBase, settings.APIBase)
+}
 
 // decodeStdBase64 is the relay's flavour: the standard alphabet with canonical
 // padding, nothing else. Go's base64.StdEncoding accepts a few strings the

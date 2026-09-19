@@ -7,8 +7,11 @@ package cloud
 // the values that are actually deployed against the relay today.
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"math/rand"
+	"net"
 	"time"
 )
 
@@ -154,13 +157,26 @@ func IsTokenExpiry(err error) bool {
 // It is a closed vocabulary on purpose: an operator reading a status file
 // should be able to grep for one of these, and a free-text error message means
 // every machine spells the same failure differently.
+//
+// The words a far end chose — the relay's code, the control plane's — are
+// copied only when they are a plain snake_case token of at most
+// maxFailureCodeBytes, because they end up in the status route and in every
+// log line; anything else is `…_unrecognized`, which failure.go names as
+// unknown rather than guessing at.
 func FailureCode(err error) string {
 	if err == nil {
 		return ""
 	}
+	var api *APIError
+	if errors.As(err, &api) {
+		if api.Code == "" {
+			return "api_http_" + itoa(api.Status)
+		}
+		return "api_" + farEndCode(api.Code)
+	}
 	var relay *RelayError
 	if errors.As(err, &relay) {
-		return "relay_" + relay.Code
+		return "relay_" + farEndCode(relay.Code)
 	}
 	var upgrade *UpgradeError
 	if errors.As(err, &upgrade) {
@@ -171,6 +187,22 @@ func FailureCode(err error) string {
 		return "closed_" + itoa(closed.Code)
 	}
 	switch {
+	case errors.Is(err, ErrIncompatible):
+		return "incompatible"
+	case errors.Is(err, ErrNoIdentity):
+		return "no_identity"
+	case errors.Is(err, ErrOtherEnvironment):
+		return "identity_other_environment"
+	case errors.Is(err, ErrLoginDenied):
+		return "login_denied"
+	case errors.Is(err, ErrLoginExpired):
+		return "login_expired"
+	case errors.Is(err, ErrLoginTimeout):
+		return "login_timeout"
+	case errors.Is(err, ErrInvalidToken):
+		return "invalid_token"
+	case errors.Is(err, ErrDisabled):
+		return "switched_off"
 	case errors.Is(err, ErrUnauthorized):
 		return "unauthorized"
 	case errors.Is(err, ErrChallengeTimeout):
@@ -192,7 +224,57 @@ func FailureCode(err error) string {
 	case errors.Is(err, ErrConnClosed):
 		return "connection_failed"
 	}
+	// The network's own failures, only in the phase before a line exists.
+	// A socket that dies mid-session is `connection_failed`, as it always
+	// was: "unreachable" would be a lie about a relay that answered for an
+	// hour and then closed.
+	if untrustedCertificate(err) {
+		return "tls_untrusted"
+	}
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return "unreachable"
+	}
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		return "unreachable"
+	}
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return "connection_timeout"
+	}
 	return "connection_failed"
+}
+
+// maxFailureCodeBytes bounds a word copied from the far end into a failure
+// code. The relay's and the control plane's own codes are all under 32.
+const maxFailureCodeBytes = 64
+
+// farEndCode copies a code the far end sent when it is a plain snake_case
+// token, and answers `unrecognized` otherwise.
+func farEndCode(code string) string {
+	if code == "" || len(code) > maxFailureCodeBytes {
+		return "unrecognized"
+	}
+	for i := 0; i < len(code); i++ {
+		c := code[i]
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			return "unrecognized"
+		}
+	}
+	return code
+}
+
+// untrustedCertificate reports a TLS peer whose certificate did not verify:
+// a proxy in the middle, a wrong host, or a clock far enough off that every
+// certificate looks expired.
+func untrustedCertificate(err error) bool {
+	var verification *tls.CertificateVerificationError
+	var authority x509.UnknownAuthorityError
+	var hostname x509.HostnameError
+	var invalid x509.CertificateInvalidError
+	return errors.As(err, &verification) || errors.As(err, &authority) ||
+		errors.As(err, &hostname) || errors.As(err, &invalid)
 }
 
 func itoa(n int) string {

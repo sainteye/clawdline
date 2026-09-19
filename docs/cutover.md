@@ -140,7 +140,7 @@ claims `internal/app/orchestrator`、`internal/adapters/store`、`taskdir`、`su
 |---|---|---|
 | **配對（機器這一半）** 🔧 | **擋路** | Go 版沒有 QR／四階段 handover。端到端實測是用 devtools 把四筆 IndexedDB 直接種進去的，**證明的是傳輸與操作，不是配對**。有 in-flight task `9ad048ac`「Cloud 第五階段：配對（機器這一半）」正在做 |
 | **帳號與裝置核准** | **擋路** | 核准發生在帳號那一端。把 Go 版配進使用者真正的 Cloud 帳號**會動到帳號**，也要在已信任的裝置上按核准——`docs/remote.md` 設計原則 3 明寫「要先問他」 |
-| 正式環境從未連過 | 擋路 | `relay.clawdline.com`／`api.clawdline.com` **一個位元組都沒連過** |
+| 正式環境從未連過 | 擋路 | `relay.clawdline.com`／`api.clawdline.com` **一個位元組都沒連過**。D1（2026-09-19）把機器這一邊準備到「只差使用者按一下」：操作手冊 `docs/cloud-cutover.md`，錯誤名稱與假扮正式端的測試見 `cloud-wire.md` §18 |
 | 10 種操作沒有 | 中 | `agent`、`shell`、`skills`、`board.items`、`timeline`、`snippets`、`schedule`、`diagnostics.report`、`diagnostics.events`、`dispatch`。回 `unknown_command` 是誠實的——hosted console 會把它記進 `machineLacks` 不再問——但**那幾個按鈕在手機上就是不會動** |
 | `dispatch` 刻意拒絕 | 中 | hosted console 只送 `{task}`，本機 broker 要 materialized 的 `task.json`＋id＋secret，沒有 pinned wire shape，所以回 `cloud_dispatch_unpinned` 409（照舊版）。**從手機派工＝沒有** |
 | entitlements、推播、`ctlr/` 回覆軌、交接通道 | 中 | 都沒動 |
@@ -307,7 +307,11 @@ claims `internal/app/orchestrator`、`internal/adapters/store`、`taskdir`、`su
 - [ ] **D2 連過正式環境。** 驗：`relay.clawdline.com` 與 `api.clawdline.com` 各一次成功連線，
       `/v1/cloud/status` 說得出帳號、機器指紋與已登記的 viewer。
 - [ ] **D3 以「第二台機器」配對，不是接管舊身分。** 驗：帳號的裝置表上舊 Mac 與新 Mac 各一列，
-      推播沒有 `cloud_machine_ambiguous`。
+      推播沒有 `cloud_machine_ambiguous`。**前提是方案允許兩台 Mac**：免費方案 `max_machines` 是 1，
+      第二台在核准頁就會被 `machine_limit_reached` 擋下（`docs/cloud-cutover.md` 步驟 1）；
+      另外，兩台都配對到同一個瀏覽器時，hosted console 的推播設定**依設計**就會回 `cloud_machine_ambiguous`
+      （舊 repo `docs/cloud.md:761, 1140-1144`：一台 Mac，否則 ambiguous），跟上面的驗法互相衝突——**驗法待重新決定**，
+      D1 沒有替它選。
 - [ ] **D4 hosted console 上 27 種操作的期待是誠實的。**
       驗：`descriptor` 的 `commands` 陣列＝`cloudops.Implemented()`，
       沒接的那幾種在 console 上是**不出現或明說不支援**，不是按了沒反應。

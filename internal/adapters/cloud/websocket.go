@@ -126,6 +126,11 @@ type DialOptions struct {
 	HandshakeTimeout time.Duration
 	// TLSConfig is used for wss://. Nil means the platform defaults.
 	TLSConfig *tls.Config
+	// NetDial opens the TCP connection. Nil is the ordinary dialer. It exists
+	// so that a test can stand a server in for `relay.clawdline.com` without
+	// a single byte leaving this machine: the hostname, the SNI and the
+	// certificate check are all the production ones, only the socket is not.
+	NetDial func(network, address string) (net.Conn, error)
 }
 
 // Dial opens a WebSocket to rawURL, which must be ws:// or wss://.
@@ -157,7 +162,11 @@ func Dial(rawURL string, opts DialOptions) (*Conn, error) {
 	}
 	deadline := time.Now().Add(timeout)
 
-	netConn, err := (&net.Dialer{Timeout: timeout}).Dial("tcp", host)
+	dial := opts.NetDial
+	if dial == nil {
+		dial = (&net.Dialer{Timeout: timeout}).Dial
+	}
+	netConn, err := dial("tcp", host)
 	if err != nil {
 		return nil, err
 	}

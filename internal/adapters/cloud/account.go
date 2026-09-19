@@ -89,7 +89,7 @@ func (c *AccountClient) StartLogin(ctx context.Context, name, platform string, p
 		return LoginStart{}, err
 	}
 	if out.DeviceCode == "" || out.UserCode == "" {
-		return LoginStart{}, fmt.Errorf("%w: the start response names no code", ErrInvalidToken)
+		return LoginStart{}, fmt.Errorf("%w: the start response names no code", ErrIncompatible)
 	}
 	return out, nil
 }
@@ -119,6 +119,69 @@ func (c *AccountClient) PollLogin(ctx context.Context, deviceCode string) (Login
 		return LoginPoll{}, err
 	}
 	return out, nil
+}
+
+// WaitForApproval polls until the person approves this machine, declines it,
+// the code expires, or wait runs out, and names whichever of those it was.
+//
+// The poll interval is the server's (RFC 8628): `slow_down` is an instruction,
+// not a suggestion, because ignoring it is what turns a poll into a rate limit.
+// sleep is the wait between polls; nil sleeps for real, and a test passes one
+// that does not.
+func (c *AccountClient) WaitForApproval(ctx context.Context, start LoginStart, wait time.Duration, sleep func(context.Context, time.Duration) error) (LoginPoll, error) {
+	if sleep == nil {
+		sleep = sleepContext
+	}
+	interval := time.Duration(start.Interval) * time.Second
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		if !time.Now().Before(deadline) {
+			return LoginPoll{}, ErrLoginTimeout
+		}
+		if err := sleep(ctx, interval); err != nil {
+			return LoginPoll{}, err
+		}
+		poll, err := c.PollLogin(ctx, start.DeviceCode)
+		if err != nil {
+			return LoginPoll{}, err
+		}
+		switch poll.Status {
+		case LoginPending:
+			continue
+		case LoginSlowDown:
+			if poll.RetryAfterSeconds > 0 {
+				interval = time.Duration(poll.RetryAfterSeconds) * time.Second
+			} else {
+				interval += time.Second
+			}
+			continue
+		case LoginDenied:
+			return LoginPoll{}, ErrLoginDenied
+		case LoginExpired:
+			return LoginPoll{}, ErrLoginExpired
+		case LoginComplete:
+			if poll.AccountID == "" || poll.MachineID == "" || poll.MachineCredential == "" {
+				return LoginPoll{}, fmt.Errorf("%w: the approval names no account, machine or credential", ErrIncompatible)
+			}
+			return poll, nil
+		default:
+			return LoginPoll{}, fmt.Errorf("%w: the control plane answered the poll with %q", ErrIncompatible, poll.Status)
+		}
+	}
+}
+
+func sleepContext(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // DeviceToken is one short-lived credential for the relay.
@@ -186,21 +249,81 @@ func (c *AccountClient) post(ctx context.Context, path, bearer string, body any,
 	if err != nil {
 		return err
 	}
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		// Terminal: the credential is wrong or withdrawn. Retrying it is how
-		// a machine gets itself rate-limited while the user waits.
-		return fmt.Errorf("%w: %s answered %d", ErrUnauthorized, path, resp.StatusCode)
-	case resp.StatusCode >= 400:
-		return fmt.Errorf("%s answered %d: %s", path, resp.StatusCode, truncate(string(data), 200))
+	if resp.StatusCode >= 400 {
+		// A 401/403 stays terminal through APIError's Unwrap: the credential
+		// is wrong or withdrawn, and retrying it is how a machine gets itself
+		// rate-limited while the user waits.
+		return decodeAPIError(path, resp.StatusCode, data)
 	}
 	if out == nil {
 		return nil
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("%w: %s answered unreadable JSON: %v", ErrInvalidToken, path, err)
+		// A 2xx that is not JSON is not a control plane answering: it is a
+		// web page, a captive portal, a proxy.
+		return fmt.Errorf("%w: %s answered unreadable JSON: %v", ErrIncompatible, path, err)
 	}
 	return nil
+}
+
+// APIError is the control plane's refusal, `{"error":{"code","message"}}`
+// (`clawdline-cloud/api/src/server.ts`'s error handler). The code is kept
+// because it is the only part that says *which* refusal this was: a 409 is
+// `machine_limit_reached` on one route and `already_decided` on another, and
+// the person needs to know which.
+type APIError struct {
+	Path    string
+	Status  int
+	Code    string
+	Message string
+}
+
+func (e *APIError) Error() string {
+	code := e.Code
+	if code == "" {
+		code = "no code"
+	}
+	if e.Message == "" {
+		return fmt.Sprintf("%s answered %d (%s)", e.Path, e.Status, code)
+	}
+	return fmt.Sprintf("%s answered %d (%s): %s", e.Path, e.Status, code, e.Message)
+}
+
+// Unwrap keeps a 401/403 what it was before this type existed: ErrUnauthorized,
+// which the transport treats as terminal.
+func (e *APIError) Unwrap() error {
+	if e.Status == http.StatusUnauthorized || e.Status == http.StatusForbidden {
+		return ErrUnauthorized
+	}
+	return nil
+}
+
+// decodeAPIError reads a refusal. A body that is not the control plane's
+// envelope — a proxy's HTML, an empty 404 — still becomes an APIError, with
+// no code, so that the status alone can be named.
+func decodeAPIError(path string, status int, data []byte) *APIError {
+	out := &APIError{Path: path, Status: status}
+	var envelope struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(data, &envelope) != nil || len(envelope.Error) == 0 {
+		out.Message = truncate(strings.TrimSpace(string(data)), 200)
+		return out
+	}
+	var typed struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(envelope.Error, &typed) == nil {
+		out.Code, out.Message = typed.Code, truncate(typed.Message, 200)
+		return out
+	}
+	// The other spelling some servers use, `{"error":"<code>"}`.
+	var bare string
+	if json.Unmarshal(envelope.Error, &bare) == nil {
+		out.Code = bare
+	}
+	return out
 }
 
 func truncate(s string, n int) string {
