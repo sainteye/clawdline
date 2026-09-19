@@ -165,8 +165,10 @@ func Build(in Inputs, q Query) (Envelope, int) {
 	status := "ready"
 	var readError map[string]any
 	switch {
-	case legacy == nil && in.LegacyErr == ErrLegacyAbsent:
-		// No Swift board on this machine: an empty catalog is the truth.
+	case legacy == nil && (in.LegacyErr == ErrLegacyAbsent || in.LegacyErr == ErrLegacyDisabled):
+		// No Swift board on this machine, or one this daemon was told not to
+		// read (cutover B1): an empty catalog is the truth of what is read.
+		// Which of the two it is, /v1/board/tracks says in `board.status`.
 	case legacy == nil:
 		// Unknown is not empty. Say so rather than draw an empty board.
 		status = "error"

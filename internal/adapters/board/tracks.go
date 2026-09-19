@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
@@ -39,7 +40,8 @@ func HistoryDir(boardPath string) string {
 // History reads the card logs and remembers each by size and time, so a
 // read of the tracks reopens only the logs that moved since the last one.
 type History struct {
-	dir string
+	dir      string
+	disabled bool
 
 	mu    sync.Mutex
 	files map[string]historyFile
@@ -52,6 +54,11 @@ type historyFile struct {
 
 // OpenHistory prepares a reader. It opens nothing yet.
 func OpenHistory(dir string) *History {
+	if swiftstore.Disabled() {
+		// The logs are the Swift board's; with the legacy switch off they
+		// are not opened, and the reading says so (Read).
+		return &History{disabled: true, files: map[string]historyFile{}}
+	}
 	return &History{dir: dir, files: map[string]historyFile{}}
 }
 
@@ -62,6 +69,13 @@ func OpenHistory(dir string) *History {
 func (h *History) Read(ids []string) (map[string]*work.History, work.HistorySource) {
 	out := map[string]*work.History{}
 	source := work.HistorySource{Status: "ok"}
+	if h != nil && h.disabled {
+		source.Status = "disabled"
+		for _, id := range ids {
+			out[id] = &work.History{}
+		}
+		return out, source
+	}
 	if h == nil || h.dir == "" {
 		source.Status = "absent"
 		for _, id := range ids {

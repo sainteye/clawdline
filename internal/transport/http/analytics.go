@@ -35,11 +35,12 @@ func (s *Server) usageAnalyticsRoute(w http.ResponseWriter, r *http.Request) {
 		writeUsageRefusal(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	rows, ok := s.analyticsRows(w, r, q.ScanFrom())
+	rows, src, ok := s.analyticsRows(w, r, q.ScanFrom())
 	if !ok {
 		return
 	}
 	res := analytics.Run(q, rows, time.Now())
+	res.Source = src
 	switch {
 	case strings.HasSuffix(r.URL.Path, ".csv"):
 		if res.Truncated {
@@ -79,7 +80,7 @@ func (s *Server) usageWorktreesRoute(w http.ResponseWriter, r *http.Request) {
 		writeUsageRefusal(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	rows, ok := s.analyticsRows(w, r, q.Usage.ScanFrom())
+	rows, _, ok := s.analyticsRows(w, r, q.Usage.ScanFrom())
 	if !ok {
 		return
 	}
@@ -92,21 +93,21 @@ func (s *Server) usageWorktreesRoute(w http.ResponseWriter, r *http.Request) {
 	writeUsageJSON(w, http.StatusOK, map[string]any{"projectWorktrees": body})
 }
 
-func (s *Server) analyticsRows(w http.ResponseWriter, r *http.Request, since time.Time) ([]analytics.Row, bool) {
+func (s *Server) analyticsRows(w http.ResponseWriter, r *http.Request, since time.Time) ([]analytics.Row, analytics.Source, bool) {
 	ctx, cancel := context.WithTimeout(r.Context(), analyticsWait)
 	defer cancel()
-	rows, err := s.usageRows().Rows(ctx, since)
+	rows, src, err := s.usageRows().RowsFrom(ctx, since)
 	if errors.Is(err, analytics.ErrBusy) {
 		w.Header().Set("Retry-After", "5")
 		writeUsageRefusal(w, http.StatusServiceUnavailable, "usage_analytics_busy",
 			"Usage Analytics is still reading the assistants' records; sessions remain available.")
-		return nil, false
+		return nil, src, false
 	}
 	if err != nil {
 		writeUsageRefusal(w, http.StatusInternalServerError, "usage_error", err.Error())
-		return nil, false
+		return nil, src, false
 	}
-	return rows, true
+	return rows, src, true
 }
 
 // The collector lives beside the Server rather than in it, so this route adds
