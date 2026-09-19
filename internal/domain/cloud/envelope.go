@@ -66,9 +66,9 @@ const (
 // the only thing about a message the cloud can read besides its channel.
 type Class string
 
-// The four classes. dispatch marks a work-dispatching command — the metadata
-// boundary already declares the number of dispatches cloud-visible — and
-// every other command stays an indistinct ctl.
+// The four classes. dispatch marks a work-dispatching command — how many
+// dispatches happen is something the metadata boundary already lets the cloud
+// see — and every other command stays an indistinct ctl.
 const (
 	ClassStream   Class = "stream"
 	ClassCtl      Class = "ctl"
