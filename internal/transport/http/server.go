@@ -335,6 +335,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		OK:        (broker == nil || !broker.Beat.Stalled) && capacityOK,
 		Broker:    broker,
 		Capacity:  capacity,
+		Platform:  s.platformDiagnostics(r.Context()),
 		Proposals: s.proposalDiagnostics(r.Context()),
 		Scheduler: s.schedulerPulse(),
 		ServedBy:  servedBy,

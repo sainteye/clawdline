@@ -2608,6 +2608,7 @@ export interface Diagnostics {
   capacity: CapacityDiagnostics
   dir: string
   ok: boolean
+  platform: PlatformDiagnostics
   port: number
   proposals?: ProposalDiagnostics
   scheduler: SchedulerPulse
@@ -3363,6 +3364,78 @@ export interface PlaceStarted {
   model: string
   ok: boolean
   place: string
+}
+
+/**
+ * One platform capability on this machine.
+ */
+export interface PlatformCapability {
+  name: PlatformCapabilityName
+
+  /**
+   * This machine's sentence: why not, why unknown, or what the capability rests on
+   * when it is there.
+   */
+  reason?: string
+  state: PlatformCapabilityState
+
+  /**
+   * What provides it here: `tmux`, `iterm`, `pasteboard`, or `shell` for the macOS
+   * shell. Absent when nothing does.
+   */
+  via?: string[]
+}
+
+/**
+ * `open_child`: open a session for a dispatched child and brief it, in the terminal
+ * the machine's `terminal` setting picks. `read_screen`: read what a session's
+ * terminal shows. `send_keys`: type into a session. `clipboard`: lend a picture to
+ * the system clipboard for a send (without it a send hands over the picture's
+ * path). `global_hotkey`: a key that answers wherever the focus is. `notch`: the
+ * island around a MacBook's notch. `launch_at_login`: start when the person logs
+ * in.
+ */
+export type PlatformCapabilityName =
+    "open_child"
+  | "read_screen"
+  | "send_keys"
+  | "clipboard"
+  | "global_hotkey"
+  | "notch"
+  | "launch_at_login"
+
+export const PlatformCapabilityNameValues: readonly PlatformCapabilityName[] = ["open_child", "read_screen", "send_keys", "clipboard", "global_hotkey", "notch", "launch_at_login"] as const
+
+/**
+ * `available`: this machine has it now. `unavailable`: it positively does not, and
+ * `reason` says why. `unknown`: whether it does could not be read — never a no.
+ */
+export type PlatformCapabilityState =
+    "available"
+  | "unavailable"
+  | "unknown"
+
+export const PlatformCapabilityStateValues: readonly PlatformCapabilityState[] = ["available", "unavailable", "unknown"] as const
+
+/**
+ * /v1/diagnostics.platform (broker-design #43, cross-platform §5): every platform
+ * capability of this machine by name — what it can do, what it cannot and why —
+ * each answered from facts that cost nothing to read, without trying any of it.
+ * `open_child`, `read_screen` and `send_keys` are what a dispatch needs: one that
+ * is `unavailable` refuses a dispatch 409 `no_child_capability` before anything is
+ * recorded, naming it, and the refusal carries these same rows. `unknown` is a
+ * probe that could not be read, and refuses nothing. Read at the moment of the
+ * request, like a dispatch reads it.
+ */
+export interface PlatformDiagnostics {
+  arch: string
+  capabilities: PlatformCapability[]
+
+  /**
+   * The operating system this daemon runs on, as Go names it: darwin, linux,
+   * windows.
+   */
+  os: string
 }
 
 export interface Project {

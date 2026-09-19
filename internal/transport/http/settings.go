@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -74,6 +75,12 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 		changes, refusal := settingsChanges(body)
 		if refusal != nil {
 			writeRefusal(w, http.StatusBadRequest, refusal.code, refusal.message)
+			return
+		}
+		// A key that turns on what this machine has no way to do is refused
+		// by name, not stored for nothing to act on (capabilities.go, W7).
+		if refusal := platformSettingRefusal(s.desktopHost().Capabilities(r.Context()), runtime.GOOS, changes); refusal != nil {
+			writeRefusal(w, http.StatusNotImplemented, refusal.code, refusal.message)
 			return
 		}
 		var (

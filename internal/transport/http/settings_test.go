@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -37,6 +38,11 @@ func settingsCall(t *testing.T, s *Server, method, contentType, body string) (*h
 // The route reads the file as it is, writes only what it was sent, and refuses
 // the write a page elsewhere could make without asking.
 func TestSettingsRoute(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		// The hotkey is the macOS shell's; elsewhere it is refused by name
+		// (TestSettingsRefuseWhatThisMachineCannotDo).
+		t.Skip("walks the hotkey, which only the macOS shell registers")
+	}
 	dir := filepath.Join(t.TempDir(), "clawdline-next")
 	s := &Server{cfg: config.Config{Dir: dir}}
 
@@ -118,6 +124,11 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 	// One value per key, each inside what the file accepts.
 	sent := map[string]any{}
 	for _, key := range nextconfig.Settables {
+		// What only the macOS shell acts on is refused by name elsewhere
+		// (capabilities.go), and walked there by its own test.
+		if _, shells := platformSettings[key.Name]; shells && runtime.GOOS != "darwin" {
+			continue
+		}
 		switch key.Kind {
 		case "string":
 			switch {

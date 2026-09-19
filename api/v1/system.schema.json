@@ -34,11 +34,12 @@
       "description": "GET /v1/diagnostics, this machine's own token only (a paired device is 403): what health used to carry about the process — its state directory, its ports, the clock's last pass and the broker's own account of itself.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "capacity", "dir", "ok", "port", "scheduler", "served_by", "upstream"],
+      "required": ["at", "capacity", "dir", "ok", "platform", "port", "scheduler", "served_by", "upstream"],
       "properties": {
         "at": { "type": "integer" },
         "broker": { "$ref": "orchestrator.schema.json#/$defs/BrokerDiagnostics" },
         "capacity": { "$ref": "#/$defs/CapacityDiagnostics" },
+        "platform": { "$ref": "#/$defs/PlatformDiagnostics" },
         "proposals": { "$ref": "#/$defs/ProposalDiagnostics" },
         "dir": { "type": "string" },
         "ok": { "type": "boolean" },
@@ -47,6 +48,39 @@
         "served_by": { "type": "string" },
         "upstream": { "type": "integer" }
       }
+    },
+    "PlatformDiagnostics": {
+      "description": "/v1/diagnostics.platform (broker-design #43, cross-platform §5): every platform capability of this machine by name — what it can do, what it cannot and why — each answered from facts that cost nothing to read, without trying any of it. `open_child`, `read_screen` and `send_keys` are what a dispatch needs: one that is `unavailable` refuses a dispatch 409 `no_child_capability` before anything is recorded, naming it, and the refusal carries these same rows. `unknown` is a probe that could not be read, and refuses nothing. Read at the moment of the request, like a dispatch reads it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arch", "capabilities", "os"],
+      "properties": {
+        "arch": { "type": "string" },
+        "capabilities": { "type": "array", "items": { "$ref": "#/$defs/PlatformCapability" } },
+        "os": { "description": "The operating system this daemon runs on, as Go names it: darwin, linux, windows.", "type": "string" }
+      }
+    },
+    "PlatformCapability": {
+      "description": "One platform capability on this machine.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "state"],
+      "properties": {
+        "name": { "$ref": "#/$defs/PlatformCapabilityName" },
+        "reason": { "description": "This machine's sentence: why not, why unknown, or what the capability rests on when it is there.", "type": "string" },
+        "state": { "$ref": "#/$defs/PlatformCapabilityState" },
+        "via": { "description": "What provides it here: `tmux`, `iterm`, `pasteboard`, or `shell` for the macOS shell. Absent when nothing does.", "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "PlatformCapabilityName": {
+      "description": "`open_child`: open a session for a dispatched child and brief it, in the terminal the machine's `terminal` setting picks. `read_screen`: read what a session's terminal shows. `send_keys`: type into a session. `clipboard`: lend a picture to the system clipboard for a send (without it a send hands over the picture's path). `global_hotkey`: a key that answers wherever the focus is. `notch`: the island around a MacBook's notch. `launch_at_login`: start when the person logs in.",
+      "type": "string",
+      "enum": ["open_child", "read_screen", "send_keys", "clipboard", "global_hotkey", "notch", "launch_at_login"]
+    },
+    "PlatformCapabilityState": {
+      "description": "`available`: this machine has it now. `unavailable`: it positively does not, and `reason` says why. `unknown`: whether it does could not be read — never a no.",
+      "type": "string",
+      "enum": ["available", "unavailable", "unknown"]
     },
     "ProposalDiagnostics": {
       "description": "/v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what the server decided about asking a person in the conversation, and what the sessions reported doing, counted from the proposals table — durable, the same after a restart. `ask_true` is the proposals the server let be asked; `asked_inline` the ones a session reported asking; `asked_inline_unprompted` those of them the server had said not to ask, which is a briefing not followed. `matched` is `asked_inline == ask_true` with none unprompted; an ask a session has not reported yet also reads as unmatched.",
