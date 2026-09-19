@@ -22,19 +22,19 @@ Two pages are in English. The rest are written in Traditional Chinese.
 
 | Document | Kind | Language | What it is |
 | --- | --- | --- | --- |
-| [design-guidelines.md](design-guidelines.md) | Public design note | Chinese | Ten design rules, each paid for by a failure: a loop that stops says so, everything that accumulates has a limit, unknown is not absent |
+| [design-guidelines.md](design-guidelines.md) | Public design note | English | Ten design rules, each paid for by a failure: a loop that stops says so, everything that accumulates has a limit, unknown is not absent |
 | [design-decisions.md](design-decisions.md) | Public design note | Chinese | The decision register the implementation follows. Where an analysis below disagrees, this wins. It also records decisions about the old app's data |
 | [limits.md](limits.md) | Public design note | Chinese | Every bounded thing: its limit, what happens when it is full, and who finds out |
 | [coordination.md](coordination.md) | Public design note | Chinese | The coordinator role redesigned around one `Obligation` model for waits, landings, handoffs and dead letters |
 | [broker.md](broker.md) | Public design note | Chinese | The broker's routes and credentials, and where it differs from the Swift app on purpose. Written at its first wave; later waves added handoffs, leases and reclaim |
-| [board-redesign.md](board-redesign.md) | Public design note | Chinese | Board, backlog and session to-do: three structures, their lifecycles, and where a person joins in |
+| [board-redesign.md](board-redesign.md) | Public design note | English | Board, backlog and session to-do: three structures, their lifecycles, and where a person joins in |
 | [github-issues.md](github-issues.md) | Public design note | Chinese | What GitHub Issues should take over, what stays local, and the three of its designs worth borrowing |
 | [schedules.md](schedules.md) | Public design note | Chinese | Schedules: the file format, the clock, catch-up, and importing |
 | [push.md](push.md) | Public design note | Chinese | Web Push: the three RFCs, what never leaves the machine, retries |
 | [remote.md](remote.md) | Public design note | Chinese | The line between the free product and Cloud, and the pairing promises. Its status table is dated |
 | [cloud-wire.md](cloud-wire.md) | Public design note | Chinese | The Cloud wire specification: envelope, canonical JSON, keys, pairing, commands, and what was measured at each stage |
 | [shell-bridge.md](shell-bridge.md) | Public design note | Chinese | The interface between a native shell and the web console, and the minimum a new platform's shell must implement |
-| [cross-platform.md](cross-platform.md) | Public design note | Chinese | Every feature on macOS, Linux and Windows, and what a platform shows when it cannot do something |
+| [cross-platform.md](cross-platform.md) | Public design note | English | Every feature on macOS, Linux and Windows, and what a platform shows when it cannot do something |
 
 ## How it got here
 
