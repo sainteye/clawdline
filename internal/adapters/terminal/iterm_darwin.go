@@ -171,39 +171,30 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 	return inv, nil
 }
 
-// itermSendScript is iterm.js's `send`: the text as one bracketed paste, then
-// a Return of its own, then a look at the composer — and another Return only
-// while the paste is demonstrably still sitting there.
+// itermSendScript is submit.go's four steps in iTerm2, with the same rule
+// (inputRuleJS): the text as one bracketed paste; the session's screen read
+// until it shows the text arriving; then a Return of its own, and never
+// before; then another Return only while a framed composer still shows exactly
+// what was confirmed.
 //
-// The composer is found by its caret: ">" and Codex's "›", as iterm.js has
-// them, and Claude Code's "❯" (composerCarets in the orchestrator), without
-// which the second look never found a Claude composer at all.
+// It pastes bracketed whatever the program asked for, because iTerm2's
+// scripting does not say whether it did; tmux does, and brackets only then.
 //
 // The first version of this called `writeText`, which is not in iTerm2's
 // scripting dictionary (the command is `write` with a `text` parameter), sent
 // no Return at all, and discarded what the script answered, so a session that
-// was not found read as a line delivered. The briefing is typed through here.
-const itermSendScript = itermEach + `
+// was not found read as a line delivered. The next pasted, waited 60 ms and
+// pressed Return whether or not the program had read the paste. The briefing
+// is typed through here.
+var itermSendScript = itermEach + inputRuleJS + fmt.Sprintf(`
 function run(argv) {
   const id = String(argv[0] || ""), text = argv[1] === undefined ? "" : String(argv[1]);
   const it = Application("iTerm2");
   if (!it.running()) return JSON.stringify({ ok: false, error: "iTerm2 is not running" });
   const ESC = String.fromCharCode(27), CR = String.fromCharCode(13);
-  // The tail of what was pasted, whitespace removed so a wrapped line still
-  // matches. A briefing ends in a 64-character secret, so it is unique.
-  const needle = text.replace(/\s+/g, "").slice(-24);
-  function stillInComposer(s) {
-    if (!needle) return false;
-    let screen = "";
-    try { screen = String(s.text() || ""); } catch (e) { screen = ""; }
-    const lines = screen.replace(/\s+$/, "").split("\n");
-    let mark = -1;
-    for (let i = lines.length - 1; i >= 0 && i >= lines.length - 12; i--) {
-      const head = lines[i].replace(/^[\s\u2502\u2503|]+/, "").charAt(0);
-      if (head === ">" || head === "\u203a" || head === "\u276f") { mark = i; break; }
-    }
-    if (mark < 0) return false;
-    return lines.slice(mark).join("").replace(/\s+/g, "").indexOf(needle) >= 0;
+  const LOOKS = %d, WINDOW_MS = %d, PAUSES = %s, NUDGES = %s;
+  function screenOf(s) {
+    try { return String(s.text() || ""); } catch (e) { return ""; }
   }
   let found = null;
   const walk = itermEach(it, function (s) {
@@ -212,17 +203,35 @@ function run(argv) {
     return true;
   });
   if (!found) return JSON.stringify({ ok: false, error: itermMissing(walk) });
+  const before = screenOf(found);
   found.write({ text: ESC + "[200~" + text + ESC + "[201~", newline: false });
-  delay(0.06);
+  const until = Date.now() + WINDOW_MS;
+  let confirmed = null;
+  for (let look = 0; look < LOOKS; look++) {
+    const screen = screenOf(found);
+    if (showsText(before, screen, text)) { confirmed = screen; break; }
+    if (Date.now() >= until) break;
+    delay(PAUSES[Math.min(look, PAUSES.length - 1)]);
+  }
+  if (confirmed === null) {
+    return JSON.stringify({ ok: false, typed: true, error: "the text was typed, but the terminal did not " +
+      "show it arriving in its input line within %s, so Enter was not pressed" });
+  }
   found.write({ text: CR, newline: false });
-  for (let attempt = 0; attempt < 3; attempt++) {
-    delay(attempt === 0 ? 0.25 : 0.4);
-    if (!stillInComposer(found)) break;
+  for (let n = 0; n < NUDGES.length; n++) {
+    delay(NUDGES[n]);
+    const now = screenOf(found);
+    if (!stillHolds(confirmed, now)) break;
     found.write({ text: CR, newline: false });
+    confirmed = now;
   }
   return JSON.stringify({ ok: true });
 }
-`
+`, looksWithin(sendConfirm), sendConfirm.Milliseconds(), seconds(submitPauses), seconds(nudgePauses), sendConfirm)
+
+// itermSendLimit bounds the whole send script: the look for the paste
+// (sendConfirm), the looks after the Return, and the Apple Events between.
+var itermSendLimit = sendConfirm + 6*time.Second
 
 // Send types one line into an iTerm2 session and submits it.
 //
@@ -230,7 +239,7 @@ function run(argv) {
 // on a current macOS, and iTerm2's own `write` does not bring the window
 // forward, which is the whole point.
 func (i *ITerm) Send(ctx context.Context, s session.Session, text string) error {
-	return itermCall(ctx, itermSendScript, 10*time.Second, s.ID, text)
+	return itermCall(ctx, itermSendScript, itermSendLimit, s.ID, text)
 }
 
 // Open is not implemented for the iTerm backend yet.
@@ -329,12 +338,15 @@ func osascriptFailure(ctx context.Context, stderr string, err error, sentence st
 //
 // "Not done" is Unsent: every effect script looks its session up, and answers
 // not done, before it writes anything — a caller may type the same line again
-// without delivering it twice. An answer that is not JSON came from a script
-// that ran, and is only a Failure.
+// without delivering it twice. The one exception says so: the send script's
+// "typed, and not submitted" (`typed: true`) is Unsubmitted, because its text
+// is in the session. An answer that is not JSON came from a script that ran,
+// and is only a Failure.
 func itermAnswer(out []byte) error {
 	var answer struct {
 		OK    bool   `json:"ok"`
 		Error string `json:"error"`
+		Typed bool   `json:"typed"`
 	}
 	if json.Unmarshal(bytes.TrimSpace(out), &answer) != nil {
 		return Failure{Message: "iTerm2 answered something that is not JSON."}
@@ -342,6 +354,9 @@ func itermAnswer(out []byte) error {
 	if !answer.OK {
 		if answer.Error == "" {
 			answer.Error = "iTerm2 refused."
+		}
+		if answer.Typed {
+			return Unsubmitted{Why: answer.Error}
 		}
 		return Unsent{Why: answer.Error}
 	}
