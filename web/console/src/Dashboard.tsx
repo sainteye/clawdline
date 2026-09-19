@@ -1,5 +1,8 @@
 import { useCallback, useMemo, useState } from "react"
 import type {
+  CapacityEntry,
+  CapacityPanel,
+  CapacityState,
   CloseReason,
   Diagnostics,
   Obligation,
@@ -32,6 +35,7 @@ export default function Dashboard({ fleet }: { fleet: ReturnType<typeof useFleet
           <Sessions rows={rows} fleet={fleet} onDid={refresh} />
         </div>
         <div>
+          <Capacity />
           <Dispatch onDid={refresh} />
           <Usage />
           <Obligations />
@@ -70,12 +74,218 @@ function Health() {
   )
 }
 
+/** `/v1/capacity`, or null when this browser may not read it. */
+async function readCapacity(): Promise<CapacityPanel | null> {
+  const res = await fetch(client.url("/v1/capacity"), { credentials: "same-origin" })
+  if (res.status === 401 || res.status === 403) return null
+  if (!res.ok) throw new Error(`/v1/capacity answered ${res.status}`)
+  return (await res.json()) as CapacityPanel
+}
+
 /** `/v1/diagnostics`, or null when this browser may not read it. */
 async function readDiagnostics(): Promise<Diagnostics | null> {
   const res = await fetch(client.url("/v1/diagnostics"), { credentials: "same-origin" })
   if (res.status === 401 || res.status === 403) return null
   if (!res.ok) throw new Error(`/v1/diagnostics answered ${res.status}`)
   return (await res.json()) as Diagnostics
+}
+
+/**
+ * How full every bounded thing this daemon keeps is (docs/limits.md §4.5,
+ * design-decisions C4): which row, how full, who lets go of what when it is
+ * full, and when it last told anybody.
+ *
+ * It is on this page and not on the replicated ones: a capacity banner on the
+ * 1:1 screens would need words the original never had, and that is a decision
+ * left to the person (U11). A row that is not ok is always listed; the rest
+ * are one click away. A row that could not be measured says so and carries no
+ * bar — unknown is not empty.
+ *
+ * It reads `/v1/capacity`, which any paired device may, and not
+ * `/v1/diagnostics`, which is this Mac's own token's: a browser opened on this
+ * Mac is a paired device too, and a panel it could never fill is not a panel.
+ *
+ * The completion notices that went unanswered through their whole ladder are
+ * here too: a dead letter is pushed once when it happens, and this is where
+ * it stays visible afterwards.
+ */
+function Capacity() {
+  const read = useMemo(() => () => readCapacity(), [])
+  const { data, error, pending } = usePoll(read, 15000)
+  const [all, setAll] = useState(false)
+  const rows = data ? [...data.capacity.entries].sort(bySeverity) : []
+  const loud = rows.filter((r) => r.state !== "ok")
+  const shown = all ? rows : loud
+  const beat = data?.capacity.beat
+  const dead = data?.completions?.dead_letter ?? 0
+  return (
+    <section className="panel capacity">
+      <header>
+        容量
+        <span className="count">
+          {data ? (loud.length > 0 ? `${loud.length} 列要注意` : `${rows.length} 列都正常`) : "—"}
+        </span>
+      </header>
+      {error && <p className="refusal">{error}</p>}
+      {pending && !data && !error && <p className="empty">讀取中…</p>}
+      {!pending && !data && !error && (
+        <p className="empty unread">這個瀏覽器沒有配對，讀不到容量。</p>
+      )}
+      {data?.completions_error && (
+        <p className="refusal">完成通知讀不到，所以不知道有沒有 dead letter：{data.completions_error}</p>
+      )}
+      {beat && !beat.running && (
+        <p className="refusal">容量巡邏沒有在這個 daemon 跑，所以下面每一列都是未知。</p>
+      )}
+      {beat?.stalled && <p className="refusal">容量巡邏停了：超過三輪沒有完成，下面的數字是舊的。</p>}
+      {dead > 0 && (
+        <div className="row cap-dead">
+          <span className="k">dead letter</span>
+          <span className="grow" title="重送：POST /v1/orchestrator/completions/reconcile">
+            {dead} 則完成通知送到最後都沒被收下；當時已推播過一次
+          </span>
+        </div>
+      )}
+      {data && loud.length === 0 && !all && (
+        <p className="empty">每一列都在告警門檻以下。</p>
+      )}
+      {shown.map((r) => (
+        <CapacityRow key={r.name} row={r} />
+      ))}
+      {data && rows.length > loud.length && (
+        <p className="empty footnote">
+          <button className="as-link" onClick={() => setAll((v) => !v)}>
+            {all ? "只看要注意的" : `展開全部 ${rows.length} 列`}
+          </button>
+        </p>
+      )}
+    </section>
+  )
+}
+
+const stateWord: Record<CapacityState, string> = {
+  ok: "正常",
+  warn: "注意",
+  critical: "快滿了",
+  full: "滿了",
+  unknown: "量不到",
+}
+
+const stateRank: Record<CapacityState, number> = { full: 0, critical: 1, unknown: 2, warn: 3, ok: 4 }
+
+function bySeverity(a: CapacityEntry, b: CapacityEntry): number {
+  return stateRank[a.state] - stateRank[b.state] || (b.ratio ?? 0) - (a.ratio ?? 0) || a.name.localeCompare(b.name)
+}
+
+function CapacityRow({ row }: { row: CapacityEntry }) {
+  const pct = row.ratio == null ? null : Math.floor(row.ratio * 100)
+  const counted = counters(row)
+  const why = row.error ?? row.note
+  return (
+    <div className="cap" data-state={row.state}>
+      <div className="line">
+        <span className="name" title={row.class}>
+          {row.name}
+        </span>
+        <span className="state">{stateWord[row.state]}</span>
+        <span className="amount">
+          {row.used == null
+            ? `上限 ${amount(row.unit, row.limit)}`
+            : `${amount(row.unit, row.used)} / ${amount(row.unit, row.limit)}`}
+          {pct != null && ` · ${pct}%`}
+        </span>
+      </div>
+      <div className="meter">{pct != null && <i style={{ width: `${Math.min(100, pct)}%` }} />}</div>
+      <div className="meta">
+        <span>{evicts(row)}</span>
+        <span>{lastAlert(row)}</span>
+        {row.projected_full_at ? <span>照目前速度 {when(row.projected_full_at)} 會滿</span> : null}
+        {row.overridden && <span>上限被調小了</span>}
+        {counted && <span>{counted}</span>}
+      </div>
+      {why && <p className="said">{why}</p>}
+    </div>
+  )
+}
+
+/** Who lets go of what when the row is full: a person, or the daemon by its rule. */
+function evicts(row: CapacityEntry): string {
+  if (row.evicted_by === "person") {
+    switch (row.at_limit) {
+      case "rotate":
+        return "滿了輪替，舊的分段只有你能刪"
+      case "refuse":
+        return "滿了拒絕新的，只有你能騰出空間"
+      default:
+        // store.db today: its class refuses at the limit, and nothing does
+        // yet (the row's deviation says so).
+        return "滿了只回報、還不會拒絕，只有你能騰出空間"
+    }
+  }
+  switch (row.at_limit) {
+    case "refuse":
+      return "滿了拒絕新的，daemon 不丟已有的"
+    case "evict_oldest":
+      return "滿了由 daemon 淘汰最舊的"
+    case "expire":
+      return "過了視窗由 daemon 讓它過期"
+    case "rotate":
+      return "滿了由 daemon 輪替、刪最舊的分段"
+    case "coalesce":
+      return "滿了只留最新的值"
+    case "disconnect":
+      return "滿了斷開跟不上的讀者"
+    case "summarize":
+      return "滿了先摘要再移走"
+    default:
+      return "滿了只回報，不拒絕也不淘汰"
+  }
+}
+
+const pushWord: Record<NonNullable<CapacityEntry["last_push"]>["push"], string> = {
+  pending: "推播待送",
+  sending: "推播送出中",
+  pushed: "已推播",
+  not_subscribed: "沒有裝置訂閱推播",
+  failed: "推播送不出去",
+  unknown: "不確定推播有沒有送出",
+}
+
+/** When the row last told anybody, and whether that reached a push service. */
+function lastAlert(row: CapacityEntry): string {
+  const tells = row.told.includes("notice")
+  if (!row.last_notice_at && !row.last_push) return tells ? "沒有告警過" : "不推播，只記在 diagnostics"
+  const at = row.last_push && row.last_push.at >= (row.last_notice_at ?? 0) ? row.last_push.at : row.last_notice_at!
+  const push = row.last_push ? `，${pushWord[row.last_push.push]}` : tells ? "" : "，不推播"
+  const held = row.notices_suppressed > 0 ? `（另有 ${row.notices_suppressed} 則被一天一則擋下）` : ""
+  return `上次告警 ${ago(at)}${push}${held}`
+}
+
+function counters(row: CapacityEntry): string {
+  const parts: string[] = []
+  if (row.refused) parts.push(`拒絕 ${row.refused}`)
+  if (row.evicted) parts.push(`淘汰 ${row.evicted}`)
+  if (row.expired) parts.push(`過期 ${row.expired}`)
+  if (row.rotated) parts.push(`輪替 ${row.rotated}`)
+  if (row.dropped) parts.push(`丟掉 ${row.dropped}`)
+  if (row.coalesced) parts.push(`合併 ${row.coalesced}`)
+  if (row.disconnected) parts.push(`斷線 ${row.disconnected}`)
+  if (row.write_errors) parts.push(`寫入失敗 ${row.write_errors}`)
+  return parts.join(" · ")
+}
+
+/** A reading in its row's unit: bytes in binary units, rows as a count. */
+function amount(unit: CapacityEntry["unit"], n: number): string {
+  if (unit !== "bytes") return `${n} 筆`
+  const k = 1024
+  if (n >= k * k * k) return `${(n / (k * k * k)).toFixed(1)} GiB`
+  if (n >= k * k) return `${(n / (k * k)).toFixed(1)} MiB`
+  if (n >= k) return `${(n / k).toFixed(1)} KiB`
+  return `${n} B`
+}
+
+function when(unix: number): string {
+  return new Date(unix * 1000).toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
 }
 
 /**

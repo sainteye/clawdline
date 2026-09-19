@@ -158,6 +158,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/auth/", s.authRoute)
 	mux.HandleFunc("/v1/health", s.health)
 	mux.HandleFunc("/v1/diagnostics", s.diagnostics)
+	mux.HandleFunc("/v1/capacity", s.capacityRoute)
 	// What the line to app.clawdline.com is doing (cloud.go). This machine's
 	// own token only.
 	mux.HandleFunc("/v1/cloud/status", s.cloudStatusRoute)

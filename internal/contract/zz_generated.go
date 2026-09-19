@@ -1622,9 +1622,10 @@ type CapacityBeat struct {
 }
 
 // diagnostics: this route, always. health: /v1/health says capacity_exhausted,
-// never the name or the numbers. notice: a capacity.notify event, a push once
-// C4 wires it. cloud_status: /v1/cloud/status. log: the daemon's log. sender:
-// whoever sent what the row turned away, in the answer to that request.
+// never the name or the numbers. notice: a capacity.notify event and, for every
+// such row, the push it owes (last_push). cloud_status: /v1/cloud/status. log:
+// the daemon's log. sender: whoever sent what the row turned away, in the
+// answer to that request.
 type CapacityChannel string
 
 const (
@@ -1741,7 +1742,15 @@ type CapacityEntry struct {
 	// When the row last refused, evicted, rotated, dropped, coalesced or disconnected
 	// something.
 	LastActionAt int64 `json:"last_action_at,omitempty"`
+
+	// When this row last produced a notice. Read back from the store at start, so a
+	// restart does not forget it (C4); held-back notices do not move it.
 	LastNoticeAt int64 `json:"last_notice_at,omitempty"`
+
+	// The push the row's last notice owed, as the store has it. Absent when the row
+	// has owed none — it has never crossed a line, or its register line does not
+	// tell a person by notice.
+	LastPush *CapacityLastPush `json:"last_push,omitempty"`
 
 	// The limit this process runs the row at, in `unit`.
 	Limit      int64  `json:"limit"`
@@ -1787,6 +1796,63 @@ type CapacityEntry struct {
 	// not one.
 	WriteErrors int64 `json:"write_errors"`
 }
+
+// One capacity notice's push: recorded with the `capacity.notify` event in one
+// transaction, sent after it commits, and finished with how it ended
+// (design-decisions C4). Its budget is its own — one per row a day — and
+// counts against nothing the agents' notifications spend.
+type CapacityLastPush struct {
+	// When the notice was recorded.
+	At int64 `json:"at"`
+
+	// Why a push failed or is unknown, in the outbox's words.
+	Detail string `json:"detail,omitempty"`
+
+	// When the push was finished with. Absent while it is pending or being sent.
+	FinishedAt int64             `json:"finished_at,omitempty"`
+	Push       CapacityPushState `json:"push"`
+
+	// The state the notice announced: critical or full going up, ok coming back.
+	State CapacityState `json:"state"`
+}
+
+// GET /v1/capacity, for any paired device: what the Dashboard's capacity panel
+// shows (design-decisions C4, docs/limits.md §4.5 'the screen'). It is
+// /v1/diagnostics.capacity without the rest of /v1/diagnostics — no state
+// directory, no ports — because a person reads the panel from a browser that
+// is a paired device, and /v1/diagnostics is this machine's own token's. Beside
+// it, the count of completion notices that went unanswered through their whole
+// ladder (limits N7): a dead letter is pushed once when it happens, and this is
+// where it stays visible.
+type CapacityPanel struct {
+	At       int64               `json:"at"`
+	Capacity CapacityDiagnostics `json:"capacity"`
+
+	// The completion notices by state. Absent when they could not be read, and then
+	// `completions_error` says why: unread is not none.
+	Completions      *BrokerNoticeCounts `json:"completions,omitempty"`
+	CompletionsError string              `json:"completions_error,omitempty"`
+}
+
+// pending: recorded, not yet begun. sending: begun, not yet finished. pushed:
+// at least one push service accepted it — accepted, which is not the same as
+// shown on a phone; no push service says that. not_subscribed: no device has
+// asked for notifications. failed: no push service accepted it, or it could not
+// be sent. unknown: a daemon stopped while sending it, and a push cannot be
+// asked afterwards whether it went, so it was not sent again.
+type CapacityPushState string
+
+const (
+	CapacityPushStatePending       CapacityPushState = "pending"
+	CapacityPushStateSending       CapacityPushState = "sending"
+	CapacityPushStatePushed        CapacityPushState = "pushed"
+	CapacityPushStateNotSubscribed CapacityPushState = "not_subscribed"
+	CapacityPushStateFailed        CapacityPushState = "failed"
+	CapacityPushStateUnknown       CapacityPushState = "unknown"
+)
+
+// CapacityPushStateValues is every value the contract allows, in contract order.
+var CapacityPushStateValues = []CapacityPushState{CapacityPushStatePending, CapacityPushStateSending, CapacityPushStatePushed, CapacityPushStateNotSubscribed, CapacityPushStateFailed, CapacityPushStateUnknown}
 
 // ok below warn_at, warn below 95%, critical below 100%, full at or past it.
 // Going down needs five points under a threshold. unknown: the row could not be

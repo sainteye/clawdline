@@ -176,6 +176,11 @@ type LinkOptions struct {
 	// QueueDepth is how many decrypted requests may wait for the bridge: the
 	// capacity register's `cloud.relay_queue` limit. Zero is its default.
 	QueueDepth int
+	// SpoolRows and SpoolBytes are the outbound spool's two global caps: the
+	// register's `cloud.spool` and `cloud.spool_bytes` limits. Zero, or a
+	// number above the default, is the default.
+	SpoolRows  int
+	SpoolBytes int
 }
 
 // Link is one machine's Cloud line.
@@ -313,7 +318,14 @@ func (l *Link) wire() error {
 	l.mu.Unlock()
 
 	fence := adaptercloud.NewFileFence(keys.Dir(), identity.MachineID)
-	spool, err := adaptercloud.NewSpool(adaptercloud.DefaultSpoolLimits(), fence, opts.Now)
+	limits := adaptercloud.DefaultSpoolLimits()
+	if opts.SpoolRows > 0 && opts.SpoolRows < limits.GlobalRowCap {
+		limits.GlobalRowCap = opts.SpoolRows
+	}
+	if opts.SpoolBytes > 0 && opts.SpoolBytes < limits.GlobalByteCap {
+		limits.GlobalByteCap = opts.SpoolBytes
+	}
+	spool, err := adaptercloud.NewSpool(limits, fence, opts.Now)
 	if err != nil {
 		return err
 	}
@@ -664,6 +676,16 @@ func (l *Link) RelayQueue() (waiting, depth int, counters capacity.Counters, ok 
 	}
 	waiting, depth, counters = l.relay.Queue()
 	return waiting, depth, counters, true
+}
+
+// SpoolReadings are the outbound spool's two capacity rows. ok is false when
+// this link has no spool: its line has never been built.
+func (l *Link) SpoolReadings() (rows, bytes capacity.Reading, ok bool) {
+	if l.relay == nil || l.relay.Spool == nil {
+		return capacity.Reading{}, capacity.Reading{}, false
+	}
+	rows, bytes = l.relay.Spool.Readings()
+	return rows, bytes, true
 }
 
 // Status is what the status route answers.

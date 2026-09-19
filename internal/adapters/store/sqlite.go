@@ -189,6 +189,9 @@ func Open(dir string) (*Store, error) {
 	if err := openParticipation(db); err != nil {
 		return nil, err
 	}
+	if err := openCapacityPush(db); err != nil {
+		return nil, err
+	}
 	// The directory is already 0700, but the files carry receipts and the
 	// subjects of somebody's work, and defence in depth is two lines here.
 	// SQLite creates them through the process umask, which is not ours to

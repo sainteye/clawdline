@@ -33,6 +33,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // SpoolChannel is the wire channel kind a row belongs to.
@@ -130,11 +132,13 @@ type SpoolLimits struct {
 	OutboundWindowByteCap int
 }
 
-// DefaultSpoolLimits is what production uses.
+// DefaultSpoolLimits is what production uses. The two global caps are the
+// capacity register's `cloud.spool` and `cloud.spool_bytes` rows, so the
+// number has one spelling and an override can only lower it (LinkOptions).
 func DefaultSpoolLimits() SpoolLimits {
 	return SpoolLimits{
-		GlobalRowCap:             2000,
-		GlobalByteCap:            16 << 20,
+		GlobalRowCap:             int(capacity.Default(capacity.CloudSpool)),
+		GlobalByteCap:            int(capacity.Default(capacity.CloudSpoolBytes)),
 		RecipientRowCap:          200,
 		RecipientByteCap:         2 << 20,
 		FairnessRecipientRowCap:  20,
@@ -245,6 +249,27 @@ type Spool struct {
 	nextSeq uint64
 	fence   SequenceFence
 	now     func() time.Time
+	// tally is what the spool did at its limits and with the rows it burned,
+	// since this process began (limits N22): a refusal used to reach only the
+	// log line of whoever called Publish, and a burn nothing at all.
+	tally spoolTally
+}
+
+// spoolTally is the spool's account for the capacity register.
+type spoolTally struct {
+	// refused is reservations turned away at a cap: global, per recipient,
+	// or the reserve past 90%.
+	refused int64
+	// dropped is rows burned before they were ever written: a reservation
+	// nobody sealed, a ready row too old to send.
+	dropped int64
+	// coalesced is never-sent snapshots a newer one for the same recipient
+	// replaced. Nothing was lost.
+	coalesced int64
+	// uncertain is rows written and never answered within their window.
+	// Whether they arrived is unknown, so they are neither sent nor dropped.
+	uncertain int64
+	lastAt    time.Time
 }
 
 // SequenceFence is the durable high-water mark for the sequence counter. It is
@@ -310,6 +335,7 @@ func (s *Spool) ReserveLatestValue(channel SpoolChannel, recipient, logicalID st
 	for seq, row := range s.rows {
 		if row.State == SpoolReady && row.Channel == channel && row.Recipient == recipient {
 			delete(s.rows, seq)
+			s.tally.coalesced++
 		}
 	}
 	return s.reserveLocked(channel, recipient, logicalID, chargedBytes)
@@ -338,19 +364,24 @@ func (s *Spool) reserveLocked(channel SpoolChannel, recipient, logicalID string,
 	if reserveOpen {
 		if recipientRows+1 > s.limits.FairnessRecipientRowCap ||
 			recipientBytes+chargedBytes > s.limits.FairnessRecipientByteCap {
+			s.refusedLocked(now)
 			return 0, fmt.Errorf("%w: %s holds %d rows", ErrSpoolFairness, recipient, recipientRows)
 		}
 	}
 	if recipientRows+1 > s.limits.RecipientRowCap {
+		s.refusedLocked(now)
 		return 0, fmt.Errorf("%w: %s holds %d rows", ErrSpoolCapacity, recipient, recipientRows)
 	}
 	if recipientBytes+chargedBytes > s.limits.RecipientByteCap {
+		s.refusedLocked(now)
 		return 0, fmt.Errorf("%w: %s holds %d bytes", ErrSpoolCapacity, recipient, recipientBytes)
 	}
 	if rowsBefore+1 > s.limits.GlobalRowCap {
+		s.refusedLocked(now)
 		return 0, fmt.Errorf("%w: %d rows", ErrSpoolCapacity, rowsBefore)
 	}
 	if bytesBefore+chargedBytes > s.limits.GlobalByteCap {
+		s.refusedLocked(now)
 		return 0, fmt.Errorf("%w: %d bytes", ErrSpoolCapacity, bytesBefore)
 	}
 
@@ -548,6 +579,10 @@ func (s *Spool) BurnExpired() []uint64 {
 		row.Tombstoned = now
 		burned = append(burned, seq)
 	}
+	if len(burned) > 0 {
+		s.tally.uncertain += int64(len(burned))
+		s.tally.lastAt = now
+	}
 	return burned
 }
 
@@ -591,6 +626,7 @@ func (s *Spool) normalizeReadyLocked(now time.Time) {
 			s.rows[prior].BurnReason = BurnReplacedByCoalesce
 			s.rows[prior].Sealed = nil
 			s.rows[prior].Tombstoned = now
+			s.tally.coalesced++
 		}
 		keep[key] = seq
 	}
@@ -607,6 +643,8 @@ func (s *Spool) normalizeReadyLocked(now time.Time) {
 			row.BurnReason = BurnStaleReadyAtSend
 			row.Sealed = nil
 			row.Tombstoned = now
+			s.tally.dropped++
+			s.tally.lastAt = now
 		}
 	}
 }
@@ -629,8 +667,44 @@ func (s *Spool) collectLocked(now time.Time) {
 			row.State = SpoolBurned
 			row.BurnReason = BurnStaleReservation
 			row.Tombstoned = now
+			s.tally.dropped++
+			s.tally.lastAt = now
 		}
 	}
+}
+
+func (s *Spool) refusedLocked(now time.Time) {
+	s.tally.refused++
+	s.tally.lastAt = now
+}
+
+// Readings are the spool's two capacity rows, `cloud.spool` and
+// `cloud.spool_bytes`: what a reservation is measured against — every row
+// held, tombstones included until they are collected, and their charged
+// bytes — and what the spool did at its limits. The counters are the same on
+// both rows, because one refusal or burn is one event whichever cap it met.
+// A written row burned at its attempt window is said in the note and counted
+// nowhere else: whether it arrived is unknown, and unknown is neither.
+func (s *Spool) Readings() (rows, bytes capacity.Reading) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var held, charged int64
+	for _, row := range s.rows {
+		held++
+		charged += int64(row.ChargedBytes)
+	}
+	counters := capacity.Counters{
+		Refused: s.tally.refused, Dropped: s.tally.dropped, Coalesced: s.tally.coalesced,
+		LastActionAt: s.tally.lastAt,
+	}
+	note := ""
+	if s.tally.uncertain > 0 {
+		note = fmt.Sprintf("%d written answer(s) went unanswered past their window and were let go; whether they arrived is unknown",
+			s.tally.uncertain)
+	}
+	rows = capacity.Reading{Known: true, Used: held, Counters: counters, Note: note}
+	bytes = capacity.Reading{Known: true, Used: charged, Counters: counters, Note: note}
+	return rows, bytes
 }
 
 func (s *Spool) sortedSequencesLocked() []uint64 {
