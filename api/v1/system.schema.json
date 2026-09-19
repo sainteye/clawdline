@@ -19,13 +19,15 @@
       }
     },
     "Health": {
-      "description": "GET /v1/health, open without a token: that this daemon is alive and which implementation it is, and nothing else. No path, no port, nothing about the work; those are in Diagnostics.",
+      "description": "GET /v1/health, open without a token: that this daemon is alive, which implementation it is, and the two answers a page needs before it can be let in — whether the asker's own credential is one this machine knows, and whether a password door exists. Nothing else: no path, no port, nothing about the work; those are in Diagnostics.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "ok", "served_by"],
+      "required": ["at", "authed", "ok", "password", "served_by"],
       "properties": {
         "at": { "type": "integer" },
+        "authed": { "description": "Whether the credential this request carried — the cookie or a bearer token — is one this machine lets in. It is about the asker and nothing else, and it is how a page tells \"this browser is not let in\" from \"the daemon is not running\" (EventSource reports a failure and never a reason). `false` is what shows the pairing page; the Swift app's page reads the same field.", "type": "boolean" },
         "ok": { "type": "boolean" },
+        "password": { "description": "Whether a password has been set, so a page offers the password door only when there is one behind it. The Swift app's health says the same.", "type": "boolean" },
         "reason": { "description": "Why `ok` is false, when it is. Absent when ok. The name only: what is behind it is in Diagnostics.", "$ref": "#/$defs/HealthReason" },
         "served_by": { "description": "Which implementation answered. This is how a reader tells the Go daemon from the Swift app on the same port.", "type": "string" }
       }

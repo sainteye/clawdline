@@ -242,8 +242,9 @@ func TestGateCoversEveryChange(t *testing.T) {
 	}
 }
 
-// The open health says it is alive and nothing else; the rest is behind this
-// machine's own token.
+// The open health says it is alive, and the two things about the door a page
+// needs before it is let in (TestHealthAnswersTheDoor), and nothing else; the
+// rest is behind this machine's own token.
 func TestHealthAndDiagnostics(t *testing.T) {
 	f, _ := newGateFixture(t)
 	s := &Server{cfg: config.Config{Dir: "/secret/state/dir", Port: 7757, UpstreamPort: 7717}}
@@ -262,7 +263,7 @@ func TestHealthAndDiagnostics(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	if strings.Join(keys, ",") != "at,ok,served_by" || strings.Contains(rec.Body.String(), "/secret") {
+	if strings.Join(keys, ",") != "at,authed,ok,password,served_by" || strings.Contains(rec.Body.String(), "/secret") {
 		t.Fatalf("the open health says more than it should: %s", rec.Body)
 	}
 

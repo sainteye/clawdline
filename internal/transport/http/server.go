@@ -169,6 +169,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/cloud/pairing/offer", s.cloudPairingOfferRoute)
 	mux.HandleFunc("/v1/cloud/devices/revoke", s.cloudDeviceRoute)
 	mux.HandleFunc("/v1/cloud/keys/rotate", s.cloudRotateRoute)
+	// The account-free way in from outside: what this daemon's cloudflared is
+	// doing (tunnel.go). This machine's own token only — a quick tunnel's
+	// address is its secret.
+	mux.HandleFunc("/v1/tunnel", s.tunnelRoute)
 	mux.HandleFunc("/v1/sessions", s.sessions)
 	// Everything under a session id is about that session: its info, which is
 	// a read, and otherwise an action on it. One handler rather than a route
@@ -312,11 +316,21 @@ func (s *Server) Handler() http.Handler {
 // It is on the gate's open list, so it says nothing but that: no path, no
 // port, nothing about the work. What a person diagnosing this machine wants is
 // at /v1/diagnostics, behind this machine's own token.
+//
+// Two answers are about the door rather than the machine, and the Swift page
+// reads both (net/live.js `check`): `authed`, whether the credential this
+// request carried is one this machine lets in — the one way a page can tell
+// "not let in" from "not running", since an event stream fails without a
+// reason — and `password`, whether there is a password door to offer. Both
+// come from the gate that judged this very request.
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+	a := accessOf(r)
 	h := contract.Health{
 		OK:       true,
 		ServedBy: servedBy,
 		At:       time.Now().Unix(),
+		Authed:   a.verdict.Allowed,
+		Password: a.gate != nil && a.gate.auth != nil && a.gate.auth.HasPassword(),
 	}
 	s.brokerHealth(&h)
 	s.capacityHealth(&h)

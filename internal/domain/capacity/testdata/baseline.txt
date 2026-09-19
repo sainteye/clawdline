@@ -106,6 +106,10 @@ internal/adapters/push.MaxPayload # admission: one push payload
 internal/adapters/push.secretLimit # read: the VAPID key file
 internal/adapters/swiftstore.maxBytes # read: one of the Swift app's files, read-only
 internal/adapters/transcript.recordReadLimit # read: the tail of one transcript (limits N17)
+internal/adapters/tunnel.attemptLimit # parameter: launches of cloudflared in a row that may die before the tunnel gives up and says so on /v1/tunnel
+internal/adapters/tunnel.complaintLimit # page: one cloudflared complaint, cut to 200 bytes on a character, for the settings card
+internal/adapters/tunnel.lineLimit # read: one line of cloudflared's output; a longer run without a newline is dropped whole and logged
+internal/adapters/tunnel.nameLimit # admission: a hand-edited remote_tunnel_name, refused by name past it
 internal/app/cloudops.cloudEnvelopeCiphertextLimit # admission: one Cloud answer's ciphertext
 internal/app/orchestrator.(*Broker).SubscribeProgress:chan(64) # store: a progress subscriber's buffer (limits N19 buffer class, C3)
 internal/app/orchestrator.AttemptLimit # parameter: completion notice attempts before dead letter (limits N7: a dead letter is pushed once, W5, and counted on the Dashboard, C4)

@@ -8,7 +8,7 @@ Cloud 版本，裝置配對等等」。這份文件記下當時量到的差距�
 | 路徑 | 版本 | 舊版靠什麼 | Go 版（2026-09-17，master ef77892） |
 |---|---|---|---|
 | 本機瀏覽器／Mac 視窗 | 免費 | RemoteServer（只綁 loopback） | 有；20 條路由（舊版 89 條）；Session 頁已接近 1:1 |
-| 自己的 cloudflared tunnel＋手機配對 | 免費 | RemoteAuth 541、RemoteTunnel 742、RemotePage 1,267、RemoteQR 44 行，加上 RemoteServer（5,976 行）裡的閘門 | 沒有；配對核心正在做 |
+| 自己的 cloudflared tunnel＋手機配對 | 免費 | RemoteAuth 541、RemoteTunnel 742、RemotePage 1,267、RemoteQR 44 行，加上 RemoteServer（5,976 行）裡的閘門 | 有（2026-09-19）：閘門與配對核心、網頁的配對頁、tunnel。見下方「配對頁與 tunnel」 |
 | app.clawdline.com | Cloud | 18 個 `Cloud*.swift` 共 22,345 行＋WebPush 858 行；網頁端 `net/cloud-*.js` 共 7,796 行 | 0 行 |
 
 量法：`wc -l ~/code/clawdline/Sources/Cloud*.swift` 等，在 `~/code/clawdline` 的工作樹上量；路由數是
@@ -57,6 +57,49 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
    配對猜錯次數跨配對累計，**與 Swift 不同**：Swift 每個配對各 5 次、換新配對就歸零，舊 app 仍有這個缺口。
    已知還沒做：React console 的配對畫面、Dashboard 的派工按鈕（會 403）、send 的 Idempotency-Key、
    公開 health 的版本、真實 cloudflared 與原生殼寫入的驗證。
-3. 配對的網頁入口（照抄 `door/door.js`、`door.css`）與原生殼的 Remote 設定。
-4. tunnel：跑使用者自己安裝的 cloudflared，一律帶 `--config`，還沒配對任何裝置就拒絕啟動。
+3. 配對的網頁入口（照抄 `door/door.js`、`door.css`）與原生殼的 Remote 設定。**已做**，見下一節。
+4. tunnel：跑使用者自己安裝的 cloudflared，一律帶 `--config`，還沒配對任何裝置就拒絕啟動。**已做**，見下一節。
 5. Cloud bridge：先讀 PROTOCOL.md，拆成傳輸與加密一波、27 種操作分兩三波，用假的 relay 測。
+
+## 配對頁與 tunnel（2026-09-19）
+
+### 配對頁
+
+- `web/console/src/legacy/js/door/door.js` 是舊版原檔的逐位元組拷貝，登記在 `MANIFEST.json`，
+  `tools/check-legacy-css.sh` 會比對；`door.css` 早就在。React 的 `web/console/src/door/Door.tsx`
+  不 import 它（它 import 整個舊頁面、在 import 時查 id），而是逐行照它寫，產出 `index.html` 那段門口相同的
+  id、class、屬性，字是 `view/static.js` 貼進去的那些 `webDoor*` 鍵。
+- **什麼時候出現**照舊版 `net/live.js` 的 `check`：開頁先讀公開的 `/v1/health`（不走快取），只有明確的
+  `authed: false` 才顯示門口；health 讀不到不是權限問題，照常畫 console。為此公開的 health 多了兩個欄位，
+  也是舊版就有的：`authed`（這個請求帶的憑證是否被放行，只關於發問者）與 `password`（有沒有密碼這扇門）。
+  兩者都不含路徑、port 或工作內容，F-06 的性質不變；`TestHealthAndDiagnostics` 釘住完整的欄位集合。
+- 還沒被放進來之前 console 完全不掛載（不讀清單、不開事件串流）。頁面開著時裝置被撤銷，門口在下一次檢查
+  （回到前景、網路恢復、每 30 秒）時蓋在 console 上面；重新進來後整頁重載。
+- 三個狀態與密碼那一路照舊。和舊版不同的一處：猜錯碼的拒絕在這裡叫 `wrong_code`（舊版叫 `forbidden`），
+  而且帶 `tries_left`（這個 daemon 跨配對、24 小時計算），用完就結束這次配對。
+
+### tunnel
+
+`internal/adapters/tunnel` 是 `RemoteTunnel.swift` 的規則，`internal/transport/http/tunnel.go` 是接線。
+
+- **跑使用者自己裝的 cloudflared**：`cloudflared_path`（只能手改 config.json，設定路由不收，因為它指名一支
+  會被執行的程式）→ Homebrew／MacPorts 的位置 → PATH。
+- **一律帶 `--config`**，指向 `CLAWDLINE_NEXT_DIR/cloudflared.yml`（0600，每次啟動前重寫）；
+  查 named tunnel 憑證的 `cloudflared tunnel list` 也帶。從來不讀 `~/.cloudflared/config.yml`。
+- **還沒有人被放進來就拒絕啟動**：判斷讀的是閘門自己的 authority（`IsConfigured`：一台非本機的已核准裝置，
+  或設了密碼——與 Swift 相同），而且在每次可能改變答案的時候重讀：daemon 啟動、`/v1/settings` 寫了
+  `remote`／`remote_tunnel`／`remote_hostname`、`/v1/auth/` 下的配對完成、密碼登入、登出與所有裝置路由。
+  撤銷到沒有裝置時，正在跑的 tunnel 會被關掉。另外 `remote`（「讓瀏覽器或你的手機看得到你的 session」）
+  關著也拒絕：Swift 的理由（本機 server 沒開）在這裡不成立，保留的理由是它是使用者對「可被這台機器以外連到」
+  的同意。
+- **兩種模式**：`quick`（`--url http://127.0.0.1:<port>`，位址從 banner 讀，等到第一條連線註冊才公布）與
+  `named`（`run <remote_tunnel_name>`，位址是 `https://<remote_hostname>`，YAML 裡只有這一條 ingress
+  加上 404）。所有來自設定的值在 YAML 裡都是雙引號字串，名稱與 hostname 另有格式檢查。
+- **看得見**：`GET /v1/tunnel`（只有本機 token；quick tunnel 的位址本身就是通行證）、`clawdline tunnel`、
+  設定視窗「遠端」分頁 hostname 下方的卡片（off／…／位址／原因，字照 `Settings.swift` 的 `refreshTunnel`）。
+- **閘門的 hostname 跟著同一次讀取更新**，named tunnel 改了 hostname 不必重啟 daemon。
+- **不留孤兒**：SIGINT／SIGTERM 時先收掉 cloudflared 再把訊號照原樣重拋；SIGKILL 接不到，所以子行程的 pid
+  記在 `cloudflared.pid`，下次啟動時只有在該 pid 的命令列確實帶著這個目錄的 `--config` 時才停掉它，
+  讀不到行程表就什麼都不做。
+- 已知沒做：真的 cloudflared 連到 Cloudflare 的那一段沒有實測（驗收只到「被正確呼叫、參數正確」與真 binary
+  的 `--help` 認得這些參數）；Windows 上不收孤兒（沒有 `ps`）；`quick` 位址會寫進 daemon log 一次（同 Swift）。

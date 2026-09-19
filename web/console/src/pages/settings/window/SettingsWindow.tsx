@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { SettingsSnapshot } from "@clawdline/contract"
+import type { SettingsSnapshot, TunnelStatus } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { readSettings, writeSettings } from "../api.js"
 import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyFailedTitle, seconds } from "./copy.js"
@@ -13,6 +13,7 @@ import {
   type CloudViewer,
 } from "../cloud.js"
 import { DEFAULTS, reading, type SettingKey } from "./defaults.js"
+import { readTunnelStatus } from "../tunnel.js"
 import {
   APP_EVENT,
   HOTKEY_EVENT,
@@ -76,6 +77,8 @@ export function SettingsWindow() {
   // The Cloud line's own reading. `undefined` is "not asked yet", `null` is
   // "this daemon would not tell us", and the two draw different cards.
   const [cloud, setCloud] = useState<CloudStatus | null | undefined>(undefined)
+  // The tunnel's own reading, the same three ways: not asked, refused, an answer.
+  const [tunnel, setTunnel] = useState<TunnelStatus | null | undefined>(undefined)
   // The pairing card's own state. `pairingSaid` is whatever went wrong with the
   // last button press, which is separate from the line's `last_error`: one is
   // about this person's click and the other about the socket.
@@ -134,6 +137,26 @@ export function SettingsWindow() {
     }
   }, [tab, cloud?.pairing?.phase])
 
+  // The tunnel's reading, while the same tab is open. The Swift window asked
+  // its tunnel once a second, because "starting" turns into an address on its
+  // own; this asks every second and a half while it is starting and every five
+  // seconds otherwise, and nothing once the tab is left.
+  useEffect(() => {
+    if (tab !== 3) return
+    let live = true
+    const pass = () => {
+      void readTunnelStatus().then((answer) => {
+        if (live) setTunnel(answer)
+      })
+    }
+    pass()
+    const timer = setInterval(pass, tunnel?.state === "starting" ? 1_500 : 5_000)
+    return () => {
+      live = false
+      clearInterval(timer)
+    }
+  }, [tab, tunnel?.state])
+
   /**
    * Write, then tell the shell. The Swift app's `apply()`: save the file and
    * post `clawdlineConfigChanged`, and let the one place that re-applies things
@@ -152,6 +175,11 @@ export function SettingsWindow() {
         return next
       })
       ask({ kind: "changed" })
+      // A Remote-tab switch moves the tunnel at once (the daemon applies it
+      // on the write); the card asks again rather than waiting its turn.
+      if ("remote" in keys || "remote_tunnel" in keys || "remote_hostname" in keys) {
+        void readTunnelStatus().then(setTunnel)
+      }
       return answer
     } catch (error) {
       setDraft((prior) => {
@@ -888,8 +916,53 @@ export function SettingsWindow() {
               }}
             />
           </Row>
+          {tunnelBlock()}
         </div>
       </>
+    )
+  }
+
+  /**
+   * What the tunnel is doing, in the words the tunnel itself used
+   * (`Settings.swift` `refreshTunnel`). Its failures are sentences meant for a
+   * person — "pair a device first" — and passing them through unchanged is
+   * better than a generic "could not start": the useful part of each is the
+   * specific thing to go and do. The two literals are that function's own.
+   */
+  function tunnelBlock() {
+    if (tunnel === undefined) return null
+    if (tunnel === null) {
+      return (
+        <Block>
+          <Note dot="idle">{W.webCloudStatusReadFailed}</Note>
+        </Block>
+      )
+    }
+    let text = ""
+    let dot: "idle" | "warn" | "live" = "idle"
+    switch (tunnel.state) {
+      case "off":
+        text = tunnel.installed ? "" : "cloudflared is not installed."
+        break
+      case "starting":
+        text = "…"
+        break
+      case "up":
+        text = tunnel.url ?? ""
+        dot = "live"
+        break
+      case "failed":
+        text = tunnel.reason ?? ""
+        dot = "warn"
+        break
+    }
+    if (!text) return null
+    return (
+      <Block>
+        <Note dot={dot} mono>
+          {text}
+        </Note>
+      </Block>
     )
   }
 

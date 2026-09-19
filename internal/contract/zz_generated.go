@@ -2467,12 +2467,25 @@ type GitSnapshot struct {
 	Head string `json:"head"`
 }
 
-// GET /v1/health, open without a token: that this daemon is alive and which
-// implementation it is, and nothing else. No path, no port, nothing about the
-// work; those are in Diagnostics.
+// GET /v1/health, open without a token: that this daemon is alive, which
+// implementation it is, and the two answers a page needs before it can be let
+// in — whether the asker's own credential is one this machine knows, and
+// whether a password door exists. Nothing else: no path, no port, nothing about
+// the work; those are in Diagnostics.
 type Health struct {
 	At int64 `json:"at"`
-	OK bool  `json:"ok"`
+
+	// Whether the credential this request carried — the cookie or a bearer token —
+	// is one this machine lets in. It is about the asker and nothing else, and it is
+	// how a page tells "this browser is not let in" from "the daemon is not running"
+	// (EventSource reports a failure and never a reason). `false` is what shows the
+	// pairing page; the Swift app's page reads the same field.
+	Authed bool `json:"authed"`
+	OK     bool `json:"ok"`
+
+	// Whether a password has been set, so a page offers the password door only when
+	// there is one behind it. The Swift app's health says the same.
+	Password bool `json:"password"`
 
 	// Why `ok` is false, when it is. Absent when ok. The name only: what is behind it
 	// is in Diagnostics.
@@ -4467,6 +4480,70 @@ type TranscriptUnread struct {
 
 	// How much of the record's end one read looks at.
 	WindowBytes int64 `json:"windowBytes"`
+}
+
+// `off`; `quick`, an address made up per run under trycloudflare.com; `named`,
+// the person's own tunnel (`remote_tunnel_name`) and hostname
+// (`remote_hostname`).
+type TunnelMode string
+
+const (
+	TunnelModeOff   TunnelMode = "off"
+	TunnelModeQuick TunnelMode = "quick"
+	TunnelModeNamed TunnelMode = "named"
+)
+
+// TunnelModeValues is every value the contract allows, in contract order.
+var TunnelModeValues = []TunnelMode{TunnelModeOff, TunnelModeQuick, TunnelModeNamed}
+
+// `off`; `starting`, launched or waiting to retry and not yet registered with
+// the edge; `up`; `failed`, with a reason — including a refusal to start.
+type TunnelState string
+
+const (
+	TunnelStateOff      TunnelState = "off"
+	TunnelStateStarting TunnelState = "starting"
+	TunnelStateUp       TunnelState = "up"
+	TunnelStateFailed   TunnelState = "failed"
+)
+
+// TunnelStateValues is every value the contract allows, in contract order.
+var TunnelStateValues = []TunnelState{TunnelStateOff, TunnelStateStarting, TunnelStateUp, TunnelStateFailed}
+
+// One reading of the tunnel.
+type TunnelStatus struct {
+	At int64 `json:"at"`
+
+	// Launches in a row that have died, while it is retrying; absent when none have.
+	Attempts int64 `json:"attempts,omitempty"`
+
+	// The cloudflared the next launch would run: `cloudflared_path` when it is set and
+	// executable, else where a package manager puts it, else PATH. Absent when there
+	// is none.
+	Binary string `json:"binary,omitempty"`
+
+	// When state, url or reason last moved.
+	Changed int64 `json:"changed"`
+
+	// The command line of the child that is running or was last started, binary first.
+	// It always carries `--config` and this daemon's own file, never the person's
+	// ~/.cloudflared/config.yml.
+	Command []string `json:"command,omitempty"`
+
+	// The configuration file cloudflared is pointed at, in this daemon's state
+	// directory.
+	Config    string     `json:"config"`
+	Installed bool       `json:"installed"`
+	Mode      TunnelMode `json:"mode"`
+
+	// Why it failed or refused, in the tunnel's own sentence. Present when state is
+	// failed.
+	Reason string      `json:"reason,omitempty"`
+	State  TunnelState `json:"state"`
+
+	// The address, once a connection to Cloudflare's edge is registered. Present when
+	// state is up.
+	URL string `json:"url,omitempty"`
 }
 
 // The Swift app's `UsageQueryService` payload. The lossless `.json` export is
