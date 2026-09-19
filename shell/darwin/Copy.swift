@@ -3,7 +3,8 @@
 // Copied from the Swift app's Sources/Copy+Chinese.swift (`TraditionalChinese`),
 // property for property and under the same names, so `L.t.menuOpen` here and
 // there is one string. Nothing in this file is written fresh: a word the
-// original does not have is a word this shell does not show.
+// original does not have is a word this shell does not show — with one marked
+// exception under the browser bar, which says where its words come from.
 //
 // Only Traditional Chinese is carried, which is what the console ships too
 // (web/console/public/strings/zh-Hant.json). The Swift app follows
@@ -105,11 +106,30 @@ struct ShellCopy {
     // file still means the same thing in the other. The two destinations are
     // the setup centre's own names for them (`Onboarding.swift`'s route
     // cards), and the reload button is what the console's own refresh buttons
-    // say. Back and forward have no word anywhere in the Swift app, so they
-    // are drawn as ‹ and › and say nothing.
+    // say. "Open in the browser" is the Swift app's own button for handing the
+    // console to the person's browser (Settings → Remote), which is the same
+    // act done to whatever page is in front.
     let homeLocalTitle = "本機瀏覽器"
     let homeCloudPreviewTitle = "Clawdline Cloud 預覽"
     let webInfoRefresh = "重新整理"
+    let settingsRemoteOpen = "用瀏覽器打開"
+
+    // **Not from the Swift app.** It has no browser, no page zoom and no View
+    // menu, so it has no words for them, and the bar's icons, the menu and a
+    // zoom at its limit all have to say something. These are macOS's own words
+    // for the same controls — Safari's toolbar and View menu in Traditional
+    // Chinese — so they read the way every other Mac app reads, and they are
+    // here rather than in Browser.swift so that nothing on screen is spelled
+    // twice. `上限`／`下限` are the Swift app's own words for a limit.
+    let browserBack = "上一頁"
+    let browserForward = "下一頁"
+    let menuView = "顯示方式"
+    let menuActualSize = "實際大小"
+    let menuZoomIn = "放大"
+    let menuZoomOut = "縮小"
+    func zoomLevel(_ percent: Int) -> String { "\(percent)%" }
+    func zoomCeiling(_ percent: Int) -> String { "上限 \(percent)%" }
+    func zoomFloor(_ percent: Int) -> String { "下限 \(percent)%" }
 
     // The pairing alert (`main.swift` showPairing in the Swift app).
     let pairingIgnore = "忽略"
