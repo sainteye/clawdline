@@ -22,6 +22,16 @@ type Unsent struct{ Why string }
 
 func (u Unsent) Error() string { return u.Why }
 
+// Unsubmitted is a line that was typed and never submitted: the text went into
+// the terminal, the program in it never showed the text arriving, and so no
+// Enter was pressed (submit.go). It is not Unsent — the text may be sitting in
+// the input line, or may arrive there once the program reads again — and it is
+// not a delivery. Typing the same line again can leave two copies in one input
+// line; it cannot submit half of one.
+type Unsubmitted struct{ Why string }
+
+func (u Unsubmitted) Error() string { return u.Why }
+
 // Unconfirmed is an effect that was asked for and not answered, and whose
 // outcome a look afterwards could not settle either way. It is neither a
 // success nor a failure: an iTerm2 close that ran out of time has been seen to

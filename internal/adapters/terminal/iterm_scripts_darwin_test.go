@@ -27,27 +27,37 @@ import (
 const itermModel = `
 const vm = require("vm");
 const writes = [];
-function session(id, tty, screen) {
+const ESC = String.fromCharCode(27);
+// Each session draws its screen from what was written to it: the text pasted
+// so far, brackets removed, and how many Returns arrived.
+function session(id, tty, draw) {
+  const state = { typed: "", returns: 0 };
   return {
-    id: () => id, tty: () => tty, name: () => "shell", text: () => screen,
-    write: (o) => { writes.push({ id: id, text: o.text, newline: o.newline }); },
+    id: () => id, tty: () => tty, name: () => "shell", text: () => draw(state),
+    write: (o) => {
+      writes.push({ id: id, text: o.text, newline: o.newline });
+      if (o.text === "\r") { state.returns++; return; }
+      state.typed += o.text.split(ESC + "[200~").join("").split(ESC + "[201~").join("");
+    },
     select: () => {}, variable: () => "",
     close: () => { writes.push({ id: id, text: "<close>", newline: false }); },
   };
 }
+const rule = "────────────────────────────────────────";
+function composer(line) { return [rule, "❯ " + line, rule, "  ? for shortcuts"].join("\n"); }
+// GUID-A is a shell: it echoes what is typed, and a Return starts a new line.
+const shell = (st) => "> " + (st.returns > 0 ? "" : st.typed);
+// GUID-C is Claude Code, the way it draws its composer — the caret is ❯, not
+// > — and it swallows the first Return after a paste.
+const claude = (st) => composer(st.returns >= 2 ? "" : st.typed);
+// GUID-D is a program that is not reading: its composer never shows anything.
+const deaf = (st) => composer("");
 const unlisted = { tabs: () => null, select: () => {} };
-// GUID-C is Claude Code with the pasted briefing still in its composer, the
-// way it draws it: the caret is ❯, not >.
-const claude = [
-  "────────────────────────────────────────",
-  "❯ please read CHILD.md 0123456789abcdef0123456789abcdef",
-  "────────────────────────────────────────",
-  "  ? for shortcuts",
-].join("\n");
 const complete = process.env.COMPLETE === "1";
 const listed = { select: () => {}, tabs: () => [
   complete ? { select: () => {}, sessions: () => [] } : { select: () => {}, sessions: () => null },
-  { select: () => {}, sessions: () => [session("GUID-A", "/dev/ttys031", "> "), session("GUID-C", "/dev/ttys032", claude)] },
+  { select: () => {}, sessions: () => [session("GUID-A", "/dev/ttys031", shell), session("GUID-C", "/dev/ttys032", claude),
+    session("GUID-D", "/dev/ttys033", deaf)] },
 ] };
 const app = { running: () => true, windows: () => complete ? [listed] : [unlisted, listed], activate: () => {} };
 const context = vm.createContext({ Application: () => app, delay: () => {}, JSON: JSON });
@@ -109,7 +119,8 @@ func runInModelWith(t *testing.T, script string, argv []string, complete bool) m
 func TestTheITermListingSkipsAWindowThatWillNotListItsTabs(t *testing.T) {
 	run := runInModel(t, itermList, nil)
 	sessions, _ := run.Answer["sessions"].([]any)
-	if len(sessions) != 2 || sessions[0].(map[string]any)["id"] != "GUID-A" || sessions[1].(map[string]any)["id"] != "GUID-C" {
+	if len(sessions) != 3 || sessions[0].(map[string]any)["id"] != "GUID-A" || sessions[1].(map[string]any)["id"] != "GUID-C" ||
+		sessions[2].(map[string]any)["id"] != "GUID-D" {
 		t.Fatalf("sessions %v, want the listed sessions by their ids", run.Answer["sessions"])
 	}
 	if run.Answer["unreadable"] != float64(2) {
@@ -120,7 +131,7 @@ func TestTheITermListingSkipsAWindowThatWillNotListItsTabs(t *testing.T) {
 // Every script that looks for one session finds it past such a window.
 func TestEveryITermScriptFindsASessionPastAWindowThatWillNotList(t *testing.T) {
 	if run := runInModel(t, itermTypeScript, []string{"GUID-A", "hello"}); run.Answer["ok"] != true ||
-		len(run.Writes) != 1 || run.Writes[0].Text != "hello" || run.Writes[0].Newline {
+		len(run.Writes) != 1 || run.Writes[0].Text != "\x1b[200~hello\x1b[201~" || run.Writes[0].Newline {
 		t.Fatalf("type: %+v", run)
 	}
 	if run := runInModel(t, itermKeyScript, []string{"key", "GUID-A", "27"}); run.Answer["ok"] != true ||
@@ -145,8 +156,9 @@ func TestEveryITermScriptFindsASessionPastAWindowThatWillNotList(t *testing.T) {
 	}
 }
 
-// Send is the Swift app's: one bracketed paste, then a Return of its own. It
-// used to call a command iTerm2 does not have and send no Return at all.
+// Send is one bracketed paste, then — once the session shows it — a Return of
+// its own. It used to call a command iTerm2 does not have and send no Return
+// at all.
 func TestTheITermSendPastesThenSubmits(t *testing.T) {
 	run := runInModel(t, itermSendScript, []string{"GUID-A", "line one\nline two"})
 	if run.Answer["ok"] != true || len(run.Writes) != 2 {
@@ -179,16 +191,35 @@ func TestAnITermAnswerOfNotDoneIsAFailure(t *testing.T) {
 // F4: the Return that follows the paste can be swallowed, and the script looks
 // again and sends another only while the paste is still in the composer. It
 // used to look for ">" and "›" only, and Claude Code draws its composer with
-// "❯" — so for Claude the look never found a composer and never helped.
+// "❯" — so for Claude the look never found a composer and never helped. Once
+// the composer lets go, no more Returns are sent.
 func TestTheITermSendNudgesAClaudeComposerThatKeptThePaste(t *testing.T) {
 	run := runInModel(t, itermSendScript, []string{"GUID-C", "please read CHILD.md 0123456789abcdef0123456789abcdef"})
-	if run.Answer["ok"] != true || len(run.Writes) < 3 {
-		t.Fatalf("a Claude composer still holding the paste got no second Return: %+v", run)
+	if run.Answer["ok"] != true || len(run.Writes) != 3 {
+		t.Fatalf("a Claude composer that kept the paste once got %+v, want the paste and two Returns", run)
 	}
 	for _, w := range run.Writes[1:] {
 		if w.Text != "\r" {
 			t.Fatalf("after the paste only Returns are sent, got %q", w.Text)
 		}
+	}
+}
+
+// The iTerm2 half of submit.go's step 3: a session that never shows the paste
+// arriving gets no Return at all, and the send answers Unsubmitted — the text
+// is in the session, so it is not Unsent either.
+func TestTheITermSendPressesNoReturnUntilTheSessionShowsThePaste(t *testing.T) {
+	run := runInModel(t, itermSendScript, []string{"GUID-D", "please read CHILD.md 0123456789abcdef0123456789abcdef"})
+	if run.Answer["ok"] != false || run.Answer["typed"] != true {
+		t.Fatalf("a session that never showed the paste answered %+v", run.Answer)
+	}
+	if len(run.Writes) != 1 || !strings.HasPrefix(run.Writes[0].Text, "\x1b[200~") {
+		t.Fatalf("want the paste and nothing else, got %+v", run.Writes)
+	}
+	raw, _ := json.Marshal(run.Answer)
+	var unsubmitted Unsubmitted
+	if err := itermAnswer(raw); !errors.As(err, &unsubmitted) {
+		t.Fatalf("typed-and-not-submitted read as %T %v, want Unsubmitted", err, err)
 	}
 }
 

@@ -9,9 +9,10 @@ import (
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
-// itermTypeScript writes text into one iTerm2 session without a newline. The
-// id and the text are arguments, never part of the script, so no quoting rule
-// has to be right about them.
+// itermTypeScript writes text into one iTerm2 session without a newline, as
+// one bracketed paste, like the send script's (submit.go). The id and the text
+// are arguments, never part of the script, so no quoting rule has to be right
+// about them.
 const itermTypeScript = itermEach + `
 function run(argv) {
   const id = String(argv[0] || ""), text = String(argv[1] || "");
@@ -20,7 +21,8 @@ function run(argv) {
   let done = false;
   const walk = itermEach(it, function (s) {
     if (String(s.id()) !== id) return false;
-    s.write({ text: text, newline: false });
+    const ESC = String.fromCharCode(27);
+    s.write({ text: ESC + "[200~" + text + ESC + "[201~", newline: false });
     done = true;
     return true;
   });

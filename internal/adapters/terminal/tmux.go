@@ -17,6 +17,10 @@ import (
 
 const paneSeparator = "\x01"
 
+// sendConfirm is how long Send waits for the pane to show the text before it
+// gives up without pressing Enter.
+var sendConfirm = 6 * time.Second
+
 type Tmux struct{ Binary string }
 
 func NewTmux() *Tmux { return &Tmux{Binary: "tmux"} }
@@ -130,17 +134,16 @@ func (t *Tmux) Capture(ctx context.Context, s session.Session) (string, bool) {
 	return string(out), true
 }
 
-// Send types one line into a pane and submits it.
+// Send types one line into a pane and submits it, by the four steps in
+// submit.go: one bracketed paste, a look at the pane until it shows the text
+// arriving, then Enter — never before — and another Enter only while the
+// input line still shows exactly what it showed.
 //
-// The text goes in literally (`-l`) so that a line containing a semicolon, a
-// brace or a newline cannot be read by tmux as its own command syntax. Submit
-// is a separate key rather than a trailing newline in the same call, because
-// the two are different events to the program reading the tty.
+// It used to be `send-keys -l` and then Enter at once. The two are one byte
+// stream to the program, which reads it in pieces of at most 1022 bytes, and a
+// 1045-byte notice reached a Claude Code root as its last 23 bytes.
 func (t *Tmux) Send(ctx context.Context, s session.Session, text string) error {
-	if err := t.run(ctx, "send-keys", "-t", s.ID, "-l", text); err != nil {
-		return err
-	}
-	return t.run(ctx, "send-keys", "-t", s.ID, "Enter")
+	return submit(ctx, tmuxInput{call: t.call, target: s.ID}, text, sendConfirm)
 }
 
 // Interrupt stops the current turn without closing the pane.
@@ -160,18 +163,28 @@ func (t *Tmux) Close(ctx context.Context, s session.Session) error {
 // question when an effect did not land. tmux already says which; this stops
 // throwing that away.
 func (t *Tmux) run(ctx context.Context, args ...string) error {
+	_, err := t.call(ctx, "", args...)
+	return err
+}
+
+// call is run with stdin, answering what tmux wrote.
+func (t *Tmux) call(ctx context.Context, stdin string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, t.Binary, args...)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	out, err := cmd.Output()
+	if err != nil {
 		said := strings.TrimSpace(stderr.String())
 		if said == "" {
-			return fmt.Errorf("tmux %s failed: %w", args[0], err)
+			return "", fmt.Errorf("tmux %s failed: %w", args[0], err)
 		}
-		return fmt.Errorf("tmux %s refused: %s", args[0], said)
+		return "", fmt.Errorf("tmux %s refused: %s", args[0], said)
 	}
-	return nil
+	return string(out), nil
 }
 
 // Open starts a detached session and returns its first pane.

@@ -3,6 +3,7 @@ package terminal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
@@ -21,6 +22,11 @@ type Failure struct {
 }
 
 func (f Failure) Error() string { return f.Message }
+
+// openConfirm is how long openPane waits for a new pane's shell to show the
+// line typed into it. Longer than a send's: a login shell may still be reading
+// its rc files, and on a busy machine that is seconds.
+var openConfirm = 15 * time.Second
 
 // Launcher is the start route's port over this machine's terminals: tmux on
 // every platform, iTerm2 where there is one (launch_darwin.go).
@@ -88,9 +94,8 @@ func (l Launcher) NewTmuxSession(ctx context.Context, cwd, name, command string)
 // `new-window <command>` runs under the server's environment instead, which
 // for a server an app started has no PATH worth reading.
 //
-// What comes back says the keystrokes were accepted, which is the most tmux
-// can say; a shell that flushes pending input shows up afterwards as a pane
-// that never reports an assistant.
+// What comes back says the shell showed the line and Enter was pressed after
+// it. Whether the assistant then started is the next reading's to say.
 func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, refused string) (string, error) {
 	bin := l.binary()
 	if bin == "" {
@@ -115,12 +120,28 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	// by the id tmux just gave it: nobody else holds that id, and a shell left
 	// open in a pane nobody recorded is the next spawn's failure (the Swift
 	// app's `3e37e8ec`). A pane this call did not make is never touched.
-	if _, err := runTmux(ctx, bin, "send-keys", "-t", id, "-l", command); err != nil {
+	//
+	// The line is typed the way every line is (submit.go): pasted, then
+	// looked for on the pane until the shell shows it, and only then Enter.
+	// It used to be `send-keys -l` and Enter at once, the shape that cut a
+	// long notice in two; a command this short is not cut, but a shell still
+	// reading its rc files is exactly a program that is not reading yet, and
+	// a shell that threw its typeahead away is now a spawn that says so rather
+	// than a pane that never reports an assistant.
+	in := tmuxInput{target: id, call: func(ctx context.Context, stdin string, args ...string) (string, error) {
+		return runTmuxInput(ctx, bin, stdin, args...)
+	}}
+	if err := submit(ctx, in, command, openConfirm); err != nil {
 		l.discard(ctx, bin, id)
-		return "", Failure{Message: "tmux would not type into the pane it just made."}
-	}
-	if _, err := runTmux(ctx, bin, "send-keys", "-t", id, "Enter"); err != nil {
-		l.discard(ctx, bin, id)
+		var unsent Unsent
+		var unsubmitted Unsubmitted
+		switch {
+		case errors.As(err, &unsent):
+			return "", Failure{Message: "tmux would not type into the pane it just made."}
+		case errors.As(err, &unsubmitted):
+			return "", Failure{Message: "tmux typed the line, but the shell in the new pane never showed it, " +
+				"so it was not run."}
+		}
 		return "", Failure{Message: "tmux typed the line but Enter did not land."}
 	}
 	return id, nil
@@ -181,10 +202,18 @@ func (l Launcher) CloseTmuxSession(ctx context.Context, paneID, name string) (bo
 
 // runTmux is one bounded tmux call, carrying tmux's own sentence on failure.
 func runTmux(ctx context.Context, bin string, args ...string) (string, error) {
+	return runTmuxInput(ctx, bin, "", args...)
+}
+
+// runTmuxInput is runTmux with stdin.
+func runTmuxInput(ctx context.Context, bin, stdin string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(outsideTmux(cmd.Environ()), "LC_ALL=C")
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
