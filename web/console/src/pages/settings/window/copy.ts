@@ -150,25 +150,48 @@ export const W = {
   webCloudStatusNoDrops: "自 {at} 起 Mac 沒有丟棄任何指令。",
 
   // Pairing a browser with this Mac. These are this build's own words rather
-  // than the hosted console's: the Swift app pairs from an AppKit sheet with a
-  // QR in it, and this window has neither the sheet nor a camera to point at
-  // one, so the sentences are about a link instead of a code on a screen.
+  // than the hosted console's, except `pairingScanTitle`, which is the Swift
+  // app's own title over its pairing QR. The QR is drawn in this window now
+  // (PairingQr.tsx), so the words lead with the code and keep the link for a
+  // browser that has no camera. The order-of-steps lines restate the hosted
+  // console's install boundary (`cloud-onboarding.js`), and the one button they
+  // name is quoted in that console's own words, which are English.
+  pairingScanTitle: "用手機掃這張 QR code",
   webCloudPair: "配對瀏覽器",
   webCloudPairNone: "還沒有任何瀏覽器配對到這台 Mac。",
-  webCloudPairStart: "產生配對連結",
-  webCloudPairAgain: "換一個連結",
+  webCloudPairStart: "產生配對 QR",
+  webCloudPairAgain: "換一張",
   webCloudPairCancel: "停止等待",
-  webCloudPairOpen: "在要配對的瀏覽器上打開這個連結，那個瀏覽器要先登入同一個 Clawdline Cloud 帳號。",
+  webCloudPairOpen:
+    "電腦或 Android 的瀏覽器也可以直接打開這個連結，再登入同一個 Clawdline Cloud 帳號。iPhone 不要用 Safari 開，照上面的順序在主畫面 app 裡掃。",
   webCloudPairCopy: "複製連結",
   webCloudPairCopied: "已複製",
-  webCloudPairExpires: "連結在 {at} 失效。",
+  webCloudPairEnlarge: "點一下 QR 可以放到最大",
+  webCloudPairRemaining: "還剩 {time}（{at} 失效）。",
+  webCloudPairRemainingShort: "還剩 {time}",
+  webCloudPairRenewed: "已自動換過 {count} 次。",
+  webCloudPairExpired: "這張 QR 已經過期了。",
+  webCloudPairRenewing: "正在換一張新的⋯⋯",
+  webCloudPairGaveUp: "已經自動換了 {count} 次都沒有人掃，先停在這裡；要掃的時候再按一下。",
+  webCloudPairRenew: "換一張新的 QR",
+  webCloudPairClose: "點任何地方或按 Esc 關閉",
+  webCloudPairOrderHead: "iPhone／iPad 一定要照這個順序，不然會白做：",
+  webCloudPairOrderInstall: "用 Safari 打開 app.clawdline.com，按「分享」→「加入主畫面」。",
+  webCloudPairOrderOpen: "關掉 Safari，從主畫面打開 Clawdline。",
+  webCloudPairOrderSignIn: "在這個主畫面 app 裡登入同一個 Clawdline Cloud 帳號。",
+  webCloudPairOrderScan: "按「Scan the QR on the Mac」，對準這張 QR。",
+  webCloudPairOrderWhy:
+    "不要用相機 app 或 Safari 直接掃：主畫面 app 的儲存跟 Safari 是分開的，金鑰又不能匯出，在 Safari 配好的，裝成 app 之後就不見了。",
+  webCloudPairOrderOther: "Android 或電腦：用相機掃、或直接打開連結，登入同一個帳號就好。",
   webCloudPairMachineKey: "這台 Mac 的金鑰是 {key}，配對完成時瀏覽器會顯示同一組。",
   webCloudPairWaiting: "等待瀏覽器回應⋯⋯",
   webCloudPairSealing: "收到瀏覽器的配對資料，正在交接金鑰⋯⋯",
   webCloudPairDone: "已配對 {device}（{key}）。",
   webCloudPairFailed: "配對沒有完成：{why}",
+  webCloudPairCodeHead: "另一條路：貼上瀏覽器的配對碼",
   webCloudPairCodeLabel: "瀏覽器顯示的配對碼",
-  webCloudPairCodeHint: "桌機瀏覽器沒有鏡頭可以掃這台 Mac，改成把它畫面上的那串配對碼貼進來，走的是同一套加密。",
+  webCloudPairCodeHint:
+    "沒有鏡頭的電腦瀏覽器走這條：在那個瀏覽器打開 app.clawdline.com 並登入，把它顯示的「Pairing code」整串貼到這裡。配對碼 10 分鐘內有效，比 QR 寬鬆，走的是同一套加密。",
   webCloudPairCodeSend: "用這串配對碼配對",
   webCloudPairPinned: "由這台 Mac 配對",
   webCloudPairRoster: "只在帳號清單上",
