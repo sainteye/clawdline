@@ -577,7 +577,8 @@
         "store": { "$ref": "#/$defs/BrokerStoreHealth" },
         "observations": { "$ref": "#/$defs/BrokerObservations" },
         "lanes": { "$ref": "#/$defs/BrokerLanes" },
-        "policy": { "$ref": "#/$defs/BrokerPolicy" }
+        "policy": { "$ref": "#/$defs/BrokerPolicy" },
+        "workflow_retired": { "$ref": "#/$defs/BrokerWorkflowRetired" }
       }
     },
     "BrokerProgressEvent": {
@@ -599,6 +600,196 @@
       "required": ["notes"],
       "properties": {
         "notes": { "type": "array", "items": { "$ref": "#/$defs/BrokerProgressEvent" } }
+      }
+    },
+    "BrokerWorkflowOutcome": {
+      "description": "What POST /v1/orchestrator/sessions/<terminal>/workflow answers now that the per-message workflow envelope is retired (design-decisions D36, U5). Sessions briefed by the Swift app still run its `clawdline-board-workflow` helper, which posts `begin` and `deliver` here; this daemon records nothing for them and says so in the envelope the helper was written against, so the helper exits 0 instead of reporting a broken step. `recorded` is always false and `authority` is `none`: the Swift app's receipt was a 202 with `workflow_<operation>_recorded` and an `item_id`, and an answer that could be mistaken for one would be the retired protocol answering again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "code", "message", "outbox_pending", "recorded", "status"],
+      "properties": {
+        "status": { "description": "This answer's HTTP status, repeated inside it as the Swift envelope does.", "type": "integer" },
+        "code": { "type": "string", "enum": ["workflow_retired"] },
+        "authority": { "type": "string", "enum": ["none"] },
+        "recorded": { "type": "boolean" },
+        "run_id": { "description": "The caller's own run_id when it sent a bounded one, echoed; nothing was looked up by it.", "type": "string", "nullable": true },
+        "item_id": { "description": "Always null: no board item is bound.", "type": "string", "nullable": true },
+        "outbox_pending": { "type": "integer" },
+        "project_id": { "description": "Always null.", "type": "string", "nullable": true },
+        "message": { "description": "One sentence the helper prints as it stands.", "type": "string" }
+      }
+    },
+    "BrokerWorkflowAnswer": {
+      "description": "The retired workflow route's whole body: the Swift app's success envelope around an outcome that says nothing was recorded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "workflow"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "workflow": { "$ref": "#/$defs/BrokerWorkflowOutcome" }
+      }
+    },
+    "BrokerWorkflowRetired": {
+      "description": "How often this process has answered the retired workflow route, the one number that says when the route can be removed: it exists only for sessions briefed before the switch, and it can go once this stays at zero. An observation of this process, in memory and never stored; `since` is when it started counting.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "since"],
+      "properties": {
+        "calls": { "type": "integer" },
+        "last_at": { "type": "integer" },
+        "since": { "type": "integer" }
+      }
+    },
+    "AssistantAvailability": {
+      "description": "One of four things this Mac can honestly say about an assistant's account-level quota, tightest to loosest. Never a percentage: both providers answer what the account last said, not what it says now.",
+      "type": "string",
+      "enum": ["ok", "low", "exhausted", "unknown"]
+    },
+    "AssistantQuotaSource": {
+      "description": "Where a reading came from. `observed` is a file the provider itself wrote (the status line's cache, a Codex rollout). Nothing in this build produces the other two.",
+      "type": "string",
+      "enum": ["observed", "probed", "self_reported"]
+    },
+    "AssistantQuota": {
+      "description": "One row of GET /v1/orchestrator/assistants: what this Mac can say about one assistant's account, as the Swift app's `AssistantQuota.payload` spells it. `logged_in` and `plan` stay null because no identity probe runs. An old `ok` decays to `unknown` with `last_known`; `low` keeps saying `low` and is marked `stale`; `exhausted` leaves only when its window resets.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "detail", "id", "installed", "label", "source", "stale", "windows"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "label": { "type": "string" },
+        "installed": { "description": "The assistant's home directory exists on this Mac.", "type": "boolean" },
+        "logged_in": { "type": "boolean", "nullable": true },
+        "plan": { "type": "string", "nullable": true },
+        "availability": { "$ref": "#/$defs/AssistantAvailability" },
+        "source": { "$ref": "#/$defs/AssistantQuotaSource" },
+        "observed_at": { "description": "Unix seconds of the provider's own record; null when nothing usable has been seen.", "type": "integer", "nullable": true },
+        "age_seconds": { "type": "integer", "nullable": true },
+        "stale": { "type": "boolean" },
+        "resets_at": { "description": "The tightest live window's reset.", "type": "integer", "nullable": true },
+        "detail": { "description": "One sentence a client can print as it stands.", "type": "string" },
+        "windows": { "type": "array", "items": { "$ref": "sessions.schema.json#/$defs/SessionLimitWindow" } },
+        "last_known": { "description": "What an `unknown` was before it aged out of `ok`. Absent on an `unknown` that is plain silence.", "$ref": "#/$defs/AssistantAvailability" }
+      }
+    },
+    "AssistantList": {
+      "description": "GET /v1/orchestrator/assistants: both assistants, machine-level, read from files only and held for five seconds. The dispatch quota check a root runs before choosing an assistant reads this.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistants", "at"],
+      "properties": {
+        "at": { "type": "integer" },
+        "assistants": { "type": "array", "items": { "$ref": "#/$defs/AssistantQuota" } }
+      }
+    },
+    "BrokerMachineNotifyRequest": {
+      "description": "The whole body of POST /v1/orchestrator/notify: a root, which holds this Mac's orchestrator token and no task secret, pushing one sentence to the person. `session_id` only chooses where tapping it lands, and only when it names a session this Mac is watching; the token proves this Mac's person asked and never which session did.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body", "title"],
+      "properties": {
+        "title": { "description": "1–80 characters.", "type": "string" },
+        "body": { "description": "1–500 characters.", "type": "string" },
+        "session_id": { "type": "string" }
+      }
+    },
+    "BrokerLandingOwnershipStatus": {
+      "description": "Where the session that has to act on a pending landing was last seen. Every `observed_*` is one exact match in the reading; `not_observed` is absence proved by a complete process table with every assistant named; anything short of either is `unknown`, never absence.",
+      "type": "string",
+      "enum": ["observed_working", "observed_ready_or_holding", "observed_other", "task_still_live", "not_observed", "unknown"]
+    },
+    "BrokerLandingOwnership": {
+      "description": "Who has to move a pending landing and where they were seen: the executor while the task runs, its root once it has finished.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "reason", "status", "subject", "task_id", "task_state", "version"],
+      "properties": {
+        "version": { "type": "integer" },
+        "status": { "$ref": "#/$defs/BrokerLandingOwnershipStatus" },
+        "subject": { "type": "string", "enum": ["executor", "root"] },
+        "reason": { "type": "string" },
+        "task_id": { "type": "string" },
+        "task_state": { "$ref": "tasks.schema.json#/$defs/TaskState" },
+        "root_key": { "type": "string", "nullable": true },
+        "root_assistant": { "type": "string", "nullable": true },
+        "observed_work_state": { "type": "string", "nullable": true },
+        "evidence": { "$ref": "#/$defs/BrokerLandingSources" }
+      }
+    },
+    "BrokerLandingSources": {
+      "description": "The three readings a landing list is made of, each with its own time: the sessions were read separately from the records, and saying so is the honest alternative to calling the two one transaction.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["landings", "sessions", "tasks"],
+      "properties": {
+        "sessions": { "$ref": "coordination.schema.json#/$defs/BearingsSource" },
+        "tasks": { "$ref": "coordination.schema.json#/$defs/BearingsSource" },
+        "landings": { "$ref": "coordination.schema.json#/$defs/BearingsSource" }
+      }
+    },
+    "BrokerPendingLanding": {
+      "description": "One landing this broker's records still owe, oldest first. `paths` is the landing write set: what the task declared at dispatch (D21), or its lease when nothing was declared. `obligation` is the broker's own reading of the owing root (the same one the inventory and a task's `landing.obligation` carry).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["age_seconds", "id", "obligation", "ownership", "paths", "since", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "root_key": { "type": "string", "nullable": true },
+        "root_label": { "type": "string", "nullable": true },
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "since": { "type": "integer" },
+        "age_seconds": { "type": "integer" },
+        "target": { "type": "string", "nullable": true },
+        "note": { "type": "string", "nullable": true },
+        "obligation": { "$ref": "#/$defs/BrokerLandingObligation" },
+        "ownership": { "$ref": "#/$defs/BrokerLandingOwnership" }
+      }
+    },
+    "BrokerLandingList": {
+      "description": "GET /v1/orchestrator/landings: every pending landing in this broker's records, derived on each read and never kept. An unreadable record makes the whole answer a refusal rather than a shorter list.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "landings", "sources"],
+      "properties": {
+        "landings": { "type": "array", "items": { "$ref": "#/$defs/BrokerPendingLanding" } },
+        "sources": { "$ref": "#/$defs/BrokerLandingSources" },
+        "at": { "type": "integer" }
+      }
+    },
+    "BrokerAddressRow": {
+      "description": "One row of GET /v1/orchestrator/sessions, the address book a coordination wait, a relay or a handoff names sessions from: which assistant sessions there are, whether each can still be given work, what it is waiting on, and whether it can be ended. It is the paired-device session row with the screen taken out — no line, menu, shells, tty or conversation id — because the orchestrator token exists to dispatch work, not to read somebody's terminal. For the same reason `disposition.title` is always empty here: a completion summary is prose, and stays on the paired-device row. `taskId` is the task this tab was opened for, when this broker opened it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["closeability", "id", "state", "work_state"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "state": { "$ref": "common.schema.json#/$defs/SessionState" },
+        "work_state": { "$ref": "sessions.schema.json#/$defs/WorkState" },
+        "work_provenance": { "$ref": "sessions.schema.json#/$defs/WorkProvenance" },
+        "work_note": { "type": "string" },
+        "work_since": { "type": "integer" },
+        "work_moved_by": { "type": "string" },
+        "work_person_needed": { "type": "boolean" },
+        "owed": { "$ref": "sessions.schema.json#/$defs/WorkOwed" },
+        "disposition": { "$ref": "sessions.schema.json#/$defs/WorkDisposition" },
+        "closeability": { "$ref": "sessions.schema.json#/$defs/Closeability" },
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "cwd": { "type": "string" },
+        "taskId": { "type": "string" },
+        "root_assignment": { "$ref": "sessions.schema.json#/$defs/RootAssignmentRecord" },
+        "coordinator": { "$ref": "sessions.schema.json#/$defs/SessionCoordinator" }
+      }
+    },
+    "BrokerAddressBook": {
+      "description": "GET /v1/orchestrator/sessions.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "sessions"],
+      "properties": {
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/BrokerAddressRow" } },
+        "at": { "type": "integer" }
       }
     }
   }

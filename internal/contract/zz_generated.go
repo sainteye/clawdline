@@ -531,6 +531,77 @@ const (
 // AssistantValues is every value the contract allows, in contract order.
 var AssistantValues = []Assistant{AssistantClaude, AssistantCodex}
 
+// One of four things this Mac can honestly say about an assistant's
+// account-level quota, tightest to loosest. Never a percentage: both providers
+// answer what the account last said, not what it says now.
+type AssistantAvailability string
+
+const (
+	AssistantAvailabilityOK        AssistantAvailability = "ok"
+	AssistantAvailabilityLow       AssistantAvailability = "low"
+	AssistantAvailabilityExhausted AssistantAvailability = "exhausted"
+	AssistantAvailabilityUnknown   AssistantAvailability = "unknown"
+)
+
+// AssistantAvailabilityValues is every value the contract allows, in contract order.
+var AssistantAvailabilityValues = []AssistantAvailability{AssistantAvailabilityOK, AssistantAvailabilityLow, AssistantAvailabilityExhausted, AssistantAvailabilityUnknown}
+
+// GET /v1/orchestrator/assistants: both assistants, machine-level, read from
+// files only and held for five seconds. The dispatch quota check a root runs
+// before choosing an assistant reads this.
+type AssistantList struct {
+	Assistants []AssistantQuota `json:"assistants"`
+	At         int64            `json:"at"`
+}
+
+// One row of GET /v1/orchestrator/assistants: what this Mac can say about one
+// assistant's account, as the Swift app's `AssistantQuota.payload` spells it.
+// `logged_in` and `plan` stay null because no identity probe runs. An old `ok`
+// decays to `unknown` with `last_known`; `low` keeps saying `low` and is marked
+// `stale`; `exhausted` leaves only when its window resets.
+type AssistantQuota struct {
+	AgeSeconds   *int64                `json:"age_seconds"`
+	Availability AssistantAvailability `json:"availability"`
+
+	// One sentence a client can print as it stands.
+	Detail string    `json:"detail"`
+	ID     Assistant `json:"id"`
+
+	// The assistant's home directory exists on this Mac.
+	Installed bool   `json:"installed"`
+	Label     string `json:"label"`
+
+	// What an `unknown` was before it aged out of `ok`. Absent on an `unknown` that is
+	// plain silence.
+	LastKnown AssistantAvailability `json:"last_known,omitempty"`
+	LoggedIn  *bool                 `json:"logged_in"`
+
+	// Unix seconds of the provider's own record; null when nothing usable has been
+	// seen.
+	ObservedAt *int64  `json:"observed_at"`
+	Plan       *string `json:"plan"`
+
+	// The tightest live window's reset.
+	ResetsAt *int64               `json:"resets_at"`
+	Source   AssistantQuotaSource `json:"source"`
+	Stale    bool                 `json:"stale"`
+	Windows  []SessionLimitWindow `json:"windows"`
+}
+
+// Where a reading came from. `observed` is a file the provider itself wrote
+// (the status line's cache, a Codex rollout). Nothing in this build produces
+// the other two.
+type AssistantQuotaSource string
+
+const (
+	AssistantQuotaSourceObserved     AssistantQuotaSource = "observed"
+	AssistantQuotaSourceProbed       AssistantQuotaSource = "probed"
+	AssistantQuotaSourceSelfReported AssistantQuotaSource = "self_reported"
+)
+
+// AssistantQuotaSourceValues is every value the contract allows, in contract order.
+var AssistantQuotaSourceValues = []AssistantQuotaSource{AssistantQuotaSourceObserved, AssistantQuotaSourceProbed, AssistantQuotaSourceSelfReported}
+
 // The inside of every refusal the gate and the auth routes give. `code` is the
 // part a client may branch on; `message` is English, for a person.
 type AuthError struct {
@@ -628,6 +699,41 @@ type BrokerAckResult struct {
 	OK           bool   `json:"ok"`
 }
 
+// GET /v1/orchestrator/sessions.
+type BrokerAddressBook struct {
+	At       int64              `json:"at"`
+	Sessions []BrokerAddressRow `json:"sessions"`
+}
+
+// One row of GET /v1/orchestrator/sessions, the address book a coordination
+// wait, a relay or a handoff names sessions from: which assistant sessions
+// there are, whether each can still be given work, what it is waiting on, and
+// whether it can be ended. It is the paired-device session row with the screen
+// taken out — no line, menu, shells, tty or conversation id — because the
+// orchestrator token exists to dispatch work, not to read somebody's terminal.
+// For the same reason `disposition.title` is always empty here: a completion
+// summary is prose, and stays on the paired-device row. `taskId` is the task
+// this tab was opened for, when this broker opened it.
+type BrokerAddressRow struct {
+	Assistant        Assistant             `json:"assistant,omitempty"`
+	Closeability     Closeability          `json:"closeability"`
+	Coordinator      *SessionCoordinator   `json:"coordinator,omitempty"`
+	CWD              string                `json:"cwd,omitempty"`
+	Disposition      *WorkDisposition      `json:"disposition,omitempty"`
+	ID               string                `json:"id"`
+	Label            string                `json:"label,omitempty"`
+	Owed             *WorkOwed             `json:"owed,omitempty"`
+	RootAssignment   *RootAssignmentRecord `json:"root_assignment,omitempty"`
+	State            SessionState          `json:"state"`
+	TaskID           string                `json:"taskId,omitempty"`
+	WorkMovedBy      string                `json:"work_moved_by,omitempty"`
+	WorkNote         string                `json:"work_note,omitempty"`
+	WorkPersonNeeded bool                  `json:"work_person_needed,omitempty"`
+	WorkProvenance   WorkProvenance        `json:"work_provenance,omitempty"`
+	WorkSince        int64                 `json:"work_since,omitempty"`
+	WorkState        WorkState             `json:"work_state"`
+}
+
 // The five things a Feature Root is briefed with, and nothing else: each
 // 1–8192 bytes, not blank, no NUL; 32768 bytes together.
 type BrokerAssignment struct {
@@ -682,13 +788,14 @@ type BrokerChild struct {
 // The broker block of /v1/diagnostics: the beat, what its last pass did, the
 // notice ledger, the store, and what the beat has only observed.
 type BrokerDiagnostics struct {
-	Beat         BrokerBeat         `json:"beat"`
-	Lanes        *BrokerLanes       `json:"lanes,omitempty"`
-	Notices      BrokerNoticeCounts `json:"notices"`
-	Observations BrokerObservations `json:"observations"`
-	Pass         BrokerPass         `json:"pass"`
-	Policy       *BrokerPolicy      `json:"policy,omitempty"`
-	Store        BrokerStoreHealth  `json:"store"`
+	Beat            BrokerBeat             `json:"beat"`
+	Lanes           *BrokerLanes           `json:"lanes,omitempty"`
+	Notices         BrokerNoticeCounts     `json:"notices"`
+	Observations    BrokerObservations     `json:"observations"`
+	Pass            BrokerPass             `json:"pass"`
+	Policy          *BrokerPolicy          `json:"policy,omitempty"`
+	Store           BrokerStoreHealth      `json:"store"`
+	WorkflowRetired *BrokerWorkflowRetired `json:"workflow_retired,omitempty"`
 }
 
 // The whole body of POST /v1/orchestrator/tasks. The brief is not in it: a
@@ -961,6 +1068,15 @@ type BrokerLanding struct {
 	TargetCommit string `json:"target_commit,omitempty"`
 }
 
+// GET /v1/orchestrator/landings: every pending landing in this broker's
+// records, derived on each read and never kept. An unreadable record makes the
+// whole answer a refusal rather than a shorter list.
+type BrokerLandingList struct {
+	At       int64                  `json:"at"`
+	Landings []BrokerPendingLanding `json:"landings"`
+	Sources  BrokerLandingSources   `json:"sources"`
+}
+
 // What a pending landing means now, derived from the broker's last reading of
 // the machine and never stored. `pending_live`: the root that owes it is
 // running. `pending_orphaned`: nothing can land it — the task has no root, or
@@ -977,6 +1093,48 @@ const (
 
 // BrokerLandingObligationValues is every value the contract allows, in contract order.
 var BrokerLandingObligationValues = []BrokerLandingObligation{BrokerLandingObligationPendingLive, BrokerLandingObligationPendingOrphaned, BrokerLandingObligationPendingUnknown}
+
+// Who has to move a pending landing and where they were seen: the executor
+// while the task runs, its root once it has finished.
+type BrokerLandingOwnership struct {
+	Evidence          BrokerLandingSources         `json:"evidence"`
+	ObservedWorkState *string                      `json:"observed_work_state"`
+	Reason            string                       `json:"reason"`
+	RootAssistant     *string                      `json:"root_assistant"`
+	RootKey           *string                      `json:"root_key"`
+	Status            BrokerLandingOwnershipStatus `json:"status"`
+	Subject           string                       `json:"subject"`
+	TaskID            string                       `json:"task_id"`
+	TaskState         TaskState                    `json:"task_state"`
+	Version           int64                        `json:"version"`
+}
+
+// Where the session that has to act on a pending landing was last seen. Every
+// `observed_*` is one exact match in the reading; `not_observed` is absence
+// proved by a complete process table with every assistant named; anything short
+// of either is `unknown`, never absence.
+type BrokerLandingOwnershipStatus string
+
+const (
+	BrokerLandingOwnershipStatusObservedWorking        BrokerLandingOwnershipStatus = "observed_working"
+	BrokerLandingOwnershipStatusObservedReadyOrHolding BrokerLandingOwnershipStatus = "observed_ready_or_holding"
+	BrokerLandingOwnershipStatusObservedOther          BrokerLandingOwnershipStatus = "observed_other"
+	BrokerLandingOwnershipStatusTaskStillLive          BrokerLandingOwnershipStatus = "task_still_live"
+	BrokerLandingOwnershipStatusNotObserved            BrokerLandingOwnershipStatus = "not_observed"
+	BrokerLandingOwnershipStatusUnknown                BrokerLandingOwnershipStatus = "unknown"
+)
+
+// BrokerLandingOwnershipStatusValues is every value the contract allows, in contract order.
+var BrokerLandingOwnershipStatusValues = []BrokerLandingOwnershipStatus{BrokerLandingOwnershipStatusObservedWorking, BrokerLandingOwnershipStatusObservedReadyOrHolding, BrokerLandingOwnershipStatusObservedOther, BrokerLandingOwnershipStatusTaskStillLive, BrokerLandingOwnershipStatusNotObserved, BrokerLandingOwnershipStatusUnknown}
+
+// The three readings a landing list is made of, each with its own time: the
+// sessions were read separately from the records, and saying so is the honest
+// alternative to calling the two one transaction.
+type BrokerLandingSources struct {
+	Landings BearingsSource `json:"landings"`
+	Sessions BearingsSource `json:"sessions"`
+	Tasks    BearingsSource `json:"tasks"`
+}
 
 type BrokerLandingState string
 
@@ -998,6 +1156,20 @@ type BrokerLanes struct {
 	Limit     int64 `json:"limit"`
 	Refused   int64 `json:"refused"`
 	Terminals int64 `json:"terminals"`
+}
+
+// The whole body of POST /v1/orchestrator/notify: a root, which holds this
+// Mac's orchestrator token and no task secret, pushing one sentence to the
+// person. `session_id` only chooses where tapping it lands, and only when it
+// names a session this Mac is watching; the token proves this Mac's person
+// asked and never which session did.
+type BrokerMachineNotifyRequest struct {
+	// 1–500 characters.
+	Body      string `json:"body"`
+	SessionID string `json:"session_id,omitempty"`
+
+	// 1–80 characters.
+	Title string `json:"title"`
 }
 
 type BrokerMessageRequest struct {
@@ -1132,6 +1304,25 @@ type BrokerPass struct {
 	// inventory; this is the count.
 	Unreadable int64 `json:"unreadable,omitempty"`
 	Watched    int64 `json:"watched"`
+}
+
+// One landing this broker's records still owe, oldest first. `paths` is the
+// landing write set: what the task declared at dispatch (D21), or its lease
+// when nothing was declared. `obligation` is the broker's own reading of the
+// owing root (the same one the inventory and a task's `landing.obligation`
+// carry).
+type BrokerPendingLanding struct {
+	AgeSeconds int64                   `json:"age_seconds"`
+	ID         string                  `json:"id"`
+	Note       *string                 `json:"note"`
+	Obligation BrokerLandingObligation `json:"obligation"`
+	Ownership  BrokerLandingOwnership  `json:"ownership"`
+	Paths      []string                `json:"paths"`
+	RootKey    *string                 `json:"root_key"`
+	RootLabel  *string                 `json:"root_label"`
+	Since      int64                   `json:"since"`
+	Target     *string                 `json:"target"`
+	Title      string                  `json:"title"`
 }
 
 // This Mac's house rules as the last briefing carried them, counted in
@@ -1559,6 +1750,56 @@ type BrokerWhoAmI struct {
 	ConversationID string           `json:"conversation_id"`
 	Provenance     BrokerProvenance `json:"provenance"`
 	TerminalID     string           `json:"terminal_id"`
+}
+
+// The retired workflow route's whole body: the Swift app's success envelope
+// around an outcome that says nothing was recorded.
+type BrokerWorkflowAnswer struct {
+	OK       bool                  `json:"ok"`
+	Workflow BrokerWorkflowOutcome `json:"workflow"`
+}
+
+// What POST /v1/orchestrator/sessions/<terminal>/workflow answers now that the
+// per-message workflow envelope is retired (design-decisions D36, U5). Sessions
+// briefed by the Swift app still run its `clawdline-board-workflow` helper,
+// which posts `begin` and `deliver` here; this daemon records nothing for them
+// and says so in the envelope the helper was written against, so the helper
+// exits 0 instead of reporting a broken step. `recorded` is always false and
+// `authority` is `none`: the Swift app's receipt was a 202 with
+// `workflow_<operation>_recorded` and an `item_id`, and an answer that could be
+// mistaken for one would be the retired protocol answering again.
+type BrokerWorkflowOutcome struct {
+	Authority string `json:"authority"`
+	Code      string `json:"code"`
+
+	// Always null: no board item is bound.
+	ItemID *string `json:"item_id"`
+
+	// One sentence the helper prints as it stands.
+	Message       string `json:"message"`
+	OutboxPending int64  `json:"outbox_pending"`
+
+	// Always null.
+	ProjectID *string `json:"project_id"`
+	Recorded  bool    `json:"recorded"`
+
+	// The caller's own run_id when it sent a bounded one, echoed; nothing was looked
+	// up by it.
+	RunID *string `json:"run_id"`
+
+	// This answer's HTTP status, repeated inside it as the Swift envelope does.
+	Status int64 `json:"status"`
+}
+
+// How often this process has answered the retired workflow route, the one
+// number that says when the route can be removed: it exists only for sessions
+// briefed before the switch, and it can go once this stays at zero. An
+// observation of this process, in memory and never stored; `since` is when it
+// started counting.
+type BrokerWorkflowRetired struct {
+	Calls  int64 `json:"calls"`
+	LastAt int64 `json:"last_at,omitempty"`
+	Since  int64 `json:"since"`
 }
 
 // The isolated checkout a task was given. `base` is recorded once and never

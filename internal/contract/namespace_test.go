@@ -82,6 +82,10 @@ var sessionFields = map[string]string{
 	"projects#WorktreeOrigin.sessionId":              "swift: as above",
 	"projects#WorktreeContext.originSession":         object,
 	"schedules#ScheduleRun.session_id":               "swift: a field of the Swift schedule file format this daemon does not fill",
+
+	// W8: a root's own notification names where it lands the way the push
+	// test does.
+	"orchestrator#BrokerMachineNotifyRequest.session_id": "terminal: the Swift route's terminal-neutral id, compared with a watched terminal as PushTestRequest.session_id is (push.go pushSessionURL); retire with it",
 }
 
 func TestEverySessionFieldSaysWhichSessionItNames(t *testing.T) {

@@ -472,19 +472,17 @@ func (b *Broker) AgentNotify(ctx context.Context, id, secret, title, body string
 	if err != nil {
 		return NotifyResult{}, err
 	}
+	if err := b.notifyAllowed(); err != nil {
+		return NotifyResult{}, err
+	}
 	if r.State.Terminal() {
 		if r.FinishedAt.IsZero() || b.now().Sub(r.FinishedAt) > notifyGrace {
 			return NotifyResult{}, refuse(http.StatusConflict, "notify_expired",
 				"That task's notification window has expired.")
 		}
 	}
-	if strings.TrimSpace(title) == "" || utf8.RuneCountInString(title) > notifyTitleLimit {
-		return NotifyResult{}, refuse(http.StatusBadRequest, "bad_request",
-			"title must be non-empty and at most 80 characters.")
-	}
-	if strings.TrimSpace(body) == "" || utf8.RuneCountInString(body) > notifyBodyLimit {
-		return NotifyResult{}, refuse(http.StatusBadRequest, "bad_request",
-			"body must be non-empty and at most 500 characters.")
+	if err := notifyFields(title, body); err != nil {
+		return NotifyResult{}, err
 	}
 	if b.Push == nil {
 		return NotifyResult{}, refuse(http.StatusConflict, "not_subscribed",
@@ -506,12 +504,77 @@ func (b *Broker) AgentNotify(ctx context.Context, id, secret, title, body string
 	if label == "" && r.Root != nil {
 		label = r.Root.Label
 	}
+	// Tapping it opens the root the task reports to, when that root is a
+	// session this machine is watching (D24).
+	return b.sendNotify(ctx, id, label+": "+title, title, body, r.RootTerminalID, "agent-task-"+id)
+}
+
+// MachineNotify is POST /v1/orchestrator/notify: a root — which holds this
+// Mac's orchestrator token and no task secret — pushing one sentence to the
+// person (the Swift app's `Orchestrator.agentNotify(title:body:sessionID:)`).
+//
+// It has no per-task allowance because there is no task; it spends the same
+// hourly one a child's notification does, because the person being woken is
+// the same person. Its row in the notification ledger names no task. session
+// only chooses where tapping it lands, and only when it names a session this
+// machine is watching: the token proves this Mac's person asked, never which
+// session did.
+func (b *Broker) MachineNotify(ctx context.Context, title, body, session string) (NotifyResult, error) {
+	if err := b.notifyAllowed(); err != nil {
+		return NotifyResult{}, err
+	}
+	if err := notifyFields(title, body); err != nil {
+		return NotifyResult{}, err
+	}
+	if b.Push == nil {
+		return NotifyResult{}, refuse(http.StatusConflict, "not_subscribed",
+			"No device has asked for notifications yet.")
+	}
+	_, perHour, err := b.Store.NotificationCounts(ctx, machineNotifyTask)
+	if err != nil {
+		return NotifyResult{}, err
+	}
+	if perHour >= notifyHourLimit {
+		return NotifyResult{}, refuse(http.StatusTooManyRequests, "rate_limited",
+			"Too many agent notifications; wait for the hourly window.")
+	}
+	return b.sendNotify(ctx, machineNotifyTask, "Clawdline: "+title, title, body, session, "agent-root")
+}
+
+// machineNotifyTask is the task id a root's own notification is recorded
+// under: none. No task id is empty, so it cannot be mistaken for one.
+const machineNotifyTask = ""
+
+// notifyAllowed is the person's `orchestrator_agent_notify` setting, asked of
+// both routes before anything else about the request is judged.
+func (b *Broker) notifyAllowed() error {
+	if b.NotifyEnabled != nil && !b.NotifyEnabled() {
+		return refuse(http.StatusConflict, "agent_notify_disabled",
+			"Agent notifications were turned off by the user. Turn them on in Settings → Remote.")
+	}
+	return nil
+}
+
+// notifyFields is the two bounds every agent notification is held to.
+func notifyFields(title, body string) error {
+	if strings.TrimSpace(title) == "" || utf8.RuneCountInString(title) > notifyTitleLimit {
+		return refuse(http.StatusBadRequest, "bad_request",
+			"title must be non-empty and at most 80 characters.")
+	}
+	if strings.TrimSpace(body) == "" || utf8.RuneCountInString(body) > notifyBodyLimit {
+		return refuse(http.StatusBadRequest, "bad_request",
+			"body must be non-empty and at most 500 characters.")
+	}
+	return nil
+}
+
+// sendNotify pushes one notification and records it once a device took it.
+// A push nobody could receive is not recorded, so it spends no allowance.
+func (b *Broker) sendNotify(ctx context.Context, task, displayed, title, body, terminal, tag string) (NotifyResult, error) {
 	if err := outside(); err != nil {
 		return NotifyResult{}, err
 	}
-	// Tapping it opens the root the task reports to, when that root is a
-	// session this machine is watching (D24).
-	sent, failed, err := b.Push(ctx, label+": "+title, body, r.RootTerminalID, "agent-task-"+id)
+	sent, failed, err := b.Push(ctx, displayed, body, terminal, tag)
 	if err != nil {
 		return NotifyResult{}, refuse(http.StatusBadGateway, "push_failed",
 			"One or more push services did not accept the notification.")
@@ -520,7 +583,7 @@ func (b *Broker) AgentNotify(ctx context.Context, id, secret, title, body string
 		return NotifyResult{}, refuse(http.StatusConflict, "not_subscribed",
 			"No device has asked for notifications yet.")
 	}
-	if _, _, err := b.Store.RecordNotification(ctx, id, title, body); err != nil {
+	if _, _, err := b.Store.RecordNotification(ctx, task, title, body); err != nil {
 		return NotifyResult{}, err
 	}
 	if failed > 0 {

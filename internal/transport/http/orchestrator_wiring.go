@@ -112,6 +112,17 @@ func newBroker(s *Server) *orchestrator.Broker {
 			d, err := s.PushSend(ctx, title, body, terminal, tag, "")
 			return d.Sent, d.Failed, err
 		},
+		// The person's switch for agent-authored pushes, read at every
+		// notification so turning it off needs no restart. Absent or
+		// unreadable is the setting's default, on.
+		NotifyEnabled: func() bool {
+			values, err := nextconfig.Open(s.cfg.Dir).Read()
+			if err != nil {
+				return true
+			}
+			on, ok := values.Bool("orchestrator_agent_notify")
+			return !ok || on
+		},
 		ProcessStart: swiftstore.ProcessStart,
 		LeaseLine:    int(CapacityLimit(capacity.LeasesQueue)),
 		OpenWaits:    int(CapacityLimit(capacity.WaitsOpen)),

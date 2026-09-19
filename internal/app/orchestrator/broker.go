@@ -104,6 +104,10 @@ type Broker struct {
 	// machine is watching, is where tapping it lands. A daemon with no push
 	// leaves this nil, and /notify answers `not_subscribed` — the truth.
 	Push func(ctx context.Context, title, body, terminal, tag string) (sent, failed int, err error)
+	// NotifyEnabled is the person's `orchestrator_agent_notify` setting. Off,
+	// both agent notification routes answer 409 agent_notify_disabled before
+	// judging anything else. Nil is on, the setting's default.
+	NotifyEnabled func() bool
 	// pushed is a test's signal that a dead letter's push, which runs off the
 	// beat's pass, has finished. Nil in production.
 	pushed func()

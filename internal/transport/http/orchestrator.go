@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/limits"
 	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 	"github.com/sainteye/clawdline-go/internal/contract"
 )
@@ -509,6 +510,11 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 		s.sessionTodos(w, r, decodeSegment(terminal))
 		return
 	}
+	// The retired per-message workflow step (workflow.go).
+	if action == "workflow" && decodeSegment(terminal) != "" {
+		s.brokerSessionWorkflow(w, r)
+		return
+	}
 	if action != "complete" || r.Method != http.MethodPost {
 		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a session action")
 		return
@@ -545,6 +551,260 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 			ReceiptAt: out.At.Unix(),
 		},
 	})
+}
+
+// brokerAssistants is GET /v1/orchestrator/assistants: what this Mac can say
+// about each assistant's account quota, the check a root runs before choosing
+// whom to dispatch to. Read-level, as in the Swift app: a paired device reads
+// it too. Files only — the status line's cache and Codex's rollouts — and the
+// same five-second reading a session's `/info` shows.
+func (s *Server) brokerAssistants(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "the assistants are read with GET")
+		return
+	}
+	now := time.Now()
+	out := contract.AssistantList{At: now.Unix(), Assistants: []contract.AssistantQuota{}}
+	for _, a := range limits.Assistants {
+		q := quotaReader().Quota(a, now)
+		row := contract.AssistantQuota{
+			ID:           contract.Assistant(a),
+			Label:        assistantLabel(a),
+			Installed:    q.Installed,
+			Availability: contract.AssistantAvailability(q.Availability),
+			// Every reading here is a file the provider wrote.
+			Source:     contract.AssistantQuotaSourceObserved,
+			ObservedAt: q.ObservedAt,
+			ResetsAt:   q.ResetsAt,
+			Stale:      q.Stale,
+			Detail:     q.Detail,
+			Windows:    wireWindows(q.Windows),
+			LastKnown:  contract.AssistantAvailability(q.LastKnown),
+		}
+		if q.ObservedAt != nil {
+			age := now.Unix() - *q.ObservedAt
+			if age < 0 {
+				age = 0
+			}
+			row.AgeSeconds = &age
+		}
+		out.Assistants = append(out.Assistants, row)
+	}
+	writeJSON(w, out)
+}
+
+func assistantLabel(id string) string {
+	if id == "claude" {
+		return "Claude Code"
+	}
+	return "Codex"
+}
+
+// brokerLandings is GET /v1/orchestrator/landings: every pending landing, and
+// who has to move each one. Read-level, as in the Swift app.
+//
+// The sessions are read once and projected once — the same rows /v1/sessions
+// publishes — so a landing's owner is placed with the work state the session
+// list shows for it, from the same moment.
+func (s *Server) brokerLandings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "the landings are read with GET")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	inv := s.inventory.Read(ctx)
+	snap := s.sessionsPayloadFrom(ctx, inv)
+	rd := orchestrator.LandingReading{Processes: inv.Sources["ps"]}
+	for _, row := range snap.Sessions {
+		rd.Sessions = append(rd.Sessions, orchestrator.LandingSession{
+			TerminalID:     row.ID,
+			Assistant:      string(row.Assistant),
+			ConversationID: row.SessionID,
+			WorkState:      string(row.WorkState),
+		})
+		if row.SessionID == "" {
+			rd.Anonymous = true
+		}
+	}
+	rows, err := s.broker.PendingLandings(ctx, rd)
+	if err != nil {
+		writeBrokerError(w, err)
+		return
+	}
+	now := time.Now()
+	sessionsFresh := "current"
+	if !inv.Complete {
+		sessionsFresh = "stale"
+	}
+	sources := contract.BrokerLandingSources{
+		Sessions: contract.BearingsSource{ObservedAt: inv.ObservedAt.Unix(), Provenance: inv.Provenance, Freshness: sessionsFresh},
+		Tasks:    contract.BearingsSource{ObservedAt: now.Unix(), Provenance: "broker", Freshness: "current"},
+		Landings: contract.BearingsSource{ObservedAt: now.Unix(), Provenance: "broker", Freshness: "current"},
+	}
+	out := contract.BrokerLandingList{Landings: []contract.BrokerPendingLanding{}, Sources: sources, At: now.Unix()}
+	for _, p := range rows {
+		rec := p.Record
+		var rootAssistant *string
+		var rootLabel *string
+		if rec.Root != nil {
+			rootAssistant = optionalString(rec.Root.Assistant)
+			rootLabel = optionalString(rec.Root.Label)
+		}
+		age := int64(now.Sub(p.Since) / time.Second)
+		if age < 0 {
+			age = 0
+		}
+		out.Landings = append(out.Landings, contract.BrokerPendingLanding{
+			ID:         rec.ID,
+			Title:      rec.Title,
+			RootKey:    optionalString(p.RootKey),
+			RootLabel:  rootLabel,
+			Paths:      p.Paths,
+			Since:      p.Since.Unix(),
+			AgeSeconds: age,
+			Target:     optionalString(rec.Landing.Target),
+			Note:       optionalString(rec.Landing.Note),
+			Obligation: contract.BrokerLandingObligation(p.Obligation),
+			Ownership: contract.BrokerLandingOwnership{
+				Version:           1,
+				Status:            contract.BrokerLandingOwnershipStatus(p.Ownership.Status),
+				Subject:           p.Ownership.Subject,
+				Reason:            p.Ownership.Reason,
+				TaskID:            rec.ID,
+				TaskState:         contract.TaskState(rec.State),
+				RootKey:           optionalString(p.RootKey),
+				RootAssistant:     rootAssistant,
+				ObservedWorkState: optionalString(p.Ownership.WorkState),
+				Evidence:          sources,
+			},
+		})
+	}
+	writeJSON(w, out)
+}
+
+// addressRowWire is a row of the address book as it is sent. It exists for
+// the key the generator cannot express, as sessionRowWire does: a declared
+// `work_person_needed: false` is an answer, and the generated bool would drop
+// it.
+type addressRowWire struct {
+	contract.BrokerAddressRow
+	WorkPersonNeeded *bool `json:"work_person_needed,omitempty"`
+}
+
+type addressBookWire struct {
+	Sessions []addressRowWire `json:"sessions"`
+	At       int64            `json:"at"`
+}
+
+// brokerAddressBook is GET /v1/orchestrator/sessions: which sessions a wait, a
+// relay or a handoff can name, for the caller holding the orchestrator token.
+// `GET /v1/sessions` is the paired device's, and this is its row with the
+// screen taken out — the same projection, so the two lists cannot disagree
+// about a session's state, only about how much of it they show.
+func (s *Server) brokerAddressBook(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "the sessions are read with GET")
+		return
+	}
+	if !machineAuthed(r) {
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden",
+			"Reading the sessions a wait can name needs the orchestrator token.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	snap := s.sessionsPayload(ctx)
+	// The task each tab was opened for: a live task of this broker's naming
+	// that terminal as its child's. Only a live one — a finished task's
+	// terminal id can have been reused by a later, unrelated pane (tmux
+	// numbers panes again after its server restarts), and a stale match would
+	// name the wrong task rather than none. Records come newest first.
+	opened := map[string]string{}
+	if records, _, err := s.broker.Records(ctx); err == nil {
+		for _, rec := range records {
+			if rec.ChildTerminalID == "" || rec.State.Terminal() {
+				continue
+			}
+			if _, seen := opened[rec.ChildTerminalID]; !seen {
+				opened[rec.ChildTerminalID] = rec.ID
+			}
+		}
+	}
+	out := addressBookWire{Sessions: []addressRowWire{}, At: snap.At}
+	for _, row := range snap.Sessions {
+		book := contract.BrokerAddressRow{
+			ID:             row.ID,
+			Label:          row.Label,
+			State:          row.State,
+			WorkState:      row.WorkState,
+			WorkProvenance: row.WorkProvenance,
+			WorkNote:       row.WorkNote,
+			WorkSince:      row.WorkSince,
+			WorkMovedBy:    row.WorkMovedBy,
+			Owed:           row.Owed,
+			Closeability:   row.Closeability,
+			Assistant:      row.Assistant,
+			CWD:            row.CWD,
+			TaskID:         opened[row.ID],
+			RootAssignment: row.RootAssignment,
+			Coordinator:    row.Coordinator,
+		}
+		if row.Disposition != nil {
+			// A completion summary is prose; it stays on the paired-device row.
+			d := *row.Disposition
+			d.Title = ""
+			book.Disposition = &d
+		}
+		out.Sessions = append(out.Sessions, addressRowWire{BrokerAddressRow: book, WorkPersonNeeded: row.WorkPersonNeeded})
+	}
+	writeJSON(w, out)
+}
+
+// brokerMachineNotify is POST /v1/orchestrator/notify: a root's own push to
+// the person, on the orchestrator token (orchestrator.MachineNotify).
+func (s *Server) brokerMachineNotify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "a notification is sent with POST")
+		return
+	}
+	if !machineAuthed(r) {
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "Agent notification needs the orchestrator token.")
+		return
+	}
+	// Read as the Swift app reads it: a missing or unreadable field is empty,
+	// and the empty title or body is what gets refused, by name.
+	var body contract.BrokerMachineNotifyRequest
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	out, err := s.broker.MachineNotify(r.Context(), body.Title, body.Body, body.SessionID)
+	if err != nil {
+		writeBrokerError(w, err)
+		return
+	}
+	writeJSON(w, contract.BrokerNotifyResult{OK: true, Sent: int64(out.Sent), Failed: int64(out.Failed)})
+}
+
+// brokerDurableReportPromotion is POST /v1/orchestrator/durable-reports/promotions,
+// which this daemon does not keep. The Swift app's promotion copies a task
+// report into an immutable store that the documents route and the Cloud
+// document link then serve; half of that — keeping the bytes without the read
+// path behind the link it returns — would hand out a link that opens nothing.
+// So it is refused by name, with what to do instead, rather than answered by
+// the fallback's generic "not implemented".
+func (s *Server) brokerDurableReportPromotion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "a promotion is sent with POST")
+		return
+	}
+	if !machineAuthed(r) {
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden",
+			"Promoting a durable report needs the orchestrator token.")
+		return
+	}
+	writeAuthRefusal(w, http.StatusNotImplemented, "durable_report_promotion_unsupported",
+		"This Clawdline does not keep durable reports, so nothing was promoted. Cite the task's own "+
+			"artifact instead, and copy anything that must outlive the task directory into the "+
+			"repository's docs/ first.")
 }
 
 // writeBrokerError sends a typed refusal in the Swift app's envelope, with the
