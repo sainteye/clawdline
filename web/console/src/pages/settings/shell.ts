@@ -27,7 +27,8 @@ export interface ShellSettingsWords {
   scope: string
   /** `settingsScopeGlobal` */
   scopeGlobal: string
-  /** `settingsOff`, drawn for a hotkey that is not set: this app has no default one. */
+  /** `settingsOff`, drawn for a hotkey set to none. With no hotkey in the file the shell
+   *  uses option+space (shell/darwin/NextConfig.swift), so this is only an explicit "". */
   off: string
 }
 

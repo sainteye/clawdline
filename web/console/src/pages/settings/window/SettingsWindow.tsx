@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { SettingsSnapshot, TunnelStatus } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { readSettings, writeSettings } from "../api.js"
-import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyFailedTitle, seconds } from "./copy.js"
+import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyTrouble, seconds } from "./copy.js"
 import {
   beginCloudPairing,
   cancelCloudPairing,
@@ -323,9 +323,15 @@ export function SettingsWindow() {
                 : (pendingHotkey ?? (shell ? (shell.hotkey ? shell.display : W.settingsOff) : hotkeyText(String(now("hotkey")))))}
             </Chip>
           </Row>
-          {shell?.failed || (!shell && !has) ? (
-            <p className="sw-said">{shell?.failed ? hotkeyFailedTitle(shell.display) : NO_SHELL}</p>
+          {/* Said whenever the shell knows something is wrong — a failed
+              registration, or the retired app holding the same combination,
+              which is not a failure and is still two input boxes per press. */}
+          {shell && (shell.failed || shell.trouble) ? (
+            <p className="sw-said">{hotkeyTrouble(shell.trouble, shell.display, shell.hotkey)}</p>
+          ) : !shell && !has ? (
+            <p className="sw-said">{NO_SHELL}</p>
           ) : null}
+          <p className="sw-hint">{W.settingsHotkeyHint}</p>
 
           <Row label={W.settingsLanguage}>
             <PopUp
@@ -1025,49 +1031,103 @@ export function SettingsWindow() {
     )
   }
 
+  /**
+   * The Claude Code hook: what it is, and what happens without it.
+   *
+   * A shell that can install it (`supported`) gets the Swift app's row — the
+   * button and its three readings. One that cannot gets no button at all rather
+   * than one that never presses: a switch that is always off reads as a choice
+   * somebody made, and the question that brought a person here is "what would
+   * it do for me", which a disabled button does not answer. What it does answer
+   * is written out below, and it is about this build: the session states come
+   * from Claude Code's own status files, so nothing on screen waits on a hook.
+   */
   function hooksPane() {
     const hooks = shell?.hooks
-    const state = !hooks?.installed ? "off" : hooks.heard ? "live" : "on"
+    const path = hooks?.path ?? "~/.claude/settings.json"
+    if (hooks?.supported) {
+      const state = !hooks.installed ? "off" : hooks.heard ? "live" : "on"
+      return (
+        <>
+          <div className="sw-column">
+            <Block hint={W.settingsHooksHint}>
+              <Note
+                dot={state === "off" ? "idle" : state === "live" ? "live" : "warn"}
+                trailing={
+                  <Chip
+                    disabled={busyHooks}
+                    onClick={() => {
+                      setBusyHooks(true)
+                      ask({ kind: "hooks", install: !hooks.installed })
+                      window.setTimeout(() => setBusyHooks(false), 1500)
+                    }}
+                  >
+                    {hooks.installed ? W.settingsHooksRemove : W.settingsHooksInstall}
+                  </Chip>
+                }
+              >
+                {state === "off" ? W.settingsHooksOff : state === "live" ? W.settingsHooksLive : W.settingsHooksOn}
+              </Note>
+            </Block>
+            {/* Whose file the button writes into. Naming the path is the difference
+                between "a switch in this app" and "an edit to somebody else's
+                settings", which is what it actually is. */}
+            <Mono>{path}</Mono>
+          </div>
+          {stateHookColumn()}
+        </>
+      )
+    }
     return (
       <>
         <div className="sw-column">
-          <Block hint={W.settingsHooksHint}>
-            <Note
-              dot={state === "off" ? "idle" : state === "live" ? "live" : "warn"}
-              trailing={
-                <Chip
-                  disabled={!hooks?.supported || busyHooks}
-                  title={hooks?.supported ? undefined : NO_HOOKS}
-                  onClick={() => {
-                    if (!hooks) return
-                    setBusyHooks(true)
-                    ask({ kind: "hooks", install: !hooks.installed })
-                    window.setTimeout(() => setBusyHooks(false), 1500)
-                  }}
-                >
-                  {hooks?.installed ? W.settingsHooksRemove : W.settingsHooksInstall}
-                </Chip>
-              }
-            >
-              {state === "off" ? W.settingsHooksOff : state === "live" ? W.settingsHooksLive : W.settingsHooksOn}
-            </Note>
+          <Block>
+            <Note dot="idle">{W.settingsHooksNone}</Note>
           </Block>
-          {/* Whose file the button writes into. Naming the path is the difference
-              between "a switch in this app" and "an edit to somebody else's
-              settings", which is what it actually is. */}
-          <Mono>{hooks?.path ?? "~/.claude/settings.json"}</Mono>
-          {!hooks?.supported ? <p className="sw-said">{has ? NO_HOOKS : NO_SHELL}</p> : null}
+          {/* The file a hook would be written into, and the one these readings
+              are of. Nothing here writes it. */}
+          <Mono>{path}</Mono>
+          {/* Readings of that file, so a card rather than a hint: the Swift
+              app's entries are still run by Claude Code on every turn. */}
+          {hooks?.legacy ? (
+            <Block>
+              <Note dot="warn">{W.settingsHooksLegacy}</Note>
+            </Block>
+          ) : null}
+          {hooks?.installed ? (
+            <Block>
+              <Note dot="warn">{W.settingsHooksStray}</Note>
+            </Block>
+          ) : null}
+          {!has ? <p className="sw-said">{NO_SHELL}</p> : null}
+          {[
+            [W.settingsHooksWhatHead, W.settingsHooksWhat],
+            [W.settingsHooksWithoutHead, W.settingsHooksWithout],
+            [W.settingsHooksWhyHead, W.settingsHooksWhy],
+          ].map(([head, body]) => (
+            <div className="sw-explain" key={head}>
+              <Head>{head}</Head>
+              <p>{body}</p>
+            </div>
+          ))}
         </div>
-        <div className="sw-column">
-          <Block label={W.settingsStateHook} hint={W.settingsStateHookHint}>
-            <Note dot={(snapshot?.on_state_change?.length ?? 0) > 0 ? "live" : "idle"} mono>
-              {`"on_state_change": [` +
-                (snapshot?.on_state_change ?? []).map((part) => `"${part}"`).join(", ") +
-                `]`}
-            </Note>
-          </Block>
-        </div>
+        {stateHookColumn()}
       </>
+    )
+  }
+
+  /** `on_state_change`, which is this build's own and works with or without a hook. */
+  function stateHookColumn() {
+    return (
+      <div className="sw-column">
+        <Block label={W.settingsStateHook} hint={W.settingsStateHookHint}>
+          <Note dot={(snapshot?.on_state_change?.length ?? 0) > 0 ? "live" : "idle"} mono>
+            {`"on_state_change": [` +
+              (snapshot?.on_state_change ?? []).map((part) => `"${part}"`).join(", ") +
+              `]`}
+          </Note>
+        </Block>
+      </div>
     )
   }
 
@@ -1226,4 +1286,3 @@ function sentence(error: unknown): string {
 /** Said under a control that needs a shell and has none. Not a `Copy+Chinese` word: the
  *  original window is only ever inside one, so it never had a sentence for this. */
 const NO_SHELL = "這一項要在 Clawdline app 裡才能改"
-const NO_HOOKS = "這個版本還沒有讀 hook 通知的東西，所以不會去動 ~/.claude/settings.json"

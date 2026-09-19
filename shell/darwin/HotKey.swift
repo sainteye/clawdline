@@ -4,9 +4,32 @@
 // monitor route needs the accessibility permission, and a tool that opens a
 // window should not be able to read every key you press.
 //
-// What differs from the original is only where the combination comes from — see
-// NextConfig. This file has no default: a shell with nothing configured
-// registers nothing, because the Swift app is still running and owns ⌥Space.
+// Where the combination comes from is NextConfig. With nothing configured it is
+// option+space, the Swift app's own default: that app is retired, and nothing
+// on a stock Mac answers ⌥Space, so a fresh install has a hotkey without anyone
+// having to choose one. A combination in the file is used as written, and an
+// empty one registers nothing.
+//
+// What happens when something else already answers the combination depends on
+// what that something is:
+//
+//   - One of macOS's own shortcuts (Spotlight's ⌘Space, the input source's
+//     ⌃Space, …). RegisterEventHotKey does not refuse these, so `register` asks
+//     CopySymbolicHotKeys first, registers nothing, and records why.
+//   - Another app's RegisterEventHotKey. That is invisible from here: Carbon
+//     takes the same combination from a second process without complaint, and
+//     one press then fires in both (measured on macOS 15.6: both registrations
+//     answered noErr and both handlers ran). The one such app this file can
+//     name is the retired Swift app — see `legacyHolds`.
+//   - A refusal from RegisterEventHotKey itself, kept with its status.
+//
+// Each is a `Trouble`, kept until the next attempt and said on the settings
+// page, under the chip; a launch or a reload that finds one also says so once,
+// in a short alert (main.swift). A combination detached because the frontmost
+// app is outside its scope is not trouble; it is the scope working — and the
+// scope is why the default is tolerable at all: out of the box it is held only
+// while iTerm2 or this app is in front, so everywhere else ⌥Space stays
+// whoever else's it is.
 import AppKit
 import Carbon.HIToolbox
 
@@ -20,8 +43,30 @@ private func nextHotKeyHandler(_ next: EventHandlerCallRef?,
 final class HotKey {
     static var shared: HotKey?
 
+    /// Why the configured combination is not simply working. The settings page
+    /// gets the kind as a fact and has the words for it (copy.ts).
+    enum Trouble: Equatable {
+        /// The file's combination is not one `parse` can read.
+        case unreadable
+        /// An enabled macOS shortcut already answers it, so nothing was registered.
+        case system
+        /// RegisterEventHotKey refused it, with this status.
+        case refused(OSStatus)
+
+        var kind: String {
+            switch self {
+            case .unreadable: return "unreadable"
+            case .system: return "system"
+            case .refused: return "refused"
+            }
+        }
+    }
+
     var onFire: (() -> Void)?
     private(set) var spec = ""
+    /// What went wrong the last time a combination was asked for; nil once one
+    /// registers, or once there is none to ask for.
+    private(set) var trouble: Trouble?
     private var ref: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
     private var handlerInstalled = false
@@ -33,10 +78,27 @@ final class HotKey {
     /// Whether a combination is registered right now.
     var isRegistered: Bool { ref != nil }
 
+    /// Whether `spec` can be registered at all, asked without registering it:
+    /// a combination that does not parse, or one macOS already answers, is
+    /// refused whatever the scope. Records what it finds; finding nothing
+    /// leaves the record as it was.
+    @discardableResult
+    func check(_ spec: String) -> Trouble? {
+        guard let (code, mods) = HotKey.parse(spec) else {
+            trouble = .unreadable
+            return trouble
+        }
+        if HotKey.systemAnswers(code: code, modifiers: mods) {
+            trouble = .system
+            return trouble
+        }
+        return nil
+    }
+
     @discardableResult
     func register(_ spec: String) -> Bool {
         unregister()
-        guard let (code, mods) = HotKey.parse(spec) else { return false }
+        guard check(spec) == nil, let (code, mods) = HotKey.parse(spec) else { return false }
 
         if !handlerInstalled {
             var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
@@ -51,16 +113,71 @@ final class HotKey {
         let status = RegisterEventHotKey(code, mods, hkID, GetApplicationEventTarget(), 0, &ref)
         if status == noErr {
             self.spec = spec
+            trouble = nil
             return true
         }
         ref = nil
+        trouble = .refused(status)
         return false
     }
 
+    /// Let the combination go. What went wrong last time is kept: the scope
+    /// detaching a combination that failed to attach has not fixed it.
     func unregister() {
         if let ref { UnregisterEventHotKey(ref) }
         ref = nil
         spec = ""
+    }
+
+    /// Nothing configured: nothing registered, and so nothing wrong.
+    func turnOff() {
+        unregister()
+        trouble = nil
+    }
+
+    /// Whether an enabled macOS shortcut is this combination. Only the four
+    /// modifiers are compared; the system's entries can carry other bits.
+    /// A list that cannot be read answers no, which leaves registration as it
+    /// always was rather than refusing every combination.
+    static func systemAnswers(code: UInt32, modifiers: UInt32) -> Bool {
+        var list: Unmanaged<CFArray>?
+        guard CopySymbolicHotKeys(&list) == noErr,
+              let rows = list?.takeRetainedValue() as? [[String: Any]] else { return false }
+        let four = UInt32(cmdKey | optionKey | controlKey | shiftKey)
+        for row in rows where (row[kHISymbolicHotKeyEnabled as String] as? Bool) == true {
+            guard let c = row[kHISymbolicHotKeyCode as String] as? Int,
+                  let m = row[kHISymbolicHotKeyModifiers as String] as? Int else { continue }
+            if UInt32(truncatingIfNeeded: c) == code, UInt32(truncatingIfNeeded: m) & four == modifiers {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// The retired Swift app. It registers its hotkey the same way this file
+    /// does, so if it is opened again both apps hold the combination and one
+    /// press opens both input bars — Carbon refuses neither.
+    static let legacyBundleID = "com.tsunamiworks.clawdline"
+
+    /// Whether the Swift app is running with the same combination as `spec`.
+    ///
+    /// Its combination is read from its own file, read-only, by its own rule
+    /// (`Config.load`): a non-empty `hotkey`, else option+space. That file is
+    /// the Swift app's; this app never writes it.
+    static func legacyHolds(_ spec: String) -> Bool {
+        guard let ours = parse(spec),
+              !NSRunningApplication.runningApplications(withBundleIdentifier: legacyBundleID).isEmpty
+        else { return false }
+        var theirs = "option+space"
+        let file = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/clawdline/config.json")
+        if let data = try? Data(contentsOf: file),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let v = obj["hotkey"] as? String, !v.isEmpty {
+            theirs = v
+        }
+        guard let other = parse(theirs) else { return false }
+        return other == ours
     }
 
     /// Accepts "option+space", "cmd+shift+k", "⌥space".

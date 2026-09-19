@@ -6,11 +6,14 @@
 // app's, it is running, and two apps writing one config is two writers.
 //
 // The keys are the Swift app's spellings, so a line copied from one file means
-// the same thing in the other. What differs is the defaults, on purpose:
+// the same thing in the other, and so are the defaults:
 //
-//   hotkey     no default. Absent or empty registers nothing. The Swift app
-//              defaults to option+space and is using it right now; a second app
-//              taking the same combination breaks the one the person is using.
+//   hotkey     option+space, as in the Swift app, when the key is absent or is
+//              not a string. A combination somebody wrote is used as written and
+//              never replaced by the default. One difference, on purpose: an
+//              empty string registers nothing here, where the Swift app reads it
+//              as absent — it is the only way to say "no hotkey", and a file
+//              that said it under the previous build meant it.
 //   scope_app  com.googlecode.iterm2, as in the Swift app. Only read when a
 //              hotkey is set.
 //   mascot     clawd, as in the Swift app. Shown in the menu, and drawn by the
@@ -22,7 +25,12 @@ import Foundation
 final class NextConfig {
     static let shared = NextConfig()
 
-    private(set) var hotKey = ""
+    /// The Swift app's `Config.hotKey` default.
+    static let defaultHotKey = "option+space"
+
+    private(set) var hotKey = NextConfig.defaultHotKey
+    /// True when `hotKey` is the default because the file does not name one.
+    private(set) var hotKeyIsDefault = true
     private(set) var scopeApp = "com.googlecode.iterm2"
     private(set) var mascot = "clawd"
     private(set) var notch = true
@@ -52,7 +60,8 @@ final class NextConfig {
     /// Read the file again. Every key falls back to its default when the file,
     /// or the key, is missing or unreadable — a missing config must still launch.
     func load() {
-        hotKey = ""
+        hotKey = Self.defaultHotKey
+        hotKeyIsDefault = true
         scopeApp = "com.googlecode.iterm2"
         mascot = "clawd"
         notch = true
@@ -66,6 +75,7 @@ final class NextConfig {
         }
         if let v = obj["hotkey"] as? String {
             hotKey = v.trimmingCharacters(in: .whitespaces)
+            hotKeyIsDefault = false
         }
         if let v = obj["scope_app"] as? String { scopeApp = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }

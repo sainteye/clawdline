@@ -52,8 +52,27 @@ export interface ShellHooks {
   installed: boolean
   /** Whether a note arrived within the day. */
   heard: boolean
+  /** Whether the retired Swift app's own entries (`clawdline/hook.sh`) are still in that
+   *  file. Read only: they are that app's to remove. Absent from a shell that does not look. */
+  legacy?: boolean
   /** Whose file the button would write into. */
   path: string
+}
+
+/**
+ * Why the configured combination is not simply working, as a fact; the sentences
+ * are in copy.ts (`hotkeyTrouble`).
+ *
+ * - `unreadable`: the file's combination is not one the shell can read.
+ * - `system`: an enabled macOS shortcut already answers it, so nothing was registered.
+ * - `refused`: the platform refused the registration; `status` is its code.
+ * - `legacy`: registered, and the retired Swift app is running with the same
+ *   combination, so one press opens both. Nothing refuses a second app the same
+ *   combination, which is why this is the one collision a shell can name.
+ */
+export interface ShellHotkeyTrouble {
+  kind: "unreadable" | "system" | "refused" | "legacy"
+  status?: number
 }
 
 /** Everything the shell knows and the page cannot ask anyone else for. */
@@ -64,9 +83,13 @@ export interface ShellState {
   display: string
   /** Whether it is registered right now. */
   registered: boolean
-  /** True when a set combination could not be registered. The sentence for it is
-   *  `hotkeyFailedTitle` in copy.ts: the shell reports the fact, this side has the words. */
+  /** True when a set combination could not be registered the last time it was asked
+   *  for — not merely detached because the frontmost app is outside the scope. */
   failed: boolean
+  /** True when `hotkey` is the default because the file names none. */
+  isDefault?: boolean
+  /** Why, when something is wrong; null or absent when nothing is. */
+  trouble?: ShellHotkeyTrouble | null
   /** The effective `scope_app`, the shell's own default included. Empty is every app. */
   scopeApp: string
   /** The scope's identifiers, named and drawn. In `scopeApp` order. */

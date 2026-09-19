@@ -72,14 +72,14 @@ struct ShellCopy {
     }
 
     func hotkeyFailedTitle(_ combo: String) -> String { "\(combo) 註冊不起來" }
-    func hotkeyFailedBody(_ configPath: String) -> String {
-        """
-        多半是被別的軟體佔走了——Spotlight、輸入法切換、BetterTouchTool 之類。
-
-        換一個：編輯 \(configPath) 裡的 hotkey，然後從選單列選「重新載入設定」。
-
-        在那之前，選單列的 ✳ 一樣打得開輸入框。
-        """
+    // **Shortened from the Swift app's**, which named the config file's full
+    // path and said to edit it by hand. The path means nothing to the person
+    // reading the alert, a screen can be seen from another device, and this
+    // build changes the combination in the settings window. What is kept is
+    // the Swift app's own way round it: the menu bar mark.
+    func hotkeyFailedBody(system: Bool) -> String {
+        (system ? "這組是 macOS 自己的快速鍵。" : "")
+            + "選單列的 ✳ 一樣打得開輸入框；要換一組，到「設定⋯」重錄。"
     }
     let loginFailed = "設定開機啟動失敗"
 

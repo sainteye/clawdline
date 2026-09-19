@@ -106,6 +106,34 @@ export const W = {
   settingsOrchestratorCloseLinger: "三分鐘後再關",
   settingsOrchestratorCloseKeep: "留著不要關",
   menuMascot: "吉祥物",
+
+  // **Not from the Swift app.** Its hotkey row never had to say that macOS
+  // itself already uses a combination, that the retired app is holding the same
+  // one, or that a default can be shared with another app without either being
+  // told; and its hook row describes a hook this build does not install. These
+  // are this build's own words, kept here so nothing on screen is spelled twice.
+  // A failure is one sentence and the way round it — the menu bar mark, which
+  // is the Swift app's own answer in `hotkeyFailedBody` — and never a path.
+  settingsHotkeyHint:
+    "沒設定過就是 ⌥Space。別的 app（例如 Alfred）也用同一組時，macOS 兩邊都會觸發，這裡看不出來；遇到就換一組，或把下面「在哪裡生效」縮到只剩終端機。",
+  settingsHotkeySystem: "{combo} 是 macOS 自己的快速鍵，所以沒有註冊。選單列的 ✳ 一樣打得開輸入框；要換一組就按上面的按鈕。",
+  settingsHotkeyRefused: "{combo} 註冊不起來（macOS 回 {status}）。選單列的 ✳ 一樣打得開輸入框；要換一組就按上面的按鈕。",
+  settingsHotkeyUnreadable: "設定檔裡的 hotkey「{spec}」讀不懂，所以沒有註冊。選單列的 ✳ 一樣打得開輸入框；按上面的按鈕重錄一組。",
+  settingsHotkeyLegacy: "舊版 Clawdline 也開著、也用 {combo}，按一下會打開兩個輸入框。結束舊版就好；它若是開機自動啟動，在它的選單取消「開機時啟動」。",
+  settingsHooksNone: "這個版本不裝 hook——session 的狀態從 Claude Code 自己的狀態檔讀",
+  settingsHooksStray: "這個檔裡有 clawdline-next/hook.sh 的項目，但這個版本沒有東西在讀它。",
+  settingsHooksLegacy:
+    "這個檔裡還掛著舊版的 hook（clawdline/hook.sh）。Claude Code 每一輪照樣會執行它，但這個版本不讀它留下的紙條——不影響任何功能，只是每次多跑一個小命令。要拿掉，從這個檔刪掉含 clawdline/hook.sh 的項目，或在舊版的設定裡按「移除」（它只移除自己的項目）。",
+  settingsHooksWhatHead: "它是什麼",
+  settingsHooksWhat:
+    "Claude Code 在特定時刻自己執行的命令，登記在 ~/.claude/settings.json。舊版 Clawdline 裝的那一支，會在一輪開始、一輪結束、跳出權限對話框、或問你問題的當下留一張紙條；舊版看到紙條就馬上去讀那個 session 的畫面，不必等下一輪檢查。舊版沒裝的時候，輸入框收著要 20 秒才檢查一次，所以權限對話框可能 20 秒後才出現在選單列；裝了不到一秒。",
+  settingsHooksWithoutHead: "不裝的時候",
+  settingsHooksWithout:
+    "Claude Code 自己會把每個 session 正在做什麼（busy、idle、waiting）寫進 ~/.claude/sessions/，這個版本大約每 2 秒讀一次。session 清單上的「在跑／等你回答／閒著」、選單列上的計數、瀏海的動畫、等你回答時列出的選項，都是從這裡來的，不需要 hook。跟舊版裝了 hook 比，差別只在時間：狀態一變，舊版不到一秒就知道，這個版本最多晚 2 秒左右。沒有狀態檔可讀的 session（例如 Codex）改從終端機畫面判讀。",
+  settingsHooksWhyHead: "為什麼這個版本沒有",
+  settingsHooksWhy:
+    "裝 hook 等於改 Claude Code 的設定檔，讓它每一輪在八個時刻多跑一個命令。這個版本還沒有讀那些紙條的程式，裝了只會多跑沒人看的命令，所以不提供安裝，也不會去改 ~/.claude/settings.json。讀紙條的那一半做好之後，這裡才會出現安裝按鈕。",
+
   // The Cloud status card's words. Same rule as everything above: each is a
   // property of `Copy+Chinese.swift`, copied under its own name. They are the
   // hosted console's Cloud status sheet's words (`webCloudStatus*`, :1132-1151)
@@ -188,4 +216,28 @@ export function dictationStatus(status: { kind: string; model?: string }): strin
 /** `hotkeyFailedTitle(_:)` (`Copy+Chinese.swift`). */
 export function hotkeyFailedTitle(combo: string): string {
   return `${combo} 註冊不起來`
+}
+
+/**
+ * What is said under the hotkey chip for the shell's `trouble` reading. A shell
+ * that says `failed` without saying why gets the Swift app's own title, which
+ * is all it could say.
+ */
+export function hotkeyTrouble(
+  trouble: { kind: string; status?: number } | null | undefined,
+  combo: string,
+  spec: string,
+): string {
+  switch (trouble?.kind) {
+    case "system":
+      return fill(W.settingsHotkeySystem, { combo })
+    case "refused":
+      return fill(W.settingsHotkeyRefused, { combo, status: String(trouble.status ?? "") })
+    case "unreadable":
+      return fill(W.settingsHotkeyUnreadable, { spec })
+    case "legacy":
+      return fill(W.settingsHotkeyLegacy, { combo })
+    default:
+      return hotkeyFailedTitle(combo)
+  }
 }
