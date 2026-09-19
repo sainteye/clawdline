@@ -9,7 +9,10 @@ import (
 
 // Store is the Swift app's store directory, read-only.
 type Store struct {
-	dir          string
+	dir string
+	// disabled is CLAWDLINE_NEXT_LEGACY_STORE=off, taken when the reader was
+	// opened: a reader that is off opens nothing for the life of the process.
+	disabled     bool
 	orchestrator *file[orchestratorFile]
 	coordinator  *file[Coordinator]
 	config       *file[configFile]
@@ -61,9 +64,13 @@ func Dir() string {
 }
 
 // Open prepares a reader. It opens nothing yet: the files are read on demand,
-// and a directory that does not exist is an answer ("unknown"), not a startup
-// failure, because this daemon runs on machines with no Swift app.
+// and a directory that does not exist is an answer ("absent"), not a startup
+// failure, because this daemon runs on machines with no Swift app. With the
+// legacy switch off (legacy.go) the reader never opens anything at all.
 func Open(dir string) *Store {
+	if Disabled() {
+		return &Store{dir: dir, disabled: true}
+	}
 	return &Store{
 		dir:          dir,
 		orchestrator: newFile[orchestratorFile](filepath.Join(dir, "orchestrator.json")),
@@ -82,6 +89,10 @@ type Snapshot struct {
 	// Stale is true when the newest read failed and an earlier one is carried.
 	Stale bool
 	Err   error
+	// Source says how orchestrator.json contributed: current, stale,
+	// unreadable, absent or disabled. Absent and disabled are known answers —
+	// the store holds nothing — and unreadable is the only one that is not.
+	Source Source
 
 	// Activity is each terminal's turn clock, by terminal id.
 	Activity map[string]int64
@@ -101,21 +112,33 @@ type Snapshot struct {
 // last call.
 func (s *Store) Read() Snapshot {
 	if s == nil {
-		return Snapshot{Err: errors.New("no Swift store configured")}
+		return Snapshot{Err: errors.New("no Swift store configured"), Source: SourceUnreadable}
+	}
+	if s.disabled {
+		// Nothing is opened. No coordinator and no titles are known answers
+		// here, as they are on a machine without the Swift app.
+		return Snapshot{Source: SourceDisabled, CoordinatorKnown: true}
 	}
 	var out Snapshot
 
 	orch := s.orchestrator.read()
 	switch {
 	case orch.Missing:
-		out.Err = errors.New("orchestrator.json is not there")
+		// No file is no Swift broker on this machine, and that is known: this
+		// daemon's own records are the whole answer then.
+		out.Source = SourceAbsent
 	case !orch.Known:
 		out.Err = orch.Err
+		out.Source = SourceUnreadable
 	default:
 		out.Orchestrator = orch.Value.Orchestrator
 		out.Known = true
 		out.Stale = orch.Stale
 		out.Err = orch.Err
+		out.Source = SourceCurrent
+		if orch.Stale {
+			out.Source = SourceStale
+		}
 		out.Activity = make(map[string]int64, len(orch.Value.SessionActivity))
 		for _, a := range orch.Value.SessionActivity {
 			out.Activity[a.TerminalID] = a.Generation
@@ -144,6 +167,16 @@ func (s *Store) Read() Snapshot {
 	}
 	return out
 }
+
+// Usable reports whether the snapshot's records can be projected as they
+// stand: the Swift store was read, or it is known to hold nothing (absent or
+// switched off), so whatever this daemon's own records add is the whole
+// answer. Only an unreadable store is not usable — then nothing projected from
+// it may be drawn as settled.
+func (s Snapshot) Usable() bool { return s.Known || s.Source.Settled() }
+
+// Disabled reports whether this reader was opened with the legacy switch off.
+func (s *Store) Disabled() bool { return s != nil && s.disabled }
 
 // tasksNewestFirst is the order Orchestrator.records() returns: created,
 // newest first, with the id as a tie-break so two readings agree.

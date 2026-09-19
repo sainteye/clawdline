@@ -11,29 +11,23 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 )
 
-// The Swift app's own ledger, when there is one, is where the Usage page's
-// rows come from: it is the record the Swift page draws, so reading it is the
-// only way the two pages can show the same numbers. The transcript collector
-// below it is the answer on a machine with no ledger — Linux, Windows, or a Mac
-// that never ran the Swift app.
+// The Usage page's rows are this daemon's own reading of the assistants'
+// records (rows.go) — the ledger this daemon keeps, since it outlives the
+// Swift app (cutover B2). The Swift app's usage ledger, when there is one, is
+// history beside it: its rows fill in the conversations whose records are no
+// longer on disk (the assistants clear old transcripts), and nothing else. One
+// conversation is answered by one source, never both, so a month is never
+// counted twice; the answer says which sources it used (`source`), and an
+// unreadable ledger makes it `partial`, named, rather than an idle month.
 //
-// Which of the two answered is not on the wire: the Swift payload has no field
-// for it, and this daemon does not invent one. A reading carried after a
-// failed copy shows up where the Swift page shows an old ledger, in
-// `freshness` (its `latestObservedAt` is the carried reading's).
+// With the legacy switch off (swiftstore/legacy.go) the ledger is not opened
+// at all and `source.legacyLedger` says `disabled`.
 
 // Where the rows came from, for the log line written when it changes.
 const (
 	sourceLedger      = "swift_ledger"
 	sourceTranscripts = "transcripts"
 )
-
-// ErrLedgerUnreadable means the Swift app's ledger exists and could not be
-// read, and there is no earlier reading to carry. Nothing is answered then:
-// the transcripts would be a different set of numbers under the same page, and
-// an empty answer would read as an idle month. The message leaves the path out
-// because paths do not cross this surface.
-var ErrLedgerUnreadable = errors.New("The Swift app's usage ledger could not be read, so Usage Analytics does not know these numbers.")
 
 // ledgerCache is one ledger reading turned into rows, kept until the reading
 // changes.
@@ -43,27 +37,36 @@ type ledgerCache struct {
 	latest time.Time
 }
 
-// ledgerRows answers from the Swift ledger. ok is false when there is no
-// ledger and the transcripts should answer instead.
-func (c *Collector) ledgerRows(ctx context.Context, since time.Time) (rows []Row, ok bool, err error) {
+// ledgerRows answers the Swift ledger's rows and how the ledger was read. A
+// ledger that is absent, switched off or unreadable answers no rows and says
+// which; only a ledger caught mid-write is an error (ErrBusy), because the
+// next try is likely to land and an answer without it would flicker.
+func (c *Collector) ledgerRows(ctx context.Context, since time.Time) (rows []Row, status swiftstore.Source, err error) {
 	if c.ledger == nil {
-		return nil, false, nil
+		return nil, swiftstore.SourceAbsent, nil
 	}
 	reading := c.ledger.Read(ctx)
 	switch {
+	case reading.Disabled:
+		c.noteSource(sourceTranscripts, nil)
+		return nil, swiftstore.SourceDisabled, nil
 	case reading.Missing:
 		c.noteSource(sourceTranscripts, nil)
-		return nil, false, nil
+		return nil, swiftstore.SourceAbsent, nil
 	case !reading.Known:
 		c.noteSource(sourceLedger, reading.Err)
 		if errors.Is(reading.Err, swiftstore.ErrLedgerChanging) ||
 			errors.Is(reading.Err, context.DeadlineExceeded) || errors.Is(reading.Err, context.Canceled) {
 			// The Swift app is writing; the next try is likely to land.
-			return nil, true, ErrBusy
+			return nil, swiftstore.SourceUnreadable, ErrBusy
 		}
-		return nil, true, ErrLedgerUnreadable
+		return nil, swiftstore.SourceUnreadable, nil
 	}
 	c.noteSource(sourceLedger, reading.Err)
+	status = swiftstore.SourceCurrent
+	if reading.Stale {
+		status = swiftstore.SourceStale
+	}
 
 	c.mu.Lock()
 	cache := c.ledgerRead
@@ -91,7 +94,29 @@ func (c *Collector) ledgerRows(ctx context.Context, since time.Time) (rows []Row
 	// `freshness` is the whole ledger's newest write, which may belong to a
 	// row that started before the range. That row is carried so Run sees it;
 	// its start keeps it out of every range the scan was asked for.
-	return out, true, nil
+	return out, status, nil
+}
+
+// withHistory is this daemon's own rows, and the ledger's rows for the
+// conversations those do not hold. A ledger row with no conversation cannot
+// be said to be covered, and is kept.
+func withHistory(own, legacy []Row) []Row {
+	covered := make(map[string]bool, len(own))
+	for _, r := range own {
+		if r.SessionID != "" {
+			covered[r.Assistant+"\x00"+r.SessionID] = true
+		}
+	}
+	out := append(make([]Row, 0, len(own)+len(legacy)), own...)
+	for _, r := range legacy {
+		if r.SessionID != "" && covered[r.Assistant+"\x00"+r.SessionID] {
+			continue
+		}
+		r.Legacy = true
+		out = append(out, r)
+	}
+	sortNewestFirst(out)
+	return out
 }
 
 // ledgerToRows is `UsageLedger.row(from:)` in this package's vocabulary.
@@ -184,11 +209,11 @@ func (c *Collector) noteSource(source string, err error) {
 	c.source, c.sourceFailing = source, failing
 	switch {
 	case failing:
-		log.Printf("usage analytics: reading the Swift usage ledger failed: %v", err)
+		log.Printf("usage analytics: reading the Swift usage ledger failed: %v; the history it holds is missing from answers", err)
 	case source == sourceLedger:
-		log.Printf("usage analytics: rows come from the Swift usage ledger (%s)", c.ledger.Path())
+		log.Printf("usage analytics: rows come from the assistants' transcripts, with the Swift usage ledger (%s) as history", c.ledger.Path())
 	default:
-		log.Printf("usage analytics: no Swift usage ledger; rows come from the assistants' transcripts")
+		log.Printf("usage analytics: rows come from the assistants' transcripts; no Swift usage ledger is read")
 	}
 }
 

@@ -49,9 +49,9 @@
       }
     },
     "StoreReading": {
-      "description": "Whether the Swift app's store was read for this answer: `current`; `stale`, an earlier reading carried because the newest one was half-written; or `unknown`, nothing could be read. Unknown is never the same as empty.",
+      "description": "Whether the Swift app's store was read for this answer: `current`; `stale`, an earlier reading carried because the newest one was half-written; `unknown`, nothing could be read; `absent`, there is no Swift store on this machine; or `disabled`, this daemon was told not to read it (CLAWDLINE_NEXT_LEGACY_STORE=off, cutover B1). Unknown is never the same as empty; absent and disabled are known, and the list is then this daemon's own tasks only.",
       "type": "string",
-      "enum": ["current", "stale", "unknown"]
+      "enum": ["current", "stale", "unknown", "absent", "disabled"]
     },
     "TaskPage": {
       "description": "Which finished tasks this answer carries. Unfinished ones ride on every page.",

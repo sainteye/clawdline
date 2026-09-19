@@ -524,9 +524,9 @@ func (s Snapshot) TitleOf(l Live, customTitle string, live []Live) Titles {
 			}
 		}
 	}
-	if s.Known {
-		out.Orchestrator = s.orchestratorTitle(l.TerminalID, live)
-	}
+	// Over whatever records there are: the Swift store's when it was read,
+	// and this daemon's own laid over them (own.go) either way.
+	out.Orchestrator = s.orchestratorTitle(l.TerminalID, live)
 	return out
 }
 
@@ -857,11 +857,13 @@ func sameMover(a, b contract.CloseMover) bool { return a == b }
 //
 // A store that could not be read at all is one more evidence reason, so the
 // answer is `unknown` with whatever else is known listed under it — never a
-// short list that reads as complete.
+// short list that reads as complete. A store that is absent, or switched off,
+// is not unread: it is known to hold nothing, and this daemon's own records
+// laid over it (own.go) are the whole list.
 func (s Snapshot) Closeability(in CloseInput) contract.Closeability {
 	l := in.Live
 	evidence := []contract.CloseReason{}
-	if !s.Known {
+	if !s.Usable() {
 		evidence = append(evidence, reason("swift_store_unreadable", "evidence", "", "", moverBroker()))
 	}
 	if !in.Bound {
@@ -892,9 +894,7 @@ func (s Snapshot) Closeability(in CloseInput) contract.Closeability {
 	case "waiting":
 		obligations = append(obligations, reason("terminal_waiting_you", "obligation", "session", l.TerminalID, moverPerson()))
 	}
-	if s.Known {
-		obligations = append(obligations, s.obligations(l)...)
-	}
+	obligations = append(obligations, s.obligations(l)...)
 	obligations = append(obligations, in.Extra...)
 
 	activity := s.Activity[l.TerminalID]

@@ -117,6 +117,14 @@ claims `internal/app/orchestrator`、`internal/adapters/store`、`taskdir`、`su
 今天新版對前者只有 `O_RDONLY`，退役後應該連讀都不要——這條讀取是一個獨立 adapter
 （`internal/adapters/swiftstore`），設計上就是要能整條拿掉。
 
+**B1 之後（2026-09-19）**：新版**先用自己的 store**（broker 的 task、waits、`session.delivered`、handoff、
+Feature Root、coordinator 表，以及自己從 transcript 算的用量），舊 store 只當「歷史補充」；
+`CLAWDLINE_NEXT_LEGACY_STORE=off` 把整條舊讀取關掉——`orchestrator.json`、`coordinator.json`、`config.json`、
+`schedules/`、`dispatch-policy.local.md`、`usage.sqlite3`、`project-board.json`＋`project-board-history/`
+一個都不開，回應裡以 `disabled` 具名（task 列表 `store`、用量 `source.legacyLedger`、`/v1/board/tracks` 的
+`sources.board/history.status`）。舊檔不存在時是 `absent`（已知沒有），不再是「未知」。
+**不歸這個開關管**的只有 B3 的舊圖片快取（`session-images`、`drops`）與語音模型——那是歷史資產，不是狀態。
+
 ---
 
 ## 4. Cloud（app.clawdline.com）：做到哪、還缺什麼
@@ -277,8 +285,20 @@ claims `internal/app/orchestrator`、`internal/adapters/store`、`taskdir`、`su
 - [ ] **B1 新 daemon 不再需要讀 `~/.config/clawdline`。**
       驗：把 `CLAWDLINE_SWIFT_DIR` 指到一個空目錄跑一次，畫面上皇冠、task chip、
       協調等待、交付勾、標題**仍然正確**（來源換成自己的 store）。**這是退役的硬門檻。**
+      **驗法補一條（B1 實作，task `fd0a00f1`）**：改用 `CLAWDLINE_NEXT_LEGACY_STORE=off` 啟動（它連
+      `usage.sqlite3`、舊看板與家規 local 檔都不開，比指空目錄完整）；對照組是同一組「金絲雀」舊檔在
+      開關 `on` 時要出現在回應裡、`off` 時一個都不能出現。2026-09-19 在隔離的 7815 實測：`off` 時
+      session 清單、task 列表（`store: disabled`）、用量（`source.legacyLedger: disabled`）、看板、tracks、
+      設定、專案都 200，daemon 沒開任何舊 store 檔（`lsof` 取樣）；新版自己記的交付回報畫成交付勾。
+      **7727 仍待重建後驗**；皇冠、task chip、協調等待在 live daemon 上要有真的 broker 事實才看得到，
+      單元測試已涵蓋投影，live 未量。「只有舊資料才有」的歷史清單見 task `fd0a00f1` 的 `artifacts/report.md`。
 - [ ] **B2 用量頁有自己的帳本。** 驗：同上情境下用量頁仍有數字，而且不是 transcript 退路
       （回應要說得出來源）。
+      **B1 實作後**：用量的列**一律**是新版自己從 transcript 算的（它就是新版的帳本，不再是退路），
+      舊 `usage.sqlite3` 只補「transcript 已經不在」的 conversation（同一個 conversation 只取一個來源），
+      回應的 `source` 說出用了哪些；舊帳本讀不到時 `availability` 是 `partial / legacy_ledger_unreadable`。
+      **沒做的**：新版 broker 沒記 child 的 conversation id，所以新版派出去的 task 在用量頁歸成
+      `manual`（舊版派的仍由舊 store 歸屬）；transcript 被清掉後新版自己的歷史就沒了——要不要落盤見報告。
 - [ ] **B3 舊圖片仍讀得到。** 驗：打開一則有 `<clawdline-image>` 標記的舊訊息，圖片出得來。
       （這一條**允許**繼續唯讀舊快取目錄——那是歷史資產，不是活狀態。）
 - [ ] **B4 worktree 有人回收。** 驗：跑一次回收，確認已落地的殘留被移除、

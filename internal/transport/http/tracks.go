@@ -101,6 +101,9 @@ func (s *Server) boardTracks(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, boardstore.ErrLegacyAbsent):
 		// No Swift board on this machine: that is known, and it is zero cards.
 		board.Status, state = "absent", nil
+	case errors.Is(err, boardstore.ErrLegacyDisabled):
+		// Told not to read it (cutover B1): known, and zero cards read.
+		board.Status, state = "disabled", nil
 	case err != nil && !boardstore.IsStale(err):
 		writeBoardRefusal(w, err, false)
 		return

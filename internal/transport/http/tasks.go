@@ -76,6 +76,7 @@ func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.
 	if err != nil {
 		return contract.TaskList{}, err
 	}
+	screen := s.screen(ctx)
 	{
 		for _, u := range unreadable {
 			created := u.CreatedAt.Unix()
@@ -112,12 +113,13 @@ func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.
 			if !t.FinishedAt.IsZero() {
 				row.FinishedAt = t.FinishedAt.Unix()
 			}
+			ownTaskLinks(&row, t, screen)
 			own = append(own, row)
 		}
 	}
 
 	snap := s.swift.Read()
-	rows, page := snap.TaskPage(s.screen(ctx), own, cursor, limit)
+	rows, page := snap.TaskPage(screen, own, cursor, limit)
 	return contract.TaskList{
 		At:    time.Now().Unix(),
 		Tasks: rows,
@@ -129,6 +131,10 @@ func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.
 // storeReading says how the Swift store was read for an answer.
 func storeReading(snap swiftstore.Snapshot) contract.StoreReading {
 	switch {
+	case snap.Source == swiftstore.SourceDisabled:
+		return contract.StoreReading(swiftstore.SourceDisabled)
+	case snap.Source == swiftstore.SourceAbsent:
+		return contract.StoreReading(swiftstore.SourceAbsent)
 	case !snap.Known:
 		return contract.StoreReadingUnknown
 	case snap.Stale:

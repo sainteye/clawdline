@@ -51,12 +51,9 @@ func (s *Server) projectReaders() *projectReaders {
 		projectRead.lifecycle = projects.NewLifecycle(projects.Ports{
 			ProjectDirectories: func() []string {
 				dirs := projects.RegistryPaths()
-				for _, t := range s.swift.Read().Tasks {
-					dirs = append(dirs, t.ProjectDir)
-				}
-				return dirs
+				return append(dirs, s.taskProjectDirs()...)
 			},
-			Tasks: func() projects.TaskEvidence { return lifecycleTasks(s.swift.Read()) },
+			Tasks: func() projects.TaskEvidence { return s.lifecycleEvidence() },
 			Live:  func() projects.LiveEvidence { return s.liveEvidence(context.Background()) },
 		})
 	})
@@ -194,6 +191,11 @@ func (s *Server) projectCatalogRoute(w http.ResponseWriter, r *http.Request) {
 		Source:        contract.CatalogSource{Ingestion: contract.CatalogIngestion{Status: "unknown"}},
 	}
 	switch {
+	case !board.Known && (errors.Is(board.Err, projects.ErrCatalogDisabled) || errors.Is(board.Err, os.ErrNotExist)):
+		// No Swift board, or one this daemon was told not to read (cutover
+		// B1): known, and it adds no projects. The places are still this
+		// person's projects, so the page lists them rather than going blank.
+		catalog.ReadState = contract.CatalogReadState{Status: contract.CatalogReadStatusReady}
 	case !board.Known:
 		catalog.ReadState = contract.CatalogReadState{Status: contract.CatalogReadStatusError,
 			Error: &contract.CatalogError{Code: "board_unavailable", Message: "The Board store could not be read."}}

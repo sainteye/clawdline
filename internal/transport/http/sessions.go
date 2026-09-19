@@ -78,7 +78,9 @@ func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
 	// unreadable broker makes the projection incomplete, not wrong in one
 	// place: it is carried as missing evidence rather than as zero.
 	owed, owedErr := s.owed(ctx, inv.Sessions)
-	// One reading of the Swift app's store, for the same reason.
+	// One reading of the Swift app's store, for the same reason. It is history
+	// now (cutover B1): this daemon's own records are laid over it below, and
+	// with the legacy switch off it is read as holding nothing.
 	swift := s.swift.Read()
 	// And of this daemon's own machine role (W5): when it holds one, the
 	// crown is drawn from it and from nothing else — one role, one source.
@@ -105,6 +107,13 @@ func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
 	matches := identityMatchCounts(items)
 	s.lastScreen.Store(&screenReading{at: time.Now(), rows: onScreen(items)})
 
+	// This daemon's own tasks, waits, deliveries, handoffs and Feature Roots,
+	// in the Swift store's shape, so the one set of rules reads both
+	// (ownrecords.go). A source of ours that could not be read is evidence
+	// missing for every row, as an unreadable Swift store is.
+	own, ownErr := s.ownOverlay(ctx, lives)
+	swift = swift.With(own)
+
 	// Names first, because a coordination wait names the sessions on either
 	// side of it by the label this list gives them.
 	labels := make(map[string]string, len(items))
@@ -128,6 +137,7 @@ func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
 			swift:      swift,
 			owed:       owed,
 			owedErr:    owedErr,
+			ownErr:     ownErr,
 			inv:        inv,
 			now:        now,
 			generation: gen,
@@ -224,6 +234,7 @@ type rowInput struct {
 	swift      swiftstore.Snapshot
 	owed       []task.Obligation
 	owedErr    error
+	ownErr     error // this daemon's own records not all read (ownrecords.go)
 	inv        session.Inventory
 	now        time.Time
 	generation int64
@@ -259,7 +270,11 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 	}
 	out := sessionRowWire{Menu: wireMenu(item)}
 
-	if in.swift.Known {
+	// The records are usable when the Swift store was read or is known to
+	// hold nothing (absent, or switched off) and this daemon's own were read:
+	// then the Swift app's rules run over both. Otherwise the daemon's own
+	// projection answers with the evidence marked missing.
+	if in.swift.Usable() && in.ownErr == nil {
 		work := in.swift.Work(in.live, state)
 		// This daemon's own peer waits are an input the Swift store does not
 		// hold; they rank where the Swift app's coordination waits do.
@@ -274,21 +289,37 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		out.WorkPersonNeeded = work.PersonNeeded
 		row.Owed = work.Owed
 		row.Disposition = work.Disposition
-		row.RootAssignment = in.swift.RootAssignment(in.live)
-		row.Coordination = in.swift.Coordination(item.ID, in.labelOf)
-		if !in.ownRole {
-			row.Coordinator = in.swift.CoordinatorFor(in.live)
-		}
 	} else {
 		// Without the store there is no reading of the task, the delivery or
 		// the declaration behind a state, and the honest projection is the
 		// daemon's own with that evidence marked missing.
-		row.WorkState = contract.WorkState(workState(item, in.owed, errSwiftUnknown))
+		missing := errSwiftUnknown
+		if in.ownErr != nil {
+			missing = in.ownErr
+		}
+		row.WorkState = contract.WorkState(workState(item, in.owed, missing))
 		row.WorkProvenance = contract.WorkProvenanceBroker
 	}
+	// A Feature Root or a wait that was read is a fact whatever else could
+	// not be: they are drawn from the records there are, the daemon's own
+	// among them.
+	row.RootAssignment = in.swift.RootAssignment(in.live)
+	row.Coordination = in.swift.Coordination(item.ID, in.labelOf)
 
+	// One role, one source: this daemon's own when it holds one; otherwise
+	// the Swift app's, which is nobody's when that store is absent or off.
 	if in.ownRole {
 		row.Coordinator = ownCrown(in.role, in.live)
+	} else {
+		row.Coordinator = in.swift.CoordinatorFor(in.live)
+	}
+
+	extra := ownCloseReasons(item, in.owed, in.owedErr)
+	if in.ownErr != nil {
+		extra = append(extra, contract.CloseReason{
+			Code: "own_records_unreadable", Kind: "evidence",
+			Mover: contract.CloseMover{Kind: "broker"},
+		})
 	}
 
 	row.Closeability = in.swift.Closeability(swiftstore.CloseInput{
@@ -301,7 +332,7 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		InventoryObservedAt: in.inv.ObservedAt,
 		Now:                 in.now,
 		Generation:          in.generation,
-		Extra:               ownCloseReasons(item, in.owed, in.owedErr),
+		Extra:               extra,
 	})
 	out.SessionRow = row
 	return out

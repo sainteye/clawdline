@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 )
 
 // LegacyPath is where the Swift app keeps its board. CLAWDLINE_BOARD_STORE is
@@ -41,6 +43,9 @@ func LegacyPath() string {
 // empty board — an empty board is a claim that the 776 cards are gone.
 type Legacy struct {
 	path string
+	// disabled is the legacy switch (swiftstore/legacy.go), taken when the
+	// reader was opened: the file is never opened then.
+	disabled bool
 
 	mu      sync.Mutex
 	stamp   fileStamp
@@ -54,16 +59,27 @@ type fileStamp struct {
 	mtime time.Time
 }
 
-// OpenLegacy prepares a reader. It opens nothing yet.
-func OpenLegacy(path string) *Legacy { return &Legacy{path: path} }
+// OpenLegacy prepares a reader. It opens nothing yet, and with the legacy
+// switch off (CLAWDLINE_NEXT_LEGACY_STORE=off) it never will.
+func OpenLegacy(path string) *Legacy {
+	return &Legacy{path: path, disabled: swiftstore.Disabled()}
+}
 
 // ErrLegacyAbsent means there is no Swift board on this machine. That is the
 // ordinary state on Linux, Windows and a Mac that never ran the old app.
 var ErrLegacyAbsent = errors.New("the Swift app has no board on this machine")
 
+// ErrLegacyDisabled means this daemon was told not to read the Swift board
+// (cutover B1). Like absent it is known and holds no cards; unlike absent the
+// cards may be there, and the answer says which it is.
+var ErrLegacyDisabled = errors.New("reading the Swift app's board is switched off")
+
 // Read returns the latest good reading, re-reading only when the file's size
 // or time has moved. The returned state is shared and must not be modified.
 func (l *Legacy) Read() (*StoredState, time.Time, error) {
+	if l != nil && l.disabled {
+		return nil, time.Time{}, ErrLegacyDisabled
+	}
 	if l == nil || l.path == "" {
 		return nil, time.Time{}, ErrLegacyAbsent
 	}

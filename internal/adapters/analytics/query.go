@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 )
 
 // Limits, as `UsageQueryService` has them.
@@ -281,6 +283,9 @@ func (q Query) filter(all []Row, start, end time.Time) ([]Row, bool) {
 
 // Result is one answered query.
 type Result struct {
+	// Source is where the rows came from; the caller that collected them
+	// sets it (Collector.RowsFrom).
+	Source      Source
 	Query       Query
 	All         []Row // everything collected, for freshness
 	Rows        []Row // the matched rows, newest first
@@ -1299,8 +1304,19 @@ func (res Result) base() obj {
 	}
 	totals := summary(res.Rows)
 	availability := obj{"status": "complete"}
-	if res.Truncated {
+	switch {
+	case res.Truncated:
 		availability = obj{"status": "partial", "reason": "scan_limit_reached"}
+	case res.Source.Ledger == swiftstore.SourceUnreadable:
+		// The Swift ledger's history could not be read: the conversations
+		// only it still holds are missing, and the page says so by name.
+		availability = obj{"status": "partial", "reason": "legacy_ledger_unreadable"}
+	}
+	legacyRows := 0
+	for _, r := range res.Rows {
+		if r.Legacy {
+			legacyRows++
+		}
 	}
 	return obj{
 		"schemaVersion":  1,
@@ -1345,6 +1361,12 @@ func (res Result) base() obj {
 		},
 		"portfolio":    res.portfolio(),
 		"availability": availability,
+		// Not in the Swift payload: which ledger answered (cutover B2). The
+		// rows are this daemon's own reading of the assistants' records; the
+		// Swift ledger, as legacyLedger says it was read, only adds the
+		// conversations those no longer hold, legacyRows of them here.
+		"source": obj{"rows": "transcripts", "legacyLedger": strOrNil(string(res.Source.Ledger)),
+			"legacyRows": legacyRows},
 	}
 }
 

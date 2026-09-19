@@ -3,12 +3,14 @@ package analytics
 import (
 	"context"
 	"database/sql"
-	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 )
 
 // ledgerSchema is the part of the Swift ledger's store version 7 the reader
@@ -138,9 +140,11 @@ func TestTheLedgerIsReadFromACopyThatIncludesTheLog(t *testing.T) {
 	}
 }
 
-// A ledger that is there and cannot be read is not an idle month: the answer
-// is an error, never an empty list and never the transcripts' other numbers.
-func TestAnUnreadableLedgerIsUnknownNotEmpty(t *testing.T) {
+// A ledger that is there and cannot be read is not an idle month. The rows
+// are this daemon's own now (cutover B2), so they are still answered — but
+// the answer says, by name, that the history only the ledger holds is
+// missing, rather than reading as complete.
+func TestAnUnreadableLedgerIsNamedNotSilent(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CLAWDLINE_OBSERVABILITY_DIR", dir)
 	t.Setenv("TMPDIR", t.TempDir())
@@ -148,8 +152,61 @@ func TestAnUnreadableLedgerIsUnknownNotEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := NewCollector(t.TempDir(), nil)
-	rows, err := c.Rows(context.Background(), time.Time{})
-	if !errors.Is(err, ErrLedgerUnreadable) {
-		t.Fatalf("want ErrLedgerUnreadable, got %d rows, err %v", len(rows), err)
+	rows, src, err := c.RowsFrom(context.Background(), time.Time{})
+	if err != nil || src.Ledger != swiftstore.SourceUnreadable {
+		t.Fatalf("want the own rows and an unreadable ledger, got %d rows, %+v, %v", len(rows), src, err)
+	}
+	q, err := Parse(url.Values{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := Run(q, rows, time.Now())
+	res.Source = src
+	p := res.Payload()
+	if av := p["availability"].(obj); av["status"] != "partial" || av["reason"] != "legacy_ledger_unreadable" {
+		t.Fatalf("availability: %v", av)
+	}
+	if s := p["source"].(obj); s["legacyLedger"] != "unreadable" || s["rows"] != "transcripts" {
+		t.Fatalf("source: %v", s)
+	}
+}
+
+// One conversation, one source: this daemon's own row wins, and the ledger
+// only adds the conversations the own rows do not hold. The control is the
+// ledger alone, which answers both of its rows.
+func TestOwnRowsComeFirstAndTheLedgerOnlyFillsHistory(t *testing.T) {
+	own := []Row{{Assistant: "claude", SessionID: "a", IntervalKey: "own-a", StartedAt: time.Unix(3000, 0)}}
+	legacy := []Row{
+		{Assistant: "claude", SessionID: "a", IntervalKey: "old-a", StartedAt: time.Unix(2000, 0)},
+		{Assistant: "claude", SessionID: "b", IntervalKey: "old-b", StartedAt: time.Unix(1000, 0)},
+		{Assistant: "codex", SessionID: "a", IntervalKey: "old-codex-a", StartedAt: time.Unix(500, 0)},
+	}
+	got := withHistory(own, legacy)
+	keys := []string{}
+	for _, r := range got {
+		keys = append(keys, r.IntervalKey)
+		if r.Legacy != strings.HasPrefix(r.IntervalKey, "old-") {
+			t.Fatalf("%s is marked legacy=%v", r.IntervalKey, r.Legacy)
+		}
+	}
+	if strings.Join(keys, ",") != "own-a,old-b,old-codex-a" {
+		t.Fatalf("rows: %v", keys)
+	}
+	if control := withHistory(nil, legacy); len(control) != 3 {
+		t.Fatalf("control: the ledger alone answered %d rows", len(control))
+	}
+
+	q, err := Parse(url.Values{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := Run(q, got, time.Now())
+	res.Source = Source{Ledger: swiftstore.SourceDisabled}
+	p := res.Payload()
+	if av := p["availability"].(obj); av["status"] != "complete" {
+		t.Fatalf("a ledger switched off is not a partial answer: %v", av)
+	}
+	if s := p["source"].(obj); s["legacyLedger"] != "disabled" || s["legacyRows"] != 2 {
+		t.Fatalf("source: %v", s)
 	}
 }

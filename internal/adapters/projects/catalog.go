@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
 )
 
 // BoardStorePath is ProjectBoardStore.defaultURL, including its override.
@@ -75,11 +77,25 @@ type Catalog struct {
 	last  *BoardCatalog
 }
 
-func NewCatalog() *Catalog { return &Catalog{Path: BoardStorePath()} }
+// NewCatalog reads the Swift app's Board store; with the legacy switch off
+// (CLAWDLINE_NEXT_LEGACY_STORE=off, cutover B1) it reads nothing.
+func NewCatalog() *Catalog {
+	if swiftstore.Disabled() {
+		return &Catalog{}
+	}
+	return &Catalog{Path: BoardStorePath()}
+}
+
+// ErrCatalogDisabled is the Board store not read because the legacy switch is
+// off: known, and not a failure to read it.
+var ErrCatalogDisabled = errors.New("reading the Swift app's board is switched off")
 
 func (c *Catalog) Read() BoardCatalog {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.Path == "" {
+		return BoardCatalog{Err: ErrCatalogDisabled}
+	}
 	fail := func(err error) BoardCatalog {
 		if c.last != nil {
 			out := *c.last

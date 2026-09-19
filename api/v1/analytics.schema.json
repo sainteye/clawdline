@@ -741,8 +741,30 @@
         "retryView"
       ]
     },
+    "AnalyticsSource": {
+      "description": "Where the rows came from (cutover B2). `rows` is `transcripts`: this daemon's own reading of the assistants' records, always. `legacyLedger` is how the Swift app's usage ledger was read — current, stale, unreadable, absent or disabled (CLAWDLINE_NEXT_LEGACY_STORE=off) — and it only adds the conversations whose own records are gone; `legacyRows` is how many of this answer's rows it added.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "type": "string"
+        },
+        "legacyLedger": {
+          "type": "string",
+          "nullable": true
+        },
+        "legacyRows": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "legacyLedger",
+        "legacyRows",
+        "rows"
+      ]
+    },
     "AnalyticsAvailability": {
-      "description": "complete, or partial with scan_limit_reached.",
+      "description": "complete, or partial with scan_limit_reached, or partial with legacy_ledger_unreadable (the Swift usage ledger's history could not be read).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -1527,6 +1549,9 @@
         },
         "availability": {
           "$ref": "#/$defs/AnalyticsAvailability"
+        },
+        "source": {
+          "$ref": "#/$defs/AnalyticsSource"
         }
       },
       "required": [

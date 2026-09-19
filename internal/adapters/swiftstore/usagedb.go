@@ -128,6 +128,9 @@ type LedgerReading struct {
 	// Missing is true when there is no ledger at all: no Swift app, or one
 	// that never recorded usage. The caller may use another source then.
 	Missing bool
+	// Disabled is true, together with Missing, when the legacy switch is off
+	// (legacy.go): the ledger may exist and was not looked at.
+	Disabled bool
 	// ReadAt is when the reading in Intervals was copied.
 	ReadAt time.Time
 	// Err is why the newest attempt failed, if it did.
@@ -140,7 +143,8 @@ var ErrLedgerChanging = errors.New("the Swift usage ledger kept changing while i
 
 // UsageLedger reads usage.sqlite3 through private copies.
 type UsageLedger struct {
-	path string
+	path     string
+	disabled bool
 	// tempRoot is where private copies are made. It belongs to this daemon.
 	tempRoot string
 
@@ -182,6 +186,9 @@ const (
 // OpenUsageLedger prepares a reader of dir/usage.sqlite3. It touches nothing
 // yet; dir "" is a reader that always answers Missing.
 func OpenUsageLedger(dir string) *UsageLedger {
+	if Disabled() {
+		return &UsageLedger{disabled: true}
+	}
 	l := &UsageLedger{tempRoot: filepath.Join(os.TempDir(), "clawdline-next")}
 	if dir != "" {
 		l.path = filepath.Join(dir, "usage.sqlite3")
@@ -196,7 +203,7 @@ func (l *UsageLedger) Path() string { return l.path }
 // only when either file changed, and not more than once per ledgerReuse.
 func (l *UsageLedger) Read(ctx context.Context) LedgerReading {
 	if l == nil || l.path == "" {
-		return LedgerReading{Known: true, Missing: true}
+		return LedgerReading{Known: true, Missing: true, Disabled: l != nil && l.disabled}
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -587,7 +594,7 @@ func seconds(v float64) time.Time {
 // fields not decoded here are not repeated.
 func (s *Store) ScheduleTitles() map[string]string {
 	out := map[string]string{}
-	if s == nil || s.dir == "" {
+	if s == nil || s.dir == "" || s.disabled {
 		return out
 	}
 	dir := filepath.Join(s.dir, "schedules")
@@ -640,8 +647,13 @@ type QuotaConfig struct {
 	config *file[quotaConfigFile]
 }
 
-// OpenQuotaConfig prepares a reader of dir/config.json.
+// OpenQuotaConfig prepares a reader of dir/config.json. With the legacy switch
+// off it reads nothing and answers the defaults, which is what the Swift app
+// runs on without a config of its own.
 func OpenQuotaConfig(dir string) *QuotaConfig {
+	if Disabled() {
+		return &QuotaConfig{}
+	}
 	return &QuotaConfig{config: newFile[quotaConfigFile](filepath.Join(dir, "config.json"))}
 }
 
@@ -651,7 +663,7 @@ func OpenQuotaConfig(dir string) *QuotaConfig {
 // is what the Swift app itself runs on without one.
 func (q *QuotaConfig) Read() QuotaSettings {
 	var out QuotaSettings
-	if q == nil {
+	if q == nil || q.config == nil {
 		return out
 	}
 	r := q.config.read()

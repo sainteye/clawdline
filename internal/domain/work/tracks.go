@@ -535,7 +535,8 @@ type Sources struct {
 // BoardSource is the old app's board file.
 type BoardSource struct {
 	// Status is ok, stale (an earlier good reading, because the file cannot
-	// be read now) or absent (there is no such file on this machine).
+	// be read now), absent (there is no such file on this machine) or
+	// disabled (this daemon was told not to read it, cutover B1).
 	Status   string  `json:"status"`
 	Revision int64   `json:"revision"`
 	Cards    int     `json:"cards"`
@@ -544,7 +545,8 @@ type BoardSource struct {
 
 // HistorySource is the old app's per-card event logs.
 type HistorySource struct {
-	// Status is ok or absent (no log directory at all).
+	// Status is ok, absent (no log directory at all) or disabled (not read,
+	// cutover B1).
 	Status     string `json:"status"`
 	Files      int    `json:"files"`
 	Unreadable int    `json:"unreadable"`

@@ -87,6 +87,9 @@ type Row struct {
 	ParentTaskID    string
 	LandingState    string
 	LandingVerified *bool
+	// Legacy is a row read from the Swift ledger: history for a conversation
+	// whose own records are gone (ledger.go).
+	Legacy bool
 	// The rest is only known from the Swift ledger; a transcript row leaves
 	// them empty, which the wire spells null.
 	Reconciliation string
@@ -141,13 +144,38 @@ func NewCollector(home string, swift *swiftstore.Store) *Collector {
 	}
 }
 
+// Source is where one answer's rows came from (cutover B2): the assistants'
+// own records, read by this daemon, always; and the Swift ledger as history,
+// as Ledger says it was read.
+type Source struct {
+	Ledger swiftstore.Source
+}
+
 // Rows returns every row whose record was written at or after `since` (zero
 // means all of them), waiting for a scan no longer than ctx allows. A scan is
 // shared: two requests at once start one.
 func (c *Collector) Rows(ctx context.Context, since time.Time) ([]Row, error) {
-	if rows, ok, err := c.ledgerRows(ctx, since); ok {
-		return rows, err
+	rows, _, err := c.RowsFrom(ctx, since)
+	return rows, err
+}
+
+// RowsFrom is Rows and the sources behind it: this daemon's own rows, with the
+// Swift ledger's for the conversations they do not hold (ledger.go).
+func (c *Collector) RowsFrom(ctx context.Context, since time.Time) ([]Row, Source, error) {
+	legacy, status, err := c.ledgerRows(ctx, since)
+	src := Source{Ledger: status}
+	if err != nil {
+		return nil, src, err
 	}
+	own, err := c.ownRows(ctx, since)
+	if err != nil {
+		return nil, src, err
+	}
+	return withHistory(own, legacy), src, nil
+}
+
+// ownRows is the assistants' records, read by this daemon.
+func (c *Collector) ownRows(ctx context.Context, since time.Time) ([]Row, error) {
 	for {
 		c.mu.Lock()
 		reusable := !c.fresh.IsZero() && time.Since(c.fresh) < 15*time.Second &&
