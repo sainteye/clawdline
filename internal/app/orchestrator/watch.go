@@ -380,11 +380,20 @@ func (b *Broker) authentic(ctx context.Context, r Record, result taskdir.Result)
 //     child — answered completely: spawn_failed;
 //   - the tab is there and holding a dialog: spawn_failed. The briefing could
 //     not be typed at it, and a keystroke would have answered the dialog;
+//   - the broker never typed the briefing (Record.Unbriefed): spawn_failed,
+//     whatever the reading says. That is not a reading at all — the secret
+//     never left the broker and is not kept, so no child can ever sign. The
+//     dispatch settles such a task itself; this is the case where that
+//     settlement was not written;
 //   - anything else — a source that failed, a tab that is there and quiet, a
 //     tab showing a shell — decides nothing. The task's own timeout is the
 //     backstop. Wrongly calling a live child dead costs somebody's work; a
 //     missed verdict costs a wait.
-func spawnVerdict(present, sourceComplete, choosing bool) (State, string, bool) {
+//
+// Measured on a Mac whose iTerm2 listing never completes: an iTerm2 child the
+// broker could not brief fell through every case above but the last, and
+// ended twelve minutes later as `timeout`, saying nothing of why.
+func spawnVerdict(present, sourceComplete, choosing bool, r Record) (State, string, bool) {
 	switch {
 	case !present && sourceComplete:
 		return StateSpawnFailed, "The child session did not reach a prompt within 4 minutes, and its terminal " +
@@ -393,6 +402,8 @@ func spawnVerdict(present, sourceComplete, choosing bool) (State, string, bool) 
 	case present && choosing:
 		return StateSpawnFailed, "The child session is holding a dialog four minutes after it opened, " +
 			"so the briefing was never typed: answering that dialog is a person's decision, not this broker's.", true
+	case r.Unbriefed:
+		return StateSpawnFailed, unbriefedVerdict(r), true
 	}
 	return "", "", false
 }
@@ -417,7 +428,7 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 		// iTerm2 cannot be asked, and "the reading saw something" says nothing
 		// about the one source that could have seen this tab.
 		complete := r.ChildTerminalID != "" && rd.sourceComplete(r.ChildBackend)
-		if state, why, decided := spawnVerdict(present, complete, choosing); decided {
+		if state, why, decided := spawnVerdict(present, complete, choosing, r); decided {
 			// The session it opened is closed after the verdict is durable,
 			// and the verdict records that it is owed (closeChild).
 			if _, ids, err := b.settle(ctx, r.ID, state, why, nil, b.closeChild(r, present)...); err == nil {

@@ -366,6 +366,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		r.ChildBackend = spawned.ChildBackend
 		r.SpawnedAt = spawned.SpawnedAt
 		r.SpawnError = spawned.SpawnError
+		r.Unbriefed = spawned.Unbriefed
 		if r.State == StateQueued {
 			r.State = spawned.State
 		}
@@ -375,6 +376,21 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		return Dispatched{}, err
 	}
 	b.forgetSecret(record.ID)
+	// A child that was never briefed is settled now, not at the beat's clock
+	// and not at its own timeout: the secret is gone with the line above, so
+	// no reading taken later can change the answer, and every minute it waits
+	// is a minute its root is not told. The tab is recorded first, so what it
+	// opened stays accountable; a tmux pane this dispatch made is closed.
+	// Should this settlement not be written, the record already says
+	// Unbriefed and the beat settles it (runClocks).
+	if record.Unbriefed && record.State == StateSpawning {
+		settled, ids, err := b.settle(ctx, record.ID, StateSpawnFailed, unbriefedVerdict(record), nil,
+			b.closeChild(record, true)...)
+		if err == nil {
+			b.runRecorded(ctx, ids)
+			record = settled
+		}
+	}
 	return Dispatched{Record: record, Warnings: warnings}, nil
 }
 
@@ -575,11 +591,35 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	// typed into. Waiting here rather than in the watch beat keeps the whole
 	// spawn in one place; the beat's own 4-minute clock is the backstop.
 	if err := b.brief(ctx, r, secret); err != nil {
-		// Not `spawn_failed`: the tab is open and the assistant may still be
-		// starting. The beat decides, and it decides with evidence.
+		// A briefing that was typed and errored is not `spawn_failed`: the
+		// keystrokes may have landed, and the beat decides that with evidence.
+		// One that was never typed is decided already — Dispatch settles it.
 		r.SpawnError = err.Error()
+		var never unbriefed
+		r.Unbriefed = errors.As(err, &never)
 	}
 	return r
+}
+
+// unbriefed is brief giving up without ever having typed the line. It is the
+// one failure to brief that is a fact rather than a reading: the secret did
+// not leave this process, and it is dropped once the dispatch returns.
+type unbriefed struct{ why error }
+
+func (u unbriefed) Error() string { return u.why.Error() }
+func (u unbriefed) Unwrap() error { return u.why }
+
+// unbriefedVerdict is the sentence a task that was never briefed ends with.
+// It carries the briefing's own reason, because "passed its timeout" — what
+// such a task used to end with, twelve minutes later — named nothing that
+// went wrong.
+func unbriefedVerdict(r Record) string {
+	why := r.SpawnError
+	if why == "" {
+		why = "the child session did not reach a prompt"
+	}
+	return "The briefing was never typed into the child's tab (" + why + "), and the secret it " +
+		"carries is not kept, so nothing can brief this child now. Dispatch it again."
 }
 
 // ChildSessionName is the tmux session one child is given.
@@ -641,16 +681,24 @@ func permissionArgs(r Record) []string {
 //
 // The wait is bounded here and again by the four-minute clock in the beat, so a
 // child that never draws a prompt is reported rather than waited on for ever.
+//
+// A give-up before any keystroke was sent answers unbriefed, and says why: a
+// tab this daemon's reading never listed under the id the terminal gave back
+// is a different fault from a child that is still starting, and the record is
+// the only place either is ever said.
 func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 	if b.Type == nil {
-		return errors.New("this daemon cannot type into a terminal")
+		return unbriefed{errors.New("this daemon cannot type into a terminal")}
 	}
 	deadline := b.now().Add(90 * time.Second)
 	var last error
+	typed, listed := false, false
 	for b.now().Before(deadline) {
 		if s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID); ok && s.IsAssistant() {
+			listed = true
 			ready, why := b.composerReady(ctx, r.ChildTerminalID)
 			if ready {
+				typed = true
 				if err := b.typeLine(ctx, r.ChildTerminalID, FirstLine(r, secret, b.Language)); err != nil {
 					last = err
 				} else {
@@ -662,14 +710,25 @@ func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 		}
 		select {
 		case <-ctx.Done():
+			if !typed {
+				return unbriefed{ctx.Err()}
+			}
 			return ctx.Err()
 		case <-time.After(2 * time.Second):
 		}
 	}
-	if last == nil {
+	if typed {
+		return last
+	}
+	switch {
+	case last != nil:
+	case !listed:
+		last = fmt.Errorf("this daemon's reading of the machine never listed the child's tab as %q with an "+
+			"assistant in it", r.ChildTerminalID)
+	default:
 		last = errors.New("the child session did not reach a prompt")
 	}
-	return last
+	return unbriefed{last}
 }
 
 // composerReady asks the child's own screen whether it is ready to be typed at.

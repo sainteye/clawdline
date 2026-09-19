@@ -18,22 +18,17 @@ import (
 
 // itermKeyScript is iterm.js's `key` and `capture` commands. The id and the
 // codes are arguments, never part of the script text.
-const itermKeyScript = `
+const itermKeyScript = itermEach + `
 function run(argv) {
   const cmd = String(argv[0] || ""), id = String(argv[1] || "");
   const it = Application("iTerm2");
   if (!it.running()) return JSON.stringify({ ok: false, error: "iTerm2 is not running" });
   let found = null;
-  const wins = it.windows();
-  for (let a = 0; a < wins.length && !found; a++) {
-    const tabs = wins[a].tabs();
-    for (let b = 0; b < tabs.length && !found; b++) {
-      const ss = tabs[b].sessions();
-      for (let c = 0; c < ss.length && !found; c++) {
-        if (String(ss[c].id()) === id) found = ss[c];
-      }
-    }
-  }
+  itermEach(it, function (s) {
+    if (String(s.id()) !== id) return false;
+    found = s;
+    return true;
+  });
   if (!found) return JSON.stringify({ ok: false, error: "That session is gone" });
   if (cmd === "key") {
     const codes = argv.slice(2).map(function (raw) { return parseInt(String(raw || "0"), 10); });
