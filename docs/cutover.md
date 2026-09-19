@@ -449,6 +449,28 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 的 `409 stale_inventory`、`POST /v1/orchestrator/handoffs`、`root-assignments`、`detached-tasks`）
 **必須真的存在**，否則家規會教 child 去打不存在的門。這一項掛在判準 A11 與 A6。
 
+### 8.5 退役日：照這個順序，每一步都說得出怎麼退回去
+
+寫於 2026-09-19，當天照這份做。**每一步都是人執行的**：這份清單不會自己跑，也不該自己跑。
+
+| # | 做什麼 | 怎麼確認它成功了 | 怎麼退回去 |
+|---|---|---|---|
+| 1 | **在舊 app 關掉看板** | 舊 app 的設定裡把看板關掉。之後舊版不再往每則訊息夾 workflow 信封 | 打開就好 |
+| 2 | **排程先搬、再停用** | 在新 daemon `import`，`verify` 三種都 SAME（`tools/migrate-schedules.py`），**然後**才在舊 app 停用那幾個排程 | 舊 app 重新啟用。兩邊**不可以**同時啟用同一個排程，否則同一刻開兩個 session |
+| 3 | **停掉舊 app** | 選單列結束 Clawdline，並取消它的「登入時啟動」 | 重開它。`~/.config/clawdline` 一個字都沒被改過 |
+| 4 | **裝新的 skill** | 自己跑一次 `clawdline skill install`；它會先記下原本 `~/.claude/skills/clawdline/SKILL.md` 指向哪裡，再換掉。`clawdline skill uninstall` 原樣放回去 | `uninstall` |
+| 5 | **移除舊 hook** | 從 `~/.claude/settings.json` 拿掉舊 app 的 `clawdline/hook.sh`（新版的是 `clawdline-next/hook.sh`，互相看不到） | 加回去 |
+| 6 | **手機**：`clawdline tunnel` 起自己的 cloudflared，把網域指到 7727 | 手機打開門口頁、配對、進得了清單 | **這一步退不回去**：PWA 與推播訂閱綁在 origin 上，換回去等於再換一次 |
+| 7 | **Cloud**：把舊那台從帳號撤掉，新機器配對 | `clawdline cloud status` | 撤掉新的、把舊 app 重新配對 |
+
+**順序的理由只有一個**：每一步都只在「上一步已經有替代品」時才拆掉舊的。看板信封先停（2 不依賴它），
+排程先在新家驗過才在舊家停（中間那段兩邊都有，但只有一邊啟用），skill 換掉之前舊 app 已經停了——
+所以不會有 session 讀到一份指向已死 bundle 的 stub。
+
+**第 4 步為什麼不自動做**：它改的是使用者的全域設定（`~/.claude/`），照 DG-10，人的東西由人動。
+而且兩個同名 skill 不能並存——Claude Code 用目錄名分辨——所以切換之前新 stub 只在這個 repo 自己的
+`.claude/skills/` 裡試用。
+
 ---
 
 ## 9. 這份盤點沒有做到的事
