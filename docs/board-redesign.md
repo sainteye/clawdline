@@ -1,277 +1,277 @@
-> **實作依據是 [`docs/design-decisions.md`](design-decisions.md)（2026-09-18 起）；本文保留為分析材料，與它衝突之處以它為準。**
+> **The implementation follows [`docs/design-decisions.md`](design-decisions.md) (from 2026-09-18 on); this document is kept as analysis, and where the two disagree, that one wins.**
 
-# 看板重新設計：看板、Session 待辦、Backlog 三種結構與它們的生命週期
+# Board redesign: three structures — the board, session to-dos and the backlog — and their lifecycles
 
-> **需求來源（使用者 2026-09-18 原話，逐字）**
+> **Where the requirement came from (the user's words on 2026-09-18, verbatim in the original Chinese, translated here)**
 >
-> 「看板最大的問題有幾個：
-> 1. 使用者不知道是否建立 (我在想流程是否要去判斷這個是否重要到使用者應該追蹤，如果是的話應該詢問)
-> 2. 太瑣碎的項目應該是給 session 看的
-> 3. 看板項目的生命週期沒有定義清楚，造成會有
->   a. 瑣碎無人管理、無人在乎的項目
->   b. 項目開始之後沒人收尾、看不進度
->   c. 項目已經作完了，但是看板系統完全沒有更新
-> 4. 我認為應該是在我們的流程中，要讓人類適當的參與、理解、給出指令，這樣才是完整的看板系統
-> 5. 如果判斷不用人介入的項目，則應該要完全自動化建立、自動化追蹤、自動結束(類似 TODO)，並且不應該和給人看的項目混在一起」
+> "The board's biggest problems are these:
+> 1. The user doesn't know whether something got created (I'm wondering whether the flow should judge whether this is important enough that the user ought to track it, and if so, ask)
+> 2. Items that are too trivial should be for the session to look at
+> 3. The lifecycle of board items isn't clearly defined, which leads to
+>   a. trivial items nobody manages and nobody cares about
+>   b. items nobody closes out once they have started, whose progress can't be seen
+>   c. items that are already done, while the board system hasn't been updated at all
+> 4. I think our process should let humans take part, understand and give instructions where appropriate; only that makes a complete board system
+> 5. Items judged not to need human involvement should be created, tracked and ended fully automatically (like a TODO), and should not be mixed in with the items meant for people"
 >
-> 同日補充（逐字）：
-> 「看板存在的兩個目的：
-> 1. 讓人類理解狀況
-> 2. 讓 Session 不會忘記什麼要作」
-> 「我認為規劃要作，但短期完全還沒有計畫開始要做的東西，應該乾脆純放在另外一種資料結構，類似 Backlog 或是其他名稱」
+> Added the same day (verbatim in the original):
+> "The board exists for two purposes:
+> 1. Letting humans understand the situation
+> 2. Making sure a session doesn't forget what it has to do"
+> "I think things that are planned, but with no plan at all to start in the short term, should simply live in a different data structure, something like a Backlog or under some other name"
 >
-> 下文用 **#1、#2、#3a、#3b、#3c、#4、#5** 指上面五點，**目的一／目的二**指兩個目的，**#BK** 指 Backlog 那一段。
-> 每個設計決定都標出它解決的是哪一條。
+> Below, **#1, #2, #3a, #3b, #3c, #4, #5** refer to the five points above, **Purpose 1 / Purpose 2** to the two purposes, and **#BK** to the passage about the backlog.
+> Every design decision says which of these it addresses.
 >
-> **本輪只出文件，不改實作。** 看板頁前端的照搬由另一個 child（`%905`）在做，本文不動它的檔案。
+> **This round produces documents only and changes no implementation.** Another child is porting the board page's front end, and this document does not touch its files.
 
-量測對象：舊 app 的看板在 **2026-09-18 01:02 UTC（台灣 09:02）** 的唯讀快照（`revision 6403`，**787 張卡**——任務書寫的 776 是較早的數字，這十一天平均每天多約 40 張），
-加上同一時刻的 `project-board-history/*.jsonl`（564 檔、12,900 筆）、`project-board-workflow.json`（workflow 日誌）、
-`~/.config/clawdline/orchestrator.json` 裡 774 個 task 的狀態與落地欄位（只抽 id／狀態／落地，不讀 `secret_hash`），
-以及 `:7727/v1/sessions` 的 14 個 live session。每張卡的 progress 是用本 repo 已移植的 `ProgressOf`／`ListSummaryOf`
-（`internal/adapters/board/progress.go`）對快照逐張算的。腳本與輸出見附錄。
+What was measured: a read-only snapshot of the old app's board at **2026-09-18 01:02 UTC (09:02 in Taiwan)** (`revision 6403`, **787 cards** — the 776 in the task brief is an earlier number; over these eleven days it grew by about 40 cards a day on average),
+plus `project-board-history/*.jsonl` at the same moment (564 files, 12,900 entries), `project-board-workflow.json` (the workflow log),
+the state and landing fields of the 774 tasks in `~/.config/clawdline/orchestrator.json` (only id, state and landing were extracted; `secret_hash` was not read),
+and the 14 live sessions from `:7727/v1/sessions`. Each card's progress was computed card by card on the snapshot with the `ProgressOf`/`ListSummaryOf` this repository has already ported
+(`internal/adapters/board/progress.go`). The scripts and their output are listed in the appendix.
 
 ---
 
-## 0. 五句話
+## 0. Five sentences
 
-1. **他說的五點全部成立，而且比他說的更嚴重。** 787 張卡**沒有一張能證明是人寫的**（網頁 UI 根本沒有任何改卡片的按鈕）；
-   有歷史紀錄的 564 張裡 **52.8% 建立之後再也沒有任何非機器的更新**；舊版的生命週期 `… → integrated → closed`
-   在十一天、787 張卡上**進到 `closed` 的是 0 張**。
-2. **壞的不是「事實進不來」，而是「生命週期收不了尾」。** 610 張連著 broker task 的卡，卡上的 task 狀態與 broker 的真實狀態
-   **0 筆不一致**；但 345 張（43.8%）在證據上已經結束，存下來的生命週期還停在 `execution`／`backlog`。
-   收尾的閘門要一種幾乎沒人寫的證據（驗證紀錄），所以永遠過不了。
-3. **一個結構硬扛兩個目的，正是他點名的病。** 同一張卡同時是 session 的備忘（checklist、obligation、宣告的 span 都是 session 寫的）
-   和人要看的進度；結果人看到的是 session 的筆記，session 的筆記又被人的生命週期規則綁住。
-   而且同一件工作常常**兩張卡互不相連**：派工只有 **12.1%** 綁到看板項目（最近兩天 56 次派工 **0 次**），
-   192 張人類卡只有 31 張（16%）連得到任何派工——**人類卡看不到進度，是因為進度根本沒接到它身上。**
-4. **設計：三種結構，各自一個讀者、一台狀態機、一張表。** 看板＝人現在需要知道的事；Session 待辦＝session 不能忘的事，
-   全自動建立／追蹤／結束；Backlog＝規劃要做但沒有「開始的承諾」的事。三者用同一個工作身分（`work_id`）相連，
-   移動是一筆有觸發條件、有執行者、寫進 `moves` 紀錄的交易。看板與 Backlog 的界線是**有沒有承諾**（有派工、有人接、
-   排了七天內的開始日、在等人決定、或已交付待收尾），是可以從事實算出來的，不是形容詞。
-5. **把現有 787 張依這套規則分：Session 待辦 602（76.5%）、看板 108（13.7%）、Backlog 77（9.8%）。**
-   只看給人看的 185 張：**Backlog 77（41.6%）、等人收尾 66（35.7%）、真的正在發生 31（16.8%）、已結束 11（5.9%）**。
-   也就是說，**人類看板上每五張卡只有不到一張是「現在」**。最小可驗收的第一步是把這個分法做成唯讀投影，
-   讓使用者先對著自己的資料確認規則，再動任何寫入（§9）。
+1. **All five of the user's points hold, and it is worse than they said.** **Not one** of the 787 cards can be shown to have been written by a person (the web UI has no button that changes a card at all);
+   of the 564 with history, **52.8% never received another non-machine update after they were created**; of the old lifecycle `… → integrated → closed`,
+   over eleven days and 787 cards, **0 cards reached `closed`**.
+2. **What is broken is not "facts cannot get in" but "the lifecycle cannot close".** On the 610 cards linked to a broker task, the task state on the card and the broker's real state
+   disagree **0 times**; but 345 (43.8%) are finished on the evidence while their stored lifecycle still sits in `execution`/`backlog`.
+   The closing gate requires a kind of evidence almost nobody writes (verification records), so it can never be passed.
+3. **One structure carrying two purposes is exactly the illness the user named.** The same card is at once a session's memo (checklists, obligations and declared spans are all written by sessions)
+   and the progress a person wants to see; so what the person sees is the session's notes, and the session's notes are bound by the person's lifecycle rules.
+   And one piece of work often has **two cards that are not linked**: only **12.1%** of dispatches are bound to a board item (**0 of 56** dispatches in the last two days),
+   and only 31 of the 192 human cards (16%) connect to any dispatch — **human cards show no progress because the progress was never attached to them.**
+4. **The design: three structures, each with one reader, one state machine and one table.** The board = what a person needs to know now; session to-dos = what a session must not forget,
+   created, tracked and ended fully automatically; the backlog = what is planned but carries no "commitment to start". The three are linked by one work identity (`work_id`),
+   and a move is a transaction with a trigger and an actor, written to the `moves` log. The line between the board and the backlog is **whether there is a commitment** (a dispatch, someone who took it on,
+   a start date within seven days, a wait for a person's decision, or a delivery awaiting closure), which can be computed from facts; it is not an adjective.
+5. **Sorting today's 787 cards by these rules gives session to-dos 602 (76.5%), board 108 (13.7%), backlog 77 (9.8%).**
+   Of just the 185 meant for people: **backlog 77 (41.6%), awaiting a person to close 66 (35.7%), really happening now 31 (16.8%), finished 11 (5.9%)**.
+   In other words, **fewer than one card in five on the human board is "now"**. The smallest acceptable first step is to build this sorting as a read-only projection,
+   so the user can check the rules against their own data before anything is written (§9).
 
 ---
 
-## 1. 他說的對不對：用數字逐條回答
+## 1. Is the user right? Answered point by point, in numbers
 
-### 1.1 量法與定義
+### 1.1 How it was measured, and definitions
 
-| 名詞 | 定義 | 為什麼這樣定 |
+| Term | Definition | Why it is defined this way |
 |---|---|---|
-| **人寫的** | 歷史紀錄的 `actor` 是人操作的裝置，且那個寫入在網頁 UI 上有對應的操作 | 舊版的 actor 規則（`ProjectBoardHTTP.swift:260-268`）：本機憑證一律記成 `machine`，配對裝置記成裝置 id |
-| **非機器的更新** | 排除 `item_created`、`automatic_state_reconciled`、`catalog_reconciled`、`task_reattributed`、`session_relation_confirmed` 這五種機器對帳 | 這五種是重算，不是新事實（`board-design.md` §2.3 已量出它們佔 52.5%） |
-| **建立後的更新** | 在 `item_created` **60 秒之後**的非機器事件 | 建立當下同一批寫入（連結 session、宣告 span、綁 task）是建立的一部分，不是進度 |
-| **閒置** | 快照時間減去最後一筆非機器事件 | `updatedAt` 會被機器對帳一直推後（見 §1.4），不能當成「有人在動」 |
-| **開始過** | 有 broker 派工、或有 session 交付紀錄、或有證據、或有勾掉的 checklist | **宣告的 span 不算**：workflow 的 `begin_template` 把 `phase` 預設成 `"output"`，登記一個項目就會同時宣告「正在產出」（見 §1.7） |
+| **Written by a person** | The history entry's `actor` is a device a person operates, and the write has a matching operation in the web UI | The old actor rule (`ProjectBoardHTTP.swift:260-268`): the local credential is always recorded as `machine`, a paired device as the device id |
+| **Non-machine update** | Excludes five machine reconciliations: `item_created`, `automatic_state_reconciled`, `catalog_reconciled`, `task_reattributed`, `session_relation_confirmed` | These five are recomputation, not new facts (`board-design.md` §2.3 already measured them at 52.5%) |
+| **Update after creation** | A non-machine event **more than 60 seconds** after `item_created` | Writes in the same batch as creation (linking a session, declaring a span, binding a task) are part of creating it, not progress |
+| **Idle** | The snapshot time minus the last non-machine event | `updatedAt` keeps being pushed later by machine reconciliation (see §1.4), so it cannot stand for "someone is working on it" |
+| **Has started** | Has a broker dispatch, a session delivery record, evidence, or a ticked checklist row | **A declared span does not count**: the workflow's `begin_template` defaults `phase` to `"output"`, so registering an item also declares "producing output" (see §1.7) |
 
-### 1.2 #1「使用者不知道是否建立」——**成立，而且是結構性的**
+### 1.2 #1 "The user doesn't know whether something got created" — **holds, and it is structural**
 
-- **人沒有建立的管道。** 舊版網頁對看板的寫入只有 `set_enabled` 與 `set_ai_consent`（`input/board-settings.js:85,102`），
-  產品文件也寫明「There is no browser New button, edit form or manual status selector」（舊 repo `docs/project-board.md:30-31`）。
-- **12,900 筆歷史紀錄是誰寫的：**
+- **A person has no way to create one.** The old web page's only writes to the board are `set_enabled` and `set_ai_consent` (`input/board-settings.js:85,102`),
+  and the product documentation says so outright: "There is no browser New button, edit form or manual status selector" (old repository `docs/project-board.md:30-31`).
+- **Who wrote the 12,900 history entries:**
 
-  | actor | 筆數 | 佔比 | 是什麼 |
+  | actor | Entries | Share | What it is |
   |---|---:|---:|---|
-  | `board` | 4,771 | 37.0% | store 自己（建立、自動對帳） |
-  | `broker` | 2,944 | 22.8% | 派工事實 |
-  | `workflow:<provider>:<session>` | 2,870 | 22.2% | session 在對話裡寫的（codex 2,136、claude 734） |
-  | `machine` | 1,851 | 14.3% | 本機憑證，也就是 root／agent 用 curl 寫的 |
-  | `root_attestation`／`root_report` | 268 | 2.1% | root 的驗證聲明與完成報告 |
-  | 配對裝置 | 196 | 1.5% | **只有一個裝置、只碰過 7 張卡**，內容是 agent 口吻（例：「使用者已於 Session 明確批准指定 payload＋destination；S3 put-object 成功…」），而網頁沒有對應的按鈕——判為 agent 透過裝置 token 寫入 |
+  | `board` | 4,771 | 37.0% | The store itself (creation, automatic reconciliation) |
+  | `broker` | 2,944 | 22.8% | Dispatch facts |
+  | `workflow:<provider>:<session>` | 2,870 | 22.2% | Written by sessions in conversation (codex 2,136, claude 734) |
+  | `machine` | 1,851 | 14.3% | The local credential, that is, root or an agent writing with curl |
+  | `root_attestation`/`root_report` | 268 | 2.1% | Root's verification statements and completion reports |
+  | Paired device | 196 | 1.5% | **One device only, touching only 7 cards**, written in an agent's voice (for example: "The user has explicitly approved the specified payload + destination in the Session; S3 put-object succeeded…"), and the web page has no matching button — judged to be an agent writing through a device token |
 
-  **可以證明是人寫的：0／787。**
-- **誰建立的：** broker 從派工自動推出的執行紀錄 **514 張（65.3%）**；agent 明確建立 273 張，其中可追到 session 對話的 99、
-  root 用機器憑證或同秒由 broker 綁定的 59、只有建立事件的 25、建立時還沒有歷史檔的 89、不明 1。**人建立：0。**
-- **agent 在人不知道的情況下開卡的機制：** 舊版每一則經 Clawdline 送出的訊息都夾帶一個 workflow 信封，要 session 先把這則訊息分類成
-  `existing_item｜new_work｜question｜clarification`。保留中的 256 次 run 裡，236 次有 `begin`，其中 **47 次（19.9%）被 agent 自己判成
-  `new_work`，當場開一張新卡，沒有問人**。
-- **有沒有問過人：** 360 筆 obligation 裡記成 `actorKind: "user"`（要人決定）的只有 **7 筆（1.9%）、4 張卡**，5 筆到現在還開著；
-  277 筆根本沒記 actorKind。workflow 的交付裡 `waiting_user` 15 次／256。
+  **Provably written by a person: 0/787.**
+- **Who created them:** execution records the broker derived automatically from dispatches, **514 cards (65.3%)**; created explicitly by an agent, 273, of which 99 can be traced to a session conversation,
+  59 were root using the machine credential or bound by the broker in the same second, 25 have only a creation event, 89 had no history file yet when they were created, and 1 is unknown. **Created by a person: 0.**
+- **How agents open cards without people knowing:** in the old version every message sent through Clawdline carried a workflow envelope that asked the session to first classify the message as
+  `existing_item|new_work|question|clarification`. Of the 256 retained runs, 236 had a `begin`, and in **47 of them (19.9%) the agent judged it `new_work` itself
+  and opened a new card on the spot, without asking anyone**.
+- **Was anyone asked:** of 360 obligations, only **7 (1.9%), on 4 cards,** are recorded as `actorKind: "user"` (a person must decide), and 5 of those are still open;
+  277 recorded no actorKind at all. Workflow deliveries had `waiting_user` 15 times in 256.
 
-> **判定：成立。** 嚴重度：高。人不只「不知道有沒有建立」，是**根本沒有參與建立**；唯一的詢問管道（`actorKind:user`）十天用了 7 次。
+> **Verdict: holds.** Severity: high. It is not just that the person "doesn't know whether it was created"; the person **takes no part in creation at all**; the only way of asking (`actorKind:user`) was used 7 times in ten days.
 
-### 1.3 #2「太瑣碎的項目應該給 session 看」——**成立**
+### 1.3 #2 "Items that are too trivial should be for the session" — **holds**
 
-| 量 | 數字 |
+| Measure | Number |
 |---|---|
-| broker 自動推出的單一 task 執行紀錄，且沒有 checklist | **496／787（63.0%）** |
-| 建立後（60 秒以後）**沒有任何**非機器更新 | **298／564（52.8%）**；再加只有一筆的 124 張，**≤1 筆的共 422 張（74.8%）** |
-| 從建立到最後一筆非機器事件的時間 | **<10 分鐘 312 張（55.3%）**、10 分–1 小時 135（23.9%）、1–6 小時 45、6–24 小時 45、1–3 天 25、3–7 天 2、≥7 天 **0** |
-| 同一份分布的百分位 | p50 **0**（全部在建立那一刻寫完）、p75 0.76 小時、p90 14.9 小時、p95 23.6 小時 |
-| 只有 ≤1 筆更新而且一小時內就結束 | 107 張，**全部是 agent 類** |
-| 每天新增 | 09-08 初次匯入 379 張；之後十天 408 張，**平均每天約 41 張** |
+| Single-task execution records derived automatically by the broker, with no checklist | **496/787 (63.0%)** |
+| **No** non-machine update at all after creation (after 60 seconds) | **298/564 (52.8%)**; add the 124 with exactly one, and **422 have ≤1 (74.8%)** |
+| Time from creation to the last non-machine event | **<10 minutes: 312 (55.3%)**, 10 minutes–1 hour 135 (23.9%), 1–6 hours 45, 6–24 hours 45, 1–3 days 25, 3–7 days 2, ≥7 days **0** |
+| Percentiles of the same distribution | p50 **0** (everything written at the moment of creation), p75 0.76 hours, p90 14.9 hours, p95 23.6 hours |
+| ≤1 update and finished within an hour | 107, **all of them agent cards** |
+| Added per day | 379 in the initial import on 09-08; 408 over the ten days after, **about 41 a day on average** |
 
-舊版在 09-15 已經做過一次逐筆稽核（由一個 codex session 執行，當時 465 張，現在帶 `catalogDisposition` 的有 474 張），
-把卡分成 `human`／`agent`／`archive`，並把 agent 列收進預設收合的「Agent execution details」。但那只是**呈現上的過濾**：它們仍在同一份文件、同一套生命週期、同一個 2,000 張的容量裡，
-計數與「無人收尾」照樣發生在它們身上（見 §1.4 的 260 張）。
+The old version already ran a row-by-row audit on 09-15 (carried out by a codex session; 465 cards then, 474 carrying `catalogDisposition` now),
+sorting cards into `human`/`agent`/`archive` and folding the agent rows into an "Agent execution details" section collapsed by default. But that was only **a filter on presentation**: they were still in the same document, the same lifecycle and the same 2,000-card capacity,
+and the counting and "nobody closes it" still happened to them (the 260 cards in §1.4).
 
-> **判定：成立。** 嚴重度：高。看板上三分之二是 broker 自己的帳，半數寫完那一刻就再也沒動過。
+> **Verdict: holds.** Severity: high. Two thirds of the board is the broker's own bookkeeping, and half of it never moved again after the moment it was written.
 
-### 1.4 #3「生命週期沒有定義清楚」——**三種壞法都量得到**
+### 1.4 #3 "The lifecycle isn't clearly defined" — **all three failure modes can be measured**
 
-**#3a 瑣碎無人管理、無人在乎：**
+**#3a Trivial, managed by nobody, cared about by nobody:**
 
-- 298 張建立後零更新（§1.3），其中 agent 240、archive 42、human 16。
-- 依 §7 的規則，**260 張不給人看的卡（agent／archive 253、協調紀錄 7）沒有結束也不會再有人動**：delivered 186、blocked 54、
-  unknown 17、execution 3。它們在舊版會永遠停在「未結束」。
-- **機器在假裝它們有在動**：`updatedAt − createdAt` 的中位數是 **108 小時**，但真正的最後一筆事件中位數在建立的那一秒。
-  **362 張卡的 `updatedAt` 比最後一筆真正的事件晚一天以上**——是機器對帳在碰它們。
-  4,124 筆 `automatic_state_reconciled` 裡 **3,115 筆（75.5%）是 `planning ⇄ execution` 來回擺盪**，集中在 209 張卡
-  （208 張是自動建立的 task 紀錄）、143 個不同的秒數裡（最多一秒 88 張），是批次對帳的雜訊。
+- 298 cards with zero updates after creation (§1.3): agent 240, archive 42, human 16.
+- By the rules in §7, **260 cards not meant for people (agent/archive 253, coordination records 7) are unfinished and will never be touched again**: delivered 186, blocked 54,
+  unknown 17, execution 3. In the old version they would stay "not finished" forever.
+- **The machine pretends they are moving**: the median of `updatedAt − createdAt` is **108 hours**, but the median of the real last event is the very second of creation.
+  **362 cards have an `updatedAt` more than a day later than their last real event** — that is machine reconciliation touching them.
+  Of 4,124 `automatic_state_reconciled` entries, **3,115 (75.5%) swing back and forth between `planning ⇄ execution`**, concentrated on 209 cards
+  (208 of them automatically created task records) and in 143 distinct seconds (at most 88 cards in one second): noise from batch reconciliation.
 
-**#3b 開始之後沒人收尾、看不到進度：**
+**#3b Nobody closes it once started, and its progress cannot be seen:**
 
-- **session 開了頭不收尾**：workflow 日誌共 528 次 run（保留 256＋已淘汰 272）。**158 次（29.9%）連 `begin` 都沒有，
-  230 次（43.6%）有 `begin` 沒有 `deliver`。**
-- **看不到進度**：派工只有 **94／774（12.1%）** 帶 `work_item_id` 綁到看板項目；09-15 之後 6／99（6.1%）；**09-17、09-18 兩天 0／56**。
-  192 張人類卡裡只有 **31 張（16.1%）** 連著任何 broker task。其餘的進度走在另一張 agent 卡上，兩張互不相連（§1.7）。
-- **未結束的 181 張人類卡裡，98 張（54.1%）超過 3 天沒有任何非機器更新**，26 張超過 7 天。
-- **「進行中」是假的**：投影成 active 的 15 張卡裡，**7 張（46.7%）的唯一依據是一段宣告中的 span，而宣告它的 session 已經不在了**
-  （其中 5 張是人類卡）。14 段未結束的 span 有 11 段屬於已經不存在的 session。
+- **Sessions start and don't close**: the workflow log holds 528 runs (256 retained + 272 retired). **158 (29.9%) have not even a `begin`,
+  and 230 (43.6%) have a `begin` but no `deliver`.**
+- **Progress cannot be seen**: only **94/774 (12.1%)** dispatches carry a `work_item_id` binding them to a board item; after 09-15, 6/99 (6.1%); **on 09-17 and 09-18, 0/56**.
+  Of the 192 human cards, only **31 (16.1%)** connect to any broker task. The rest of the progress happens on a separate agent card, and the two are not linked (§1.7).
+- **Of the 181 unfinished human cards, 98 (54.1%) have had no non-machine update for more than 3 days**, and 26 for more than 7 days.
+- **"In progress" is false**: of the 15 cards projected as active, **7 (46.7%) rest solely on a declared span, and the session that declared it no longer exists**
+  (5 of them human cards). Of the 14 unfinished spans, 11 belong to sessions that no longer exist.
 
-**#3c 做完了但看板沒更新：**
+**#3c Done, but the board was not updated:**
 
-| 量 | 數字 | 說明 |
+| Measure | Number | Note |
 |---|---:|---|
-| 存下來的生命週期進到 `closed` | **0／787** | `integrated` 1 張、`verified` 8 張 |
-| 投影已結束（landed／settled／verified／canceled）但存的狀態還是 `execution`／`backlog` | **345（43.8%）** | 人看到的標記與系統存的生命週期說兩件事 |
-| broker 說每個 task 都已落地（`landed`／`nothing_to_land`），卡卻顯示未完成 | **16** | blocked 12、delivered 2、correction 1、execution 1 |
-| 投影 `delivered` 的卡 | 262 | 其中 **207（79.0%）閒置 ≥3 天**；task 的落地欄位：**169 張完全沒有落地紀錄**、64 張只有 session 自稱交付、25 張 abandoned |
-| 卡上的 task 狀態 vs broker 的真實狀態 | **0 筆不一致**（610 張有 task 連結，610 張的 task 都查得到） | **事實有進來；壞的是收尾** |
+| Stored lifecycle reached `closed` | **0/787** | `integrated` 1, `verified` 8 |
+| Projection finished (landed/settled/verified/canceled) but stored state still `execution`/`backlog` | **345 (43.8%)** | The mark a person sees and the lifecycle the system stores say two different things |
+| The broker says every task has landed (`landed`/`nothing_to_land`), yet the card shows unfinished | **16** | blocked 12, delivered 2, correction 1, execution 1 |
+| Cards projected `delivered` | 262 | Of these, **207 (79.0%) idle ≥3 days**; the tasks' landing fields: **169 have no landing record at all**, 64 have only the session's own claim of delivery, 25 abandoned |
+| Task state on the card vs the broker's real state | **0 disagreements** (610 cards have a task link, and all 610 tasks can be found) | **The facts get in; what is broken is closing** |
 
-為什麼永遠收不了尾：舊版的自動對帳（`ProjectBoardStore.swift:3440-3505`）要 `closed` 必須同時有 owner、沒有未解的阻擋 finding、
-**當前 checklist 每一列都有證據、有驗證證據**、有交付（落地）證據、並通過 `closureIsSafe`。驗證證據只能由 root 用 `record_evidence`
-寫入，十一天只寫了 194 筆。**閘門是對的形狀，但它要的證據在實際流程裡幾乎不會產生，所以等於沒有出口。**
+Why it can never close: the old automatic reconciliation (`ProjectBoardStore.swift:3440-3505`) requires, for `closed`, all at once: an owner, no unresolved blocking finding,
+**evidence on every row of the current checklist, verification evidence**, delivery (landing) evidence, and passing `closureIsSafe`. Verification evidence can only be written by root with `record_evidence`,
+and in eleven days only 194 were written. **The gate is the right shape, but the evidence it wants almost never arises in the real flow, so in effect there is no exit.**
 
-> **判定：三種壞法全部成立。** 嚴重度：高。尤其 #3c：人看的是 progress 投影，系統存的是另一個永遠不前進的狀態，
-> 兩者之間沒有任何東西會讓它們收斂。
+> **Verdict: all three failure modes hold.** Severity: high. Especially #3c: the person looks at the progress projection, the system stores a different state that never moves forward,
+> and nothing between the two makes them converge.
 
-### 1.5 #4、#5「人要適當參與；不用人的要全自動、不混在一起」——**現況兩頭都沒做到**
+### 1.5 #4, #5 "People should take part where appropriate; what needs no person should be fully automatic and not mixed in" — **today, neither half is done**
 
-- **人能下的指令：** 看板上 0 個（只有開關）。人的意志只能透過「跟 session 講話，再由 agent 代寫」進來，而那條路 43.6% 沒有收尾。
-- **自動的部分沒有自動結束：** 260 張 agent 卡停在未結束（§1.4），因為結束的條件跟人類卡是同一套。
-- **混在一起：** 同一份文件、同一個容量、同一套生命週期；分開的只有 UI 的預設收合。
+- **Instructions a person can give:** 0 on the board (only switches). A person's intent can get in only by "talking to the session and having the agent write it down", and that path fails to close 43.6% of the time.
+- **The automatic part does not end automatically:** 260 agent cards are stuck unfinished (§1.4), because their end conditions are the same as those of human cards.
+- **Mixed together:** the same document, the same capacity, the same lifecycle; the only separation is the UI's default collapse.
 
-### 1.6 總表
+### 1.6 Summary table
 
-| 他說的 | 判定 | 最能說明的數字 |
+| What the user said | Verdict | The number that says it best |
 |---|---|---|
-| #1 不知道是否建立 | **成立** | 人建立 0／787；agent 自己判 `new_work` 開卡 19.9% 的 begin；問人的 obligation 十天 7 筆 |
-| #2 瑣碎應給 session | **成立** | 自動執行紀錄 63.0%；建立後零更新 52.8%；55.3% 十分鐘內寫完 |
-| #3a 無人管理 | **成立** | 260 張不給人看的卡永遠未結束；362 張被機器「更新」但沒有真事件 |
-| #3b 沒人收尾、看不到進度 | **成立** | 43.6% run 沒 deliver；派工綁定 12.1%（近兩天 0%）；active 的 46.7% 是幽靈 |
-| #3c 做完沒更新 | **成立** | `closed` 0 張；345 張投影已結束但生命週期沒動；卡上 task 狀態 0 筆不一致 |
-| #4 人適當參與 | **成立（缺）** | 看板上人能下的指令 0 個 |
-| #5 自動軌道獨立 | **成立（缺）** | agent 與人類卡同表、同生命週期、同容量 |
+| #1 doesn't know whether it was created | **Holds** | Created by a person 0/787; agents judged `new_work` themselves and opened cards in 19.9% of begins; obligations asking a person, 7 in ten days |
+| #2 trivial items belong to the session | **Holds** | Automatic execution records 63.0%; zero updates after creation 52.8%; 55.3% written within ten minutes |
+| #3a managed by nobody | **Holds** | 260 cards not meant for people never finish; 362 "updated" by the machine with no real event |
+| #3b nobody closes it, progress cannot be seen | **Holds** | 43.6% of runs never deliver; dispatch binding 12.1% (0% in the last two days); 46.7% of active cards are ghosts |
+| #3c done but not updated | **Holds** | `closed` 0 cards; 345 finished in projection with the lifecycle unmoved; task state on cards, 0 disagreements |
+| #4 people take part where appropriate | **Holds (missing)** | Instructions a person can give on the board: 0 |
+| #5 a separate automatic track | **Holds (missing)** | Agent and human cards share one table, one lifecycle, one capacity |
 
-### 1.7 量測時順帶發現、舊紀錄沒提過的
+### 1.7 Found along the way, and not mentioned in the old records
 
-1. **同一件工作兩張卡。** 例：`CLA-495`／`496`／`497`（「broker／看板／時間軸的設計分析」）在 `clawdline` 專案、人類卡、**顯示從未開始**；
-   實際派出去的執行紀錄（如 `CLA-48`「broker 設計分析」）在 `clawdline-go` 專案、agent 卡、**已落地**。
-   本任務自己也是：`CLA-498`（人類卡，`clawdline`）與 `CLA-53`（執行紀錄，`clawdline-go`）。同專案、標題相近、六小時內的配對至少 9 對
-   （跨專案的沒算，是下限）。
-2. **專案歸屬跟著 session 的 cwd，不跟著工作。** root 在 `~/code/clawdline` 裡開、做的是 `clawdline-go` 的事，它開的卡就記在 `clawdline`。
-3. **`begin_template` 的 `phase` 預設 `"output"`**，所以「登記一個還沒動工的 epic」會同時宣告「正在產出」（`CLA-493`／`494` 都是這樣），
-   span 因此不能當作「開始了」的證據。
-4. **每則訊息的 workflow 信封會污染畫面解析。** 舊 app log 裡有 62 行 `choosing (unnumbered): options=17 — 請用中文 ⏐ <clawdline-workflow …`，
-   是畫面上的選單解析把信封內容當成選項。
-5. **assistant 內建的待辦工具在這台機器上幾乎沒人用**：近 10 天 400 份 Claude transcript 用 `TodoWrite` 的 0 份；
-   300 份 Codex session 用 `update_plan` 的 16 份（5%）。所以 Session 待辦**不能**靠投影它們（§3.1 的決定來自這個數字）。
-6. **item key 不唯一**：`CLA-53` 同時是 `clawdline`、`clawdline-cloud`、`clawdline-go` 三個專案裡的三張卡；
-   全部有 80 個 key 重複、涉及 224 張卡。新設計的身分是 `work.id`，key 只是顯示用。
+1. **Two cards for one piece of work.** For example, `CLA-495`/`496`/`497` ("design analysis of the broker/board/timeline") are in the `clawdline` project, human cards, **shown as never started**;
+   the execution records actually dispatched (such as `CLA-48`, "broker design analysis") are in the `clawdline-go` project, agent cards, **already landed**.
+   The task that wrote this document is one too: `CLA-498` (human card, `clawdline`) and `CLA-53` (execution record, `clawdline-go`). Pairs in the same project with similar titles within six hours: at least 9
+   (cross-project pairs were not counted, so this is a lower bound).
+2. **Project ownership follows the session's cwd, not the work.** A root opened in `~/code/clawdline` doing work for `clawdline-go` records the cards it opens under `clawdline`.
+3. **`begin_template` defaults `phase` to `"output"`**, so "registering an epic nobody has started on" also declares "producing output" (`CLA-493`/`494` are both like this),
+   and so a span cannot count as evidence that something "started".
+4. **The workflow envelope on every message pollutes screen parsing.** The old app's log has 62 lines like `choosing (unnumbered): options=17 — please use Chinese ⏐ <clawdline-workflow …` (the message text, Chinese in the log, is given here in English),
+   where the screen's menu parser took the envelope's content as options.
+5. **The assistants' built-in to-do tools are almost unused on this machine**: of 400 Claude transcripts from the last 10 days, 0 used `TodoWrite`;
+   of 300 Codex sessions, 16 (5%) used `update_plan`. So session to-dos **cannot** rely on projecting them (the decision in §3.1 comes from this number).
+6. **Item keys are not unique**: `CLA-53` is three cards at once, in three projects: `clawdline`, the cloud service and `clawdline-go`;
+   80 keys are duplicated in all, involving 224 cards. The new design's identity is `work.id`; the key is only for display.
 
-### 1.8 量不到的（不算通過）
+### 1.8 What could not be measured (this does not count as passing)
 
-- **卡片有沒有被人打開過：量不到。** 舊版不記單張卡的讀取；`remote-audit.jsonl` 不記看板讀取，log 裡 Cloud 的
-  `kind=board` 讀取只記「讀了看板」不記哪一張。
-- **workflow 那 112 張有 session 對話痕跡的卡，是不是真的有人在場：** `/send` 也可能是 root 轉送，所以 112 只是「人可能在場」的上限。
-- **停擺門檻的依據只有十天**：「沉寂超過 3 天之後再也沒有恢復」是在這十天內觀察到的（§5.5），更長的沉寂沒有機會被觀察。
-- **progress 是用 Go 移植版算的**，不是 Swift 原版；兩者是否逐卡一致，本文沒有重新比對（`board-design.md` 的 B1 說逐條移植）。
-- `orchestrator.json` 與 session 清單是在快照後幾分鐘內讀的；`:7727/v1/sessions` 看到的 session 可能比舊 app 少，因此「session 已不在」可能略為高估。
+- **Whether a card was ever opened by a person: cannot be measured.** The old version does not record reads of individual cards; `remote-audit.jsonl` does not record board reads, and Cloud's
+  `kind=board` reads in the log record only "read the board", not which card.
+- **Whether a person was really present for the 112 cards with traces of a session conversation in the workflow:** `/send` may also be root forwarding, so 112 is only an upper bound on "a person may have been present".
+- **The stall threshold rests on only ten days**: "after more than 3 days of silence it never resumed" was observed within these ten days (§5.5); longer silences had no chance to be observed.
+- **Progress was computed with the Go port**, not the Swift original; whether the two agree card by card was not re-checked here (`board-design.md` B1 says it was ported rule by rule).
+- `orchestrator.json` and the session list were read within minutes after the snapshot; `:7727/v1/sessions` may see fewer sessions than the old app, so "the session no longer exists" may be slightly overstated.
 
 ---
 
-## 2. 設計原則（每一條都指回問題）
+## 2. Design principles (each points back to a problem)
 
-| # | 原則 | 解的是 |
+| # | Principle | Addresses |
 |---|---|---|
-| D1 | **一個結構一個讀者。** 看板的讀者是人、Session 待辦的讀者是 session、Backlog 的讀者是做規劃的人。沒有任何一筆資料同時寫給兩種讀者 | 目的一 vs 目的二、#2、#5 |
-| D2 | **給人看的東西，出現之前人一定知道。** 進看板只有三條路：人自己說、人確認了提議、或符合「承諾」規則的自動移動——而自動移動一定出現在每日摘要裡 | #1、#4 |
-| D3 | **每一筆未結束的東西都有 owner 與時鐘。** 時鐘到了走一條寫好的轉換，從來不是「安靜地停著」 | #3a、#3b |
-| D4 | **收尾用實際會產生的證據。** code 的收尾證據就是 broker 的落地紀錄（已證明可靠：0 筆不一致）；「驗證過」是徽章，不是閘門 | #3c |
-| D5 | **人只在少數幾個點被拉進來，而且有預算。** 會擋住工作的決定才推播；其餘進每日摘要或待確認區 | #4 |
-| D6 | **事實落盤，觀察不落盤**（沿用 `broker-design.md` §6.2）。session 宣告的 phase 是觀察，不能讓卡變成「進行中」 | #3b（幽靈進行中）、#3a（機器擺盪） |
-| D7 | **規則決定能不能問，agent 只提供事實，人決定要不要追蹤。** agent 的自評不足以把東西放上看板 | #1 |
-| D8 | **派工必須帶工作身分。** 沒帶就由 broker 依規則綁定或開一筆 Session 待辦，絕不在另一個專案另開一張人類卡 | #3b（看不到進度）、§1.7 的雙胞胎 |
+| D1 | **One structure, one reader.** The board's reader is a person, the session to-do's reader is a session, the backlog's reader is the person doing the planning. No record is written for two kinds of reader at once | Purpose 1 vs Purpose 2, #2, #5 |
+| D2 | **What is meant for a person is known to that person before it appears.** There are only three ways onto the board: the person says so, the person confirms a proposal, or an automatic move that meets the "commitment" rule — and an automatic move always appears in the daily digest | #1, #4 |
+| D3 | **Everything unfinished has an owner and a clock.** When the clock runs out it takes a written transition; it never "quietly stays put" | #3a, #3b |
+| D4 | **Close on evidence that is actually produced.** For code, the closing evidence is the broker's landing record (proven reliable: 0 disagreements); "verified" is a badge, not a gate | #3c |
+| D5 | **A person is pulled in at only a few points, and on a budget.** Only a decision that blocks work is pushed; everything else goes into the daily digest or the to-confirm area | #4 |
+| D6 | **Facts are persisted, observations are not** (following `broker-design.md` §6.2). The phase a session declares is an observation and cannot make a card "in progress" | #3b (ghost in-progress), #3a (machine oscillation) |
+| D7 | **The rules decide whether to ask, the agent supplies only facts, and the person decides whether to track.** An agent's self-assessment is not enough to put something on the board | #1 |
+| D8 | **A dispatch must carry a work identity.** Without one, the broker binds it by rule or opens a session to-do, and never opens a separate human card in another project | #3b (progress cannot be seen), the twins in §1.7 |
 
 ---
 
-## 3. 三種結構
+## 3. Three structures
 
-### 3.1 各自是什麼
+### 3.1 What each one is
 
-| | **看板**（Board） | **Session 待辦**（Todo） | **Backlog** |
+| | **Board** | **Session to-do** (Todo) | **Backlog** |
 |---|---|---|---|
-| 目的 | **目的一**：人理解現在的狀況 | **目的二**：session 不會忘記要做什麼 | 規劃要做、但沒有開始的承諾 |
-| 讀者 | 人 | session（它自己、它的 root、接手它的 session） | 做規劃的人 |
-| 回答的問題 | 「現在有哪些事在發生、哪些在等我？」 | 「我（這個 session）還欠什麼？」 | 「之後要做什麼、先後順序？」 |
-| 誰建立 | 人；或人確認的提議；或 Backlog／待辦依規則移入（一定進摘要） | **自動**：broker 派工、child 的 `result.json`、session 交付的 `remaining`、obligation | 人；或提議選「之後」；或看板停擺移回 |
-| 誰結束 | 證據（落地）自動結束；或人「收下／放棄」 | **自動**：對應的 task 結束並落地、obligation 解決、交付涵蓋它；session 消失時移交給 root | 只有人（丟掉），或被移進看板 |
-| 必填 | owner、目標、時鐘（下一筆證據的期限） | owner session、來源（哪個 task／交付） | 無（排序、預計開始日選填） |
-| 數量級（依 §7 換算現況） | 進行中 31、等收尾 66 | 602（其中 live 5） | 77 |
+| Purpose | **Purpose 1**: a person understands the situation now | **Purpose 2**: a session does not forget what it has to do | Planned, but with no commitment to start |
+| Reader | A person | A session (itself, its root, the session that takes it over) | The person doing the planning |
+| The question it answers | "What is happening now, and what is waiting on me?" | "What do I (this session) still owe?" | "What comes later, and in what order?" |
+| Who creates | A person; or a proposal a person confirmed; or a move in from the backlog or a to-do by rule (always in the digest) | **Automatic**: broker dispatch, a child's `result.json`, the `remaining` in a session's delivery, obligations | A person; or a proposal answered "later"; or a stalled board item moved back |
+| Who ends | Evidence (landing) ends it automatically; or a person "accepts / drops" it | **Automatic**: its task ends and lands, the obligation is resolved, a delivery covers it; when the session disappears it is handed to root | Only a person (discard), or it is moved onto the board |
+| Required | Owner, goal, clock (the deadline for the next evidence) | Owner session, origin (which task or delivery) | Nothing (rank and planned start date optional) |
+| Magnitude (today's data converted by §7) | In progress 31, awaiting closure 66 | 602 (5 of them live) | 77 |
 
-**Session 待辦從哪裡自動長出來：** 不是 assistant 的 `TodoWrite`／`update_plan`（§1.7-5：幾乎沒人用），而是**broker 已經可靠產生的事實**：
-一個派工＝root 的一筆「收結果、落地」待辦；child 的 `result.json` 與 session `deliver` 裡的 `remaining`＝各自 owner 的待辦；
-obligation 依 `actorKind` 分流（`user` 的變成看板上的「等你決定」，其他的變成待辦）。
-這條路不需要 session 多呼叫任何 API——量到 43.6% 的 run 連 `deliver` 都會漏，**任何「請 agent 記得呼叫」的設計都會漏同樣的比例**。
+**Where session to-dos grow from automatically:** not the assistants' `TodoWrite`/`update_plan` (§1.7-5: almost nobody uses them), but **facts the broker already produces reliably**:
+a dispatch = root's to-do "collect the result and land it"; the `remaining` in a child's `result.json` and in a session's `deliver` = to-dos for their respective owners;
+obligations split by `actorKind` (`user` ones become "Waiting on you" on the board, the rest become to-dos).
+This path needs no extra API call from a session — measured, 43.6% of runs miss even `deliver`, so **any design of the form "ask the agent to remember to call" will miss the same share**.
 
-### 3.2 資料上怎麼分：三張表＋一個工作身分＋一條移動紀錄
+### 3.2 How the data is separated: three tables + one work identity + one log of moves
 
-比較過三種做法：
+Three approaches were compared:
 
-| 做法 | 好處 | 壞處 | 判斷 |
+| Approach | Upside | Downside | Judgement |
 |---|---|---|---|
-| **同一張表、不同 `kind`**（＝舊版的 `audience`） | 移動只改一個欄位 | 每個查詢都要記得過濾；容量、計數、生命週期共用；**舊版就是這樣，§1.3–1.4 的數字就是結果** | 不要 |
-| **同一張表、不同狀態機** | 狀態機分開了 | 不變量（看板必須有 owner 與時鐘、Backlog 不需要）只能靠程式慣例，schema 擋不住；還是會一起算 | 不要 |
-| **不同表** | 不變量由 schema 保證（`NOT NULL`、`CHECK`）；查詢**不可能**混到另一種；容量與保留策略各自定 | 移動要一筆交易；需要一個跨表的身分 | **採用** |
+| **One table, different `kind`** (= the old `audience`) | A move changes only one field | Every query must remember to filter; capacity, counting and lifecycle are shared; **the old version was exactly this, and the numbers in §1.3–1.4 are the result** | No |
+| **One table, different state machines** | The state machines are separate | Invariants (a board item must have an owner and a clock, a backlog item need not) rest only on code convention, and the schema cannot enforce them; they still get counted together | No |
+| **Separate tables** | Invariants are guaranteed by the schema (`NOT NULL`, `CHECK`); a query **cannot** mix in another kind; capacity and retention are set per table | A move takes a transaction; an identity across tables is needed | **Adopted** |
 
-**決定（D1、#5、#BK）：**
+**Decision (D1, #5, #BK):**
 
 ```sql
--- 工作的身分：不管現在在哪個結構，id 不變，連結（task、文件、報告）掛在這裡
+-- The identity of the work: whichever structure it is in now, the id does not change; links (tasks, documents, reports) hang here
 CREATE TABLE work (
   id          TEXT PRIMARY KEY,           -- uuid
-  project_id  TEXT NOT NULL,              -- 工作的專案，不是 session 的 cwd（§1.7-2）
+  project_id  TEXT NOT NULL,              -- the work's project, not the session's cwd (§1.7-2)
   title       TEXT NOT NULL,
   created_at  INTEGER NOT NULL,
   created_by  TEXT NOT NULL               -- user | user_via_session:<run> | root:<session> | broker
 );
 
-CREATE TABLE board_items (                -- 看板：人現在需要知道的
+CREATE TABLE board_items (                -- board: what a person needs to know now
   work_id          TEXT PRIMARY KEY REFERENCES work(id),
   state            TEXT NOT NULL CHECK (state IN ('active','awaiting_closure','done','dropped')),
-  owner            TEXT NOT NULL,         -- root session 或 "user"
+  owner            TEXT NOT NULL,         -- a root session or "user"
   commitment       TEXT NOT NULL,         -- dispatch | assigned | scheduled | decision | delivered
-  evidence_due_at  INTEGER,               -- 時鐘：active／awaiting_closure 必填
-  acceptance       TEXT,                  -- 人看的驗收條件（少數幾條），不是 session 的步驟清單
+  evidence_due_at  INTEGER,               -- the clock: required for active/awaiting_closure
+  acceptance       TEXT,                  -- acceptance conditions a person reads (a few), not the session's step list
   closed_reason    TEXT                   -- landed | accepted | unconfirmed | dropped
 );
 
-CREATE TABLE backlog (                    -- Backlog：規劃要做、沒有開始的承諾
+CREATE TABLE backlog (                    -- backlog: planned, with no commitment to start
   work_id      TEXT PRIMARY KEY REFERENCES work(id),
   state        TEXT NOT NULL CHECK (state IN ('planned','dropped')),
   rank         INTEGER,
-  start_on     TEXT,                      -- 預計開始日；進入七天內即觸發移入看板
-  reviewed_at  INTEGER                    -- 人最後一次看過它
+  start_on     TEXT,                      -- planned start date; coming within seven days triggers a move onto the board
+  reviewed_at  INTEGER                    -- the last time a person looked at it
 );
 
-CREATE TABLE todos (                      -- Session 待辦：session 不能忘的
+CREATE TABLE todos (                      -- session to-do: what a session must not forget
   id            TEXT PRIMARY KEY,
-  work_id       TEXT REFERENCES work(id), -- 可空：純 session 的雜事沒有人類工作
+  work_id       TEXT REFERENCES work(id), -- nullable: a session's pure chores have no human work
   owner_session TEXT NOT NULL,
   origin        TEXT NOT NULL,            -- dispatch | result_remaining | deliver_remaining | obligation
   task_id       TEXT,
@@ -279,424 +279,424 @@ CREATE TABLE todos (                      -- Session 待辦：session 不能忘�
   escalated_at  INTEGER
 );
 
-CREATE TABLE moves (                      -- 三個結構之間每一次移動，append-only
+CREATE TABLE moves (                      -- every move between the three structures, append-only
   seq      INTEGER PRIMARY KEY,
   work_id  TEXT NOT NULL,
   from_s   TEXT NOT NULL,                 -- todo | proposal | board | backlog | none
   to_s     TEXT NOT NULL,
-  trigger  TEXT NOT NULL,                 -- §6 的觸發碼
+  trigger  TEXT NOT NULL,                 -- a trigger code from §6
   actor    TEXT NOT NULL,
-  evidence TEXT NOT NULL,                 -- JSON：哪一筆事實觸發了它
+  evidence TEXT NOT NULL,                 -- JSON: which fact triggered it
   at       INTEGER NOT NULL
 );
 ```
 
-另外兩張小表：`proposals`（§4 的提議與它的答案）、`decisions`（等人決定的事）。
+Two more small tables: `proposals` (the proposals of §4 and their answers) and `decisions` (things waiting for a person to decide).
 
-**放在哪：** 與 broker 同一個 SQLite（`broker-design.md` §6.1、§6.9 的方向）。理由是 #3c：舊版的看板是另一份文件，靠 broker 推送
-`observe(...)` 更新，收尾條件又是另一套——兩個 store 之間只要有一處不收斂就永遠不收斂。同一個 DB 裡，
-「task 落地」→「待辦結束」→「看板項目結束」可以是**同一筆交易**（`broker-design.md` §6.1 的規則：一個外部看得到的事實就是一筆交易）。
-這一點與 `board-design.md` C1「照搬整份文件重寫」不同：C1 是對**照搬舊模型**的判斷，本文換了模型，換模型之後舊的理由（42 ms、不值得拆）
-不再是決定因素。舊版 787 張卡的唯讀讀取（`internal/adapters/board/source.go` 的 `Legacy`）**不變**。
+**Where it lives:** in the same SQLite as the broker (the direction of `broker-design.md` §6.1, §6.9). The reason is #3c: the old board was a separate document, updated by the broker pushing
+`observe(...)`, with yet another set of closing conditions — between two stores, one place that fails to converge means it never converges. Inside one DB,
+"task landed" → "to-do ended" → "board item ended" can be **one transaction** (the rule of `broker-design.md` §6.1: one externally visible fact is one transaction).
+This differs from `board-design.md` C1, "port the whole-document rewrite as is": C1 was a judgement about **porting the old model**; this document changes the model, and once the model changes, the old reasons (42 ms, not worth splitting)
+are no longer decisive. The read-only reading of the old version's 787 cards (`Legacy` in `internal/adapters/board/source.go`) **does not change**.
 
-**衍生的顯示狀態不存。** 卡片上「排隊中／進行中／審查中／已交付／已落地」照舊由 `ProgressOf` 從證據推出（`board-design.md` B1、B5 照搬），
-但**不寫回 store**，所以不會再有 4,124 筆對帳紀錄與 75.5% 的擺盪（D6、#3a）。存下來的只有四個生命週期狀態與人的決定。
+**Derived display states are not stored.** The "queued / in progress / in review / delivered / landed" on a card is still derived from evidence by `ProgressOf` (`board-design.md` B1, B5, ported as is),
+but **not written back to the store**, so there will be no more 4,124 reconciliation entries and 75.5% oscillation (D6, #3a). Only the four lifecycle states and a person's decisions are stored.
 
-### 3.3 畫面上怎麼分
+### 3.3 How the screen is divided
 
-- **看板頁**只放 `board_items`，由上到下：
-  1. **等你決定**：`decisions` 與 `awaiting_closure`（收尾佇列）。每張只有一到三個按鈕。
-  2. **進行中**：`active`。卡上顯示目標、owner、衍生狀態、**Session 待辦的計數**（「3 個待辦、1 個卡住」，不列內容）、
-     最後一筆證據的時間、時鐘（「3 天內沒有新證據會回 Backlog」）。
-  3. **本週排入**：Backlog 中 `start_on` 已進入七天內但還沒派工的（它們已經算承諾，見 §6）。
-  4. **最近完成**：七天內 `done`，預設收合。
-- 看板標題旁一個**待確認**徽章（`proposals` 的數量），點開是提議清單。
-- **Backlog** 是看板頁的另一個分頁：排序清單、依專案篩選、每列有「排入」與「開始做」。
-- **Session 待辦不出現在看板頁。** 它在 session 詳情的一個面板裡，並提供給 session 本身讀（API 與簡報，見 §5.2）。
-  這是 #5「不應該和給人看的項目混在一起」的字面實現：**不是收合，是不在同一頁**。
+- **The board page** shows only `board_items`, from top to bottom:
+  1. **Waiting on you**: `decisions` and `awaiting_closure` (the closure queue). Each card has only one to three buttons.
+  2. **In progress**: `active`. A card shows the goal, the owner, the derived state, **the count of session to-dos** ("3 to-dos, 1 stuck", without listing them),
+     the time of the last evidence, and the clock ("back to the backlog if there is no new evidence within 3 days").
+  3. **Scheduled this week**: backlog items whose `start_on` is within seven days but not yet dispatched (they already count as a commitment; see §6).
+  4. **Recently done**: `done` within seven days, collapsed by default.
+- Beside the board's title, a **To confirm** badge (the number of `proposals`); opening it shows the list of proposals.
+- **The backlog** is another tab of the board page: a ranked list, filterable by project, with "Schedule" and "Start" on every row.
+- **Session to-dos do not appear on the board page.** They are in a panel of the session's details, and are provided for the session itself to read (API and briefing; see §5.2).
+  This is the literal realization of #5, "should not be mixed in with the items meant for people": **not collapsed, but not on the same page**.
 
-> 目前的看板頁前端是 `%905` 在做的舊版照搬，給 787 張舊卡的唯讀檢視用。本設計的畫面是新 app 自己的看板，排在照搬落地之後（§9）。
+> The current board page front end is the port of the old version that another child is building, as a read-only view of the 787 old cards. This design's screens are the new app's own board, scheduled after that port lands (§9).
 
-### 3.4 兩個目的不打架：誰寫什麼
+### 3.4 The two purposes do not fight: who writes what
 
-舊版一張卡上同時有：目標（人的）、checklist（session 的計畫，但被當成人的驗收條件）、obligation（有的要人決定、多數是 session 自己的）、
-span（session 的宣告，卻讓卡變成「進行中」）、交付（session 的自述，卻是人看的完成標記）。**每一種欄位都是兩個讀者共用，兩邊都被對方綁住。**
+One old card held all of these at once: the goal (the person's), the checklist (the session's plan, yet treated as the person's acceptance conditions), obligations (some for a person to decide, most the session's own),
+spans (the session's declaration, yet they made the card "in progress"), and deliveries (the session's own account, yet the completion mark a person reads). **Every kind of field was shared by two readers, and each side was bound by the other.**
 
-| 資訊 | 舊版放在 | 新設計放在 | 誰寫 | 誰讀 |
+| Information | Old version kept it in | New design keeps it in | Who writes | Who reads |
 |---|---|---|---|---|
-| 目標、owner、驗收條件（少數） | 卡 | `board_items` | 人（或人確認的提議） | 人；session 唯讀地拿來知道「為什麼」 |
-| 步驟清單、剩餘工作 | 卡的 checklist／obligation | `todos` | 自動（broker 事實） | session |
-| 要人決定的事 | 卡的 obligation（`actorKind:user`，7 筆） | `decisions` | session 提出、人回答 | 人 |
-| 「我正在做 X」 | 卡的 span | **不落盤**（記憶體與 SSE 的即時欄位） | session | 人（即時畫面） |
-| 交付、落地 | 卡的 evidence／sessionDeliveries | broker 的 task 與落地紀錄 | broker | 兩邊都讀，推導出各自的狀態 |
+| Goal, owner, acceptance conditions (a few) | The card | `board_items` | A person (or a proposal a person confirmed) | The person; a session reads it, read-only, to know "why" |
+| Step list, remaining work | The card's checklist/obligations | `todos` | Automatic (broker facts) | The session |
+| Things a person must decide | The card's obligations (`actorKind:user`, 7 of them) | `decisions` | A session raises it, a person answers | The person |
+| "I am working on X" | The card's span | **Not persisted** (a live field in memory and SSE) | The session | The person (live screen) |
+| Delivery, landing | The card's evidence/sessionDeliveries | The broker's tasks and landing records | The broker | Both read it and derive their own states |
 
-**規則：session 永遠不寫看板項目的狀態；人永遠不需要編輯待辦。** 看板項目的狀態由它連著的待辦與 task 的事實推導，加上人的決定；
-待辦的狀態由 broker 事實推導。兩者只透過 `work_id` 相連，**同一筆資料不會同時為兩個讀者存在**（D1）。
+**The rule: a session never writes a board item's state; a person never needs to edit a to-do.** A board item's state is derived from the facts of the to-dos and tasks it is linked to, plus a person's decisions;
+a to-do's state is derived from broker facts. The two are linked only through `work_id`, and **no record exists for two readers at once** (D1).
 
-### 3.5 名稱：就叫 **Backlog**
+### 3.5 The name: just call it **Backlog**
 
-API 用 `backlog`，中文介面也寫 **Backlog**，副標「已規劃，尚未排入」。理由：
+The API uses `backlog`, and the Chinese interface writes **Backlog** too, with the subtitle "planned, not yet scheduled". The reasons:
 
-1. **這是使用者自己用的字**，而且業界意思剛好吻合：有排序、規劃要做、不在進行中。
-2. **自己造的中文詞都會撞到這個 app 已經在用的詞**：「待辦」是 Session 那一軌；「規劃」是 progress 的 `planning` 階段；
-   「待排」和「待辦」只差一個字，在手機上一眼分不出來。
-3. **舊版的 `backlog` 是看板項目的一個狀態**（151 張），新設計把它**拿掉**，讓這個字只有一個意思：一個結構，不是一個狀態。
+1. **It is the user's own word**, and its meaning in the industry fits exactly: ranked, planned, not in progress.
+2. **Every Chinese word we could coin collides with a word this app already uses**: the word for "to-do" (*dàibàn*) is the session track; the word for "planning" (*guīhuà*) is progress's `planning` phase;
+   "awaiting scheduling" (*dàipái*) differs from *dàibàn* by one character, and on a phone the two cannot be told apart at a glance.
+3. **The old `backlog` was a state of a board item** (151 cards); the new design **removes** it, so the word has only one meaning: a structure, not a state.
 
-另外兩個名稱：**看板**（`board`）、**Session 待辦**（`todo`）。
+The other two names: the **board** (`board`) and the **session to-do** (`todo`).
 
 ---
 
-## 4. 建立：什麼值得讓人追蹤、誰判斷、什麼時候問、怎麼防呆（#1、#4、D2、D7）
+## 4. Creation: what is worth a person's tracking, who judges, when to ask, and how to fool-proof it (#1, #4, D2, D7)
 
-### 4.1 預設：什麼都進 Session 待辦，不問
+### 4.1 The default: everything goes into session to-dos, without asking
 
-session 做的每一件事都先是待辦。**不問、不上看板。** 這一條本身就擋掉 §1.2 那 47 次「agent 自己判 `new_work` 開卡」。
+Everything a session does starts as a to-do. **No asking, no board.** This rule alone stops the 47 cases in §1.2 of "the agent judged `new_work` itself and opened a card".
 
-### 4.2 什麼情況「值得問」：用規則判，agent 只提供事實
+### 4.2 When it is "worth asking": judged by rules, with the agent supplying only facts
 
-| 訊號 | 從哪裡來（事實，不是自評） | 為什麼是這條線 |
+| Signal | Where it comes from (a fact, not a self-assessment) | Why the line is here |
 |---|---|---|
-| **I1 跨 session**：這條工作派出了 child，或做了 handoff | broker | 一件事需要第二個 session，就已經不是一個回合的雜事 |
-| **I2 活得久**：待辦開著超過 **24 小時** | 時間戳記 | 量到的 p95 是 23.6 小時（§1.3）：只有最長的 5% 會超過 |
-| **I3 有外部效果**：部署、發布、推到預設分支、花錢、對外寄信 | session 用**封閉詞彙**宣告，或 broker 觀察到落地到預設分支 | 這些是人事後會問「那個上線了嗎」的東西 |
-| I4 要人決定 | obligation `actorKind:user` | **不走提議**，直接變成「等你決定」（§5.1） |
-| I5 人自己說要追蹤（「追蹤這個」「放上看板」） | 人送出的訊息（workflow run 證明是人送的） | **不問**，直接建立，actor 記 `user_via_session:<run>` |
+| **I1 crosses sessions**: this line of work dispatched a child, or did a handoff | The broker | Once a thing needs a second session, it is no longer one turn's chore |
+| **I2 lives long**: a to-do open for more than **24 hours** | Timestamps | The measured p95 is 23.6 hours (§1.3): only the longest 5% exceed it |
+| **I3 has an external effect**: deploying, releasing, pushing to the default branch, spending money, sending mail outside | Declared by the session in a **closed vocabulary**, or the broker observes a landing on the default branch | These are the things a person later asks about: "did that go live?" |
+| I4 needs a person's decision | Obligation `actorKind:user` | **Does not go through a proposal**; it becomes "Waiting on you" directly (§5.1) |
+| I5 the person says to track it ("track this", "put it on the board") | A message the person sent (the workflow run proves a person sent it) | **No asking**; created directly, with the actor recorded as `user_via_session:<run>` |
 
-**規則：** 符合 I1、I2、I3 任一條，而且還沒綁到看板項目 → 產生一個**提議**。I4、I5 不產生提議（一個直接變決定、一個直接建立）。
+**The rule:** meets any of I1, I2, I3, and not yet bound to a board item → generate a **proposal**. I4 and I5 generate no proposal (one becomes a decision directly, the other is created directly).
 
-**永遠不提議的：** child 自己的 task（它的 root 擁有那條工作）；review／test／correction 這類附屬嘗試（它們是某件事的步驟）；
-`question`／`clarification`；排程的例行工作（61 個有 `schedule_id` 的 task）。
+**Never proposed:** a child's own task (its root owns that line of work); auxiliary attempts such as review/test/correction (they are steps of something else);
+`question`/`clarification`; scheduled routine work (the 61 tasks with a `schedule_id`).
 
-**誰判斷：規則決定「能不能問」，agent 只提供 I1–I3 的事實，人決定「要不要追蹤」。** agent 自評不足以上看板——
-§1.2 的 47 張就是 agent 自評的結果。
+**Who judges: the rules decide "whether it may ask", the agent supplies only the facts for I1–I3, and the person decides "whether to track".** An agent's self-assessment is not enough to go on the board —
+the 47 cards in §1.2 are what agent self-assessment produced.
 
-### 4.3 什麼時候問、用哪個管道
+### 4.3 When to ask, and through which channel
 
-| 情況 | 管道 | 樣子 |
+| Situation | Channel | What it looks like |
 |---|---|---|
-| 人在場（這個 root session 過去 30 分鐘內收過人送出的訊息） | **session 裡**，附在 agent 這一回合的交付訊息尾端，**不阻塞** | 「要不要把『X』放上看板追蹤？ 追蹤／之後（Backlog）／不用」——人回覆或在看板上按 |
-| 人不在場 | **看板的待確認區**，不推播 | 待確認徽章＋每日摘要裡一行「有 N 個提議」 |
-| 要人決定而且擋住工作（I4） | **推播**（現有 notify，每 task 5 則、每小時 30 則的上限內） | 只有這一種會推播 |
+| The person is present (this root session received a message the person sent within the last 30 minutes) | **In the session**, appended to the end of the agent's delivery message for this turn, **non-blocking** | "Put 'X' on the board to track? Track / Later (backlog) / No" — the person replies, or presses it on the board |
+| The person is not present | **The board's to-confirm area**, not pushed | The To confirm badge + one line in the daily digest, "N proposals" |
+| A person's decision is needed and it blocks work (I4) | **Push** (the existing notify, within its limits of 5 per task and 30 per hour) | The only case that pushes |
 
-量級估計：派工以「root × 專案 × 天」分組，09-08 以來每天中位數 5 條、最多 17 條工作線。已經綁定的工作線不會再被問，所以
-實際詢問數會低於這個上限（**未量**，是上限估計）。「要人決定」十天 7 筆，約每天 0.7 次，推播預算綽綽有餘。
+Estimated magnitude: grouping dispatches by "root × project × day", since 09-08 the daily median is 5 lines of work, at most 17. A line of work already bound is not asked about again, so
+the actual number of asks will be below this ceiling (**not measured**; it is an upper-bound estimate). "Needs a person's decision" was 7 in ten days, about 0.7 a day, well within the push budget.
 
-### 4.4 防呆：不該問的時候絕對不要問
+### 4.4 Fool-proofing: never ask when it should not
 
-防呆放在**唯一的入口**：提議只能透過 `POST /v1/orchestrator/proposals` 建立，**是否要在 session 裡問，是伺服器的回答，不是 agent 的決定**。
-agent 的簡報只寫一句：「只有當回應是 `ask: true` 時才在對話裡問，用回應裡的句子。」
+The fool-proofing sits at **the only entry**: a proposal can only be created through `POST /v1/orchestrator/proposals`, and **whether to ask in the session is the server's answer, not the agent's decision**.
+The agent's briefing says one sentence: "Ask in the conversation only when the response is `ask: true`, using the sentence in the response."
 
-| 拒絕碼 | 條件 |
+| Refusal code | Condition |
 |---|---|
-| `proposal_below_threshold` | 不符合 I1–I3 |
-| `proposal_from_child` | 呼叫者是 child；child 的提議改記在 root 的待確認區 |
-| `proposal_duplicate` | 同一個 `work_id` 已經被提議過；被拒絕過的只在**有新的訊號**時可以再提一次，而且只能一次 |
-| `proposal_already_tracked` | 已經綁在看板項目上：直接綁，不問 |
-| `proposal_budget_exhausted` | 這個 session 這一回合已經問過一次，或今天已經問滿 3 次 → 改進待確認區 |
-| （不是拒絕）`ask: false, reason: human_absent` | 人不在場 → 進待確認區 |
+| `proposal_below_threshold` | Meets none of I1–I3 |
+| `proposal_from_child` | The caller is a child; a child's proposal is recorded in its root's to-confirm area instead |
+| `proposal_duplicate` | The same `work_id` has already been proposed; a rejected one may be proposed again only **when there is a new signal**, and only once |
+| `proposal_already_tracked` | Already bound to a board item: bind it directly, don't ask |
+| `proposal_budget_exhausted` | This session has already asked once this turn, or has asked 3 times today → goes to the to-confirm area instead |
+| (not a refusal) `ask: false, reason: human_absent` | The person is not present → goes to the to-confirm area |
 
-**沒有人回答的提議，7 天後過期，結果是「留在 Session 待辦」**（不追蹤）。這是安全的預設：沒回答就不把東西塞進人的看板；
-它仍然在待辦裡被自動追蹤、自動結束，而過期會出現在摘要裡一次。
+**A proposal nobody answers expires after 7 days, and the result is "stays a session to-do"** (not tracked). This is the safe default: no answer means nothing is pushed onto the person's board;
+it is still tracked and ended automatically as a to-do, and the expiry appears in the digest once.
 
-每一筆提議與它的答案寫進 `proposals`；「伺服器說 `ask:false` 但對話裡還是問了」這件事無法完全擋住（agent 可以打任何字），
-所以**要量**：`/v1/diagnostics` 記 `proposals.asked_inline` 與 `proposals.ask_true`，兩者對不上就是簡報沒被遵守。
+Every proposal and its answer is written to `proposals`; "the server said `ask:false` but the conversation asked anyway" cannot be fully prevented (an agent can type anything),
+so **it is measured**: `/v1/diagnostics` records `proposals.asked_inline` and `proposals.ask_true`, and when the two disagree, the briefing was not followed.
 
 ---
 
-## 5. 生命週期
+## 5. Lifecycles
 
-### 5.1 看板項目
+### 5.1 Board items
 
 ```
-          人說／人確認提議／Backlog 依規則移入
+   a person says so / a person confirms a proposal / the backlog moves it in by rule
                          │
                          ▼
-   ┌──────────────── active ─────────────────┐
-   │   (有 owner、有時鐘 evidence_due_at)     │
-   │                                         │
-   │ 所有綁定的執行都結束、至少一個交付、      │  新的派工／新的阻擋 finding
-   │ 但沒有自動收尾的證據                     │◄──────────────────────┐
-   ▼                                         │                       │
-awaiting_closure ──(落地證據到了)──────────► done ──────(reopen)─────┘
-   │   │                                     ▲
-   │   └──(人：收下)─────────────────────────┤
-   │                                         │
-   └──(問過一次，7 天沒回答)──► done（closed_reason = unconfirmed，標「交付未確認」）
+   ┌────────────────── active ───────────────────┐
+   │   (owner and clock: evidence_due_at)        │
+   │                                             │
+   │ all bound executions finished, at least one │  a new dispatch / a new blocking finding
+   │ delivery, but no automatic-closure evidence │◄──────────────────────┐
+   ▼                                             │                       │
+awaiting_closure ──(landing evidence arrives)──► done ─────(reopen)──────┘
+   │   │                                         ▲
+   │   └──(person: accept)───────────────────────┤
+   │                                             │
+   └──(asked once, no answer in 7 days)──► done (closed_reason = unconfirmed, marked "delivery unconfirmed")
 
-active ──(3 天沒有新證據、也沒有交付)──► 移回 Backlog（寫 moves，進摘要）
-active／awaiting_closure ──(人：放棄)──► dropped
+active ──(3 days with no new evidence and no delivery)──► back to the backlog (writes moves, goes in the digest)
+active / awaiting_closure ──(person: drop)──► dropped
 ```
 
-| 轉換 | 觸發 | 由誰 | 證據 |
+| Transition | Trigger | By whom | Evidence |
 |---|---|---|---|
-| →`active` | 人建立、人確認提議、Backlog 依 §6 移入 | 人／規則 | `moves` 一筆 |
-| `active`→`done` | 綁定的 task 全部 `landed` 或 `nothing_to_land`，且沒有未解的阻擋 obligation／finding | **規則（自動）** | broker 落地紀錄（D4） |
-| `active`→`awaiting_closure` | 綁定的執行都已結束、至少一個交付，但沒有上一條的證據（非 code、session 自稱交付、落地還沒發生） | 規則 | task 終態＋交付 |
-| `awaiting_closure`→`done` | 落地證據到了 | 規則 | broker |
-| `awaiting_closure`→`done` | 人按「收下」（＝舊版 `accept_artifact` 的一般化，記成人的決定，是事實不是意見） | **人** | `decisions` 一筆 |
-| `awaiting_closure`→`done(unconfirmed)` | 進入 3 天後在摘要問一次，再 7 天沒回答 | 規則 | 時鐘；卡上永遠標「交付未確認」 |
-| `awaiting_closure`→`active` | 人按「還要改」 | 人 | 新開一筆待辦給 owner |
-| `active`→Backlog | **3 天**沒有新的非機器證據、沒有交付、沒有等人的決定 | 規則 | 時鐘；`moves` 記 `stalled_3d`，進摘要 |
-| `done`→`active` | 新的派工綁上來、或新的阻擋 finding（沿用舊版「新範圍重開」） | 規則 | broker／finding |
-| →`dropped` | 人按「放棄」 | **只有人** | `decisions` |
-| owner 不在了 | owner session 不存在且沒有接手者 | 規則 | 卡上標「無人負責」、進摘要；時鐘照走 |
+| →`active` | A person creates it, a person confirms a proposal, the backlog moves it in per §6 | Person / rule | One `moves` entry |
+| `active`→`done` | Every bound task `landed` or `nothing_to_land`, and no unresolved blocking obligation/finding | **Rule (automatic)** | The broker's landing record (D4) |
+| `active`→`awaiting_closure` | Every bound execution has finished, at least one delivery, but no evidence for the row above (not code, the session's own claim of delivery, landing has not happened yet) | Rule | Task terminal state + delivery |
+| `awaiting_closure`→`done` | Landing evidence arrives | Rule | The broker |
+| `awaiting_closure`→`done` | The person presses "Accept" (= a generalization of the old `accept_artifact`, recorded as the person's decision; a fact, not an opinion) | **Person** | One `decisions` entry |
+| `awaiting_closure`→`done(unconfirmed)` | Asked once in the digest 3 days after entering, then 7 more days without an answer | Rule | The clock; the card is marked "delivery unconfirmed" for good |
+| `awaiting_closure`→`active` | The person presses "Needs changes" | Person | A new to-do opens for the owner |
+| `active`→backlog | **3 days** with no new non-machine evidence, no delivery, and no decision waiting on a person | Rule | The clock; `moves` records `stalled_3d`, and it goes in the digest |
+| `done`→`active` | A new dispatch is bound to it, or a new blocking finding (following the old "reopen for a new scope") | Rule | Broker / finding |
+| →`dropped` | The person presses "Drop" | **Only a person** | `decisions` |
+| The owner is gone | The owner session no longer exists and no one has taken over | Rule | The card is marked "no one responsible" and goes in the digest; the clock keeps running |
 
-**時鐘看的「證據」是什麼：** 綁在這個 `work_id` 上的任何事實——待辦的建立或結束、派工與它的終態、落地、session 的交付回報、
-人的決定。session 的宣告（「我正在做」）是觀察，不算（D6）。root 自己直接在做、沒有派工的工作，靠它每一輪的交付回報推進時鐘；
-回報漏了、被移回 Backlog，代價是一個動作：下一筆綁上來的事實（或人按「開始做」）就會把它移回看板（§6）。
-**移回 Backlog 從來不刪東西，只是把「承諾」這件事說實話。**
+**What "evidence" the clock looks at:** any fact bound to this `work_id` — a to-do created or ended, a dispatch and its terminal state, a landing, a session's delivery report,
+a person's decision. A session's declaration ("I am working on it") is an observation and does not count (D6). Work root is doing directly, with no dispatch, moves the clock with its delivery report each round;
+if a report is missed and the item moves back to the backlog, the cost is one action: the next fact bound to it (or the person pressing "Start") moves it back onto the board (§6).
+**Moving back to the backlog never deletes anything; it only tells the truth about the "commitment".**
 
-**為什麼 `done(unconfirmed)` 可以安全地自動結束：** 它只是把人的看板清乾淨，**不是**宣稱落地。未落地的交付在 broker 自己的 inventory
-（`unlanded`）裡仍然是一筆義務，那裡有 owner 與落地佇列；看板不需要用「永遠不關」來記住它。卡上保留「交付未確認」標記，任何新證據都會重開。
+**Why `done(unconfirmed)` can safely end automatically:** it only clears the person's board; it does **not** claim a landing. An unlanded delivery remains an obligation in the broker's own inventory
+(`unlanded`), which has an owner and a landing queue; the board does not need "never close" to remember it. The card keeps the "delivery unconfirmed" mark, and any new evidence reopens it.
 
-### 5.2 Session 待辦
+### 5.2 Session to-dos
 
 ```
-open ──(對應 task 結束且落地／obligation 解決／交付涵蓋)──► done
-open ──(owner session 結束)──► handed_off（移給 root；root 也不在 → 24 小時後 dropped，進摘要一行）
-open ──(符合 §6 升級條件)──► 保持 open，另外在看板產生決定或提議
+open ──(its task ends and lands / obligation resolved / a delivery covers it)──► done
+open ──(owner session ends)──► handed_off (to root; if root is gone too → dropped after 24 hours, one line in the digest)
+open ──(meets the escalation conditions of §6)──► stays open, and a decision or proposal is created on the board
 ```
 
-| 轉換 | 觸發 | 由誰 |
+| Transition | Trigger | By whom |
 |---|---|---|
-| 建立 | 派工被接受（root 的「收結果、落地」待辦）；`result.json`／`deliver` 的 `remaining`；非 user 的 obligation | broker（自動） |
-| →`done` | task 終態＋落地（`landed`／`nothing_to_land`）；obligation 解決；後續的 `deliver` 涵蓋 | broker（自動） |
-| →`done`（未落地） | task 終態但 `abandoned`，或 broker 的落地義務由人或 root 關掉 | broker（自動） |
-| →`handed_off` | owner session 結束 | 規則：移給它的 root；`handoff` 則移給接手者 |
-| →`dropped` | 移交後 24 小時仍無 owner | 規則，進摘要 |
+| Created | A dispatch is accepted (root's "collect the result and land it" to-do); the `remaining` of `result.json`/`deliver`; an obligation not for the user | The broker (automatic) |
+| →`done` | Task terminal state + landing (`landed`/`nothing_to_land`); obligation resolved; covered by a later `deliver` | The broker (automatic) |
+| →`done` (unlanded) | Task terminal but `abandoned`, or the broker's landing obligation closed by a person or root | The broker (automatic) |
+| →`handed_off` | The owner session ends | Rule: moved to its root; with a `handoff`, moved to the session taking over |
+| →`dropped` | Still no owner 24 hours after being handed off | Rule, in the digest |
 
-**session 怎麼「不忘記」（目的二）：** 待辦在三個 session 容易忘的時刻被送回給它：
-(1) 派工的簡報與 handoff 的 OPEN THREADS 帶上它的未完成待辦；(2) child 完成通知（已有的 durable notice）帶上 root 那一筆「收結果、落地」待辦；
-(3) `GET /v1/orchestrator/sessions/:id/todos`（機器憑證）隨時可讀。**不再在每一則人送出的訊息裡夾信封**（§1.7-4；也是 43.6% 漏 deliver 的來源）。
+**How a session "doesn't forget" (Purpose 2):** to-dos are brought back to a session at three moments when it tends to forget:
+(1) a dispatch's briefing and a handoff's OPEN THREADS carry its unfinished to-dos; (2) a child's completion notice (the existing durable notice) carries root's "collect the result and land it" to-do;
+(3) `GET /v1/orchestrator/sessions/:id/todos` (machine credential) can be read at any time. **No more envelope on every message a person sends** (§1.7-4; it is also where the 43.6% missing `deliver` came from).
 
 ### 5.3 Backlog
 
 ```
-planned ──(§6 的任一移入觸發)──► 移入看板
-planned ──(人：丟掉)──► dropped
-planned，30 天沒人看過 ──► 每週摘要問一次「要留嗎？」；預設保留
+planned ──(any move-in trigger of §6)──► moved onto the board
+planned ──(person: discard)──► dropped
+planned, not looked at for 30 days ──► the weekly digest asks once, "keep it?"; kept by default
 ```
 
-**Backlog 永遠不自動刪除。** 人的規劃被機器清掉是最糟的錯誤（`board-design.md` §6-5、`timeline-design.md` §3.3 的同一條理由）。
+**The backlog is never deleted automatically.** A person's planning being cleared by a machine is the worst mistake there is (the same reason as `board-design.md` §6-5 and `timeline-design.md` §3.3).
 
-### 5.4 3a、3b、3c 各自被哪一條規則擋住
+### 5.4 Which rule stops each of 3a, 3b and 3c
 
-| 壞法 | 現況的機制 | 擋住它的規則 |
+| Failure | The mechanism today | The rule that stops it |
 |---|---|---|
-| **#3a 瑣碎無人管理** | 自動執行紀錄與人類卡同表同生命週期，結束條件用人類那一套，所以永遠不結束；機器對帳持續「更新」它們 | (1) 瑣碎的東西根本不是看板項目，是待辦（§3）；(2) 待辦由 broker 事實**自動結束**，owner 消失就移交或丟棄（§5.2）；(3) 衍生狀態不落盤，機器不會再「碰」它們（§3.2） |
-| **#3b 開始後沒人收尾、看不到進度** | 派工不綁看板項目（12.1%）；session 的 begin 不收尾（43.6%）；宣告的 span 讓死掉的 session 看起來還在做 | (1) **D8**：派工必須帶 `work_id`，沒帶就由 broker 綁或開待辦，絕不在別的專案另開人類卡；(2) 每個看板項目有 owner 與**時鐘**，3 天沒證據就回 Backlog、owner 消失就標「無人負責」；(3) 宣告不落盤（D6），「進行中」只由 broker 的活著的嘗試推出 |
-| **#3c 做完了看板沒更新** | 收尾閘門要驗證紀錄，實際幾乎不產生，`closed` 0 張 | (1) **D4**：落地證據就足以自動結束；驗證是徽章；(2) 非 code 或沒落地的交付進收尾佇列，**問一次、有期限、有預設**；(3) task 落地→待辦結束→看板結束在同一個 DB、同一筆交易（§3.2） |
+| **#3a trivial, managed by nobody** | Automatic execution records share a table and a lifecycle with human cards, with the human end conditions, so they never end; machine reconciliation keeps "updating" them | (1) Trivial things are not board items at all but to-dos (§3); (2) to-dos **end automatically** on broker facts, and are handed off or dropped when their owner disappears (§5.2); (3) derived states are not persisted, so the machine no longer "touches" them (§3.2) |
+| **#3b nobody closes it once started, progress cannot be seen** | Dispatches are not bound to board items (12.1%); sessions' begins don't close (43.6%); declared spans make dead sessions look like they are still working | (1) **D8**: a dispatch must carry a `work_id`; without one the broker binds it or opens a to-do, and never opens a separate human card in another project; (2) every board item has an owner and a **clock**: 3 days without evidence sends it back to the backlog, and a vanished owner marks it "no one responsible"; (3) declarations are not persisted (D6), and "in progress" is derived only from the broker's live attempts |
+| **#3c done but the board was not updated** | The closing gate requires verification records, which are almost never produced; `closed` 0 cards | (1) **D4**: landing evidence is enough to end it automatically; verification is a badge; (2) deliveries that are not code or have not landed go to the closure queue: **asked once, with a deadline and a default**; (3) task landed → to-do ended → board item ended in the same DB, in one transaction (§3.2) |
 
-### 5.5 門檻怎麼來的
+### 5.5 Where the thresholds come from
 
-| 門檻 | 值 | 依據 |
+| Threshold | Value | Basis |
 |---|---|---|
-| 看板停擺回 Backlog | **3 天** | 全部 12,900 筆事件裡，沉寂超過 1 天之後又恢復的只有 11 次，**超過 3 天之後恢復的 0 次**；已完成的 281 張卡，過程中最長的沉寂 p99 是 30.8 小時。三天沒動，在這份資料裡等於不會再動（限制見 §1.8） |
-| 值得問（I2） | **24 小時** | 活得最久的 5%（p95 23.6 小時） |
-| 看板的「短期」 | **7 天** | `start_on` 在七天內＝本週排入；配合每週一次的 Backlog 摘要 |
-| 收尾佇列的預設結果 | 進入 3 天後問一次，再 7 天 | 給人一個完整的週末；之後結束但標「未確認」 |
-| 提議過期 | 7 天 | 同上 |
+| Board stall, back to the backlog | **3 days** | Of all 12,900 events, activity resumed after more than 1 day of silence only 11 times, and **0 times after more than 3 days**; for the 281 finished cards, the p99 of the longest silence along the way is 30.8 hours. In this data, three days without movement means it will not move again (limits in §1.8) |
+| Worth asking (I2) | **24 hours** | The longest-lived 5% (p95 23.6 hours) |
+| The board's "short term" | **7 days** | `start_on` within seven days = scheduled this week; matches the weekly backlog digest |
+| Default outcome of the closure queue | Asked once 3 days after entering, then 7 more days | Gives a person one whole weekend; after that it ends, marked "unconfirmed" |
+| Proposal expiry | 7 days | Same as above |
 
-門檻敏感度見 §7.3：**改門檻只會在「看板·進行中」與「看板·等收尾」之間移動，不會改變 Session 待辦與「從未開始」的 Backlog。**
+For threshold sensitivity see §7.3: **changing the threshold only moves cards between "board: in progress" and "board: awaiting closure"; it does not change session to-dos or the "never started" backlog.**
 
 ---
 
-## 6. 三者之間的移動規則
+## 6. Rules for moving between the three
 
-每一次移動是一筆交易，寫一筆 `moves`（`trigger`、`actor`、`evidence`），而且**自動的移動一定出現在每日摘要**（D2）。
+Every move is a transaction that writes one `moves` entry (`trigger`, `actor`, `evidence`), and **an automatic move always appears in the daily digest** (D2).
 
-| 從 → 到 | 觸發 | 由誰 | 證據 |
+| From → to | Trigger | By whom | Evidence |
 |---|---|---|---|
-| **Backlog → 看板** | 有人派工並帶這個 `work_id` | root（派工時） | broker task 被接受 |
-| | 人在 session 裡說「開始做 X」，session 的 begin 綁到這個既有項目 | 人（經 session） | 人送出的 run＋綁定 |
-| | 人在看板按「開始做」（指派給某個 root）或「排入」並設 `start_on` | 人 | `decisions` |
-| | `start_on` 進入七天內 | 規則 | 日期 |
-| | 某個 session 接受了指派（`assignment_decision: accepted`） | session | workflow 收據 |
-| **看板 → Backlog** | `active` 且 3 天沒有新的非機器證據、沒有交付、沒有等人的決定 | 規則 | 時鐘，`stalled_3d` |
-| | `start_on` 過了 1 天仍沒有派工 | 規則 | 日期，`schedule_missed` |
-| | 人按「放回 Backlog」 | 人 | `decisions` |
-| | **不會**：已交付的（那是收尾佇列，不是回到規劃） | — | — |
-| **Session 待辦 → 看板（升級）** | 需要人決定而且擋住工作（obligation `actorKind:user`、`waiting_user`） | session 提出，規則放上 | 產生「等你決定」，掛在它的看板項目上；沒有看板項目就只推播與留在 session |
-| | 同一筆待辦的嘗試失敗第二次（兩次 `failure`／`timeout`／`spawn_failed`） | 規則 | broker 終態；有看板項目就掛上「卡住了：重試／換做法／放棄」的決定，沒有就產生提議 |
-| | 符合 §4.2 的 I1–I3 | 規則 | 產生**提議**（不是直接上看板） |
-| | owner session 結束、移交後 24 小時仍無人接 | 規則 | 摘要一行：「N 筆待辦沒有人接：轉給誰／丟掉」 |
-| **看板 → Session 待辦（降級）** | 人對提議或項目按「不用追蹤」 | 人 | `decisions`；工作回到只有待辦 |
-| **提議 → 看板／Backlog／待辦** | 人選「追蹤」／「之後」／「不用」；7 天沒回答 → 待辦 | 人／規則 | `proposals` |
+| **Backlog → board** | Someone dispatches carrying this `work_id` | Root (when dispatching) | The broker task is accepted |
+| | The person says "start on X" in a session, and the session's begin is bound to this existing item | The person (through the session) | The run the person sent + the binding |
+| | The person presses "Start" on the board (assigning it to a root) or "Schedule" and sets `start_on` | Person | `decisions` |
+| | `start_on` comes within seven days | Rule | The date |
+| | A session accepted an assignment (`assignment_decision: accepted`) | Session | Workflow receipt |
+| **Board → backlog** | `active` and 3 days with no new non-machine evidence, no delivery, and no decision waiting on a person | Rule | The clock, `stalled_3d` |
+| | `start_on` passed 1 day ago and still no dispatch | Rule | The date, `schedule_missed` |
+| | The person presses "Back to backlog" | Person | `decisions` |
+| | **Never**: what has been delivered (that goes to the closure queue, not back to planning) | — | — |
+| **Session to-do → board (escalation)** | A person's decision is needed and it blocks work (obligation `actorKind:user`, `waiting_user`) | The session raises it, the rule places it | Creates a "Waiting on you" on its board item; with no board item, it is only pushed and stays in the session |
+| | The same to-do's attempt fails a second time (two `failure`/`timeout`/`spawn_failed`) | Rule | Broker terminal state; with a board item, a "Stuck: retry / change approach / drop" decision is attached; without one, a proposal is created |
+| | Meets I1–I3 of §4.2 | Rule | Creates a **proposal** (not straight onto the board) |
+| | The owner session ended and no one has taken over 24 hours after hand-off | Rule | One digest line: "N to-dos have no one: hand to whom / discard" |
+| **Board → session to-do (demotion)** | The person presses "Don't track" on a proposal or an item | Person | `decisions`; the work goes back to being only to-dos |
+| **Proposal → board / backlog / to-do** | The person chooses "Track" / "Later" / "No"; no answer for 7 days → to-do | Person / rule | `proposals` |
 
 ---
 
-## 7. 現有 787 張卡落在哪裡
+## 7. Where today's 787 cards land
 
-### 7.1 規則（依序，先符合先決定）
+### 7.1 Rules (in order; the first match decides)
 
 ```
-輸入：audience（舊版 catalogDisposition，沒有的依 inferredSourceKey 推）、type、
-      progress（Go ProgressOf）、未解的 user 決定、最後一筆非機器事件、是否開始過（§1.1）
+Input: audience (the old catalogDisposition; where absent, inferred from inferredSourceKey), type,
+       progress (Go ProgressOf), unresolved user decisions, the last non-machine event, has started (§1.1)
 
-S  audience ≠ human，或 type = coordination        → Session 待辦
-     已結束（completed／canceled）                  → S.done
-     active 且不是幽靈（§1.4）                      → S.live
-     其餘                                           → S.autoclose（遷移時自動結束）
-B  audience = human 且已結束                        → 看板·已結束（B.done）
-B  有未解的 user 決定，或 active 且不是幽靈         → 看板·進行中（B.now）
-K  從未開始過（沒有派工、交付、證據、勾掉的 checklist）→ Backlog（K.never_started）
-B  開始過，閒置 ≤ 3 天                              → 看板·進行中（B.now）
-B  開始過，閒置 > 3 天，投影是 delivered／verified／
-     blocked／correction／review_testing            → 看板·等收尾（B.closure）
-K  其餘（開始過、閒置 > 3 天、沒有交付）             → Backlog（K.stalled）
+S  audience ≠ human, or type = coordination               → session to-do
+     finished (completed/canceled)                        → S.done
+     active and not a ghost (§1.4)                        → S.live
+     everything else                                      → S.autoclose (ended automatically at migration)
+B  audience = human and finished                          → board: finished (B.done)
+B  an unresolved user decision, or active and not a ghost → board: in progress (B.now)
+K  never started (no dispatch, delivery, evidence or ticked checklist) → backlog (K.never_started)
+B  started, idle ≤ 3 days                                 → board: in progress (B.now)
+B  started, idle > 3 days, projection delivered/verified/
+     blocked/correction/review_testing                    → board: awaiting closure (B.closure)
+K  everything else (started, idle > 3 days, no delivery)  → backlog (K.stalled)
 ```
 
-coordination 放進 Session 待辦，是因為它們是 session 之間的協調紀錄（例：「通知 Clawdfather：/git 等路由佔住 RemoteServer 共用 queue」），
-舊版自己也規定它們沒有交付生命週期。
+coordination goes into session to-dos because these are coordination records between sessions (for example: "Notify Clawdfather: /git and other routes are occupying RemoteServer's shared queue"),
+and the old version itself specified that they have no delivery lifecycle.
 
-### 7.2 結果（門檻 3 天）
+### 7.2 Result (threshold 3 days)
 
-| 結構 | 細分 | 張數 | 佔全部 | 投影狀態組成 |
+| Structure | Breakdown | Cards | Share of all | Projected states |
 |---|---|---:|---:|---|
-| **Session 待辦** | S.done（已結束） | 337 | 42.8% | landed 304、canceled 19、settled 14 |
-| | S.autoclose（遷移時自動結束） | 260 | 33.0% | delivered 186、blocked 54、unknown 17、execution 3 |
-| | S.live（進行中） | 5 | 0.6% | 目前這幾個 child 的執行紀錄 |
-| | **小計** | **602** | **76.5%** | |
-| **看板** | B.now（真的正在發生） | 31 | 3.9% | delivered 24、execution 3、unknown 2、blocked 1、correction 1 |
-| | B.closure（等人收尾） | 66 | 8.4% | delivered 52、verified 7、correction 3、blocked 2、review_testing 2 |
-| | B.done（已結束） | 11 | 1.4% | landed 8、canceled 3 |
-| | **小計** | **108** | **13.7%** | |
-| **Backlog** | K.never_started | 60 | 7.6% | planning 53、unknown 4、execution 3 |
-| | K.stalled | 17 | 2.2% | planning 12、unknown 5 |
-| | **小計** | **77** | **9.8%** | |
-| | **合計** | **787** | 100% | |
+| **Session to-do** | S.done (finished) | 337 | 42.8% | landed 304, canceled 19, settled 14 |
+| | S.autoclose (ended automatically at migration) | 260 | 33.0% | delivered 186, blocked 54, unknown 17, execution 3 |
+| | S.live (in progress) | 5 | 0.6% | The execution records of the few children running now |
+| | **Subtotal** | **602** | **76.5%** | |
+| **Board** | B.now (really happening now) | 31 | 3.9% | delivered 24, execution 3, unknown 2, blocked 1, correction 1 |
+| | B.closure (awaiting a person to close) | 66 | 8.4% | delivered 52, verified 7, correction 3, blocked 2, review_testing 2 |
+| | B.done (finished) | 11 | 1.4% | landed 8, canceled 3 |
+| | **Subtotal** | **108** | **13.7%** | |
+| **Backlog** | K.never_started | 60 | 7.6% | planning 53, unknown 4, execution 3 |
+| | K.stalled | 17 | 2.2% | planning 12, unknown 5 |
+| | **Subtotal** | **77** | **9.8%** | |
+| | **Total** | **787** | 100% | |
 
-**只看給人看的卡（舊版 `audience=human` 的 192 張扣掉 7 張 coordination＝185 張）：**
+**Only the cards meant for people (the old version's 192 `audience=human` cards minus 7 coordination = 185):**
 
-| | 張數 | 佔人類卡 |
+| | Cards | Share of human cards |
 |---|---:|---:|
-| 其實是 **Backlog** | **77** | **41.6%** |
-| 等人收尾 | 66 | 35.7% |
-| 真的正在發生 | 31 | 16.8% |
-| 已結束 | 11 | 5.9% |
+| Really **backlog** | **77** | **41.6%** |
+| Awaiting a person to close | 66 | 35.7% |
+| Really happening now | 31 | 16.8% |
+| Finished | 11 | 5.9% |
 
-**看板現在有 41.6% 其實是 Backlog；「現在」只有 16.8%。** 等收尾的 66 張，正是 #3c 的具體清單（例：「自動追蹤名單上線」
-「錯誤修復提案管理頁：commit、push、部署」，session 都說交付了，看板一直沒關）。
+**41.6% of the board today is really backlog; "now" is only 16.8%.** The 66 awaiting closure are the concrete list for #3c (for example: "Automatic tracking list goes live",
+"Bug-fix proposal management page: commit, push, deploy" — each time the session said it was delivered, and the board never closed it).
 
-### 7.3 門檻敏感度
+### 7.3 Threshold sensitivity
 
-| 停擺門檻 | B.now | B.closure | K.stalled | K.never_started | S（合計） | B.done |
+| Stall threshold | B.now | B.closure | K.stalled | K.never_started | S (total) | B.done |
 |---|---:|---:|---:|---:|---:|---:|
-| 1 天 | 14 | 82 | 18 | 60 | 602 | 11 |
-| **3 天** | **31** | **66** | **17** | **60** | **602** | **11** |
-| 7 天 | 97 | 17 | 0 | 60 | 602 | 11 |
+| 1 day | 14 | 82 | 18 | 60 | 602 | 11 |
+| **3 days** | **31** | **66** | **17** | **60** | **602** | **11** |
+| 7 days | 97 | 17 | 0 | 60 | 602 | 11 |
 
-**Session 待辦 602 與「從未開始」60 在三種門檻下完全不動**；門檻只決定人類卡裡「進行中」與「等收尾／停擺」的切法。
+**Session to-dos at 602 and "never started" at 60 do not move at all under the three thresholds**; the threshold only decides how human cards split between "in progress" and "awaiting closure / stalled".
 
-### 7.4 誰來判、判錯了怎麼救
+### 7.4 Who judges, and how to recover from a wrong call
 
-- **誰判：規則（§7.1），人批准一次。** 分類器唯讀地跑在舊資料上（舊 store 一個字都不寫，`plan.md` §4），產出每一列的歸屬與
-  **理由碼**（例：`audience_agent`、`never_started`、`idle_gt_3d+delivered`）。遷移是一個**批次提議**：使用者在一個畫面上看到
-  「看板 31／等收尾 66／Backlog 77／自動結束 260／封存 348」，可以逐列改，按一次「套用」。**沒有批准之前，新看板是空的，舊卡照舊唯讀顯示。**
-- **先看最可能錯的：** 列表依信心排序，低信心的排最前面——
-  1. **雙胞胎**：人類卡顯示「從未開始」，但同一件事的執行紀錄已落地（§1.7-1，至少 9 對，跨專案的另計）。這些依規則會進 Backlog，實際上應該是
-     「已結束」。遷移前先跑一次綁定比對：同一個 root session、六小時內、task 的 `work_item_id` 或 graph 相符的，列為「可能是同一件事」讓人確認。
-     **不用標題自動合併**（舊版的規則，理由不變：標題不是身分）。
-  2. **靠門檻決定的**：`K.stalled` 與 `B.closure`，因為它們隨門檻移動（§7.3）。
-  3. **span 被模板預設成 output 的**：已用「開始過」的嚴格定義排除（§1.1），列出來給人看。
-- **判錯了怎麼救：** 每一列遷移都寫 `moves`（`trigger: migration`，含規則版本與理由碼）。任何一列都能用一個動作移到另一個結構；
-  舊卡永遠讀得到（`migrated_from` 指回舊 id）。分類器是純函數、輸入唯讀，**整批重跑是冪等的**：改了規則重跑，只會移動人還沒手動改過的列
-  （人改過的以人的為準，`moves.actor = user`）。
-- **遷移自動結束的 260 張 S.autoclose**：只是讓它們離開「未結束」，broker 對未落地交付的紀錄不受影響。
+- **Who judges: the rules (§7.1), approved once by a person.** The classifier runs read-only on the old data (not a single byte is written to the old store, `plan.md` §4), and produces each row's placement and
+  **reason code** (for example `audience_agent`, `never_started`, `idle_gt_3d+delivered`). The migration is one **batch proposal**: on one screen the user sees
+  "board 31 / awaiting closure 66 / backlog 77 / auto-ended 260 / archived 348", can change any row, and presses "Apply" once. **Until it is approved, the new board is empty, and the old cards stay visible read-only.**
+- **Look first at what is most likely wrong:** the list is sorted by confidence, lowest first —
+  1. **Twins**: a human card shows "never started", but the execution record for the same thing has landed (§1.7-1, at least 9 pairs, cross-project ones on top of that). By the rules these would go to the backlog, when really they should be
+     "finished". Before migrating, run a binding match once: same root session, within six hours, the task's `work_item_id` or graph matches — list them as "possibly the same thing" for a person to confirm.
+     **Do not merge by title automatically** (the old version's rule, for the same reason: a title is not an identity).
+  2. **Those decided by the threshold**: `K.stalled` and `B.closure`, because they move with the threshold (§7.3).
+  3. **Those whose span the template defaulted to output**: already excluded by the strict definition of "has started" (§1.1), and listed for a person to see.
+- **Recovering from a wrong call:** every migrated row writes `moves` (`trigger: migration`, with the rule version and the reason code). Any row can be moved to another structure with one action;
+  the old card can always be read (`migrated_from` points back to the old id). The classifier is a pure function over read-only input, so **rerunning the whole batch is idempotent**: rerun it after changing the rules, and it only moves rows a person has not changed by hand
+  (where a person changed a row, the person's choice wins, `moves.actor = user`).
+- **The 260 S.autoclose ended automatically by the migration**: this only takes them out of "unfinished"; the broker's records of unlanded deliveries are unaffected.
 
 ---
 
-## 8. 人類參與點：少而準（#4、D5）
+## 8. Where people take part: few points, well chosen (#4, D5)
 
-| 階段 | 什麼時候把人拉進來 | 人看到什麼 | 人能下的指令 | 管道 | 預算 |
+| Stage | When a person is pulled in | What the person sees | Instructions the person can give | Channel | Budget |
 |---|---|---|---|---|---|
-| **建立** | 提議符合 I1–I3，且人在場或到了摘要時間 | 一句話的目標＋為什麼被提議（I1／I2／I3） | 追蹤／之後（Backlog）／不用 | 對話尾端（在場）或待確認區 | 每 session 每回合 ≤1，每天推到人面前 ≤3 |
-| **派工** | 不拉人（派工是 root 的事）；Backlog 項目被派工時在摘要告知一行 | — | —（人可以事先在 Backlog 按「開始做」） | 摘要 | — |
-| **進行中** | **只有擋住工作的決定** | 問題、選項、誰在等 | 回答 | **推播**＋看板「等你決定」 | 沿用 notify 上限（每 task 5、每小時 30） |
-| **交付** | 沒有自動收尾證據的交付，在 3 天後 | 交付摘要、輸出連結、還差什麼 | 收下／還要改／放回 Backlog／放棄 | 看板收尾佇列＋摘要一行 | 批次處理（一次一個畫面） |
-| **落地** | 不拉人 | 摘要一行「N 件已落地」 | — | 摘要 | — |
-| **定期** | 每天一次 | 完成了什麼、什麼停擺回了 Backlog、有幾個提議、有幾件等收尾、有沒有無人負責的 | 從摘要直接跳到對應的清單 | 每日摘要（一則） | 1 則／天 |
-| **規劃** | 每週一次 | Backlog 裡 30 天沒人看的 | 留著／丟掉／排入 | 每週摘要 | 1 則／週 |
+| **Creation** | A proposal meets I1–I3, and the person is present or it is digest time | A one-sentence goal + why it was proposed (I1/I2/I3) | Track / Later (backlog) / No | End of the conversation (present) or the to-confirm area | ≤1 per session per turn; ≤3 a day put in front of the person |
+| **Dispatch** | No one is pulled in (dispatch is root's business); when a backlog item is dispatched, one line in the digest says so | — | — (the person can press "Start" on the backlog beforehand) | Digest | — |
+| **In progress** | **Only decisions that block work** | The question, the options, who is waiting | Answer | **Push** + "Waiting on you" on the board | The existing notify limits (5 per task, 30 per hour) |
+| **Delivery** | A delivery with no automatic closing evidence, after 3 days | The delivery summary, output links, what is still missing | Accept / Needs changes / Back to backlog / Drop | The board's closure queue + one digest line | In batches (one screen at a time) |
+| **Landing** | No one is pulled in | One digest line, "N landed" | — | Digest | — |
+| **Periodic** | Once a day | What finished, what stalled back to the backlog, how many proposals, how many await closure, whether anything has no one responsible | Jump from the digest straight to the matching list | Daily digest (one message) | 1 a day |
+| **Planning** | Once a week | Backlog items no one has looked at for 30 days | Keep / Discard / Schedule | Weekly digest | 1 a week |
 
-**人能在看板上下的指令（完整清單）：** 開始做、排入、放回 Backlog、收下、還要改、放棄、轉交、追蹤這個、不用追蹤、回答決定。
-在 session 裡用自然語言說的，由 root 轉成同一組指令，actor 記 `user_via_session:<run>`（run 證明是人送出的訊息）。
+**Instructions a person can give on the board (the complete list):** Start, Schedule, Back to backlog, Accept, Needs changes, Drop, Hand over, Track this, Don't track, Answer a decision.
+What is said in natural language in a session is turned by root into the same set of instructions, with the actor recorded as `user_via_session:<run>` (the run proves the message was sent by a person).
 
-這是**刻意推翻舊版的一條原則**：舊版 `project-board.md:30-34` 是「沒有手動狀態選單，狀態全由證據推導」。本設計保留「狀態由證據推導」，
-但加上**人的決定也是一種證據**（收下、放棄、排入），因為量到的結果是：只靠自動證據，收尾永遠不會發生（#3c）。
-人的決定不能覆蓋 broker 的事實（例如不能把沒落地的東西標成已落地），只能決定「我接受這個結果」或「不做了」。
+This **deliberately overturns one of the old version's principles**: the old `project-board.md:30-34` was "no manual status menu; all status is derived from evidence". This design keeps "status is derived from evidence",
+but adds that **a person's decision is also evidence** (accept, drop, schedule), because what was measured is that with automatic evidence alone, closing never happens (#3c).
+A person's decision cannot override the broker's facts (it cannot, for example, mark something unlanded as landed); it can only decide "I accept this result" or "we are not doing this".
 
 ---
 
-## 9. 實作順序與最小可驗收的第一步
+## 9. Implementation order, and the smallest acceptable first step
 
-前提：看板頁的舊版照搬（`%905`）先落地，給舊卡一個唯讀、1:1 的檢視。本設計是新 app 自己的看板，排在它後面。
+Precondition: the port of the old board page (the other child's work noted at the top) lands first, giving the old cards a read-only, 1:1 view. This design is the new app's own board, scheduled after it.
 
-| 步 | 內容 | 完成的判準 | 依賴 |
+| Step | Content | Done when | Depends on |
 |---|---|---|---|
-| **1（最小可驗收）** | **唯讀的三軌投影**：`GET /v1/board/tracks?project=`，把舊的 787 張依 §7.1 分成三軌，每列帶理由碼；同一份規則的 CLI `clawdline board tracks` | 對本文附錄的快照，數字與 §7.2 完全相同（602／108／77 與各細項）；每一條規則有一個會失敗的 fixture 測試；**零寫入** | 無 |
-| 2 | Session 待辦：`todos` 表，由 Go broker 的事實自動建立／結束／移交 | failure injection：child 死掉、root 死掉、落地比結果先到、`result.json` 重送兩次 → 待辦都收斂且只一筆 | broker B3（通知） |
-| 3 | 看板與 Backlog：`work`、`board_items`、`backlog`、`moves`；承諾規則、3 天時鐘、落地自動結束、收尾佇列 | fixture 重現 §5.4 的三種壞法，各自被對應規則處理 | broker B5（落地） |
-| 4 | 人類參與點：`proposals`、`decisions`、待確認區、每日／每週摘要、§4.4 的拒絕碼 | 每個拒絕碼一個測試；`asked_inline` 與 `ask_true` 在 diagnostics 對得上 | 3 |
-| 5 | 遷移：批次提議畫面、人批准一次、`moves` 記錄 | 重跑冪等；人改過的列不被覆蓋 | 1、3 |
-| 6 | 前端：看板頁三區、Backlog 分頁、session 詳情的待辦面板 | reviewer 對照本文 §3.3 | `%905` 落地、3、4 |
+| **1 (smallest acceptable)** | **A read-only three-track projection**: `GET /v1/board/tracks?project=`, sorting the old 787 cards into three tracks per §7.1, each row with a reason code; a CLI with the same rules, `clawdline board tracks` | Against the snapshot in this document's appendix, the numbers are exactly those of §7.2 (602/108/77 and every breakdown); every rule has a fixture test that can fail; **zero writes** | None |
+| 2 | Session to-dos: a `todos` table, created, ended and handed off automatically from the Go broker's facts | Failure injection: a child dies, root dies, the landing arrives before the result, `result.json` is sent twice → the to-dos all converge, with exactly one entry each | Broker B3 (notifications) |
+| 3 | Board and backlog: `work`, `board_items`, `backlog`, `moves`; the commitment rule, the 3-day clock, automatic ending on landing, the closure queue | Fixtures reproduce the three failures of §5.4, each handled by its rule | Broker B5 (landing) |
+| 4 | Where people take part: `proposals`, `decisions`, the to-confirm area, daily/weekly digests, the refusal codes of §4.4 | One test per refusal code; `asked_inline` and `ask_true` agree in diagnostics | 3 |
+| 5 | Migration: the batch proposal screen, approved once by a person, recorded in `moves` | Reruns are idempotent; rows a person changed are not overwritten | 1, 3 |
+| 6 | Front end: the board page's three areas, the backlog tab, the to-do panel in session details | A reviewer checks it against §3.3 of this document | The board-page port landed, 3, 4 |
 
-**為什麼第一步是唯讀投影：** 它是最便宜的一步，卻能讓使用者**對著自己的資料**判斷規則對不對（「這 77 張真的是 Backlog 嗎？」），
-在任何寫入、任何畫面改動之前。規則如果錯了，改的是一個純函數，不是一份遷移過的資料。
+**Why the first step is a read-only projection:** it is the cheapest step, yet it lets the user judge whether the rules are right **against their own data** ("are these 77 really backlog?"),
+before any write or any change to the screens. If the rules are wrong, what changes is a pure function, not migrated data.
 
-**明確不移植的：** 每則訊息的 workflow 信封與 `begin` 分類（§1.7-3、4，#1 的來源）；`automatic_state_reconciled` 寫進持久歷史（D6）；
-以 session cwd 決定卡片的專案（§1.7-2）。
+**Explicitly not ported:** the workflow envelope on every message and the `begin` classification (§1.7-3, 4, the source of #1); writing `automatic_state_reconciled` into durable history (D6);
+deciding a card's project by the session's cwd (§1.7-2).
 
 ---
 
-## 10. 需要使用者拍板的（都已選安全的預設繼續做）
+## 10. What needs the user's decision (each already proceeds on a safe default)
 
-| # | 問題 | 預設 | 為什麼這是安全的一邊 |
+| # | Question | Default | Why this is the safe side |
 |---|---|---|---|
-| 1 | Backlog 的名稱 | **Backlog**（中英同字，副標「已規劃，尚未排入」） | 是你自己用的字；中文候選都撞到既有用詞（§3.5） |
-| 2 | 停擺回 Backlog 的門檻 | **3 天** | 資料裡沉寂 3 天後恢復的 0 次；改門檻只影響人類卡的切法（§7.3） |
-| 3 | 「短期」的長度 | **7 天** | 配合每週一次的 Backlog 摘要 |
-| 4 | 沒人回答的提議 | **7 天後留在 Session 待辦（不追蹤）** | 不回答就不塞進你的看板；它仍被自動追蹤與結束 |
-| 5 | 沒人回答的收尾 | **問一次，再 7 天後結束並標「交付未確認」** | 清掉看板但不宣稱落地；broker 的未落地紀錄不受影響；任何新證據都會重開 |
-| 6 | 舊的 787 張怎麼遷 | **批次提議，你批准一次才套用**；之前新看板是空的 | 第一次搬資料不該由機器自己決定 |
-| 7 | 在 session 裡說的話算不算人的指令 | **算**，actor 記 `user_via_session:<run>` | 你大部分的指令本來就在對話裡；run 證明訊息是人送的 |
-| 8 | 每則訊息夾帶 workflow 信封 | **不移植** | 它是 agent 自己開卡的來源，也是 43.6% 沒收尾的那條路 |
-| 9 | 卡片的專案 | **建立時明確指定**；沒指定才用 session 的 cwd，並標 `project_inferred` | 避免 root 在 A 專案目錄裡替 B 專案開卡（§1.7-2） |
-| 10 | 推翻舊版「沒有手動狀態」的原則 | **推翻**：人的「收下／放棄／排入」是證據 | 只靠自動證據，`closed` 十一天 0 張（§8） |
+| 1 | The backlog's name | **Backlog** (the same word in Chinese and English, subtitled "planned, not yet scheduled") | It is your own word; every Chinese candidate collides with an existing term (§3.5) |
+| 2 | The stall threshold for moving back to the backlog | **3 days** | In the data, 0 resumptions after 3 days of silence; changing the threshold only affects how human cards split (§7.3) |
+| 3 | How long "short term" is | **7 days** | Matches the weekly backlog digest |
+| 4 | Proposals nobody answers | **After 7 days, they stay session to-dos (not tracked)** | No answer means nothing is pushed onto your board; it is still tracked and ended automatically |
+| 5 | Closures nobody answers | **Ask once, then end after 7 more days, marked "delivery unconfirmed"** | Clears the board without claiming a landing; the broker's unlanded records are unaffected; any new evidence reopens it |
+| 6 | How to migrate the old 787 cards | **A batch proposal, applied only once you approve it**; until then the new board is empty | The first move of data should not be decided by the machine alone |
+| 7 | Whether what is said in a session counts as a person's instruction | **It counts**, with the actor recorded as `user_via_session:<run>` | Most of your instructions are already in conversation; the run proves a person sent the message |
+| 8 | The workflow envelope on every message | **Not ported** | It is where agents opening cards on their own came from, and it is the path behind the 43.6% that never closed |
+| 9 | A card's project | **Specified explicitly at creation**; only when unspecified does it use the session's cwd, marked `project_inferred` | Stops root opening cards for project B from inside project A's directory (§1.7-2) |
+| 10 | Overturning the old "no manual status" principle | **Overturn it**: a person's "accept / drop / schedule" is evidence | With automatic evidence alone, `closed` was 0 cards in eleven days (§8) |
 
 ---
 
-## 11. 這份文件沒有做到的事
+## 11. What this document did not do
 
-- **沒有改任何實作，也沒有跑 repo 的 build 或測試。** 為了逐張算 progress，把 `internal/adapters/board` 複製到任務的暫存目錄、
-  加一支 30 行的量測程式編譯執行；repo 本身沒有動。
-- **沒有量卡片的讀取**（舊版不記），所以「沒有被任何人打開過」這一項**量不到**。
-- 「人在場」的定義（30 分鐘內收過人送出的訊息）與提議的每日數量，**沒有在真實流程上試過**；§4.3 的數量是上限估計。
-- 所有數字來自一台機器、十一天。停擺門檻的依據受這個視窗限制（§1.8）。
-- 雙胞胎只量到同專案的（至少 9 對）；跨專案的只舉了例子，沒有全數統計。
-- 沒有讀任何 token 或 secret；`orchestrator.json` 只抽 task 的 id、狀態、落地欄位，沒有讀 `secret_hash`。唯一讀過的憑證是新版自己的
-  `local-token`，用來對 `:7727` 發唯讀的 GET。
+- **No implementation was changed, and the repository's build and tests were not run.** To compute progress card by card, `internal/adapters/board` was copied into the task's temporary directory,
+  and a 30-line measuring program was added, compiled and run; the repository itself was not touched.
+- **Card reads were not measured** (the old version does not record them), so "never opened by anyone" **cannot be measured**.
+- The definition of "the person is present" (received a message the person sent within 30 minutes) and the daily number of proposals **have not been tried on the real flow**; the numbers in §4.3 are upper-bound estimates.
+- All numbers come from one machine over eleven days. The basis of the stall threshold is limited by that window (§1.8).
+- Twins were measured only within a project (at least 9 pairs); cross-project ones were only illustrated by examples, not counted in full.
+- No token or secret was read; from `orchestrator.json` only the tasks' id, state and landing fields were extracted, and `secret_hash` was not read. The only credential read was the new version's own
+  `local-token`, used for read-only GETs against `:7727`.
 
 ---
 
-## 附錄：數字從哪裡來
+## Appendix: where the numbers come from
 
-腳本與輸出都在任務 `9f996840` 的 `artifacts/`（`measure.py`、`classify3.py`、`boardmeasure.go`、`metrics.json`、`metrics2.json`、
-`classify3.json`、`twins.json`），快照與中間檔在 `snapshot.tar.gz`（0600）。重現：解開 tarball，放入兩支腳本，
-`python3 measure.py && python3 classify3.py`——§7.2 與 §7.3 的數字會原樣出現（已實際重跑一次確認）。§9 第一步的驗收就是拿同一份快照對這些數字。
+The scripts and output are all in the measuring task's `artifacts/` (`measure.py`, `classify3.py`, `boardmeasure.go`, `metrics.json`, `metrics2.json`,
+`classify3.json`, `twins.json`), and the snapshot and intermediate files in `snapshot.tar.gz` (0600). To reproduce: unpack the tarball, add the two scripts, and run
+`python3 measure.py && python3 classify3.py` — the numbers of §7.2 and §7.3 come out exactly (confirmed by actually rerunning once). The acceptance of step 1 in §9 checks these numbers against the same snapshot.
 
-| 數字 | 怎麼量的 |
+| Number | How it was measured |
 |---|---|
-| 787 張卡、revision 6403 | 2026-09-18 01:02:40 UTC 以 `cp` 複製 `project-board.json`、`project-board-history/`、`project-board-workflow.json` 到暫存目錄，之後只讀副本 |
-| 每張卡的 progress、group、audience | `boardmeasure.go`：對副本呼叫 `ProgressOf`／`ListSummaryOf`（本 repo `internal/adapters/board/progress.go`） |
-| actor 分布、建立者、建立後更新 | 逐行解析 564 個 history 檔；actor 規則讀 `ProjectBoardHTTP.swift:260-268`、`:419-432` |
-| 網頁沒有改卡片的操作 | `grep` 舊版 `Resources/web/app/js`：`boardCommand` 只被 `input/board-settings.js` 用於 `set_enabled`／`set_ai_consent` |
-| 收尾閘門 | 讀 `ProjectBoardStore.swift:3440-3505` |
-| 4,124 筆自動對帳、3,115 筆擺盪 | 從 history 的 `automatic_state_reconciled` 摘要解析「from X to Y」 |
-| task 狀態、落地、`work_item_id` | 從 `~/.config/clawdline/orchestrator.json` 抽 774 個 task 的 id／state／landing／work_item_id（不含 `secret_hash`） |
-| 卡上 task 狀態 vs 真實狀態 0 筆不一致 | 卡上 `links[kind=task, source=broker].attemptState` 對 task 的 `state` |
-| live session | `GET :7727/v1/sessions`（本機 token，唯讀），14 個 |
-| workflow 528 次 run、漏 begin／deliver | `project-board-workflow.json` 的 `runs[].missingFollowUp`（保留 256）＋`retiredGaps`（已淘汰 272） |
-| 沉寂後恢復次數 | 每張卡相鄰兩筆非機器事件的間隔 |
-| `TodoWrite`／`update_plan` 使用率 | `grep -l` 近 10 天的 `~/.claude/projects/**/*.jsonl`（前 400 份）與 `~/.codex/sessions/**/*.jsonl`（前 300 份） |
-| 工作線數量 | `orchestrator.json` 的 task 依（root session, project_dir, 日）分組，排除 61 個排程 task |
-| 三軌分類與敏感度 | `classify3.py`（§7.1 的規則），門檻 1／3／7 天各跑一次 |
+| 787 cards, revision 6403 | At 2026-09-18 01:02:40 UTC, `project-board.json`, `project-board-history/` and `project-board-workflow.json` were copied with `cp` into a temporary directory; after that only the copies were read |
+| Each card's progress, group, audience | `boardmeasure.go`: calls `ProgressOf`/`ListSummaryOf` (this repository's `internal/adapters/board/progress.go`) on the copies |
+| actor distribution, creators, updates after creation | Parsed the 564 history files line by line; the actor rule is from `ProjectBoardHTTP.swift:260-268`, `:419-432` |
+| The web page has no operation that changes a card | `grep` over the old `Resources/web/app/js`: `boardCommand` is used only by `input/board-settings.js`, for `set_enabled`/`set_ai_consent` |
+| The closing gate | Read `ProjectBoardStore.swift:3440-3505` |
+| 4,124 automatic reconciliations, 3,115 oscillations | Parsed "from X to Y" from the summaries of `automatic_state_reconciled` in history |
+| Task state, landing, `work_item_id` | Extracted the id/state/landing/work_item_id of 774 tasks from `~/.config/clawdline/orchestrator.json` (without `secret_hash`) |
+| Task state on cards vs real state, 0 disagreements | The card's `links[kind=task, source=broker].attemptState` against the task's `state` |
+| Live sessions | `GET :7727/v1/sessions` (local token, read-only), 14 |
+| 528 workflow runs, missing begin/deliver | `runs[].missingFollowUp` in `project-board-workflow.json` (256 retained) + `retiredGaps` (272 retired) |
+| Resumptions after silence | The gap between each card's consecutive non-machine events |
+| `TodoWrite`/`update_plan` usage | `grep -l` over the last 10 days of `~/.claude/projects/**/*.jsonl` (first 400) and `~/.codex/sessions/**/*.jsonl` (first 300) |
+| Number of lines of work | Tasks in `orchestrator.json` grouped by (root session, project_dir, day), excluding 61 scheduled tasks |
+| Three-track classification and sensitivity | `classify3.py` (the rules of §7.1), run once each with thresholds of 1, 3 and 7 days |

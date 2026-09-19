@@ -1,62 +1,62 @@
-# 設計概規
+# Design guidelines
 
-> 使用者原話（2026-09-18）：「請將這次設計你看到的問題統整起來，然後變成我們之後設計系統的概規……
-> 應該要依據這一次設計所去看到的通用性的問題，去把它整理成一個最簡潔的版本。」
-> 追加：「就連我們的 guide line 本身也必須要有一定的合理性。包含它的簡潔性、可圖性。還有不能無限擴張。」
+> The user's words (2026-09-18, translated from Chinese): "Take the problems you saw in this round of design and consolidate them into the guidelines we design systems by from now on…
+> They should be drawn from the general problems this round of design turned up, and organized into the most concise version possible."
+> Added: "Even our guidelines themselves have to be reasonable, and that includes being concise and being drawable. And they cannot grow without limit."
 
-來源是這一輪（2026-09-16～18）的設計文件、child 報告與 commit，以及舊 repo（`~/code/clawdline`，唯讀）
-自己點名過的事故。**每一條都指回一次真的發生過的失敗**，證據在 §3。
+The sources are this round's design documents, child reports and commits (2026-09-16 to 18), and the incidents the old repository (`~/code/clawdline`, read-only)
+named itself. **Every rule points back to a failure that really happened**; the evidence is in §3.
 
-**總原則：兩件不同的事，不能看起來一樣。** 這一輪的事故幾乎都能寫成這個句型，舊 repo 自己也是這樣描述的：
-「a list that was never read prints exactly what a list with nothing to keep prints」（`d31a09df`）。
-所以每一條都寫出它守住的是哪一對。
+**The overall principle: two different things must not look the same.** Nearly every incident this round can be written in that form, and the old repository described its own the same way:
+"a list that was never read prints exactly what a list with nothing to keep prints" (`d31a09df`).
+So every rule names the pair it keeps apart.
 
-## 清單（上限 12 條，現在 10 條；為什麼是 12、滿了怎麼辦見 §1）
+## The list (at most 12 rules, 10 today; §1 says why 12, and what happens when it is full)
 
-1. **DG-1 會叫**（停了≠閒著）：每個自己會跑的迴圈都回報每一輪；它停了，`/v1/health` 在三個週期內變紅；做不到就具名拒絕。
-2. **DG-2 有界**（滿了≠正常）：每個會累積的東西，上線前寫齊四格：上限、滿了怎樣、誰會知道、誰決定淘汰。
-3. **DG-3 看主體**（單次快≠總量省）：效能數字附分母與分布（每單位有用變化的成本、p99／最大值），在真實規模的非空輸入上量。
-4. **DG-4 只記事實**（事實≠觀察、送出≠送達）：重算不出來的才落盤，一個事實一個交易；意圖先記、效果後做，送出與送達各記一筆。
-5. **DG-5 一種拼法**（一件事≠兩種拼法）：一個概念一個名字、一種信封、一個 id 命名空間；加第二種拼法的變更，同時排定刪掉舊的。
-6. **DG-6 同一份**（檢查看的≠執行用的）：權限、去重、狀態轉換的判斷，讀執行用的那一份、那一刻；權限等級等於實際效果。
-7. **DG-7 未知不是沒有**（未知≠沒有）：讀不到、沒回應都是「未知」；刪除、判死、關閉只憑正面證據，只動自己證明擁有的東西。
-8. **DG-8 會紅的對照**（通過≠沒測到）：每個「通過」都附一個條件相同、證明這個檢查會紅的對照；沒量到的寫「未量」。
-9. **DG-9 逐項繼承**（有理由≠只是歷史）：繼承任何東西都逐項標照搬／小改／重做／不搬，附今天仍成立的證據；缺陷不搬，不變量不丟。
-10. **DG-10 人的位置**（人的決定≠機器的輸入）：要人判斷的事有明確的決定點、管道與安全預設；機器不替人按鍵，答得出來的不問人。
-
----
-
-## 1. 上限，以及滿了怎麼辦
-
-**規則上限 12 條。** 為什麼是 12：
-
-- **一頁**：每條一行，12 行加標題，手機一個畫面、紙本一頁放得下。超過這個數，清單就從「記得住」變成
-  「查得到」，而查得到的清單在設計當下不會被想起來。
-- **一次坐下來問得完**：review 時要逐條問（§4），12 個問句是一次問得完的量。
-- **留兩格，不湊滿**：這一輪萃取出 10 類，每類至少三起彼此獨立的事故；第 11、12 格留給下一個反覆出現的類別。
-  上限是天花板，不是目標。
-
-**全文上限 280 行**＝12 條 × 每條 15 行 ＋ 固定章節 100 行。每條最多三種失敗形狀、每種最多兩起事故，
-挑最硬的，不往上堆。檢查：`wc -l docs/design-guidelines.md`。
-
-**要加一條新規則時：**
-
-1. 說出它守住哪一對「看起來一樣、其實不同」的狀態。說不出來的是建議，不是規則。
-2. 附至少兩起彼此獨立、有證據位置的真實事故。
-3. 先試著改現有規則的判準；現有判準擋不住，才加條。
-4. **已經 12 條時，同一個變更必須指出合併或刪除哪一條**，連同那一條在 review 裡被引用的紀錄（§4）。
-
-**誰決定：任何 session 都可以提案（寫在 review 發現或 PR 裡），加、刪、合併由使用者拍板。**
-使用者不在時的安全預設是**不加**，提案原樣留在待檢視清單。連續三個波次沒被任何 review 引用的規則是淘汰候選——
-交給使用者看，**不自動刪**。
-
-這一節是時間軸那個缺陷的反面。時間軸 `entries` 滿了之後**安靜地拒絕寫入**、回填永久放棄那個專案、
-沒有任何人被通知（`timeline-design.md` §0）。這份文件滿了也拒絕新增，但拒絕是公開的（提案當場就要回答淘汰哪一條）、
-有指名的決定者、有淘汰的依據；而且不自動清掃——自動清掃會掃掉還被引用的東西，那是舊版 200 筆上限踩過的坑（DG-2）。
+1. **DG-1 Speaks up** (stopped ≠ idle): every loop that runs by itself reports every round; when it stops, `/v1/health` turns red within three periods; what it cannot do, it refuses by name.
+2. **DG-2 Bounded** (full ≠ normal): everything that accumulates has four cells filled in before it ships: the limit, what happens when it is full, who finds out, and who decides what is evicted.
+3. **DG-3 Measure the total** (one fast run ≠ a cheaper total): a performance number carries its denominator and its distribution (cost per unit of useful change, p99/maximum), measured on non-empty input at real scale.
+4. **DG-4 Record only facts** (fact ≠ observation, sent ≠ delivered): persist only what cannot be recomputed, one fact per transaction; record the intent first and cause the effect after, and record sending and delivery separately.
+5. **DG-5 One spelling** (one thing ≠ two spellings): one concept, one name, one envelope, one id namespace; a change that adds a second spelling schedules the removal of the old one at the same time.
+6. **DG-6 The same copy** (what the check reads ≠ what execution uses): decisions about permission, deduplication and state transitions read the copy execution uses, at the moment it uses it; a permission level equals its actual effect.
+7. **DG-7 Unknown is not absent** (unknown ≠ none): a failed read and no response are both "unknown"; deleting, declaring dead and closing rest only on positive evidence, and touch only what you have proven you own.
+8. **DG-8 A control that can go red** (passed ≠ never tested): every "pass" comes with a control under the same conditions that proves the check can go red; what was not measured is written "not measured".
+9. **DG-9 Inherit item by item** (has a reason ≠ merely history): anything inherited is graded item by item as port as is, small change, redo or do not port, with evidence that still holds today; defects are not ported, invariants are not dropped.
+10. **DG-10 The person's place** (a person's decision ≠ a machine's input): what needs a person's judgement has a clear decision point, channel and safe default; the machine never presses keys for a person, and never asks a person what it can answer itself.
 
 ---
 
-## 2. 一張圖
+## 1. The limit, and what happens when it is full
+
+**At most 12 rules.** Why 12:
+
+- **One page**: one line per rule, and 12 lines plus a heading fit on one phone screen or one printed page. Beyond that, the list turns from something "remembered" into
+  something "looked up", and a list that has to be looked up does not come to mind at the moment of design.
+- **Asked in one sitting**: review asks rule by rule (§4), and 12 questions is an amount that can be asked in one go.
+- **Two slots left, not filled**: this round distilled 10 classes, each with at least three independent incidents; slots 11 and 12 are kept for the next class that keeps coming back.
+  The limit is a ceiling, not a target.
+
+**At most 280 lines in total** = 12 rules × 15 lines per rule + 100 lines of fixed sections. Each rule has at most three failure shapes and each shape at most two incidents,
+choosing the hardest ones rather than piling more on. Check: `wc -l docs/design-guidelines.md`.
+
+**To add a new rule:**
+
+1. Name the pair of states that "look the same but are different" that it keeps apart. If you cannot, it is advice, not a rule.
+2. Attach at least two independent, real incidents, each saying where its evidence is.
+3. First try changing the criterion of an existing rule; add a rule only when the existing criteria cannot stop the failure.
+4. **When there are already 12 rules, the same change must name the rule it merges or deletes**, together with that rule's record of being cited in review (§4).
+
+**Who decides: any session may propose (in a review finding or a PR); adding, deleting and merging are the user's call.**
+While the user is away, the safe default is **not to add**, and the proposal stays unchanged on the to-review list. A rule that no review has cited for three consecutive waves is a candidate for removal —
+it is handed to the user and **never deleted automatically**.
+
+This section is the opposite of the timeline's defect. When the timeline's `entries` filled up, it **silently refused writes**, backfill gave up on that project for good,
+and nobody was told (`timeline-design.md` §0). This document also refuses additions when full, but the refusal is public (a proposal has to answer on the spot which rule goes),
+it has a named decider and a basis for removal; and nothing is swept automatically — an automatic sweep removes things that are still cited, the pit the old 200-entry limit fell into (DG-2).
+
+---
+
+## 2. One picture
 
 ```text
   input                                                        world
@@ -77,197 +77,197 @@
  +------------------------------------------------------------------+
 ```
 
-- **ENTRY 入口**（契約、閘門、路由）：DG-5，進來的每樣東西只有一種拼法。
-- **DECIDE 判斷**（權限、去重、狀態轉換、判死）：DG-6 讀執行用的那一份；DG-7 未知不能拿來判。
-- **STORE 儲存**：DG-4 只記事實。**EFFECT 效果**（打字、推播、刪檔）：DG-4 意圖先落盤，送出與送達各記一筆。
-- **PERSON 人**：DG-10，只接到機器答不出來的決定。
-- **LOOPS 一直在跑的東西**：DG-1、DG-2、DG-3。往 STORE 的線是 §3 DG-3 那 30 次整份重寫；往 PERSON 的線是
-  「停了、滿了」走到人面前的那條管道。
-- **PROOF**：怎麼知道上面每一格是對的，DG-8、DG-9。
+- **ENTRY** (contracts, gates, routes): DG-5; everything that comes in has exactly one spelling.
+- **DECIDE** (permission, deduplication, state transitions, declaring dead): DG-6 reads the copy execution uses; DG-7 unknown cannot be decided on.
+- **STORE**: DG-4 record only facts. **EFFECT** (typing, push, deleting files): DG-4 the intent is persisted first, and sending and delivery are each recorded.
+- **PERSON**: DG-10; receives only the decisions the machine cannot answer.
+- **LOOPS**, the things that keep running: DG-1, DG-2, DG-3. The line into STORE is the 30 whole-file rewrites under DG-3 in §3; the line to PERSON is
+  the channel through which "stopped" and "full" reach a person.
+- **PROOF**: how we know each box above is right; DG-8, DG-9.
 
-一條規則要是在這張圖上找不到落點，就表示它跟其他規則沒有結構，應該重整，不是硬塞進清單。
-
----
-
-## 3. 每一條的失敗與判準
-
-> 路徑沒有前綴的是本 repo 的 `docs/`；「舊 repo」是 `~/code/clawdline`；`task xxxxxxxx` 是 child 的報告，
-> 放在 `/tmp/.clawdline/<task>/artifacts/report.md`，會被回收（見 §5）。
-
-### DG-1 會叫（停了≠閒著）
-
-- 舊版 `/v1/health` 沒有 `beat`、`scheduler`、`store` 任何一個欄位，心跳停了照樣回 `ok: true`；git 歷史裡四次主執行緒卡死，
-  修法都是拿掉那個阻塞呼叫，沒有一次加上偵測（`broker-design.md` §2.6、§4 C1）。
-- 排程器只在發射時寫 log，「巡過但沒有到期」和「排程器停了」是同一個觀察，修法有沒有效答不出來（`447fd55`，`plan.md` §3.2）。
-- 2026-09-06 有 26 筆落地沒人記錄、10 筆交付重做，而 `/inflight` 整天都正確列著每一筆：「Nothing made anybody look.」（`coordination.md` §1）
-- **判準**：把那個迴圈停掉，`/v1/health` 在 3×tick 內回 `ok:false` 並帶 `reason`（`broker-design.md` §8 B2 的驗收寫法）。
-  每個要人處理的狀態（dead letter、滿了、停了）指得出送到人面前的管道，而且實際走過一次。
-  不支援的輸入回具名拒絕、不被忽略：「a broker that ignores `serialize` starts a task its caller asked to wait」（`5feea4b`）。
-
-### DG-2 有界（滿了≠正常）
-
-- 時間軸 `entries` 2,000／2,000：上限的實作是拒絕寫入，回填看到 `capacity` 就永久跳過那個專案，store 凍了一天以上，
-  沒有任何人被通知，舊紀錄也沒寫下它滿了（`timeline-design.md` §0、§3.3）。
-- `remote-audit.jsonl` 5.7 MB、36,010 行、31 天沒有輪替，取最後 200 行要整檔讀進來；`worktree.kept` 3,699 筆，
-  其實是 158 個清不掉的 worktree 每 6 小時被重記一次（`broker-design.md` §2.1、§2.6）。
-- 淘汰也會錯：寫死的 200 筆上限掃掉用量分類唯一的證據，149 列永遠無法歸因；上限改成可設定後，測它的測試
-  「would have gone on passing while testing nothing」（舊 repo `4eb97d86`、`794d3a53`；`broker-design.md` §4 F1、F2）。
-- **判準**：設計文件有一張 `名稱｜上限｜滿了怎樣｜誰知道｜誰決定淘汰` 的表，沒有空格。「滿了怎樣」看資料類別（DG-4）：
-  事實只能拒絕並說出來，重算得出來的觀察可以淘汰——時間軸的事件 98.7% 是可從 git 重算的匯入，滿了卻選擇拒絕；200 筆上限淘汰的反而是事實。
-  沒結的狀態也算累積，它的淘汰就是出口條件。上限可以注入，至少一個測試注入小值跑到滿，斷言「滿了」被說出來。
-
-### DG-3 看主體（單次快≠總量省）
-
-- 看板一次 persist 42 ms、93% 是 encode，舊版據此不拆——這個數字沒錯（`board-design.md` §2.2）。但 `orchestrator.json`
-  在 315 秒內被整份重寫 30 次、淨變化 +90 B，約 202 MB 換 90 bytes，五次裡四次只改了觀察時鐘（`broker-design.md` §2.2）。
-  該量的是寫入放大，不是一次多快。
-- 看板寫入「1.23 s → 0.20 s」量的是一次；修正後 32 小時內仍有 479 次物化超過 200 ms、45 次破 1 秒，
-  Cloud 上的看板讀取最久排隊 229 秒（`board-design.md` §2.4、§2.6）。
-- 時間軸的驗收記下「1,561 B／0.017 s，fine」，量的是一個空結果：預設過濾把 100% 的資料濾掉了（`timeline-design.md` §2.7）。
-- **判準**：每個效能數字附四樣：分母（寫入位元組對有效變化位元組、每天次數）、分布（p50／p99／最大值與樣本數）、
-  輸入規模而且非空、量的是哪一端（client、佇列、server、磁碟）。缺一樣，就只是一次讀數。
-
-### DG-4 只記事實（事實≠觀察、送出≠送達）
-
-- 觀察落了盤：`executor.observed_at` 與 `inventory_generation` 每 10 秒變一次，每次都整份重寫 6.75 MB；看板 12,872 筆
-  歷史裡 52.5% 是機器重算投影，沒有新事實（`broker-design.md` §2.2、§6.2，`board-design.md` §2.3）。
-- 一個事實沒有一個交易：舊版派一次工寫五個檔，沒有共同的交易；「落地了沒」有三份拷貝，頁面說 53 筆未落地、
-  git 說其中 24 筆早已是祖先、佇列說 17（`broker-design.md` §2.3，舊 repo `e924dd9a`）。
-- 送出當成送達：完成通知曾經只是一次 send，終端機忙、app 重啟或 root 換了行程就消失，只剩一個沒人被告知的
-  `result.json`（舊 repo `f05ed2b3`）；打進 tty 的簡報被 shell 回 `command not found: Your`（`9de8527`）。
-- **判準**：對每個持久欄位問「下一次讀數算得出來嗎」，算得出來就不落盤；有 briefed task 但狀態沒變時，寫入次數接近 0
-  （`broker-design.md` §8 B2）。狀態、事件、收據同一個交易；每個副作用指得出觸發它的已落盤事件；
-  同一個請求送兩次，事件數不變（`9de8527`：結算兩次仍是 13 筆事件）。
-
-### DG-5 一種拼法（一件事≠兩種拼法）
-
-- 拒絕有兩種信封，`{"error":{"code","message"}}` 與 `{"error":"<code>","detail"}`；只讀前者的 client 把
-  `session_unknown` 變成 `command_failed`，`reasons` 整個掉（`cloud-wire.md` §10.5）。
-- 兩個都叫 session id 的欄位要相反的值：`root.session_id` 給了 terminal id，派工照收、child 照做，`notifyRoot` 找不到人也不寫 log，
-  四個 task 成了孤兒（舊 repo `8dffbe49`）；落地槽持有者用 conversation id 命名、用 terminal id 查，`advance` 從沒送達過（`broker-design.md` §5 O2）。
-- 一個名字兩件事：`pending` 同時代表「有人在做」與「執行者死了」，一條線在它後面卡了 14 小時（`broker-design.md` §5 O1）；
-  手機的 `data-view` 與桌面的 `data-pane` 被合成一個屬性，760 寬點了列看不到對話（`replica.md` reviewer 第二輪 N1）。
-- **判準**：`plan.md` §10 的概念登記表：每個概念一個擁有者、一種拼法，守衛看到第二份就紅。review 時問：
-  這個變更有沒有替已存在的概念加第二個名字、信封或 id？有的話，刪掉舊拼法的時間寫在哪？
-
-### DG-6 同一份（檢查看的≠執行用的）
-
-- 閘門讀解碼過的 `r.URL.Path`，mux 比對 `cleanPath(EscapedPath())`：`/v1/sessions/..%2F..%2Fv1%2Fauth%2Fx/git` 在閘門眼裡
-  是公開的 `/v1/auth/…`、在 mux 眼裡是 session id，不帶 token 就跑進 handler 盤點整台機器；修的途中又找到第二種拼法
-  `…/documents/../../../../v1/health`（`15ff376`，`replica.md`「閘門看的那一份路徑」）。
-- 讀、做慢事、存回副本：通知 pump 打字幾秒後把打字前的副本存回去，蓋掉中間到的 ACK；派工把 `spawning` 存回去，
-  蓋掉剛被證明的 `briefed`。四種遺失更新是同一個形狀（`5feea4b`，`broker.md`「實測抓到的三件事」#3）。
-- 讀級的權限、寫級的效果：唯讀的 Git 面板會執行惡意 repo 指定的 `core.fsmonitor`（`internal/adapters/git/changes_test.go`
-  的 `TestChangesRunsNothingTheRepositoryNames`）；唯讀的清單每讀一次就開一個 `codex app-server`，
-  現在只加了上限：「This route is a GET that starts a program.」（`internal/adapters/projects/past.go` 的 `codexServers`）
-- **判準**：權限、分派與每一處用路徑做決定的地方，讀同一個函式產出的 key（`routePath`）。每個「讀 → 慢步驟 → 寫」
-  走鎖內重讀（`mutate`），failure-injection 測試把第二個寫入者放進慢步驟裡（`race_test.go`）。
-  review 時問：這個判斷讀的變數，是不是下一行執行用的那一個？
-
-### DG-7 未知不是沒有（未知≠沒有）
-
-- 保留清單從來沒被讀到，印出來跟「沒有要保留的」一模一樣，於是移掉 25 個 worktree，其中一個還有人在工作
-  （舊 repo `d31a09df`）；`git status` 對一條不存在的路徑回 exit 0、沒有輸出，跟乾淨一樣，關掉了三筆落地紀錄（`broker-design.md` §4 G1）。
-- 四分鐘沒收到 progress note 就記 `spawn_failed`，可是簡報明說不要送心跳，正在工作的 child 被記成沒開起來（`eefa318`）；
-  舊版同一個形狀刪掉了一個還在工作的 child 的 checkout 與交付分支（舊 repo `95f6a30b`，`broker-design.md` §4 D1）。
-- 不是自己的也動了：`pkill -f 'bin/clawdline serve'` 殺掉兄弟 child 的 daemon（task `891ee91e`、`f4c367f4`）；
-  測試 session 開進使用者的 tmux，因為 `$TMUX` 蓋過了 `TMUX_TMPDIR`（task `1f9ca362`）。
-- **判準**：型別上分三值：已知有、已知沒有、未知（`Complete:false` 不是空清單，`cross-platform.md` §5）。每個破壞性動作
-  列出它依據的讀數與擁有權證明，任一為未知就拒絕。測試把讀取來源弄壞，斷言結果是「未知」而不是空或否（`b8f5258` 的對照組）。
-
-### DG-8 會紅的對照（通過≠沒測到）
-
-- 讀數沒有能力說不：修排程後看了六分鐘沒派工，什麼都沒證明（`447fd55`）；舊 repo 的 service worker 修了十一輪，
-  「A reading that has no power to disagree with you looks exactly like a reading that agrees.」（舊 repo `docs/hard-problems.md`）
-- 條件不對等：Chrome 把 `localhost` 預設縮放 110%，兩邊 dpr 變成 2.2 對 2.0（task `cb397397`）；Cloud 的「端對端」
-  用 devtools 在 IndexedDB 種金鑰跳過配對，證明的是傳輸不是配對（`cutover.md` §4.2）。
-- 沒跑的綠：「1 of 7716 checks failed」對著一棵有 8,218 個檢查的樹，五百多個根本沒執行（舊 repo
-  `docs/machine-resource-scheduling.md`）；原生殼從語音那一波起就編譯不過，直到另一個 child 撞到才修（`8ede06e` 引入、`5e9115f` 修好）。
-- **判準**：驗收紀錄每一列都寫「對照：……，結果：紅」；回歸測試附「在修正前的程式上跑過、失敗」
-  （`15ff376`：舊拼法 12 個裡有 8 個回 200）；比較兩邊時列出寬度、dpr、縮放、資料集，並證明相同。
-
-### DG-9 逐項繼承（有理由≠只是歷史）
-
-- 缺陷被忠實搬過來：配對猜錯次數跟著新配對歸零、Origin 只比 hostname 而 cookie 不分 port，都是從 Swift 原樣帶來的
-  （`remote.md`「順序」第 2 點，task `0c82534e` F-02、F-03，修在 `f2caa6a`）；舊版到今天仍開著的 11 項缺陷得逐項點名不搬
-  （`broker-design.md` §5）。
-- 形狀搬了、不變量丟了：broker 第一波讓落地紀錄被安靜覆寫、`claims: []` 讀起來像承諾、讀不到當成不在，
-  原樣重現了舊事故（`broker-design-challenge.md` §4）。
-- 「連理由一起搬」的理由不存在：重打五次、30 秒兩次觀察、讀 4／寫 8，找遍 commit 都沒寫為什麼；有兩項被評為照搬時，
-  早 12 分鐘的 commit（`eefa318`）已經用量測推翻了它們（`broker-design-challenge.md` §2.2、§2.3）。
-- **判準**：移植文件有「照搬／小改／重做／不搬」分級表，每列有證據欄；「先前的分析說過」「為了跟舊版對齊」不算證據。
-  每個不搬的形狀，寫出它原本守的不變量搬到了哪裡。
-
-### DG-10 人的位置（人的決定≠機器的輸入）
-
-- 機器替人按了鍵：broker 看到 tty 上有 assistant 就打字加 Enter，那個 Enter 回答了 workspace trust 對話框，
-  游標停在「No, exit」，child 什麼都沒讀就結束了（`eefa318`，`broker.md`「實測抓到的三件事」#1）。
-- 該問人的事送進沒人看的地方：child 用 progress note 直接問 root 一個問題，root 兩筆都沒收到，child 只好自己決定；
-  兩份指南當時都說 progress 會叫醒 root（舊 repo `825fc32e`）。
-- 人站在機器的位置：`landed` 只有一個入口而且要人手動記，一晚手寫 22 筆，其中 14 筆早在 `main` 裡躺了好幾天
-  （舊 repo `docs/landing.md`）；17 則「你卡住了嗎」換回 17 句「我沒停」，答案就在同一列的 `mover`（`coordination.md` §4.2）。
-- **判準**：設計文件列出每個需要人的點：誰、從哪個管道看到、沒回應時的安全預設、機器會不會誤觸。任何往 tty 打字的程式，
-  打字前要證明對面是 composer 而不是對話框（`TestADialogIsNeverTypedInto`）。機器答得出來的問題，不送給人。
+A rule that finds no place on this picture has no structure in common with the others; the list should be reorganized, not have it squeezed in.
 
 ---
 
-## 4. 這份文件怎麼被使用
+## 3. Each rule's failures and criterion
 
-**設計新功能時**，設計文件或 PR 說明附一段「概規回答」，每條一個問句，各答一句。答不出來寫「未知」，不能留白（DG-7）；
-刻意違反的寫理由，交給使用者決定（DG-10）。
+> A path with no prefix is in this repository's `docs/`; "the old repository" is `~/code/clawdline`; a *task report* is a child's report,
+> kept at `/tmp/.clawdline/<task>/artifacts/report.md`, and it is reclaimed (see §5).
 
-1. 它停了，誰在多久內知道？（DG-1）
-2. 它會累積什麼？上限、滿了怎樣、誰知道、誰淘汰？（DG-2）
-3. 它的成本以什麼為分母？在多大、非空的輸入上量？（DG-3）
-4. 哪些欄位重算得出來？每個對外動作的交易邊界在哪？送出與送達各記在哪？（DG-4）
-5. 它新增了哪些名字、id、信封？登記表裡有沒有同一個概念？（DG-5）
-6. 每個判斷讀的，是不是執行用的那一份？讀和寫之間有沒有慢步驟？（DG-6）
-7. 哪些讀取會失敗？失敗時，哪個動作會因此刪東西或判死？（DG-7）
-8. 驗收的對照組是什麼？怎麼證明它會紅？（DG-8）
-9. 從哪裡繼承了什麼？每一項今天的證據是什麼？（DG-9）
-10. 哪裡要人決定？管道和預設是什麼？機器會不會誤觸？（DG-10）
+### DG-1 Speaks up (stopped ≠ idle)
 
-**review 時**，依這次改了什麼挑規則。下表是最少要看的：
+- The old `/v1/health` had no `beat`, `scheduler` or `store` field at all, and still answered `ok: true` after the heartbeat stopped; git history holds four main-thread hangs,
+  each fixed by removing the blocking call, and not one of them added detection (`broker-design.md` §2.6, §4 C1).
+- The scheduler logged only when it fired, so "swept and found nothing due" and "the scheduler stopped" were the same observation, and whether a fix worked could not be answered (`447fd55`, `plan.md` §3.2).
+- On 2026-09-06, 26 landings went unrecorded and 10 deliveries were redone, while `/inflight` listed every one of them correctly all day: "Nothing made anybody look." (`coordination.md` §1)
+- **Criterion**: stop the loop, and `/v1/health` answers `ok:false` with a `reason` within 3×tick (the acceptance wording of `broker-design.md` §8 B2).
+  Every state that needs a person (a dead letter, full, stopped) can point to the channel that brings it in front of a person, and that channel has actually been walked once.
+  Unsupported input gets a named refusal and is not ignored: "a broker that ignores `serialize` starts a task its caller asked to wait" (`5feea4b`).
 
-| 這次改了 | 至少看 |
+### DG-2 Bounded (full ≠ normal)
+
+- The timeline's `entries` at 2,000/2,000: the limit was implemented as refusing writes, backfill skipped the project for good once it saw `capacity`, the store was frozen for more than a day,
+  nobody was told, and the old records never noted that it was full (`timeline-design.md` §0, §3.3).
+- `remote-audit.jsonl` at 5.7 MB, 36,010 lines and 31 days without rotation, and taking its last 200 lines read the whole file in; `worktree.kept` held 3,699 entries,
+  which were really 158 worktrees that could not be cleaned, recorded again every 6 hours (`broker-design.md` §2.1, §2.6).
+- Eviction can be wrong too: a hard-coded 200-entry limit swept away the only evidence for usage classification, and 149 rows can never be attributed; after the limit became configurable, the test for it
+  "would have gone on passing while testing nothing" (old repository `4eb97d86`, `794d3a53`; `broker-design.md` §4 F1, F2).
+- **Criterion**: the design document has a table `name | limit | when full | who finds out | who decides eviction` with no empty cell. "When full" depends on the class of data (DG-4):
+  a fact can only be refused, out loud; an observation that can be recomputed may be evicted — 98.7% of the timeline's events were imports recomputable from git, yet when full it chose to refuse, while the 200-entry limit evicted facts.
+  An unresolved state counts as accumulation too, and its eviction is its exit condition. The limit can be injected, and at least one test injects a small value, runs to full, and asserts that "full" is said out loud.
+
+### DG-3 Measure the total (one fast run ≠ a cheaper total)
+
+- One board persist took 42 ms, 93% of it encoding, and on that basis the old version did not split it — that number is right (`board-design.md` §2.2). But `orchestrator.json`
+  was rewritten whole 30 times in 315 seconds for a net change of +90 B, about 202 MB spent for 90 bytes, and four writes in five changed only the observation clock (`broker-design.md` §2.2).
+  What needed measuring was write amplification, not how fast one write is.
+- The board write "1.23 s → 0.20 s" measured one write; after the fix, 32 hours still held 479 materializations over 200 ms and 45 over 1 second,
+  and a board read on Cloud queued for as long as 229 seconds (`board-design.md` §2.4, §2.6).
+- The timeline's acceptance recorded "1,561 B / 0.017 s, fine", and what it measured was an empty result: the default filter removed 100% of the data (`timeline-design.md` §2.7).
+- **Criterion**: every performance number carries four things: a denominator (bytes written against bytes of useful change, times per day), a distribution (p50/p99/maximum and the sample count),
+  an input size that is also non-empty, and which end was measured (client, queue, server, disk). Missing any one, it is only a single reading.
+
+### DG-4 Record only facts (fact ≠ observation, sent ≠ delivered)
+
+- Observations were persisted: `executor.observed_at` and `inventory_generation` changed every 10 seconds, and each change rewrote 6.75 MB whole; of the board's 12,872
+  history entries, 52.5% were projections the machine recomputed, carrying no new fact (`broker-design.md` §2.2, §6.2, `board-design.md` §2.3).
+- One fact without one transaction: the old version wrote five files for one dispatch with no shared transaction; "has it landed" had three copies, and the page said 53 were unlanded,
+  git said 24 of those had long been ancestors, and the queue said 17 (`broker-design.md` §2.3, old repository `e924dd9a`).
+- Sent taken for delivered: the completion notice was once a single send, lost when the terminal was busy, the app restarted or root changed processes, leaving only a
+  `result.json` nobody was told about (old repository `f05ed2b3`); a briefing typed into a tty got `command not found: Your` back from the shell (`9de8527`).
+- **Criterion**: for every persistent field ask "can the next reading compute it?"; if it can, it is not persisted; while tasks are briefed but no state changes, the write count stays close to 0
+  (`broker-design.md` §8 B2). State, event and receipt share one transaction; every side effect points to the persisted event that triggered it;
+  the same request sent twice leaves the event count unchanged (`9de8527`: settled twice, still 13 events).
+
+### DG-5 One spelling (one thing ≠ two spellings)
+
+- Refusals had two envelopes, `{"error":{"code","message"}}` and `{"error":"<code>","detail"}`; a client that read only the first turned
+  `session_unknown` into `command_failed` and lost `reasons` entirely (`cloud-wire.md` §10.5).
+- Two fields both called session id wanted opposite values: `root.session_id` was given a terminal id, dispatch accepted it, the child did the work, and `notifyRoot` found no one and logged nothing,
+  so four tasks were orphaned (old repository `8dffbe49`); the landing slot's holder was named by conversation id and looked up by terminal id, so `advance` was never once delivered (`broker-design.md` §5 O2).
+- One name for two things: `pending` meant both "someone is working on it" and "the executor is dead", and a line waited behind it for 14 hours (`broker-design.md` §5 O1);
+  the phone's `data-view` and the desktop's `data-pane` were merged into one attribute, and at 760 wide clicking a row showed no conversation (`replica.md`, reviewer round two, N1).
+- **Criterion**: the concept register in `plan.md` §10: every concept has one owner and one spelling, and a guard goes red when it sees a second. In review ask:
+  does this change give a concept that already exists a second name, envelope or id? If so, where is the date for removing the old spelling written down?
+
+### DG-6 The same copy (what the check reads ≠ what execution uses)
+
+- The gate read the decoded `r.URL.Path` while the mux matched `cleanPath(EscapedPath())`: `/v1/sessions/..%2F..%2Fv1%2Fauth%2Fx/git` was, to the gate,
+  the public `/v1/auth/…` and, to the mux, a session id, so without a token it reached the handler and inventoried the whole machine; on the way to the fix a second spelling turned up,
+  `…/documents/../../../../v1/health` (`15ff376`; `replica.md`, "the copy of the path the gate reads").
+- Read, do something slow, save the copy back: the notification pump typed for a few seconds and then saved back its copy from before typing, overwriting an ACK that had arrived in between; dispatch saved `spawning` back,
+  overwriting a `briefed` that had just been proven. Four kinds of lost update, one shape (`5feea4b`; `broker.md`, "three things the measurements caught", #3).
+- Read-level permission, write-level effect: the read-only Git panel would run the `core.fsmonitor` a malicious repository names (`TestChangesRunsNothingTheRepositoryNames`
+  in `internal/adapters/git/changes_test.go`); the read-only list starts a `codex app-server` on every read,
+  and so far only a limit has been added: "This route is a GET that starts a program." (`codexServers` in `internal/adapters/projects/past.go`)
+- **Criterion**: permission, dispatch and every place that decides by path read the key one function produces (`routePath`). Every "read → slow step → write"
+  re-reads inside the lock (`mutate`), and a failure-injection test puts a second writer inside the slow step (`race_test.go`).
+  In review ask: is the variable this decision reads the same one the next line executes with?
+
+### DG-7 Unknown is not absent (unknown ≠ none)
+
+- The keep list was never read, and it printed exactly like "nothing to keep", so 25 worktrees were removed, one of them with someone still working in it
+  (old repository `d31a09df`); `git status` on a path that does not exist returns exit 0 and no output, the same as clean, and that closed three landing records (`broker-design.md` §4 G1).
+- Four minutes without a progress note was recorded as `spawn_failed`, although the briefing said plainly not to send heartbeats, so a working child was recorded as never having started (`eefa318`);
+  the old version, in the same shape, deleted the checkout and delivery branch of a child that was still working (old repository `95f6a30b`, `broker-design.md` §4 D1).
+- Touching what is not yours: `pkill -f 'bin/clawdline serve'` killed a sibling child's daemon (two task reports);
+  a test session opened inside the user's tmux, because `$TMUX` overrode `TMUX_TMPDIR` (a task report).
+- **Criterion**: three values in the type: known present, known absent, unknown (`Complete:false` is not an empty list, `cross-platform.md` §5). Every destructive action
+  lists the readings and the proof of ownership it rests on, and refuses if any of them is unknown. Tests break the read source and assert the result is "unknown", not empty or no (the control group in `b8f5258`).
+
+### DG-8 A control that can go red (passed ≠ never tested)
+
+- A reading with no power to say no: six minutes of watching without a dispatch after the scheduler fix proved nothing (`447fd55`); the old repository's service worker was fixed over eleven rounds, and
+  "A reading that has no power to disagree with you looks exactly like a reading that agrees." (old repository `docs/hard-problems.md`)
+- Unequal conditions: Chrome zooms `localhost` to 110% by default, so the two sides had dpr 2.2 against 2.0 (a task report); Cloud's "end to end" test
+  used devtools to plant keys in IndexedDB and skip pairing, which proved the transport, not the pairing (`cutover.md` §4.2).
+- Green that never ran: "1 of 7716 checks failed" against a tree with 8,218 checks, more than five hundred of which never ran (old repository
+  `docs/machine-resource-scheduling.md`); the native shell had not compiled since the voice wave, until another child ran into it and it was fixed (introduced in `8ede06e`, fixed in `5e9115f`).
+- **Criterion**: every row of an acceptance record says "control: …, result: red"; a regression test comes with "ran on the code before the fix, and failed"
+  (`15ff376`: 8 of the 12 old spellings returned 200); a comparison of two sides lists width, dpr, zoom and data set, and proves they are the same.
+
+### DG-9 Inherit item by item (has a reason ≠ merely history)
+
+- Defects were ported faithfully: the pairing wrong-guess count resetting with each new pairing, and Origin compared by hostname alone while cookies ignore the port, both came over unchanged from Swift
+  (`remote.md`, "Order", point 2; task report findings F-02 and F-03, fixed in `f2caa6a`); the 11 defects the old version still has open today had to be named one by one as not ported
+  (`broker-design.md` §5).
+- The shape was ported and the invariant dropped: the broker's first wave let landing records be silently overwritten, let `claims: []` read like a promise, and treated unreadable as absent,
+  reproducing the old incidents exactly (`broker-design-challenge.md` §4).
+- The reasons that "port it together with its reason" relied on did not exist: five retypes, two observations 30 seconds apart, read 4 / write 8 — no commit anywhere says why; when two of them were graded port as is,
+  a commit from 12 minutes earlier (`eefa318`) had already overturned them by measurement (`broker-design-challenge.md` §2.2, §2.3).
+- **Criterion**: a porting document has a table grading each item port as is, small change, redo or do not port, with an evidence column on every row; "an earlier analysis said so" and "to match the old version" are not evidence.
+  For every shape not ported, say where the invariant it guarded went.
+
+### DG-10 The person's place (a person's decision ≠ a machine's input)
+
+- The machine pressed a key for a person: the broker saw an assistant on the tty and typed, then Enter; that Enter answered the workspace trust dialog,
+  the cursor was on "No, exit", and the child exited without reading anything (`eefa318`; `broker.md`, "three things the measurements caught", #1).
+- What should reach a person went where nobody looks: a child asked root a question directly in a progress note, root received neither of the two, and the child had to decide by itself;
+  both guides said at the time that progress would wake root (old repository `825fc32e`).
+- A person standing in the machine's place: `landed` had one entry point and had to be recorded by hand, 22 were written by hand in one night, and 14 of them had been in `main` for days
+  (old repository `docs/landing.md`); 17 "are you stuck?" messages got 17 "I have not stopped" replies, when the answer was in the same row's `mover` (`coordination.md` §4.2).
+- **Criterion**: the design document lists every point that needs a person: who, through which channel they see it, the safe default when nobody answers, and whether the machine could trigger it by mistake. Any program that types into a tty
+  proves before typing that the other side is a composer and not a dialog (`TestADialogIsNeverTypedInto`). A question the machine can answer is not sent to a person.
+
+---
+
+## 4. How this document is used
+
+**When designing a new feature**, the design document or PR description carries a "guidelines answer": one question per rule, one sentence each. What you cannot answer is written "unknown", never left blank (DG-7);
+a rule broken on purpose gets its reason and goes to the user to decide (DG-10).
+
+1. When it stops, who finds out, and how soon? (DG-1)
+2. What does it accumulate? The limit, what happens when full, who finds out, who evicts? (DG-2)
+3. What is the denominator of its cost? On how large a non-empty input was it measured? (DG-3)
+4. Which fields can be recomputed? Where is the transaction boundary of each outward action? Where are sending and delivery each recorded? (DG-4)
+5. Which names, ids and envelopes does it add? Does the register already hold the same concept? (DG-5)
+6. Does every decision read the copy execution uses? Is there a slow step between the read and the write? (DG-6)
+7. Which reads can fail? When they do, which action would delete something or declare something dead because of it? (DG-7)
+8. What is the acceptance control? How is it proven that it can go red? (DG-8)
+9. What was inherited, and from where? What is today's evidence for each item? (DG-9)
+10. Where does a person decide? Through which channel, with what default? Could the machine trigger it by mistake? (DG-10)
+
+**In review**, choose the rules by what the change touched. The table below is the minimum:
+
+| This change touched | Look at least at |
 |---|---|
-| 路由、閘門、權限、wire 契約 | DG-5、DG-6 |
-| 儲存、schema、事件、收據 | DG-4、DG-2 |
-| 背景迴圈、佇列、連線、排程 | DG-1、DG-2、DG-3 |
-| 刪除、清掃、判死、關閉 | DG-7 |
-| 從舊版或其他文件移植 | DG-9 |
-| 往終端機打字、通知、要人決定 | DG-10 |
-| 任何「通過」「變快」的宣稱 | DG-8、DG-3 |
+| Routes, gates, permissions, wire contracts | DG-5, DG-6 |
+| Storage, schemas, events, receipts | DG-4, DG-2 |
+| Background loops, queues, connections, schedules | DG-1, DG-2, DG-3 |
+| Deleting, sweeping, declaring dead, closing | DG-7 |
+| Porting from the old version or another document | DG-9 |
+| Typing into a terminal, notifications, asking a person to decide | DG-10 |
+| Any claim that something "passes" or is "faster" | DG-8, DG-3 |
 
-review 的每個發現標上規則編號，例如 `[DG-6]`，這是 §1 淘汰依據的唯一資料來源。套不上任何一條的標 `[DG-?]`；
-累積到兩起彼此獨立的，就是一條新規則的提案，照 §1 的程序走。
+Every review finding is tagged with its rule number, for example `[DG-6]`; this is the only data source for the removal basis in §1. A finding that fits no rule is tagged `[DG-?]`;
+once two independent ones accumulate, that is a proposal for a new rule, and it follows the procedure in §1.
 
 ---
 
-## 5. 用自己的規則檢查自己
+## 5. Checking this document by its own rules
 
-| 問句 | 答案 |
+| Question | Answer |
 |---|---|
-| 它有沒有觀測？（DG-1） | **沒有真的在跑的觀測。** §4 要 review 標 `[DG-n]`，但沒有任何東西在收集；一條規則過時了，不會有東西叫。**違反。** |
-| 它的上限是什麼？（DG-2） | 12 條、280 行、每條三種失敗形狀。現在 10 條、273 行。**遵守。** |
-| 滿了誰決定淘汰？（DG-2、DG-10） | 使用者；他不在時預設不加。**遵守**，但這一版的內容本身還沒經過他（見下方第 6 點）。 |
-| 它可不可以被畫出來？ | 可以，§2。十條各有一個落點；落不下去的規則就是該重整的規則。 |
+| Is it observed? (DG-1) | **No observation that actually runs.** §4 asks reviews to tag `[DG-n]`, but nothing collects the tags; when a rule goes stale, nothing speaks up. **Broken.** |
+| What is its limit? (DG-2) | 12 rules, 280 lines, three failure shapes per rule. Now 10 rules, 273 lines. **Kept.** |
+| When full, who decides what goes? (DG-2, DG-10) | The user; while they are away, the default is not to add. **Kept**, but the content of this version has not been through them yet (see point 6 below). |
+| Can it be drawn? | Yes, §2. Each of the ten has a place; a rule that finds no place is a rule that should be reorganized. |
 
-**它違反了哪幾條，照實寫：**
+**Which rules it breaks, stated plainly:**
 
-1. **DG-1**：同上表。命中紀錄只是約定。
-2. **DG-4**：標 `task xxxxxxxx` 的證據只存在 `/tmp` 的報告裡，task 結束就被回收；指回 commit 與 repo 內文件的不會。
-   能換成持久來源的已經換了，還剩 DG-7、DG-8、DG-9 裡的 5 個 task 報告。
-3. **DG-6**：清單、圖、§3 三處描述同一組規則，沒有守衛保證三者一致，只靠「同一個 commit 一起改」。
-   手動檢查如下，每一列要是 `1 1 1`（這一版跑過，十條都是）：
+1. **DG-1**: as in the table. The citation record is only a convention.
+2. **DG-4**: evidence cited as a task report exists only in a report under `/tmp`, reclaimed when the task ends; evidence that points to commits and to documents in the repository is not.
+   What could be moved to a durable source has been; 5 task reports remain, in DG-7, DG-8 and DG-9.
+3. **DG-6**: the list, the picture and §3 describe the same set of rules in three places, and no guard keeps them consistent, only "change them in the same commit".
+   The manual check follows; every row must read `1 1 1` (this version ran it, and all ten do):
 
    ```sh
    f=docs/design-guidelines.md; for n in $(seq 1 12); do echo "DG-$n $(grep -cE "^[0-9]+\. \*\*DG-$n " $f) $(grep -cE "^### DG-$n " $f) $(sed -n '/^```text/,/^```$/p' $f | grep -cE "DG-$n([^0-9]|$)")"; done
    ```
-4. **DG-8**：沒有對照組。沒有拿它審一份好的設計看會不會誤報，也沒有在一份新設計上看它能不能事前抓到問題。
-   只做了回溯：`broker-design.md` §5 那 11 項舊版未修缺陷，每一項都對得到至少一條（O1、O2、O11→DG-5；O3→DG-2；
-   O4、O8、O9→DG-7；O5、O6→DG-4；O7→DG-1；O10→DG-6）。規則本來就是從這些事故寫出來的，回溯對得到只是必要條件。
-5. **DG-9**：數字沿用各文件與報告自己的量測，沒有今天重量。引文都對過原文，只有 `4eb97d86`、`e924dd9a` 是從
-   `broker-design.md` 轉引。`broker-design-challenge.md` 在撰寫時還沒落地，引用的是 task `0d322375` 完成時的版本。
-6. **DG-10**：寫在使用者睡覺時。12 這個上限、`DG-` 編號、十條的取捨，都是我選的安全預設，等他拍板。
-7. **DG-3**：這份文件的主體是「下一次設計有沒有因此少出事」，完全沒量；行數只是代理。
+4. **DG-8**: there is no control. It has not been used to review a good design to see whether it raises false alarms, nor applied to a new design to see whether it catches problems in advance.
+   Only a retrospective was done: each of the 11 unfixed old-version defects in `broker-design.md` §5 maps to at least one rule (O1, O2, O11→DG-5; O3→DG-2;
+   O4, O8, O9→DG-7; O5, O6→DG-4; O7→DG-1; O10→DG-6). The rules were written from these very incidents, so mapping back is only a necessary condition.
+5. **DG-9**: the numbers are the ones each document and report measured for itself, not re-measured today. Every quotation was checked against its source, except `4eb97d86` and `e924dd9a`, which are quoted by way of
+   `broker-design.md`. `broker-design-challenge.md` had not landed when this was written; the version cited is the one its authoring task finished with.
+6. **DG-10**: written while the user was asleep. The limit of 12, the `DG-` numbering and the choice of these ten are all safe defaults I chose, awaiting their decision.
+7. **DG-3**: what this document is really for — whether the next design has fewer incidents because of it — has not been measured at all; the line count is only a proxy.

@@ -1,1216 +1,1216 @@
-# 跨平台盤點：每一個功能在 Linux 與 Windows 怎麼做
+# Cross-platform inventory: how every feature works on Linux and Windows
 
-> 使用者原話（2026-09-17）：「除了少數 Mac 才有的特色，應該要可以跨平台」「你可以重新思考這些
-> 東西要怎麼跨平台使用，如果真的不行的，要告訴我限制和討論如何呈現使用」。
+> The user's words (2026-09-17, translated from Chinese): "Apart from the few features only a Mac has, it should work across platforms." "You can rethink how these
+> things can be used across platforms; where something really can't be done, tell me the limits, and let's discuss how to present it."
 >
-> **這是決策文件，不是實作。** 這一份的作用是讓你在看完總表之後，知道哪些事在別的作業系統上
-> 是「照做就好」、哪些是「做得到但換一種互動」、哪些是「這台真的沒有，要講出來」。
+> **This is a decision document, not an implementation.** Its job is that once you have read the summary table, you know which things on other operating systems
+> are "just do the same", which are "doable, but with a different interaction", and which are "this machine really does not have it, and has to say so".
 
-## 0. 這份文件怎麼共同編輯
+## 0. How this document is edited together
 
-這份文件由多個 child 分節寫，**骨架與總表由骨架擁有者維護，其他人只動自己的節**。規則三條：
+Several children write this document section by section; **the skeleton and the summary table are maintained by the skeleton owner, and everyone else touches only their own section**. Three rules:
 
-1. **總表（§3）只有一個作者。** 你不要直接改總表的列。你的結論若與總表不同，就在**你自己的節**裡
-   寫一行 `**修正總表**：<列名> → <新結論>`，root 合併時統一改。理由：markdown 表格改一列，
-   兩個人同時改就是整段衝突，而衝突解到最後總會有人的字被吃掉。
-2. **每一節用 anchor 包起來，anchor 內是你的，anchor 外不要碰。**
+1. **The summary table (§3) has one author.** Do not edit its rows directly. If your conclusion differs from the table, write in **your own section**
+   a line `**Summary-table correction**: <row> → <new conclusion>`, and root changes them all when merging. The reason: when two people edit one row of a markdown table
+   at the same time, the whole block conflicts, and by the time the conflict is resolved somebody's words have always been eaten.
+2. **Wrap every section in anchors; what is inside the anchors is yours, and what is outside them you do not touch.**
 
    ```markdown
-   <!-- section:<你的 id> owner:task-xxxxxxxx -->
-   ### 4.14 <你的題目>
-   …你的內容…
-   <!-- /section:<你的 id> -->
+   <!-- section:<your id> owner:task-xxxxxxxx -->
+   ### 4.14 <your subject>
+   …your content…
+   <!-- /section:<your id> -->
    ```
 
-   **新增一節就接在 §4 的尾巴**，節號用下一個沒人用的數字，不要插在別人中間——插入會讓後面
-   每一節的號碼都動，等於改了別人的檔案。已經用掉的 anchor id（不要重複）：
+   **A new section goes at the end of §4**, numbered with the next unused number; do not insert it between others — inserting moves the number of every
+   later section, which amounts to editing other people's files. Anchor ids already used (do not repeat them):
 
-   `sessions`、`screen`、`clipboard`、`whisper`、`secrets`、`notifications`、`autostart`、
-   `hotkey`、`notch`、`shell`、`filesystem`、`swiftstore`、`fidelity`。
+   `sessions`, `screen`, `clipboard`, `whisper`, `secrets`, `notifications`, `autostart`,
+   `hotkey`, `notch`, `shell`, `filesystem`, `swiftstore`, `fidelity`. (In the anchors below, the owner's real task id is shown as the fixture `task-aaaaaaaa`; one task wrote all of them.)
 
-   已知還有別的 task 在動同一個題目：**瀏海島是 task `a0d852b4`**（它認領
-   `shell/darwin/NotchIsland.swift` 與 `docs/replica.md`），§4.9 只寫決策骨架，細節以它為準。
-3. **狀態標記統一四種**，寫在每一節開頭一行：
+   Another task is known to be working on one of these subjects: **the notch island belongs to a separate task** (it claimed
+   `shell/darwin/NotchIsland.swift` and `docs/replica.md`); §4.9 writes only the skeleton of the decision, and that task is authoritative on the details.
+3. **Four status markers, no others**, written on one line at the start of each section:
 
-   | 標記 | 意思 |
+   | Marker | Meaning |
    |---|---|
-   | `已實作` | 這個平台上已經有程式在跑這條路 |
-   | `可實作` | 做法確定、元件存在，只是還沒寫 |
-   | `降級` | 做不到原本那件事，換一種互動；代價要寫出來 |
-   | `不支援` | 這台機器沒有這個東西，要具名地講出來 |
+   | `implemented` | Code already runs this path on this platform |
+   | `implementable` | The approach is settled and the components exist; it just has not been written |
+   | `degraded` | The original thing cannot be done, and a different interaction replaces it; its cost has to be written down |
+   | `unsupported` | This machine does not have the thing, and has to say so by name |
 
-**這份文件的所有 Linux／Windows 判斷都是讀原始碼與既有知識得出的，沒有在真的 Linux 或 Windows
-機器上量過。** 使用者授權之後會開 AWS 的機器實測，§7 就是那份最小檢查清單。凡是我自己不確定的，
-都收在 §8，不要把它們當成已知。
+**Every Linux/Windows judgement in this document comes from reading source code and from existing knowledge; none of it was measured on a real Linux or Windows
+machine.** Once the user authorizes it, AWS machines will be opened for real tests, and §7 is the minimal checklist for that. Everything I am not sure of
+is collected in §8; do not treat any of it as known.
 
 ---
 
-## 1. 一句話
+## 1. In one sentence
 
-**Go daemon 本身幾乎是跨平台的；不跨平台的是它伸出去碰的那五樣東西——終端機、剪貼簿、鍵盤、
-秘密儲存、桌面。** 六個平台的執行檔已經可以從一台機器產出（`plan.md` §P5），Linux 那顆也已經在
-真的容器裡起得來；剩下的問題全部集中在 adapters 與原生殼。
+**The Go daemon itself is almost cross-platform; what is not are the five things it reaches out to touch — the terminal, the clipboard, the keyboard,
+secret storage and the desktop.** Executables for six platforms can already be produced from one machine (`plan.md` §P5), and the Linux one already starts
+in a real container; the remaining problems all sit in the adapters and the native shells.
 
-三個平台上這個產品的形態不一樣，這是**產品層面要先講清楚的第一件事**：
+The product takes a different shape on each of the three platforms, and that is **the first thing to make clear at the product level**:
 
 | | macOS | Linux | Windows |
 |---|---|---|---|
-| **遙控你已經開著的 session** | ✅ tmux ＋ iTerm2 | ✅ tmux（沒 tmux 就只能看見，不能控） | ❌ 原生沒有（要 WSL 或 MSYS2 的 tmux） |
-| **自己開、自己養的 session** | ✅ tmux | ✅ tmux／自有 pty | ⚠️ 要 ConPTY，尚未實作 |
-| **桌面整合（熱鍵、匣、開機啟動）** | ✅ 原生殼 | ⚠️ X11 完整、Wayland 受限、無桌面則無 | ⚠️ 要寫 WebView2 殼 |
-| **console 網頁本身** | ✅ | ✅ | ✅ |
+| **Remote-controlling sessions you already have open** | ✅ tmux + iTerm2 | ✅ tmux (without tmux, visible only, no control) | ❌ none natively (needs tmux from WSL or MSYS2) |
+| **Sessions it opens and keeps itself** | ✅ tmux | ✅ tmux / its own pty | ⚠️ needs ConPTY, not yet implemented |
+| **Desktop integration (hotkey, tray, start at login)** | ✅ native shell | ⚠️ complete on X11, limited on Wayland, none without a desktop | ⚠️ needs a WebView2 shell |
+| **The console web page itself** | ✅ | ✅ | ✅ |
 
-**Windows 使用者只有「自己開的 session」那一半**（`plan.md` §7 已經寫下這句），這份文件把那半句
-展開成一張可以照著做的表。
+**Windows users get only the "sessions it opens itself" half** (`plan.md` §7 already says so), and this document expands that half-sentence
+into a table you can follow.
 
 ---
 
-## 2. 兩條硬規則先限制了選項
+## 2. Two hard rules narrow the options first
 
-在挑任何做法之前，這個專案有兩條規則會先砍掉一半的候選：
+Before any approach is chosen, two of this project's rules cut away half the candidates:
 
 ### 2.1 `CGO_ENABLED=0`
 
-一台機器產出六個平台的執行檔（`plan.md` §P5）靠的就是這個。**它砍掉的是所有要連 C 函式庫的路**：
+Producing executables for six platforms from one machine (`plan.md` §P5) depends on exactly this. **What it cuts away is every path that links a C library**:
 
-| 想做的事 | 需要 cgo 的做法 | 純 Go 的替代 |
+| What we want | The cgo way | The pure-Go alternative |
 |---|---|---|
-| macOS Keychain | Security.framework、`go-keychain` | 子行程 `/usr/bin/security`，或交給 Swift 殼 |
-| Linux 剪貼簿 | `golang.design/x/clipboard`（X11 lib） | 子行程 `wl-copy`／`xclip`／`xsel` |
-| Linux 全域熱鍵 | Xlib `XGrabKey` | `xgb`（純 Go 的 X11 protocol client）或 D-Bus portal |
-| Linux 殼 | WebKitGTK（gotk3） | **不做殼**，用系統瀏覽器 |
-| Windows 殼 | `webview/webview_go` | `go-webview2`（純 Go COM） |
-| Windows 行程／DPAPI／Job Object | — | `golang.org/x/sys/windows` 全部有 |
+| macOS Keychain | Security.framework, `go-keychain` | A `/usr/bin/security` subprocess, or leave it to the Swift shell |
+| Linux clipboard | `golang.design/x/clipboard` (X11 lib) | `wl-copy`/`xclip`/`xsel` subprocesses |
+| Linux global hotkey | Xlib `XGrabKey` | `xgb` (a pure-Go X11 protocol client) or a D-Bus portal |
+| Linux shell | WebKitGTK (gotk3) | **No shell**; use the system browser |
+| Windows shell | `webview/webview_go` | `go-webview2` (pure-Go COM) |
+| Windows processes / DPAPI / Job Object | — | `golang.org/x/sys/windows` has them all |
 
-**結論：Windows 那一整欄都可以純 Go 做；Linux 的桌面整合要靠子行程與 D-Bus；macOS 的原生面
-留在 Swift 殼裡不動。** 這條規則並沒有擋住任何真正要做的事，但它決定了做法。
+**Conclusion: the whole Windows column can be done in pure Go; Linux desktop integration relies on subprocesses and D-Bus; the macOS native side
+stays in the Swift shell, untouched.** This rule blocks nothing that really needs doing, but it decides how it is done.
 
-### 2.2 「不搶你的鍵盤」
+### 2.2 "Don't take over your keyboard"
 
-`plan.md` §1 的第一條。它在跨平台上有兩個具體後果，而且兩個都是**拒絕一條看似可行的路**：
+The first rule of `plan.md` §1. It has two concrete consequences across platforms, and both are **refusing a path that looks feasible**:
 
-- **Linux 不用 `TIOCSTI`。** 往別人的 tty 塞字元在技術上做得到，但那正是一個 keylogger 等級的
-  能力，而且新一點的核心預設關掉它（`dev.tty.legacy_tiocsti`）。沒有 tmux 就是沒有——
-  「看得見、動不了」是誠實的答案，偷塞鍵不是。
-- **Linux 不用 `/dev/input` 抓全域熱鍵。** 同一個理由：那要進 `input` 群組，等於可以讀你打的
-  每一個字。舊版 `HotKey.swift` 選 Carbon 而不選 `NSEvent` global monitor，寫的就是這個理由
-  （「一個開視窗的工具不該能讀你按的每一個鍵」）。Wayland 上沒有正統做法時，正確的答案是降級，
-  不是換一條更有權力的路。
+- **Linux does not use `TIOCSTI`.** Stuffing characters into someone else's tty is technically possible, but that is a keylogger-grade
+  capability, and newer kernels turn it off by default (`dev.tty.legacy_tiocsti`). No tmux means no control —
+  "can see, can't touch" is the honest answer; sneaking keys in is not.
+- **Linux does not use `/dev/input` to grab global hotkeys.** Same reason: that requires the `input` group, which amounts to being able to read every
+  character you type. The old `HotKey.swift` chose Carbon over an `NSEvent` global monitor for exactly this reason
+  ("a tool that opens a text box should not be able to read every key you press"). Where Wayland has no proper way, the right answer is to degrade,
+  not to switch to a more powerful path.
 
 ---
 
-## 3. 總表
+## 3. Summary table
 
-難度：**S** ＝ 半天以內；**M** ＝ 一到三天；**L** ＝ 一週以上；**X** ＝ 要先做一個新元件。
-「現況」欄是 macOS 上的 clawdline-go（master `d40545e`）。
+Difficulty: **S** = half a day or less; **M** = one to three days; **L** = a week or more; **X** = a new component has to be built first.
+The "Today" column is clawdline-go on macOS (master `d40545e`).
 
-### 3.1 終端機與 session
+### 3.1 Terminals and sessions
 
-| 功能 | 靠什麼 | 現況 | Linux | Windows | 做不到時怎麼呈現 | 難度 |
+| Feature | Relies on | Today | Linux | Windows | How it shows when it can't | Difficulty |
 |---|---|---|---|---|---|---|
-| 盤點既有 session（tmux） | `tmux list-panes` | ✅ `terminal/tmux.go` | ✅ 同一條路，零修改 | ❌ 原生無 tmux；WSL／MSYS2 才有 | Windows：清單只列 owned session，並在頁面上說明「這台沒有 tmux」 | S |
-| 盤點既有 session（iTerm2） | osascript／JXA | ✅ `iterm_darwin.go` | ❌ 沒有 iTerm2 | ❌ Windows Terminal **沒有任何遙控 API** | 具名不支援（`hosts_other.go` 已經只回 tmux） | — |
-| 盤點行程 | `/bin/ps -ax -o tty,pid,pgid,tpgid,command` | ✅ `process/ps_unix.go`（darwin\|\|linux） | ✅ 可用；建議改讀 `/proc`（精簡容器沒有 `ps`） | ⚠️ `process/ps_windows.go` 目前誠實回 `Complete:false` | Windows：`Complete:false` ＋ 「這台的行程盤點還沒實作」 | M |
-| 自己開 session | `tmux new-session -d` | ✅ | ✅ | ⚠️ 要 ConPTY（§4.1） | — | L |
-| 送訊息／送鍵／中斷／關閉 | `send-keys`（`-l`、`-H`）、`C-c`、`kill-pane` | ✅ | ✅ | ⚠️ ConPTY：直接寫輸入 pipe（`\x03` 就是中斷） | — | M |
-| 讀畫面（attached） | `capture-pane -p -e -J` | ✅ | ✅ | ❌ 沒有 tmux 就沒有 | 「這個 session 的畫面讀不到」，而不是空白畫面 | — |
-| 讀畫面（owned） | — | — | 自有 pty ＋ VT 解析器 | ConPTY ＋ VT 解析器（**同一個元件**） | — | X |
-| 即時畫面推送 | `pipe-pane` → FIFO，可讀性就是訊號 | ✅ `signal_unix.go` | ✅ 同一條路 | ❌ 沒有 mkfifo；`signal_other.go` 回 nil | 已經正確：畫面標成 `on-demand`，不假裝 4ms | — |
-| 即時畫面推送（owned） | — | — | pty 輸出本身就是訊號 | ConPTY 輸出 pipe 本身就是訊號 | — | S（做完 ConPTY 就有） |
-| 在畫面上顯示（focus／reveal） | `select-pane` ＋ iTerm2 activate | ✅ | ⚠️ 只做得到 tmux 內的 select；**Wayland 沒有 client 主動 raise 視窗的協定** | ⚠️ 同左；`SetForegroundWindow` 有前景鎖 | 已經正確：`ok` 只承諾「選到了」，不承諾視窗在你面前 | S |
-| 砍整棵行程樹 | `Setpgid` ＋ `killpg` | ✅ `supervisor_unix.go` | ✅ | ⚠️ 要 Job Object；現在誠實拒絕啟動 | 已經正確：寧可不啟動，也不要讓呼叫者以為能取消 | M |
+| Inventory of existing sessions (tmux) | `tmux list-panes` | ✅ `terminal/tmux.go` | ✅ same path, zero changes | ❌ no native tmux; only in WSL/MSYS2 | Windows: the list shows only owned sessions, and the page says "this machine has no tmux" | S |
+| Inventory of existing sessions (iTerm2) | osascript/JXA | ✅ `iterm_darwin.go` | ❌ no iTerm2 | ❌ Windows Terminal has **no remote-control API at all** | Unsupported by name (`hosts_other.go` already returns only tmux) | — |
+| Process inventory | `/bin/ps -ax -o tty,pid,pgid,tpgid,command` | ✅ `process/ps_unix.go` (darwin\|\|linux) | ✅ works; better to read `/proc` (slim containers have no `ps`) | ⚠️ `process/ps_windows.go` honestly returns `Complete:false` today | Windows: `Complete:false` + "process inventory on this machine is not implemented yet" | M |
+| Opening its own session | `tmux new-session -d` | ✅ | ✅ | ⚠️ needs ConPTY (§4.1) | — | L |
+| Send message / send key / interrupt / close | `send-keys` (`-l`, `-H`), `C-c`, `kill-pane` | ✅ | ✅ | ⚠️ ConPTY: write straight to the input pipe (`\x03` is the interrupt) | — | M |
+| Reading the screen (attached) | `capture-pane -p -e -J` | ✅ | ✅ | ❌ no tmux, no screen | "This session's screen cannot be read", not a blank screen | — |
+| Reading the screen (owned) | — | — | Own pty + VT parser | ConPTY + VT parser (**the same component**) | — | X |
+| Live screen push | `pipe-pane` → FIFO; readability is the signal | ✅ `signal_unix.go` | ✅ same path | ❌ no mkfifo; `signal_other.go` returns nil | Already right: the screen is marked `on-demand`, and does not pretend to 4 ms | — |
+| Live screen push (owned) | — | — | The pty output itself is the signal | The ConPTY output pipe itself is the signal | — | S (comes with ConPTY) |
+| Showing it on screen (focus/reveal) | `select-pane` + iTerm2 activate | ✅ | ⚠️ only selection inside tmux; **Wayland has no protocol for a client to raise a window itself** | ⚠️ same; `SetForegroundWindow` has a foreground lock | Already right: `ok` promises only "selected", not that the window is in front of you | S |
+| Killing a whole process tree | `Setpgid` + `killpg` | ✅ `supervisor_unix.go` | ✅ | ⚠️ needs a Job Object; today it honestly refuses to start | Already right: better not to start than to let the caller believe it can cancel | M |
 
-### 3.2 圖片、剪貼簿、語音
+### 3.2 Images, clipboard, voice
 
-| 功能 | 靠什麼 | 現況 | Linux | Windows | 做不到時怎麼呈現 | 難度 |
+| Feature | Relies on | Today | Linux | Windows | How it shows when it can't | Difficulty |
 |---|---|---|---|---|---|---|
-| 瀏覽器端附圖／貼上／拖拉 | HTML5，全在前端 | ✅ | ✅ 零修改 | ✅ 零修改 | — | — |
-| 圖片解碼（PNG／JPEG／GIF） | Go 標準庫 | ✅ | ✅ | ✅ | — | — |
-| 圖片解碼（HEIC／TIFF／WebP／BMP） | `/usr/bin/sips` | ✅ `decode_darwin.go` | ❌ `ErrDecoderUnavailable` | ❌ 同左 | 已經正確：回 `unsupported_image`，不是靜默接受 | S（純 Go webp／bmp 解碼器可補） |
-| 把圖交給終端裡的 assistant | 借用 macOS pasteboard 再還原 | ✅ `pasteboard_darwin.go` | ❌ 見 §4.3，**建議不做** | ❌ 同左 | 已經正確：`ErrPasteboardUnsupported` → 改交路徑 | — |
-| 語音錄音 | 瀏覽器 MediaRecorder → 16 kHz PCM | ✅ | ✅ 需 secure context | ✅ 同左 | 非 localhost 的 http 來源：麥克風按鈕要說「這個網址不能錄音」 | S |
-| 語音轉文字 | `whisper-cli` ＋ `ggml-*.bin` | ✅ | ✅ 搜尋路徑已寫好 | ✅ 搜尋路徑已寫好 | 已經正確：`ErrNoBinary` 與 `ErrNoModel` 分開 | S（缺的是安裝指引，§4.4） |
+| Attaching / pasting / dragging images in the browser | HTML5, all in the front end | ✅ | ✅ zero changes | ✅ zero changes | — | — |
+| Image decoding (PNG/JPEG/GIF) | Go standard library | ✅ | ✅ | ✅ | — | — |
+| Image decoding (HEIC/TIFF/WebP/BMP) | `/usr/bin/sips` | ✅ `decode_darwin.go` | ❌ `ErrDecoderUnavailable` | ❌ same | Already right: returns `unsupported_image`, does not silently accept | S (pure-Go webp/bmp decoders can fill in) |
+| Handing an image to the assistant in the terminal | Borrow the macOS pasteboard, then restore it | ✅ `pasteboard_darwin.go` | ❌ see §4.3, **recommended not to do** | ❌ same | Already right: `ErrPasteboardUnsupported` → hand over a path instead | — |
+| Voice recording | Browser MediaRecorder → 16 kHz PCM | ✅ | ✅ needs a secure context | ✅ same | An http origin that is not localhost: the microphone button must say "this address cannot record" | S |
+| Speech to text | `whisper-cli` + `ggml-*.bin` | ✅ | ✅ search paths already written | ✅ search paths already written | Already right: `ErrNoBinary` and `ErrNoModel` are separate | S (what is missing is install guidance, §4.4) |
 
-### 3.3 秘密、權限、儲存
+### 3.3 Secrets, permissions, storage
 
-| 功能 | 靠什麼 | 現況 | Linux | Windows | 做不到時怎麼呈現 | 難度 |
+| Feature | Relies on | Today | Linux | Windows | How it shows when it can't | Difficulty |
 |---|---|---|---|---|---|---|
-| 裝置與 token 儲存 | 0700 目錄 ＋ 0600 檔 ＋ atomic rename | ✅ `devices/`、`cloudkeys/` | ✅ 原生正確 | ❌ **Windows 沒有 0600**，`os.Chmod` 只改唯讀位元 | 見 §4.5：要 NTFS ACL ＋ DPAPI，這是目前唯一的 blocking 安全落差 | M |
-| 秘密進系統 keystore | — | ❌ 全部是檔案 | Secret Service（D-Bus）；headless 沒有 | DPAPI／Credential Manager（純 Go 可做） | 設定頁明說「這台用的是檔案」，不要假裝 | M |
-| 拒絕 symlink | `O_NOFOLLOW` ＋ Lstat ＋ same-file | ✅ | ✅ | ⚠️ `nofollow_other.go` 只剩 Lstat；還有 junction／ADS／短名 | §4.11 | M |
-| 事件儲存 | modernc.org/sqlite（純 Go） | ✅ | ✅ | ✅ 但 WAL 不可放網路磁碟 | 狀態目錄若在 UNC／對映磁碟機，啟動時就拒絕並說明 | S |
-| 狀態目錄位置 | `config.Dir()` | ✅ | `$XDG_CONFIG_HOME` → `~/.config` | `%APPDATA%` | — | — |
-| 文件路由的路徑穿越防護 | 副檔名白名單 ＋ 根目錄先算定 | ✅ `documents/` | ✅ | ⚠️ 要補 Windows 專屬檢查（§4.11） | — | M |
+| Device and token storage | 0700 directory + 0600 files + atomic rename | ✅ `devices/`, `cloudkeys/` | ✅ correct natively | ❌ **Windows has no 0600**; `os.Chmod` only changes the read-only bit | See §4.5: needs NTFS ACLs + DPAPI; this is the only blocking security gap today | M |
+| Secrets in the system keystore | — | ❌ all files | Secret Service (D-Bus); none when headless | DPAPI/Credential Manager (doable in pure Go) | The settings page says plainly "this machine uses files"; don't pretend | M |
+| Refusing symlinks | `O_NOFOLLOW` + Lstat + same-file | ✅ | ✅ | ⚠️ `nofollow_other.go` has only Lstat; junctions/ADS/short names remain | §4.11 | M |
+| Event storage | modernc.org/sqlite (pure Go) | ✅ | ✅ | ✅ but WAL cannot live on a network drive | If the state directory is on UNC or a mapped drive, refuse at startup and say why | S |
+| State directory location | `config.Dir()` | ✅ | `$XDG_CONFIG_HOME` → `~/.config` | `%APPDATA%` | — | — |
+| Path-traversal protection on the documents route | Extension allowlist + root settled first | ✅ `documents/` | ✅ | ⚠️ Windows-specific checks needed (§4.11) | — | M |
 
-### 3.4 桌面整合
+### 3.4 Desktop integration
 
-| 功能 | 靠什麼 | 現況 | Linux | Windows | 做不到時怎麼呈現 | 難度 |
+| Feature | Relies on | Today | Linux | Windows | How it shows when it can't | Difficulty |
 |---|---|---|---|---|---|---|
-| 原生視窗（webview） | WKWebView | ✅ `shell/darwin/` | **建議不做殼**，用系統瀏覽器 | WebView2 ＋ `go-webview2` | Linux：`clawdline open` 已經是完整答案 | L（Windows） |
-| 選單列／系統匣 | NSStatusItem | ✅ | StatusNotifierItem（D-Bus）；**GNOME 預設沒有匣** | `Shell_NotifyIcon` | GNOME：退回瀏覽器分頁的徽章（§4.9） | M |
-| 全域熱鍵 | Carbon `RegisterEventHotKey` | ✅ `HotKey.swift` | X11 可；**Wayland 基本上不行**（§4.8） | `RegisterHotKey`（user32） | Wayland：設定頁換成「由你的桌面設定一個捷徑指向 `clawdline panel`」 | M |
-| 登入時啟動 | `SMAppService` | ✅（預設關） | `systemd --user` ＋ `loginctl enable-linger`；或 XDG autostart | `HKCU\...\Run` | 無桌面且無 systemd：印出手動指令 | M |
-| 本機桌面通知 | **舊版沒有**（實測：`Sources/` 找不到 `UNUserNotificationCenter`） | — | `org.freedesktop.Notifications` | Toast（需 AUMID） | 見 §4.6：通知有三個出口，不是一個開關 | M |
-| 推播到手機 | Web Push（RFC 8291 ＋ VAPID） | ❌ 未移植 | ✅ 天生跨平台 | ✅ 天生跨平台 | — | L |
-| 瀏海島 | MacBook 的實體瀏海 | ❌ 未移植（task `a0d852b4` 進行中） | 無瀏海 | 無瀏海 | 抽象成 `Presence` port，見 §4.9 | M |
-| 拖放到原生視窗 | AppKit | ❌ 未移植 | — | — | 瀏覽器的 HTML5 拖放已經覆蓋 | — |
-| Dock／工作列圖示 | `.icns` | ✅ | `.desktop` ＋ PNG | `.ico` | — | S |
+| Native window (webview) | WKWebView | ✅ `shell/darwin/` | **Recommended: no shell**, use the system browser | WebView2 + `go-webview2` | Linux: `clawdline open` is already the complete answer | L (Windows) |
+| Menu bar / system tray | NSStatusItem | ✅ | StatusNotifierItem (D-Bus); **GNOME has no tray by default** | `Shell_NotifyIcon` | GNOME: fall back to a badge on the browser tab (§4.9) | M |
+| Global hotkey | Carbon `RegisterEventHotKey` | ✅ `HotKey.swift` | Possible on X11; **basically impossible on Wayland** (§4.8) | `RegisterHotKey` (user32) | Wayland: the settings page switches to "set a shortcut in your desktop that points to `clawdline panel`" | M |
+| Start at login | `SMAppService` | ✅ (off by default) | `systemd --user` + `loginctl enable-linger`; or XDG autostart | `HKCU\...\Run` | No desktop and no systemd: print the manual commands | M |
+| Local desktop notifications | **The old version had none** (measured: no `UNUserNotificationCenter` in `Sources/`) | — | `org.freedesktop.Notifications` | Toast (needs an AUMID) | See §4.6: notifications have three outlets, not one switch | M |
+| Push to the phone | Web Push (RFC 8291 + VAPID) | ❌ not ported | ✅ cross-platform by nature | ✅ cross-platform by nature | — | L |
+| Notch island | The MacBook's physical notch | ❌ not ported (a separate task is in progress) | No notch | No notch | Abstracted into a `Presence` port; see §4.9 | M |
+| Drag and drop onto the native window | AppKit | ❌ not ported | — | — | The browser's HTML5 drag and drop already covers it | — |
+| Dock/taskbar icon | `.icns` | ✅ | `.desktop` + PNG | `.ico` | — | S |
 
-### 3.5 遠端與互通
+### 3.5 Remote and interoperation
 
-| 功能 | 靠什麼 | 現況 | Linux | Windows | 做不到時怎麼呈現 | 難度 |
+| Feature | Relies on | Today | Linux | Windows | How it shows when it can't | Difficulty |
 |---|---|---|---|---|---|---|
-| 本機認證閘門 | 檔案 token ＋ cookie | ✅ | ✅ | ⚠️ 同 §3.3 的權限問題 | — | — |
-| `clawdline open` 開瀏覽器 | `open`／`xdg-open`／`rundll32` | ✅ 三平台已寫 | ✅ headless 無效 → `--print` | ✅ | headless：`--print` 印網址（已實作） | — |
-| 六位數配對 | CLI 印出 | ✅ | ✅ | ✅ | 無殼平台本來就走 CLI（`remote.md` §5 已寫） | — |
-| tunnel | 使用者自備 cloudflared | ❌ 未做 | ✅ 有官方二進位 | ✅ 有官方二進位 | — | M |
-| Cloud bridge | PROTOCOL.md | ❌ 未做 | ✅ 純網路 | ✅ 純網路 | — | L |
-| 讀舊 Swift app 的 store | `~/.config/clawdline` | ✅ `swiftstore/` | 天生為空（那台沒有舊 app） | 天生為空 | 用量頁退回 transcript（已實作）；皇冠／交付勾就是沒有 | — |
-| 用量帳本 | `~/Library/.../usage.sqlite3` | ✅ | ❌ `ObservabilityDir()` 只在 darwin 回值 | ❌ 同左 | 已經正確：退回 transcript 計算 | — |
-| 讀 transcript ／方案額度 | `~/.claude`、`~/.codex` | ✅ | ✅ 同樣路徑 | ✅ `%USERPROFILE%` | — | — |
-| 排程 | 純 Go | ✅ | ✅ | ✅ | — | — |
+| Local authentication gate | File token + cookie | ✅ | ✅ | ⚠️ the same permission problem as §3.3 | — | — |
+| `clawdline open` opening a browser | `open`/`xdg-open`/`rundll32` | ✅ written for all three | ✅ no effect when headless → `--print` | ✅ | Headless: `--print` prints the URL (implemented) | — |
+| Six-digit pairing | Printed by the CLI | ✅ | ✅ | ✅ | Platforms without a shell use the CLI anyway (`remote.md` §5 says so) | — |
+| tunnel | cloudflared, brought by the user | ❌ not done | ✅ official binaries exist | ✅ official binaries exist | — | M |
+| Cloud bridge | PROTOCOL.md | ❌ not done | ✅ pure network | ✅ pure network | — | L |
+| Reading the old Swift app's store | `~/.config/clawdline` | ✅ `swiftstore/` | Empty by nature (that machine has no old app) | Empty by nature | The usage page falls back to transcripts (implemented); the crown and the delivery check are simply absent | — |
+| Usage ledger | `~/Library/.../usage.sqlite3` | ✅ | ❌ `ObservabilityDir()` returns a value only on darwin | ❌ same | Already right: falls back to computing from transcripts | — |
+| Reading transcripts / plan quotas | `~/.claude`, `~/.codex` | ✅ | ✅ same paths | ✅ `%USERPROFILE%` | — | — |
+| Schedules | Pure Go | ✅ | ✅ | ✅ | — | — |
 
 ---
 
-## 4. 逐項
+## 4. Item by item
 
-<!-- section:sessions owner:task-1d861805 -->
-### 4.1 Windows 上沒有 tmux，session 怎麼開與讀
+<!-- section:sessions owner:task-aaaaaaaa -->
+### 4.1 Windows has no tmux: how sessions are opened and read
 
-`降級`（WSL 模式為 `可實作`）
+`degraded` (`implementable` in WSL mode)
 
-這是整份文件裡最大的一題，因為 `plan.md` §1 的第一條——「協調你已經開著的 session，而不是取代
-它」——在 Windows 上**沒有辦法完整成立**。理由不是懶，是 Windows 根本沒有這個產品需要的那個東西：
+This is the biggest question in the whole document, because the first rule of `plan.md` §1 — "coordinate the sessions you already have open, don't replace
+them" — **cannot fully hold** on Windows. The reason is not laziness; Windows simply does not have the thing this product needs:
 
-- **Windows 原生沒有 tmux。** tmux 要 POSIX pty。MSYS2／Cygwin 有 port，但那個 pty 是模擬的，
-  而且只控制得到同一個 MSYS 環境裡跑的行程；Windows 原生的 console 應用在它底下行為不同。
-- **Windows Terminal 不能被遙控。** 它有 `wt.exe` 命令列可以**開**新分頁（`wt -w 0 new-tab`），
-  但**沒有任何公開 API 可以對一個已經存在的分頁送鍵或讀畫面**。所以 Windows Terminal 只能當
-  「開啟器」，不能當 `TerminalHost`。
-- **Windows 沒有 tty 與前景行程群組。** `ps_unix.go` 靠 `pgid == tpgid` 判斷「這個終端機現在
-  正在跑的是哪一個行程」，Windows 上這個概念不存在。一個 console 可以有多個 attached 行程，
-  而且沒有「前景群組」。
+- **Windows has no native tmux.** tmux needs a POSIX pty. MSYS2/Cygwin have ports, but that pty is emulated,
+  and it controls only processes running in the same MSYS environment; native Windows console applications behave differently under it.
+- **Windows Terminal cannot be remote-controlled.** Its `wt.exe` command line can **open** a new tab (`wt -w 0 new-tab`),
+  but there is **no public API to send keys to, or read the screen of, a tab that already exists**. So Windows Terminal can only be
+  an "opener", not a `TerminalHost`.
+- **Windows has no tty and no foreground process group.** `ps_unix.go` relies on `pgid == tpgid` to decide "which process this terminal is
+  running right now"; that concept does not exist on Windows. A console can have several attached processes,
+  and there is no "foreground group".
 
-所以 Windows 要分三種形態講，**建議把三種都做，並在設定頁明白標示現在是哪一種**：
+So Windows has to be discussed as three shapes; **the recommendation is to build all three, and to label clearly on the settings page which one is in use**:
 
-#### (a) WSL 模式 —— 建議的預設
+#### (a) WSL mode — the recommended default
 
-**整個 daemon 用 Linux 版二進位跑在 WSL2 裡**，一切照 Linux 走：tmux 有、pty 有、procfs 有、
-FIFO 有。Windows 那邊只有瀏覽器（或將來的 WebView2 殼）連 `http://127.0.0.1:7727`——WSL2 的
-localhost 轉發讓這件事不需要任何設定。
+**The whole daemon runs as the Linux binary inside WSL2**, and everything goes the Linux way: tmux, pty, procfs and
+FIFOs are all there. On the Windows side there is only a browser (or a future WebView2 shell) connecting to `http://127.0.0.1:7727` — WSL2's
+localhost forwarding makes this need no configuration at all.
 
-- **代價 1**：專案檔案要放在 WSL 的檔案系統裡（`/home/...`）才有正常的 I/O 速度與 inotify；
-  放在 `/mnt/c/...` 兩者都會壞。
-- **代價 2**：用 Windows 原生工具鏈（MSVC、.NET）的專案不適用。
-- **代價 3**：`~/.claude`、`~/.codex` 是 WSL 裡那一份，不是 Windows 那一份。使用者若兩邊都跑過
-  assistant，會看到兩套歷史。**這一點要在頁面上講明**，不然他會以為 session 消失了。
-- 這條路的工作量幾乎是零（已經有 linux/amd64 的二進位，而且已在容器裡跑過），**所以它應該是
-  Windows 上第一個能用的形態**，而不是等 ConPTY 做完。
+- **Cost 1**: project files must live in WSL's file system (`/home/...`) to get normal I/O speed and inotify;
+  under `/mnt/c/...` both break.
+- **Cost 2**: projects that use the native Windows toolchain (MSVC, .NET) are not covered.
+- **Cost 3**: `~/.claude` and `~/.codex` are the copies inside WSL, not the Windows ones. A user who has run an assistant on both sides
+  will see two sets of history. **The page has to say this plainly**, or they will think their sessions vanished.
+- The work on this path is almost zero (a linux/amd64 binary already exists, and has already run in a container), **so it should be
+  the first usable shape on Windows**, rather than waiting for ConPTY.
 
-#### (b) 原生 Windows ＋ owned session —— ConPTY
+#### (b) Native Windows + owned sessions — ConPTY
 
-daemon 自己用 **ConPTY**（`CreatePseudoConsole`，Windows 10 1809＋）開一個 pseudo console，把
-assistant 跑在裡面。daemon 就是這個 pty 的 host，所以：
+The daemon itself uses **ConPTY** (`CreatePseudoConsole`, Windows 10 1809+) to open a pseudo console, and runs the
+assistant inside it. The daemon is this pty's host, so:
 
-| 要做的事 | tmux 上怎麼做 | ConPTY 上怎麼做 |
+| What needs doing | How on tmux | How on ConPTY |
 |---|---|---|
-| 送訊息 | `send-keys -l <text>` ＋ `Enter` | 往輸入 pipe 寫 UTF-8 ＋ `\r` |
-| 送一個原始按鍵（選單用） | `send-keys -H <hex>` | 往輸入 pipe 寫那一個 byte |
-| 中斷 | `send-keys C-c` | 往輸入 pipe 寫 `\x03` |
-| 關閉 | `kill-pane` | 關掉 pty ＋ 砍 Job Object |
-| 改大小 | tmux 自己管 | `ResizePseudoConsole` |
-| 讀畫面 | `capture-pane -p -e -J` | **見下一節：自己解析 VT 流** |
+| Send a message | `send-keys -l <text>` + `Enter` | Write UTF-8 + `\r` to the input pipe |
+| Send one raw key (for menus) | `send-keys -H <hex>` | Write that one byte to the input pipe |
+| Interrupt | `send-keys C-c` | Write `\x03` to the input pipe |
+| Close | `kill-pane` | Close the pty + kill the Job Object |
+| Resize | tmux handles it | `ResizePseudoConsole` |
+| Read the screen | `capture-pane -p -e -J` | **See the next section: parse the VT stream ourselves** |
 
-純 Go 可做：`golang.org/x/sys/windows` 有全部的 syscall，或直接用 `github.com/UserExistsError/conpty`
-（MIT，純 Go）。**不需要 cgo。**
+Doable in pure Go: `golang.org/x/sys/windows` has every syscall, or use `github.com/UserExistsError/conpty` directly
+(MIT, pure Go). **No cgo needed.**
 
-- **這是 Windows 上唯一能「完整」的路**，但它只涵蓋 daemon 自己開的 session。
-- **代價**：使用者自己在 Windows Terminal 裡手動開的那個 claude，daemon 讀不到也送不進去。
-  產品上要接受：**Windows 上要用 Clawdline，就從 Clawdline 開 session。**
+- **This is the only "complete" path on Windows**, but it covers only sessions the daemon opens itself.
+- **Cost**: a claude the user opens by hand in Windows Terminal can be neither read nor typed into by the daemon.
+  The product has to accept this: **to use Clawdline on Windows, open sessions from Clawdline.**
 
-#### (c) 原生 Windows ＋ 既有 session 的「只看得見」
+#### (c) Native Windows + "visible only" for existing sessions
 
-即使不能控，也應該看得見。`CreateToolhelp32Snapshot`（純 Go）可以列出 pid／ppid／執行檔名；
-命令列（`classify()` 與 `resumeID` 都要它）則要 WMI（`Win32_Process.CommandLine`，可用純 Go 的
-COM 綁定）或 `NtQueryInformationProcess` 讀 PEB。
+Even without control, they should be visible. `CreateToolhelp32Snapshot` (pure Go) can list pid/ppid/executable name;
+the command line (which both `classify()` and `resumeID` need) requires WMI (`Win32_Process.CommandLine`, through pure-Go
+COM bindings) or reading the PEB with `NtQueryInformationProcess`.
 
-- **呈現**：這些 session 出現在清單上，圖示與標題照舊，但**狀態明白標成「偵測到，這台無法遙控」**，
-  送出框停用並附上理由。這比讓它們從清單上消失好——使用者知道那個 session 在跑，看不到它才叫故障。
-- 這正好對應 `ps_windows.go` 現在的 `Complete:false`：**不能看，和看到空的，是兩件事**，那個檔案
-  已經把這條規則寫下來了。
+- **Presentation**: these sessions appear in the list with their icons and titles as usual, but **their state says plainly "detected; this machine cannot control it"**,
+  and the composer is disabled with the reason attached. That is better than having them vanish from the list — the user knows the session is running, and not being able to see it would be the fault.
+- This matches exactly the `Complete:false` that `ps_windows.go` returns today: **being unable to look and seeing nothing are two different things**, and that file
+  already has this rule written down.
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:sessions -->
 
-<!-- section:screen owner:task-1d861805 -->
-### 4.2 螢幕內容怎麼讀（ConPTY 的緩衝區）
+<!-- section:screen owner:task-aaaaaaaa -->
+### 4.2 How screen content is read (ConPTY's buffer)
 
-`可實作`（需要一個新元件）
+`implementable` (needs a new component)
 
-讀畫面有兩條完全不同的路，而分界線不是作業系統，**是這個 session 是誰開的**：
+There are two entirely different paths for reading the screen, and the dividing line is not the operating system; **it is who opened the session**:
 
-| | attached（別人開的） | owned（daemon 自己開的） |
+| | attached (opened by someone else) | owned (opened by the daemon itself) |
 |---|---|---|
-| macOS | tmux `capture-pane`；iTerm2 有 `Capture` | pty ＋ VT 解析器 |
-| Linux | tmux `capture-pane` | pty ＋ VT 解析器 |
-| Windows | **沒有** | ConPTY ＋ VT 解析器 |
+| macOS | tmux `capture-pane`; iTerm2 has `Capture` | pty + VT parser |
+| Linux | tmux `capture-pane` | pty + VT parser |
+| Windows | **None** | ConPTY + VT parser |
 
-也就是說，**「owned session 的讀畫面」在三個平台上是同一個元件**，值得先寫它。
+In other words, **"reading the screen of an owned session" is the same component on all three platforms**, and it is worth writing first.
 
-#### ConPTY 給你的不是緩衝區，是一條 VT 流
+#### ConPTY gives you a VT stream, not a buffer
 
-這一點很容易誤解，所以寫清楚：`CreatePseudoConsole` 給你一對 pipe。你寫進去的是鍵盤輸入；
-你**讀出來的是已經渲染好的 VT escape sequence 流**——游標移動、清行、顏色、重繪，全都在裡面。
-它不是一個你可以隨時去 dump 的二維字元陣列。
+This is easy to misunderstand, so to be clear: `CreatePseudoConsole` gives you a pair of pipes. What you write in is keyboard input;
+what you **read out is a stream of already-rendered VT escape sequences** — cursor moves, line clears, colours, repaints, all of it.
+It is not a two-dimensional character array you can dump at any moment.
 
-所以要有「畫面」，daemon 必須自己維護一個終端機狀態機：把那條流餵進去，狀態機裡永遠有一份
-當下的螢幕，隨時可以輸出成跟 `capture-pane -p -e -J` 一樣的東西。
+So to have a "screen", the daemon has to maintain a terminal state machine itself: feed the stream into it, and the state machine always holds
+the current screen, which can be output at any time as the same thing `capture-pane -p -e -J` gives.
 
-**這件事舊版評估過，而且拒絕過。** `LiveScreen.swift` 的表格裡，方案 B 是「`pipe-pane` ＋ VT
-emulator」，被否決的理由是：
+**The old version evaluated this, and rejected it.** In the table in `LiveScreen.swift`, option B was "`pipe-pane` + a VT
+emulator", and the reason it was rejected was:
 
-> 一個中途加入的讀取者，25 行裡有 13–14 行是錯的，而且在五個加入點裡有兩個**永遠不收斂**——
-> Claude Code 只重畫有變的行，你到達之前畫的那一行，對你來說永遠是空的。
+> a reader joining mid-stream is wrong for 13–14 of 25 lines and, at two of five join points, *never converges*:
+> Claude Code repaints only the lines that changed, so a line drawn before you arrived is blank for you forever.
 
-**這個理由在 owned session 上不成立**，而這是關鍵的轉折：owned session 的 daemon 從**第一個
-byte** 就在讀，根本沒有「中途加入」這回事。所以舊版拒絕 B 的那個理由，在這裡剛好反過來——
-B 是唯一可行的，而且是正確的。舊版量到 B 的 emulator 「以 100.00% 的 cell 與顏色精確度重現了
-三條真實的流，零個未實作的序列」，349 行 Swift，所以規模是可控的。
+**That reason does not hold for owned sessions**, and this is the key turn: for an owned session the daemon is reading from the **first
+byte**; there is no "joining mid-stream" at all. So the very reason the old version rejected B is reversed here —
+B is the only workable option, and the right one. The old version measured that B's emulator "reproduced three real streams at 100.00% cell-and-colour fidelity
+with zero unimplemented sequences", in 349 lines of Swift, so its size is manageable.
 
-Go 的候選：`github.com/hinshun/vt10x`、`github.com/charmbracelet/x/vt`，或照舊版那 349 行自己寫。
-**建議自己寫或包一層**，理由跟舊版一樣：這個東西要跟著 Claude Code 的重繪方式走，而那不是
-一個函式庫會替你維護的東西。
+Go candidates: `github.com/hinshun/vt10x`, `github.com/charmbracelet/x/vt`, or writing it ourselves after the old 349 lines.
+**The recommendation is to write our own or wrap one**, for the same reason as the old version: this thing has to follow the way Claude Code repaints, and that is not
+something a library will maintain for you.
 
-#### 評估過但不採用：`ReadConsoleOutput`
+#### Evaluated but not adopted: `ReadConsoleOutput`
 
-Windows 有 `AttachConsole(pid)` ＋ `ReadConsoleOutput` 可以直接讀一個 console 的字元緩衝區。
-不採用，三個理由：
+Windows has `AttachConsole(pid)` + `ReadConsoleOutput`, which reads a console's character buffer directly.
+Not adopted, for three reasons:
 
-1. **一個行程同時只能 attach 一個 console。** daemon 要輪流 attach／detach，而 attach 會接管
-   自己的 stdio。
-2. 對 ConPTY 托管的 pseudo console 適用性有限。
-3. 它讀的是那個 console 的緩衝區，而我們自己就是 pty host——繞遠路去讀自己已經有的東西。
+1. **A process can be attached to only one console at a time.** The daemon would have to attach and detach in turn, and attaching takes over
+   its own stdio.
+2. Its applicability to pseudo consoles hosted by ConPTY is limited.
+3. It reads that console's buffer, while we are the pty host ourselves — a detour to read something we already have.
 
-#### 即時性
+#### Latency
 
-- macOS／Linux 的 attached：`pipe-pane` → FIFO，FIFO 的可讀性就是訊號（實測 0.014 ms）。已實作。
-- **owned（三平台）**：pty／ConPTY 的輸出 pipe 本身就是訊號——有 byte 讀出來就是畫面動了。
-  比 FIFO 那一套更簡單，因為不需要第二個管道。
-- Windows 的 attached：沒有，`signal_other.go` 回 nil，畫面標成 `on-demand`。**這是對的**，
-  不要改成一個永遠不會醒的 stub。
+- macOS/Linux attached: `pipe-pane` → FIFO; the FIFO's readability is the signal (measured at 0.014 ms). Implemented.
+- **owned (all three platforms)**: the pty/ConPTY output pipe itself is the signal — bytes coming out mean the screen moved.
+  Simpler than the FIFO arrangement, because no second channel is needed.
+- Windows attached: none; `signal_other.go` returns nil, and the screen is marked `on-demand`. **This is right**;
+  do not change it into a stub that never wakes up.
 
-#### 一個要記得設的旗標
+#### A flag to remember to set
 
-ConPTY 底下，Windows console 的輸出 code page 預設不是 UTF-8（繁體中文機器上是 CP950）。
-要 `SetConsoleOutputCP(CP_UTF8)` ／ `SetConsoleCP(CP_UTF8)`，否則中文全是亂碼。
-這一條在真機上第一次跑就會撞到。
+Under ConPTY, a Windows console's output code page is not UTF-8 by default (on a Traditional Chinese machine it is CP950).
+It needs `SetConsoleOutputCP(CP_UTF8)` / `SetConsoleCP(CP_UTF8)`, or all Chinese text comes out garbled.
+This one will be hit on the very first run on a real machine.
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:screen -->
 
-<!-- section:clipboard owner:task-1d861805 -->
-### 4.3 剪貼簿與圖片：Linux／Windows 建議「不做借用」
+<!-- section:clipboard owner:task-aaaaaaaa -->
+### 4.3 Clipboard and images: on Linux/Windows the recommendation is "no borrowing"
 
-`不支援`（建議維持現況）
+`unsupported` (recommended to stay as it is)
 
-現在把圖交給終端裡的 assistant 的做法是：**借用系統剪貼簿 → 放圖 → 送 Ctrl-V → 還原**
-（`pasteboard_darwin.go`，對應舊版 `Targets.send(_ pieces:to:)`）。Claude Code 收到 Ctrl-V 時去讀
-剪貼簿，畫面上顯示 `[Image #1]`。
+Today an image is handed to the assistant in the terminal like this: **borrow the system clipboard → put the image in → send Ctrl-V → restore**
+(`pasteboard_darwin.go`, matching the old `Targets.send(_ pieces:to:)`). When Claude Code receives Ctrl-V it reads
+the clipboard, and the screen shows `[Image #1]`.
 
-**在 Linux 上這條路建議不要做**，理由是 X11 與 Wayland 的剪貼簿所有權模型：
+**On Linux this path is recommended against**, because of the clipboard ownership model of X11 and Wayland:
 
-- X11 的 selection **不是一塊記憶體，是一個「誰現在擁有它」的宣告**。擁有者必須活著，才能在
-  別人貼上時把資料交出去。`xclip` 因此會 fork 一個常駐行程。
-- Wayland 更嚴：**設定剪貼簿要有 focus**。`wl-copy` 靠開一個隱形 surface 繞過，而且同樣必須
-  保持存活。
-- 這表示「借用再還原」在 Linux 上不是兩次呼叫，是**兩次交接所有權**，而且中間那段時間
-  daemon 必須持有使用者的剪貼簿。一旦 daemon 在那段時間掛掉，使用者原本複製的東西就沒了。
-  這跟「不搶你的鍵盤」是同一類的傷害。
+- An X11 selection **is not a piece of memory but a declaration of "who owns it now"**. The owner must be alive to hand over the data when
+  someone else pastes. That is why `xclip` forks a resident process.
+- Wayland is stricter: **setting the clipboard needs focus**. `wl-copy` gets around it by opening an invisible surface, and it too has to
+  stay alive.
+- This means "borrow, then restore" on Linux is not two calls but **two handovers of ownership**, and in between
+  the daemon has to hold the user's clipboard. If the daemon dies in that window, whatever the user had copied is gone.
+  That is the same kind of harm as taking over the keyboard.
 
-**建議的呈現**：Linux 與 Windows 上，送圖就是**把檔案路徑交給 assistant**（現在
-`ErrPasteboardUnsupported` 已經是這個行為）。
+**The recommended presentation**: on Linux and Windows, sending an image means **handing the file path to the assistant** (which is already
+what `ErrPasteboardUnsupported` does today).
 
-- **代價**：Claude Code 在那些機器上收到的是一行路徑，不是 `[Image #1]`。它仍然讀得到圖
-  （它有讀檔工具），但對話裡的呈現不一樣，而且要多一次工具呼叫。
-- **要講給使用者聽的**：在附圖的提示行寫一句「這台機器會把圖片以路徑交給 assistant」，
-  而不是讓他自己從結果推論。
+- **Cost**: on those machines Claude Code receives a line with a path, not `[Image #1]`. It can still read the image
+  (it has a file-reading tool), but it looks different in the conversation, and takes one more tool call.
+- **What to tell the user**: the hint line for attaching images says "this machine hands images to the assistant as paths",
+  rather than leaving them to infer it from the result.
 
-**Windows** 技術上比較容易（`OpenClipboard`／`SetClipboardData` 是一次呼叫，資料交給系統保管，
-不需要常駐），所以將來若真的要做，**先做 Windows**。但同樣的問題還在：借用期間使用者複製的
-東西會被蓋掉。現行的 `change count` 保護（別人複製過就不還原）在 Windows 上有對應的
-`GetClipboardSequenceNumber`，所以可以照抄。
+**Windows** is technically easier (`OpenClipboard`/`SetClipboardData` is one call, and the system keeps the data,
+with no resident process needed), so if this is ever really done, **do Windows first**. But the same problem remains: whatever the user copies while the clipboard is borrowed
+gets overwritten. The current `change count` protection (don't restore if someone else copied in the meantime) has a Windows counterpart,
+`GetClipboardSequenceNumber`, so it can be carried over as is.
 
-#### 圖片解碼
+#### Image decoding
 
-`sips` 只有 macOS 有。Linux／Windows 上 HEIC、TIFF、WebP、BMP 目前一律 `unsupported_image`。
+Only macOS has `sips`. On Linux/Windows, HEIC, TIFF, WebP and BMP are all `unsupported_image` today.
 
-- 補救成本最低的是 **WebP 與 BMP**：純 Go 有 `golang.org/x/image/webp`（只支援解碼，夠用）
-  與 `golang.org/x/image/bmp`。**建議直接補上，三平台一起受益**——現在連 macOS 都是繞去叫 `sips`。
-- HEIC 沒有純 Go 解碼器，維持 `unsupported_image`。呈現：錯誤訊息要說「這台機器讀不了 HEIC，
-  請先轉成 PNG 或 JPEG」，不要只說「不支援的圖片」。
+- The cheapest to fix are **WebP and BMP**: pure Go has `golang.org/x/image/webp` (decode only, which is enough)
+  and `golang.org/x/image/bmp`. **Recommended: add them now, and all three platforms benefit** — today even macOS takes the detour through `sips`.
+- HEIC has no pure-Go decoder; it stays `unsupported_image`. Presentation: the error message says "this machine cannot read HEIC;
+  convert it to PNG or JPEG first", not just "unsupported image".
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:clipboard -->
 
-<!-- section:whisper owner:task-1d861805 -->
-### 4.4 whisper-cli 的安裝方式
+<!-- section:whisper owner:task-aaaaaaaa -->
+### 4.4 How whisper-cli is installed
 
-`已實作`（搜尋路徑）／`可實作`（安裝指引）
+`implemented` (search paths) / `implementable` (install guidance)
 
-`internal/adapters/whisper` 的搜尋路徑三個平台都已經寫好了，而且 `ErrNoBinary` 與 `ErrNoModel`
-是分開的兩個錯誤——`whisper.go` 的檔頭已經說明為什麼要分開（「只告訴他『關著』，他會去檢查
-一件他已經做過的事」）。**缺的不是程式，是指引。**
+The search paths in `internal/adapters/whisper` are already written for all three platforms, and `ErrNoBinary` and `ErrNoModel`
+are two separate errors — the header of `whisper.go` already explains why they are kept apart: *Told only "off", a person goes and checks
+the thing they already did.* **What is missing is not code but guidance.**
 
-| | 執行檔怎麼來 | 搜尋路徑（已寫好） | 模型怎麼來 | 模型路徑（已寫好） |
+| | Where the executable comes from | Search paths (already written) | Where the model comes from | Model paths (already written) |
 |---|---|---|---|---|
-| **macOS** | `brew install whisper-cpp` | `/opt/homebrew/bin`、`/usr/local/bin` | `download-ggml-model.sh`，或沿用舊 app 下載過的 | `~/.cache/whisper`、`~/Library/Application Support/Clawdline/models` |
-| **Linux** | **沒有主流發行版套件**。實務上是自己編：`git clone whisper.cpp && cmake -B build && cmake --build build -j` | `/usr/local/bin`、`/usr/bin`、`/opt/whisper.cpp/build/bin`、`~/.local/bin`、`~/whisper.cpp/build/bin` | 同上 | `~/.cache/whisper`、`~/.local/share/whisper`、`/usr/share/whisper`、`/opt/whisper.cpp/models` |
-| **Windows** | 官方 release 有預編 zip，解壓到 `%LOCALAPPDATA%\whisper.cpp\` | `%LOCALAPPDATA%\whisper.cpp[\bin]`、`%ProgramFiles%\whisper.cpp[\bin]` | 同上 | `%LOCALAPPDATA%\whisper`、`%LOCALAPPDATA%\whisper.cpp\models` |
+| **macOS** | `brew install whisper-cpp` | `/opt/homebrew/bin`, `/usr/local/bin` | `download-ggml-model.sh`, or reuse one the old app downloaded | `~/.cache/whisper`, `~/Library/Application Support/Clawdline/models` |
+| **Linux** | **No mainstream distribution package.** In practice you build it: `git clone whisper.cpp && cmake -B build && cmake --build build -j` | `/usr/local/bin`, `/usr/bin`, `/opt/whisper.cpp/build/bin`, `~/.local/bin`, `~/whisper.cpp/build/bin` | Same as above | `~/.cache/whisper`, `~/.local/share/whisper`, `/usr/share/whisper`, `/opt/whisper.cpp/models` |
+| **Windows** | The official release has a prebuilt zip; unzip it into `%LOCALAPPDATA%\whisper.cpp\` | `%LOCALAPPDATA%\whisper.cpp[\bin]`, `%ProgramFiles%\whisper.cpp[\bin]` | Same as above | `%LOCALAPPDATA%\whisper`, `%LOCALAPPDATA%\whisper.cpp\models` |
 
-三件要做的事：
+Three things to do:
 
-1. **設定頁把路徑印出來。** 「沒找到 whisper-cli」旁邊直接列出**這台機器實際搜尋過的目錄**，
-   以及這個平台的安裝指令，附一個複製按鈕。使用者最常犯的錯是裝了但裝在別的地方。
-2. **明講不吃哪一個。** pip／uv 裝的 `openai-whisper` 是另一個工具、另一組 CLI 參數，**不相容**。
-   Linux 使用者很容易裝到那個然後以為壞了。錯誤訊息要點名。
-3. **模型可以代下載，執行檔不行。** 建議加一個 `clawdline voice install-model <name>`，把
-   `ggml-<name>.bin` 下載到 `~/.cache/whisper`（三平台都是第一個搜尋位置）。執行檔要編譯，
-   不代勞——那是一個會失敗在一百種地方的事，而失敗的錯誤訊息會變成我們的責任。
+1. **The settings page prints the paths.** Next to "whisper-cli not found", list **the directories this machine actually searched**,
+   and this platform's install command, with a copy button. The user's commonest mistake is having installed it somewhere else.
+2. **Say plainly which one it does not take.** The `openai-whisper` installed by pip/uv is a different tool with different CLI arguments, **not compatible**.
+   Linux users easily install that one and think it is broken. The error message has to name it.
+3. **The model can be downloaded for the user; the executable cannot.** Recommended: add `clawdline voice install-model <name>`, which downloads
+   `ggml-<name>.bin` into `~/.cache/whisper` (the first search location on all three platforms). The executable needs compiling,
+   and we don't do that for them — it can fail in a hundred places, and the failure's error message would become our responsibility.
 
-**Linux 上還有一個前提**：瀏覽器要錄音，頁面必須是 secure context。`http://127.0.0.1:7727`
-算（localhost 是例外），但**從區網 IP 連進來的 `http://192.168.x.x:7727` 不算**，麥克風會被
-瀏覽器拒絕。這不是 Linux 專屬，但 Linux 上「在另一台機器開瀏覽器連過去」是常見用法，所以
-要在 `#mic` 停用時說出真正的理由。
+**There is one more precondition on Linux**: for the browser to record, the page must be a secure context. `http://127.0.0.1:7727`
+counts (localhost is an exception), but **`http://192.168.x.x:7727`, reached over a LAN IP, does not**, and the browser will refuse
+the microphone. This is not Linux-specific, but "opening a browser on another machine and connecting over" is a common way to use Linux, so
+when `#mic` is disabled it has to give the real reason.
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:whisper -->
 
-<!-- section:secrets owner:task-1d861805 -->
-### 4.5 金鑰儲存：Keychain／Credential Manager／Secret Service／檔案
+<!-- section:secrets owner:task-aaaaaaaa -->
+### 4.5 Key storage: Keychain / Credential Manager / Secret Service / files
 
-`已實作`（檔案）／`可實作`（keystore）／**Windows 有一個 blocking 落差**
+`implemented` (files) / `implementable` (keystore) / **Windows has a blocking gap**
 
-現況：`internal/adapters/cloudkeys`（device Ed25519 seed、account master secret）與
-`internal/adapters/devices`（local token、machine token、裝置雜湊、audit log）**全部是檔案**，
-0700 目錄 ＋ 0600 檔 ＋ 寫入走同目錄暫存檔再 rename ＋ 開檔一律 `O_NOFOLLOW`。接縫是
-`cloud.KeyStore`。`remote.md` §4 已經記下這是刻意的第一版選擇。
+Today: `internal/adapters/cloudkeys` (the device Ed25519 seed, the account master secret) and
+`internal/adapters/devices` (local token, machine token, device hashes, audit log) **are all files**:
+a 0700 directory + 0600 files + writes through a temporary file in the same directory, then a rename + every open with `O_NOFOLLOW`. The seam is
+`cloud.KeyStore`. `remote.md` §4 already records this as a deliberate first-version choice.
 
-#### 先講那個 blocking 的落差
+#### First, the blocking gap
 
-**Windows 上「0600」是一句空話。** `os.Chmod` 在 Windows 只改唯讀位元，不設 ACL。所以
-`cloudkeys` 與 `devices` 兩個 package 檔頭寫的那條規則——「這個檔案是這個人的，別人讀不到」
-——在 Windows 上目前**不成立**。同一台機器上的另一個使用者帳號讀得到 local token，而 local token
-可以 send、可以管理裝置。
+**On Windows, "0600" is an empty phrase.** On Windows `os.Chmod` changes only the read-only bit and sets no ACL. So
+the rule written in the headers of the `cloudkeys` and `devices` packages — that this file belongs to this person and nobody else can read it
+— **does not hold** on Windows today. Another user account on the same machine can read the local token, and the local token
+can send and can manage devices.
 
-兩件事一起做才補得起來，**而且建議兩件都做，不要二選一**：
+It takes two things done together to close it, **and the recommendation is to do both, not to pick one**:
 
-1. **NTFS ACL**：建檔時用 `SetNamedSecurityInfo`／`CreateFile` 帶一個只含目前使用者 SID 的 DACL，
-   並關掉繼承。純 Go 可做（`golang.org/x/sys/windows`）。
-2. **DPAPI**：`CryptProtectData`（user scope）把內容加密之後才寫檔。即使檔案被複製走，
-   換一個帳號也解不開。純 Go 可做。
+1. **NTFS ACL**: when creating the file, use `SetNamedSecurityInfo`/`CreateFile` with a DACL containing only the current user's SID,
+   and turn off inheritance. Doable in pure Go (`golang.org/x/sys/windows`).
+2. **DPAPI**: `CryptProtectData` (user scope) encrypts the content before it is written. Even if the file is copied away,
+   another account cannot decrypt it. Doable in pure Go.
 
-第 2 項同時就是 Windows 的 keystore 答案，所以它不是額外的工作，是**把 §3.3 那一列和這一列
-合併成同一件事**。
+Item 2 is also the Windows keystore answer, so it is not extra work; it **merges that row of §3.3 and this row
+into one job**.
 
-#### 四個平台的 keystore
+#### The keystore on four platforms
 
-| | 做法 | 純 Go？ | 限制 |
+| | Approach | Pure Go? | Limits |
 |---|---|---|---|
-| **macOS** | Keychain | ❌ 要 cgo（Security.framework） | 替代：子行程 `/usr/bin/security`（但密碼會出現在命令列參數），或**由 Swift 殼代管**——殼本來就連得到 Security.framework |
-| **Windows** | DPAPI（user scope）＋ 檔案；或 Credential Manager | ✅ | Credential Manager 單筆上限 2560 bytes，對 32-byte key 綽綽有餘 |
-| **Linux（有桌面）** | Secret Service（D-Bus `org.freedesktop.secrets`，gnome-keyring／KWallet） | ✅（`godbus/dbus`） | **要有 desktop session 且 keyring 已解鎖**。SSH 進去的 session 通常沒有 |
-| **Linux（headless／容器）** | 0600 檔案 | ✅ | 就是現況 |
+| **macOS** | Keychain | ❌ needs cgo (Security.framework) | Alternatives: a `/usr/bin/security` subprocess (but the password appears in the command-line arguments), or **let the Swift shell hold it** — the shell can reach Security.framework anyway |
+| **Windows** | DPAPI (user scope) + files; or Credential Manager | ✅ | Credential Manager's limit is 2560 bytes per entry, plenty for a 32-byte key |
+| **Linux (with a desktop)** | Secret Service (D-Bus `org.freedesktop.secrets`, gnome-keyring/KWallet) | ✅ (`godbus/dbus`) | **Needs a desktop session with the keyring unlocked.** A session reached over SSH usually has neither |
+| **Linux (headless/container)** | 0600 files | ✅ | This is today's state |
 
-**macOS 的建議**：不要為了 Keychain 開 cgo——那會拆掉「一台機器產六個平台」這件事。
-要嘛維持檔案，要嘛讓 Swift 殼在啟動時從 Keychain 讀出來、交給 daemon。後者比較對，因為殼本來
-就已經在做同一件事（它把本機 token 注入 WKWebView 的 cookie）。
+**For macOS, the recommendation**: don't turn on cgo for Keychain — that would break "one machine builds six platforms".
+Either keep the files, or have the Swift shell read the secrets from Keychain at startup and hand them to the daemon. The latter is more right, because the shell
+already does the same kind of thing (it injects the local token into WKWebView's cookie).
 
-#### 三條規則，寫進設計
+#### Three rules, written into the design
 
-1. **檔案是地板，keystore 是加值。** 啟動時偵測，能用就用，用不了就用檔案。
-   **絕不因為 keystore 不在就拒絕啟動**——headless Linux 是正常的部署形態，不是壞掉的桌面。
-2. **降級要說出來，而且要說在兩個地方**：設定頁的一行字，以及 `/v1/health` 的一個欄位
-   （讓 CLI 與監控也看得到）。「秘密存在哪裡」是使用者有權知道的事。
-3. **讀不到 ≠ 不存在。** 這是 `cloudkeys` 檔頭已經寫下的規則，換 keystore 時特別危險：
-   使用者換了桌面環境、keyring 沒解鎖、DPAPI 因為帳號密碼被管理員重設而失效——這些情況下
-   **必須停下來報錯，不可以 mint 一把新的**。mint 新的會讓他所有已配對的裝置靜默失效，
-   而他第一個察覺的症狀會是「什麼都解不開了」。
+1. **Files are the floor; the keystore is an extra.** Detect it at startup: use it if it works, and files if it doesn't.
+   **Never refuse to start because the keystore is missing** — headless Linux is a normal deployment shape, not a broken desktop.
+2. **A degradation is said out loud, and in two places**: one line on the settings page, and one field in `/v1/health`
+   (so the CLI and monitoring can see it too). "Where the secrets are kept" is something the user has a right to know.
+3. **Unreadable ≠ absent.** This rule is already in the `cloudkeys` header, and it is especially dangerous when changing keystores:
+   the user switched desktop environments, the keyring is not unlocked, DPAPI stopped working because an administrator reset the account password — in these cases
+   **it must stop and report an error, and must not mint a new key**. Minting a new one would silently invalidate every device they have paired,
+   and the first symptom they would notice is "nothing can be decrypted any more".
 
-#### 遷移
+#### Migration
 
-一旦某個平台開始用 keystore，就要有從檔案搬過去的路徑，而且**搬完要把檔案刪掉並記一筆 audit**。
-反方向（keystore → 檔案）不要自動做：那是降級，要使用者明確同意。
+Once a platform starts using a keystore, there has to be a path for moving over from files, and **after the move the files are deleted and an audit entry is recorded**.
+The reverse direction (keystore → files) is not done automatically: that is a degradation, and it needs the user's explicit consent.
 
-**修正總表**：`3.3 / 裝置與 token 儲存 / Windows` 這一格的難度應為 **M**，且屬於 **blocking**——
-Windows 版在補上 ACL ＋ DPAPI 之前不應該對外發布。
+**Summary-table correction**: `3.3 / Device and token storage / Windows`: this cell's difficulty should be **M**, and it is **blocking** —
+the Windows version should not be released publicly before ACL + DPAPI are in place.
 
 <!-- /section:secrets -->
 
-<!-- section:notifications owner:task-1d861805 -->
-### 4.6 通知
+<!-- section:notifications owner:task-aaaaaaaa -->
+### 4.6 Notifications
 
-`可實作`
+`implementable`
 
-先講一個實測到、而且對跨平台是好消息的事實：
+First, a measured fact that is good news for cross-platform:
 
-> **舊 Swift app 沒有使用 macOS 本機通知中心。** `grep -rn "UNUserNotificationCenter|NSUserNotification|display notification" Sources/`
-> 在舊 app 的 `Sources/` 底下**零個結果**。它唯一會主動離開這台機器的東西是 **Web Push**
-> （`WebPush.swift`，RFC 8291 ＋ VAPID，加密後交給 Apple／Mozilla／Google 的 push service）。
+> **The old Swift app did not use the macOS local notification center.** `grep -rn "UNUserNotificationCenter|NSUserNotification|display notification" Sources/`
+> gives **zero results** under the old app's `Sources/`. The only thing it actively sent off this machine was **Web Push**
+> (`WebPush.swift`, RFC 8291 + VAPID, encrypted and handed to Apple's, Mozilla's or Google's push service).
 
-也就是說，**「通知」這個功能天生就是跨平台的**，因為訂閱在瀏覽器端，daemon 只需要能對外發
-HTTPS。Linux server、Windows、macOS 都一樣。
+In other words, **"notifications" as a feature is cross-platform by nature**, because the subscription lives in the browser and the daemon only needs to be able to make outbound
+HTTPS requests. Linux servers, Windows and macOS are all the same.
 
-所以通知不該是設定頁上一個開關，而是**三個出口，各自有狀態**：
+So notifications should not be one switch on the settings page but **three outlets, each with its own state**:
 
-| 出口 | 需要什麼 | macOS | Linux | Windows |
+| Outlet | Needs | macOS | Linux | Windows |
 |---|---|---|---|---|
-| **1. Web Push 到已配對的裝置**（主要路徑） | 瀏覽器訂閱 ＋ daemon 能對外連線 | ✅ | ✅ | ✅ |
-| **2. 本機桌面通知**（有殼、有桌面時的加值） | 平台 API | `UNUserNotificationCenter`（要 signed bundle，殼已經是 `.app`） | `org.freedesktop.Notifications`（D-Bus，幾乎每個桌面都有；headless 沒有） | Toast（`Windows.UI.Notifications`；**要 AUMID，而且開始功能表要有捷徑才會顯示**） |
-| **3. console 頁面本身**（永遠有） | 無 | ✅ | ✅ | ✅ |
+| **1. Web Push to paired devices** (the main path) | A browser subscription + outbound connectivity for the daemon | ✅ | ✅ | ✅ |
+| **2. Local desktop notifications** (an extra, when there is a shell and a desktop) | A platform API | `UNUserNotificationCenter` (needs a signed bundle; the shell is already an `.app`) | `org.freedesktop.Notifications` (D-Bus, on nearly every desktop; none when headless) | Toast (`Windows.UI.Notifications`; **needs an AUMID, and shows only if there is a Start menu shortcut**) |
+| **3. The console page itself** (always there) | Nothing | ✅ | ✅ | ✅ |
 
-出口 3 是地板：分頁標題的徽章、favicon、header 的 counts。它不需要任何權限、任何平台 API，
-而且在使用者正看著頁面的時候它其實是最好的那個。
+Outlet 3 is the floor: the badge in the tab title, the favicon, the counts in the header. It needs no permission and no platform API,
+and while the user is looking at the page it is actually the best of the three.
 
-#### 三個要寫進呈現的限制
+#### Three limits the presentation must state
 
-1. **Service Worker 要 secure context。** 瀏覽器要訂閱 Web Push，頁面必須是 https 或 localhost。
-   `http://127.0.0.1:7727` 可以；**`http://192.168.x.x:7727` 不可以**。所以「從另一台機器連進來
-   的人收不到推播」——除非走 tunnel 的 https。這一條要在設定頁的通知區塊直說，不然使用者會以為
-   是 bug。
-2. **Windows Toast 的 AUMID。** 沒有註冊 AppUserModelID 的行程發出的 toast 不會顯示，而且
-   **不會報錯**。這是 Windows 上最容易「以為做完了其實沒有」的一項，要在真機驗證清單裡。
-3. **headless Linux 沒有出口 2。** 這是正常狀態，不是故障。設定頁列「本機桌面通知：這台機器
-   沒有桌面工作階段」。
+1. **A Service Worker needs a secure context.** For the browser to subscribe to Web Push, the page must be https or localhost.
+   `http://127.0.0.1:7727` works; **`http://192.168.x.x:7727` does not**. So "someone connecting from another machine
+   gets no push" — unless they come through a tunnel's https. This has to be said in the notifications block of the settings page, or users will think
+   it is a bug.
+2. **The Windows Toast AUMID.** A toast from a process without a registered AppUserModelID does not show, and
+   **reports no error**. On Windows this is the item easiest to "think is done when it isn't", and it belongs on the real-machine checklist.
+3. **Headless Linux has no outlet 2.** That is a normal state, not a fault. The settings page lists "Local desktop notifications: this machine
+   has no desktop session".
 
-#### 建議的順序
+#### Recommended order
 
-Web Push（出口 1）本來就要為 Cloud 做，做完三個平台一起有。出口 2 是三份各自的小工，
-建議排在原生殼之後，因為它們都要殼提供身分（bundle／AUMID／`.desktop` 名稱）。
+Web Push (outlet 1) has to be built for Cloud anyway, and once it is done all three platforms have it. Outlet 2 is three separate small jobs,
+best scheduled after the native shells, because they all need the shell to provide an identity (bundle/AUMID/`.desktop` name).
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:notifications -->
 
-<!-- section:autostart owner:task-1d861805 -->
-### 4.7 開機自動啟動
+<!-- section:autostart owner:task-aaaaaaaa -->
+### 4.7 Starting automatically at login
 
-`已實作`（macOS）／`可實作`（Linux、Windows）
+`implemented` (macOS) / `implementable` (Linux, Windows)
 
-macOS 已經有：`SMAppService.mainApp`，一個開關，預設關閉（`replica.md` 的原生殼表）。
+macOS already has it: `SMAppService.mainApp`, one switch, off by default (the native shell table in `replica.md`).
 
 #### Windows
 
-四個候選，**建議選第一個**：
+Four candidates; **the recommendation is the first**:
 
-| 做法 | 純 Go | 優點 | 缺點 |
+| Approach | Pure Go | Upside | Downside |
 |---|---|---|---|
-| **`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`** | ✅ `x/sys/windows/registry` | 一行登錄值；使用者自己在工作管理員的「開機」分頁看得到也關得掉 | 登入後才跑；部分防毒會多看一眼 |
-| Startup 資料夾（`shell:startup` 放 `.lnk`） | ⚠️ 要 COM 產生捷徑 | 使用者看得懂 | 麻煩，沒有好處 |
-| Task Scheduler（`schtasks /create /sc onlogon`） | ✅（子行程） | 可延遲啟動、可自動重啟 | 企業環境常鎖住；XML 難維護 |
-| Windows Service（SCM） | ✅ | 開機就跑，不用登入 | **不要做**——見下 |
+| **`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`** | ✅ `x/sys/windows/registry` | One registry value; the user can see it, and turn it off, in Task Manager's "Startup" tab | Runs only after login; some antivirus software takes a second look |
+| Startup folder (a `.lnk` in `shell:startup`) | ⚠️ needs COM to create the shortcut | Users understand it | Fiddly, with no benefit |
+| Task Scheduler (`schtasks /create /sc onlogon`) | ✅ (subprocess) | Can delay the start, can restart automatically | Often locked down in enterprises; the XML is hard to maintain |
+| Windows Service (SCM) | ✅ | Runs at boot, with no login needed | **Don't** — see below |
 
-**不要做成 Windows Service。** 服務跑在 Session 0，與使用者的桌面工作階段隔離：它看不到使用者
-的終端機、拿不到使用者的 `%USERPROFILE%\.claude`、也不能開視窗。這個 daemon 的工作**就是**
-使用者那個工作階段裡的事。把它做成服務會得到一個技術上在跑、產品上什麼都做不到的東西。
+**Don't make it a Windows Service.** Services run in Session 0, isolated from the user's desktop session: a service cannot see the user's
+terminals, cannot get the user's `%USERPROFILE%\.claude`, and cannot open windows. This daemon's job **is**
+what happens in that user's session. Making it a service yields something that is technically running and, as a product, can do nothing.
 
 #### Linux
 
-兩條，**建議都支援並自動偵測**：
+Two ways; **the recommendation is to support both and detect automatically**:
 
-| 情形 | 做法 |
+| Situation | Approach |
 |---|---|
-| 有桌面 | XDG autostart：`~/.config/autostart/clawdline-next.desktop`。主流桌面全支援 |
-| 無桌面／server | `systemd --user`：`~/.config/systemd/user/clawdline-next.service` ＋ `systemctl --user enable --now` |
+| A desktop | XDG autostart: `~/.config/autostart/clawdline-next.desktop`. Every mainstream desktop supports it |
+| No desktop / a server | `systemd --user`: `~/.config/systemd/user/clawdline-next.service` + `systemctl --user enable --now` |
 
-**`loginctl enable-linger $USER` 這一步一定要寫出來。** 沒有 linger，systemd 預設在使用者最後
-一個工作階段結束時殺掉他所有的行程（`KillUserProcesses`）——也就是說，SSH 登出，daemon 就沒了。
-這是 AWS 上第一個會撞到的坑，而且症狀（「我明明 enable 了」）跟設定錯誤長得一模一樣。
+**The `loginctl enable-linger $USER` step must be written out.** Without linger, systemd by default kills all of a user's processes when their last
+session ends (`KillUserProcesses`) — that is, log out of SSH and the daemon is gone.
+This is the first pit anyone hits on AWS, and its symptom ("but I enabled it") looks exactly like a configuration mistake.
 
-#### 統一的介面
+#### One interface
 
-建議做一個 `clawdline autostart enable|disable|status` 子命令，把三個平台的差異關在裡面，
-設定頁只呼叫它、只顯示它回報的狀態。理由：**設定頁上那個開關要能誠實地回答「現在是開還是關」**，
-而三個平台的「怎麼問」完全不同；把它放在一個地方，設定頁就不用知道 registry 長什麼樣子。
+Recommended: a `clawdline autostart enable|disable|status` subcommand that keeps the three platforms' differences inside it;
+the settings page only calls it and only shows the state it reports. The reason: **the switch on the settings page has to be able to answer honestly "is it on or off right now"**,
+and "how to ask" is completely different on the three platforms; with the asking in one place, the settings page does not need to know what the registry looks like.
 
-無桌面、無 systemd 的機器（極簡容器）：`status` 回「這台機器沒有可用的自動啟動機制」，
-並印出手動的指令。
+Machines with no desktop and no systemd (minimal containers): `status` answers "this machine has no usable autostart mechanism",
+and prints the manual commands.
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:autostart -->
 
-<!-- section:hotkey owner:task-1d861805 -->
-### 4.8 全域熱鍵，以及 Wayland 的限制
+<!-- section:hotkey owner:task-aaaaaaaa -->
+### 4.8 Global hotkeys, and the limits of Wayland
 
-`已實作`（macOS）／`可實作`（Windows、X11）／`降級`（Wayland）
+`implemented` (macOS) / `implementable` (Windows, X11) / `degraded` (Wayland)
 
-#### macOS（現況）
+#### macOS (today)
 
-Carbon 的 `RegisterEventHotKey`。`HotKey.swift` 的檔頭寫明為什麼不用 `NSEvent` 的 global
-monitor：那要輔助使用權限，而**一個開視窗的工具不該能讀你按的每一個鍵**。這條理由在後面
-每一個平台都要再用一次。
+Carbon's `RegisterEventHotKey`. The header of `HotKey.swift` says why it does not use an `NSEvent` global
+monitor: that needs the accessibility permission, and **a tool that opens a text box should not be able to read every key you press**. This reason
+will be used again for every platform below.
 
 #### Windows
 
-`RegisterHotKey`（user32），純 Go 可呼叫。簡單、不需要任何權限。兩個要處理的事實：
+`RegisterHotKey` (user32), callable from pure Go. Simple, and needs no permission. Two facts to handle:
 
-- **同一組合被別的程式先註冊，`RegisterHotKey` 會失敗。** 要具名回報（「`Ctrl+Shift+K` 已經被
-  這台機器上的另一個程式佔用」），不要靜默失敗然後讓使用者按了沒反應。
-- 需要一個訊息迴圈來收 `WM_HOTKEY`，所以它住在殼裡，不住在 daemon 裡。
+- **If another program registered the same combination first, `RegisterHotKey` fails.** Report it by name ("`Ctrl+Shift+K` is already
+  taken by another program on this machine"); don't fail silently and leave the user pressing keys to no effect.
+- It needs a message loop to receive `WM_HOTKEY`, so it lives in the shell, not in the daemon.
 
 #### Linux — X11
 
-`XGrabKey`。純 Go 有 `github.com/BurntSushi/xgb`（X11 protocol 的純 Go client，不需要 Xlib）。
-可行，難度 M。同樣要處理「已被佔用」（`BadAccess`）。
+`XGrabKey`. Pure Go has `github.com/BurntSushi/xgb` (a pure-Go client for the X11 protocol, with no Xlib needed).
+Workable, difficulty M. "Already taken" (`BadAccess`) has to be handled here too.
 
-#### Linux — Wayland：**設計上就不允許**
+#### Linux — Wayland: **not allowed, by design**
 
-這是要講給使用者聽的核心事實：**Wayland 的設計裡，一般的 client 不能攔截全域按鍵。**
-鍵盤事件只有 compositor 看得到，沒有 focus 的視窗什麼都收不到。這不是缺一個函式庫，
-是一個刻意的安全邊界——而且它的理由跟 `HotKey.swift` 拒絕 `NSEvent` monitor 的理由一模一樣。
+This is the core fact to tell users: **in Wayland's design, an ordinary client cannot intercept global keys.**
+Only the compositor sees keyboard events, and a window without focus receives nothing. This is not a missing library;
+it is a deliberate security boundary — and its reason is exactly the same as the reason `HotKey.swift` refused the `NSEvent` monitor.
 
-三條路：
+Three paths:
 
-1. **XDG Desktop Portal 的 `org.freedesktop.portal.GlobalShortcuts`**（唯一的「正統」做法）。
-   - 支援度不齊：KDE Plasma 有實作；GNOME 長期沒有（**要在真機用 `busctl introspect` 確認，
-     見 §8**）；wlroots 系（Sway、Hyprland）靠 `xdg-desktop-portal-wlr`，覆蓋不完整。
-   - 即使有，**綁哪一個鍵是 compositor 決定的，不是 app**，而且第一次註冊會彈一個系統對話框
-     要使用者確認。所以設定頁上那個「錄製熱鍵」的 UI 在這條路上是不成立的。
-2. **叫使用者在自己的桌面設定一個捷徑。** GNOME「設定 → 鍵盤 → 自訂捷徑」、KDE「系統設定 →
-   捷徑」，指向一個命令。**這條在每一個桌面都能用、不需要任何權限、不需要 portal**，
-   而且使用者完全掌握綁什麼鍵。
-3. `libinput`／`/dev/input` 直接讀。**拒絕**——那要進 `input` 群組，等同 keylogger。
+1. **The XDG Desktop Portal's `org.freedesktop.portal.GlobalShortcuts`** (the only "proper" way).
+   - Support is uneven: KDE Plasma implements it; GNOME long has not (**to be confirmed on a real machine with `busctl introspect`,
+     see §8**); the wlroots family (Sway, Hyprland) relies on `xdg-desktop-portal-wlr`, with incomplete coverage.
+   - Even where it exists, **which key gets bound is decided by the compositor, not the app**, and the first registration pops up a system dialog
+     for the user to confirm. So the "record a hotkey" UI on the settings page does not work on this path.
+2. **Ask the user to set up a shortcut in their own desktop.** GNOME "Settings → Keyboard → Custom Shortcuts", KDE "System Settings →
+   Shortcuts", pointing at a command. **This works on every desktop and needs no permission and no portal**,
+   and the user fully controls which key is bound.
+3. Read `libinput`/`/dev/input` directly. **Refused** — that requires the `input` group, which amounts to a keylogger.
 
-**建議的降級呈現**（安全的預設，不等使用者拍板）：
+**The recommended degraded presentation** (a safe default, not waiting for the user's decision):
 
-- 偵測 `$WAYLAND_DISPLAY` 或 `$XDG_SESSION_TYPE=wayland`。
-- 設定頁的熱鍵欄位**換掉，不是停用**：改成一段說明「你的桌面（Wayland）由 compositor 管理
-  快捷鍵」＋ 一個可複製的命令列 ＋ 兩三個主流桌面的設定路徑。
-- 為此需要一個 `clawdline panel` 子命令：向 daemon 要求把 console 叫出來（開瀏覽器或叫殼的
-  視窗）。**這個子命令三個平台都有用**，不只 Wayland——它同時是「沒有殼的 Linux」的那個入口。
-- 若 D-Bus 上查得到 `GlobalShortcuts` portal，才額外顯示「用系統對話框設定」的按鈕。
+- Detect `$WAYLAND_DISPLAY` or `$XDG_SESSION_TYPE=wayland`.
+- The hotkey field on the settings page is **replaced, not disabled**: it becomes an explanation, "on your desktop (Wayland) the compositor manages
+  shortcuts", + a copyable command line + the settings paths of two or three mainstream desktops.
+- For this a `clawdline panel` subcommand is needed: it asks the daemon to bring up the console (open a browser, or call up the shell's
+  window). **This subcommand is useful on all three platforms**, not just Wayland — it is also the entry point for "Linux without a shell".
+- Only if the `GlobalShortcuts` portal can be found on D-Bus is an extra "set it with the system dialog" button shown.
 
-**代價**：Wayland 使用者要多做一次設定，而且那次設定在我們的 UI 外面。**這是誠實的代價**，
-比一個按了沒反應的錄製框好，也比要求他把 daemon 加進 `input` 群組好太多。
+**Cost**: Wayland users have to do one more setup step, and it happens outside our UI. **This is an honest cost**,
+better than a record box that does nothing when pressed, and far better than asking them to add the daemon to the `input` group.
 
-#### 順帶：「把視窗叫到前面」在 Wayland 也不行
+#### Incidentally: "bringing a window to the front" doesn't work on Wayland either
 
-同一個邊界的另一面。X11 有 `_NET_ACTIVE_WINDOW`（`wmctrl`／`xdotool`）；**Wayland 沒有讓 client
-主動 raise 自己的協定**（`xdg-activation` 需要一個由使用者互動產生的 token，daemon 沒有）。
-所以 Linux 上的「在畫面上顯示」只做得到 tmux 內的 `select-pane`／`select-window`——這正好
-就是 `reveal_other.go` 現在的行為，而且它的註解已經把這件事說對了：
-**`ok` 是「選到了」，不是「它在你面前」。**
+The other side of the same boundary. X11 has `_NET_ACTIVE_WINDOW` (`wmctrl`/`xdotool`); **Wayland has no protocol for a client
+to raise itself** (`xdg-activation` needs a token produced by user interaction, which the daemon does not have).
+So "show it on screen" on Linux can only do `select-pane`/`select-window` inside tmux — which is exactly
+what `reveal_other.go` does today, and its comment already gets this right:
+**`ok` means "selected", not "it is in front of you".**
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:hotkey -->
 
-<!-- section:notch owner:task-1d861805 -->
-### 4.9 瀏海的替代
+<!-- section:notch owner:task-aaaaaaaa -->
+### 4.9 What replaces the notch
 
-`不支援`（硬體）／`可實作`（抽象成 Presence）
+`unsupported` (hardware) / `implementable` (abstracted into Presence)
 
-> **歸屬**：瀏海島本身正由 task `a0d852b4`（「瀏海島（Mac 原生）與它的跨平台對應」）實作，
-> 它認領 `shell/darwin/NotchIsland.swift` 與 `docs/replica.md`。這一節只寫決策層的骨架；
-> 實作細節以那一個 task 的結論為準，兩邊若不一致，以它為準並回來改這一節。
+> **Ownership**: the notch island itself is being implemented by a separate task ("The notch island (Mac native) and its cross-platform counterparts"),
+> which claimed `shell/darwin/NotchIsland.swift` and `docs/replica.md`. This section writes only the skeleton at the decision level;
+> that task's conclusions are authoritative on the implementation details, and where the two disagree, it wins and this section is corrected to match.
 
-先把事實擺正：**瀏海只有有瀏海的 MacBook 有。** 外接螢幕、iMac、Mac mini、Mac Studio 全都沒有。
-所以這不是「Mac 有、別人沒有」，是「某些 Mac 有」——它從一開始就需要一個後備，而那個後備
-正好就是其他平台要的東西。舊版自己也說它是裝飾（`NotchIsland.swift`：「這一個是玩的」）。
+First, the facts straight: **only MacBooks with a notch have a notch.** External displays, iMac, Mac mini and Mac Studio have none.
+So this is not "Macs have it and others don't" but "some Macs have it" — it needed a fallback from the start, and that fallback
+happens to be exactly what the other platforms need. The old version itself calls it decoration (`NotchIsland.swift`: "This one is play").
 
-#### 它到底在傳達什麼
+#### What it is actually conveying
 
-拆開看，瀏海島只講三件事，而且三件都不是只有瀏海能講：
+Taken apart, the notch island says only three things, and none of them is something only a notch can say:
 
-1. 現在有幾件事在跑；
-2. 哪一個 session 在等你；
-3. 一件長工做完了（那個舞）。
+1. how many things are running now;
+2. which session is waiting for you;
+3. a long job has finished (the dance).
 
-所以正確的做法**不是替瀏海找一個像瀏海的東西，是把這三件事抽成一個 port**——
-暫名 `Presence`——然後每個平台各給一個實作：
+So the right approach **is not to find something notch-like to stand in for the notch, but to abstract these three things into a port** —
+provisionally named `Presence` — and give each platform its own implementation:
 
-| 實作 | 平台 | 怎麼呈現 |
+| Implementation | Platform | How it shows |
 |---|---|---|
-| **通用 web 徽章（地板，永遠有）** | 全部 | 分頁標題前綴（`(2) Clawdline`）、動態 favicon、header 的 counts。**不需要任何原生 API** |
-| 瀏海島 | 有瀏海的 MacBook | 現況 |
-| 選單列標記 | macOS | 已有（`NSStatusItem`） |
-| 工作列 overlay icon ＋ 進度 | Windows | `ITaskbarList3::SetOverlayIcon`（角標）＋ `SetProgressState/Value`（**跑東西時工作列按鈕變一條進度，這其實比瀏海更貼近「一眼看到在跑」**） |
-| 系統匣圖示 | Windows | `Shell_NotifyIcon`，換圖示表示狀態 |
-| StatusNotifierItem | Linux（KDE 與大部分桌面） | D-Bus，純 Go 可做 |
+| **Generic web badge (the floor, always there)** | All | A tab title prefix (`(2) Clawdline`), a dynamic favicon, the counts in the header. **Needs no native API** |
+| Notch island | MacBooks with a notch | Today |
+| Menu bar mark | macOS | Exists (`NSStatusItem`) |
+| Taskbar overlay icon + progress | Windows | `ITaskbarList3::SetOverlayIcon` (a corner badge) + `SetProgressState/Value` (**while something runs, the taskbar button becomes a progress bar, which is actually closer than the notch to "seeing at a glance that something is running"**) |
+| System tray icon | Windows | `Shell_NotifyIcon`, changing the icon to show state |
+| StatusNotifierItem | Linux (KDE and most desktops) | D-Bus, doable in pure Go |
 
-#### GNOME 的坑要先講
+#### GNOME's pit, first
 
-**GNOME 預設沒有系統匣。** 要靠使用者自己裝 AppIndicator 擴充。所以 Linux 上不能把系統匣當
-成必然存在的東西——這正是「通用 web 徽章」必須是地板的理由：它在 GNOME、在 headless ＋
-遠端瀏覽器、在任何地方都成立。
+**GNOME has no system tray by default.** It relies on the user installing the AppIndicator extension. So on Linux the tray cannot be treated
+as something that is always there — which is exactly why the "generic web badge" has to be the floor: it holds on GNOME, on headless +
+a remote browser, anywhere.
 
-#### 建議
+#### Recommendation
 
-- **先做地板那一個**（分頁標題 ＋ favicon 徽章）。它是純前端，三平台一起有，而且它同時補上
-  「使用者把 console 開在另一台機器的瀏覽器裡」這個情形——那是瀏海永遠碰不到的。
-- Windows 的工作列進度排在 WebView2 殼之後，它很便宜而且效果好。
-- Linux 的 StatusNotifierItem 排最後：要有殼，而 Linux 建議不做殼（§4.10）。
+- **Build the floor first** (tab title + favicon badge). It is pure front end, all three platforms get it, and it also covers
+  the case of "the user has the console open in a browser on another machine" — which the notch can never reach.
+- Windows taskbar progress comes after the WebView2 shell; it is cheap and works well.
+- Linux StatusNotifierItem comes last: it needs a shell, and the recommendation for Linux is no shell (§4.10).
 
-**代價**：Mac 之外沒有「那個好玩的東西」。這是真的，而且應該直說——瀏海島是這個 app 的個性，
-不是功能，而個性沒辦法移植到一塊沒有瀏海的螢幕上。能移植的是它講的那三件事。
+**Cost**: outside the Mac there is no "fun thing". That is true, and it should be said plainly — the notch island is this app's personality,
+not a feature, and personality cannot be ported to a screen with no notch. What can be ported are the three things it says.
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:notch -->
 
-<!-- section:shell owner:task-1d861805 -->
-### 4.10 原生殼與內嵌瀏覽器
+<!-- section:shell owner:task-aaaaaaaa -->
+### 4.10 Native shells and the embedded browser
 
-`已實作`（macOS）／`可實作`（Windows）／`降級`（Linux：不做殼）
+`implemented` (macOS) / `implementable` (Windows) / `degraded` (Linux: no shell)
 
-#### Linux：建議不做殼
+#### Linux: recommended, no shell
 
-WebKitGTK 要 cgo，而 cgo 會拆掉「一台機器產六個平台」。`plan.md` §3 本來就寫「WebKitGTK，
-**或直接用瀏覽器**」——建議就是後者，而且 `clawdline open` 已經把它做完了：發一個唯讀裝置、
-用 fragment 帶 token、`/v1/auth/adopt` 換成 cookie、轉到 `/`。
+WebKitGTK needs cgo, and cgo would break "one machine builds six platforms". `plan.md` §3 already says "WebKitGTK,
+**or just use the browser**" — the recommendation is the latter, and `clawdline open` has already done it: it issues a read-only device,
+carries the token in the fragment, exchanges it for a cookie at `/v1/auth/adopt`, and redirects to `/`.
 
-**代價要列清楚，這是一整排功能不存在**：
+**The cost has to be listed plainly: this is a whole row of features that do not exist**:
 
-| 沒有殼就沒有 | 替代 |
+| Without a shell there is no | Substitute |
 |---|---|
-| 全域熱鍵 | §4.8 的 compositor 捷徑 ＋ `clawdline panel` |
-| 系統匣 | §4.9 的 web 徽章 |
-| 本機桌面通知 | `notify-send` 可以由 daemon 直接發（D-Bus，不需要殼）——**這一項其實不需要殼** |
-| 登入時啟動的 UI | `clawdline autostart` CLI（§4.7） |
-| 內嵌瀏覽器（Cloud 預覽） | 使用者自己開一個分頁。**Linux 上這反而更乾淨**：cookie 本來就分家 |
-| 麥克風權限的代為授權 | 瀏覽器自己會問，而且問得比較清楚 |
+| Global hotkey | §4.8's compositor shortcut + `clawdline panel` |
+| System tray | §4.9's web badge |
+| Local desktop notifications | `notify-send` can be sent directly by the daemon (D-Bus, no shell needed) — **this one actually needs no shell** |
+| UI for starting at login | The `clawdline autostart` CLI (§4.7) |
+| Embedded browser (Cloud preview) | The user opens a tab themselves. **On Linux this is actually cleaner**: the cookies are separate anyway |
+| Granting microphone permission on the user's behalf | The browser asks by itself, and asks more clearly |
 
-**結論：Linux 上「沒有殼」不是缺陷，是一個可以接受的形態**，只要上面這張表在設定頁上看得到。
-真的要殼再說，而那時候第一個該做的是 systemd user service ＋ 瀏覽器，不是 GTK。
+**Conclusion: on Linux, "no shell" is not a defect but an acceptable shape**, as long as the table above is visible on the settings page.
+If a shell is ever really needed, deal with it then, and the first thing to build then is a systemd user service + the browser, not GTK.
 
-#### Windows：WebView2
+#### Windows: WebView2
 
-`go-webview2`（純 Go，走 COM）而不是 `webview/webview_go`（要 cgo）。
+`go-webview2` (pure Go, through COM) rather than `webview/webview_go` (needs cgo).
 
-- Runtime：Windows 11 內建；Windows 10 要裝 Evergreen Runtime。**安裝檔要偵測並代裝**，
-  否則第一次啟動就是一個空白視窗。
-- **兩個 webview、cookie 分家**（`replica.md` 的「內嵌瀏覽器」那一段）在 WebView2 上做得到：
-  用兩個 `CoreWebView2Environment`，各自不同的 `userDataFolder`。這條規則的價值在 Windows 上
-  一樣成立——本機 token 從來沒寫進去的那個罐子，頁面做什麼都交不出來。
-- 上方那條原生列（網址框、上一頁、分頁按鈕）在 Windows 要重畫一次。顏色與間距同樣從
-  `legacy/tokens.css` 取值，字詞同樣只能用舊版字串目錄裡已有的鍵。
+- Runtime: built into Windows 11; Windows 10 needs the Evergreen Runtime installed. **The installer has to detect it and install it**,
+  or the first launch is a blank window.
+- **Two webviews with separate cookies** (the "embedded browser" passage of `replica.md`) can be done on WebView2:
+  use two `CoreWebView2Environment`s, each with a different `userDataFolder`. The value of this rule holds on Windows
+  just the same — a jar the local token was never written into cannot hand it over, whatever the page does.
+- The native bar across the top (address box, back, tab buttons) has to be drawn again on Windows. Colours and spacing likewise come from
+  `legacy/tokens.css`, and the words likewise may only use keys that already exist in the old string catalog.
 
-#### macOS：不動
+#### macOS: untouched
 
-Swift 殼保持現況。它是唯一一個有 Keychain、瀏海、Carbon 熱鍵、`SMAppService` 的殼，
-這些本來就是「少數 Mac 才有的特色」。
+The Swift shell stays as it is. It is the only shell with Keychain, the notch, Carbon hotkeys and `SMAppService`,
+and these are exactly "the few features only a Mac has".
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:shell -->
 
-<!-- section:filesystem owner:task-1d861805 -->
-### 4.11 儲存、路徑、檔案系統
+<!-- section:filesystem owner:task-aaaaaaaa -->
+### 4.11 Storage, paths, file systems
 
-`已實作`／`可實作`
+`implemented` / `implementable`
 
 #### SQLite
 
-`modernc.org/sqlite` 是純 Go，三平台可用。兩個限制要寫成啟動時的檢查：
+`modernc.org/sqlite` is pure Go and works on all three platforms. Two limits should become checks at startup:
 
-- **狀態目錄不能在網路磁碟。** SQLite 的 WAL 在 SMB／NFS 上的鎖定不可靠。Windows 上使用者的
-  `%APPDATA%` 在企業環境可能是重導向到網路磁碟（folder redirection）的。**建議啟動時判斷
-  磁碟型別，是網路磁碟就拒絕並說明**——這比事後查一個偶發的資料損毀便宜太多。
-- Windows 的檔案鎖定語意與 POSIX 不同（`LockFileEx` 是強制鎖，POSIX 是勸告鎖）。
-  同一個檔案被兩個 daemon 開著，Windows 上的症狀會跟 macOS 不同。
+- **The state directory cannot be on a network drive.** SQLite's WAL locking is unreliable over SMB/NFS. On Windows, a user's
+  `%APPDATA%` may be redirected to a network drive in enterprise environments (folder redirection). **Recommended: check the drive type
+  at startup, and if it is a network drive, refuse and say why** — far cheaper than chasing an occasional data corruption afterwards.
+- Windows file-locking semantics differ from POSIX (`LockFileEx` locks are mandatory, POSIX locks are advisory).
+  When one file is open in two daemons, the symptoms on Windows will differ from macOS.
 
-#### Windows 的路徑陷阱（`documents` 路由要補的檢查）
+#### Windows path traps (checks the `documents` route needs)
 
-`internal/adapters/documents` 的檔頭已經把邊界寫得很清楚：「從裝置來的名字只能**在**一個
-這段程式算出來的根目錄裡挑」。那套規則在 Windows 上要加幾條，因為 Win32 會在 Go 看到名字
-**之後**再改寫它：
+The header of `internal/adapters/documents` already draws the boundary clearly: "a name that arrives from a device may only choose *within* a
+root this code computed". On Windows that rule needs a few more checks, because Win32 rewrites a name **after**
+Go has seen it:
 
-| 陷阱 | 為什麼危險 |
+| Trap | Why it is dangerous |
 |---|---|
-| `\` 與 `/` 都是分隔符 | 只擋 `/..` 擋不到 `\..` |
-| ADS（`notes.md:hidden`） | 副檔名白名單看到的是 `.md`，實際開的是另一條資料流 |
-| 8.3 短名（`PROGRA~1`） | 一個目錄有兩個名字，白名單比對會漏 |
-| 尾隨的空白與點（`x.md.`、`x.md `） | Win32 開檔時會被剝掉，比對的名字和開的檔案不同 |
-| 保留裝置名（`CON`、`NUL`、`COM1`…） | 開起來不是檔案 |
-| 大小寫不敏感 | 比對要用不敏感的方式，否則白名單可以被繞過 |
-| `\\?\` 與 UNC 前綴 | 繞過正規化 |
-| reparse point（symlink／junction／hardlink） | `nofollow_other.go` 現在只剩 Lstat ＋ same-file 檢查 |
+| `\` and `/` are both separators | Blocking only `/..` does not block `\..` |
+| ADS (`notes.md:hidden`) | The extension allowlist sees `.md`, while what gets opened is another data stream |
+| 8.3 short names (`PROGRA~1`) | One directory has two names, and allowlist matching misses one |
+| Trailing spaces and dots (`x.md.`, `x.md `) | Win32 strips them when opening, so the name compared and the file opened differ |
+| Reserved device names (`CON`, `NUL`, `COM1`…) | What opens is not a file |
+| Case insensitivity | Comparisons must be case-insensitive, or the allowlist can be bypassed |
+| `\\?\` and UNC prefixes | They bypass normalization |
+| Reparse points (symlink/junction/hardlink) | `nofollow_other.go` has only Lstat + the same-file check today |
 
-**建議做法**：Windows 上不要只做字串檢查。開檔之後用 `GetFinalPathNameByHandle` 拿到**核心
-認定的真實路徑**，再確認它在根目錄底下。那是唯一不會被上面任何一條繞過的檢查，因為它問的是
-已經開好的那個 handle。
+**Recommended approach**: on Windows, don't rely on string checks alone. After opening, use `GetFinalPathNameByHandle` to get **the real path as the kernel
+sees it**, then confirm it is under the root. That is the only check none of the traps above can get around, because what it asks about is
+the handle that is already open.
 
-#### 路徑長度
+#### Path length
 
-Windows 預設 `MAX_PATH` 260。worktree ＋ task id 的路徑很長（`…\worktrees\clawdline-go-xxxxxxxx\<uuid>\…`
-就已經接近）。Go 的 `os` 對絕對路徑會自動補 `\\?\`，但不是所有情形，**要在真機驗證**（§7）。
+Windows's default `MAX_PATH` is 260. Paths with a worktree + task id are long (`…\worktrees\clawdline-go-xxxxxxxx\<uuid>\…`
+already comes close). Go's `os` adds `\\?\` to absolute paths automatically, but not in every case; **verify it on a real machine** (§7).
 
-#### 行尾與編碼
+#### Line endings and encoding
 
-- transcript、contract、console 全部 UTF-8，不受影響。
-- ConPTY 底下要 `SetConsoleOutputCP(CP_UTF8)`（§4.2）。
-- git 的 `core.autocrlf` 在 Windows 上預設 true，`internal/adapters/git` 的 diff 解析要確認
-  不會因為 `\r` 而錯位。
+- Transcripts, contracts and the console are all UTF-8, and unaffected.
+- Under ConPTY, `SetConsoleOutputCP(CP_UTF8)` is needed (§4.2).
+- git's `core.autocrlf` defaults to true on Windows; the diff parsing in `internal/adapters/git` needs checking so that
+  `\r` doesn't misalign it.
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:filesystem -->
 
-<!-- section:swiftstore owner:task-1d861805 -->
-### 4.12 與舊 Swift app 互通：只有 macOS 有，而那是對的
+<!-- section:swiftstore owner:task-aaaaaaaa -->
+### 4.12 Interoperating with the old Swift app: only macOS has it, and that is right
 
-`已實作`
+`implemented`
 
-`internal/adapters/swiftstore` 唯讀舊 app 的 `~/.config/clawdline`（Clawdfather 是誰、task 列表、
-交付紀錄、session 標題、圖片、用量帳本）。**Linux 與 Windows 上舊 app 不存在，所以這一整塊
-天生為空**，而且程式已經正確處理：
+`internal/adapters/swiftstore` reads the old app's `~/.config/clawdline`, read-only (who Clawdfather is, the task list,
+delivery records, session titles, images, the usage ledger). **On Linux and Windows the old app does not exist, so this whole area
+is empty by nature**, and the code already handles that correctly:
 
-- `ObservabilityDirIn()` 在非 darwin 回 `""` → 用量頁退回 transcript 計算（已實作）。
-- `ProcessStart()` 在非 darwin 回零時間 → 不會對上任何記錄的身分（`procstart_other.go` 的註解
-  已經說明了）。
-- 其餘讀取找不到檔案 → 依規則是「未知」，不是「空」。
+- `ObservabilityDirIn()` returns `""` off darwin → the usage page falls back to computing from transcripts (implemented).
+- `ProcessStart()` returns the zero time off darwin → it never matches any recorded identity (the comment in `procstart_other.go`
+  already explains this).
+- Any other read that finds no file → by the rules, "unknown", not "empty".
 
-**要注意的一個呈現問題**：在 Mac 上「皇冠、task chip、協調等待、交付勾」有，在 Linux／Windows
-上沒有。使用者若在兩台機器之間切換，會以為 Linux 那台壞了。**建議**：這些元素的來源是舊 app
-的 store，而那個 store 按 `plan.md` §4 是**過渡**——等 clawdline-go 自己擁有派工與交付紀錄，
-這些欄位就會由自己的 store 供應，三平台一致。在那之前，Linux／Windows 上不要留下一個空位，
-就是沒有那個元素（現況即如此）。
+**One presentation problem to watch**: on a Mac, "the crown, task chips, coordination waits, the delivery check" are there; on Linux/Windows
+they are not. A user who switches between two machines will think the Linux one is broken. **Recommendation**: these elements come from the old app's
+store, and by `plan.md` §4 that store is **transitional** — once clawdline-go owns its own dispatch and delivery records,
+these fields will be supplied by its own store, the same on all three platforms. Until then, on Linux/Windows don't leave an empty slot;
+the element is simply absent (which is how it is today).
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:swiftstore -->
 
-<!-- section:fidelity owner:task-1d861805 -->
-### 4.13 一個要先講清楚的驗收問題：跨平台不量 1:1
+<!-- section:fidelity owner:task-aaaaaaaa -->
+### 4.13 An acceptance question to settle first: cross-platform is not measured 1:1
 
-`降級`（驗收標準）
+`degraded` (the acceptance standard)
 
-`replica.md` 的驗收方法是**同一個瀏覽器視窗、同一個縮放，比對 `getComputedStyle` 與
-`getBoundingClientRect`**。這個方法在 Linux 與 Windows 上**一定會全紅**，而且不是因為程式錯了：
+The acceptance method of `replica.md` is **the same browser window at the same zoom, comparing `getComputedStyle` and
+`getBoundingClientRect`**. On Linux and Windows this method **will certainly be all red**, and not because the code is wrong:
 
-- 那台機器沒有 SF Pro／`-apple-system`，字型會 fallback 到別的字體；
-- 字寬一變，每一個 `getBoundingClientRect` 都變；
-- Linux 的字型渲染（freetype hinting、subpixel）與 macOS 不同；
-- Windows 的 DPI 縮放是另一套。
+- those machines have no SF Pro/`-apple-system`, so the font falls back to another typeface;
+- once glyph widths change, every `getBoundingClientRect` changes;
+- Linux font rendering (freetype hinting, subpixel) differs from macOS;
+- Windows DPI scaling is a different system again.
 
-**使用者在睡覺，所以這裡選一個安全的預設並寫下來，等他醒來可以推翻**：
+**The user is asleep, so a safe default is chosen and written down here, to be overturned when they wake up**:
 
-> 跨平台的驗收標準是**結構與字串相同**，不是像素相同。也就是：同一份 DOM、同一組 class、
-> 同一批字串鍵、同一批 `id`，以及**每一個「這台做不到」的地方都在畫面上具名地說出來**。
-> 像素級的 1:1 只在 macOS 對舊版量。
+> The cross-platform acceptance standard is **the same structure and strings**, not the same pixels. That is: the same DOM, the same classes,
+> the same string keys, the same `id`s, and **every place "this machine cannot do it" said by name on screen**.
+> Pixel-level 1:1 is measured only on macOS, against the old version.
 
-理由：1:1 復刻的對象是**舊的 Swift app**，而舊 app 只有 macOS。在一台沒有舊 app 的機器上，
-沒有可以比對的 oracle——那裡要驗的是別的東西。
+The reason: the target of the 1:1 replica is **the old Swift app**, and the old app exists only on macOS. On a machine without the old app
+there is no oracle to compare against — what needs verifying there is something else.
 
-**修正總表**：無。
+**Summary-table correction**: none.
 
 <!-- /section:fidelity -->
 
 ---
 
-## 5. 「這台做不到」要怎麼呈現：四條規則
+## 5. How "this machine can't do it" is presented: four rules
 
-這是整份文件裡最該被當成規範的一段。現有的程式其實已經在守它了（`terminal/errors.go` 的
-`Unsupported`、`ps_windows.go` 的 `Complete:false`、`signal_other.go` 回 nil 而不是 stub、
-`pasteboard_other.go` 的 `ErrPasteboardUnsupported`、`whisper` 把「沒裝」與「沒模型」分開），
-把它們寫成四條，後面的人照著做：
+This is the passage of the document that most deserves to be treated as a standard. The existing code in fact already keeps it (`Unsupported` in `terminal/errors.go`,
+`Complete:false` in `ps_windows.go`, `signal_other.go` returning nil rather than a stub,
+`ErrPasteboardUnsupported` in `pasteboard_other.go`, `whisper` separating "not installed" from "no model");
+here it is written as four rules for whoever comes next:
 
-1. **具名地拒絕，不要靜默。** 每一個平台差異都回一個有型別的錯誤，錯誤裡說**這台機器**為什麼
-   做不到。`terminal.Unsupported{Op:…}` 是既有的範本。
-2. **「不知道」和「沒有」是兩件事，不可以拼成同一個答案。**
-   `ps_windows.go` 回 `Complete:false` 而不是空清單，是這條規則最好的示範：空清單是在宣稱
-   「沒有東西在跑」，而它沒有資格這樣宣稱。
-3. **停用，不要移除。** 一個看得見但停用、而且說得出理由的按鈕，比一個消失的按鈕好。
-   使用者對照 Mac 上的截圖時，看到「這台機器沒有 iTerm2」會懂；看到那一項不見了，只會困惑。
-   （`replica.md` 對沒有後端的項目已經是這個做法。）
-4. **降級要在兩個地方講**：使用者看得到的畫面上（設定頁 ／ 那個功能的旁邊），以及
-   `/v1/health` 的欄位（讓 CLI、監控與寫程式的人也拿得到）。
-   建議 `/v1/health` 加一塊 `capabilities`，列出這台機器上每一個平台相關的能力與它的狀態，
-   內容就是 §3 那張總表在**這一台**上的答案。設定頁直接渲染它，不要自己再判斷一次。
-
----
-
-## 6. 難度與建議順序
-
-分三梯。每一梯的驗收都是 §7 的對應層。
-
-### 第一梯：讓 Linux 真的能用（估 1–2 週）
-
-Linux 是離「可用」最近的，因為 tmux、pty、FIFO、procfs 全都有。
-
-| # | 項目 | 難度 | 為什麼排這裡 |
-|---|---|---|---|
-| 1 | `/v1/health` 的 `capabilities` 區塊 ＋ 設定頁渲染它 | S | 後面每一項降級都要靠它呈現，先做它，後面每一項就只是填一格 |
-| 2 | `clawdline autostart` ＋ systemd user unit ＋ linger 的說明 | M | 沒有它，daemon 一登出就死，其他全都白做 |
-| 3 | procfs 版的行程盤點（取代 `/bin/ps`） | S | 精簡容器沒有 `ps`；`/proc` 也更準 |
-| 4 | Secret Service ＋ 檔案退路 ＋ 降級的呈現 | M | 為 Cloud 鋪路；沒有桌面就誠實用檔案 |
-| 5 | `clawdline panel` ＋ Wayland 熱鍵的降級 UI | M | Wayland 是現在 Linux 桌面的預設 |
-| 6 | whisper 的安裝指引與路徑印出 ＋ `install-model` | S | 純文案 ＋ 一個下載，效益高 |
-| 7 | 通用 web 徽章（分頁標題 ＋ favicon） | S | 三平台一起受益，而且它是 Presence 的地板 |
-| 8 | 本機桌面通知（`org.freedesktop.Notifications`） | S | 不需要殼，D-Bus 直接發 |
-
-### 第二梯：讓 Windows 能用（估 3–5 週）
-
-| # | 項目 | 難度 | 備註 |
-|---|---|---|---|
-| 1 | **WSL 模式的文件與偵測** | S | **工作量幾乎為零，卻直接讓 Windows 使用者有完整功能。應該第一個做。** |
-| 2 | NTFS ACL ＋ DPAPI | M | **blocking**：在這之前 Windows 版不該對外發布（§4.5） |
-| 3 | ConPTY ＋ VT 解析器（owned session） | X | 最大的一塊。做完，Linux 的 owned session 也一起有 |
-| 4 | Job Object（`supervisor_windows.go`） | M | 跟 3 綁在一起：不能砍的樹就不該開 |
-| 5 | Win32／WMI 行程盤點（只看得見，不能控） | M | 讓既有 session 至少出現在清單上 |
-| 6 | `documents` 路由的 Windows 路徑檢查 | M | 安全項，跟 2 一起審 |
-| 7 | WebView2 殼（含兩個 environment 的 cookie 分家） | L | |
-| 8 | `RegisterHotKey`、`HKCU\Run`、Toast、工作列徽章 | M | 都要先有殼 |
-
-### 第三梯：加值
-
-- 純 Go 的 WebP／BMP 解碼（三平台一起，順便讓 macOS 少叫一次 `sips`）。
-- Linux StatusNotifierItem（要先有殼，所以可能永遠不做）。
-- Windows 剪貼簿借用（若真的要做，先做 Windows，Linux 不做，§4.3）。
-- macOS Keychain（若決定做，走 Swift 殼代管，不開 cgo）。
+1. **Refuse by name, never silently.** Every platform difference returns a typed error, and the error says why **this machine**
+   cannot do it. `terminal.Unsupported{Op:…}` is the existing template.
+2. **"Don't know" and "none" are two things, and must never be spelled as the same answer.**
+   `ps_windows.go` returning `Complete:false` instead of an empty list is the best demonstration of this rule: an empty list claims
+   "nothing is running", and it has no standing to claim that.
+3. **Disable, don't remove.** A button that is visible but disabled, and can say why, is better than a button that vanished.
+   A user comparing with screenshots from a Mac understands "this machine has no iTerm2"; seeing the item gone only confuses them.
+   (`replica.md` already does this for items with no backend.)
+4. **A degradation is stated in two places**: on the screen the user sees (the settings page / next to the feature itself), and in
+   fields of `/v1/health` (so the CLI, monitoring and programmers can get it too).
+   Recommended: add a `capabilities` block to `/v1/health` listing every platform-dependent capability on this machine and its state;
+   its content is the summary table of §3 answered for **this machine**. The settings page renders it directly instead of judging again for itself.
 
 ---
 
-## 7. 要驗證什麼：AWS 的 Linux 與 Windows 機器上的最小檢查
+## 6. Difficulty and recommended order
 
-**這一節是給實測用的。** 每一項寫成「跑什麼 → 看到什麼才算過」。沒跑到的項目不可以當成通過；
-跑了但結果不同，記下來比宣稱通過有價值。
+Three tiers. Each tier's acceptance is the matching layer of §7.
 
-建議機型：Linux 一台 **有桌面**（GNOME on Wayland）＋ 一台 **headless**（Amazon Linux／Ubuntu
-Server，SSH 進去）；Windows 一台 **Windows Server 2022 或 Windows 11**（要有桌面，因為殼與
-Toast 都需要）。**Linux 兩台是必要的，不是保險**——headless 與桌面的差別正好落在熱鍵、
-keystore、通知、autostart 這四項上，而那四項是這份文件裡最多不確定的地方。
+### Tier 1: make Linux really usable (estimated 1–2 weeks)
 
-### L0 — 它活不活得下來（兩台都要）
+Linux is the closest to "usable", because tmux, pty, FIFOs and procfs are all there.
 
-| 檢查 | 過的條件 |
+| # | Item | Difficulty | Why it is here |
+|---|---|---|---|
+| 1 | The `capabilities` block of `/v1/health` + the settings page rendering it | S | Every later degradation relies on it to be presented; build it first, and each later item only fills in a cell |
+| 2 | `clawdline autostart` + a systemd user unit + the linger explanation | M | Without it the daemon dies at logout, and everything else is wasted |
+| 3 | A procfs process inventory (replacing `/bin/ps`) | S | Slim containers have no `ps`; `/proc` is also more accurate |
+| 4 | Secret Service + a file fallback + presenting the degradation | M | Paves the way for Cloud; with no desktop, honestly use files |
+| 5 | `clawdline panel` + the degraded UI for Wayland hotkeys | M | Wayland is the default on Linux desktops today |
+| 6 | whisper install guidance and printed paths + `install-model` | S | Pure copy + one download, high return |
+| 7 | The generic web badge (tab title + favicon) | S | All three platforms benefit, and it is the floor of Presence |
+| 8 | Local desktop notifications (`org.freedesktop.Notifications`) | S | Needs no shell; sent directly over D-Bus |
+
+### Tier 2: make Windows usable (estimated 3–5 weeks)
+
+| # | Item | Difficulty | Notes |
+|---|---|---|---|
+| 1 | **Documentation and detection for WSL mode** | S | **Almost zero work, yet it gives Windows users full functionality directly. It should be done first.** |
+| 2 | NTFS ACL + DPAPI | M | **blocking**: before this, the Windows version should not be released publicly (§4.5) |
+| 3 | ConPTY + VT parser (owned sessions) | X | The biggest piece. Once done, Linux owned sessions come with it |
+| 4 | Job Object (`supervisor_windows.go`) | M | Tied to 3: a tree that cannot be killed should not be started |
+| 5 | Win32/WMI process inventory (visible only, no control) | M | So existing sessions at least appear in the list |
+| 6 | Windows path checks for the `documents` route | M | A security item; review it together with 2 |
+| 7 | WebView2 shell (with cookies separated across two environments) | L | |
+| 8 | `RegisterHotKey`, `HKCU\Run`, Toast, taskbar badge | M | All need the shell first |
+
+### Tier 3: extras
+
+- Pure-Go WebP/BMP decoding (all three platforms at once, and macOS calls `sips` one time less).
+- Linux StatusNotifierItem (needs a shell first, so possibly never).
+- Windows clipboard borrowing (if it is ever really done, Windows first, never Linux; §4.3).
+- macOS Keychain (if it is decided on, through the Swift shell holding it, without turning on cgo).
+
+---
+
+## 7. What to verify: the minimal checks on AWS Linux and Windows machines
+
+**This section is for the real tests.** Each item is written as "run what → what you must see for it to pass". An item not run must never count as passing;
+an item run with a different result is worth more written down than claimed as passing.
+
+Recommended machines: one Linux machine **with a desktop** (GNOME on Wayland) + one **headless** (Amazon Linux/Ubuntu
+Server, reached over SSH); one Windows machine, **Windows Server 2022 or Windows 11** (with a desktop, because the shell and
+Toast both need one). **Two Linux machines are necessary, not insurance** — the differences between headless and desktop fall exactly on hotkeys,
+keystore, notifications and autostart, and those four are where this document is least certain.
+
+### L0 — Does it survive (both machines)
+
+| Check | Passes when |
 |---|---|
-| `clawdline doctor` | 正確解析狀態目錄（Linux `~/.config/clawdline-next`、Windows `%APPDATA%\clawdline-next`） |
-| `clawdline serve` | 綁得上 127.0.0.1:7727，log 沒有 panic |
-| `GET /v1/health` | 200，`scheduler` 的 `considered`／`due`／`fired` 有值 |
-| SQLite | 狀態目錄裡建得出 db；**殺掉 daemon 再起來，事件還在** |
-| 重開機 | daemon 自己回來（做完 §4.7 之後） |
-| 長路徑（Windows） | 在一個接近 260 字元的路徑底下跑 `serve`，不炸 |
-| 網路磁碟（Windows，可選） | `%APPDATA%` 被重導向時，啟動要拒絕並說明（做完檢查之後） |
+| `clawdline doctor` | Resolves the state directory correctly (Linux `~/.config/clawdline-next`, Windows `%APPDATA%\clawdline-next`) |
+| `clawdline serve` | Binds 127.0.0.1:7727, and the log has no panic |
+| `GET /v1/health` | 200, with values for the `scheduler`'s `considered`/`due`/`fired` |
+| SQLite | The db can be created in the state directory; **kill the daemon and start it again, and the events are still there** |
+| Reboot | The daemon comes back by itself (once §4.7 is done) |
+| Long paths (Windows) | Run `serve` under a path close to 260 characters, and it doesn't blow up |
+| Network drive (Windows, optional) | With `%APPDATA%` redirected, startup refuses and says why (once the check is done) |
 
-### L1 — 認證閘門（兩台都要）
+### L1 — The authentication gate (both machines)
 
-| 檢查 | 過的條件 |
+| Check | Passes when |
 |---|---|
-| 不帶 token 打 `/v1/sessions` | `401 unauthorized`，訊息是舊版原文 |
-| 帶 `local-token` | 200 |
-| `clawdline open` | 有桌面：真的開起瀏覽器並進到 `/`。headless：`--print` 印出網址 |
-| `fetch('/v1/auth/logout')` | cookie 清掉，裝置也撤銷 |
-| **檔案權限** | Linux：`stat -c %a ~/.config/clawdline-next/local-token` ＝ `600`，目錄 `700`。**Windows：`icacls` 只列出目前使用者**（做完 §4.5 之前這一項會紅，那個紅是預期的，要記下來） |
-| symlink | 把 `local-token` 換成一個 symlink，daemon 要拒絕，不是跟著走 |
+| Hit `/v1/sessions` without a token | `401 unauthorized`, with the old version's exact message |
+| With `local-token` | 200 |
+| `clawdline open` | With a desktop: it really opens a browser and gets to `/`. Headless: `--print` prints the URL |
+| `fetch('/v1/auth/logout')` | The cookie is cleared and the device revoked |
+| **File permissions** | Linux: `stat -c %a ~/.config/clawdline-next/local-token` = `600`, directory `700`. **Windows: `icacls` lists only the current user** (until §4.5 is done this item will be red; that red is expected, and should be recorded) |
+| symlink | Replace `local-token` with a symlink; the daemon must refuse it, not follow it |
 
-### L2 — Session（Linux 為主）
+### L2 — Sessions (mainly Linux)
 
-| 檢查 | 過的條件 |
+| Check | Passes when |
 |---|---|
-| `tmux new-session -d` 後盤點 | `/v1/sessions` 列出那個 pane，tty／cwd／assistant 正確 |
-| 沒有 tmux server 時盤點 | 空清單且 `Complete:true`（**這是「權威的空」，跟讀不到不同**） |
-| tmux 不存在時盤點 | note 寫「tmux is not installed」，`Complete:true` |
-| 開一個**可拋棄的** claude session，送一句話 | 畫面上出現那句話 |
-| 讀畫面 | `/screen` 回得到內容，中文不是亂碼 |
-| 送鍵（`/key`） | 用 AskUserQuestion 問一個無害問題，按選項，選到的是按的那一個 |
-| 中斷、關閉 | pane 真的停 ／ 真的消失 |
-| focus | 回 `ok`，而且**文件與 UI 沒有宣稱視窗會跳到前面**（Wayland 上不會） |
-| 砍整棵樹 | 對照組：有 `Setpgid` 時孤兒 0 個 |
-| **Windows** | WSL 模式：上面每一項在 WSL 裡重跑一遍。原生模式：owned session 的開／送／讀／中斷／關（做完 ConPTY 之後） |
-| **Windows 的既有 session** | 手動在 Windows Terminal 開一個 claude，清單上要**出現**並標示「無法遙控」（做完 §4.1(c) 之後） |
+| Inventory after `tmux new-session -d` | `/v1/sessions` lists that pane, with tty/cwd/assistant correct |
+| Inventory with no tmux server | An empty list with `Complete:true` (**this is "authoritatively empty", which is different from unreadable**) |
+| Inventory with no tmux installed | The note says "tmux is not installed", `Complete:true` |
+| Open a **disposable** claude session and send a sentence | The sentence appears on screen |
+| Read the screen | `/screen` returns content, and Chinese text is not garbled |
+| Send a key (`/key`) | Ask a harmless question with AskUserQuestion, press an option, and the one selected is the one pressed |
+| Interrupt, close | The pane really stops / really disappears |
+| focus | Returns `ok`, and **neither the docs nor the UI claim the window will jump to the front** (on Wayland it won't) |
+| Killing the whole tree | Control: with `Setpgid`, 0 orphans |
+| **Windows** | WSL mode: rerun every item above inside WSL. Native mode: open/send/read/interrupt/close for owned sessions (once ConPTY is done) |
+| **Windows existing sessions** | Open a claude by hand in Windows Terminal; it must **appear** in the list, marked "cannot be controlled" (once §4.1(c) is done) |
 
-### L3 — 每一個降級都看得見（兩台都要，這一層最重要）
+### L3 — Every degradation is visible (both machines; this layer matters most)
 
-對每一項：**打對應的 API，看它回的是具名錯誤；打開頁面，看那個地方有沒有說出理由。**
+For each item: **call the matching API and see that it returns a named error; open the page and see whether that spot says why.**
 
-| 功能 | Linux 應有的答案 | Windows 應有的答案 |
+| Feature | The answer Linux should give | The answer Windows should give |
 |---|---|---|
-| 送圖給 assistant | `ErrPasteboardUnsupported` → 改交路徑，且畫面上說了 | 同左 |
-| HEIC 圖片 | `unsupported_image`，訊息說得出是哪一種格式 | 同左 |
-| iTerm2 相關 | 不出現在 backend 清單 | 同左 |
-| 即時畫面 | tmux 有 → `live`；無 tmux → `on-demand` | `on-demand`，且沒有假裝 |
-| 行程盤點 | 完整 | `Complete:false` ＋ note |
-| supervisor | 正常 | `supervisor_unsupported`（在補上 Job Object 之前） |
-| 舊 app 的 store | 皇冠／交付勾就是沒有，不留空位 | 同左 |
-| 用量頁 | 退回 transcript，頁面上說明了數字的來源不同 | 同左 |
-| 全域熱鍵 | Wayland：設定頁顯示 compositor 捷徑的說明，不是一個錄不到的框 | `RegisterHotKey` 被佔用時要具名 |
-| 秘密儲存 | 設定頁說出「keyring」還是「檔案」 | 說出「DPAPI」還是「檔案」 |
-| 通知 | 三個出口各自的狀態都列出來 | 同左，且 Toast 真的看得到（AUMID 的坑） |
+| Sending an image to the assistant | `ErrPasteboardUnsupported` → hands over a path instead, and the screen says so | Same |
+| HEIC images | `unsupported_image`, and the message can say which format | Same |
+| iTerm2-related | Does not appear in the backend list | Same |
+| Live screen | tmux present → `live`; no tmux → `on-demand` | `on-demand`, without pretending |
+| Process inventory | Complete | `Complete:false` + a note |
+| supervisor | Normal | `supervisor_unsupported` (until the Job Object is in place) |
+| The old app's store | The crown and the delivery check are simply absent, and no empty slot is left | Same |
+| Usage page | Falls back to transcripts, and the page explains that the numbers come from a different source | Same |
+| Global hotkey | Wayland: the settings page shows the compositor-shortcut explanation, not a box that cannot record | When `RegisterHotKey` is taken, it says so by name |
+| Secret storage | The settings page says "keyring" or "files" | Says "DPAPI" or "files" |
+| Notifications | Each of the three outlets lists its own state | Same, and the Toast can really be seen (the AUMID pit) |
 
-### L4 — 選配元件（兩台都要）
+### L4 — Optional components (both machines)
 
-| 檢查 | 過的條件 |
+| Check | Passes when |
 |---|---|
-| whisper 三態 | 沒裝 → `ErrNoBinary`；裝了沒模型 → `ErrNoModel`；都有 → 真的轉錄出已知內容 |
-| 錄音的 secure context | 從 `127.0.0.1` 可以；從區網 IP 要說出真正的理由 |
-| git 面板 | 在一個**可拋棄的** repo 上看得到變更；Windows 上 `\r` 不會讓 diff 錯位 |
-| cloudflared | 沒裝時具名拒絕；裝了能起（可選） |
+| whisper's three states | Not installed → `ErrNoBinary`; installed without a model → `ErrNoModel`; both → it really transcribes known content |
+| The secure context for recording | Works from `127.0.0.1`; from a LAN IP it must give the real reason |
+| git panel | Changes show on a **disposable** repository; on Windows, `\r` doesn't misalign the diff |
+| cloudflared | Refused by name when not installed; starts when installed (optional) |
 
-### L5 — 前端（兩台都要）
+### L5 — Front end (both machines)
 
-| 檢查 | 過的條件 |
+| Check | Passes when |
 |---|---|
-| console 載入 | 該平台的預設瀏覽器裡，`booting=false`、清單畫得出來 |
-| SSE | 放著十分鐘不斷線；斷了會重連 |
-| 版面 | **不量像素**（§4.13）。量的是：同一組 `id` 都在、沒有溢出、沒有水平捲軸、760 寬與桌面寬都能用 |
-| 字型 | fallback 之後中文還讀得出來，沒有方塊 |
+| Console loads | In the platform's default browser, `booting=false`, and the list draws |
+| SSE | Left open for ten minutes without dropping; reconnects if it drops |
+| Layout | **No pixel measurement** (§4.13). What is measured: the same set of `id`s are all present, no overflow, no horizontal scroll bar, usable at 760 wide and at desktop width |
+| Fonts | After fallback, Chinese text is still readable, with no boxes |
 
-### 記錄方式
+### How to record
 
-每一項記「跑了／沒跑／結果」三態，**沒跑的要留在清單上**。這份文件的價值有一半在於：
-下一次有人問「Windows 到底能不能用」時，答案是一張有勾有叉有空格的表，不是一句印象。
+Record each item in three states, "run / not run / result"; **items not run stay on the list**. Half the value of this document is that
+the next time someone asks "can Windows actually be used", the answer is a table with ticks, crosses and blanks, not an impression.
 
 ---
 
-## 8. 我不確定、要在真機確認的事
+## 8. What I am not sure of, to be confirmed on real machines
 
-這一節是誠實的邊界。以下每一條都影響上面的建議，但**我沒有在真的機器上驗過**：
+This section is the honest boundary. Every item below affects the recommendations above, but **I have not verified any of them on a real machine**:
 
-1. **GNOME 到底有沒有實作 `org.freedesktop.portal.GlobalShortcuts`。** 我的認知是長期沒有，
-   但這會變。驗法：在那台桌面 Linux 上跑
-   `busctl --user introspect org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop | grep -i GlobalShortcuts`。
-   有的話，§4.8 的建議要加上 portal 那條路。
-2. **whisper.cpp 在 scoop／winget 上有沒有套件。** §4.4 的 Windows 那一列寫的是「官方 release
-   的預編 zip」，如果有套件管理員的版本，指引要改。
-3. **Go 在 Windows 上對超過 `MAX_PATH` 的處理涵蓋到哪。** Go 會對絕對路徑自動補 `\\?\`，
-   但不是每一條路徑操作都會。要在接近 260 字元的路徑底下實跑（L0）。
-4. **`modernc.org/sqlite` 在 Windows 上的 WAL 行為。** 純 Go 應該沒問題，但沒跑過。
-5. **ConPTY 的輸出流在 Claude Code 的 TUI 底下實際長什麼樣。** VT 解析器要跟著它的重繪方式走，
-   而那要真的接上去看一次才知道成本。舊版在 tmux 上量過（349 行、100% 精確度），ConPTY 不一定相同。
-6. **WSL2 的 localhost 轉發在使用者的網路設定下是否穩定。** 有些企業 VPN 會擋。
-7. **Windows Toast 在沒有開始功能表捷徑時到底會不會顯示。** 我的認知是不會且不報錯，要實測。
-8. **Linux 桌面上 Secret Service 在 SSH ＋ `DISPLAY` 轉發的情形下會不會卡住等解鎖。** 會卡住的話，
-   要有 timeout 而不是讓啟動吊死。
+1. **Whether GNOME actually implements `org.freedesktop.portal.GlobalShortcuts`.** My understanding is that it long has not,
+   but that changes. How to check: on the desktop Linux machine run
+   `busctl --user introspect org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop | grep -i GlobalShortcuts`.
+   If it is there, §4.8's recommendation should add the portal path.
+2. **Whether whisper.cpp has packages on scoop/winget.** §4.4's Windows row says "the prebuilt zip from the official
+   release"; if a package-manager version exists, the guidance should change.
+3. **How far Go's handling of paths beyond `MAX_PATH` reaches on Windows.** Go adds `\\?\` to absolute paths automatically,
+   but not every path operation does. Run it for real under a path close to 260 characters (L0).
+4. **`modernc.org/sqlite`'s WAL behaviour on Windows.** Pure Go should be fine, but it has not been run.
+5. **What ConPTY's output stream really looks like under Claude Code's TUI.** The VT parser has to follow its repaint style,
+   and only hooking it up and looking will tell the cost. The old version measured on tmux (349 lines, 100% fidelity); ConPTY may differ.
+6. **Whether WSL2's localhost forwarding is stable under the user's network setup.** Some enterprise VPNs block it.
+7. **Whether a Windows Toast shows at all without a Start menu shortcut.** My understanding is that it doesn't, and reports no error; to be tested.
+8. **Whether Secret Service on a Linux desktop hangs waiting to be unlocked under SSH + `DISPLAY` forwarding.** If it does,
+   there has to be a timeout, rather than letting startup hang.
 
 ---
 
-## 附：這份文件依據的原始碼位置
+## Appendix: the source locations this document is based on
 
-| 主題 | 檔案 |
+| Subject | Files |
 |---|---|
-| 平台分檔的全貌 | `grep -rn '^//go:build' internal/ shell/` |
-| 終端機 backend 清單 | `internal/adapters/terminal/hosts_darwin.go`、`hosts_other.go` |
-| tmux | `internal/adapters/terminal/tmux.go`、`screen.go`、`keys.go`、`type.go`、`launch.go` |
+| Every platform-split file | `grep -rn '^//go:build' internal/ shell/` |
+| Terminal backend list | `internal/adapters/terminal/hosts_darwin.go`, `hosts_other.go` |
+| tmux | `internal/adapters/terminal/tmux.go`, `screen.go`, `keys.go`, `type.go`, `launch.go` |
 | iTerm2 | `internal/adapters/terminal/iterm_*.go` |
-| 即時畫面訊號 | `internal/adapters/terminal/signal_unix.go`、`signal_other.go` |
-| 在畫面上顯示 | `internal/adapters/terminal/reveal.go`、`reveal_darwin.go`、`reveal_other.go` |
-| 行程盤點 | `internal/adapters/process/ps_unix.go`、`ps_windows.go` |
-| 行程樹 | `internal/adapters/supervisor/supervisor_unix.go`、`supervisor_windows.go` |
-| 剪貼簿與圖片解碼 | `internal/adapters/artifacts/pasteboard_*.go`、`decode_*.go` |
-| 語音 | `internal/adapters/whisper/whisper.go`（`binaryDirs()`、`modelDirs()`） |
-| 秘密 | `internal/adapters/cloudkeys/`、`internal/adapters/devices/`、`nofollow_*.go` |
-| 路徑與狀態目錄 | `internal/config/config.go` |
-| 文件路由的邊界 | `internal/adapters/documents/documents.go` |
-| 舊 app 的 store | `internal/adapters/swiftstore/`（`usagedb.go` 的 `ObservabilityDirIn`、`procstart_*.go`） |
-| 開瀏覽器 | `cmd/clawdline/auth.go` 的 `openURL` |
-| macOS 原生殼 | `shell/darwin/`（`HotKey.swift`、`main.swift` 的 `SMAppService`、`Browser.swift`） |
-| 舊 Swift app（唯讀參考） | `~/code/clawdline/Sources/`：`LiveScreen.swift`、`WebPush.swift`、`NotchIsland.swift`、`Whisper.swift`、`CloudKeys.swift`、`Targets.swift` |
+| Live screen signal | `internal/adapters/terminal/signal_unix.go`, `signal_other.go` |
+| Showing it on screen | `internal/adapters/terminal/reveal.go`, `reveal_darwin.go`, `reveal_other.go` |
+| Process inventory | `internal/adapters/process/ps_unix.go`, `ps_windows.go` |
+| Process trees | `internal/adapters/supervisor/supervisor_unix.go`, `supervisor_windows.go` |
+| Clipboard and image decoding | `internal/adapters/artifacts/pasteboard_*.go`, `decode_*.go` |
+| Voice | `internal/adapters/whisper/whisper.go` (`binaryDirs()`, `modelDirs()`) |
+| Secrets | `internal/adapters/cloudkeys/`, `internal/adapters/devices/`, `nofollow_*.go` |
+| Paths and the state directory | `internal/config/config.go` |
+| The documents route's boundary | `internal/adapters/documents/documents.go` |
+| The old app's store | `internal/adapters/swiftstore/` (`ObservabilityDirIn` in `usagedb.go`, `procstart_*.go`) |
+| Opening a browser | `openURL` in `cmd/clawdline/auth.go` |
+| macOS native shell | `shell/darwin/` (`HotKey.swift`, `SMAppService` in `main.swift`, `Browser.swift`) |
+| The old Swift app (read-only reference) | `~/code/clawdline/Sources/`: `LiveScreen.swift`, `WebPush.swift`, `NotchIsland.swift`, `Whisper.swift`, `CloudKeys.swift`, `Targets.swift` |
 
 ---
 
-# 併入：先落地的兩節（輸入條、瀏海島）
+# Merged in: two sections that landed first (the input bar, the notch island)
 
-## 輸入條（快速面板）
+## The input bar (quick panel)
 
-macOS 的這一半在 `shell/darwin/Bar.swift`，web 的那一半在 `web/console/src/bar/`。
+The macOS half is in `shell/darwin/Bar.swift`, the web half in `web/console/src/bar/`.
 
-### 1. 全域熱鍵（⌥Space）
+### 1. Global hotkey (⌥Space)
 
-**限制是什麼。** macOS 用 Carbon 的 `RegisterEventHotKey`（`shell/darwin/HotKey.swift`），不需要
-輔助使用權限，整個系統一個組合只有一個擁有者。
+**What the limit is.** macOS uses Carbon's `RegisterEventHotKey` (`shell/darwin/HotKey.swift`), which needs no
+accessibility permission, and gives each combination exactly one owner across the whole system.
 
-- **Linux**：X11 下是 `XGrabKey`，抓得到；**Wayland 抓不到**。Wayland 刻意不讓一般程式監看別的
-  視窗的鍵盤，合法的路是桌面環境自己的設定（GNOME 的 `org.gnome.settings-daemon.plugins.
-  media-keys.custom-keybindings`、KDE 的 `kglobalaccel`），或是 `xdg-desktop-portal` 的
-  GlobalShortcuts portal（相對新，不是每個桌面都有）。
-- **Windows**：`RegisterHotKey` 抓得到，但被 UIPI 擋在提權視窗之外，而且 `VK_SPACE` 加 `MOD_ALT`
-  會跟系統選單打架。
+- **Linux**: under X11 it is `XGrabKey`, and it can grab; **under Wayland it cannot**. Wayland deliberately does not let ordinary programs watch other
+  windows' keyboards; the legitimate paths are the desktop environment's own settings (GNOME's `org.gnome.settings-daemon.plugins.
+  media-keys.custom-keybindings`, KDE's `kglobalaccel`), or the `xdg-desktop-portal`
+  GlobalShortcuts portal (relatively new, and not on every desktop).
+- **Windows**: `RegisterHotKey` can grab, but UIPI keeps it out of elevated windows, and `VK_SPACE` with `MOD_ALT`
+  fights the system menu.
 
-**建議怎麼呈現。** 殼在啟動時就知道自己抓不抓得到：抓得到就照舊；抓不到的時候**不要靜靜地不動**，
-而是（a）寫進 log 說明是哪一種抓不到，（b）在設定頁的快速鍵那一列說「這個桌面要由系統設定，指令是
-`clawdline-next://toggle`」，並且（c）一定要留一條不靠熱鍵也打得開的路——macOS 是選單列的
-「打開輸入框」，Linux／Windows 就是 tray 選單那一項加上那個 URL scheme。`main.swift` 現在
-`applyConfiguredHotKey(alertOnFailure:)` 就是這個形狀的 macOS 版（註冊不起來會說一句「多半是被別的
-軟體佔走了」，而不是假裝註冊好了）。
+**How it should be presented.** The shell knows at startup whether it can grab: if it can, carry on as before; if it can't, **don't quietly do nothing**,
+but (a) write to the log which kind of failure it is, (b) say on the shortcut row of the settings page "on this desktop the system sets this; the command is
+`clawdline-next://toggle`", and (c) always leave a way to open it that doesn't depend on the hotkey — on macOS the menu bar's
+"open the input bar" item (`menuOpen`), on Linux/Windows that item of the tray menu plus that URL scheme. `main.swift`'s current
+`applyConfiguredHotKey(alertOnFailure:)` is the macOS version of this shape (when registration fails it says the combination is "most likely taken by some other
+app", rather than pretending it registered).
 
-### 2. 視窗層級與「不搶焦點」
+### 2. Window level and "not stealing focus"
 
-**限制是什麼。** macOS 的 `NSPanel` 有 `.nonactivatingPanel`：視窗拿到鍵盤，但**應用程式沒有被
-啟動**，所以底下那個 app 看起來還是「前景」。這是整個輸入條成立的前提。
+**What the limit is.** macOS's `NSPanel` has `.nonactivatingPanel`: the window gets the keyboard, but **the application is not
+activated**, so the app underneath still looks "in front". This is the premise the whole input bar stands on.
 
-- **Linux／X11**：`_NET_WM_WINDOW_TYPE_DOCK` 或 `override-redirect` 可以做到置頂不被管理，但焦點
-  的模型不一樣，多半得自己 `XSetInputFocus`，而且各家 WM 行為不同。
-- **Linux／Wayland**：要靠 `wlr-layer-shell`（wlroots 系：sway、Hyprland 有）。**GNOME 沒有**
-  layer-shell，一般程式做不出「浮在所有東西上面的面板」。
-- **Windows**：`WS_EX_TOPMOST` 加 `WS_EX_NOACTIVATE` 很接近，但 `NOACTIVATE` 的視窗要拿到鍵盤得繞
-  `AttachThreadInput`，而且會踩到前景視窗鎖（`SetForegroundWindow` 的限制）。
+- **Linux/X11**: `_NET_WM_WINDOW_TYPE_DOCK` or `override-redirect` can keep it on top and unmanaged, but the focus
+  model is different; you mostly have to `XSetInputFocus` yourself, and every WM behaves differently.
+- **Linux/Wayland**: needs `wlr-layer-shell` (the wlroots family: sway and Hyprland have it). **GNOME has no**
+  layer-shell, and an ordinary program cannot make "a panel floating above everything".
+- **Windows**: `WS_EX_TOPMOST` with `WS_EX_NOACTIVATE` comes close, but a `NOACTIVATE` window that wants the keyboard has to go round through
+  `AttachThreadInput`, and runs into the foreground-window lock (the limits of `SetForegroundWindow`).
 
-**建議怎麼呈現。** 做不到「不搶焦點」的平台，就做成**會搶焦點的一般視窗**，並且在收起來的時候把
-焦點還回去（`Bar.swift` 的 `hide(returnFocus:)` 已經是這個行為）。不要為了模擬而用 always-on-top
-的無邊框視窗卻不處理焦點——那會變成打字打到一半鍵盤跑掉。GNOME／Wayland 上老實一點：開一般視窗，
-並在設定頁說明這個桌面沒有浮動面板。
+**How it should be presented.** On platforms that cannot "not steal focus", make it **an ordinary window that does steal focus**, and give
+focus back when it closes (`hide(returnFocus:)` in `Bar.swift` already does this). Don't imitate it with an always-on-top
+borderless window that ignores focus — that turns into the keyboard wandering off halfway through typing. On GNOME/Wayland be honest: open an ordinary window,
+and say on the settings page that this desktop has no floating panels.
 
-### 3. 毛玻璃
+### 3. Frosted glass
 
-**限制是什麼。** 卡片後面的模糊是**桌面的模糊**，網頁看不到桌面，所以那一層一定在殼裡
-（macOS：`NSVisualEffectView`）。Windows 有 `DwmSetWindowAttribute` 的 Mica／Acrylic（Win11）；
-Linux 要靠合成器的 blur-behind（KDE 有 `KWindowEffects`，GNOME 沒有）。
+**What the limit is.** The blur behind the card is **a blur of the desktop**, and a web page cannot see the desktop, so that layer has to be in the shell
+(macOS: `NSVisualEffectView`). Windows has Mica/Acrylic through `DwmSetWindowAttribute` (Win11);
+Linux relies on the compositor's blur-behind (KDE has `KWindowEffects`, GNOME does not).
 
-**建議怎麼呈現。** 沒有毛玻璃的時候**什麼都不用做**：`bar.css` 的 scrim 是一層 55% 的深色，殼後面
-是黑的話，畫出來就是一張比較實的卡片，不會破版。這是唯一一個「退化得剛好」的項目。
+**How it should be presented.** Without frosted glass, **do nothing**: the scrim in `bar.css` is a 55% dark layer, and if what is behind the shell
+is black, what gets drawn is a somewhat more solid card, and nothing breaks. This is the one item that "degrades just right".
 
-### 4. 跟著終端機出現與收起
+### 4. Appearing and hiding with the terminal
 
-**限制是什麼。** macOS 用 `NSWorkspace.didActivateApplicationNotification` 知道「現在前景是哪個
-app」，而且拿得到 bundle id（`com.googlecode.iterm2`）。
+**What the limit is.** macOS uses `NSWorkspace.didActivateApplicationNotification` to know "which app is in front now",
+and gets its bundle id (`com.googlecode.iterm2`).
 
-- **Linux／X11**：`_NET_ACTIVE_WINDOW` 加 `WM_CLASS` 做得到。**Wayland 拿不到**——沒有一般程式讀
-  得到「現在誰在前景」的 API，這是刻意的。
-- **Windows**：`SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` 加上 process 的 image name 做得到。
+- **Linux/X11**: `_NET_ACTIVE_WINDOW` with `WM_CLASS` can do it. **Wayland cannot** — there is no API an ordinary program can use to read
+  "who is in front now", deliberately.
+- **Windows**: `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` plus the process's image name can do it.
 
-**建議怎麼呈現。** 拿不到前景 app 的平台，就**把這個功能整個關掉**，不要用「視窗失去焦點」去猜
-（失焦包含切到瀏覽器、切到 Slack，全部重新出現會非常吵）。設定頁那一列（`settingsReopen`
-「輸入條跟著終端機出現和收起」）在這種平台上要 disabled 並說明原因，而不是開著卻沒作用。
+**How it should be presented.** On platforms that cannot get the foreground app, **turn this feature off entirely**; don't guess from "the window lost focus"
+(losing focus includes switching to the browser or to Slack, and reappearing every time would be very noisy). That settings row (`settingsReopen`,
+"the input bar appears and hides with the terminal") must be disabled with the reason on such platforms, rather than switched on and doing nothing.
 
-### 5. 把選到的 session 在終端機裡選起來（Reveal／follow）
+### 5. Selecting the chosen session in the terminal (Reveal/follow)
 
-**這一項在 macOS 上也還沒打開，原因不是平台。** 舊版 `Controller.follow(_:)` 呼叫的是
-`Targets.reveal(target, activate: false)`，註解寫得很清楚：「**Without activating.** Bringing
+**This one isn't turned on even on macOS yet, and the reason is not the platform.** The old `Controller.follow(_:)` calls
+`Targets.reveal(target, activate: false)`, and its comment is clear: "**Without activating.** Bringing
 iTerm2 forward on every Tab press would hand it the keyboard, which is the one thing this whole
-application exists to avoid doing.」
+application exists to avoid doing."
 
-新 daemon 的 `POST /v1/sessions/<id>/focus`（`internal/app/focus.go`）呼叫的是
-`h.Reveal(ctx, s, true)`——**一律 activate**，而且路由沒有參數可以要它不要。在輸入條裡按 ⇥ 就會把
-終端機叫到前面，鍵盤立刻從輸入框跑掉，輸入條自己也會因為失焦而收起來。
+The new daemon's `POST /v1/sessions/<id>/focus` (`internal/app/focus.go`) calls
+`h.Reveal(ctx, s, true)` — **it always activates**, and the route has no parameter to ask it not to. Pressing ⇥ in the input bar brings the
+terminal to the front, the keyboard immediately leaves the input box, and the input bar itself closes because it lost focus.
 
-所以：web 那一半（`Bar.tsx` 的 `follow`）已經接好，但由殼送過來的 `clawdline-bar-state.follow`
-**一律是 false**。要打開，需要 `/focus` 多一個 `activate` 欄位（預設 true，維持相容），
-`app.Actions.Focus` 把它傳進 `Reveal`；那是一行的改動，但會動到別的 child 剛落地的檔案，所以留給
-root 或下一輪。
+So: the web half (`follow` in `Bar.tsx`) is already wired up, but the `clawdline-bar-state.follow` the shell sends
+**is always false**. Turning it on needs an `activate` field on `/focus` (default true, for compatibility),
+with `app.Actions.Focus` passing it into `Reveal`; that is a one-line change, but it touches files another child just landed, so it is left to
+root or the next round.
 
-**跨平台的部分**：tmux 的 `select-pane`／`select-window` 三個平台都有（Windows 在 WSL 裡）；
-iTerm2 只有 macOS；Windows Terminal 沒有可以選分頁的自動化介面。`internal/adapters/terminal` 已經
-有 `terminal.Unsupported` 這個具名錯誤，沒有對應實作的平台回它，不要默默成功。
+**The cross-platform part**: tmux's `select-pane`/`select-window` exists on all three platforms (on Windows, inside WSL);
+iTerm2 is macOS only; Windows Terminal has no automation interface for selecting a tab. `internal/adapters/terminal` already
+has the named error `terminal.Unsupported`; platforms with no matching implementation return it, and never quietly succeed.
 
-### 6. 剪貼簿與編輯鍵
+### 6. Clipboard and editing keys
 
-**限制是什麼。** 這個視窗沒有選單列，WKWebView 只有在有人把 `cut:`／`copy:`／`paste:` 送給它的
-時候才會動（`Bar.swift` 的 `performKeyEquivalent`，抄 `ConsoleWindow` 的做法）。
+**What the limit is.** This window has no menu bar, and WKWebView acts only when someone sends it `cut:`/`copy:`/`paste:`
+(`performKeyEquivalent` in `Bar.swift`, copying what `ConsoleWindow` does).
 
-- **Linux（WebKitGTK）／Windows（WebView2）**：webview 內建的鍵盤處理本來就會處理 Ctrl+C／V／X／A／Z，
-  不需要這一段。
+- **Linux (WebKitGTK) / Windows (WebView2)**: the webview's built-in keyboard handling already handles Ctrl+C/V/X/A/Z,
+  so this part is not needed.
 
-**建議怎麼呈現。** 這是 macOS 要補、別的平台不用補的一項。修飾鍵也不同：web 那一半
-（`Bar.tsx` 的 `onKey`）已經寫成 `ev.metaKey || ev.ctrlKey`，所以 ⌘K 與 Ctrl+K 是同一件事，
-提示列上的 `⌘K` 字樣是唯一還寫死 macOS 的地方——之後要換成依平台顯示 `⌘`／`Ctrl`，
-字詞要去 `Copy+*.swift` 找，不要自己造。
+**How it should be presented.** This is an item macOS has to fill in and the other platforms don't. The modifier keys differ too: the web half
+(`onKey` in `Bar.tsx`) is already written as `ev.metaKey || ev.ctrlKey`, so ⌘K and Ctrl+K are the same thing;
+the `⌘K` on the hint row is the only place still hard-wired to macOS — later it should show `⌘`/`Ctrl` by platform,
+and the words should be found in `Copy+*.swift`, not made up.
 
-### 7. 送出的歷史紀錄放在哪裡
+### 7. Where the send history is kept
 
-**限制是什麼。** 舊版把 60 筆歷史寫進 `~/.config/clawdline/config.json`（`Config.shared.history`）。
-輸入條現在是一個網頁，網頁把使用者的訊息寫進設定檔不合適（設定頁會把設定檔顯示出來），所以它放在這個
-origin 的 `localStorage`（`web/console/src/bar/history.ts`）。
+**What the limit is.** The old version wrote 60 history entries into `~/.config/clawdline/config.json` (`Config.shared.history`).
+The input bar is now a web page, and a web page writing the user's messages into the config file is not appropriate (the settings page displays the config file), so the history lives in this
+origin's `localStorage` (`web/console/src/bar/history.ts`).
 
-**後果，而且是真的。** 換一個 webview、清掉網站資料、或是用無痕視窗，歷史就沒了；舊版的歷史連重裝
-都還在。三個平台都一樣，所以這不是平台差異而是這一版的差異——**寫在這裡是因為它會被誤認成 bug**。
-要修的話是 daemon 開一條自己的路由來存，不是讓網頁去寫設定檔。
+**The consequence, and it is real.** Switch to another webview, clear the site data, or use a private window, and the history is gone; the old version's history survived even a
+reinstall. It is the same on all three platforms, so this is a difference of this version, not of platforms — **it is written here because it will be mistaken for a bug**.
+The fix would be for the daemon to open a route of its own to store it, not for the web page to write the config file.
 
-### 8. 還沒接上的（不是平台限制，是這一輪沒做）
+### 8. Not wired up yet (not a platform limit; this round didn't do it)
 
-畫面上畫著、但目前不會動的東西，列在這裡以免被當成跨平台問題：
+Things drawn on screen that don't work yet, listed here so they are not mistaken for cross-platform problems:
 
-| 項目 | 現況 | 要接的話 |
+| Item | Today | To wire it up |
 |---|---|---|
-| 麥克風（⌘L `語音`） | 按鈕照畫、`disabled`，`title` 是舊版的 `hintVoice` | `POST /v1/voice` 已經有（第八波 B），錄音那一段在 `legacy/voice-bridge.ts`，但它跟 composer 的 DOM 綁在一起，要拆出來 |
-| ⌘J `看輸出` | 提示列上有，按了沒事 | 舊版是 `Controller.refreshOutput` 那一整套輸出面板，需要 `/v1/transcript` 與一個新的面板 |
-| ⌘M `換角色`、⌘S `伺服器` | 同上 | 吉祥物這個 app 目前不畫；dev stack 沒有後端路由 |
-| ⌘F `全螢幕`、⌘R `反序`、⌘+ `字級` | 同上 | 這三個都只對輸出面板有意義，會跟 ⌘J 一起 |
-| 拖拉檔案進卡片 | `bar.css` 有 `[data-drop="on"]` 的邊框規則，沒有人設定它 | 舊版是 `DropTargetView` + `Drop.swift`；跨平台要各自的 drag 型別 |
-| 列上的「N 個在背景」 | 不畫 | wire 上沒有這個欄位（舊版讀 Swift app 的 subagent 檔） |
-| 列上的協調等待 | 不畫 | 同上，讀的是舊 app 的 orchestrator store |
+| Microphone (⌘L, `hintVoice`, "voice") | The button is drawn, `disabled`, with the old `hintVoice` as its `title` | `POST /v1/voice` already exists (wave 8, B); the recording part is in `legacy/voice-bridge.ts`, but it is tied to the composer's DOM and has to be split out |
+| ⌘J, `hintOutput` ("show output") | On the hint row; pressing it does nothing | In the old version it is the whole output panel of `Controller.refreshOutput`; needs `/v1/transcript` and a new panel |
+| ⌘M `hintMascot` ("change character"), ⌘S `hintStacks` ("servers") | Same | This app doesn't draw the mascot yet; the dev stack has no backend route |
+| ⌘F `hintFullscreen` ("full screen"), ⌘R `hintOrder` ("reverse order"), ⌘+ `hintTextSize` ("text size") | Same | All three only make sense for the output panel, and will come with ⌘J |
+| Dragging files onto the card | `bar.css` has a border rule for `[data-drop="on"]`, and nothing sets it | In the old version, `DropTargetView` + `Drop.swift`; cross-platform needs each platform's drag types |
+| "N in the background" on a row | Not drawn | The wire has no such field (the old version read the Swift app's subagent files) |
+| Coordination waits on a row | Not drawn | Same; it reads the old app's orchestrator store |
 
-### 9. 刻意跟舊版不一樣的兩個初始狀態
+### 9. Two initial states deliberately different from the old version
 
-`Controller.show()` 開起來是 `listMode = .none`、`keysShown = false`：一行輸入框、一列寫著
-`⌘/ 快速鍵` 的提示，沒有別的。這一版**開起來清單是開的、快捷鍵是攤開的**——那是使用者給的那張畫面，
-也是舊版按 ⌘K 與 ⌘/ 之後的樣子。
+`Controller.show()` opens with `listMode = .none`, `keysShown = false`: one line of input box and one hint row reading
+⌘/ plus `hintKeys` ("shortcuts"), nothing else. This version **opens with the list open and the shortcuts laid out** — that is the screen the user provided,
+and also what the old version looks like after pressing ⌘K and ⌘/.
 
-理由：舊版的「收起來」狀態還有地方可去（⌘J 會在它上面開輸出面板），這一版沒有面板（見上一節），
-清單再收起來就只剩一行字的卡片。兩個鍵都照樣 toggle，要改回去是 `Bar.tsx` 最上面兩個常數。
+The reason: the old "collapsed" state still had somewhere to go (⌘J opens the output panel over it); this version has no panel (see the previous section),
+and with the list collapsed as well, only a one-line card would remain. Both keys still toggle; changing it back is the two constants at the top of `Bar.tsx`.
 
 ---
 
-## 瀏海島（一直看得到的等待數與一隻角色）
+## The notch island (an always-visible waiting count, and a character)
 
-### 這個功能的本質不是「瀏海」
+### This feature's essence is not "the notch"
 
-瀏海只是道具。macOS 的鏡頭挖孔本來就是純黑、本來就一直在那裡，所以把一個黑色視窗貼著它畫，
-看起來就像挖孔長出了兩隻耳朵——左耳住著角色，右耳是狀態。**這個把戲只有 Mac 有。**
+The notch is only a prop. The camera cutout on a Mac is pure black and always there, so a black window drawn flush against it
+looks as if the cutout grew two ears — the character lives in the left ear, and the right ear is the status. **Only the Mac has this trick.**
 
-拿掉道具之後剩下的才是功能，有三件：
+Take the prop away, and what remains is the feature, in three parts:
 
-1. **一個不用切換視窗就看得到的等待數**——有幾個 session 在等你回答，或有幾個在跑。
-2. **一隻角色**，它睡覺、起床、忙的時候動得比較快、跑完了會跳舞。這是情緒，不是資料；
-   它說的每一件事選單列的 ✳ 都已經說過了（舊版原始碼自己就這樣寫：同一份讀數換一套戲服）。
-3. **兩個按得到的目標**：角色＝這個 app（打開 console），數字＝那個 session（選起它的終端機分頁）。
+1. **A waiting count visible without switching windows** — how many sessions are waiting for your answer, or how many are running.
+2. **A character**, which sleeps, wakes up, moves faster when busy, and dances when a run finishes. This is mood, not data;
+   everything it says, the ✳ in the menu bar already says (the old source says so itself: "the same reading, wearing a costume").
+3. **Two targets to press**: the character = this app (opens the console), the number = that session (selects its terminal tab).
 
-所以移植到別的平台時要問的不是「Linux 的瀏海在哪裡」，而是**「這台機器上，哪裡是一直看得到、
-放得下一張小圖和一個數字、而且按得下去的地方」**。三個平台的答案都不同，而且都不是視窗。
+So when porting to other platforms, the question is not "where is Linux's notch" but **"on this machine, where is a place that is always visible,
+fits a small picture and a number, and can be pressed"**. The three platforms answer differently, and none of the answers is a window.
 
 ### Linux
 
-| 做法 | 能做到什麼 | 限制 |
+| Approach | What it can do | Limits |
 |---|---|---|
-| **系統匣（StatusNotifierItem／AppIndicator，走 D-Bus）** | 一張自繪的圖示（角色可以畫進去）、tooltip、左右鍵選單；換圖就是換一張 pixmap，所以低張數的動畫做得出來 | GNOME 從 3.26 起沒有內建托盤，要裝 AppIndicator 擴充套件才看得到；KDE Plasma 原生支援。圖示大小約 22–24 px，角色只能是剪影等級 |
-| **置頂小浮窗（layer-shell／DOCK 視窗）** | 最接近舊版：真的有一塊常駐的畫面，角色可以動、數字可以是字 | **X11 可以自己決定位置，Wayland 不行**——Wayland 客戶端沒有全域座標，要靠 `wlr-layer-shell` 才能把 surface 釘在螢幕邊緣。sway、Hyprland、KDE 有；**GNOME 的 Mutter 沒有實作 layer-shell**，那裡只有寫 gnome-shell 擴充套件一條路 |
-| **工作列徽章（`com.canonical.Unity.LauncherEntry`，D-Bus）** | 啟動器圖示上一個數字徽章，KDE 與 Ubuntu Dock 都吃 | 只有數字，沒有角色；要有 `.desktop` 檔才認得出是誰；GNOME 原生同樣不吃 |
+| **System tray (StatusNotifierItem/AppIndicator, over D-Bus)** | A self-drawn icon (the character can be drawn into it), a tooltip, left- and right-click menus; changing the picture is swapping a pixmap, so low-frame-count animation is possible | GNOME has had no built-in tray since 3.26, and the AppIndicator extension must be installed to see it; KDE Plasma supports it natively. The icon is about 22–24 px, so the character can only be a silhouette |
+| **A small always-on-top floating window (layer-shell/DOCK window)** | Closest to the old version: a real, permanently present patch of screen, where the character can move and the number can be text | **X11 lets you choose the position yourself; Wayland does not** — Wayland clients have no global coordinates, and need `wlr-layer-shell` to pin a surface to the screen edge. sway, Hyprland and KDE have it; **GNOME's Mutter does not implement layer-shell**, and there the only path is writing a gnome-shell extension |
+| **Launcher badge (`com.canonical.Unity.LauncherEntry`, D-Bus)** | A number badge on the launcher icon, honoured by both KDE and Ubuntu Dock | A number only, no character; needs a `.desktop` file to know whose it is; GNOME natively doesn't honour it either |
 
-**建議：系統匣為主，浮窗為選配。** 理由是「一直看得到」這個條件：托盤在哪個桌面環境都**可能**沒有，
-但它不需要決定自己的位置，所以不會在 Wayland 上直接做不出來；浮窗反過來，做得出來的時候最像舊版，
-但在最普及的 GNOME Wayland 上是沒有解的，把它當主力等於在最大的一塊使用者上交白卷。
-工作列徽章不當主力：它畫不出角色，本質三件事只做到一件。
+**Recommendation: the system tray first, the floating window optional.** The reason is the "always visible" condition: the tray **may** be missing on any desktop environment,
+but it does not need to decide its own position, so it cannot be flatly impossible on Wayland; the floating window is the reverse — where it can be built it is the most like the old version,
+but on the most widespread setup, GNOME on Wayland, it has no solution, and making it the main path means handing in a blank sheet for the largest group of users.
+The launcher badge is not the main path: it cannot draw the character, and does only one of the three essential things.
 
-實作順序：托盤圖示（角色縮成剪影＋等待數畫在右下角）→ tooltip 用同一組字串 → 左鍵開 console、
-右鍵選單列出等待中的 session。**在 sway／Hyprland／KDE 上另外提供 layer-shell 版的浮窗**，
-那裡才把角色畫成會動的。動畫張數要降：托盤是換 pixmap，60 fps 會變成 D-Bus 洪水，
-狀態改變時換一次、跑完了放一段幾張的短動作就夠。
+Implementation order: the tray icon (the character shrunk to a silhouette + the waiting count drawn in the bottom right) → the tooltip uses the same strings → left click opens the console,
+and the right-click menu lists the waiting sessions. **On sway/Hyprland/KDE, additionally provide a layer-shell floating window**,
+and only there draw the character moving. Cut the number of animation frames: the tray swaps pixmaps, and 60 fps would become a D-Bus flood;
+swapping once when the state changes, and playing a short action of a few frames when a run finishes, is enough.
 
 ### Windows
 
-| 做法 | 能做到什麼 | 限制 |
+| Approach | What it can do | Limits |
 |---|---|---|
-| **通知區域圖示（`Shell_NotifyIcon`）** | 每個 Windows 都有；圖示可以隨時換成新的 HICON，所以角色與數字都畫得進去；tooltip 內建 | Windows 10／11 預設把**新的托盤圖示收進溢位選單**，使用者要自己拖出來才會一直看得到。16×16（依 DPI 放大），一樣只能是剪影 |
-| **工作列徽章／覆疊圖示（`ITaskbarList3::SetOverlayIcon`）** | 在 app 的工作列按鈕上疊一個小圖，數字可以畫進去 | **要有工作列按鈕才有地方疊**——視窗關起來就沒有了，而這個功能的重點正是視窗關著的時候。MSIX 打包後另有 `BadgeUpdateManager` 的數字徽章，但要有套件識別 |
-| **置頂無邊框小視窗（`WS_EX_TOPMOST`＋`WS_EX_NOACTIVATE`＋`WS_EX_TOOLWINDOW`）** | Windows **允許** app 自己決定螢幕座標，所以舊版那種「釘在螢幕上緣的一小塊」在這裡做得出來，角色可以全速動 | 它會蓋到別人的東西；要自己處理多螢幕與 DPI 變更；要靠 `SHQueryUserNotificationState` 在全螢幕簡報與遊戲時收起來 |
+| **Notification area icon (`Shell_NotifyIcon`)** | Every Windows has it; the icon can be replaced with a new HICON at any time, so both the character and the number can be drawn in; a built-in tooltip | Windows 10/11 by default **tuck new tray icons into the overflow menu**, and the user has to drag the icon out for it to stay visible. 16×16 (scaled with DPI), again only a silhouette |
+| **Taskbar badge / overlay icon (`ITaskbarList3::SetOverlayIcon`)** | Overlays a small picture on the app's taskbar button, and the number can be drawn in | **It needs a taskbar button to overlay** — when the window is closed it is gone, and the whole point of this feature is the time when the window is closed. With MSIX packaging there is also `BadgeUpdateManager`'s number badge, but that needs a package identity |
+| **A small always-on-top borderless window (`WS_EX_TOPMOST` + `WS_EX_NOACTIVATE` + `WS_EX_TOOLWINDOW`)** | Windows **allows** an app to choose its own screen coordinates, so the old "small patch pinned to the top edge of the screen" can be built here, and the character can move at full speed | It covers other things on screen; multiple displays and DPI changes have to be handled by hand; it has to rely on `SHQueryUserNotificationState` to hide during full-screen presentations and games |
 
-**建議：通知區域圖示為主，置頂小視窗為選配。** 托盤被收進溢位選單是個設定問題，
-使用者拖一次就解決；工作列徽章則是結構問題，視窗關著就不存在，直接不符合這個功能的前提。
-置頂小視窗是三個平台裡唯一能把舊版原樣搬過去的做法，所以留著當選配——但不當預設，
-因為「預設就蓋住別人畫面的一塊常駐視窗」是要使用者同意的事，不是安裝完就該有的事。
+**Recommendation: the notification area icon first, the always-on-top window optional.** A tray icon tucked into the overflow menu is a settings problem,
+solved by the user dragging it out once; the taskbar badge is a structural problem — it does not exist while the window is closed, which directly fails this feature's premise.
+The always-on-top window is the only approach across the three platforms that carries the old version over unchanged, so it stays as an option — but not the default,
+because "a permanent window that covers part of someone's screen by default" is something the user has to agree to, not something that should be there right after installing.
 
-### 這一版只做 Mac，介面接在哪裡
+### This version builds only the Mac; where the interface attaches
 
-`shell/darwin/NotchIsland.swift` 一個檔，`main.swift` 只多四行掛載。檔案裡分成三層，
-**中間那層是跨平台的，兩頭不是**：
+One file, `shell/darwin/NotchIsland.swift`, and only four more lines in `main.swift` to mount it. The file is split into three layers;
+**the middle one is cross-platform, the two ends are not**:
 
-| 層 | 內容 | 換平台時 |
+| Layer | Content | When changing platforms |
 |---|---|---|
-| 讀數 | `attach(to:open:)` 注入的 bridge script、`shellIsland` 訊息、`IslandSession` | **照抄**。WebKitGTK 的 API 就是 `window.webkit.messageHandlers.<name>.postMessage`，同一段 JS 不用改；WebView2 是 `window.chrome.webview.postMessage`，加一層三行的 shim |
-| 狀態機 | `IslandMode`、`refresh()`（等待優先於慶祝、慶祝優先於進度；3.4 秒的慶祝；`pendingFinished` 只消費一次）、`ears(for:bar:)` 的寬度規則 | **照抄**，它只碰數字與字串 |
-| 畫面與互動 | `Notch.rect/path/screen`、`IslandPanel`（覆寫 `constrainFrameRect` 才畫得到選單列上面）、`IslandView`、`IslandMascotView` | **整層換掉**。托盤版只需要「把 `IslandView` 畫的東西畫成一張 pixmap」，吉祥物的 pack 格式與取樣（`IslandMascotPack`）可以照抄 |
+| Readings | The bridge script injected by `attach(to:open:)`, the `shellIsland` message, `IslandSession` | **Copy as is.** WebKitGTK's API is `window.webkit.messageHandlers.<name>.postMessage`, so the same JS needs no change; WebView2's is `window.chrome.webview.postMessage`, with a three-line shim |
+| State machine | `IslandMode`, `refresh()` (waiting takes precedence over celebrating, celebrating over progress; a 3.4-second celebration; `pendingFinished` consumed only once), the width rules of `ears(for:bar:)` | **Copy as is**; it only touches numbers and strings |
+| Screen and interaction | `Notch.rect/path/screen`, `IslandPanel` (overrides `constrainFrameRect` to be able to draw above the menu bar), `IslandView`, `IslandMascotView` | **Replace the whole layer.** A tray version only needs to "draw what `IslandView` draws into a pixmap"; the mascot's pack format and sampling (`IslandMascotPack`) can be copied as is |
 
-兩個動作是共通的，兩邊都已經是本機 daemon 的路由，不是平台 API：
+Two actions are shared, and on both sides they are already routes of the local daemon, not platform APIs:
 
-- 角色被按 → 打開 console 視窗（殼自己的事）。
-- 數字被按 → `POST /v1/sessions/{id}/focus`，和 console 的「在 Mac 上顯示」同一條路由，
-  所以兩邊不可能選到不同的東西。Linux／Windows 的殼照送同一個請求，要不要真的把終端機叫起來
-  由 daemon 那端決定。
+- The character is pressed → open the console window (the shell's own business).
+- The number is pressed → `POST /v1/sessions/{id}/focus`, the same route as the console's "show on Mac",
+  so the two can never select different things. The Linux/Windows shells send the same request, and whether the terminal is really brought up
+  is decided at the daemon's end.
 
-**還沒決定、留給第二個平台到場時再決定的一件事**：狀態機要不要搬進 Go，讓 daemon 直接發一個
-`island` 事件（誰在等、幾個在跑、誰剛跑完），三個殼都只負責畫與按。現在不搬，因為只有一個殼，
-搬了只是把一份程式碼換個語言；等第二個殼出現、兩邊的 3.4 秒開始各寫一次的時候，就該搬。
+**One thing not yet decided, left for when a second platform arrives**: whether the state machine moves into Go, so that the daemon emits an
+`island` event directly (who is waiting, how many are running, who just finished), and all three shells only draw and take presses. It doesn't move now, because there is only one shell,
+and moving it would only rewrite one piece of code in another language; once a second shell appears and the 3.4 seconds start being written once on each side, it should move.
