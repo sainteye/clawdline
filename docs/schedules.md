@@ -61,39 +61,128 @@
 還原或匯入的檔會在出現的那一分鐘就發射——正是 §3.2 第二次事故換個寫法。所以每一次都還要跟這支 daemon
 第一次看見這一列的時間比；這個時間在**讀取時**蓋章，因為會出事的正是沒經過寫入路徑的那些列。
 
-## 遷移：把舊排程搬過來
+## Migration: moving the old schedules over
 
 ```sh
-# 在要接手的機器上。<state> 是新 daemon 的 CLAWDLINE_NEXT_DIR（預設 ~/.config/clawdline-next）
-cp -p ~/.config/clawdline/schedules/*.json /tmp/schedules-copy/      # 用複本；.bak 不會被帶到
-# 在 <state>/config.json 加上 "schedule_imports_enabled": true（匯入用完就拿掉）
-python3 migrate-schedules.py import /tmp/schedules-copy 7727 <state>  # 逐檔結果與下次執行時間
-python3 migrate-schedules.py verify /tmp/schedules-copy 7727 <state>  # 三種比對都要 SAME
+# On the machine taking over. <port> and <state> are the new daemon's port and its CLAWDLINE_NEXT_DIR
+# (7727 and ~/.config/clawdline-next unless it was started otherwise). Neither has a default.
+mkdir -p /tmp/schedules-copy
+cp -p ~/.config/clawdline/schedules/*.json /tmp/schedules-copy/   # a copy; *.json.bak is not taken
+# add "schedule_imports_enabled": true to <state>/config.json, and take it out again afterwards
+python3 tools/migrate-schedules.py import /tmp/schedules-copy <port> <state>   # each file's result and next firing
+python3 tools/migrate-schedules.py verify /tmp/schedules-copy <port> <state>   # all three comparisons must say SAME
 ```
 
-`migrate-schedules.py` 在這次任務的 artifacts 裡（它只讀來源目錄）。匯入的規則：
+`tools/migrate-schedules.py` needs Python 3.9 or later and nothing outside its standard library. It
+reads the source directory and writes nothing, there or anywhere else. Before anything is sent it
+refuses:
 
-- 每個檔**逐位元組**存進去，檔名就是 id；讀不懂的檔也存，清單上顯示成 `invalid` 列（不會默默少一個）。
-- 匯入那一刻就是它的 `first_seen`，而且最近一次已發生的時間記為已決定：舊 app 已經跑過（或錯過）的那一次，
-  新 daemon 不會重跑，也不會說它 missed。下一次才是新 daemon 的。
-- 同一個檔再匯一次回 `unchanged`；同 id 不同內容回 `exists`，不覆蓋。
-- **為什麼要另外一個開關**：匯入收下重複排程與任意 `project_dir`，對新 daemon 來說就是舊版的「手寫檔案」那扇門，
-  orchestrator token「只能動只跑一次的排程」的規則管不到它，而本機任何 agent session 都讀得到那個 token。所以預設關，
-  遷移時由人打開、用完關掉。
+- **a source that is not a copy**: a directory that is, or resolves into, `~/.config/clawdline` — in
+  any letter case and through any symbolic link, because it is compared by device and inode as well as
+  by spelling — and a file in the copy that is a symbolic link, a hard link, not a plain file, or not
+  UTF-8 text (a JSON string carries text, so such bytes would arrive changed);
+- **a target that is not the new daemon of `<state>`**: `/v1/health` on `<port>` must answer
+  `"served_by": "clawdline-go"` before the token leaves the script (the Swift app on 7717 does not), and
+  the token is `<state>/orchestrator-token`; a daemon that refuses it keeps its state somewhere else.
 
-**怎麼驗證內容一致**（`verify`，三種互相獨立）：
+A refusal from the daemon is printed in the daemon's own words. Without the switch, for example:
 
-1. **位元組**：來源檔的 sha256 ＝ `GET /v1/orchestrator/schedule-exports` 裡那個檔的 sha256。
-2. **解析結果**：新 daemon 自己讀出來的 `title`、`enabled`、`when`、`close_tab`、`catch_up_hours`、
-   `notify_on_failure` 與整個 `task` 範本，跟來源檔相同（未寫的欄位比對舊版預設值）。
-3. **時間**：新 daemon 的 `next_fire` ＝ 腳本自己從來源 `when` 用本地時間算出來的下一次。
+```
+migrate-schedules: The daemon refused the import: 403 schedule_imports_disabled: Importing schedule files is switched off. Set "schedule_imports_enabled": true in this daemon's config.json for the migration, and take it out again afterwards.
+```
 
-另外可以拿舊 app 自己的答案對照：在已配對的 7717 分頁 `fetch('/v1/orchestrator/schedules')`，
-逐列比 `next_fire`（2026-09-18 實測 6/6 相同）。
+The exit status is 0 when every file is in and the same, 1 when something differs or needs a person
+(`exists`, `invalid`, `refused`, a comparison that is not SAME), and 2 when it could not be done or
+checked. Titles are never printed, so the output can be pasted into a report.
 
-**真的切換時的順序**（要使用者決定，見報告）：兩邊不能同時啟用同一個排程，否則同一時刻會開兩個 session。
-先在新 daemon 匯入，確認 verify 全部 SAME，再在舊 app 把那幾個排程停用（或停舊 app 的派工），最後讓新 daemon
-的派工開著。
+The import's rules (the daemon's, `ScheduleBook.Import`):
+
+- Every file is stored **byte for byte**, its name being its id. A file that does not parse is stored
+  too and listed as an `invalid` row with the parser's sentence, so a migration never loses one without
+  saying so; a name that is not `<lower-case UUID>.json` is `refused` and not stored.
+- The moment of import is the row's `first_seen`, and its latest occurrence at or before that moment is
+  recorded as decided: what the Swift app already ran (or missed) is not run again here and is not
+  announced as missed. The next occurrence is the new daemon's.
+- The same file again is `unchanged`; the same id with different bytes is `exists` and is not
+  overwritten.
+- **Why a separate switch**: an import accepts repeating schedules and any `project_dir`, which makes it
+  what a hand-written file was for the Swift app — the door the orchestrator token's once-only rule does
+  not cover, and every agent session on this machine can read that token. So it is off by default; a
+  person turns it on for the migration and off afterwards.
+
+**How `verify` shows the content is the same** — three independent comparisons:
+
+1. **Bytes**: the source file's sha256 = the sha256 of that file in
+   `GET /v1/orchestrator/schedule-exports`.
+2. **Parsed**: what the daemon's own parser read — `title`, `enabled`, `when`, `close_tab`,
+   `catch_up_hours`, `notify_on_failure` and the whole `task` template, from
+   `GET /v1/orchestrator/schedules/:id` — equals the source file, with the Swift app's defaults
+   (`on_success`, `6`, `true`) for a field the file leaves out. `when.days` is compared as a set, as the
+   parser keeps it, and `true` never counts as `1`.
+3. **Time**: the daemon's `next_fire` = the next firing the script computes from the source `when` in
+   this machine's local time. Run it in the daemon's time zone (`TZ`), or this comparison says DIFFERENT
+   for a reason that is not the file.
+
+A file the daemon lists as `invalid` is `INVALID` under parsed, and one it does not hold is `MISSING`.
+Files the daemon holds that the source does not have are named and not compared.
+
+Measured on 2026-09-19 with copies of this machine's five schedule files, against a daemon of its own
+(its own `CLAWDLINE_NEXT_DIR` and port, and `"orchestrator_enabled": false`, so nothing could fire).
+Ids and paths below are replaced with fixtures; the rest is the output as printed.
+
+```
+$ python3 tools/migrate-schedules.py import /tmp/schedules-copy 7841 /tmp/state
+import  /tmp/schedules-copy -> 127.0.0.1:7841 (/tmp/state)
+  c6000001-0000-4000-8000-000000000001.json  imported    next 2026-09-21 09:40 Mon
+  c6000002-0000-4000-8000-000000000002.json  imported    next 2026-09-20 12:10 Sun
+  c6000003-0000-4000-8000-000000000003.json  imported    next 2026-09-22 10:00 Tue
+  c6000004-0000-4000-8000-000000000004.json  imported    next 2026-09-22 10:20 Tue
+  c6000005-0000-4000-8000-000000000005.json  imported    next 2026-09-20 09:15 Sun
+5 files: 5 imported
+next: verify with the same arguments, then take "schedule_imports_enabled" out of /tmp/state/config.json again.
+
+$ python3 tools/migrate-schedules.py import /tmp/schedules-copy 7841 /tmp/state    # the same again
+  ...
+5 files: 5 unchanged
+
+$ python3 tools/migrate-schedules.py verify /tmp/schedules-copy 7841 /tmp/state
+verify  /tmp/schedules-copy against 127.0.0.1:7841 (/tmp/state)
+  file                                       bytes      parsed     next_fire
+  c6000001-0000-4000-8000-000000000001.json  SAME       SAME       SAME      2026-09-21 09:40 Mon
+  c6000002-0000-4000-8000-000000000002.json  SAME       SAME       SAME      2026-09-20 12:10 Sun
+  c6000003-0000-4000-8000-000000000003.json  SAME       SAME       SAME      2026-09-22 10:00 Tue
+  c6000004-0000-4000-8000-000000000004.json  SAME       SAME       SAME      2026-09-22 10:20 Tue
+  c6000005-0000-4000-8000-000000000005.json  SAME       SAME       SAME      2026-09-20 09:15 Sun
+5 files: bytes 5/5 SAME, parsed 5/5 SAME, next_fire 5/5 SAME
+```
+
+It was seen to go red first. A copy with one byte changed in each of two files — a minute in `when.at`,
+a letter in `task.instructions` — against the same daemon (exit 1):
+
+```
+  c6000001-0000-4000-8000-000000000001.json  DIFFERENT  DIFFERENT  DIFFERENT 2026-09-21 09:40 Mon
+  c6000002-0000-4000-8000-000000000002.json  DIFFERENT  DIFFERENT  SAME      2026-09-20 12:10 Sun
+  ...
+  c6000001-0000-4000-8000-000000000001.json  bytes: source sha256 …, stored …
+  c6000001-0000-4000-8000-000000000001.json  parsed: differs in when
+  c6000001-0000-4000-8000-000000000001.json  next_fire: daemon 2026-09-21 09:40 Mon, computed here 2026-09-21 09:41 Mon
+  c6000002-0000-4000-8000-000000000002.json  bytes: source sha256 …, stored …
+  c6000002-0000-4000-8000-000000000002.json  parsed: differs in task.instructions
+5 files: bytes 3/5 SAME, parsed 3/5 SAME, next_fire 4/5 SAME
+```
+
+Importing that copy answered `exists` for the two and left the stored files as they were (verify of the
+good copy stayed 5/5 afterwards). A truncated file and one with `"at": "25:00"` were imported as
+`invalid` rows — `The file does not contain a JSON object.` and `when.at must be HH:MM in local time` —
+and are in the list; verify reports them `SAME  INVALID`.
+
+The Swift app's own answer is a fourth comparison: in a paired 7717 tab,
+`fetch('/v1/orchestrator/schedules')` and compare `next_fire` row by row (6/6 the same on 2026-09-18).
+
+**The order for the real switch** (the user's decision): the two apps must never both have the same
+schedule enabled, or the same moment opens two sessions. Import into the new daemon first and see
+verify say SAME everywhere; then disable those schedules in the Swift app (or stop its dispatch); last,
+leave the new daemon's dispatch on.
 
 ## 與舊版刻意不同的地方
 
