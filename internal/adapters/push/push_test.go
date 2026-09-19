@@ -369,9 +369,9 @@ func TestTheStoredOriginIsAnOriginAndNothingElse(t *testing.T) {
 		"http://localhost:5273/x": "http://localhost:5273",
 		// And nothing else over plain http.
 		"http://192.0.2.4:7727/": "",
-		"ftp://console.example":    "",
-		"":                         "",
-		"not a url":                "",
+		"ftp://console.example":  "",
+		"":                       "",
+		"not a url":              "",
 	} {
 		if got := WebAppOrigin(raw); got != want {
 			t.Errorf("WebAppOrigin(%q) = %q, want %q", raw, got, want)
@@ -379,13 +379,13 @@ func TestTheStoredOriginIsAnOriginAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestASessionAddressSurvivesATmuxPaneID. `%141` written straight into a
-// fragment reads as U+0014 followed by `1` at the other end, and the tap lands
+// TestASessionAddressSurvivesATmuxPaneID. `%14` written straight into a
+// fragment reads as U+0014 at the other end, and the tap lands
 // on a list with nothing on screen to say why.
 func TestASessionAddressSurvivesATmuxPaneID(t *testing.T) {
 	t.Parallel()
 	for id, want := range map[string]string{
-		"%141":           "/#session=%25141",
+		"%14":            "/#session=%2514",
 		"w0t0p0:9F2A":    "/#session=w0t0p0%3A9F2A",
 		"plain-id_1.2~3": "/#session=plain-id_1.2~3",
 		"a&b=c#d":        "/#session=a%26b%3Dc%23d",
@@ -417,7 +417,7 @@ func TestATopicIsShortAndIsNotAPrefix(t *testing.T) {
 func TestAppleGetsADeclarativeMessageAndEverybodyElseGetsTheWorkerOne(t *testing.T) {
 	t.Parallel()
 	b := newBrowser(t)
-	n := Notification{Title: "Clawdline", Body: "一個 session 在等你", URL: "/#session=%25141",
+	n := Notification{Title: "Clawdline", Body: "一個 session 在等你", URL: "/#session=%2514",
 		Tag: "session-1", Icon: "/icon-192.png", At: time.Unix(1_700_000_000, 0)}
 
 	apple := b.subscription("a", "https://web.push.apple.com/one", "phone")
@@ -446,7 +446,7 @@ func TestAppleGetsADeclarativeMessageAndEverybodyElseGetsTheWorkerOne(t *testing
 	if declared.WebPush != 8030 {
 		t.Errorf("web_push is %d", declared.WebPush)
 	}
-	if declared.Notification.Navigate != "https://console.example/#session=%25141" {
+	if declared.Notification.Navigate != "https://console.example/#session=%2514" {
 		t.Errorf("navigate is %q", declared.Notification.Navigate)
 	}
 	if declared.Notification.Icon != "https://console.example/icon-192.png" {
@@ -849,7 +849,7 @@ func TestOneAcceptedSendIsOneSent(t *testing.T) {
 	var slept []time.Duration
 	sender := senderFor(t, store, &slept)
 	delivery, err := sender.Send(context.Background(), Notification{
-		Title: "Clawdline", Body: "一個 session 在等你", URL: "/#session=%25141", Tag: "session-1",
+		Title: "Clawdline", Body: "一個 session 在等你", URL: "/#session=%2514", Tag: "session-1",
 	}, "")
 	if err != nil {
 		t.Fatalf("Send: %v", err)

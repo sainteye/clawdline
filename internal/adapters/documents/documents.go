@@ -139,9 +139,9 @@ func IsInside(path, base string) bool {
 // replicated follows it unconditionally (`ProjectArtifact.projectRoot`, "with
 // its symlink followed") and its reasoning is written down: a person put that
 // symlink there to say "my documents live over there", so what it resolves to
-// becomes the root. That is a real arrangement on this machine —
-// `~/code/clawdline/artifacts -> ../clawdline-cloud/artifacts`, and the
-// documents page reads 101 rows through it — so following stays the default.
+// becomes the root. That is a real arrangement on the machine this was written
+// on — one project's `artifacts` is a symlink into a sibling repository, and
+// the documents page read 101 rows through it — so following stays the default.
 //
 // What does not hold here is the assumption underneath it, that a person is
 // the only one writing in a session's working directory: this daemon dispatches

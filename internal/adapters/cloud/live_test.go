@@ -8,19 +8,12 @@ package cloud
 //	CLAWDLINE_LIVE_RELAY=ws://127.0.0.1:8787/v1/connect \
 //	go test ./internal/adapters/cloud/ -run TestLive -v
 //
-// Set them up with, from a copy of ~/code/clawdline-cloud:
+// Both come from the cloud service, which is not part of this repository; how
+// to run it locally is written down there, not here.
 //
-//	mongod --replSet rs0 --dbpath … --port 27117 --bind_ip 127.0.0.1
-//	mongosh --port 27117 --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27117"}]})'
-//	(cd api && MONGO_URI='mongodb://127.0.0.1:27117/?replicaSet=rs0&directConnection=true' \
-//	   HOST=127.0.0.1 PORT=8180 PUBLIC_URL=http://127.0.0.1:8180 \
-//	   node --experimental-strip-types src/index.ts)
-//	(cd relay && npx wrangler dev --ip 127.0.0.1 --port 8787 \
-//	   --var API_BASE:http://127.0.0.1:8180 --var RELAY_SERVICE_TOKEN:dev-service-token)
-//
-// **API_BASE must be overridden.** `relay/wrangler.toml` points at
-// `https://api.clawdline.com`, and a `wrangler dev` without that flag asks the
-// production control plane about entitlements and keys.
+// **The local relay must be pointed at the local control plane.** Left at its
+// default it asks the production one, `https://api.clawdline.com`, about
+// entitlements and keys.
 //
 // The test registers its own account through the api's development stub OAuth,
 // so it never touches anybody's real one.

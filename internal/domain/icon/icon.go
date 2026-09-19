@@ -223,8 +223,8 @@ func (r *Registry) load() map[string]entry {
 // For returns the mark for a working directory.
 //
 // The registry row that wins is the longest registered path containing it, not
-// an exact match: a session sits in `a private venture/frontend` while the entry naming
-// the project is `a private venture` — and `a private venture/backend` may have a row of its own,
+// an exact match: a session sits in `shop/frontend` while the entry naming
+// the project is `shop` — and `shop/backend` may have a row of its own,
 // which should win for anything inside it.
 func (r *Registry) For(cwd string) Grid {
 	if cwd == "" {

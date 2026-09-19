@@ -30,7 +30,7 @@ import (
 // occurrence run. Every test here drives a real broker and a real store; only
 // the terminal is fake, and it counts what it was asked to open.
 
-const w4Root = "379d443c-db38-4d17-8ce2-b273dc748ea0"
+const w4Root = "379d0000-0000-4000-8000-000000000001"
 
 // w4Terminal is the machine's terminals: one root session, and a tab per
 // child the broker opens, each of which is an assistant ready to be typed at.

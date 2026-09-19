@@ -20,12 +20,12 @@ func TestLaunchLineIsTheSwiftAppsLine(t *testing.T) {
 		t.Fatalf("line\n got %q\nwant %q", got, want)
 	}
 	r, err := Admit(LaunchRequest{ProjectRoot: "/p", Assistant: AssistantCodex, Model: "opus",
-		Resume: "0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b"})
+		Resume: "0f1e0000-0000-4000-8000-000000000001"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := r.ShellCommand(), "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX "+
-		"-u CODEX_SANDBOX_NETWORK_DISABLED codex resume 0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b --model opus"; got != want {
+		"-u CODEX_SANDBOX_NETWORK_DISABLED codex resume 0f1e0000-0000-4000-8000-000000000001 --model opus"; got != want {
 		t.Fatalf("resume first\n got %q\nwant %q", got, want)
 	}
 }
@@ -36,7 +36,7 @@ func TestLaunchRefusesWhatIsNotAName(t *testing.T) {
 		{ProjectRoot: "/a\nb", Assistant: AssistantClaude},
 		{ProjectRoot: "/a", Assistant: "sh"},
 		{ProjectRoot: "/a", Assistant: AssistantClaude, Model: "opus; rm -rf ~"},
-		{ProjectRoot: "/a", Assistant: AssistantClaude, Resume: "0F1E2D3C-4B5A-6978-8A9B-0C1D2E3F4A5B"},
+		{ProjectRoot: "/a", Assistant: AssistantClaude, Resume: "0F1E0000-0000-4000-8000-000000000001"},
 		{ProjectRoot: "/a", Assistant: AssistantClaude, Resume: "--dangerously"},
 	} {
 		if _, err := Admit(req); err == nil {

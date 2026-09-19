@@ -218,7 +218,7 @@ func (s *Server) documentsPayload(ctx context.Context, cwd, sessionID string) ([
 				Modified: document.Modified,
 				// The session id goes in as it arrived, unescaped, because that
 				// is what the Swift route writes — `"/v1/sessions/\(sessionID)/…"`
-				// — and a tmux pane is `%865`, so the address in a row is not a
+				// — and a tmux pane is `%86`, so the address in a row is not a
 				// valid URL there either. It is the original's quirk and it costs
 				// nothing: `localDocumentListing` checks only that the string
 				// starts with `/` and then drops it, because the page builds its

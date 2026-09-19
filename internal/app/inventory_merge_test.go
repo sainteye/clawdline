@@ -11,7 +11,7 @@ import (
 func TestMergeNamesAnITermTabByItsSessionID(t *testing.T) {
 	process := session.Session{ID: "ttys017", TTY: "ttys017", Backend: session.BackendITerm,
 		Assistant: session.AssistantClaude, PID: 7}
-	tab := session.Session{ID: "D379E32C-9201-45F1-B889-25D015FB56B5", TTY: "ttys017", Backend: session.BackendITerm}
+	tab := session.Session{ID: "D3790000-0000-4000-8000-000000000017", TTY: "ttys017", Backend: session.BackendITerm}
 	got := richer(process, tab)
 	if got.ID != tab.ID || got.PID != 7 || got.Assistant != session.AssistantClaude {
 		t.Fatalf("got %+v", got)

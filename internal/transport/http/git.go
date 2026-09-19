@@ -13,7 +13,7 @@ import (
 
 // gitPath recognises GET /v1/sessions/{id}/git and returns the id, decoded —
 // one segment of the path the mux dispatched by, which is what makes a tmux
-// pane's `%195` a name here rather than a separator or a control character.
+// pane's `%19` a name here rather than a separator or a control character.
 func gitPath(r *http.Request) (string, bool) {
 	return sessionVerbIs(r, "git", http.MethodGet)
 }

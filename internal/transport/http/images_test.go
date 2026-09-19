@@ -34,7 +34,7 @@ func picturesFixture(t *testing.T) (*Server, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	swiftID := "2bf6b711-ab17-4fd2-8a4a-d76d920ddd06"
+	swiftID := "1a000000-0000-4000-8000-000000000004"
 	_ = os.WriteFile(filepath.Join(swiftDir, swiftID+".json"), []byte(`{"artifact":{"byteCount":3,"height":1,"expiresAt":4102444800,"id":"`+swiftID+`","mediaType":"image\/png","width":1},"createdAt":1}`), 0o600)
 	_ = os.WriteFile(filepath.Join(swiftDir, swiftID+".png"), []byte("png"), 0o600)
 	return s, stored[0].Artifact.ID, swiftID
@@ -55,7 +55,7 @@ func TestImageRouteReadsOwnStoreThenSwifts(t *testing.T) {
 		t.Fatalf("swift: %d %q", w.Code, w.Body.String())
 	}
 	for path, code := range map[string]int{
-		"/v1/artifacts/images/0a6473d6-af38-49ea-8a7c-21607322bb3f": 404,
+		"/v1/artifacts/images/1a000000-0000-4000-8000-000000000001": 404,
 		"/v1/artifacts/images/":            404,
 		"/v1/artifacts/images/a/b":         404,
 		"/v1/artifacts/images/..%2f..%2fx": 404,
@@ -84,7 +84,7 @@ func TestImagesRouteRefusesADevice(t *testing.T) {
 // envelope's pictures are served as described.
 func TestWireArtifacts(t *testing.T) {
 	s, own, swift := picturesFixture(t)
-	unknown := "0a6473d6-af38-49ea-8a7c-21607322bb3f"
+	unknown := "1a000000-0000-4000-8000-000000000001"
 	e := transcript.Entry{
 		ArtifactIDs: []string{own, swift, unknown},
 		Artifacts:   []transcript.ImageRef{{ID: unknown, MediaType: "image/png", ByteCount: 9, Width: 1, Height: 1, ExpiresAt: 5}},

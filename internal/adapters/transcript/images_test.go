@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	idA = "16c399a8-951f-440f-b774-47c437610297"
-	idB = "01de6fd0-fd77-47af-99d9-eeffd7cf3a1f"
+	idA = "1a000000-0000-4000-8000-000000000002"
+	idB = "1a000000-0000-4000-8000-000000000003"
 )
 
 func marker(id string) string { return `<clawdline-image id="` + id + `">` }
@@ -26,7 +26,7 @@ func TestReadImageMarkers(t *testing.T) {
 		{"the whole turn", marker(idA), "", []string{idA}, 6},
 		{"indented, trailing spaces", "a\n  " + marker(idA) + "  \nb", "a\nb", []string{idA}, 6},
 		{"two on a line", marker(idA) + " " + marker(idB) + "\nz", " \nz", []string{idA, idB}, 6},
-		{"uppercase id stays", `x <clawdline-image id="16C399A8-951F-440F-B774-47C437610297">`, `x <clawdline-image id="16C399A8-951F-440F-B774-47C437610297">`, nil, 6},
+		{"uppercase id stays", `x <clawdline-image id="1A000000-0000-4000-8000-000000000002">`, `x <clawdline-image id="1A000000-0000-4000-8000-000000000002">`, nil, 6},
 		{"placeholder stays", `<clawdline-image id="ARTIFACT_ID">`, `<clawdline-image id="ARTIFACT_ID">`, nil, 6},
 		{"unclosed stays", `<clawdline-image id="` + idA, `<clawdline-image id="` + idA, nil, 6},
 		{"a bad one does not hide a good one", `<clawdline-image id="x"> ` + marker(idA), `<clawdline-image id="x"> `, []string{idA}, 6},

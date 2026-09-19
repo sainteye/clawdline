@@ -16,7 +16,7 @@ import (
 // step during which somebody else changes the record, and the question is
 // whether the slow step's stale copy gets written back over the change.
 
-const rootConversation = "379d443c-db38-4d17-8ce2-b273dc748ea0"
+const rootConversation = "379d0000-0000-4000-8000-000000000001"
 
 func newTestBroker(t *testing.T) (*Broker, context.Context) {
 	t.Helper()

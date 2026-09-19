@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-// The pane id is `%195` in every one of these on purpose. It is the id a tmux
+// The pane id is `%19` in every one of these on purpose. It is the id a tmux
 // session really has, it is the one character that makes a path a different
 // path when it is not escaped, and reading it raw once turned a session id
 // into a control character and answered `not_found` — the wrong answer to the
 // wrong question.
-const pane = "%195"
+const pane = "%19"
 
-const taskID = "7209c73f-3c6f-4de0-b340-36d947de61ea"
+const taskID = "7a000000-0000-4000-8000-000000000001"
 
 // router records what it was asked and answers what the test told it to.
 type router struct {
@@ -135,18 +135,18 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		word:    "info",
 		body:    map[string]any{"type": "info", "session": pane, "parts": "summary"},
 		session: pane, name: "info.summary",
-		method: "GET", path: "/v1/sessions/%25195/info",
+		method: "GET", path: "/v1/sessions/%2519/info",
 		query: map[string]string{"parts": "summary"},
 	}, {
 		word:    "git",
 		body:    map[string]any{"type": "git", "session": pane},
 		session: pane, name: "git",
-		method: "GET", path: "/v1/sessions/%25195/git",
+		method: "GET", path: "/v1/sessions/%2519/git",
 	}, {
 		word:    "screen",
 		body:    map[string]any{"type": "screen", "session": pane},
 		session: pane, name: "screen",
-		method: "GET", path: "/v1/sessions/%25195/screen",
+		method: "GET", path: "/v1/sessions/%2519/screen",
 	}, {
 		word:    "image",
 		body:    map[string]any{"type": "image", "session": pane, "id": "img_7f3a"},
@@ -157,14 +157,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		word:    "documents",
 		body:    map[string]any{"type": "documents", "session": pane},
 		session: pane, name: "documents",
-		method: "GET", path: "/v1/sessions/%25195/documents",
+		method: "GET", path: "/v1/sessions/%2519/documents",
 		answers: &router{body: `{"documents":[]}`},
 	}, {
 		word: "document",
 		body: map[string]any{"type": "document", "session": pane, "request": "req-doc",
 			"scope": "task", "task": taskID, "path": "report.md"},
 		session: pane, name: "read:req-doc",
-		method: "GET", path: "/v1/sessions/%25195/documents/task/" + taskID + "/report.md",
+		method: "GET", path: "/v1/sessions/%2519/documents/task/" + taskID + "/report.md",
 		answers: &router{body: "# report\n", media: "text/markdown; charset=utf-8"},
 	}, {
 		word:    "places",
@@ -198,33 +198,33 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",
 			"text": "hello", "images": []any{}},
 		session: pane, name: "action:req-send",
-		method: "POST", path: "/v1/sessions/%25195/send",
+		method: "POST", path: "/v1/sessions/%2519/send",
 		body2: `{"images":[],"text":"hello"}`,
 	}, {
 		word: "answer",
 		body: map[string]any{"type": "answer", "session": pane, "request": "req-answer",
 			"answer": "2"},
 		session: pane, name: "action:req-answer",
-		method: "POST", path: "/v1/sessions/%25195/key",
+		method: "POST", path: "/v1/sessions/%2519/key",
 		body2: `{"key":"2"}`,
 	}, {
 		word:    "key",
 		body:    map[string]any{"type": "key", "session": pane, "request": "req-key", "key": "submit"},
 		session: pane, name: "action:req-key",
-		method: "POST", path: "/v1/sessions/%25195/key",
+		method: "POST", path: "/v1/sessions/%2519/key",
 		body2: `{"key":"submit"}`,
 	}, {
 		word: "end",
 		body: map[string]any{"type": "end", "session": pane, "request": "req-end",
 			"accept_loss": false, "expected_closeability_version": "cl1_" + strings.Repeat("a", 32)},
 		session: pane, name: "action:req-end",
-		method: "POST", path: "/v1/sessions/%25195/close",
+		method: "POST", path: "/v1/sessions/%2519/close",
 		body2: `{"expected_closeability_version":"cl1_` + strings.Repeat("a", 32) + `","force":false}`,
 	}, {
 		word:    "focus",
 		body:    map[string]any{"type": "focus", "session": pane, "request": "req-focus"},
 		session: pane, name: "action:req-focus",
-		method: "POST", path: "/v1/sessions/%25195/focus",
+		method: "POST", path: "/v1/sessions/%2519/focus",
 	}, {
 		word: "start",
 		body: map[string]any{"type": "start", "session": machine, "request": "req-start",
@@ -577,7 +577,7 @@ func TestARouteRefusalCrossesWithItsOwnCode(t *testing.T) {
 // `session_unknown` would be given a shrug where there was an explanation.
 func TestThisDaemonsOwnRefusalSpellingAlsoCrosses(t *testing.T) {
 	r := &router{status: 409,
-		body: `{"detail":"this reading of the machine was incomplete (merged), so %195 is not absent, it is unseen","error":"session_unknown"}`}
+		body: `{"detail":"this reading of the machine was incomplete (merged), so %19 is not absent, it is unseen","error":"session_unknown"}`}
 	answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
 		"type": "screen", "session": pane}))
 	if answer.Status != 409 || answer.Code != "session_unknown" {
@@ -768,9 +768,9 @@ func TestADocumentCrossesOnlyAsInertText(t *testing.T) {
 func TestADocumentListingLosesThisMachinesAddress(t *testing.T) {
 	listing := `{"documents":[
 	  {"source":"project","path":"notes.md","label":"notes.md","bytes":12,"modified":1787817600.5,
-	   "url":"http://127.0.0.1:7727/v1/sessions/%25195/documents/project/notes.md"},
+	   "url":"http://127.0.0.1:7727/v1/sessions/%2519/documents/project/notes.md"},
 	  {"source":"task","path":"report.md","label":"report.md","bytes":40,"modified":1787817601.0,
-	   "url":"http://127.0.0.1:7727/v1/sessions/%25195/documents/task/` + taskID + `/report.md",
+	   "url":"http://127.0.0.1:7727/v1/sessions/%2519/documents/task/` + taskID + `/report.md",
 	   "task":{"id":"` + taskID + `","title":"Cloud"}}]}`
 	answer := open(&router{body: listing}).Handle(context.Background(),
 		request(t, ClassCtl, map[string]any{"type": "documents", "session": pane}))
@@ -811,7 +811,7 @@ func TestAnOlderPageStillSends(t *testing.T) {
 	r := &router{}
 	answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
 		"type": "send", "session": pane, "text": "hello", "images": []any{}}))
-	if len(r.seen) != 1 || r.last().Path != "/v1/sessions/%25195/send" {
+	if len(r.seen) != 1 || r.last().Path != "/v1/sessions/%2519/send" {
 		t.Fatalf("the send did not reach this machine: %+v", r.seen)
 	}
 	if answer.Published() {
@@ -886,12 +886,12 @@ func TestEveryDivergenceIsAboutAWordThisDaemonActuallyAnswers(t *testing.T) {
 	}
 }
 
-// TestChannelSegmentIsEncodeURIComponent. A tmux pane is `%195`, and the same
+// TestChannelSegmentIsEncodeURIComponent. A tmux pane is `%19`, and the same
 // function names both a relay channel's segment and a local route's path
 // segment, exactly as the Swift bridge uses it.
 func TestChannelSegmentIsEncodeURIComponent(t *testing.T) {
 	cases := map[string]string{
-		"%195":                    "%25195",
+		"%19":                     "%2519",
 		"/Users/sean/code":        "%2FUsers%2Fsean%2Fcode",
 		"mac-01":                  "mac-01",
 		"a b":                     "a%20b",

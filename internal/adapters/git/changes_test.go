@@ -18,13 +18,13 @@ import (
 func TestParseStatusReadsTheBranchLine(t *testing.T) {
 	got := ParseStatus(strings.Join([]string{
 		"# branch.oid 45b8906547fe622fabc35d06f6fcd82258db6129",
-		"# branch.head clawdline/task/2fc3e801",
+		"# branch.head clawdline/task/2fc00000",
 		"# branch.ab +3 -11",
 	}, "\n"))
 	if got.Head != "45b8906547fe622fabc35d06f6fcd82258db6129" {
 		t.Errorf("head = %q", got.Head)
 	}
-	if got.Branch != "clawdline/task/2fc3e801" {
+	if got.Branch != "clawdline/task/2fc00000" {
 		t.Errorf("branch = %q", got.Branch)
 	}
 	if got.Ahead != 3 || got.Behind != 11 {
@@ -267,9 +267,9 @@ func keys(m map[string]numstat) []string {
 // measured here on git 2.38.1 — and `.git/config` is a file anything working in
 // that directory can write. The Git panel is opened by a device that may only
 // read, on a working directory that on this machine is often a checkout an
-// agent made an hour ago (reviewer task 2315c043, F4). So the settings that
-// name a program are turned off on the command line, where they outrank the
-// repository's own config.
+// agent made an hour ago (an independent review's finding F4). So the settings
+// that name a program are turned off on the command line, where they outrank
+// the repository's own config.
 //
 // The marker is what the planted program would leave behind. The test asserts
 // there is none, and that the reading still answers.

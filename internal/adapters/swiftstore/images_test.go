@@ -11,10 +11,10 @@ import (
 // is answered as expired and left exactly as it was, with its picture.
 func TestSwiftImagesAreReadOnly(t *testing.T) {
 	dir := t.TempDir()
-	live := "16c399a8-951f-440f-b774-47c437610297"
-	gone := "01de6fd0-fd77-47af-99d9-eeffd7cf3a1f"
-	stale := "2bf6b711-ab17-4fd2-8a4a-d76d920ddd06"
-	bad := "2d50af05-f1cf-4cb0-890b-d3570f79cf37"
+	live := "1a000000-0000-4000-8000-000000000002"
+	gone := "1a000000-0000-4000-8000-000000000003"
+	stale := "1a000000-0000-4000-8000-000000000004"
+	bad := "1a000000-0000-4000-8000-000000000005"
 	write := func(name, body string) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -40,7 +40,7 @@ func TestSwiftImagesAreReadOnly(t *testing.T) {
 	if _, _, state := s.Lookup(stale, now); state != ImageExpired {
 		t.Fatalf("stale: %v", state)
 	}
-	for _, id := range []string{bad, "0a6473d6-af38-49ea-8a7c-21607322bb3f", "../secrets", "16C399A8-951F-440F-B774-47C437610297"} {
+	for _, id := range []string{bad, "1a000000-0000-4000-8000-000000000001", "../secrets", "1A000000-0000-4000-8000-000000000002"} {
 		if _, state := s.Liveness(id, now); state != ImageMissing {
 			t.Fatalf("%s: %v", id, state)
 		}

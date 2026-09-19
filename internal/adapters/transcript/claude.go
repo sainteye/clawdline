@@ -32,7 +32,7 @@ type ClaudeRegistry struct {
 	Version   string `json:"version"`
 }
 
-// Pane returns the tmux pane id out of a value like "clawdline:@800.%801".
+// Pane returns the tmux pane id out of a value like "clawdline:@8.%12".
 func (r ClaudeRegistry) Pane() string {
 	if i := strings.LastIndex(r.Tmux, "."); i >= 0 {
 		return r.Tmux[i+1:]

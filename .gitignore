@@ -15,6 +15,9 @@
 
 # The console's build output and its dependencies. The source and the lockfile
 # are the record; 235 kB of hashed bundle regenerated on every build is not.
-node_modules/
+# No trailing slash on node_modules: in a worktree it is a symlink to the main
+# checkout's, `node_modules/` matches only a directory, and the link was once
+# committed carrying the absolute path of the machine it was made on.
+node_modules
 web/*/dist/
 .serena/

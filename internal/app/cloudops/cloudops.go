@@ -387,7 +387,7 @@ func idempotencyKey(cmd Command, plan plan) string {
 //
 // It is used for two different things on purpose, exactly as the Swift bridge
 // uses it: the segments of a relay channel, and the segments of a local route's
-// path. A tmux pane is `%195`, and a path that carried that raw would be a
+// path. A tmux pane is `%19`, and a path that carried that raw would be a
 // different path.
 func ChannelSegment(value string) string {
 	const safe = "-_.!~*'()"

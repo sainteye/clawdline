@@ -115,7 +115,7 @@ func TestStoreImportsLooksUpAndExpires(t *testing.T) {
 	if f := s.Lookup(a.ID, now); f.State != Live || len(f.Data) != a.ByteCount {
 		t.Fatalf("live: %+v", f.State)
 	}
-	if f := s.Lookup("0a6473d6-af38-49ea-8a7c-21607322bb3f", now); f.State != Missing {
+	if f := s.Lookup("1a000000-0000-4000-8000-000000000001", now); f.State != Missing {
 		t.Fatalf("unknown id: %v", f.State)
 	}
 	if f := s.Lookup("../../etc/passwd", now); f.State != Missing {
@@ -224,7 +224,7 @@ func TestDropsPruneAndDiscardOnlyTheirOwn(t *testing.T) {
 	}
 	foreign := filepath.Join(d.Dir, "keep-me.png")
 	_ = os.WriteFile(foreign, []byte("x"), 0o600)
-	outside := writePNG(t, t.TempDir(), "clawdline-20260101-000000-000-0a6473d6-af38-49ea-8a7c-21607322bb3f.png", 1, 1)
+	outside := writePNG(t, t.TempDir(), "clawdline-20260101-000000-000-1a000000-0000-4000-8000-000000000001.png", 1, 1)
 	d.Discard([]string{paths[1], foreign, outside, d.Dir + "/../x"})
 	if _, err := os.Stat(paths[1]); !os.IsNotExist(err) {
 		t.Fatal("discard kept its own file")

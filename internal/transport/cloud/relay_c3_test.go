@@ -81,7 +81,7 @@ func TestTheSenderOfARefusedRequestIsToldItsBusy(t *testing.T) {
 	go func() { _ = service.Run(ctx) }()
 
 	fake.refusals <- Inbound{Channel: "ctl/mac-01", Class: "ctl", Sender: "viewer-01", Sequence: 77,
-		Plaintext: plaintext(t, map[string]any{"type": "transcript", "session": "%195", "limit": 50})}
+		Plaintext: plaintext(t, map[string]any{"type": "transcript", "session": "%19", "limit": 50})}
 	deadline := time.Now().Add(2 * time.Second)
 	for len(fake.Published()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
@@ -91,7 +91,7 @@ func TestTheSenderOfARefusedRequestIsToldItsBusy(t *testing.T) {
 		t.Fatalf("published %d answers to a refused request, wanted one", len(published))
 	}
 	out := published[0]
-	if out.Channel != "t/mac-01/%25195" || out.Reply.Code != "cloud_ingress_busy" || out.Reply.Status != 429 {
+	if out.Channel != "t/mac-01/%2519" || out.Reply.Code != "cloud_ingress_busy" || out.Reply.Status != 429 {
 		t.Fatalf("answered %q %d %s", out.Channel, out.Reply.Status, out.Reply.Code)
 	}
 	var payload struct {

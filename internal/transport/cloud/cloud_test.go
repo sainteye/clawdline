@@ -47,14 +47,14 @@ func TestAnAnswerRidesTheSessionsOwnTranscriptChannel(t *testing.T) {
 		Log: func(string, ...any) {}}
 	service.Answer(context.Background(), Inbound{Channel: "ctl/mac-01", Class: "ctl",
 		Sender: "viewer-device-01", Sequence: 411,
-		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%195"})})
+		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%19"})})
 	published := fake.Published()
 	if len(published) != 1 {
 		t.Fatalf("published %d answers, wanted one", len(published))
 	}
 	out := published[0]
-	if out.Channel != "t/mac-01/%25195" {
-		t.Fatalf("published on %q, wanted t/mac-01/%%25195", out.Channel)
+	if out.Channel != "t/mac-01/%2519" {
+		t.Fatalf("published on %q, wanted t/mac-01/%%2519", out.Channel)
 	}
 	if out.Class != "stream" {
 		t.Fatalf("published as class %q, wanted stream", out.Class)
@@ -81,7 +81,7 @@ func TestAnAnswerWithNowhereToGoIsRecordedRatherThanSent(t *testing.T) {
 	// and an answer on ours would be read by nobody.
 	service.Answer(context.Background(), Inbound{Channel: "ctl/mac-02", Class: "ctl",
 		Sender: "viewer-device-01", Sequence: 412,
-		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%195"})})
+		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%19"})})
 	if len(fake.Published()) != 0 {
 		t.Fatalf("an answer for another Mac was published: %+v", fake.Published())
 	}
@@ -101,7 +101,7 @@ func TestAPublicationThatCannotLeaveIsSaidOutLoud(t *testing.T) {
 		Log: func(format string, args ...any) { lines = append(lines, format) }}
 	answer := service.Answer(context.Background(), Inbound{Channel: "ctl/mac-01", Class: "ctl",
 		Sender: "viewer-device-01", Sequence: 413,
-		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%195"})})
+		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%19"})})
 	if !answer.Published() {
 		t.Fatalf("the bridge decided nothing: %+v", answer)
 	}
@@ -113,7 +113,7 @@ func TestAPublicationThatCannotLeaveIsSaidOutLoud(t *testing.T) {
 // TestRunDrainsUntilTheTransportIsFinished.
 func TestRunDrainsUntilTheTransportIsFinished(t *testing.T) {
 	fake := NewFake(4)
-	for _, session := range []string{"%195", "%196"} {
+	for _, session := range []string{"%19", "%18"} {
 		fake.Deliver(Inbound{Channel: "ctl/mac-01", Class: "ctl", Sender: "viewer-device-01",
 			Sequence: 1, Plaintext: plaintext(t, map[string]any{"type": "git", "session": session})})
 	}
@@ -145,7 +145,7 @@ func TestTheRouterDispatchesInThisProcess(t *testing.T) {
 		r.Header.Set("Authorization", "Bearer a-token")
 	}}
 	res, err := router.Do(context.Background(), cloudops.LocalRequest{
-		Method: "POST", Path: "/v1/sessions/%25195/send",
+		Method: "POST", Path: "/v1/sessions/%2519/send",
 		Query:  map[string]string{"limit": "200"},
 		Header: map[string]string{"Idempotency-Key": "req-send"},
 		Body:   []byte(`{"text":"hello"}`)})
@@ -155,7 +155,7 @@ func TestTheRouterDispatchesInThisProcess(t *testing.T) {
 	if res.Status != 200 || string(res.Body) != "PNG" || res.ContentType != "image/png" {
 		t.Fatalf("the answer is %+v", res)
 	}
-	if seen.URL.EscapedPath() != "/v1/sessions/%25195/send" {
+	if seen.URL.EscapedPath() != "/v1/sessions/%2519/send" {
 		t.Fatalf("the path arrived as %q", seen.URL.EscapedPath())
 	}
 	if seen.URL.Query().Get("limit") != "200" {

@@ -22,7 +22,7 @@ func TestRowsAreBusyWhileARecordIsStuck(t *testing.T) {
 	}
 	// A FIFO blocks the reader's open until something writes to it: a record
 	// on a disk that has stopped answering.
-	stuck := filepath.Join(dir, "11111111-2222-3333-4444-555555555555.jsonl")
+	stuck := filepath.Join(dir, "5a100000-0000-4000-8000-000000000001.jsonl")
 	if err := syscall.Mkfifo(stuck, 0o600); err != nil {
 		t.Skipf("no FIFO here: %v", err)
 	}
