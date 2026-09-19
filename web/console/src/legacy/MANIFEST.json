@@ -77,7 +77,8 @@
     "js/net/schedule-webhooks.js": "6b59e590cdb79034",
     "js/input/schedule-run.js": "4a7213cac6954c85",
     "js/input/schedule.js": "80e190d9ffe36e22",
-    "js/input/schedule-history.js": "56dd8682b4bcf0e7"
+    "js/input/schedule-history.js": "56dd8682b4bcf0e7",
+    "js/door/door.js": "712ba04a6d7323fd"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {

@@ -1,6 +1,6 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import App from "./App.js"
+import { DoorGate } from "./door/Door.js"
 
 // The original stylesheet, all of it, in the order index.html links it. These
 // are byte-for-byte copies (see legacy/README.md). The first cut copied only the
@@ -43,8 +43,10 @@ import "./shell.css"
 const host = document.getElementById("root")
 if (!host) throw new Error("no #root in the document")
 
+// The door stands in front of the console: until this daemon says the browser
+// is let in, the console is not drawn at all (door/Door.tsx).
 createRoot(host).render(
   <StrictMode>
-    <App />
+    <DoorGate />
   </StrictMode>,
 )

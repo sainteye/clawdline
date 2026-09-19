@@ -41,6 +41,14 @@ func (s *Server) authRoute(w http.ResponseWriter, r *http.Request) {
 	// read the way the gate read them (routePath, gate.go).
 	p := routePath(r)
 	post := r.Method == http.MethodPost
+	// Every change to who is let in — a pairing, a password, a browser
+	// device, a revocation — is one of these POSTs, and the tunnel's refusal
+	// waits on exactly that answer (tunnel.go). Asked after the route has
+	// answered, whatever it answered: a refused request changed nothing, and
+	// applying an unchanged tunnel is a no-op.
+	if post && changesWhoIsLetIn(p) {
+		defer s.applyTunnel()
+	}
 	switch {
 	case post && p == "/v1/auth/pair":
 		g.beginPairing(w, r)
@@ -61,6 +69,18 @@ func (s *Server) authRoute(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No such route")
 	}
+}
+
+// changesWhoIsLetIn is whether a POST under /v1/auth/ can change the answer
+// to "is anybody but this machine let in": a finished pairing, a password
+// sign-in (which adds a device), a sign-out (which revokes one), and every
+// device route.
+func changesWhoIsLetIn(p string) bool {
+	switch p {
+	case "/v1/auth/pair/confirm", "/v1/auth/password", "/v1/auth/logout":
+		return true
+	}
+	return strings.HasPrefix(p, "/v1/auth/devices/")
 }
 
 // readBody is the Swift app's reading of a body: a JSON object or nothing.

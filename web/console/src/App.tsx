@@ -65,8 +65,8 @@ const PAGES: { id: Page; nav: string; key?: string; text?: string; ready: boolea
 ]
 
 // The wordmark's mark, `main.js`'s literal: the project's own creature, drawn
-// by the code the rows use, at 3px a cell.
-const BRAND_MARK: Icon = {
+// by the code the rows use, at 3px a cell. The door draws it too (door/Door.tsx).
+export const BRAND_MARK: Icon = {
   accent: "#d97757",
   cells: [".######.", ".#o##o#.", "########", ".##..##."].map((row) =>
     row.split("").map((ch) => (ch === "#" ? "#d97757" : ch === "o" ? "#141416" : "#33201a")),

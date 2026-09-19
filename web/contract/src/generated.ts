@@ -2921,13 +2921,30 @@ export interface GitSnapshot {
 }
 
 /**
- * GET /v1/health, open without a token: that this daemon is alive and which
- * implementation it is, and nothing else. No path, no port, nothing about the work;
+ * GET /v1/health, open without a token: that this daemon is alive, which
+ * implementation it is, and the two answers a page needs before it can be let in
+ * — whether the asker's own credential is one this machine knows, and whether a
+ * password door exists. Nothing else: no path, no port, nothing about the work;
  * those are in Diagnostics.
  */
 export interface Health {
   at: number
+
+  /**
+   * Whether the credential this request carried — the cookie or a bearer token
+   * — is one this machine lets in. It is about the asker and nothing else, and it
+   * is how a page tells "this browser is not let in" from "the daemon is not
+   * running" (EventSource reports a failure and never a reason). `false` is what
+   * shows the pairing page; the Swift app's page reads the same field.
+   */
+  authed: boolean
   ok: boolean
+
+  /**
+   * Whether a password has been set, so a page offers the password door only when
+   * there is one behind it. The Swift app's health says the same.
+   */
+  password: boolean
 
   /**
    * Why `ok` is false, when it is. Absent when ok. The name only: what is behind it
@@ -5443,6 +5460,81 @@ export interface TranscriptUnread {
    * How much of the record's end one read looks at.
    */
   windowBytes: number
+}
+
+/**
+ * `off`; `quick`, an address made up per run under trycloudflare.com; `named`, the
+ * person's own tunnel (`remote_tunnel_name`) and hostname (`remote_hostname`).
+ */
+export type TunnelMode =
+    "off"
+  | "quick"
+  | "named"
+
+export const TunnelModeValues: readonly TunnelMode[] = ["off", "quick", "named"] as const
+
+/**
+ * `off`; `starting`, launched or waiting to retry and not yet registered with the
+ * edge; `up`; `failed`, with a reason — including a refusal to start.
+ */
+export type TunnelState =
+    "off"
+  | "starting"
+  | "up"
+  | "failed"
+
+export const TunnelStateValues: readonly TunnelState[] = ["off", "starting", "up", "failed"] as const
+
+/**
+ * One reading of the tunnel.
+ */
+export interface TunnelStatus {
+  at: number
+
+  /**
+   * Launches in a row that have died, while it is retrying; absent when none have.
+   */
+  attempts?: number
+
+  /**
+   * The cloudflared the next launch would run: `cloudflared_path` when it is set
+   * and executable, else where a package manager puts it, else PATH. Absent when
+   * there is none.
+   */
+  binary?: string
+
+  /**
+   * When state, url or reason last moved.
+   */
+  changed: number
+
+  /**
+   * The command line of the child that is running or was last started, binary
+   * first. It always carries `--config` and this daemon's own file, never the
+   * person's ~/.cloudflared/config.yml.
+   */
+  command?: string[]
+
+  /**
+   * The configuration file cloudflared is pointed at, in this daemon's state
+   * directory.
+   */
+  config: string
+  installed: boolean
+  mode: TunnelMode
+
+  /**
+   * Why it failed or refused, in the tunnel's own sentence. Present when state is
+   * failed.
+   */
+  reason?: string
+  state: TunnelState
+
+  /**
+   * The address, once a connection to Cloudflare's edge is registered. Present when
+   * state is up.
+   */
+  url?: string
 }
 
 /**

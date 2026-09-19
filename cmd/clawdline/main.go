@@ -9,7 +9,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
@@ -57,6 +59,8 @@ func main() {
 		pairCommand(os.Args[2:])
 	case "cloud":
 		cloudCommand(os.Args[2:])
+	case "tunnel":
+		tunnelCommand(os.Args[2:])
 	case "board":
 		boardCommand(os.Args[2:])
 	case "task":
@@ -101,10 +105,35 @@ func serve() {
 	// closed, three quiet days send an item back to the Backlog.
 	srv.StartWork(context.Background())
 	startCloudLine(context.Background(), cfg, srv)
+	// The account-free tunnel, if the settings ask for one and something is
+	// paired: a cloudflared an earlier run left behind is stopped first.
+	srv.StartTunnel()
+	stopTunnelOnSignal(srv)
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)
 	}
+}
+
+// stopTunnelOnSignal takes cloudflared down before the daemon goes, then lets
+// the signal do what it would have done. Without this an interrupt or a
+// SIGTERM ends the daemon at once and leaves its tunnel up: a public address
+// that nothing on screen admits to. A SIGKILL cannot be caught, which is what
+// the tunnel's pid file and Reclaim are for.
+func stopTunnelOnSignal(srv *httptransport.Server) {
+	caught := make(chan os.Signal, 1)
+	signal.Notify(caught, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-caught
+		srv.StopTunnel()
+		signal.Reset(os.Interrupt, syscall.SIGTERM)
+		if p, err := os.FindProcess(os.Getpid()); err == nil && p.Signal(sig) == nil {
+			// Give the re-raised signal a moment to land; the exit status is
+			// then the one the sender expected.
+			time.Sleep(time.Second)
+		}
+		os.Exit(1)
+	}()
 }
 
 // startCloudLine brings up the line to app.clawdline.com, if the settings say
@@ -238,10 +267,11 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|send|interrupt|close|open|pair|cloud|board|task|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|send|interrupt|close|open|pair|tunnel|cloud|board|task|version>")
 	fmt.Fprintln(os.Stderr, "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so")
 	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")
 	fmt.Fprintln(os.Stderr, "  pair [--watch]            show the code when a device asks to pair")
+	fmt.Fprintln(os.Stderr, "  tunnel [--json]           what the cloudflared tunnel is doing; remote_tunnel in the settings turns it on")
 	fmt.Fprintln(os.Stderr, "  cloud <status|on|off|login|connect>   the line to app.clawdline.com; off by default")
 	fmt.Fprintln(os.Stderr, "  board tracks [--rows] [--json]   the old cards on the three tracks, read-only")
 	fmt.Fprintln(os.Stderr, "  task finish [--port n] <task dir>   a child's result, validated and put in place; no node needed")

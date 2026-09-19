@@ -98,6 +98,11 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 			writeSettingsFailure(w, f, err)
 			return
 		}
+		// The Remote tab's switches are the tunnel's; it follows them the
+		// moment they are written, as the Swift app's did on its reload.
+		if tunnelSettingChanged(changes) {
+			s.applyTunnel()
+		}
 		writeJSON(w, settingsSnapshot(f, v))
 	default:
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or POST")
@@ -105,6 +110,17 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 type settingsRefusal struct{ code, message string }
+
+// tunnelSettingChanged is whether a write touched what the tunnel is decided
+// on (tunnel.go).
+func tunnelSettingChanged(changes map[string]any) bool {
+	for _, key := range []string{"remote", "remote_tunnel", "remote_hostname"} {
+		if _, ok := changes[key]; ok {
+			return true
+		}
+	}
+	return false
+}
 
 // settingsChanges turns a request body into the keys to write.
 //

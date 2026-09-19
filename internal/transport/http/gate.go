@@ -14,10 +14,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/devices"
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline-go/internal/adapters/tunnel"
 	"github.com/sainteye/clawdline-go/internal/config"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/auth"
@@ -66,10 +68,13 @@ type gate struct {
 	// err is why the gate could not open. Every route behind it is then
 	// refused; an unreadable device file is never an empty one.
 	err error
-	// hostname is `remote_hostname` from this app's config.json, read when the
-	// daemon starts: the one name besides loopback and a quick tunnel that the
-	// Host check accepts. The Origin check follows the Host that passed.
-	hostname string
+	// hostname is `remote_hostname` from this app's config.json: the one name
+	// besides loopback and a quick tunnel that the Host check accepts. The
+	// Origin check follows the Host that passed. It is read when the daemon
+	// starts and again every time the tunnel is applied (tunnel.go), through
+	// the same reading the tunnel's own ingress is written from, so a named
+	// tunnel and the gate in front of it never disagree about its name.
+	hostname atomic.Pointer[string]
 	port     int
 
 	machineWarned sync.Once
@@ -143,7 +148,7 @@ func openGate(cfg config.Config) *gate {
 	}
 	if v, err := nextconfig.Open(cfg.Dir).Read(); err == nil {
 		if h, ok := v.String("remote_hostname"); ok {
-			g.hostname = strings.ToLower(strings.TrimSpace(h))
+			g.setHostname(h)
 		}
 	}
 	// Paths only. Neither token is ever written to the log.
@@ -152,10 +157,33 @@ func openGate(cfg config.Config) *gate {
 	return g
 }
 
+// setHostname takes `remote_hostname` as the file has it. A value that is not
+// a hostname admits no name at all: the Host check then answers loopback and
+// quick tunnels only, which is what an unreadable setting should open.
+func (g *gate) setHostname(raw string) {
+	h, ok := tunnel.Hostname(raw)
+	if !ok {
+		h = ""
+	}
+	g.hostname.Store(&h)
+}
+
+// allowedHostname is the configured name the Host check accepts, or "".
+func (g *gate) allowedHostname() string {
+	if h := g.hostname.Load(); h != nil {
+		return *h
+	}
+	return ""
+}
+
 // access is what the gate learned about a request, for the handlers behind it.
 type access struct {
 	machine bool
 	verdict auth.Verdict
+	// gate is the gate that judged the request, so a handler that answers a
+	// question about the door (health's `password`) asks the authority that
+	// made this verdict and no other.
+	gate *gate
 }
 
 type accessKey struct{}
@@ -225,7 +253,7 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 		// proxy behind it would otherwise hand this daemon's token to the Swift
 		// app.
 		stripCredentials(r)
-		ctx := context.WithValue(r.Context(), accessKey{}, access{machine: machine, verdict: verdict})
+		ctx := context.WithValue(r.Context(), accessKey{}, access{machine: machine, verdict: verdict, gate: g})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -364,7 +392,7 @@ func (g *gate) crossOriginRefusal(r *http.Request) string {
 	if isCrossSiteSubresource(r.Header) {
 		return "Cross-site requests are not answered."
 	}
-	if !isAllowedHost(r.Host, g.hostname) {
+	if !isAllowedHost(r.Host, g.allowedHostname()) {
 		return "Wrong host."
 	}
 	return ""

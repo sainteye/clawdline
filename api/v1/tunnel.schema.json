@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tunnel.schema.json",
+  "title": "The way in from outside",
+  "description": "GET /v1/tunnel, this machine's own token only (a paired device is 403): what the cloudflared this daemon runs is doing. It is turned on and off by `remote_tunnel` in the settings (POST /v1/settings), and it refuses to start while nothing but this machine is let in. A quick tunnel's address is its secret, which is why a paired phone cannot read this.",
+  "$defs": {
+    "TunnelStatus": {
+      "description": "One reading of the tunnel.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "changed", "config", "installed", "mode", "state"],
+      "properties": {
+        "at": { "type": "integer" },
+        "attempts": { "description": "Launches in a row that have died, while it is retrying; absent when none have.", "type": "integer" },
+        "binary": { "description": "The cloudflared the next launch would run: `cloudflared_path` when it is set and executable, else where a package manager puts it, else PATH. Absent when there is none.", "type": "string" },
+        "changed": { "description": "When state, url or reason last moved.", "type": "integer" },
+        "command": { "description": "The command line of the child that is running or was last started, binary first. It always carries `--config` and this daemon's own file, never the person's ~/.cloudflared/config.yml.", "type": "array", "items": { "type": "string" } },
+        "config": { "description": "The configuration file cloudflared is pointed at, in this daemon's state directory.", "type": "string" },
+        "installed": { "type": "boolean" },
+        "mode": { "$ref": "#/$defs/TunnelMode" },
+        "reason": { "description": "Why it failed or refused, in the tunnel's own sentence. Present when state is failed.", "type": "string" },
+        "state": { "$ref": "#/$defs/TunnelState" },
+        "url": { "description": "The address, once a connection to Cloudflare's edge is registered. Present when state is up.", "type": "string" }
+      }
+    },
+    "TunnelMode": {
+      "description": "`off`; `quick`, an address made up per run under trycloudflare.com; `named`, the person's own tunnel (`remote_tunnel_name`) and hostname (`remote_hostname`).",
+      "type": "string",
+      "enum": ["off", "quick", "named"]
+    },
+    "TunnelState": {
+      "description": "`off`; `starting`, launched or waiting to retry and not yet registered with the edge; `up`; `failed`, with a reason — including a refusal to start.",
+      "type": "string",
+      "enum": ["off", "starting", "up", "failed"]
+    }
+  }
+}
