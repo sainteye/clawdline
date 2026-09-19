@@ -2202,6 +2202,7 @@ type Diagnostics struct {
 	Capacity  CapacityDiagnostics  `json:"capacity"`
 	Dir       string               `json:"dir"`
 	OK        bool                 `json:"ok"`
+	Platform  PlatformDiagnostics  `json:"platform"`
 	Port      int64                `json:"port"`
 	Proposals *ProposalDiagnostics `json:"proposals,omitempty"`
 	Scheduler SchedulerPulse       `json:"scheduler"`
@@ -2855,6 +2856,73 @@ type PlaceStarted struct {
 	Model string `json:"model"`
 	OK    bool   `json:"ok"`
 	Place string `json:"place"`
+}
+
+// One platform capability on this machine.
+type PlatformCapability struct {
+	Name PlatformCapabilityName `json:"name"`
+
+	// This machine's sentence: why not, why unknown, or what the capability rests on
+	// when it is there.
+	Reason string                  `json:"reason,omitempty"`
+	State  PlatformCapabilityState `json:"state"`
+
+	// What provides it here: `tmux`, `iterm`, `pasteboard`, or `shell` for the macOS
+	// shell. Absent when nothing does.
+	Via []string `json:"via,omitempty"`
+}
+
+// `open_child`: open a session for a dispatched child and brief it, in the
+// terminal the machine's `terminal` setting picks. `read_screen`: read what a
+// session's terminal shows. `send_keys`: type into a session. `clipboard`: lend
+// a picture to the system clipboard for a send (without it a send hands over
+// the picture's path). `global_hotkey`: a key that answers wherever the focus
+// is. `notch`: the island around a MacBook's notch. `launch_at_login`: start
+// when the person logs in.
+type PlatformCapabilityName string
+
+const (
+	PlatformCapabilityNameOpenChild     PlatformCapabilityName = "open_child"
+	PlatformCapabilityNameReadScreen    PlatformCapabilityName = "read_screen"
+	PlatformCapabilityNameSendKeys      PlatformCapabilityName = "send_keys"
+	PlatformCapabilityNameClipboard     PlatformCapabilityName = "clipboard"
+	PlatformCapabilityNameGlobalHotkey  PlatformCapabilityName = "global_hotkey"
+	PlatformCapabilityNameNotch         PlatformCapabilityName = "notch"
+	PlatformCapabilityNameLaunchAtLogin PlatformCapabilityName = "launch_at_login"
+)
+
+// PlatformCapabilityNameValues is every value the contract allows, in contract order.
+var PlatformCapabilityNameValues = []PlatformCapabilityName{PlatformCapabilityNameOpenChild, PlatformCapabilityNameReadScreen, PlatformCapabilityNameSendKeys, PlatformCapabilityNameClipboard, PlatformCapabilityNameGlobalHotkey, PlatformCapabilityNameNotch, PlatformCapabilityNameLaunchAtLogin}
+
+// `available`: this machine has it now. `unavailable`: it positively does not,
+// and `reason` says why. `unknown`: whether it does could not be read — never
+// a no.
+type PlatformCapabilityState string
+
+const (
+	PlatformCapabilityStateAvailable   PlatformCapabilityState = "available"
+	PlatformCapabilityStateUnavailable PlatformCapabilityState = "unavailable"
+	PlatformCapabilityStateUnknown     PlatformCapabilityState = "unknown"
+)
+
+// PlatformCapabilityStateValues is every value the contract allows, in contract order.
+var PlatformCapabilityStateValues = []PlatformCapabilityState{PlatformCapabilityStateAvailable, PlatformCapabilityStateUnavailable, PlatformCapabilityStateUnknown}
+
+// /v1/diagnostics.platform (broker-design #43, cross-platform §5): every
+// platform capability of this machine by name — what it can do, what it
+// cannot and why — each answered from facts that cost nothing to read,
+// without trying any of it. `open_child`, `read_screen` and `send_keys` are
+// what a dispatch needs: one that is `unavailable` refuses a dispatch 409
+// `no_child_capability` before anything is recorded, naming it, and the refusal
+// carries these same rows. `unknown` is a probe that could not be read, and
+// refuses nothing. Read at the moment of the request, like a dispatch reads it.
+type PlatformDiagnostics struct {
+	Arch         string               `json:"arch"`
+	Capabilities []PlatformCapability `json:"capabilities"`
+
+	// The operating system this daemon runs on, as Go names it: darwin, linux,
+	// windows.
+	Os string `json:"os"`
 }
 
 type Project struct {

@@ -91,7 +91,10 @@ func newBroker(s *Server) *orchestrator.Broker {
 			return "", false
 		},
 		Launcher: terminal.NewLauncher(),
-		Lanes:    app.TerminalLanes(),
+		// What this machine's terminals can do, asked before a dispatch is
+		// admitted (orchestrator capability.go, W7).
+		TerminalCapabilities: terminal.NewLauncher().Capabilities,
+		Lanes:                app.TerminalLanes(),
 		Terminal: func() projects.TerminalChoice {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()
 			if err != nil {

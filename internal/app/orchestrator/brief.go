@@ -1,11 +1,13 @@
 package orchestrator
 
 import (
-	_ "embed"
-	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/projects"
 )
 
 // The two things a child is given: a file it reads, and one line typed into its
@@ -17,8 +19,24 @@ import (
 // per-task secrets is that a child can prove it is itself without holding
 // anything that authorises it elsewhere.
 
-//go:embed result-preflight.js
-var resultPreflight string
+// finishCommand is the one line a child runs to publish its result:
+// `clawdline task finish`, named by this daemon's own absolute path so that it
+// needs nothing on the child's PATH — node least of all (D16).
+func (b *Broker) finishCommand(dir string, port int) string {
+	exe := b.Executable
+	if exe == "" {
+		if self, err := os.Executable(); err == nil {
+			exe = self
+			if resolved, err := filepath.EvalSymlinks(self); err == nil {
+				exe = resolved
+			}
+		}
+	}
+	if exe == "" {
+		exe = "clawdline"
+	}
+	return fmt.Sprintf("%s task finish --port %d %s", projects.ShellQuoted(exe), port, projects.ShellQuoted(dir))
+}
 
 // FirstLine is what is typed into the child's composer.
 //
@@ -223,20 +241,18 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(` "finished_at": "<ISO8601 UTC>"}`)
 	w("```")
 	w("")
-	w(`Use "status": "failure" when you could not do it. Then run this exact preflight and atomic`)
-	w("rename command:")
+	w(`Use "status": "failure" when you could not do it. Then run this exact command. It checks the`)
+	w("file, puts it in place as `result.json` and asks the broker to collect it, with nothing but this")
+	w("daemon's own binary — no node, nothing else on your PATH:")
 	w("")
 	w("```bash")
-	w("node -e 'eval(\"(async()=>{\"+Buffer.from(process.argv[1],\"base64\").toString(\"utf8\")+\"\\n})()\")' '%s' \\",
-		base64.StdEncoding.EncodeToString([]byte(resultPreflight)))
-	w("  '%s/task.json' '%s/result.json.tmp' '%s/result.json.ready' \\", dir, dir, dir)
-	w("  && mv -- '%s/result.json.tmp' '%s/result.json' \\", dir, dir)
-	w("  && rm -f -- '%s/result.json.ready'", dir)
+	w("%s", b.finishCommand(dir, port))
 	w("```")
 	w("")
-	w("The validator is carried inside this briefing, so it works wherever you are. If validation")
-	w("fails, do not rename or delete the tmp file: correct it and run the same command again.")
-	w("`result.json` remains the only completion signal.")
+	w("If the check fails it says why and writes nothing: correct the tmp file and run the same command")
+	w("again. `result.json` remains the only completion signal. Asking the broker to collect it now is a")
+	w("courtesy, so when the broker cannot be reached — some sandboxes have no loopback — the command")
+	w("still exits 0 and the work is already reported. A non-zero exit means it was not.")
 	w("")
 	w("**`symbols` is how your work is told apart from everybody else's.** List what you introduced:")
 	w("new functions and types, new fields, new string keys, the names of test groups you added.")
@@ -245,16 +261,6 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("**Write the tmp file with your file-writing tool, not with a shell command.** A shell line")
 	w("that builds JSON gets refused by command screening on its own shape, and that refusal is a")
 	w("prompt with no \"always allow\" on a tab nobody is watching.")
-	w("")
-	w("Optionally, once `result.json` is in place, you may ask for it to be collected now rather than")
-	w("on the broker's next look, a few seconds later. The call carries nothing: the file is the")
-	w("result, and a call made before the file exists is refused and settles nothing. The file alone")
-	w("is enough, so when this call fails the work is already reported and there is nothing to repair:")
-	w("")
-	w("```bash")
-	w("curl --fail-with-body -sS -X POST %s/complete \\", base)
-	w(`  -H "X-Clawdline-Task-Secret: <TASK_SECRET>"`)
-	w("```")
 	return s.String()
 }
 

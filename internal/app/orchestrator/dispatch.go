@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -149,6 +150,11 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// (graphs.go): not running twice, not done twice, not ahead of what it
 	// depends on.
 	if err := b.checkGraph(ctx, record); err != nil {
+		return Dispatched{}, err
+	}
+	// A machine that cannot open a child says so here, by name, before
+	// anything exists (capability.go, broker-design #43).
+	if err := b.checkChildCapability(ctx); err != nil {
 		return Dispatched{}, err
 	}
 	if err := b.admitDispatch(); err != nil {
@@ -518,18 +524,9 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	}
 	line := "cd " + projects.ShellQuoted(cwd) + " && " + shellCommand(launch, r, b.Tasks.Dir)
 
-	itermOpen := false
-	if b.Launcher != nil {
-		itermOpen, _ = b.Launcher.ITermRunning(ctx)
-	}
-	reach := projects.TmuxAbsent
-	if b.Launcher != nil {
-		reach = projects.TmuxReach(b.Launcher.TmuxReach(ctx))
-	}
-	choice := projects.TerminalAuto
-	if b.Terminal != nil {
-		choice = b.Terminal()
-	}
+	// The same decision the dispatch was admitted on (capability.go), read
+	// again: the facts may have moved since.
+	plan := b.planChild(ctx)
 	var (
 		terminalID string
 		backend    string
@@ -542,7 +539,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		r.FinishedAt = b.now()
 		return r
 	}
-	switch projects.ChoosePlan(choice, itermOpen, reach) {
+	switch plan.kind {
 	case projects.PlanITerm:
 		terminalID, openErr = b.Launcher.NewITermTab(ctx, line)
 		backend = "iterm"
@@ -557,10 +554,8 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		terminalID, openErr = b.Launcher.NewTmuxSession(ctx, cwd, ChildSessionName(r.ID),
 			shellCommand(launch, r, b.Tasks.Dir))
 		backend = "tmux"
-	case projects.PlanNotRunning:
-		openErr = terminal.Failure{Message: "iTerm2 is not running, and this will not launch it for you."}
 	default:
-		openErr = terminal.Failure{Message: "tmux is the terminal for new sessions in Settings, and there is no tmux on this Mac."}
+		openErr = terminal.Failure{Message: plan.failure(runtime.GOOS)}
 	}
 	// The tab is open, or will not be: the opening's turn ends here.
 	opened()

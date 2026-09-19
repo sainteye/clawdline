@@ -66,6 +66,14 @@ type Broker struct {
 	Screen func(ctx context.Context, terminalID string) (string, bool)
 	// Launcher opens the child's tab.
 	Launcher ports.Launcher
+	// TerminalCapabilities is what this machine's terminals can do —
+	// read_screen and send_keys — asked before a dispatch is admitted
+	// (capability.go). Nil answers unknown, which refuses nothing.
+	TerminalCapabilities func(ctx context.Context) ports.Capabilities
+	// Executable is this daemon's own binary, which a child runs as
+	// `clawdline task finish` to publish its result (brief.go, D16). Empty
+	// asks the operating system.
+	Executable string
 	// Lanes is the machine's terminal lanes (lane, D22) — the same set the
 	// daemon's Type goes through. A dispatch takes its admission here before
 	// it writes anything, so a machine that is full answers 429 rather than
