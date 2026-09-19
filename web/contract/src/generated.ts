@@ -5080,8 +5080,8 @@ export interface SettingsSnapshot {
 
   /**
    * The file's `hotkey`, or null when the file does not carry one as a string. Null
-   * and empty both register nothing in this app: the Swift app is running and owns
-   * option+space.
+   * means the default, option+space, which the Swift app used to own and no longer
+   * does; an empty string means the person asked for none, and registers nothing.
    */
   hotkey: string | null
 

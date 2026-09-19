@@ -165,10 +165,13 @@ message handler 沒有回傳值，所以**殼的每一個回答都是一個 wind
 
 | 欄位 | 內容 |
 |---|---|
-| `hotkey` | 檔案裡的組合，沒有就空字串 |
+| `hotkey` | 現在生效的組合。**檔案沒寫時是預設值 `option+space`**（2026-09-19 起；舊 app 退役之前這裡是空的，因為那時候 ⌥Space 是它的） |
+| `isDefault` | 這個組合是不是預設來的，而不是使用者自己設的 |
 | `display` | 同一個組合，用這個平台的寫法（macOS 是 `⌘⇧K`） |
 | `registered` | 現在真的註冊著沒有 |
 | `failed` | 設了組合但註冊不起來。**句子不要送**，web 用 `hotkeyFailedTitle()` 自己組 |
+| `trouble` | 註冊不起來是哪一種：`system`（macOS 自己佔著那組鍵）／`unreadable`（設定讀不到）／`refused`（別的東西拒絕了）。空字串＝沒有麻煩 |
+| `legacy` | 舊版 app 正開著而且用同一組鍵。**兩個 process 註冊同一組 Carbon 快速鍵都會被告知成功**（macOS 15.6 實測），按一下會開兩個輸入框，所以這一格存在是為了說出來，不是為了讓出 |
 | `scopeApp` | 生效範圍的 `scope_app`，含殼自己的預設；空字串 = 所有 app |
 | `apps` | `scope_app` 裡每一個 id 的 `{id,name,icon?,unresolved?}`，順序同 `scope_app` |
 | `runningApps` | 現在開著、而且還不在範圍裡的 app，同樣的形狀 |
