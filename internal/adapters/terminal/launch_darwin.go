@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"log"
+	"errors"
 	"os/exec"
 	"strings"
 	"time"
@@ -78,23 +78,7 @@ func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) 
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		said := strings.TrimSpace(stderr.String())
-		// -1712 is errAETimeout and -1743 is a refused automation permission:
-		// both are something on the Mac's screen waiting for a person.
-		attention := strings.Contains(said, "-1712") || strings.Contains(said, "-1743") ||
-			ctx.Err() == context.DeadlineExceeded
-		// **osascript's own words are read here and go no further.** They carry
-		// the script, the interpreter's path and an Apple Event error number,
-		// and the app being replicated never sends any of it: its iTerm2
-		// failures carry the script's `error` field or a fixed sentence
-		// (`ITerm.terminalFailure(_:fallback:)`). So the reader of this
-		// machine's log gets the diagnosis and the device gets the sentence.
-		if said != "" {
-			log.Printf("iterm: osascript refused: %s", said)
-		} else {
-			log.Printf("iterm: osascript failed: %v", err)
-		}
-		return "", Failure{Attention: attention, Message: "iTerm2 would not open a tab."}
+		return "", osascriptFailure(ctx, stderr.String(), err, "iTerm2 would not open a tab.")
 	}
 	var answer struct {
 		OK    bool   `json:"ok"`
@@ -111,4 +95,46 @@ func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) 
 		return "", Failure{Message: answer.Error}
 	}
 	return answer.ID, nil
+}
+
+// itermCloseScript is iterm.js's `close`: one session, found by the id iTerm2
+// gave back when it was opened.
+//
+// It closes the *session*, not its tab or window, as iterm.js does: a tab can
+// be split, and `tab.close()` would take the panes beside it, which belong to
+// work nobody asked about. A session that was alone in its tab takes the tab
+// with it.
+const itermCloseScript = itermEach + `
+function run(argv) {
+  const id = String(argv[0] || "");
+  const it = Application("iTerm2");
+  if (!it.running()) return JSON.stringify({ ok: false, error: "iTerm2 is not running" });
+  let found = null;
+  const walk = itermEach(it, function (s) {
+    if (String(s.id()) !== id) return false;
+    found = s;
+    return true;
+  });
+  if (!found) return JSON.stringify({ ok: false, error: itermMissing(walk) });
+  found.close();
+  return JSON.stringify({ ok: true });
+}
+`
+
+// CloseITermSession closes the iTerm2 session with this id and answers whether
+// it closed anything. The id is the proof of ownership: it is the one iTerm2
+// answered when this daemon opened the tab (NewITermTab), and iTerm2 never
+// gives it to another session. A session that is gone — or not seen, past a
+// window that would not list — closes nothing and is not an error; anything
+// else, including a script that failed part way, is.
+func (l Launcher) CloseITermSession(ctx context.Context, id string) (bool, error) {
+	if id == "" {
+		return false, nil
+	}
+	err := itermCall(ctx, itermCloseScript, 10*time.Second, id)
+	var unsent Unsent
+	if errors.As(err, &unsent) {
+		return false, nil
+	}
+	return err == nil, err
 }

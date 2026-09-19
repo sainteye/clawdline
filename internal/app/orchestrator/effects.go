@@ -263,13 +263,18 @@ func runWorktree(ctx context.Context, b *Broker, e store.Effect) effectResult {
 // --- child.close ----------------------------------------------------------
 
 type closeChildEffect struct {
+	// Backend is empty for tmux — every effect written before iTerm2 tabs
+	// were closed is one — and "iterm" for an iTerm2 session, whose id is
+	// then Pane.
+	Backend string `json:"backend,omitempty"`
 	Pane    string `json:"pane"`
 	Session string `json:"session"`
 }
 
-// runCloseChild closes the session named for the task only while the pane
-// this broker made is still one of its panes (see closeChild). A second
-// attempt after a crash finds the pane gone and closes nothing.
+// runCloseChild closes the pane this broker made only while it is still one of
+// the panes of the session named for the task, or the iTerm2 session by the id
+// iTerm2 gave back (see closeChild). A second attempt after a crash finds the
+// pane or session gone and closes nothing.
 func runCloseChild(ctx context.Context, b *Broker, e store.Effect) effectResult {
 	var c closeChildEffect
 	if err := json.Unmarshal(e.Payload, &c); err != nil {
@@ -278,8 +283,26 @@ func runCloseChild(ctx context.Context, b *Broker, e store.Effect) effectResult 
 	if b.Launcher == nil {
 		return effectResult{state: store.EffectFailed, outcome: "this daemon has no launcher"}
 	}
-	closed, err := b.Launcher.CloseTmuxSession(ctx, c.Pane, c.Session)
+	var (
+		closed bool
+		err    error
+	)
+	switch c.Backend {
+	case "":
+		closed, err = b.Launcher.CloseTmuxSession(ctx, c.Pane, c.Session)
+	case "iterm":
+		closer, ok := b.Launcher.(itermCloser)
+		if !ok {
+			return effectResult{state: store.EffectFailed, outcome: "this daemon cannot close an iTerm2 session"}
+		}
+		closed, err = closer.CloseITermSession(ctx, c.Pane)
+	default:
+		return effectResult{state: store.EffectFailed, outcome: "no close for a " + c.Backend + " child"}
+	}
 	body := map[string]any{"task": e.Subject, "pane": c.Pane, "session": c.Session, "closed": closed}
+	if c.Backend != "" {
+		body["backend"] = c.Backend
+	}
 	res := effectResult{state: store.EffectDone, outcome: "closed"}
 	if !closed {
 		res.outcome = "not closed"

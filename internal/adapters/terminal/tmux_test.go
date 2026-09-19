@@ -154,3 +154,45 @@ func TestCloseTmuxSessionClosesOnlyWhatItsPaneProves(t *testing.T) {
 		t.Fatal("closing ours took the session that shares its prefix")
 	}
 }
+
+// F6: the close takes the pane it has proof of, not the whole session. A
+// window somebody added to the session — to look at why a child was slow, or
+// moved in from elsewhere — is not the task's, and survives it. Runs a private
+// tmux server.
+func TestCloseTmuxSessionLeavesAWindowThatIsNotTheTasks(t *testing.T) {
+	bin, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("no tmux")
+	}
+	dir, err := os.MkdirTemp("/tmp", "clawdline-tmux-close-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	t.Setenv("TMUX", "")
+	os.Unsetenv("TMUX")
+	os.Unsetenv("TMUX_PANE")
+	t.Setenv("TMUX_TMPDIR", dir)
+	const name = "clawdline-task-bbbbbbbb"
+	out, err := exec.Command(bin, "new-session", "-d", "-s", name, "-P", "-F", "#{pane_id}", "sleep", "60").Output()
+	if err != nil {
+		t.Skipf("could not start a private tmux server: %v", err)
+	}
+	defer exec.Command(bin, "kill-server").Run()
+	ours := strings.TrimSpace(string(out))
+	theirs, err := exec.Command(bin, "new-window", "-d", "-t", "="+name+":", "-P", "-F", "#{pane_id}", "sleep", "60").Output()
+	if err != nil {
+		t.Fatalf("could not add a window: %v", err)
+	}
+	if closed, err := NewLauncher().CloseTmuxSession(context.Background(), ours, name); !closed || err != nil {
+		t.Fatalf("the proven pane closed=%v err=%v", closed, err)
+	}
+	panes, err := exec.Command(bin, "list-panes", "-a", "-F", "#{pane_id}").Output()
+	if err != nil {
+		t.Fatalf("the window that was not the task's went with it: %v", err)
+	}
+	got := strings.Fields(string(panes))
+	if len(got) != 1 || got[0] != strings.TrimSpace(string(theirs)) {
+		t.Fatalf("panes left %v, want only %s", got, strings.TrimSpace(string(theirs)))
+	}
+}

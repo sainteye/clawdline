@@ -456,24 +456,47 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 // (D11), and only what it can prove it opened — nil when there is nothing
 // provably ours to close.
 //
-// The proof is the pane: the record holds the id tmux gave back when this
-// broker made it, and the adapter closes the session named for this task only
-// when that pane is still one of its panes. A tab that has already gone left
-// nothing provably ours behind, and a session that merely has our name is not
-// proof — a second task whose id shares the first eight characters is refused
-// that name by tmux, and closing by name would close the first task's tab. The
-// Swift app's `3e37e8ec` is why this is done at all: a tab left open was the
-// next spawn's failure.
+// The proof is the id the terminal gave back when this broker made the tab.
+// For tmux it is the pane: the adapter closes it only while it is still one of
+// the panes of the session named for this task. A tab that has already gone
+// left nothing provably ours behind, and a session that merely has our name is
+// not proof — a second task whose id shares the first eight characters is
+// refused that name by tmux, and closing by name would close the first task's
+// tab. For iTerm2 it is the session id iTerm2 answered, which it never gives
+// to another session; it is closed only where the launcher can close one
+// (itermCloser), and the tab a spawn_failed child leaves behind is otherwise
+// an idle assistant per retry (the review of e54e338, F5). The Swift app's
+// `3e37e8ec` is why this is done at all: a tab left open was the next spawn's
+// failure.
 //
 // It is an outbox effect (G14): recorded in the transaction that settles the
 // task, run after it, and — if this process dies in between — run by the next
 // broker, once, rather than never.
 func (b *Broker) closeChild(r Record, present bool) []store.Effect {
-	if !present || r.ChildBackend != "tmux" || r.ChildTerminalID == "" || b.Launcher == nil {
+	if !present || r.ChildTerminalID == "" || b.Launcher == nil {
 		return nil
 	}
-	payload, _ := json.Marshal(closeChildEffect{Pane: r.ChildTerminalID, Session: ChildSessionName(r.ID)})
+	var c closeChildEffect
+	switch r.ChildBackend {
+	case "tmux":
+		c = closeChildEffect{Pane: r.ChildTerminalID, Session: ChildSessionName(r.ID)}
+	case "iterm":
+		if _, ok := b.Launcher.(itermCloser); !ok {
+			return nil
+		}
+		c = closeChildEffect{Backend: "iterm", Pane: r.ChildTerminalID}
+	default:
+		return nil
+	}
+	payload, _ := json.Marshal(c)
 	return []store.Effect{{Kind: EffectCloseChild, Subject: r.ID, Payload: payload}}
+}
+
+// itermCloser is a launcher that can close one iTerm2 session by the id iTerm2
+// gave it (terminal.Launcher on macOS). It is asked for rather than required:
+// the launcher port is shared with the start route, which closes nothing.
+type itermCloser interface {
+	CloseITermSession(ctx context.Context, id string) (bool, error)
 }
 
 // settleOrphan settles a task still `queued` whose dispatcher has provably

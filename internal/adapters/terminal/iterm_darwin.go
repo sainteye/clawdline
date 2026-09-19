@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 	"sync"
@@ -44,7 +45,16 @@ func (i *ITerm) Name() string { return "iterm" }
 // everything.
 //
 // visit answers true to stop the walk.
+//
+// itermMissing is what a script that looked for one session and did not find
+// it says. A walk that skipped a window it could not read has not seen that
+// session, which is not the same as its being gone (F7 of the review of
+// e54e338): "gone" is said only by a walk that read everything.
 const itermEach = `
+function itermMissing(walk) {
+  if (!walk || !walk.unreadable) return "That session is gone";
+  return "That session was not seen: " + walk.unreadable + " window(s) or tab(s) could not be read";
+}
 function itermEach(it, visit) {
   let unreadable = 0;
   const wins = it.windows();
@@ -165,6 +175,10 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 // a Return of its own, then a look at the composer — and another Return only
 // while the paste is demonstrably still sitting there.
 //
+// The composer is found by its caret: ">" and Codex's "›", as iterm.js has
+// them, and Claude Code's "❯" (composerCarets in the orchestrator), without
+// which the second look never found a Claude composer at all.
+//
 // The first version of this called `writeText`, which is not in iTerm2's
 // scripting dictionary (the command is `write` with a `text` parameter), sent
 // no Return at all, and discarded what the script answered, so a session that
@@ -186,18 +200,18 @@ function run(argv) {
     let mark = -1;
     for (let i = lines.length - 1; i >= 0 && i >= lines.length - 12; i--) {
       const head = lines[i].replace(/^[\s\u2502\u2503|]+/, "").charAt(0);
-      if (head === ">" || head === "\u203a") { mark = i; break; }
+      if (head === ">" || head === "\u203a" || head === "\u276f") { mark = i; break; }
     }
     if (mark < 0) return false;
     return lines.slice(mark).join("").replace(/\s+/g, "").indexOf(needle) >= 0;
   }
   let found = null;
-  itermEach(it, function (s) {
+  const walk = itermEach(it, function (s) {
     if (String(s.id()) !== id) return false;
     found = s;
     return true;
   });
-  if (!found) return JSON.stringify({ ok: false, error: "That session is gone" });
+  if (!found) return JSON.stringify({ ok: false, error: itermMissing(walk) });
   found.write({ text: ESC + "[200~" + text + ESC + "[201~", newline: false });
   delay(0.06);
   found.write({ text: CR, newline: false });
@@ -224,15 +238,26 @@ func (i *ITerm) Open(ctx context.Context, req ports.OpenRequest) (session.Sessio
 	return session.Session{}, errUnsupported("open a session")
 }
 
-// Interrupt and Close are not implemented for the iTerm backend yet. They
-// answer with a refusal rather than doing nothing quietly, because a caller
-// that believes a turn was stopped is worse off than one told it was not.
+// Interrupt is not implemented for the iTerm backend yet. It answers with a
+// refusal rather than doing nothing quietly, because a caller that believes a
+// turn was stopped is worse off than one told it was not.
 func (i *ITerm) Interrupt(ctx context.Context, s session.Session) error {
 	return errUnsupported("interrupt")
 }
 
+// Close closes one iTerm2 session — the session, never its tab or window
+// (itermCloseScript) — found by its id.
+//
+// It is bounded like every effect here, and its failures are typed: a session
+// that was not found, or not seen, is Unsent, and closed nothing; an Apple
+// Event that timed out (-1712, which a close on this Mac has answered) or was
+// killed at the limit is a Failure with Attention, and the caller is not held
+// past the limit.
 func (i *ITerm) Close(ctx context.Context, s session.Session) error {
-	return errUnsupported("close")
+	if s.ID == "" {
+		return Unsent{Why: "there is no iTerm2 session id to close"}
+	}
+	return itermCall(ctx, itermCloseScript, 10*time.Second, s.ID)
 }
 
 // appleEvents serialises every iTerm2 Apple Event that has an effect —
@@ -266,16 +291,46 @@ func itermCall(ctx context.Context, script string, limit time.Duration, args ...
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		said := strings.TrimSpace(stderr.String())
-		if said == "" {
-			said = "iTerm2 did not answer: " + err.Error()
-		}
-		return Failure{Attention: strings.Contains(said, "-1712") || strings.Contains(said, "-1743"), Message: said}
+		return osascriptFailure(ctx, stderr.String(), err, "iTerm2 did not do what it was asked.")
 	}
 	return itermAnswer(out)
 }
 
+// osascriptFailure is a failed osascript run as it is reported.
+//
+// **osascript's own words are read here and go no further.** They carry the
+// script's position, the interpreter's path and an Apple Event error number,
+// and the app being replicated never sends any of it: its iTerm2 failures carry
+// the script's `error` field or a fixed sentence
+// (`ITerm.terminalFailure(_:fallback:)`). So the reader of this machine's log
+// gets the diagnosis, and the refusal a phone shows — and the spawn_error a
+// record keeps — gets the sentence (F8 of the review of e54e338).
+//
+// It is never Unsent. A script that was killed or threw may have written
+// before it stopped, and only the script's own answer can say it did not.
+func osascriptFailure(ctx context.Context, stderr string, err error, sentence string) Failure {
+	said := strings.TrimSpace(stderr)
+	// -1712 is errAETimeout and -1743 is a refused automation permission:
+	// both are something on the Mac's screen waiting for a person.
+	attention := strings.Contains(said, "-1712") || strings.Contains(said, "-1743") ||
+		ctx.Err() == context.DeadlineExceeded
+	if said != "" {
+		log.Printf("iterm: osascript refused: %s", said)
+	} else {
+		log.Printf("iterm: osascript failed: %v", err)
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		sentence = "iTerm2 did not answer in time."
+	}
+	return Failure{Attention: attention, Message: sentence}
+}
+
 // itermAnswer reads what an effect script said it did.
+//
+// "Not done" is Unsent: every effect script looks its session up, and answers
+// not done, before it writes anything — a caller may type the same line again
+// without delivering it twice. An answer that is not JSON came from a script
+// that ran, and is only a Failure.
 func itermAnswer(out []byte) error {
 	var answer struct {
 		OK    bool   `json:"ok"`
@@ -288,7 +343,7 @@ func itermAnswer(out []byte) error {
 		if answer.Error == "" {
 			answer.Error = "iTerm2 refused."
 		}
-		return Failure{Message: answer.Error}
+		return Unsent{Why: answer.Error}
 	}
 	return nil
 }

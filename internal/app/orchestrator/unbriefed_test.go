@@ -3,12 +3,15 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/projects"
+	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
+	"github.com/sainteye/clawdline-go/internal/app/lane"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
@@ -23,7 +26,15 @@ import (
 // itermLauncher is an iTerm2 that opens every tab under one session id.
 type itermLauncher struct {
 	fakeLauncher
-	id string
+	id          string
+	itermClosed []string
+}
+
+func (l *itermLauncher) CloseITermSession(_ context.Context, id string) (bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.itermClosed = append(l.itermClosed, id)
+	return true, nil
 }
 
 func (l *itermLauncher) ITermRunning(context.Context) (bool, error) { return true, nil }
@@ -110,13 +121,21 @@ func TestAnUnbriefedTmuxChildIsClosed(t *testing.T) {
 	}
 }
 
-// A briefing that was typed and errored is not a fact: the keystrokes may have
-// landed. The dispatch leaves it `spawning`, and it is not marked unbriefed.
+// A briefing whose typing failed with an outcome nobody can know — the script
+// was killed after the paste, the terminal answered something unreadable — is
+// not a fact: the keystrokes may have landed. The dispatch leaves it
+// `spawning`, and it is not marked unbriefed.
+//
+// The error here is a terminal that did not answer, not a lane that timed out:
+// a lane is waited for before the first byte, so "the lane timed out" is the
+// one failure that proves nothing was typed (the review of e54e338, F2).
 func TestATypedBriefingThatErredIsNotSettled(t *testing.T) {
 	b, ctx := newTestBroker(t)
 	b.Clock = steppingClock(time.Date(2026, 9, 19, 4, 0, 0, 0, time.UTC), 50*time.Second)
 	b.Launcher = &openingLauncher{pane: "%74"}
-	b.Type = func(context.Context, string, string) error { return errors.New("the lane timed out") }
+	b.Type = func(context.Context, string, string) error {
+		return errors.New("send_failed: iTerm2 did not answer in time")
+	}
 	b.Live = func(context.Context) []session.Session {
 		return []session.Session{
 			{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation},
@@ -127,8 +146,143 @@ func TestATypedBriefingThatErredIsNotSettled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Record.State != StateSpawning || out.Record.Unbriefed || out.Record.SpawnError != "the lane timed out" {
+	if out.Record.State != StateSpawning || out.Record.Unbriefed ||
+		out.Record.SpawnError != "send_failed: iTerm2 did not answer in time" {
 		t.Fatalf("state %q unbriefed %v spawn_error %q", out.Record.State, out.Record.Unbriefed, out.Record.SpawnError)
+	}
+}
+
+// F1: a typing whose outcome is unknown is not typed again. The line may be
+// sitting in the child's composer, or already read; a second one is the child
+// told its first sentence twice, or two briefings joined into one message.
+func TestABriefingWhoseOutcomeIsUnknownIsNotTypedAgain(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	// Thirty seconds a reading: the ninety-second wait has room for two tries.
+	b.Clock = steppingClock(time.Date(2026, 9, 19, 4, 0, 0, 0, time.UTC), 30*time.Second)
+	b.Launcher = &openingLauncher{pane: "%75"}
+	var mu sync.Mutex
+	tries := 0
+	b.Type = func(context.Context, string, string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		tries++
+		return terminal.Failure{Message: "iTerm2 did not answer in time."}
+	}
+	b.Live = func(context.Context) []session.Session {
+		return []session.Session{
+			{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation},
+			{ID: "%75", Backend: session.BackendTmux, Assistant: session.AssistantClaude},
+		}
+	}
+	out, err := dispatchOne(t, b, ctx, "c8000006-0000-4000-8000-000000000006")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if tries != 1 {
+		t.Fatalf("the briefing was typed %d times after an attempt whose outcome was unknown, want 1", tries)
+	}
+	if out.Record.State != StateSpawning || out.Record.Unbriefed {
+		t.Fatalf("state %q unbriefed %v", out.Record.State, out.Record.Unbriefed)
+	}
+}
+
+// F2: a typing refused before its first byte is not a typing. The lane that
+// never came free and the terminal that answered "not found" before writing
+// anything leave the child exactly as unbriefed as never trying did — so the
+// dispatch settles it as spawn_failed with that reason, rather than leaving it
+// `spawning` until a timeout that cannot be respawned.
+func TestABriefingRefusedBeforeAnyByteIsSettledAsNeverBriefed(t *testing.T) {
+	for name, refusal := range map[string]error{
+		"busy":   fmt.Errorf("busy: %w", lane.Busy{Key: "tmux:%76", Limit: 4, Waited: true}),
+		"unsent": fmt.Errorf("send_failed: %w", terminal.Unsent{Why: "That session is gone"}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			b, ctx := newTestBroker(t)
+			b.Clock = steppingClock(time.Date(2026, 9, 19, 4, 0, 0, 0, time.UTC), 50*time.Second)
+			launcher := &openingLauncher{pane: "%76"}
+			b.Launcher = launcher
+			b.Type = func(context.Context, string, string) error { return refusal }
+			b.Live = func(context.Context) []session.Session {
+				return []session.Session{
+					{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation},
+					{ID: "%76", Backend: session.BackendTmux, Assistant: session.AssistantClaude},
+				}
+			}
+			out, err := dispatchOne(t, b, ctx, "c8000007-0000-4000-8000-000000000007")
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := out.Record
+			if r.State != StateSpawnFailed || !r.Unbriefed {
+				t.Fatalf("a briefing refused before its first byte left %q unbriefed=%v (spawn_error %q)",
+					r.State, r.Unbriefed, r.SpawnError)
+			}
+			if !strings.Contains(r.Verdict, refusal.Error()) {
+				t.Fatalf("verdict %q does not carry the refusal %q", r.Verdict, refusal.Error())
+			}
+			if len(launcher.closed) != 1 {
+				t.Fatalf("closed %v, want the pane this dispatch made", launcher.closed)
+			}
+		})
+	}
+}
+
+// F3: a screen reader that failed this once is not a machine with no screen
+// reader. The child may be showing its workspace-trust dialog, whose
+// highlighted answer is "No, exit"; typing the briefing and its Return at it
+// is the accident composer.go records. Not ready, and asked again.
+func TestAChildWhoseScreenCouldNotBeReadIsNotTypedAt(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	b.Clock = steppingClock(time.Date(2026, 9, 19, 4, 0, 0, 0, time.UTC), 50*time.Second)
+	b.Launcher = &openingLauncher{pane: "%77"}
+	keys := &typedKeys{}
+	b.Type = keys.Type
+	b.Screen = func(context.Context, string) (string, bool) { return "", false }
+	b.Live = func(context.Context) []session.Session {
+		return []session.Session{
+			{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation},
+			{ID: "%77", Backend: session.BackendTmux, Assistant: session.AssistantClaude},
+		}
+	}
+	out, err := dispatchOne(t, b, ctx, "c8000008-0000-4000-8000-000000000008")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := keys.count("%77"); n != 0 {
+		t.Fatalf("the briefing was typed %d time(s) at a screen nobody could read", n)
+	}
+	r := out.Record
+	if r.State != StateSpawnFailed || !r.Unbriefed || !strings.Contains(r.SpawnError, "screen") {
+		t.Fatalf("state %q unbriefed %v spawn_error %q", r.State, r.Unbriefed, r.SpawnError)
+	}
+}
+
+// F5: an iTerm2 tab this dispatch opened and could not brief is closed with
+// the settlement, by the session id iTerm2 gave back — as a tmux one is. The
+// verdict tells the root to dispatch again; a tab left behind each time is an
+// idle assistant per retry, on the machine that was already too slow.
+func TestAnUnbriefedITermChildIsClosed(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	b.Clock = steppingClock(time.Date(2026, 9, 19, 4, 0, 0, 0, time.UTC), 50*time.Second)
+	const guid = "4F1C0000-0000-4000-8000-00000000A009"
+	launcher := &itermLauncher{id: guid}
+	b.Launcher = launcher
+	b.Terminal = func() projects.TerminalChoice { return projects.TerminalITerm }
+	b.Type = (&typedKeys{}).Type
+	out, err := dispatchOne(t, b, ctx, "c8000009-0000-4000-8000-000000000009")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Record.State != StateSpawnFailed {
+		t.Fatalf("state %q", out.Record.State)
+	}
+	if len(launcher.itermClosed) != 1 || launcher.itermClosed[0] != guid {
+		t.Fatalf("closed %v, want the iTerm2 session this dispatch opened", launcher.itermClosed)
+	}
+	if len(launcher.closed) != 0 {
+		t.Fatalf("a tmux close was asked for an iTerm2 tab: %v", launcher.closed)
 	}
 }
 

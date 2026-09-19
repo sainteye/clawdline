@@ -24,12 +24,12 @@ function run(argv) {
   const it = Application("iTerm2");
   if (!it.running()) return JSON.stringify({ ok: false, error: "iTerm2 is not running" });
   let found = null;
-  itermEach(it, function (s) {
+  const walk = itermEach(it, function (s) {
     if (String(s.id()) !== id) return false;
     found = s;
     return true;
   });
-  if (!found) return JSON.stringify({ ok: false, error: "That session is gone" });
+  if (!found) return JSON.stringify({ ok: false, error: itermMissing(walk) });
   if (cmd === "key") {
     const codes = argv.slice(2).map(function (raw) { return parseInt(String(raw || "0"), 10); });
     found.write({ text: String.fromCharCode.apply(String, codes), newline: false });
@@ -55,11 +55,7 @@ func (i *ITerm) keyScript(ctx context.Context, args ...string) (map[string]any, 
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		said := strings.TrimSpace(stderr.String())
-		if said == "" {
-			said = "iTerm2 did not answer: " + err.Error()
-		}
-		return nil, Failure{Attention: strings.Contains(said, "-1712") || strings.Contains(said, "-1743"), Message: said}
+		return nil, osascriptFailure(ctx, stderr.String(), err, "iTerm2 did not do what it was asked.")
 	}
 	var answer map[string]any
 	if json.Unmarshal(bytes.TrimSpace(out), &answer) != nil {
