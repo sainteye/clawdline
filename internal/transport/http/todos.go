@@ -15,7 +15,7 @@ import (
 // The reader is the session — its root, whoever takes it over — through the
 // machine token, the same credential that dispatched the work. It is not a
 // person's page: nothing that draws the board reads this, and nothing here is
-// pushed anywhere (#5, "不應該和給人看的項目混在一起"). The list is read, never
+// pushed anywhere (#5, "must not be mixed in with the items a person reads"). The list is read, never
 // written, through this route; every change to it is the broker's, from a
 // fact.
 
@@ -65,7 +65,7 @@ func todosPath(r *http.Request) (string, bool) {
 }
 
 // sessionTodosRead is the same list for a person: the session detail's to-do
-// panel (T6, board-redesign §3.3 — "它在 session 詳情的一個面板裡"). It is a
+// panel (T6, board-redesign §3.3 — "they are in a panel of the session's details"). It is a
 // read at the list's own level, never a write: nobody edits a to-do (§3.4), and
 // it is the session's page, not the board's, so nothing on a person's board
 // reads it (#5).

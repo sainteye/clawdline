@@ -812,7 +812,7 @@ func (p *Participation) Sweep(ctx context.Context) error {
 	return nil
 }
 
-// RuleProposals is §6's "Session 待辦 → 看板（升級）": a line of work the
+// RuleProposals is §6's "session to-do → board (promotion)": a line of work the
 // rules find worth following is proposed without anybody calling anything —
 // a design that waits for an agent to remember a call misses what 43.6% of
 // runs missed (board-redesign §3.1). Such a proposal is never asked in a
@@ -892,7 +892,7 @@ func (s *DigestSection) add(l DigestLine) {
 
 func section() DigestSection { return DigestSection{Lines: []DigestLine{}} }
 
-// DigestBody is what one digest says (board-redesign §8's 定期 and 規劃
+// DigestBody is what one digest says (board-redesign §8's Periodic and Planning
 // rows): what finished, what went back to the Backlog, every automatic move
 // (D2), what waits for a person, and — weekly — the Backlog nobody has looked
 // at for thirty days, each asked about once, kept unless a person says so.

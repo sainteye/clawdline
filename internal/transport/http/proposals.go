@@ -37,7 +37,7 @@ import (
 //	GET  /v1/work/proposals?state=&project=&cursor= the "to confirm" area (pending by default)
 //	GET  /v1/work/proposals/{id}
 //	POST /v1/work/proposals/{id}                    {"answer": "track"|"later"|"no"}
-//	GET  /v1/work/decisions?state=&cursor=          等你決定 (open by default)
+//	GET  /v1/work/decisions?state=&cursor=          waiting on you (open by default)
 //	GET  /v1/work/decisions/{id}
 //	POST /v1/work/decisions/{id}                    {"answer": "<option id>"}
 //	GET  /v1/work/digests?kind=&cursor=             the daily and weekly digests

@@ -281,7 +281,7 @@ func TestEachSettlementClosesItsTodo(t *testing.T) {
 	expectTodo(t, b, ctx, owedNone, work.TodoStateDone, work.ReasonAbandoned)
 }
 
-// board-redesign §9: "child 死掉". The beat's own clock ends the task; one that
+// board-redesign §9: "a child dies". The beat's own clock ends the task; one that
 // owes a landing stays owed, one that owes nothing closes.
 func TestAChildThatDiesLeavesItsTodoOwedOrClosed(t *testing.T) {
 	b, ctx, clock := newTodoBroker(t)
@@ -307,7 +307,7 @@ func TestAChildThatDiesLeavesItsTodoOwedOrClosed(t *testing.T) {
 	expectTodo(t, b, ctx, free.ID, work.TodoStateDone, work.ReasonNothingOwed)
 }
 
-// board-redesign §9: "root 死掉". Handed off only on a reading that positively
+// board-redesign §9: "root dies". Handed off only on a reading that positively
 // says the root is gone; back when it returns; dropped only after the grace
 // with the root still positively gone.
 func TestARootThatDiesHandsItsTodoOff(t *testing.T) {
@@ -376,7 +376,7 @@ func TestARootThatDiesHandsItsTodoOff(t *testing.T) {
 	}
 }
 
-// board-redesign §9: "落地比結果先到". A landing named before the result is an
+// board-redesign §9: "the landing arrives before the result". A landing named before the result is an
 // obligation; a settled landing before the task ended is refused and moves
 // nothing; a result that arrives after the landing settled changes nothing.
 func TestALandingBeforeTheResult(t *testing.T) {
@@ -412,7 +412,7 @@ func TestALandingBeforeTheResult(t *testing.T) {
 	}
 }
 
-// board-redesign §9: "`result.json` 重送兩次". Collected once, by whichever of
+// board-redesign §9: "`result.json` is sent twice". Collected once, by whichever of
 // the beat and /complete gets there first; the to-do moves once.
 func TestAResultSentTwiceMovesTheTodoOnce(t *testing.T) {
 	b, ctx, clock := newTodoBroker(t)

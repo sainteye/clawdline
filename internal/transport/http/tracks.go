@@ -14,7 +14,7 @@ import (
 )
 
 // `GET /v1/board/tracks?project=&track=&cursor=`: the old app's cards placed
-// on the three tracks of docs/board-redesign.md (看板／Session 待辦／Backlog),
+// on the three tracks of docs/board-redesign.md (board / session to-do / backlog),
 // read-only (§9 step 1, design-decisions T1).
 //
 // It reads the board through the same reader `/v1/board` uses, the card logs
