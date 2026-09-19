@@ -376,11 +376,19 @@ function Tools({
   const focusMac = () => {
     if (!row) return
     const mine = row.id
+    // Across Clawdline Cloud the answer is a relay round trip away. Past the
+    // start sheet's 150 ms the toast says the ask is on its way, in the words
+    // a message on its way uses, and the answer replaces it.
+    const onItsWay = setTimeout(() => {
+      if (mine === row.id) toast(T.webSending)
+    }, 150)
     askFocus(mine).then(
       () => {
+        clearTimeout(onItsWay)
         if (mine === row.id) toast(T.webShowOnMacAsked)
       },
       (e) => {
+        clearTimeout(onItsWay)
         if (mine === row.id) toastFailure(e, T.webRequestFailed)
       },
     )

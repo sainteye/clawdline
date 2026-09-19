@@ -143,3 +143,32 @@ test("cards belong to their session, and every change is announced", () => {
   p.add("a", "unheard", [], T0)
   assert.equal(heard, 2)
 })
+
+test("try again reads first: a failed attempt that was typed after all settles, and is not typed twice", () => {
+  // Across Clawdline Cloud the Mac can type the words and its answer be lost.
+  const p = new PendingSends()
+  p.reconcile("s", [user("older", T0 - 5_000)], T0 - 1)
+  const card = p.add("s", "typed but unanswered", [], T0)
+  p.failed(card.token, "cloud_read_timeout")
+  assert.equal(p.retrying(card.token)?.state, "sending", "the card says it is on its way while the page looks")
+  assert.equal(p.retrying(card.token), null, "one look per press")
+  // What the look found: the failed attempt's turn.
+  p.reconcile("s", [user("older", T0 - 5_000), user("typed but unanswered", T0 + 700)], T0 + 70_000)
+  assert.equal(p.card(card.token), undefined, "settled by the read")
+  assert.equal(p.resend(card.token, T0 + 70_000), null, "so nothing is sent again")
+})
+
+test("try again reads first: when the attempt did not arrive, it goes again as a new attempt", () => {
+  const p = new PendingSends()
+  p.reconcile("s", [], T0 - 1)
+  const card = p.add("s", "refused", [], T0)
+  p.failed(card.token, "cloud_commands_disabled")
+  p.retrying(card.token)
+  p.reconcile("s", [user("unrelated", T0 + 500)], T0 + 30_000)
+  const again = p.resend(card.token, T0 + 30_000)
+  assert.equal(again?.state, "sending")
+  assert.equal(again?.checking, false)
+  assert.equal(again?.sentAt, T0 + 30_000)
+  p.reconcile("s", [user("unrelated", T0 + 500), user("refused", T0 + 31_000)], T0 + 32_000)
+  assert.equal(p.of("s").length, 0)
+})

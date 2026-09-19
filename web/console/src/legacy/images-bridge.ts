@@ -8,7 +8,10 @@
 // the lightbox's markup from `index.html` — is here, for `session/Transcript.tsx`.
 //
 // No `source` is given to a tile, as on the Mac's own page: the bytes are asked
-// of this origin at `/v1/artifacts/images/:id`.
+// of this origin at `/v1/artifacts/images/:id`. A console reading a machine
+// across Clawdline Cloud cannot do that — its origin is a static host, and an
+// `<img>` does not go through `fetch` — so it hands in one (`carryPictures`),
+// as the Swift app's hosted console hands `CloudClient.image` to the same tile.
 import { T, fill } from "./js/core/i18n.js"
 import { esc } from "./js/core/esc.js"
 import {
@@ -87,6 +90,20 @@ function describeArtifactFailure(code: string, artifact: ArtifactRef | undefined
 
 let lightbox: Lightbox | null = null
 
+/** A picture's bytes as a URL the tile can show, and the way to let them go. */
+export type PictureSource = (artifact: ArtifactRef, session: string) => Promise<{ url: string; release?: () => void }>
+
+let carried: PictureSource | null = null
+
+/**
+ * Hand every tile drawn from now on its bytes through `source`, rather than
+ * pointing its `<img>` at this origin. Set once, before the console is drawn,
+ * by a console that reads its machine across Clawdline Cloud (`cloud/install.ts`).
+ */
+export function carryPictures(source: PictureSource): void {
+  carried = source
+}
+
 /**
  * The lightbox, drawn once as `index.html` writes it and bound once as
  * `view/transcript.js` binds it at import. It is the body's own child, after
@@ -121,10 +138,12 @@ function imageLightbox(): Lightbox {
 }
 
 /** `hydrateArtifactImages`: give each fresh tile its state, its listeners and its source. */
-function hydrate(tiles: HTMLElement[], queue: (ArtifactRef | undefined)[]): void {
+function hydrate(tiles: HTMLElement[], queue: (ArtifactRef | undefined)[], session: string | undefined): void {
+  const source = carried
   for (const tile of tiles) {
     const artifact = queue[Number(tile.dataset.artifactSlot)]
     connectArtifactTile(tile, artifact, {
+      ...(source && session ? { source: (a: ArtifactRef) => source(a, session) } : {}),
       loadingLabel: T.webLoading,
       expiredLabel: T.webImageExpired,
       unknownLabel: T.webImageUnknown,
@@ -148,7 +167,7 @@ function hydrate(tiles: HTMLElement[], queue: (ArtifactRef | undefined)[]): void
 export class ArtifactTiles {
   private connected = new Set<HTMLElement>()
 
-  settle(box: HTMLElement | null, queue: (ArtifactRef | undefined)[]): void {
+  settle(box: HTMLElement | null, queue: (ArtifactRef | undefined)[], session?: string): void {
     if (!box) return
     const now = Array.from(box.querySelectorAll<HTMLElement>("[data-artifact-slot]"))
     const fresh = now.filter((tile) => !this.connected.has(tile))
@@ -160,7 +179,7 @@ export class ArtifactTiles {
     }
     const result = reconcileArtifactTiles(gone, fresh, queue, { activeElement: document.activeElement })
     for (const tile of result.reused) this.connected.add(tile)
-    hydrate(result.fresh, queue)
+    hydrate(result.fresh, queue, session)
     for (const tile of result.fresh) this.connected.add(tile)
     result.restoreFocus()
   }

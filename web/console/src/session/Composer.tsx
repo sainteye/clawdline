@@ -23,7 +23,7 @@ import {
   skillQuery,
 } from "../legacy/skills-bridge.js"
 import { toast } from "../overlays/toast.js"
-import { deliver, pendingSends } from "./send.js"
+import { deliverUntilSeen, pendingSends } from "./send.js"
 import { Waiting } from "./Waiting.js"
 
 /**
@@ -386,8 +386,9 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
       }
       // A resolved send means the bytes reached the tty, not that the assistant
       // read them. The card says the first; the turn appearing in the
-      // transcript, which takes the card's place, is the second.
-      const code = await deliver(pendingSends.add(row.id, said, pictures, Date.now()))
+      // transcript, which takes the card's place, is the second — and is
+      // enough on its own to free the box when the first never arrives.
+      const code = await deliverUntilSeen(pendingSends.add(row.id, said, pictures, Date.now()))
       if (code === "write_disabled") setWrite(false)
       if (!code) onDid()
     } catch (err) {

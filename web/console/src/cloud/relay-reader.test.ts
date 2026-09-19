@@ -71,20 +71,20 @@ test("empty is believed only after the machine's inventory, and not while it is 
   assert.equal(recovering.scan.epoch, before.scan.epoch)
 })
 
-test("a write is refused as read-only and an uncarried read as not carried, both typed", async () => {
+test("with no writer carried, a write is refused as not carried, as an uncarried read is, both typed", async () => {
   const r = reader(new FakeClient(), { t: 0 })
   const post = await r.fetch("/v1/sessions/s1/send", { method: "POST", body: "{}" })
-  assert.equal(post.status, 403)
+  assert.equal(post.status, 501)
   assert.deepEqual(await post.json(), {
-    error: "cloud_read_only",
-    detail: "This console reads a machine through Clawdline Cloud and does not change it yet.",
+    error: "cloud_not_carried",
+    detail: "POST /v1/sessions/s1/send is not carried over Clawdline Cloud: do it on the Mac itself.",
     route: "/v1/sessions/s1/send",
   })
   const board = await r.fetch("/v1/board")
   assert.equal(board.status, 501)
   assert.equal((await body<{ error: string }>(board)).error, "cloud_not_carried")
   assert.deepEqual(r.log.map((x: { answer: string; code?: string }) => [x.answer, x.code]), [
-    ["refused", "cloud_read_only"],
+    ["refused", "cloud_not_carried"],
     ["refused", "cloud_not_carried"],
   ])
 })

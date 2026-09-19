@@ -14,11 +14,17 @@
 // account, so the machine is chosen before the console is drawn and this
 // answers for that one only.
 //
+// The writes — sending, answering, starting, ending, dictating — are
+// `relay-writer.ts`, handed in with `carryWrites`; this file routes the
+// console's requests to it and keeps what a write means for the reads after it
+// (`wrote`).
+//
 // It does not import the copied modules: the client is handed in, typed by the
 // little of it this file reads, so the rules here run under `node --test`
 // without a page (`relay-reader.test.ts`).
 import type { Health, SessionRow, SessionsSnapshot, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
+import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
 
 /** One machine and one of its sessions, as the relay's channels name them. */
 export interface CloudIdentity {
@@ -54,8 +60,8 @@ export interface CloudEvent {
 }
 
 /**
- * The part of the copied `CloudClient` this seam reads. Reads only: nothing
- * here can reach `send`, `answer`, `start` or anything else that writes.
+ * The part of the copied `CloudClient` this seam reads. Reads only: the writes
+ * are `CloudWriteClient`, reached only through `relay-writer.ts`.
  */
 export interface CloudReadClient {
   readonly ready?: boolean
@@ -84,6 +90,15 @@ export const TRANSCRIPT_LINE_REREAD_MS = 15_000
  * bound on how stale that can make the page.
  */
 export const TRANSCRIPT_MAX_REUSE_MS = 30_000
+
+/**
+ * How long, after this page did something to a session, every poll asks the
+ * machine again until the transcript it answers has changed. A message just
+ * typed is the turn the page is waiting to see (`session/pending.ts`); reusing
+ * the answer from before it would hold the card at "the Mac has it" for up to
+ * `TRANSCRIPT_MAX_REUSE_MS` with the turn already written.
+ */
+export const TRANSCRIPT_EXPECT_MS = 45_000
 
 /**
  * Failures that mean nobody answered, rather than that somebody said no. They
@@ -116,6 +131,12 @@ export interface SeamRow {
   /** `relay`: asked of the machine; `cache`: the last answer reused; `local`: answered here. */
   answer: "relay" | "cache" | "local" | "refused" | "unanswered"
   code?: string
+  /** The Cloud command a write was carried as. */
+  word?: string
+  /** From the request to its answer, for a write. */
+  ms?: number
+  /** The envelope a refusal names, `sender·seq`. */
+  ref?: string
 }
 
 export interface RelayReaderOptions {
@@ -132,6 +153,17 @@ interface HeldTranscript {
   rowKey: string
   line: string
   inflight: Promise<TranscriptPage> | null
+  /** Ask the machine on the next read, whatever the row says: something was done to this session. */
+  stale: boolean
+  /** Until when a write's effect is awaited (`TRANSCRIPT_EXPECT_MS`), and the signature it is awaited against. */
+  expectUntil: number
+  expectFrom: string | null
+}
+
+/** The writer `carryWrites` hands in: `RelayWriter`, typed by what this file calls. */
+export interface WriteSeam {
+  route(method: string, path: string): WriteRoute | null
+  answer(route: WriteRoute, method: string, url: URL, init?: RequestInit): Promise<Response>
 }
 
 interface OpenStream {
@@ -150,6 +182,7 @@ export class RelayReader {
   private readonly transcripts = new Map<string, HeldTranscript>()
   private readonly rows: SeamRow[] = []
   private readonly options: RelayReaderOptions
+  private writer: WriteSeam | null = null
   /** The one machine this reads. */
   readonly machine: string
 
@@ -180,6 +213,38 @@ export class RelayReader {
     }
   }
 
+  /**
+   * What `relay-writer.ts` is given of this seam: the machine, the client, the
+   * log, and `wrote`, which is how a write reaches the reads after it.
+   */
+  get writeHost(): WriteHost {
+    return {
+      machine: this.machine,
+      connected: () => this.connected() as CloudWriteClient,
+      wrote: (session, outcome) => this.wrote(session, outcome),
+      note: (row) => this.note(row.method, row.path, row.answer, row.code, row),
+    }
+  }
+
+  /** Carry the console's writes through `writer` (`RelayWriter`); without one, every write is refused by name. */
+  carryWrites(writer: WriteSeam): void {
+    this.writer = writer
+  }
+
+  /**
+   * Something was done to `session`. The next read asks the machine whatever
+   * the row says, and — unless the Mac refused, which changes nothing — every
+   * read for the next `TRANSCRIPT_EXPECT_MS` does too, until the transcript it
+   * answers is not the one from before.
+   */
+  wrote(session: string, outcome: "done" | "unknown" | "refused"): void {
+    const held = this.transcripts.get(session) ?? this.hold(session)
+    held.stale = true
+    if (outcome === "refused") return
+    held.expectUntil = this.now() + TRANSCRIPT_EXPECT_MS
+    held.expectFrom = held.answer?.signature ?? null
+  }
+
   /** The line went away (`reconnecting`, `paused`, a terminal refusal). */
   lost(): void {
     for (const stream of this.streams) stream.handlers.onError?.(new Error("the relay connection is down"))
@@ -192,9 +257,11 @@ export class RelayReader {
     const url = new URL(href, "http://relay.invalid/")
     const path = url.pathname
     try {
+      const write = this.writer?.route(method, path) ?? null
+      if (write) return await this.writer!.answer(write, method, url, init)
       if (method !== "GET") {
-        return this.refuse(method, path, 403, "cloud_read_only",
-          "This console reads a machine through Clawdline Cloud and does not change it yet.")
+        return this.refuse(method, path, 501, "cloud_not_carried",
+          `${method} ${path} is not carried over Clawdline Cloud: do it on the Mac itself.`)
       }
       switch (path) {
         case "/v1/sessions":
@@ -203,7 +270,11 @@ export class RelayReader {
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
-          const { page, reused } = await this.transcript(session)
+          // `cache: "no-store"` is a caller that must see the machine's answer
+          // now: a failed send's "try again" checks the words did not arrive
+          // after all before it types them a second time (`session/send.ts`).
+          const fresh = init?.cache === "no-store" || init?.cache === "reload" || init?.cache === "no-cache"
+          const { page, reused } = await this.transcript(session, fresh)
           this.note(method, path, reused ? "cache" : "relay")
           return json(200, page)
         }
@@ -297,8 +368,12 @@ export class RelayReader {
    * answer is reused until the row says something moved — at once for any
    * change but the status line, after fifteen seconds for the line alone, and
    * after thirty seconds regardless. Two asks while one is in flight share it.
+   *
+   * A write changes that (`wrote`): the page is waiting to see what it did, so
+   * the machine is asked on every poll until the answer is a different one, and
+   * a `fresh` caller is never handed an answer asked before it.
    */
-  async transcript(session: string): Promise<{ page: TranscriptPage; reused: boolean }> {
+  async transcript(session: string, fresh = false): Promise<{ page: TranscriptPage; reused: boolean }> {
     const client = this.connected()
     const all = await client.sessions()
     const row = all.sessions.find((r) => r.machine === this.machine && (r.session ?? r.id) === session)
@@ -306,8 +381,11 @@ export class RelayReader {
     const line = row && typeof row.line === "string" ? row.line : ""
     const now = this.now()
     const held = this.transcripts.get(session)
-    if (held?.inflight) return { page: await held.inflight, reused: true }
-    if (held?.answer) {
+    // A read already on its way is shared — unless the caller must see an
+    // answer asked after it asked (`fresh`), which that one may predate.
+    if (held?.inflight && !fresh) return { page: await held.inflight, reused: true }
+    const expecting = !!held && held.expectUntil > now && (held.answer?.signature ?? null) === held.expectFrom
+    if (held?.answer && !fresh && !held.stale && !expecting) {
       const age = now - held.at
       const moved = rowKey !== held.rowKey
       const lineMoved = line !== held.line
@@ -315,7 +393,7 @@ export class RelayReader {
         return { page: held.answer, reused: true }
       }
     }
-    const entry: HeldTranscript = held ?? { answer: null, at: 0, rowKey, line, inflight: null }
+    const entry: HeldTranscript = held ?? this.hold(session)
     const asked = client
       .transcript({ machine: this.machine, session }, undefined, { foreground: true })
       .then((body) => transcriptPage(body, session))
@@ -327,12 +405,21 @@ export class RelayReader {
       entry.at = this.now()
       entry.rowKey = rowKey
       entry.line = line
+      entry.stale = false
+      // The awaited change has arrived; from here the ordinary rules apply.
+      if (entry.expectUntil && page.signature !== entry.expectFrom) entry.expectUntil = 0
       return { page, reused: false }
     } finally {
       // A failed ask keeps the last good answer and its age, so the next poll
       // asks again rather than reusing it as though nothing had happened.
       entry.inflight = null
     }
+  }
+
+  private hold(session: string): HeldTranscript {
+    const entry: HeldTranscript = { answer: null, at: 0, rowKey: "", line: "", inflight: null, stale: false, expectUntil: 0, expectFrom: null }
+    this.transcripts.set(session, entry)
+    return entry
   }
 
   private connected(): CloudReadClient {
@@ -382,8 +469,17 @@ export class RelayReader {
     return json(status, { error: code, detail, route: path })
   }
 
-  private note(method: string, path: string, answer: SeamRow["answer"], code?: string): void {
-    const row: SeamRow = { at: this.now(), method, path, answer, ...(code ? { code } : {}) }
+  private note(method: string, path: string, answer: SeamRow["answer"], code?: string, extra?: Partial<SeamRow>): void {
+    const row: SeamRow = {
+      at: this.now(),
+      method,
+      path,
+      answer,
+      ...(code ? { code } : {}),
+      ...(extra?.word ? { word: extra.word } : {}),
+      ...(typeof extra?.ms === "number" ? { ms: extra.ms } : {}),
+      ...(extra?.ref ? { ref: extra.ref } : {}),
+    }
     this.rows.push(row)
     if (this.rows.length > 400) this.rows.shift()
     this.options.onAnswer?.(row)

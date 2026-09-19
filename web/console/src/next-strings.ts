@@ -32,7 +32,7 @@ const words = {
     cloudChecking: "Checking this browser's Clawdline account…",
     cloudSignInLede: "Sign in to read your machines",
     cloudSignInFine:
-      "Clawdline Cloud lists the machines paired with this browser and their sessions. This version reads them; it does not send anything to them yet.",
+      "Clawdline Cloud lists the machines paired with this browser and their sessions, and carries what you send them.",
     cloudConnecting: "Connecting to Clawdline Cloud…",
     cloudRetrying: "Clawdline Cloud did not answer ({code}). Trying again in {seconds} s.",
     cloudFailed: "Could not reach Clawdline Cloud ({code}).",
@@ -46,7 +46,7 @@ const words = {
     cloudInstallLede: "Add Clawdline to the Home Screen first",
     cloudInstallFine:
       "On an iPhone or iPad, the keys a Safari page makes stay in Safari and cannot move into the Home Screen app. Add this page to the Home Screen, open it from there, and sign in there.",
-    cloudMachinesLede: "Choose a machine to read",
+    cloudMachinesLede: "Choose a machine",
     cloudMachinesFine: "Account {account} · this browser {device}",
     cloudMachinesWaiting: "Waiting for the machines on this account to report in…",
     cloudMachinesNone: "No machine on this account has reported in yet.",
@@ -55,6 +55,9 @@ const words = {
     cloudSwitch: "Other machines",
     cloudBlocked: "This console was built for {origin} and is being served from {here}, so it does not connect.",
     cloudMisdeclared: "This console's Clawdline Cloud declaration cannot be used: {reason}",
+    cloudNotCarried: "This cannot be done over Clawdline Cloud yet. Do it on the Mac itself.",
+    cloudPastUnavailable:
+      "This Mac cannot list its earlier sessions over Clawdline Cloud yet (it does not answer past-sessions), so none can be picked up from here. Pick it up on the Mac, or start a new session here.",
   },
   "zh-Hant": {
     olderNotRead: "更早的對話沒有載入：這一頁只讀對話記錄的最後 {window}，前面還有 {bytes} 沒有讀。",
@@ -74,7 +77,7 @@ const words = {
     sessionGone: "網址裡的那個 session 已經不在這台機器上了，先回到清單。",
     cloudChecking: "正在確認這個瀏覽器的 Clawdline 帳號…",
     cloudSignInLede: "登入後就能讀取你的機器",
-    cloudSignInFine: "Clawdline Cloud 會列出和這個瀏覽器配對過的機器，以及它們的 session。這一版只讀，還不會從這裡送出任何東西。",
+    cloudSignInFine: "Clawdline Cloud 會列出和這個瀏覽器配對過的機器與它們的 session，也會把你從這裡送出的東西帶過去。",
     cloudConnecting: "正在連上 Clawdline Cloud…",
     cloudRetrying: "Clawdline Cloud 沒有回應（{code}），{seconds} 秒後再試。",
     cloudFailed: "連不上 Clawdline Cloud（{code}）。",
@@ -85,7 +88,7 @@ const words = {
     cloudDeviceLimit: "帳號 {account} 的觀看裝置已經有 {limit} 台（{tier}）。這一版還不能在這裡移除舊裝置。",
     cloudInstallLede: "請先把 Clawdline 加到主畫面",
     cloudInstallFine: "在 iPhone 與 iPad 上，Safari 頁面產生的金鑰搬不進主畫面的 app。請把這一頁加到主畫面，從那裡打開，在那裡登入。",
-    cloudMachinesLede: "選一台機器來讀取",
+    cloudMachinesLede: "選一台機器",
     cloudMachinesFine: "帳號 {account} · 這個瀏覽器 {device}",
     cloudMachinesWaiting: "正在等這個帳號的機器回報…",
     cloudMachinesNone: "這個帳號還沒有任何機器回報。",
@@ -94,6 +97,9 @@ const words = {
     cloudSwitch: "換一台機器",
     cloudBlocked: "這個 console 是給 {origin} 用的，現在卻從 {here} 打開，所以不會連線。",
     cloudMisdeclared: "這個 console 的 Clawdline Cloud 宣告不能用：{reason}",
+    cloudNotCarried: "這件事還不能經由 Clawdline Cloud 做，請直接在 Mac 上操作。",
+    cloudPastUnavailable:
+      "這台 Mac 還不能經由 Clawdline Cloud 列出以前的 session（它不回答 past-sessions），所以這裡沒辦法接續。請在 Mac 上接續，或在這裡開一個新的 session。",
   },
 } as const
 
