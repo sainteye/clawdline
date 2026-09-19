@@ -219,6 +219,16 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// the page has written it or given up.
     private var hotKeySuspended = false
 
+    /// The activation a launch brings with it belongs to the launch, which has
+    /// already decided whether the window opens (quietly, once it has been put
+    /// away). It is told from somebody switching here by when it comes: the
+    /// first activation, within a few seconds of the launch finishing. A launch
+    /// that never activates the app — at login it may not — leaves the next
+    /// one, whenever it is, to be an ordinary switch.
+    private var launchFinishedAt: Date?
+    private var launchActivationPassed = false
+    private static let launchActivationWindow: TimeInterval = 5
+
     // MARK: - Launch
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -301,6 +311,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         } else {
             shellLog("window: introduced before; launching quietly")
         }
+        launchFinishedAt = Date()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -310,6 +321,49 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         }
         showConsole()
         return true
+    }
+
+    /// ⌘Tab, and anything else that brings the app forward without asking for
+    /// a window. A click on the Dock icon asks, and is answered above; ⌘Tab
+    /// does not ask, and AppKit leaves an app whose window was closed or
+    /// minimised in front with nothing on screen but its menu bar. So when the
+    /// app comes forward with nothing to look at, the console comes with it.
+    ///
+    /// When there is something to look at, nothing happens at all: switching
+    /// here must not take the keyboard from a window or move one. Not on this
+    /// turn of the loop, because what activated the app — the notch island, the
+    /// menu, the input bar, Settings, the Dock — orders its own window front
+    /// after asking to be active, and by the next turn it has.
+    func applicationDidBecomeActive(_ note: Notification) {
+        if !launchActivationPassed {
+            launchActivationPassed = true
+            if let finished = launchFinishedAt,
+               Date().timeIntervalSince(finished) < Self.launchActivationWindow {
+                shellLog("activate: the launch's own activation; the launch decides the window")
+                return
+            }
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, NSApp.isActive, !NSApp.isHidden else { return }
+            guard !self.somethingOnScreen else { return }
+            shellLog("activate: nothing on screen; showing the console")
+            self.showConsole()
+        }
+    }
+
+    /// Whether the app already has something of its own to look at.
+    ///
+    /// Whichever window holds the keyboard counts, the borderless input bar
+    /// included, and so does an alert being answered. Otherwise it is any
+    /// titled window — the console, Settings — that is not minimised, on this
+    /// Space or another, on this display or another: macOS takes the person
+    /// to it (or, when they turned that off, leaves them where they chose to
+    /// be), and moving it here would be moving their window. The menu bar item
+    /// and the notch island are windows to AppKit and not to a person; they
+    /// are never titled and never hold the keyboard.
+    private var somethingOnScreen: Bool {
+        if NSApp.keyWindow != nil || NSApp.modalWindow != nil { return true }
+        return NSApp.windows.contains { $0.isVisible && !$0.isMiniaturized && $0.styleMask.contains(.titled) }
     }
 
     // Closing the window leaves the app, the menu bar item and the hotkey.

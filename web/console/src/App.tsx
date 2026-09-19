@@ -9,6 +9,8 @@ import Dashboard from "./Dashboard.js"
 import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
 import { workWord } from "./pages/work/words.js"
+import { nextWord } from "./next-strings.js"
+import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
 import {
   ActionConfirm,
   GO_PAGE,
@@ -22,6 +24,7 @@ import {
   hostConfirm,
   hostInfo,
   shown,
+  toast,
   toggleKeys,
   type ConfirmRequest,
   type PageRequest,
@@ -41,6 +44,9 @@ import {
  * app.
  */
 type Page = "sessions" | "dashboard" | "devices" | "projects" | "board" | "usage" | "ledger" | "plan" | "settings" | "work"
+
+/** What became of a session the address asked for: see `openAsked`. */
+type Asked = "none" | "waiting" | "opened" | "gone"
 
 // The drawer's rows as `index.html` has them: its order, its ids, and its
 // `hidden`. Pages whose backend this daemon does not own stay on screen and
@@ -114,6 +120,53 @@ function writeHash(hash: string): void {
     history.replaceState(history.state, "", hash)
   } catch {
     location.hash = hash
+  }
+}
+
+/** The address of the list: the page's own, with no fragment. */
+function listAddress(): string {
+  return location.pathname + location.search
+}
+
+/** Back to the list's address, in place: no Back step is added. */
+function leaveAddress(state: unknown): void {
+  try {
+    history.replaceState(state, "", listAddress())
+  } catch {
+    try {
+      location.hash = ""
+    } catch {
+      /* nothing more to do */
+    }
+  }
+}
+
+/**
+ * The phone's detail is one step above the list, so that the back gesture means
+ * what it looks like (`openSession`, `session/open.js`), and the step carries
+ * the session's address.
+ *
+ * There is only ever the one step. Opening a session from a detail — a forward
+ * gesture, a reload of a detail, a link to another session — replaces the step
+ * that is there; one pushed over it would leave Back going to a session that
+ * is no longer on screen. An address that arrived asking for a session, typed
+ * or tapped in a notification, had no list under it: the entry it arrived in
+ * becomes the list and the detail is pushed over that, so Back from it is the
+ * list rather than whatever came before the console.
+ */
+function stepIntoDetail(id: string, address: string, arrived: boolean): void {
+  const detail = { view: "detail", id }
+  try {
+    if ((history.state as { view?: unknown } | null)?.view === "detail") {
+      history.replaceState(detail, "", address)
+    } else if (arrived) {
+      history.replaceState({ view: "list" }, "", listAddress())
+      history.pushState(detail, "", address)
+    } else {
+      history.pushState(detail, "", address)
+    }
+  } catch {
+    /* the address stays as it was */
   }
 }
 
@@ -239,14 +292,17 @@ export default function App() {
   // registry's `focusFallback`, since neither page here names a control of its
   // own), writes the page into the address unless the address is what asked,
   // and then closes the drawer behind it (`markSidebarPage`). The page left is
-  // hidden, not taken down: `main#app` keeps its scroll and its open session.
+  // hidden, not taken down: `main#app` keeps its scroll and its open session —
+  // so coming back to it writes that session's address, not the page's.
   const go = (to: Page, options?: { hash?: boolean }) => {
     if (!knows(to) || to === pageRef.current) return false
     pageRef.current = to
     setPage(to)
     if (document.documentElement.classList.contains("booting")) landOnBrand.current = true
     else brandRef.current?.focus({ preventScroll: true })
-    if (options?.hash !== false) writeHash("#page=" + encodeURIComponent(to))
+    if (options?.hash !== false) {
+      writeHash(to === "sessions" && openRef.current ? sessionFragment(openRef.current) : "#page=" + encodeURIComponent(to))
+    }
     closeMenu()
     return true
   }
@@ -255,18 +311,23 @@ export default function App() {
   // (`input/route.js`) follows the address: once on arrival and on every
   // change, without writing back the address it was just read from. A page
   // this daemon cannot show is not a page here, as an unknown name is not one
-  // there.
+  // there. A session the address names is held until the list has it
+  // (`openAsked` below): on arrival the list has not come yet.
   useLayoutEffect(() => {
     document.documentElement.setAttribute("data-page", page)
   }, [page])
   const goRef = useRef(go)
   goRef.current = go
+  const askedRef = useRef<string[] | null>(null)
+  const openAskedRef = useRef<() => Asked>(() => "none")
   useEffect(() => {
     const routeTo = () => {
       const wanted = pageInHash(location.hash)
       if (wanted) {
         if (knows(wanted)) goRef.current(wanted, { hash: false })
       } else goRef.current("sessions", { hash: false })
+      askedRef.current = sessionsInFragment(location.hash)
+      if (askedRef.current) openAskedRef.current()
     }
     routeTo()
     window.addEventListener("hashchange", routeTo)
@@ -276,6 +337,8 @@ export default function App() {
   const rows = fleet.snapshot?.sessions ?? []
   const rowsRef = useRef(rows)
   rowsRef.current = rows
+  const snapshotRef = useRef(fleet.snapshot)
+  snapshotRef.current = fleet.snapshot
   const T = L.strings
 
   // `select` (`session/agent.js`): the highlight moves, and the keyboard with it.
@@ -307,11 +370,15 @@ export default function App() {
     getClosingId() !== null || document.getElementById("detail-head")?.dataset.closing === "on"
 
   // `openSession` (`session/open.js`). A session lives on the sessions page, so
-  // opening one means being there. On a phone it is a whole screen, with a
-  // history entry so the back gesture means what it looks like; on a desk it
-  // puts the second column back if it was put away. `keepFocus` is the first
-  // list's courtesy open, which must not take the keyboard.
-  const openSession = (id: string, keepFocus = false) => {
+  // opening one means being there. Either way the address names it, so a
+  // reload or a copied link comes back to it. On a phone it is a whole screen,
+  // with a history entry so the back gesture means what it looks like
+  // (`stepIntoDetail`); on a desk it puts the second column back if it was put
+  // away, and the address is replaced, because moving between sessions there
+  // is where you are and not a step you took. `keepFocus` is the first list's
+  // courtesy open, which must not take the keyboard; `arrived` is an address
+  // that asked for this session.
+  const openSession = (id: string, keepFocus = false, arrived = false) => {
     if (!rowsRef.current.some((r) => r.id === id)) return
     if (closing() && openRef.current === id) return
     go("sessions")
@@ -320,20 +387,45 @@ export default function App() {
     if (phone()) {
       if (viewRef.current !== "detail") releaseKeyboardFocus()
       setView("detail")
-      try {
-        history.pushState({ view: "detail", id }, "")
-      } catch {
-        /* the address stays as it was */
-      }
-    } else if (!paneRef.current) {
-      setPane(true)
+      stepIntoDetail(id, listAddress() + sessionFragment(id), arrived)
+    } else {
+      if (!paneRef.current) setPane(true)
+      writeHash(sessionFragment(id))
     }
     if (!keepFocus && !phone()) rowNode(id)?.focus({ preventScroll: true })
   }
 
+  // The session the address asked for (`openWanted`, `input/route.js`), once
+  // the list has it. Until a list has arrived it waits; a list read in full
+  // that does not have it means it has gone, and that is said — the address
+  // is put back to what is on screen and nothing else is opened in its place.
+  // A reading that did not complete may not have reached it yet, so it waits
+  // for the next one.
+  const openAsked = (): Asked => {
+    const asked = askedRef.current
+    const snapshot = snapshotRef.current
+    if (!asked) return "none"
+    if (!snapshot) return "waiting"
+    const id = asked.find((c) => snapshot.sessions.some((r) => r.id === c))
+    if (id) {
+      askedRef.current = null
+      openSession(id, false, true)
+      return "opened"
+    }
+    if (!snapshot.scan.complete) return "waiting"
+    askedRef.current = null
+    if (openRef.current) writeHash(sessionFragment(openRef.current))
+    else leaveAddress(history.state)
+    toast(nextWord("sessionGone"))
+    return "gone"
+  }
+  openAskedRef.current = openAsked
+
   // `closeDetail`: the session goes, the highlight stays. On a phone the list
   // comes back and a `#session=…` or `#page=…` address goes with the detail,
-  // replaced rather than pushed so it adds no Back step.
+  // replaced rather than pushed so it adds no Back step. On a desk the list
+  // never went, and only a `#session=…` address goes: one naming another page
+  // is where the reader is.
   // `settled` is the close's own call: it gives the detail back once the close
   // has settled, a frame before the header has been redrawn to say so.
   const closeDetail = (settled = false) => {
@@ -341,23 +433,20 @@ export default function App() {
     setOpen(null)
     if (phone()) {
       setView("list")
-      try {
-        history.replaceState({ view: "list" }, "", location.pathname + location.search)
-      } catch {
-        try {
-          location.hash = ""
-        } catch {
-          /* nothing more to do */
-        }
-      }
+      leaveAddress({ view: "list" })
+    } else if (namesSession(location.hash)) {
+      leaveAddress(history.state)
     }
   }
 
   // What each list does to the selection (`handlers.js`'s `apply`,
   // `SessionSelection.reconcile`): a session that went away takes its
-  // highlight and its detail with it. The first list to arrive puts the
-  // highlight on the top row; on a desk it also opens it, on a phone it does
-  // not — and not when the address asked for another page.
+  // highlight and its detail with it. A session the address asked for is
+  // looked for in every list until it is found or known gone. The first list
+  // to arrive puts the highlight on the top row; on a desk it also opens it,
+  // on a phone it does not — and not when the address asked for another page,
+  // or for a session: that is answered by the session or by saying it has
+  // gone, never by opening the top one in its place.
   const firstList = useRef(true)
   useEffect(() => {
     // A list without the session being closed is that close's answer
@@ -365,12 +454,13 @@ export default function App() {
     endedIfGone(new Set(rows.map((r) => r.id)))
     if (selectedRef.current && !rows.some((r) => r.id === selectedRef.current)) setSelected(null)
     if (openRef.current && !rows.some((r) => r.id === openRef.current)) closeDetail()
-    if (firstList.current && rows.length) {
+    const asked = openAsked()
+    if (firstList.current && (rows.length || asked === "gone")) {
       firstList.current = false
-      if (pageRef.current === "sessions") {
+      if (pageRef.current === "sessions" && asked !== "opened") {
         const top = L.orderedRows()[0]
         if (top) {
-          if (phone()) setSelected(top.id)
+          if (phone() || asked !== "none") setSelected(top.id)
           else openSession(top.id, true)
         }
       }
