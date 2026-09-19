@@ -1,3 +1,5 @@
+> **How the whole work system runs today (board items, session to-dos, the Backlog and GitHub Issues; what is built and what is only designed) is on one page in [`docs/work-system.md`](work-system.md), in Chinese.**
+
 > **The implementation follows [`docs/design-decisions.md`](design-decisions.md) (from 2026-09-18 on); this document is kept as analysis, and where the two disagree, that one wins.**
 
 # Board redesign: three structures — the board, session to-dos and the backlog — and their lifecycles

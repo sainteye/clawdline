@@ -25,6 +25,7 @@ outside reader judges it by. The rest are written in Traditional Chinese.
 | --- | --- | --- | --- |
 | [design-guidelines.md](design-guidelines.md) | Public design note | English | Ten design rules, each paid for by a failure: a loop that stops says so, everything that accumulates has a limit, unknown is not absent |
 | [design-decisions.md](design-decisions.md) | Public design note | Chinese | The decision register the implementation follows. Where an analysis below disagrees, this wins. It also records decisions about the old app's data |
+| [work-system.md](work-system.md) | Public design note | Chinese | The work system on one page: board items, session to-dos, the Backlog and GitHub Issues, each with its lifecycle, what is built and what is only designed, and how the page itself is changed |
 | [limits.md](limits.md) | Public design note | Chinese | Every bounded thing: its limit, what happens when it is full, and who finds out |
 | [coordination.md](coordination.md) | Public design note | Chinese | The coordinator role redesigned around one `Obligation` model for waits, landings, handoffs and dead letters |
 | [broker.md](broker.md) | Public design note | Chinese | The broker's routes and credentials, and where it differs from the Swift app on purpose. Written at its first wave; later waves added handoffs, leases and reclaim |
