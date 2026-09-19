@@ -30,7 +30,7 @@ import (
 // **The role is checked as well as the pane, and that is a lock rather than a
 // nicety.** Selecting the wrong tab takes somebody's keyboard away from what
 // they were typing into just as surely as raising the wrong application does.
-const itermRevealScript = `
+const itermRevealScript = itermEach + `
 function run(argv) {
   const cmd = String(argv[0] || "");
   const it = Application("iTerm2");
@@ -41,20 +41,13 @@ function run(argv) {
     }
     return JSON.stringify({ ok: true });
   }
-  const wins = it.windows();
   if (cmd === "list") {
     const out = [];
-    for (let a = 0; a < wins.length; a++) {
-      const tabs = wins[a].tabs();
-      for (let b = 0; b < tabs.length; b++) {
-        const ss = tabs[b].sessions();
-        for (let c = 0; c < ss.length; c++) {
-          let tty = "";
-          try { tty = String(ss[c].tty() || ""); } catch (e) {}
-          if (tty) out.push(tty);
-        }
-      }
-    }
+    itermEach(it, function (s) {
+      let tty = "";
+      try { tty = String(s.tty() || ""); } catch (e) {}
+      if (tty) out.push(tty);
+    });
     return JSON.stringify({ ok: true, ttys: out });
   }
   const activate = String(argv[2] === undefined ? "1" : argv[2]) === "1";
@@ -65,28 +58,21 @@ function run(argv) {
     } catch (e) { return ""; }
   }
   const want = String(argv[1] || "");
-  let hit = false;
-  for (let a = 0; a < wins.length && !hit; a++) {
-    const tabs = wins[a].tabs();
-    for (let b = 0; b < tabs.length && !hit; b++) {
-      const ss = tabs[b].sessions();
-      for (let c = 0; c < ss.length && !hit; c++) {
-        const s = ss[c];
-        if (cmd === "reveal") {
-          if (String(s.id()) !== want) continue;
-        } else if (cmd === "revealtmux") {
-          if (variableOf(s, "session.tmuxWindowPane") !== want) continue;
-          if (variableOf(s, "session.tmuxRole") !== "client") continue;
-        } else {
-          return JSON.stringify({ ok: false, error: "unknown command" });
-        }
-        try { wins[a].select(); } catch (e) {}
-        try { tabs[b].select(); } catch (e) {}
-        try { s.select(); } catch (e) {}
-        hit = true;
-      }
-    }
+  if (cmd !== "reveal" && cmd !== "revealtmux") {
+    return JSON.stringify({ ok: false, error: "unknown command" });
   }
+  const hit = itermEach(it, function (s, win, tab) {
+    if (cmd === "reveal") {
+      if (String(s.id()) !== want) return false;
+    } else {
+      if (variableOf(s, "session.tmuxWindowPane") !== want) return false;
+      if (variableOf(s, "session.tmuxRole") !== "client") return false;
+    }
+    try { win.select(); } catch (e) {}
+    try { tab.select(); } catch (e) {}
+    try { s.select(); } catch (e) {}
+    return true;
+  }).stopped;
   if (!hit) {
     return JSON.stringify({ ok: false, error: cmd === "reveal"
       ? "That session is gone"

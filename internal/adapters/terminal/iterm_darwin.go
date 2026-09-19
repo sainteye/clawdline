@@ -3,6 +3,7 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,27 +29,56 @@ func NewITerm() *ITerm { return &ITerm{} }
 
 func (i *ITerm) Name() string { return "iterm" }
 
+// itermEach is the one walk every iTerm2 script takes over the sessions, and
+// it is prepended to each of them.
+//
+// **A window can answer null for its tabs.** Measured on this Mac: a visible,
+// titled window whose `tabs()`, `currentTab()` and `currentSession()` are all
+// null. Every script here used to read `tabs.length` straight off it, so one
+// such window threw a TypeError out of the listing, the typing, the keys and
+// the reveal alike — the listing was never complete, every iTerm2 row reached
+// the inventory as a bare tty from the process table, and the session id a new
+// tab is opened under was listed nowhere (docs/switch-blockers.md). So a window
+// or tab that will not list is skipped and counted: a caller looking for one
+// session goes on to the next window, and the listing says it did not see
+// everything.
+//
+// visit answers true to stop the walk.
+const itermEach = `
+function itermEach(it, visit) {
+  let unreadable = 0;
+  const wins = it.windows();
+  for (let a = 0; a < wins.length; a++) {
+    let tabs = null;
+    try { tabs = wins[a].tabs(); } catch (e) {}
+    if (!tabs) { unreadable++; continue; }
+    for (let b = 0; b < tabs.length; b++) {
+      let ss = null;
+      try { ss = tabs[b].sessions(); } catch (e) {}
+      if (!ss) { unreadable++; continue; }
+      for (let c = 0; c < ss.length; c++) {
+        if (visit(ss[c], wins[a], tabs[b]) === true) return { stopped: true, unreadable: unreadable };
+      }
+    }
+  }
+  return { stopped: false, unreadable: unreadable };
+}
+`
+
 // The whole conversation is one script so that it costs one Apple Event round
 // trip rather than one per property per session.
-const itermList = `
+const itermList = itermEach + `
 const it = Application("iTerm2");
 if (!it.running()) { JSON.stringify({running:false, sessions:[]}); }
 else {
   const out = [];
-  const wins = it.windows();
-  for (let i = 0; i < wins.length; i++) {
-    const tabs = wins[i].tabs();
-    for (let j = 0; j < tabs.length; j++) {
-      const ss = tabs[j].sessions();
-      for (let k = 0; k < ss.length; k++) {
-        let tty = "", name = "";
-        try { tty = String(ss[k].tty() || ""); } catch (e) {}
-        try { name = String(ss[k].name() || ""); } catch (e) {}
-        out.push({ id: String(ss[k].id()), tty: tty, name: name });
-      }
-    }
-  }
-  JSON.stringify({running:true, sessions: out});
+  const walk = itermEach(it, function (s) {
+    let tty = "", name = "";
+    try { tty = String(s.tty() || ""); } catch (e) {}
+    try { name = String(s.name() || ""); } catch (e) {}
+    out.push({ id: String(s.id()), tty: tty, name: name });
+  });
+  JSON.stringify({running:true, sessions: out, unreadable: walk.unreadable});
 }
 `
 
@@ -83,8 +113,9 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 	}
 
 	var answer struct {
-		Running  bool       `json:"running"`
-		Sessions []itermRow `json:"sessions"`
+		Running    bool       `json:"running"`
+		Sessions   []itermRow `json:"sessions"`
+		Unreadable int        `json:"unreadable"`
 	}
 	if err := json.Unmarshal(out, &answer); err != nil {
 		inv.Complete = false
@@ -94,6 +125,13 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 	if !answer.Running {
 		inv.Notes = append(inv.Notes, "iTerm2 is not running")
 		return inv, nil
+	}
+	// The rows it did list are published — each one is a session iTerm2
+	// named — but the listing is not all there is, so it proves no absence.
+	if answer.Unreadable > 0 {
+		inv.Complete = false
+		inv.Notes = append(inv.Notes, fmt.Sprintf("iTerm2 would not list the tabs of %d window(s) or tab(s)",
+			answer.Unreadable))
 	}
 
 	ptyless := 0
@@ -123,28 +161,62 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 	return inv, nil
 }
 
-// Send types one line into an iTerm2 session.
+// itermSendScript is iterm.js's `send`: the text as one bracketed paste, then
+// a Return of its own, then a look at the composer — and another Return only
+// while the paste is demonstrably still sitting there.
+//
+// The first version of this called `writeText`, which is not in iTerm2's
+// scripting dictionary (the command is `write` with a `text` parameter), sent
+// no Return at all, and discarded what the script answered, so a session that
+// was not found read as a line delivered. The briefing is typed through here.
+const itermSendScript = itermEach + `
+function run(argv) {
+  const id = String(argv[0] || ""), text = argv[1] === undefined ? "" : String(argv[1]);
+  const it = Application("iTerm2");
+  if (!it.running()) return JSON.stringify({ ok: false, error: "iTerm2 is not running" });
+  const ESC = String.fromCharCode(27), CR = String.fromCharCode(13);
+  // The tail of what was pasted, whitespace removed so a wrapped line still
+  // matches. A briefing ends in a 64-character secret, so it is unique.
+  const needle = text.replace(/\s+/g, "").slice(-24);
+  function stillInComposer(s) {
+    if (!needle) return false;
+    let screen = "";
+    try { screen = String(s.text() || ""); } catch (e) { screen = ""; }
+    const lines = screen.replace(/\s+$/, "").split("\n");
+    let mark = -1;
+    for (let i = lines.length - 1; i >= 0 && i >= lines.length - 12; i--) {
+      const head = lines[i].replace(/^[\s\u2502\u2503|]+/, "").charAt(0);
+      if (head === ">" || head === "\u203a") { mark = i; break; }
+    }
+    if (mark < 0) return false;
+    return lines.slice(mark).join("").replace(/\s+/g, "").indexOf(needle) >= 0;
+  }
+  let found = null;
+  itermEach(it, function (s) {
+    if (String(s.id()) !== id) return false;
+    found = s;
+    return true;
+  });
+  if (!found) return JSON.stringify({ ok: false, error: "That session is gone" });
+  found.write({ text: ESC + "[200~" + text + ESC + "[201~", newline: false });
+  delay(0.06);
+  found.write({ text: CR, newline: false });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    delay(attempt === 0 ? 0.25 : 0.4);
+    if (!stillInComposer(found)) break;
+    found.write({ text: CR, newline: false });
+  }
+  return JSON.stringify({ ok: true });
+}
+`
+
+// Send types one line into an iTerm2 session and submits it.
 //
 // Apple Events rather than the tty: you cannot write into another process's tty
-// on a current macOS, and iTerm2's own `write text` does not bring the window
+// on a current macOS, and iTerm2's own `write` does not bring the window
 // forward, which is the whole point.
 func (i *ITerm) Send(ctx context.Context, s session.Session, text string) error {
-	return i.script(ctx, `
-const it = Application("iTerm2");
-const id = %q, text = %q;
-let done = false;
-const wins = it.windows();
-for (let a = 0; a < wins.length && !done; a++) {
-  const tabs = wins[a].tabs();
-  for (let b = 0; b < tabs.length && !done; b++) {
-    const ss = tabs[b].sessions();
-    for (let c = 0; c < ss.length && !done; c++) {
-      if (String(ss[c].id()) === id) { ss[c].writeText(text); done = true; }
-    }
-  }
-}
-JSON.stringify({sent: done});
-`, s.ID, text)
+	return itermCall(ctx, itermSendScript, 10*time.Second, s.ID, text)
 }
 
 // Open is not implemented for the iTerm backend yet.
@@ -179,10 +251,44 @@ func effect() func() {
 	return appleEvents.Unlock
 }
 
-func (i *ITerm) script(ctx context.Context, format string, args ...any) error {
+// itermCall runs one effect script with its arguments — never inside the
+// script text, so no quoting rule has to be right about them — and reads its
+// `{ok, error}` answer. A script that answered "not done" is a failure, never
+// a quiet success.
+func itermCall(ctx context.Context, script string, limit time.Duration, args ...string) error {
 	defer effect()()
-	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript")
-	cmd.Stdin = strings.NewReader(fmt.Sprintf(format, args...))
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", append([]string{"-l", "JavaScript", "-"}, args...)...)
+	cmd.Stdin = strings.NewReader(script)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
-	return cmd.Run()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		said := strings.TrimSpace(stderr.String())
+		if said == "" {
+			said = "iTerm2 did not answer: " + err.Error()
+		}
+		return Failure{Attention: strings.Contains(said, "-1712") || strings.Contains(said, "-1743"), Message: said}
+	}
+	return itermAnswer(out)
+}
+
+// itermAnswer reads what an effect script said it did.
+func itermAnswer(out []byte) error {
+	var answer struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(out), &answer) != nil {
+		return Failure{Message: "iTerm2 answered something that is not JSON."}
+	}
+	if !answer.OK {
+		if answer.Error == "" {
+			answer.Error = "iTerm2 refused."
+		}
+		return Failure{Message: answer.Error}
+	}
+	return nil
 }

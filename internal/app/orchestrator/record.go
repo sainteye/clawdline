@@ -322,8 +322,16 @@ type Record struct {
 	// is through the ledger's compare-and-set, which is what stops an attempt
 	// that read the task a moment ago from writing over an ACK.
 	Notice *Notice `json:"-"`
-	// SpawnError is the terminal's own sentence when the tab did not open.
+	// SpawnError is the terminal's own sentence when the tab did not open,
+	// or the briefing's when the tab opened and could not be briefed.
 	SpawnError string `json:"spawn_error,omitempty"`
+	// Unbriefed is the broker's own knowledge that it gave up on the briefing
+	// without ever typing it. The secret never left this process and is not
+	// kept, so nothing can brief the child afterwards: the fact decides the
+	// task by itself, with no reading of the machine (dispatch.go, watch.go).
+	// False on a briefing that was typed and errored — those keystrokes may
+	// have landed, and only a receipt can say.
+	Unbriefed bool `json:"unbriefed,omitempty"`
 	// RespawnOf is the spawn_failed task this one retried, and
 	// RespawnGeneration how far down that chain it is: 0 for an original.
 	// The limit is counted over the family, not read from this number — see

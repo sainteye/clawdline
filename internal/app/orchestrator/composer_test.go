@@ -86,7 +86,7 @@ func TestSilenceFromALiveChildIsNotASpawnFailure(t *testing.T) {
 		{"the tab is holding a dialog, listing incomplete elsewhere", true, false, true, StateSpawnFailed, true},
 		{"the tab is alive and quiet", true, true, false, "", false},
 	} {
-		state, why, decided := spawnVerdict(c.present, c.sourceComplete, c.choosing)
+		state, why, decided := spawnVerdict(c.present, c.sourceComplete, c.choosing, Record{})
 		if decided != c.decided || state != c.want {
 			t.Errorf("%s: got %q/%v, want %q/%v", c.name, state, decided, c.want, c.decided)
 		}
