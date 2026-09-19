@@ -357,7 +357,7 @@ Windows 沒有 tmux，所以 Windows 使用者只有「自己開的 session」�
 2. 助理自己的標題：Claude 的 `ai-title`、Codex 的 `session_index.jsonl` 的 `thread_name`
 
 新 app 是全新安裝，第一層是空的，所以它顯示第二層。比對舊 app 時
-`%231` 因此不同——它接過一次 handoff，助理把自己叫作「Clawdline handoff …」，
+有一個 session 因此不同——它接過一次 handoff，助理把自己叫作「Clawdline handoff …」，
 而舊 app 記著原本那條工作線的名字。**規則相同，覆寫資料不同。**
 
 ---

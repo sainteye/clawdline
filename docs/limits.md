@@ -269,7 +269,7 @@ O39 task 目錄刪除沒有 audit——**這些都是對的行為**，缺的是�
 ### 3.5 順帶發現：舊 app 的測試寫進了使用者正式的時間軸
 
 時間軸 27 筆 `landed_to_git` 裡，**10 筆的 task id 是測試用的假值**（`10101010-2020-3030-4040-505050505050`、
-`66666666-7777-8888-9999-aaaaaaaaaaaa`、`30303030-4040-5050-6060-707070707070`…），標題是
+`30303030-4040-5050-6060-707070707070`，還有一個是 6、7、8、9、a 依序各自重複排成的 id…），標題是
 「a record naming the wrong commit」「landing state machine」「legacy pending row」，`effectiveAt` 是 `10`、`20`、`30`、`5300`
 （也就是 1970 年），觀察時間都是 2026-09-10 13:39 前後。這些 id 在舊 repo 的
 `Tests/LandingCurrencyTests.swift`、`OrchestratorLandingTests.swift` 等檔裡找得到。
@@ -425,7 +425,7 @@ O39 task 目錄刪除沒有 audit——**這些都是對的行為**，缺的是�
 | `broker-design.md` §6.1 L2 | 熱列不刪（每年約 97 MB） | 同（證據類） | **一致**。補充：「不刪」必須搭配 `store.db` 的位元組告警，否則就是另一個「沒人知道它在長」 |
 | `broker-design.md` §6.1 L3 | 長文 90 天，可設定（刪除） | 90 天後**留摘要、原文移到冷層**，不直接刪；review 的裁決、axes 與 finding metadata 是**證據**，留在 L2，只有散文進 L3 | **分歧**。理由：summary 是人唯一讀得懂的「這個 child 做了什麼」，冷層一年約十 MB 付得起（§4.3）；F1 的教訓是「刪掉的證據再也歸因不回來」，把裁決跟散文一起刪會重演 |
 | `broker-design.md` §6.2 | 事實落盤、觀察不落盤 | 同（§4.2 `observation`） | **一致** |
-| `broker-design.md` §6.6 | `broker{beat, notices, store, lane, landing}`；beat 停了 health `ok:false` | `capacity` 放在 `broker` 旁邊；health 的 `reason` 共用一個列舉（`broker_beat_stalled`、`capacity_exhausted`）；`broker.store` 管寫入健康，`capacity` 管填充度，不重複 | **一致**。注意：進行中的 task `eb6b34eb`（broker B2＋B3，認領 `api/v1`、`internal/adapters/store`）正在做這一塊，§7 第一步要排在它之後 |
+| `broker-design.md` §6.6 | `broker{beat, notices, store, lane, landing}`；beat 停了 health `ok:false` | `capacity` 放在 `broker` 旁邊；health 的 `reason` 共用一個列舉（`broker_beat_stalled`、`capacity_exhausted`）；`broker.store` 管寫入健康，`capacity` 管填充度，不重複 | **一致**。注意：進行中的 broker B2＋B3 那個 task（認領 `api/v1`、`internal/adapters/store`）正在做這一塊，§7 第一步要排在它之後 |
 | `timeline-design.md` B1、§6 第 3 項 | 「不是改成自動刪除」；容量到了講出來，**由人決定封存** | **可重算的 git 歷史**（且沒有被看板引用的）自動淘汰；被引用的 12 筆釘住；landing／部署證據**永不自動淘汰**、用自己的預算；人決定的封存只留給證據 | **分歧**。理由：他們避開自動刪除，是怕「刪掉還被引用的」——這用釘住解決。git 歷史 100% 可從 git 重算（`ProjectTimelineGitImporter.swift:86-88`：標題＝commit subject，摘要與分類是常數）。**要人決定才能讓位，等於在沒人看的時候重演今天的凍結**，而使用者正在睡覺 |
 | `timeline-design.md` B3 | 用位元組與時間視窗當主要界線 | 同，再加**分類預算**：觀察滿了不能擠掉證據 | **一致** |
 | `timeline-design.md` §0 表 | `eventReceipts` 上限 4,096、`checkpoints` 12 | `eventReceipts` **沒有自己的上限**（4,096 是 `requestReceipts`，`ProjectTimelineStore.swift:9, 157`），它跟著 events 受 20,000 限制；checkpoints 現在 13 | **更正**（數字的小誤植，結論不變） |
@@ -478,7 +478,7 @@ landing 從新版自己的 landing 紀錄推導。**
 
 ### 7.1 第一步：一張登記表、一個 diagnostics 區塊、一個會叫的例子
 
-**範圍**（一個 child、一個隔離 worktree；排在 `eb6b34eb` 落地之後，因為它認領了 `api/v1` 與 `internal/adapters/store`）：
+**範圍**（一個 child、一個隔離 worktree；排在 broker B2＋B3 那個 task 落地之後，因為它認領了 `api/v1` 與 `internal/adapters/store`）：
 
 1. `internal/domain/capacity`：`Entry`、`Class`、`State`、`Reading`、類別→准許行為的表、水位＋遲滯＋預測的純函式狀態機。
 2. 登記四列**今天就存在**的東西：

@@ -238,7 +238,7 @@ private static let entitlement: [String: Any] = [
 
 ### 2.11 與 orchestrator、broker、時間軸的耦合
 
-> 有另一個 child（%896）正在寫 `docs/broker-design.md`。以下只指出耦合面，**沒有改動任何相關檔案**。
+> 同一時間有另一個 child 正在寫 `docs/broker-design.md`。以下只指出耦合面，**沒有改動任何相關檔案**。
 
 | 方向 | 內容 | 性質 |
 |---|---|---|

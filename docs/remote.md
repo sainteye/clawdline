@@ -25,7 +25,7 @@ Go 版有對應本機功能的約 7 種：send、end、info、transcript、dispa
 focus、git、image、places、resume、schedule、screen、shell、skills、snippets、start、timeline、voice。
 
 底下還要一層傳輸：帳號、裝置配對與核准、金鑰、端對端加密的封包、canonical JSON、指令帳本（重送去重）、
-送出佇列、交接、推播。接縫合約是 `~/code/clawdline-cloud/docs/PROTOCOL.md`。
+送出佇列、交接、推播。接縫合約是 Cloud 服務（the cloud service）的協定文件（`PROTOCOL.md`，不公開）；這一邊照它寫下的公開規格是 `docs/cloud-wire.md`。
 
 ## 設計原則
 
@@ -50,7 +50,7 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
 1. 設定、用量、專案三頁（已落地：c9f60c1、303c9e4、ef77892）。
 2. 免費版配對與認證的 Go 核心，加上原生殼的最小接線（token、配對 alert）。在隔離的 worktree 裡做，
    這樣閘門不會在其他 child 量 7727 的途中上線。**已合進 master（`5cca6b1`）。** Codex 的安全審查
-   （task 0c82534e）找到 1 high、4 medium、1 low，全部修正後才合併（`f2caa6a`）。下一次重建 7727 閘門就會生效，
+   （一次獨立的 review task）找到 1 high、4 medium、1 low，全部修正後才合併（`f2caa6a`）。下一次重建 7727 閘門就會生效，
    瀏覽器要用 `clawdline open` 取得 cookie（見 replica.md 的量測段落）。
    刻意的取捨：密碼錯誤（24 小時 10 次）與配對猜錯（24 小時 5 次）是全體共用的額度，連得到 port 的人可以讓
    密碼登入或新配對停一天（已配對的裝置不受影響）；額度只存在記憶體，重啟會歸零。

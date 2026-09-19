@@ -64,7 +64,7 @@
 |---|---|---|---|---|---|
 | 1 | `~/.config/clawdline/orchestrator.json` | **6,752,983 B** | `tasks` 769、`root_assignments` 25、`session_deliveries` 105、`closure_attestations` 50、`session_activity` 974、`session_self_states` 9、`handoffs` 0、`coordination_waits` 0、`restart` 1 | 整份重寫 | broker |
 | 2 | `~/.config/clawdline/landing-queue.json` | 70,723 B | `landing_paths` **252**、`queues` **0** | 整份重寫 | broker |
-| 3 | `~/.config/clawdline/coordinator.json` | 3,797 B | Clawdfather＝codex `%426`、generation 21、alias 14 筆 | 整份 CAS | broker |
+| 3 | `~/.config/clawdline/coordinator.json` | 3,797 B | Clawdfather＝一個 codex session（記的是它的 tmux pane id）、generation 21、alias 14 筆 | 整份 CAS | broker |
 | 4 | `~/.config/clawdline/coordinator-successions.json` | 5,158 B | `successions` 4 | 整份重寫 | broker |
 | 5 | `~/.config/clawdline/owned-storage.jsonl` | 228,746 B | 657 行，全部是 `kind: scratchpad` | append | broker |
 | 6 | `~/.config/clawdline/remote-audit.jsonl` | **5,724,449 B** | **36,010 行**，涵蓋 08-18 → 09-18（31 天），**沒有輪替** | append | broker 寫 86 處 |
@@ -445,8 +445,8 @@ being wrong there is somebody's work killed mid-turn」（`docs/orchestrator.md:
 **D1 spawn_failed 誤判了一個正在工作的 child，刪掉了它的 worktree 和交付分支。**
 `72ed3e46`／`95f6a30b`（2026-08-28），`Orchestrator.swift:6866-6871`：`finalize` 把「`spawn_failed` 而且
 `briefedAt == nil`」讀成「這裡什麼都沒發生過」，於是執行 `disposeWorktree(why: "empty", allowCommitted: false)`。
-**同一個小時內有兩個姊妹 task 被誤判：`ffe1b91b` 在第 109 秒已經 commit，所以全身而退；
-`2a995bd5` 還沒 commit，結果在它的分頁還在那個目錄裡工作時，checkout 和交付分支都沒了。**
+**同一個小時內有兩個姊妹 task 被誤判：一個在第 109 秒已經 commit，所以全身而退；
+另一個還沒 commit，結果在它的分頁還在那個目錄裡工作時，checkout 和交付分支都沒了。**
 根因不是 app 重啟，而是 iTerm2 早 68 秒啟動、帶著 root 的 `CLAUDE_CODE_*` 環境變數，每個新分頁都繼承了，
 於是 transcript 檔從來沒被寫出來，只剩四分鐘的 deadline 會觸發。
 修法**繞開了壞掉的那條通道**：progress note 是用 task secret 認證的，而 secret 只會從一個地方到達 child，
@@ -636,7 +636,7 @@ roadblock**」。`15924b14`：「**A clock on the work is wrong; a clock on the 
 
 ## 6. Go 版 broker 的設計
 
-> 目前狀態：in-flight task `0ca0b8c0`（「broker 第一波：派工到收工的完整迴圈」，分支 head `29a5cf5`）已經寫了
+> 目前狀態：一個 in-flight task（「broker 第一波：派工到收工的完整迴圈」，分支 head `29a5cf5`）已經寫了
 > 6,074 行，包括 `internal/adapters/store/broker.go`、`internal/app/orchestrator/{broker,dispatch,brief,watch,lifecycle,inventory,messages,notice,record}.go`
 > 與 `api/v1/orchestrator.schema.json`。**下面的設計在它已經做了選擇的地方，會寫「已選，理由是這個」；
 > 在它還沒做到的地方，會寫「接下來要這樣做」。本文不動它的檔案。**
@@ -933,7 +933,7 @@ turn(repository)    = 第一個 ready candidate（推導）
 
 | 波 | 內容 | 完成的判準 | 依賴 |
 |---|---|---|---|
-| **B1**（進行中 `0ca0b8c0`） | 派工→簡報→收工的完整迴圈、task secret、CHILD.md、逾時、dispatch-policy 注入 | `cutover.md` A1–A5、A11 | — |
+| **B1**（進行中） | 派工→簡報→收工的完整迴圈、task secret、CHILD.md、逾時、dispatch-policy 注入 | `cutover.md` A1–A5、A11 | — |
 | **B2** | **先做可觀測性，再做功能**：diagnostics 的 `broker` 區塊、beat 停了會發出警報、panic 時 recover、store 健康度；**同時做「觀察不落盤」**（#2） | 殺掉 beat goroutine，30 秒內 `/v1/health` 能說出來；5 個 briefed task 在閒置時寫入次數接近 0 | B1 |
 | **B3** | 完成通知（獨立的表）；respawn；progress 進 SSE；SSE 用 identity 去重 | 拔掉 root 的分頁再接回來，notice 仍然送達，而且只送一次 | B1、B2 |
 | **B4** | 長文分表＋三層保留＋busy_timeout＋備份＋audit 輪替 | 熱路徑的查詢不碰 `broker_task_text`；13,000 列的 fixture 下，清單投影 < 50 ms | B1 |
@@ -961,9 +961,9 @@ turn(repository)    = 第一個 ready candidate（推導）
 - **`coordinator.json`、`owned-storage.jsonl`、`project-timeline.json` 在 git 歷史裡沒有事故紀錄。**
 - **舊 app 的 58 個 orchestrator route case 沒有一條一條測。**
 - **§5 的 O1–O11 是舊 repo 的 backlog 狀態，沒有一條一條重現。**
-- **第一波的 child（`0ca0b8c0`）還在進行中。**本文讀了它的分支 head `29a5cf5`，但沒有動它的檔案。
+- **第一波的 child 還在進行中。**本文讀了它的分支 head `29a5cf5`，但沒有動它的檔案。
 
-### 9.1 B2／B3 落地後實測（2026-09-18 09:06–09:24，task `eb6b34eb`）
+### 9.1 B2／B3 落地後實測（2026-09-18 09:06–09:24）
 
 以下只記量到的事實。量法：獨立 daemon `:7797`、獨立 `CLAWDLINE_NEXT_DIR`、tick 5 秒；child 與 root 都是
 `/tmp` 下可拋棄的 haiku session。證據檔在該 task 的 `artifacts/`。
@@ -976,7 +976,7 @@ turn(repository)    = 第一個 ready candidate（推導）
   `panic@3` 與 `exit@3` 則被 supervisor 接住、1 秒後重啟，health 全程 `ok:true`，diagnostics 的 `restarts` 是 1，
   store 各有一筆 `broker.beat.panicked`／`broker.beat.exited`。
 - **拔掉 root 的分頁再接回來，notice 只送一次。** root 分頁關掉後完成 child：4 次 `root_missing`（5／10／20／40 秒的梯子，
-  中間重啟 daemon 一次，notice id 不變）；root 用 `claude --resume` 在新分頁 `%924` 回來後，下一次到期的嘗試打進 `%924`，
+  中間重啟 daemon 一次，notice id 不變）；root 用 `claude --resume` 在一個新分頁（新的 pane id）回來後，下一次到期的嘗試打進的就是這個新分頁，
   root 的 transcript 裡帶這個 notice id 的 user turn **正好 1 則**；ACK 之後 90 秒內沒有再送。
   store 的 events：`task.completion.attempt` 4、`delivered` 1、`acknowledged` 1。
 - **這台機器的 session 讀數從來不是 complete。** `/v1/next/sessions` 的 scan 是

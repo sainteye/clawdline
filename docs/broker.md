@@ -53,7 +53,7 @@ task、跟上還沒結束的待辦。不問人、不推播、不進看板；升�
    child 什麼都沒讀就死了。現在要看到**有框線的輸入列**才打字；沒有框線的 `❯` 是選單的反白，不打
    （`composer.go`，`TestADialogIsNeverTypedInto`）。規則看結構，不列舉對話框的字，所以沒見過的對話框也擋得住。
 2. **安靜不是失敗。** 時鐘原本把「4 分鐘沒 progress note」當 `spawn_failed`，但 briefing 明說**不要**送心跳，
-   於是正常工作的 child 被記成沒開起來（task `69c21384`）。現在問分頁本身：不見了、或卡在對話框，才是 spawn 失敗；
+   於是正常工作的 child 被記成沒開起來（B1 第一次實跑就撞到一次）。現在問分頁本身：不見了、或卡在對話框，才是 spawn 失敗；
    活著就交給 task 自己的 timeout（`spawnVerdict`，`TestSilenceFromALiveChildIsNotASpawnFailure`）。
    另外，打完 briefing 後分頁開始跑一個 turn，就升成 `briefed`——比舊版讀 transcript 找 task 標記弱，註解裡寫明了。
 3. **慢步驟不能把過去寫回去。** 通知 pump 打字要幾秒，打完把打字前的副本存回去，蓋掉中間到的 ACK；
@@ -64,7 +64,7 @@ task、跟上還沒結束的待辦。不問人、不推播、不進看板；升�
 ## 還沒做（這一波刻意不做，或做不到）
 
 - `detached-tasks`、`handoffs`、`root-assignments`、`respawn`、`landing-queue`、`graphs`、`waits`、`coordinator/*`。
-- `/notify` 沒有推播：這個 daemon 還沒有 WebPush（task `0470e147` 在做）。所以一律 `409 not_subscribed`——
+- `/notify` 沒有推播：這個 daemon 還沒有 WebPush（另一個 task 在做）。所以一律 `409 not_subscribed`——
   是事實，不是 stub。`Broker.Notify` 是接縫。
 - messages 的 `Idempotency-Key` **只檢查有沒有，不存也不重播**；`images` 不支援。
 - 打字前不清 composer 裡的草稿（舊版 `TerminalComposerClear`）。實測看到：relay 的訊息把 child composer 裡一段
