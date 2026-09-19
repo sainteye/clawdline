@@ -90,7 +90,7 @@
 但 B1 在落地前又多了兩個 commit：
 
 - `eefa318`（08:29）：「**Four minutes of silence is not a spawn failure.**」B1 在第一次真的跑的時候量到：
-  拿 progress note 當 child 還活著的證明，會把一個活著、在工作的 child 記成 `spawn_failed`（task `69c21384`），因為簡報明文叫 child 不要送心跳。
+  拿 progress note 當 child 還活著的證明，會把一個活著、在工作的 child 記成 `spawn_failed`（B1 第一次實跑時派出的一個 child），因為簡報明文叫 child 不要送心跳。
 - `5feea4b`（08:32）：「**One way to change a task record, so a slow step cannot write back the past**」。
 
 所以 **#16 與 #18 被評為照搬時，落地的程式已經用自己的量測推翻了它們**。這不是誰的錯，是順序的問題；
@@ -254,7 +254,7 @@
   transcript 根本沒被寫出來，只剩四分鐘時鐘會開火。**iTerm 分頁的 child 自 9/07 起是 0。**
 - **用量**：`orchestrator.brief.progress` 在 31 天裡觸發 **2 次**（09-11、09-15）。
 - **根本的矛盾**：簡報明文要 child **不要**送心跳（本 task 的 `CHILD.md`：「do not send heartbeat status」）。
-  拿一個被禁止送出的訊號當「活著」的證明，結果就是 B1 的 `eefa318` 量到的：活著、在工作的 `69c21384` 被記成 `spawn_failed`。
+  拿一個被禁止送出的訊號當「活著」的證明，結果就是 B1 的 `eefa318` 量到的：一個活著、在工作的 child 被記成 `spawn_failed`。
 - **從零開始**：簡報送達的證明應該是**一張具型別的收據**，不是從沉默或旁證推論。
   舊版的簡報已經要 child 第一句逐字說「收到 Clawdline 派來的任務：…」，但**沒有任何程式讀這一句**：
   它在 `OrchestratorChildBrief.swift:41-46` 產生，Sources／Resources／Tests 裡沒有任何消費者。
@@ -290,7 +290,7 @@
 - **前半必要。** `eefa318` 的對話框事件是現成的證據：Return 回答了 workspace trust，游標停在「No, exit」。
   「打進去了」跟「收到了」是兩回事。B1 照做，打完仍然是 `spawning`。
 - **後半「最多重打五次」**：
-  - 用量：audit 的 `orchestrator.brief.inject` 依 `attempt` 欄位分組，第一次 1,291 筆，**第二次 1 筆**（`8bfd4a79`，09-07），第三次以上 **0**。
+  - 用量：audit 的 `orchestrator.brief.inject` 依 `attempt` 欄位分組，第一次 1,291 筆，**第二次 1 筆**（09-07 的一個 task），第三次以上 **0**。
   - 「為什麼是五」找不到任何紀錄（§2.3）。
   - 重打失敗的方向是**重複簡報**。`fb54fb68`（09-13）是 Root Assignment 被打進同一個 root 兩次，修法原文是
     「no composer state, missing receipt or elapsed time licenses a second send」。**舊版自己已經對 root 廢除了重打。**
@@ -710,7 +710,7 @@ Dashboard 改讀 camelCase 之後應該刪掉。
 ### 第二：完成只有一條路，收據只有一張表
 
 - **涵蓋**：§6.1、§6.2；看板 D4、時間軸 C5、messages 那個假的 `Idempotency-Key`。
-- **為什麼排第二**：B1 今天就會掉資料（review 的裁決，§6.1）。而且在跑的 `eb6b34eb`（broker B2＋B3）正在做「notice 放進獨立的表」，
+- **為什麼排第二**：B1 今天就會掉資料（review 的裁決，§6.1）。而且在跑的 broker B2＋B3 那個 task 正在做「notice 放進獨立的表」，
   如果收據表不先定，下一波就多一種拼法。
 - **代價**：中。**不做的代價**：每一波都多一種冪等，每一種都要各自被測、各自出錯。
 
@@ -758,8 +758,8 @@ B1 的 7 個測試：`TestAnAckThatLandsMidTypingIsNotUndone`、`TestATaskIsSett
   而 B1 的 task 目錄是 `<CLAWDLINE_NEXT_DIR>/tasks`。B1 只在測試 daemon 上跑過（`docs/broker.md`「自己跑一次」、`eefa318`）。
   也就是說，B1 還沒有任何一筆需要遷移的真實紀錄。
 - **與在跑的 child 的衝突**：①②③ 與 #10、#13 都會碰到 `internal/app/orchestrator`、`internal/adapters/store`、`api/v1`，
-  也就是 `eb6b34eb`（broker B2＋B3）的 claims。**本文沒有動它們；這些改動應該排在 `eb6b34eb` 落地之後，或交給它的下一波。**
-  `cb397397`（看板頁，前端）與 `1f9ca362`（排程）不受影響。
+  也就是在跑的 broker B2＋B3 那個 task 的 claims。**本文沒有動它們；這些改動應該排在 B2＋B3 落地之後，或交給它的下一波。**
+  另外兩個在跑的 task（看板頁的前端、排程）不受影響。
 - **`cutover.md` 的判準 B1**（新 daemon 不再讀 `~/.config/clawdline`）還沒落地，不受影響。第三件事裡「看板 progress 改讀 broker 的事實」是它在看板這一塊的前提。
 
 ---

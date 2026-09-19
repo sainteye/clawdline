@@ -54,7 +54,7 @@ Timeline 1,456、WebPush＋SmartNotification 1,318。
   failure 22、timeout 13、spawn_failed 11、**briefed 4 在跑**）、25 筆 root assignment、
   104 筆 session delivery、50 筆 closure attestation、971 筆 session activity。
 - `~/.config/clawdline/landing-queue.json`（70 KB）：250 個 repository 的 landing path 紀錄。
-- `~/.config/clawdline/coordinator.json`：Clawdfather＝codex session `%426`，generation 21。
+- `~/.config/clawdline/coordinator.json`：Clawdfather＝一個 codex session（記的是它的 tmux pane id），generation 21。
 - `~/.config/clawdline/owned-storage.jsonl`（228 KB）、`coordinator-successions.json`（5 KB）。
 - 派工的隔離 worktree 在 `~/Library/Application Support/Clawdline/worktrees/`（6 個 repo、**434 MB**）。
 
@@ -80,7 +80,7 @@ Timeline 1,456、WebPush＋SmartNotification 1,318。
 | `graphs` | 多節點派工圖 | ❌ | split-and-join 無法宣告 | 新 daemon | 4 |
 | `detached-tasks` | `root.session_id: null` 的無人值守自動化 | ❌ | 排程的自動任務沒有載體 | 新 daemon | 3 |
 | `coordinator`（Clawdfather） | 註冊、rebind、bearings、successions；機器層級的角色 | 🔶 `/v1/next/coordinator` 有 read／POST 與候選清單，實測 `registered:false` | 新 daemon 沒有接手這個角色；皇冠目前靠唯讀舊 store | 新 daemon | 3 |
-| `schedules` 與 `schedule-webhooks` | 6 個排程檔（5 個啟用，全部是真的營運工作：文章發布、production 錯誤巡檢、a private venture對應、a private venture 巡檢）＋webhook bind／delivery | ✅🔧 2026-09-18（task `1f9ca362`，`docs/schedules.md`）：舊版檔案格式、六條路由、webhook 綁定帳本、匯入／匯出；時鐘在 7796 實測發射、重啟不連發、停機錯過的那一次補跑一次。派工本身仍是 Go 第一版（見 A1、A2） | **5 個每天在跑的營運排程會停**。遷移＝把 6 個 JSON 換成新格式並重新設定 | 新 daemon＋使用者確認 | 2 |
+| `schedules` 與 `schedule-webhooks` | 6 個排程檔（5 個啟用，全部是真的營運工作：文章發布、production 錯誤巡檢、a private venture對應、a private venture 巡檢）＋webhook bind／delivery | ✅🔧 2026-09-18（一次隔離交付，`docs/schedules.md`）：舊版檔案格式、六條路由、webhook 綁定帳本、匯入／匯出；時鐘在 7796 實測發射、重啟不連發、停機錯過的那一次補跑一次。派工本身仍是 Go 第一版（見 A1、A2） | **5 個每天在跑的營運排程會停**。遷移＝把 6 個 JSON 換成新格式並重新設定 | 新 daemon＋使用者確認 | 2 |
 | `durable-reports/promotions` | 把 task 報告升級成不可變、可跨裝置讀的文件（`~/Library/Application Support/Clawdline/durable-reports/`） | ❌ | 報告只剩本機檔案 | 新 daemon | 5 |
 | `storage` / `maintenance/restart` | store 健康度、重啟維護窗（讓 app 可以安全重啟而不殺掉 in-flight） | ❌ | 新 daemon 重啟沒有保護 | 新 daemon | 4 |
 | `whoami` / `assistants` / `waits` | session 自我識別、可用助理、協調等待 | ❌ | 協調等待（畫面上的「等待中」）沒有來源 | 新 daemon | 3 |
@@ -88,7 +88,7 @@ Timeline 1,456、WebPush＋SmartNotification 1,318。
 | dispatch policy | `~/.config/clawdline/dispatch-policy.md`（15 KB）在每次派工時被讀進 child 的簡報 | ❌ | 家規不會傳給 child | 新 daemon | 2 |
 
 **結論**：broker 不是「一條路由」，是 **20 條以上路由＋一個 5 秒心跳＋六份持久狀態**。
-目前有一個 in-flight task 正在做第一波（`0ca0b8c0` 「broker 第一波：派工到收工的完整迴圈」，
+目前有一個 in-flight task 正在做第一波（「broker 第一波：派工到收工的完整迴圈」，
 claims `internal/app/orchestrator`、`internal/adapters/store`、`taskdir`、`supervisor`、`api/v1`）。
 
 ---
@@ -146,7 +146,7 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 
 | 缺口 | 嚴重度 | 說明 |
 |---|---|---|
-| **配對（機器這一半）** 🔧 | **擋路** | Go 版沒有 QR／四階段 handover。端到端實測是用 devtools 把四筆 IndexedDB 直接種進去的，**證明的是傳輸與操作，不是配對**。有 in-flight task `9ad048ac`「Cloud 第五階段：配對（機器這一半）」正在做 |
+| **配對（機器這一半）** 🔧 | **擋路** | Go 版沒有 QR／四階段 handover。端到端實測是用 devtools 把四筆 IndexedDB 直接種進去的，**證明的是傳輸與操作，不是配對**。有一個 in-flight task「Cloud 第五階段：配對（機器這一半）」正在做 |
 | **帳號與裝置核准** | **擋路** | 核准發生在帳號那一端。把 Go 版配進使用者真正的 Cloud 帳號**會動到帳號**，也要在已信任的裝置上按核准——`docs/remote.md` 設計原則 3 明寫「要先問他」 |
 | 正式環境從未連過 | 擋路 | `relay.clawdline.com`／`api.clawdline.com` **一個位元組都沒連過**。D1（2026-09-19）把機器這一邊準備到「只差使用者按一下」：操作手冊 `docs/cloud-cutover.md`，錯誤名稱與假扮正式端的測試見 `cloud-wire.md` §18 |
 | 10 種操作沒有 | 中 | `agent`、`shell`、`skills`、`board.items`、`timeline`、`snippets`、`schedule`、`diagnostics.report`、`diagnostics.events`、`dispatch`。回 `unknown_command` 是誠實的——hosted console 會把它記進 `machineLacks` 不再問——但**那幾個按鈕在手機上就是不會動** |
@@ -203,7 +203,7 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 | 本機配對（六位數） | ✅ `internal/transport/http/auth.go`＋`shell/darwin/Pairing.swift` |
 | Cloud 的四個 push 命令 | ❌ `cloud-wire.md:817` 把 WebPush 排在最後一波 |
 
-有一個 in-flight task `0470e147`「推播：Web Push（手機通知）」正在做這一塊
+有一個 in-flight task「推播：Web Push（手機通知）」正在做這一塊
 （claims `internal/adapters/push`、`internal/transport/http/push.go`、`web/console/public`、`docs/push.md`）。
 
 ### 5.3 一個要先決定的事（我先選了安全的預設）
@@ -266,14 +266,14 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 - [ ] **A7 Clawdfather 可以在新 daemon 上註冊並被畫出來。**
       驗：`POST /v1/next/coordinator` 註冊後，`registered:true`，清單上出現皇冠，
       **而且此時 `swiftstore` 是關掉的**（否則證明不了來源）。
-- [ ] **A8 排程真的會在新 daemon 上發射。**（2026-09-18 在隔離的 7796 實測通過，證據在 task `1f9ca362` 的 artifacts；
+- [ ] **A8 排程真的會在新 daemon 上發射。**（2026-09-18 在隔離的 7796 實測通過，證據在那次排程交付的 task artifacts，不在 repo 裡；
       規則已換成舊版的「時刻＋補跑窗」，`every 1h` 不再存在，驗法改成「建一個一分鐘後的排程」。在 7727 上仍待重建後驗） 驗：建一個 `every 1h` 的排程，
       確認 `first_seen` 規則生效（**第一次在一小時後**，不是立刻），
       到期時真的開了分頁，`/v1/diagnostics` 的 `due` 與 `fired` 對得起來。
       **驗法補一條（`design-decisions.md` D53，W4）**：排程的 run 走 broker——有自己的 secret、CHILD.md 與逾時；
       一個不寫 result 的 run 要在自己的 `timeout_minutes` 到時變成 `timeout`，並放行同一排程的下一次；它的 claims
       與 broker task 互相擋（`409 workspace_busy`，在開任何東西之前）。2026-09-18 在隔離的 7807（私有 tmux、假的
-      `claude`）實測通過，證據在 task `3a614643` 的 `artifacts/report.md`；7727 仍待重建後驗。
+      `claude`）實測通過，證據在那次交付的 `artifacts/report.md`（本機 task 目錄，不在 repo 裡）；7727 仍待重建後驗。
 - [ ] **A9 五個營運排程搬過去而且各跑成功一次。**（匯入與內容一致已用複本驗過 6/6；「各跑成功一次」要真的切換，見 `docs/schedules.md` 的順序）
       清單：文章發布、a private venture發布、dual production 錯誤巡檢、a private venture餐廳對應與 production 錯誤、
       a private venture 內容修正與對話異常巡檢。**這一項要使用者自己確認結果對**，不是看它有沒有開分頁。
@@ -285,13 +285,13 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 - [ ] **B1 新 daemon 不再需要讀 `~/.config/clawdline`。**
       驗：把 `CLAWDLINE_SWIFT_DIR` 指到一個空目錄跑一次，畫面上皇冠、task chip、
       協調等待、交付勾、標題**仍然正確**（來源換成自己的 store）。**這是退役的硬門檻。**
-      **驗法補一條（B1 實作，task `fd0a00f1`）**：改用 `CLAWDLINE_NEXT_LEGACY_STORE=off` 啟動（它連
+      **驗法補一條（B1 實作）**：改用 `CLAWDLINE_NEXT_LEGACY_STORE=off` 啟動（它連
       `usage.sqlite3`、舊看板與家規 local 檔都不開，比指空目錄完整）；對照組是同一組「金絲雀」舊檔在
       開關 `on` 時要出現在回應裡、`off` 時一個都不能出現。2026-09-19 在隔離的 7815 實測：`off` 時
       session 清單、task 列表（`store: disabled`）、用量（`source.legacyLedger: disabled`）、看板、tracks、
       設定、專案都 200，daemon 沒開任何舊 store 檔（`lsof` 取樣）；新版自己記的交付回報畫成交付勾。
       **7727 仍待重建後驗**；皇冠、task chip、協調等待在 live daemon 上要有真的 broker 事實才看得到，
-      單元測試已涵蓋投影，live 未量。「只有舊資料才有」的歷史清單見 task `fd0a00f1` 的 `artifacts/report.md`。
+      單元測試已涵蓋投影，live 未量。「只有舊資料才有」的歷史清單記在那次 B1 實作交付的 `artifacts/report.md`（本機 task 目錄，不在 repo 裡）；要重列，就用上面同一組金絲雀舊檔，開關 `on` 與 `off` 各啟動一次，比對兩邊回應的差集。
 - [ ] **B2 用量頁有自己的帳本。** 驗：同上情境下用量頁仍有數字，而且不是 transcript 退路
       （回應要說得出來源）。
       **B1 實作後**：用量的列**一律**是新版自己從 transcript 算的（它就是新版的帳本，不再是退路），
@@ -431,8 +431,8 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
   推播那一節的欄位結構是從 `WebPush.swift` 讀出來的，不是從檔案。
 - **舊 app 的 108 個 route case 沒有逐條測**：路由清單是從 `RemoteServer.dispatch` 與
   `grep -rhoE '"/v1/[^"]+"' Sources/` 抽的，代表**字面路徑**，不是 handler 行為。
-- **三個 in-flight task 會改變這份盤點**：`0ca0b8c0`（broker 第一波）、
-  `0470e147`（Web Push）、`9ad048ac`（Cloud 配對）。它們落地後，§2、§4.2、§5.2 要重讀一次。
+- **三個 in-flight task 會改變這份盤點**：broker 第一波、
+  Web Push、Cloud 配對。它們落地後，§2、§4.2、§5.2 要重讀一次。
 - **看板、時間軸、驗證帳本沒有深入**：只確認了資料規模與新版沒有對應物，
   沒有盤點它們的欄位語意。要移植時需要各自一份規格。
 

@@ -26,7 +26,7 @@
 
 - 列高 219 vs 86：`.state` 外面多包了一層沒 class 的 span，破壞 flex（改成跟原本一樣直接設 innerHTML）
 - 列高 219 vs 86：`canvas.spin` 沒被畫，停在 canvas 預設的 300×150（原本的註解正好警告這件事）
-- 「機器 · %801」vs「Mac 電腦 · 這台 Mac」：wire 上本來就沒有 machine，是舊版前端補的
+- 「機器 · %12」vs「Mac 電腦 · 這台 Mac」（`%12` 代表一個 tmux pane id）：wire 上本來就沒有 machine，是舊版前端補的
 
 ### 閘門上線之後，量 :7727 要先認證
 
@@ -84,7 +84,7 @@ hashchange，讀到的是空的，就回到清單。現在改成 `requestPage({p
 ### 文件的 project root（F11）
 
 `<session cwd>/artifacts` 是 symlink 時，舊版無條件跟隨（`ProjectArtifact.projectRoot`），這台機器也真的
-這樣用（`~/code/clawdline/artifacts -> ../clawdline-cloud/artifacts`，文件頁 101 列）。所以**預設仍然跟隨**，
+這樣用（`~/code/clawdline/artifacts -> ../<旁邊另一個 repo>/artifacts`，文件頁 101 列）。所以**預設仍然跟隨**，
 但加了一道地板：解析後的 root 不可以是家目錄、不可以包含 session 自己的工作目錄、不可以是檔案系統根
 （`ln -s ~ artifacts` 那一條就是被這道擋掉的）。要完全不跟隨的機器，在自己的 `config.json` 寫
 `documents_contain_project_root: true`。
@@ -113,7 +113,7 @@ hashchange，讀到的是空的，就回到清單。現在改成 `requestPage({p
 | ⋯ 選單的「在 Mac 上顯示／Session 資訊／即時畫面／Git」 | 各自需要後端路由，目前 disabled 而非移除 |
 | composer 的附圖、語音、skill menu | 同上 |
 | 裝置頁本機那台機器的 `platform` 寫死 `macos`（照舊版 `net/live.js`，在 `legacy/devices-bridge.ts` 的 `localMachines`） | 本頁不顯示這個欄位，所以畫面相同；但 Go 核心在 Linux／Windows 上跑時應換成實際的作業系統（連帶 `name`／`label` 的「這台 Mac」），待三平台時處理 |
-| 多個 :7727 分頁會吃滿 Chrome 對同一 host:port 的 6 條連線 | child C 觀察到一個請求排隊 95 秒。**舊版也會**：裝置頁 child（3f2a0d24）量測時 7717 在 Chrome 裡排隊超過 5 秒，同一時間 curl 7 ms 就回來；是瀏覽器對同一 host:port 的連線上限，不是新版的退化 |
+| 多個 :7727 分頁會吃滿 Chrome 對同一 host:port 的 6 條連線 | child C 觀察到一個請求排隊 95 秒。**舊版也會**：裝置頁的 child 量測時 7717 在 Chrome 裡排隊超過 5 秒，同一時間 curl 7 ms 就回來；是瀏覽器對同一 host:port 的連線上限，不是新版的退化 |
 
 ### 其他頁面（側欄）
 
@@ -130,10 +130,10 @@ hashchange，讀到的是空的，就回到清單。現在改成 `requestPage({p
 原本那個監控面板保留成側欄的一個選項（使用者 2026-09-17 同意），樣式全部限定在 `.dashboard-page` 底下，
 不會漏到復刻的頁面上。
 
-## Reviewer 第一輪（2026-09-17 03:28–03:39，task ee7741a5）
+## Reviewer 第一輪（2026-09-17 03:28–03:39）
 
 同一分頁、同一視窗（1180×772，dpr 2.2，兩邊 BackCompat），34,401 個屬性逐節點比對。
-結論：**還不能宣稱 1:1**，新發現 41 項。報告原文在 `/tmp/.clawdline/ee7741a5-…/artifacts/report.md`。
+結論：**還不能宣稱 1:1**，新發現 41 項。報告原文在那次 review task 的 `artifacts/report.md`（本機 task 目錄，不在 repo 裡）。
 
 已經 0 差異（扣除已知）的：對話區四種訊息、composer（已開／空狀態）、一般 idle 列、working 列本體、主格線、`#conn`、status-line 空狀態。
 
@@ -147,10 +147,10 @@ hashchange，讀到的是空的，就回到清單。現在改成 `requestPage({p
 | #16–20 | Clawdfather 皇冠與 chip、coordination-wait、交付勾 | **需要使用者決定**：資料在 Swift app 的 store，兩個 app 的 store 依設計分開。要不要讓 Go 唯讀 `~/.config/clawdline`，是架構決定 |
 | #41 | 所有 overlay（Session 資訊、開新 session、確認框、語音…） | 之後的波次 |
 
-## Reviewer 第二輪（task 618bd064，對 HEAD `bb8a8a4`）
+## Reviewer 第二輪（對 HEAD `bb8a8a4`）
 
 同一分頁 1022×739、dpr 2.2、兩邊 BackCompat；760 寬用同源 iframe 量。報告原文在
-`/tmp/.clawdline/618bd064-…/artifacts/report.md`。**結論仍是還不能宣稱 1:1。**
+那次 review task 的 `artifacts/report.md`（本機 task 目錄，不在 repo 裡）。**結論仍是還不能宣稱 1:1。**
 
 第一輪 41 項：**已消失 26**、部分 4（#4、#9、#10、#22）、仍在 10（其中 7 項屬已知，非已知的 #23、#24、#40 都是 subtle）、#32 未重量。
 
@@ -164,13 +164,13 @@ hashchange，讀到的是空的，就回到清單。現在改成 `requestPage({p
 | N2 | visible | 桌面版第一份清單到達時不會自動打開第一列 | ✅ `e339955` |
 | N3 | visible | 沒開 session 時少了 home hero | ✅ `e339955` |
 | N4 | visible | 沒有 ↑↓／Enter／Escape／`/`，選取與打開綁在一起，沒有凍結排序 | ✅ `e339955`、`5f442f5` |
-| N5 | visible | `%832` 的圖示與標題色不同 | 多半與 #22 同源（舊版依 Swift store 的 task 決定），歸入等你決定的那一項 |
+| N5 | visible | 有一列 session 的圖示與標題色不同 | 多半與 #22 同源（舊版依 Swift store 的 task 決定），歸入等你決定的那一項 |
 | N6 | subtle | 沒有 `#page=` 路由，Dashboard 會卸載 `main#app` | ✅ `e339955` |
 | N7 | subtle | 幾個看不見的屬性 | 暫不處理 |
 
 未比對（不算通過）：排程列（新 daemon 0 筆）、unknown／waiting 列、骨架時序、失敗與斷線情境。
 
-## 窄範圍 reviewer（task a5f1b0fc，對 HEAD `5f442f5`）
+## 窄範圍 reviewer（對 HEAD `5f442f5`）
 
 只驗 N1–N4、N6。**結論：全部可以關閉。** 760 寬點列／返回／瀏覽器上一頁／`history.state`、桌面 ⌘J、
 自動打開、home hero（兩種寬度各 620 項，只差背景圖網址的 origin 與打包工具省略的等價漸層 stop）、
@@ -179,7 +179,7 @@ hashchange，讀到的是空的，就回到清單。現在改成 `requestPage({p
 未比對（不算通過）：resize 轉換、觸控、帶 `#page=` 的冷啟動、g／G、篩選框內的 Escape、凍結排序的實際效果。
 兩邊的 `hero-orchestration-v4-task-clinic.webp` 都回 404——舊版本身的缺陷，照樣繼承。
 
-## Reviewer 第三輪（task 5ba0274e，對 master `836344b`）
+## Reviewer 第三輪（對 master `836344b`）
 
 第一次有獨立的眼睛看五個新頁面與 session 增量。1129 與 760 兩種寬度，同源 iframe，dpr 2.2，兩邊 BackCompat。
 
@@ -192,7 +192,7 @@ hashchange，讀到的是空的，就回到清單。現在改成 `requestPage({p
 | 用量頁（1129） | 408,351 項 | 扣掉已知的 features 後 0；Load more、明細、Recent agent work 各 0 |
 | 用量 API（同一秒） | 30 天 27 列、7 天 18 列 | 順序與數字全同，只差 `portfolio.features` |
 | 行為 | 104＋21＋20 步 | 全部相同（Tab 順序由 DOM 推算，沒有真的按） |
-| session 增量（%798、%712） | r、設定頁切換、助理圖示、`.limits` | 相同；`/info` 的 limits 只差 `readAtMs` |
+| session 增量（兩個 session） | r、設定頁切換、助理圖示、`.limits` | 相同；`/info` 的 limits 只差 `readAtMs` |
 
 新發現兩項，都是 minor：
 - **R1**：`r` 不會重畫隱藏中的 `#settings-order` 文字，進設定頁時才更新。設定頁開著時 `r` 本來就不作用，
@@ -211,7 +211,7 @@ hashchange，讀到的是空的，就回到清單。現在改成 `requestPage({p
 **Session 清單頁**：兩輪 reviewer 加一輪窄驗收之後，除了下面兩類，已量到的部分與舊版一致。
 
 1. **使用者已決定（2026-09-17 早上）：Go 版唯讀 Swift store。** Clawdfather 皇冠與 chip、coordination-wait、
-   交付勾（#16–20）、3 列標題（#22）、`%832` 的圖示（N5）、task chip 與縮排，交給 child `%843`。規則見 `plan.md` §4。
+   交付勾（#16–20）、3 列標題（#22）、N5 那一列的圖示、task chip 與縮排，交給一個 child。規則見 `plan.md` §4。
 2. **沒有後端，刻意 disabled**：在 Mac 上顯示、Session 資訊、即時畫面、文件、我傳出的訊息、常用句、Git、
    附圖、語音、⌘I 等 sheet、所有 overlay（#41）、status-line 的 ctx／files／deploy／limits、task chip 與縮排、
    `#conn` 的版本、帶圖片標記的訊息、側欄的裝置／專案／方案／設定頁。
@@ -266,9 +266,9 @@ webview 之外，舊 app 的原生面：
 實測（打包後真的開 app，殼的 stdout 與 System Events）：console `rows=14`；切到 `app.clawdline.com` 載入成功
 （未登入畫面）；`cookie-wall: separate-stores=true`、console store 有 `clawdline-next@127.0.0.1`、web store
 `(none) token-cookies-here=0`；網址列、上一頁、`target=_blank`、外部頁面導向 console 被拒、console 的外連結
-交給系統瀏覽器，都各驗過一次。詳見 task `03e6be52` 的 `artifacts/report.md`。
+交給系統瀏覽器，都各驗過一次。詳見那次交付的 `artifacts/report.md`（本機 task 目錄，不在 repo 裡）。
 
-### 排程（2026-09-18，task `1f9ca362`）
+### 排程（2026-09-18）
 
 清單 `details#schedules`、`#schedule-history`、`#schedule-form`、`#schedule-delete-confirm` 照
 `view/schedules.js`、`net/schedules.js`、`input/schedule.js`、`input/schedule-history.js` 逐行移植到
@@ -283,7 +283,7 @@ webview 之外，舊 app 的原生面：
    N5（一列的圖示）來自 Swift 記憶體裡永不失效的快取，store 沒有這個事實——**刻意不繼承**。
 2. overlay：Session 資訊、確認框、鍵盤說明——✅ `9eb0a58`（鍵盤卡 3,241 項 0 差異、確認框 0 差異、行為 22 項相同）。
    接線 ✅ `fd90d22`：標題與選單開 Info 卡、關閉走確認框；暫代匯出收進 `legacy/overlay-bridge.ts`。
-3. 頁面（`f0d6b90` 之後，`pages/*.tsx` 自己註冊，不再改 App）：專案頁 `%846`、用量頁 `%847`、設定頁（本機）`%848`。
+3. 頁面（`f0d6b90` 之後，`pages/*.tsx` 自己註冊，不再改 App）：專案頁、用量頁、設定頁（本機），各交給一個 child。
    契約產出檔不給 child 認領，整合時由 root 統一重生。
 4. 依畫面效益補後端：Session 資訊 sheet（`#info`）、開新 session（`#start`）、確認框（`#action-confirm`）、
    在 Mac 上顯示——這四個是詳情標頭與選單最常用的入口。

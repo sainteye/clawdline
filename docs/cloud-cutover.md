@@ -3,7 +3,7 @@
 > 把新版（clawdline-go，7727）接上 `app.clawdline.com` 的正式環境。**照順序做，一步做完再做下一步。**
 > 會動到帳號的是步驟 1、2、4、5，**全部由使用者本人做**；步驟 0、3 是維護 daemon 的人（root session）做，
 > 不碰帳號。截至 2026-09-19，這一版**一個位元組都沒送到正式環境過**，下面的「會看到什麼」
-> 抄自正式端的原始碼（`~/code/clawdline-cloud`）與本機 stand-in 的實錄，不是正式端量來的。
+> 抄自正式端（Cloud 服務，the cloud service）的原始碼與本機 stand-in 的實錄，不是正式端量來的。
 > **前提**：7727 跑的 binary 已含這一波（`clawdline cloud preflight` 存在）；舊 binary 的錯誤訊息沒有下面的類別名。
 
 ## 先知道的三件事

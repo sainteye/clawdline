@@ -11,10 +11,10 @@ Go 版在這一波之前是 0 行。**這一波只做地基**：canonical JSON�
 
 | 來源 | 位置 | 權威性 |
 |---|---|---|
-| 協定散文 | `~/code/clawdline-cloud/docs/PROTOCOL.md`（661 行） | **規範**（README.md:4-6 說在 cutover ADR 之前它仍是 normative prose authority） |
-| 契約包 | `~/code/clawdline-cloud/contracts/cloud/v1/` | candidate，closed schema＋測試向量 |
-| relay 實作 | `~/code/clawdline-cloud/relay/src/` | 已部署的讀取者，實際會拒絕什麼以它為準 |
-| relay 說明 | `~/code/clawdline-cloud/relay/README.md` | 錯誤碼、frame、token claims 的原文表 |
+| 協定散文 | Cloud 服務（the cloud service）的 `docs/PROTOCOL.md`（661 行；不公開，本文件是這一邊對它的公開規格） | **規範**（README.md:4-6 說在 cutover ADR 之前它仍是 normative prose authority） |
+| 契約包 | Cloud 服務的 `contracts/cloud/v1/` | candidate，closed schema＋測試向量 |
+| relay 實作 | Cloud 服務的 `relay/src/` | 已部署的讀取者，實際會拒絕什麼以它為準 |
+| relay 說明 | Cloud 服務的 `relay/README.md` | 錯誤碼、frame、token claims 的原文表 |
 | Swift 實作 | `~/code/clawdline/Sources/Cloud*.swift` | 已上線的 producer |
 | 公開測試向量 | `~/code/clawdline/Tests/protocol-vectors.json`（186,557 bytes，SHA-256 `ca354b68…fe5a9`） | **known-answer**，已複製到 `internal/domain/cloud/testdata/` |
 
@@ -23,7 +23,7 @@ Go 版在這一波之前是 0 行。**這一波只做地基**：canonical JSON�
 - 每一條規格底下都標了來源檔案與行號。**沒有標行號的段落是推論**，並且會寫「（推論）」。
 - 行號是 2026-09-18 讀到的那一份。`~/code/clawdline` 當時在 commit `85cf6003`。
 - 四份來源互相不完全一致，不一致的地方在 §11 列成表，每一項都說明這一版選了哪一邊。
-- **這個 repo 全程只讀 `~/code/clawdline` 與 `~/code/clawdline-cloud`，不改它們。**
+- **這個 repo 全程只讀 `~/code/clawdline` 與 Cloud 服務的原始碼，不改它們。**
 
 ---
 
@@ -933,13 +933,13 @@ jitter 是 `0.75 + unit*0.5`（±25%，對稱），而且**先睡再加倍**（:
 也是 401。React 設定頁的「遠端」分頁多了一張 Cloud 狀態卡，5 秒一次、只在那一頁開著時才問。
 
 **刻意的缺口**：這個形狀**沒有**進 `api/v1/` 契約，因此設定頁是自己寫型別
-（`web/console/src/pages/settings/cloud.ts`）。理由是 task `e33336e8` 同時 claim 了 `api/v1/`，
+（`web/console/src/pages/settings/cloud.ts`）。理由是當時另一個進行中的 task 同時 claim 了 `api/v1/`，
 重生契約會改到 218 個型別的產出檔並跟它撞在一起。補契約是待辦。
 
 ### 16.4 端到端實測：hosted console 真的看得到這台 Mac
 
 環境全部在本機，**沒有碰正式環境，也沒有碰使用者的 Cloud 帳號**：mongod 27117、
-`clawdline-cloud/api` 的複本 8180、relay 的複本（`wrangler dev`）8787，前面一層自簽 TLS 的
+Cloud 服務的 API（`api/`）複本 8180、relay 的複本（`wrangler dev`）8787，前面一層自簽 TLS 的
 Node 伺服器把三者收在同一個 origin `https://127.0.0.1:8443`（console 的 build 宣告強制
 `https` 與 `wss`，`net/cloud-boot.js:86-91`）。console 是
 `tools/build-web-app.py --app-origin/--api-origin/--relay-url` 指向本機的產出，**一個位元組都沒改**。
@@ -1112,7 +1112,7 @@ query 與 fragment：那些要嘛會被丟掉，要嘛會把一次性 secret 帶
 ## 18. D1：正式連線前的最後一步（2026-09-19）
 
 操作手冊在 `docs/cloud-cutover.md`。這一節只寫程式這一邊的規格。**正式環境仍然一個位元組都沒連過**，
-下面每一個「正式端會回什麼」都抄自 `~/code/clawdline-cloud` 的原始碼，不是量的。
+下面每一個「正式端會回什麼」都抄自 Cloud 服務的原始碼，不是量的。
 
 ### 18.1 失敗的名字：一個對照，七個類別
 
