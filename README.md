@@ -281,7 +281,21 @@ Most design notes are written in Traditional Chinese. The English pages above po
 go test ./...                        # the Go tests
 (cd web && npm run check)            # TypeScript, no emit
 go run ./tools/contract-gen -check   # the generated Go and TypeScript match api/v1
+tools/check-legacy-css.sh            # the copied files still match what they were copied from
+tools/check-private.sh               # nothing personal is about to be published
 ```
+
+Two of those need a word of explanation.
+
+`check-legacy-css.sh` compares the files under `web/console/src/legacy/` with the Swift app they
+were copied from, byte for byte, and answers one of three ways: they match, they have drifted, or
+it cannot tell because the original is not on this machine. The third answer is not a pass.
+
+`check-private.sh` looks for what belongs to whoever ran this rather than to the project: a real
+home directory, a real task or session id, a credential, an email address. It also reads a word
+list from `.git/info/private-words`, one word per line, which git never commits — put the names
+of your own projects and machines there. The rules, and what each one lets through, are in
+`tools/check-private.sh -rules`.
 
 There is no CI yet. The API is defined in `api/v1/*.schema.json`. Change the schema, then run
 `go run ./tools/contract-gen`. Do not edit the generated files by hand. Commit messages and code
