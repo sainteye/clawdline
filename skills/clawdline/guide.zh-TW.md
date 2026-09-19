@@ -1,0 +1,451 @@
+# Clawdline 使用指南
+
+這是 `clawdline guide` 的繁體中文版。兩者內容有出入時，以英文版（`clawdline guide`）為準。
+
+給跑在裝了 **Clawdline Next** 的機器上的助理 session 看，Claude Code 或 Codex 都一樣。這份指南只寫
+這個 daemon 今天有提供的東西，其他一概不寫：下面每一條路由都是印出這份指南的那個 build 註冊的，
+少了一條，就會有測試失敗。要看請重新執行 `clawdline guide zh-TW`（英文版是 `clawdline guide`），
+不要相信手上的副本。
+
+## 0. 如果你是從 Swift app 學會 Clawdline 的，先讀這段
+
+Swift app（port 7717、`~/.config/clawdline`）正在退役。這個 daemon 不是它的複製品，最容易踩空的是
+下面五個差異：
+
+1. **Task 目錄是 `<state dir>/tasks`，不是 `/tmp/.clawdline`。** `/tmp/.clawdline` 歸 Swift broker
+   管；兩個 broker 往同一個目錄寫 task id，會在沒人看的地方撞在一起。兩個都不要寫死：從 inventory
+   （§3）讀 `task_root`，把 `task.json` 寫在它底下。
+2. **沒有 workflow envelope，也沒有 workflow 路由可以呼叫。** 訊息不再帶看板分類，session 也從不
+   自己開看板卡片。`POST /v1/orchestrator/sessions/<terminal>/workflow` 還在，只是為了讓舊的 helper
+   不會在 turn 中途失敗：它回 `workflow_retired`，什麼都不記錄，新的程式碼不可以呼叫它。
+3. **參與看板要透過 proposal 和 decision**（§10）：session 提案，人來回答。沒有什麼要 `begin` 或
+   `deliver` 的。
+4. **換了一扇門。** Port 7727（或 `CLAWDLINE_NEXT_PORT`），狀態放在 `~/.config/clawdline-next`
+   （或 `CLAWDLINE_NEXT_DIR`）。絕對不要讀 `~/.config/clawdline`：那裡的 token 不是這個 daemon 的，
+   會被 `401 unauthorized` 拒絕。
+5. **Swift app 有、這個 daemon 沒有的東西：** durable report 升級（回
+   `501 durable_report_promotion_unsupported`）、coordinator succession（回
+   `501 succession_unavailable`）、task 的取消路由，以及 brief 欄位 `serialize`、
+   `attach_session`、`reasoning_effort`（每一個都會被點名拒絕，code 是 `bad_task`）。
+
+## 1. Root 還是 child
+
+如果你的第一則訊息寫著 *"You are a Clawdline CHILD agent for task …"*，你就是 **child**。訊息裡指定的
+`CHILD.md` 管你：你不派工，不送 turn receipt，最後用 `clawdline task finish` 收尾。讀到這裡就可以停了。
+
+否則你是 **root**：一個有人正在跟你對話的一般 session。後面的內容都是寫給你的。
+
+## 2. 連上 daemon
+
+**有指令可以用，就用指令，不要自己組 curl。** 指令在自己的 process 裡讀憑證，所以憑證不會出現在命令列、
+`ps`、指令輸出，也不會出現在你的 transcript 裡。
+
+| 指令 | 做什麼 |
+|---|---|
+| `clawdline guide [zh-TW]` | 這份指南。不需要 daemon |
+| `clawdline session report --summary "…"` | 記錄你已經完成的 turn（§7） |
+| `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
+| `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
+| `clawdline assistants` | 每個助理的帳號還剩多少額度 |
+| `clawdline landings` | 這台機器上所有還欠著的 landing |
+| `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
+
+會去問 daemon 的那幾個指令，成功時印出 daemon 回的 JSON；被拒絕時印出
+`refused, <status> <code>: <message>`，exit code 是 1。`--port` 可以覆寫 port。
+
+**東西在哪裡。**
+
+- Port：`CLAWDLINE_NEXT_PORT`，沒設就是 **7727**。只聽 loopback：`http://127.0.0.1:<port>`。
+- 狀態目錄：`CLAWDLINE_NEXT_DIR`，沒設就是 `$XDG_CONFIG_HOME/clawdline-next`，再沒有就是
+  `~/.config/clawdline-next`（Windows 上是 `%APPDATA%\clawdline-next`）。
+- `GET /v1/health` 不需要憑證，會回 `served_by: "clawdline-go"`。用它分辨「沒在跑」和「被拒絕」。
+
+**憑證。** 一共三種，session 用第一種：
+
+| 憑證 | 在哪裡 | 怎麼送 | 開得了什麼 |
+|---|---|---|---|
+| Orchestrator token | `<state dir>/orchestrator-token` | header `X-Clawdline-Orchestrator` | `/v1/orchestrator/`、`/v1/work/`、`/v1/board` 底下的全部路由，以及 `POST /v1/artifacts/images` |
+| Task secret | root 派工時自己選 | header `X-Clawdline-Task-Secret` | child 自己在 `/v1/orchestrator/tasks/<id>/` 底下的路由，以及 `POST /v1/orchestrator/proposals` |
+| Device token | `<state dir>/local-token`，或配對過的裝置自己的 token | `Authorization: Bearer` | console 的路由（`/v1/sessions/…`）。session 用不到 |
+
+把 orchestrator token 當成 `Bearer` 送，它會被拿去跟裝置比對，然後被拒絕。token 錯誤或沒帶時回
+`401 unauthorized`「This needs a paired device.」——字面上講的是裝置，真正的原因是 token。
+
+**非用 curl 不可時**，別讓 token 出現在命令列上：
+
+```sh
+DIR="${CLAWDLINE_NEXT_DIR:-$HOME/.config/clawdline-next}"
+PORT="${CLAWDLINE_NEXT_PORT:-7727}"
+auth() { printf 'X-Clawdline-Orchestrator: %s\n' "$(cat "$DIR/orchestrator-token")"; }
+curl --fail-with-body -sS -H @<(auth) "http://127.0.0.1:$PORT/v1/orchestrator/inventory?project=$PWD"
+```
+
+- `--fail-with-body`：少了它，被拒絕時 exit code 還是 0，看起來像成功。
+- **每一個帶 body 的 POST 都要加 `-H 'Content-Type: application/json'`**，否則會被
+  `415 unsupported_media_type` 拒絕。只用 `curl -d` 的話，送出去的是 form 型別。
+- Body 上限 2 MiB，除非該路由規定得更小。
+- 像 `%47` 這種 tmux terminal id，放進路徑時要當成一個 segment 跳脫：`%2547`。
+
+**拒絕有兩種形狀。** 看 code 決定怎麼處理，永遠不要看那句話：
+
+- `{"error":{"code":"…","message":"…","request_id":"…", …extras}}`——gate 和 broker 用這種。
+  `retry_after` 這類額外欄位放在 `error` 裡面。
+- `{"error":"<code>","detail":"…"}`——找不到路由、HTTP method 錯誤，以及部分讀取用這種。
+
+不歸這個 daemon 管的路由，在 Swift app 還在執行時會轉送給它；daemon 單獨執行時則回
+`501 not_implemented`。這兩種都不是這個 daemon 給的答案。
+
+## 3. 派工之前：先讀已經存在的東西
+
+別的 session 可能已經在做你要做的事，而且從共用的 working tree 上看不出來：一份已經完成、放在還沒
+合併的 branch 上的交付，不會出現在任何 `git status` 裡。先讀。
+
+```
+GET /v1/orchestrator/inventory?project=<absolute repo path>[&claims=a,b]
+```
+
+- 回 `generation`、`task_root` 和四個清單：`live`、`unlanded`、`droppable`、`unreadable`。每一列都帶著
+  一個 daemon 會接受的 `do`。帶了 `claims` 時，每一筆 live 列都會標出它 `overlaps` 什麼。
+- **派工一定要帶 `generation`**（§4）。它是由各列 sealed 欄位算出來的 16 個 hex 字元；只要有一列開始、
+  結束或改了 claims，它就會變。
+- **`task_root` 就是 `task.json` 要放的地方。** 這是這個 daemon 自己的欄位；Swift broker 沒有，因為它
+  把 `/tmp/.clawdline` 寫死了。
+- `project` 不是某個 Git repository 裡的絕對路徑時，回 `400 bad_request`。
+
+另外值得讀一次的：
+
+- `GET /v1/orchestrator/inflight?project=…`——repository 裡每一條還沒結束的工作線，由誰負責、claim 了
+  什麼。
+- `clawdline assistants`——每個助理的 `availability`（`ok`、`low`、`exhausted`、`unknown`）、
+  `windows`、`stale`、`resets_at`。讀完再決定派給誰；不會有任何東西因為額度而拒絕派工。
+
+**到底該不該派出去？** 能拆成獨立幾塊的工作，平行做比較快。每一步都依賴上一步的鏈，拆開反而更糟，
+因為每次交接都會把鏈切斷。診斷、比寫 briefing 還小的工作，以及有人正在等的事，都留在自己的 session
+做。這台機器的規矩寫在 `<state dir>/dispatch-policy.md`（還有使用者自己的
+`dispatch-policy.local.md`）；每個 child 的 briefing 裡都會附上它們。
+
+## 4. 派出一個 owned child
+
+owned child 是掛在你底下、範圍有限的 task。**彙整、整合和 landing 都還是你的事。**
+
+**1. 選一個 id 和一個 secret。**
+
+```sh
+TASK_ID=$(uuidgen | tr 'A-Z' 'a-z')     # 36 個字元，小寫
+SECRET=$(openssl rand -hex 32)          # 64 個小寫 hex
+```
+
+secret 由你放在 POST body 交給 daemon，再由 daemon 打進 child 的那一行交給 child。它不在
+`task.json` 裡，也不在派工的回應裡，之後你也用不到它。（唯一會帶 secret 的回應是 respawn：它回的是副本的新
+secret。）
+
+**2. 讀 inventory**（§3），拿到 `generation` 和 `task_root`。
+
+**3. 寫 `<task_root>/<TASK_ID>/task.json`。** daemon 從這個檔案讀 brief，不是從 request 讀，所以 child
+讀到的，就是通過驗證的那份位元組。
+
+| 欄位 | 規則 |
+|---|---|
+| `clawdline_protocol` | `1` |
+| `task_id` | 同一個 id |
+| `assistant` | `claude` 或 `codex` |
+| `project_dir` | 一個已經存在的目錄的絕對路徑 |
+| `title` | 顯示在畫面上；超過 200 字元會被截掉 |
+| `instructions` | 必填，最多 16 KiB。內容必須自己就講得清楚：除此之外 child 什麼都不知道 |
+| `claims` | **必填**：最多 32 個 child 可以寫入的相對路徑。`[]` 表示它什麼都不寫，派工會帶一個警告（`claims_missing`） |
+| `isolation` | `none`（預設），或 `worktree`：在自己的 branch 上開一份私有 checkout |
+| `permission_mode` | `ask`、`edits` 或 `full` |
+| `timeout_minutes` | 1–240，預設 30 |
+| `kind`、`deliverables`、`model` | 選填；`model` 只能用 `[a-z0-9._-]`，最多 64 字元 |
+| `work_id` | 選填，這個 task 所服務的看板項目的 UUID |
+| `root` | **必填**：`{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "label": "…"}` |
+
+**`root.session_id` 是你的 conversation id，絕對不是 terminal id。** Claude Code 把它 export 成
+`CLAUDE_CODE_SESSION_ID`，Codex 則是 `CODEX_THREAD_ID`。daemon 靠它把 child 歸到你底下，並在 child
+結束時通知你。要確認它指的就是這個分頁：`GET /v1/orchestrator/whoami?conversation_id=<id>` 會回
+`terminal_id`。
+
+**4. 派工**，帶 orchestrator token：
+
+```
+POST /v1/orchestrator/tasks
+{"task_id": "…", "secret": "…", "inventory_generation": "…"}
+```
+
+body 從 stdin 送（`jq -n … | curl --data-binary @- -H 'Content-Type: application/json' …`），secret
+才不會出現在 argv 裡。
+回應是 `{ok, task, warnings?}`。要讀 `warnings`：`claims_overlap`、`claims_missing`、
+`claims_ignored_for_worktree`、`dirty_worktree_base`。同一個 id 再 POST 一次，會回之前存下的 task 並帶
+`replayed: true`，所以重試是安全的。
+
+分頁開不起來時仍然回 200，只是 `task.state: "spawn_failed"`。
+`POST /v1/orchestrator/tasks/<id>/respawn`（orchestrator token）會用新的 secret 開一份副本，每個原始
+task 最多兩次。
+
+**你會遇到的拒絕**，照檢查的順序排：
+
+| 狀態 | Code | 怎麼處理 |
+|---|---|---|
+| 422 | `bad_task` | 訊息會點出是哪個欄位。「No readable task.json under …」也是這一種——檢查 `task_root` |
+| 422 | `claims_required` | 補上 `claims` |
+| 422 | `root_session_required`、`root_assistant_required` | 補上 `root.session_id` 和 `root.assistant` |
+| 422 | `detached_route_required` | 你送了 `root.poll_only`；那是 detached automation（§6） |
+| **409** | **`stale_inventory`** | 你的 `generation` 沒帶或過期了。錯誤裡附著目前完整的 inventory：讀它、重新判斷，再用它的 `generation` 重送 |
+| 409 | `graph_*` | task-graph 的准入規則（`graph` 欄位） |
+| 409 | `no_child_capability` | 這個平台開不了 child；`missing` 會說缺什麼 |
+| 429 | `rate_limited` | 十分鐘內派工次數太多 |
+| 422 / 409 | `root_unresolved`、`conversation_ambiguous` | 你的 conversation id 對不到任何活著的 session，或對到不只一個。把它修好；不要改走 detached |
+| 429 | `over_capacity` | 你的 child 名額（預設 5 個）或整台機器的名額滿了；看 `retry_after` |
+| 409 | `workspace_busy` | 另一個 root 的 claims 跟你重疊；錯誤會點出擋住你的那個 task |
+| 409 | `worktree_unavailable` | 私有 checkout 建不起來 |
+| 429 | `terminal_busy` | 所有 terminal 寫入通道都在忙；`retry_after: 5` |
+
+## 5. 執行中，以及結束時
+
+child 會簽收 briefing（`/accepted`），計畫改變時可以送一則進度說明（`/progress`），最多可以推五則通知
+（`/notify`），最後寫好 `result.json`、執行 `clawdline task finish` 收尾。這些路由你不用呼叫。
+
+- `GET /v1/orchestrator/tasks/<id>`——單一 task 和它的狀態。`GET /v1/orchestrator/tasks` 列出全部
+  （`?state=`、`?limit=` 最多 500）。
+- **child 結束時，daemon 會在你的輸入框打一行 `<clawdline-notice>`**，內容有狀態、`result.json` 的路徑和
+  一個 `notice_id`。它照 5→300 秒的階梯重試，一共八次，直到你 ACK 為止——而且你正在顯示選單時，它絕不
+  打字：
+
+  ```
+  POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
+  ```
+
+  第二次 ACK 會回 `changed: false`。還沒 ACK 的通知列在 `GET /v1/orchestrator/completions`；
+  `POST /v1/orchestrator/completions/reconcile` 會把它們重新排上。
+- **沒有取消路由**。task 只會以完成、失敗或逾時結束。
+- **child 結束，不等於程式碼已經 landing。** 在你整合之前，它的成果還放在共用的 working tree 或它自己的
+  branch 上。
+
+## 6. Landing，以及另外三種工作
+
+帶著 claims 的 child 一回來，**就記下 landing 義務**：
+
+```
+POST /v1/orchestrator/tasks/<id>/landing
+{"state": "pending" | "landed" | "abandoned" | "nothing_to_land", "target": "<ref>", "commit": "<sha>", "note": "…"}
+```
+
+- 只收這幾個 key，外加 `delivery`（收下但不使用）；其他 key 一律拒絕。`pending` 和 `abandoned` 接受
+  task secret 或 orchestrator token；`landed` 和 `nothing_to_land` 只接受 orchestrator token。
+- `landed` 需要 `target` 和 `commit`，而且 daemon **會去 Git 裡查證**；查不過就回
+  `409 unverified_landing` 並附上 `reason`（`target_unresolved`、`commit_unresolved`、
+  `not_on_target`、`predates_dispatch`、`nothing_delivered`、`not_the_delivery`、…）。
+- task 其實有寫入 repository 時，`nothing_to_land` 會被 `409 wrote_to_repository` 拒絕。
+- 已經定案的 landing 不能再改：回 `409 invalid_transition`；要改成不同的值時回
+  `409 landing_conflict`。
+
+`clawdline landings`（`GET /v1/orchestrator/landings`）是整台機器上所有 pending 的 landing，每一筆都帶
+`ownership.status`。`unknown` 不代表「沒人負責」：它的意思是證據讀不到。`503 landings_incomplete` 表示
+有些列讀不到，而且不會拿一份比較短的清單來頂替。
+
+**兩個 root 要 landing 到同一份 checkout 時**，先取得 landing lease（§11）。
+
+另外三種工作各有自己的路由。選哪一條是邊界問題，不是細節：
+
+| 種類 | 路由 | 是什麼 |
+|---|---|---|
+| **Handoff** | `POST /v1/orchestrator/handoffs` | 把一條既有的工作線連同完整狀態，交給一個新的 session |
+| **Root assignment** | `POST /v1/orchestrator/root-assignments` | 為新功能開一個獨立負責的新 Root |
+| **Detached automation** | `POST /v1/orchestrator/detached-tasks` | 沒人看著、也沒有回報對象的工作 |
+
+**Handoff。** 先寫 `<state dir>/handoffs/<handoff_id>/handoff.md`（列表路由會回 `package_root`）。它應該
+有三段：**REFERENCES**（接手者必須讀的所有東西）、**VERIFICATION**（接手者繼續之前，要從那些來源回答
+的問題）和 **OPEN THREADS**（從哪裡接著做）。然後 POST，body 是封閉的（只能有這些 key）：
+
+```
+{"handoff_id": "<uuid>", "from_session": "<your conversation id>", "coordinator_plain_handoff": true,
+ "project_dir": "/abs", "assistant": "claude"|"codex", "model": "…", "title": "…"}
+```
+
+接手者會被告知：讀那個檔案、逐一看過它的 references、回答它的 verification 問題，然後繼續做。對方接手時
+你會收到一則 `handoff_receipt` 通知。拒絕：`bad_task`（`handoff.md` 不存在或是空的也算）、
+`sender_not_found`、`sender_ambiguous`、`rate_limited`、`terminal_busy`，以及你持有整台機器的
+coordinator 角色時的 `succession_required`——這個 daemon 沒有 succession（`501`），所以那個 session
+沒辦法 handoff。
+
+**Root assignment。** `Idempotency-Key` header 必須等於 `request_id`：
+
+```
+{"request_id": "<uuid>", "assistant": "claude"|"codex", "model": "…", "project_dir": "/abs", "label": "…",
+ "assignment": {"objective": "…", "scope": "…", "constraints": "…", "relevant_references": "…", "acceptance": "…"}}
+```
+
+每個 assignment 欄位 1–8192 bytes，加起來最多 32 KiB。daemon 自己寫 brief、自己開 session。它**沒有
+parent、secret、timeout、result，也沒有 landing**：它結束時不會通知任何人，因為它不向任何人負責。
+拒絕：`bad_root_assignment`、`idempotency_mismatch`、`request_conflict`、`rate_limited`。絕對不要用
+child、detached task 或 handoff 假裝成 root assignment。
+
+**Detached automation。** 跟派工（§4）一樣——`task.json` 放在 `task_root` 底下，再送
+`{"task_id", "secret", "inventory_generation"}`——但 brief 的 root 必須是
+`{"session_id": null, "poll_only": true}`，否則會被 `detached_task_required` 拒絕。不會通知任何人；
+自己 poll `GET /v1/orchestrator/tasks/<id>`，再讀 `result.json`。它永遠不是 Root，也不是功能的 owner。
+
+## 7. 回報你自己完成的 turn
+
+這一輪真的做完了——工作做完、驗證過、該 commit 的也 commit 了——就在最後回答之前，把這一步當成最後一個
+動作：
+
+```sh
+clawdline session report --summary "One concrete sentence about what was delivered."
+```
+
+它會在你的 session 那一列畫一個勾：**已交付，等待驗收**。它比 landing 弱，也不代表有人 review 過。只有
+在 daemon 判斷 session 是閒置時才會顯示——工作中、等待中、讀不到畫面，都會蓋過它——而且只在那個
+terminal 還掛著同一個 conversation 時顯示。
+
+- **只用在完成的 turn。** 做一半、只做了診斷、被擋住、正在反問使用者，都不要送。child 絕對不送
+  （`409 child_session`）。
+- 指令從 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID` 找出你的 conversation（都沒有就用
+  `--conversation`），向 `GET /v1/orchestrator/whoami` 問出 terminal，再把 `{"summary"}` 送到
+  `POST /v1/orchestrator/sessions/<terminal>/complete`。
+- summary 長度 1–500 字元。每呼叫一次就是一張新的收據；以最新的為準。
+- 拒絕：`conversation_id_malformed`（不是小寫的 UUID）、`conversation_not_found`、
+  `conversation_ambiguous`、`registry_stale`、`session_not_found`、`session_unbound`、
+  `child_session`。被拒絕就照實回報；在聊天裡寫一句話不算收據。
+
+## 8. 跟另一個 session 說話
+
+**找到它。** `GET /v1/orchestrator/sessions` 是通訊錄：每個 session 的 `id`（也就是它的 terminal id）、
+`label`、`assistant`、`cwd`、`state`、`work_state`，活著的 child 還有 `taskId`。
+
+**送出。**
+
+```sh
+clawdline send --to <terminal id> "text"        # 或從 stdin 送文字
+```
+
+這就是 `POST /v1/orchestrator/messages`，帶 `{from_session, to_session, text}` 和一個
+`Idempotency-Key`。daemon 會把它打進收件者的輸入框，外面包一層標明你是來源的 `<clawdline-message>`
+envelope。
+
+- `to_session` 是 **terminal id**：訊息跟著你指定的那個分頁走，不是跟著 conversation 走。
+  `from_session` 是你的 terminal id 或 conversation id（指令會幫你填）。
+- 只能送文字，最多 100,000 字元。沒有 `images` 欄位：送了也會被默默丟掉。
+- `ok` 的意思是位元組送到了某個輸入框，不代表有人讀了。
+- 可能要幾十秒：daemon 打字之前會先讀過整台機器的 session（2026-09-19 在一台 Mac 上量到每次 relay 約
+  30 秒）。指令最多等兩分鐘，不要中途打斷——relay 在半路被切斷，可能已經打進去卻沒記下來，之後用同一把
+  key 重送只會回 `409 request_in_progress`。
+- 指令會先印出它的 `Idempotency-Key`。如果呼叫在半路失敗，用 `--key <that key>` 再執行一次：同一個 key
+  加同一個 body 只會打一次。同一個 key 配上不同的 body，會得到 `409 idempotency_key_reused`。
+- 拒絕：`source_not_found`、`target_not_found`、`same_session`、`target_busy`（收件者正在顯示選單；
+  什麼都沒打進去）、`terminal_busy`、`delivery_failed`。
+
+**給使用者看一張圖。** 不要貼本機路徑：在手機上點了什麼都打不開。
+
+```
+POST /v1/artifacts/images    {"images": [{"path": "/absolute/path.png"}]}
+```
+
+- 只接受 orchestrator token。一到六個本機檔案；每一個都必須是一般檔案，最多 12 MiB、每邊最多
+  12,000 px。PNG、JPEG、GIF 直接讀；其他格式在 macOS 上會先交給 `sips` 轉。
+- 回應會列出 `artifacts`，每一個都有一個 `marker`，例如 `<clawdline-image id="…">`。**把 marker 放進
+  你的回覆裡**；console 會在 marker 的位置顯示圖片。圖片保留 24 小時。
+
+## 9. 通知使用者
+
+```sh
+clawdline notify --title "At most 80 characters" --body "At most 500 characters"
+```
+
+也就是 `POST /v1/orchestrator/notify`。只用在使用者正在等的事情上：推播的價值就在於它很少出現。
+`--session <terminal>` 讓使用者點通知時直接打開那個 session。
+
+- `409 agent_notify_disabled`：使用者關掉了 agent 通知。不是你的錯；不要重試。
+- `409 not_subscribed`：沒有任何裝置訂閱推播。
+- `429 rate_limited`：整台機器每小時 30 則，跟所有 child 的通知共用。
+- `502 push_failed`：push service 拒絕了；`sent` 和 `failed` 在錯誤裡。
+
+## 10. 看板
+
+看板有三種結構——看板項目、Backlog，以及每個 session 自己的待辦清單——而且**上面放什麼由人決定**。
+session 只能提案，從不自己建卡片。
+
+**提議一條工作線。**
+
+```
+POST /v1/orchestrator/proposals     (Idempotency-Key required)
+{"session_id": "<your conversation id>", "title": "…", "project": "<project>", "work_id" or "task_id": "<uuid>",
+ "effects": ["deploy" | "publish" | "push_default_branch" | "spend" | "email"]}
+```
+
+- `201` 會回傳 proposal 和 `instructions`，告訴你要**現在問使用者**還是**先擱著**。照做。只有使用者
+  在場時才可以問——也就是他在過去 30 分鐘內透過 Clawdline 寫過訊息給這個 session——而且每個 turn 最多
+  一次、每天最多三次。問完要回報：`POST /v1/orchestrator/proposals/<id>/asked`。
+- 拒絕：`proposal_already_tracked`、`proposal_duplicate`、`proposal_below_threshold`、
+  `not_the_root`、`facts_unknown`、`proposals_full`，以及欄位錯誤的 code（`invalid_title`、…）。
+- child 可以用自己的 task secret 和 `task_id` 提案；會記在它的 root 名下。
+
+**請使用者做決定。**
+
+```
+POST /v1/orchestrator/decisions     (Idempotency-Key required)
+{"session_id": "…", "project": "<project>", "question": "…", "options": [{"id": "a", "label": "…"}, …],
+ "default": "a", "blocking": true, "due_in_minutes": 1440}
+```
+
+二到四個選項；`default` 必須是其中之一，也就是沒人回答時會採用的選項（7 天後，除非 `due_in_minutes`
+指定 60–10080）。只有 `blocking` 的 decision 會推播。用 `GET /v1/orchestrator/decisions/<id>` 讀答案。
+
+**回答的是使用者，不是 session。** proposal、decision 和看板項目都在 `/v1/work/…` 底下回答。session
+要寫進去，必須指名帶著使用者那句話的 run：`"via": {"run": "<id>"}`，沒帶就被拒絕
+（`403 session_cannot_decide`）。**這個 daemon 目前沒有任何路由會發 run id**——它原本來自已經退役的
+workflow 信封——而且只檢查格式。所以不要代轉：請使用者自己在 console 回答，在那裡他是以本人身分寫入。
+
+**你的待辦清單。** `GET /v1/orchestrator/sessions/<conversation id>/todos`——用 conversation id 指名，
+不是 terminal id（否則回 `409 session_id_is_terminal`）。這些項目由 broker 根據 task 的事實開啟和關閉；
+你不需要寫任何東西。
+
+`/v1/board` 是 Swift app 的舊卡片，唯讀。landing 是 broker 的事實：項目永遠不會被人手動標成已 landing
+（`422 landing_is_broker_fact`）。
+
+## 11. 協調
+
+**整台機器的 coordinator（"Clawdfather"）。** `GET /v1/orchestrator/coordinator` 查看這個角色；
+`/coordinator/bearings` 是整台機器的概況（進行中的 task、pending 的 landing、還開著的 wait、dead letter、
+被持有的 lease，以及哪些是 `unknown`）。帶 `{"session_id": "<conversation id>"}` 呼叫
+`POST …/coordinator/register` 就取得這個角色；綁定的 session 離線之後，`POST …/coordinator/rebind` 會把
+角色移走（`expected_coordinator_id`、`expected_generation`）。Succession 回
+`501 succession_unavailable`。
+
+**檔案 wait。** wait 的意思是「owner 處理完這些路徑時告訴我」。它是一筆紀錄加一則訊息，不是鎖，也不是
+檔案監看。
+
+- `POST /v1/orchestrator/waits`——
+  `{"repository", "paths", "owner_session_id", "waiter_session_id", "reason", "release_condition"}`
+  （session id 都是 conversation id）。owner 會在自己的輸入框被告知一次。
+- 由 owner 結束它：`POST /v1/orchestrator/waits/<id>/release`，帶
+  `{"owner_session_id", "commit"?, "note"?}`；每個 waiter 都會被告知。沒有任何計時器會自動 release
+  wait。
+- waiter 自己退出：`POST …/waits/<id>/cancel`，帶 `{"waiter_session_id"}`。
+- `409 owner_busy` 和 `502 request_delivery_failed` 表示 **wait 已經記下來了**，只是還沒通知到 owner。
+  `502 release_incomplete` 會列出還有誰沒通知到：再送一次 release。
+
+**Lease。** 兩種資源：`heavy_compile`（整台機器唯一的重度編譯名額）和 `landing`（每份 checkout 一個）。
+
+- `POST /v1/orchestrator/leases`——
+  `{"request_id": "<uuid>", "resource", "checkout" (landing only), "holder", "reason", "session_id", "pid"}`。
+  回 `granted`，或回 `queued` 並附上 `position` 和 `retry_after_seconds`。排隊中的請求用同一個
+  `request_id` 再問一次。
+- `POST …/leases/renew | release | cancel`，帶 `{"request_id", "resource", "checkout"}`。持有者用
+  `/renew` 續約（用自己的 `request_id` 再打一次 `POST /v1/orchestrator/leases` 也算續約）。
+- 60 秒內要續約，否則 lease 會被視為已經不在了。`409 lease_lost` 就表示它真的不在了。排隊的 waiter 到
+  32 個時回 `429 queue_full`。
+
+**Graph**（`GET /v1/orchestrator/graphs`）是從已派出 task 的 `graph` 欄位算出來的唯讀檢視。
+**Reclaim**（`/v1/orchestrator/reclaim`）會清掉已經結束的 checkout；POST 預設只是 dry run，除非 body 寫明
+`{"dry_run": false}`。
+
+## 12. 被拒絕時怎麼辦
+
+- 看 `error.code`（扁平形狀則是 `error`）決定怎麼處理。message 是寫給人看的。
+- 有 `retry_after` 就是容量方面的回答：等那麼久，再送同一個 request。
+- `409 stale_write`、`503 orchestrator_store_busy`：store 當下在忙；原封不動再送一次是安全的。
+- 任何地方出現 `unknown`——ownership、存活狀態、來源——都表示 daemon 讀不到。它不等於「不存在」，也不能
+  據此刪掉任何東西，或宣告任何東西已經死了。
+- 你預期存在的路由如果回 `404 not_found` 或 `501`，就是這個 daemon 沒有它。直接講明；不要退回去用
+  Swift app 的路由，也不要改用 provider 原生的 subagent 代替。

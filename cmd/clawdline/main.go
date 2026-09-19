@@ -47,8 +47,24 @@ func main() {
 		// the broker's claims never saw. Said by name, so a script that still
 		// runs one learns where the work went rather than reading a usage line.
 		retiredCommand(os.Args[1])
-	case "send":
+	case "type":
+		// Typing straight into a terminal, with nothing recorded: a tool for
+		// proving a terminal backend. `send` is the relay a session uses.
 		terminalCommand("send", os.Args[2:])
+	case "send":
+		sendCommand(os.Args[2:])
+	case "notify":
+		notifyCommand(os.Args[2:])
+	case "session":
+		sessionCommand(os.Args[2:])
+	case "landings":
+		readCommand("landings", "/v1/orchestrator/landings", os.Args[2:])
+	case "assistants":
+		readCommand("assistants", "/v1/orchestrator/assistants", os.Args[2:])
+	case "guide":
+		guideCommand(os.Args[2:])
+	case "skill":
+		skillCommand(os.Args[2:])
 	case "interrupt":
 		terminalCommand("interrupt", os.Args[2:])
 	case "close":
@@ -83,6 +99,10 @@ func serve() {
 	cfg.Port = port
 	// The log goes where it is bounded before anything else is said.
 	daemonLog(cfg)
+	// The copy of this binary the skill stub runs (skillfile.ProjectBinary).
+	// Off the startup path, and never fatal: without it a session cannot read
+	// the guide, which is worth a log line, not a daemon that will not start.
+	go projectBinary(cfg.Dir)
 	srv, err := httptransport.New(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
@@ -222,7 +242,11 @@ func retiredCommand(name string) {
 // port the daemon uses, so a thing proved here is proved for both.
 func terminalCommand(op string, args []string) {
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "usage: clawdline %s <session-id> [text]\n", op)
+		name := op
+		if op == "send" {
+			name = "type"
+		}
+		fmt.Fprintf(os.Stderr, "usage: clawdline %s <session-id> [text]\n", name)
 		os.Exit(2)
 	}
 	target := session.Session{ID: args[0], Backend: session.BackendTmux}
@@ -248,7 +272,7 @@ func terminalCommand(op string, args []string) {
 	switch op {
 	case "send":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "clawdline send needs text")
+			fmt.Fprintln(os.Stderr, "clawdline type needs text")
 			os.Exit(2)
 		}
 		err = host.Send(ctx, target, strings.Join(args[1:], " "))
@@ -267,7 +291,14 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|send|interrupt|close|open|pair|tunnel|cloud|board|task|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|send|notify|landings|assistants|type|interrupt|close|open|pair|tunnel|cloud|board|task|version>")
+	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
+	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
+	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
+	fmt.Fprintln(os.Stderr, "  send --to <terminal> [text…]  relay a message into another session's composer")
+	fmt.Fprintln(os.Stderr, "  notify --title <t> --body <b>   push a notification to the person")
+	fmt.Fprintln(os.Stderr, "  landings | assistants         every landing still owed; what each assistant's account has left")
+	fmt.Fprintln(os.Stderr, "  type <session-id> <text>      type straight into a terminal, recording nothing (for testing a backend)")
 	fmt.Fprintln(os.Stderr, "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so")
 	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")
 	fmt.Fprintln(os.Stderr, "  pair [--watch]            show the code when a device asks to pair")
