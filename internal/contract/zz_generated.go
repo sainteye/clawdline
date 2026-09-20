@@ -3265,6 +3265,164 @@ type LeaseWaiter struct {
 	WaitedSeconds int64  `json:"waited_seconds"`
 }
 
+// One of the review receipt's three axes, and what it answered.
+type LedgerAxis struct {
+	Axis         string `json:"axis"`
+	FindingCount int64  `json:"findingCount"`
+
+	// pass or findings.
+	Status string `json:"status"`
+}
+
+// One Feature's card. `label` when this Mac still remembers what the graph was
+// dispatched for, and null when it does not: the name is swept with the task
+// registry and the id is forever, so the id is sent beside the name rather than
+// replaced by it.
+type LedgerFeature struct {
+	// Only on the one-Feature read.
+	Axes     []LedgerAxis   `json:"axes,omitempty"`
+	Findings LedgerFindings `json:"findings"`
+
+	// Null on the block that names no Feature, which is the one card on this page
+	// whose subject is that there is no Feature.
+	GraphID *string `json:"graphId"`
+
+	// The findings themselves. Only on the one-Feature read.
+	Items []LedgerFinding `json:"items,omitempty"`
+
+	// Null once the destination this graph was dispatched for is no longer on this
+	// Mac. A reconstruction would be a guess, and this page's whole subject is that
+	// not knowing has to look different from knowing.
+	Label *string `json:"label"`
+
+	// RFC3339. Null when no row or receipt here carried a time.
+	LastSeenAt *string `json:"lastSeenAt"`
+
+	// Interval rows counted into this card.
+	Rows   int64        `json:"rows"`
+	Tasks  int64        `json:"tasks"`
+	Tokens LedgerTokens `json:"tokens"`
+
+	// Only on the one-Feature read.
+	Verdicts     []LedgerVerdict    `json:"verdicts,omitempty"`
+	Verification LedgerVerification `json:"verification"`
+}
+
+// One finding, as its review receipt wrote it. The evidence is the passage the
+// finding rests on; a verdict without one is the shape a hallucinating judge
+// produces, which is why the receipt requires at least one.
+type LedgerFinding struct {
+	Evidence  []string `json:"evidence"`
+	FindingID string   `json:"findingId"`
+	Severity  string   `json:"severity"`
+	Summary   string   `json:"summary"`
+}
+
+// What reviewing this Feature found. `present` with a total of zero is a
+// Feature somebody reviewed and found nothing in, which is the answer worth
+// reaching and is said in those words rather than as `0`.
+type LedgerFindings struct {
+	// How many review receipts this figure rests on.
+	ReviewReceipts int64            `json:"reviewReceipts"`
+	Severities     []LedgerSeverity `json:"severities"`
+	State          LedgerState      `json:"state"`
+
+	// Null on every state but `present`, so no reader can put a figure where there is
+	// none.
+	Total *int64 `json:"total"`
+}
+
+// What the read reached, and where it stopped. Two ceilings, and they are not
+// the same ceiling: `truncated` is the interval scan reaching its limit, and
+// `featuresListed` short of `featuresFound` is the list itself being cut. A Mac
+// past either reads a number it found over a smaller number it was shown unless
+// both are on the wire.
+type LedgerRead struct {
+	FeaturesFound  int64 `json:"featuresFound"`
+	FeaturesListed int64 `json:"featuresListed"`
+
+	// The receipt read reached its ceiling, so the oldest reviews and verifications
+	// are not in these figures.
+	ReceiptsTruncated bool  `json:"receiptsTruncated"`
+	RowsScanned       int64 `json:"rowsScanned"`
+
+	// The interval scan reached its ceiling, so older rows are not in these figures.
+	Truncated bool `json:"truncated"`
+}
+
+// How many findings of one severity. Worst first, in the order the route sorted
+// them.
+type LedgerSeverity struct {
+	Count int64 `json:"count"`
+
+	// blocking, important or minor: the review receipt's own closed set.
+	Severity string `json:"severity"`
+}
+
+// What a figure is. `present`: it was measured, and the number beside it is the
+// measurement. `absent`: this Mac holds no such receipt — never read as a
+// zero, and never as `nobody did it`, because a receipt whose write failed
+// leaves only a log line. `unknown`: there are rows and not one of them
+// measured anything, which is spending nobody can count.
+type LedgerState string
+
+const (
+	LedgerStatePresent LedgerState = "present"
+	LedgerStateAbsent  LedgerState = "absent"
+	LedgerStateUnknown LedgerState = "unknown"
+)
+
+// LedgerStateValues is every value the contract allows, in contract order.
+var LedgerStateValues = []LedgerState{LedgerStatePresent, LedgerStateAbsent, LedgerStateUnknown}
+
+// One token bucket. A floor and a total are two quantities and both reach the
+// screen: a bucket holding a row that measured only part of what it spent has
+// no total at all, and says so by sending `total: null` beside a `measured`
+// that is still a real number.
+type LedgerTokenReading struct {
+	// Rows here that measured only part of what they spent.
+	IncompleteRows int64 `json:"incompleteRows"`
+
+	// What the rows that did measure add up to. A floor when `total` is null.
+	Measured int64       `json:"measured"`
+	Rows     int64       `json:"rows"`
+	State    LedgerState `json:"state"`
+
+	// Null when the bucket holds a row that measured only part of itself: the figure
+	// beside it is a floor, not a total.
+	Total *int64 `json:"total"`
+}
+
+// The token buckets, in the order they are drawn. `undeclared` is a row whose
+// task never said which side of the work it was on, and is never added to the
+// implementation figure beside it: calling it implementation would be a claim
+// about a side that nothing on the row supports.
+type LedgerTokens struct {
+	Implementation LedgerTokenReading `json:"implementation"`
+	Review         LedgerTokenReading `json:"review"`
+	Undeclared     LedgerTokenReading `json:"undeclared"`
+}
+
+// How many review receipts carried one verdict.
+type LedgerVerdict struct {
+	Count int64 `json:"count"`
+
+	// safe_to_land or changes_required: the review receipt's own closed set.
+	Verdict string `json:"verdict"`
+}
+
+// What proving this Feature cost, out of the children's own `verification`
+// receipts. Runs and seconds are one sentence on screen, because a run count
+// with no seconds beside it reads as an achievement rather than as a cost.
+type LedgerVerification struct {
+	// Receipts whose last run did not pass.
+	EndedRed int64       `json:"endedRed"`
+	Receipts int64       `json:"receipts"`
+	Runs     int64       `json:"runs"`
+	Seconds  int64       `json:"seconds"`
+	State    LedgerState `json:"state"`
+}
+
 // What a current inventory says about the bound process. An incomplete reading
 // answers `unknown`, never `offline`: absence of evidence is not proof of
 // death.
@@ -4920,6 +5078,164 @@ type TaskUsage struct {
 	Total      int64   `json:"total"`
 }
 
+// The entry bound, on the wire where a reader can see it (timeline-design A4).
+// What is dropped at the bound is the oldest, and it is a projection of records
+// this daemon still holds, so nothing is lost by dropping it.
+type TimelineCapacity struct {
+	EntryCount int64 `json:"entryCount"`
+	EntryLimit int64 `json:"entryLimit"`
+}
+
+// What kind of work an entry was. `feature` for ordinary delivery, `operation`
+// for a task whose write set was only tooling or documentation.
+type TimelineCategory string
+
+const (
+	TimelineCategoryFeature   TimelineCategory = "feature"
+	TimelineCategoryOperation TimelineCategory = "operation"
+)
+
+// TimelineCategoryValues is every value the contract allows, in contract order.
+var TimelineCategoryValues = []TimelineCategory{TimelineCategoryFeature, TimelineCategoryOperation}
+
+// How far one Project's history has been read. It is derived on every read and
+// stored nowhere, so it can never freeze the way a saved cursor did.
+type TimelineCheckpoint struct {
+	HistoryStatus TimelineHistoryStatus `json:"historyStatus"`
+	ProjectID     string                `json:"projectId"`
+}
+
+// One delivery. The id is the broker task's, because the task is the thing that
+// was delivered and an id of this projection's own invention would be a second
+// name for it.
+type TimelineEntry struct {
+	// The work items this delivery is on, as the task's own `work_id` names them.
+	BoardItemIds []string        `json:"boardItemIds"`
+	Events       []TimelineEvent `json:"events"`
+	ID           string          `json:"id"`
+
+	// The task's own title, never a summary written for it.
+	OriginalTitle   string             `json:"originalTitle"`
+	PrimaryCategory TimelineCategory   `json:"primaryCategory"`
+	ProjectID       string             `json:"projectId"`
+	Projection      TimelineProjection `json:"projection"`
+	SourceRevisions []TimelineRevision `json:"sourceRevisions"`
+
+	// The delivery's own one-paragraph account of itself, cut to a length the card can
+	// hold. Absent when the task wrote none.
+	Summary string `json:"summary,omitempty"`
+}
+
+type TimelineEnvelope struct {
+	Timeline TimelineSnapshot `json:"timeline"`
+}
+
+// One piece of evidence under an entry, and who said it. `authority` is what
+// wrote it down — `broker` for this daemon's own landing record — because
+// an event with no authority is an assertion.
+type TimelineEvent struct {
+	Authority string `json:"authority"`
+
+	// Unix seconds: when the thing happened. Absent when only the observation time is
+	// known.
+	EffectiveAt int64  `json:"effectiveAt,omitempty"`
+	Kind        string `json:"kind"`
+
+	// Unix seconds: when this Mac learned of it.
+	ObservedAt int64  `json:"observedAt"`
+	Result     string `json:"result"`
+}
+
+// How far back this Project's coverage reaches. `unknown` is the honest answer
+// while no history importer exists; `capacity` is the entry bound reached, and
+// what was retained is never removed to make room.
+type TimelineHistoryStatus string
+
+const (
+	TimelineHistoryStatusComplete TimelineHistoryStatus = "complete"
+	TimelineHistoryStatusCapacity TimelineHistoryStatus = "capacity"
+	TimelineHistoryStatusUnknown  TimelineHistoryStatus = "unknown"
+)
+
+// TimelineHistoryStatusValues is every value the contract allows, in contract order.
+var TimelineHistoryStatusValues = []TimelineHistoryStatus{TimelineHistoryStatusComplete, TimelineHistoryStatusCapacity, TimelineHistoryStatusUnknown}
+
+type TimelineProject struct {
+	ID string `json:"id"`
+
+	// The repository's own name. Never a reconstruction of one this Mac no longer
+	// holds.
+	Label string `json:"label"`
+	Name  string `json:"name,omitempty"`
+}
+
+// What the events below add up to. `availableTargets` is how many targets this
+// entry is proved available on, which on this daemon is always zero: there is
+// no deployment evidence producer, and a required target nothing can answer is
+// not the same as a failure.
+type TimelineProjection struct {
+	AvailableTargets int64 `json:"availableTargets"`
+
+	// Unix seconds. Absent when nothing under this entry carried one.
+	EffectiveAt     int64          `json:"effectiveAt,omitempty"`
+	ObservedAt      int64          `json:"observedAt"`
+	RequiredTargets int64          `json:"requiredTargets"`
+	Status          TimelineStatus `json:"status"`
+}
+
+// One commit an entry rests on, as the landing record proved it. `githubUrl`
+// only when the repository is a GitHub one this daemon can name with certainty.
+type TimelineRevision struct {
+	Commit       string `json:"commit"`
+	GithubUrl    string `json:"githubUrl,omitempty"`
+	RepositoryID string `json:"repositoryId"`
+	ShortCommit  string `json:"shortCommit"`
+}
+
+type TimelineSnapshot struct {
+	Capacity    TimelineCapacity     `json:"capacity"`
+	Checkpoints []TimelineCheckpoint `json:"checkpoints"`
+	Enabled     bool                 `json:"enabled"`
+	Entries     []TimelineEntry      `json:"entries"`
+
+	// A keyset cursor — the last entry's time and id — not an offset, so a page
+	// that arrives while records are being written cannot skip an entry
+	// (timeline-design A5). Absent on the last page.
+	NextCursor string          `json:"nextCursor,omitempty"`
+	Project    TimelineProject `json:"project"`
+
+	// The reading's own counter. It changes when the records under it do; nothing
+	// writes to this projection, so it is never a compare-and-set token.
+	Revision int64          `json:"revision"`
+	Selected *TimelineEntry `json:"selected,omitempty"`
+
+	// `current`, or `partial` when one of the sources under this reading could not be
+	// read — never an empty list drawn as a quiet Project.
+	Status string         `json:"status"`
+	Viewer TimelineViewer `json:"viewer"`
+}
+
+// What this Mac can prove about one entry. Only the three this daemon can reach
+// are here: the Swift app's other nine name deployment outcomes, and a word no
+// producer can ever write is a promise the screen cannot keep (design-decisions
+// X25).
+type TimelineStatus string
+
+const (
+	TimelineStatusLandedToGit TimelineStatus = "landed_to_git"
+	TimelineStatusUpcoming    TimelineStatus = "upcoming"
+	TimelineStatusUnknown     TimelineStatus = "unknown"
+)
+
+// TimelineStatusValues is every value the contract allows, in contract order.
+var TimelineStatusValues = []TimelineStatus{TimelineStatusLandedToGit, TimelineStatusUpcoming, TimelineStatusUnknown}
+
+type TimelineViewer struct {
+	// False on this daemon, always: the Timeline is a projection of records it already
+	// keeps, so there is no switch to turn it off and nothing a viewer could manage.
+	CanManage bool `json:"canManage"`
+}
+
 type TranscriptAction struct {
 	Command string `json:"command,omitempty"`
 
@@ -5254,6 +5570,23 @@ type UsageRow struct {
 	// a number.
 	Note        string `json:"note,omitempty"`
 	TotalTokens int64  `json:"totalTokens"`
+}
+
+// The whole answer. `features` and `unattributed` are the list read; `feature`
+// is the one-Feature read and is absent from the list read.
+type VerificationLedger struct {
+	Feature  *LedgerFeature  `json:"feature,omitempty"`
+	Features []LedgerFeature `json:"features"`
+	Read     LedgerRead      `json:"read"`
+
+	// The rows and receipts that name no Feature, drawn above every Feature and inside
+	// none of them: every figure below it is short by exactly this much. Null when
+	// there are none.
+	Unattributed *LedgerFeature `json:"unattributed"`
+}
+
+type VerificationLedgerEnvelope struct {
+	VerificationLedger VerificationLedger `json:"verificationLedger"`
 }
 
 // A refusal from this route. It is the ordinary refusal shape with one field

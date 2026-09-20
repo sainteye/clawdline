@@ -43,7 +43,7 @@ import {
  * rather than the conversation — so it is kept, as a page rather than as the
  * app.
  */
-type Page = "sessions" | "dashboard" | "devices" | "projects" | "board" | "usage" | "ledger" | "plan" | "settings" | "work"
+type Page = "sessions" | "dashboard" | "devices" | "projects" | "board" | "usage" | "ledger" | "timeline" | "plan" | "settings" | "work"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -53,19 +53,30 @@ type Asked = "none" | "waiting" | "opened" | "gone"
 // disabled rather than missing, so what is not here can be seen.
 //
 // `nav-board` is hidden by `BoardControls.apply` whatever the answer, and
-// `static.js` never paints it, so it keeps the markup's English. `usage-open` and
-// `nav-ledger` are hidden in the markup and shown only by a board answer that
-// carries `enabled: false`; this daemon's `/v1/board` carries no `enabled`, which
-// `apply` ignores, so they stay as the markup has them. `nav-ledger` also keeps
-// the markup's English: `core/dom.js` has no such id in its element table, so
-// `static.js`'s paint of `T.webLedger` writes to nothing there.
+// `static.js` never paints it, so it keeps the markup's English and stays out
+// of the drawer here too; the Board is reached from a Project, as there.
+//
+// `usage-open` and `nav-ledger` are hidden in the markup and shown by that same
+// `apply` on a board answer that carries `enabled: false` — Board mode off,
+// which is the mode this daemon is always in: it has no Board switch, and its
+// `/v1/board` carries no `enabled` at all. So the two rows are shown here, as
+// the original shows them in the mode this console is in, and the drawer holds
+// the seven pages the original's holds.
+//
+// `nav-ledger` keeps the markup's English over there — `core/dom.js` has no
+// such id in its element table, so `static.js`'s paint of `T.webLedger` writes
+// to nothing — and does not here, because this drawer is React's and reads the
+// catalog like every other row.
+//
+// The Timeline is in neither drawer: a timeline is one Project's, so it is
+// reached from that Project's board and has no row to be in.
 const PAGES: { id: Page; nav: string; key?: string; text?: string; ready: boolean; hidden?: boolean }[] = [
   { id: "sessions", nav: "nav-sessions", key: "webSessions", ready: true },
   { id: "devices", nav: "nav-devices", key: "webDevices", ready: false },
   { id: "projects", nav: "nav-projects", key: "webProjects", ready: false },
   { id: "board", nav: "nav-board", text: "Projects · Board", ready: false, hidden: true },
-  { id: "usage", nav: "usage-open", key: "webUsage", ready: false, hidden: true },
-  { id: "ledger", nav: "nav-ledger", text: "Verification ledger", ready: false, hidden: true },
+  { id: "usage", nav: "usage-open", key: "webUsage", ready: false },
+  { id: "ledger", nav: "nav-ledger", key: "webLedger", ready: false },
   { id: "plan", nav: "nav-plan", key: "webPlan", ready: false },
   { id: "settings", nav: "nav-settings", key: "webSettings", ready: false },
 ]

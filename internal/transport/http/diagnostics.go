@@ -300,6 +300,32 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: n}
 		},
 		capacity.BoardReceipts: func() capacity.Reading { return s.boardReceiptReading() },
+		// The two pages that read this daemon's own history (ledger.go,
+		// timeline.go). They store nothing, so what is measured is what the
+		// next read would walk.
+		capacity.LedgerScan: func() capacity.Reading {
+			tasks, _, _, err := s.historyReadings()
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: tasks}
+		},
+		capacity.LedgerFeatures: func() capacity.Reading {
+			_, features, _, err := s.historyReadings()
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: features}
+		},
+		capacity.TimelineEntries: func() capacity.Reading {
+			_, _, entries, err := s.historyReadings()
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			// The fullest single Project: a timeline is one Project's, so the
+			// row is at its limit when any one of them reaches it.
+			return capacity.Reading{Known: true, Used: entries}
+		},
 		capacity.CloudRelayQueue: func() capacity.Reading {
 			line, ok := cloudLines.Load(s.cfg.Dir)
 			if !ok {

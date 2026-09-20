@@ -356,6 +356,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/usage/analytics.csv", s.usageAnalyticsRoute)
 	mux.HandleFunc("/v1/orchestrator/usage/analytics.json", s.usageAnalyticsRoute)
 	mux.HandleFunc("/v1/orchestrator/usage/project-worktrees", s.usageWorktreesRoute)
+	// The two pages that read this daemon's own history and store nothing
+	// (ledger.go, timeline.go). Both are GET only.
+	mux.HandleFunc("/v1/orchestrator/usage/verification-ledger", s.ledgerRoute)
+	mux.HandleFunc("/v1/timeline", s.timelineRoute)
 	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
 	// Pictures: stored by a session (machine token), read by id (images.go).
 	mux.HandleFunc("/v1/artifacts/images", s.imagesRoute)

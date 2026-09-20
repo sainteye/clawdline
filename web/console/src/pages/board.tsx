@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react"
 import type { PageModule } from "./types.js"
 import { bindBoard, boardIntent, enterProjectBoard, refreshBoardMode, type BoardPage } from "../legacy/board-bridge.js"
+import { openTimeline } from "../legacy/timeline-bridge.js"
 import { ActionConfirm, Info, requestPage, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./board/section.html?raw"
 
@@ -21,9 +22,9 @@ import sectionMarkup from "./board/section.html?raw"
  * through `openLocator` (`bindBoardRoute`), and `BoardControls.refresh()` runs
  * once at start, as `boot` runs it.
  *
- * The Timeline tab is `main.js`'s, not the module's: it enters the Timeline
- * page, which this console does not have. It stays on screen, disabled, as the
- * drawer's rows for pages this daemon cannot show do.
+ * The Timeline tab is `main.js`'s, not the module's: it hands the Timeline
+ * page the Project this one is showing and then changes page, exactly as there.
+ * With no Project open it goes to the Projects page instead, as there.
  *
  * Escape: in the original, `input/keys.js` gives this page its turn after the
  * drawer and the keyboard card — `BoardControls.escape()`, which is the
@@ -40,7 +41,16 @@ function BoardPageView({ shown }: { shown: boolean }) {
   useLayoutEffect(() => {
     if (!page.current) page.current = bindBoard(document, { navigate, openLive })
     const timeline = document.getElementById("board-timeline-tab") as HTMLButtonElement | null
-    if (timeline) timeline.disabled = true
+    const onTimeline = () => {
+      const project = page.current?.state.projectId ?? null
+      if (!project) {
+        navigate("projects")
+        return
+      }
+      openTimeline(project)
+      navigate("timeline")
+    }
+    timeline?.addEventListener("click", onTimeline)
     // Read before App's own routing runs, which is after this.
     wanted.current = boardIntent(location.hash)
     // A link pasted while the page is already up opens at once, as the route
@@ -54,7 +64,10 @@ function BoardPageView({ shown }: { shown: boolean }) {
     window.addEventListener("hashchange", onHash, true)
     // `boot`: the mode, once, whatever page is first.
     refreshBoardMode().catch(() => {})
-    return () => window.removeEventListener("hashchange", onHash, true)
+    return () => {
+      window.removeEventListener("hashchange", onHash, true)
+      timeline?.removeEventListener("click", onTimeline)
+    }
   }, [])
 
   useLayoutEffect(() => {

@@ -3833,6 +3833,218 @@ export interface LeaseWaiter {
 }
 
 /**
+ * One of the review receipt's three axes, and what it answered.
+ */
+export interface LedgerAxis {
+  axis: string
+  findingCount: number
+
+  /**
+   * pass or findings.
+   */
+  status: string
+}
+
+/**
+ * One Feature's card. `label` when this Mac still remembers what the graph was
+ * dispatched for, and null when it does not: the name is swept with the task
+ * registry and the id is forever, so the id is sent beside the name rather than
+ * replaced by it.
+ */
+export interface LedgerFeature {
+  /**
+   * Only on the one-Feature read.
+   */
+  axes?: LedgerAxis[]
+  findings: LedgerFindings
+
+  /**
+   * Null on the block that names no Feature, which is the one card on this page
+   * whose subject is that there is no Feature.
+   */
+  graphId: string | null
+
+  /**
+   * The findings themselves. Only on the one-Feature read.
+   */
+  items?: LedgerFinding[]
+
+  /**
+   * Null once the destination this graph was dispatched for is no longer on this
+   * Mac. A reconstruction would be a guess, and this page's whole subject is that
+   * not knowing has to look different from knowing.
+   */
+  label: string | null
+
+  /**
+   * RFC3339. Null when no row or receipt here carried a time.
+   */
+  lastSeenAt: string | null
+
+  /**
+   * Interval rows counted into this card.
+   */
+  rows: number
+  tasks: number
+  tokens: LedgerTokens
+
+  /**
+   * Only on the one-Feature read.
+   */
+  verdicts?: LedgerVerdict[]
+  verification: LedgerVerification
+}
+
+/**
+ * One finding, as its review receipt wrote it. The evidence is the passage the
+ * finding rests on; a verdict without one is the shape a hallucinating judge
+ * produces, which is why the receipt requires at least one.
+ */
+export interface LedgerFinding {
+  evidence: string[]
+  findingId: string
+  severity: string
+  summary: string
+}
+
+/**
+ * What reviewing this Feature found. `present` with a total of zero is a Feature
+ * somebody reviewed and found nothing in, which is the answer worth reaching and is
+ * said in those words rather than as `0`.
+ */
+export interface LedgerFindings {
+  /**
+   * How many review receipts this figure rests on.
+   */
+  reviewReceipts: number
+  severities: LedgerSeverity[]
+  state: LedgerState
+
+  /**
+   * Null on every state but `present`, so no reader can put a figure where there is
+   * none.
+   */
+  total: number | null
+}
+
+/**
+ * What the read reached, and where it stopped. Two ceilings, and they are not the
+ * same ceiling: `truncated` is the interval scan reaching its limit, and
+ * `featuresListed` short of `featuresFound` is the list itself being cut. A Mac
+ * past either reads a number it found over a smaller number it was shown unless
+ * both are on the wire.
+ */
+export interface LedgerRead {
+  featuresFound: number
+  featuresListed: number
+
+  /**
+   * The receipt read reached its ceiling, so the oldest reviews and verifications
+   * are not in these figures.
+   */
+  receiptsTruncated: boolean
+  rowsScanned: number
+
+  /**
+   * The interval scan reached its ceiling, so older rows are not in these figures.
+   */
+  truncated: boolean
+}
+
+/**
+ * How many findings of one severity. Worst first, in the order the route sorted
+ * them.
+ */
+export interface LedgerSeverity {
+  count: number
+
+  /**
+   * blocking, important or minor: the review receipt's own closed set.
+   */
+  severity: string
+}
+
+/**
+ * What a figure is. `present`: it was measured, and the number beside it is the
+ * measurement. `absent`: this Mac holds no such receipt — never read as a zero,
+ * and never as `nobody did it`, because a receipt whose write failed leaves only a
+ * log line. `unknown`: there are rows and not one of them measured anything, which
+ * is spending nobody can count.
+ */
+export type LedgerState =
+    "present"
+  | "absent"
+  | "unknown"
+
+export const LedgerStateValues: readonly LedgerState[] = ["present", "absent", "unknown"] as const
+
+/**
+ * One token bucket. A floor and a total are two quantities and both reach the
+ * screen: a bucket holding a row that measured only part of what it spent has no
+ * total at all, and says so by sending `total: null` beside a `measured` that is
+ * still a real number.
+ */
+export interface LedgerTokenReading {
+  /**
+   * Rows here that measured only part of what they spent.
+   */
+  incompleteRows: number
+
+  /**
+   * What the rows that did measure add up to. A floor when `total` is null.
+   */
+  measured: number
+  rows: number
+  state: LedgerState
+
+  /**
+   * Null when the bucket holds a row that measured only part of itself: the figure
+   * beside it is a floor, not a total.
+   */
+  total: number | null
+}
+
+/**
+ * The token buckets, in the order they are drawn. `undeclared` is a row whose task
+ * never said which side of the work it was on, and is never added to the
+ * implementation figure beside it: calling it implementation would be a claim about
+ * a side that nothing on the row supports.
+ */
+export interface LedgerTokens {
+  implementation: LedgerTokenReading
+  review: LedgerTokenReading
+  undeclared: LedgerTokenReading
+}
+
+/**
+ * How many review receipts carried one verdict.
+ */
+export interface LedgerVerdict {
+  count: number
+
+  /**
+   * safe_to_land or changes_required: the review receipt's own closed set.
+   */
+  verdict: string
+}
+
+/**
+ * What proving this Feature cost, out of the children's own `verification`
+ * receipts. Runs and seconds are one sentence on screen, because a run count with
+ * no seconds beside it reads as an achievement rather than as a cost.
+ */
+export interface LedgerVerification {
+  /**
+   * Receipts whose last run did not pass.
+   */
+  endedRed: number
+  receipts: number
+  runs: number
+  seconds: number
+  state: LedgerState
+}
+
+/**
  * What a current inventory says about the bound process. An incomplete reading
  * answers `unknown`, never `offline`: absence of evidence is not proof of death.
  */
@@ -5945,6 +6157,192 @@ export interface TaskUsage {
   total: number
 }
 
+/**
+ * The entry bound, on the wire where a reader can see it (timeline-design A4). What
+ * is dropped at the bound is the oldest, and it is a projection of records this
+ * daemon still holds, so nothing is lost by dropping it.
+ */
+export interface TimelineCapacity {
+  entryCount: number
+  entryLimit: number
+}
+
+/**
+ * What kind of work an entry was. `feature` for ordinary delivery, `operation` for
+ * a task whose write set was only tooling or documentation.
+ */
+export type TimelineCategory =
+    "feature"
+  | "operation"
+
+export const TimelineCategoryValues: readonly TimelineCategory[] = ["feature", "operation"] as const
+
+/**
+ * How far one Project's history has been read. It is derived on every read and
+ * stored nowhere, so it can never freeze the way a saved cursor did.
+ */
+export interface TimelineCheckpoint {
+  historyStatus: TimelineHistoryStatus
+  projectId: string
+}
+
+/**
+ * One delivery. The id is the broker task's, because the task is the thing that was
+ * delivered and an id of this projection's own invention would be a second name for
+ * it.
+ */
+export interface TimelineEntry {
+  /**
+   * The work items this delivery is on, as the task's own `work_id` names them.
+   */
+  boardItemIds: string[]
+  events: TimelineEvent[]
+  id: string
+
+  /**
+   * The task's own title, never a summary written for it.
+   */
+  originalTitle: string
+  primaryCategory: TimelineCategory
+  projectId: string
+  projection: TimelineProjection
+  sourceRevisions: TimelineRevision[]
+
+  /**
+   * The delivery's own one-paragraph account of itself, cut to a length the card
+   * can hold. Absent when the task wrote none.
+   */
+  summary?: string
+}
+
+export interface TimelineEnvelope {
+  timeline: TimelineSnapshot
+}
+
+/**
+ * One piece of evidence under an entry, and who said it. `authority` is what wrote
+ * it down — `broker` for this daemon's own landing record — because an event
+ * with no authority is an assertion.
+ */
+export interface TimelineEvent {
+  authority: string
+
+  /**
+   * Unix seconds: when the thing happened. Absent when only the observation time is
+   * known.
+   */
+  effectiveAt?: number
+  kind: string
+
+  /**
+   * Unix seconds: when this Mac learned of it.
+   */
+  observedAt: number
+  result: string
+}
+
+/**
+ * How far back this Project's coverage reaches. `unknown` is the honest answer
+ * while no history importer exists; `capacity` is the entry bound reached, and what
+ * was retained is never removed to make room.
+ */
+export type TimelineHistoryStatus =
+    "complete"
+  | "capacity"
+  | "unknown"
+
+export const TimelineHistoryStatusValues: readonly TimelineHistoryStatus[] = ["complete", "capacity", "unknown"] as const
+
+export interface TimelineProject {
+  id: string
+
+  /**
+   * The repository's own name. Never a reconstruction of one this Mac no longer
+   * holds.
+   */
+  label: string
+  name?: string
+}
+
+/**
+ * What the events below add up to. `availableTargets` is how many targets this
+ * entry is proved available on, which on this daemon is always zero: there is no
+ * deployment evidence producer, and a required target nothing can answer is not the
+ * same as a failure.
+ */
+export interface TimelineProjection {
+  availableTargets: number
+
+  /**
+   * Unix seconds. Absent when nothing under this entry carried one.
+   */
+  effectiveAt?: number
+  observedAt: number
+  requiredTargets: number
+  status: TimelineStatus
+}
+
+/**
+ * One commit an entry rests on, as the landing record proved it. `githubUrl` only
+ * when the repository is a GitHub one this daemon can name with certainty.
+ */
+export interface TimelineRevision {
+  commit: string
+  githubUrl?: string
+  repositoryId: string
+  shortCommit: string
+}
+
+export interface TimelineSnapshot {
+  capacity: TimelineCapacity
+  checkpoints: TimelineCheckpoint[]
+  enabled: boolean
+  entries: TimelineEntry[]
+
+  /**
+   * A keyset cursor — the last entry's time and id — not an offset, so a page
+   * that arrives while records are being written cannot skip an entry
+   * (timeline-design A5). Absent on the last page.
+   */
+  nextCursor?: string
+  project: TimelineProject
+
+  /**
+   * The reading's own counter. It changes when the records under it do; nothing
+   * writes to this projection, so it is never a compare-and-set token.
+   */
+  revision: number
+  selected?: TimelineEntry
+
+  /**
+   * `current`, or `partial` when one of the sources under this reading could not be
+   * read — never an empty list drawn as a quiet Project.
+   */
+  status: string
+  viewer: TimelineViewer
+}
+
+/**
+ * What this Mac can prove about one entry. Only the three this daemon can reach are
+ * here: the Swift app's other nine name deployment outcomes, and a word no producer
+ * can ever write is a promise the screen cannot keep (design-decisions X25).
+ */
+export type TimelineStatus =
+    "landed_to_git"
+  | "upcoming"
+  | "unknown"
+
+export const TimelineStatusValues: readonly TimelineStatus[] = ["landed_to_git", "upcoming", "unknown"] as const
+
+export interface TimelineViewer {
+  /**
+   * False on this daemon, always: the Timeline is a projection of records it
+   * already keeps, so there is no switch to turn it off and nothing a viewer could
+   * manage.
+   */
+  canManage: boolean
+}
+
 export interface TranscriptAction {
   command?: string
 
@@ -6372,6 +6770,27 @@ export interface UsageRow {
    */
   note?: string
   totalTokens: number
+}
+
+/**
+ * The whole answer. `features` and `unattributed` are the list read; `feature` is
+ * the one-Feature read and is absent from the list read.
+ */
+export interface VerificationLedger {
+  feature?: LedgerFeature
+  features: LedgerFeature[]
+  read: LedgerRead
+
+  /**
+   * The rows and receipts that name no Feature, drawn above every Feature and
+   * inside none of them: every figure below it is short by exactly this much. Null
+   * when there are none.
+   */
+  unattributed: LedgerFeature | null
+}
+
+export interface VerificationLedgerEnvelope {
+  verificationLedger: VerificationLedger
 }
 
 /**

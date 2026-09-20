@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "timeline.schema.json",
+  "title": "The Project Timeline",
+  "description": "GET /v1/timeline. A Project's deliveries in the order they happened, and — for each — what this Mac can actually prove about it. The whole reason the feature exists is that a commit, a build, a task that said `success` and an assistant's summary are none of them evidence that something is available to anybody (design-decisions D41, timeline-design A1). This daemon has no producer of deployment evidence, so nothing here is ever drawn as available: an entry is `landed_to_git` when the broker's landing record proves a commit reached its target, and `upcoming` when a delivery has not landed. It is a projection and stores nothing of its own (D01, D04).",
+  "$defs": {
+    "TimelineStatus": {
+      "description": "What this Mac can prove about one entry. Only the three this daemon can reach are here: the Swift app's other nine name deployment outcomes, and a word no producer can ever write is a promise the screen cannot keep (design-decisions X25).",
+      "type": "string",
+      "enum": ["landed_to_git", "upcoming", "unknown"]
+    },
+    "TimelineCategory": {
+      "description": "What kind of work an entry was. `feature` for ordinary delivery, `operation` for a task whose write set was only tooling or documentation.",
+      "type": "string",
+      "enum": ["feature", "operation"]
+    },
+    "TimelineHistoryStatus": {
+      "description": "How far back this Project's coverage reaches. `unknown` is the honest answer while no history importer exists; `capacity` is the entry bound reached, and what was retained is never removed to make room.",
+      "type": "string",
+      "enum": ["complete", "capacity", "unknown"]
+    },
+    "TimelineProject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "description": "The repository's own name. Never a reconstruction of one this Mac no longer holds.", "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "TimelineRevision": {
+      "description": "One commit an entry rests on, as the landing record proved it. `githubUrl` only when the repository is a GitHub one this daemon can name with certainty.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "repositoryId", "shortCommit"],
+      "properties": {
+        "commit": { "type": "string" },
+        "githubUrl": { "type": "string" },
+        "repositoryId": { "type": "string" },
+        "shortCommit": { "type": "string" }
+      }
+    },
+    "TimelineEvent": {
+      "description": "One piece of evidence under an entry, and who said it. `authority` is what wrote it down — `broker` for this daemon's own landing record — because an event with no authority is an assertion.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "kind", "observedAt", "result"],
+      "properties": {
+        "authority": { "type": "string" },
+        "effectiveAt": { "description": "Unix seconds: when the thing happened. Absent when only the observation time is known.", "type": "integer" },
+        "kind": { "type": "string" },
+        "observedAt": { "description": "Unix seconds: when this Mac learned of it.", "type": "integer" },
+        "result": { "type": "string" }
+      }
+    },
+    "TimelineProjection": {
+      "description": "What the events below add up to. `availableTargets` is how many targets this entry is proved available on, which on this daemon is always zero: there is no deployment evidence producer, and a required target nothing can answer is not the same as a failure.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availableTargets", "observedAt", "requiredTargets", "status"],
+      "properties": {
+        "availableTargets": { "type": "integer" },
+        "effectiveAt": { "description": "Unix seconds. Absent when nothing under this entry carried one.", "type": "integer" },
+        "observedAt": { "type": "integer" },
+        "requiredTargets": { "type": "integer" },
+        "status": { "$ref": "#/$defs/TimelineStatus" }
+      }
+    },
+    "TimelineEntry": {
+      "description": "One delivery. The id is the broker task's, because the task is the thing that was delivered and an id of this projection's own invention would be a second name for it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boardItemIds", "events", "id", "originalTitle", "primaryCategory", "projection", "projectId", "sourceRevisions"],
+      "properties": {
+        "boardItemIds": { "description": "The work items this delivery is on, as the task's own `work_id` names them.", "type": "array", "items": { "type": "string" } },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/TimelineEvent" } },
+        "id": { "type": "string" },
+        "originalTitle": { "description": "The task's own title, never a summary written for it.", "type": "string" },
+        "primaryCategory": { "$ref": "#/$defs/TimelineCategory" },
+        "projectId": { "type": "string" },
+        "projection": { "$ref": "#/$defs/TimelineProjection" },
+        "sourceRevisions": { "type": "array", "items": { "$ref": "#/$defs/TimelineRevision" } },
+        "summary": { "description": "The delivery's own one-paragraph account of itself, cut to a length the card can hold. Absent when the task wrote none.", "type": "string" }
+      }
+    },
+    "TimelineCheckpoint": {
+      "description": "How far one Project's history has been read. It is derived on every read and stored nowhere, so it can never freeze the way a saved cursor did.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["historyStatus", "projectId"],
+      "properties": {
+        "historyStatus": { "$ref": "#/$defs/TimelineHistoryStatus" },
+        "projectId": { "type": "string" }
+      }
+    },
+    "TimelineCapacity": {
+      "description": "The entry bound, on the wire where a reader can see it (timeline-design A4). What is dropped at the bound is the oldest, and it is a projection of records this daemon still holds, so nothing is lost by dropping it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entryCount", "entryLimit"],
+      "properties": {
+        "entryCount": { "type": "integer" },
+        "entryLimit": { "type": "integer" }
+      }
+    },
+    "TimelineViewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canManage"],
+      "properties": {
+        "canManage": { "description": "False on this daemon, always: the Timeline is a projection of records it already keeps, so there is no switch to turn it off and nothing a viewer could manage.", "type": "boolean" }
+      }
+    },
+    "TimelineSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capacity", "checkpoints", "enabled", "entries", "project", "revision", "status", "viewer"],
+      "properties": {
+        "capacity": { "$ref": "#/$defs/TimelineCapacity" },
+        "checkpoints": { "type": "array", "items": { "$ref": "#/$defs/TimelineCheckpoint" } },
+        "enabled": { "type": "boolean" },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/TimelineEntry" } },
+        "nextCursor": { "description": "A keyset cursor — the last entry's time and id — not an offset, so a page that arrives while records are being written cannot skip an entry (timeline-design A5). Absent on the last page.", "type": "string" },
+        "project": { "$ref": "#/$defs/TimelineProject" },
+        "revision": { "description": "The reading's own counter. It changes when the records under it do; nothing writes to this projection, so it is never a compare-and-set token.", "type": "integer" },
+        "selected": { "$ref": "#/$defs/TimelineEntry" },
+        "status": { "description": "`current`, or `partial` when one of the sources under this reading could not be read — never an empty list drawn as a quiet Project.", "type": "string" },
+        "viewer": { "$ref": "#/$defs/TimelineViewer" }
+      }
+    },
+    "TimelineEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeline"],
+      "properties": {
+        "timeline": { "$ref": "#/$defs/TimelineSnapshot" }
+      }
+    }
+  }
+}

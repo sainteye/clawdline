@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ledger.schema.json",
+  "title": "The verification ledger",
+  "description": "GET /v1/orchestrator/usage/verification-ledger. One question asked per Feature: what did reviewing it find, what did proving it cost, and how did the tokens divide between building the work and reading it. Every figure arrives as one of three states — `present`, `absent`, `unknown` — and the last two are words rather than a zero, because a page that draws `nobody recorded it` as `it cost nothing` is the defect this route exists to refuse.",
+  "$defs": {
+    "LedgerState": {
+      "description": "What a figure is. `present`: it was measured, and the number beside it is the measurement. `absent`: this Mac holds no such receipt — never read as a zero, and never as `nobody did it`, because a receipt whose write failed leaves only a log line. `unknown`: there are rows and not one of them measured anything, which is spending nobody can count.",
+      "type": "string",
+      "enum": ["present", "absent", "unknown"]
+    },
+    "LedgerSeverity": {
+      "description": "How many findings of one severity. Worst first, in the order the route sorted them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "severity"],
+      "properties": {
+        "count": { "type": "integer" },
+        "severity": { "description": "blocking, important or minor: the review receipt's own closed set.", "type": "string" }
+      }
+    },
+    "LedgerFindings": {
+      "description": "What reviewing this Feature found. `present` with a total of zero is a Feature somebody reviewed and found nothing in, which is the answer worth reaching and is said in those words rather than as `0`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewReceipts", "severities", "state"],
+      "properties": {
+        "reviewReceipts": { "description": "How many review receipts this figure rests on.", "type": "integer" },
+        "severities": { "type": "array", "items": { "$ref": "#/$defs/LedgerSeverity" } },
+        "state": { "$ref": "#/$defs/LedgerState" },
+        "total": { "description": "Null on every state but `present`, so no reader can put a figure where there is none.", "type": "integer", "nullable": true }
+      }
+    },
+    "LedgerVerification": {
+      "description": "What proving this Feature cost, out of the children's own `verification` receipts. Runs and seconds are one sentence on screen, because a run count with no seconds beside it reads as an achievement rather than as a cost.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endedRed", "receipts", "runs", "seconds", "state"],
+      "properties": {
+        "endedRed": { "description": "Receipts whose last run did not pass.", "type": "integer" },
+        "receipts": { "type": "integer" },
+        "runs": { "type": "integer" },
+        "seconds": { "type": "integer" },
+        "state": { "$ref": "#/$defs/LedgerState" }
+      }
+    },
+    "LedgerTokenReading": {
+      "description": "One token bucket. A floor and a total are two quantities and both reach the screen: a bucket holding a row that measured only part of what it spent has no total at all, and says so by sending `total: null` beside a `measured` that is still a real number.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["incompleteRows", "measured", "rows", "state"],
+      "properties": {
+        "incompleteRows": { "description": "Rows here that measured only part of what they spent.", "type": "integer" },
+        "measured": { "description": "What the rows that did measure add up to. A floor when `total` is null.", "type": "integer" },
+        "rows": { "type": "integer" },
+        "state": { "$ref": "#/$defs/LedgerState" },
+        "total": { "description": "Null when the bucket holds a row that measured only part of itself: the figure beside it is a floor, not a total.", "type": "integer", "nullable": true }
+      }
+    },
+    "LedgerTokens": {
+      "description": "The token buckets, in the order they are drawn. `undeclared` is a row whose task never said which side of the work it was on, and is never added to the implementation figure beside it: calling it implementation would be a claim about a side that nothing on the row supports.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementation", "review", "undeclared"],
+      "properties": {
+        "implementation": { "$ref": "#/$defs/LedgerTokenReading" },
+        "review": { "$ref": "#/$defs/LedgerTokenReading" },
+        "undeclared": { "$ref": "#/$defs/LedgerTokenReading" }
+      }
+    },
+    "LedgerVerdict": {
+      "description": "How many review receipts carried one verdict.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "verdict"],
+      "properties": {
+        "count": { "type": "integer" },
+        "verdict": { "description": "safe_to_land or changes_required: the review receipt's own closed set.", "type": "string" }
+      }
+    },
+    "LedgerAxis": {
+      "description": "One of the review receipt's three axes, and what it answered.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axis", "findingCount", "status"],
+      "properties": {
+        "axis": { "type": "string" },
+        "findingCount": { "type": "integer" },
+        "status": { "description": "pass or findings.", "type": "string" }
+      }
+    },
+    "LedgerFinding": {
+      "description": "One finding, as its review receipt wrote it. The evidence is the passage the finding rests on; a verdict without one is the shape a hallucinating judge produces, which is why the receipt requires at least one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "findingId", "severity", "summary"],
+      "properties": {
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "findingId": { "type": "string" },
+        "severity": { "type": "string" },
+        "summary": { "type": "string" }
+      }
+    },
+    "LedgerFeature": {
+      "description": "One Feature's card. `label` when this Mac still remembers what the graph was dispatched for, and null when it does not: the name is swept with the task registry and the id is forever, so the id is sent beside the name rather than replaced by it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findings", "rows", "tasks", "tokens", "verification"],
+      "properties": {
+        "axes": { "description": "Only on the one-Feature read.", "type": "array", "items": { "$ref": "#/$defs/LedgerAxis" } },
+        "findings": { "$ref": "#/$defs/LedgerFindings" },
+        "graphId": { "description": "Null on the block that names no Feature, which is the one card on this page whose subject is that there is no Feature.", "type": "string", "nullable": true },
+        "items": { "description": "The findings themselves. Only on the one-Feature read.", "type": "array", "items": { "$ref": "#/$defs/LedgerFinding" } },
+        "label": { "description": "Null once the destination this graph was dispatched for is no longer on this Mac. A reconstruction would be a guess, and this page's whole subject is that not knowing has to look different from knowing.", "type": "string", "nullable": true },
+        "lastSeenAt": { "description": "RFC3339. Null when no row or receipt here carried a time.", "type": "string", "nullable": true },
+        "rows": { "description": "Interval rows counted into this card.", "type": "integer" },
+        "tasks": { "type": "integer" },
+        "tokens": { "$ref": "#/$defs/LedgerTokens" },
+        "verdicts": { "description": "Only on the one-Feature read.", "type": "array", "items": { "$ref": "#/$defs/LedgerVerdict" } },
+        "verification": { "$ref": "#/$defs/LedgerVerification" }
+      }
+    },
+    "LedgerRead": {
+      "description": "What the read reached, and where it stopped. Two ceilings, and they are not the same ceiling: `truncated` is the interval scan reaching its limit, and `featuresListed` short of `featuresFound` is the list itself being cut. A Mac past either reads a number it found over a smaller number it was shown unless both are on the wire.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["featuresFound", "featuresListed", "receiptsTruncated", "rowsScanned", "truncated"],
+      "properties": {
+        "featuresFound": { "type": "integer" },
+        "featuresListed": { "type": "integer" },
+        "receiptsTruncated": { "description": "The receipt read reached its ceiling, so the oldest reviews and verifications are not in these figures.", "type": "boolean" },
+        "rowsScanned": { "type": "integer" },
+        "truncated": { "description": "The interval scan reached its ceiling, so older rows are not in these figures.", "type": "boolean" }
+      }
+    },
+    "VerificationLedger": {
+      "description": "The whole answer. `features` and `unattributed` are the list read; `feature` is the one-Feature read and is absent from the list read.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["features", "read"],
+      "properties": {
+        "feature": { "$ref": "#/$defs/LedgerFeature" },
+        "features": { "type": "array", "items": { "$ref": "#/$defs/LedgerFeature" } },
+        "read": { "$ref": "#/$defs/LedgerRead" },
+        "unattributed": { "description": "The rows and receipts that name no Feature, drawn above every Feature and inside none of them: every figure below it is short by exactly this much. Null when there are none.", "$ref": "#/$defs/LedgerFeature", "nullable": true }
+      }
+    },
+    "VerificationLedgerEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verificationLedger"],
+      "properties": {
+        "verificationLedger": { "$ref": "#/$defs/VerificationLedger" }
+      }
+    }
+  }
+}

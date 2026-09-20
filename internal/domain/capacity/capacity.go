@@ -189,6 +189,12 @@ const (
 	// at once, and how many screens are held between them.
 	ScreensCaptureSlots  = "screens.capture_slots"
 	CacheTerminalScreens = "cache.terminal_screens"
+	// The two pages that read this daemon's own history: the verification
+	// ledger and the Project Timeline. Both are projections that store
+	// nothing, so what is bounded is the read (limits §3.3).
+	LedgerScan      = "ledger.scan"
+	LedgerFeatures  = "ledger.features"
+	TimelineEntries = "timeline.entries"
 )
 
 // Entry is one row of the register.
@@ -595,6 +601,46 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app.ScreenHeldLimit"},
+		},
+		{
+			// The task records one verification-ledger read counts, newest
+			// first. The tasks grow with every dispatch and store.db bounds
+			// only their bytes, so the read over them is bounded here — the
+			// case limits §3.3 names, and the same reason the device list's
+			// and the subscriptions' read bounds are rows. Past it the oldest
+			// tasks are left out of the figures and the answer says so
+			// (`read.truncated`); they are still in the store, and a narrower
+			// read reaches them, so nothing is lost by leaving them out.
+			Name: LedgerScan, Class: Observation, Unit: Rows,
+			Limit: 4_000, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.ledgerTaskLimit"},
+		},
+		{
+			// The Features one ledger answer lists. How many were found is
+			// sent beside how many were listed, because a Mac past the cap
+			// that is shown only one of the two reads the larger number over
+			// the smaller list — this page's own subject, printed by the page.
+			Name: LedgerFeatures, Class: Observation, Unit: Rows,
+			Limit: 200, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.ledgerFeatureLimit"},
+		},
+		{
+			// One Project's Timeline entries. The Swift app's equivalent
+			// refused new writes here and stopped recording for over a day
+			// with nobody told (timeline-design §0); this row cannot repeat
+			// that, because the Timeline stores nothing — every entry is
+			// re-derived from the broker's records on the next read, so the
+			// oldest going is a shorter answer and never a lost fact. The
+			// count and the limit are both on the wire (timeline-design A4).
+			Name: TimelineEntries, Class: Observation, Unit: Rows,
+			Limit: 500, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.timelineEntryLimit"},
 		},
 	}
 }

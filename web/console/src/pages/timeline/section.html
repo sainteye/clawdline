@@ -1,0 +1,17 @@
+
+    <header class="timeline-head">
+        <button id="timeline-back" type="button">Back</button>
+        <button id="timeline-board-tab" type="button">Board</button>
+        <button id="timeline-refresh" type="button">Refresh</button>
+    </header>
+    <div class="timeline-intro">
+        <canvas id="timeline-project-mark" hidden aria-hidden="true"></canvas>
+        <h1 id="timeline-title" tabindex="-1">Timeline</h1>
+        <p id="timeline-subtitle"></p>
+    </div>
+    <p id="timeline-status" role="status" aria-live="polite"></p>
+    <label><span id="timeline-environment-label">Environment</span> <select id="timeline-environment"></select></label>
+    <label><span id="timeline-category-label">Category</span> <select id="timeline-category"></select></label>
+    <label><input id="timeline-upcoming" type="checkbox"> <span id="timeline-upcoming-label">Include upcoming / Git history</span></label>
+    <div id="timeline-items"></div>
+    <div id="timeline-detail"></div>
