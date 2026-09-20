@@ -19,6 +19,8 @@ import {
 } from "./copied.js"
 import { CARRY_TABLE } from "./carry.js"
 import { afterForget, forgetMachine, honestyIsOurs, type ForgetOutcome } from "./forget.js"
+import { NAME_MAX, renameMachine, type RenameOutcome } from "./rename.js"
+import { setAccountMachines } from "../legacy/devices-bridge.js"
 import { readThroughRelay } from "./install.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
@@ -145,6 +147,14 @@ export function CloudGate({ declared }: { declared: string }) {
   const [forgetting, setForgetting] = useState(false)
   const [forgotten, setForgotten] = useState<readonly string[]>([])
   const [told, setTold] = useState<{ machine: string; outcome: ForgetOutcome } | null>(null)
+  // Renaming one (`rename.ts`): which machine is being renamed, and what the
+  // account answered about the last one. The new name is not written into the
+  // list here, because this list is not the control plane's — it is what the
+  // machines published — so the row keeps saying what its machine last said
+  // and the answer says where the new name has arrived instead.
+  const [naming, setNaming] = useState<CloudMachine | null>(null)
+  const [renaming, setRenaming] = useState(false)
+  const [renamed, setRenamed] = useState<{ machine: string; outcome: RenameOutcome } | null>(null)
 
   const session = useRef<CloudSession | null>(null)
   const line = useRef<CloudConnection | null>(null)
@@ -152,6 +162,14 @@ export function CloudGate({ declared }: { declared: string }) {
   const reader = useRef<RelayReader | null>(null)
   const unlisten = useRef<(() => void) | null>(null)
   const recheck = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // What this tab has forgotten, where the machine source installed once can
+  // read it. The source outlives every render that changes the list.
+  const gone = useRef<readonly string[]>([])
+  gone.current = forgotten
+
+  // The Devices page's list belongs to this gate's line. A gate that is gone
+  // leaves no source behind for a page to read an account through.
+  useEffect(() => () => setAccountMachines(null), [])
 
   useEffect(() => {
     if (transport.kind === "misdeclared") {
@@ -286,6 +304,31 @@ export function CloudGate({ declared }: { declared: string }) {
     [transport, forgetting, remembered, chosen, who],
   )
 
+  /**
+   * Call `machine` something else on this account, once the person has typed
+   * it against the machine's own name.
+   *
+   * Nothing is retried and nothing is assumed: `rename.ts` answers which of
+   * "refused", "no such machine" and "could not be read" it was, and this only
+   * decides where that is said. It is not destructive, so unlike forgetting it
+   * leaves the list and this tab's chosen machine exactly as they were.
+   */
+  const rename = useCallback(
+    async (machine: CloudMachine, name: string) => {
+      if (transport.kind !== "cloud" || renaming) return
+      setRenaming(true)
+      setRenamed(null)
+      const outcome = await renameMachine(transport.config.apiOrigin, machine.id, name)
+      setRenaming(false)
+      setRenamed({ machine: machine.name || machine.label || machine.id, outcome })
+      // A name this page would not send, or a bound the account would refuse,
+      // never left the browser: the question stays open with what was typed.
+      if (outcome.kind === "blank" || outcome.kind === "too_long") return
+      setNaming(null)
+    },
+    [transport, renaming],
+  )
+
   const onUpdate = useCallback(
     (update: CloudUpdate) => {
       switch (update.state) {
@@ -293,6 +336,25 @@ export function CloudGate({ declared }: { declared: string }) {
           const next = update.client
           client.current = next
           setWho({ account: next.account ?? "", device: next.deviceID ?? "" })
+          // The Devices page reads the account's machines through this, and
+          // says so under its heading. It is the client at the moment of the
+          // call rather than this one, because a renewal replaces it
+          // (`legacy/devices-bridge.ts`). A machine this tab has forgotten is
+          // still on the list the relay decrypted, and a card offering "New
+          // session" on it would be the page saying something the account has
+          // stopped being true.
+          setAccountMachines(async () => {
+            const current = client.current
+            if (!current) return { machines: [], syncing: true, retryAfterMs: 1000 }
+            const answer = await current.machines()
+            return {
+              machines: answer.machines.map((m) =>
+                gone.current.includes(m.id) ? { ...m, selectable: false, autoSelectable: false } : { ...m },
+              ),
+              syncing: answer.syncing,
+              retryAfterMs: answer.retryAfterMs,
+            }
+          })
           unlisten.current?.()
           unlisten.current = next.events((event) => {
             // The list is for choosing; once a machine is on screen nobody is looking at it.
@@ -431,6 +493,11 @@ export function CloudGate({ declared }: { declared: string }) {
           onAsk={setAsking}
           onForget={forget}
           onLeave={leave}
+          naming={naming}
+          renaming={renaming}
+          renamed={renamed}
+          onName={setNaming}
+          onRename={rename}
         />
       )}
     </>
@@ -453,9 +520,15 @@ function GateCard(props: {
   onAsk: (machine: CloudMachine | null) => void
   onForget: (machine: CloudMachine) => void
   onLeave: () => void
+  naming: CloudMachine | null
+  renaming: boolean
+  renamed: { machine: string; outcome: RenameOutcome } | null
+  onName: (machine: CloudMachine | null) => void
+  onRename: (machine: CloudMachine, name: string) => void
 }) {
   const { screen, who, machines, syncing, problem, onChoose, onRetry } = props
   const { asking, forgetting, forgotten, told, reading, onAsk, onForget, onLeave } = props
+  const { naming, renaming, renamed, onName, onRename } = props
   const mark = useRef<HTMLCanvasElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
   const go = useRef<HTMLButtonElement>(null)
@@ -470,26 +543,41 @@ function GateCard(props: {
   useLayoutEffect(() => {
     if (asking) cancel.current?.focus({ preventScroll: true })
   }, [asking])
+  // The same rule for renaming, which is reached from the same rows: the
+  // question opens on Cancel, not on the field and not on the button that
+  // writes to the account. The field is one Tab away for whoever wants it.
+  const nameCancel = useRef<HTMLButtonElement>(null)
+  const nameGo = useRef<HTMLButtonElement>(null)
+  const [typed, setTyped] = useState("")
+  useLayoutEffect(() => {
+    if (!naming) return
+    setTyped(naming.name || "")
+    nameCancel.current?.focus({ preventScroll: true })
+  }, [naming])
   const T = L.strings
   // The question belongs to the list it was asked from. A line that drops
   // while it is open puts its own screen back, rather than leaving an
   // irreversible button over a card that is now saying something else.
   const question = asking && screen.at === "machines" ? asking : null
+  const nameQuestion = !question && naming && screen.at === "machines" ? naming : null
+  const open = question ? "forget" : nameQuestion ? "rename" : screen.at
   return (
-    <div className="door" data-step="cloud" data-cloud-screen={question ? "forget" : screen.at}>
+    <div className="door" data-step="cloud" data-cloud-screen={open}>
       <div
         className="door-card"
-        role={question ? "alertdialog" : "dialog"}
+        role={question || nameQuestion ? "alertdialog" : "dialog"}
         aria-modal="true"
         aria-label="clawdline"
-        aria-busy={forgetting ? "true" : undefined}
-        aria-describedby={question ? "cloud-forget-say" : undefined}
+        aria-busy={forgetting || renaming ? "true" : undefined}
+        aria-describedby={question ? "cloud-forget-say" : nameQuestion ? "cloud-rename-say" : undefined}
       >
         <div className="door-head">
           <canvas ref={mark} />
           <b>clawdline</b>
         </div>
-        <section data-step="cloud">{question ? forgetQuestion(question) : body()}</section>
+        <section data-step="cloud">
+          {question ? forgetQuestion(question) : nameQuestion ? renameQuestion(nameQuestion) : body()}
+        </section>
       </div>
     </div>
   )
@@ -562,6 +650,113 @@ function GateCard(props: {
           </button>
         </div>
       </div>
+    )
+  }
+
+  /**
+   * The rename question, in place of the list as the forget question is.
+   *
+   * It names the machine, says who sees the new name, and says the one thing
+   * this console knows that the route does not mention: the list on this
+   * screen is not the control plane's, so a rename that worked will not show
+   * here until that machine reports in again. That is said before the button,
+   * because afterwards it reads as an excuse.
+   */
+  function renameQuestion(machine: CloudMachine) {
+    const name = machine.name || machine.label || machine.id
+    return (
+      <form
+        className="cloud-rename-ask"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!renaming) onRename(machine, typed)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault()
+            if (!renaming) onName(null)
+          }
+        }}
+      >
+        <p className="lede">{nextWord("cloudRenameTitle", { machine: name })}</p>
+        <p className="say" id="cloud-rename-say">
+          {nextWord("cloudRenameAsk", { machine: name })}
+          {"\n"}
+          {nextWord("cloudRenameLater")}
+        </p>
+        <label htmlFor="cloud-rename-name">{nextWord("cloudRenameField")}</label>
+        <input
+          id="cloud-rename-name"
+          type="text"
+          value={typed}
+          maxLength={NAME_MAX}
+          disabled={renaming}
+          autoComplete="off"
+          onChange={(event) => setTyped(event.target.value)}
+        />
+        <div className="buttons">
+          <button
+            className="chip"
+            id="cloud-rename-cancel"
+            type="button"
+            ref={nameCancel}
+            disabled={renaming}
+            onClick={() => onName(null)}
+          >
+            {T.webCancel}
+          </button>
+          <button
+            className="chip"
+            id="cloud-rename-go"
+            type="submit"
+            ref={nameGo}
+            disabled={renaming || !typed.trim() || typed.trim() === (machine.name || "")}
+          >
+            {renaming ? nextWord("cloudRenaming", { machine: name }) : nextWord("cloudRename")}
+          </button>
+        </div>
+      </form>
+    )
+  }
+
+  /**
+   * What the account answered about the last machine this tab tried to rename.
+   *
+   * `blank` and `too_long` never reached the network and say so by naming the
+   * bound rather than the account; the other three are the account's own three
+   * different answers, and the last of them says it is not an answer.
+   */
+  function renameOutcome() {
+    if (!renamed) return null
+    const machine = renamed.machine
+    const outcome = renamed.outcome
+    if (outcome.kind === "renamed") {
+      return (
+        <p className="say" id="cloud-rename-told" data-rename-outcome="renamed">
+          {nextWord("cloudRenamed", { machine, name: outcome.name })}
+          {"\n"}
+          {nextWord("cloudRenameLater")}
+        </p>
+      )
+    }
+    if (outcome.kind === "blank") return null
+    if (outcome.kind === "too_long") {
+      return (
+        <p className="say" id="cloud-rename-told" data-rename-outcome="too_long">
+          {nextWord("cloudRenameTooLong", { max: outcome.max })}
+        </p>
+      )
+    }
+    const word =
+      outcome.kind === "refused"
+        ? "cloudRenameRefused"
+        : outcome.kind === "absent"
+          ? "cloudRenameAbsent"
+          : "cloudRenameUnreadable"
+    return (
+      <p className="say" id="cloud-rename-told" data-rename-outcome={outcome.kind}>
+        {nextWord(word, { machine, code: outcome.code })}
+      </p>
     )
   }
 
@@ -704,6 +899,19 @@ function GateCard(props: {
                           machine. */}
                       {!gone && (
                         <button
+                          className="cloud-rename"
+                          type="button"
+                          data-rename={m.id}
+                          disabled={forgetting || renaming}
+                          title={nextWord("cloudRenameOne", { machine: m.name || m.label || m.id })}
+                          aria-label={nextWord("cloudRenameOne", { machine: m.name || m.label || m.id })}
+                          onClick={() => onName(m)}
+                        >
+                          <span aria-hidden="true">✎</span>
+                        </button>
+                      )}
+                      {!gone && (
+                        <button
                           className="cloud-forget"
                           type="button"
                           data-forget={m.id}
@@ -723,6 +931,7 @@ function GateCard(props: {
               <p className="say calm">{syncing || machines === null ? nextWord("cloudMachinesWaiting") : nextWord("cloudMachinesNone")}</p>
             )}
             {forgetOutcome()}
+            {renameOutcome()}
             {/* The console behind this card is reading a machine that has just
                 been forgotten: choosing another one is a new page, which is
                 what the header's own switch does. */}
