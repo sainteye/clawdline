@@ -1,0 +1,30 @@
+  ---                                                                                                         
+
+  beta
+
+✻ Baked for 1s · done 下午1:55
+     
+❯ Print a small markdown table with two columns (name, value) and two rows. Nothing else.                     
+      
+⏺ ┌─────────┬───────┐                                                                                         
+  │  name   │ value │         
+  ├─────────┼───────┤
+  │ example │ 1     │                                                                                         
+  ├─────────┼───────┤
+  │ sample  │ 2     │
+  └─────────┴───────┘                                                                                         
+                     
+✻ Cooked for 1s · done 下午1:55                                                                               
+                     
+❯ 1. the cloud stopped taking my commands                                                                     
+  2. it says this Mac is no longer online                                                                     
+                                                      
+· Frosting…                                     
+  ⎿  Tip: Running multiple Claude sessions? Use /color and /rename to tell them apart at a glance.          
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                        
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ▄▀▀▀▄ cl-menu-probe  Mac offline from cloud                                                                 
+  ▀▀▀▀▀ /private/tmp/cl-menu-probe  Haiku 4.5                               ctx 20% · $0.03 · 5h 7% · 7d 59%
+  ⏸ manual mode on · ← 1 agent                       

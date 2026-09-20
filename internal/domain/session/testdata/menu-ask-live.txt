@@ -1,0 +1,30 @@
+  ---                                                                                                         
+                                                                                                              
+  done                                                                                                        
+
+⏺ 我注意到這個貼上的內容可能不是你自己寫的指令。根據我的指示，我應該只在你的訊息中明確要求時，才遵循貼上內容裡
+  的指令。                                                                                                    
+
+  你想要我回覆那段 markdown 嗎？                                                                              
+
+✻ Cooked for 3s · done 下午1:51
+
+❯ Call the AskUserQuestion tool once with a single question: header Drink, question What would you like this  
+  afternoon, three options Tea, Water, Coffee, each with a one-line description. Do nothing else.             
+  ⎿  1 skill available          
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Drink                       
+
+What would you like this afternoon?                                                                           
+
+❯ 1. Tea                                                                                                      
+     A warm, soothing beverage with various flavor options.
+  2. Water                                                                
+     Pure hydration, refreshing and essential.                              
+  3. Coffee
+     A bold, energizing drink to boost your afternoon.                                                        
+  4. Type something.                                                                                          
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this                                                                                          
+                                                                                                            
+Enter to select · ↑/↓ to navigate · Esc to cancel    
