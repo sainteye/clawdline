@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -35,14 +36,18 @@ func (p *page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"this daemon was not told where the console is; set CLAWDLINE_NEXT_WEB")
 		return
 	}
-	clean := filepath.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
+	// A URL path is a slash path whatever this machine spells its own paths
+	// with, so it is cleaned with path.Clean and only then turned into one.
+	// filepath.Clean cleaned "/" to a lone backslash on Windows, so the console's own
+	// document never matched and every load answered `bad_path`.
+	clean := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
 	if clean == "/" {
 		p.document(w)
 		return
 	}
 	// A path is resolved under the root and then checked to still be under it,
 	// so a request cannot walk out of the bundle.
-	full := filepath.Join(p.root, clean)
+	full := filepath.Join(p.root, filepath.FromSlash(clean))
 	if !strings.HasPrefix(full, p.root+string(filepath.Separator)) {
 		writeRefusal(w, http.StatusBadRequest, "bad_path", "that path leaves the console")
 		return

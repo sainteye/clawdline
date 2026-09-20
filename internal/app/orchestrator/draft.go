@@ -462,7 +462,10 @@ func IsTaskSecret(v string) bool {
 }
 
 func usableDir(path string) bool {
-	if path == "" || !strings.HasPrefix(path, "/") || strings.ContainsRune(path, 0) {
+	// filepath.IsAbs rather than a leading slash: `C:\work\repo` is an
+	// absolute path, and testing the spelling refused every Windows brief
+	// with a message saying the path was not absolute when it was.
+	if path == "" || !filepath.IsAbs(path) || strings.ContainsRune(path, 0) {
 		return false
 	}
 	info, err := os.Stat(path)

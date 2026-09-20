@@ -1,6 +1,7 @@
 package taskdir
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -67,8 +68,18 @@ func readBounded(path string, limit int64) ([]byte, error) {
 	if int64(len(body)) > limit {
 		return nil, fmt.Errorf("%s: %w (%d bytes)", filepath.Base(path), ErrTooLarge, limit)
 	}
-	return body, nil
+	// A UTF-8 byte-order mark is what a default Windows text writer puts in
+	// front of a file, and it is not part of the JSON. Left in, it read as
+	// "result.json.tmp is not readable JSON" to a child that had written
+	// perfectly good JSON, and the refusal never named the three bytes. It is
+	// dropped here, at the one place these files are read, so what is parsed
+	// and what is copied on to result.json are the same bytes.
+	return bytes.TrimPrefix(body, utf8BOM), nil
 }
+
+// utf8BOM is EF BB BF: a zero-width no-break space encoded in UTF-8, which
+// Windows tools write to mark a file as UTF-8 and JSON has no room for.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
 // ErrResultExists is an adoption that found result.json already there. The
 // file that is there is the child's own, renamed into place, and adoption
