@@ -68,6 +68,11 @@ export const CARRIED = {
   "schedule-update": "PATCH /v1/orchestrator/schedules/{id}",
   schedules: "GET /v1/orchestrator/schedules",
   send: "POST /v1/sessions/{id}/send",
+  "snippet-create": "POST /v1/snippets",
+  "snippet-delete": "DELETE /v1/snippets/{id}",
+  "snippet-order": "POST /v1/snippets/order",
+  "snippet-update": "PATCH /v1/snippets/{id}",
+  snippets: "GET /v1/snippets",
   start: "POST /v1/places/{id}/start[/{assistant}[/{model}]]",
   transcript: "GET /v1/transcript?session={id}",
   voice: "POST /v1/voice",
@@ -122,7 +127,6 @@ export const NO_MAC_ROUTE = {
   schedule: "This Mac does not answer one schedule in full over Clawdline Cloud: the list is read here, and a schedule's runs and its form are opened on the Mac.",
   shell: "A session's shell is not read over Clawdline Cloud: read it on the Mac.",
   skills: "A session's skills are not listed over Clawdline Cloud: read them on the Mac.",
-  snippets: "Snippets are not carried over Clawdline Cloud yet: open them on the Mac.",
   timeline: "A project's timeline is not read over Clawdline Cloud yet: read it on the Mac.",
 } as const
 
@@ -197,7 +201,10 @@ export function uncarriedWordOf(method: string, path: string): string {
     return ""
   }
   const [head, a, b] = segments
-  if (head === "snippets") return "snippets"
+  // `/v1/snippets*` is not here any more: the list and the four writes are
+  // carried, so they are parsed once — by the reader's own case and by
+  // `writeRoute` — and naming them a second time here would be a second
+  // spelling to keep right.
   if (head === "board") return method === "GET" ? "board" : "board.items"
   if (head === "timeline") return "timeline"
   if (head === "diagnostics" && a === "report") return "diagnostics.report"

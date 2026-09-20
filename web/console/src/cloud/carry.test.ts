@@ -94,6 +94,28 @@ class FakeMac implements CloudWriteClient {
   voice() {
     return Promise.resolve({})
   }
+  snippets(identity: CloudIdentity) {
+    this.asked.push("snippets:" + identity.machine + "/" + identity.session)
+    return Promise.resolve({
+      snippets: [
+        { id: "sn-1", machine: "mac-a", scope: "global", title: "a title", body: "a body" },
+        { id: "sn-2", machine: "mac-b", scope: "global", title: "elsewhere", body: "another Mac's" },
+      ],
+      at: 9,
+    })
+  }
+  createSnippet() {
+    return Promise.resolve({})
+  }
+  updateSnippet() {
+    return Promise.resolve({})
+  }
+  deleteSnippet() {
+    return Promise.resolve({})
+  }
+  orderSnippets() {
+    return Promise.resolve({})
+  }
 }
 
 function seam(mac: FakeMac) {
@@ -132,23 +154,28 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["PATCH", "/v1/orchestrator/schedules/sch-1"],
     ["DELETE", "/v1/orchestrator/schedules/sch-1"],
     ["POST", "/v1/orchestrator/schedules/sch-1/run"],
+    ["POST", "/v1/snippets"],
+    ["PATCH", "/v1/snippets/sn-1"],
+    ["DELETE", "/v1/snippets/sn-1"],
+    ["POST", "/v1/snippets/order"],
   ]
   for (const [method, path] of routes) {
     const word = writeRoute(method, path)?.word
     assert.ok(word, method + " " + path + " parses to no route")
     assert.ok(word! in CARRIED, method + " " + path + " asks for " + word + ", which CARRIED does not list")
   }
-  // `/v1/transcript` and the schedule list are carried by the reader rather
-  // than by a route, and they are in the table for the same reason the rest
-  // are: the guard reads the table.
+  // `/v1/transcript` and the two lists are carried by the reader rather than
+  // by a route, and they are in the table for the same reason the rest are:
+  // the guard reads the table.
   assert.ok("transcript" in CARRIED)
   assert.ok("schedules" in CARRIED)
-  // 21, not the 16 this was last measured at: the schedule list and the four
-  // schedule writes moved out of DEFERRED, whose sentences had been saying
-  // this console did not read or write schedules long after the Mac started
-  // answering all five. The count is re-measured rather than carried over — a
-  // number copied across a change is the one nobody checks.
-  assert.equal(Object.keys(CARRIED).length, 21)
+  assert.ok("snippets" in CARRIED)
+  // 26, counted again on this tree and not carried over from the 21 this was
+  // last measured at: the snippet list and the four snippet writes moved out
+  // of NO_MAC_ROUTE, where the list had been sitting because the Mac's
+  // catalog really did know the word and have no route behind it. A number
+  // copied across a change is the one nobody checks.
+  assert.equal(Object.keys(CARRIED).length, 26)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -175,13 +202,18 @@ test("every route the table says is answered here is answered here, with no word
 test("a route this console does not carry is refused by the word it stands for", async () => {
   const mac = new FakeMac()
   const reader = seam(mac)
-  // The one the person met: 常用句, a word this Mac has no route for at all.
-  const res = await reader.fetch("/v1/snippets?session=s1")
+  // 常用句 used to be here — a word this Mac knew and had no route for, so
+  // the page refused the read to itself. It is carried now, and the shape it
+  // left behind is the one this asserts on a word that still is not: a
+  // session's skills.
+  const res = await reader.fetch("/v1/sessions/s1/skills")
   assert.equal(res.status, 501)
   const body = (await res.json()) as { error: string; detail: string }
   assert.equal(body.error, "cloud_not_carried", "the code the screens choose their sentence by")
-  assert.equal(body.detail, NO_MAC_ROUTE.snippets)
+  assert.equal(body.detail, NO_MAC_ROUTE.skills)
   assert.match(body.detail, /on the Mac/, "a named refusal says what can be done instead")
+  assert.equal(uncarriedWordOf("GET", "/v1/snippets"), "", "the snippet list is carried, so it stands for nothing here")
+  assert.equal(uncarried("snippets"), "", "a carried word has no refusal sentence")
   // A word this Mac answers and this console has not carried yet says its own
   // sentence too, not the same one.
   assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/git"), "git")
@@ -227,19 +259,19 @@ test("the seam says what this Mac can do that this bundle never asks for", async
   const mac = new FakeMac()
   const reader = seam(mac)
   assert.equal(reader.drift(), null, "no descriptor is not agreement")
-  mac.commands = [...Object.keys(CARRIED), "snippets", "board"]
-  assert.deepEqual(reader.drift(), { notCarried: ["board", "snippets"], notOnThisMac: [] })
+  mac.commands = [...Object.keys(CARRIED), "shell", "board"]
+  assert.deepEqual(reader.drift(), { notCarried: ["board", "shell"], notOnThisMac: [] })
   mac.commands = Object.keys(CARRIED).filter((word) => word !== "info")
   assert.deepEqual(reader.drift(), { notCarried: [], notOnThisMac: ["info"] })
 
   // And it reaches this page's own log, once, the first time the list is read.
-  mac.commands = [...Object.keys(CARRIED), "snippets"]
+  mac.commands = [...Object.keys(CARRIED), "shell"]
   const fresh = seam(mac)
   await fresh.fetch("/v1/sessions")
   await fresh.fetch("/v1/sessions")
   const said = fresh.log.filter((row) => row.code === "cloud_vocabulary_drift")
   assert.equal(said.length, 1, "said once, not on every reading")
-  assert.equal(said[0].word, "snippets")
+  assert.equal(said[0].word, "shell")
 })
 
 test("the words are this build's own catalog, and the document says which", async () => {

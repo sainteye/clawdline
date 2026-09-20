@@ -72,10 +72,23 @@ import {
  *     editor opens for a new snippet, through the same `userMessageEntries` the
  *     我傳出的訊息 sheet uses — so the two cannot disagree about which turn that
  *     is, at the cost of one read nobody waits on.
- *   - The Cloud does not carry these routes. The relay refuses the read by name
- *     (`cloud_not_carried`), which lands in the sheet's own note where the list
- *     would be, and the `＋` is not drawn beside an error — so a hosted console
- *     says what it cannot do instead of showing an empty list.
+ *   - Over Clawdline Cloud the list is the whole machine's and names no
+ *     project: the wire carries no session (`cloud/carry.ts`), so `snippetGroups`
+ *     groups by this session's own `cwd` instead of by the project the Mac
+ *     resolved. A session standing in a subdirectory of its project, or in a
+ *     worktree, therefore sees its global snippets and an empty project group
+ *     where the same session on this machine's own network sees both. A
+ *     refusal still lands in the sheet's own note where the list would be, and
+ *     the `＋` is not drawn beside an error.
+ *
+ * **Whose snippets these are.** The machine's. They live in this daemon's own
+ * SQLite (`internal/adapters/store/snippets.go`), they are filed against
+ * directories that exist on it, and the relay publishes them per machine — so
+ * two Macs on one account have two sets and neither is "mine". The sheet says
+ * which machine whenever the row it was opened on names one, which is exactly
+ * when this console is reading a machine across the relay and more than one
+ * could have been meant. On the daemon's own page there is only ever one, and
+ * naming it there would be furniture.
  */
 /**
  * The sentence for a failure, said by its code and never by the machine's
@@ -165,10 +178,12 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
   useEffect(() => () => void (alive.current = false), [])
 
   const may = snippetActions(SNIPPET_CONTROLS, false)
-  const model: SnippetModel = snippetGroups(answer, {
-    machine: (row as { machine?: string }).machine ?? null,
-    project: row.cwd ?? null,
-  })
+  // A row that names a machine is a row read across the relay — the local
+  // daemon's own `/v1/sessions` carries no such field — and that is the one
+  // case where "whose snippets are these" has more than one answer.
+  const machine = (row as { machine?: string }).machine ?? null
+  const model: SnippetModel = snippetGroups(answer, { machine, project: row.cwd ?? null })
+  const whose = machine ? L.machineFor(row).label : ""
   const shown = snippetOrder(model)
   const projectKey = model.project ? model.project.key : ""
   const editorOpen = !!draft
@@ -307,14 +322,14 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
     if (!press) return
     onClose()
     appendToComposer(press.body)
-    if (press.create) void createSnippet(press.create).catch(() => {})
+    if (press.create) void createSnippet(row.id, press.create).catch(() => {})
   }
 
   const remove = (snippet: Snippet | undefined) => {
     if (!snippet || !may.remove) return
     setMenuFor(-1)
     wantFocus("data-snippet-more", snippet)
-    void write(() => deleteSnippet(snippet.id), { thenClose: true })
+    void write(() => deleteSnippet(row.id, snippet.id), { thenClose: true })
   }
 
   const move = (snippet: Snippet | undefined, delta: number) => {
@@ -329,7 +344,7 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
     // step of the same journey rather than three presses to reopen a menu.
     setMenuFor(shown.indexOf(snippet) + delta)
     wantFocus(delta < 0 ? "data-snippet-up" : "data-snippet-down", snippet)
-    void write(() => orderSnippets(body), { keepScroll: true })
+    void write(() => orderSnippets(row.id, body), { keepScroll: true })
   }
 
   const swapScope = (snippet: Snippet | undefined) => {
@@ -338,7 +353,7 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
     if (!patch) return
     setMenuFor(-1)
     wantFocus("data-snippet-more", snippet)
-    void write(() => updateSnippet(snippet.id, patch as Record<string, string>))
+    void write(() => updateSnippet(row.id, snippet.id, patch as Record<string, string>))
   }
 
   const openEditor = (of: Snippet | null) => {
@@ -394,13 +409,13 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
         return
       }
       const id = editing.id
-      void write(() => updateSnippet(id, patch), { thenClose: true })
+      void write(() => updateSnippet(row.id, id, patch), { thenClose: true })
       return
     }
     if (!may.create) return
     const body = snippetCreateBody(draft)
     if (!body) return
-    void write(() => createSnippet(body), { thenClose: true })
+    void write(() => createSnippet(row.id, body), { thenClose: true })
   }
 
   const rowAt = (target: Element, attribute: string): Snippet | undefined =>
@@ -480,7 +495,7 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
           <div className="snippets-heading">
             <h2 id="snippets-title">{T.webSnippets}</h2>
             <span className="snippets-where" id="snippets-where">
-              {model.project ? model.project.label : ""}
+              {[whose, model.project ? model.project.label : ""].filter(Boolean).join(" · ")}
             </span>
           </div>
           {/* The only writing control outside the list, so the only one this

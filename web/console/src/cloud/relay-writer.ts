@@ -112,6 +112,30 @@ export interface CloudWriteClient extends CloudReadClient {
   updateSchedule?(id: string, schedule: unknown): Promise<unknown>
   deleteSchedule?(id: string): Promise<unknown>
   runSchedule?(id: string): Promise<unknown>
+  /**
+   * The four snippet writes. Each names the machine whose settings change
+   * through a session identity — only its `machine` is read
+   * (`_snippetRequest`) — because a snippet id, or the first machine in a
+   * snapshot, is not authority to choose which Mac gets edited.
+   *
+   * They mint their own request id per call, which is what becomes the Mac's
+   * `Idempotency-Key` (`cloudops.route`). That matches the local path rather
+   * than diverging from it: `session/snippets-api.ts` mints a fresh key per
+   * press too, so one press is one key on either transport. What the key buys
+   * is the same on both — the Mac files the outcome under it and answers a
+   * resend with the first answer instead of writing twice.
+   *
+   * `orderSnippets` takes the group and its complete order separately, and the
+   * copied client assembles the `ordering` object the Mac's word carries; the
+   * local route reads the same three fields under no name at all.
+   *
+   * Optional for the reason the push words are: a copied client older than
+   * them is refused by name rather than throwing where nobody is catching.
+   */
+  createSnippet?(snippet: unknown, identity: CloudIdentity): Promise<unknown>
+  updateSnippet?(id: string, snippet: unknown, identity: CloudIdentity): Promise<unknown>
+  deleteSnippet?(id: string, identity: CloudIdentity): Promise<unknown>
+  orderSnippets?(scope: string, project: string, order: string[], identity: CloudIdentity): Promise<unknown>
   image?(identity: CloudIdentity, id: string): Promise<{ id: string; media_type: string; bytes: Uint8Array }>
   /**
    * The copied client's one read, which `answer` itself calls for a Mac that
@@ -164,6 +188,14 @@ export type WriteRoute =
   | { op: "schedule-update"; word: Carried<"schedule-update">; schedule: string }
   | { op: "schedule-delete"; word: Carried<"schedule-delete">; schedule: string }
   | { op: "schedule-run"; word: Carried<"schedule-run">; schedule: string }
+  // The four snippet writes. None carries a session: the snippet belongs to
+  // the machine and not to the session, and the session the sheet was opened
+  // on rides in the query, where `carry` reads it — so `sessionOf` leaves them
+  // alone and a snippet saved does not mark a transcript stale.
+  | { op: "snippet-create"; word: Carried<"snippet-create"> }
+  | { op: "snippet-update"; word: Carried<"snippet-update">; snippet: string }
+  | { op: "snippet-delete"; word: Carried<"snippet-delete">; snippet: string }
+  | { op: "snippet-order"; word: Carried<"snippet-order"> }
   // `interrupt` and `title` are not Cloud words at all — not here and not in
   // the Swift app's vocabulary — so this one is a plain string.
   | { op: "uncarried"; word: string; session?: string }
@@ -285,7 +317,21 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (method === "PATCH" || method === "PUT") return { op: "schedule-update", word: "schedule-update", schedule: b }
     if (method === "DELETE") return { op: "schedule-delete", word: "schedule-delete", schedule: b }
   }
+  // And the two snippet writes that are not a POST, for the same reason: a
+  // snippet is saved with PATCH and removed with DELETE, exactly as
+  // `session/snippets-api.ts` spells them against a daemon on this machine's
+  // own network.
+  if (head === "snippets" && a && a !== "order" && segments.length === 2) {
+    if (method === "PATCH" || method === "PUT") return { op: "snippet-update", word: "snippet-update", snippet: a }
+    if (method === "DELETE") return { op: "snippet-delete", word: "snippet-delete", snippet: a }
+  }
   if (method !== "POST") return null
+  if (head === "snippets") {
+    // `GET /v1/snippets` is the reader's, and falls out above.
+    if (segments.length === 1) return { op: "snippet-create", word: "snippet-create" }
+    if (segments.length === 2 && a === "order") return { op: "snippet-order", word: "snippet-order" }
+    return null
+  }
   if (head === "orchestrator" && a === "schedules") {
     // `GET /v1/orchestrator/schedules` is the reader's, and falls out above.
     if (segments.length === 2) return { op: "schedule-create", word: "schedule-create" }
@@ -373,6 +419,17 @@ function spellingOf(route: WriteRoute): Spelling {
     case "schedule-delete":
     case "schedule-run":
       return "nested"
+    // The snippet routes are the other way round: `writeSnippetRefusal` and
+    // `writeRefusal` (internal/transport/http/snippets.go) both answer the
+    // flat `{"error":"code","detail":"…"}`, and `session/snippets-api.ts`
+    // reads both spellings — it has to, because the gate in front of them
+    // answers the nested one. Named so that the seam sends the refusal in the
+    // spelling the route itself would have sent.
+    case "snippet-create":
+    case "snippet-update":
+    case "snippet-delete":
+    case "snippet-order":
+      return "flat"
     default:
       return "nested"
   }
@@ -567,6 +624,48 @@ export class RelayWriter {
         }
         return client.runSchedule(route.schedule)
       }
+      case "snippet-create": {
+        // The sheet's own body, whole: `view/snippets-data.js`'s
+        // `snippetCreateBody` gives both transports the same flat request the
+        // local route reads (`title`, `body`, `scope`, `project`), and the Mac
+        // is what decides whether it is a snippet and where it lands.
+        const snippet = await bodyOf(init)
+        if (typeof client.createSnippet !== "function") {
+          throw failure("cloud_not_carried", "snippet-create", 501)
+        }
+        return client.createSnippet(snippet, this.snippetIdentity(url))
+      }
+      case "snippet-update": {
+        const snippet = await bodyOf(init)
+        if (typeof client.updateSnippet !== "function") {
+          throw failure("cloud_not_carried", "snippet-update", 501)
+        }
+        return client.updateSnippet(route.snippet, snippet, this.snippetIdentity(url))
+      }
+      case "snippet-delete": {
+        if (typeof client.deleteSnippet !== "function") {
+          throw failure("cloud_not_carried", "snippet-delete", 501)
+        }
+        return client.deleteSnippet(route.snippet, this.snippetIdentity(url))
+      }
+      case "snippet-order": {
+        // Taken apart here and put together again by the copied client, which
+        // is the producer for this word: it spells the sub-document
+        // `ordering`, and the local route reads the same three fields under no
+        // name at all. Neither spelling is derived from the other, so the one
+        // that crosses the relay is the one the Mac's word carries.
+        const body = await bodyOf(init)
+        if (typeof client.orderSnippets !== "function") {
+          throw failure("cloud_not_carried", "snippet-order", 501)
+        }
+        const order = Array.isArray(body.order) ? body.order.filter((id): id is string => typeof id === "string") : []
+        return client.orderSnippets(
+          typeof body.scope === "string" ? body.scope : "",
+          typeof body.project === "string" ? body.project : "",
+          order,
+          this.snippetIdentity(url),
+        )
+      }
       case "uncarried":
         throw failure("cloud_not_carried", route.word, 501)
     }
@@ -640,6 +739,28 @@ export class RelayWriter {
     const identity = row.identity
     if (identity && typeof identity.machine === "string" && typeof identity.session === "string") return identity
     return { machine: this.host.machine, session: typeof row.session === "string" ? row.session : session }
+  }
+
+  /**
+   * Which Mac a snippet write changes, from the session the sheet was opened
+   * on.
+   *
+   * Only the `machine` half is read on the other side (`_snippetRequest`), and
+   * this seam already answers for one machine, so nothing here has to be
+   * looked up in a session list — which also means a write does not wait on
+   * one. The session travels anyway because it is what makes the identity
+   * true: a snippet saved from this sheet is saved on the Mac this session is
+   * on, and an identity that named a machine and no session would be a
+   * different claim.
+   *
+   * A write that names no session is refused rather than aimed at a guess.
+   * Both halves of the sheet name one (`session/snippets-api.ts`), so this is
+   * a caller that is not this sheet.
+   */
+  private snippetIdentity(url: URL): CloudIdentity {
+    const session = url.searchParams.get("session")
+    if (!session) throw failure("bad_request", "a snippet write names the session it was made from", 400)
+    return { machine: this.host.machine, session }
   }
 
   private async row(client: CloudWriteClient, session: string): Promise<CloudRow | undefined> {

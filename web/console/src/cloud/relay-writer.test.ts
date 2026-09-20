@@ -121,6 +121,18 @@ class FakeClient implements CloudWriteClient {
   runSchedule(id: string) {
     return this.act("runSchedule", [id], { ok: true, task_id: "t-1" })
   }
+  createSnippet(snippet: unknown, identity: CloudIdentity) {
+    return this.act("createSnippet", [snippet, identity], { id: "sn-9", title: "a title", body: "a body", scope: "global", position: 0 })
+  }
+  updateSnippet(id: string, snippet: unknown, identity: CloudIdentity) {
+    return this.act("updateSnippet", [id, snippet, identity], { id, title: "a title", body: "a body", scope: "global", position: 0 })
+  }
+  deleteSnippet(id: string, identity: CloudIdentity) {
+    return this.act("deleteSnippet", [id, identity], { ok: true, deleted: id })
+  }
+  orderSnippets(scope: string, project: string, order: string[], identity: CloudIdentity) {
+    return this.act("orderSnippets", [scope, project, order, identity], { ok: true, scope, snippets: [] })
+  }
   image(identity: CloudIdentity, id: string) {
     return this.act("image", [identity, id], { id, media_type: "image/png", bytes: new Uint8Array([137, 80, 78, 71]) }) as Promise<{
       id: string
@@ -180,6 +192,19 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["GET", "/v1/orchestrator/schedules/sch-1", null],
     ["POST", "/v1/orchestrator/schedules/sch-1", null],
     ["DELETE", "/v1/orchestrator/schedules", null],
+    ["POST", "/v1/snippets", "snippet-create"],
+    ["PATCH", "/v1/snippets/sn-1", "snippet-update"],
+    ["DELETE", "/v1/snippets/sn-1", "snippet-delete"],
+    ["POST", "/v1/snippets/order", "snippet-order"],
+    // `order` is a name no snippet id may be, on this side as on the Mac's
+    // (internal/transport/http/snippets.go says so of its own mux), so the
+    // group's order is never parsed as a snippet called "order".
+    ["PATCH", "/v1/snippets/order", null],
+    ["DELETE", "/v1/snippets/order", null],
+    // The list is a read and is answered by `relay-reader.ts`, not here.
+    ["GET", "/v1/snippets", null],
+    ["GET", "/v1/snippets/sn-1", null],
+    ["POST", "/v1/snippets/sn-1", null],
     // The key is a read and is answered by `relay-reader.ts`, not here.
     ["GET", "/v1/push/key", null],
     ["POST", "/v1/push/key", null],
@@ -684,6 +709,100 @@ test("a client that cannot write schedules is refused by name", async () => {
     const res = await reader.fetch(path, { ...post({}), method })
     assert.equal(res.status, 501, method + " " + path)
     assert.equal((await json<{ error: { code: string } }>(res)).error.code, "cloud_not_carried")
+  }
+  assert.deepEqual(client.calls, [], "nothing was asked of the Mac")
+})
+
+// 常用句 from a phone: the sheet's own five requests, unchanged
+// (`session/snippets-api.ts` spells them against a daemon on this machine's
+// own network), reaching the copied client's four snippet methods — each of
+// which names the Mac whose settings change through the session the sheet was
+// opened on.
+test("the snippet sheet's four writes reach the Mac as its own four words", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const identity = { machine: "mac-a", session: "s1" }
+  const draft = { title: "a title", body: "a body", scope: "global" }
+
+  const made = await reader.fetch("/v1/snippets?session=s1", post(draft, { "Idempotency-Key": "press-1" }))
+  assert.equal(made.status, 200)
+  assert.deepEqual(await json(made), { id: "sn-9", title: "a title", body: "a body", scope: "global", position: 0 })
+
+  const saved = await reader.fetch("/v1/snippets/sn%209?session=s1", {
+    ...post(draft, { "Idempotency-Key": "press-2" }), method: "PATCH",
+  })
+  assert.equal(saved.status, 200)
+
+  const removed = await reader.fetch("/v1/snippets/sn-9?session=s1", {
+    method: "DELETE", headers: { "Idempotency-Key": "press-3" },
+  })
+  assert.equal(removed.status, 200)
+
+  const ordered = await reader.fetch("/v1/snippets/order?session=s1",
+    post({ scope: "project", project: "/tmp/p", order: ["sn-9", "sn-8"] }, { "Idempotency-Key": "press-4" }))
+  assert.equal(ordered.status, 200)
+
+  assert.deepEqual(client.calls, [
+    ["createSnippet", draft, identity],
+    ["updateSnippet", "sn 9", draft, identity],
+    ["deleteSnippet", "sn-9", identity],
+    // Taken apart here and put back together by the copied client, which is
+    // the producer for this word: `ordering` is its spelling and the local
+    // route reads the same three fields under no name at all.
+    ["orderSnippets", "project", "/tmp/p", ["sn-9", "sn-8"], identity],
+  ])
+  assert.deepEqual(reader.log.map((x: { word?: string; answer: string }) => [x.word, x.answer]), [
+    ["snippet-create", "relay"], ["snippet-update", "relay"],
+    ["snippet-delete", "relay"], ["snippet-order", "relay"],
+  ])
+})
+
+// The snippet routes answer the flat `{"error":"code","detail":"…"}`
+// (internal/transport/http/snippets.go), which is what `snippets-api.ts`
+// branches on — and the limits ride beside it in `counts`, where the sheet
+// reads them.
+test("a refused snippet write comes back in the spelling its own route answers", async () => {
+  const client = new FakeClient()
+  client.fail.createSnippet = failureFromMac(
+    { code: "snippet_limit_reached", layer: "mac_route", message: "this machine holds as many snippets as it may" },
+    409, REF,
+  )
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/snippets?session=s1", post({ title: "a title", body: "a body", scope: "global" }))
+  assert.equal(res.status, 409)
+  const body = await json<{ error: string; detail: string; word: string }>(res)
+  assert.equal(typeof body.error, "string", "the nested spelling would put an object here")
+  assert.equal(body.error, "snippet_limit_reached")
+  assert.equal(reader.log[reader.log.length - 1].code, "snippet_limit_reached")
+})
+
+// A write that names no session is aimed at no machine, and is refused here
+// rather than sent to a guess.
+test("a snippet write that names no session is refused before anything is sealed", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/snippets", post({ title: "a title", body: "a body", scope: "global" }))
+  assert.equal(res.status, 400)
+  assert.equal((await json<{ error: string }>(res)).error, "bad_request")
+  assert.deepEqual(client.calls, [], "nothing was asked of the Mac")
+})
+
+// A copied client older than the four words, refused by name rather than
+// thrown as a `TypeError` inside the sheet's own `then`.
+test("a client that cannot write snippets is refused by name", async () => {
+  const client = new FakeClient()
+  const older = client as unknown as Record<string, unknown>
+  for (const name of ["createSnippet", "updateSnippet", "deleteSnippet", "orderSnippets"]) older[name] = undefined
+  const { reader } = seam(client)
+  for (const [method, path] of [
+    ["POST", "/v1/snippets?session=s1"],
+    ["PATCH", "/v1/snippets/sn-9?session=s1"],
+    ["DELETE", "/v1/snippets/sn-9?session=s1"],
+    ["POST", "/v1/snippets/order?session=s1"],
+  ]) {
+    const res = await reader.fetch(path, { ...post({}), method })
+    assert.equal(res.status, 501, method + " " + path)
+    assert.equal((await json<{ error: string }>(res)).error, "cloud_not_carried")
   }
   assert.deepEqual(client.calls, [], "nothing was asked of the Mac")
 })

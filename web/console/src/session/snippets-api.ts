@@ -11,10 +11,17 @@ import type { Snippet, SnippetAnswer, SnippetControls } from "../legacy/snippets
  *
  * `fetch` is looked up per request, as `client.ts` does, because a console
  * reading a machine through Clawdline Cloud has its own `fetch` installed over
- * this origin's `/v1/…` (`cloud/install.ts`). That is how this sheet finds out
- * the Cloud does not carry these routes: the relay answers a typed
- * `cloud_not_carried` refusal, which the sheet says in words, rather than the
- * static host's page coming back as a body that is not JSON.
+ * this origin's `/v1/…` (`cloud/install.ts`). All five are carried there now
+ * (`cloud/carry.ts`), and a refusal still arrives as this daemon's own typed
+ * one rather than as the static host's page coming back as a body that is not
+ * JSON.
+ *
+ * **Every one of them names the session it was made from.** The daemon on this
+ * machine's own network reads `?session=` on the list and ignores it on the
+ * four writes; the relay needs it on all five, because a snippet belongs to a
+ * machine and the session is what says which machine that is
+ * (`cloud/relay-writer.ts`, `snippetIdentity`). Sending it always is one rule
+ * rather than two, and the local routes are unchanged by it.
  */
 
 /** A refusal or a failure, with the code the sheet says it by. */
@@ -102,20 +109,22 @@ function writing(method: string, body?: unknown): RequestInit {
 export const readSnippets = (sessionRowID: string): Promise<SnippetAnswer> =>
   call<SnippetAnswer>("/v1/snippets?session=" + encodeURIComponent(sessionRowID))
 
-export const createSnippet = (body: Record<string, string>): Promise<Snippet> =>
-  call<Snippet>("/v1/snippets", writing("POST", body))
+/** `?session=<row>`, which every one of these carries; see the note above. */
+const on = (sessionRowID: string) => "?session=" + encodeURIComponent(sessionRowID)
 
-export const updateSnippet = (id: string, patch: Record<string, string>): Promise<Snippet> =>
-  call<Snippet>("/v1/snippets/" + encodeURIComponent(id), writing("PATCH", patch))
+export const createSnippet = (sessionRowID: string, body: Record<string, string>): Promise<Snippet> =>
+  call<Snippet>("/v1/snippets" + on(sessionRowID), writing("POST", body))
 
-export const deleteSnippet = (id: string): Promise<{ ok: boolean; deleted: string }> =>
-  call<{ ok: boolean; deleted: string }>("/v1/snippets/" + encodeURIComponent(id), writing("DELETE"))
+export const updateSnippet = (sessionRowID: string, id: string, patch: Record<string, string>): Promise<Snippet> =>
+  call<Snippet>("/v1/snippets/" + encodeURIComponent(id) + on(sessionRowID), writing("PATCH", patch))
 
-export const orderSnippets = (body: {
-  scope: string
-  project?: string
-  order: string[]
-}): Promise<{ ok: boolean }> => call<{ ok: boolean }>("/v1/snippets/order", writing("POST", body))
+export const deleteSnippet = (sessionRowID: string, id: string): Promise<{ ok: boolean; deleted: string }> =>
+  call<{ ok: boolean; deleted: string }>("/v1/snippets/" + encodeURIComponent(id) + on(sessionRowID), writing("DELETE"))
+
+export const orderSnippets = (
+  sessionRowID: string,
+  body: { scope: string; project?: string; order: string[] },
+): Promise<{ ok: boolean }> => call<{ ok: boolean }>("/v1/snippets/order" + on(sessionRowID), writing("POST", body))
 
 /**
  * Which of the five routes this console has, which is all of them: they are
@@ -125,7 +134,10 @@ export const orderSnippets = (body: {
  * function, because the Swift page's relay client carries only the reading half.
  * Here the same question is answered once, as a constant, so the sheet's six
  * call sites still ask it in one place — and a transport that turns out not to
- * carry a write says so in the answer to that write, by name.
+ * carry a write says so in the answer to that write, by name. That is still
+ * the shape over the relay: a copied client older than the four snippet words
+ * answers `cloud_not_carried` for the one that is missing rather than making
+ * the whole sheet read-only.
  */
 export const SNIPPET_CONTROLS: SnippetControls = {
   read: true,

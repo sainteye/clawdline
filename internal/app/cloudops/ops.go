@@ -803,6 +803,33 @@ func init() {
 				}}
 			}},
 
+		// The sentences somebody wrote once, read from a phone.
+		//
+		// **The whole machine's list, and no session in the question.** The
+		// producer sends `{type, session, request}` and nothing else
+		// (`net/cloud-client.js`, `_freshSnippets`), because the rows ride the
+		// `orch/<machine>` inventory rather than answering one session — so the
+		// wire has nowhere to put a session and this read must not invent one.
+		op{name: "snippets", read: true,
+			divergence: "the whole machine's list, unfiltered: the local route takes `?session=` " +
+				"and answers that session's two groups plus the project this machine resolved " +
+				"for it — registry prefix first, then the checkout an isolated worktree was cut " +
+				"from — and this wire carries no session, so the viewer groups the rows by " +
+				"matching `project` against the session's own `cwd` exactly " +
+				"(`view/snippets-data.js`, `snippetGroups`). A session standing in a " +
+				"subdirectory of its project, or in a worktree, therefore sees its global " +
+				"snippets and an empty project group where the same session on this machine's " +
+				"own network sees both",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/snippets"}
+			}},
+
 		op{name: "timeline", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request", "project", "entry", "cursor",
@@ -827,14 +854,6 @@ func init() {
 				p.project, p.entry, p.cursor = project, entry, cursor
 				p.environment, p.category, p.upcoming = environment, category, upcoming
 				return p, true
-			}},
-
-		op{name: "snippets", read: true,
-			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request") {
-					return plan{}, false
-				}
-				return machinePlan(b)
 			}},
 
 		op{name: "schedule", read: true,
@@ -1055,6 +1074,80 @@ func init() {
 					Header: asDevice()}
 			}},
 
+		// The four snippet writes. The key sets are the producer's, word for
+		// word (`net/cloud-client.js`: `createSnippet`, `updateSnippet`,
+		// `deleteSnippet`, `orderSnippets`), and each one hands its
+		// sub-document straight to the local route that owns its shape — this
+		// bridge knows what a request looks like, not what a snippet looks
+		// like.
+		//
+		// They carry `X-Clawdline-Actor: device` for the reason the schedule
+		// writes do, said for this door: `snippetWrite` asks which door the
+		// caller came in by, and the answer decides the name the write is
+		// filed under in the receipt table (`personPrincipal`). Without the
+		// header an in-process Cloud request is this machine's own hand —
+		// `local` — so a person's press from their phone and a script's write
+		// on this machine would share one receipt namespace. It opens nothing:
+		// the route needs a device that may send, which it needed anyway.
+		op{name: "snippet-create",
+			decode: decodeSnippetWrite(false),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/snippets",
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "snippet-update",
+			decode: decodeSnippetWrite(true),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "PATCH", Path: "/v1/snippets/" + segment(p.id),
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "snippet-delete",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				id, ok := b.nonEmpty("id")
+				if !ok {
+					return plan{}, false
+				}
+				p.id = id
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "DELETE", Path: "/v1/snippets/" + segment(p.id),
+					Header: asDevice()}
+			}},
+
+		// One group's complete order. `ordering` is the producer's name for
+		// the body the local route reads under no name at all, which is the
+		// one place these two spellings differ.
+		op{name: "snippet-order",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "ordering") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				document, ok := b.object("ordering", snippetMaximumBytes)
+				if !ok {
+					return plan{}, false
+				}
+				p.document = document
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/snippets/order",
+					Body: p.document, Header: asDevice()}
+			}},
+
 		// The three words that change something about notifications, all
 		// read-level: the Swift bridge lists exactly these three beside the
 		// two diagnostics words in `readLevelCommandTypes`. The write switch
@@ -1230,6 +1323,12 @@ const voiceRate = 16000
 // the route on the other side will read.
 const scheduleMaximumBytes = 256 << 10
 
+// snippetMaximumBytes is what one snippet write weighs on the wire, matching
+// the local route's own reader (`snippetBodyLimit` in internal/transport/http).
+// This bridge does not know what a snippet looks like; it knows how much of one
+// the route on the other side will read.
+const snippetMaximumBytes = 64 << 10
+
 // pushBodyMaximumBytes is what one subscription weighs on the wire, matching
 // the local route's own reader (`authBodyLimit`, the bound `/v1/push/` is
 // registered under in internal/transport/http). This bridge does not know what
@@ -1297,6 +1396,42 @@ func decodeScheduleWrite(named bool) func(b body) (plan, bool) {
 		// sentence naming the field that is wrong — which is the sentence the
 		// form already shows over this machine's own network.
 		document, ok := b.object("schedule", scheduleMaximumBytes)
+		if !ok {
+			return plan{}, false
+		}
+		p.document = document
+		return p, true
+	}
+}
+
+// decodeSnippetWrite is `snippet-create` and `snippet-update`, which differ by
+// one key: the id of the snippet being saved.
+func decodeSnippetWrite(named bool) func(b body) (plan, bool) {
+	want := []string{"type", "session", "request", "snippet"}
+	if named {
+		want = []string{"type", "session", "request", "id", "snippet"}
+	}
+	return func(b body) (plan, bool) {
+		if !b.has(want...) {
+			return plan{}, false
+		}
+		p, ok := actionPlan(b, false)
+		if !ok || p.request == "" {
+			return plan{}, false
+		}
+		if named {
+			id, ok := b.nonEmpty("id")
+			if !ok {
+				return plan{}, false
+			}
+			p.id = id
+		}
+		// The object travels as the bytes it arrived as. What counts as a
+		// snippet is `internal/domain/snippet`'s question, answered once there
+		// and never here — the sentence a person reads about a title that is
+		// too long is the one the sheet already shows over this machine's own
+		// network.
+		document, ok := b.object("snippet", snippetMaximumBytes)
 		if !ok {
 			return plan{}, false
 		}

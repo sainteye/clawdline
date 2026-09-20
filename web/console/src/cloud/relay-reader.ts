@@ -88,6 +88,27 @@ export interface CloudSchedules {
   unconfirmed?: string[]
 }
 
+/** One snippet as the Mac's list answers it, plus the machine it came from. */
+export type CloudSnippet = Record<string, unknown> & { machine?: string }
+
+/**
+ * `CloudClient.snippets()`'s answer for one machine: its rows, and when they
+ * were read.
+ *
+ * There is no `unanswered` here and there does not need to be. The account-wide
+ * form of that read fans out and settles on the first reply, which is why the
+ * schedule list has to check who did not answer; the form this seam makes names
+ * one machine, asks that one, and throws its own failure — `cloud_read_
+ * unavailable` for a machine nothing has told us about, `cloud_snippets_
+ * unpublished` for one whose inventory carries no such field. Neither ever
+ * resolves as an empty list, because "this Mac has none" and "nobody answered"
+ * are opposite facts and the sheet draws a different thing for each.
+ */
+export interface CloudSnippets {
+  snippets?: CloudSnippet[]
+  at?: number
+}
+
 /** What `CloudClient.events()` hands a listener; only these fields are read. */
 export interface CloudEvent {
   type: string
@@ -135,6 +156,19 @@ export interface CloudReadClient {
    * nobody is catching.
    */
   schedules?(options?: { fresh?: boolean }): Promise<CloudSchedules>
+  /**
+   * One machine's snippets. The identity names which — only its `machine` is
+   * read (`_snippetRequest`), and the session travels so that what is asked
+   * for is the machine the open session is on and not the first one in a
+   * snapshot.
+   *
+   * `{ fresh: true }` for the reason the schedule list asks it: the retained
+   * `orch/` snapshot is a first paint and not evidence, and a reconnect can
+   * hand back one older than the feature. Optional for the reason `pushKey`
+   * and `tasks` are: a copied client older than the word must be refused by
+   * name rather than throw where nobody is catching.
+   */
+  snippets?(identity: CloudIdentity, options?: { fresh?: boolean }): Promise<CloudSnippets>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
   /**
    * The application server key, as the Mac's `push-key` read answers it.
@@ -455,12 +489,42 @@ export class RelayReader {
               "This Mac has not published an inventory to this account yet.")
           }
           const schedules = (answer.schedules ?? []).filter((row) => row?.machine === this.machine)
-          // Typed against the table, as `transcript` below is: this is the
-          // reader's second carried word, and dropping it from `CARRIED` is a
-          // compile error here rather than a silent disagreement.
+          // Typed against the table, as `transcript` below is: dropping it
+          // from `CARRIED` is a compile error here rather than a silent
+          // disagreement.
           const word: CarriedWord = "schedules"
           this.note(method, path, "relay", undefined, { word })
           return json(200, { schedules, at: answer.at || Math.floor(this.now() / 1000) })
+        }
+        case "/v1/snippets": {
+          // 常用句 — the sheet a phone could not open. Both halves were true
+          // at once: this Mac's catalog knew the word and had no route behind
+          // it, so the seam listed it in `NO_MAC_ROUTE` and refused the read
+          // to itself rather than asking a Mac that would have said
+          // `unknown_command`. The sentence was honest; what it described is
+          // gone.
+          //
+          // **The whole machine's list, and the grouping stays on the page.**
+          // The wire carries no session (`cloudops`' `snippets` op), so the
+          // Mac cannot resolve this session's project the way the local route
+          // does and the answer names none: `view/snippets-data.js`'s
+          // `snippetGroups` matches each row's `project` against the session's
+          // own `cwd` instead. The rows are cut to this machine's for the
+          // reason the schedule list's are — the copied client merges every
+          // Mac's rows into one, and another Mac's snippet is text this
+          // session cannot even be about.
+          const session = url.searchParams.get("session")
+          if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
+          const client = this.connected()
+          if (typeof client.snippets !== "function") {
+            return this.refuse(method, path, 501, "cloud_not_carried",
+              "This console cannot read this Mac's snippets.")
+          }
+          const answer = await client.snippets({ machine: this.machine, session }, { fresh: true })
+          const snippets = (answer.snippets ?? []).filter((row) => row?.machine === this.machine)
+          const word: CarriedWord = "snippets"
+          this.note(method, path, "relay", undefined, { word })
+          return json(200, { snippets })
         }
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
@@ -470,10 +534,11 @@ export class RelayReader {
           // after all before it types them a second time (`session/send.ts`).
           const fresh = init?.cache === "no-store" || init?.cache === "reload" || init?.cache === "no-cache"
           const { page, reused } = await this.transcript(session, fresh)
-          // One of the two words this file carries itself — the other is the
-          // schedule list above; the rest are the writer's. Typed against the
-          // table so that dropping it from `CARRIED` is a compile error here
-          // rather than a silent disagreement.
+          // One of the three words this file carries itself — the others are
+          // the schedule list and the snippet list above; the rest are the
+          // writer's. Typed against the table so that dropping it from
+          // `CARRIED` is a compile error here rather than a silent
+          // disagreement.
           const word: CarriedWord = "transcript"
           this.note(method, path, reused ? "cache" : "relay", undefined, { word })
           return json(200, page)
