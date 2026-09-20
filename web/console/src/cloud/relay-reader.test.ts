@@ -7,7 +7,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { SessionsSnapshot, TranscriptPage } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { RelayReader, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudReadClient, type CloudRow } from "./relay-reader.ts"
+import { RelayReader, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudReadClient, type CloudRow, type CloudSchedules } from "./relay-reader.ts"
 
 class FakeClient implements CloudReadClient {
   ready = true
@@ -36,6 +36,18 @@ class FakeClient implements CloudReadClient {
     this.pushKeyAsks += 1
     return { key: "BPk" }
   }
+  /** Every reading of the schedule list, with the options it was asked under. */
+  scheduleAsks: ({ fresh?: boolean } | undefined)[] = []
+  scheduleAnswer: () => Promise<CloudSchedules> = async () => ({ schedules: [], at: 0 })
+  schedules?: (options?: { fresh?: boolean }) => Promise<CloudSchedules> = (options) => {
+    this.scheduleAsks.push(options)
+    return this.scheduleAnswer()
+  }
+}
+
+/** A schedule row as the copied client tags it: the Mac's own row, plus the machine. */
+function schedule(machine: string, id: string, extra: Record<string, unknown> = {}) {
+  return { id, machine, title: "a schedule", enabled: true, project_dir: "/tmp/p", ...extra }
 }
 
 function row(machine: string, session: string, extra: Record<string, unknown> = {}): CloudRow {
@@ -273,4 +285,89 @@ test("a key nobody can ask for is refused by name, not left to the network", asy
   const refusal = await body<{ error: string; detail: string }>(refused)
   assert.equal(refusal.error, "cloud_feature_unavailable")
   assert.equal(typeof refusal.detail, "string", "`isRefusal` needs a string detail")
+})
+
+// The list under the session list, which on a phone was not there at all.
+// `carry.ts` had the word in `DEFERRED` saying schedules were not read over
+// Cloud yet, and this Mac had been answering `schedules` the whole time — so
+// the seam refused the route to itself and the section stayed hidden, with
+// nothing in the Mac's log because nothing had been asked for.
+test("the schedule list is asked of this machine, and is this machine's rows", async () => {
+  const client = new FakeClient()
+  client.scheduleAnswer = async () => ({
+    schedules: [schedule("mac-a", "s-1"), schedule("mac-b", "s-2"), schedule("mac-a", "s-3")],
+    at: 1_700,
+  })
+  const r = reader(client, { t: 1000 })
+  const res = await r.fetch("/v1/orchestrator/schedules")
+  assert.equal(res.status, 200)
+  const list = await body<{ schedules: { id: string }[]; at: number }>(res)
+  assert.deepEqual(list.schedules.map((s) => s.id), ["s-1", "s-3"], "another Mac's schedules are not this list")
+  assert.equal(list.at, 1_700)
+  // `fresh`, and not for freshness: this daemon publishes no schedules on its
+  // `orch/` descriptor, so the retained reading refuses forever — and the
+  // fresh one is also what teaches the copied client which Mac an id is on,
+  // which is what the four writes are routed by.
+  assert.deepEqual(client.scheduleAsks, [{ fresh: true }])
+  const last = r.log[r.log.length - 1]
+  assert.equal(last.answer, "relay")
+  assert.equal(last.word, "schedules")
+})
+
+// The distinction this whole read is drawn around: "this Mac has none" and
+// "nobody answered" are opposite facts, and `pages/schedules.tsx` draws the
+// section for one and leaves it alone for the other. An empty answer is an
+// answer; a refusal must never arrive as `{schedules: []}`.
+test("an empty list is only ever what the Mac said, never what a refusal became", async () => {
+  const empty = new FakeClient()
+  const said = await reader(empty, { t: 1000 }).fetch("/v1/orchestrator/schedules")
+  assert.equal(said.status, 200)
+  assert.deepEqual(await said.json(), { schedules: [], at: 1 }, "an answer with no rows is an answer")
+
+  // The copied client's own refusal for a Mac running a build that publishes
+  // no schedules, and for an account no snapshot has arrived from.
+  for (const code of ["cloud_schedules_unpublished", "cloud_read_unavailable"]) {
+    const client = new FakeClient()
+    client.scheduleAnswer = async () => {
+      throw Object.assign(new Error(code), { code })
+    }
+    const res = await reader(client, { t: 1000 }).fetch("/v1/orchestrator/schedules")
+    assert.equal(res.status, 502, code + " must not resolve")
+    assert.equal((await body<{ error: string }>(res)).error, code)
+  }
+})
+
+// The fan-out's own trap: `schedules()` settles as soon as *one* machine
+// answers, so an account with two Macs and one silent one resolves with the
+// silent one's rows simply absent. Read as this machine's list that is the
+// page asserting an inventory nobody read.
+test("a machine that did not answer is not a machine with no schedules", async () => {
+  const silent = new FakeClient()
+  silent.scheduleAnswer = async () => ({
+    schedules: [schedule("mac-b", "s-2")],
+    at: 1_700,
+    unanswered: [{ machine: "mac-a", label: "this Mac", error: Object.assign(new Error("timed out"), { code: "cloud_read_timeout" }) }],
+  })
+  // `cloud_read_timeout` is one of the codes that mean nobody answered, so it
+  // rejects the way a dropped connection does and the list is left as it was.
+  await assert.rejects(reader(silent, { t: 1000 }).fetch("/v1/orchestrator/schedules"), TypeError)
+
+  const never = new FakeClient()
+  never.scheduleAnswer = async () => ({ schedules: [schedule("mac-b", "s-2")], at: 1_700, unconfirmed: ["mac-a"] })
+  const res = await reader(never, { t: 1000 }).fetch("/v1/orchestrator/schedules")
+  assert.equal(res.status, 503)
+  assert.equal((await body<{ error: string }>(res)).error, "cloud_read_unavailable")
+})
+
+// A copied client older than the word: refused by name, in the spelling
+// `schedules-bridge.ts`'s `jsonFetch` reads, rather than thrown inside the
+// one-minute lane where nothing is catching by type.
+test("a client that cannot ask for schedules is refused by name", async () => {
+  const older = new FakeClient()
+  older.schedules = undefined
+  const res = await reader(older, { t: 0 }).fetch("/v1/orchestrator/schedules")
+  assert.equal(res.status, 501)
+  const refusal = await body<{ error: string; detail: string }>(res)
+  assert.equal(refusal.error, "cloud_not_carried")
+  assert.match(refusal.detail, /schedules/)
 })

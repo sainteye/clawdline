@@ -109,6 +109,18 @@ class FakeClient implements CloudWriteClient {
   pushTest(session: string | null) {
     return this.act("pushTest", [session], { ok: true, sent: 1, failed: 0 })
   }
+  createSchedule(schedule: unknown) {
+    return this.act("createSchedule", [schedule], { ok: true, schedule: { id: "sch-9", title: "a schedule" }, dispatch_enabled: true })
+  }
+  updateSchedule(id: string, schedule: unknown) {
+    return this.act("updateSchedule", [id, schedule], { ok: true, schedule: { id, title: "a schedule" } })
+  }
+  deleteSchedule(id: string) {
+    return this.act("deleteSchedule", [id], { ok: true, deleted: id })
+  }
+  runSchedule(id: string) {
+    return this.act("runSchedule", [id], { ok: true, task_id: "t-1" })
+  }
   image(identity: CloudIdentity, id: string) {
     return this.act("image", [identity, id], { id, media_type: "image/png", bytes: new Uint8Array([137, 80, 78, 71]) }) as Promise<{
       id: string
@@ -158,6 +170,16 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/push/subscribe", "push-subscribe"],
     ["POST", "/v1/push/unsubscribe", "push-unsubscribe"],
     ["POST", "/v1/push/test", "push-test"],
+    ["POST", "/v1/orchestrator/schedules", "schedule-create"],
+    ["PATCH", "/v1/orchestrator/schedules/sch-1", "schedule-update"],
+    ["DELETE", "/v1/orchestrator/schedules/sch-1", "schedule-delete"],
+    ["POST", "/v1/orchestrator/schedules/sch-1/run", "schedule-run"],
+    // The list is a read and is answered by `relay-reader.ts`, not here, and
+    // so is one schedule in full — which this Mac has no route for at all.
+    ["GET", "/v1/orchestrator/schedules", null],
+    ["GET", "/v1/orchestrator/schedules/sch-1", null],
+    ["POST", "/v1/orchestrator/schedules/sch-1", null],
+    ["DELETE", "/v1/orchestrator/schedules", null],
     // The key is a read and is answered by `relay-reader.ts`, not here.
     ["GET", "/v1/push/key", null],
     ["POST", "/v1/push/key", null],
@@ -581,4 +603,87 @@ test("a registration with the line down is refused, not left to a transport erro
   assert.equal(res.status, 503)
   const body = await json<{ error: { code: string } }>(res)
   assert.equal(body.error.code, "offline")
+})
+
+// Making, saving, removing and running a schedule from a phone. The form's
+// own requests, unchanged — `schedules-bridge.ts` spells them against a
+// daemon on this machine's own network — reaching the copied client's four
+// schedule methods, which route each one to the Mac that owns it.
+test("the schedule form's four writes reach the Mac as its own four words", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const form = { title: "a schedule", at: "09:00", days: "daily", place_id: "mac-a\u0000p1", assistant: "claude",
+    model: "", instructions: "do the thing", enabled: true, close_tab: "on_success", catch_up_hours: 6,
+    notify_on_failure: true, timeout_minutes: 30 }
+
+  const made = await reader.fetch("/v1/orchestrator/schedules", post(form, { "Idempotency-Key": "press-1" }))
+  assert.equal(made.status, 200)
+  assert.deepEqual(await json(made), { ok: true, schedule: { id: "sch-9", title: "a schedule" }, dispatch_enabled: true })
+
+  const saved = await reader.fetch("/v1/orchestrator/schedules/sch%209", {
+    ...post(form, { "Idempotency-Key": "press-2" }), method: "PATCH",
+  })
+  assert.equal(saved.status, 200)
+
+  const removed = await reader.fetch("/v1/orchestrator/schedules/sch-9", {
+    method: "DELETE", headers: { "Idempotency-Key": "press-3" },
+  })
+  assert.equal(removed.status, 200)
+
+  const ran = await reader.fetch("/v1/orchestrator/schedules/sch-9/run", post({}, { "Idempotency-Key": "press-4" }))
+  assert.equal(ran.status, 200)
+  assert.deepEqual(await json(ran), { ok: true, task_id: "t-1" })
+
+  assert.deepEqual(client.calls, [
+    // The form's body whole: the copied client reads `place_id` out of it to
+    // find the Mac, so nothing may be reshaped on the way past.
+    ["createSchedule", form],
+    ["updateSchedule", "sch 9", form],
+    ["deleteSchedule", "sch-9"],
+    ["runSchedule", "sch-9"],
+  ])
+  assert.deepEqual(reader.log.map((x: { word?: string; answer: string }) => [x.word, x.answer]), [
+    ["schedule-create", "relay"], ["schedule-update", "relay"],
+    ["schedule-delete", "relay"], ["schedule-run", "relay"],
+  ])
+})
+
+// The schedule routes refuse through `writeAuthRefusal` and
+// `writeBrokerRefusal` (internal/transport/http/schedules.go), both of which
+// send `{"error":{"code","message",…}}` — and the form reads a broker
+// refusal's extra fields out of that same object.
+test("a refused schedule write comes back in the spelling its own route answers", async () => {
+  const client = new FakeClient()
+  client.fail.runSchedule = failureFromMac(
+    { code: "task_already_running", layer: "mac_route", message: "that schedule is already running" },
+    409, REF,
+  )
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/orchestrator/schedules/sch-9/run", post({}))
+  assert.equal(res.status, 409)
+  const body = await json<{ error: { code: string; message: string; layer: string; word: string } }>(res)
+  assert.equal(typeof body.error, "object", "the flat spelling would put a string here")
+  assert.equal(body.error.code, "task_already_running")
+  assert.equal(body.error.word, "schedule-run")
+  assert.equal(reader.log[reader.log.length - 1].code, "task_already_running")
+})
+
+// A copied client older than the four words. Refused by name rather than
+// thrown as a `TypeError` inside the form's own `then`.
+test("a client that cannot write schedules is refused by name", async () => {
+  const client = new FakeClient()
+  const older = client as unknown as Record<string, unknown>
+  for (const name of ["createSchedule", "updateSchedule", "deleteSchedule", "runSchedule"]) older[name] = undefined
+  const { reader } = seam(client)
+  for (const [method, path] of [
+    ["POST", "/v1/orchestrator/schedules"],
+    ["PATCH", "/v1/orchestrator/schedules/sch-9"],
+    ["DELETE", "/v1/orchestrator/schedules/sch-9"],
+    ["POST", "/v1/orchestrator/schedules/sch-9/run"],
+  ]) {
+    const res = await reader.fetch(path, { ...post({}), method })
+    assert.equal(res.status, 501, method + " " + path)
+    assert.equal((await json<{ error: { code: string } }>(res)).error.code, "cloud_not_carried")
+  }
+  assert.deepEqual(client.calls, [], "nothing was asked of the Mac")
 })

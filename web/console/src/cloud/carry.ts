@@ -62,6 +62,11 @@ export const CARRIED = {
   "push-test": "POST /v1/push/test",
   "push-unsubscribe": "POST /v1/push/unsubscribe",
   resume: "POST /v1/places/{id}/resume[/{assistant}]/{past}",
+  "schedule-create": "POST /v1/orchestrator/schedules",
+  "schedule-delete": "DELETE /v1/orchestrator/schedules/{id}",
+  "schedule-run": "POST /v1/orchestrator/schedules/{id}/run",
+  "schedule-update": "PATCH /v1/orchestrator/schedules/{id}",
+  schedules: "GET /v1/orchestrator/schedules",
   send: "POST /v1/sessions/{id}/send",
   start: "POST /v1/places/{id}/start[/{assistant}[/{model}]]",
   transcript: "GET /v1/transcript?session={id}",
@@ -88,11 +93,6 @@ export const DEFERRED = {
   // chosen for (F1, `RelayWriter.press`). `key` is the older spelling and is
   // deliberately never sent.
   key: "A waiting card's press is sent as `answer`, which names the question it answers; `key` is the older spelling of the same command.",
-  "schedule-create": "Schedules are not written over Clawdline Cloud yet: make one on the Mac.",
-  "schedule-delete": "Schedules are not written over Clawdline Cloud yet: delete it on the Mac.",
-  "schedule-run": "Schedules are not run over Clawdline Cloud yet: run it on the Mac.",
-  "schedule-update": "Schedules are not written over Clawdline Cloud yet: change it on the Mac.",
-  schedules: "The schedule list is not read over Clawdline Cloud yet: read it on the Mac.",
   screen: "What the terminal is showing is not read over Clawdline Cloud yet: look at it on the Mac.",
 } as const
 
@@ -110,7 +110,16 @@ export const NO_MAC_ROUTE = {
   "diagnostics.events": "This Mac does not take a page's diagnostic events over Clawdline Cloud.",
   "diagnostics.report": "This Mac does not take a diagnostic report over Clawdline Cloud.",
   dispatch: "Dispatching a task over Clawdline Cloud has no pinned wire shape on this Mac: dispatch it on the Mac.",
-  schedule: "One schedule is not read over Clawdline Cloud yet: read it on the Mac.",
+  // `schedule` is the one schedule word that stays here, and it is not a
+  // console decision: this Mac's catalog lists it with no route behind it
+  // (`op{name: "schedule", read: true}` in internal/app/cloudops/ops.go has a
+  // `decode` and no `route`), so `Implemented()` leaves it out and the bridge
+  // answers it `unknown_command`. The local route it would reach exists —
+  // `GET /v1/orchestrator/schedules/:id` — and the list carried below already
+  // brings down `project_dir`, which is the only field the rows themselves
+  // needed it for. What still needs it is the pair of sheets that read one
+  // schedule in full: the run history and the form behind Edit.
+  schedule: "This Mac does not answer one schedule in full over Clawdline Cloud: the list is read here, and a schedule's runs and its form are opened on the Mac.",
   shell: "A session's shell is not read over Clawdline Cloud: read it on the Mac.",
   skills: "A session's skills are not listed over Clawdline Cloud: read them on the Mac.",
   snippets: "Snippets are not carried over Clawdline Cloud yet: open them on the Mac.",
@@ -192,11 +201,10 @@ export function uncarriedWordOf(method: string, path: string): string {
   if (head === "board") return method === "GET" ? "board" : "board.items"
   if (head === "timeline") return "timeline"
   if (head === "diagnostics" && a === "report") return "diagnostics.report"
-  if (head === "orchestrator" && a === "schedules") {
-    if (segments.length === 2) return method === "POST" ? "schedule-create" : "schedules"
-    if (method === "DELETE") return "schedule-delete"
-    if (method === "PATCH" || method === "PUT") return "schedule-update"
-    if (method === "POST") return "schedule-run"
+  // The list and the four writes are carried, so they are parsed once, by the
+  // reader's own case and by `writeRoute`, and are deliberately not spelled a
+  // second time here. What is left under this prefix is the single read.
+  if (head === "orchestrator" && a === "schedules" && b && segments.length === 3 && method === "GET") {
     return "schedule"
   }
   if (head === "sessions" && a && b) {
