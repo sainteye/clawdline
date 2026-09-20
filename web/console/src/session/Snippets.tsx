@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
 import type { SessionRow, TranscriptPage } from "@clawdline/contract"
 import { client } from "../client.js"
+import { nextWord } from "../next-strings.js"
 import * as L from "../legacy/bridge.js"
 import { userMessageEntries } from "../legacy/user-messages-bridge.js"
 import {
@@ -76,6 +77,26 @@ import {
  *     would be, and the `＋` is not drawn beside an error — so a hosted console
  *     says what it cannot do instead of showing an empty list.
  */
+/**
+ * The sentence for a failure, said by its code and never by the machine's
+ * English `message` (`docs/cloud-error-transparency.md` §5 rule 1).
+ *
+ * `failureSentence` is the copied catalog's, and `cloud_not_carried` is not in
+ * it — it is this generation's code, for the Cloud not carrying a route rather
+ * than for anything going wrong — so it fell through to "Request failed", and
+ * a person opening 常用句 on their phone was told a request had failed and
+ * nothing about what to do. This app's own words have a sentence for exactly
+ * that (`next-strings.ts`, `cloudNotCarried`), and the Mac is where the list
+ * is. The list itself is one of the words this Mac has no route for at all
+ * (`cloud/carry.ts`, `NO_MAC_ROUTE`): the seam refuses it here rather than
+ * asking a Mac that would answer `unknown_command`.
+ */
+function snippetSentence(failure: unknown, fallback: string): string {
+  const code = (failure as { code?: unknown } | null)?.code
+  if (code === "cloud_not_carried") return nextWord("cloudNotCarried")
+  return failureSentence(failure, fallback)
+}
+
 export function Snippets({ row }: { row: SessionRow | null }) {
   const [open, setOpen] = useState(false)
   const openedOn = useRef<string | null>(null)
@@ -171,7 +192,7 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
         // Said by its code, never by the machine's English sentence
         // (`core/failure-text.js`): `cloud_not_carried` is the Cloud not
         // carrying this route, and that is the words a hosted reader gets.
-        setError(failureSentence(failure, T.webRequestFailed))
+        setError(snippetSentence(failure, T.webRequestFailed))
       })
   }
 
@@ -257,7 +278,7 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
         // Nothing was redrawn, so the button the press came from still holds
         // the keyboard.
         pendingFocus.current = null
-        const message = failureSentence(failure, T.webRequestFailed)
+        const message = snippetSentence(failure, T.webRequestFailed)
         if (editorOpen) setEditorSaid(message)
         else setSaid(message)
         return false

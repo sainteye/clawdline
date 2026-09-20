@@ -22,6 +22,7 @@
 // It does not import the copied modules: the client is handed in, typed by the
 // little of it this file reads, so the rules here run under `node --test`
 // without a page (`relay-reader.test.ts`).
+import type { CarriedWord, CarryTable } from "./carry.js"
 import type { Health, SessionRow, SessionsSnapshot, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
@@ -145,6 +146,17 @@ export interface RelayReaderOptions {
   strings?: () => Promise<Record<string, string>>
   /** Called with a row each time something is answered, for the diagnostics log. */
   onAnswer?: (row: SeamRow) => void
+  /**
+   * What this bundle carries, and what it says about what it does not
+   * (`carry.ts`, handed in by `CloudGate`).
+   *
+   * It is handed in rather than imported because nothing in this file is
+   * imported at run time — that is what lets `node --test` load it as it is —
+   * and because there is exactly one table and it is the one the drift guard
+   * reads (internal/app/cloudops/carry_test.go). Without it a refusal still
+   * says the route and `drift` says it does not know.
+   */
+  carry?: CarryTable
 }
 
 interface HeldTranscript {
@@ -183,6 +195,8 @@ export class RelayReader {
   private readonly rows: SeamRow[] = []
   private readonly options: RelayReaderOptions
   private writer: WriteSeam | null = null
+  /** Whether this page has already said what it and the Mac disagree about (`drift`). */
+  private saidDrift = false
   /** The one machine this reads. */
   readonly machine: string
 
@@ -245,6 +259,53 @@ export class RelayReader {
     held.expectFrom = held.answer?.signature ?? null
   }
 
+  /**
+   * What this bundle and this Mac disagree about, right now, on the page.
+   *
+   * The build-time half of this is a Go test that reads `carry.ts`
+   * (internal/app/cloudops/carry_test.go), and it can only compare this bundle
+   * with the checkout it was built from. A hosted console is an *older* bundle
+   * reading a Mac that has been updated since, which no test in either repo can
+   * see. The Mac says what it can do in its own descriptor —
+   * `cloudops.Implemented()`, carried as `machine.commands` — so the same
+   * question is asked here of the machine actually being read.
+   *
+   * `notCarried` is what this Mac answers and this bundle never asks for;
+   * `notOnThisMac` is what this bundle would ask for and this Mac does not
+   * list. Empty when the descriptor has not arrived: unknown is not agreement,
+   * and `null` says which of the two this is.
+   */
+  drift(): { notCarried: string[]; notOnThisMac: string[] } | null {
+    const carried = this.options.carry?.carried
+    if (!carried) return null
+    const client = this.client as { machineDescriptor?: (machine: string) => { machine?: { commands?: unknown } } | null } | null
+    const commands = client?.machineDescriptor?.(this.machine)?.machine?.commands
+    if (!Array.isArray(commands)) return null
+    const listed = new Set(commands.filter((word): word is string => typeof word === "string"))
+    return {
+      notCarried: [...listed].filter((word) => !carried.includes(word)).sort(),
+      notOnThisMac: carried.filter((word) => !listed.has(word)).sort(),
+    }
+  }
+
+  /**
+   * Put `drift` in this page's own log, once, as soon as the machine's
+   * descriptor has arrived. It is a row and not a refusal because nothing is
+   * broken: the page carries what it carries. It is recorded because the
+   * alternative is what happened with `info` — a Mac answering a word for
+   * months, a page never asking for it, and nothing anywhere saying so.
+   */
+  private sayDrift(): void {
+    if (this.saidDrift) return
+    const found = this.drift()
+    if (!found) return
+    this.saidDrift = true
+    if (!found.notCarried.length && !found.notOnThisMac.length) return
+    this.note("GET", "/v1/sessions", "local", "cloud_vocabulary_drift", {
+      word: [...found.notCarried, ...found.notOnThisMac.map((w) => "-" + w)].join(" "),
+    })
+  }
+
   /** The line went away (`reconnecting`, `paused`, a terminal refusal). */
   lost(): void {
     for (const stream of this.streams) stream.handlers.onError?.(new Error("the relay connection is down"))
@@ -260,8 +321,7 @@ export class RelayReader {
       const write = this.writer?.route(method, path) ?? null
       if (write) return await this.writer!.answer(write, method, url, init)
       if (method !== "GET") {
-        return this.refuse(method, path, 501, "cloud_not_carried",
-          `${method} ${path} is not carried over Clawdline Cloud: do it on the Mac itself.`)
+        return this.refuse(method, path, 501, "cloud_not_carried", this.notCarried(method, path))
       }
       switch (path) {
         case "/v1/sessions":
@@ -275,7 +335,11 @@ export class RelayReader {
           // after all before it types them a second time (`session/send.ts`).
           const fresh = init?.cache === "no-store" || init?.cache === "reload" || init?.cache === "no-cache"
           const { page, reused } = await this.transcript(session, fresh)
-          this.note(method, path, reused ? "cache" : "relay")
+          // The one word this file carries itself; the rest are the writer's.
+          // Typed against the table so that dropping it from `CARRIED` is a
+          // compile error here rather than a silent disagreement.
+          const word: CarriedWord = "transcript"
+          this.note(method, path, reused ? "cache" : "relay", undefined, { word })
           return json(200, page)
         }
         case "/v1/health": {
@@ -287,12 +351,18 @@ export class RelayReader {
           this.note(method, path, "local")
           return json(200, health)
         }
-        case "/v1/strings":
-          this.note(method, path, "local")
-          return json(200, this.options.strings ? await this.options.strings() : {})
+        case "/v1/strings": {
+          // The words are the bundle's own file, not the Mac's (`cloud/strings.ts`):
+          // they belong to the screen and the screen is here. An empty answer
+          // is not a failure — the console has built-in English and uses it —
+          // but it is a degradation, and the seam log says so by name rather
+          // than looking like a catalog that happened to be empty.
+          const words = this.options.strings ? await this.options.strings() : {}
+          this.note(method, path, "local", Object.keys(words).length ? undefined : "no_catalog")
+          return json(200, words)
+        }
         default:
-          return this.refuse(method, path, 501, "cloud_not_carried",
-            `${path} is not carried over Clawdline Cloud yet: this console reads the session list and transcripts.`)
+          return this.refuse(method, path, 501, "cloud_not_carried", this.notCarried(method, path))
       }
     } catch (error) {
       const failure = error as { code?: unknown; status?: unknown; message?: unknown }
@@ -338,6 +408,7 @@ export class RelayReader {
   async snapshot(): Promise<SessionsSnapshot> {
     const client = this.connected()
     const all = await client.sessions()
+    this.sayDrift()
     const recovering = (all.scan.recovering ?? []).includes(this.machine)
     const failed = (all.scan.failures ?? []).some((f) => f.machine === this.machine)
     const inventory = client.sessionInventoryByMachine?.has(this.machine) === true
@@ -474,6 +545,22 @@ export class RelayReader {
         },
       )
     }, 0)
+  }
+
+  /**
+   * What a refusal says about a route this bundle does not carry.
+   *
+   * Nothing reads it for its wording — the code is `cloud_not_carried` and each
+   * screen chooses its own sentence by that (`legacy/js/core/failure-text.js`)
+   * — but it is what a person looking at this page's own log or at devtools
+   * gets, and "snippets are not carried" is a different fact from "something is
+   * not carried". The table says which; without one this says the route.
+   */
+  private notCarried(method: string, path: string): string {
+    return (
+      this.options.carry?.detail(method, path) ??
+      `${method} ${path} is not carried over Clawdline Cloud: do it on the Mac itself.`
+    )
   }
 
   private refuse(method: string, path: string, status: number, code: string, detail: string): Response {

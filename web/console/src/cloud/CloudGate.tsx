@@ -17,7 +17,9 @@ import {
   type CloudSession,
   type CloudUpdate,
 } from "./copied.js"
+import { CARRY_TABLE } from "./carry.js"
 import { readThroughRelay } from "./install.js"
+import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
 import "./cloud.css"
@@ -101,21 +103,17 @@ const ACCESS_PROBLEMS = new Set([
 ])
 
 /**
- * The build's static catalog for this browser's language: the same alias rule
- * as `cloudStringsURL` (the longest alias the language starts with), resolved
- * against this console's own `public/strings/`. No alias, no catalog: the
- * built-in English stays.
+ * The build's own catalog for this browser (`cloud/strings.ts`).
+ *
+ * It used to return `{}` for a browser whose language matched no declared
+ * alias, and a declaration may carry no aliases at all — `strings` is optional
+ * in `readCloudConfig`. Both are the same silence: `applyStrings` takes no
+ * `lang` from an empty object, the document keeps the one it shipped with, and
+ * the whole hosted console is English for somebody whose Mac is not. So there
+ * is a default now, and it is the daemon's own (`DEFAULT_TAG`).
  */
 async function catalog(config: CloudConfig): Promise<Record<string, string>> {
-  const aliases = Object.keys(config.strings).sort((a, b) => b.length - a.length)
-  for (const language of navigator.languages ?? [navigator.language]) {
-    const alias = aliases.find((a) => language.toLowerCase().startsWith(a.toLowerCase()))
-    if (!alias) continue
-    const res = await fetch(new URL("strings/" + encodeURIComponent(config.strings[alias]) + ".json", document.baseURI))
-    if (!res.ok) throw new Error("catalog " + res.status)
-    return (await res.json()) as Record<string, string>
-  }
-  return {}
+  return bundledCatalog(config, navigator.languages ?? [navigator.language], document.baseURI)
 }
 
 export function CloudGate({ declared }: { declared: string }) {
@@ -148,7 +146,19 @@ export function CloudGate({ declared }: { declared: string }) {
       document.documentElement.classList.remove("booting")
       return
     }
-    void L.loadStrings(() => catalog(transport.config)).finally(() => {
+    // What the document says it is in has to be what it is showing: a screen
+    // reader picks a voice from it, a browser offers to translate against it,
+    // and `next-strings.ts` chooses this app's own sentences by it. The
+    // catalog sets it when one lands (`applyStrings`); when none does, the
+    // words on the screen are the built-in English and this says so, rather
+    // than leaving the tag the document was built with.
+    let landed = false
+    void L.loadStrings(async () => {
+      const words = await catalog(transport.config)
+      landed = typeof words.lang === "string" && !!words.lang
+      return words
+    }).finally(() => {
+      if (!landed) document.documentElement.lang = BUILTIN_TAG
       setWords(true)
       document.documentElement.classList.remove("booting")
     })
@@ -183,7 +193,10 @@ export function CloudGate({ declared }: { declared: string }) {
       /* a tab that cannot remember asks again after a reload */
     }
     const config = transport.kind === "cloud" ? transport.config : null
-    const next = new RelayReader(machine.id, { strings: () => (config ? catalog(config) : Promise.resolve({})) })
+    const next = new RelayReader(machine.id, {
+      strings: () => (config ? catalog(config) : Promise.resolve({})),
+      carry: CARRY_TABLE,
+    })
     const writer = new RelayWriter(next.writeHost)
     next.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
     next.attach(current)

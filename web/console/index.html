@@ -3,7 +3,17 @@
      row is 90px under quirks and 94.3px under standards, among other things.
      Replicating strictly means inheriting that. If the original ever gains a
      doctype, this should gain one in the same change. -->
-<html lang="en" class="booting">
+<!-- `lang` is the catalog this build ships and every transport defaults to:
+     `web/console/public/strings/zh-Hant.json`, which the daemon writes into the
+     document below and the hosted bundle reads from its own origin
+     (`src/cloud/strings.ts`, `DEFAULT_TAG` — `carry.test.ts` pins the three to
+     one constant). It was `en`, which was only ever right for the seconds
+     before the words arrived, and on the hosted console it was right for good:
+     nothing there ever answered with a catalog, so `applyStrings` never
+     overwrote it and the whole page stayed in a language its reader had not
+     asked for. A load that finds no catalog puts `en` back, because that is
+     what the built-in words in `legacy/js/core/i18n.js` are. -->
+<html lang="zh-Hant" class="booting">
   <head>
     <meta charset="utf-8" />
     <!-- The viewport is the Swift page's, and both halves of it are deliberate.

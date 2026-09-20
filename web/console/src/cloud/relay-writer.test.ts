@@ -75,6 +75,12 @@ class FakeClient implements CloudWriteClient {
   focus(identity: CloudIdentity) {
     return this.act("focus", [identity], { ok: true, id: identity.session })
   }
+  info(identity: CloudIdentity) {
+    return this.act("info", [identity], { info: { session: { id: identity.session } } })
+  }
+  infoSummary(identity: CloudIdentity) {
+    return this.act("infoSummary", [identity], { info: { session: { id: identity.session } } })
+  }
   places(machine: string) {
     return this.act("places", [machine], { places: [{ id: "mac-a\u0000p1", label: "api" }], assistants: [{ id: "claude" }] })
   }

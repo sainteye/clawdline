@@ -30,6 +30,7 @@
 // the same refusal from a daemon on this machine does (`session/outcome.ts`).
 //
 // Nothing is imported at run time, so `node --test` loads it as it is.
+import type { CarriedWord } from "./carry.js"
 import type { CloudIdentity, CloudReadClient, CloudRow, SeamRow } from "./relay-reader.js"
 
 /** A typed failure as the copied modules raise it (`cloud-failure.js`). */
@@ -72,6 +73,14 @@ export interface CloudWriteClient extends CloudReadClient {
   startPlace(place: string, assistant: string, model: string): Promise<unknown>
   resumePlace(place: string, past: string, assistant: string, requestId?: string): Promise<unknown>
   voice(audio: string, rate: number): Promise<unknown>
+  /**
+   * The status line's read, and the Session info card's. The copied client has
+   * had both since the Swift console; nothing here asked for them, so every
+   * cloud session's status line drew "Loading…" and said why to nobody
+   * (`cloud-client.js`, `info`).
+   */
+  info(identity: CloudIdentity): Promise<unknown>
+  infoSummary(identity: CloudIdentity): Promise<unknown>
   setVoiceHost?(machine: string): Promise<unknown>
   image?(identity: CloudIdentity, id: string): Promise<{ id: string; media_type: string; bytes: Uint8Array }>
   /**
@@ -107,17 +116,27 @@ export interface WriteHost {
  * report name.
  */
 export type WriteRoute =
-  | { op: "send"; word: "send"; session: string }
-  | { op: "answer"; word: "answer"; session: string }
-  | { op: "end"; word: "end"; session: string }
-  | { op: "focus"; word: "focus"; session: string }
-  | { op: "start"; word: "start"; place: string; assistant: string; model: string }
-  | { op: "resume"; word: "resume"; place: string; assistant: string; past: string }
-  | { op: "voice"; word: "voice" }
-  | { op: "places"; word: "places" }
-  | { op: "past"; word: "past-sessions"; place: string; assistant: string }
-  | { op: "image"; word: "image"; artifact: string }
+  | { op: "send"; word: Carried<"send">; session: string }
+  | { op: "info"; word: Carried<"info">; session: string }
+  | { op: "answer"; word: Carried<"answer">; session: string }
+  | { op: "end"; word: Carried<"end">; session: string }
+  | { op: "focus"; word: Carried<"focus">; session: string }
+  | { op: "start"; word: Carried<"start">; place: string; assistant: string; model: string }
+  | { op: "resume"; word: Carried<"resume">; place: string; assistant: string; past: string }
+  | { op: "voice"; word: Carried<"voice"> }
+  | { op: "places"; word: Carried<"places"> }
+  | { op: "past"; word: Carried<"past-sessions">; place: string; assistant: string }
+  | { op: "image"; word: Carried<"image">; artifact: string }
+  // `interrupt` and `title` are not Cloud words at all — not here and not in
+  // the Swift app's vocabulary — so this one is a plain string.
   | { op: "uncarried"; word: string; session?: string }
+
+/**
+ * The tie between a route here and `carry.ts`: a word that table does not list
+ * as carried is a compile error on the route that names it, which is why the
+ * vocabulary is not written down a second time in this file.
+ */
+type Carried<K extends CarriedWord> = K
 
 /**
  * The routes this daemon answers locally that have no command on the Cloud
@@ -212,6 +231,12 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "artifacts" && a === "images" && b && segments.length === 3) {
       return { op: "image", word: "image", artifact: b }
     }
+    // `?parts=` is not read here: the route is the same request either way and
+    // the half is read off the URL where the read is made, so one route cannot
+    // be parsed into two words.
+    if (head === "sessions" && a && b === "info" && segments.length === 3) {
+      return { op: "info", word: "info", session: a }
+    }
     return null
   }
   if (method !== "POST") return null
@@ -259,6 +284,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "answer":
     case "end":
     case "focus":
+    case "info":
     case "uncarried":
       return "flat"
     default:
@@ -363,6 +389,16 @@ export class RelayWriter {
       }
       case "focus":
         return client.focus(await this.identity(client, route.session))
+      case "info": {
+        // The two halves are two reads on the wire, answered on two channels
+        // (`info.full`, `info.summary`), because a full answer settled by a
+        // summary would be held as complete while missing what the summary
+        // leaves out (`cloudops` `info`). This daemon answers the same body for
+        // both — its own divergence — and the page still asks for the half it
+        // wants, so a Mac that does tell them apart is asked correctly.
+        const identity = await this.identity(client, route.session)
+        return url.searchParams.get("parts") === "summary" ? client.infoSummary(identity) : client.info(identity)
+      }
       case "places":
         return client.places(this.host.machine)
       case "past":
