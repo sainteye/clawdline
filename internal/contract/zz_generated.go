@@ -3967,11 +3967,28 @@ type Scan struct {
 	Epoch      int64  `json:"epoch"`
 	Generation int64  `json:"generation"`
 	Provenance string `json:"provenance"`
+
+	// Each source's own completeness, by provenance name, in a stable order. Optional:
+	// a reading with no per-source answer omits it, and a client written before it
+	// existed is unaffected.
+	Sources []ScanSource `json:"sources,omitempty"`
 }
 
 type ScanCompleted struct {
 	Complete bool  `json:"complete"`
 	Sequence int64 `json:"sequence"`
+}
+
+// One source's own answer about itself. The merged `complete` is the AND of
+// these, which is the right answer to `is this list all there is` and the wrong
+// one to `is this pane gone`: only the source that reads panes can say that. A
+// reader that must decide whether a session it remembers is really absent asks
+// the source that would have seen it.
+type ScanSource struct {
+	Complete bool `json:"complete"`
+
+	// The source's provenance, as the adapter names it: `ps`, `tmux`, `iterm`.
+	Source string `json:"source"`
 }
 
 type ScheduleDeleted struct {
