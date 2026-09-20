@@ -306,6 +306,11 @@ function Tools({
   const gitMoreRef = useRef<HTMLButtonElement>(null)
   // Focus moves after the level has re-rendered, since `inert` has to be gone first.
   const focusNext = useRef<"first" | "git-more" | "trigger" | null>(null)
+  // The session open now, for an answer that arrives later: `row` inside a
+  // closure is the row that was open when it was made, so comparing the two
+  // asked nothing (review F13) and a toast for one session landed on another.
+  const openNow = useRef<SessionRow | null>(row)
+  openNow.current = row
 
   const items = () => {
     const level = git ? gitRef.current : mainRef.current
@@ -380,16 +385,16 @@ function Tools({
     // start sheet's 150 ms the toast says the ask is on its way, in the words
     // a message on its way uses, and the answer replaces it.
     const onItsWay = setTimeout(() => {
-      if (mine === row.id) toast(T.webSending)
+      if (openNow.current?.id === mine) toast(T.webSending)
     }, 150)
     askFocus(mine).then(
       () => {
         clearTimeout(onItsWay)
-        if (mine === row.id) toast(T.webShowOnMacAsked)
+        if (openNow.current?.id === mine) toast(T.webShowOnMacAsked)
       },
       (e) => {
         clearTimeout(onItsWay)
-        if (mine === row.id) toastFailure(e, T.webRequestFailed)
+        if (openNow.current?.id === mine) toastFailure(e, T.webRequestFailed)
       },
     )
   }

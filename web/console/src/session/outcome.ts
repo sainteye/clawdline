@@ -57,3 +57,22 @@ export function outcomeOf(failure: FailedWrite): Outcome {
   if (failure.status === null) return "unknown"
   return NOT_DONE.has(failure.code) ? "not_done" : "unknown"
 }
+
+/**
+ * Codes that mean this device may not write to this machine at all — the
+ * daemon's own `write_disabled`, and the four Clawdline Cloud says it with:
+ * the machine's remote-write switch, a device downgraded to reading, a device
+ * the Mac no longer knows. The box is closed on any of them, rather than
+ * making one failed card per press (review F11).
+ */
+const WRITE_OFF: ReadonlySet<string> = new Set([
+  "write_disabled",
+  "cloud_commands_disabled",
+  "cloud_read_only",
+  "cloud_read_needs_send_prompt",
+  "unknown_sender",
+])
+
+export function writeIsOff(code: string): boolean {
+  return WRITE_OFF.has(code)
+}

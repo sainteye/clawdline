@@ -23,6 +23,7 @@ import {
   skillQuery,
 } from "../legacy/skills-bridge.js"
 import { toast } from "../overlays/toast.js"
+import { writeIsOff } from "./outcome.js"
 import { deliverUntilSeen, pendingSends } from "./send.js"
 import { Waiting } from "./Waiting.js"
 
@@ -389,11 +390,11 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
       // transcript, which takes the card's place, is the second — and is
       // enough on its own to free the box when the first never arrives.
       const code = await deliverUntilSeen(pendingSends.add(row.id, said, pictures, Date.now()))
-      if (code === "write_disabled") setWrite(false)
+      if (writeIsOff(code)) setWrite(false)
       if (!code) onDid()
     } catch (err) {
       const code = err instanceof RefusalError ? err.code : "unexpected_error"
-      if (code === "write_disabled") setWrite(false)
+      if (writeIsOff(code)) setWrite(false)
       setFailure(L.fillString(T.webFailWithTag, { text: T.sendFailed, tag: code }))
     } finally {
       inFlight.current = false
