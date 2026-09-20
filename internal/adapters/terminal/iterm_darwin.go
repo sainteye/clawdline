@@ -25,9 +25,15 @@ import (
 // scripting interface is the supported way in. This is the one adapter that is
 // macOS-only by nature: Windows and Linux reach the same port through tmux and
 // through ptys this daemon owns.
-type ITerm struct{}
+type ITerm struct {
+	// ptys reads which pseudo-terminals belong to iTerm2 from the process
+	// table. It is what seals a window this adapter cannot read, and it is a
+	// field so a test can hand over a machine of its own — including one where
+	// the process table cannot be read at all, which must seal nothing.
+	ptys func(context.Context) (itermPTYs, bool)
+}
 
-func NewITerm() *ITerm { return &ITerm{} }
+func NewITerm() *ITerm { return &ITerm{ptys: systemITermPTYs} }
 
 func (i *ITerm) Name() string { return "iterm" }
 
@@ -58,21 +64,36 @@ function itermMissing(walk) {
 }
 function itermEach(it, visit) {
   let unreadable = 0;
+  const gaps = [];
+  // A gap is recorded against the window, not the tab, so a window with
+  // forty tabs it will not list is one thing a person can look at rather
+  // than forty. The count is still per region, because it is what decides
+  // whether the listing was whole.
+  function note(id, why) {
+    for (let g = 0; g < gaps.length; g++) {
+      if (gaps[g].window === id) { gaps[g].regions++; return; }
+    }
+    gaps.push({ window: id, why: why, regions: 1 });
+  }
   const wins = it.windows();
   for (let a = 0; a < wins.length; a++) {
+    let wid = "";
+    try { wid = String(wins[a].id()); } catch (e) {}
     let tabs = null;
     try { tabs = wins[a].tabs(); } catch (e) {}
-    if (!tabs) { unreadable++; continue; }
+    if (!tabs) { unreadable++; note(wid, "tabs() answered null"); continue; }
     for (let b = 0; b < tabs.length; b++) {
       let ss = null;
       try { ss = tabs[b].sessions(); } catch (e) {}
-      if (!ss) { unreadable++; continue; }
+      if (!ss) { unreadable++; note(wid, "a tab's sessions() answered null"); continue; }
       for (let c = 0; c < ss.length; c++) {
-        if (visit(ss[c], wins[a], tabs[b]) === true) return { stopped: true, unreadable: unreadable };
+        if (visit(ss[c], wins[a], tabs[b]) === true) {
+          return { stopped: true, unreadable: unreadable, gaps: gaps };
+        }
       }
     }
   }
-  return { stopped: false, unreadable: unreadable };
+  return { stopped: false, unreadable: unreadable, gaps: gaps };
 }
 `
 
@@ -89,7 +110,7 @@ else {
     try { name = String(s.name() || ""); } catch (e) {}
     out.push({ id: String(s.id()), tty: tty, name: name });
   });
-  JSON.stringify({running:true, sessions: out, unreadable: walk.unreadable});
+  JSON.stringify({running:true, sessions: out, unreadable: walk.unreadable, gaps: walk.gaps});
 }
 `
 
@@ -127,6 +148,7 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 		Running    bool       `json:"running"`
 		Sessions   []itermRow `json:"sessions"`
 		Unreadable int        `json:"unreadable"`
+		Gaps       []itermGap `json:"gaps"`
 	}
 	if err := json.Unmarshal(out, &answer); err != nil {
 		inv.Complete = false
@@ -139,10 +161,17 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 	}
 	// The rows it did list are published — each one is a session iTerm2
 	// named — but the listing is not all there is, so it proves no absence.
+	//
+	// Which is true of the windows it could not read, and of nothing else. So
+	// each one is named here, and then offered to the process table: a window
+	// that is hiding no pty is hiding no session this adapter would ever
+	// publish, and a listing whose every gap is sealed that way answers for
+	// itself again (sealITermGaps).
 	if answer.Unreadable > 0 {
 		inv.Complete = false
 		inv.Notes = append(inv.Notes, fmt.Sprintf("iTerm2 would not list the tabs of %d window(s) or tab(s)",
 			answer.Unreadable))
+		inv.Gaps = itermGaps(answer.Gaps, answer.Unreadable)
 	}
 
 	ptyless := 0
@@ -169,7 +198,48 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 		inv.Notes = append(inv.Notes,
 			"iTerm2 reported ptyless mirror rows, left to the tmux adapter")
 	}
+	if len(inv.Gaps) > 0 {
+		inv = sealITermGaps(ctx, inv, i.ptys)
+	}
 	return inv, nil
+}
+
+// itermGap is one window the walk could not read, as the script names it.
+type itermGap struct {
+	Window  string `json:"window"`
+	Why     string `json:"why"`
+	Regions int    `json:"regions"`
+}
+
+// itermGaps turns the script's answer into the reading's own gaps.
+//
+// A script that answered a count and no names — an older build of this walk,
+// or one whose windows would not even give their ids — still leaves a gap, and
+// an unnamed gap can never be sealed: a region nothing can point at is a
+// region nothing can account for.
+func itermGaps(gaps []itermGap, unreadable int) []session.Gap {
+	out := make([]session.Gap, 0, len(gaps))
+	named := 0
+	for _, g := range gaps {
+		if g.Window == "" {
+			continue
+		}
+		named += g.Regions
+		detail := fmt.Sprintf("iTerm2 window %s would not list its tabs (%s)", g.Window, g.Why)
+		if g.Regions > 1 {
+			detail = fmt.Sprintf("iTerm2 window %s would not list %d of its regions (%s)",
+				g.Window, g.Regions, g.Why)
+		}
+		out = append(out, session.Gap{Source: "iterm", Scope: "window", ID: g.Window, Detail: detail})
+	}
+	if named < unreadable {
+		out = append(out, session.Gap{
+			Source: "iterm", Scope: "listing",
+			Detail: fmt.Sprintf("iTerm2 left %d window(s) or tab(s) unread and would not name them",
+				unreadable-named),
+		})
+	}
+	return out
 }
 
 // itermSendScript is submit.go's four steps in iTerm2, with the same rule

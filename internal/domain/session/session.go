@@ -149,6 +149,13 @@ type Inventory struct {
 	// Mac whose iTerm2 cannot be asked the AND is never true
 	// (docs/design-decisions.md D05 ③). Not on the wire.
 	Sources map[string]bool `json:"-"`
+	// Gaps are the regions a source could not see into, each named and each
+	// either sealed by another source or still open (gap.go). A source that is
+	// incomplete and names no gap is incomplete about itself as a whole.
+	// Incompleteness with a subject is what lets a reading go on answering for
+	// the parts nothing was hiding. Not on the wire in this shape; the
+	// transport puts it beside the source it belongs to.
+	Gaps []Gap `json:"-"`
 }
 
 func (i Inventory) Assistants() []Session {

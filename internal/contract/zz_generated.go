@@ -3983,6 +3983,34 @@ type ScanCompleted struct {
 	Sequence int64 `json:"sequence"`
 }
 
+// One region of a source that this reading could not see into, named. A source
+// that says only `incomplete` has told a reader that its list is short and
+// nothing else, so every absence on the machine becomes unprovable at once —
+// including absences that source was never asked about. Naming the region lets
+// a reader ask the narrower question instead: could what I am looking for be in
+// the part that was not read?
+type ScanGap struct {
+	// What was asked and what came back, in one sentence, for a person reading it.
+	Detail string `json:"detail"`
+
+	// The region's own id, where the source can name one. Absent when it could not,
+	// and a region with no name is never sealed.
+	ID string `json:"id,omitempty"`
+
+	// The kind of region, in the source's own words: `window`.
+	Scope string `json:"scope"`
+
+	// Another source has accounted for everything this region could be hiding, so it
+	// no longer costs its source its authority. Time never sets this: a window unread
+	// for two hours is a window unread, and `long enough` is the same guess made more
+	// slowly.
+	Sealed bool `json:"sealed"`
+
+	// That reason with its numbers in it, so a reader can check it rather than take
+	// it. Absent on a region that is still open.
+	SealedBy string `json:"sealedBy,omitempty"`
+}
+
 // One source's own answer about itself. The merged `complete` is the AND of
 // these, which is the right answer to `is this list all there is` and the wrong
 // one to `is this pane gone`: only the source that reads panes can say that. A
@@ -3990,6 +4018,11 @@ type ScanCompleted struct {
 // the source that would have seen it.
 type ScanSource struct {
 	Complete bool `json:"complete"`
+
+	// The regions of this source that could not be read, each one either sealed by
+	// another source or still open. Optional: a source that read everything omits it.
+	// A person whose machine has gone quiet reads this to find out what is in the way.
+	Gaps []ScanGap `json:"gaps,omitempty"`
 
 	// The source's provenance, as the adapter names it: `ps`, `tmux`, `iterm`.
 	Source string `json:"source"`

@@ -191,15 +191,24 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			// answer of the source that would have seen it: the AND is false
 			// whenever any source failed, so on its own it would make every
 			// absence unprovable and nothing could ever be tombstoned.
-			Sources: scanSources(inv.Sources),
+			Sources: scanSources(inv.Sources, inv.Gaps),
 		},
 	}
+}
+
+// sourceComplete is whether this reading answers for one row's own source.
+//
+// A backend no source here speaks for falls back to the whole reading, which
+// is what this said for every row before it could tell them apart.
+func sourceComplete(inv session.Inventory, backend session.Backend) bool {
+	proves, _ := inv.ProvesAbsence(session.SourceFor(backend))
+	return proves
 }
 
 // scanSources orders the per-source answers by name, because this snapshot is
 // compared byte for byte against the last one published (the Cloud publisher
 // skips a row nobody would read differently) and a map's order is not stable.
-func scanSources(sources map[string]bool) []contract.ScanSource {
+func scanSources(sources map[string]bool, gaps []session.Gap) []contract.ScanSource {
 	if len(sources) == 0 {
 		return nil
 	}
@@ -210,7 +219,34 @@ func scanSources(sources map[string]bool) []contract.ScanSource {
 	sort.Strings(names)
 	out := make([]contract.ScanSource, 0, len(names))
 	for _, name := range names {
-		out = append(out, contract.ScanSource{Source: name, Complete: sources[name]})
+		out = append(out, contract.ScanSource{Source: name, Complete: sources[name], Gaps: scanGaps(name, gaps)})
+	}
+	return out
+}
+
+// scanGaps is what one source could not read, in the order the source met it.
+//
+// It travels even when the source is complete again, because a sealed gap is
+// still a window on this person's screen that will not open — and until this
+// was on the wire the only way to find out was to ask iTerm2 by hand, which is
+// how the window that made every row on this machine read `unknown` was found
+// in the first place.
+func scanGaps(source string, gaps []session.Gap) []contract.ScanGap {
+	out := []contract.ScanGap{}
+	for _, g := range gaps {
+		if g.Source != source {
+			continue
+		}
+		out = append(out, contract.ScanGap{
+			Scope:    g.Scope,
+			ID:       g.ID,
+			Detail:   g.Detail,
+			Sealed:   g.Sealed,
+			SealedBy: g.SealedBy,
+		})
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -412,8 +448,15 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		TerminalState: state,
 		Bound: in.live.Assistant != "" && in.live.PID != 0 &&
 			!in.live.ProcessStart.IsZero() && in.live.ConversationID != "",
-		Matches:             in.matches,
-		InventoryComplete:   in.inv.Complete,
+		Matches: in.matches,
+		// The completeness that decides whether this row's reading is stale is
+		// the completeness of the source that lists this row, not the AND over
+		// every source (D05 ③). With the AND here, one iTerm2 window that will
+		// not describe itself made every row on this machine read `unknown`
+		// with `session_inventory_stale` — including ten tmux panes iTerm2 has
+		// never listed and could not be hiding — and nothing on this Mac could
+		// be closed for as long as that window was open.
+		InventoryComplete:   sourceComplete(in.inv, item.Backend),
 		InventoryObservedAt: in.inv.ObservedAt,
 		Now:                 in.now,
 		Generation:          in.generation,

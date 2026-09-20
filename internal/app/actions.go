@@ -106,6 +106,16 @@ func (r Refusal) Unwrap() error { return r.Cause }
 // that does not contain the id has proved the session is gone. An incomplete
 // one has proved nothing, and answering `not_found` there would turn a terminal
 // that lost accessibility for a moment into a session somebody deleted.
+//
+// **Which reading has to be complete is the source that would have listed this
+// id, and that source alone** (D05 ③). It used to be the whole merged reading,
+// whose Complete is the AND over every source — so on this Mac, where one
+// iTerm2 window has answered null to `tabs()` in every reading for hours, a
+// tmux pane that tmux listed completely could never be shown to have gone, and
+// a session the person had closed came back from their phone as
+// `session_unknown: it is not absent, it is unseen`. The id's own shape says
+// which source issues it (session.SourceForID); an id in no source's shape
+// falls back to the whole reading, which is where it started.
 func (a Actions) Find(ctx context.Context, id string) (session.Session, error) {
 	inv := a.read(ctx)
 	for _, item := range inv.Sessions {
@@ -113,16 +123,27 @@ func (a Actions) Find(ctx context.Context, id string) (session.Session, error) {
 			return item, nil
 		}
 	}
-	if !inv.Complete {
+	source := session.SourceForID(id)
+	if proves, why := inv.ProvesAbsence(source); !proves {
 		return session.Session{}, Refusal{
-			Code:   "session_unknown",
-			Detail: fmt.Sprintf("this reading of the machine was incomplete (%s), so %s is not absent, it is unseen", inv.Provenance, id),
+			Code: "session_unknown",
+			Detail: fmt.Sprintf("this reading of the machine (%s) does not answer for %s, so %s is not absent, "+
+				"it is unseen: %s", inv.Provenance, sourceName(source), id, why),
 		}
 	}
 	return session.Session{}, Refusal{
 		Code:   "session_not_found",
-		Detail: fmt.Sprintf("no session %s in a complete reading of this machine", id),
+		Detail: fmt.Sprintf("no session %s in a complete reading of %s on this machine", id, sourceName(source)),
 	}
+}
+
+// sourceName is how a refusal names the source that owes the answer, including
+// when there is none to name.
+func sourceName(source string) string {
+	if source == "" {
+		return "this machine"
+	}
+	return source
 }
 
 // read is a reading taken for this call. An action names a session and then
