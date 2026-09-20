@@ -273,3 +273,4 @@ internal/adapters/store.snippetWriteLimit # admission: snippet writes in snippet
 internal/transport/http.snippetBodyLimit # admission: one snippet write's body, refused before it is read; the fields inside it are bounded by internal/domain/snippet
 internal/transport/http.timelinePageLimit # page: entries in one Timeline page, continued by its keyset cursor; nothing fills
 internal/transport/http.timelineSummaryLimit # page: a delivery's own account of itself as a Timeline card draws it; the whole of it stays on the task
+internal/adapters/process.headLimit # read: the first record of one Codex rollout, where the `session_id` naming the conversation it belongs to is; one line of one file per transcript a process holds open, read only while a session has no name, and a first line longer than this names nothing this could have used (the transcript read family, beside skillmenu.maxRolloutPrefix)

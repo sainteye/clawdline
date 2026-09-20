@@ -32,7 +32,15 @@ func systemOpenFiles(ctx context.Context, pids []int) (map[int][]string, bool) {
 	// name lookups this has no use for, and `-d` keeps the text and mapped
 	// entries out: a session's transcript is an open descriptor, never a
 	// mapped one.
-	cmd := exec.CommandContext(ctx, "/usr/sbin/lsof", "-w", "-n", "-P", "-F", "pn", "-d", "^txt,^cwd,^rtd", "-p", strings.Join(list, ","))
+	//
+	// `-a` is what makes `-p` a restriction rather than one more thing to
+	// report. lsof ORs its selectors by default, so without it the pid list
+	// selects nothing away and the whole machine is listed: measured here on
+	// 2026-09-20, asking about three pids answered for 664 processes in 22,166
+	// lines and 198 ms, against 301 lines and 26 ms with the flag. The answer
+	// was right either way — the parse is keyed by pid — which is exactly why
+	// nothing had noticed on a reading this takes every couple of seconds.
+	cmd := exec.CommandContext(ctx, "/usr/sbin/lsof", "-w", "-n", "-P", "-a", "-F", "pn", "-d", "^txt,^cwd,^rtd", "-p", strings.Join(list, ","))
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()
 	// lsof exits non-zero when it found nothing to report, which is an answer

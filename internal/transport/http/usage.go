@@ -77,7 +77,7 @@ func (s *Server) usageRow(item session.Session) contract.UsageRow {
 	path := recordPath(item)
 	if path == "" {
 		row.Evidence = contract.EvidenceNone
-		row.Note = "this session's own record could not be located"
+		row.Note = unlocatedNote(item)
 		return row
 	}
 	u, err := s.readUsage(item, path)
@@ -102,6 +102,22 @@ func (s *Server) usageRow(item session.Session) contract.UsageRow {
 	row.TotalTokens = u.Total()
 	row.Messages = u.Messages
 	return row
+}
+
+// unlocatedNote is what a person reads when the session has no record to read
+// because nothing named the conversation.
+//
+// "could not be located" is true of all three of those and useful about none
+// of them: a session nobody has typed into yet, a machine that could not read
+// its own table of open files, and two conversations sharing one process are
+// three different things to do next. The scan already worked out which
+// (session.Binding) and said why in a sentence, so that sentence is what is
+// passed on rather than re-derived here.
+func unlocatedNote(item session.Session) string {
+	if item.BindingDetail != "" {
+		return "this session's own record could not be located: " + item.BindingDetail
+	}
+	return "this session's own record could not be located"
 }
 
 // recordNote is what a person reads when a session's record could not be
@@ -160,7 +176,7 @@ func (s *Server) transcriptPage(id string, item session.Session, limit int) cont
 	path := recordPath(item)
 	if path == "" {
 		page.Evidence = contract.EvidenceNone
-		page.Note = "this session's own record could not be located"
+		page.Note = unlocatedNote(item)
 		return page
 	}
 	page.Path = path

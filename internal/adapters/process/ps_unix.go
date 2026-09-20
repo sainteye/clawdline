@@ -21,9 +21,13 @@ type PS struct {
 	// not resumed is tied to its conversation. New fills it with this
 	// platform's reader; a test puts its own table here.
 	Open OpenFiles
+	// Head reads the first record of one of those transcripts, which is what
+	// says whether it is the conversation or one sub-thread of it. Nil is a
+	// scan that cannot read any of them, and answers accordingly.
+	Head RolloutHead
 }
 
-func New() *PS { return &PS{Open: systemOpenFiles} }
+func New() *PS { return &PS{Open: systemOpenFiles, Head: readRolloutHead} }
 
 // resumeID matches the conversation a session was resumed with. Both assistants
 // put it on their own command line, which makes it proof rather than inference:
@@ -105,11 +109,19 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 // and its rollout appearing, and three threads that day never got one at all.
 //
 // What does exist from the first message on is the open descriptor: the
-// process holds its own rollout open, and the id is in that file's name. So
-// the window this cannot close is startup to first message, and within that
-// window the answer is `no_record` rather than silence — which is the whole
-// difference between a session that will name itself shortly and one this
-// machine is failing to read.
+// process holds its own rollout open, and that file says which conversation it
+// belongs to. So the window this cannot close is startup to first message, and
+// within that window the answer is `no_record` rather than silence — which is
+// the whole difference between a session that will name itself shortly and one
+// this machine is failing to read.
+//
+// The pid asked about is the terminal's foreground process, which for Codex is
+// the platform binary and not the npm wrapper that started it: a wrapper run as
+// `node .../bin/codex` is not classified as an assistant at all, because
+// classify reads the executable and that one is `node`. Measured on this Mac on
+// 2026-09-20 across four Codex sessions, the wrapper held no rollout open in
+// any of them and the binary held every one — so asking the wrong one of the
+// two would have turned every session into a false `no_record`.
 //
 // It runs as one call for every row that needs it, after the table is built,
 // so a machine with no unnamed Codex on it pays nothing.
@@ -131,9 +143,10 @@ func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Se
 		if s.Assistant != session.AssistantCodex || s.ConversationID != "" || s.PID == 0 {
 			continue
 		}
-		id, binding := codexConversation(files[s.PID], read)
+		id, binding, detail := codexConversation(files[s.PID], read, p.Head)
 		rows[i].ConversationID = id
 		rows[i].Binding = binding
+		rows[i].BindingDetail = detail
 	}
 	return rows
 }
