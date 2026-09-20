@@ -50,6 +50,22 @@ class FakeClient implements CloudReadClient {
     this.snippetAsks.push({ identity, options })
     return this.snippetAnswer()
   }
+  // The two shapes below stand for two different client methods and are both
+  // kept: `snippets()` is the copied client's own named reader, and
+  // `_machineRequest` is the generic underneath every word that has no named
+  // method. A test that asks for the snippet list reads `snippetAsks`; a test
+  // that asks for a work-system word reads `reads`.
+  /** Every read sent by word, with the machine and the body it carried. */
+  reads: { machine: string; word: string; body: Record<string, unknown> }[] = []
+  readAnswer: (word: string) => Promise<unknown> = async (word) => ({ read: word })
+  _machineRequest?: (machine: string, word: string, body: Record<string, unknown>, kind: "read") => Promise<unknown> = (
+    machine,
+    word,
+    reqBody,
+  ) => {
+    this.reads.push({ machine, word, body: reqBody })
+    return this.readAnswer(word)
+  }
 }
 
 /** A snippet row as the copied client tags it, with nothing of anybody's in it. */
@@ -109,9 +125,12 @@ test("with no writer carried, a write is refused as not carried, as an uncarried
     detail: "POST /v1/sessions/s1/send is not carried over Clawdline Cloud: do it on the Mac itself.",
     route: "/v1/sessions/s1/send",
   })
-  const board = await r.fetch("/v1/board")
-  assert.equal(board.status, 501)
-  assert.equal((await body<{ error: string }>(board)).error, "cloud_not_carried")
+  // `/v1/board` stood here until this console began asking for it. The read
+  // that stands for "most of this daemon's API" now is one that is no Cloud
+  // word at all (`carry.ts`, `notCarriedDetail`'s second sentence).
+  const uncarried = await r.fetch("/v1/devstacks")
+  assert.equal(uncarried.status, 501)
+  assert.equal((await body<{ error: string }>(uncarried)).error, "cloud_not_carried")
   assert.deepEqual(r.log.map((x: { answer: string; code?: string }) => [x.answer, x.code]), [
     ["refused", "cloud_not_carried"],
     ["refused", "cloud_not_carried"],
@@ -448,4 +467,108 @@ test("a snippet list with no session named is refused, and an older client by na
   const refusal = await body<{ error: string; detail: string }>(res)
   assert.equal(refusal.error, "cloud_not_carried")
   assert.match(refusal.detail, /snippets/)
+})
+
+/* ---- the work system, the Projects page and what they carry ---------------
+   Before this, every one of these was the `default:` case — 501
+   `cloud_not_carried` — so a phone showed the Mac's work board, its Backlog,
+   its proposals, its decisions, its digests, its Project catalog, its Project
+   worktrees, its timeline and its verification ledger as nine screens that
+   could not be read. The Mac had answered four of them the whole time and had
+   a route for a fifth; the other five had no word at all. */
+
+/** Every read carried by word, the URL the console asks it with, and the body that must reach the Mac. */
+const CARRIED_READS: [string, string, Record<string, unknown>][] = [
+  ["/v1/work/board?project=%2Fp", "work.board", { project: "/p", cursor: "" }],
+  ["/v1/work/board", "work.board", { project: "", cursor: "" }],
+  ["/v1/work/backlog?project=%2Fp&cursor=c2", "work.backlog", { project: "/p", cursor: "c2" }],
+  ["/v1/work/proposals?project=%2Fp", "work.proposals", { project: "/p" }],
+  ["/v1/work/decisions", "work.decisions", {}],
+  ["/v1/work/digests?kind=daily", "work.digests", { kind: "daily" }],
+  ["/v1/projects", "projects", {}],
+  ["/v1/orchestrator/usage/project-worktrees?project=%2Fp", "project-worktrees", { project: "/p" }],
+  ["/v1/projects/%2Fp/worktrees", "project-worktree-lifecycle", { project: "/p" }],
+  ["/v1/orchestrator/usage/verification-ledger", "verification-ledger", { graph: "" }],
+  ["/v1/orchestrator/usage/verification-ledger?graph=g1", "verification-ledger", { graph: "g1" }],
+  ["/v1/board?project=p1", "board", { project: "p1", item: "" }],
+  ["/v1/board?project=p1&item=i1", "board", { project: "p1", item: "i1" }],
+  [
+    "/v1/board?project=p1&audience=human",
+    "board.items",
+    { project: "p1", audience: "human", cursor: 0, limit: 30 },
+  ],
+  [
+    "/v1/board?project=p1&audience=agent&cursor=60&limit=90",
+    "board.items",
+    { project: "p1", audience: "agent", cursor: 60, limit: 90 },
+  ],
+  [
+    "/v1/timeline?project=clawdline-go&upcoming=false",
+    "timeline",
+    { project: "clawdline-go", entry: "", cursor: "", environment: "", category: "", upcoming: false },
+  ],
+  [
+    "/v1/timeline?project=clawdline-go&environment=staging&category=feature&upcoming=true",
+    "timeline",
+    { project: "clawdline-go", entry: "", cursor: "", environment: "staging", category: "feature", upcoming: true },
+  ],
+]
+
+test("the work system, the projects and the timeline reach the Mac as their own words", async () => {
+  for (const [path, word, sent] of CARRIED_READS) {
+    const client = new FakeClient()
+    const r = reader(client, { t: 1000 })
+    const res = await r.fetch(path)
+    assert.equal(res.status, 200, path + " was not answered")
+    assert.deepEqual(await body(res), { read: word }, path + " did not answer what the Mac said")
+    assert.equal(client.reads.length, 1, path + " asked the Mac " + client.reads.length + " times")
+    assert.equal(client.reads[0].machine, "mac-a", path + " asked a machine this page is not reading")
+    assert.equal(client.reads[0].word, word, path + " asked for " + client.reads[0].word)
+    assert.deepEqual(client.reads[0].body, sent, path + " carried the wrong body")
+    const logged = r.log[r.log.length - 1]
+    assert.equal(logged.answer, "relay", path + " was answered somewhere other than the Mac")
+    assert.equal(logged.word, word, path + " is logged as " + logged.word)
+  }
+})
+
+test("a query field no word carries is refused by name, never quietly dropped", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 1000 })
+  // `section` is a real field of this daemon's own route and no part of the
+  // word: carried silently it would answer one section as though it were the
+  // board, which is worse than saying so.
+  const res = await r.fetch("/v1/work/board?project=%2Fp&section=active")
+  assert.equal(res.status, 501)
+  const refusal = await body<{ error: string; detail: string }>(res)
+  assert.equal(refusal.error, "cloud_not_carried")
+  assert.match(refusal.detail, /section=/)
+  assert.equal(client.reads.length, 0, "the Mac was asked a question it could not have been told")
+})
+
+test("a client with no generic read refuses each word by name rather than throwing", async () => {
+  const client = new FakeClient()
+  client._machineRequest = undefined
+  const r = reader(client, { t: 1000 })
+  for (const [path, word] of CARRIED_READS) {
+    const res = await r.fetch(path)
+    assert.equal(res.status, 501, path)
+    const refusal = await body<{ error: string; detail: string }>(res)
+    assert.equal(refusal.error, "cloud_not_carried", path)
+    assert.match(refusal.detail, new RegExp(word.replace(".", "\\.")), path + " did not name the word")
+  }
+})
+
+test("a refusal from the Mac's own route stays that route's refusal", async () => {
+  const client = new FakeClient()
+  client.readAnswer = async () => {
+    throw Object.assign(new Error("A timeline is one Project's; name it with ?project=."), {
+      code: "project_required",
+      status: 400,
+    })
+  }
+  const r = reader(client, { t: 1000 })
+  const res = await r.fetch("/v1/timeline?upcoming=true")
+  assert.equal(res.status, 400, "the Mac's own status is what the page sees")
+  const refusal = await body<{ error: string }>(res)
+  assert.equal(refusal.error, "project_required", "a route's refusal is not turned into a seam refusal")
 })

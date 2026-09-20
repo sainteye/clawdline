@@ -233,6 +233,79 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		query: map[string]string{"project": "clawdline-go", "audience": "human",
 			"cursor": "0", "limit": "50"},
 	}, {
+		// The work system, five words. What a phone showed before these was
+		// `cloud_not_carried` on every one of them, which is the whole board,
+		// the Backlog, the proposals, the decisions and the digests at once.
+		word: "work.board",
+		body: map[string]any{"type": "work.board", "session": machine, "request": "req-work-board",
+			"project": "/Users/sean/code/clawdline-go", "cursor": ""},
+		session: machine, name: "read:req-work-board",
+		method: "GET", path: "/v1/work/board",
+		query: map[string]string{"project": "/Users/sean/code/clawdline-go"},
+	}, {
+		word: "work.backlog",
+		body: map[string]any{"type": "work.backlog", "session": machine, "request": "req-work-backlog",
+			"project": "", "cursor": "c-2"},
+		session: machine, name: "read:req-work-backlog",
+		method: "GET", path: "/v1/work/backlog",
+		query: map[string]string{"cursor": "c-2"},
+	}, {
+		word: "work.proposals",
+		body: map[string]any{"type": "work.proposals", "session": machine,
+			"request": "req-work-proposals", "project": ""},
+		session: machine, name: "read:req-work-proposals",
+		method: "GET", path: "/v1/work/proposals",
+	}, {
+		word: "work.decisions",
+		body: map[string]any{"type": "work.decisions", "session": machine,
+			"request": "req-work-decisions"},
+		session: machine, name: "read:req-work-decisions",
+		method: "GET", path: "/v1/work/decisions",
+	}, {
+		word: "work.digests",
+		body: map[string]any{"type": "work.digests", "session": machine,
+			"request": "req-work-digests", "kind": "daily"},
+		session: machine, name: "read:req-work-digests",
+		method: "GET", path: "/v1/work/digests",
+		query: map[string]string{"kind": "daily"},
+	}, {
+		word:    "projects",
+		body:    map[string]any{"type": "projects", "session": machine, "request": "req-projects"},
+		session: machine, name: "read:req-projects",
+		method: "GET", path: "/v1/projects",
+	}, {
+		word: "project-worktrees",
+		body: map[string]any{"type": "project-worktrees", "session": machine,
+			"request": "req-worktrees", "project": "/Users/sean/code/clawdline-go"},
+		session: machine, name: "read:req-worktrees",
+		method: "GET", path: "/v1/orchestrator/usage/project-worktrees",
+		query: map[string]string{"project": "/Users/sean/code/clawdline-go"},
+	}, {
+		// The Project id is a path segment here, so the escaping is the
+		// answer to a different question than the query above's.
+		word: "project-worktree-lifecycle",
+		body: map[string]any{"type": "project-worktree-lifecycle", "session": machine,
+			"request": "req-lifecycle", "project": "/Users/sean/code/clawdline-go"},
+		session: machine, name: "read:req-lifecycle",
+		method: "GET", path: "/v1/projects/%2FUsers%2Fsean%2Fcode%2Fclawdline-go/worktrees",
+	}, {
+		// `upcoming` travels on every read because both of its values mean
+		// something; the empty filters do not travel at all, because this
+		// route reads an absent parameter and an empty one differently.
+		word: "timeline",
+		body: map[string]any{"type": "timeline", "session": machine, "request": "req-timeline",
+			"project": "clawdline-go", "entry": "", "cursor": "", "environment": "",
+			"category": "", "upcoming": false},
+		session: machine, name: "read:req-timeline",
+		method: "GET", path: "/v1/timeline",
+		query: map[string]string{"project": "clawdline-go", "upcoming": "false"},
+	}, {
+		word: "verification-ledger",
+		body: map[string]any{"type": "verification-ledger", "session": machine,
+			"request": "req-ledger", "graph": ""},
+		session: machine, name: "read:req-ledger",
+		method: "GET", path: "/v1/orchestrator/usage/verification-ledger",
+	}, {
 		word: "send",
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",
 			"text": "hello", "images": []any{}},
@@ -398,12 +471,6 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		word:    "skills",
 		body:    map[string]any{"type": "skills", "session": pane},
 		session: pane, name: "skills", code: "unknown_command", status: 400,
-	}, {
-		word: "timeline",
-		body: map[string]any{"type": "timeline", "session": machine, "request": "req-timeline",
-			"project": "clawdline-go", "entry": "", "cursor": "", "environment": "",
-			"category": "", "upcoming": false},
-		session: machine, name: "read:req-timeline", code: "unknown_command", status: 400,
 	}, {
 		word: "schedule",
 		body: map[string]any{"type": "schedule", "session": machine, "request": "req-schedule",
@@ -1033,7 +1100,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		}
 	}
 	// The daemon's published list must not promise what it refuses.
-	for _, word := range []string{"agent", "shell", "skills", "timeline",
+	for _, word := range []string{"agent", "shell", "skills",
 		"schedule", "diagnostics.report", "diagnostics.events", "dispatch"} {
 		if implemented[word] {
 			t.Fatalf("%s is advertised and has no local capability", word)
@@ -1044,7 +1111,9 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"past-sessions", "schedules", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
-		"board", "board.items"} {
+		"board", "board.items", "timeline", "projects", "project-worktrees",
+		"project-worktree-lifecycle", "verification-ledger",
+		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}

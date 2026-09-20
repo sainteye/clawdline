@@ -64,13 +64,13 @@ var FeatureWords = []string{"sessions.snapshot", "board.items"}
 
 // Features is the subset of those this daemon can actually answer.
 //
-// It is **computed, not copied**, and today it is empty: `sessions.snapshot`
-// is not in this daemon's vocabulary (this publisher polls instead of being
-// asked) and `board.items` is one of the nine words `cloudops` answers
-// `unknown_command`. Advertising either would buy a refusal per tap rather
-// than a feature — and worse than a refusal, because a page that has been told
-// a machine implements a word and is then refused records it as a fault rather
-// than as an absence.
+// It is **computed, not copied**, which is what keeps it true as the catalog
+// moves: `sessions.snapshot` is not in this daemon's vocabulary at all (this
+// publisher polls instead of being asked) and `board.items` is routed, so
+// today this list is exactly `board.items`. Advertising a word this daemon
+// refuses would buy a refusal per tap rather than a feature — and worse than a
+// refusal, because a page that has been told a machine implements a word and
+// is then refused records it as a fault rather than as an absence.
 //
 // An empty list is published as no `features` key at all, which is what the
 // Linux runtime already does and what the consumer treats as "this machine has

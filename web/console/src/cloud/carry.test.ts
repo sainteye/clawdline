@@ -170,12 +170,18 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("transcript" in CARRIED)
   assert.ok("schedules" in CARRIED)
   assert.ok("snippets" in CARRIED)
-  // 26, counted again on this tree and not carried over from the 21 this was
-  // last measured at: the snippet list and the four snippet writes moved out
-  // of NO_MAC_ROUTE, where the list had been sitting because the Mac's
-  // catalog really did know the word and have no route behind it. A number
-  // copied across a change is the one nobody checks.
-  assert.equal(Object.keys(CARRIED).length, 26)
+  assert.ok("timeline" in CARRIED)
+  // 38, counted on this tree after the two lines met, and equal to neither
+  // number either of them carried: the snippet line measured 26 against a base
+  // of 21 and the work-system line measured 33 against the same 21, so 38 is
+  // 21 plus both sets of arrivals — the snippet list and its four writes, and
+  // the twelve reads of the work system (its five words, this daemon's Project
+  // catalog, the two Project worktree reads, the verification ledger, the
+  // Project timeline and the Swift board's two). Neither branch could see the
+  // other's five, and Git does not mark a conflict when two sides write the
+  // same number, so this count is re-measured at every merge rather than
+  // carried over — a number copied across a change is the one nobody checks.
+  assert.equal(Object.keys(CARRIED).length, 38)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -195,8 +201,9 @@ test("every route the table says is answered here is answered here, with no word
     assert.equal(uncarriedWordOf("GET", path), "", path + " stands for a word, so it is not answered here")
   }
   // And a route in neither list is still refused, so the list is what a page
-  // can reach and not merely some of it.
-  assert.equal((await reader.fetch("/v1/board")).status, 501)
+  // can reach and not merely some of it. `/v1/board` stood here until this
+  // console began asking for it; `/v1/devstacks` is no Cloud word at all.
+  assert.equal((await reader.fetch("/v1/devstacks")).status, 501)
 })
 
 test("a route this console does not carry is refused by the word it stands for", async () => {
@@ -218,6 +225,12 @@ test("a route this console does not carry is refused by the word it stands for",
   // sentence too, not the same one.
   assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/git"), "git")
   assert.equal(notCarriedDetail("GET", "/v1/sessions/s1/git"), DEFERRED.git)
+  // A word this console now carries stands for nothing here, because what is
+  // carried is parsed once by the reader's own case: the work board and a
+  // Project's timeline were both in this function and are not any more.
+  assert.equal(uncarriedWordOf("GET", "/v1/work/board"), "", "the work board is carried")
+  assert.equal(uncarriedWordOf("GET", "/v1/timeline?project=p"), "", "a Project's timeline is carried")
+  assert.equal(uncarried("work.board"), "", "a carried word has no refusal sentence")
   // One schedule in full is the one schedule word this Mac has no route for
   // (`op{name: "schedule"}` in cloudops/ops.go carries no `route`), so the
   // sheets behind a schedule row say that and not "not read yet", while the
@@ -259,8 +272,13 @@ test("the seam says what this Mac can do that this bundle never asks for", async
   const mac = new FakeMac()
   const reader = seam(mac)
   assert.equal(reader.drift(), null, "no descriptor is not agreement")
-  mac.commands = [...Object.keys(CARRIED), "shell", "board"]
-  assert.deepEqual(reader.drift(), { notCarried: ["board", "shell"], notOnThisMac: [] })
+  // Two words this Mac knows and this bundle does not ask for, one from each
+  // uncarried list: `git` is DEFERRED and `shell` is NO_MAC_ROUTE. Both of the
+  // pairs this test used before — `board` and `snippets` — became carried
+  // words, on the two branches that met here, which is exactly the drift this
+  // assertion is about.
+  mac.commands = [...Object.keys(CARRIED), "shell", "git"]
+  assert.deepEqual(reader.drift(), { notCarried: ["git", "shell"], notOnThisMac: [] })
   mac.commands = Object.keys(CARRIED).filter((word) => word !== "info")
   assert.deepEqual(reader.drift(), { notCarried: [], notOnThisMac: ["info"] })
 
