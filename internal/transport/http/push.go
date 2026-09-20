@@ -16,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	cloudtransport "github.com/sainteye/clawdline-go/internal/transport/cloud"
 )
 
 // The /v1/push/* routes, which are the Swift app's (`RemoteServer.swift`, the
@@ -140,7 +141,7 @@ func (s *Server) pushSubscribeRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	// Validated rather than stored as given. See FromBrowser.
 	subscription, ok := adapterpush.FromBrowser(readBody(r), newPushID(), device,
-		r.Header.Get("Origin"))
+		pushWebAppOrigin(r))
 	if !ok {
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "That is not a usable push subscription.")
 		return
@@ -157,6 +158,36 @@ func (s *Server) pushSubscribeRoute(w http.ResponseWriter, r *http.Request) {
 		"id": subscription.ID, "device": device, "host": subscription.Host(),
 	})
 	writeJSON(w, contract.PushSubscribed{OK: true, ID: subscription.ID})
+}
+
+// pushWebAppOrigin is the web app this subscription belongs to — the page that
+// will be opened when somebody taps a notification sent to it, months from
+// now.
+//
+// **That is not the same question as "where did this request come from", even
+// though one header was answering both.** For a browser they coincide: the
+// page asking to be notified is the page the person is looking at, and its
+// Origin says so. For a Cloud viewer they do not. The request is dispatched in
+// this process on the person's behalf, and `internal/transport/cloud`'s
+// `LocalAuthorizer` stamps `Origin: http://127.0.0.1` on it, which is the
+// truthful answer to the CSRF question and the wrong answer to this one: the
+// person is looking at `app.clawdline.com` on a phone, where `127.0.0.1` opens
+// nothing. Stored, that address goes into every notification this daemon later
+// sends — an iPhone's endpoint is `push.apple.com`, so a row with an origin
+// takes Apple's declarative envelope and its `navigate` is resolved against
+// exactly this value, and WebKit never wakes `sw.js` to give the tap a second
+// chance.
+//
+// So the Cloud line says which console it is answering for, in the request's
+// context where nothing arriving over a socket can put it (`WithAppOrigin`),
+// and it is the settings' `cloud_app_origin` — a person who pointed this
+// machine at their own console is followed there. Every other request is a
+// browser speaking for itself and is read exactly as before.
+func pushWebAppOrigin(r *http.Request) string {
+	if console := cloudtransport.AppOriginOf(r.Context()); console != "" {
+		return console
+	}
+	return r.Header.Get("Origin")
 }
 
 // pushTestRoute sends one notification to the asking device, and waits for the

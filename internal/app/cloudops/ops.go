@@ -1074,10 +1074,13 @@ func init() {
 				"request carries this machine's own local credential, and the store keeps " +
 				"one row per device, so a second Cloud browser asking to be notified takes " +
 				"the first one's place — where two devices paired to this machine's own " +
-				"network keep a row each. The stored web-app origin is this daemon's " +
-				"`http://127.0.0.1` for the same reason, and that is the origin an iOS " +
-				"declarative notification resolves its address against. Measured in " +
-				"internal/transport/http's `TestEveryCloudViewerIsTheSameDeviceHere`",
+				"network keep a row each. It needs the viewer's own identity to reach the " +
+				"route, which no word on this wire carries. Measured in " +
+				"internal/transport/http's `TestEveryCloudViewerIsTheSameDeviceHere`. " +
+				"The web-app origin stored beside it was this daemon's `http://127.0.0.1` " +
+				"for a while, which is what an iOS declarative notification resolved its " +
+				"address against and is why a notification that arrived opened nothing; " +
+				"it is now `cloud_app_origin`, carried to the route beside the credential",
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request", "subscription") {
 					return plan{}, false

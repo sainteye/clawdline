@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
 	adapterpush "github.com/sainteye/clawdline-go/internal/adapters/push"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/app/cloudops"
@@ -44,6 +45,17 @@ type pushStandIn struct {
 
 func newPushStandIn(t *testing.T) *pushStandIn {
 	t.Helper()
+	return newPushStandInFor(t, adaptercloud.DefaultAppOrigin)
+}
+
+// newPushStandInFor is the same machine answering for a named console, which
+// is what `cloud_app_origin` in the settings file decides: the default is
+// `app.clawdline.com`, and a person who put their own console there is
+// followed to it. The link reads that key once and hands it to the router
+// (`internal/transport/cloud`'s `wire`), so this argument is that settings
+// value arriving where the routes can see it.
+func newPushStandInFor(t *testing.T, appOrigin string) *pushStandIn {
+	t.Helper()
 	dir := filepath.Join(t.TempDir(), "clawdline-next")
 	t.Setenv("CLAWDLINE_SWIFT_DIR", filepath.Join(t.TempDir(), "swift"))
 	st, err := store.Open(dir)
@@ -66,7 +78,8 @@ func newPushStandIn(t *testing.T) *pushStandIn {
 		handler: handler,
 		bridge: cloudops.Bridge{MachineID: "mac-01",
 			Router: cloud.Router{Handler: handler,
-				Authorize: cloud.LocalAuthorizer(local, machineToken)},
+				Authorize: cloud.LocalAuthorizer(local, machineToken),
+				AppOrigin: appOrigin},
 			// Deliberately off: these three words are read-level, and a Mac
 			// with remote writes switched off still lets a phone ask to be
 			// notified.
@@ -264,11 +277,14 @@ func TestEveryCloudViewerIsTheSameDeviceHere(t *testing.T) {
 	if rows[0].Endpoint != "https://fcm.googleapis.com/fcm/send/Qm9i" {
 		t.Fatalf("the surviving row is %q, wanted the one that arrived last", rows[0].Endpoint)
 	}
-	// And the origin stored with it is this daemon's own, because that is the
-	// Origin an in-process request truthfully carries — not the console's. An
-	// iOS declarative notification resolves its address against exactly this.
-	if rows[0].Origin != "http://127.0.0.1" {
-		t.Fatalf("the stored origin is %q; the divergence says this daemon's own", rows[0].Origin)
+	// The *origin* stored with it is no longer part of this divergence. It was:
+	// the row kept the `http://127.0.0.1` the authorizer stamps for CSRF, and
+	// an iOS notification resolved its address against that. The two halves
+	// looked like one problem and were not — one viewer's identity cannot
+	// reach this route, and the console's address always could.
+	if rows[0].Origin != adaptercloud.DefaultAppOrigin {
+		t.Fatalf("the stored origin is %q, want the hosted console's %q",
+			rows[0].Origin, adaptercloud.DefaultAppOrigin)
 	}
 }
 
@@ -360,5 +376,124 @@ func TestTheActorHeaderClosesTheLocalDoorToo(t *testing.T) {
 		if rec.Code != tc.want {
 			t.Errorf("%s: %d %s, want %d", tc.name, rec.Code, rec.Body, tc.want)
 		}
+	}
+}
+
+// TestACloudSubscriptionOpensTheHostedConsole is the whole of what the origin
+// stored with a Cloud registration is for: a notification that arrives on a
+// phone has to open the page the person was looking at.
+//
+// It is measured at the two places the value is used rather than only at the
+// column it is written into — the store's row, and the envelope
+// `adapterpush.Build` selects from it. An iPhone's endpoint is
+// `web.push.apple.com`, so a row with a trustworthy origin takes Apple's
+// Declarative Web Push envelope, and `navigate` is resolved against that
+// origin. WebKit displays and navigates without waking the service worker, so
+// `sw.js`'s `notificationclick` is not a second chance at this: the address in
+// the envelope is the address the tap opens.
+func TestACloudSubscriptionOpensTheHostedConsole(t *testing.T) {
+	s := newPushStandIn(t)
+
+	answer, _ := s.ask(t, 1, map[string]any{"type": "push-subscribe",
+		"session": cloudops.MachineReplySession, "request": "req-sub",
+		"subscription": cloudSubscription(t, "https://web.push.apple.com/QWxpY2U")})
+	if !answer.OK() {
+		t.Fatalf("the viewer could not subscribe: %d/%q %s",
+			answer.Status, answer.Code, answer.Payload)
+	}
+	rows := s.rows(t)
+	if len(rows) != 1 {
+		t.Fatalf("one registration wrote %d subscriptions", len(rows))
+	}
+	if rows[0].Origin != adaptercloud.DefaultAppOrigin {
+		t.Errorf("the stored origin is %q, want the hosted console's %q",
+			rows[0].Origin, adaptercloud.DefaultAppOrigin)
+	}
+
+	message, _, ok := adapterpush.Build(adapterpush.Notification{
+		Title: "Clawdline", Body: "一個 session 在等你", URL: "/"}, rows[0])
+	if !ok {
+		t.Fatal("no envelope could be built for this subscription")
+	}
+	if message.ContentType != "application/notification+json" {
+		t.Fatalf("an Apple endpoint with an origin took the %q envelope", message.ContentType)
+	}
+	var declared struct {
+		Notification struct {
+			Navigate string `json:"navigate"`
+		} `json:"notification"`
+	}
+	if err := json.Unmarshal(message.Plaintext, &declared); err != nil {
+		t.Fatalf("the declarative payload does not parse: %v", err)
+	}
+	if want := adaptercloud.DefaultAppOrigin + "/"; declared.Notification.Navigate != want {
+		t.Errorf("tapping the notification opens %q, want %q", declared.Notification.Navigate, want)
+	}
+}
+
+// TestACloudSubscriptionFollowsAConsoleSomebodyMoved is the same property for
+// a machine pointed at a console of its own.
+//
+// The value is `cloud_app_origin`, which the link reads at startup and hands
+// to its router, so a person running their own console — or a build pointed at
+// a staging one — is followed there rather than to the constant. Writing the
+// constant into the route would have passed the test above and stranded
+// exactly those people.
+func TestACloudSubscriptionFollowsAConsoleSomebodyMoved(t *testing.T) {
+	const moved = "https://console.example"
+	s := newPushStandInFor(t, moved)
+
+	answer, _ := s.ask(t, 1, map[string]any{"type": "push-subscribe",
+		"session": cloudops.MachineReplySession, "request": "req-sub",
+		"subscription": cloudSubscription(t, "https://web.push.apple.com/QWxpY2U")})
+	if !answer.OK() {
+		t.Fatalf("the viewer could not subscribe: %d/%q %s",
+			answer.Status, answer.Code, answer.Payload)
+	}
+	rows := s.rows(t)
+	if len(rows) != 1 {
+		t.Fatalf("one registration wrote %d subscriptions", len(rows))
+	}
+	if rows[0].Origin != moved {
+		t.Errorf("the stored origin is %q, want the console this machine was pointed at, %q",
+			rows[0].Origin, moved)
+	}
+}
+
+// TestTheCSRFAnswerIsUnchanged is the other half of the header this change
+// stopped overloading, held still.
+//
+// `LocalAuthorizer` stamps `Origin: http://127.0.0.1` because for "where did
+// this change come from" the answer genuinely is this daemon, and the gate
+// refuses a change that cannot say. Nothing here may move that: a Cloud write
+// that arrived without a same-origin answer would be refused by the gate, and
+// the way to find that out must not be a person's session going quiet.
+func TestTheCSRFAnswerIsUnchanged(t *testing.T) {
+	var seen *http.Request
+	router := cloud.Router{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r
+			w.WriteHeader(http.StatusNoContent)
+		}),
+		Authorize: cloud.LocalAuthorizer("local-token", "machine-token"),
+		AppOrigin: "https://console.example",
+	}
+	if _, err := router.Do(context.Background(), cloudops.LocalRequest{
+		Method: http.MethodPost, Path: "/v1/push/subscribe", Body: []byte("{}")}); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if got := seen.Header.Get("Origin"); got != "http://127.0.0.1" {
+		t.Errorf("the request came from %q; the gate is told this daemon, and a Cloud "+
+			"write with any other answer is refused as cross-origin", got)
+	}
+	if got := seen.Header.Get("Sec-Fetch-Site"); got != "same-origin" {
+		t.Errorf("Sec-Fetch-Site is %q", got)
+	}
+	// And the console travels beside it, where no socket can put it.
+	if got := cloud.AppOriginOf(seen.Context()); got != "https://console.example" {
+		t.Errorf("the router named the console %q", got)
+	}
+	if got := seen.Header.Get("X-Clawdline-App-Origin"); got != "" {
+		t.Errorf("the console travelled as a header (%q), which a tunnelled browser could send too", got)
 	}
 }

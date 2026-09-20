@@ -382,8 +382,9 @@ func (l *Link) wire() error {
 	l.service = Service{
 		MachineID: identity.MachineID,
 		Bridge: cloudops.Bridge{
-			MachineID:     identity.MachineID,
-			Router:        Router{Handler: opts.Handler, Authorize: opts.Authorize},
+			MachineID: identity.MachineID,
+			Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
+				AppOrigin: settings.AppOrigin},
 			AllowCommands: l.allowCommands,
 			Authority:     l.authority,
 		},
@@ -395,9 +396,10 @@ func (l *Link) wire() error {
 		MachineName: machineName(identity, settings),
 		Platform:    runtime.GOOS,
 		Version:     opts.Version,
-		Router:      Router{Handler: opts.Handler, Authorize: opts.Authorize},
-		Publish:     l.relay.Publish,
-		Log:         opts.Log,
+		Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
+			AppOrigin: settings.AppOrigin},
+		Publish: l.relay.Publish,
+		Log:     opts.Log,
 	}
 	return nil
 }
@@ -851,6 +853,49 @@ func LocalAuthorizer(localToken, machineToken string) func(*http.Request) {
 		r.Header.Set("Origin", "http://127.0.0.1")
 		r.Header.Set("Sec-Fetch-Site", "same-origin")
 	}
+}
+
+// appOriginKey carries the hosted console a request was dispatched on behalf
+// of. See WithAppOrigin.
+type appOriginKey struct{}
+
+// WithAppOrigin marks a request as this daemon answering a viewer of the
+// hosted console at `origin`, and names that console.
+//
+// **It is the second question the Origin header was answering, asked
+// separately.** `LocalAuthorizer` sets `Origin: http://127.0.0.1` because for
+// "where did this change come from", which is what CSRF asks, the answer
+// genuinely is this daemon itself. But a route that stores an origin to open a
+// page at later — `/v1/push/subscribe` writes one into every subscription, and
+// an iOS declarative notification resolves its address against exactly that —
+// is asking "which web app is this person looking at", and to that question
+// `http://127.0.0.1` is a wrong answer that only shows up on a phone, where
+// the address opens nothing. One header cannot be honest about both, so the
+// second answer travels on its own.
+//
+// **In the context and not in a header, because only this can put it there.**
+// A header naming where a stored subscription will later open would be a
+// header that *grants*, and the gate would then have to strip it from
+// everything arriving over a socket to keep a tunnelled browser from choosing
+// its own. `net/http`'s server builds a request's context itself and has no
+// way to carry a caller's value into it, so a value this package sets on a
+// request it constructed in process cannot be forged from outside. Contrast
+// `X-Clawdline-Actor`, which the gate honours from anybody precisely because
+// it can only ever take authority away.
+func WithAppOrigin(ctx context.Context, origin string) context.Context {
+	if origin == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, appOriginKey{}, origin)
+}
+
+// AppOriginOf is the hosted console this request is being answered on behalf
+// of, or "" for a request that did not come in through the Cloud line — which
+// is every request that arrived over a socket, and is the answer that leaves a
+// route reading the browser's own Origin header as before.
+func AppOriginOf(ctx context.Context) string {
+	origin, _ := ctx.Value(appOriginKey{}).(string)
+	return origin
 }
 
 // machineScoped is the gate's own list of paths where the orchestrator
