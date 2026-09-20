@@ -28,6 +28,18 @@ export interface ConfirmRequest {
   id?: string
   /** Where focus goes back on Cancel; the `⋯` trigger when absent. */
   opener?: HTMLElement | null
+  /**
+   * What the question is about, when the screen behind it does not already
+   * say: the swiped row's own name. Beside the conversation, "this session" is
+   * unambiguous and the title stays as it was.
+   */
+  subject?: string
+  /**
+   * Which answer the question opens with. `cancel` for a question one press
+   * away from a list whose rows are pressed to *use* what they name — the rule
+   * the Forget-a-machine question follows (`cloud/CloudGate.tsx`).
+   */
+  focus?: "cancel" | "go"
 }
 
 /** Open the Session info card for the open session (`#detail-info`, `#session-info`, `#status-line-open`). */

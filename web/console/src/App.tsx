@@ -534,7 +534,10 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
     }
     const onConfirm = (ev: Event) => {
       const ask = (ev as CustomEvent<ConfirmRequest | undefined>).detail
-      ActionConfirm.open(ask?.kind || "end", ask?.id, ask?.opener)
+      ActionConfirm.open(ask?.kind || "end", ask?.id, ask?.opener, undefined, {
+        subject: ask?.subject,
+        focus: ask?.focus,
+      })
     }
     document.addEventListener(OPEN_INFO, onInfo)
     document.addEventListener(OPEN_CONFIRM, onConfirm)

@@ -1,0 +1,50 @@
+/* ==========================================================================
+   The uncovered control, for the two readings the original never had
+   The gesture's whole look — `.row[data-swipe]`, `--swipe-x`,
+   `--swipe-button-x`, `.swipe-end` and its colour — is the Swift app's, copied
+   into `legacy/responsive.css` byte for byte. Only what that file has no rule
+   for is here, and there is a reason it has none: the app it came from drew
+   one kind of row, the kind you can close. This console draws three, because
+   the broker answers three (`view/derive.js`, `projectSessionCloseability`),
+   and on this machine on 2026-09-20 six of thirteen rows were the one that
+   says it does not know.
+   So: a second line under the word, and a cell that is not the destructive
+   colour when what it says is not an offer to close anything. Pressing it
+   still opens the confirmation — that is where the reasons are, in full.
+   Kept out of `legacy/` because that directory is compared byte for byte
+   (`tools/check-legacy-css.sh`); the breakpoint is the one the copy uses, so
+   the cell exists on a phone and nowhere else.
+   ========================================================================== */
+@media (max-width: 899px) {
+    .row > .swipe-end {
+        flex-direction: column;
+        gap: 2px;
+        line-height: 1.25;
+        text-align: center;
+    }
+    .row > .swipe-end .word { display: block; }
+    .row > .swipe-end .why {
+        display: block;
+        font-size: 10px;
+        font-weight: 500;
+        opacity: 0.8;
+    }
+
+    /* Something is still owed, or the reading could not prove anything. The
+       cell keeps its place and its size and loses the accent: a control that
+       is about to refuse must not look like the one that acts. */
+    .row > .swipe-end[data-closeability="blocked"],
+    .row > .swipe-end[data-closeability="needs_attestation"] {
+        background: var(--card-hi);
+        color: var(--ink);
+        box-shadow: inset 1px 0 0 var(--line);
+    }
+    .row > .swipe-end[data-closeability="unknown"] {
+        background: var(--card-hi);
+        color: var(--dim);
+        box-shadow: inset 1px 0 0 var(--line);
+    }
+    .row > .swipe-end[data-closeability]:not([data-closeability="safe"]):active {
+        background: var(--line);
+    }
+}

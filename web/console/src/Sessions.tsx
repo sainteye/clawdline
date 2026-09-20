@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } fro
 import type { SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
-import { Row } from "./session/List.js"
+import { paintSwipe, Row } from "./session/List.js"
 import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { Starting } from "./session/Starting.js"
 import { taskReads } from "./session/task-read.js"
+import { swipes } from "./session/swipe.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 import { ScheduleSection } from "./pages/schedules.js"
 
@@ -143,8 +144,16 @@ export function SessionsPage({
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const ptrRef = useRef<HTMLDivElement>(null)
+  // The swipe binds first, so that by the time pull-to-refresh reads a move
+  // the axis has been decided and it knows whether the gesture is its own.
+  const swipedId = useSwipeToEnd(scrollRef)
   const ptrWord = usePullToRefresh(scrollRef, ptrRef, onDid)
   useOrderHold(scrollRef)
+  // A row that has gone takes its uncovered action with it, rather than
+  // leaving a close button standing over whatever row took its place.
+  useEffect(() => {
+    if (swipedId && !drawn.some((r) => r.id === swipedId)) swipes.closeOpen()
+  }, [drawn, swipedId])
 
   return (
     <>
@@ -227,7 +236,14 @@ export function SessionsPage({
             <ul className="rows" id="rows" role="listbox" aria-label={T.webListLabel} tabIndex={0} ref={listRef}>
               {!skeleton && arriving && <StartingRow place={arriving} />}
               {drawn.map((r) => (
-                <Row key={r.id} row={r} selected={r.id === selected} open={r.id === openId} onOpen={onOpen} />
+                <Row
+                  key={r.id}
+                  row={r}
+                  selected={r.id === selected}
+                  open={r.id === openId}
+                  swiped={r.id === swipedId}
+                  onOpen={onOpen}
+                />
               ))}
             </ul>
             <div className={emptyClass} id="list-empty" hidden={!skeleton && !empty}>
@@ -358,7 +374,11 @@ function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>): void {
     const scroller = scrollRef.current
     if (!scroller) return
     const touchEnd = () => {
-      setTimeout(L.thawOrder, 1200)
+      // And not while a row's action is uncovered: the swipe is still on
+      // screen, so the row under it must stay where the finger left it.
+      setTimeout(() => {
+        if (swipes.openId() === null) L.thawOrder()
+      }, 1200)
     }
     scroller.addEventListener("mouseenter", L.freezeOrder)
     scroller.addEventListener("mouseleave", L.thawOrder)
@@ -371,6 +391,97 @@ function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>): void {
       scroller.removeEventListener("touchend", touchEnd)
     }
   }, [scrollRef])
+}
+
+/**
+ * Swiping a row left, phones only: the gesture, bound to the list.
+ *
+ * The rule is `session/swipe.ts`, which imports nothing and is held by
+ * `node --test`; this is the part that has to be in a browser. What it does
+ * between a finger going down and coming up is write two custom properties on
+ * one `li` — the contents leave by `--swipe-x`, the action arrives by
+ * `--swipe-button-x`, both read by the copied `legacy/responsive.css`. React
+ * is told once, when the row settles, because a render is the whole list and a
+ * drag is sixty frames of one row.
+ *
+ * **Every listener is passive and none of them calls `preventDefault`**, which
+ * a passive listener may not do anyway. Nothing needs it: `.row[data-swipe]`
+ * carries `touch-action: pan-y`, so the browser gives the page every
+ * horizontal movement over a row and keeps only the vertical ones for itself.
+ * The attribute is therefore put on the row the moment a finger lands on it —
+ * `arm`, before any movement has been read — and taken off again when the
+ * gesture turns out to be the scroller's. Set after the first move instead, the
+ * browser has already begun a horizontal scroll and the row jumps.
+ *
+ * The scroller is where the listeners go, not each row: rows are rebuilt on
+ * every frame the daemon sends, and a listener per row would be rebound with
+ * them, mid-gesture.
+ */
+function useSwipeToEnd(scrollRef: RefObject<HTMLDivElement | null>): string | null {
+  const swiped = useSyncExternalStore(swipes.subscribe, swipes.openId, swipes.openId)
+  useEffect(() => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    let node: HTMLElement | null = null
+    const rowAt = (target: EventTarget | null): HTMLElement | null => {
+      const el = target instanceof Element ? target.closest<HTMLElement>("li.row") : null
+      return el && scroller.contains(el) ? el : null
+    }
+    /** The row is ready to be dragged before it is dragged; see above. */
+    const arm = (el: HTMLElement) => {
+      if (!el.dataset.swipe) el.dataset.swipe = "dragging"
+    }
+    const paint = (el: HTMLElement, id: string) => {
+      paintSwipe(el, swipes.stateOf(id), swipes.offsetOf(id))
+    }
+    const start = (ev: TouchEvent) => {
+      if (ev.touches.length !== 1) return
+      const el = rowAt(ev.target)
+      const id = el?.dataset.id ?? null
+      const closed = swipes.begin(id, ev.touches[0].clientX, ev.touches[0].clientY, ev.timeStamp)
+      if (closed) {
+        for (const other of scroller.querySelectorAll<HTMLElement>("li.row[data-swipe]")) paintSwipe(other, "", 0)
+        node = null
+        return
+      }
+      node = el
+      if (el) arm(el)
+    }
+    const move = (ev: TouchEvent) => {
+      if (!node || ev.touches.length !== 1) return
+      const axis = swipes.move(ev.touches[0].clientX, ev.touches[0].clientY, ev.timeStamp)
+      if (axis === "list") {
+        // The scroller's after all: put the row back exactly as it was, so a
+        // scroll that started over a row leaves no trace of having been armed.
+        paintSwipe(node, swipes.stateOf(node.dataset.id ?? ""), swipes.offsetOf(node.dataset.id ?? ""))
+        node = null
+        return
+      }
+      if (axis !== "row") return
+      // The order is frozen by the list's own `touchstart` listener; this only
+      // has to not fight it.
+      paint(node, node.dataset.id ?? "")
+    }
+    const end = () => {
+      const settled = swipes.end()
+      const el = node
+      node = null
+      if (!settled || !el) return
+      paint(el, settled.id)
+    }
+    scroller.addEventListener("touchstart", start, { passive: true })
+    scroller.addEventListener("touchmove", move, { passive: true })
+    scroller.addEventListener("touchend", end, { passive: true })
+    scroller.addEventListener("touchcancel", end, { passive: true })
+    return () => {
+      scroller.removeEventListener("touchstart", start)
+      scroller.removeEventListener("touchmove", move)
+      scroller.removeEventListener("touchend", end)
+      scroller.removeEventListener("touchcancel", end)
+      swipes.closeOpen()
+    }
+  }, [scrollRef])
+  return swiped
 }
 
 /**
@@ -406,6 +517,14 @@ function usePullToRefresh(
     }
     const move = (ev: TouchEvent) => {
       if (!pulling) return
+      // One gesture has one owner. The swipe decides the axis from the first
+      // real movement, and a gesture it has taken is not also a pull: a
+      // diagonal drag used to open the pad and the row at once.
+      if (swipes.axis() === "row") {
+        distance = 0
+        pad.style.height = "0px"
+        return
+      }
       const raw = ev.touches[0].clientY - startY
       if (raw <= 0) {
         distance = 0
