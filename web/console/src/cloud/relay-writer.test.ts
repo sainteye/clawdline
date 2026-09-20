@@ -1,7 +1,7 @@
 // The relay seam's writes: `node --test web/console/src/cloud/*.test.ts`.
 //
 // A fake CloudClient stands in for the copied one. Each method records what it
-// was asked and answers the way the copied client does: the Mac's own body on
+// was asked and answers the way the copied client does: the machine's own body on
 // success, a `CloudFailure`-shaped rejection otherwise — code, layer, status
 // and the envelope's `ref` — so what is asserted here is what the page's
 // readers (`ClawdlineClient`, `start-bridge.ts`, `waiting-bridge.ts`) are
@@ -13,7 +13,7 @@ import type { TranscriptPage } from "@clawdline/contract"
 import { RelayReader, TRANSCRIPT_EXPECT_MS, type CloudEvent, type CloudIdentity, type CloudRow } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
-// The copied client's own failure constructor: what the Mac's refusal really becomes.
+// The copied client's own failure constructor: what the machine's refusal really becomes.
 import { failureFromMac } from "../legacy/js/net/cloud-failure.js"
 
 type Call = [string, ...unknown[]]
@@ -190,7 +190,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["DELETE", "/v1/orchestrator/schedules/sch-1", "schedule-delete"],
     ["POST", "/v1/orchestrator/schedules/sch-1/run", "schedule-run"],
     // The list is a read and is answered by `relay-reader.ts`, not here, and
-    // so is one schedule in full — which this Mac has no route for at all.
+    // so is one schedule in full — which this machine has no route for at all.
     ["GET", "/v1/orchestrator/schedules", null],
     ["GET", "/v1/orchestrator/schedules/sch-1", null],
     ["POST", "/v1/orchestrator/schedules/sch-1", null],
@@ -199,7 +199,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["PATCH", "/v1/snippets/sn-1", "snippet-update"],
     ["DELETE", "/v1/snippets/sn-1", "snippet-delete"],
     ["POST", "/v1/snippets/order", "snippet-order"],
-    // `order` is a name no snippet id may be, on this side as on the Mac's
+    // `order` is a name no snippet id may be, on this side as on the machine's
     // (internal/transport/http/snippets.go says so of its own mux), so the
     // group's order is never parsed as a snippet called "order".
     ["PATCH", "/v1/snippets/order", null],
@@ -227,7 +227,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
   assert.equal(writeRoute("POST", "/v1/sessions/s1/interrupt")?.op, "uncarried")
 })
 
-test("a send goes as the Mac's `send` under the row's own identity, and answers as the local route does", async () => {
+test("a send goes as the machine's `send` under the row's own identity, and answers as the local route does", async () => {
   const client = new FakeClient()
   client.rows = [row("s1")]
   const { reader } = seam(client)
@@ -241,7 +241,7 @@ test("a send goes as the Mac's `send` under the row's own identity, and answers 
   assert.equal(typeof last.ms, "number")
 })
 
-test("a Mac's refusal comes back typed, in the flat spelling `ClawdlineClient` recognises", async () => {
+test("a machine's refusal comes back typed, in the flat spelling `ClawdlineClient` recognises", async () => {
   const client = new FakeClient()
   client.rows = [row("s1")]
   client.fail.send = refusal("cloud_commands_disabled", { status: 403, ref: { sender: "web_abcdef123456", seq: 12 } })
@@ -257,7 +257,7 @@ test("a Mac's refusal comes back typed, in the flat spelling `ClawdlineClient` r
   assert.equal(reader.log[reader.log.length - 1].code, "cloud_commands_disabled")
 })
 
-test("a command the Mac may have run without answering says so, and nothing sent says that", async () => {
+test("a command the machine may have run without answering says so, and nothing sent says that", async () => {
   const client = new FakeClient()
   client.rows = [row("s1")]
   client.fail.send = refusal("cloud_read_timeout", { layer: "browser" })
@@ -328,13 +328,13 @@ test("a refusal costs one fresh read, not a window of them; `no-store` always as
   assert.equal(client.transcriptAsks, 3, "a caller that must see the machine's answer is never handed an old one")
 })
 
-test("a waiting card's press is answered by the Mac itself, never by the relay's `delivered`", async () => {
+test("a waiting card's press is answered by the machine itself, never by the relay's `delivered`", async () => {
   const client = new FakeClient()
   client.rows = [row("s1")]
   client.descriptors.set("mac-a", { machine: { commands: ["send", "answer", "key"] } })
   const { reader } = seam(client)
   // The Go daemon: lists `answer`, publishes no cloud_status. Asked with a
-  // request id, settled by the Mac's own answer; with no key from the card,
+  // request id, settled by the machine's own answer; with no key from the card,
   // the writer mints one.
   const res = await reader.fetch("/v1/sessions/s1/key", post({ key: "2", expect: FINGERPRINT }))
   assert.equal(res.status, 200)
@@ -377,7 +377,7 @@ test("start and resume go as the machine's words; a refusal keeps `app` in the n
   assert.equal(body.error.outcome, "not_done")
 })
 
-test("a Mac without `past-sessions` refuses the resume list by the client's own code", async () => {
+test("a machine without `past-sessions` refuses the resume list by the client's own code", async () => {
   const client = new FakeClient()
   client.fail.pastSessions = refusal("cloud_feature_unavailable", { layer: "browser" })
   const { reader } = seam(client)
@@ -388,7 +388,7 @@ test("a Mac without `past-sessions` refuses the resume list by the client's own 
   assert.equal(body.error.word, "past-sessions")
 })
 
-test("dictation picks the machine this page reads when the voice Mac is ambiguous, once", async () => {
+test("dictation picks the machine this page reads when the voice machine is ambiguous, once", async () => {
   const client = new FakeClient()
   client.fail.voice = refusal("cloud_voice_host_ambiguous", { layer: "browser" })
   const { reader } = seam(client)
@@ -410,7 +410,7 @@ test("a route with no Cloud word is refused by name before anything is sealed", 
   assert.deepEqual(client.calls, [])
 })
 
-test("a transcript's picture is read as bytes through the Mac's `image`", async () => {
+test("a transcript's picture is read as bytes through the machine's `image`", async () => {
   const client = new FakeClient()
   client.rows = [row("s1")]
   const { reader } = seam(client)
@@ -434,7 +434,7 @@ test("F2: every attempt of one card is one Cloud request, the card's own", async
     await reader.fetch("/v1/sessions/s1/send", post({ text: "delete it" }, { "Idempotency-Key": "card-7" }))
   }
   const sends = client.calls.filter((c) => c[0] === "_read")
-  assert.equal(sends.length, 2, "each attempt is asked of the Mac and settled by its answer")
+  assert.equal(sends.length, 2, "each attempt is asked of the machine and settled by its answer")
   for (const call of sends) {
     assert.deepEqual(call.slice(1, 5), [
       { machine: "mac-a", session: "s1" }, "send", { request: "card-7", text: "delete it", images: [] }, "action:card-7",
@@ -455,10 +455,10 @@ test("F1: a press names the question it answers, under the press's own request",
   ])
 })
 
-test("F1, F7: a press that cannot be checked against the Mac's screen is refused here, and nothing is sent", async () => {
+test("F1, F7: a press that cannot be checked against the machine's screen is refused here, and nothing is sent", async () => {
   const cases: [string, (c: FakeClient) => void, Record<string, unknown>][] = [
     ["no question named", (c) => c.descriptors.set("mac-a", GO_DAEMON), { key: "2" }],
-    ["a Mac whose words are not known yet", () => {}, { key: "2", expect: FINGERPRINT }],
+    ["a machine whose words are not known yet", () => {}, { key: "2", expect: FINGERPRINT }],
     ["a Mac that answers without checking (a Swift app)", (c) => {
       c.descriptors.set("mac-a", GO_DAEMON)
       c.macCapabilities.add("mac-a")
@@ -478,22 +478,22 @@ test("F1, F7: a press that cannot be checked against the Mac's screen is refused
   }
 })
 
-test("F3: a write is `not_done` only when this page can prove it never reached the Mac", async () => {
+test("F3: a write is `not_done` only when this page can prove it never reached the machine", async () => {
   // [what failed, the outcome the page must be told]
   const cases: [string, Error, string | undefined][] = [
     ["never sealed: the copied client refused before publishing", refusal("cloud_read_only", { layer: "browser", ref: null }), "not_done"],
-    ["the relay said the Mac is not connected", refusal("machine_offline", { layer: "relay", ref: REF }), "not_done"],
-    ["the Mac refused before acting", refusal("cloud_commands_disabled", { layer: "mac_preflight", ref: REF }), "not_done"],
-    ["the Mac's queue was full", refusal("cloud_ingress_busy", { layer: "mac_transport", ref: REF }), "not_done"],
+    ["the relay said the machine is not connected", refusal("machine_offline", { layer: "relay", ref: REF }), "not_done"],
+    ["the machine refused before acting", refusal("cloud_commands_disabled", { layer: "mac_preflight", ref: REF }), "not_done"],
+    ["the machine's queue was full", refusal("cloud_ingress_busy", { layer: "mac_transport", ref: REF }), "not_done"],
     ["the socket dropped after the envelope was written", refusal("offline", { layer: "browser", ref: REF }), "unknown"],
     ["the token was replaced mid-flight", refusal("token_superseded", { layer: "relay", ref: REF }), "unknown"],
     ["the relay closed with an internal error", refusal("internal", { layer: "relay", ref: REF }), "unknown"],
     ["an error nobody named", refusal("unexpected_error", { layer: "browser", ref: REF }), "unknown"],
-    ["the Mac ran it and the reply was lost", refusal("command_answer_undeliverable", { layer: "mac_reply", ref: REF }), "unknown"],
+    ["the machine ran it and the reply was lost", refusal("command_answer_undeliverable", { layer: "mac_reply", ref: REF }), "unknown"],
     ["nothing answered in time", refusal("cloud_read_timeout", { layer: "browser", ref: null }), "unknown"],
     // The route's own refusal is read by its code, as the same refusal from a
     // daemon on this machine is (`session/outcome.ts`).
-    ["the Mac's route refused", refusal("terminal_io_failed", { layer: "mac_route", ref: REF }), undefined],
+    ["the machine's route refused", refusal("terminal_io_failed", { layer: "mac_route", ref: REF }), undefined],
   ]
   for (const [name, failure, outcome] of cases) {
     const client = new FakeClient()
@@ -517,7 +517,7 @@ test("F5: a write for a session this page has no row for is refused here, not se
   assert.deepEqual(client.calls, [])
 })
 
-test("F12: showing a session on the Mac does not make every poll re-read its transcript", async () => {
+test("F12: showing a session on the machine does not make every poll re-read its transcript", async () => {
   const client = new FakeClient()
   client.rows = [row("s1")]
   const { reader, clock } = seam(client)
@@ -531,7 +531,7 @@ test("F12: showing a session on the Mac does not make every poll re-read its tra
   assert.equal(client.transcriptAsks, 1, "focus changes nothing a transcript holds")
 })
 
-// F6. The Mac's refusal reaches the writer through the copied client's own
+// F6. The machine's refusal reaches the writer through the copied client's own
 // `failureFromMac`, which this test now uses instead of an error built by
 // hand — the hand-built one carried `reasons` the real path never does.
 test("F6: a blocked close, through the copied client's real failure path", async () => {
@@ -565,10 +565,10 @@ test("F6: a blocked close keeps its reasons across Clawdline Cloud",
   })
 
 // The three requests that change something about notifications. Each goes as
-// the word the Mac lists, with the browser's own subscription handed over
+// the word the machine lists, with the browser's own subscription handed over
 // whole: it is the browser's endpoint and the browser's keys, and anything
 // reshaped on the way past is a chance to get a credential wrong.
-test("registering for notifications goes as the Mac's own three words", async () => {
+test("registering for notifications goes as the machine's own three words", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
   const subscription = {
@@ -636,8 +636,8 @@ test("a registration with the line down is refused, not left to a transport erro
 // Making, saving, removing and running a schedule from a phone. The form's
 // own requests, unchanged — `schedules-bridge.ts` spells them against a
 // daemon on this machine's own network — reaching the copied client's four
-// schedule methods, which route each one to the Mac that owns it.
-test("the schedule form's four writes reach the Mac as its own four words", async () => {
+// schedule methods, which route each one to the machine that owns it.
+test("the schedule form's four writes reach the machine as its own four words", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
   const form = { title: "a schedule", at: "09:00", days: "daily", place_id: "mac-a\u0000p1", assistant: "claude",
@@ -664,7 +664,7 @@ test("the schedule form's four writes reach the Mac as its own four words", asyn
 
   assert.deepEqual(client.calls, [
     // The form's body whole: the copied client reads `place_id` out of it to
-    // find the Mac, so nothing may be reshaped on the way past.
+    // find the machine, so nothing may be reshaped on the way past.
     ["createSchedule", form],
     ["updateSchedule", "sch 9", form],
     ["deleteSchedule", "sch-9"],
@@ -713,15 +713,15 @@ test("a client that cannot write schedules is refused by name", async () => {
     assert.equal(res.status, 501, method + " " + path)
     assert.equal((await json<{ error: { code: string } }>(res)).error.code, "cloud_not_carried")
   }
-  assert.deepEqual(client.calls, [], "nothing was asked of the Mac")
+  assert.deepEqual(client.calls, [], "nothing was asked of the machine")
 })
 
 // 常用句 from a phone: the sheet's own five requests, unchanged
 // (`session/snippets-api.ts` spells them against a daemon on this machine's
 // own network), reaching the copied client's four snippet methods — each of
-// which names the Mac whose settings change through the session the sheet was
+// which names the machine whose settings change through the session the sheet was
 // opened on.
-test("the snippet sheet's four writes reach the Mac as its own four words", async () => {
+test("the snippet sheet's four writes reach the machine as its own four words", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
   const identity = { machine: "mac-a", session: "s1" }
@@ -787,7 +787,7 @@ test("a snippet write that names no session is refused before anything is sealed
   const res = await reader.fetch("/v1/snippets", post({ title: "a title", body: "a body", scope: "global" }))
   assert.equal(res.status, 400)
   assert.equal((await json<{ error: string }>(res)).error, "bad_request")
-  assert.deepEqual(client.calls, [], "nothing was asked of the Mac")
+  assert.deepEqual(client.calls, [], "nothing was asked of the machine")
 })
 
 // A copied client older than the four words, refused by name rather than
@@ -807,5 +807,5 @@ test("a client that cannot write snippets is refused by name", async () => {
     assert.equal(res.status, 501, method + " " + path)
     assert.equal((await json<{ error: string }>(res)).error, "cloud_not_carried")
   }
-  assert.deepEqual(client.calls, [], "nothing was asked of the Mac")
+  assert.deepEqual(client.calls, [], "nothing was asked of the machine")
 })

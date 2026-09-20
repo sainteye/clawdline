@@ -171,7 +171,7 @@ test("pictures go before words do, and a card that lost them is never sent again
   assert.equal(back.partial, true)
   assert.equal(back.pictures.length, 1, "it is still a message with a picture, which is how its turn is recognised")
   assert.equal(back.pictures[0], "")
-  assert.equal(second.cards.retrying(back.token), null, "a second attempt with a different body is refused by the Mac, so it is not offered")
+  assert.equal(second.cards.retrying(back.token), null, "a second attempt with a different body is refused by the machine, so it is not offered")
   assert.equal(second.cards.resend(back.token, T0 + 31_000), null)
   // And it is still settled by its own turn, pictures and all.
   second.cards.reconcile("s1", [user("look at this [Image #1]", T0 + 2_000, 1)], T0 + 30_000)

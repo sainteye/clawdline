@@ -47,7 +47,7 @@ test("a refusal that proves nothing was typed fails the card; anything else leav
   h.answer({ ok: false, status: 504, code: "cloud_read_timeout", outcome: "unknown" })
   const b = h.cards.add("s", "two", [], T0)
   await h.sender.deliver(b)
-  assert.equal(h.cards.card(b.token)?.state, "unknown", "the Mac may have typed it")
+  assert.equal(h.cards.card(b.token)?.state, "unknown", "the machine may have typed it")
 
   h.answer("throw")
   const c = h.cards.add("s", "three", [], T0)

@@ -97,7 +97,7 @@ const completeScan = `{"at":17,"scan":{"complete":true},"sessions":[
 
 func newPublisher(router cloudops.LocalRouter, out *collector) *Publisher {
 	return &Publisher{
-		MachineID: "mac-01", MachineName: "Test Mac", Platform: "darwin", Version: "0.0.1-test",
+		MachineID: "mac-01", MachineName: "Test machine", Platform: "darwin", Version: "0.0.1-test",
 		Router: router, Publish: out.publish,
 	}
 	// Run is not started: each test drives passes itself, so nothing here
@@ -118,7 +118,7 @@ func TestTheDescriptorNamesTheWordsThisMacAnswers(t *testing.T) {
 
 	body := out.payload(t, "orch/mac-01")
 	machine, _ := body["machine"].(map[string]any)
-	if machine["name"] != "Test Mac" || machine["platform"] != "darwin" {
+	if machine["name"] != "Test machine" || machine["platform"] != "darwin" {
 		t.Errorf("the descriptor lost its display metadata: %v", machine)
 	}
 	// A page with a `commands` array treats it as the whole truth, so a word

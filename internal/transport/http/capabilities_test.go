@@ -101,7 +101,7 @@ func TestSettingsRefuseWhatThisMachineCannotDo(t *testing.T) {
 	switch runtime.GOOS {
 	case "darwin":
 		if rec.Code != http.StatusOK {
-			t.Fatalf("a Mac: %d %s", rec.Code, rec.Body)
+			t.Fatalf("a machine: %d %s", rec.Code, rec.Body)
 		}
 	default:
 		if rec.Code != http.StatusNotImplemented || refusal.Error != "capability_unavailable" ||

@@ -28,11 +28,11 @@ import (
 //
 // So the console's three lists are read here and compared with the catalog:
 //
-//	CARRIED       the words the console asks for
-//	DEFERRED      the words this machine answers and the console does not ask for
-//	NO_MAC_ROUTE  the words this machine knows and has no route for
+//	CARRIED           the words the console asks for
+//	DEFERRED          the words this machine answers and the console does not ask for
+//	NO_MACHINE_ROUTE  the words this machine knows and has no route for
 //
-// CARRIED ∪ DEFERRED must be exactly Implemented(), and NO_MAC_ROUTE exactly
+// CARRIED ∪ DEFERRED must be exactly Implemented(), and NO_MACHINE_ROUTE exactly
 // the rest of Vocabulary(). Either half of a new word — a route added here, or
 // a route taken away — fails this by name, and the failure says which list the
 // word belongs in.
@@ -63,9 +63,9 @@ func TestTheConsoleCarryTableMatchesThisMachinesVocabulary(t *testing.T) {
 
 	carried := carryList(t, text, "CARRIED")
 	deferred := carryList(t, text, "DEFERRED")
-	noRoute := carryList(t, text, "NO_MAC_ROUTE")
+	noRoute := carryList(t, text, "NO_MACHINE_ROUTE")
 
-	for _, pair := range [][2]string{{"CARRIED", "DEFERRED"}, {"CARRIED", "NO_MAC_ROUTE"}, {"DEFERRED", "NO_MAC_ROUTE"}} {
+	for _, pair := range [][2]string{{"CARRIED", "DEFERRED"}, {"CARRIED", "NO_MACHINE_ROUTE"}, {"DEFERRED", "NO_MACHINE_ROUTE"}} {
 		for word := range listOf(pair[0], carried, deferred, noRoute) {
 			if _, twice := listOf(pair[1], carried, deferred, noRoute)[word]; twice {
 				t.Errorf("%s is in both %s and %s; one word, one list", word, pair[0], pair[1])
@@ -89,7 +89,7 @@ func TestTheConsoleCarryTableMatchesThisMachinesVocabulary(t *testing.T) {
 			t.Errorf("%s lists %q in %s and this machine has no such word at all", carryTable, word, where)
 			continue
 		}
-		t.Errorf("%s lists %q in %s and this machine has no route for it: it belongs in NO_MAC_ROUTE", carryTable, word, where)
+		t.Errorf("%s lists %q in %s and this machine has no route for it: it belongs in NO_MACHINE_ROUTE", carryTable, word, where)
 	}
 
 	// And what this machine knows without answering must be the third list exactly,
@@ -102,7 +102,7 @@ func TestTheConsoleCarryTableMatchesThisMachinesVocabulary(t *testing.T) {
 		}
 	}
 	for _, word := range missing(unrouted, noRoute) {
-		t.Errorf("this machine knows %q and has no route for it, and %s does not say so in NO_MAC_ROUTE", word, carryTable)
+		t.Errorf("this machine knows %q and has no route for it, and %s does not say so in NO_MACHINE_ROUTE", word, carryTable)
 	}
 	for _, word := range missing(noRoute, unrouted) {
 		t.Errorf("%s says this machine has no route for %q, and it has one now: move it to CARRIED or DEFERRED", carryTable, word)
@@ -114,7 +114,7 @@ func TestTheConsoleCarryTableMatchesThisMachinesVocabulary(t *testing.T) {
 	for _, list := range []struct {
 		name  string
 		words map[string]string
-	}{{"DEFERRED", deferred}, {"NO_MAC_ROUTE", noRoute}} {
+	}{{"DEFERRED", deferred}, {"NO_MACHINE_ROUTE", noRoute}} {
 		for word, sentence := range list.words {
 			if len(sentence) < 40 {
 				t.Errorf("%s: %s says %q, which says too little to act on", list.name, word, sentence)

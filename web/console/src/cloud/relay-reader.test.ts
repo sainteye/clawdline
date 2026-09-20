@@ -73,7 +73,7 @@ function snippet(machine: string, id: string, extra: Record<string, unknown> = {
   return { id, machine, title: "a title", body: "a body", scope: "global", position: 0, ...extra }
 }
 
-/** A schedule row as the copied client tags it: the Mac's own row, plus the machine. */
+/** A schedule row as the copied client tags it: the machine's own row, plus the machine. */
 function schedule(machine: string, id: string, extra: Record<string, unknown> = {}) {
   return { id, machine, title: "a schedule", enabled: true, project_dir: "/tmp/p", ...extra }
 }
@@ -147,7 +147,7 @@ test("with no writer carried, a write is refused as not carried, as an uncarried
   assert.equal(post.status, 501)
   assert.deepEqual(await post.json(), {
     error: "cloud_not_carried",
-    detail: "POST /v1/sessions/s1/send is not carried over Clawdline Cloud: do it on the Mac itself.",
+    detail: "POST /v1/sessions/s1/send is not carried over Clawdline Cloud: do it on the machine itself.",
     route: "/v1/sessions/s1/send",
   })
   // `/v1/board` stood here until this console began asking for it. The read
@@ -229,7 +229,7 @@ test("the machine's refusal stays typed; a timeout is nobody answering", async (
   const refused = await r.fetch("/v1/transcript?session=gone")
   assert.equal(refused.status, 404)
   assert.equal((await body<{ error: string }>(refused)).error, "not_found")
-  client.answer = () => Promise.reject(Object.assign(new Error("the Mac did not answer this read"), { code: "cloud_read_timeout" }))
+  client.answer = () => Promise.reject(Object.assign(new Error("the machine did not answer this read"), { code: "cloud_read_timeout" }))
   await assert.rejects(r.fetch("/v1/transcript?session=slow"), /cloud_read_timeout/)
 })
 
@@ -273,7 +273,7 @@ test("the stream sends one frame per turn for this machine and none for another"
 // can be one asked before the attempt that failed. The copied client shares a
 // read with any other for the same session (`readKey`), so asking again while
 // one is in flight is handed that older answer. A `no-store` read waits for
-// the one on its way to finish and then asks the Mac anew.
+// the one on its way to finish and then asks the machine anew.
 test("a fresh read is never handed an answer asked before it", async () => {
   const client = new FakeClient()
   client.rows = [row("mac-a", "s1")]
@@ -302,7 +302,7 @@ test("a fresh read is never handed an answer asked before it", async () => {
 })
 
 // The first thing a phone does when somebody presses "notify me". It is a
-// read — the Mac mints the key and nothing else changes — so it is answered
+// read — the machine mints the key and nothing else changes — so it is answered
 // here rather than by the writer, and it is what the whole registration
 // stopped on: before this route existed, `GET /v1/push/key` was refused
 // `cloud_not_carried` in the browser and the request never left the phone.
@@ -331,7 +331,7 @@ test("a key nobody can ask for is refused by name, not left to the network", asy
 
   const client = new FakeClient()
   client.pushKey = async () => {
-    throw Object.assign(new Error("this Mac does not carry notifications"), {
+    throw Object.assign(new Error("this machine does not carry notifications"), {
       code: "cloud_feature_unavailable",
       status: 501,
     })
@@ -345,9 +345,9 @@ test("a key nobody can ask for is refused by name, not left to the network", asy
 
 // The list under the session list, which on a phone was not there at all.
 // `carry.ts` had the word in `DEFERRED` saying schedules were not read over
-// Cloud yet, and this Mac had been answering `schedules` the whole time — so
+// Cloud yet, and this machine had been answering `schedules` the whole time — so
 // the seam refused the route to itself and the section stayed hidden, with
-// nothing in the Mac's log because nothing had been asked for.
+// nothing in the machine's log because nothing had been asked for.
 test("the schedule list is asked of this machine, and is this machine's rows", async () => {
   const client = new FakeClient()
   client.scheduleAnswer = async () => ({
@@ -358,11 +358,11 @@ test("the schedule list is asked of this machine, and is this machine's rows", a
   const res = await r.fetch("/v1/orchestrator/schedules")
   assert.equal(res.status, 200)
   const list = await body<{ schedules: { id: string }[]; at: number }>(res)
-  assert.deepEqual(list.schedules.map((s) => s.id), ["s-1", "s-3"], "another Mac's schedules are not this list")
+  assert.deepEqual(list.schedules.map((s) => s.id), ["s-1", "s-3"], "another machine's schedules are not this list")
   assert.equal(list.at, 1_700)
   // `fresh`, and not for freshness: this daemon publishes no schedules on its
   // `orch/` descriptor, so the retained reading refuses forever — and the
-  // fresh one is also what teaches the copied client which Mac an id is on,
+  // fresh one is also what teaches the copied client which machine an id is on,
   // which is what the four writes are routed by.
   assert.deepEqual(client.scheduleAsks, [{ fresh: true }])
   const last = r.log[r.log.length - 1]
@@ -370,17 +370,17 @@ test("the schedule list is asked of this machine, and is this machine's rows", a
   assert.equal(last.word, "schedules")
 })
 
-// The distinction this whole read is drawn around: "this Mac has none" and
+// The distinction this whole read is drawn around: "this machine has none" and
 // "nobody answered" are opposite facts, and `pages/schedules.tsx` draws the
 // section for one and leaves it alone for the other. An empty answer is an
 // answer; a refusal must never arrive as `{schedules: []}`.
-test("an empty list is only ever what the Mac said, never what a refusal became", async () => {
+test("an empty list is only ever what the machine said, never what a refusal became", async () => {
   const empty = new FakeClient()
   const said = await reader(empty, { t: 1000 }).fetch("/v1/orchestrator/schedules")
   assert.equal(said.status, 200)
   assert.deepEqual(await said.json(), { schedules: [], at: 1 }, "an answer with no rows is an answer")
 
-  // The copied client's own refusal for a Mac running a build that publishes
+  // The copied client's own refusal for a machine running a build that publishes
   // no schedules, and for an account no snapshot has arrived from.
   for (const code of ["cloud_schedules_unpublished", "cloud_read_unavailable"]) {
     const client = new FakeClient()
@@ -394,7 +394,7 @@ test("an empty list is only ever what the Mac said, never what a refusal became"
 })
 
 // The fan-out's own trap: `schedules()` settles as soon as *one* machine
-// answers, so an account with two Macs and one silent one resolves with the
+// answers, so an account with two machines and one silent one resolves with the
 // silent one's rows simply absent. Read as this machine's list that is the
 // page asserting an inventory nobody read.
 test("a machine that did not answer is not a machine with no schedules", async () => {
@@ -402,7 +402,7 @@ test("a machine that did not answer is not a machine with no schedules", async (
   silent.scheduleAnswer = async () => ({
     schedules: [schedule("mac-b", "s-2")],
     at: 1_700,
-    unanswered: [{ machine: "mac-a", label: "this Mac", error: Object.assign(new Error("timed out"), { code: "cloud_read_timeout" }) }],
+    unanswered: [{ machine: "mac-a", label: "this machine", error: Object.assign(new Error("timed out"), { code: "cloud_read_timeout" }) }],
   })
   // `cloud_read_timeout` is one of the codes that mean nobody answered, so it
   // rejects the way a dropped connection does and the list is left as it was.
@@ -429,7 +429,7 @@ test("a client that cannot ask for schedules is refused by name", async () => {
 })
 
 // 常用句 on a phone: the sheet that answered "這件事還不能經由 Clawdline Cloud
-// 做，請直接在 Mac 上操作。" That sentence was true — this Mac's catalog knew the
+// 做，請直接在 Mac 上操作。" That sentence was true — this machine's catalog knew the
 // word `snippets` and had no route behind it, so the seam refused the read to
 // itself rather than asking. Both halves have changed, and this is the read.
 test("the snippet list is asked of the machine the session is on, and is that machine's rows", async () => {
@@ -442,7 +442,7 @@ test("the snippet list is asked of the machine the session is on, and is that ma
   const res = await r.fetch("/v1/snippets?session=s1")
   assert.equal(res.status, 200)
   const list = await body<{ snippets: { id: string }[]; project?: unknown }>(res)
-  assert.deepEqual(list.snippets.map((row) => row.id), ["sn-1", "sn-3"], "another Mac's snippets are not this list")
+  assert.deepEqual(list.snippets.map((row) => row.id), ["sn-1", "sn-3"], "another machine's snippets are not this list")
   // **No project.** The local route resolves one from the session and names
   // it; the wire carries no session, so an answer that named a project would
   // be this page guessing one. `snippetGroups` groups by the session's own
@@ -465,7 +465,7 @@ test("a machine with no snippets and a machine nobody could ask are not the same
   assert.deepEqual(await said.json(), { snippets: [] }, "an answer with no rows is an answer")
 
   // The copied client's own two, which it raises for this one machine rather
-  // than for the account: a Mac whose inventory carries no such field, and a
+  // than for the account: a machine whose inventory carries no such field, and a
   // Mac nothing has arrived from at all.
   for (const code of ["cloud_snippets_unpublished", "cloud_read_unavailable"]) {
     const client = new FakeClient()
@@ -483,7 +483,7 @@ test("a snippet list with no session named is refused, and an older client by na
   const unnamed = await reader(client, { t: 0 }).fetch("/v1/snippets")
   assert.equal(unnamed.status, 400)
   assert.equal((await body<{ error: string }>(unnamed)).error, "bad_request")
-  assert.deepEqual(client.snippetAsks, [], "nothing is asked of the Mac for a request that named no session")
+  assert.deepEqual(client.snippetAsks, [], "nothing is asked of the machine for a request that named no session")
 
   const older = new FakeClient()
   older.snippets = undefined
@@ -502,7 +502,7 @@ test("a snippet list with no session named is refused, and an older client by na
    could not be read. The Mac had answered four of them the whole time and had
    a route for a fifth; the other five had no word at all. */
 
-/** Every read carried by word, the URL the console asks it with, and the body that must reach the Mac. */
+/** Every read carried by word, the URL the console asks it with, and the body that must reach the machine. */
 const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/board?project=%2Fp", "work.board", { project: "/p", cursor: "" }],
   ["/v1/work/board", "work.board", { project: "", cursor: "" }],
@@ -539,19 +539,19 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ],
 ]
 
-test("the work system, the projects and the timeline reach the Mac as their own words", async () => {
+test("the work system, the projects and the timeline reach the machine as their own words", async () => {
   for (const [path, word, sent] of CARRIED_READS) {
     const client = new FakeClient()
     const r = reader(client, { t: 1000 })
     const res = await r.fetch(path)
     assert.equal(res.status, 200, path + " was not answered")
-    assert.deepEqual(await body(res), { read: word }, path + " did not answer what the Mac said")
-    assert.equal(client.reads.length, 1, path + " asked the Mac " + client.reads.length + " times")
+    assert.deepEqual(await body(res), { read: word }, path + " did not answer what the machine said")
+    assert.equal(client.reads.length, 1, path + " asked the machine " + client.reads.length + " times")
     assert.equal(client.reads[0].machine, "mac-a", path + " asked a machine this page is not reading")
     assert.equal(client.reads[0].word, word, path + " asked for " + client.reads[0].word)
     assert.deepEqual(client.reads[0].body, sent, path + " carried the wrong body")
     const logged = r.log[r.log.length - 1]
-    assert.equal(logged.answer, "relay", path + " was answered somewhere other than the Mac")
+    assert.equal(logged.answer, "relay", path + " was answered somewhere other than the machine")
     assert.equal(logged.word, word, path + " is logged as " + logged.word)
   }
 })
@@ -567,7 +567,7 @@ test("a query field no word carries is refused by name, never quietly dropped", 
   const refusal = await body<{ error: string; detail: string }>(res)
   assert.equal(refusal.error, "cloud_not_carried")
   assert.match(refusal.detail, /section=/)
-  assert.equal(client.reads.length, 0, "the Mac was asked a question it could not have been told")
+  assert.equal(client.reads.length, 0, "the machine was asked a question it could not have been told")
 })
 
 test("a client with no generic read refuses each word by name rather than throwing", async () => {
@@ -583,7 +583,7 @@ test("a client with no generic read refuses each word by name rather than throwi
   }
 })
 
-test("a refusal from the Mac's own route stays that route's refusal", async () => {
+test("a refusal from the machine's own route stays that route's refusal", async () => {
   const client = new FakeClient()
   client.readAnswer = async () => {
     throw Object.assign(new Error("A timeline is one Project's; name it with ?project=."), {
@@ -593,7 +593,7 @@ test("a refusal from the Mac's own route stays that route's refusal", async () =
   }
   const r = reader(client, { t: 1000 })
   const res = await r.fetch("/v1/timeline?upcoming=true")
-  assert.equal(res.status, 400, "the Mac's own status is what the page sees")
+  assert.equal(res.status, 400, "the machine's own status is what the page sees")
   const refusal = await body<{ error: string }>(res)
   assert.equal(refusal.error, "project_required", "a route's refusal is not turned into a seam refusal")
 })

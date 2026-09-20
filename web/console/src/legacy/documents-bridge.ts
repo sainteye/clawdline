@@ -144,7 +144,7 @@ export function hasDocumentIntent(hash: string): boolean {
 
 /** `net/live.js`'s refusal for a document that belongs to another Mac. */
 function wrongMachine(): Error & { code?: string } {
-  const wrong: Error & { code?: string } = new Error("This document belongs to another Mac.")
+  const wrong: Error & { code?: string } = new Error("This document belongs to another machine.")
   wrong.code = "document_machine_mismatch"
   return wrong
 }

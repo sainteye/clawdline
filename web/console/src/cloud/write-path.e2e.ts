@@ -39,7 +39,7 @@ import { PendingSends } from "../session/pending.ts"
 import { PressHolds, postPress } from "../session/press-holds.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { Sender, postCard, readTranscript } from "../session/sender.ts"
-// The copied client's own failure constructors: a Mac refusal reaches the
+// The copied client's own failure constructors: a machine refusal reaches the
 // writer through these and nowhere else.
 import { cloudFailure, failureFromMac } from "../legacy/js/net/cloud-failure.js"
 
@@ -50,15 +50,15 @@ const repo = process.env.CLAWDLINE_WRITE_PATH_REPO || resolve(dirname(fileURLToP
 const address = "127.0.0.1:" + (18900 + (process.pid % 90))
 const mac = "http://" + address
 
-/** The Mac, as the page's client sees it: plaintext in, one Answer out. */
+/** The machine, as the page's client sees it: plaintext in, one Answer out. */
 class GoClient implements CloudWriteClient {
   ready = true
   allowWrites = true
   macCapabilities = new Set<string>()
   sessionInventoryByMachine = new Map<string, unknown>([["mac-a", { ids: new Set(["%4"]) }]])
-  /** Commands the Mac was really asked for, in order. */
+  /** Commands the machine was really asked for, in order. */
   asked: { type: string; body: Record<string, unknown> }[] = []
-  /** The next command runs on the Mac and its answer never comes back. */
+  /** The next command runs on the machine and its answer never comes back. */
   loseNext = false
   private seq = 0
 
@@ -93,16 +93,16 @@ class GoClient implements CloudWriteClient {
       await fetch(mac + "/command", { method: "POST", body: JSON.stringify({ seq, body }) })
     ).json()) as { status: number; code: string; payload?: { body?: unknown; error?: Record<string, unknown> } }
     if (this.loseNext) {
-      // The Mac ran it; the answer did not come back. This is what the copied
+      // The machine ran it; the answer did not come back. This is what the copied
       // client raises when its read times out (`_readTimedOut`).
       this.loseNext = false
-      throw cloudFailure("cloud_read_timeout", "the Mac did not answer this read", { layer: "browser", ref })
+      throw cloudFailure("cloud_read_timeout", "the machine did not answer this read", { layer: "browser", ref })
     }
     const failure = answered.payload?.error
     if (failure) throw failureFromMac(failure, answered.status, ref)
     return answered.payload?.body ?? {}
   }
-  // Not used on this path: the page asks through `_read` so that the Mac's own
+  // Not used on this path: the page asks through `_read` so that the machine's own
   // answer settles every write.
   send() {
     return Promise.reject(new Error("the page must ask through _read"))
@@ -118,7 +118,7 @@ class GoClient implements CloudWriteClient {
   }
   // The status line's read, spelled as the copied client spells it: two names
   // for two answers on one word (`cloud-client.js`). It goes to the same Mac
-  // the writes do, so `info reaches the Mac's own route` below is this
+  // the writes do, so `info reaches the machine's own route` below is this
   // daemon's bridge answering, not a fake.
   info(identity: CloudIdentity) {
     return this._read(identity, "info", { parts: "full" })
@@ -173,7 +173,7 @@ before(async () => {
       await fetch(mac + "/acts")
       break
     } catch {
-      if (Date.now() > deadline) throw new Error("the Mac half never came up on " + address)
+      if (Date.now() > deadline) throw new Error("the machine half never came up on " + address)
       await new Promise((r) => setTimeout(r, 250))
     }
   }
@@ -198,18 +198,18 @@ after(async () => {
 //
 // What is worth proving here is not that the seam calls a method — `carry.test.ts`
 // does that against a fixture, and draws the cell out of the answer — but that
-// the word the page now sends is one this Mac admits, decodes and routes.
+// the word the page now sends is one this machine admits, decodes and routes.
 // Before this the page never sent it, so `cloudops`' `info` was reachable only
-// from a Swift console: the Mac answered nothing because nothing asked, and the
+// from a Swift console: the machine answered nothing because nothing asked, and the
 // hosted status line said "Loading…" with no refusal recorded at either end.
 //
-// The Mac half here is a pane server with a small router
+// The machine half here is a pane server with a small router
 // (`TestServeTheWritePathForAPage`), not this daemon's own `/info` handler, so
 // what comes back is that router's word about the route. That is exactly the
 // line this asserts: past admission, past the decoder, refused — or answered —
-// by the Mac's own route and by nothing before it. `cloudops_test.go` pins what
+// by the machine's own route and by nothing before it. `cloudops_test.go` pins what
 // the route itself is.
-test("the status line's read reaches this Mac's own route, by both its names", async () => {
+test("the status line's read reaches this machine's own route, by both its names", async () => {
   const before = client.asked.length
   const summary = await doFetch(url("/v1/sessions/%254/info?parts=summary"))
   const full = await doFetch(url("/v1/sessions/%254/info"))
@@ -231,21 +231,21 @@ test("the status line's read reaches this Mac's own route, by both its names", a
       continue
     }
     const refusal = (await res.json()) as { error?: string; layer?: string; word?: string }
-    // The three that would mean it never got that far: a word this Mac does
+    // The three that would mean it never got that far: a word this machine does
     // not know, a body it could not read, and a machine the copied client
     // refused to ask at all.
     assert.ok(
       !["unknown_command", "malformed_command", "cloud_feature_unavailable", "cloud_machine_unsupported"].includes(
         refusal.error ?? "",
       ),
-      half + ": the Mac did not admit `info`: " + JSON.stringify(refusal),
+      half + ": the machine did not admit `info`: " + JSON.stringify(refusal),
     )
     assert.equal(refusal.layer, "mac_route", half + ": " + JSON.stringify(refusal))
     assert.equal(refusal.word, "info")
   }
 })
 
-// F1, both ends: the page reads one permission prompt, the Mac moves on to the
+// F1, both ends: the page reads one permission prompt, the machine moves on to the
 // next tool call's prompt before the press lands, and nothing is typed. The
 // same press at the question it names is typed and committed.
 test("a press is typed only at the question the page named", async () => {
@@ -253,7 +253,7 @@ test("a press is typed only at the question the page named", async () => {
   const expect = menuFingerprint(await rowMenu())
   const holds = new PressHolds()
 
-  // The Mac is asking about something else by the time the press arrives.
+  // The machine is asking about something else by the time the press arrives.
   await say("/prompt", { command: "rm -rf /" })
   const press = holds.start("%4", "menu-1", Date.now())
   const moved = await postPress(doFetch, "%4", "1", expect, press.request)
@@ -271,7 +271,7 @@ test("a press is typed only at the question the page named", async () => {
 
 // F1(a) with F3: the press landed and its answer did not come back. The card
 // does not open its options — it says it does not know — and when the person
-// chooses again, the Mac refuses the second press because its screen has moved
+// chooses again, the machine refuses the second press because its screen has moved
 // on. The digit is typed once.
 test("a press whose answer was lost is not quietly pressed again", async () => {
   await say("/prompt", { command: "npm test" })
@@ -288,7 +288,7 @@ test("a press whose answer was lost is not quietly pressed again", async () => {
   holds.failed(press, outcome)
   assert.equal(holds.current("%4", "menu-2", true, Date.now())?.state, "unknown", "the options were opened again")
   const typed = (await acts()).slice(before)
-  assert.deepEqual(typed, ["key:1", "key:\r"], "the Mac did press it")
+  assert.deepEqual(typed, ["key:1", "key:\r"], "the machine did press it")
 
   // The person chooses again, from a card still drawing the old question.
   holds.release("%4")
@@ -298,9 +298,9 @@ test("a press whose answer was lost is not quietly pressed again", async () => {
   assert.equal((await acts()).length, before + 2, "nothing more was typed")
 })
 
-// F2, both ends: a card's words reach the Mac and the answer is lost. The card
+// F2, both ends: a card's words reach the machine and the answer is lost. The card
 // says it does not know; looking reads a transcript that has not caught up;
-// sending again goes to the Mac as the same request, and the Mac answers it
+// sending again goes to the machine as the same request, and the machine answers it
 // with the first attempt's answer. The words are typed once.
 test("a card whose answer was lost is typed once, however often it is sent", async () => {
   await say("/prompt", { command: "" })
@@ -324,10 +324,10 @@ test("a card whose answer was lost is typed once, however often it is sent", asy
   assert.equal(cards.card(card.token)?.absent, true, "the transcript has not caught up, and says so")
 
   await sender.resend(card.token)
-  assert.equal(cards.card(card.token)?.state, "accepted", "the Mac answered the second attempt with the first one's answer")
+  assert.equal(cards.card(card.token)?.state, "accepted", "the machine answered the second attempt with the first one's answer")
   const sends = (await acts()).filter((a) => a.startsWith("send:")).length
   assert.equal(sends, before + 1, "the words were typed twice")
-  assert.equal(client.asked.filter((c) => c.type === "send").length, 2, "both attempts really reached the Mac")
+  assert.equal(client.asked.filter((c) => c.type === "send").length, 2, "both attempts really reached the machine")
   assert.equal(
     new Set(client.asked.filter((c) => c.type === "send").map((c) => c.body.request)).size,
     1,

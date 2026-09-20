@@ -7,11 +7,11 @@
 // (`session/pending.ts`, `Waiting.tsx`, `Start.tsx`). This file is the other
 // half of `relay-reader.ts`: it answers those same requests out of the copied
 // `CloudClient`, so every one of those screens keeps its own look and its own
-// words and does not learn that the Mac is far away.
+// words and does not learn that the machine is far away.
 //
 // Two rules decide everything here.
 //
-// **Only words the Mac already has.** Each route is one command the machine
+// **Only words the machine already has.** Each route is one command the machine
 // lists in its descriptor (`cloudops.Implemented()` on the Go daemon, carried
 // as `machine.commands`), spelled the way `net/cloud-client.js` spells it. A
 // route with no command behind it is refused by name, here, before anything is
@@ -21,12 +21,12 @@
 // **A failure is an answer, not a silence.** A read that nobody answered
 // rejects its `fetch`, because the console draws that as "away" and polls
 // again. A write cannot be treated that way: the command may have reached the
-// Mac and run, and the page must be able to say which of those it knows. So
+// machine and run, and the page must be able to say which of those it knows. So
 // every write settles with a typed refusal in the spelling the route's own
 // reader takes, carrying the code, the layer and the envelope's `ref`, and the
 // `outcome` this seam can vouch for (`outcomeOf` below): `not_done` only when
-// it can prove the envelope never reached the Mac, `unknown` otherwise, and
-// none at all for a refusal from the Mac's own route, whose code says it — as
+// it can prove the envelope never reached the machine, `unknown` otherwise, and
+// none at all for a refusal from the machine's own route, whose code says it — as
 // the same refusal from a daemon on this machine does (`session/outcome.ts`).
 //
 // Nothing is imported at run time, so `node --test` loads it as it is.
@@ -57,7 +57,7 @@ interface RememberedDescriptor {
  * The part of the copied `CloudClient` the writes call. Every method is its
  * own, with its own checks: `allowWrites` (the device's `send_prompt`
  * capability), the machine's declared vocabulary, the relay's word on the
- * envelope, and the Mac's answer on `t/<machine>/<session>`.
+ * envelope, and the machine's answer on `t/<machine>/<session>`.
  */
 export interface CloudWriteClient extends CloudReadClient {
   readonly allowWrites?: boolean
@@ -84,14 +84,14 @@ export interface CloudWriteClient extends CloudReadClient {
   /**
    * The Git panel's read. The copied client has had it since the Swift
    * console and nothing here asked for it, so 「Git 變更」 said "無法讀取 Git
-   * 變更" on every phone while this Mac answered the word to anyone who did
+   * 變更" on every phone while this machine answered the word to anyone who did
    * ask (`cloud-client.js`, `git`). It is not optional for the reason `info`
    * is not: both have been in the copied client since it was copied.
    */
   git(identity: CloudIdentity): Promise<unknown>
   setVoiceHost?(machine: string): Promise<unknown>
   /**
-   * The three notification writes. Each picks the account's push Mac strictly
+   * The three notification writes. Each picks the account's push machine strictly
    * (`_pushMachine`): the key, the subscription and its removal must all reach
    * the same one, so it is never the freshest of two. Optional for the reason
    * `pushKey` is: a copied client older than these words is refused by name
@@ -101,13 +101,13 @@ export interface CloudWriteClient extends CloudReadClient {
   pushUnsubscribe?(id: string): Promise<unknown>
   pushTest?(session: string): Promise<unknown>
   /**
-   * The four schedule writes. Each routes itself to the Mac that owns the
+   * The four schedule writes. Each routes itself to the machine that owns the
    * schedule — `createSchedule` by the Project the body names, the other three
    * by which machine published the id (`_scheduleMachine`) — so none of them
    * takes a machine, and none of them may be sent before the list has been
    * read fresh at least once (`CloudReadClient.schedules`).
    *
-   * They mint their own request id per call, which is what becomes the Mac's
+   * They mint their own request id per call, which is what becomes the machine's
    * `Idempotency-Key` (`cloudops.route`). That is not a divergence from the
    * local path: `schedules-bridge.ts` mints a fresh `uuid()` per press too, so
    * one press is one key on either transport and a second press is a second
@@ -124,17 +124,17 @@ export interface CloudWriteClient extends CloudReadClient {
    * The four snippet writes. Each names the machine whose settings change
    * through a session identity — only its `machine` is read
    * (`_snippetRequest`) — because a snippet id, or the first machine in a
-   * snapshot, is not authority to choose which Mac gets edited.
+   * snapshot, is not authority to choose which machine gets edited.
    *
-   * They mint their own request id per call, which is what becomes the Mac's
+   * They mint their own request id per call, which is what becomes the machine's
    * `Idempotency-Key` (`cloudops.route`). That matches the local path rather
    * than diverging from it: `session/snippets-api.ts` mints a fresh key per
    * press too, so one press is one key on either transport. What the key buys
-   * is the same on both — the Mac files the outcome under it and answers a
+   * is the same on both — the machine files the outcome under it and answers a
    * resend with the first answer instead of writing twice.
    *
    * `orderSnippets` takes the group and its complete order separately, and the
-   * copied client assembles the `ordering` object the Mac's word carries; the
+   * copied client assembles the `ordering` object the machine's word carries; the
    * local route reads the same three fields under no name at all.
    *
    * Optional for the reason the push words are: a copied client older than
@@ -146,9 +146,9 @@ export interface CloudWriteClient extends CloudReadClient {
   orderSnippets?(scope: string, project: string, order: string[], identity: CloudIdentity): Promise<unknown>
   image?(identity: CloudIdentity, id: string): Promise<{ id: string; media_type: string; bytes: Uint8Array }>
   /**
-   * The copied client's one read, which `answer` itself calls for a Mac that
+   * The copied client's one read, which `answer` itself calls for a machine that
    * has shown `cloud_status`. See `RelayWriter.answer` for why it is called
-   * directly for a Mac that names `answer` in its descriptor instead.
+   * directly for a machine that names `answer` in its descriptor instead.
    */
   _read?(
     identity: CloudIdentity,
@@ -230,7 +230,7 @@ const NO_CLOUD_WORD: Readonly<Record<string, string>> = {
 
 /**
  * Codes that mean the envelope went and no answer came back: the relay handed
- * it to the Mac and then nothing, or the Mac ran it and its reply could not be
+ * it to the machine and then nothing, or the machine ran it and its reply could not be
  * delivered (`cloud-failure.js`, `_readTimedOut`). Whatever else the failure
  * carries, the command may have been carried out.
  */
@@ -246,7 +246,7 @@ const SENT_UNANSWERED = new Set([
 ])
 
 /**
- * Layers whose refusal is decided before anything is carried out: the Mac's
+ * Layers whose refusal is decided before anything is carried out: the machine's
  * admission (the write switch, the roster, the clock) and its transport (the
  * queue was full).
  */
@@ -255,10 +255,10 @@ const REFUSED_BEFORE_RUNNING = new Set(["mac_preflight", "mac_transport"])
 /**
  * What this seam can vouch for about a failed write (F3). The burden is on
  * `not_done`, because it is what sends a person to "try again": it is said
- * only when the envelope provably never reached the Mac — the copied client
+ * only when the envelope provably never reached the machine — the copied client
  * refused before sealing it (no sequence was spent, so no `ref`), the relay
- * said the Mac was not connected, or the Mac refused it at the door. A refusal
- * from the Mac's own route is left to its code (`undefined`). Everything else —
+ * said the machine was not connected, or the machine refused it at the door. A refusal
+ * from the machine's own route is left to its code (`undefined`). Everything else —
  * a socket that dropped after the frame was written, a token replaced
  * mid-flight, an error nobody named — is `unknown`.
  */
@@ -477,7 +477,7 @@ export class RelayWriter {
     if (route.op === "uncarried") {
       return this.refuse(route, method, path, started, spelling, {
         code: "cloud_not_carried",
-        message: `${route.word} has no Clawdline Cloud command: do it on the Mac itself.`,
+        message: `${route.word} has no Clawdline Cloud command: do it on the machine itself.`,
         status: 501,
         layer: "browser",
       })
@@ -496,7 +496,7 @@ export class RelayWriter {
         const picture = body as { media_type: string; bytes: Uint8Array }
         return new Response(picture.bytes as BodyInit, { status: 200, headers: { "content-type": picture.media_type } })
       }
-      // Showing a session on the Mac changes nothing its transcript holds, so
+      // Showing a session on the machine changes nothing its transcript holds, so
       // it does not set every poll re-reading it (F12).
       const session = route.op === "focus" ? null : sessionOf(route)
       if (session) this.host.wrote(session, "done")
@@ -514,7 +514,7 @@ export class RelayWriter {
         const text = typeof body.text === "string" ? body.text : ""
         const images = Array.isArray(body.images) ? body.images.filter((x): x is string => typeof x === "string") : []
         const identity = await this.identity(client, route.session)
-        // F2: the card's one request for every attempt, so the Mac answers a
+        // F2: the card's one request for every attempt, so the machine answers a
         // second attempt with the first one's answer (its receipt) instead of
         // typing the words again. The copied `send` mints a new id per call,
         // so the same read it makes is made here with the card's.
@@ -555,13 +555,13 @@ export class RelayWriter {
         // summary would be held as complete while missing what the summary
         // leaves out (`cloudops` `info`). This daemon answers the same body for
         // both — its own divergence — and the page still asks for the half it
-        // wants, so a Mac that does tell them apart is asked correctly.
+        // wants, so a machine that does tell them apart is asked correctly.
         const identity = await this.identity(client, route.session)
         return url.searchParams.get("parts") === "summary" ? client.infoSummary(identity) : client.info(identity)
       }
       case "git":
         // A read, so nothing is marked written and `sessionOf` leaves it out:
-        // asking what a repository has changed changes nothing. The Mac's own
+        // asking what a repository has changed changes nothing. The machine's own
         // refusal crosses as its code — `not_a_repo` is the one the panel
         // branches on — because `git-bridge.ts` reads the code and not the
         // sentence (`session/GitPanel.tsx`).
@@ -610,7 +610,7 @@ export class RelayWriter {
       case "push-test": {
         // The session the notification should tap back to, when the page has
         // one open. Nothing to tap back to is an empty target, not a missing
-        // one: the Mac's word carries the key either way.
+        // one: the machine's word carries the key either way.
         const body = await bodyOf(init)
         if (typeof client.pushTest !== "function") {
           throw failure("cloud_not_carried", "push-test", 501)
@@ -620,8 +620,8 @@ export class RelayWriter {
       case "schedule-create": {
         // The form's own body, whole: `input/schedule.js` gives both
         // transports the flat request the local route reads (`at`, `days`,
-        // `place_id`, …) and the Mac is what turns it into a stored record.
-        // The copied client reads `place_id` out of it to find which Mac the
+        // `place_id`, …) and the machine is what turns it into a stored record.
+        // The copied client reads `place_id` out of it to find which machine the
         // Project is on, so nothing may be reshaped on the way past.
         const schedule = await bodyOf(init)
         if (typeof client.createSchedule !== "function") {
@@ -651,7 +651,7 @@ export class RelayWriter {
       case "snippet-create": {
         // The sheet's own body, whole: `view/snippets-data.js`'s
         // `snippetCreateBody` gives both transports the same flat request the
-        // local route reads (`title`, `body`, `scope`, `project`), and the Mac
+        // local route reads (`title`, `body`, `scope`, `project`), and the machine
         // is what decides whether it is a snippet and where it lands.
         const snippet = await bodyOf(init)
         if (typeof client.createSnippet !== "function") {
@@ -677,7 +677,7 @@ export class RelayWriter {
         // is the producer for this word: it spells the sub-document
         // `ordering`, and the local route reads the same three fields under no
         // name at all. Neither spelling is derived from the other, so the one
-        // that crosses the relay is the one the Mac's word carries.
+        // that crosses the relay is the one the machine's word carries.
         const body = await bodyOf(init)
         if (typeof client.orderSnippets !== "function") {
           throw failure("cloud_not_carried", "snippet-order", 501)
@@ -696,40 +696,40 @@ export class RelayWriter {
   }
 
   /**
-   * A waiting card's press, answered by the Mac rather than by the relay, and
+   * A waiting card's press, answered by the machine rather than by the relay, and
    * only at the question it was chosen for (F1).
    *
    * The press names that question — `expect`, the fingerprint of the menu the
-   * card drew (`session/fingerprint.ts`) — and the Mac types nothing unless the
+   * card drew (`session/fingerprint.ts`) — and the machine types nothing unless the
    * question on its screen still has it. So a press is sent only where that
-   * check happens: to a Mac that lists `answer` in its descriptor and has not
+   * check happens: to a machine that lists `answer` in its descriptor and has not
    * shown `cloud_status`, which is the Go daemon (`decodeAnswer` in
    * internal/app/cloudops/ops.go takes `expect`, and refuses an answer without
    * one). Everywhere else it is refused here, before anything is sealed:
    *
    * - no `expect` — a page that could not name the question;
-   * - no descriptor yet — the Mac's words are not known, and the copied
+   * - no descriptor yet — the machine's words are not known, and the copied
    *   `answer` would settle on the relay's `delivered`, which proves only
-   *   that the envelope reached the Mac's socket (F7);
-   * - a Mac that has shown `cloud_status` — the Swift app, whose `answer`
+   *   that the envelope reached the machine's socket (F7);
+   * - a machine that has shown `cloud_status` — the Swift app, whose `answer`
    *   checks its key set exactly, would refuse `expect`, and without it would
    *   press the digit at whatever question is up.
    *
    * The card's own key is the request when it sent one, so a press retried
-   * after its answer was lost is the same request to the Mac's receipt.
+   * after its answer was lost is the same request to the machine's receipt.
    */
   private press(client: CloudWriteClient, identity: CloudIdentity, key: string, expect: string, request: string): Promise<unknown> {
     const listed = declaredCommands(client, identity.machine)
     const checks = !client.macCapabilities?.has(identity.machine) && !!listed?.includes("answer") && typeof client._read === "function"
     if (!expect || !checks) {
-      return Promise.reject(failure("menu_unverified", "this press cannot be checked against the Mac's screen", 428))
+      return Promise.reject(failure("menu_unverified", "this press cannot be checked against the machine's screen", 428))
     }
     const id = request || this.requestID()
     return client._read!(identity, "answer", { request: id, answer: key, expect }, "action:" + id, undefined, { retireUncertain: true })
   }
 
   /**
-   * Dictation goes to the account's voice Mac (`voiceHost`). With two Macs and
+   * Dictation goes to the account's voice machine (`voiceHost`). With two machines and
    * no choice made yet that is ambiguous, and the one this page is reading is
    * the answer a person would give: it is chosen, once — `setVoiceHost` takes
    * it only if it can transcribe, and keeps it for this browser and account,
@@ -766,14 +766,14 @@ export class RelayWriter {
   }
 
   /**
-   * Which Mac a snippet write changes, from the session the sheet was opened
+   * Which machine a snippet write changes, from the session the sheet was opened
    * on.
    *
    * Only the `machine` half is read on the other side (`_snippetRequest`), and
    * this seam already answers for one machine, so nothing here has to be
    * looked up in a session list — which also means a write does not wait on
    * one. The session travels anyway because it is what makes the identity
-   * true: a snippet saved from this sheet is saved on the Mac this session is
+   * true: a snippet saved from this sheet is saved on the machine this session is
    * on, and an identity that named a machine and no session would be a
    * different claim.
    *
@@ -822,11 +822,11 @@ export class RelayWriter {
       ...(ref ? { ref } : {}),
       retryable: error?.retryable === true,
       // What the page may say about the effect (`outcomeOf`): absent for the
-      // Mac's own route, whose code the page reads as it does locally.
+      // machine's own route, whose code the page reads as it does locally.
       ...(outcome ? { outcome } : {}),
       word: route.word,
     }
-    // The fields each reader acts on, where the Mac sent them: a blocked
+    // The fields each reader acts on, where the machine sent them: a blocked
     // close's `reasons`, a closed terminal's `app`, a missing Whisper's `reason`.
     for (const key of ["reasons", "app", "reason", "lost"] as const) {
       const value = error?.[key] ?? error?.detail?.[key]

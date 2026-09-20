@@ -3,15 +3,15 @@
 // One Mac snapshot, read twice: as a phone read it while this seam carried no
 // task list, and as it reads it now. What is being proved is the thing the
 // person saw — a flat list of sessions on app.clawdline.com where the console
-// on the Mac itself indents each child under the session that dispatched it.
+// on the machine itself indents each child under the session that dispatched it.
 //
-// The rows in these fixtures are the Mac's own projection, field for field
+// The rows in these fixtures are the machine's own projection, field for field
 // (`internal/transport/cloud/tasklist.go` `cloudTaskFields`): nine paths, and
 // no more. If that projection stopped carrying what the indent is computed
 // from, these would fail here rather than on somebody's phone.
 //
 // The grouping itself is not re-stated: `arrangeSessions` is the list's own
-// rule (`session/order.ts`) and `taskShaping` is the copied module the Mac's
+// rule (`session/order.ts`) and `taskShaping` is the copied module the machine's
 // console uses (`legacy/js/view/derive.js`), both called as the page calls
 // them.
 import { test } from "node:test"
@@ -25,7 +25,7 @@ import { taskShaping } from "../legacy/js/view/derive.js"
 import { S } from "../legacy/js/core/state.js"
 
 /**
- * A Mac as the copied `CloudClient` holds it: session rows from the `s/`
+ * A machine as the copied `CloudClient` holds it: session rows from the `s/`
  * channel, and the `orch/` snapshot's task list, which `tasks()` answers out
  * of what has already been decrypted (`_allOrchestratorRows`).
  */
@@ -33,7 +33,7 @@ class FakeMac implements CloudReadClient {
   ready = true
   sessionInventoryByMachine = new Map<string, unknown>([["mac-a", {}]])
   rows: CloudRow[] = []
-  /** Every machine's tasks, as the copied client merges them: the row plus which Mac it came from. */
+  /** Every machine's tasks, as the copied client merges them: the row plus which machine it came from. */
   taskRows: Record<string, unknown>[] = []
   /** How many times the page asked for the list at all. */
   asks = 0
@@ -56,7 +56,7 @@ function session(id: string, label: string, state = "idle"): CloudRow {
   return { id, machine: "mac-a", session: id, identity: { machine: "mac-a", session: id }, state, label, work_state: "ready" }
 }
 
-/** One task as the Mac publishes it to a viewer: `cloudTaskFields`, and nothing else. */
+/** One task as the machine publishes it to a viewer: `cloudTaskFields`, and nothing else. */
 function published(
   machine: string,
   id: string,
@@ -104,7 +104,7 @@ async function listOf(reader: RelayReader): Promise<SessionRow[]> {
   return ((await res.json()) as { sessions: SessionRow[] }).sessions
 }
 
-test("the Mac's published task list reaches the page, and no envelope is spent on it", async () => {
+test("the machine's published task list reaches the page, and no envelope is spent on it", async () => {
   const mac = new FakeMac()
   mac.rows = [session("%1", "root"), session("%2", "child")]
   mac.taskRows = [published("mac-a", "t1", "%1", "%2")]
@@ -126,7 +126,7 @@ test("the Mac's published task list reaches the page, and no envelope is spent o
   assert.equal(row.code, undefined)
   // And it says how the rows were cut, because they are not the route's rows.
   assert.equal(list.page.fields, "cloud")
-  assert.equal(list.store, "unknown", "this page has not read the Mac's store and does not say it has")
+  assert.equal(list.store, "unknown", "this page has not read the machine's store and does not say it has")
 })
 
 test("the same snapshot draws flat without the task list and indented with it", async () => {
@@ -168,7 +168,7 @@ test("a finished task still holds its child's row while the tab is open, and a d
 test("another machine's tasks never shape this machine's list", async () => {
   const mac = new FakeMac()
   mac.rows = [session("%1", "aaa root"), session("%3", "mmm other"), session("%2", "zzz child")]
-  // A terminal id is a tmux pane name and two Macs both have a `%1`. A task
+  // A terminal id is a tmux pane name and two machines both have a `%1`. A task
   // published by the machine this page is not reading must not move a row here.
   mac.taskRows = [published("mac-b", "t9", "%1", "%2")]
   const reader = seam(mac)
