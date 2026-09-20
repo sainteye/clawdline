@@ -36,6 +36,9 @@ The branch is `master`. Work lands through a **disposable worktree**, never in t
 git worktree add -f <scratch>/<name> HEAD
 ```
 
+A root integrates by **merging the child's branch**, not by applying its patch: the merge commit
+carries the branch, which is what makes the landing provable. Record it as soon as it lands.
+
 A dispatched child gets its own worktree from the broker; **read its path from the task record**
 (`GET /v1/orchestrator/tasks/<id>` → `.task.worktree.path`) rather than composing it, because two
 brokers have two roots. `cd "$W" || exit 1` — a failed `cd` runs everything else somewhere else.
@@ -80,7 +83,14 @@ undone. Numbers come from a run, not from memory.
 ## What a child does not do
 
 - Does not `git add -A` in a shared tree, and never stages a file it was not assigned.
-- Does not commit or push when its brief says not to; it leaves a patch in `artifacts/` instead.
+- **Commits its delivery to its own task branch**, and never pushes. The worktree is the child's
+  own, so committing there disturbs nobody — and it is the only way the landing can be proved:
+  `POST /v1/orchestrator/tasks/<id>/landing` with `state: landed` checks in Git that the branch
+  carries something past its base and that the commit named on the target contains it. A child
+  that leaves only a patch has delivered work the machine cannot record, and the register goes on
+  saying it is owed. Measured on 2026-09-20: sixteen deliveries that had already been merged into
+  master were all refused `unverified_landing / nothing_delivered`, because every brief that day
+  had told the child not to commit.
 - Does not start a daemon on port 7727 or write to the person's running one. Use your own
   `CLAWDLINE_NEXT_DIR` — an **empty** one, never a copy of `~/.config/clawdline-next`, whose task
   records carry real session ids and whose daemon will type into somebody's live terminal.
