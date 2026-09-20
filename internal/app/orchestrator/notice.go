@@ -12,6 +12,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/app/lane"
+	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
 // Telling the root its child finished, and keeping at it until somebody says
@@ -42,11 +43,16 @@ type noticeBody struct {
 	State    string     `json:"state"`
 	Result   string     `json:"result_path"`
 	Outstand int        `json:"outstanding"`
-	Released bool       `json:"claims_released"`
-	MayWrite bool       `json:"child_may_still_write"`
-	Body     string     `json:"body"`
-	NoticeID string     `json:"notice_id"`
-	AckPath  string     `json:"ack_path"`
+	// Leftovers is how many things this delivery says it did not do. The list
+	// itself is in result.json and on the task, which the root is being told
+	// to read; what belongs in one line typed at a session is the number and
+	// the fact that nothing happens to them until somebody acts.
+	Leftovers int    `json:"leftovers,omitempty"`
+	Released  bool   `json:"claims_released"`
+	MayWrite  bool   `json:"child_may_still_write"`
+	Body      string `json:"body"`
+	NoticeID  string `json:"notice_id"`
+	AckPath   string `json:"ack_path"`
 }
 
 type noticeTask struct {
@@ -69,6 +75,17 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	if r.Landing != nil && r.Landing.State == LandingPending {
 		line += " — claimed work may still be in the shared tree; mark landing pending so other roots can see it"
 	}
+	// The moment this whole path exists for. A root integrating a child has
+	// just read what it did not do, and until now the only place that went
+	// was the root's memory: every Backlog row on this machine was written in
+	// a moment somebody complained, never in this one. The line says what is
+	// there and what raising one costs; nothing is created by saying nothing.
+	if n := len(leftoversOf(r)); n > 0 {
+		line += fmt.Sprintf(" — it says it did not do %d thing(s) (result.leftovers); to put one to the person, "+
+			`POST /v1/orchestrator/proposals {"session_id":"<yours>","task_id":"%s","leftover":"<its title>"}`+
+			" — they answer track, later (Backlog) or no, and nothing reaches their board until they do",
+			n, r.ID)
+	}
 	if noticeID != "" {
 		line += fmt.Sprintf(" — after observing, ACK notice %s at /v1/orchestrator/tasks/%s/completion/ack",
 			noticeID, r.ID)
@@ -82,18 +99,19 @@ func (b *Broker) NoticeWire(r Record) (string, error) {
 		return "", fmt.Errorf("this task has no completion envelope")
 	}
 	body := noticeBody{
-		Protocol: NoticeProtocol,
-		Version:  NoticeVersion,
-		Kind:     "task_finished",
-		Audience: "root",
-		Task:     noticeTask{ID: r.ID, Title: r.Title},
-		State:    string(r.State),
-		Result:   filepath.Join(b.Tasks.Path(r.ID), "result.json"),
-		Released: r.State == StateTimeout && len(r.Lease()) > 0,
-		MayWrite: r.State == StateTimeout && len(r.Lease()) > 0,
-		Body:     b.FinishedLine(r, r.Notice.ID),
-		NoticeID: r.Notice.ID,
-		AckPath:  "/v1/orchestrator/tasks/" + r.ID + "/completion/ack",
+		Protocol:  NoticeProtocol,
+		Version:   NoticeVersion,
+		Kind:      "task_finished",
+		Audience:  "root",
+		Task:      noticeTask{ID: r.ID, Title: r.Title},
+		State:     string(r.State),
+		Result:    filepath.Join(b.Tasks.Path(r.ID), "result.json"),
+		Leftovers: len(leftoversOf(r)),
+		Released:  r.State == StateTimeout && len(r.Lease()) > 0,
+		MayWrite:  r.State == StateTimeout && len(r.Lease()) > 0,
+		Body:      b.FinishedLine(r, r.Notice.ID),
+		NoticeID:  r.Notice.ID,
+		AckPath:   "/v1/orchestrator/tasks/" + r.ID + "/completion/ack",
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
@@ -103,6 +121,16 @@ func (b *Broker) NoticeWire(r Record) (string, error) {
 		return "", fmt.Errorf("the notice could not be encoded safely")
 	}
 	return "<clawdline-notice>" + string(encoded) + "</clawdline-notice>", nil
+}
+
+// leftoversOf is what a task's delivery said it did not do, or nothing at all
+// for a task that has no result — a timeout, a tab that never opened. A
+// broker's own verdict never names leftovers: it is not the child speaking.
+func leftoversOf(r Record) []work.Leftover {
+	if r.Result == nil {
+		return nil
+	}
+	return r.Result.Leftovers
 }
 
 // noticeOf is a ledger row as the broker reads it.

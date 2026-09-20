@@ -23,6 +23,8 @@ import (
 // A session's side, behind the orchestrator credential:
 //
 //	POST /v1/orchestrator/proposals                 propose a line of work; the answer says whether to ask
+//	POST /v1/orchestrator/proposals {"task_id":…,"leftover":"<title>"}
+//	                                                propose one thing a delivery said it did not do
 //	GET  /v1/orchestrator/proposals/{id}            one proposal
 //	POST /v1/orchestrator/proposals/{id}/asked      "I asked it in the conversation"
 //	POST /v1/orchestrator/decisions                 ask a person something
@@ -271,12 +273,17 @@ type digestListWire struct {
 // ——— A session's side ———
 
 type proposeWire struct {
-	SessionID string   `json:"session_id"`
-	WorkID    string   `json:"work_id"`
-	TaskID    string   `json:"task_id"`
-	Title     string   `json:"title"`
-	Project   string   `json:"project"`
-	Effects   []string `json:"effects"`
+	SessionID string `json:"session_id"`
+	WorkID    string `json:"work_id"`
+	TaskID    string `json:"task_id"`
+	// Leftover is the title of one row of task_id's `leftovers`: something
+	// that delivery said it did not do. With it, task_id is where the
+	// candidate came from rather than the line of work being proposed, and
+	// the title and project are the delivery's own.
+	Leftover string   `json:"leftover"`
+	Title    string   `json:"title"`
+	Project  string   `json:"project"`
+	Effects  []string `json:"effects"`
 }
 
 type askedWire struct {
@@ -350,7 +357,8 @@ func (s *Server) propose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := app.ProposalRequest{Session: strings.TrimSpace(body.SessionID), WorkID: strings.TrimSpace(body.WorkID),
-		TaskID: strings.TrimSpace(body.TaskID), Title: body.Title, Project: body.Project, Effects: body.Effects}
+		TaskID: strings.TrimSpace(body.TaskID), Leftover: body.Leftover, Title: body.Title, Project: body.Project,
+		Effects: body.Effects}
 	principal := "machine"
 	switch {
 	case machineAuthed(r):

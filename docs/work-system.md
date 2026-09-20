@@ -133,7 +133,7 @@
 
 | 什麼情況下用 | 怎麼開始 | 怎麼推進 | 怎麼結束 | 達成什麼 |
 |---|---|---|---|---|
-| **BL-1** 決定要做，但還沒有開始的承諾：沒有派工、沒人接、沒有 7 天內的日期。〔已實作：`backlog` 表沒有 owner，放進來就不在看板上（CM-4）〕 | **BL-2** 你新增 `POST /v1/work/items` `{"place":"backlog"}`，可以帶 `start_on`、`rank`；帶 `owner` 回 400 `owner_on_board_only`。〔已實作 `app/board_work.go` `Create`〕<br>**BL-3** 提議答 `later`。〔已實作 `Placing`〕<br>看板退回來的見 BD-13。 | **BL-4** 排順序 `{"op":"rank","rank":N}`（0 是不排，排在最後）；排日期 `{"op":"schedule","start_on":"YYYY-MM-DD"}`，日期在 7 天內（含已經過去的）就直接上看板。不是 `planned` 回 409 `wrong_place`。〔已實作 `Decide`〕<br>**BL-5** 每週摘要列出 30 天沒被看過的項目（rank、schedule 會重設這個鐘），問「要留嗎」；同一項 30 天內只問一次，不回答就是留。〔部分：列出已實作 `app/proposals.go` `weekly`；摘要只存不送（缺口 3）〕 | **BL-6** 上看板：放進 Backlog 之後有派工帶它的 `work_id` → `dispatched`（owner 是那個 root）；`start_on` 進入 7 天內 → `start_on_within_7d`（已經過去的日期不會自己上去）；你按 start（可以指定 owner）。〔已實作 `ruleDispatched`、`ruleStartSoon`、`Decide`〕<br>**BL-7** 丟掉：只有你能 drop；機器永遠不刪 Backlog，滿了只拒絕新增。〔已實作 `Decide`、`adapters/store/work.go` `WorkOpenLimit`〕 | 規劃留得住，又不假裝在進行；看板與 Backlog 的界線是一個事實（有沒有承諾），不是形容詞。驗法：`GET /v1/work/backlog` 的每一項 `owner` 都是 null、`commitment` 都是 null。 |
+| **BL-1** 決定要做，但還沒有開始的承諾：沒有派工、沒人接、沒有 7 天內的日期。〔已實作：`backlog` 表沒有 owner，放進來就不在看板上（CM-4）〕 | **BL-2** 你新增 `POST /v1/work/items` `{"place":"backlog"}`，可以帶 `start_on`、`rank`；帶 `owner` 回 400 `owner_on_board_only`。〔已實作 `app/board_work.go` `Create`〕<br>**BL-3** 提議答 `later`。〔已實作 `Placing`〕<br>**BL-8** child 交回的「我沒做的事」經 PT-9 提出來、你答 `later`：這是 Backlog 第一個不是你自己開、也不是 root 代轉的來源，那一列的第一筆 `moves` 記 `leftover_of_task`（哪一個交付提出來的）。〔已實作 `domain/work/proposals.go` `Placing`〕<br>看板退回來的見 BD-13。 | **BL-4** 排順序 `{"op":"rank","rank":N}`（0 是不排，排在最後）；排日期 `{"op":"schedule","start_on":"YYYY-MM-DD"}`，日期在 7 天內（含已經過去的）就直接上看板。不是 `planned` 回 409 `wrong_place`。〔已實作 `Decide`〕<br>**BL-5** 每週摘要列出 30 天沒被看過的項目（rank、schedule 會重設這個鐘），問「要留嗎」；同一項 30 天內只問一次，不回答就是留。〔部分：列出已實作 `app/proposals.go` `weekly`；摘要只存不送（缺口 3）〕 | **BL-6** 上看板：放進 Backlog 之後有派工帶它的 `work_id` → `dispatched`（owner 是那個 root）；`start_on` 進入 7 天內 → `start_on_within_7d`（已經過去的日期不會自己上去）；你按 start（可以指定 owner）。〔已實作 `ruleDispatched`、`ruleStartSoon`、`Decide`〕<br>**BL-7** 丟掉：只有你能 drop；機器永遠不刪 Backlog，滿了只拒絕新增。〔已實作 `Decide`、`adapters/store/work.go` `WorkOpenLimit`〕 | 規劃留得住，又不假裝在進行；看板與 Backlog 的界線是一個事實（有沒有承諾），不是形容詞。驗法：`GET /v1/work/backlog` 的每一項 `owner` 都是 null、`commitment` 都是 null。 |
 
 **容量**：和看板共用 `work.open`（§3）。
 
@@ -176,7 +176,10 @@
 
 **PT-8** 訊息不再夾 workflow 信封，session 不自己開卡；舊 helper 呼叫 `POST /v1/orchestrator/sessions/<terminal>/workflow` 得到 200 與「已退役」，什麼都不記。〔已實作 `transport/http/workflow.go`（D36、U5）〕
 
+**PT-9** child 沒做完的事變成候選（交付 → 提議 → Backlog）：child 在 `result.json` 寫 `leftovers`（每筆 `title`、`why`、`suggested_acceptance`，至多 8 筆；不是必填，沒寫照樣完成交付，寫了也不會自己發生任何事），broker 在完成通知帶出筆數與怎麼提、在 task 詳情帶出那幾筆；root 整合時用 `POST /v1/orchestrator/proposals` 帶 `task_id` 與 `leftover`（那一筆的 title）提出來。提議的主體是一條還沒有任何派工的新工作線，`task_id` 只記「哪一個交付提出來的」，不會把那個 task 綁到新線上；同一個交付的每一筆 leftover 是各自的主體（不算互為重複），同一筆提過就不再提（PT-4 的重複規則）。人答 `later` 就是一列 Backlog、`track` 上看板、`no` 什麼都不留，7 天沒人答 `expired`，一樣什麼都不留——session 不自己往你的看板上放東西（CM-2）。〔已實作 `domain/work/leftovers.go` `ParseLeftovers`、`PriorLeftovers`、`SignalLeftover`，`app/proposals.go` `leftoverSubject`，`transport/http/proposals.go` 的 `leftover`，`app/orchestrator/notice.go` `FinishedLine`；child 那一段寫在 `app/orchestrator/brief.go`〕
+
 **容量**：`proposals.open` 500、`decisions.open` 256，到頂拒絕新的（429）；`work.digests` 800，淘汰最舊的。
+一筆交付最多 8 筆 leftover，每筆 title 200 字、why 與 suggested_acceptance 各 500 字，超過的 `result.json` 由 child 自己的驗證整份退回；登記在 `internal/domain/capacity` 的 baseline。
 
 ## 8. 今天真的長怎樣（2026-09-19，執行中的 daemon，只做唯讀 GET）
 
@@ -202,6 +205,7 @@
 3. **摘要只存不送**（BD-8、BL-5、PT-6）。「問你一次」只寫進 `digests` 表；你沒打開 console 工作頁就等於沒被問，
    7 天後照樣以 `unconfirmed` 結束。`board-redesign.md` §8 設計的是每天一則訊息。
 4. **待辦只有派工一種來源**（TD-3）。`result.json` 沒有 `remaining`，交付收據只有一句話，obligation 表正在退役（D07）。
+   PT-9 給了 `result.json` 一個 `leftovers`，但那一條接的是提議與 Backlog，不是待辦：沒有人回答時它不留下任何東西。
 5. **`repeated_failure` 沒有人接**（TD-7）。`board-redesign.md` §6 要它變成「卡住：重試／換方法／放棄」的決定或提議。
 6. **待辦移交沒有接手的人，也不會被帶回 session**（TD-8、TD-10）。`handed_to` 沒有寫入者；`/v1/orchestrator/handoffs`
    存在但不移動待辦；`app/orchestrator/brief.go` 與完成通知都不帶待辦。
@@ -213,6 +217,10 @@
 11. **run 證明人說過話，證明不了是哪個 session 在代轉**（CM-2）。orchestrator token 是整台機器共用的（`local-token` 同一個使用者的程序也都讀得到），
     伺服器分不出呼叫的是哪個 session：任何 session 都能讀別的 session 的 run 並拿來代轉看板指令；`run_other_session` 只擋得住誤用。
     要分得出來得給每個 session 自己的憑證，由使用者決定要不要做。
+12. **登記的時機只有「child 交回」這一個**（PT-9）。今天 backlog 的 14 列全部在兩個瞬間進來，兩次都是「使用者剛抱怨完」那一刻；
+    PT-9 補上的是另一個瞬間——child 交回、root 整合的那一刻。root 自己學到的事仍然沒有觸發器：他診斷出來的缺陷、
+    發現某個功能只做到一半，只有在他剛好在寫總結時才會被記下來，流程裡沒有一刻會問他「你剛剛學到一件事，它該不該進 backlog？」。
+    下一步由使用者決定要不要給 root 一個同樣形狀的動作。
 
 ## 10. 怎麼修改這份文件
 

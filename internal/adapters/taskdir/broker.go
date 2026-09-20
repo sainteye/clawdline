@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
 // The broker half of a task directory: the brief on the way in, and the three
@@ -118,15 +120,21 @@ type RootRef struct {
 // dropped: a broker that silently discards a field the protocol documents is
 // how a protocol stops being one.
 type Result struct {
-	Protocol   int             `json:"clawdline_protocol"`
-	TaskID     string          `json:"task_id"`
-	Secret     string          `json:"task_secret"`
-	Status     string          `json:"status"`
-	Summary    string          `json:"summary"`
-	Symbols    []string        `json:"symbols,omitempty"`
-	Artifacts  []string        `json:"artifacts,omitempty"`
-	Review     json.RawMessage `json:"review,omitempty"`
-	Verify     *Verification   `json:"verification,omitempty"`
+	Protocol  int             `json:"clawdline_protocol"`
+	TaskID    string          `json:"task_id"`
+	Secret    string          `json:"task_secret"`
+	Status    string          `json:"status"`
+	Summary   string          `json:"summary"`
+	Symbols   []string        `json:"symbols,omitempty"`
+	Artifacts []string        `json:"artifacts,omitempty"`
+	Review    json.RawMessage `json:"review,omitempty"`
+	Verify    *Verification   `json:"verification,omitempty"`
+	// Leftovers is the child's own account of what it did not do, in the
+	// shape a machine reads (work.Leftover). It is optional and always was:
+	// a child that writes none has delivered, and the field is absent rather
+	// than empty so that "nothing was left over" and "this child never said"
+	// stay the same silence they are on the wire.
+	Leftovers  []work.Leftover `json:"leftovers,omitempty"`
 	FinishedAt string          `json:"finished_at,omitempty"`
 }
 

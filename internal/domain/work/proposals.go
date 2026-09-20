@@ -484,6 +484,12 @@ func Placing(p Proposal, tasks []TaskFacts, now time.Time) (Item, Change, bool) 
 		Place: place, PlacedAt: now}
 	c := Change{From: PlaceProposal, To: place, Trigger: "proposal_" + string(p.Answer), Actor: p.AnsweredBy,
 		Evidence: map[string]any{"proposal": p.ID, "signals": p.Signals, "answer": string(p.Answer)}}
+	if p.Leftover() {
+		// Which task said it did not do this. It is the whole provenance of a
+		// row that nobody typed: the item's first move names the delivery it
+		// came out of, and `GET /v1/work/items/{id}/moves` reads it back.
+		c.Evidence["leftover_of_task"] = p.TaskID
+	}
 	if place == PlaceBoard {
 		// The person chose to follow the whole line, so its stay begins with
 		// the first task it already sent: a delivery made before the answer

@@ -1171,6 +1171,22 @@ type BrokerLanes struct {
 	Terminals int64 `json:"terminals"`
 }
 
+// One thing a delivery reported it did not do, in the child's own words. It is
+// a candidate for a Backlog row and nothing else: it becomes one only when a
+// session raises it as a proposal and a person answers that proposal.
+type BrokerLeftover struct {
+	// What the child thinks would count as done. A suggestion: nothing here reads it
+	// as a commitment.
+	SuggestedAcceptance string `json:"suggested_acceptance,omitempty"`
+
+	// The row this would become. It is also how the leftover is named when it is
+	// proposed, so no two of one result share it.
+	Title string `json:"title"`
+
+	// Why the child did not do it.
+	Why string `json:"why,omitempty"`
+}
+
 // The whole body of POST /v1/orchestrator/notify: a root, which holds this
 // Mac's orchestrator token and no task secret, pushing one sentence to the
 // person. `session_id` only chooses where tapping it lands, and only when it
@@ -1527,8 +1543,12 @@ type BrokerRespawnResult struct {
 // What a child wrote about itself. The secret it authenticated with is never
 // carried here.
 type BrokerResult struct {
-	Artifacts    []string            `json:"artifacts,omitempty"`
-	FinishedAt   string              `json:"finished_at,omitempty"`
+	Artifacts  []string `json:"artifacts,omitempty"`
+	FinishedAt string   `json:"finished_at,omitempty"`
+
+	// What this delivery says it did not do. Absent when the child named none, which
+	// is an ordinary complete delivery: nothing ever required the field.
+	Leftovers    []BrokerLeftover    `json:"leftovers,omitempty"`
 	Status       string              `json:"status"`
 	Summary      string              `json:"summary,omitempty"`
 	Symbols      []string            `json:"symbols,omitempty"`

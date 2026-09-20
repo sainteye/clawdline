@@ -217,6 +217,10 @@ internal/domain/work.decisionOptionsLimit # admission: the options one decision 
 internal/domain/work.decisionQuestionLimit # admission: a decision's question
 internal/domain/work.optionIDLimit # admission: an option's id
 internal/domain/work.optionLabelLimit # admission: an option's label
+internal/domain/work.LeftoversLimit # admission: the leftovers one result.json names, refused whole past it by the child's own validator (taskdir.ValidateResult); what waits for a person afterwards is counted by proposals.open
+internal/domain/work.LeftoverTitleLimit # admission: a leftover's title, the work item title it would become (internal/app.workTitleLimit)
+internal/domain/work.LeftoverWhyLimit # admission: a leftover's why, the sentence its proposal's question carries
+internal/domain/work.LeftoverAcceptanceLimit # admission: a leftover's suggested_acceptance
 internal/app.ruleLineLimit # page: the named lines one sweep pass proposes by rule; the rest are the next pass's
 cmd/clawdline.collectAnswerLimit # read: the broker's answer to `clawdline task finish` asking it to collect now, one refusal envelope (W7); result.json and task.json themselves are read under internal/adapters/taskdir.resultLimit
 internal/transport/http.workflowBodyLimit # admission: one command to the retired workflow route (W8), the Swift route's 64 KiB, which is what its helper checks before sending
