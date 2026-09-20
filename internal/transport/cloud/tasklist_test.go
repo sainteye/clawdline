@@ -59,7 +59,15 @@ func (r *pathRouter) set(path, body string, status int) {
 func sessionsBody(complete bool, ids ...string) string {
 	rows := make([]map[string]any, 0, len(ids))
 	for _, id := range ids {
-		rows = append(rows, map[string]any{"id": id, "assistant": "claude", "tty": "ttys001", "title": "a session"})
+		// One tty per session, and the same tty for that session in every
+		// reading. One terminal runs one session — the process adapter reads
+		// the foreground process group on exactly that assumption — so two
+		// rows sharing a tty are two names for one session, which the
+		// inventory's no-duplicate rule now collapses. Deriving it from the
+		// id rather than from the loop index is what keeps a session's
+		// terminal the same when a later reading lists fewer of them.
+		rows = append(rows, map[string]any{"id": id, "assistant": "claude",
+			"tty": "ttys-" + id, "title": "a session"})
 	}
 	body, _ := json.Marshal(map[string]any{"at": 17, "scan": map[string]any{"complete": complete}, "sessions": rows})
 	return string(body)
