@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/projects"
+	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
 // The two things a child is given: a file it reads, and one line typed into its
@@ -249,6 +250,8 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(` "symbols": ["<every name your change introduced>", "..."],`)
 	w(` "artifacts": ["artifacts/<file>", "..."],`)
 	w(` "verification": {"runs": 1, "seconds": 0, "last": "pass", "scope": "<what you ran>"},`)
+	w(` "leftovers": [{"title": "<one thing you did not do>", "why": "<why you did not>",`)
+	w(`               "suggested_acceptance": "<what would count as done>"}],`)
 	w(` "finished_at": "<ISO8601 UTC>"}`)
 	w("```")
 	w("")
@@ -268,6 +271,13 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("**`symbols` is how your work is told apart from everybody else's.** List what you introduced:")
 	w("new functions and types, new fields, new string keys, the names of test groups you added.")
 	w("Names, not descriptions.")
+	w("")
+	w("**`leftovers` is the paragraph you were going to write anyway.** Your report ends in what you")
+	w("did not do and what your root has to pick up; put those lines here too, one entry each, at")
+	w("most %d. It is optional and it is not a new obligation: a result with no `leftovers` is a", work.LeftoversLimit)
+	w("complete delivery, and writing one does not make anything happen by itself. Your root reads")
+	w("them when it integrates and may put one to the person, who answers whether to register it.")
+	w("Leave it out when you finished everything you were asked.")
 	w("")
 	w("**Write the tmp file with your file-writing tool, not with a shell command.** A shell line")
 	w("that builds JSON gets refused by command screening on its own shape, and that refusal is a")

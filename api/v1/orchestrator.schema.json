@@ -143,6 +143,17 @@
         "scope": { "type": "string" }
       }
     },
+    "BrokerLeftover": {
+      "description": "One thing a delivery reported it did not do, in the child's own words. It is a candidate for a Backlog row and nothing else: it becomes one only when a session raises it as a proposal and a person answers that proposal.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": { "description": "The row this would become. It is also how the leftover is named when it is proposed, so no two of one result share it.", "type": "string" },
+        "why": { "description": "Why the child did not do it.", "type": "string" },
+        "suggested_acceptance": { "description": "What the child thinks would count as done. A suggestion: nothing here reads it as a commitment.", "type": "string" }
+      }
+    },
     "BrokerResult": {
       "description": "What a child wrote about itself. The secret it authenticated with is never carried here.",
       "type": "object",
@@ -154,7 +165,8 @@
         "symbols": { "type": "array", "items": { "type": "string" } },
         "artifacts": { "type": "array", "items": { "type": "string" } },
         "finished_at": { "type": "string" },
-        "verification": { "$ref": "#/$defs/BrokerVerification" }
+        "verification": { "$ref": "#/$defs/BrokerVerification" },
+        "leftovers": { "description": "What this delivery says it did not do. Absent when the child named none, which is an ordinary complete delivery: nothing ever required the field.", "type": "array", "items": { "$ref": "#/$defs/BrokerLeftover" } }
       }
     },
     "BrokerTask": {

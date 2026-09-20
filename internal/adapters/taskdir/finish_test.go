@@ -195,3 +195,76 @@ func TestAFinishRefusesWhatTheOldValidatorRefused(t *testing.T) {
 		t.Fatalf("a closed review receipt: %v", err)
 	}
 }
+
+// What a child says it did not do passes the preflight when it is readable,
+// is absent without comment when there is none, and is refused by name when it
+// is there and wrong — the way `verification` is. The table's first row is the
+// control: a delivery that names no leftovers is a complete delivery, and
+// always was.
+func TestLeftoversArePublishedWhenReadableAndRefusedWhenNot(t *testing.T) {
+	long := strings.Repeat("x", 201)
+	for _, c := range []struct {
+		why, extra, reason string
+	}{
+		{"no leftovers at all", "", ""},
+		{"an empty list", `, "leftovers": []`, ""},
+		{"one, with everything", `, "leftovers": [{"title": "the flaky test", "why": "not mine",
+			"suggested_acceptance": "it passes twenty times"}]`, ""},
+		{"one, with a title only", `, "leftovers": [{"title": "the flaky test"}]`, ""},
+		{"not a list", `, "leftovers": {"title": "x"}`, "leftovers must be a list"},
+		{"nine of them", `, "leftovers": [{"title":"1"},{"title":"2"},{"title":"3"},{"title":"4"},{"title":"5"},
+			{"title":"6"},{"title":"7"},{"title":"8"},{"title":"9"}]`, "leftovers must be a list"},
+		{"a key nobody named", `, "leftovers": [{"title": "x", "owner": "me"}]`, "title/why/suggested_acceptance"},
+		{"no title", `, "leftovers": [{"why": "no reason"}]`, "needs a title"},
+		{"an empty title", `, "leftovers": [{"title": "   "}]`, "needs a title"},
+		{"a title past its bound", `, "leftovers": [{"title": "` + long + `"}]`, "needs a title"},
+		{"a why that is not a string", `, "leftovers": [{"title": "x", "why": 3}]`, "why and suggested_acceptance"},
+		{"two of one title", `, "leftovers": [{"title": "x"}, {"title": " x "}]`, "the same title"},
+	} {
+		dir := finishDir(t, plainTask("custom"), resultWith(c.extra))
+		done, err := Finish(dir)
+		var bad InvalidResult
+		switch {
+		case c.reason == "" && err != nil:
+			t.Errorf("%s: %v", c.why, err)
+		case c.reason == "" && done.TaskID != finishID:
+			t.Errorf("%s: %+v", c.why, done)
+		case c.reason != "" && !errors.As(err, &bad):
+			t.Errorf("%s: %v", c.why, err)
+		case c.reason != "" && !strings.Contains(bad.Reason, c.reason):
+			t.Errorf("%s: %q does not say %q", c.why, bad.Reason, c.reason)
+		}
+		if c.reason == "" {
+			continue
+		}
+		// A refusal publishes nothing and leaves the tmp file to be corrected.
+		if _, err := os.Stat(filepath.Join(dir, "result.json")); !os.IsNotExist(err) {
+			t.Errorf("%s: a refused result was published", c.why)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "result.json.tmp")); err != nil {
+			t.Errorf("%s: the tmp file was taken away: %v", c.why, err)
+		}
+	}
+}
+
+// The broker reads back what the child wrote, field for field. A protocol the
+// two halves spell differently is not one.
+func TestLeftoversSurviveTheRoundTrip(t *testing.T) {
+	dir := finishDir(t, plainTask("custom"), resultWith(`, "leftovers": [{"title": "the flaky test",
+		"why": "not mine to fix", "suggested_acceptance": "it passes twenty times"}]`))
+	if _, err := Finish(dir); err != nil {
+		t.Fatal(err)
+	}
+	root := Root{Dir: filepath.Dir(dir)}
+	got, _, err := root.ReadResult(finishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Leftovers) != 1 {
+		t.Fatalf("leftovers %+v", got.Leftovers)
+	}
+	lo := got.Leftovers[0]
+	if lo.Title != "the flaky test" || lo.Why != "not mine to fix" || lo.Acceptance != "it passes twenty times" {
+		t.Fatalf("%+v", lo)
+	}
+}

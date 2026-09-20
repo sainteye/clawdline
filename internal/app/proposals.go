@@ -193,6 +193,12 @@ type ProposalRequest struct {
 	Title   string
 	Project string
 	Effects []string
+	// Leftover is the title of one row of TaskID's `result.json` leftovers:
+	// something a child reported it did not do (work.Leftover). It makes the
+	// proposal's subject that leftover rather than TaskID's own line of work,
+	// so TaskID is provenance here — which delivery said so — and never a
+	// dispatch of the work being proposed.
+	Leftover string
 	// FromChild says the caller authenticated with a child's task secret;
 	// ChildTask is that task. ByRule says the rules made it (RuleProposals).
 	FromChild bool
@@ -231,12 +237,32 @@ func mergeRows(rows []store.BrokerRow, more []store.BrokerRow) []store.BrokerRow
 // ask in the conversation is this answer's, decided from facts.
 func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file ProposalFiler) (ProposalView, error) {
 	req.Title, req.Project = strings.TrimSpace(req.Title), strings.TrimSpace(req.Project)
+	req.Leftover = strings.TrimSpace(req.Leftover)
+	// A leftover takes its title, and its project, from the delivery that
+	// named it: what is proposed is what the child wrote, not a sentence the
+	// proposing session made up about it.
+	leftover := req.Leftover != ""
 	switch {
 	case checkSession(req.Session) != nil:
 		return ProposalView{}, checkSession(req.Session)
-	case req.Title == "" || utf8.RuneCountInString(req.Title) > workTitleLimit:
+	case leftover && req.TaskID == "":
+		return ProposalView{}, workRefusal(400, "subject_required",
+			"A leftover is proposed with the task_id of the delivery whose result.json named it.")
+	case leftover && req.WorkID != "":
+		return ProposalView{}, workRefusal(400, "invalid_work_id",
+			"A leftover has no line of work yet: one is named when a person answers, so work_id is not given here.")
+	case leftover && len(req.Effects) > 0:
+		return ProposalView{}, workRefusal(400, "invalid_leftover",
+			"A leftover has no effects yet: nothing has been done towards it. Declare effects on the line of work that had them.")
+	case leftover && utf8.RuneCountInString(req.Leftover) > work.LeftoverTitleLimit:
+		return ProposalView{}, workRefusal(400, "invalid_leftover",
+			"leftover is the title of one row of that task's leftovers, at most "+
+				strconv.Itoa(work.LeftoverTitleLimit)+" characters.")
+	case !leftover && (req.Title == "" || utf8.RuneCountInString(req.Title) > workTitleLimit):
 		return ProposalView{}, workRefusal(400, "invalid_title", "title is 1 to "+strconv.Itoa(workTitleLimit)+" characters.")
-	case req.Project == "" || utf8.RuneCountInString(req.Project) > workProjectLimit:
+	case !leftover && (req.Project == "" || utf8.RuneCountInString(req.Project) > workProjectLimit):
+		return ProposalView{}, workRefusal(400, "project_required", "project names the work's project.")
+	case utf8.RuneCountInString(req.Project) > workProjectLimit:
 		return ProposalView{}, workRefusal(400, "project_required", "project names the work's project.")
 	case req.WorkID != "" && !orchestrator.IsTaskID(req.WorkID):
 		return ProposalView{}, workRefusal(400, "invalid_work_id", "work_id is a lowercase UUID, the one the line's dispatches carry.")
@@ -269,7 +295,24 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 		bind = nil
 		workID := req.WorkID
 		rows := []store.BrokerRow{}
-		if req.TaskID != "" {
+		title, project, question := req.Title, req.Project, ""
+		var signals []work.Signal
+		var ignored []work.Ignored
+		var prior []work.Proposal
+		if leftover {
+			sub, err := leftoverSubject(tx, req)
+			if err != nil {
+				return err
+			}
+			// A line of its own, named now. Nothing is dispatched on it yet,
+			// and the task that raised it stays on its own line: it is where
+			// this came from, not work done towards it.
+			workID, title, question = newWorkID(), sub.leftover.Title, work.LeftoverQuestion(sub.leftover, req.TaskID)
+			project, signals, prior = sub.project, []work.Signal{work.SignalLeftover}, sub.prior
+			if req.Project != "" {
+				project = req.Project
+			}
+		} else if req.TaskID != "" {
 			row, err := tx.BrokerTask(req.TaskID)
 			if errors.Is(err, store.ErrNoTask) {
 				return workRefusal(404, "task_not_found", "No broker task has that id.")
@@ -316,38 +359,39 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 			}
 			rows = append(rows, row)
 		}
-		if workID == "" {
-			// No task and no line named: the proposal names a new line, and
-			// the root's dispatches for it carry it.
-			workID = newWorkID()
-		} else {
-			bound, err := tx.Tasks(workID)
+		if !leftover {
+			if workID == "" {
+				// No task and no line named: the proposal names a new line,
+				// and the root's dispatches for it carry it.
+				workID = newWorkID()
+			} else {
+				bound, err := tx.Tasks(workID)
+				if err != nil {
+					return err
+				}
+				rows = mergeRows(rows, bound)
+			}
+			facts, unknown := Facts(rows)
+			if unknown > 0 {
+				return workRefusal(409, "facts_unknown",
+					"A task of this line of work could not be read, so its signals are unknown; nothing was recorded.")
+			}
+			ids := make([]string, 0, len(facts))
+			for _, f := range facts {
+				ids = append(ids, f.Task)
+			}
+			todos, err := tx.TodosOf(ids)
 			if err != nil {
 				return err
 			}
-			rows = mergeRows(rows, bound)
+			signals, ignored = work.SignalsOf(facts, todos, effects, now)
+			if prior, err = tx.PriorProposals(workID, req.TaskID); err != nil {
+				return err
+			}
 		}
-		facts, unknown := Facts(rows)
-		if unknown > 0 {
-			return workRefusal(409, "facts_unknown",
-				"A task of this line of work could not be read, so its signals are unknown; nothing was recorded.")
-		}
-		ids := make([]string, 0, len(facts))
-		for _, f := range facts {
-			ids = append(ids, f.Task)
-		}
-		todos, err := tx.TodosOf(ids)
-		if err != nil {
-			return err
-		}
-		signals, ignored := work.SignalsOf(facts, todos, effects, now)
 		item, err := tx.Item(workID)
 		hasItem := err == nil
 		if err != nil && !errors.Is(err, store.ErrNoWork) {
-			return err
-		}
-		prior, err := tx.PriorProposals(workID, req.TaskID)
-		if err != nil {
 			return err
 		}
 		inTurn, inDay, err := tx.AskCounts(req.Session, heard, p.Proposals.DayStart(now))
@@ -361,10 +405,16 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 			return err
 		}
 		prop := work.Proposal{ID: newWorkID(), WorkID: workID, TaskID: req.TaskID, Session: req.Session,
-			Source: source, Project: req.Project, Title: req.Title, Signals: signals, Effects: effects,
+			Source: source, Project: project, Title: title, Signals: signals, Effects: effects,
 			Ask: verdict.Ask, AskReason: verdict.Reason, Channel: verdict.Channel, State: work.ProposalPending,
 			CreatedAt: now, ExpiresAt: now.Add(p.Proposals.Expiry)}
-		if prop.Ask {
+		switch {
+		case leftover:
+			// A leftover's sentence is recorded whether or not it may be
+			// asked: it is what a person reads in the "to confirm" area, and
+			// what the child wrote is the whole of the question.
+			prop.Question = question
+		case prop.Ask:
 			prop.Question = work.Question(prop.Title, signals, effects)
 		}
 		if err := tx.PutProposal(prop, nil, limitOr(p.ProposalLimit, store.ProposalOpenLimit)); err != nil {
@@ -382,6 +432,64 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 		p.bindAfter(ctx, bind)
 	}
 	return out, participationRefusal(err)
+}
+
+// leftoverOf is the subject of a leftover's proposal, read inside the
+// transaction that will record it.
+type leftoverSubjectRow struct {
+	leftover work.Leftover
+	project  string
+	// prior is every earlier proposal of **this** leftover — the same task
+	// and the same title — and nothing else. A delivery that named three
+	// leftovers is three subjects, not one proposed three times, so the
+	// duplicate rules must not read its siblings as earlier attempts.
+	prior []work.Proposal
+}
+
+// leftoverSubject reads the delivery a leftover was named in, and the leftover
+// itself. The task belongs to the proposing root or nothing is read: a
+// proposal is put to one root, and a delivery of another root's is not this
+// root's to raise.
+func leftoverSubject(tx *store.WorkTx, req ProposalRequest) (leftoverSubjectRow, error) {
+	row, err := tx.BrokerTask(req.TaskID)
+	if errors.Is(err, store.ErrNoTask) {
+		return leftoverSubjectRow{}, workRefusal(404, "task_not_found", "No broker task has that id.")
+	}
+	if err != nil {
+		return leftoverSubjectRow{}, err
+	}
+	r, err := orchestrator.Decode(row.Record)
+	if err != nil {
+		return leftoverSubjectRow{}, workRefusal(409, "facts_unknown",
+			"That task's record could not be read; nothing was recorded.")
+	}
+	facts, _ := Facts([]store.BrokerRow{row})
+	if facts[0].Owner != req.Session {
+		return leftoverSubjectRow{}, workRefusal(409, "not_the_root",
+			"A leftover is raised for the root the delivery belongs to, and that task's root is another session.")
+	}
+	var named []work.Leftover
+	if r.Result != nil {
+		named = r.Result.Leftovers
+	}
+	// Read again here rather than trusted from the file: the child's own
+	// validator refuses a malformed list (taskdir.ValidateResult), and a
+	// result that reached the record another way is still not allowed to put
+	// an unbounded string in front of a person.
+	list, err := work.ParseLeftovers(named)
+	if err != nil {
+		return leftoverSubjectRow{}, err
+	}
+	lo, ok := work.FindLeftover(list, req.Leftover)
+	if !ok {
+		return leftoverSubjectRow{}, workRefusal(404, "leftover_not_found",
+			"That delivery's result.json names no leftover with that title.")
+	}
+	all, err := tx.PriorProposals("", req.TaskID)
+	if err != nil {
+		return leftoverSubjectRow{}, err
+	}
+	return leftoverSubjectRow{leftover: lo, project: r.ProjectDir, prior: work.PriorLeftovers(all, lo.Title)}, nil
 }
 
 // lineBinding is a task to be put on a line of work by the broker.
@@ -499,8 +607,11 @@ func (p *Participation) Answer(ctx context.Context, id string, answer work.Answe
 			}
 			// The task the proposal was about is on the line the item now
 			// holds; asked again here in case the proposal's own binding
-			// did not happen (bindAfter).
-			if next.TaskID != "" {
+			// did not happen (bindAfter). A leftover's task is not that: it
+			// is the delivery that reported the work was **not** done, and
+			// binding it here would move a finished task onto a line nothing
+			// has been done on.
+			if next.TaskID != "" && !next.Leftover() {
 				from := work.WorkProposal
 				if next.TaskID == next.WorkID {
 					from = work.WorkDispatch

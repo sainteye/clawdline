@@ -1408,6 +1408,30 @@ export interface BrokerLanes {
 }
 
 /**
+ * One thing a delivery reported it did not do, in the child's own words. It is a
+ * candidate for a Backlog row and nothing else: it becomes one only when a session
+ * raises it as a proposal and a person answers that proposal.
+ */
+export interface BrokerLeftover {
+  /**
+   * What the child thinks would count as done. A suggestion: nothing here reads it
+   * as a commitment.
+   */
+  suggested_acceptance?: string
+
+  /**
+   * The row this would become. It is also how the leftover is named when it is
+   * proposed, so no two of one result share it.
+   */
+  title: string
+
+  /**
+   * Why the child did not do it.
+   */
+  why?: string
+}
+
+/**
  * The whole body of POST /v1/orchestrator/notify: a root, which holds this Mac's
  * orchestrator token and no task secret, pushing one sentence to the person.
  * `session_id` only chooses where tapping it lands, and only when it names a
@@ -1818,6 +1842,12 @@ export interface BrokerRespawnResult {
 export interface BrokerResult {
   artifacts?: string[]
   finished_at?: string
+
+  /**
+   * What this delivery says it did not do. Absent when the child named none, which
+   * is an ordinary complete delivery: nothing ever required the field.
+   */
+  leftovers?: BrokerLeftover[]
   status: string
   summary?: string
   symbols?: string[]

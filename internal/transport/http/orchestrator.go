@@ -932,6 +932,15 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 				Runs: int64(v.Runs), Seconds: int64(v.Seconds), Last: v.Last, Scope: v.Scope,
 			}
 		}
+		// What the delivery says it did not do, for the root reading this
+		// task at the moment it integrates. They are candidates: raising one
+		// is POST /v1/orchestrator/proposals with this task_id and the
+		// leftover's title, and only a person's answer makes a row.
+		for _, lo := range r.Result.Leftovers {
+			row.Result.Leftovers = append(row.Result.Leftovers, contract.BrokerLeftover{
+				Title: lo.Title, Why: lo.Why, SuggestedAcceptance: lo.Acceptance,
+			})
+		}
 		row.Summary = r.Result.Summary
 	} else if r.Verdict != "" {
 		// What the console shows as a finished task's line. The broker's own

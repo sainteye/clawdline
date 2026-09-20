@@ -17,6 +17,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf16"
+
+	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
 // The child's half of finishing: `clawdline task finish <task dir>`
@@ -219,6 +221,11 @@ func ValidateResult(task, result map[string]any) string {
 			return "verification must contain non-negative integer runs/seconds, a valid last value, and a non-empty scope"
 		}
 	}
+	if rows, present := result["leftovers"]; present {
+		if reason := validateLeftovers(rows); reason != "" {
+			return reason
+		}
+	}
 	review, hasReview := result["review"]
 	if requiresReview(task) && result["status"] == "success" && !hasReview {
 		return "a successful review task requires a closed review receipt"
@@ -264,6 +271,70 @@ func requiresReview(task map[string]any) bool {
 		}
 	}
 	return false
+}
+
+// validateLeftovers is the child's own account of what it did not do: absent,
+// or a bounded list of rows whose keys are exactly the three the protocol
+// names (work.Leftover).
+//
+// It is checked here, and refused here, for the reason `verification` is: an
+// optional field that is present and wrong is not a smaller delivery, it is a
+// delivery whose extra sentence nobody can read. The tmp file is left where it
+// is and the child corrects it. A child that writes no leftovers at all passes
+// this without ever meeting it.
+func validateLeftovers(value any) string {
+	rows, ok := value.([]any)
+	if !ok || len(rows) > work.LeftoversLimit {
+		return fmt.Sprintf("leftovers must be a list of at most %d entries", work.LeftoversLimit)
+	}
+	titles := map[string]bool{}
+	for _, r := range rows {
+		row, ok := r.(map[string]any)
+		if !ok || !onlyKeys(row, "title", "why", "suggested_acceptance") {
+			return "each leftover must use only the title/why/suggested_acceptance schema"
+		}
+		title, _ := row["title"].(string)
+		if !nonEmpty(row["title"], work.LeftoverTitleLimit) {
+			return fmt.Sprintf("each leftover needs a title of 1 to %d characters", work.LeftoverTitleLimit)
+		}
+		if !absentOrBounded(row["why"], work.LeftoverWhyLimit) ||
+			!absentOrBounded(row["suggested_acceptance"], work.LeftoverAcceptanceLimit) {
+			return fmt.Sprintf("a leftover's why and suggested_acceptance are strings of at most %d characters",
+				work.LeftoverWhyLimit)
+		}
+		key := strings.Join(strings.Fields(title), " ")
+		if titles[key] {
+			return "two leftovers of one result may not have the same title"
+		}
+		titles[key] = true
+	}
+	return ""
+}
+
+// onlyKeys is exactKeys for a shape with optional members: every key present
+// is one of keys, and nothing else is.
+func onlyKeys(obj map[string]any, keys ...string) bool {
+	known := map[string]bool{}
+	for _, k := range keys {
+		known[k] = true
+	}
+	for k := range obj {
+		if !known[k] {
+			return false
+		}
+	}
+	return true
+}
+
+// absentOrBounded is an optional string field: missing, or a string no longer
+// than max. An empty one is allowed — a child that has no why says so by
+// leaving it empty, and that is not a malformed delivery.
+func absentOrBounded(v any, max int) bool {
+	if v == nil {
+		return true
+	}
+	s, ok := v.(string)
+	return ok && jsLength(s) <= max
 }
 
 // validateReview is the closed review receipt: a verdict, and exactly the three
