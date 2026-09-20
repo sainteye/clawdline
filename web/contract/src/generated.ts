@@ -26,6 +26,26 @@ export interface ActionResult {
 }
 
 /**
+ * Which kind of nothing took the place of a session's activity time. They are
+ * deliberately not one word, for the same reason `IdentityBinding`'s three are not:
+ * `no_record` is a session that has written no conversation record yet — which is
+ * a session opened a moment ago, never one that has been quiet, because both
+ * assistants write that file at the first turn; `unreadable` is this machine
+ * failing to read a record that should be there, which is its own fault to fix;
+ * `unread` is a row this reading of the machine did not get to, having already read
+ * as many records as its bound allows (the capacity register's
+ * `sessions.activity_reads`); `unsupported` is a row nothing here can answer for at
+ * all. None of them may be drawn as an age or ordered as an old time.
+ */
+export type ActivityUnknownReason =
+    "no_record"
+  | "unreadable"
+  | "unread"
+  | "unsupported"
+
+export const ActivityUnknownReasonValues: readonly ActivityUnknownReason[] = ["no_record", "unreadable", "unread", "unsupported"] as const
+
+/**
  * POST /v1/auth/adopt: a token the page was handed in a URL fragment, traded for
  * the cookie EventSource needs. Nothing is granted: an unknown token is 401.
  */
@@ -5049,6 +5069,44 @@ export interface SendRequest {
 }
 
 /**
+ * When this session last moved, from this daemon rather than from whatever each
+ * browser happened to have watched: the moment the session's own conversation
+ * record last grew. That one file follows both halves of a turn — the assistant
+ * appends its output to it and the person's message is appended to it too — so it
+ * is the single answer to a question that otherwise splits into three that
+ * disagree. State changes are not it: a session working since midnight changes
+ * state twice a night, and ordering by that would sink it below one that blinked an
+ * hour ago. The list orders by this inside each state, so an assistant still
+ * producing output at four in the morning reads as moving now, and a session
+ * somebody replied to ten minutes ago and which has gone quiet reads as ten minutes
+ * old and sits above one that stopped at midnight. Absent on a row no reading has
+ * answered for.
+ */
+export interface SessionActivity {
+  /**
+   * Unix seconds: when the record last grew. Present only when `known`.
+   */
+  at?: number
+
+  /**
+   * This machine's own sentence about the answer, for a reader deciding whether to
+   * wait, fix this machine or stop asking.
+   */
+  detail?: string
+  evidence?: Evidence
+
+  /**
+   * Whether there is a time. False is a real answer and carries `unknown_reason`: a
+   * client must draw it as unknown and order it ahead of every known time inside
+   * its state, never as a very old time. Of the two ways to be wrong about a row
+   * nobody could read, only `it has been quiet for a week` hides the row somebody
+   * has to act on.
+   */
+  known: boolean
+  unknown_reason?: ActivityUnknownReason
+}
+
+/**
  * Who this session is parked on, and who is parked on it. Absent when neither.
  * `state` is `waiting_on_session` whenever `waitingOn` is not empty, otherwise
  * `has_waiters`.
@@ -5365,6 +5423,7 @@ export interface SessionModel {
  * invented; a reader that handles absence handles this too.
  */
 export interface SessionRow {
+  activity?: SessionActivity
   assistant?: Assistant
   backend: Backend
   closeability: Closeability

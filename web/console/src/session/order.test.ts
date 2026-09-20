@@ -9,24 +9,31 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { SessionRow, TaskRow } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see above.
-import { arrangeSessions, compareSessions, groupUnderRoots, rankOf, waitingKey, type MovedAt } from "./order.ts"
+import { arrangeSessions, compareSessions, groupUnderRoots, movedAt, rankOf, waitingKey } from "./order.ts"
 
 function row(id: string, state: string, label: string, extra: Partial<SessionRow> = {}): SessionRow {
   return { id, state, label, backend: "iterm", work_state: "unknown", evidence: "screen", isClaude: true, ...extra } as SessionRow
 }
 
-/** A clock from a table: ids not in it have never been seen moving. */
-function moved(times: Record<string, number>): MovedAt {
-  return (r: SessionRow) => times[r.id] ?? 0
+/**
+ * The rows, each carrying the daemon's answer for when it last moved. An id
+ * absent from the table is a row the daemon could not read: it carries the
+ * reason and no time, which is not the same row as one with an old time.
+ */
+function withTimes(rows: SessionRow[], times: Record<string, number>): SessionRow[] {
+  return rows.map((r) =>
+    times[r.id] === undefined
+      ? ({ ...r, activity: { known: false, unknown_reason: "unreadable" } } as SessionRow)
+      : ({ ...r, activity: { known: true, at: times[r.id], evidence: "transcript" } } as SessionRow),
+  )
 }
 
 function order(rows: SessionRow[], times: Record<string, number>, extra: { filter?: string; tasks?: TaskRow[] } = {}): string[] {
   return arrangeSessions({
-    sessions: rows,
+    sessions: withTimes(rows, times),
     filter: extra.filter ?? "",
     tasks: extra.tasks ?? [],
     shaping: () => true,
-    movedAt: moved(times),
     hold: null,
   }).map((r: SessionRow) => r.id)
 }
@@ -52,15 +59,50 @@ test("the title still decides between rows that moved at the same moment", () =>
   assert.deepEqual(order(rows, { z: 500, m: 500, a: 500 }), ["a", "m", "z"])
 })
 
-test("rows never seen moving go after the ones that were, by title", () => {
+test("a time that could not be read is not a very old time: the row goes above, not below", () => {
   const rows = [row("n1", "idle", "Bravo"), row("seen", "idle", "Zulu"), row("n2", "idle", "Alpha")]
-  assert.deepEqual(order(rows, { seen: 42 }), ["seen", "n2", "n1"])
+  // `seen` moved; the other two are rows the daemon could not read. They keep
+  // their own order by title and sit above the row with a time, because the
+  // bottom of the list is where a row stops being looked at.
+  assert.deepEqual(order(rows, { seen: 42 }), ["n2", "n1", "seen"])
+})
+
+test("a long quiet session and an unreadable one are two different answers", () => {
+  const quiet = { ...row("quiet", "idle", "Quiet"), activity: { known: true, at: 1, evidence: "transcript" } } as SessionRow
+  const unread = { ...row("unread", "idle", "Unread"), activity: { known: false, unknown_reason: "unread" } } as SessionRow
+  const missing = row("missing", "idle", "Missing")
+  assert.equal(movedAt(quiet), 1)
+  assert.equal(movedAt(unread), null)
+  // A row from a daemon too old to send the field is the same answer as one
+  // that could not be read, and never the bottom of the list.
+  assert.equal(movedAt(missing), null)
+  assert.deepEqual(
+    arrangeSessions({ sessions: [quiet, unread, missing], filter: "", tasks: [], shaping: () => true, hold: null }).map(
+      (r: SessionRow) => r.id,
+    ),
+    ["missing", "unread", "quiet"],
+  )
+})
+
+test("every kind of nothing sorts the same way, whatever its reason", () => {
+  const reasons = ["no_record", "unreadable", "unread", "unsupported"]
+  for (const reason of reasons) {
+    const one = { ...row("x", "idle", "Zulu"), activity: { known: false, unknown_reason: reason } } as SessionRow
+    const moved = { ...row("y", "idle", "Alpha"), activity: { known: true, at: 9_999, evidence: "transcript" } } as SessionRow
+    assert.deepEqual(
+      arrangeSessions({ sessions: [moved, one], filter: "", tasks: [], shaping: () => true, hold: null }).map(
+        (r: SessionRow) => r.id,
+      ),
+      ["x", "y"],
+      reason,
+    )
+  }
 })
 
 test("the id is the last word when title and time are equal", () => {
   const rows = [row("b", "idle", "Same"), row("a", "idle", "Same")]
-  assert.deepEqual(order(rows, {}), ["a", "b"])
-  assert.equal(compareSessions(rows[0], rows[0], moved({})), 0)
+  assert.deepEqual(order(rows, { a: 7, b: 7 }), ["a", "b"])
+  assert.equal(compareSessions(rows[0], rows[0]), 0)
 })
 
 test("Clawdfather stays first, even behind a waiting row that just moved", () => {
@@ -88,15 +130,18 @@ test("the filter reads label, folder, tty and backend", () => {
 })
 
 test("a held order does not move, and a row that arrives goes after it", () => {
-  const rows = [row("a", "idle", "Alpha"), row("b", "idle", "Bravo"), row("c", "idle", "Charlie")]
+  // `b` and `c` moved since the hold was taken; the held rows stay where they were.
+  const rows = withTimes([row("a", "idle", "Alpha"), row("b", "idle", "Bravo"), row("c", "idle", "Charlie")], {
+    a: 1,
+    b: 50,
+    c: 99,
+  })
   const hold = { order: ["a", "b"], waiting: waitingKey(rows) }
   const held = arrangeSessions({
     sessions: rows,
     filter: "",
     tasks: [],
     shaping: () => true,
-    // `b` and `c` moved since the hold was taken; the held rows stay where they were.
-    movedAt: moved({ a: 1, b: 50, c: 99 }),
     hold,
   }).map((r: SessionRow) => r.id)
   assert.deepEqual(held, ["a", "b", "c"])

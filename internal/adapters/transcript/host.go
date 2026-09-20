@@ -12,20 +12,25 @@ import (
 type Host struct {
 	Home string
 
-	claude map[int]ClaudeRegistry
-	codex  map[string]string
-	titles *Titles
-	shells *Shells
+	claude    map[int]ClaudeRegistry
+	codex     map[string]string
+	titles    *Titles
+	shells    *Shells
+	movements *Movements
 }
 
 func NewHost() *Host {
 	home, _ := os.UserHomeDir()
-	return &Host{Home: home, titles: NewTitles(), shells: NewShells()}
+	return &Host{Home: home, titles: NewTitles(), shells: NewShells(), movements: NewMovements()}
 }
 
 // Titles is the conversation-title cache, for the capacity register's
 // `cache.transcript_titles` row and its override.
 func (h *Host) Titles() *Titles { return h.titles }
+
+// Movements is the cache behind "when did this session last move", for the
+// register's `cache.session_activity` row and its override.
+func (h *Host) Movements() *Movements { return h.movements }
 
 // Refresh reads both indexes once per inventory rather than once per row.
 func (h *Host) Refresh() {

@@ -146,6 +146,9 @@ func New(cfg config.Config) (*Server, error) {
 			// The list's screens are held and refreshed behind the answer; the
 			// live reader above stays what a keystroke and the broker read.
 			Held: app.NewHeldScreens(terminal.NewScreens()),
+			// And the bound on how many of its rows one reading may ask an
+			// activity time of.
+			Activity: app.NewActivityReads(),
 		},
 	}
 	// One producer in front of it, so three loops are one scan.
@@ -155,8 +158,10 @@ func New(cfg config.Config) (*Server, error) {
 	// The transcript caches and the skills cache hold their register rows' limits.
 	srv.ledger.SetLimit(CapacityLimit(capacity.CacheTranscriptUsage))
 	srv.skillMenu.SetLimit(CapacityLimit(capacity.CacheSessionSkills))
+	srv.inventory.Activity.SetLimit(CapacityLimit(capacity.SessionsActivityReads))
 	if h, ok := srv.inventory.Identity.(*transcript.Host); ok {
 		h.Titles().SetLimit(CapacityLimit(capacity.CacheTranscriptTitles))
+		h.Movements().SetLimit(CapacityLimit(capacity.CacheSessionActivity))
 	}
 	// The live screens, and the FIFO directory that is their ownership record.
 	// A pane this daemon piped and did not take back is a `%N.fifo` left in

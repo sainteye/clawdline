@@ -323,6 +323,9 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		// worth waiting out rather than acting on.
 		Identity: contract.IdentityBinding(item.Binding),
 		Shells:   wireShells(item.Shells),
+		// When this row last moved, from this daemon: the list's order no
+		// longer depends on what any one browser happened to have watched.
+		Activity: wireActivity(item.Activity),
 	}
 	out := sessionRowWire{Menu: wireMenu(item)}
 
@@ -428,6 +431,26 @@ func ownCloseReasons(item session.Session, owed []task.Obligation, err error) []
 			Mover:       wireCloseMover(r.Mover, item.ID),
 		})
 	}
+	return out
+}
+
+// wireActivity carries when a row last moved across to the wire.
+//
+// An unreadable time is sent as `known: false` with its reason, never as a
+// zero or an old one: `at` is absent unless there is an answer, so a client
+// cannot accidentally read "nobody could tell" as "quiet since 1970". The
+// order it is owed is written into the contract beside it.
+func wireActivity(a session.Activity) *contract.SessionActivity {
+	out := &contract.SessionActivity{
+		Evidence: contract.Evidence(a.Evidence),
+		Detail:   a.Detail,
+	}
+	if a.Known() {
+		out.Known = true
+		out.At = a.At.Unix()
+		return out
+	}
+	out.UnknownReason = contract.ActivityUnknownReason(a.Unknown())
 	return out
 }
 

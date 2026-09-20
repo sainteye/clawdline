@@ -3,26 +3,16 @@
 // `derive.js` `ordered()`, `freezeOrder()` and `thawOrder()` are replaced here
 // rather than edited, because that file is a byte-for-byte copy. The rule
 // itself — the original's, with the most recently moved session first inside
-// each state — is `session/order.ts`; the clock that says when a session
-// moved is `session/activity.ts`. This file only hands them the state the
-// copied modules keep (`S`), and keeps the one piece of state the order has of
-// its own: the hold a pointer puts on it.
+// each state — is `session/order.ts`, and when a session last moved comes with
+// the row (`activity`) rather than from a clock this browser keeps. This file
+// only hands the rule the state the copied modules keep (`S`), and keeps the
+// one piece of state the order has of its own: the hold a pointer puts on it.
 import type { SessionRow, TaskRow } from "@clawdline/contract"
 import { S } from "./js/core/state.js"
 import { callSessionUI } from "./js/session/ui.js"
 import { taskShaping } from "./js/view/derive.js"
-import { ActivityClock, type ActivityStore } from "../session/activity.js"
 import { arrangeSessions, waitingKey, type OrderHold } from "../session/order.js"
 
-/** This browser's own copy of the clock, beside the other per-browser settings. */
-const STORE_KEY = "clawdline.list.moved"
-
-const browserStore: ActivityStore = {
-  read: () => window.localStorage.getItem(STORE_KEY),
-  write: (value) => window.localStorage.setItem(STORE_KEY, value),
-}
-
-const clock = new ActivityClock(browserStore)
 let hold: OrderHold | null = null
 
 /** The copied state, as the order reads it. `publish` in `bridge.ts` fills it. */
@@ -33,11 +23,6 @@ function state(): { sessions: SessionRow[]; tasks: TaskRow[]; filter: string } {
     tasks: (s.tasks as TaskRow[] | undefined) ?? [],
     filter: typeof s.filter === "string" ? s.filter : "",
   }
-}
-
-/** Look at the fleet as it now stands, so the clock can see what moved. */
-export function observeActivity(rows: readonly SessionRow[]): void {
-  clock.observe(rows, Date.now())
 }
 
 /** The list's own order and filter, so rows are arranged as the list draws them. */
@@ -51,7 +36,6 @@ export function orderedRows(): SessionRow[] {
     filter: now.filter,
     tasks: now.tasks,
     shaping: taskShaping as (task: TaskRow) => boolean,
-    movedAt: (row) => clock.movedAt(row.id),
     hold,
   })
 }

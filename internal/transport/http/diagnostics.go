@@ -214,6 +214,20 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return h.Titles().Reading()
 		},
+		capacity.CacheSessionActivity: func() capacity.Reading {
+			h, ok := s.inventory.Identity.(*transcript.Host)
+			if !ok {
+				return capacity.Unmeasured("this inventory reads no session records")
+			}
+			return h.Movements().Reading()
+		},
+		// What the last reading of the machine spent asking when each row
+		// last moved (internal/app/activity_reads.go). An inventory with no
+		// bound of its own is a known zero, not an unmeasured row: it reads
+		// no activity times at all.
+		capacity.SessionsActivityReads: func() capacity.Reading {
+			return s.inventory.Activity.Reading()
+		},
 		capacity.CacheSessionSkills: func() capacity.Reading { return s.skillsReading() },
 		// The screens the session list holds, and the captures it has in
 		// flight (internal/app/screen_held.go).

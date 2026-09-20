@@ -113,6 +113,13 @@ type Session struct {
 	// newest first. Empty for most sessions, and always for Codex, which keeps
 	// no record of them.
 	Shells []Shell `json:"shells,omitempty"`
+
+	// Activity is when this session last moved, by the one definition in
+	// movement.go: the moment its own conversation record last grew. It is
+	// what the list is ordered by on every device, in place of a clock each
+	// browser kept for itself. Not on the wire in this shape; the transport
+	// sends it as the row's `activity`.
+	Activity Activity `json:"-"`
 }
 
 // IsAssistant separates a Claude or Codex session from an ordinary shell.

@@ -9,6 +9,14 @@
  * the list and let go the moment the set of waiting sessions changes; and a
  * dispatched child placed under the session that asked for it (`grouped`).
  *
+ * **When a session last moved is the daemon's answer, not this page's.** It
+ * used to be a clock each browser kept in its own `localStorage`, watching the
+ * rows change: a phone and a Mac reading the same daemon put the same sessions
+ * in different orders, and a browser that had never seen a row had no time for
+ * it at all. The row now carries `activity` — the moment the session's own
+ * conversation record last grew — so every device sorts the same list the same
+ * way and a browser opened for the first time is not starting over.
+ *
  * Restated rather than wrapped, because the copied function has no seam for a
  * comparator and `derive.js` stays byte for byte (`tools/check-legacy-css.sh`).
  * Every function here takes what it reads as arguments and nothing is imported
@@ -37,25 +45,51 @@ function coordinatorFirst(a: SessionRow, b: SessionRow): number {
 }
 
 /**
- * When a row last moved, in a unit that only goes up. Zero is "never seen
- * moving", which sorts after every row that has been.
+ * When a row last moved, in Unix seconds, and `null` when the daemon could not
+ * say.
+ *
+ * `null` is not a very old time and is never turned into one. A row the daemon
+ * could not read — its record missing, unreadable, or past the reading's own
+ * bound (`unknown_reason`) — would be buried at the bottom of the list by a
+ * failure nobody was told about, and the bottom of the list is where a row
+ * stops being looked at. A row with no `activity` key at all is the same
+ * answer: a daemon too old to send one has told this page nothing.
  */
-export type MovedAt = (row: SessionRow) => number
+export function movedAt(row: SessionRow): number | null {
+  const a = row.activity
+  if (!a || !a.known || typeof a.at !== "number") return null
+  return a.at
+}
+
+/** Rows whose time could not be read sort ahead of every row that has one. */
+function movedBand(row: SessionRow): number {
+  return movedAt(row) === null ? 0 : 1
+}
 
 /**
- * Clawdfather → state → most recent movement → title → id.
+ * Clawdfather → state → unknown-before-known → most recent movement → title → id.
  *
  * The time is compared only between rows in the same state, so a session that
  * moved a second ago never climbs over one that is waiting for somebody. The
  * title is still what separates two rows that moved together — every working
  * session, which is moving right now — so those keep the steady order they
  * had before.
+ *
+ * **A row with no readable time goes to the top of its state, not the
+ * bottom.** Of the two ways to be wrong about a row nobody could read, only
+ * "it has been quiet for a week" hides the row somebody has to act on, and the
+ * commonest reason for it — a session that has written no record yet — is a
+ * tab somebody opened a moment ago and is looking for. Those rows keep their
+ * own order by title.
  */
-export function compareSessions(a: SessionRow, b: SessionRow, movedAt: MovedAt): number {
+export function compareSessions(a: SessionRow, b: SessionRow): number {
+  const at = movedAt(a)
+  const bt = movedAt(b)
   return (
     coordinatorFirst(a, b) ||
     rankOf(a) - rankOf(b) ||
-    movedAt(b) - movedAt(a) ||
+    movedBand(a) - movedBand(b) ||
+    (at === null || bt === null ? 0 : bt - at) ||
     (a.label || "").localeCompare(b.label || "") ||
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   )
@@ -92,7 +126,6 @@ export interface Arrangement {
   tasks: readonly TaskRow[]
   /** `taskShaping`: whether a task still decides where its child's row sits. */
   shaping: (task: TaskRow) => boolean
-  movedAt: MovedAt
   /** A hold that is still current; the caller drops a stale one (`waitingKey`). */
   hold: OrderHold | null
 }
@@ -109,11 +142,10 @@ export function arrangeSessions(a: Arrangement): SessionRow[] {
   if (hold) {
     const at = new Map(hold.order.map((id, i) => [id, i]))
     list.sort(
-      (x, y) =>
-        coordinatorFirst(x, y) || (at.get(x.id) ?? 1e9) - (at.get(y.id) ?? 1e9) || compareSessions(x, y, a.movedAt),
+      (x, y) => coordinatorFirst(x, y) || (at.get(x.id) ?? 1e9) - (at.get(y.id) ?? 1e9) || compareSessions(x, y),
     )
   } else {
-    list.sort((x, y) => compareSessions(x, y, a.movedAt))
+    list.sort((x, y) => compareSessions(x, y))
   }
   return groupUnderRoots(list, a.tasks, a.shaping)
 }

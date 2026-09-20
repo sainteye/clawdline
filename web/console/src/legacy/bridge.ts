@@ -56,7 +56,6 @@ import {
   tasksOfRoot as tasksOfRootOriginal,
 } from "./js/view/derive.js"
 import { coordinatorForSession as coordinatorForSessionOriginal, coordinatorRowModel as coordinatorRowModelOriginal } from "./js/input/coordinator-actions.js"
-import { observeActivity } from "./order-bridge.js"
 
 /**
  * Put the current fleet where the copied modules look for it.
@@ -86,9 +85,6 @@ export function publish(
     const own = (s as { machine?: unknown }).machine
     return { ...s, machine: typeof own === "string" && own ? own : LOCAL_SESSION_MACHINE }
   })
-  // The list orders by when a session last moved, and the page is what sees
-  // it move (`session/activity.ts`), so every fleet that arrives is looked at.
-  observeActivity(sessions)
   // The whole task list, replaced whole, as `handlers.tasks` does. A caller
   // with no answer yet passes nothing and the last list stands; the original
   // starts from an empty one, which leaves every task function answering as
@@ -104,8 +100,9 @@ export function publish(
 }
 
 /* The list's order is not the copied `ordered()`: it adds the time a session
-   last moved, inside each state, and so its hold is not the copied one either.
-   `orderedRows`, `freezeOrder` and `thawOrder` come from `order-bridge.ts`. */
+   last moved — the daemon's answer, on the row itself — inside each state, and
+   so its hold is not the copied one either. `orderedRows`, `freezeOrder` and
+   `thawOrder` come from `order-bridge.ts`. */
 export { orderedRows, freezeOrder, thawOrder } from "./order-bridge.js"
 
 export function workState(row: SessionRow): { state: string } {

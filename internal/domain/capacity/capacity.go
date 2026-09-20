@@ -195,6 +195,10 @@ const (
 	LedgerScan      = "ledger.scan"
 	LedgerFeatures  = "ledger.features"
 	TimelineEntries = "timeline.entries"
+	// When each session last moved: how many records one reading of the
+	// machine may read, and what the last reading of each one found.
+	SessionsActivityReads = "sessions.activity_reads"
+	CacheSessionActivity  = "cache.session_activity"
 )
 
 // Entry is one row of the register.
@@ -641,6 +645,40 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/transport/http.timelineEntryLimit"},
+		},
+		{
+			// How many sessions one reading of the machine may ask an
+			// activity time of (session.Activity). Each one is a stat of a
+			// file the assistant writes anyway, inside the one producer, so
+			// the cost is a stat per row per reading and not a transcript
+			// read — but a bound that grows with the number of rows is not a
+			// bound, and the one thing a list of sessions must survive is a
+			// machine with a great many of them.
+			//
+			// Past the limit the row is not read and says so: its activity
+			// comes back `unread`, which the order puts ahead of every known
+			// time inside its state rather than below them. That is the whole
+			// point of refusing rather than evicting here — a row left unread
+			// must not be mistaken for a row that has been quiet, and it is
+			// the reader, not this row, that is told.
+			Name: SessionsActivityReads, Class: Buffer, Unit: Rows,
+			Limit: 64, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.ActivityReadLimit"},
+		},
+		{
+			// What the last reading found about each session's own record:
+			// where it is, and what its newest turn said the time was when the
+			// file was that size. It is what keeps a list redrawn every two
+			// seconds to one stat per row — the record itself is opened only
+			// when it has changed. Past the limit the conversation read
+			// longest ago is let go, and its next reading opens the file
+			// again.
+			Name: CacheSessionActivity, Class: Cache, Unit: Rows,
+			Limit: 64, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
 		},
 	}
 }

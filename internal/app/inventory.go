@@ -26,6 +26,11 @@ type Inventory struct {
 	// alone after a failure (screen_held.go). Nil falls back to Screen, which
 	// is what a hand-built Inventory in a test wants.
 	Held *HeldScreens
+	// Activity is the bound on how many rows one reading may ask an activity
+	// time of, and the record of what the last one spent
+	// (activity_reads.go). Nil is the register's default with nothing
+	// measured, which is what a hand-built Inventory in a test wants.
+	Activity *ActivityReads
 }
 
 // screens is the reader the list uses: the held one where there is one.
@@ -109,13 +114,54 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 	}
 
 	sort.Strings(order)
+	// One budget for the whole reading, so the bound is on what looking at
+	// this machine costs and not on what one row does.
+	budget := in.Activity.budget()
+	var read, unread int64
 	for _, key := range order {
 		row := in.enrich(ctx, byTTY[key])
 		row = in.readScreen(ctx, row)
 		row = in.readShells(ctx, row)
+		row = in.readActivity(ctx, row, &budget, &read, &unread)
 		merged.Sessions = append(merged.Sessions, row)
 	}
+	in.Activity.spent(read, unread)
 	return merged
+}
+
+// readActivity asks when this session last moved (session.Activity).
+//
+// The answer comes from the identity source when it can give one, because the
+// file that answers is the assistant's own record and that source is the one
+// that knows where it is. A source that cannot say, and a row past this
+// reading's budget, both get a named nothing rather than a time — which is the
+// difference between a row a reader is shown and a row a failure buried.
+func (in Inventory) readActivity(ctx context.Context, s session.Session, budget, read, unread *int64) session.Session {
+	if !s.IsAssistant() {
+		return s
+	}
+	h, ok := in.Identity.(interface {
+		LastActivity(context.Context, session.Session) session.Activity
+	})
+	if !ok {
+		s.Activity = session.Activity{
+			Reason: session.ActivityUnsupported,
+			Detail: "this daemon's identity source keeps no activity times",
+		}
+		return s
+	}
+	if *budget <= 0 {
+		*unread++
+		s.Activity = session.Activity{
+			Reason: session.ActivityUnread,
+			Detail: "this reading had already read as many records as it may (sessions.activity_reads)",
+		}
+		return s
+	}
+	*budget--
+	*read++
+	s.Activity = h.LastActivity(ctx, s)
+	return s
 }
 
 // enrich asks the assistant's own records about a row the machine reported.
