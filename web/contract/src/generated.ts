@@ -3618,9 +3618,12 @@ export interface Icon {
  * Codex writes its rollout at the first message and not at startup, so a session
  * nobody has typed into is this, and names itself as soon as somebody does;
  * `unreadable` is this machine failing to read the table of open files, which is
- * its own fault to fix; `ambiguous` is more than one transcript open at once, where
- * naming the session at all would be a guess. Absent on a row no identity source
- * was asked about.
+ * its own fault to fix; `ambiguous` is transcripts belonging to more than one
+ * conversation open on the same process, where naming the session at all would be a
+ * guess — it is the conversations that are counted and not the files, because a
+ * Codex session running sub-agents holds one transcript per thread open and every
+ * one of them names the same conversation at its head. Absent on a row no identity
+ * source was asked about.
  */
 export type IdentityBinding =
     "command_line"

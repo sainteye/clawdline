@@ -95,6 +95,12 @@ type Session struct {
 	// but three (session.Binding), and a reader deciding whether to wait,
 	// fix this machine or stop asking needs to know which.
 	Binding Binding `json:"binding,omitempty"`
+	// BindingDetail is this machine's own sentence about that answer, in
+	// the shape Activity.Detail has: what was counted and what it came to,
+	// so a reader is not left to make the measurement again to find out why
+	// the row has no name. Empty on a row whose id was found. Not on the
+	// wire in this shape; the transport puts it where a person reads it.
+	BindingDetail string `json:"-"`
 
 	// Rungs are the parts Label was chosen from, kept so a reader holding a
 	// higher rung (a name typed in the Swift app, the task that opened the tab)

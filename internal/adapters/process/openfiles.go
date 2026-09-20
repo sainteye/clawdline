@@ -39,29 +39,86 @@ const (
 // codexConversation reads the conversation id out of the transcripts a process
 // holds open, and says how it got there — or which kind of nothing it found.
 //
-// Two open rollouts are not a tie to be broken. Codex's own app-server holds
-// every thread it is serving open at once, and a session named after whichever
-// of those sorted first would be a session wearing another's name, which costs
-// far more than a row with no name on it.
-func codexConversation(paths []string, read bool) (string, session.Binding) {
+// **The question is how many conversations are open, not how many files.** A
+// Codex session running sub-agents holds one rollout per thread open at once,
+// all of them its own, and on this Mac that is the ordinary case: of the four
+// Codex sessions running on 2026-09-20, two held two rollouts each and a third
+// held six. Counting files answered `ambiguous` for all three and left them
+// with no name, which is the bug this rule replaces.
+//
+// **What tells them apart is a positive field, never the shape of the set.**
+// The head of every rollout is a `session_meta` record carrying `session_id`,
+// the conversation the thread belongs to, beside `id`, the thread itself. A
+// thread that started the conversation has them equal; a sub-thread has
+// `session_id` pointing at the conversation and `id` at itself. So the rollouts
+// one process holds open fold to the set of `session_id`s among them: one
+// conversation binds, two do not.
+//
+// Reading the head rather than excluding the rollouts that carry a
+// `parent_thread_id` is deliberate, and not only because absence is the weaker
+// evidence. Of the 414 sub-thread rollouts on this Mac, 36 name another
+// sub-thread as their parent rather than the conversation, so a rule built on
+// parentage has to walk a tree the open files may not contain all of; and where
+// the conversation's own rollout is not among the open ones — a sub-agent still
+// writing after its parent thread closed its descriptor — the parentage rule
+// answers `no_record` while `session_id` still names the session correctly.
+// The same field also corrects an answer the old rule got wrong rather than
+// merely refused: one open rollout that happens to be a sub-thread used to bind
+// the sub-thread's id, taken from the file's name.
+//
+// **Two conversations remain ambiguous and bind nothing.** Codex's own
+// app-server holds every thread it is serving open at once, and a session named
+// after whichever of those sorted first would be a session wearing another's
+// name — which costs far more than a row with no name on it. What is new is
+// that the answer says what it counted (session.OpenTranscripts), so the next
+// reader does not have to open the same files to find out why.
+func codexConversation(paths []string, read bool, head RolloutHead) (string, session.Binding, string) {
 	if !read {
-		return "", session.BindingUnreadable
+		return "", session.BindingUnreadable, session.UnreadableTranscriptsDetail
 	}
-	found := ""
+	counted := session.OpenTranscripts{}
+	conversations := map[string]bool{}
 	for _, p := range paths {
-		id, ok := codexRolloutID(p)
+		name, ok := codexRolloutID(p)
 		if !ok {
 			continue
 		}
-		if found != "" && found != id {
-			return "", session.BindingAmbiguous
+		counted.Open++
+		// The file's name carries the thread, which is the conversation only
+		// when the thread started it. An unreadable head therefore falls back
+		// to the name, which can only ever refuse — a sub-thread's own id
+		// disagrees with its conversation and the answer stays ambiguous —
+		// and never to naming one session after another.
+		conversation := name
+		if conv, thread, readable := headOf(head, p); !readable {
+			counted.Unread++
+		} else if conv != "" {
+			conversation = conv
+			if thread != "" && thread != conv {
+				counted.SubThreads++
+			}
 		}
-		found = id
+		conversations[conversation] = true
 	}
-	if found == "" {
-		return "", session.BindingNoRecord
+	counted.Conversations = len(conversations)
+	if counted.Open == 0 {
+		return "", session.BindingNoRecord, session.NoTranscriptDetail
 	}
-	return found, session.BindingOpenFile
+	if counted.Conversations == 1 {
+		for id := range conversations {
+			return id, session.BindingOpenFile, ""
+		}
+	}
+	return "", session.BindingAmbiguous, counted.Detail()
+}
+
+// headOf reads one rollout's head, or answers that it could not be read. A
+// scan built without a reader is one that cannot read any of them.
+func headOf(head RolloutHead, path string) (string, string, bool) {
+	if head == nil {
+		return "", "", false
+	}
+	return head(path)
 }
 
 // codexRolloutID is the thread id in a rollout's file name, if that is what
