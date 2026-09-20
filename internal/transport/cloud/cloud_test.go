@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -76,7 +77,7 @@ func TestAnAnswerWithNowhereToGoIsRecordedRatherThanSent(t *testing.T) {
 	fake := NewFake(4)
 	var lines []string
 	service := Service{MachineID: "mac-01", Bridge: answering(t), Transport: fake,
-		Log: func(format string, args ...any) { lines = append(lines, format) }}
+		Log: func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }}
 	// Addressed to another Mac: the viewer listens on the channel it named,
 	// and an answer on ours would be read by nobody.
 	service.Answer(context.Background(), Inbound{Channel: "ctl/mac-02", Class: "ctl",
@@ -87,6 +88,14 @@ func TestAnAnswerWithNowhereToGoIsRecordedRatherThanSent(t *testing.T) {
 	}
 	if len(lines) != 1 || !strings.Contains(lines[0], "answered nobody") {
 		t.Fatalf("that drop was not recorded: %v", lines)
+	}
+	// And it names the session. Without that, two menu answers refused on
+	// 2026-09-20 recorded a code and a sender and nothing that said which
+	// session had been left unable to answer. A body too malformed to name one
+	// reads as a word rather than as a gap, which would look like a session
+	// called "".
+	if !strings.Contains(lines[0], "session=unknown") {
+		t.Fatalf("a recorded drop does not name its session: %q", lines[0])
 	}
 }
 

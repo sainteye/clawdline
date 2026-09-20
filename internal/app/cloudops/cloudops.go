@@ -86,6 +86,11 @@ type Answer struct {
 	Code string
 	// Payload is the JSON object to seal. Empty when Session is empty.
 	Payload []byte
+	// Subject is the session the request was about, whether or not there is a
+	// channel back to whoever asked. Session is the channel; this is the
+	// fact — and on the one answer that has no channel it is all there is to
+	// go on, so it is what the caller's log names.
+	Subject string
 }
 
 // Published reports whether this answer has a channel to go out on.

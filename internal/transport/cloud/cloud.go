@@ -153,8 +153,9 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 		Plaintext: request.Plaintext,
 	})
 	if !answer.Published() {
-		s.logf("cloud: %s answered nobody: status=%d code=%s sender=%s seq=%d",
-			answer.Name, answer.Status, answer.Code, request.Sender, request.Sequence)
+		s.logf("cloud: %s answered nobody: session=%s status=%d code=%s sender=%s seq=%d",
+			answer.Name, subjectOrUnknown(answer.Subject), answer.Status, answer.Code,
+			request.Sender, request.Sequence)
 		return answer
 	}
 	channel := AnswerChannel(s.MachineID, answer.Session)
@@ -228,4 +229,14 @@ func (s Service) logf(format string, args ...any) {
 		return
 	}
 	log.Printf(format, args...)
+}
+
+// subjectOrUnknown is what the log says a silent answer was about. A body too
+// malformed to name a session reads as `unknown` rather than as a gap in the
+// line, because a gap there is indistinguishable from a session called "".
+func subjectOrUnknown(subject string) string {
+	if subject == "" {
+		return "unknown"
+	}
+	return subject
 }

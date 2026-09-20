@@ -140,9 +140,9 @@ func payload(name string, status int, body json.RawMessage, failure map[string]a
 // send, a malformed read with no request id — and the caller records it.
 func (b Bridge) settle(p plan, status int, code string, ok json.RawMessage, failure map[string]any) Answer {
 	if p.name == "" || p.session == "" {
-		return Answer{Status: status, Code: code}
+		return Answer{Status: status, Code: code, Subject: p.session}
 	}
-	return Answer{Session: p.session, Name: p.name, Status: status, Code: code,
+	return Answer{Session: p.session, Name: p.name, Status: status, Code: code, Subject: p.session,
 		Payload: payload(p.name, status, ok, failure)}
 }
 

@@ -57,6 +57,15 @@ func TestACloudAnswerThatNamesNoQuestionIsRefused(t *testing.T) {
 	if len(r.seen) != 0 {
 		t.Fatalf("an unchecked answer still asked this machine: %+v", r.seen)
 	}
+	// That shape has no channel, so the refusal reaches nobody — but it names
+	// the session it was about, which is the only thing the log can say about
+	// a press somebody is still waiting on.
+	if older.Published() {
+		t.Fatalf("an answer with no request found a channel: %+v", older)
+	}
+	if older.Subject != pane {
+		t.Fatalf("a silent refusal does not say what it was about: %q", older.Subject)
+	}
 }
 
 func TestAnExpectationThatIsNotAFingerprintIsMalformed(t *testing.T) {

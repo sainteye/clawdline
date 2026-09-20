@@ -335,8 +335,13 @@ func actionPlan(b body, sessionScoped bool) (plan, bool) {
 	}
 	raw, named := b["request"]
 	if !named {
-		// No channel, and nothing is wrong with that.
-		return plan{target: p.target}, true
+		// No channel, and nothing is wrong with that. The session is kept
+		// anyway, because a refusal that cannot be published still has to say
+		// what it was about: two menu answers refused on 2026-09-20 were
+		// recorded as `answered nobody` with nothing but a code, and finding
+		// which of fourteen sessions had been left unable to answer took
+		// reading the screen of each one.
+		return plan{target: p.target, session: p.session}, true
 	}
 	request, ok := requestName(raw)
 	if !ok {
