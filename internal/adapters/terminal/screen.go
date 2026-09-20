@@ -99,7 +99,7 @@ func (t *Tmux) PipedPanes(ctx context.Context) map[string]bool {
 	}
 	state := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-		fields := strings.Split(line, paneSeparator)
+		fields := splitPaneFields(line)
 		if len(fields) != 2 || !IsPaneID(fields[0]) {
 			continue
 		}

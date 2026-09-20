@@ -82,7 +82,7 @@ func (t *Tmux) controlModeClients(ctx context.Context) []controlModeClient {
 	}
 	var rows []controlModeClient
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-		f := strings.Split(line, paneSeparator)
+		f := splitPaneFields(line)
 		if len(f) < 2 {
 			continue
 		}

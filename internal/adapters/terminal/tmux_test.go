@@ -196,3 +196,66 @@ func TestCloseTmuxSessionLeavesAWindowThatIsNotTheTasks(t *testing.T) {
 		t.Fatalf("panes left %v, want only %s", got, strings.TrimSpace(string(theirs)))
 	}
 }
+
+// tmux 3.4 renders the \x01 separator as its octal escape, so a listing that
+// is read literally loses every field on every line at once. That must not
+// come back as "there are no panes": it is the answer D05 ③ reserves for
+// evidence. Driven through a stand-in binary, because this Mac has 3.6a and
+// cannot produce 3.4's spelling.
+func TestAnEscapedSeparatorIsStillAListing(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		lines string
+		want  int
+		whole bool
+	}{
+		{"raw", "%1\x01/dev/ttys001\x01claude\x01s\x01title\x01/tmp\n", 1, true},
+		{"escaped", `%1\001/dev/ttys001\001claude\001s\001title\001/tmp` + "\n", 1, true},
+		{"unreadable", "%1 ttys001 claude s title /tmp\n", 0, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			bin := stubTmux(t, c.lines)
+			inv, err := (&Tmux{Binary: bin}).Inventory(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(inv.Sessions) != c.want {
+				t.Fatalf("got %d panes, want %d: %+v", len(inv.Sessions), c.want, inv.Sessions)
+			}
+			if inv.Complete != c.whole {
+				t.Fatalf("Complete=%v, want %v (notes %v)", inv.Complete, c.whole, inv.Notes)
+			}
+			if !c.whole && len(inv.Notes) == 0 {
+				t.Fatal("an incomplete listing has to say why")
+			}
+		})
+	}
+}
+
+// A tmux server with no panes still answers, and that empty answer is
+// complete. The drop counter above must not read it as damage.
+func TestAnEmptyListingIsStillComplete(t *testing.T) {
+	inv, err := (&Tmux{Binary: stubTmux(t, "")}).Inventory(context.Background())
+	if err != nil || !inv.Complete || len(inv.Sessions) != 0 || len(inv.Notes) != 0 {
+		t.Fatalf("err=%v inv=%+v", err, inv)
+	}
+}
+
+// stubTmux writes an executable that prints out and exits 0, whatever it is
+// asked. It stands in for a tmux whose version this machine does not have.
+func stubTmux(t *testing.T, out string) string {
+	t.Helper()
+	dir := t.TempDir()
+	// The bytes go in a file and the script cats it: a separator written
+	// into the script would have to survive the shell's own escaping, and
+	// \x01 does not.
+	data := filepath.Join(dir, "out")
+	if err := os.WriteFile(data, []byte(out), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "tmux")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\ncat "+data+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}

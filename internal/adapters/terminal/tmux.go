@@ -17,6 +17,29 @@ import (
 
 const paneSeparator = "\x01"
 
+// paneSeparatorEscaped is what tmux 3.4 writes where 3.6a writes the byte
+// itself: format output goes through vis(3), which renders a control
+// character as its four-character octal escape. `-u` below stops 3.6a
+// rewriting the byte, but it does not reach this — 3.4 escapes after it has
+// expanded the format, whatever the client claims about UTF-8.
+const paneSeparatorEscaped = `\001`
+
+// splitPaneFields cuts a format line on whichever spelling of the separator
+// this build of tmux used.
+//
+// A build that escapes the separator is not a build with no panes. Read
+// literally, every line loses its fields at once, so Inventory would have
+// answered "there are no panes" carrying the full authority of a listing that
+// succeeded — the one answer D05 ③ forbids it to arrive at by guessing. Found
+// on Ubuntu 24.04 (tmux 3.4) on 2026-09-20; this Mac runs 3.6a and never saw
+// it.
+func splitPaneFields(line string) []string {
+	if strings.Contains(line, paneSeparator) {
+		return strings.Split(line, paneSeparator)
+	}
+	return strings.Split(line, paneSeparatorEscaped)
+}
+
 // sendConfirm is how long Send waits for the pane to show the text before it
 // gives up without pressing Enter.
 var sendConfirm = 6 * time.Second
@@ -81,9 +104,14 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 		return inv, nil
 	}
 
+	dropped := 0
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-		parts := strings.Split(line, paneSeparator)
+		if line == "" {
+			continue
+		}
+		parts := splitPaneFields(line)
 		if len(parts) < 6 {
+			dropped++
 			continue
 		}
 		s := session.Session{
@@ -102,6 +130,14 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 			s.Assistant = session.AssistantCodex
 		}
 		inv.Sessions = append(inv.Sessions, s)
+	}
+	if dropped > 0 {
+		// Whatever those lines were, they were panes. Handing back the ones
+		// that parsed, as a complete listing, is how a pane that is on screen
+		// becomes a pane the broker is entitled to call gone.
+		inv.Complete = false
+		inv.Notes = append(inv.Notes,
+			fmt.Sprintf("tmux list-panes: %d line(s) did not carry six fields", dropped))
 	}
 	return inv, nil
 }
