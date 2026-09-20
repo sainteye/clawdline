@@ -172,7 +172,7 @@ HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST
 | N19 | SSE（自己供應時） | 訂閱者數**無上限**；screen bus 每訂閱 chan 16，**滿了走 `default` 直接丟、沒有計數**（`http/screen.go:189-197`）；沒有 Last-Event-ID | 丟 | 沒人 | 下次變動才補回 | b（訂閱者無上限那一半是 c） |
 | N20 | Cloud 入站佇列 | 64（`cloud/relay.go:42`） | **丟最舊的請求**，記 log | `/v1/cloud/status.queue_dropped`；UI 有型別（`cloud.ts:77`）**但沒畫** | 是 | b |
 | N21 | Cloud replay window | 照搬（`cloud/replay.go:11-17`） | 拒絕新 sender | `inbound_dropped{reason}`，設定頁有警示點（`SettingsWindow.tsx:632-640`） | 是 | a |
-| N22 | Cloud spool | 照搬（`spool.go:128-150`） | 拒絕，只記 log；過期列 burn 掉，`BurnExpired()` 的回傳值被丟掉（`transport.go:692`） | log | 是 | ✓? |
+| N22 | Cloud spool | 四個登記列：`cloud.spool`（2,000）、`cloud.spool_bytes`（16 MiB）、`cloud.spool_channel_bytes`（4 MiB，單一 channel）、`cloud.spool_receipts`（4,096 筆墓碑） | 拒絕；**而且會回一句具名的拒絕**給等在那條 channel 上的人（`cloud_read_busy` / `command_answer_undeliverable`，9.5.1），不是只記 log | log、diagnostics、notice、**等的人本人** | 是 | ✓ |
 | N23 | Cloud command ledger | 照搬（`domain/cloud/ledger.go:49-66`） | **寫好了但沒接上**（`NewLedger` 沒有正式呼叫端）；註解承認重啟後會重複執行（`:19-23`） | — | — | （未接線） |
 | N24 | 看板收據 | 4,096（`board/board.go:56`） | FIFO；淘汰計數只存在檔案裡（`settings.go:205-208`），不上 wire | 沒人 | 是 | b |
 | N25 | 看板卡片／專案 | `MaximumItems = 2_000`、`MaximumProjects = 200`（`board/board.go:53-54`） | **宣告了，整個 codebase 沒有任何引用**——跟舊時間軸同一個數字，這次是名義上的上限 | — | — | c |
@@ -268,7 +268,7 @@ HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST
 
 ### 3.4 橫跨三類：行為對了，但沒有人知道
 
-O8／N7 dead letter、O28 ledger 的拒絕計數沒人讀、O29／N22 spool 拒絕被歸成 integrity、O34 家規截斷只有 child 知道、
+O8／N7 dead letter、O28 ledger 的拒絕計數沒人讀、O34 家規截斷只有 child 知道、
 O39 task 目錄刪除沒有 audit——**這些都是對的行為**，缺的是「誰會知道」。
 
 反過來，舊 app 唯一做對的地方是 O26：`http_reliability` 在 `/v1/health` 裡把 `limits.streams: 16` 和

@@ -233,6 +233,36 @@ test("the machine's refusal stays typed; a timeout is nobody answering", async (
   await assert.rejects(r.fetch("/v1/transcript?session=slow"), /cloud_read_timeout/)
 })
 
+// The Mac's channel filled and the answer could not leave. What the page gets
+// back is that sentence, at once, with the bound it met — not sixty seconds of
+// "loading" and then `cloud_read_timeout`, which was the whole of it before:
+// measured 2026-09-21, one long session's transcript channel was refused 34
+// times and every one of them was a log line on the Mac and nothing here.
+test("a full channel on the Mac is a typed refusal here, not a read that times out", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 0 })
+  client.answer = () =>
+    Promise.reject(
+      Object.assign(new Error("This Mac answered, and the channel that answer goes on is full; try again shortly."), {
+        code: "cloud_read_busy",
+        status: 429,
+        layer: "mac_transport",
+        detail: { lane: "egress", limit: 4 << 20, retry_after: 5 },
+      }),
+    )
+  const refused = await r.fetch("/v1/transcript?session=%19")
+  assert.equal(refused.status, 429)
+  const answered = await body<{ error: string; detail: string }>(refused)
+  assert.equal(answered.error, "cloud_read_busy")
+  assert.match(answered.detail, /full/)
+  // It is a refusal the page can draw, not a transport failure it draws as
+  // "away": the Mac is there and said something.
+  assert.deepEqual(
+    r.log.map((row) => [row.answer, row.code]),
+    [["refused", "cloud_read_busy"]],
+  )
+})
+
 test("the stream sends one frame per turn for this machine and none for another", async () => {
   const client = new FakeClient()
   client.rows = [row("mac-a", "s1")]

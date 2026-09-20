@@ -96,6 +96,14 @@
 # steps of those ladders rather than bounds of their own, as retryCeiling has
 # been since the first wave.
 
+# The stuck channel (2026-09-21) split the Cloud spool's one budget into what
+# is owed and what has been answered. It registered two rows,
+# cloud.spool_channel_bytes (what one wire channel may have owed to it, the
+# bound that was refusing answers while the two global rows read 18% full) and
+# cloud.spool_receipts (the tombstones, an idempotency table and not a queue).
+# The line it added is the reserve that lets a full channel say it is full
+# (admission).
+#
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
 internal/adapters/analytics.MaxScannedRows # read: rows one analytics query scans
@@ -280,3 +288,4 @@ internal/adapters/projectlinks.maxStatusBytes # read: one status-line cache file
 internal/adapters/projectlinks.maxHealthComponents # page: the component rows kept from one health receipt
 internal/adapters/projectlinks.maxLabelRunes # page: a label, status word or reason as a link row draws it
 internal/adapters/projectlinks.maxURLBytes # page: a URL taken from one of those files, as a row carries it
+internal/adapters/cloud.spoolRefusalByteLimit # admission: one typed refusal admitted past a full channel's own caps so the waiter is told rather than left; one live per channel, so nothing accumulates (limits N22)
