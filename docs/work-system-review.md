@@ -489,3 +489,74 @@ TD-9 寫得很清楚：落地紀錄說 `landed`／`nothing_to_land`／`abandoned
 - **沒有量前端**：console 那幾頁是讀程式與打它們的路由判斷的，**沒有實際開瀏覽器看過畫面**。
 - **W1-b 的門檻（12 小時）是猜的。** 它應該由「一個交付從結束到被整合，實際上要多久」量出來，
   而那份分布這一輪沒有做。
+
+---
+
+## 11. W4 與 W6 落地了（2026-09-21）
+
+這一節是實作紀錄，不是新的審查。§0 到 §10 是 2026-09-20 的那一份，**沒有改**——包括 §10 說
+「本輪沒有改任何實作」，那句話講的是那一輪。
+
+### 做了什麼
+
+**第四個 freshness 值。** `SourceFreshness` 現在有四個字（`api/v1/coordination.schema.json`）：
+`current`、`stale`、`missing`，加上 `unverified`——**讀到了，而且裡面有一件事靠的是這個 daemon
+沒辦法確認還成不成立的東西**。三個字都在量「我讀到了嗎」，這是 §1.3 第 1 點的修正落地：
+協調者沒有無視警示，它報告了一個它沒有詞可以表達的狀態。
+
+三個產生者，每一個都有先紅後綠的守衛（`internal/transport/http/now_sources_test.go`）：
+
+- **落地帳自己說話。** `Sources.Landings` 本來是 `src(b.TasksFresh, "broker")`——task 讀取的那個字，
+  掛在落地帳的名字下面。一筆 pending 落地如果紀錄上沒寫 target，就沒有東西可以拿去問 git，
+  這就是 `unverified`；一列這樣就足以把整塊標成這個字（`orchestrator.Unverifiable`）。
+- **task 列表**：另一個 store 讀不到 → `stale`（少，不是空）；帶著上一次的讀取 → `unverified`。
+- **提議與決定**：它們過期與採用預設靠的那個 sweep 沒在轉 → `unverified`。那個答案不缺東西，
+  可能錯的是答案本身。
+
+**一頁三塊**（`web/console/src/pages/now.tsx`，抽屜最後一列「現在」）。四個請求、不是一個：
+它是在手機上經過 relay 讀的，一個涵蓋三個來源的答案會讓一個連不上的來源變成整頁空白。
+每一塊印自己來源的 freshness；**讀不到的那一塊沒有數字**（`pages/now/freshness.ts` 的
+`count: null`，那個函式裡沒有數字可以被後來的修改拿去填）。
+
+**落地列帶 `settlement`**（W1-a 開始記的那個事實）。「它的分支上什麼都沒有」與「東西在它自己的
+分支上」要人做的是相反的事，而兩者都不同於「沒有人問過」——後者維持不送這個 key。
+
+**W6**：時間軸的入口。舊看板頁在這台機器上畫不出東西（`/v1/board` 回 `items: 0`），而時間軸
+卡片上的 pill 又指回它。工作頁的項目現在也開得了時間軸，`timelineReturn()` 把讀者還給送他來的
+那一頁。舊看板的分頁**一個字都沒動**（U1），它只是不再是唯一的門。
+
+### 一處跟 §5.2 不一樣，理由寫在這裡
+
+§5.2 的表把「交了還沒記帳」那一塊指到 `/v1/orchestrator/inventory` 的 `unlanded`。
+**落地的是 `/v1/orchestrator/landings`。**
+
+`inventory` 是**單一 repository** 的（`?project=` 是必填，沒帶回 400 `bad_request`）。這一頁是
+給手機看的、問的是「這台機器現在什麼狀況」，另外兩塊也都是整台機器的。要它變成單一 repository
+只有兩條路：讓頁面挑一個 repository，然後把那一個的列當成這台機器的全部欠帳——**那就是「讀不到
+畫成 0」的同一個錯，換一種拼法**；或者讓手機自己列出所有 repository、逐一去打、自己合併——
+那是把一個 join 放到 relay 的另一端。
+
+`landings` 是整台機器的、沒有參數、每次讀都重新推導、不存任何東西，而且它本來就帶著三個
+`BearingsSource`——`sessions`、`tasks`、`landings`——所以「每一塊印出自己那個來源的 freshness」
+這條硬規則在它身上是原生的，不是加上去的。§5.2 要的「每列的 `do` 與 `why`」在這條路上是
+`obligation`（欠的是誰、現在是什麼意思）與 `ownership.reason`（那個人最後被看到在哪裡），
+再加上新的 `settlement`。
+
+`inventory` 沒有被改掉也沒有被取代：它仍然是派工前要讀的那一份，仍然是 `409 stale_inventory`
+帶回來的那個 body。
+
+### 怎麼證明它比現在好（§9 的那條）
+
+`斷開 daemon 的一個來源，那一塊要顯示「讀不到」而不是 0`——做了，輸出留在這個 task 的
+`artifacts/acceptance.txt`。用自己的 daemon（空的 `CLAWDLINE_NEXT_DIR`、7791 埠、
+`CLAWDLINE_NEXT_LEGACY_STORE=off`），前面架一個 proxy，四次讀：
+
+| 跑 | 情境 | 那一塊 | 旁邊兩塊 |
+|---|---|---|---|
+| 1 | 全部通 | `0`，tone `plain`，settled | 一樣 |
+| 2 | 只斷 `/v1/orchestrator/landings` | **`—`**，帶著 `store_unavailable` 這個名字 | **沒受影響**，照樣是 `0` |
+| 3 | 整個 daemon 不在 | `—`，`ECONNREFUSED` | 三塊都是 `—`，沒有一塊是 `0` |
+| 4 | daemon 原本的答案，只把那個字改成 `unverified` | `0`，但 tone `warn`、settled `false`，並印出「為什麼不能當定論」 | 一樣 |
+
+第 4 跑那一行的字是被改過的，因為那是一個全新的空 daemon，它沒有任何 pending 落地可以拿來說
+`unverified`；那個字的產生者由 Go 的守衛蓋住（先紅的輸出在 `artifacts/guards-red.txt`）。
