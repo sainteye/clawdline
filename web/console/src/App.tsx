@@ -269,7 +269,7 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
   useEffect(() => {
     const inline = (window as { __strings?: Record<string, string> }).__strings
     const get = async () => inline ?? (await client.strings())
-    void L.loadStrings(get).finally(() => {
+    void L.loadStrings(get, () => setLoaded((n) => n + 1)).finally(() => {
       document.documentElement.classList.remove("booting")
       if (landOnBrand.current) {
         landOnBrand.current = false

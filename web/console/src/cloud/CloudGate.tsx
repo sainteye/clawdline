@@ -121,6 +121,9 @@ async function catalog(config: CloudConfig): Promise<Record<string, string>> {
 export function CloudGate({ declared }: { declared: string }) {
   const transport = useMemo(() => readDeclaration(declared), [declared])
   const [words, setWords] = useState(false)
+  // A catalog that arrives late has words for a screen already on show
+  // (`legacy/bridge.ts` `loadStrings`), and nothing else here would redraw it.
+  const [, redraw] = useState(0)
   const [screen, setScreen] = useState<Screen>(() =>
     transport.kind === "misdeclared"
       ? { at: "misdeclared", reason: transport.reason }
@@ -148,7 +151,7 @@ export function CloudGate({ declared }: { declared: string }) {
       document.documentElement.classList.remove("booting")
       return
     }
-    void L.loadStrings(() => catalog(transport.config)).finally(() => {
+    void L.loadStrings(() => catalog(transport.config), () => redraw((n) => n + 1)).finally(() => {
       setWords(true)
       document.documentElement.classList.remove("booting")
     })

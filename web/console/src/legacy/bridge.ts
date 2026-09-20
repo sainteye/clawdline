@@ -12,6 +12,7 @@
 // dangerouslySetInnerHTML — the same input produces the same markup as the
 // original, and the copied stylesheet then styles it identically.
 import type { Icon, SessionRow, TaskRow } from "@clawdline/contract"
+import { retrying } from "../strings-retry.js"
 
 /* The imports below are the copied modules. They are plain JavaScript with no
    types, read with allowJs so the compiler infers what it can and checks none
@@ -193,12 +194,25 @@ export const fillString = fill as (s: string, holes: Record<string, unknown>) =>
  * that refused to start over a missing translation would be worse than one that
  * starts in English.
  */
-export async function loadStrings(get: () => Promise<Record<string, string>>): Promise<void> {
+export async function loadStrings(
+  get: () => Promise<Record<string, string>>,
+  again?: () => void,
+): Promise<void> {
   try {
     applyStrings(await get())
+    return
   } catch {
-    /* built-in English stays */
+    /* built-in English stays, for now */
   }
+  // And it is asked for again behind the page (`strings-retry.ts`): one lost
+  // fetch on a phone used to mean English until the reader thought to reload,
+  // and there is nothing on the screen to tell them that is the cure. `again`
+  // is how the caller redraws what is already showing when the words turn up
+  // late. Not `words` for the value: this file imports a function by that name.
+  void retrying(get, (catalog) => {
+    applyStrings(catalog)
+    again?.()
+  })
 }
 
 /* The transcript's renderers, copied rather than ported (the child replicating
