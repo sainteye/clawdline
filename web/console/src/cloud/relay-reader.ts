@@ -656,6 +656,13 @@ export class RelayReader {
           const q = this.only(url, path, "project")
           return await this.machineRead(method, path, "project-worktrees", { project: q.project ?? "" })
         }
+        case "/v1/orchestrator/landings": {
+          // No parameters: the landing ledger is machine-wide, and the one
+          // page that reads it asks what this machine owes, not what one
+          // repository does.
+          this.only(url, path)
+          return await this.machineRead(method, path, "landings", {})
+        }
         case "/v1/orchestrator/usage/verification-ledger": {
           const q = this.only(url, path, "graph")
           return await this.machineRead(method, path, "verification-ledger", { graph: q.graph ?? "" })
@@ -1013,11 +1020,16 @@ function consoleRow(row: CloudRow): SessionRow {
  * tagged them with, for the reason a session row does: a row read across the
  * relay is not on this machine and says so.
  *
- * `page` and `store` are answered rather than left out. The type says they are
- * there, nothing in this console reads them, and a field that is declared and
- * absent is the kind of thing that is discovered by something breaking. So:
- * `store` is `unknown`, because this page has not read the machine's task store
- * and cannot say how fresh it is; and this is not a page — the machine publishes
+ * `page`, `store` and `source` are answered rather than left out. The type says
+ * they are there, and a field that is declared and absent is the kind of thing
+ * that is discovered by something breaking. So: `store` is `unknown`, because
+ * this page has not read the machine's task store and cannot say how fresh it
+ * is; `source` is `stale`, which is the honest word for what this is — the
+ * machine's published projection, nine paths of each row rather than the row,
+ * with no reading of the other store behind it. It is not `current`, because
+ * this console did not read the machine, and it is not `missing`, because the
+ * rows are real. A page drawing this number now knows not to call it the whole
+ * answer; and this is not a page — the machine publishes
  * the whole list a viewer can reach on its descriptor, bounded there, and this
  * hands that over whole, so there is no cursor to follow and no limit was
  * asked for. `fields` says `cloud` rather than `list` because the rows are the
@@ -1035,6 +1047,7 @@ function taskList(answer: CloudTasks, machine: string, at: number): TaskList {
     at,
     page: { cursor: 0, fields: "cloud", limit: 0, finished, unfinished: rows.length - finished },
     store: "unknown",
+    source: { observed_at: at, provenance: "relay", freshness: "stale" },
     tasks: rows as unknown as TaskRow[],
   }
 }

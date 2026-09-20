@@ -306,6 +306,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-ledger",
 		method: "GET", path: "/v1/orchestrator/usage/verification-ledger",
 	}, {
+		// Machine-wide and so parameterless: the landing ledger is not one
+		// repository's debt, and a word that took a project would let a page
+		// show one repository's rows as the whole answer.
+		word:    "landings",
+		body:    map[string]any{"type": "landings", "session": machine, "request": "req-landings"},
+		session: machine, name: "read:req-landings",
+		method: "GET", path: "/v1/orchestrator/landings",
+	}, {
 		word: "send",
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",
 			"text": "hello", "images": []any{}},
@@ -1112,7 +1120,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items", "timeline", "projects", "project-worktrees",
-		"project-worktree-lifecycle", "verification-ledger",
+		"project-worktree-lifecycle", "verification-ledger", "landings",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)

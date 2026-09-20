@@ -282,7 +282,8 @@ func (s *Server) coordinatorBearings(ctx context.Context, w http.ResponseWriter)
 func wireBearings(b app.Bearings, st app.State) contract.CoordinatorBearings {
 	at := b.ObservedAt.Unix()
 	src := func(freshness, provenance string) contract.BearingsSource {
-		return contract.BearingsSource{ObservedAt: at, Provenance: provenance, Freshness: freshness}
+		return contract.BearingsSource{ObservedAt: at, Provenance: provenance,
+			Freshness: contract.SourceFreshness(freshness)}
 	}
 	sessionsAt := st.Seen.Inventory.ObservedAt
 	out := contract.CoordinatorBearings{
@@ -297,9 +298,13 @@ func wireBearings(b app.Bearings, st app.State) contract.CoordinatorBearings {
 		Unknown:              append([]string{}, b.Unknown...),
 		Sources: contract.BearingsSources{
 			Sessions: contract.BearingsSource{ObservedAt: sessionsAt.Unix(), Provenance: st.Seen.Inventory.Provenance,
-				Freshness: b.SessionsFresh},
-			Tasks:    src(b.TasksFresh, "broker"),
-			Landings: src(b.TasksFresh, "broker"),
+				Freshness: contract.SourceFreshness(b.SessionsFresh)},
+			Tasks: src(b.TasksFresh, "broker"),
+			// Its own word, not the task records'. The records can be read in
+			// full and still say nothing about whether the work they describe
+			// reached its target; that is `unverified`, and it used to be
+			// `current` here because this line was a copy of the one above it.
+			Landings: src(b.LandingsFresh, "broker"),
 			Waits:    src(b.WaitsFresh, "broker"),
 		},
 	}

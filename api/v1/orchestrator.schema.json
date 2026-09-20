@@ -798,6 +798,7 @@
       "properties": {
         "id": { "type": "string" },
         "title": { "type": "string" },
+        "settlement": { "description": "What the delivery branch carried past its base at the moment the task ended, as the record kept it (W1-a). Absent when nobody asked — a task that wrote the shared checkout, or a record written before it was kept — and absence is not `branch_empty`. It is on this row because \"still owed\" reads one way for a branch that carries a delivery and the opposite way for one that carries nothing: the second is not a landing waiting to be recorded, it is work that was never committed.", "$ref": "#/$defs/BrokerLandingSettlement" },
         "root_key": { "type": "string", "nullable": true },
         "root_label": { "type": "string", "nullable": true },
         "paths": { "type": "array", "items": { "type": "string" } },

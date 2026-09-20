@@ -111,10 +111,11 @@
       "description": "`at` is when the answer was built. With `store` at `unknown` the list holds only this daemon's own tasks, which is not the same as the machine having no others.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "page", "store", "tasks"],
+      "required": ["at", "page", "source", "store", "tasks"],
       "properties": {
         "at": { "type": "integer" },
         "page": { "$ref": "#/$defs/TaskPage" },
+        "source": { "description": "What this list is worth as a reading, in the one vocabulary every source on this daemon answers in. `store` says how the Swift app's store was read; this says what that makes of the whole answer, so a screen can print the list's freshness without knowing which stores it came from. `stale` when the Swift store could not be read at all \u2014 the list is then this daemon's own tasks and is short by however many the other store held; `unverified` when an earlier reading of it was carried, so the rows are here and a row may have moved since; `current` otherwise, which includes a machine with no Swift store, because absent is known.", "$ref": "coordination.schema.json#/$defs/BearingsSource" },
         "store": { "$ref": "#/$defs/StoreReading" },
         "tasks": { "type": "array", "items": { "$ref": "#/$defs/TaskRow" } }
       }

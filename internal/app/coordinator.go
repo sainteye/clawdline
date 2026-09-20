@@ -305,7 +305,19 @@ type Bearings struct {
 	Unknown         []string
 	SessionsFresh   string
 	TasksFresh      string
-	WaitsFresh      string
+	// LandingsFresh is the landing ledger's own word, which is not the task
+	// records' word however often the two are read in the same pass. The
+	// records read perfectly and still leave "is this work on its target"
+	// unanswered whenever nothing on the record says what its target is, and
+	// while this field was a copy of TasksFresh the ledger answered `current`
+	// about exactly that — a reading that happened, standing in for a fact
+	// nobody had checked.
+	LandingsFresh string
+	WaitsFresh    string
+	// UnverifiedLandings is how many pending landings are owed and cannot be
+	// checked against a target. It is the evidence behind an `unverified`
+	// LandingsFresh, and never a reason to draw the pending count as fewer.
+	UnverifiedLandings int
 }
 
 // BearingsLanding is one pending landing.
@@ -320,19 +332,19 @@ type BearingsLanding struct {
 func (c *Coordinator) Bearings(ctx context.Context, st State) Bearings {
 	now := c.now()
 	out := Bearings{ObservedAt: now, Lifecycle: Lifecycle(st), SessionsFresh: "current",
-		TasksFresh: "current", WaitsFresh: "current"}
+		TasksFresh: "current", LandingsFresh: "current", WaitsFresh: "current"}
 	if !st.Seen.Inventory.Complete {
 		out.SessionsFresh = "stale"
 		out.Unknown = append(out.Unknown, "sessions")
 	}
 	if c.Broker == nil {
-		out.TasksFresh, out.WaitsFresh = "missing", "missing"
+		out.TasksFresh, out.LandingsFresh, out.WaitsFresh = "missing", "missing", "missing"
 		out.Unknown = append(out.Unknown, "tasks", "landings", "waits", "leases")
 		return out
 	}
 	records, _, err := c.Broker.Records(ctx)
 	if err != nil {
-		out.TasksFresh = "missing"
+		out.TasksFresh, out.LandingsFresh = "missing", "missing"
 		out.Unknown = append(out.Unknown, "tasks", "landings")
 	} else {
 		for _, r := range records {
@@ -344,6 +356,9 @@ func (c *Coordinator) Bearings(ctx context.Context, st State) Bearings {
 					Task: r.ID, Title: r.Title, Obligation: string(c.Broker.Obligation(r)),
 					Age: now.Sub(r.FinishedAt),
 				})
+				if orchestrator.Unverifiable(r.Landing) {
+					out.UnverifiedLandings++
+				}
 			}
 			if r.Notice != nil && r.Notice.State == orchestrator.NoticeDeadLetter {
 				out.DeadLetters++
@@ -355,6 +370,9 @@ func (c *Coordinator) Bearings(ctx context.Context, st State) Bearings {
 		out.Unknown = append(out.Unknown, "waits")
 	} else {
 		out.OpenWaits = len(waits)
+	}
+	if out.LandingsFresh == "current" && out.UnverifiedLandings > 0 {
+		out.LandingsFresh = "unverified"
 	}
 	if leases, err := c.Broker.Leases(ctx); err != nil {
 		out.Unknown = append(out.Unknown, "leases")

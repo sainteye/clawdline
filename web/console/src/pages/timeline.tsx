@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from "react"
 import type { PageModule } from "./types.js"
 import { openBoard } from "../legacy/board-bridge.js"
-import { bindTimeline, requestedTimeline, type TimelinePage } from "../legacy/timeline-bridge.js"
+import { bindTimeline, requestedTimeline, timelineReturn, type TimelinePage } from "../legacy/timeline-bridge.js"
 import { ActionConfirm, Info, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./timeline/section.html?raw"
 
@@ -15,8 +15,19 @@ import sectionMarkup from "./timeline/section.html?raw"
  * original's own DOM.
  *
  * It is not a drawer row, there or here: a timeline is one Project's, so it is
- * reached from that Project's board (`board-timeline-tab`), which is what hands
- * it the Project through `openTimeline`.
+ * reached from something that already has a Project, which is what hands it
+ * the Project through `openTimeline`.
+ *
+ * **Where it is reached from changed** (work-system-review §5.2, W6). It used
+ * to hang off the old Project Board alone, and on this machine that board
+ * draws nothing — `/v1/board` answers `items: 0` — so the one live thing here
+ * was reached only through a dead one, and the pills on its own cards pointed
+ * back into it. A work item now opens it too (`pages/work/Board.tsx`), which
+ * is where "the history of this one thing" belongs. The old Board's tab is
+ * left exactly as it was (U1); it is simply no longer the only door.
+ *
+ * So "back" is no longer a constant. `timelineReturn()` names the page that
+ * sent the reader here, and the Board's own entry still says `projects`.
  *
  * What the original's `main.js` does for this page is done here: bind once,
  * `enter(project)` on arrival, `leave` on departure, and the keyboard lands on
@@ -30,6 +41,14 @@ function TimelinePageView({ shown }: { shown: boolean }) {
   useLayoutEffect(() => {
     if (!page.current) {
       page.current = bindTimeline(document, (project, item) => {
+        // A card's work-item pill points at the old Project Board, which on
+        // this machine has no items to show. A reader who came from a work
+        // item is given back to the work page instead of being dropped on an
+        // empty one; a reader who came from the Board still gets the Board.
+        if (timelineReturn() !== "projects") {
+          navigate(timelineReturn())
+          return
+        }
         if (!openBoard(project, item)) navigate("projects")
       })
     }
@@ -49,7 +68,7 @@ function TimelinePageView({ shown }: { shown: boolean }) {
       // asked. The Projects page is where the Project is chosen, so that is
       // where a reader who arrived here by address is sent.
       if (!project) {
-        navigate("projects")
+        navigate(timelineReturn())
         return
       }
       void page.current?.enter(project)

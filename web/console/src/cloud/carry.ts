@@ -59,6 +59,7 @@ export const CARRIED = {
   git: "GET /v1/sessions/{id}/git",
   image: "GET /v1/artifacts/images/{id}?session={id}",
   info: "GET /v1/sessions/{id}/info[?parts=summary]",
+  landings: "GET /v1/orchestrator/landings",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
   places: "GET /v1/places",
   "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",

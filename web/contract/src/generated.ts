@@ -898,7 +898,7 @@ export interface BearingsLanding {
 }
 
 export interface BearingsSource {
-  freshness: string
+  freshness: SourceFreshness
   observed_at: number
   provenance: string
 }
@@ -1713,6 +1713,17 @@ export interface BrokerPendingLanding {
   paths: string[]
   root_key: string | null
   root_label: string | null
+
+  /**
+   * What the delivery branch carried past its base at the moment the task ended, as
+   * the record kept it (W1-a). Absent when nobody asked — a task that wrote the
+   * shared checkout, or a record written before it was kept — and absence is not
+   * `branch_empty`. It is on this row because "still owed" reads one way for a
+   * branch that carries a delivery and the opposite way for one that carries
+   * nothing: the second is not a landing waiting to be recorded, it is work that
+   * was never committed.
+   */
+  settlement?: BrokerLandingSettlement
   since: number
   target: string | null
   title: string
@@ -6271,6 +6282,29 @@ export interface SkillsReply {
   truncated?: boolean
 }
 
+/**
+ * What one source's answer is worth, and the four are not degrees of the same
+ * thing. `current`: read in full just now, and nothing in it rests on an older
+ * reading. `stale`: read, and known to be short — some part of it could not be
+ * reached, so what is here is less than what there is. `missing`: it could not be
+ * read at all, which is never the same as it being empty. `unverified`: read in
+ * full, and a fact in it rests on something this daemon cannot confirm still holds
+ * — the answer exists and may already be out of date. The fourth word exists
+ * because the first three only ever measured whether the reading happened. A ledger
+ * that reads its own records perfectly and cannot say whether the work they
+ * describe has since landed was answering `current` about a fact it had no way to
+ * check, and a screen drew that as settled. A reader may print an `unverified`
+ * count; it may never print it as a certainty, and it may never draw any of the
+ * last three as `0`.
+ */
+export type SourceFreshness =
+    "current"
+  | "stale"
+  | "missing"
+  | "unverified"
+
+export const SourceFreshnessValues: readonly SourceFreshness[] = ["current", "stale", "missing", "unverified"] as const
+
 export interface StartAssistant {
   availability: StartAvailability
   id: string
@@ -6361,6 +6395,19 @@ export interface TaskChild {
 export interface TaskList {
   at: number
   page: TaskPage
+
+  /**
+   * What this list is worth as a reading, in the one vocabulary every source on
+   * this daemon answers in. `store` says how the Swift app's store was read; this
+   * says what that makes of the whole answer, so a screen can print the list's
+   * freshness without knowing which stores it came from. `stale` when the Swift
+   * store could not be read at all — the list is then this daemon's own tasks and
+   * is short by however many the other store held; `unverified` when an earlier
+   * reading of it was carried, so the rows are here and a row may have moved since;
+   * `current` otherwise, which includes a machine with no Swift store, because
+   * absent is known.
+   */
+  source: BearingsSource
   store: StoreReading
   tasks: TaskRow[]
 }

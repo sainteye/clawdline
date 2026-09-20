@@ -61,6 +61,11 @@
         "state": { "type": "string", "enum": ["available", "configured", "blocked"] }
       }
     },
+    "SourceFreshness": {
+      "description": "What one source's answer is worth, and the four are not degrees of the same thing. `current`: read in full just now, and nothing in it rests on an older reading. `stale`: read, and known to be short — some part of it could not be reached, so what is here is less than what there is. `missing`: it could not be read at all, which is never the same as it being empty. `unverified`: read in full, and a fact in it rests on something this daemon cannot confirm still holds — the answer exists and may already be out of date. The fourth word exists because the first three only ever measured whether the reading happened. A ledger that reads its own records perfectly and cannot say whether the work they describe has since landed was answering `current` about a fact it had no way to check, and a screen drew that as settled. A reader may print an `unverified` count; it may never print it as a certainty, and it may never draw any of the last three as `0`.",
+      "type": "string",
+      "enum": ["current", "stale", "missing", "unverified"]
+    },
     "BearingsSource": {
       "type": "object",
       "additionalProperties": false,
@@ -68,7 +73,7 @@
       "properties": {
         "observed_at": { "type": "integer" },
         "provenance": { "type": "string" },
-        "freshness": { "type": "string", "enum": ["current", "stale", "missing"] }
+        "freshness": { "$ref": "#/$defs/SourceFreshness" }
       }
     },
     "BearingsSources": {

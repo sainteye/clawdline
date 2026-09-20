@@ -9,6 +9,7 @@ import Dashboard from "./Dashboard.js"
 import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
 import { workWord } from "./pages/work/words.js"
+import { nowWord } from "./pages/now/words.js"
 import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
 import { NewBuild } from "./NewBuild.js"
@@ -44,7 +45,7 @@ import {
  * rather than the conversation — so it is kept, as a page rather than as the
  * app.
  */
-type Page = "sessions" | "dashboard" | "devices" | "projects" | "board" | "usage" | "ledger" | "timeline" | "plan" | "settings" | "work"
+type Page = "sessions" | "dashboard" | "devices" | "projects" | "board" | "usage" | "ledger" | "timeline" | "plan" | "settings" | "work" | "now"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -799,6 +800,21 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
             onClick={() => go("work")}
           >
             {workWord("nav")}
+          </button>
+          {/* "Where things stand" (work-system-review §5.2, W4): the one page
+              that answers the question the person asked three times in a day.
+              Last, beside the board, because it is a reading and not a place
+              work is done — nothing on it can be changed from it. */}
+          <button
+            className="sidebar-item"
+            id="nav-now"
+            type="button"
+            data-page-to="now"
+            aria-current={page === "now" ? "page" : undefined}
+            disabled={!ready("now")}
+            onClick={() => go("now")}
+          >
+            {nowWord("nav")}
           </button>
         </div>
       </nav>

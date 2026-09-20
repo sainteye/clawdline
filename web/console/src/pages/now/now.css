@@ -1,0 +1,53 @@
+/* "Where things stand" (work-system-review §5.2, W4).
+
+   Not a copy: the Swift app has no screen for this. So, like the board's
+   stylesheet beside it, this invents no palette and no furniture of its own —
+   every colour is a token of legacy/tokens.css, the page is board.css's
+   `.board-page`, the buttons are its `.board-button`, and the measures are
+   the ones those files already use.
+
+   What it adds is the one thing this page has to get right on a phone: three
+   blocks that stack, each one carrying its own state. A block that could not
+   be read looks different from a block that read and found nothing, and
+   neither looks like a block that read and is not sure — `data-tone` on the
+   block is the whole of that, and a big number with no line under it is a
+   shape this stylesheet cannot produce. */
+
+.now-page .now-wrap { width: min(1080px, 100%); margin-inline: auto; }
+.now-page h1 { margin: 0; font-size: clamp(30px, 5vw, 48px); line-height: 1.1; letter-spacing: -.04em; }
+.now-lede { margin: 14px 0 0; color: var(--dim); font-size: 14px; line-height: 1.7; }
+
+.now-blocks { display: grid; gap: 16px; margin-top: 24px; }
+@media (min-width: 900px) { .now-blocks { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; } }
+
+.now-block {
+    display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 18px 20px;
+    border: 1px solid var(--line); border-left: 3px solid var(--now-edge, var(--line)); border-radius: 16px;
+    background: var(--card); color: var(--ink);
+}
+.now-block[data-tone="plain"] { --now-edge: var(--ok); }
+.now-block[data-tone="warn"]  { --now-edge: var(--warn); }
+.now-block[data-tone="bad"]   { --now-edge: var(--bad); }
+
+.now-head { display: flex; align-items: baseline; gap: 10px; }
+.now-head h2 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 650; letter-spacing: .02em; }
+.now-count { margin-left: auto; color: var(--now-edge, var(--dim)); font: 600 26px/1 var(--mono); letter-spacing: -.02em; }
+.now-block-lede { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.6; }
+
+/* The freshness line. It is directly under the number on purpose: the number
+   is never on screen without it. */
+.now-fresh { margin: 0; color: var(--dim); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.now-block[data-tone="warn"] .now-fresh { color: var(--warn); }
+.now-block[data-tone="bad"] .now-fresh { color: var(--bad); }
+.now-fresh-at { display: block; color: var(--faint); font: 11px/1.6 var(--mono); }
+
+.now-rows { margin: 0; padding: 0; list-style: none; }
+.now-rows > li { padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.6; }
+.now-rows > li b { display: block; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.now-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--dim); font-size: 12px; line-height: 1.5; }
+.now-meta span { overflow-wrap: anywhere; }
+.now-note { color: var(--faint); font-size: 12px; line-height: 1.5; }
+.now-block[data-tone="warn"] .now-note { color: var(--warn); }
+.now-empty { margin: 0; padding: 10px 0 0; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
+.now-more { color: var(--faint); font: 11px/1.6 var(--mono); }
+.now-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }

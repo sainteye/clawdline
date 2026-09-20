@@ -10,6 +10,8 @@ import {
   type Proposal,
   type Section,
 } from "./api.js"
+import { openTimeline } from "../../legacy/timeline-bridge.js"
+import { requestPage } from "../../overlays/index.js"
 import { ownerWords, reasonWords, taskWords, when } from "./shared.js"
 import { workWord, type WorkWord } from "./words.js"
 
@@ -188,6 +190,27 @@ function ItemCard({
         {(d.tasks.total > 0 || item.unknown_tasks > 0) && <span>{taskWords(item)}</span>}
         {item.start_on && <span>{workWord("startOn", { date: item.start_on })}</span>}
       </div>
+      {/* The history of this one thing (work-system-review §5.2, W6). The
+          Timeline used to be reached only from the old Project Board, which
+          draws nothing on this machine, so a live page hung off a dead one.
+          It belongs here: a timeline is one Project's, and this card is the
+          thing whose history a reader wants. The Board's own tab is left as
+          it was — this is a second door, not a replacement. */}
+      {item.project && (
+        <div className="work-actions">
+          <button
+            className="chip"
+            type="button"
+            data-timeline-for={item.id}
+            onClick={() => {
+              openTimeline(item.project, "work")
+              requestPage({ page: "timeline" })
+            }}
+          >
+            {workWord("timeline")}
+          </button>
+        </div>
+      )}
       {d.last_evidence_at && <div className="work-clock">{workWord("lastEvidence", { when: when(d.last_evidence_at) })}</div>}
       {d.stall_at && <div className="work-clock">{workWord("stallClock", { when: when(d.stall_at) })}</div>}
       {d.closure_due_at && <div className="work-clock">{workWord("closureClock", { when: when(d.closure_due_at) })}</div>}

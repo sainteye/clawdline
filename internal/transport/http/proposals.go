@@ -214,6 +214,10 @@ type proposalListWire struct {
 	Rows       []proposalWire   `json:"rows"`
 	NextCursor *string          `json:"next_cursor"`
 	PageSize   int              `json:"page_size"`
+	// What this reading is worth (`SourceFreshness`), so a screen showing
+	// these beside the task list and the landing ledger prints all three the
+	// same way. See participationSource.
+	Source contract.BearingsSource `json:"source"`
 }
 
 type decisionWire struct {
@@ -257,6 +261,49 @@ type decisionListWire struct {
 	Rows       []decisionWire   `json:"rows"`
 	NextCursor *string          `json:"next_cursor"`
 	PageSize   int              `json:"page_size"`
+	// As proposalListWire.Source: what this reading is worth.
+	Source contract.BearingsSource `json:"source"`
+}
+
+// participationSource is the freshness of a proposal or decision listing.
+//
+// Both lists are read from the store exactly, every time, so "did the read
+// happen" is always yes and was never the interesting question. What ages
+// these rows is the sweep: a pending proposal leaves on its own when its
+// subject settles or when it expires, and an open decision defaults when its
+// clock runs out — and both of those are the sweep's doing. With the sweep
+// stopped the rows are still there and still say `pending` and `open`, which
+// is `unverified`: read in full, and resting on a clock that is not running.
+//
+// That is why this is not `stale`. Nothing is missing from the answer. What
+// may be wrong is the answer itself.
+func (s *Server) participationSource() contract.BearingsSource {
+	board := s.work()
+	pulse, _, running := board.Pulse()
+	return contract.BearingsSource{
+		ObservedAt: time.Now().Unix(),
+		Provenance: "work",
+		Freshness:  participationFreshness(running, pulse.At.IsZero(), board.Stalled()),
+	}
+}
+
+// participationFreshness is that judgement with the board taken out of it, so
+// that each of the four ways it can be reached is a case somebody can write
+// down rather than a clock somebody has to run.
+//
+// Three of them are the same fact in three spellings — the clock these rows
+// age on is not turning — and all three are `unverified` rather than `stale`,
+// because nothing is missing from the answer. What may be wrong is the answer.
+func participationFreshness(running, noPassYet, stalled bool) contract.SourceFreshness {
+	switch {
+	case !running:
+		return contract.SourceFreshnessUnverified
+	case noPassYet:
+		return contract.SourceFreshnessUnverified
+	case stalled:
+		return contract.SourceFreshnessUnverified
+	}
+	return contract.SourceFreshnessCurrent
 }
 
 type digestWire struct {
@@ -561,7 +608,7 @@ func (s *Server) workProposalsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		out := proposalListWire{OK: true, State: optionalString(string(state)), Project: optionalString(q["project"]),
 			Counts: map[string]int64{}, Rows: []proposalWire{}, NextCursor: optionalString(page.Next),
-			PageSize: app.WorkPageSize}
+			PageSize: app.WorkPageSize, Source: s.participationSource()}
 		for _, st := range work.ProposalStates {
 			out.Counts[string(st)] = page.Counts[st]
 		}
@@ -640,7 +687,8 @@ func (s *Server) workDecisionsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out := decisionListWire{OK: true, State: optionalString(string(state)), Counts: map[string]int64{},
-			Rows: []decisionWire{}, NextCursor: optionalString(page.Next), PageSize: app.WorkPageSize}
+			Rows: []decisionWire{}, NextCursor: optionalString(page.Next), PageSize: app.WorkPageSize,
+			Source: s.participationSource()}
 		for _, st := range []work.DecisionState{work.DecisionOpen, work.DecisionAnswered, work.DecisionDefaulted} {
 			out.Counts[string(st)] = page.Counts[st]
 		}

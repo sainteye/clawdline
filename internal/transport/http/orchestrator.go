@@ -659,14 +659,15 @@ func (s *Server) brokerLandings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	sessionsFresh := "current"
+	sessionsFresh := contract.SourceFreshnessCurrent
 	if !inv.Complete {
-		sessionsFresh = "stale"
+		sessionsFresh = contract.SourceFreshnessStale
 	}
+	landingsFresh := landingsFreshness(rows)
 	sources := contract.BrokerLandingSources{
 		Sessions: contract.BearingsSource{ObservedAt: inv.ObservedAt.Unix(), Provenance: inv.Provenance, Freshness: sessionsFresh},
-		Tasks:    contract.BearingsSource{ObservedAt: now.Unix(), Provenance: "broker", Freshness: "current"},
-		Landings: contract.BearingsSource{ObservedAt: now.Unix(), Provenance: "broker", Freshness: "current"},
+		Tasks:    contract.BearingsSource{ObservedAt: now.Unix(), Provenance: "broker", Freshness: contract.SourceFreshnessCurrent},
+		Landings: contract.BearingsSource{ObservedAt: now.Unix(), Provenance: "broker", Freshness: landingsFresh},
 	}
 	out := contract.BrokerLandingList{Landings: []contract.BrokerPendingLanding{}, Sources: sources, At: now.Unix()}
 	for _, p := range rows {
@@ -690,6 +691,7 @@ func (s *Server) brokerLandings(w http.ResponseWriter, r *http.Request) {
 			Since:      p.Since.Unix(),
 			AgeSeconds: age,
 			Target:     optionalString(rec.Landing.Target),
+			Settlement: contract.BrokerLandingSettlement(rec.Landing.Settlement),
 			Note:       optionalString(rec.Landing.Note),
 			Obligation: contract.BrokerLandingObligation(p.Obligation),
 			Ownership: contract.BrokerLandingOwnership{
@@ -707,6 +709,29 @@ func (s *Server) brokerLandings(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, out)
+}
+
+// landingsFreshness is the ledger's own word, decided from the rows it is
+// about to send.
+//
+// Reading every record and finding nothing wrong with the reading is what this
+// route used to call `current` — while the rows themselves said that the one
+// question a landing ledger exists to answer, *is this work on its target*,
+// could not be put at all, because nothing on the record says what the target
+// was. That is `unverified`: an answer, and one that may already be wrong.
+//
+// One such row is enough to qualify the whole block. A count where most of the
+// rows can be checked and some cannot is still a count nobody should act on as
+// arithmetic, and the alternative — a per-row word the reader has to add up
+// themselves — is the shape that made this ledger unreadable in the first
+// place.
+func landingsFreshness(rows []orchestrator.PendingLanding) contract.SourceFreshness {
+	for _, row := range rows {
+		if orchestrator.Unverifiable(row.Record.Landing) {
+			return contract.SourceFreshnessUnverified
+		}
+	}
+	return contract.SourceFreshnessCurrent
 }
 
 // addressRowWire is a row of the address book as it is sent. It exists for

@@ -125,13 +125,30 @@ export function bindTimeline(doc: Document, openBoard: (project: string | null, 
 // without importing the page — the two are separate files on purpose, which is
 // what let this page and the ledger be built at once.
 let requested: string | null = null
+let cameFrom = "projects"
 
-/** `main.js`'s `timeline.enter(project, …)`, less the arrival. */
-export function openTimeline(project: string | null): void {
+/**
+ * `main.js`'s `timeline.enter(project, …)`, less the arrival.
+ *
+ * `from` is this repository's own addition and it is what let the Timeline
+ * stop hanging off a dead page (work-system-review §5.2, W6). The Swift app
+ * had exactly one way in — the old Board's tab — so "back" could be written
+ * into the page. It now also opens from a work item, and a page that sent a
+ * reader somewhere they did not come from is worse than one with no way back
+ * at all: they lose their place and are shown a screen that, on this machine,
+ * is empty. The old Board's own call leaves it alone and keeps its way back.
+ */
+export function openTimeline(project: string | null, from = "projects"): void {
   requested = project && project.trim() ? project : null
+  cameFrom = from
 }
 
 /** The Project the page should enter, or null when nobody named one. */
 export function requestedTimeline(): string | null {
   return requested
+}
+
+/** The page a reader of the Timeline should be given back to. */
+export function timelineReturn(): string {
+  return cameFrom
 }

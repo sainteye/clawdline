@@ -95,6 +95,24 @@ func (b *Broker) branchSettlement(ctx context.Context, w *Worktree) LandingSettl
 	return SettlementCarried
 }
 
+// Unverifiable reports whether a pending landing is one this ledger cannot
+// check. A landing is proved by asking git whether the delivery is on the
+// branch the record names as its target, so a record that names no target has
+// nothing to ask about: the row is owed, and whether the work is already on
+// master is a question nobody here can put. A delivery branch git could not
+// count when the task ended is the same kind of nothing.
+//
+// It is not "the work has not landed". That is the sentence this ledger has
+// been saying about such rows, and it is the one thing the reading does not
+// show. Everything that draws a pending landing reads this to choose between
+// "owed" and "owed, and nobody can say whether it still is".
+func Unverifiable(l *Landing) bool {
+	if l == nil || l.State != LandingPending {
+		return false
+	}
+	return l.Target == "" || l.Settlement == SettlementUnreadable
+}
+
 // settlementNote is the sentence a pending landing opens with: what the
 // branch held, rather than the one thing every pending landing already says.
 func settlementNote(s LandingSettlement) string {
