@@ -11,6 +11,7 @@ import type { PageModule } from "./pages/types.js"
 import { workWord } from "./pages/work/words.js"
 import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
+import { NewBuild } from "./NewBuild.js"
 import {
   ActionConfirm,
   GO_PAGE,
@@ -823,6 +824,7 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
         <Component key={id} shown={page === id} />
       ))}
       <Overlays />
+      <NewBuild />
     </>
   )
 }

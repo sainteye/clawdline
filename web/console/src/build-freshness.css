@@ -1,0 +1,34 @@
+/* The offer to reload when the page is not the build being served
+   (`build-freshness.ts`, `NewBuild.tsx`).
+
+   Nothing below is a new look. It sits where the toast sits and is built from
+   the toast's own rule, because it is the same kind of thing — a line the page
+   says to the reader, over whatever they are doing — and differs only in that
+   it stays until it is used. Each declaration is taken from a rule that
+   exists, named above it. */
+
+/* `.toast` (`legacy/door.css`), less its entrance animation: a line that
+   arrives with a slide reads as something that will leave again, and this one
+   will not. One step further from the bottom edge than the toast, so the two
+   can be on screen at once without overlapping. */
+.new-build {
+    position: fixed; z-index: 71;
+    left: 50%; transform: translateX(-50%);
+    bottom: calc(64px + var(--status-h));
+    display: flex; align-items: center; gap: 10px;
+    background: #1e1e25; border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 14px; font-size: 12.5px; color: var(--ink);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    max-width: min(420px, calc(100vw - 32px));
+}
+.new-build[hidden] { display: none; }
+
+/* `.composer .waiting .go`, as `session/pending.css` reuses it: the small
+   rounded button this app already offers inside a line of its own. */
+.new-build .go {
+    flex: 0 0 auto;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--dim);
+    font-size: 11.5px; padding: 4px 10px; cursor: pointer;
+}
+.new-build .go:hover { background: var(--card-hi); color: var(--ink); }
