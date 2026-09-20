@@ -47,7 +47,9 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 	case session.AssistantClaude:
 		r, ok := h.claude[s.PID]
 		if !ok {
-			return ports.Identity{}, false
+			// Claude Code writes this file itself, so its absence is the
+			// session not having written it — not a reading that failed.
+			return ports.Identity{Binding: session.BindingNoRecord}, false
 		}
 		title, custom := "", ""
 		if r.CWD != "" && r.SessionID != "" {
@@ -65,13 +67,18 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 			Rungs:          rungs,
 			CustomTitle:    custom,
 			Status:         r.Status,
+			Binding:        session.BindingRegistry,
 		}, true
 
 	case session.AssistantCodex:
-		// Codex keeps no live registry, so the only proof of identity is the
-		// id it was resumed with, which it carries on its own command line.
-		// A session started fresh has none, and this says so by answering
-		// false rather than guessing from the working directory.
+		// Codex keeps no live registry beside Claude Code's, so nothing here
+		// can be asked about a pid. The id comes from the scan — the command
+		// line of a resumed session, or the rollout the process holds open —
+		// and which of those it was, or which kind of nothing took its place,
+		// is already on the row (internal/adapters/process.bindCodex). This
+		// adds no answer of its own, and in particular never guesses one from
+		// the working directory: two Codex sessions in one checkout is the
+		// ordinary case here, and they would both answer to the same name.
 		if s.ConversationID == "" {
 			return ports.Identity{}, false
 		}

@@ -3038,6 +3038,33 @@ type Icon struct {
 	Cells  [][]*string `json:"cells"`
 }
 
+// How a running process was tied to the conversation it is having, or — when
+// `sessionId` is absent — which kind of nothing stands in the way.
+// `command_line` is a resumed session, whose id is on its own command line;
+// `open_file` is the transcript the process holds open, which the kernel names
+// rather than a correlation between two clocks; `registry` is the assistant's
+// own live record, which only Claude Code writes. The three that carry no id
+// are deliberately not one word: `no_record` is a session that has written
+// nothing to match yet — Codex writes its rollout at the first message and
+// not at startup, so a session nobody has typed into is this, and names itself
+// as soon as somebody does; `unreadable` is this machine failing to read the
+// table of open files, which is its own fault to fix; `ambiguous` is more than
+// one transcript open at once, where naming the session at all would be a
+// guess. Absent on a row no identity source was asked about.
+type IdentityBinding string
+
+const (
+	IdentityBindingCommandLine IdentityBinding = "command_line"
+	IdentityBindingOpenFile    IdentityBinding = "open_file"
+	IdentityBindingRegistry    IdentityBinding = "registry"
+	IdentityBindingNoRecord    IdentityBinding = "no_record"
+	IdentityBindingUnreadable  IdentityBinding = "unreadable"
+	IdentityBindingAmbiguous   IdentityBinding = "ambiguous"
+)
+
+// IdentityBindingValues is every value the contract allows, in contract order.
+var IdentityBindingValues = []IdentityBinding{IdentityBindingCommandLine, IdentityBindingOpenFile, IdentityBindingRegistry, IdentityBindingNoRecord, IdentityBindingUnreadable, IdentityBindingAmbiguous}
+
 // Why a reference has no picture behind it: `expired` when the store held it
 // and no longer does, `unknown` when no store here ever held that id.
 type ImageAbsence string
@@ -4311,6 +4338,7 @@ type SessionRow struct {
 	Evidence     Evidence             `json:"evidence"`
 	Icon         *Icon                `json:"icon,omitempty"`
 	ID           string               `json:"id"`
+	Identity     IdentityBinding      `json:"identity,omitempty"`
 	IsClaude     bool                 `json:"isClaude"`
 
 	// What the session is called, by the Swift app's rungs (ITerm.swift

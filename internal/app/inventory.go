@@ -122,8 +122,16 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 		return s
 	}
 	id, ok := in.Identity.ForSession(ctx, s)
+	// How the row was named — or which kind of nothing kept it nameless — is
+	// an answer whether or not there was an identity behind it, so it is taken
+	// before `ok` is looked at. An empty one leaves what the scan already
+	// found: for Codex the scan is the source, and this must not overwrite its
+	// answer with silence.
+	if id.Binding != "" {
+		s.Binding = id.Binding
+	}
 	if !ok {
-		return s
+		return in.named(s)
 	}
 	if id.ConversationID != "" {
 		s.ConversationID = id.ConversationID
@@ -142,6 +150,28 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 		s.State = session.StateFromAssistantStatus(id.Status)
 		s.Evidence = session.EvidenceRegistry
 	}
+	return in.named(s)
+}
+
+// named gives a row the bottom rung of its name: where the session is.
+//
+// It is filled here rather than by an identity source because it is the one
+// rung no source can supply — it is not something an assistant knows about
+// itself. Every rung above it still wins, including the two the console fills
+// from the Swift store afterwards, so a task title is never displaced by this.
+//
+// What it replaces is a row whose label is empty. A fresh Codex has no name
+// anywhere on disk until somebody types into it, and an unnamed row in a list
+// of sessions reads as a session that is not there — which is exactly the row
+// somebody opened a moment ago and is looking for.
+func (in Inventory) named(s session.Session) session.Session {
+	if !s.IsAssistant() {
+		return s
+	}
+	if s.Rungs.Coordinate == "" {
+		s.Rungs.Coordinate = session.Coordinate(s)
+	}
+	s.Label = session.PreferredLabel(s.Rungs)
 	return s
 }
 

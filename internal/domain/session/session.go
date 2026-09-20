@@ -90,6 +90,11 @@ type Session struct {
 	// ConversationID is the assistant's own id for this line of work. It
 	// survives a terminal restart, which a tty and a pane id do not.
 	ConversationID string `json:"conversation_id,omitempty"`
+	// Binding is how ConversationID was obtained, or — when it is empty —
+	// which kind of nothing is in the way. A row with no id is not one fact
+	// but three (session.Binding), and a reader deciding whether to wait,
+	// fix this machine or stop asking needs to know which.
+	Binding Binding `json:"binding,omitempty"`
 
 	// Rungs are the parts Label was chosen from, kept so a reader holding a
 	// higher rung (a name typed in the Swift app, the task that opened the tab)

@@ -31,6 +31,12 @@ type Identity struct {
 	Rungs session.LabelRungs
 	// CustomTitle is the conversation's current `/rename`, if any.
 	CustomTitle string
+	// Binding is how this identity was obtained, or — on a source that could
+	// not produce one — which kind of nothing it found. It is carried even
+	// when the answer is false, because "the session has written no record
+	// yet" and "the record could not be read" are different facts and only
+	// one of them is worth waiting out (session.Binding).
+	Binding session.Binding
 }
 
 // OpenRequest is what it takes to start a session.

@@ -16,9 +16,14 @@ import (
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
-type PS struct{}
+type PS struct {
+	// Open is the table of open files, which is how a Codex session that was
+	// not resumed is tied to its conversation. New fills it with this
+	// platform's reader; a test puts its own table here.
+	Open OpenFiles
+}
 
-func New() *PS { return &PS{} }
+func New() *PS { return &PS{Open: systemOpenFiles} }
 
 // resumeID matches the conversation a session was resumed with. Both assistants
 // put it on their own command line, which makes it proof rather than inference:
@@ -81,11 +86,56 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 		}
 		if m := resumeID.FindStringSubmatch(command); len(m) == 2 {
 			s.ConversationID = m[1]
+			s.Binding = session.BindingCommandLine
 			s.Evidence = session.EvidenceProcess
 		}
 		inv.Sessions = append(inv.Sessions, s)
 	}
+	inv.Sessions = p.bindCodex(ctx, inv.Sessions)
 	return inv, nil
+}
+
+// bindCodex names the Codex sessions the command line could not.
+//
+// Claude Code writes a record per pid and Codex writes none, so a Codex
+// session that was not started with `codex resume <id>` carries its id
+// nowhere a scan can see — and its rollout does not exist yet either, because
+// that file is written at the first message and not at startup. Measured on
+// this Mac on 2026-09-20: 15 s, 54 s and 88 s between a thread being created
+// and its rollout appearing, and three threads that day never got one at all.
+//
+// What does exist from the first message on is the open descriptor: the
+// process holds its own rollout open, and the id is in that file's name. So
+// the window this cannot close is startup to first message, and within that
+// window the answer is `no_record` rather than silence — which is the whole
+// difference between a session that will name itself shortly and one this
+// machine is failing to read.
+//
+// It runs as one call for every row that needs it, after the table is built,
+// so a machine with no unnamed Codex on it pays nothing.
+func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Session {
+	var pids []int
+	for _, s := range rows {
+		if s.Assistant == session.AssistantCodex && s.ConversationID == "" && s.PID != 0 {
+			pids = append(pids, s.PID)
+		}
+	}
+	if len(pids) == 0 {
+		return rows
+	}
+	files, read := map[int][]string{}, false
+	if p.Open != nil {
+		files, read = p.Open(ctx, pids)
+	}
+	for i, s := range rows {
+		if s.Assistant != session.AssistantCodex || s.ConversationID != "" || s.PID == 0 {
+			continue
+		}
+		id, binding := codexConversation(files[s.PID], read)
+		rows[i].ConversationID = id
+		rows[i].Binding = binding
+	}
+	return rows
 }
 
 // classify decides whether a command line is an assistant we coordinate. It

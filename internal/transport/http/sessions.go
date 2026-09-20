@@ -273,7 +273,12 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		Line:      item.Line,
 		CWD:       item.CWD,
 		SessionID: item.ConversationID,
-		Shells:    wireShells(item.Shells),
+		// How that id was obtained, or which kind of nothing took its place.
+		// A row with no `sessionId` is three different situations, and only
+		// one of them — a session that has not written anything yet — is
+		// worth waiting out rather than acting on.
+		Identity: contract.IdentityBinding(item.Binding),
+		Shells:   wireShells(item.Shells),
 	}
 	out := sessionRowWire{Menu: wireMenu(item)}
 
