@@ -202,8 +202,9 @@ leave the new daemon's dispatch on.
 - ~~派工本身還是 Go 的第一版~~：W4 起排程走 broker，有 CHILD.md、task secret、`timeout_minutes`、`model`、
   `permission_mode`、worktree 隔離。**還沒有的**：`close_tab`（結束後關分頁屬於 linger，W6）；排程 run 以
   failure／timeout／spawn_failed 結束時的推播（舊版 `scheduleNotifyFailure`，要等 broker 的推播接上，W5／D24）；
-  範本裡 broker 還不支援的欄位（`serialize`、`graph`、`reasoning_effort`）會在發射時被具名拒絕（`bad_task`），
-  不再像舊骨架那樣安靜地忽略。
+  範本裡 broker 還不支援的欄位（`serialize`、`graph`）會在發射時被具名拒絕（`bad_task`），
+  不再像舊骨架那樣安靜地忽略。`reasoning_effort` 2026-09-20 起支援了：存得下去、也發得出去，
+  不再是「存檔說好、每次發射說 `bad_task`」的陷阱。
 - **webhook 的啟用與投遞**：綁定寫進本機帳本後，要向 Cloud 啟用 hook；這個 daemon 沒有 Cloud 帳號用戶端，
   所以回舊版遇到「沒有機器憑證」時的 `401 no_machine_credential`（綁定本身仍留著，與舊版相同）。Cloud 送來的
   delivery（claim／lease／receipt）整段沒有做。

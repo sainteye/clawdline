@@ -558,6 +558,10 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
 		Model:       r.Model,
+		// Codex only, and already refused by name on anything else when the
+		// brief was admitted; `Admit` refuses it again rather than trusting
+		// that, because it is the gate between a brief and a command line.
+		ReasoningEffort: r.ReasoningEffort,
 	})
 	if err != nil {
 		r.State = StateSpawnFailed

@@ -266,16 +266,22 @@ type Record struct {
 	// Claims is the declared write set, as task.json spells it — D21's
 	// `declared_writes`. It is written once at dispatch and never changed;
 	// Lease is what it reserves, and that depends on LeaseScope.
-	Claims         []string  `json:"claims"`
-	Isolation      string    `json:"isolation"`
-	ProjectDir     string    `json:"project_dir"`
-	Title          string    `json:"title"`
-	Instructions   string    `json:"instructions"`
-	Deliverables   []string  `json:"deliverables,omitempty"`
-	TimeoutMinutes int       `json:"timeout_minutes"`
-	Model          string    `json:"model,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	Root           *RootRef  `json:"root,omitempty"`
+	Claims         []string `json:"claims"`
+	Isolation      string   `json:"isolation"`
+	ProjectDir     string   `json:"project_dir"`
+	Title          string   `json:"title"`
+	Instructions   string   `json:"instructions"`
+	Deliverables   []string `json:"deliverables,omitempty"`
+	TimeoutMinutes int      `json:"timeout_minutes"`
+	Model          string   `json:"model,omitempty"`
+	// ReasoningEffort is Codex's `model_reasoning_effort` for this task's
+	// session, `high` or `xhigh`, empty for the model's own default. Recorded
+	// as well as used: what a session was started with is not readable off the
+	// session afterwards, and a task list that cannot say it cannot answer why
+	// two runs of one brief cost differently.
+	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	Root            *RootRef  `json:"root,omitempty"`
 	// WorkID is the line of work this task is on (D36): the key a task, its
 	// root's to-do and a board item are bound by, in place of guessing from
 	// titles. The dispatch names it, or the broker binds one by its rules

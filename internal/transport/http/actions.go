@@ -328,6 +328,12 @@ func actionStatus(code string) int {
 		return http.StatusConflict
 	case "pictures_unavailable":
 		return http.StatusServiceUnavailable
+	case "nobody_attached":
+		// The selection landed and no screen is showing it: a tmux session with
+		// no client attached. 409 for the same reason the two readings above
+		// are — the state, not the request, is what refused, and attaching a
+		// terminal and asking again is the remedy.
+		return http.StatusConflict
 	case "backend_unsupported":
 		return http.StatusNotImplemented
 	case "terminal_io_failed":

@@ -26,8 +26,9 @@ and five differences are where people fall:
    is refused with `401 unauthorized`.
 5. **Things the Swift app had and this daemon does not:** durable-report promotion (answers
    `501 durable_report_promotion_unsupported`), coordinator succession (answers
-   `501 succession_unavailable`), a cancel route for tasks, and the brief fields `serialize`,
-   `attach_session` and `reasoning_effort` (each refused by name as `bad_task`).
+   `501 succession_unavailable`), a cancel route for tasks, and the brief fields `serialize`
+   and `attach_session` (each refused by name as `bad_task`). `reasoning_effort` is supported:
+   `high` or `xhigh`, on a `codex` task only.
 
 ## 1. Root or child
 

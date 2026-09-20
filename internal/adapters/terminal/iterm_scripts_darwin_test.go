@@ -27,6 +27,9 @@ import (
 const itermModel = `
 const vm = require("vm");
 const writes = [];
+// Which session was picked, so a reveal can be checked for the tab it chose
+// and not only for having answered yes.
+const selects = [];
 const ESC = String.fromCharCode(27);
 // Each session draws its screen from what was written to it: the text pasted
 // so far, brackets removed, and how many Returns arrived.
@@ -39,7 +42,7 @@ function session(id, tty, draw) {
       if (o.text === "\r") { state.returns++; return; }
       state.typed += o.text.split(ESC + "[200~").join("").split(ESC + "[201~").join("");
     },
-    select: () => {}, variable: () => "",
+    select: () => { selects.push(id); }, variable: () => "",
     close: () => { writes.push({ id: id, text: "<close>", newline: false }); },
   };
 }
@@ -65,7 +68,7 @@ const script = process.env.SCRIPT, argv = JSON.parse(process.env.ARGV || "null")
 const answer = argv === null
   ? vm.runInContext(script, context)
   : vm.runInContext(script + "\n;run(" + JSON.stringify(argv) + ")", context);
-process.stdout.write(JSON.stringify({ answer: JSON.parse(answer), writes: writes }));
+process.stdout.write(JSON.stringify({ answer: JSON.parse(answer), writes: writes, selects: selects }));
 `
 
 type modelRun struct {
@@ -75,6 +78,7 @@ type modelRun struct {
 		Text    string `json:"text"`
 		Newline bool   `json:"newline"`
 	} `json:"writes"`
+	Selects []string `json:"selects"`
 }
 
 func runInModel(t *testing.T, script string, argv []string) modelRun {
@@ -314,5 +318,43 @@ func TestTheITermCloseIsImplemented(t *testing.T) {
 	var unsent Unsent
 	if !errors.As(err, &unsent) {
 		t.Fatalf("a session with no id answered %T %v, want Unsent", err, err)
+	}
+}
+
+// The commonest tmux there is — `tmux attach` typed into an iTerm2 tab — has
+// no mirrored window to name, so the tab is found by the pty tmux says its
+// client is on. `revealtty` used to be no command at all, and the whole reveal
+// tail did nothing for this shape.
+func TestTheITermRevealFindsATabByTheTTYItIsHolding(t *testing.T) {
+	run := runInModel(t, itermRevealScript, []string{"revealtty", "ttys032", "0"})
+	if run.Answer["ok"] != true {
+		t.Fatalf("revealtty: %+v", run)
+	}
+	if len(run.Selects) != 1 || run.Selects[0] != "GUID-C" {
+		t.Fatalf("selected %v, want the one session holding that pty", run.Selects)
+	}
+	// The directory is off on both sides, and it is the same terminal either
+	// way tmux spelled it.
+	if run := runInModel(t, itermRevealScript, []string{"revealtty", "/dev/ttys032", "0"}); run.Answer["ok"] != false {
+		t.Fatalf("a tty with its directory still on matched: %+v", run)
+	}
+}
+
+// A pty iTerm2 is not holding is a no, and so is no pty at all: an empty
+// argument that matched the rows with no tty — every `tmux -CC` mirror — would
+// select a tab for a client that is not it.
+func TestTheITermRevealRefusesATTYItDoesNotHold(t *testing.T) {
+	for _, want := range []string{"ttys999", ""} {
+		run := runInModel(t, itermRevealScript, []string{"revealtty", want, "1"})
+		if run.Answer["ok"] != false || len(run.Selects) != 0 {
+			t.Fatalf("revealtty %q answered %+v, want a refusal and nothing selected", want, run)
+		}
+	}
+	// And the same empty-argument guard on the other two commands.
+	for _, cmd := range []string{"reveal", "revealtmux"} {
+		if run := runInModel(t, itermRevealScript, []string{cmd, "", "1"}); run.Answer["ok"] != false ||
+			len(run.Selects) != 0 {
+			t.Fatalf("%s with nothing named answered %+v", cmd, run)
+		}
 	}
 }

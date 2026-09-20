@@ -3,6 +3,7 @@ package projects
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -130,5 +131,46 @@ func TestWeakTitleStepsAsideOnlyForAFallback(t *testing.T) {
 	}
 	if titleIsWeak("Image review", "Image review", "[Image #1]", true) {
 		t.Fatal("a /rename is never weak")
+	}
+}
+
+// Codex's reasoning effort reaches the command line as `--config
+// model_reasoning_effort=…`, after the model, which is where the Swift app's
+// measured line has it.
+func TestLaunchCarriesTheCodexReasoningEffort(t *testing.T) {
+	l, err := Admit(LaunchRequest{ProjectRoot: "/p", Assistant: AssistantCodex,
+		Model: "gpt-5.6-sol", ReasoningEffort: "xhigh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX " +
+		"-u CODEX_SANDBOX_NETWORK_DISABLED codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh"
+	if got := l.ShellCommand(); got != want {
+		t.Fatalf("line\n got %q\nwant %q", got, want)
+	}
+	// With no model of its own it is still the only extra flag.
+	l, err = Admit(LaunchRequest{ProjectRoot: "/p", Assistant: AssistantCodex, ReasoningEffort: "high"})
+	if err != nil || strings.Join(l.Arguments, " ") != "--config model_reasoning_effort=high" {
+		t.Fatalf("arguments %v (%v)", l.Arguments, err)
+	}
+	// And an unnamed one adds nothing at all.
+	l, err = Admit(LaunchRequest{ProjectRoot: "/p", Assistant: AssistantCodex})
+	if err != nil || len(l.Arguments) != 0 {
+		t.Fatalf("arguments %v (%v)", l.Arguments, err)
+	}
+}
+
+// The last gate before a command line is a closed list, and it refuses what
+// the brief's own check would have: a value that is not one of the two names,
+// and the setting on the assistant that has no such flag.
+func TestLaunchRefusesAReasoningEffortItCannotType(t *testing.T) {
+	for _, req := range []LaunchRequest{
+		{ProjectRoot: "/p", Assistant: AssistantCodex, ReasoningEffort: "medium"},
+		{ProjectRoot: "/p", Assistant: AssistantCodex, ReasoningEffort: "high; rm -rf ~"},
+		{ProjectRoot: "/p", Assistant: AssistantClaude, ReasoningEffort: "high"},
+	} {
+		if _, err := Admit(req); err == nil {
+			t.Errorf("admitted %+v", req)
+		}
 	}
 }

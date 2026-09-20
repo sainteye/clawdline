@@ -26,7 +26,8 @@ Swift app（port 7717、`~/.config/clawdline`）正在退役。這個 daemon 不
 5. **Swift app 有、這個 daemon 沒有的東西：** durable report 升級（回
    `501 durable_report_promotion_unsupported`）、coordinator succession（回
    `501 succession_unavailable`）、task 的取消路由，以及 brief 欄位 `serialize`、
-   `attach_session`、`reasoning_effort`（每一個都會被點名拒絕，code 是 `bad_task`）。
+   `attach_session`（兩個都會被點名拒絕，code 是 `bad_task`）。`reasoning_effort` 有支援：
+   `high` 或 `xhigh`，而且只在 `codex` 的 task 上。
 
 ## 1. Root 還是 child
 

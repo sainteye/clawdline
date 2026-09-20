@@ -81,7 +81,7 @@
       }
     },
     "FocusResult": {
-      "description": "The session's terminal was asked to come forward. It says the selection was made on this machine, never that a window is now in front of a person: under tmux the emulator drawing the pane decides that, and one of them — iTerm2 under `tmux -CC` — is asked separately, after this answer has already gone out.",
+      "description": "The session's terminal was asked to come forward. It says the selection was made on this machine, never that a window is now in front of a person: under tmux the emulator drawing the pane decides that, and the one that can be asked — iTerm2, whether it is mirroring the pane under `tmux -CC` or holding the pty an ordinary `tmux attach` is running in — is asked separately, after this answer has already gone out. What it does say is that somebody could see it: a tmux session with no client attached is refused as `nobody_attached` rather than answered `ok`.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "ok"],

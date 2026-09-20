@@ -13,8 +13,17 @@ import (
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
-// itermRevealScript is iterm.js's `reveal`, `revealtmux`, `activate` and the
-// tty half of `list`. The ids are arguments, never part of the script text.
+// itermRevealScript is iterm.js's `reveal`, `revealtmux`, `revealtty`,
+// `activate` and the tty half of `list`. The ids are arguments, never part of
+// the script text.
+//
+// **`revealtty` is the ordinary `tmux attach` in a tab**, where there is no
+// mirrored window to name: the whole tmux server is one pty and iTerm2 is asked
+// which of its own sessions is holding it. `s.tty()` is the same `/dev/ttysNNN`
+// tmux reports as `#{client_tty}`, compared with the directory off both sides,
+// and an empty one is refused before the walk rather than matched — a row
+// iTerm2 gives no tty for (a `-CC` mirror) would otherwise match an empty
+// argument and be selected for a client that is not it.
 //
 // **`revealtmux` asks a `variable`, not a property.** iTerm2's session class
 // carries no tmux property, which is where the old reasoning stopped; the same
@@ -57,13 +66,23 @@ function run(argv) {
       return v === null || v === undefined ? "" : String(v);
     } catch (e) { return ""; }
   }
+  function bareTTY(s) {
+    let tty = "";
+    try { tty = String(s.tty() || ""); } catch (e) {}
+    return tty.indexOf("/dev/") === 0 ? tty.slice(5) : tty;
+  }
   const want = String(argv[1] || "");
-  if (cmd !== "reveal" && cmd !== "revealtmux") {
+  if (cmd !== "reveal" && cmd !== "revealtmux" && cmd !== "revealtty") {
     return JSON.stringify({ ok: false, error: "unknown command" });
+  }
+  if (want === "") {
+    return JSON.stringify({ ok: false, error: "nothing was named to show" });
   }
   const walk = itermEach(it, function (s, win, tab) {
     if (cmd === "reveal") {
       if (String(s.id()) !== want) return false;
+    } else if (cmd === "revealtty") {
+      if (bareTTY(s) !== want) return false;
     } else {
       if (variableOf(s, "session.tmuxWindowPane") !== want) return false;
       if (variableOf(s, "session.tmuxRole") !== "client") return false;
@@ -74,9 +93,10 @@ function run(argv) {
     return true;
   });
   if (!walk.stopped) {
-    return JSON.stringify({ ok: false, error: cmd === "reveal"
-      ? itermMissing(walk)
-      : "iTerm2 is drawing no tmux window for pane %" + want });
+    let why = itermMissing(walk);
+    if (cmd === "revealtmux") { why = "iTerm2 is drawing no tmux window for pane %" + want; }
+    if (cmd === "revealtty") { why = "iTerm2 is holding no tab on " + want; }
+    return JSON.stringify({ ok: false, error: why });
   }
   if (activate) { try { it.activate(); } catch (e) {} }
   return JSON.stringify({ ok: true });
@@ -146,6 +166,24 @@ func itermRevealTmuxPane(ctx context.Context, paneNumber string, activate bool) 
 		flag = "1"
 	}
 	_, err := itermReveal(ctx, "revealtmux", paneNumber, flag)
+	return err
+}
+
+// itermRevealTTY selects the iTerm2 tab holding one pty, which is how an
+// ordinary `tmux attach` is found: tmux names the tty its client is on, iTerm2
+// names the tty each of its sessions is holding, and the two are the same
+// terminal. The argument is bare — `ttys047`, not `/dev/ttys047` — because both
+// spellings reach here and only one of them is compared.
+//
+// **A refusal here is iTerm2 saying it holds no such tab**, which is the whole
+// lock: the caller walks on to the next client rather than raising an
+// application nothing confirmed.
+func itermRevealTTY(ctx context.Context, tty string, activate bool) error {
+	flag := "0"
+	if activate {
+		flag = "1"
+	}
+	_, err := itermReveal(ctx, "revealtty", tty, flag)
 	return err
 }
 

@@ -44,7 +44,8 @@ task、跟上還沒結束的待辦。不問人、不推播、不進看板；升�
 | tmux 的 child | （舊版開 iTerm 分頁） | 每個 child 一個新的 detached session，名字 `clawdline-task-<id 前 8 碼>` | `new-window` 不指定 session 會落在 tmux 最後用過的那個——這台機器上是有人正在用的 `clawdline`（25 個視窗）。broker 不可以把 child 放到別人的鍵盤前 |
 | 派工前 root 必須在 | 會解析 | 會解析（`root_unresolved`、`conversation_ambiguous`） | 一樣。root 不在，完成通知就沒有收件人 |
 | 4 分鐘時鐘 | 沒有 progress note 就 `spawn_failed` | 分頁還活著就不判 `spawn_failed`；分頁不見或卡在對話框才判 | 見下面「實測抓到的三件事」第二條 |
-| `serialize`、`graph`、`attach_session`、`reasoning_effort` | 支援 | **明確拒絕**（`bad_task`，說出欄位名） | 還沒做。默默忽略 `serialize` 會把該等待的 task 直接開起來 |
+| `serialize`、`graph`、`attach_session` | 支援 | **明確拒絕**（`bad_task`，說出欄位名） | 還沒做。默默忽略 `serialize` 會把該等待的 task 直接開起來 |
+| `reasoning_effort` | 支援 | 支援（codex 限定，`high`／`xhigh`，接成 `--config model_reasoning_effort=…`） | 2026-09-20 補上。之前是具名拒絕，而那句拒絕請人「改用 Swift app」——那個 app 已經退役，等於沒有出路；同時 schedule 那邊早就會驗、會存這個欄位，存得下去卻發不出來 |
 
 ## 實測抓到的三件事（都有測試）
 

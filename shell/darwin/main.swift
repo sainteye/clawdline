@@ -449,6 +449,13 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         // The console is one of the two views this window can show; the bar and
         // the switch between them are in Browser.swift.
         window.contentView = buildBrowser()
+        // **The keyboard starts in the page, not in the address field.** Left
+        // to itself a window gives the keyboard to the first key view in its
+        // content, which is the field in the bar; `showTab` asks for the page
+        // instead but runs while this window is still being built, when there
+        // is no window to ask. So it is asked here, where there is one.
+        window.initialFirstResponder = active
+        window.makeFirstResponder(active)
         window.delegate = self
         window.onReload = { [weak self] in self?.reloadActive() }
         window.onBack = { [weak self] in self?.browserBack() }

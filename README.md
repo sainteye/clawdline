@@ -37,7 +37,7 @@ checkout, and the last column says how.
 | Sessions in tmux and iTerm2 on macOS | Works | start `claude` or `codex` inside tmux; it appears in the list |
 | Linux | The daemon has run in a Linux container and answered `/v1/health`. Sessions go through tmux on the same code path as macOS, but have not been exercised on Linux | `clawdline doctor` prints the resolved state directory |
 | The macOS app | Works when built from source. Apple silicon, macOS 13+, signed ad hoc | `tools/package-macos.sh` |
-| Handing work to another session (the broker) | Works. `serialize`, `attach_session` and `reasoning_effort` are refused by name, not ignored | `POST /v1/orchestrator/tasks` with one of them returns `bad_task` |
+| Handing work to another session (the broker) | Works. A Codex task may name `reasoning_effort`; `serialize` and `attach_session` are refused by name, not ignored | `POST /v1/orchestrator/tasks` with one of those two returns `bad_task` |
 | Board, backlog and a session's own to-do list | Works. A new install starts empty | `GET /v1/work/board` |
 | A browser on the same machine | Works | `clawdline open` |
 | A phone, without an account | **Works, over a tunnel you run.** The pairing page, the gate and a launcher for your own `cloudflared` are all in. A clean browser was driven through it end to end; no public tunnel has been raised from this repository | [below](#from-a-browser-or-a-phone) |

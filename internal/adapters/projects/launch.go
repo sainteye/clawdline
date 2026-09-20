@@ -55,6 +55,27 @@ func ModelName(raw string) (string, bool) {
 	return raw, true
 }
 
+// ReasoningEfforts is `ReasoningEffort.allCases`: the only two names Codex's
+// `model_reasoning_effort` is set to from here, and the order the refusal
+// lists them in.
+//
+// Two rather than Codex's own five. The value travels from a brief a person
+// wrote to a command line, so it is a closed list like the assistant and the
+// permission — a name that is not on it is refused, never passed through — and
+// the two on it are the two that mean something to somebody writing a task
+// down: the default is already what an unset field gets.
+var ReasoningEfforts = []string{"high", "xhigh"}
+
+// KnownReasoningEffort is `ReasoningEffort(rawValue:)`: exact, and two cases.
+func KnownReasoningEffort(name string) bool {
+	for _, e := range ReasoningEfforts {
+		if e == name {
+			return true
+		}
+	}
+	return false
+}
+
 // SessionName is SessionLaunchPolicy.sessionID: a UUID as both CLIs write it,
 // lowercase, and nothing else. `--resume` takes an optional value, so anything
 // looser would open the CLI's own picker in a tab nobody is sitting at.
@@ -109,6 +130,12 @@ type LaunchRequest struct {
 	Assistant   string
 	Model       string
 	Resume      string
+	// ReasoningEffort is Codex's `model_reasoning_effort`, empty for the
+	// model's own default. It is a Codex setting and Claude Code has no
+	// equivalent flag, so it is refused rather than dropped on the other
+	// assistant: a brief that asked for it and got a session without it would
+	// have been answered yes to something that did not happen.
+	ReasoningEffort string
 }
 
 // Launch is ProviderLaunchPlan: the one command a new terminal is given.
@@ -141,6 +168,16 @@ func Admit(req LaunchRequest) (Launch, error) {
 			return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the provider resume id is not a lowercase UUID"))
 		}
 	}
+	if req.ReasoningEffort != "" {
+		if req.Assistant != AssistantCodex {
+			return Launch{}, errors.Join(ErrInvalidLaunch,
+				errors.New("a reasoning effort is a Codex setting and this is not Codex"))
+		}
+		if !KnownReasoningEffort(req.ReasoningEffort) {
+			return Launch{}, errors.Join(ErrInvalidLaunch,
+				errors.New("the provider reasoning effort is not one this machine starts"))
+		}
+	}
 	var args []string
 	// `resume` first: its value is optional to the CLI, so anything but the id
 	// immediately after it changes what it means.
@@ -153,6 +190,12 @@ func Admit(req LaunchRequest) (Launch, error) {
 	}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
+	}
+	// After the model and before everything else, which is where
+	// `SessionLaunchPolicy.admit` puts it and what the Swift app's measured
+	// command line reads as.
+	if req.ReasoningEffort != "" {
+		args = append(args, "--config", "model_reasoning_effort="+req.ReasoningEffort)
 	}
 	return Launch{ProjectRoot: req.ProjectRoot, Assistant: req.Assistant, Arguments: args}, nil
 }

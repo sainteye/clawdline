@@ -23,6 +23,14 @@ import (
 // with no way to do it at all — an owned pty, a platform with no such terminal
 // — answers `backend_unsupported` rather than quietly doing nothing, because a
 // page told a window is now in front of somebody sends them to look for it.
+//
+// **There is one shape where the selection lands and `ok` would still be a
+// lie**, and it has its own code: a tmux session nothing is attached to is on
+// no screen at all, so `nobody_attached` says the pane was selected and nobody
+// can see it. It is not `terminal_io_failed` — no terminal command failed —
+// and not `backend_unsupported` — this backend does this — which is why it is
+// neither, and 409 rather than a failure: attaching and asking again is the
+// remedy.
 func (a Actions) Focus(ctx context.Context, id string) (session.Session, error) {
 	s, err := a.Find(ctx, id)
 	if err != nil {
@@ -35,6 +43,9 @@ func (a Actions) Focus(ctx context.Context, id string) (session.Session, error) 
 	if err := h.Reveal(ctx, s, true); err != nil {
 		if _, no := err.(terminal.Unsupported); no {
 			return s, Refusal{Code: "backend_unsupported", Detail: err.Error()}
+		}
+		if _, unwatched := err.(terminal.Unwatched); unwatched {
+			return s, Refusal{Code: "nobody_attached", Detail: err.Error()}
 		}
 		// The original's sentence for this, as `/key` already writes it
 		// (keys.go): a terminal command that did not complete, and what the

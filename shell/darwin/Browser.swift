@@ -317,8 +317,17 @@ final class BrowserBar: NSView {
         }
     }
 
-    /// Whether somebody is typing in it, in which case nothing overwrites it.
-    var isBeingTyped: Bool { field.currentEditor() != nil }
+    /// Whether somebody's own text is in it, in which case nothing overwrites
+    /// it.
+    ///
+    /// **Holding the keyboard is not the same as having typed.** An empty box
+    /// holds no unsent text, so filling it takes nothing away from anybody —
+    /// and reading focus alone as typing left the address blank for a whole
+    /// run of the app: a window hands the keyboard to the first key view it
+    /// finds, this field is it, and so the guard below was true before the
+    /// first page had even loaded and true for every refresh after. What is
+    /// protected here is a draft, not a caret.
+    var isBeingTyped: Bool { field.currentEditor() != nil && !field.stringValue.isEmpty }
 }
 
 // MARK: - The web side

@@ -87,3 +87,16 @@ func (q QuitRefused) Error() string { return q.Why }
 type StillRunning struct{ Why string }
 
 func (s StillRunning) Error() string { return s.Why }
+
+// Unwatched is a selection nobody can see: the pane was selected inside tmux
+// and no client is attached to the tmux session holding it, so the pane is on
+// no screen on this machine. It is not a failure of the selection — that
+// landed, and the next client to attach arrives on it — and it is not a
+// terminal that misbehaved, so it is neither `Unsupported` nor an I/O error.
+// It is the one thing a caller must not be told `ok` about: a page that says a
+// window is now in front of somebody sends them to look for it.
+type Unwatched struct{ Session string }
+
+func (u Unwatched) Error() string {
+	return fmt.Sprintf("nobody can see this session: no terminal is attached to tmux session %q", u.Session)
+}

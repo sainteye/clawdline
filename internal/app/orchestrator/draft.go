@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/projects"
 )
 
 // Reading the brief a caller wrote, and refusing it by name.
@@ -59,15 +61,52 @@ type draft struct {
 
 	// Graph is a node's place in a task graph (graphs.go, W6).
 	//
-	// The rest are accepted by the Swift broker and not by this one yet. They
-	// are read only so that their presence can be refused by name: a broker
-	// that silently drops `serialize` starts a task the caller asked to wait.
-	// Ignoring a field the protocol documents is a quieter way of doing
+	// ReasoningEffort is Codex's `model_reasoning_effort`, raw so that a wrong
+	// *type* is refused by name rather than failing the decode of the whole
+	// file.
+	//
+	// The other two are accepted by the Swift broker and not by this one yet.
+	// They are read only so that their presence can be refused by name: a
+	// broker that silently drops `serialize` starts a task the caller asked to
+	// wait. Ignoring a field the protocol documents is a quieter way of doing
 	// something else.
 	Serialize       json.RawMessage `json:"serialize"`
 	Graph           json.RawMessage `json:"graph"`
 	AttachSession   json.RawMessage `json:"attach_session"`
 	ReasoningEffort json.RawMessage `json:"reasoning_effort"`
+}
+
+// admitReasoningEffort reads `reasoning_effort`: Codex's
+// `model_reasoning_effort`, one of two names, and only on Codex.
+//
+// **It is carried now rather than refused by name.** It used to be on the list
+// of fields this broker reads only to say no to, and the sentence it said named
+// the Swift app as the way to dispatch with it — an app that has since been
+// retired, so the alternative was dead. Meanwhile the rest of this daemon had
+// already been built around the field: `internal/domain/schedule` validates it
+// on a stored template with these same two sentences, `Orchestrator.carry`
+// keeps it across a schedule's saves, and the published task row has a
+// `reasoning_effort` key. A field a schedule may be saved with and a dispatch
+// may not fire with is a trap: the save says yes and every run of it says
+// `bad_task`.
+//
+// The two refusals are the Swift app's own, word for word
+// (`OrchestratorDraft.swift`), because a caller fixing one brief at a time
+// should meet the same sentence on both brokers.
+func admitReasoningEffort(raw json.RawMessage, assistant string) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	if assistant != projects.AssistantCodex {
+		return "", refuse(http.StatusUnprocessableEntity, "bad_task",
+			"reasoning_effort is only valid when assistant is codex")
+	}
+	var name string
+	if json.Unmarshal(raw, &name) != nil || !projects.KnownReasoningEffort(name) {
+		return "", refuse(http.StatusUnprocessableEntity, "bad_task",
+			"reasoning_effort must be one of: "+strings.Join(projects.ReasoningEfforts, ", "))
+	}
+	return name, nil
 }
 
 type draftRoot struct {
@@ -189,16 +228,19 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		root = admitted
 	}
 	for name, raw := range map[string]json.RawMessage{
-		"serialize":      d.Serialize,
-		"attach_session": d.AttachSession, "reasoning_effort": d.ReasoningEffort,
+		"serialize": d.Serialize, "attach_session": d.AttachSession,
 	} {
 		if len(raw) > 0 && string(raw) != "null" {
-			return bad(name + " is not supported by this broker yet; dispatch without it, or through the Swift app")
+			return bad(name + " is not supported by this broker yet; dispatch without it")
 		}
 	}
 	model := strings.TrimSpace(d.Model)
 	if model != "" && !modelName(model) {
 		return bad("model must be a model name: lower-case letters, digits, . _ -, at most 64 characters")
+	}
+	effort, err := admitReasoningEffort(d.ReasoningEffort, d.Assistant)
+	if err != nil {
+		return Record{}, err
 	}
 	workID, err := admitWorkID(d.WorkID)
 	if err != nil {
@@ -219,23 +261,24 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	}
 
 	return Record{
-		Protocol:       Protocol,
-		ID:             id,
-		Kind:           kind,
-		Assistant:      d.Assistant,
-		PermissionMode: permission,
-		Claims:         claims,
-		Isolation:      isolation,
-		ProjectDir:     filepath.Clean(d.ProjectDir),
-		Title:          title,
-		Instructions:   d.Instructions,
-		Deliverables:   d.Deliverables,
-		TimeoutMinutes: timeout,
-		Root:           root,
-		Model:          model,
-		WorkID:         workID,
-		Graph:          graph,
-		State:          StateQueued,
+		Protocol:        Protocol,
+		ID:              id,
+		Kind:            kind,
+		Assistant:       d.Assistant,
+		PermissionMode:  permission,
+		Claims:          claims,
+		Isolation:       isolation,
+		ProjectDir:      filepath.Clean(d.ProjectDir),
+		Title:           title,
+		Instructions:    d.Instructions,
+		Deliverables:    d.Deliverables,
+		TimeoutMinutes:  timeout,
+		Root:            root,
+		Model:           model,
+		ReasoningEffort: effort,
+		WorkID:          workID,
+		Graph:           graph,
+		State:           StateQueued,
 	}, nil
 }
 
