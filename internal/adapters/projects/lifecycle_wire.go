@@ -144,7 +144,7 @@ func notObserved(p Identity) *Snapshot {
 		SchemaVersion: schemaVersion,
 		Project:       SnapshotProject{ID: p.ID, Label: p.Label},
 		Repository:    SnapshotRepo{ID: RepositoryID(p.CanonicalPath), Label: p.Label, CanonicalPath: p.CanonicalPath},
-		Error:         &Issue{"not_observed", "This Mac has not observed these worktrees yet; request a refresh."},
+		Error:         &Issue{"not_observed", "This machine has not observed these worktrees yet; request a refresh."},
 		Rows:          []SnapshotRow{},
 	}
 }

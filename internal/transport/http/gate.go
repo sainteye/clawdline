@@ -422,7 +422,7 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		// Here they are the hotkey, a global keyboard grab, so only this
 		// machine's own token changes them.
 		if !(v.Allowed && v.Local) {
-			return http.StatusForbidden, "forbidden", "Only this Mac's own token may change its settings."
+			return http.StatusForbidden, "forbidden", "Only this machine's own token may change its settings."
 		}
 	case p == "/v1/orchestrator/tasks" || strings.HasPrefix(p, "/v1/orchestrator/tasks/"):
 		// dispatch.go, and the task-secret routes.

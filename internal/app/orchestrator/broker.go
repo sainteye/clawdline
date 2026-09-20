@@ -82,7 +82,7 @@ type Broker struct {
 	Lanes *lane.Lanes
 	// Terminal is the machine's `terminal` setting.
 	Terminal func() projects.TerminalChoice
-	// Policy is this Mac's dispatch policy — the base file and the person's
+	// Policy is this machine's dispatch policy — the base file and the person's
 	// local one, read at every dispatch — pasted into every child briefing
 	// through ComposePolicy (policy.go).
 	Policy func() (base, local string)

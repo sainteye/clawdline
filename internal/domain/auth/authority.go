@@ -53,8 +53,10 @@ const (
 	// which both apps write.
 	PasswordHashBytes = 32
 	PasswordSaltBytes = 16
-	// LocalName is what the machine's own device is called.
-	LocalName = "This Mac"
+	// LocalName is what the machine's own device is called. A device already
+	// stored under the old spelling keeps it: a display name is not an id, and
+	// rewriting one would edit a record the retired app also reads.
+	LocalName = "This machine"
 	// DefaultName is what an unnamed device is called.
 	DefaultName = "A browser"
 	nameLimit   = 40

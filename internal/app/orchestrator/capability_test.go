@@ -160,7 +160,7 @@ func TestTheNoChildSentenceSaysWhatThisPlatformIs(t *testing.T) {
 		unwant string
 	}{
 		{"darwin", childPlan{choice: projects.TerminalTmux, kind: projects.PlanNoTmux, asked: true},
-			"there is no tmux on this Mac", ""},
+			"there is no tmux on this machine", ""},
 		{"darwin", childPlan{choice: projects.TerminalITerm, kind: projects.PlanNotRunning, asked: true},
 			"iTerm2 is not running, and this will not launch it for you.", ""},
 		{"linux", childPlan{choice: projects.TerminalAuto, kind: projects.PlanNotRunning, asked: true},
@@ -170,7 +170,7 @@ func TestTheNoChildSentenceSaysWhatThisPlatformIs(t *testing.T) {
 		{"windows", childPlan{choice: projects.TerminalITerm, kind: projects.PlanNotRunning, asked: true},
 			"windows has no iTerm2; set it to tmux", "not running"},
 		{"windows", childPlan{choice: projects.TerminalTmux, kind: projects.PlanNoTmux, asked: true},
-			"tmux is not installed", "this Mac"},
+			"tmux is not installed", "this machine"},
 	}
 	for _, c := range cases {
 		got := c.plan.capability(c.goos)

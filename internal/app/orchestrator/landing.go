@@ -119,7 +119,7 @@ func settlementNote(s LandingSettlement) string {
 // of them is routinely unknown while the other is known exactly, and a
 // sentence that reports either unknown as "no commit count" sends a reader to
 // look at something that has no problem. Measured on 2026-09-20: nineteen
-// unlanded rows all read "this Mac has no commit count for its checkout",
+// unlanded rows all read "this machine has no commit count for its checkout",
 // while every one of their branches was still there and every count was
 // known — what was missing was the worktree (work-system-review §3.2, G2).
 //
@@ -137,10 +137,10 @@ func deliveryEvidence(commits int, commitsKnown, dirty, dirtyKnown bool, kept st
 		return "its checkout has uncommitted changes"
 	}
 	if !commitsKnown {
-		return "this Mac could not count what its delivery branch carries, and an unknown count is not permission"
+		return "this machine could not count what its delivery branch carries, and an unknown count is not permission"
 	}
 	if !dirtyKnown {
-		return "its branch carries nothing past its base, and this Mac could not read its checkout to say " +
+		return "its branch carries nothing past its base, and this machine could not read its checkout to say " +
 			"whether anything is uncommitted there"
 	}
 	return ""

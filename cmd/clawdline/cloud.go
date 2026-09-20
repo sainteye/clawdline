@@ -9,10 +9,10 @@ package main
 //	clawdline cloud status              what the switch and the identity say
 //	clawdline cloud preflight           is the machine side ready for the person's step
 //	clawdline cloud on | off            the switch
-//	clawdline cloud commands on | off   whether a viewer may act on this Mac
+//	clawdline cloud commands on | off   whether a viewer may act on this machine
 //	clawdline cloud login               register this machine, and wait for approval
 //	clawdline cloud pair [--offer …]    hand a browser the account key (cloudpair.go)
-//	clawdline cloud devices             who may speak to this Mac
+//	clawdline cloud devices             who may speak to this machine
 //	clawdline cloud revoke <device>     throw one browser out
 //	clawdline cloud rotate              replace this machine's signing key
 //	clawdline cloud connect [--for 30s] hold the line open and print what happens
@@ -85,11 +85,11 @@ func cloudUsage() {
 	fmt.Fprintln(os.Stderr, "  status                 the switch, the identity and the endpoints")
 	fmt.Fprintln(os.Stderr, "  preflight              check, without the network, that only the person's step is left")
 	fmt.Fprintln(os.Stderr, "  on | off               turn the cloud line on or off in the settings file")
-	fmt.Fprintln(os.Stderr, "  commands on | off      whether a paired viewer may act on this Mac; off by default")
+	fmt.Fprintln(os.Stderr, "  commands on | off      whether a paired viewer may act on this machine; off by default")
 	fmt.Fprintln(os.Stderr, "  login [--wait 10m]     register this machine and wait for the approval")
 	fmt.Fprintln(os.Stderr, "  pair [--offer <code>]  show a browser a one-time link, or finish with its code")
-	fmt.Fprintln(os.Stderr, "  devices                who may speak to this Mac, and where that trust came from")
-	fmt.Fprintln(os.Stderr, "  revoke <device-id>     throw one browser out of this Mac")
+	fmt.Fprintln(os.Stderr, "  devices                who may speak to this machine, and where that trust came from")
+	fmt.Fprintln(os.Stderr, "  revoke <device-id>     throw one browser out of this machine")
 	fmt.Fprintln(os.Stderr, "  rotate [--yes]         replace this machine's signing key; every browser re-pairs")
 	fmt.Fprintln(os.Stderr, "  connect [--for 1m]     hold the line open and report what happens")
 }
@@ -197,7 +197,7 @@ func cloudSwitchCommand(on bool) {
 
 // cloudCommandsCommand is the remote-write switch, which is a separate
 // decision from whether the line is up: reading a session list and running code
-// on this Mac are not the same permission and never share a switch.
+// on this machine are not the same permission and never share a switch.
 func cloudCommandsCommand(args []string) {
 	if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
 		fmt.Fprintln(os.Stderr, "usage: clawdline cloud commands <on|off>")
@@ -235,8 +235,9 @@ func cloudLoginCommand(args []string) {
 	}
 
 	// The key is minted here if this machine has never had one. It is **not**
-	// the Swift app's key: that app is on this Mac too, and one sender id with
-	// two producers means two sequence counters over one replay window.
+	// the Swift app's key: on a Mac that app is installed beside this one, and
+	// one sender id with two producers means two sequence counters over one
+	// replay window.
 	key, err := domaincloud.LoadOrCreateDeviceKey(parts.keys, rand.Reader)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)

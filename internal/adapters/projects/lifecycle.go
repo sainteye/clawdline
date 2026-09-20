@@ -337,7 +337,7 @@ func (l *Lifecycle) Resolve(id string) (Identity, error) {
 			return identity, nil
 		}
 	}
-	return Identity{}, &Refusal{404, "project_not_found", "No Project known to this Mac has that id."}
+	return Identity{}, &Refusal{404, "project_not_found", "No Project known to this machine has that id."}
 }
 
 // Snapshot is the cached reading, or an explicit not_observed one. It never

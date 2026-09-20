@@ -24,7 +24,7 @@ import (
 
 const (
 	cookieLifetime = "31536000"
-	browserName    = "Browser on this Mac"
+	browserName    = "Browser on this machine"
 	// streamPing keeps an idle pairing stream from being closed by whatever
 	// sits between it and its reader.
 	streamPing = 15 * time.Second
@@ -245,7 +245,7 @@ func requireLocal(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	if !v.Local {
-		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "Only this Mac's own token may manage devices.")
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "Only this machine's own token may manage devices.")
 		return false
 	}
 	return true
@@ -425,7 +425,7 @@ func writeDeviceChange(w http.ResponseWriter, err error) {
 	case errors.Is(err, auth.ErrNotFound):
 		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No paired device has that id.")
 	case errors.Is(err, auth.ErrLocalDevice):
-		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "This Mac's own token is not managed here.")
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "This machine's own token is not managed here.")
 	case errors.Is(err, auth.ErrBadCaps):
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "caps may be read and send.")
 	default:

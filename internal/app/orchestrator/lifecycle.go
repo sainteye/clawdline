@@ -19,7 +19,7 @@ import (
 //
 //   - a **child** proves it is itself with its own task secret, and may say
 //     what it is doing, that it has finished, and that it wants somebody woken;
-//   - the **machine** proves it is this Mac's broker with the orchestrator
+//   - the **machine** proves it is this machine's broker with the orchestrator
 //     token, and may acknowledge a notice and settle a landing;
 //   - `landed` and `nothing_to_land` are machine-only even though the child
 //     holds a secret, because a delivery may not certify its own arrival.
@@ -519,14 +519,14 @@ func (b *Broker) AgentNotify(ctx context.Context, id, secret, title, body string
 }
 
 // MachineNotify is POST /v1/orchestrator/notify: a root — which holds this
-// Mac's orchestrator token and no task secret — pushing one sentence to the
+// machine's orchestrator token and no task secret — pushing one sentence to the
 // person (the Swift app's `Orchestrator.agentNotify(title:body:sessionID:)`).
 //
 // It has no per-task allowance because there is no task; it spends the same
 // hourly one a child's notification does, because the person being woken is
 // the same person. Its row in the notification ledger names no task. session
 // only chooses where tapping it lands, and only when it names a session this
-// machine is watching: the token proves this Mac's person asked, never which
+// machine is watching: the token proves this machine's person asked, never which
 // session did.
 func (b *Broker) MachineNotify(ctx context.Context, title, body, session string) (NotifyResult, error) {
 	if err := b.notifyAllowed(); err != nil {

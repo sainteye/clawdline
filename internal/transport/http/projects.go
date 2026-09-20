@@ -334,7 +334,7 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		case readers.busy <- struct{}{}:
 		default:
 			writeRefusal(w, http.StatusTooManyRequests, "worktree_lifecycle_busy",
-				"Worktree lifecycle work is already queued on this Mac; try again shortly.")
+				"Worktree lifecycle work is already queued on this machine; try again shortly.")
 			return
 		}
 		snap, err = readers.lifecycle.Refresh(parts[0])

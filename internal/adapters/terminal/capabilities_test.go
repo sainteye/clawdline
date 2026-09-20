@@ -29,12 +29,12 @@ func TestTerminalCapabilitiesNameWhatIsMissingOnEachPlatform(t *testing.T) {
 		{"windows", "windows", []backendReach{noTmux}, ports.CapabilityUnavailable, "",
 			[]string{"tmux is not installed", "windows has no iTerm2", "ConPTY"}},
 		{"linux with tmux", "linux", []backendReach{tmux}, ports.CapabilityAvailable, "tmux", []string{"through tmux"}},
-		{"a Mac with neither", "darwin", []backendReach{noTmux, closed}, ports.CapabilityUnavailable, "",
+		{"a machine with neither", "darwin", []backendReach{noTmux, closed}, ports.CapabilityUnavailable, "",
 			[]string{"tmux is not installed", "iTerm2 is not running"}},
-		{"a Mac with tmux and iTerm2 closed", "darwin", []backendReach{tmux, closed}, ports.CapabilityAvailable, "tmux",
+		{"a machine with tmux and iTerm2 closed", "darwin", []backendReach{tmux, closed}, ports.CapabilityAvailable, "tmux",
 			[]string{"through tmux", "not otherwise: iTerm2 is not running"}},
 		// Unknown is not no (DG-7).
-		{"a Mac whose iTerm2 could not be asked", "darwin", []backendReach{noTmux, unread}, ports.CapabilityUnknown, "",
+		{"a machine whose iTerm2 could not be asked", "darwin", []backendReach{noTmux, unread}, ports.CapabilityUnknown, "",
 			[]string{"could not be read", "tmux is not installed"}},
 	}
 	for _, c := range cases {

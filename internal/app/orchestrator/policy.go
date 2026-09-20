@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-// This Mac's house rules, as they go into a briefing (docs/design-decisions.md
+// This machine's house rules, as they go into a briefing (docs/design-decisions.md
 // D23 ① and ④).
 //
 // Two files: a base that says how work is handed out on this machine, and a

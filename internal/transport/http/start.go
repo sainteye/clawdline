@@ -404,6 +404,6 @@ func writeStartRefusal(w http.ResponseWriter, err error) string {
 	// diagnoses that, and it is the one place with nobody else reading.
 	log.Printf("start: refused: %v", err)
 	writePlaceRefusal(w, http.StatusInternalServerError, "internal",
-		"This Mac could not open that session.", "")
+		"This machine could not open that session.", "")
 	return "internal"
 }

@@ -1,4 +1,4 @@
-# How work is handed out on this Mac
+# How work is handed out on this machine
 
 Clawdline reads this file at every dispatch and copies it into the briefing of every child that may
 dispatch in turn. Edit it freely; an empty file means there are no house rules. **It is cut at

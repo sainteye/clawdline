@@ -22,7 +22,7 @@ import (
 // place, with nothing but this binary (docs/design-decisions.md D16).
 //
 // The briefing used to end in a `node -e` line carrying the validator as
-// base64. node is on this Mac's PATH and on no promise anywhere else, and a
+// base64. node is on this machine's PATH and on no promise anywhere else, and a
 // child that could not run it could not report — so a Linux or Windows child
 // without it did its work and then had no way to say so. The binary that
 // dispatched the child is on the same machine by construction, and the

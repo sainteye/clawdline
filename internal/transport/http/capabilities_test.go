@@ -92,7 +92,7 @@ func TestSettingsRefuseWhatThisMachineCannotDo(t *testing.T) {
 	}
 	mac := desktop.Host{GOOS: "darwin"}.Capabilities(context.Background())
 	if got := platformSettingRefusal(mac, "darwin", map[string]any{"hotkey": "cmd+shift+k", "notch": true}); got != nil {
-		t.Errorf("a Mac refused its own shell's settings: %+v", got)
+		t.Errorf("a machine refused its own shell's settings: %+v", got)
 	}
 
 	// And through the route, on whatever this test runs on.

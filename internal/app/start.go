@@ -111,11 +111,11 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		// StartPoints.appName: the name as a person says it. This daemon does
 		// not ask Launch Services for the display name; iTerm2's is its name.
 		return Started{}, StartRefusal{Status: http.StatusConflict, Code: "terminal_closed",
-			Message: "iTerm2 is not running, and this will not launch it for you. Open it on the Mac and try again.",
+			Message: "iTerm2 is not running, and this will not launch it for you. Open it on the machine and try again.",
 			App:     "iTerm2"}
 	default:
 		return Started{}, StartRefusal{Status: http.StatusConflict, Code: "terminal_unsupported",
-			Message: "tmux is the terminal for new sessions in Settings, and there is no tmux on this Mac. " +
+			Message: "tmux is the terminal for new sessions in Settings, and there is no tmux on this machine. " +
 				"Install tmux, or pick a different terminal in Settings — see docs/remote.md."}
 	}
 }

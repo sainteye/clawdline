@@ -395,7 +395,7 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body2: `{}`,
 	}, {
 		// The four snippet writes, in the producer's own key sets. Nothing of
-		// the person's is in these: the fields are invented here and the Mac
+		// the person's is in these: the fields are invented here and the machine
 		// is what decides whether they are a snippet.
 		word: "snippet-create",
 		body: map[string]any{"type": "snippet-create", "session": machine, "request": "req-new",
@@ -458,7 +458,7 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		// The words this daemon knows and cannot answer. `unknown_command` is
 		// not a guess at a code: it is the one the hosted console learns from
-		// (`machineLacks` in net/cloud-client.js), so a Mac that says it stops
+		// (`machineLacks` in net/cloud-client.js), so a machine that says it stops
 		// being asked.
 		word:    "agent",
 		body:    map[string]any{"type": "agent", "session": pane, "agent": "ag_4", "limit": 200},
@@ -804,7 +804,7 @@ func TestARequestForAnotherMacIsNotAnswered(t *testing.T) {
 		t.Fatalf("refused %q/%d, wanted wrong_machine/409", answer.Code, answer.Status)
 	}
 	if answer.Published() || len(r.seen) != 0 {
-		t.Fatalf("a request for another Mac was answered or routed: %+v", answer)
+		t.Fatalf("a request for another machine was answered or routed: %+v", answer)
 	}
 }
 
@@ -1189,7 +1189,7 @@ func pushWrites() map[string]map[string]any {
 // a session needs an answer is the reading half arriving by a different road,
 // and a phone paired read-only is exactly the device the feature exists for —
 // the Swift bridge says the same in one line, listing all three in
-// `readLevelCommandTypes` beside the two diagnostics words. A Mac with remote
+// `readLevelCommandTypes` beside the two diagnostics words. A machine with remote
 // writes off would otherwise refuse the registration and never say why the
 // notifications never came.
 func TestAskingToBeNotifiedIsReadLevel(t *testing.T) {

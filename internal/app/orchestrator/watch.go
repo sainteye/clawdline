@@ -399,7 +399,7 @@ func spawnVerdict(present, sourceComplete, choosing bool, r Record) (State, stri
 	case !present && sourceComplete:
 		return StateSpawnFailed, "The child session did not reach a prompt within 4 minutes, and its terminal " +
 			"answered completely that the tab is gone. If several sessions were starting at once, they were " +
-			"competing for this Mac.", true
+			"competing for this machine.", true
 	case present && choosing:
 		return StateSpawnFailed, "The child session is holding a dialog four minutes after it opened, " +
 			"so the briefing was never typed: answering that dialog is a person's decision, not this broker's.", true

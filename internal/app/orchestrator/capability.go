@@ -105,7 +105,7 @@ func (p childPlan) failure(goos string) string {
 	mac := goos == "darwin"
 	switch {
 	case p.kind == projects.PlanNoTmux && mac:
-		return "tmux is the terminal for new sessions in Settings, and there is no tmux on this Mac."
+		return "tmux is the terminal for new sessions in Settings, and there is no tmux on this machine."
 	case p.kind == projects.PlanNoTmux:
 		return "tmux is the terminal for new sessions in Settings, and tmux is not installed."
 	case p.choice == projects.TerminalITerm && mac:

@@ -482,7 +482,7 @@ func (l *Link) runOnce(ctx context.Context) error {
 	// stale roster when an envelope arrives, which is enough to admit a new
 	// viewer — but a machine that has received nothing all morning would then
 	// report a roster from this morning, and the status route is read by a
-	// person asking "does this Mac know about my phone yet".
+	// person asking "does this machine know about my phone yet".
 	go l.refreshRoster(ctx)
 	// The snapshots this machine publishes without being asked. They start
 	// only once the first handshake has completed: a snapshot reserved before
@@ -627,7 +627,7 @@ func (l *Link) pairingKeys() (domaincloud.DeviceKey, domaincloud.ContentKey, err
 // The roster is the account's, not this machine's: a device the person removed
 // in the hosted console stops being able to act here at the next refresh. The
 // capability check is the same borrowing — a viewer enrolled without
-// `send_prompt` may read this Mac and may not type into it, and that is the
+// `send_prompt` may read this machine and may not type into it, and that is the
 // account's decision rather than one this file makes up.
 func (l *Link) authority(ctx context.Context, sender string, requiresWriteGate bool) cloudops.Authority {
 	readable, _ := l.roster.Readable()

@@ -1,6 +1,6 @@
 package cloud
 
-// One pairing, from the link this Mac shows to the browser that can read it.
+// One pairing, from the link this machine shows to the browser that can read it.
 //
 // `internal/domain/cloud` owns the bytes and `internal/adapters/cloud` owns the
 // HTTP; this file owns the *order*, which is the part that goes wrong:
@@ -21,7 +21,7 @@ package cloud
 //     was not the one that opened this pairing — the substitution a person
 //     comparing two screens cannot see.
 //   - **The pin is written last.** Pinning is what lets a browser drive this
-//     Mac. A browser that never received the key cannot produce a command
+//     machine. A browser that never received the key cannot produce a command
 //     anyway, so pinning earlier would only leave a pinned viewer behind every
 //     failed delivery.
 //
@@ -289,7 +289,7 @@ func (p *Pairing) answer(ctx context.Context, invitation domaincloud.PairingInvi
 // Complete is the other way in: a person copies the offer the browser is
 // showing and pastes it here.
 //
-// It is the path a desktop browser takes, because a Mac showing a QR to a
+// It is the path a desktop browser takes, because a machine showing a QR to a
 // laptop in front of it is a camera that is not there. The cryptography is
 // identical — the invitation exists only to carry these same bytes when the
 // browser is a phone.

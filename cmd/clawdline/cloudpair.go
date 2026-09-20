@@ -5,7 +5,8 @@ package main
 //
 // **These four go through the running daemon**, unlike `cloud on`, `cloud off`
 // and `cloud login`, which write files. The reason is that pairing has one
-// live piece of state — the invitation this Mac is currently waiting on — and
+// live piece of state — the invitation this machine is currently waiting on —
+// and
 // two processes holding two of them means two codes on two screens and one
 // person, who then uses the wrong one. The daemon owns that state; this is a
 // terminal for it.
@@ -85,7 +86,7 @@ func cloudPairCommand(args []string) {
 	fmt.Println()
 	fmt.Println("   ", state.Link)
 	fmt.Println()
-	fmt.Printf("This Mac's key is %s. The browser shows the same one when it finishes.\n",
+	fmt.Printf("This machine's key is %s. The browser shows the same one when it finishes.\n",
 		state.MachineFingerprint)
 	if state.ExpiresAt > 0 {
 		fmt.Printf("The link stops working at %s.\n", time.Unix(state.ExpiresAt, 0).Format(time.Kitchen))
@@ -118,8 +119,8 @@ func printPairingState(state cloudtransport.PairingState) {
 	case cloudtransport.PairingPaired:
 		fmt.Printf("paired     %s\n", state.ViewerDeviceID)
 		fmt.Printf("browser    %s\n", state.ViewerFingerprint)
-		fmt.Printf("this Mac   %s\n", state.MachineFingerprint)
-		fmt.Println("           that browser can now read and, if commands are on, drive this Mac")
+		fmt.Printf("machine    %s\n", state.MachineFingerprint)
+		fmt.Println("           that browser can now read and, if commands are on, drive this machine")
 	case cloudtransport.PairingFailed:
 		fmt.Fprintf(os.Stderr, "clawdline: the pairing did not complete: %s\n", state.Error)
 	default:
@@ -127,7 +128,7 @@ func printPairingState(state cloudtransport.PairingState) {
 	}
 }
 
-// cloudDevicesCommand lists who may speak to this Mac, and where that trust
+// cloudDevicesCommand lists who may speak to this machine, and where that trust
 // came from.
 func cloudDevicesCommand() {
 	var status cloudtransport.Status
@@ -139,7 +140,7 @@ func cloudDevicesCommand() {
 		os.Exit(1)
 	}
 	if len(status.Devices) == 0 {
-		fmt.Println("no browser has been paired with this Mac")
+		fmt.Println("no browser has been paired with this machine")
 		fmt.Println("run `clawdline cloud pair` to show one a link")
 		return
 	}
@@ -162,7 +163,7 @@ func cloudDevicesCommand() {
 	}
 }
 
-// cloudRevokeCommand throws one browser out of this Mac.
+// cloudRevokeCommand throws one browser out of this machine.
 func cloudRevokeCommand(args []string) {
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		fmt.Fprintln(os.Stderr, "usage: clawdline cloud revoke <device-id>")
@@ -177,7 +178,7 @@ func cloudRevokeCommand(args []string) {
 		fail(err)
 	}
 	if !answer.Revoked {
-		fmt.Printf("nothing changed: %s was not a browser this Mac had pinned\n", answer.Device)
+		fmt.Printf("nothing changed: %s was not a browser this machine had pinned\n", answer.Device)
 		return
 	}
 	fmt.Printf("revoked    %s\n", answer.Device)
@@ -187,7 +188,7 @@ func cloudRevokeCommand(args []string) {
 // cloudRotateCommand replaces this machine's signing key.
 //
 // It asks first, by name. The cost is that every browser holding the old key
-// stops being able to verify this Mac, and a person who is not shown which
+// stops being able to verify this machine, and a person who is not shown which
 // browsers cannot weigh that.
 func cloudRotateCommand(args []string) {
 	fs := flag.NewFlagSet("cloud rotate", flag.ExitOnError)
@@ -201,13 +202,13 @@ func cloudRotateCommand(args []string) {
 		fail(err)
 	}
 	if len(preview.Repair) > 0 {
-		fmt.Println("Rotating this Mac's signing key makes these browsers stop being able to")
+		fmt.Println("Rotating this machine's signing key makes these browsers stop being able to")
 		fmt.Println("verify it. Each one has to be paired again:")
 		for _, row := range preview.Repair {
 			fmt.Println("   ", row)
 		}
 	} else {
-		fmt.Println("No browser has been paired with this Mac, so nothing has to be repaired.")
+		fmt.Println("No browser has been paired with this machine, so nothing has to be repaired.")
 	}
 	if !*yes {
 		fmt.Print("Rotate anyway? [y/N] ")

@@ -463,7 +463,7 @@ var coordinatorCommands = func() []contract.SessionCoordinatorCommand {
 		on("landing_closure", "low", "registry_read"),
 		on("scope_permissions", "low", "registry_read"),
 		off("since_away", "no_return_ledger", "unknown", "unbuilt",
-			"This Mac does not record a return point yet, so there is nothing to read one against."),
+			"This machine does not record a return point yet, so there is nothing to read one against."),
 		off("coordinate_work", "no_command_route", "unknown", "unbuilt", unrouted),
 		off("dispatch_independent_work", "device_cannot_spawn", "high", "spawns_session",
 			"A paired device can never start a session — that separation is deliberate, and this command will not cross it."),
@@ -472,7 +472,7 @@ var coordinatorCommands = func() []contract.SessionCoordinatorCommand {
 		off("quiet_watch", "no_command_route", "unknown", "unbuilt", unrouted),
 		off("stop", "no_command_route", "low", "broker_only", unrouted),
 		off("reconnect", "machine_token_only", "low", "broker_only",
-			"Reconnecting needs the Mac's own orchestrator token, which a paired device deliberately does not hold."),
+			"Reconnecting needs the machine's own orchestrator token, which a paired device deliberately does not hold."),
 	}
 }()
 
