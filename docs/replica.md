@@ -237,7 +237,7 @@ webview 之外，舊 app 的原生面：
 | Dock 圖示 | — | ✅ `360c9fd`：與舊 app 逐位元組相同。兩個 app 同時跑會有兩個相同圖示與 ✳，這是忠實復刻的結果 |
 | 原生「設定⋯」 | — | ✅ `c9f60c1`：⌘, 與選單列都打開 `#page=settings`；熱鍵錄製在殼裡。只做過型別檢查，殼沒有實際跑過 |
 | 配對 alert、本機 token | — | ✅ `5cca6b1`（審查後合併）：只有「忽略」的 NSAlert、cookie 注入。2026-09-17 以 `de7c5da` 重新打包，對開著閘門的 7727 實測：殼帶著本機 token 載入，`booting=false elements-with-id=265 rows=8`。alert 沒有在這台機器上觸發過 |
-| 內嵌瀏覽器（舊版沒有） | — | ✅ 見下一段：視窗上方一條原生列，本機 console 與任意網址兩個 WKWebView，cookie 分家 |
+| 內嵌瀏覽器（舊版沒有） | — | ✅ 見下一段：一個只載本機 console 的 WKWebView；Cloud 明確交給系統瀏覽器 |
 | 快捷面板（`Controller` + `Panel`） | 5,400 行 | 目前以 webview 視窗代替 |
 | 原生設定（`Settings.swift`） | 3,822 行 | 未開始 |
 | 導覽（`Onboarding.swift`） | 1,468 行 | 未開始 |
@@ -247,33 +247,18 @@ webview 之外，舊 app 的原生面：
 
 ### 內嵌瀏覽器（2026-09-18）
 
-使用者要的是「在新 app 裡直接用 clawdline 的所有功能」，包含 Cloud。**舊 app 沒有這一面可抄**——它整個
-沒有 WKWebView（`grep -rl WebKit Sources/` 只有 Onboarding／Settings／RemotePage／WebPush，都不是 web view），
-所以這裡沒有「照抄」可言，只有「不要發明新的樣式系統與新的字」。
+使用者要的是在新 app 裡直接使用本機 Clawdline，並且能清楚前往 Cloud。**舊 app 沒有這一面可抄**——它整個
+沒有 WKWebView（`grep -rl WebKit Sources/` 只有 Onboarding／Settings／RemotePage／WebPush，都不是 web view）。
 
-做法：**兩個 WKWebView，不是一個會導航的**。
+目前做法是**一個只載本機 console 的 WKWebView**：`Shell.web` 只能到
+`http://127.0.0.1:<port>`，本機 token 只存在它的 cookie store；console 的外連結一律交給系統瀏覽器。
+Cloud 不再是第二個內嵌 WebView。「雲朵＋Cloud」按鈕直接用 `NSWorkspace.shared.open` 打開
+`https://app.clawdline.com`（開發時可用 `CLAWDLINE_NEXT_CLOUD` 指向測試服務），所以登入、密碼管理器與
+瀏覽器資料都留在使用者選定的瀏覽器。
 
-| | console 那個（`Shell.web`，本來就有的） | web 那個（`ExternalWeb`，新的） |
-|---|---|---|
-| 可以去哪 | 只有 `http://127.0.0.1:<port>`；其他一律取消，交給系統瀏覽器（`NSWorkspace.shared.open`，舊 app 對所有連結的做法） | 任何 http／https；**console 的位址被拒絕**，那裡只能從旁邊的分頁按鈕去 |
-| cookie | `WKWebsiteDataStore.default()`，本機 token 寫在這裡 | 自己的 store（macOS 14+ 用固定 UUID 的 `WKWebsiteDataStore(forIdentifier:)`，所以 Cloud 的登入活得過重開；13 退回 `.nonPersistent()`） |
-| 麥克風 | 照舊 grant（`Microphone.swift`，只給 console 的 origin） | 一律 deny |
-| 注入的 script | fleet bridge、settings 字詞 | 沒有 |
-
-**一個會導航的 view 要自己記得什麼時候把 token cookie 放進去、什麼時候拿出來，而它要記對的東西是一組
-憑證。**兩個 store 是同一條規則交給 WebKit 執行：token 從來沒寫進去的罐子，不管頁面做什麼都交不出來。
-代價是兩邊不共用登入——對「本機 daemon」與「託管 console」來說本來就該如此。
-
-上方那條列是原生的（一個頁面要再開第三個 web view 才畫得出來）。顏色與間距直接用 `legacy/tokens.css`
-的值（`Browser.swift` 的 `Ink`，變數名一字不改）：`.conn` 的 pill 當按鈕、`.stale .go` 的 accent 當選中、
-`.top` 的 14／12 間距、`.composer .box` 的圓角當網址框。字詞取自舊版 `Copy+Chinese.swift` 原本的屬性名：
-`homeLocalTitle`（本機瀏覽器）、`homeCloudPreviewTitle`（Clawdline Cloud 預覽）、`webInfoRefresh`（重新整理）；
-**上一頁／下一頁舊版整份字串目錄裡沒有任何對應的詞**，所以就是 `‹` `›` 兩個符號，不編字。
-
-實測（打包後真的開 app，殼的 stdout 與 System Events）：console `rows=14`；切到 `app.clawdline.com` 載入成功
-（未登入畫面）；`cookie-wall: separate-stores=true`、console store 有 `clawdline-next@127.0.0.1`、web store
-`(none) token-cookies-here=0`；網址列、上一頁、`target=_blank`、外部頁面導向 console 被拒、console 的外連結
-交給系統瀏覽器，都各驗過一次。詳見那次交付的 `artifacts/report.md`（本機 task 目錄，不在 repo 裡）。
+上方原生列的網址只報告目前本機頁面：可選取與複製，但沒有邊框、輸入 action 或可編輯狀態。返回、前進、
+重新整理與縮放只作用在本機 console。顏色與間距仍直接使用 `legacy/tokens.css` 的值；Cloud 使用 SF Symbol
+`cloud` 加上可見短字 `Cloud`，完整的「用瀏覽器打開 Clawdline Cloud」保留給 tooltip 與 VoiceOver。
 
 ### 排程（2026-09-18）
 

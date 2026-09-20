@@ -176,14 +176,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     var statusItem: NSStatusItem!
     var daemon: Process?
 
-    /// The other place this window can be: anywhere on the web, in a cookie
-    /// store this machine's token has never been written to. Browser.swift.
-    var webTab: ExternalWeb!
-    /// The bar across the top, and the part of the window under it.
+    /// The bar across the top. Browser.swift.
     var bar: BrowserBar!
-    var content: NSView!
-    /// Which of the two views `content` is holding.
-    var showingWeb = false
 
     private let hotKey = HotKey()
     private var hotKeyActive = false
@@ -446,14 +440,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         window.isReleasedWhenClosed = false
         // The Swift app's Home window floor.
         window.minSize = NSSize(width: 680, height: 620)
-        // The console is one of the two views this window can show; the bar and
-        // the switch between them are in Browser.swift.
+        // The console stays inside this window; Cloud opens in the person's
+        // browser. The bar and that boundary are in Browser.swift.
         window.contentView = buildBrowser()
-        // **The keyboard starts in the page, not in the address field.** Left
-        // to itself a window gives the keyboard to the first key view in its
-        // content, which is the field in the bar; `showTab` asks for the page
-        // instead but runs while this window is still being built, when there
-        // is no window to ask. So it is asked here, where there is one.
+        // The address is a reading, so the keyboard starts in the page.
         window.initialFirstResponder = active
         window.makeFirstResponder(active)
         window.delegate = self
@@ -534,9 +524,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
 
     /// Load a page of the console's, with this machine's token in place first.
     ///
-    /// `url` is always the console's own origin — `go(to:)` in Browser.swift is
-    /// the only caller that passes anything but `home`, and it checks. Every
-    /// route but the page itself needs a token, this window included. The
+    /// `url` is always the console's own origin. Every route but the page itself
+    /// needs a token, this window included. The
     /// cookie goes in first; see LocalToken.install for why it is not adopted
     /// through the page.
     func load(_ url: URL) {
@@ -906,11 +895,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     // the console window's (Bar.swift).
     @objc private func openPanel() { inputBar.toggle() }
 
-    /// "Home" is the console, so it is also the tab the window is on.
-    @objc private func showHome() {
-        showConsole()
-        showTab(web: false)
-    }
+    /// "Home" is the console; Cloud is never another in-app tab.
+    @objc private func showHome() { showConsole() }
 
     /// Launch at login, through SMAppService, off until somebody turns it on.
     /// Registering changes the person's login items; nothing here does it on

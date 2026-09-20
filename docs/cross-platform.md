@@ -681,7 +681,7 @@ carries the token in the fragment, exchanges it for a cookie at `/v1/auth/adopt`
 | System tray | §4.9's web badge |
 | Local desktop notifications | `notify-send` can be sent directly by the daemon (D-Bus, no shell needed) — **this one actually needs no shell** |
 | UI for starting at login | The `clawdline autostart` CLI (§4.7) |
-| Embedded browser (Cloud preview) | The user opens a tab themselves. **On Linux this is actually cleaner**: the cookies are separate anyway |
+| Native local-console window | The user runs `clawdline open`; Cloud already opens in the chosen browser on every platform |
 | Granting microphone permission on the user's behalf | The browser asks by itself, and asks more clearly |
 
 **Conclusion: on Linux, "no shell" is not a defect but an acceptable shape**, as long as the table above is visible on the settings page.
@@ -693,16 +693,16 @@ If a shell is ever really needed, deal with it then, and the first thing to buil
 
 - Runtime: built into Windows 11; Windows 10 needs the Evergreen Runtime installed. **The installer has to detect it and install it**,
   or the first launch is a blank window.
-- **Two webviews with separate cookies** (the "embedded browser" passage of `replica.md`) can be done on WebView2:
-  use two `CoreWebView2Environment`s, each with a different `userDataFolder`. The value of this rule holds on Windows
-  just the same — a jar the local token was never written into cannot hand it over, whatever the page does.
-- The native bar across the top (address box, back, tab buttons) has to be drawn again on Windows. Colours and spacing likewise come from
-  `legacy/tokens.css`, and the words likewise may only use keys that already exist in the old string catalog.
+- One WebView2 hosts only the local console and its local token. The Cloud button opens `https://app.clawdline.com`
+  in the system browser, so the shell never needs a second cookie store.
+- The native bar across the top (read-only address, back, Cloud and open-outside buttons) has to be drawn again on Windows.
+  Colours and spacing likewise come from `legacy/tokens.css`.
 
-#### macOS: untouched
+#### macOS
 
-The Swift shell stays as it is. It is the only shell with Keychain, the notch, Carbon hotkeys and `SMAppService`,
-and these are exactly "the few features only a Mac has".
+The Swift shell owns one local-console WKWebView. Its `Cloud` button opens the hosted console in the system browser,
+and its address is a selectable, read-only value rather than navigation UI. It remains the only shell with Keychain,
+the notch, Carbon hotkeys and `SMAppService`; these are exactly "the few features only a Mac has".
 
 **Summary-table correction**: none.
 

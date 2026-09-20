@@ -100,17 +100,12 @@ struct ShellCopy {
     let settingsScopeGlobal = "所有 app"
     let settingsOff = "關閉"
 
-    // The browser bar (shell/darwin/Browser.swift). The Swift app has no
-    // embedded browser and so has no words for one; these are the nearest it
-    // does have, kept under its own property names so a line copied from one
-    // file still means the same thing in the other. The two destinations are
-    // the setup centre's own names for them (`Onboarding.swift`'s route
-    // cards), and the reload button is what the console's own refresh buttons
-    // say. "Open in the browser" is the Swift app's own button for handing the
-    // console to the person's browser (Settings → Remote), which is the same
-    // act done to whatever page is in front.
+    // The browser bar (shell/darwin/Browser.swift). Cloud is deliberately the
+    // short product name requested for the external-browser button; its longer
+    // sentence is the tooltip and VoiceOver label.
     let homeLocalTitle = "本機瀏覽器"
-    let homeCloudPreviewTitle = "Clawdline Cloud 預覽"
+    let browserCloud = "Cloud"
+    let browserOpenCloud = "用瀏覽器打開 Clawdline Cloud"
     let webInfoRefresh = "重新整理"
     let settingsRemoteOpen = "用瀏覽器打開"
 
