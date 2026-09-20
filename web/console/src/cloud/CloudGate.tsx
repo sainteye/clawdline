@@ -18,6 +18,7 @@ import {
   type CloudUpdate,
 } from "./copied.js"
 import { CARRY_TABLE } from "./carry.js"
+import { afterForget, forgetMachine, honestyIsOurs, type ForgetOutcome } from "./forget.js"
 import { readThroughRelay } from "./install.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
@@ -134,6 +135,16 @@ export function CloudGate({ declared }: { declared: string }) {
   const [syncing, setSyncing] = useState(true)
   const [problem, setProblem] = useState<string | null>(null)
   const [chosen, setChosen] = useState<CloudMachine | null>(null)
+  // Forgetting a machine (`forget.ts`): which one is being asked about, which
+  // ones this tab has forgotten, and what the account answered about the last
+  // one. The list itself is the relay's, not the control plane's, so a
+  // forgotten machine stays on it and is marked rather than disappearing —
+  // "I revoked it" is visible, as it is on the Mac's own device list
+  // (`internal/transport/cloud/link.go`).
+  const [asking, setAsking] = useState<CloudMachine | null>(null)
+  const [forgetting, setForgetting] = useState(false)
+  const [forgotten, setForgotten] = useState<readonly string[]>([])
+  const [told, setTold] = useState<{ machine: string; outcome: ForgetOutcome } | null>(null)
 
   const session = useRef<CloudSession | null>(null)
   const line = useRef<CloudConnection | null>(null)
@@ -190,6 +201,9 @@ export function CloudGate({ declared }: { declared: string }) {
   const choose = useCallback((machine: CloudMachine) => {
     const current = client.current
     if (!current || reader.current || !machine.selectable) return
+    // A machine this tab has forgotten still has decrypted snapshots behind it
+    // and would open a console reading a line the account has stopped routing.
+    if (forgotten.includes(machine.id)) return
     try {
       sessionStorage.setItem(CHOSEN + (current.account ?? ""), machine.id)
     } catch {
@@ -216,7 +230,61 @@ export function CloudGate({ declared }: { declared: string }) {
     cardsAreFor(machine.id)
     setChosen(machine)
     setScreen({ at: "console" })
-  }, [transport])
+  }, [transport, forgotten])
+
+  /** The machine this tab remembers choosing, for the account it is signed in to. */
+  const remembered = useCallback(() => {
+    try {
+      return sessionStorage.getItem(CHOSEN + (who?.account ?? ""))
+    } catch {
+      return null
+    }
+  }, [who])
+
+  /**
+   * Forget `machine`, once the person has said so to its name.
+   *
+   * This is the only irreversible, outward-facing thing the gate does, and
+   * everything it can be told is said rather than reduced to a boolean: what
+   * the account answered, including the sentence about what a revoke does not
+   * undo, and which of "refused", "no such machine" and "could not be read" it
+   * was. Nothing is retried; a second DELETE on an answer nobody could read
+   * would be a second irreversible act on a guess.
+   */
+  const forget = useCallback(
+    async (machine: CloudMachine) => {
+      if (transport.kind !== "cloud" || forgetting) return
+      setForgetting(true)
+      setTold(null)
+      const outcome = await forgetMachine(transport.config.apiOrigin, machine.id)
+      setForgetting(false)
+      setAsking(null)
+      setTold({ machine: machine.name || machine.label || machine.id, outcome })
+      if (outcome.kind !== "forgotten") return
+      setForgotten((was) => (was.includes(machine.id) ? was : [...was, machine.id]))
+      const next = afterForget({
+        forgotten: machine.id,
+        remembered: remembered(),
+        reading: chosen?.id ?? null,
+      })
+      if (next.clearRemembered) {
+        try {
+          sessionStorage.removeItem(CHOSEN + (who?.account ?? ""))
+        } catch {
+          /* a tab that cannot remember asks again after a reload */
+        }
+      }
+      if (next.backToList) {
+        // The console on screen is reading a machine the account no longer
+        // routes to. Say so over it, as a dropped line is said over it, and
+        // leave the way out where the header's own way out is: another machine
+        // is another page (`aside`).
+        reader.current?.lost()
+        setScreen({ at: "machines" })
+      }
+    },
+    [transport, forgetting, remembered, chosen, who],
+  )
 
   const onUpdate = useCallback(
     (update: CloudUpdate) => {
@@ -307,15 +375,25 @@ export function CloudGate({ declared }: { declared: string }) {
   // A machine this tab chose before, once it is listed again.
   useEffect(() => {
     if (screen.at !== "machines" || !machines || !who) return
-    let remembered: string | null = null
-    try {
-      remembered = sessionStorage.getItem(CHOSEN + who.account)
-    } catch {
-      remembered = null
-    }
-    const again = machines.find((m) => m.id === remembered && m.selectable)
+    const id = remembered()
+    const again = machines.find((m) => m.id === id && m.selectable)
     if (again) choose(again)
-  }, [screen, machines, who, choose])
+  }, [screen, machines, who, choose, remembered])
+
+  /**
+   * Leave the machine this tab chose and start again at the list. This drops
+   * only this tab's choice; the machine keeps its place on the account, which
+   * is what `forget` above is for.
+   */
+  const leave = useCallback(() => {
+    try {
+      sessionStorage.removeItem(CHOSEN + (who?.account ?? ""))
+    } catch {
+      /* nothing remembered */
+    }
+    // Another machine is another page, for the same reason.
+    location.reload()
+  }, [who])
 
   // Which machine this is, in the header beside the connection light, and the
   // way back to the list.
@@ -325,15 +403,7 @@ export function CloudGate({ declared }: { declared: string }) {
       id="cloud-switch"
       type="button"
       title={(chosen.label || chosen.id) + " · " + nextWord("cloudSwitch")}
-      onClick={() => {
-        try {
-          sessionStorage.removeItem(CHOSEN + (who?.account ?? ""))
-        } catch {
-          /* nothing remembered */
-        }
-        // Another machine is another page, for the same reason.
-        location.reload()
-      }}
+      onClick={leave}
     >
       {chosen.name || chosen.label || chosen.id}
     </button>
@@ -345,7 +415,23 @@ export function CloudGate({ declared }: { declared: string }) {
     <>
       {chosen && <App aside={aside} />}
       {words && screen.at !== "console" && (
-        <GateCard screen={screen} who={who} machines={machines} syncing={syncing} problem={problem} onChoose={choose} onRetry={start} />
+        <GateCard
+          screen={screen}
+          who={who}
+          machines={machines}
+          syncing={syncing}
+          problem={problem}
+          onChoose={choose}
+          onRetry={start}
+          asking={asking}
+          forgetting={forgetting}
+          forgotten={forgotten}
+          told={told}
+          reading={chosen?.id ?? null}
+          onAsk={setAsking}
+          onForget={forget}
+          onLeave={leave}
+        />
       )}
     </>
   )
@@ -359,24 +445,166 @@ function GateCard(props: {
   problem: string | null
   onChoose: (machine: CloudMachine) => void
   onRetry: () => void
+  asking: CloudMachine | null
+  forgetting: boolean
+  forgotten: readonly string[]
+  told: { machine: string; outcome: ForgetOutcome } | null
+  reading: string | null
+  onAsk: (machine: CloudMachine | null) => void
+  onForget: (machine: CloudMachine) => void
+  onLeave: () => void
 }) {
   const { screen, who, machines, syncing, problem, onChoose, onRetry } = props
+  const { asking, forgetting, forgotten, told, reading, onAsk, onForget, onLeave } = props
   const mark = useRef<HTMLCanvasElement>(null)
+  const cancel = useRef<HTMLButtonElement>(null)
+  const go = useRef<HTMLButtonElement>(null)
   useLayoutEffect(() => {
     L.paintIcon(mark.current, BRAND_MARK, 3)
   }, [])
+  // Cancel, not the destructive button, holds the focus the question opens
+  // with. `#schedule-delete-confirm` focuses its own Delete, and that sheet is
+  // reached from a form somebody opened for one schedule; this question is one
+  // press away from a list whose rows are pressed to *use* a machine, so the
+  // safe answer is the one under the return key.
+  useLayoutEffect(() => {
+    if (asking) cancel.current?.focus({ preventScroll: true })
+  }, [asking])
   const T = L.strings
+  // The question belongs to the list it was asked from. A line that drops
+  // while it is open puts its own screen back, rather than leaving an
+  // irreversible button over a card that is now saying something else.
+  const question = asking && screen.at === "machines" ? asking : null
   return (
-    <div className="door" data-step="cloud" data-cloud-screen={screen.at}>
-      <div className="door-card" role="dialog" aria-modal="true" aria-label="clawdline">
+    <div className="door" data-step="cloud" data-cloud-screen={question ? "forget" : screen.at}>
+      <div
+        className="door-card"
+        role={question ? "alertdialog" : "dialog"}
+        aria-modal="true"
+        aria-label="clawdline"
+        aria-busy={forgetting ? "true" : undefined}
+        aria-describedby={question ? "cloud-forget-say" : undefined}
+      >
         <div className="door-head">
           <canvas ref={mark} />
           <b>clawdline</b>
         </div>
-        <section data-step="cloud">{body()}</section>
+        <section data-step="cloud">{question ? forgetQuestion(question) : body()}</section>
       </div>
     </div>
   )
+
+  /**
+   * The question, in place of the list rather than stacked over it — one
+   * dialog on screen at a time, the rule `#schedule-delete-confirm` follows
+   * over `#schedule-form`, so cancelling leaves the list exactly as it was.
+   *
+   * It names the machine, says what does not come back, says what forgetting a
+   * machine that is reporting in right now does to it, and says the one thing
+   * the control plane is careful to say about a revoke: routing stops, the
+   * ciphertext somebody already recorded does not. That sentence is here,
+   * before the button, because after it is too late to decide anything with.
+   */
+  function forgetQuestion(machine: CloudMachine) {
+    const name = machine.name || machine.label || machine.id
+    return (
+      <div
+        className="cloud-forget-ask"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault()
+            if (!forgetting) onAsk(null)
+            return
+          }
+          if (event.key !== "Tab") return
+          // The two answers are the whole dialog; tab wraps between them
+          // (`input/action-confirm.js`'s trap).
+          const ends = [cancel.current, go.current].filter(Boolean) as HTMLButtonElement[]
+          if (ends.length < 2) return
+          const edge = event.shiftKey ? ends[0] : ends[ends.length - 1]
+          if (document.activeElement !== edge) return
+          event.preventDefault()
+          ;(event.shiftKey ? ends[ends.length - 1] : ends[0]).focus({ preventScroll: true })
+        }}
+      >
+        <p className="lede">{nextWord("cloudForgetTitle", { machine: name })}</p>
+        <p className="say" id="cloud-forget-say">
+          {nextWord("cloudForgetAsk", { machine: name })}
+          {"\n"}
+          {machine.freshness === "current"
+            ? nextWord("cloudForgetAskCurrent")
+            : machine.freshness === "stale"
+              ? nextWord("cloudForgetAskStale")
+              : nextWord("cloudForgetAskUnknown")}
+          {"\n"}
+          {nextWord("cloudForgetHonest")}
+        </p>
+        <div className="buttons">
+          <button
+            className="chip"
+            id="cloud-forget-cancel"
+            type="button"
+            ref={cancel}
+            disabled={forgetting}
+            onClick={() => onAsk(null)}
+          >
+            {T.webCancel}
+          </button>
+          <button
+            className="chip confirm-go"
+            id="cloud-forget-go"
+            type="button"
+            ref={go}
+            disabled={forgetting}
+            onClick={() => onForget(machine)}
+          >
+            {forgetting ? nextWord("cloudForgetting", { machine: name }) : nextWord("cloudForget")}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  /**
+   * What the account answered about the last machine this tab tried to forget.
+   *
+   * Four answers, and three of them are different words on purpose: refused,
+   * no such machine, and could not be read. The last one is the only one that
+   * does not say what happened, and it says that.
+   */
+  function forgetOutcome() {
+    if (!told) return null
+    const machine = told.machine
+    const outcome = told.outcome
+    if (outcome.kind === "forgotten") {
+      return (
+        <p className="say" id="cloud-forget-told" data-forget-outcome="forgotten">
+          {nextWord("cloudForgotten", { machine })}
+          {"\n"}
+          {/* Our own sentence while the route still answers the two words it
+              was written against; the route's own note when it answered
+              something else; and, when the answer to a revoke that did happen
+              could not be read at all, neither. */}
+          {honestyIsOurs(outcome)
+            ? nextWord("cloudForgetHonest")
+            : outcome.note
+              ? nextWord("cloudForgetSaid", { note: outcome.note })
+              : nextWord("cloudForgetHonestUnread")}
+        </p>
+      )
+    }
+    const word =
+      outcome.kind === "refused"
+        ? "cloudForgetRefused"
+        : outcome.kind === "absent"
+          ? "cloudForgetAbsent"
+          : "cloudForgetUnreadable"
+    return (
+      <p className="say" id="cloud-forget-told" data-forget-outcome={outcome.kind}>
+        {nextWord(word, { machine, code: outcome.code })}
+      </p>
+    )
+  }
 
   function body() {
     switch (screen.at) {
@@ -443,25 +671,61 @@ function GateCard(props: {
             {who && <p className="fine">{nextWord("cloudMachinesFine", { account: who.account, device: who.device })}</p>}
             {machines && machines.length > 0 ? (
               <ul className="cloud-machines" id="cloud-machines">
-                {machines.map((m) => (
-                  <li key={m.id}>
-                    <button type="button" data-machine={m.id} disabled={!m.selectable} onClick={() => onChoose(m)}>
-                      <span className="cloud-machine-name">{m.label || m.id}</span>
-                      <span className="cloud-machine-facts">
-                        {nextWord("cloudMachineSessions", { count: m.sessions })}
-                        {" · "}
-                        {m.pairing === "not_paired"
-                          ? T.webDeviceNotPaired
-                          : m.freshness === "current"
-                            ? T.webDeviceOnline
-                            : T.webStartMachineStale}
-                      </span>
-                    </button>
-                  </li>
-                ))}
+                {machines.map((m) => {
+                  const gone = forgotten.includes(m.id)
+                  return (
+                    <li key={m.id} data-forgotten={gone ? "true" : undefined}>
+                      <button
+                        type="button"
+                        data-machine={m.id}
+                        disabled={!m.selectable || gone}
+                        onClick={() => onChoose(m)}
+                      >
+                        <span className="cloud-machine-name">{m.label || m.id}</span>
+                        <span className="cloud-machine-facts">
+                          {nextWord("cloudMachineSessions", { count: m.sessions })}
+                          {" · "}
+                          {gone
+                            ? nextWord("cloudForgottenRow")
+                            : m.pairing === "not_paired"
+                              ? T.webDeviceNotPaired
+                              : m.freshness === "current"
+                                ? T.webDeviceOnline
+                                : T.webStartMachineStale}
+                        </span>
+                      </button>
+                      {/* A machine this browser was never paired with cannot be
+                          chosen and is exactly the kind that has to be
+                          removable, so this sits outside the row's own button
+                          and does not share its `disabled`. */}
+                      {!gone && (
+                        <button
+                          className="chip danger cloud-forget"
+                          type="button"
+                          data-forget={m.id}
+                          disabled={forgetting}
+                          title={nextWord("cloudForgetOne", { machine: m.name || m.label || m.id })}
+                          aria-label={nextWord("cloudForgetOne", { machine: m.name || m.label || m.id })}
+                          onClick={() => onAsk(m)}
+                        >
+                          {nextWord("cloudForget")}
+                        </button>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             ) : (
               <p className="say calm">{syncing || machines === null ? nextWord("cloudMachinesWaiting") : nextWord("cloudMachinesNone")}</p>
+            )}
+            {forgetOutcome()}
+            {/* The console behind this card is reading a machine that has just
+                been forgotten: choosing another one is a new page, which is
+                what the header's own switch does. */}
+            {reading && forgotten.includes(reading) && (
+              <button className="go" type="button" id="cloud-forget-leave" onClick={onLeave}>
+                {nextWord("cloudSwitch")}
+              </button>
             )}
             {problem && <p className="say">{nextWord("cloudAccessProblem", { code: problem })}</p>}
           </>
