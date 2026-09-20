@@ -305,3 +305,32 @@ func TestAReadWindowThatRunsOutSaysHowMuchWasNotRead(t *testing.T) {
 		t.Fatalf("a short record reads unread=%d entries=%d", page.Unread, len(page.Entries))
 	}
 }
+
+// A message Clawdline relays is typed in as a bracketed paste, so Claude Code
+// records it wearing a pair of paste marks. The marks are Claude Code's; the
+// words between them are the person's, and only the marks come off.
+func TestPasteMarksComeOffAndTheirContentStays(t *testing.T) {
+	path := writeRecord(t,
+		claudeRow("user", `<pasted_content id="a6cc">另外 T3 這個 Session 看不到</pasted_content id="a6cc">`),
+		m{"type": "queue-operation", "operation": "enqueue", "timestamp": "2026-09-16T10:00:01.000Z",
+			"content": `<pasted_content id="b1">排隊中的那一句</pasted_content id="b1">`},
+		claudeRow("user", `前面的話</pasted_content id="c2">`),
+		// The negative control: the word, and no tag. Nothing here is a mark,
+		// so nothing here may be taken off.
+		claudeRow("user", "the wrapper is called pasted_content and I want to keep saying so"),
+	)
+	page, _ := ReadClaude(path, 10)
+	got := []string{}
+	for _, e := range page.Entries {
+		got = append(got, e.Kind+"|"+e.Text)
+	}
+	want := strings.Join([]string{
+		"user|另外 T3 這個 Session 看不到",
+		"user|排隊中的那一句",
+		"user|前面的話",
+		"user|the wrapper is called pasted_content and I want to keep saying so",
+	}, "\n")
+	if strings.Join(got, "\n") != want {
+		t.Fatalf("got %q", got)
+	}
+}

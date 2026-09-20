@@ -722,7 +722,32 @@ func withoutMachineBlocks(text string) string {
 	for _, tag := range machineTags {
 		text = removingTag(tag, text)
 	}
-	return text
+	return withoutPasteMarks(text)
+}
+
+// pasteMark is how Claude Code marks text that arrived as a paste, both ends
+// of it. The closing tag carries the opening tag's attributes rather than
+// standing alone — `</pasted_content id="a6cc">` — which no HTML would, so it
+// is matched as the two shapes Claude Code actually writes rather than as a
+// tag in general.
+var pasteMark = regexp.MustCompile(`</?pasted_content(?:\s[^>]*)?>`)
+
+// withoutPasteMarks takes off those marks and keeps what is inside them.
+//
+// **Unlike everything in `machineTags`, the content here is the person's.**
+// Clawdline types a relayed message into the session as a bracketed paste
+// (`internal/app/keys.go`: Send wraps its text in one), so every message sent
+// from a phone comes back out of the record wearing a pair of these — and the
+// reader is then shown the mark twice around each of their own sentences, on
+// the screen with the least room for it. Deleting the block the way a system
+// reminder is deleted would take the message with it; only the marks go.
+func withoutPasteMarks(text string) string {
+	// The opening tag alone is not the guard: a truncated record can carry
+	// only the closing one, which does not contain the opening tag's bytes.
+	if !strings.Contains(text, "pasted_content") {
+		return text
+	}
+	return pasteMark.ReplaceAllString(text, "")
 }
 
 func removingTag(tag, text string) string {
