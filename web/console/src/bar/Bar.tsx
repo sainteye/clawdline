@@ -474,7 +474,10 @@ export default function Bar() {
         // transport failure has only its own words, and `sendFailed` — the
         // original's "送不出去" — is the honest thing to put on a hint row that
         // is one line wide.
-        say(err instanceof RefusalError && err.detail ? err.detail : words.sendFailed, true)
+        // `err.detail` is the daemon's English, and this bar is read in
+        // Chinese too, so it used to show one language or one subject-less
+        // sentence. The catalog names the code and tags it.
+        say(L.failureSentence(err, words.sendFailed), true)
       })
   }, [say])
 

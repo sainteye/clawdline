@@ -215,17 +215,14 @@ async function read(value: unknown): Promise<unknown> {
   }
   const bytes = new Uint8Array(await response.arrayBuffer())
   if (!response.ok) {
-    let body: { error?: { code?: string; message?: string } } | null = null
+    let body: Record<string, unknown> | null = null
     try {
       body = JSON.parse(new TextDecoder().decode(bytes))
     } catch {
       /* a refusal that is not JSON is still a refusal; its status names it */
     }
-    const detail = body && body.error
-    throw typed(
-      (detail && (detail.message || detail.code)) || response.statusText || words().webRequestFailed,
-      (detail && detail.code) || "http_" + response.status,
-    )
+    const said = refusalOf(body, response)
+    throw typed(said.message, said.code)
   }
   try {
     return (documentBytesAnswer as (l: unknown, m: string, b: Uint8Array) => unknown)(
@@ -256,14 +253,41 @@ async function jsonFetch(path: string, headers?: Headers[]): Promise<unknown> {
     /* handled below: a body that will not parse is not an answer */
   }
   if (!response.ok) {
-    const detail = (body as { error?: { code?: string; message?: string } } | null)?.error
-    throw typed(
-      (detail && (detail.message || detail.code)) || response.statusText || words().webRequestFailed,
-      (detail && detail.code) || "http_" + response.status,
-    )
+    const said = refusalOf(body as Record<string, unknown> | null, response)
+    throw typed(said.message, said.code)
   }
   if (body === null) throw typed(words().webRequestFailed, "bad_payload")
   return body
+}
+
+/**
+ * The refusal's own name, out of whichever envelope this refusal came in.
+ *
+ * This daemon writes `{"error": "not_found", "detail": "…"}` — a **string**
+ * `error` beside a separate `detail` (`internal/transport/http/write.go`) —
+ * and the Swift app wrote `{"error": {"code", "message"}}`. Every other bridge
+ * here reads both (`git-bridge.ts`, `ledger-bridge.ts`, `board-bridge.ts`,
+ * `projects-bridge.ts`, `schedules-bridge.ts`, `start-bridge.ts`,
+ * `timeline-bridge.ts`, `voice-bridge.ts`). This one read only the object, so
+ * `error.code` on a string was `undefined` and every refusal the Documents page
+ * ever showed arrived as `http_404`/`http_403`/`http_503` — none of which
+ * `core/failure-text.js` has a sentence for, so `not_found`, `forbidden`,
+ * `busy` and `store_unavailable` all ended as the same "The document could not
+ * be read." The daemon had named it; this function is where the name was lost.
+ */
+function refusalOf(body: Record<string, unknown> | null, response: Response): { code: string; message: string } {
+  const raw = body?.error
+  if (typeof raw === "string" && raw) {
+    return { code: raw, message: typeof body?.detail === "string" ? body.detail : raw }
+  }
+  if (raw && typeof raw === "object") {
+    const nested = raw as { code?: string; message?: string }
+    if (nested.code) return { code: nested.code, message: nested.message || nested.code }
+  }
+  return {
+    code: "http_" + response.status,
+    message: response.statusText || words().webRequestFailed,
+  }
 }
 
 function typed(message: string, code: string): Error & { code: string } {

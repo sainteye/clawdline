@@ -26,7 +26,7 @@ export function Todos({ row }: { row: SessionRow | null }) {
   const [open, setOpen] = useState(false)
   const [closed, setClosed] = useState(false)
   const [page, setPage] = useState<TodoPage | null>(null)
-  const [failure, setFailure] = useState<"unknown" | "unreadable" | null>(null)
+  const [failure, setFailure] = useState<"unknown" | string | null>(null)
   const ticket = useRef(0)
 
   // A different session is a different list: fold it, and forget the last one.
@@ -48,7 +48,16 @@ export function Todos({ row }: { row: SessionRow | null }) {
       },
       (e: unknown) => {
         if (mine !== ticket.current) return
-        setFailure(e instanceof RefusalError && e.code === "conversation_unknown" ? "unknown" : "unreadable")
+        // "unreadable" used to be every refusal but one: a `forbidden`, a
+        // `rate_limited`, a daemon that was not there and a store that could
+        // not be opened all said "讀不到這個 session 的待辦。" and nothing else.
+        // The one code with better words here keeps them; the rest are named
+        // and tagged by the catalog every other refusal in this console uses.
+        setFailure(
+          e instanceof RefusalError && e.code === "conversation_unknown"
+            ? "unknown"
+            : L.failureSentence(e, workWord("todosUnreadable")),
+        )
       },
     )
   }, [row?.id, open, closed])
@@ -72,8 +81,8 @@ export function Todos({ row }: { row: SessionRow | null }) {
         <p>{workWord("todosLede")}</p>
         {failure === "unknown" ? (
           <p>{workWord("todosUnknown")}</p>
-        ) : failure === "unreadable" ? (
-          <p>{workWord("todosUnreadable")}</p>
+        ) : failure ? (
+          <p>{failure}</p>
         ) : page && page.todos.length === 0 ? (
           <p>{workWord("todosNone")}</p>
         ) : (

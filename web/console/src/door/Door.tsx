@@ -356,7 +356,16 @@ function bindDoor(host: HTMLElement, onSignedIn: () => void): DoorControl {
           // Three requests in ten minutes is the limit because each one puts
           // an alert on somebody's screen, and "rate_limited" on its own reads
           // like a fault rather than like a door working correctly.
-          this.say(e.code === "rate_limited" ? e.message + " " + T.webDoorRateLimited : e.message || T.webDoorAskFailed)
+          // `e.message` is the server's English. Every refusal but
+          // `rate_limited` used to arrive as that message, or as one sentence
+          // when there was none — so a `forbidden` and a daemon that is not
+          // there read alike. The catalog names each code and tags it.
+          this.say(
+            L.failureSentence(e, {
+              sentence: e.code === "rate_limited" ? T.webDoorRateLimited : "",
+              fallback: T.webDoorAskFailed,
+            }),
+          )
         })
         .then(() => {
           els.ask.disabled = false
@@ -389,7 +398,15 @@ function bindDoor(host: HTMLElement, onSignedIn: () => void): DoorControl {
             this.say(T.webDoorFinished)
             return
           }
-          this.say(e.message || T.webDoorWrongCode)
+          // Not every refusal on this press is a wrong code: `rate_limited`,
+          // `forbidden` and a door that never answered used to read as "驗證碼
+          // 不對", which sends somebody to type the same six digits again.
+          this.say(
+            L.failureSentence(e, {
+              sentence: e.code === "wrong_code" ? T.webDoorWrongCode : "",
+              fallback: T.webDoorAskFailed,
+            }),
+          )
           if (!phone()) boxes[0]?.focus()
         })
         .then(() => {

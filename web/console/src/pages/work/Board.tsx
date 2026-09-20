@@ -25,6 +25,8 @@ export interface BoardData {
   decisionsTotal: number
   digest: Digest | null
   digestRead: boolean
+  /** One sentence per part of this page whose read was refused; empty when all answered. */
+  unread: string[]
 }
 
 const SECTION_WORD: Record<Section, WorkWord> = {
@@ -66,6 +68,11 @@ export function BoardView({
 
   return (
     <>
+      {data.unread.map((said) => (
+        <p key={said} className="work-note" role="alert">
+          {said}
+        </p>
+      ))}
       <DigestFold digest={data.digest} read={data.digestRead} />
       <ProposalsFold proposals={data.proposals} total={data.proposalsTotal} busy={busy} run={run} onAnswer={onAnswerProposal} />
       {SECTIONS.map((section) => {

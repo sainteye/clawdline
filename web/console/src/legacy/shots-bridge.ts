@@ -20,6 +20,10 @@
 import { RefusalError, TransportError } from "@clawdline/core"
 import { T, fill } from "./js/core/i18n.js"
 import { esc } from "./js/core/esc.js"
+import { failureSentence as failureSentenceOriginal } from "./js/core/failure-text.js"
+
+/** `core/failure-text.js`'s `failureSentence`, typed for this module's callers. */
+const failureSentence = failureSentenceOriginal as (error: unknown, fallback: string) => string
 
 const LONG_EDGE = 1600
 const QUALITY = 0.82
@@ -180,8 +184,11 @@ export const Shots = {
           }
           list.push({ id: ++seq, url: shot.url, name: file.name || "picture" })
         })
-        .catch(() => {
-          toast(T.webShotUnreadable, true)
+        .catch((failure: unknown) => {
+          // A picture that would not read used to say one sentence whatever
+          // refused it; a `too_large` from this daemon and a decoder that gave
+          // up are not the same afternoon.
+          toast(failureSentence(failure, T.webShotUnreadable), true)
         })
         .then(() => {
           busy -= 1

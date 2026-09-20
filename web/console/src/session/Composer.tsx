@@ -409,7 +409,12 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
     } catch (err) {
       const code = err instanceof RefusalError ? err.code : "unexpected_error"
       if (writeIsOff(code)) setWrite(false)
-      setFailure(L.fillString(T.webFailWithTag, { text: T.sendFailed, tag: code }))
+      // This used to build `webFailWithTag` by hand: the tag was the code and
+      // the sentence was always `sendFailed`, so the half of
+      // `core/failure-text.js` that chooses words by code was skipped and
+      // `write_disabled`, `rate_limited` and `machine_offline` all read as
+      // "送不出去". The formatter builds the same line and picks the sentence.
+      setFailure(L.failureSentence(err, T.sendFailed))
     } finally {
       inFlight.current = false
       setSending(false)

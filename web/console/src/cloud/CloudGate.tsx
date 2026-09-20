@@ -62,7 +62,7 @@ export function readDeclaration(declared: string): Declared {
   try {
     raw = JSON.parse(declared)
   } catch {
-    return { kind: "misdeclared", reason: "not JSON" }
+    return { kind: "misdeclared", reason: "not JSON" } // refusal-ok: a build declaration that will not parse carries no code; this names the reason itself
   }
   let config: CloudConfig | null
   try {

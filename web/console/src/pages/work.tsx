@@ -43,6 +43,7 @@ type Tab = "board" | "backlog"
 
 const EMPTY: BoardData = {
   board: null, proposals: null, decisions: null, proposalsTotal: 0, decisionsTotal: 0, digest: null, digestRead: false,
+  unread: [],
 }
 
 /** How often a page on screen reads the board again: the sweep's own tick is 15 seconds. */
@@ -101,6 +102,13 @@ function WorkPageView({ shown }: { shown: boolean }) {
       readDigests(),
     ])
     if (mine !== ticket.current) return
+    // Only the board's refusal used to be read. The other three were dropped
+    // where they were settled, so a refused "to confirm" drew as `?`, a
+    // refused "to decide" drew as the empty section — which is the same
+    // picture as "nothing is waiting for you" — and a refused digest drew as
+    // a digest nobody had written. Each one now keeps its own sentence, said
+    // by the catalog that names the code (DG-7: a read that did not happen is
+    // never drawn as a read that found nothing).
     const next: BoardData = {
       board: board.status === "fulfilled" ? board.value : null,
       proposals: proposals.status === "fulfilled" ? proposals.value.rows : null,
@@ -109,6 +117,11 @@ function WorkPageView({ shown }: { shown: boolean }) {
       decisionsTotal: decisions.status === "fulfilled" ? (decisions.value.counts.open ?? decisions.value.rows.length) : 0,
       digest: digests.status === "fulfilled" ? (digests.value.rows[0] ?? null) : null,
       digestRead: digests.status === "fulfilled",
+      unread: [
+        proposals.status === "rejected" ? failureWords(proposals.reason) : "",
+        decisions.status === "rejected" ? failureWords(decisions.reason) : "",
+        digests.status === "rejected" ? failureWords(digests.reason) : "",
+      ].filter(Boolean),
     }
     setData(next)
     if (next.board) remember(next.board.rows)
