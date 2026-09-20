@@ -96,6 +96,20 @@ const words = {
     newBuildReload: "Reload",
     menuMoved: "The question changed before the answer landed, so nothing was typed. Read the new question and choose again.",
     menuUnverified: "This Mac cannot check which question an answer is for over Clawdline Cloud, so menus are answered on the Mac itself.",
+    // The Links sheet says which kind of nothing it found. The copied catalog
+    // has one sentence for an empty list and one for a failed read, and no way
+    // to say that the list is right and only the deploy could not be named —
+    // which is the distinction between a project with no CI and a machine
+    // whose git is wedged.
+    linksNotRepository: "Not a git repository, so nothing here could name a workflow run. Everything else on this list was read.",
+    linksNoRemote: "This repository has no origin remote, and a workflow run is named after one, so no deploy could be found. Everything else on this list was read.",
+    linksRemoteNotGitHub: "This repository's origin is not on GitHub, and only a GitHub remote names a workflow run here, so no deploy could be found.",
+    linksGitUnreadable: "git would not answer here ({reason}), so whether this project has a deploy is unknown — which is not the same as no.",
+    linksGitMissing: "there is no git on this machine",
+    linksGitTimeout: "it did not answer in time",
+    linksGitFailed: "it refused",
+    linksGitTooLarge: "it said more than this reads",
+    linksTruncated: "More addresses were found than this list carries; the rest are not shown.",
   },
   "zh-Hant": {
     olderNotRead: "更早的對話沒有載入：這一頁只讀對話記錄的最後 {window}，前面還有 {bytes} 沒有讀。",
@@ -172,6 +186,15 @@ const words = {
     newBuildReload: "重新載入",
     menuMoved: "送到之前題目已經換了，所以什麼都沒打。請看清楚新的題目再選。",
     menuUnverified: "這台 Mac 經由 Clawdline Cloud 還無法確認答案對應哪一題，請直接在 Mac 上作答。",
+    linksNotRepository: "這裡不是 git repository，所以沒有東西可以對應到一次 workflow 執行。這份清單上其他項目都讀到了。",
+    linksNoRemote: "這個 repository 沒有 origin remote，而 workflow 執行是用 remote 命名的，所以找不到 deploy。這份清單上其他項目都讀到了。",
+    linksRemoteNotGitHub: "這個 repository 的 origin 不在 GitHub 上，而這裡只有 GitHub 的 remote 對得到 workflow 執行，所以找不到 deploy。",
+    linksGitUnreadable: "git 在這裡沒有回答（{reason}），所以這個專案有沒有 deploy 是不知道，不是沒有。",
+    linksGitMissing: "這台機器上沒有 git",
+    linksGitTimeout: "它沒有在時限內回答",
+    linksGitFailed: "它拒絕了",
+    linksGitTooLarge: "它回的東西超過這裡讀得下的量",
+    linksTruncated: "找到的位址比這份清單裝得下的多，其餘沒有列出。",
   },
 } as const
 

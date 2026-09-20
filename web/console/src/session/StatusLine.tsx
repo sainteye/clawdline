@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { SessionInfo, SessionInfoContext, SessionLimitWindow, SessionLimits, SessionRow } from "@clawdline/contract"
+import type { ProjectLink, SessionInfo, SessionInfoContext, SessionLimitWindow, SessionLimits, SessionRow } from "@clawdline/contract"
 import { contextCell } from "./context.js"
 import * as L from "../legacy/bridge.js"
 import { SessionFacts, requestInfo } from "../overlays/index.js"
@@ -32,8 +32,10 @@ import { SessionFacts, requestInfo } from "../overlays/index.js"
  *   info card, which a press on the button opens; it is disabled while no
  *   session is open.
  * - `.files` stays hidden: the working tree is not part of this daemon's read.
- * - `.deploy` stays hidden: a running deploy comes from the project-link walk,
- *   which this daemon does not have.
+ * - `.deploy` carries whatever is running, from the same `/info` answer's
+ *   `deploy` rows — the project-link walk, served from a projection per
+ *   working directory (`links.go`), so the chip costs the page nothing beyond
+ *   the read it was already making.
  * - `.limits` carries the plan windows, from the same `/info` answer: the
  *   account-level reading every session of that assistant shares. The newest
  *   reading per assistant is held and drawn over an older answer, and while an
@@ -48,6 +50,8 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
   if (row) drawn.current = true
   const info = useSessionInfo(row)
   const windows = row ? (info ? overlayMachineLimits(info) : machineLimits(row.assistant))?.windows ?? [] : []
+  const deploy = runningDeploy(info)
+  const progress = useDeployProgress(deploy)
 
   let open
   if (!drawn.current) {
@@ -97,14 +101,7 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
     <footer className="status-line" id="status-line">
       {open}
       <button className="files" id="status-line-files" type="button" hidden></button>
-      <a
-        className="deploy"
-        id="status-line-deploy"
-        hidden
-        target="_blank"
-        rel="noopener noreferrer"
-        {...(drawn.current ? { "data-kind": "" } : {})}
-      ></a>
+      {deployChip(deploy, progress, drawn.current)}
       <div
         className="limits"
         id="status-line-limits"
@@ -112,6 +109,98 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
       ></div>
     </footer>
   )
+}
+
+/**
+ * `runningDeploy` in `input/status-line.js`: the one row the chip at the foot
+ * of the page is drawn from, out of everything the project has an address for.
+ *
+ * **A local run wins over a deploy.** Both are "something is happening", but
+ * only one of them is happening on the machine in front of the person, started
+ * by the person, and holding up the next thing they were going to do; a deploy
+ * running in somebody's cloud can wait for the Links sheet. There is one chip
+ * and this is how it is spent.
+ */
+export function runningDeploy(info: SessionInfo | null): ProjectLink | null {
+  const rows = (info && (info.links || info.deploy)) || []
+  const running = rows.filter((row) => row && row.state === "running" &&
+    (row.kind === "run" || row.kind === "deploy" || row.kind === "ci"))
+  return running.filter((row) => row.kind === "run")[0] || running[0] || null
+}
+
+/**
+ * `deployProgress`: how far along, by elapsed time against how long this
+ * usually takes. Null when either number is missing or nonsense — a bar drawn
+ * from a number nobody wrote is a bar that lies, and the stylesheet has a
+ * `data-known="false"` animation for exactly that.
+ */
+export function deployProgress(row: ProjectLink | null, now = Date.now()): number | null {
+  const started = Number(row && row.startedAt)
+  const typical = Number(row && row.typicalSeconds)
+  if (!Number.isFinite(started) || !Number.isFinite(typical) || started <= 0 || typical <= 0) return null
+  return Math.max(0, Math.min(1, (now / 1000 - started) / typical))
+}
+
+/**
+ * `drawDeploy`: the chip, or the original's empty hidden element.
+ *
+ * `phase` is producer text and is drawn verbatim, in every language, in place
+ * of the percentage — the bar is already saying how far along this is, and
+ * "compiling" answers the question a percentage cannot. `data-kind` is what
+ * the stylesheet reads to keep a local run from being mistaken for a deploy at
+ * a glance.
+ */
+function deployChip(row: ProjectLink | null, progress: number | null, drawn: boolean) {
+  if (!row) {
+    return (
+      <a className="deploy" id="status-line-deploy" hidden target="_blank" rel="noopener noreferrer"
+        {...(drawn ? { "data-kind": "" } : {})}></a>
+    )
+  }
+  const known = progress !== null
+  const pct = known ? Math.round((progress as number) * 100) : null
+  const label = row.label || "deploy"
+  const phase = String(row.phase == null ? "" : row.phase).trim()
+  const said = label + " " + (phase || (known ? pct + "%" : L.strings.webLinkRunning))
+  const href = /^https?:\/\//i.test(String(row.url || "")) ? { href: row.url } : {}
+  return (
+    <a
+      className="deploy"
+      id="status-line-deploy"
+      target="_blank"
+      rel="noopener noreferrer"
+      data-known={known ? "true" : "false"}
+      data-kind={row.kind || "deploy"}
+      title={said}
+      aria-label={said}
+      {...href}
+    >
+      <span className="label">{label}</span>
+      <span className="track" aria-hidden="true">
+        <i style={{ "--w": (known ? pct : 0) + "%" } as React.CSSProperties}></i>
+      </span>
+      <span className="pct">{phase ? phase : known ? pct + "%" : "…"}</span>
+    </a>
+  )
+}
+
+/**
+ * The chip's own clock, as the original's `deployTicker` is: a bar drawn from
+ * elapsed time has to be redrawn for the time to elapse. It runs only while a
+ * running row with two usable numbers is on screen, and a hidden page moves
+ * nothing — there is nobody to move it for.
+ */
+function useDeployProgress(row: ProjectLink | null): number | null {
+  const [, tick] = useState(0)
+  const known = deployProgress(row) !== null
+  useEffect(() => {
+    if (!row || row.state !== "running" || !known) return
+    const id = window.setInterval(() => {
+      if (!document.hidden) tick((n) => n + 1)
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [row, row?.label, row?.startedAt, known])
+  return deployProgress(row)
 }
 
 /**

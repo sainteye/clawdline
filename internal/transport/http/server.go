@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/process"
+	"github.com/sainteye/clawdline-go/internal/adapters/projectlinks"
 	"github.com/sainteye/clawdline-go/internal/adapters/skillmenu"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
@@ -64,6 +65,12 @@ type Server struct {
 	// skillMenu holds each session's slash-menu skills for five minutes
 	// (skills.go), at most the `cache.session_skills` row's limit of them.
 	skillMenu *skillmenu.Cache
+	// links holds where each project can be opened (links.go), one reading per
+	// working directory, at most the `cache.session_links` row's limit of
+	// them. A held reading is served however old it is and refreshed behind
+	// the request, so the walk's one subprocess is never on a request a person
+	// is waiting on twice.
+	links *projectlinks.Cache
 	// lastScreen is the sessions the last list was built from, so a task list
 	// can place a task under its root without scanning the machine again.
 	lastScreen atomic.Pointer[screenReading]
@@ -138,6 +145,7 @@ func New(cfg config.Config) (*Server, error) {
 		swift:     swiftstore.Open(swiftstore.Dir()),
 		pictures:  newPictures(cfg.Dir),
 		skillMenu: skillmenu.NewCache(),
+		links:     projectlinks.NewCache(),
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
@@ -158,6 +166,7 @@ func New(cfg config.Config) (*Server, error) {
 	// The transcript caches and the skills cache hold their register rows' limits.
 	srv.ledger.SetLimit(CapacityLimit(capacity.CacheTranscriptUsage))
 	srv.skillMenu.SetLimit(CapacityLimit(capacity.CacheSessionSkills))
+	srv.links.SetLimit(CapacityLimit(capacity.CacheSessionLinks))
 	srv.inventory.Activity.SetLimit(CapacityLimit(capacity.SessionsActivityReads))
 	if h, ok := srv.inventory.Identity.(*transcript.Host); ok {
 		h.Titles().SetLimit(CapacityLimit(capacity.CacheTranscriptTitles))
@@ -270,6 +279,12 @@ func (s *Server) Handler() http.Handler {
 		// A read (skills.go): the slash menu, asked for when `/` opens it.
 		if id, ok := skillsPath(r); ok {
 			s.sessionSkillsRoute(w, r, id)
+			return
+		}
+		// A read (links.go): everything this project has an address for,
+		// asked for when the Links sheet opens.
+		if id, ok := linksPath(r); ok {
+			s.sessionLinksRoute(w, r, id)
 			return
 		}
 		s.sessionAction(w, r)

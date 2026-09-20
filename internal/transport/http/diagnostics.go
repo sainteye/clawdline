@@ -229,6 +229,7 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return s.inventory.Activity.Reading()
 		},
 		capacity.CacheSessionSkills: func() capacity.Reading { return s.skillsReading() },
+		capacity.CacheSessionLinks:  func() capacity.Reading { return s.linksReading() },
 		// The screens the session list holds, and the captures it has in
 		// flight (internal/app/screen_held.go).
 		// An inventory with no held screens is a known zero, not an

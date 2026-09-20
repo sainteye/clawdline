@@ -1,6 +1,7 @@
-import type { SessionInfo, SessionModel } from "@clawdline/contract"
+import type { ProjectGitFailure, ProjectLink, ProjectRepository, SessionInfo, SessionModel } from "@clawdline/contract"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
 import { SessionFacts } from "./facts.js"
 import {
   byId,
@@ -30,11 +31,13 @@ import { toast } from "./toast.js"
  * drawn for a field the answer does not have:
  *
  * - hero, status, model switch and token use are the original's sections;
- * - `limits`, `files`, `links`/`deploy`, `permission` and `fastMode` are not on
- *   this wire, so their sections are absent — not drawn with the original's
- *   empty-state sentences, each of which ("this is not a git repo", "nothing
- *   to open", "Claude only records a window once spent") states a fact about
- *   the session that this daemon never read;
+ * - `links` is on this wire now, so the original's Links section is drawn from
+ *   it, with the original's classes and its own words;
+ * - `limits`, `files`, `permission` and `fastMode` are not on this wire, so
+ *   their sections are absent — not drawn with the original's empty-state
+ *   sentences, each of which ("this is not a git repo", "Claude only records a
+ *   window once spent") states a fact about the session that this daemon never
+ *   read;
  * - `session.seconds` is absent, so the running-for part of the meta line is;
  * - there is no title route, so the title is the original's read-only button
  *   (disabled, no pencil), which is how it looks where editing is off;
@@ -309,6 +312,97 @@ function usageHTML(u: Facts["usage"]): string {
   )
 }
 
+/**
+ * `STATES` in `input/info.js`: the four dots that have a word. A state outside
+ * it — including the empty one a server row carries when nothing measured it —
+ * has no word here, and `status` says what there is to say instead.
+ */
+const LINK_STATES: Record<string, string> = {
+  ok: "webLinkOk", fail: "webLinkFail", down: "webLinkDown", running: "webLinkRunning",
+}
+
+/** Only an explicit web address becomes an anchor: a `javascript:` in an `href` is script running on this page with this page's cookie. */
+function openable(url: string): boolean {
+  return /^https?:\/\//i.test(url || "")
+}
+
+/**
+ * Why this project has no deploy row, in the words for **which kind of
+ * nothing** it was.
+ *
+ * The distinction is the whole reason the daemon answers `repository` at all:
+ * a directory that is not a repository, one with no `origin`, one whose
+ * `origin` is elsewhere and a git that would not answer all produce no deploy
+ * row, and only the last leaves it unknown whether there was one to produce.
+ * "No links" for all four tells somebody their project has no CI when what
+ * happened is that git is wedged.
+ */
+function repositoryNote(repo: ProjectRepository | undefined, failure: ProjectGitFailure | undefined): string {
+  switch (repo) {
+    case "no_remote":
+      return nextWord("linksNoRemote")
+    case "not_a_repository":
+      return nextWord("linksNotRepository")
+    case "remote_not_github":
+      return nextWord("linksRemoteNotGitHub")
+    case "unreadable":
+      return nextWord("linksGitUnreadable", { reason: gitFailureWord(failure) })
+  }
+  return ""
+}
+
+function gitFailureWord(failure: ProjectGitFailure | undefined): string {
+  switch (failure) {
+    case "git_missing":
+      return nextWord("linksGitMissing")
+    case "git_timeout":
+      return nextWord("linksGitTimeout")
+    case "git_answer_too_large":
+      return nextWord("linksGitTooLarge")
+  }
+  return nextWord("linksGitFailed")
+}
+
+/**
+ * `linksHTML` in `input/info.js`, row for row: a `.dep-row` holding a `.dep`
+ * with its dot, label, state word and host, and a `.dep-note` under it when
+ * there is one line worth saying about why.
+ *
+ * The daemon's own additions are drawn in the same shapes: a `server` row that
+ * nothing measured has no `data-state` — so the stylesheet leaves its dot the
+ * faint default rather than colouring it a verdict nobody took — and says
+ * which kind of nothing it was where the receipt's word would go.
+ */
+function linksHTML(links: ProjectLink[], d: Facts): string {
+  const note = repositoryNote(d.repository, d.repositoryUnreadable)
+  const noteHTML = note ? '<p class="note">' + esc(note) + "</p>" : ""
+  if (!links.length) return '<p class="note">' + esc(T.webLinksEmpty) + "</p>" + noteHTML
+  const rows = links
+    .map((link) => {
+      const word = link.status || (LINK_STATES[link.state] ? T[LINK_STATES[link.state]] : "") ||
+        (link.unknownReason === "status_not_run"
+          ? nextWord("stackStatusNotRun")
+          : link.unknownReason === "nothing_declared"
+            ? nextWord("stackNothingDeclared")
+            : "")
+      const url = String(link.url || "")
+      const far = link.local && !L.atMac()
+      const detail = link.why ? String(link.why) : far ? T.webLinksLocal : ""
+      const where = url.replace(/^https?:\/\//i, "")
+      const inner =
+        '<span class="dot"></span><span class="lbl">' + esc(link.label || link.kind) + "</span>" +
+        (word ? '<span class="st">' + esc(word) + "</span>" : "") +
+        '<span class="host" title="' + esc(url) + '">' + esc(where) + "</span>"
+      const row = openable(url)
+        ? '<a class="dep" data-state="' + esc(link.state || "") + '" href="' + esc(url) +
+          '" target="_blank" rel="noopener noreferrer">' + inner + "</a>"
+        : '<div class="dep" data-state="' + esc(link.state || "") + '">' + inner + "</div>"
+      return '<div class="dep-row">' + row + (detail ? '<p class="dep-note">' + esc(detail) + "</p>" : "") + "</div>"
+    })
+    .join("")
+  return rows + noteHTML
+}
+
 function html(d: Facts): string {
   const s = d.session || ({} as Facts["session"])
   const u = d.usage
@@ -323,6 +417,16 @@ function html(d: Facts): string {
   // Read-only pairings get no buttons rather than dead ones.
   if (models.length && host.writable()) out += sec(++i, T.webInfoSwitchModel, "", modelsHTML(models, current))
   out += sec(++i, T.webInfoUsage, "", usageHTML(u))
+  // Where this project can be opened. The section is drawn only when the
+  // daemon read the directory at all: a session with no working directory has
+  // not got an empty project, it has not been placed.
+  if (d.links || d.repository) {
+    // A held reading is served however old it is, so the card says its age
+    // where the original says a plan reading's — the same words in the same
+    // place.
+    const when = d.linksObservedAt ? esc(fill(T.webInfoAsOf, { when: L.clock(d.linksObservedAt) })) : ""
+    out += sec(++i, T.webLinks, when, linksHTML(d.links || [], d))
+  }
   return out
 }
 

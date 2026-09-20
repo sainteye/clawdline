@@ -4457,6 +4457,152 @@ export interface ProjectCatalogAnswer {
 }
 
 /**
+ * Which way the git read failed, present only with `unreadable`. Four words because
+ * what to do about each is different: install git, wait, look at the repository.
+ */
+export type ProjectGitFailure =
+    "git_missing"
+  | "git_timeout"
+  | "git_failed"
+  | "git_answer_too_large"
+
+export const ProjectGitFailureValues: readonly ProjectGitFailure[] = ["git_missing", "git_timeout", "git_failed", "git_answer_too_large"] as const
+
+/**
+ * One address a project has. `kind` says which of the walk's sources it came from
+ * and decides how a reader draws it; `state` is the colour of its dot, `status` the
+ * producer's own word for the same thing, and `why` one line saying what is wrong
+ * when something is.
+ */
+export interface ProjectLink {
+  /**
+   * `deploy` is a workflow run named after the repository's GitHub remote; `run` is
+   * a test or build on this machine; `server` is a process a `.devstack.json`
+   * declares; anything else is a health check, named by the receipt itself (`site`
+   * when it named none, `ci` where a receipt says so). The status-line chip draws
+   * `run`, `deploy` and `ci`.
+   */
+  kind: string
+
+  /**
+   * What the row is called: the producer's own label, or the reader's word for that
+   * kind when the file named none.
+   */
+  label: string
+
+  /**
+   * The address is on this machine's own network, so a paired phone cannot follow
+   * it.
+   */
+  local: boolean
+
+  /**
+   * Producer text for what a local run is doing now — `compiling`. Drawn
+   * verbatim, in every language, in place of the percentage: the bar already says
+   * how far along this is, and this answers the question a percentage cannot.
+   */
+  phase?: string
+
+  /**
+   * Unix seconds this run began. Only on a `running` row, and only where the
+   * producer wrote it: a progress bar drawn from a missing number is a bar that
+   * lies, so a reader with neither this nor `typicalSeconds` draws an indeterminate
+   * one.
+   */
+  startedAt?: number
+
+  /**
+   * The dot: `ok`, `down`, `fail`, `running`, or empty when nothing measured it —
+   * which on a `server` row is said by `unknownReason` rather than drawn as a
+   * colour, because a red dot nobody measured is a mark that is always wrong.
+   */
+  state: string
+
+  /**
+   * The producer's own word, kept beside the dot where the two vocabularies differ:
+   * `not deployed` and `unreachable` are both a red dot and are not the same fact.
+   * Absent when the state is all there was.
+   */
+  status?: string
+
+  /**
+   * How long this run usually takes, as the producer measured it. Only on a
+   * `running` row.
+   */
+  typicalSeconds?: number
+  unknownReason?: ProjectServerUnknown
+
+  /**
+   * Where it opens. Absent on a local run, whose log is a filesystem path rather
+   * than an address — the one row here with nowhere to go. A reader turns only
+   * `http(s)://` into an anchor.
+   */
+  url?: string
+
+  /**
+   * One line saying what is wrong, from the producer: a health receipt's `reason`.
+   * Absent when nothing is wrong or nothing said.
+   */
+  why?: string
+}
+
+/**
+ * GET /v1/sessions/{id}/links. Served from a maintained projection per working
+ * directory: a held reading comes back however old it is and a refresh is taken
+ * behind the request, because a link row that is thirty seconds old is a correct
+ * answer to 'where can I go from here' and a spinner is not. Only the first read
+ * for a directory is synchronous. This is never on the session list and never on
+ * the event stream — the walk costs a subprocess, and paying for it per session
+ * per beat is what the Swift app's route comment refuses.
+ */
+export interface ProjectLinksReply {
+  links: ProjectLink[]
+
+  /**
+   * When this walk was taken, in seconds since 1970. It travels with the rows so a
+   * reader can say how old they are; nothing here decides that for it.
+   */
+  observedAt: number
+  repository: ProjectRepository
+
+  /**
+   * More rows were found than one answer carries, and the rest are not in `links`.
+   * Absent when nothing was left out.
+   */
+  truncated?: boolean
+  unreadable?: ProjectGitFailure
+}
+
+/**
+ * What the one git read found, which is a different question from what it produced.
+ * A deploy row is a file named after the repository's GitHub remote, so four of
+ * these five answers produce no deploy row — and only `unreadable` leaves it
+ * unknown whether there was one to produce. They are separate words because 'could
+ * not read' and 'there is none' must not be one sentence on a screen.
+ */
+export type ProjectRepository =
+    "github"
+  | "remote_not_github"
+  | "no_remote"
+  | "not_a_repository"
+  | "unreadable"
+
+export const ProjectRepositoryValues: readonly ProjectRepository[] = ["github", "remote_not_github", "no_remote", "not_a_repository", "unreadable"] as const
+
+/**
+ * Why a `server` row has no state. `status_not_run`: the project declares a status
+ * command and this daemon runs no command a repository names, so only a declared
+ * port could have been asked and there was none. `nothing_declared`: the file
+ * declares no port at all. Absent wherever a state was measured, because a dot
+ * nobody measured is a mark that is always wrong.
+ */
+export type ProjectServerUnknown =
+    "status_not_run"
+  | "nothing_declared"
+
+export const ProjectServerUnknownValues: readonly ProjectServerUnknown[] = ["status_not_run", "nothing_declared"] as const
+
+/**
  * Which worktrees under one Project finished a Feature. With no accepted Feature
  * attribution on this daemon, `worktrees` is always empty; the read still resolves
  * the Project.
@@ -5171,14 +5317,44 @@ export interface SessionCoordinatorCommand {
 
 /**
  * The facts behind the status line under an open session. This daemon serves the
- * transcript-derived part the Swift app calls the summary, the context reading and
- * the plan windows; the working tree, links, permission and fast mode are not read
- * here and their keys are absent.
+ * transcript-derived part the Swift app calls the summary, the context reading, the
+ * plan windows and the project's addresses; the working tree, permission and fast
+ * mode are not read here and their keys are absent.
  */
 export interface SessionInfo {
   context?: SessionInfoContext
+
+  /**
+   * The `links` rows whose kind is `deploy`, `ci` or `run`, unchanged, so a state
+   * means there what it means there. It is the smaller field the Swift app kept for
+   * older clients, and the one the status line's chip is drawn from.
+   */
+  deploy?: ProjectLink[]
   limits?: SessionLimits
+
+  /**
+   * Where this project can be opened, the same rows GET /v1/sessions/{id}/links
+   * answers with (links.schema.json). Served from the same maintained projection,
+   * so the card and the sheet cannot show one project two ways. Absent when the
+   * session has no working directory.
+   */
+  links?: ProjectLink[]
+
+  /**
+   * When the walk behind `links` was taken, in seconds since 1970. A held reading
+   * is served however old it is, so a card that wants to say how old it is has the
+   * number.
+   */
+  linksObservedAt?: number
   models: SessionModel[]
+
+  /**
+   * What the one git read behind `links` found. Present whenever the session has a
+   * working directory, including when it produced no row: `could not read` and
+   * `there is none` are different sentences.
+   */
+  repository?: ProjectRepository
+  repositoryUnreadable?: ProjectGitFailure
   session: SessionInfoSession
   usage?: SessionInfoUsage
 }
