@@ -105,6 +105,23 @@ Nothing is written there.
 not patches, because a view built from two sources that update at different times shows a state
 that never existed ([plan.md](plan.md) §6).
 
+## What another program writes, and this one only reads
+
+Two of this daemon's readings come from files a *different* program leaves on the machine, and
+both are drawn in the console as though they were the daemon's own. Naming them here so that an
+empty cell is debugged in the right place:
+
+| What is drawn | The file | Who writes it |
+|---|---|---|
+| The `.deploy` cell and a session's deploy/CI links | `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json` | Whatever `statusLine.command` names in `~/.claude/settings.json`. Claude Code runs it to draw its own status line; these files are its side effect |
+| A project's health and run rows | `~/.claude/statusline-cache/health-*.json`, `run-*.json` | The same tool |
+
+**Clawdline never writes them**, a missing file is a legitimate answer, and `state: "none"` means
+that tool found nothing worth reporting — not that the repository has no runs. So an empty deploy
+cell has two causes wearing one face: there is no run, or nobody is writing these files any more.
+Nothing in this repository can tell them apart, and no guard goes red for either;
+`internal/adapters/projectlinks/status.go` says the same thing beside the code that reads them.
+
 ## The broker
 
 The broker is everything under `/v1/orchestrator/*`: dispatching a child session, collecting its

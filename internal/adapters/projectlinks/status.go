@@ -14,6 +14,33 @@
 // **Nothing here reaches the network.** A deploy row is a file the CI poller
 // left behind, not an API call: what this daemon cannot learn from the local
 // directory it does not claim to know.
+//
+// # Who writes the files this package reads
+//
+// Not Clawdline. `~/.claude/statusline-cache/` is written by whatever
+// `statusLine.command` names in `~/.claude/settings.json` — Claude Code runs
+// that command to draw its own status line, and the tool a person has
+// configured there leaves these files behind as a side effect. It is a
+// different tool on a different machine, and on a machine with no status line
+// configured the directory does not exist at all. Clawdline only ever reads
+// it, and a missing file is not an error here.
+//
+// `ghrun-<owner>-<repo>.json` is that tool's reading of the repository's
+// GitHub workflow runs. Its `state` is `running`, `ok`, `fail` or `none`, and
+// **`none` means that tool found no run worth reporting — not that the
+// repository has none.** Measured 2026-09-21: a repository whose newest run
+// was five days old was written as `none` while four other repositories in
+// the same directory carried `ok` and `fail`, and this package drew nothing
+// for it, correctly.
+//
+// **The consequence, stated because nothing here will state it for you.** If
+// that tool stops running, is reconfigured, or changes the shape of what it
+// writes, these rows quietly become empty — and no guard in this repository
+// goes red, because an absent file is a legitimate answer. A deploy row
+// disappearing is therefore two different facts wearing one face: "there is
+// no run" and "nobody is looking any more". Anybody debugging an empty
+// `.deploy` cell should check the file's own `updated_at` before looking
+// anywhere in this package.
 package projectlinks
 
 import (
