@@ -33,6 +33,7 @@
 //	tools/check-private.sh -- ':!docs'     # git pathspecs narrow it
 //	tools/check-private.sh -rules          # what each rule catches and what passes
 //	tools/check-private.sh -history        # every commit, from the last checkpoint
+//	tools/check-private.sh -history -new   # red only if today's commits added one
 //	tools/check-private.sh -history -full  # every commit, whatever the checkpoint says
 package main
 
@@ -57,8 +58,9 @@ func main() {
 	revs := flag.String("revs", "HEAD", "what -history reads, as git rev-list spells it (e.g. --all)")
 	full := flag.Bool("full", false, "-history reads every commit, whatever the checkpoint says")
 	checkpoint := flag.String("checkpoint", "", "where -history remembers what it read; - keeps none")
+	onlyNew := flag.Bool("new", false, "-history is red only for a finding the checkpoint had not already recorded")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: check-private [-rules] [-history [-revs R] [-full] [-checkpoint P]] [-- git-pathspec...]")
+		fmt.Fprintln(os.Stderr, "usage: check-private [-rules] [-history [-revs R] [-full] [-new] [-checkpoint P]] [-- git-pathspec...]")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -67,7 +69,7 @@ func main() {
 		return
 	}
 	if *history {
-		os.Exit(int(runHistory(historyOptions{revs: *revs, full: *full, checkpoint: *checkpoint})))
+		os.Exit(int(runHistory(historyOptions{revs: *revs, full: *full, checkpoint: *checkpoint, onlyNew: *onlyNew})))
 	}
 	os.Exit(int(run(flag.Args())))
 }

@@ -57,6 +57,7 @@ go test ./...
 go run ./tools/contract-gen -check      # Go and TypeScript are generated together
 tools/check-legacy-css.sh               # the byte-for-byte copies still match
 tools/check-private.sh                  # nothing of the person's is in a public repo
+tools/check-private.sh -history -new    # no commit behind it added one either
 ( cd web && npm run check && npm run build )   # when anything under web/ changed
 ```
 
@@ -68,10 +69,20 @@ before you make it green, and keep the output that proves it went red.
 
 It is open source. **Nothing of the person's may appear in it**: no names of their businesses, no
 tokens, no paths into their accounts, no content from their conversations.
-`tools/check-private.sh` reads a word list kept out of git (`.git/info/private-words`) and only
-sees the working tree — it does not read history, so a private word committed and later removed
-stays in the history until somebody scrubs it. Commit messages, comments and documentation are in
-**English**; the conversation with the person is in Traditional Chinese.
+`tools/check-private.sh` reads a word list kept out of git (`.git/info/private-words`); without
+that list it answers 3, **undetermined**, and not 0. `-history` reads the commits as well as the
+working tree, because a word committed and later removed is gone from the tree and still in what
+`git push` sends — `docs/cutover.md` at `ef067d70` is the live example, and the tree scan is green
+on it. A history finding names the commit, the file and the line, and never the matched text.
+This history is already red and stays red: three lines at `ef067d70` are in it for good unless
+somebody rewrites it, which is a decision about the whole repository and not a patch. So the
+pre-commit check is `-history -new`, which prints every standing finding and is red only for one
+today added. **Before this repository is made public, or pushed anywhere public,** run the whole
+thing — `tools/check-private.sh -history -full -revs=--all` — and read all of it.
+`docs/privacy-guard.md` is the whole of it.
+
+Commit messages, comments and documentation are in **English**; the conversation with the person
+is in Traditional Chinese.
 
 ## How a commit reads here
 
@@ -109,5 +120,6 @@ undone. Numbers come from a run, not from memory.
 | Cloud and the phone | `docs/remote.md`, `docs/cloud-wire.md` |
 | Deploying app.clawdline.com | `docs/hosted-console.md` |
 | Every bound and where it is enforced | `docs/limits.md` |
+| What keeps the person out of a public repository | `docs/privacy-guard.md` |
 
 Where instruction files conflict, the nearest one wins, and a task brief wins over all of them.

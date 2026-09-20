@@ -312,3 +312,49 @@ func TestAnObjectTooBigToReadIsNotAnObjectWithNothingInIt(t *testing.T) {
 		t.Errorf("it did not name the object it could not read:\n%s", printed)
 	}
 }
+
+// TestADailyRunIsRedForWhatTodayAdded: a history with a finding nobody can
+// take out without rewriting it is red for ever, and a check that is red for
+// ever stops being read. -new keeps every standing finding printed and asks
+// the one question a daily run can act on.
+func TestADailyRunIsRedForWhatTodayAdded(t *testing.T) {
+	r := fixtureRepo(t)
+	r.words(fixtureWord)
+	old := r.commit("the note", map[string]string{"docs/note.md": "a " + fixtureWord + " line\n"})
+	r.commit("take it out", map[string]string{"docs/note.md": "a line\n"})
+	cp := filepath.Join(t.TempDir(), "cp")
+	daily := historyOptions{revs: "HEAD", checkpoint: cp, onlyNew: true}
+
+	// The first run has nothing to compare with, so everything is new.
+	if answer, printed := r.scan(daily); answer != privacy.Found {
+		t.Fatalf("the first run: %s, want found\n%s", answer, printed)
+	}
+	answer, printed := r.scan(daily)
+	if answer != privacy.Clean {
+		t.Fatalf("a day with no new commit: %s, want clean\n%s", answer, printed)
+	}
+	if !strings.Contains(printed, old[:8]+" ") {
+		t.Errorf("a green day stopped printing the standing finding:\n%s", printed)
+	}
+	if !strings.Contains(printed, "nothing here is new since the checkpoint") {
+		t.Errorf("it did not say why it was green:\n%s", printed)
+	}
+
+	// A commit that adds one is red again, and says which one is new.
+	fresh := r.commit("and another", map[string]string{"docs/other.md": "a " + fixtureWord + " line\n"})
+	answer, printed = r.scan(daily)
+	if answer != privacy.Found {
+		t.Fatalf("a day that added one: %s, want found\n%s", answer, printed)
+	}
+	for _, want := range []string{fresh[:8] + " ", "docs/other.md:1: private-word", "[new]"} {
+		if !strings.Contains(printed, want) {
+			t.Errorf("the new one is not marked with %q:\n%s", want, printed)
+		}
+	}
+	if strings.Count(printed, "[new]") != 1 {
+		t.Errorf("a standing finding was marked new too:\n%s", printed)
+	}
+	if !strings.Contains(printed, "1 already recorded, 1 new") {
+		t.Errorf("the summary does not count them apart:\n%s", printed)
+	}
+}

@@ -39,6 +39,7 @@ type historyOptions struct {
 	revs       string // what to scan, as git rev-list spells it
 	full       bool   // read everything, whatever the checkpoint says
 	checkpoint string // where the checkpoint is; "-" is none
+	onlyNew    bool   // red only for a finding the checkpoint had not already recorded
 }
 
 // found is one finding, before it is printed: the match is kept to compare
@@ -242,7 +243,16 @@ func runHistory(o historyOptions) privacy.Answer {
 		return all[i].Rule < all[j].Rule
 	})
 
-	commitsWith, filesWith, live := map[string]bool{}, map[string]bool{}, 0
+	// Standing or new. A history that carries a finding nobody can take out
+	// without rewriting it is red for ever, and a check that is red for ever
+	// is a check people stop reading. -new keeps the standing ones printed
+	// and counted, and asks the only question a daily run can act on: did
+	// today's commits add one?
+	standing := map[string]bool{}
+	for _, r := range carried {
+		standing[recordKey(r)] = true
+	}
+	commitsWith, filesWith, live, fresh := map[string]bool{}, map[string]bool{}, 0, 0
 	for _, r := range all {
 		commitsWith[r.Commit] = true
 		filesWith[r.Path] = true
@@ -250,7 +260,14 @@ func runHistory(o historyOptions) privacy.Answer {
 		if len(paths) > 0 {
 			live++
 		}
-		fmt.Printf("%s %s %s:%d: %s — %s\n", short(r.Commit), dates[r.Commit], r.Path, r.Line, r.Rule, whereNow(r.Path, paths))
+		age := ""
+		if !standing[recordKey(r)] {
+			fresh++
+			if len(standing) > 0 {
+				age = " [new]"
+			}
+		}
+		fmt.Printf("%s %s %s:%d: %s — %s%s\n", short(r.Commit), dates[r.Commit], r.Path, r.Line, r.Rule, whereNow(r.Path, paths), age)
 	}
 
 	elapsed := time.Since(start)
@@ -266,8 +283,12 @@ func runHistory(o historyOptions) privacy.Answer {
 	// "there are 558 of them" is the one somebody can act on; the line above
 	// says the answer is not complete, so neither is lost.
 	answer := privacy.Clean
+	red := len(all)
+	if o.onlyNew {
+		red = fresh
+	}
 	switch {
-	case len(all) > 0:
+	case red > 0:
 		answer = privacy.Found
 	case len(words) == 0, len(oversize) > 0:
 		answer = privacy.Undetermined
@@ -286,8 +307,15 @@ func runHistory(o historyOptions) privacy.Answer {
 		if len(words) == 0 || len(oversize) > 0 {
 			partial = " This is not the whole answer: see the undetermined line above."
 		}
-		fmt.Fprintf(os.Stderr, "private-history: %d finding(s) in %d commit(s), %d file(s); %d the working tree still carries, %d in history only. The word itself is not printed: `git show <commit>:<file>` reads the line.%s\n",
-			len(all), len(commitsWith), len(filesWith), live, len(all)-live, partial)
+		age := fmt.Sprintf("%d already recorded, %d new; ", len(all)-fresh, fresh)
+		if len(standing) == 0 {
+			age = "" // nothing was carried, so "new" would mean "all of them"
+		}
+		fmt.Fprintf(os.Stderr, "private-history: %d finding(s) in %d commit(s), %d file(s); %s%d the working tree still carries, %d in history only. The word itself is not printed: `git show <commit>:<file>` reads the line.%s\n",
+			len(all), len(commitsWith), len(filesWith), age, live, len(all)-live, partial)
+		if o.onlyNew && fresh == 0 {
+			fmt.Fprintln(os.Stderr, "private-history: -new: nothing here is new since the checkpoint. The findings above still stand; only rewriting the history takes a history-only one out.")
+		}
 	}
 
 	// Only a run that read everything it meant to may move the checkpoint.
