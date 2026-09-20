@@ -116,6 +116,16 @@ class GoClient implements CloudWriteClient {
   focus() {
     return Promise.reject(new Error("not asked here"))
   }
+  // The status line's read, spelled as the copied client spells it: two names
+  // for two answers on one word (`cloud-client.js`). It goes to the same Mac
+  // the writes do, so `info reaches the Mac's own route` below is this
+  // daemon's bridge answering, not a fake.
+  info(identity: CloudIdentity) {
+    return this._read(identity, "info", { parts: "full" })
+  }
+  infoSummary(identity: CloudIdentity) {
+    return this._read(identity, "info", { parts: "summary" })
+  }
   places() {
     return Promise.reject(new Error("not asked here"))
   }
@@ -176,6 +186,57 @@ after(async () => {
     /* it is going away anyway */
   }
   daemon?.kill()
+})
+
+// The read the status line under every session is drawn from, on the wire.
+//
+// What is worth proving here is not that the seam calls a method — `carry.test.ts`
+// does that against a fixture, and draws the cell out of the answer — but that
+// the word the page now sends is one this Mac admits, decodes and routes.
+// Before this the page never sent it, so `cloudops`' `info` was reachable only
+// from a Swift console: the Mac answered nothing because nothing asked, and the
+// hosted status line said "Loading…" with no refusal recorded at either end.
+//
+// The Mac half here is a pane server with a small router
+// (`TestServeTheWritePathForAPage`), not this daemon's own `/info` handler, so
+// what comes back is that router's word about the route. That is exactly the
+// line this asserts: past admission, past the decoder, refused — or answered —
+// by the Mac's own route and by nothing before it. `cloudops_test.go` pins what
+// the route itself is.
+test("the status line's read reaches this Mac's own route, by both its names", async () => {
+  const before = client.asked.length
+  const summary = await doFetch(url("/v1/sessions/%254/info?parts=summary"))
+  const full = await doFetch(url("/v1/sessions/%254/info"))
+
+  const asked = client.asked.slice(before)
+  assert.deepEqual(
+    asked.map((one) => one.body),
+    [
+      { type: "info", session: "%4", parts: "summary" },
+      { type: "info", session: "%4", parts: "full" },
+    ],
+    "two reads, one word: a full answer settled by a summary would be held as complete",
+  )
+
+  for (const [half, res] of [["summary", summary], ["full", full]] as const) {
+    if (res.status === 200) {
+      const body = (await res.json()) as { info?: unknown }
+      assert.equal(typeof body.info, "object", half + ": the answer is this daemon's `{info: …}`")
+      continue
+    }
+    const refusal = (await res.json()) as { error?: string; layer?: string; word?: string }
+    // The three that would mean it never got that far: a word this Mac does
+    // not know, a body it could not read, and a machine the copied client
+    // refused to ask at all.
+    assert.ok(
+      !["unknown_command", "malformed_command", "cloud_feature_unavailable", "cloud_machine_unsupported"].includes(
+        refusal.error ?? "",
+      ),
+      half + ": the Mac did not admit `info`: " + JSON.stringify(refusal),
+    )
+    assert.equal(refusal.layer, "mac_route", half + ": " + JSON.stringify(refusal))
+    assert.equal(refusal.word, "info")
+  }
 })
 
 // F1, both ends: the page reads one permission prompt, the Mac moves on to the
