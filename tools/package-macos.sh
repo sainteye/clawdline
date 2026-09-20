@@ -46,6 +46,26 @@ else
   exit 1
 fi
 
+# The console this app serves must be the daemon's, not the hosted one. They
+# are the same source and a different build: `web/console/src/main.tsx`
+# branches on VITE_HOSTED_CONSOLE, and a build that has it loads CloudGate and
+# refuses every origin but app.clawdline.com. Shipped inside the app that
+# serves 127.0.0.1, it draws "this console was built for
+# https://app.clawdline.com" and nothing else — which is what the person met on
+# 2026-09-20, from an exported variable that outlived the command it was
+# written for, or a dist reused through CLAWDLINE_WEB_SOURCE.
+#
+# Neither the build nor the copy can fail on its own, because nothing is
+# missing: a different branch was taken. So the bundle is asked afterwards what
+# it actually contains.
+if grep -rql 'CloudGate' "$APP/Contents/Resources/web/assets" 2>/dev/null; then
+  echo "error: the console in $WEB is the hosted build (CloudGate is in it)." >&2
+  echo "       That one only talks to app.clawdline.com and cannot serve 127.0.0.1." >&2
+  echo "       Unset VITE_HOSTED_CONSOLE and CLAWDLINE_WEB_SOURCE, remove web/console/dist, and build again." >&2
+  echo "       docs/hosted-console.md says which build is which." >&2
+  exit 1
+fi
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
