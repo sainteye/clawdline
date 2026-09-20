@@ -314,3 +314,50 @@ func TestTheShellsTypesAreRegistered(t *testing.T) {
 		}
 	}
 }
+
+// TestABrowserOnThisMachinesOwnNetworkKeepsItsOwnOrigin is the road that must
+// not move.
+//
+// A browser at `http://127.0.0.1:7727`, or at a tunnel's name, sends a real
+// Origin header naming the page the person is looking at — and that page is
+// the one a notification should open. Only a request dispatched in process by
+// the Cloud line is answered for a console somewhere else, and only because
+// nothing on that road can speak for itself. A change that read the hosted
+// console's origin for every subscription would send a phone paired over the
+// tunnel to `app.clawdline.com`, where it has never signed in.
+func TestABrowserOnThisMachinesOwnNetworkKeepsItsOwnOrigin(t *testing.T) {
+	for _, origin := range []string{
+		"http://127.0.0.1:7727",
+		"https://calm-river-1234.trycloudflare.com",
+		// No Origin at all is no origin stored, which is what keeps an old row
+		// on the service worker's payload rather than a guessed address.
+		"",
+	} {
+		s := pushServer(t)
+		req := httptest.NewRequest(http.MethodPost, "/v1/push/subscribe",
+			strings.NewReader(browserSubscription(t, "https://web.push.apple.com/QWxpY2U")))
+		req.Header.Set("Content-Type", "application/json")
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		rec := httptest.NewRecorder()
+		s.pushRoute(rec, asDevice(req, "phone", false))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%q: subscribe answered %d %s", origin, rec.Code, rec.Body)
+		}
+		store, err := s.push()
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, err := store.Subscriptions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("%q: %d subscriptions", origin, len(rows))
+		}
+		if rows[0].Origin != origin {
+			t.Errorf("a browser at %q had its subscription stored as %q", origin, rows[0].Origin)
+		}
+	}
+}

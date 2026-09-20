@@ -37,6 +37,14 @@ type Router struct {
 	// is what the gate's rebinding check accepts and what an in-process
 	// request truthfully is.
 	Host string
+	// AppOrigin is the hosted console the viewer being answered is looking at,
+	// `cloud_app_origin`. It reaches the routes as a context value rather than
+	// a header, and is the answer to a different question than the Origin the
+	// authorizer stamps — see WithAppOrigin, which says which is which.
+	//
+	// Empty is a router that cannot say, and a route that wanted it then reads
+	// the request's own Origin as it always did.
+	AppOrigin string
 }
 
 // Do dispatches one request and returns what the route answered.
@@ -72,7 +80,7 @@ func (r Router) Do(ctx context.Context, req cloudops.LocalRequest) (cloudops.Loc
 		Header: http.Header{}, Host: host, RequestURI: target,
 		Body:          io.NopCloser(bytes.NewReader(req.Body)),
 		ContentLength: int64(len(req.Body)),
-	}).WithContext(ctx)
+	}).WithContext(WithAppOrigin(ctx, r.AppOrigin))
 	if len(req.Body) > 0 {
 		// The gate refuses a change whose body is neither JSON nor nothing,
 		// because a page elsewhere can post a form without asking and cannot
