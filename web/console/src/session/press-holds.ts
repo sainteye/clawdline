@@ -18,6 +18,14 @@
  *   screen like any press (F1(a), F3).
  * - **An answered press holds for `PRESS_SETTLED_MS`** and then gives the card
  *   back to the row, as the original did.
+ * - **A press that only ticks a box does not hold at all once it has landed.**
+ *   A multi-select's rows toggle and nothing is sent until Submit, so the
+ *   question does not move and a second tap is not a stray digit in the next
+ *   one — it is the second box, which is the whole point of a multi-select.
+ *   Holding one for ten seconds locked every row and Submit with it, so the
+ *   answer could never be more than one box (2026-09-20). The page this one
+ *   replicates had no hold and redrew the rows live the moment the tick came
+ *   back; this keeps that, and keeps the hold for the presses that do answer.
  * - **Every press is its own request.** Its id is the Idempotency-Key, so a
  *   press retried after its answer was lost is the same request to the Mac.
  *
@@ -32,6 +40,13 @@ export interface Press {
   readonly session: string
   /** `menuKey` of the question pressed at: the hold lasts while it is up. */
   readonly menu: string
+  /**
+   * This press ticks a box rather than answering the question. `menuKey` does
+   * not read a row's tick — deliberately, so that folding or waving away a
+   * card survives one — so a ticking press cannot be released by the question
+   * changing, and is released by landing instead.
+   */
+  readonly ticks: boolean
   /** The press's one request id. */
   readonly request: string
   state: "sending" | "sent" | "unknown"
@@ -71,7 +86,8 @@ export class PressHolds {
   current(session: string, menu: string | null, waiting: boolean, now: number): Press | null {
     const press = this.holds.get(session)
     if (!press) return null
-    if (!waiting || press.menu !== menu || (press.state === "sent" && now - press.at > PRESS_SETTLED_MS)) {
+    const landed = press.state === "sent"
+    if (!waiting || press.menu !== menu || (landed && (press.ticks || now - press.at > PRESS_SETTLED_MS))) {
       this.holds.delete(session)
       return null
     }
@@ -79,8 +95,8 @@ export class PressHolds {
   }
 
   /** A tap: the options go dead until this press is over. */
-  start(session: string, menu: string, now: number): Press {
-    const press: Press = { session, menu, request: this.mint(), state: "sending", shown: false, at: now }
+  start(session: string, menu: string, now: number, ticks = false): Press {
+    const press: Press = { session, menu, ticks, request: this.mint(), state: "sending", shown: false, at: now }
     this.holds.set(session, press)
     return press
   }

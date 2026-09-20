@@ -62,3 +62,36 @@ test("every press is its own request, and a late answer does not settle a newer 
   holds.settled(first, T0 + 20)
   assert.equal(holds.current("s1", "menu-A", true, T0 + 30)?.state, "sending")
 })
+
+// A multi-select's rows toggle: nothing is sent until Submit, so the question
+// does not move and the next tap is the next box. `menuKey` does not read a
+// row's tick, so nothing else would ever release this hold — and for ten
+// seconds every row and Submit with them were dead, which made "tick all three"
+// impossible from a phone (2026-09-20).
+test("a tick gives the card back the moment it lands, so the next box can be ticked", () => {
+  const holds = new PressHolds()
+  const press = holds.start("s1", "menu-A", T0, true)
+  // On its way, it still shuts the rows: a second tap in flight is a second
+  // digit at a question that has not answered the first one yet.
+  assert.equal(holds.current("s1", "menu-A", true, T0 + 100)?.state, "sending")
+  holds.settled(press, T0 + 500)
+  assert.equal(holds.current("s1", "menu-A", true, T0 + 501), null, "the card was still locked after a tick landed")
+})
+
+// A tick that may have landed is not opened again either: it may have ticked,
+// and a second tap would tick it back off.
+test("a tick whose answer was lost keeps the rows shut, like any press", () => {
+  const holds = new PressHolds()
+  const press = holds.start("s1", "menu-A", T0, true)
+  holds.failed(press, "unknown")
+  assert.equal(holds.current("s1", "menu-A", true, T0 + 60_000)?.state, "unknown")
+})
+
+// The control: an answering press is not a tick and keeps its whole allowance.
+test("an answer still holds for its ten seconds", () => {
+  const holds = new PressHolds()
+  const press = holds.start("s1", "menu-A", T0)
+  holds.settled(press, T0 + 500)
+  assert.equal(holds.current("s1", "menu-A", true, T0 + 501)?.state, "sent")
+  assert.equal(holds.current("s1", "menu-A", true, T0 + 500 + PRESS_SETTLED_MS + 1), null)
+})

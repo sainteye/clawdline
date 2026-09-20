@@ -111,7 +111,9 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
               : press.state === "unknown"
                 ? "unknown"
                 : press.state === "sent"
-                  ? "sent"
+                  ? press.ticks
+                    ? "ticked"
+                    : "sent"
                   : press.shown
                     ? "sending"
                     : null,
@@ -186,9 +188,18 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
         el.querySelectorAll<HTMLButtonElement>(".opt").forEach((b) => {
           b.disabled = true
         })
+        // A multi-select's rows carry a tick, and pressing one toggles it:
+        // nothing is sent, the question does not move, and the next press is
+        // the next box. The card is told that much so it neither says the
+        // answer went nor shuts the rows somebody is still choosing between.
+        const pressed = opt.dataset.key || ""
+        const ticks = (open.menu?.options ?? []).some(
+          (o) => String(o.n) === pressed && typeof o.checked === "boolean",
+        )
         // Held, so the next render has something to draw once the picker has
-        // gone and the session has not yet stopped waiting.
-        if (open.menu && open.menu.options && open.menu.options.length) {
+        // gone and the session has not yet stopped waiting. A tick never
+        // empties the picker, so it holds nothing.
+        if (!ticks && open.menu && open.menu.options && open.menu.options.length) {
           st.answered = {
             key: open.id,
             rows: open.menu.options,
@@ -201,18 +212,18 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
         const asked = open.id
         const T = L.strings
         const expect = open.menu ? menuFingerprint(open.menu) : ""
-        const press = holds.start(asked, menuKey(open.menu), Date.now())
+        const press = holds.start(asked, menuKey(open.menu), Date.now(), ticks)
         setTimeout(() => {
           if (holds.current(asked, press.menu, true, Date.now()) !== press) return
           press.shown = true
           redraw()
         }, PRESS_SHOWN_MS)
-        pressKey(asked, opt.dataset.key || "", expect, press.request)
+        pressKey(asked, pressed, expect, press.request)
           .then(() => {
             // Still held — the question has not gone yet — and now saying so.
             holds.settled(press, Date.now())
             redraw()
-            if (current.current.row?.id === asked) toast(T.webMenuSent)
+            if (current.current.row?.id === asked) toast(ticks ? nextWord("menuTicked") : T.webMenuSent)
           })
           .catch((err: KeyFailure) => {
             const code = typeof err?.code === "string" ? err.code : ""
