@@ -23,6 +23,10 @@ const taskID = "7a000000-0000-4000-8000-000000000001"
 // constant for both would pass while they disagreed.
 const scheduleID = "5c000000-0000-4000-8000-000000000002"
 
+// pushID is one stored subscription's name, as `newPushID` writes one: this
+// machine's name for a row, and not a uuid like the two above.
+const pushID = "9f1c0b3a4d5e6f708192a3b4c5d6e7f8"
+
 // router records what it was asked and answers what the test told it to.
 type router struct {
 	seen     []LocalRequest
@@ -189,6 +193,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-schedules",
 		method: "GET", path: "/v1/orchestrator/schedules",
 	}, {
+		// Asking for the key is the first thing a phone does when somebody
+		// presses "notify me", and the whole registration stops here when it
+		// is not carried.
+		word:    "push-key",
+		body:    map[string]any{"type": "push-key", "session": machine, "request": "req-push-key"},
+		session: machine, name: "read:req-push-key",
+		method: "GET", path: "/v1/push/key",
+	}, {
 		word: "board",
 		body: map[string]any{"type": "board", "session": machine, "request": "req-board",
 			"project": "clawdline-go", "item": ""},
@@ -293,6 +305,34 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-now",
 		method: "POST", path: "/v1/orchestrator/schedules/" + scheduleID + "/run",
 		body2: `{}`,
+	}, {
+		// The browser's own subscription object, handed to the route whole:
+		// its endpoint and its keys are the browser's, and anything reshaped
+		// on the way past is a chance to get a credential wrong.
+		word: "push-subscribe",
+		body: map[string]any{"type": "push-subscribe", "session": machine, "request": "req-sub",
+			"subscription": map[string]any{"endpoint": "https://web.push.apple.com/QW",
+				"keys": map[string]any{"p256dh": "BPk", "auth": "c2VjcmV0"}}},
+		session: machine, name: "action:req-sub",
+		method: "POST", path: "/v1/push/subscribe",
+		body2: `{"endpoint":"https://web.push.apple.com/QW",` +
+			`"keys":{"auth":"c2VjcmV0","p256dh":"BPk"}}`,
+	}, {
+		word: "push-unsubscribe",
+		body: map[string]any{"type": "push-unsubscribe", "session": machine,
+			"request": "req-drop", "id": pushID},
+		session: machine, name: "action:req-drop",
+		method: "POST", path: "/v1/push/unsubscribe",
+		body2: `{"id":"` + pushID + `"}`,
+	}, {
+		// `target` is the session the notification should tap back to, and
+		// the local route's field for it is `session_id`.
+		word: "push-test",
+		body: map[string]any{"type": "push-test", "session": machine, "request": "req-buzz",
+			"target": pane},
+		session: machine, name: "action:req-buzz",
+		method: "POST", path: "/v1/push/test",
+		body2: `{"session_id":"%19"}`,
 	}, {
 		// The words this daemon knows and cannot answer. `unknown_command` is
 		// not a guess at a code: it is the one the hosted console learns from
@@ -585,6 +625,24 @@ func TestAMalformedBodyIsRefusedWhereItSafelyNames(t *testing.T) {
 		name: "a save that names no schedule to save over",
 		body: map[string]any{"type": "schedule-update", "session": MachineReplySession,
 			"request": "req", "id": "", "schedule": map[string]any{"title": "morning"}},
+		code: "malformed_command", published: true,
+	}, {
+		name: "a subscription that is not an object",
+		body: map[string]any{"type": "push-subscribe", "session": MachineReplySession,
+			"request": "req", "subscription": "https://web.push.apple.com/QW"},
+		code: "malformed_command", published: true,
+	}, {
+		name: "a removal that names no subscription",
+		body: map[string]any{"type": "push-unsubscribe", "session": MachineReplySession,
+			"request": "req", "id": ""},
+		code: "malformed_command", published: true,
+	}, {
+		// The key is required and its value may be empty: a test with nothing
+		// to tap back to is the account's, and sends to the list. A body that
+		// leaves the key out is a different word's shape.
+		name: "a test that names no target at all",
+		body: map[string]any{"type": "push-test", "session": MachineReplySession,
+			"request": "req"},
 		code: "malformed_command", published: true,
 	}}
 	for _, c := range cases {
@@ -925,7 +983,8 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
 		"transcript", "info", "git", "screen", "image", "documents", "document", "places",
 		"past-sessions", "schedules", "schedule-create", "schedule-update", "schedule-delete",
-		"schedule-run", "board", "board.items"} {
+		"schedule-run", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
+		"board", "board.items"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}
@@ -974,6 +1033,96 @@ func TestAScheduleWriteIsJudgedAsTheDeviceThatSentIt(t *testing.T) {
 	r := &router{}
 	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
 		"type": "schedules", "session": MachineReplySession, "request": "req"}))
+	if _, named := r.last().Header[actorHeader]; named {
+		t.Fatalf("a read named an actor: %v", r.last().Header)
+	}
+}
+
+// pushWrites is the three words that change something about notifications,
+// each with the body the hosted console really sends.
+func pushWrites() map[string]map[string]any {
+	return map[string]map[string]any{
+		"push-subscribe": {"type": "push-subscribe", "session": MachineReplySession,
+			"request": "req", "subscription": map[string]any{
+				"endpoint": "https://web.push.apple.com/QW",
+				"keys":     map[string]any{"p256dh": "BPk", "auth": "c2VjcmV0"}}},
+		"push-unsubscribe": {"type": "push-unsubscribe", "session": MachineReplySession,
+			"request": "req", "id": pushID},
+		"push-test": {"type": "push-test", "session": MachineReplySession,
+			"request": "req", "target": ""},
+	}
+}
+
+// TestAskingToBeNotifiedIsReadLevel is why these three are not behind the
+// write switch.
+//
+// That switch is about typing into somebody's session. Asking to be told when
+// a session needs an answer is the reading half arriving by a different road,
+// and a phone paired read-only is exactly the device the feature exists for —
+// the Swift bridge says the same in one line, listing all three in
+// `readLevelCommandTypes` beside the two diagnostics words. A Mac with remote
+// writes off would otherwise refuse the registration and never say why the
+// notifications never came.
+func TestAskingToBeNotifiedIsReadLevel(t *testing.T) {
+	for word, body := range pushWrites() {
+		t.Run(word, func(t *testing.T) {
+			r := &router{}
+			// The zero value's write switch: nobody has said anybody may
+			// write, which is the default everywhere else in this package.
+			closed := Bridge{MachineID: "mac-01", Router: r}
+			answer := closed.Handle(context.Background(), request(t, ClassCtl, body))
+			if !answer.OK() {
+				t.Fatalf("%s was refused with the write switch off: %d/%q", word,
+					answer.Status, answer.Code)
+			}
+			if len(r.seen) != 1 {
+				t.Fatalf("%s asked this machine %d times, wanted once", word, len(r.seen))
+			}
+		})
+	}
+	// And the switch still holds every word that types into a session.
+	r := &router{}
+	closed := Bridge{MachineID: "mac-01", Router: r}
+	answer := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "send", "session": pane, "request": "req", "text": "hi", "images": []any{}}))
+	if answer.Code != "cloud_commands_disabled" {
+		t.Fatalf("a send with the switch off answered %q", answer.Code)
+	}
+}
+
+// TestAPushWriteIsJudgedAsTheDeviceThatSentIt is the rule the schedule words
+// have, said for these three.
+//
+// `/v1/push/unsubscribe` asks *which door* the caller came in by: this
+// machine's own token is exempt from the check that a subscription belongs to
+// the device removing it, because that exemption is how a script cleans up
+// after itself. A Cloud viewer reaches these routes in process under this
+// machine's own local credential (`internal/transport/cloud.LocalAuthorizer`),
+// so without a word from the request itself a person on their phone would
+// inherit that script's exemption and be able to remove a subscription that is
+// not theirs. The header can only take a door away, never open one.
+func TestAPushWriteIsJudgedAsTheDeviceThatSentIt(t *testing.T) {
+	for word, body := range pushWrites() {
+		t.Run(word, func(t *testing.T) {
+			r := &router{}
+			if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); !answer.OK() {
+				t.Fatalf("%s was refused: %+v", word, answer)
+			}
+			if got := r.last().Header[actorHeader]; got != actorDevice {
+				t.Fatalf("%s carried %s=%q, wanted %q", word, actorHeader, got, actorDevice)
+			}
+			// The viewer's own request id is the key: a retried registration
+			// is not a second subscription.
+			if got := r.last().Header["Idempotency-Key"]; got != "req" {
+				t.Fatalf("%s carried the key %q, wanted the request id", word, got)
+			}
+		})
+	}
+	// Asking for the key changes nothing, so which door it came in by does
+	// not arise.
+	r := &router{}
+	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "push-key", "session": MachineReplySession, "request": "req"}))
 	if _, named := r.last().Header[actorHeader]; named {
 		t.Fatalf("a read named an actor: %v", r.last().Header)
 	}

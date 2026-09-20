@@ -70,6 +70,17 @@ export interface CloudReadClient {
   events(listener: (event: CloudEvent) => void): () => void
   sessions(): Promise<CloudSessions>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
+  /**
+   * The application server key, as the Mac's `push-key` read answers it.
+   *
+   * Optional because a copied client older than the word does not have it, and
+   * a page that reached that build must be refused by name rather than throw
+   * where nobody is catching. It is a read and not a write — asking is what
+   * mints the key, and nothing about a session changes — so it is answered
+   * here beside the transcript rather than in `relay-writer.ts`, where the
+   * three requests that follow it live.
+   */
+  pushKey?(): Promise<unknown>
 }
 
 /**
@@ -286,6 +297,21 @@ export class RelayReader {
           const health: Health = { at: Math.floor(this.now() / 1000), authed: true, ok: true, password: false, served_by: "cloud-relay" }
           this.note(method, path, "local")
           return json(200, health)
+        }
+        case "/v1/push/key": {
+          // The first request of a registration, and the one the whole
+          // feature stopped on: a phone that pressed "notify me" got as far
+          // as the iOS permission dialog and then asked for this, which was
+          // refused here as a route this console does not carry. The three
+          // requests that follow it are writes and are `relay-writer.ts`'s.
+          const client = this.connected()
+          if (typeof client.pushKey !== "function") {
+            return this.refuse(method, path, 501, "cloud_not_carried",
+              "This console cannot ask this Mac for a notification key.")
+          }
+          const key = await client.pushKey()
+          this.note(method, path, "relay", undefined, { word: "push-key" })
+          return json(200, key)
         }
         case "/v1/strings":
           this.note(method, path, "local")

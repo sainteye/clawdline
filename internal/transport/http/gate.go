@@ -70,13 +70,25 @@ const (
 	//
 	// It exists because this daemon answers a Cloud viewer through its own
 	// routes in process, stamped with this machine's own credentials
-	// (internal/transport/cloud's `LocalAuthorizer`), and one of those routes —
-	// a schedule write — asks *which door* the caller came in by and gives a
-	// narrower answer to the machine than to a person. The Swift app has no
-	// such header because it has no such problem: a verified Cloud request is
-	// a source of its own there, with `read` and `send` and no orchestrator
-	// credential (`RemoteServer.permission(for:)`). This is the same sentence,
-	// said where this port can say it. See internal/app/cloudops.
+	// (internal/transport/cloud's `LocalAuthorizer`), and some of those routes
+	// ask *which door* the caller came in by and give a narrower answer to the
+	// machine than to a person. The Swift app has no such header because it
+	// has no such problem: a verified Cloud request is a source of its own
+	// there, with `read` and `send` and no orchestrator credential
+	// (`RemoteServer.permission(for:)`). This is the same sentence, said where
+	// this port can say it. See internal/app/cloudops.
+	//
+	// **This machine has two credentials that mean "me", and the header closes
+	// both.** The orchestrator token opens `/v1/orchestrator/*`; the local
+	// token is the one the shell and this daemon's own scripts hold, and a
+	// verdict for it says `Local`. A route that exempts `Local` is exempting
+	// this machine's own hand — `/v1/push/unsubscribe` lets it remove any
+	// device's subscription, which is how a script cleans up after itself, and
+	// `/v1/settings` lets it change a global keyboard grab. An in-process
+	// Cloud request carries the local token by construction, so closing only
+	// the orchestrator door would have left a person on their phone wearing
+	// the script's exemption. Neither door is one a person needs, and taking
+	// both away is the whole of what this header may do.
 	actorHeader = "X-Clawdline-Actor"
 	actorDevice = "device"
 )
@@ -84,6 +96,14 @@ const (
 // judgedAsDevice is whether this request asked not to be the machine.
 func judgedAsDevice(r *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(r.Header.Get(actorHeader)), actorDevice)
+}
+
+// notThisMachine is the verdict as a request that named an actor is judged by:
+// the same device, the same capabilities, and not this machine. It only ever
+// removes: a verdict that was not `Local` comes back unchanged.
+func notThisMachine(v auth.Verdict) auth.Verdict {
+	v.Local = false
+	return v
 }
 
 // gate holds what the checks read. One per state directory per process,
@@ -248,9 +268,13 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 			return
 		}
 		p := routePath(r)
-		machine := machineScoped(p) && !judgedAsDevice(r) &&
+		device := judgedAsDevice(r)
+		machine := machineScoped(p) && !device &&
 			g.verifyMachine(r.Header.Get(machineHeader))
 		verdict := g.permission(r)
+		if device {
+			verdict = notThisMachine(verdict)
+		}
 		if !openPath(p) && !machine && !taskSecretRoute(r.Method, p) && !verdict.Allowed {
 			if g.err != nil {
 				writeAuthRefusal(w, http.StatusServiceUnavailable, "store_unavailable",

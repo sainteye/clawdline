@@ -653,6 +653,26 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/schedules"}
 			}},
 
+		// push-key is the first request of a registration and the one the
+		// whole feature stopped on: a phone that pressed "notify me" got as
+		// far as the iOS permission dialog and then asked this for the
+		// application server key, which the relay seam refused in the browser.
+		//
+		// A read, as the Swift bridge classifies it (`CloudV2ReadCatalog`,
+		// `.pushKey` is a `liveQuery`): asking for the key is what mints one,
+		// and a machine nobody has ever asked to be notified by grows no key
+		// material, but nothing about a session changes either way.
+		op{name: "push-key", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/push/key"}
+			}},
+
 		op{name: "board", read: true,
 			divergence: "the envelope and cards are the Swift app's; the report, collection, " +
 				"catalog-search and session selectors are refused by name " +
@@ -1030,6 +1050,106 @@ func init() {
 					Header: asDevice()}
 			}},
 
+		// The three words that change something about notifications, all
+		// read-level: the Swift bridge lists exactly these three beside the
+		// two diagnostics words in `readLevelCommandTypes`. The write switch
+		// is about typing into somebody's session, and asking to be told when
+		// one needs an answer is the reading half arriving by another road —
+		// a phone paired read-only is the device this feature exists for.
+		//
+		// Each carries `X-Clawdline-Actor: device` for the reason the schedule
+		// writes do, said for a different door: `/v1/push/unsubscribe` exempts
+		// this machine's own token from the check that a subscription belongs
+		// to the device removing it, because that exemption is how a script
+		// cleans up after itself. A Cloud viewer reaches these routes in
+		// process holding exactly that token, so without this header a person
+		// on their phone would arrive wearing the script's exemption.
+		op{name: "push-subscribe", readLevel: true,
+			divergence: "every Cloud viewer is the same device here: an in-process Cloud " +
+				"request carries this machine's own local credential, and the store keeps " +
+				"one row per device, so a second Cloud browser asking to be notified takes " +
+				"the first one's place — where two devices paired to this machine's own " +
+				"network keep a row each. The stored web-app origin is this daemon's " +
+				"`http://127.0.0.1` for the same reason, and that is the origin an iOS " +
+				"declarative notification resolves its address against. Measured in " +
+				"internal/transport/http's `TestEveryCloudViewerIsTheSameDeviceHere`",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "subscription") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				// The browser's own object, carried as the bytes it will
+				// travel as. What counts as a usable subscription is the
+				// route's question (`push.FromBrowser`), and it is asked
+				// there so that an endpoint this machine will POST to is
+				// checked in exactly one place.
+				document, ok := b.object("subscription", pushBodyMaximumBytes)
+				if !ok {
+					return plan{}, false
+				}
+				p.document = document
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/push/subscribe",
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "push-unsubscribe", readLevel: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				id, ok := b.nonEmpty("id")
+				if !ok {
+					return plan{}, false
+				}
+				p.id = id
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/push/unsubscribe",
+					Body:   jsonBody(map[string]any{"id": p.id}),
+					Header: asDevice()}
+			}},
+
+		op{name: "push-test", readLevel: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "target") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				// An empty target is a test with nothing to tap back to,
+				// which goes to the list: the key is required, its value may
+				// be "". The route's field for it is `session_id`, and the
+				// body leaves it out entirely rather than sending an empty
+				// one, as the Swift bridge does.
+				target, ok := b.str("target")
+				if !ok {
+					return plan{}, false
+				}
+				p.target = target
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				sent := map[string]any{}
+				if p.target != "" {
+					sent["session_id"] = p.target
+				}
+				return LocalRequest{Method: "POST", Path: "/v1/push/test",
+					Body: jsonBody(sent), Header: asDevice()}
+			}},
+
 		// MARK: commands this daemon refuses or has no local capability for
 
 		op{name: "dispatch", refusal: &cloudDispatchUnpinned, anyClass: true,
@@ -1101,6 +1221,13 @@ const voiceRate = 16000
 // bridge does not know what a schedule looks like; it knows how much of one
 // the route on the other side will read.
 const scheduleMaximumBytes = 256 << 10
+
+// pushBodyMaximumBytes is what one subscription weighs on the wire, matching
+// the local route's own reader (`authBodyLimit`, the bound `/v1/push/` is
+// registered under in internal/transport/http). This bridge does not know what
+// a subscription looks like; it knows how much of one the route on the other
+// side will read.
+const pushBodyMaximumBytes = 64 << 10
 
 // The header a Cloud write puts on its own local request, and the reason the
 // schedule words carry it.

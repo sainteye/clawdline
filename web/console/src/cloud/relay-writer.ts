@@ -73,6 +73,16 @@ export interface CloudWriteClient extends CloudReadClient {
   resumePlace(place: string, past: string, assistant: string, requestId?: string): Promise<unknown>
   voice(audio: string, rate: number): Promise<unknown>
   setVoiceHost?(machine: string): Promise<unknown>
+  /**
+   * The three notification writes. Each picks the account's push Mac strictly
+   * (`_pushMachine`): the key, the subscription and its removal must all reach
+   * the same one, so it is never the freshest of two. Optional for the reason
+   * `pushKey` is: a copied client older than these words is refused by name
+   * rather than throwing where nobody is catching.
+   */
+  pushSubscribe?(subscription: unknown): Promise<unknown>
+  pushUnsubscribe?(id: string): Promise<unknown>
+  pushTest?(session: string): Promise<unknown>
   image?(identity: CloudIdentity, id: string): Promise<{ id: string; media_type: string; bytes: Uint8Array }>
   /**
    * The copied client's one read, which `answer` itself calls for a Mac that
@@ -117,6 +127,9 @@ export type WriteRoute =
   | { op: "places"; word: "places" }
   | { op: "past"; word: "past-sessions"; place: string; assistant: string }
   | { op: "image"; word: "image"; artifact: string }
+  | { op: "push-subscribe"; word: "push-subscribe" }
+  | { op: "push-unsubscribe"; word: "push-unsubscribe" }
+  | { op: "push-test"; word: "push-test" }
   | { op: "uncarried"; word: string; session?: string }
 
 /**
@@ -239,6 +252,19 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return null
   }
   if (head === "voice" && segments.length === 1) return { op: "voice", word: "voice" }
+  // The three requests that change something about notifications. `key` is
+  // not among them: it is a read, and `relay-reader.ts` answers it.
+  if (head === "push" && segments.length === 2) {
+    switch (a) {
+      case "subscribe":
+        return { op: "push-subscribe", word: "push-subscribe" }
+      case "unsubscribe":
+        return { op: "push-unsubscribe", word: "push-unsubscribe" }
+      case "test":
+        return { op: "push-test", word: "push-test" }
+    }
+    return null
+  }
   return null
 }
 
@@ -252,6 +278,12 @@ type Spelling = "flat" | "nested"
  * sheet and the voice row read `app` and `reason`, which only the nested
  * `{error: {code, message, …}}` carries to them. Both are this daemon's own
  * spellings (`internal/transport/http/write.go`, `start.go`).
+ *
+ * The three push routes are named rather than left to the default, because
+ * theirs is the spelling their own reader documents: `push/api.ts` says at the
+ * top that `/v1/push/*` answers the gate's nested envelope and not the flat
+ * one the rest of this daemon uses. It reads both — what must not happen is a
+ * third.
  */
 function spellingOf(route: WriteRoute): Spelling {
   switch (route.op) {
@@ -261,6 +293,10 @@ function spellingOf(route: WriteRoute): Spelling {
     case "focus":
     case "uncarried":
       return "flat"
+    case "push-subscribe":
+    case "push-unsubscribe":
+    case "push-test":
+      return "nested"
     default:
       return "nested"
   }
@@ -385,6 +421,34 @@ export class RelayWriter {
           throw failure("malformed_read", "a picture is read with the session it belongs to", 400)
         }
         return client.image(await this.identity(client, session), route.artifact)
+      }
+      case "push-subscribe": {
+        // The browser's own subscription object, whole. `push/api.ts` posts
+        // exactly what `PushSubscription.toJSON()` gave it — its endpoint and
+        // its keys — and anything reshaped here would be a chance to get a
+        // credential wrong on the way past.
+        const subscription = await bodyOf(init)
+        if (typeof client.pushSubscribe !== "function") {
+          throw failure("cloud_not_carried", "push-subscribe", 501)
+        }
+        return client.pushSubscribe(subscription)
+      }
+      case "push-unsubscribe": {
+        const body = await bodyOf(init)
+        if (typeof client.pushUnsubscribe !== "function") {
+          throw failure("cloud_not_carried", "push-unsubscribe", 501)
+        }
+        return client.pushUnsubscribe(String(body.id ?? ""))
+      }
+      case "push-test": {
+        // The session the notification should tap back to, when the page has
+        // one open. Nothing to tap back to is an empty target, not a missing
+        // one: the Mac's word carries the key either way.
+        const body = await bodyOf(init)
+        if (typeof client.pushTest !== "function") {
+          throw failure("cloud_not_carried", "push-test", 501)
+        }
+        return client.pushTest(typeof body.session_id === "string" ? body.session_id : "")
       }
       case "uncarried":
         throw failure("cloud_not_carried", route.word, 501)
