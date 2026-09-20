@@ -66,6 +66,13 @@ type Relay struct {
 	Log func(format string, args ...any)
 	// Depth is how many requests may wait; zero is the register's default.
 	Depth int
+	// Audience is told the sender of every envelope this machine receives,
+	// before anything is decided about the request itself. It is how the
+	// publisher learns that a viewer is out there holding nothing
+	// (`Publisher.Seen`); a refused request proves that just as well as an
+	// answered one, so it is called on the way in rather than on the way out.
+	// Nil is nobody listening.
+	Audience func(sender string)
 
 	once     sync.Once
 	requests chan Inbound
@@ -119,6 +126,9 @@ func (r *Relay) Deliver(envelope domaincloud.Envelope, plaintext []byte) {
 		Sender:    envelope.Sender,
 		Sequence:  envelope.Seq,
 		Plaintext: plaintext,
+	}
+	if r.Audience != nil {
+		r.Audience(envelope.Sender)
 	}
 	select {
 	case r.requests <- in:

@@ -401,6 +401,10 @@ func (l *Link) wire() error {
 		Publish: l.relay.Publish,
 		Log:     opts.Log,
 	}
+	// The publisher hears every viewer the relay hears from, which is how a
+	// viewer that arrived after this machine's last change gets the current
+	// state instead of waiting for the heartbeat (`Publisher.Seen`).
+	l.relay.Audience = l.publisher.Seen
 	return nil
 }
 

@@ -869,7 +869,10 @@ function Counts({ rows, recovering }: { rows: { state: string; shells?: unknown[
     })
   }
   if (unknown) bits.push({ cls: "part quiet", text: L.fillString(T.webCountUnreadable, { n: unknown }) })
-  if (recovering) bits.push({ cls: "part quiet", text: T.webEmptyWaitTitle })
+  // The line is up — this band is drawn from a snapshot that arrived — so the
+  // sentence is about the list, not about the app (`Sessions.tsx`'s empty
+  // state, and `next-strings.ts` on why these are two words and not one).
+  if (recovering) bits.push({ cls: "part quiet", text: nextWord("sessionsListWaitTitle") })
   if (!bits.length) {
     const quiet = rows.length
       ? L.fillString(rows.length === 1 ? T.webCountQuietOne : T.webCountQuietMany, { n: rows.length })
