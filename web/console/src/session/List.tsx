@@ -1,6 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
+import { requestConfirm } from "../overlays/events.js"
+import { ACTION_WIDTH, revealFor, swipes, type Reveal } from "./swipe.js"
+import "./swipe.css"
 
 export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: number; id?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -193,11 +197,14 @@ export function Row({
   row,
   selected,
   open,
+  swiped,
   onOpen,
 }: {
   row: SessionRow
   selected: boolean
   open: boolean
+  /** This row's action is uncovered (`swipe.ts`). A phone thing; nothing else sets it. */
+  swiped: boolean
   onOpen: (id: string) => void
 }) {
   // From the decorated copy the copied modules hold, so the machine identity
@@ -219,6 +226,23 @@ export function Row({
     node.classList.toggle("selected", selected)
     node.classList.toggle("open", open)
   }, [selected, open])
+  // The swipe's resting position. While a finger is on the row the gesture
+  // writes these itself, frame by frame (`Sessions.tsx`, `paint`) — React is
+  // told once, when the row settles, which is why a drag does not re-render
+  // thirteen rows sixty times a second.
+  useLayoutEffect(() => {
+    const node = ref.current
+    if (!node) return
+    paintSwipe(node, swiped ? "open" : "", swiped ? ACTION_WIDTH : 0)
+  }, [swiped])
+  const reveal = swipeReveal(row)
+  const name = row.label || row.tty || row.id
+  // A gesture that moved the row, and the press that put an uncovered action
+  // away, are not presses on the row (`swipe.ts`, `tookThePress`).
+  const onPress = () => {
+    if (swipes.tookThePress()) return
+    onOpen(row.id)
+  }
   const mark = <Mark icon={row.icon} cellPx={4} />
   return (
     <li
@@ -234,7 +258,7 @@ export function Row({
       aria-disabled="false"
       data-coordinator={coordinator ? "1" : undefined}
       data-depth={place.chip && place.depth ? String(place.depth) : undefined}
-      onClick={() => onOpen(row.id)}
+      onClick={onPress}
     >
       <span className="kid" hidden={!place.depth} aria-hidden="true">
         └
@@ -294,11 +318,70 @@ export function Row({
         </span>
       </div>
       <StateLine row={row} />
-      {/* The phone's swipe-to-end control, in `buildRow`'s markup. Nothing here
-          reveals it yet, so it stays hidden as the original starts it. */}
-      <button className="swipe-end" type="button" hidden>
-        {L.strings.webEndSession}
+      {/* The phone's swipe control, in `buildRow`'s markup and uncovered by
+          `swipe.ts`. It never closes anything: it opens the confirmation every
+          other close in this console goes through, which is where the reasons
+          are and where the second press is. Hidden until a gesture uncovers it,
+          as the original starts it — on a desk nothing ever does. */}
+      <button
+        className="swipe-end"
+        type="button"
+        hidden={!swiped}
+        data-closeability={reveal.state}
+        aria-label={
+          reveal.proven
+            ? nextWord("swipeEndLabel", { session: name })
+            : nextWord("swipeWhyLabel", { session: name, why: reveal.word })
+        }
+        title={[reveal.word, reveal.why].filter(Boolean).join(" · ")}
+        onClick={(event) => {
+          event.stopPropagation()
+          requestConfirm({ kind: "end", id: row.id, opener: event.currentTarget, subject: name, focus: "cancel" })
+        }}
+      >
+        <span className="word">{reveal.word}</span>
+        {reveal.why && <span className="why">{reveal.why}</span>}
       </button>
     </li>
   )
+}
+
+/**
+ * What the uncovered control says for this row, in the reader's language.
+ *
+ * The projection and the words are the copied modules' — the same badge the
+ * state line already draws beside the work state (`closeabilityHTML`) — so a
+ * row says one thing about itself in both places. `swipe.ts` holds the rule
+ * and imports nothing, which is what lets `node --test` load it.
+ */
+function swipeReveal(row: SessionRow): Reveal {
+  const T = L.strings
+  const closeable = L.closeabilityOf(row)
+  const obligations = closeable.reasons.filter((reason) => reason.kind === "obligation").length
+  const forms = String(T.closeabilityBlocked || "").split("\u001f")
+  return revealFor(closeable, {
+    end: T.webEndSession,
+    blocked: L.fillString(obligations === 1 ? forms[0] : forms[1] || forms[0], { n: obligations }),
+    needsAttestation: T.closeabilityNeedsAttestation,
+    unknown: T.closeabilityUnknown,
+    mover: L.closeabilityMover(row),
+  })
+}
+
+/**
+ * Where a row's contents and its action are, right now.
+ *
+ * Both are custom properties the copied stylesheet reads
+ * (`legacy/responsive.css`): the contents move left by `--swipe-x`, and the
+ * button comes in from the edge by `--swipe-button-x`, so what leaves and what
+ * arrives are one movement. Written on the element rather than rendered,
+ * because a gesture is sixty frames and a render is the whole list.
+ */
+export function paintSwipe(node: HTMLElement, state: "" | "dragging" | "open", offset: number): void {
+  if (state) node.dataset.swipe = state
+  else delete node.dataset.swipe
+  node.style.setProperty("--swipe-x", -offset + "px")
+  node.style.setProperty("--swipe-button-x", Math.max(0, ACTION_WIDTH - offset) + "px")
+  const action = node.querySelector<HTMLElement>(".swipe-end")
+  if (action) action.hidden = !state
 }

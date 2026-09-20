@@ -4,6 +4,7 @@ import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { getClosingId, setClosingId } from "./events.js"
 import { byId, closeabilityLines, closeabilityOf, lostIfClosed, setConfirmSpin, type Closeable } from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
 import { toast, toastFailure } from "./toast.js"
 
 /**
@@ -46,6 +47,22 @@ interface Pending {
   why: string[]
   closeability: string | null
   help: Help | null
+  /** The decision's own id, which is the close's `Idempotency-Key`. */
+  request: string
+}
+
+/**
+ * How the question differs when it is not asked from beside the conversation.
+ *
+ * `subject` names what would be acted on, and `focus` puts the opening focus
+ * on the safe answer — both of them the Forget-a-machine question's rules
+ * (`cloud/CloudGate.tsx`), because a question reached by swiping one of
+ * thirteen rows has the same problem it does: nothing else on the screen says
+ * which one this is about, and the press that got here was a gesture.
+ */
+export interface Asked {
+  subject?: string
+  focus?: "cancel" | "go"
 }
 
 export interface ConfirmHost {
@@ -137,7 +154,7 @@ export const ActionConfirm = {
    * `ask` is for a caller that owns its own destructive action: its two
    * sentences and a function whose promise the sheet waits for.
    */
-  open(kind: string, sessionID?: string | null, opener?: HTMLElement | null, ask?: Ask): void {
+  open(kind: string, sessionID?: string | null, opener?: HTMLElement | null, ask?: Ask, asked?: Asked): void {
     const id = sessionID || host.openId()
     const overlay = node("action-confirm")
     const sheet = node("action-confirm-sheet")
@@ -155,18 +172,28 @@ export const ActionConfirm = {
     const help = closeabilityHelpModel(closeable)
     this.pending = {
       id, kind, action, opener: returnFocus, ask: ask || null, lost, why,
-      closeability: closeable && closeable.state, help,
+      closeability: closeable && closeable.state, help, request: mintRequest(),
     }
     this.busy = false
     sheet.dataset.kind = kind
-    title.textContent =
-      ask && ask.title ? ask.title : kind === "end" ? T.webConfirmEndTitle : L.fillString(T.webConfirmActionTitle, { action })
+    title.textContent = ask && ask.title
+      ? ask.title
+      : kind === "end"
+        ? asked && asked.subject
+          ? nextWord("endNamedTitle", { session: asked.subject })
+          : T.webConfirmEndTitle
+        : L.fillString(T.webConfirmActionTitle, { action })
     if (ask && ask.say) this.renderSay(ask.say, null, [])
     else if (kind === "end") this.renderSay(this.endSay(lost, why, this.pending.closeability, help), help, why)
     else this.renderSay(L.fillString(T.webConfirmActionSay, { action }), null, [])
     overlay.hidden = false
     this.sync()
-    go.focus({ preventScroll: true })
+    // Cancel, not the destructive button, when the question was reached from
+    // the list: the same rule, and for the same reason, as the question that
+    // forgets a machine (`cloud/CloudGate.tsx`).
+    const cancel = node<HTMLButtonElement>("action-confirm-cancel")
+    const first = asked && asked.focus === "cancel" && cancel ? cancel : go
+    first.focus({ preventScroll: true })
   },
 
   endSay(lost: string[], why: string[], closeability: string | null, help: Help | null): string {
@@ -229,6 +256,10 @@ export const ActionConfirm = {
     this.open("end", id)
     const pending = this.pending
     if (!pending) return
+    // A fresh request id: the refusal is the daemon's answer to the first
+    // ask, and pressing again is a second decision about what it said, not a
+    // retry of a request whose answer was lost.
+    pending.request = mintRequest()
     const row = byId(id) as Record<string, unknown> | null
     const base = (row && (row.closeability as Record<string, unknown>)) || {}
     const refused = { ...(row || { id }), closeability: { ...base, state: "blocked", reasons: [...reasons] } }
@@ -269,7 +300,7 @@ export const ActionConfirm = {
       // refusal to start leaves nothing to release them, so the sheet lets go.
       this.busy = true
       this.sync()
-      if (!end(pending.id)) {
+      if (!end(pending.id, pending.request)) {
         this.busy = false
         this.sync()
         this.close(false)
@@ -327,8 +358,31 @@ let endTicket = 0
 let settlingEnd = false
 let endWasOpen = false
 
+/**
+ * A fresh request id for one decision.
+ *
+ * `crypto.randomUUID` only exists in a secure context, and this console is
+ * served over plain http on a LAN, so the fallback is the one `press-holds.ts`
+ * uses: it has to be unrepeated, not unguessable.
+ */
+let minted = 0
+function mintRequest(): string {
+  const c = globalThis.crypto
+  if (typeof c?.randomUUID === "function") {
+    try {
+      return c.randomUUID()
+    } catch {
+      /* below */
+    }
+  }
+  minted += 1
+  const bytes = new Uint8Array(8)
+  c.getRandomValues(bytes)
+  return "close-" + minted + "-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+}
+
 /** `false` is the only answer that tells the sheet nothing is coming back. */
-function end(id: string): boolean {
+function end(id: string, request: string): boolean {
   if (!id || !host.writable() || getClosingId()) return false
   const ticket = ++endTicket
   setClosingId(id)
@@ -336,7 +390,7 @@ function end(id: string): boolean {
   settlingEnd = false
   endWait.start()
   ActionConfirm.sync()
-  client.close(id).then(
+  client.close(id, false, request).then(
     () => finishEnd(id, ticket, true),
     (e) => finishEnd(id, ticket, false, e),
   )

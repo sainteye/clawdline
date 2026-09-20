@@ -9,6 +9,7 @@ import { confirmSpin, drawSpinner, setConfirmSpin as setConfirmSpinOriginal, spi
 import {
   byId as byIdOriginal,
   closeabilityLines as closeabilityLinesOriginal,
+  closeabilityMoverText as closeabilityMoverTextOriginal,
   closeabilityPlainReasons as closeabilityPlainReasonsOriginal,
   lostIfClosed as lostIfClosedOriginal,
   owedBadgeHTML as owedBadgeHTMLOriginal,
@@ -37,6 +38,12 @@ export const byId = byIdOriginal as (id: string | null | undefined) => LegacySes
 export const closeabilityOf = projectSessionCloseability as (s: unknown) => Closeable
 export const workStateOf = projectSessionWorkState as (s: unknown) => { state: string }
 export const closeabilityLines = closeabilityLinesOriginal as (s: unknown) => string[]
+/** Who clears what is standing in the way, in the reader's language, or "". */
+export function closeabilityMover(s: unknown): string {
+  const projected = projectSessionCloseability(s) as Closeable & { block: { mover?: unknown } | null }
+  if (projected.state === "safe") return ""
+  return (closeabilityMoverTextOriginal as (mover: unknown) => string)(projected.block && projected.block.mover)
+}
 export const closeabilityPlainReasons = closeabilityPlainReasonsOriginal as (s: unknown) => { text: string; count: number }[]
 export const closeabilityBadgeHTML = sessionCloseabilityHTML as (s: unknown) => string
 export const lostIfClosed = lostIfClosedOriginal as (id: string) => string[]

@@ -103,9 +103,17 @@ export class ClawdlineClient {
    * Rejects with a RefusalError carrying `close_blocked` when something is
    * still owed; the reasons come back on the error so a caller can show them
    * rather than only that it refused.
+   *
+   * `request` is the decision's own id, and it becomes the `Idempotency-Key`.
+   * One decision is one key however many times it is asked: the daemon answers
+   * a retry under it with the first answer instead of climbing the close ladder
+   * a second time (`sessionWrite`, internal/transport/http/actions.go), and so
+   * does a Mac read across Clawdline Cloud (`cloud/relay-writer.ts`, `end`).
+   * Without one, an answer lost on a phone's connection leaves the caller with
+   * a choice between never knowing and closing something twice.
    */
-  close(id: string, force = false): Promise<ActionResult> {
-    return this.post(sessionRoutes.close(id), { force })
+  close(id: string, force = false, request?: string): Promise<ActionResult> {
+    return this.post(sessionRoutes.close(id), { force }, request ? { "Idempotency-Key": request } : undefined)
   }
 
   /**
@@ -134,10 +142,10 @@ export class ClawdlineClient {
     return this.request<T>(path, { method: "GET" })
   }
 
-  private post<T>(path: string, body: unknown): Promise<T> {
+  private post<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
     return this.request<T>(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
     })
   }
