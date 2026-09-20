@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { GitSnapshot, SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
-import { bodyHTML, readGit, type GitFailure } from "../legacy/git-bridge.js"
+import { bodyHTML, gitSentence, readGit } from "../legacy/git-bridge.js"
 
 /**
  * `section#git-panel`: a read-only view of the open session's repository,
@@ -36,8 +36,11 @@ export function GitPanel({ row, open, onClose }: { row: SessionRow | null; open:
       },
       (e: unknown) => {
         if (mine !== ticket.current) return
-        const code = (e as GitFailure)?.code
-        setState({ loading: false, error: code === "not_a_repo" ? T.webGitNotRepo : T.webGitFailed, snapshot: null })
+        // Said by its code, never by the machine's English sentence, and never
+        // flattened into one (`gitSentence`): "無法讀取 Git 變更" was every
+        // refusal this panel had, including the one that was this console
+        // refusing its own request.
+        setState({ loading: false, error: gitSentence(e, T.webGitFailed), snapshot: null })
       },
     )
   }

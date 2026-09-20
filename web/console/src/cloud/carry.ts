@@ -55,6 +55,7 @@ export const CARRIED = {
   "board.items": "GET /v1/board?project=&audience=&cursor=&limit=",
   end: "POST /v1/sessions/{id}/close",
   focus: "POST /v1/sessions/{id}/focus",
+  git: "GET /v1/sessions/{id}/git",
   image: "GET /v1/artifacts/images/{id}?session={id}",
   info: "GET /v1/sessions/{id}/info[?parts=summary]",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
@@ -97,11 +98,20 @@ export const CARRIED = {
  * where the thing can be done instead. They are here rather than in a document
  * because this is the list the drift guard reads, so a word cannot be quietly
  * left out of both.
+ *
+ * **A sentence here is a decision, and a decision expires.** `git` sat here
+ * saying the working tree was not read over Cloud yet, months after this Mac
+ * began answering the word and after `legacy/git-bridge.ts` had been copied in
+ * and was asking for the route on every press of 「Git 變更」; the page refused
+ * its own request and the person was told "無法讀取 Git 變更". `schedules` sat
+ * here the same way and for the same length of time. Neither was caught,
+ * because the guard below only ever asked whether a word was *classified*,
+ * never whether the sentence was still true. `DEFERRED_ASKED` is the half of
+ * that question a machine can answer.
  */
 export const DEFERRED = {
   document: "A document's text is not read over Clawdline Cloud yet: open it on the Mac.",
   documents: "A session's documents are not listed over Clawdline Cloud yet: open them on the Mac.",
-  git: "The working tree is not read over Clawdline Cloud yet: read it on the Mac.",
   // `key` and `answer` are one command under two names on the wire. This
   // console sends a waiting card's press as `answer`, because only that
   // spelling carries `expect`, the fingerprint of the question the press was
@@ -110,6 +120,26 @@ export const DEFERRED = {
   key: "A waiting card's press is sent as `answer`, which names the question it answers; `key` is the older spelling of the same command.",
   screen: "What the terminal is showing is not read over Clawdline Cloud yet: look at it on the Mac.",
 } as const
+
+/**
+ * The deferred words a screen in this console already asks for.
+ *
+ * **This is what "deliberately not carried yet" costs, named.** A word is in
+ * `DEFERRED` because somebody decided not to carry it; it is in this list
+ * because some page here issues the request anyway, so the refusal a person
+ * meets is this bundle refusing itself, in front of a screen that was built to
+ * show the answer. Deferring is still legal — the list is not a failure — but
+ * it is no longer silent, and this is the roster to re-read when choosing what
+ * to carry next.
+ *
+ * It is held to both directions by `carry.test.ts`, which reads every `/v1/…`
+ * path this console spells and asks `uncarriedWordOf` what each one stands
+ * for: a deferred word some screen asks for and this list does not name fails,
+ * and so does a name here that no screen asks for any more. That is the guard
+ * `git` needed and did not have — the day `git-bridge.ts` landed, the entry
+ * had to say so.
+ */
+export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["document", "documents", "screen"]
 
 /**
  * Words the Mac knows and has nothing behind. Asking for one is answered
@@ -225,8 +255,6 @@ export function uncarriedWordOf(method: string, path: string): string {
   }
   if (head === "sessions" && a && b) {
     switch (b) {
-      case "git":
-        return "git"
       case "screen":
         return "screen"
       case "skills":

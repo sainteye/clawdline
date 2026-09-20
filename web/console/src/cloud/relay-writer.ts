@@ -81,6 +81,14 @@ export interface CloudWriteClient extends CloudReadClient {
    */
   info(identity: CloudIdentity): Promise<unknown>
   infoSummary(identity: CloudIdentity): Promise<unknown>
+  /**
+   * The Git panel's read. The copied client has had it since the Swift
+   * console and nothing here asked for it, so 「Git 變更」 said "無法讀取 Git
+   * 變更" on every phone while this Mac answered the word to anyone who did
+   * ask (`cloud-client.js`, `git`). It is not optional for the reason `info`
+   * is not: both have been in the copied client since it was copied.
+   */
+  git(identity: CloudIdentity): Promise<unknown>
   setVoiceHost?(machine: string): Promise<unknown>
   /**
    * The three notification writes. Each picks the account's push Mac strictly
@@ -172,6 +180,7 @@ export interface WriteHost {
 export type WriteRoute =
   | { op: "send"; word: Carried<"send">; session: string }
   | { op: "info"; word: Carried<"info">; session: string }
+  | { op: "git"; word: Carried<"git">; session: string }
   | { op: "answer"; word: Carried<"answer">; session: string }
   | { op: "end"; word: Carried<"end">; session: string }
   | { op: "focus"; word: Carried<"focus">; session: string }
@@ -306,6 +315,13 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "sessions" && a && b === "info" && segments.length === 3) {
       return { op: "info", word: "info", session: a }
     }
+    // The second read parsed here rather than in `relay-reader.ts`, and for
+    // the same reason `info` is: it is a session's read, so it has to be asked
+    // under the session's own identity as this page holds it (`identity`,
+    // F5) rather than on the machine channel the reader's generic uses.
+    if (head === "sessions" && a && b === "git" && segments.length === 3) {
+      return { op: "git", word: "git", session: a }
+    }
     return null
   }
   // The three schedule writes that are not a POST. They are parsed before the
@@ -402,6 +418,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "end":
     case "focus":
     case "info":
+    case "git":
     case "uncarried":
       return "flat"
     case "push-subscribe":
@@ -542,6 +559,13 @@ export class RelayWriter {
         const identity = await this.identity(client, route.session)
         return url.searchParams.get("parts") === "summary" ? client.infoSummary(identity) : client.info(identity)
       }
+      case "git":
+        // A read, so nothing is marked written and `sessionOf` leaves it out:
+        // asking what a repository has changed changes nothing. The Mac's own
+        // refusal crosses as its code — `not_a_repo` is the one the panel
+        // branches on — because `git-bridge.ts` reads the code and not the
+        // sentence (`session/GitPanel.tsx`).
+        return client.git(await this.identity(client, route.session))
       case "places":
         return client.places(this.host.machine)
       case "past":

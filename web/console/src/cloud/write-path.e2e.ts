@@ -126,6 +126,12 @@ class GoClient implements CloudWriteClient {
   infoSummary(identity: CloudIdentity) {
     return this._read(identity, "info", { parts: "summary" })
   }
+  // The Git panel's read, spelled as the copied client spells it. It reaches
+  // this daemon's own `/v1/sessions/{id}/git` through the bridge, as `info`
+  // above does.
+  git(identity: CloudIdentity) {
+    return this._read(identity, "git", {})
+  }
   places() {
     return Promise.reject(new Error("not asked here"))
   }
