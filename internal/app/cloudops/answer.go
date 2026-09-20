@@ -486,10 +486,10 @@ func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
 	word, _ := parsed.str("type")
 	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
 		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
-			Message: "This Cloud request addresses another Mac."})
+			Message: "This Cloud request addresses another machine."})
 	}
 	full := Refusal{Status: 429, Code: "cloud_read_busy",
-		Message: "This Mac answered, and the channel that answer goes on is full; try again shortly.",
+		Message: "This machine answered, and the channel that answer goes on is full; try again shortly.",
 		Detail:  map[string]any{"lane": "egress", "limit": limit, "retry_after": 5},
 		Layer:   layerTransport}
 	if parseErr != nil || word == "" {
@@ -500,7 +500,7 @@ func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
 		// The effect happened. This is a lost receipt, not a refusal, and it
 		// carries no detail because the reader would drop it anyway.
 		lost := Refusal{Status: 503, Code: "command_answer_undeliverable",
-			Message: "This Mac carried out the command and its reply could not be delivered.",
+			Message: "This machine carried out the command and its reply could not be delivered.",
 			Layer:   layerReply}
 		return b.refuse(cmd, parsed, word, lost)
 	}

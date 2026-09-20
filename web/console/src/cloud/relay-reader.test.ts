@@ -238,12 +238,12 @@ test("the machine's refusal stays typed; a timeout is nobody answering", async (
 // "loading" and then `cloud_read_timeout`, which was the whole of it before:
 // measured 2026-09-21, one long session's transcript channel was refused 34
 // times and every one of them was a log line on the Mac and nothing here.
-test("a full channel on the Mac is a typed refusal here, not a read that times out", async () => {
+test("a full channel on the machine is a typed refusal here, not a read that times out", async () => {
   const client = new FakeClient()
   const r = reader(client, { t: 0 })
   client.answer = () =>
     Promise.reject(
-      Object.assign(new Error("This Mac answered, and the channel that answer goes on is full; try again shortly."), {
+      Object.assign(new Error("This machine answered, and the channel that answer goes on is full; try again shortly."), {
         code: "cloud_read_busy",
         status: 429,
         layer: "mac_transport",
