@@ -199,6 +199,8 @@ const (
 	// machine may read, and what the last reading of each one found.
 	SessionsActivityReads = "sessions.activity_reads"
 	CacheSessionActivity  = "cache.session_activity"
+	// Where each project can be opened, one reading per working directory.
+	CacheSessionLinks = "cache.session_links"
 )
 
 // Entry is one row of the register.
@@ -676,6 +678,19 @@ func Register() []Entry {
 			// longest ago is let go, and its next reading opens the file
 			// again.
 			Name: CacheSessionActivity, Class: Cache, Unit: Rows,
+			Limit: 64, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+		},
+		{
+			// Where each project can be opened: one reading per working
+			// directory, held as the Swift app's SessionLinksCache holds it.
+			// A reading costs a `git remote` and a handful of file reads, and
+			// the Swift app measured five consecutive walks at 319-390 ms
+			// with nothing holding them. Past the limit the directory read
+			// longest ago is let go; a miss walks it again, which is why this
+			// is a cache and not evidence.
+			Name: CacheSessionLinks, Class: Cache, Unit: Rows,
 			Limit: 64, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,

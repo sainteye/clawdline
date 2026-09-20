@@ -275,7 +275,7 @@
       }
     },
     "SessionInfo": {
-      "description": "The facts behind the status line under an open session. This daemon serves the transcript-derived part the Swift app calls the summary, the context reading and the plan windows; the working tree, links, permission and fast mode are not read here and their keys are absent.",
+      "description": "The facts behind the status line under an open session. This daemon serves the transcript-derived part the Swift app calls the summary, the context reading, the plan windows and the project's addresses; the working tree, permission and fast mode are not read here and their keys are absent.",
       "type": "object",
       "additionalProperties": false,
       "required": ["models", "session"],
@@ -284,7 +284,26 @@
         "limits": { "$ref": "#/$defs/SessionLimits" },
         "models": { "type": "array", "items": { "$ref": "#/$defs/SessionModel" } },
         "session": { "$ref": "#/$defs/SessionInfoSession" },
-        "usage": { "$ref": "#/$defs/SessionInfoUsage" }
+        "usage": { "$ref": "#/$defs/SessionInfoUsage" },
+        "links": {
+          "description": "Where this project can be opened, the same rows GET /v1/sessions/{id}/links answers with (links.schema.json). Served from the same maintained projection, so the card and the sheet cannot show one project two ways. Absent when the session has no working directory.",
+          "type": "array",
+          "items": { "$ref": "links.schema.json#/$defs/ProjectLink" }
+        },
+        "deploy": {
+          "description": "The `links` rows whose kind is `deploy`, `ci` or `run`, unchanged, so a state means there what it means there. It is the smaller field the Swift app kept for older clients, and the one the status line's chip is drawn from.",
+          "type": "array",
+          "items": { "$ref": "links.schema.json#/$defs/ProjectLink" }
+        },
+        "linksObservedAt": {
+          "description": "When the walk behind `links` was taken, in seconds since 1970. A held reading is served however old it is, so a card that wants to say how old it is has the number.",
+          "type": "number"
+        },
+        "repository": {
+          "description": "What the one git read behind `links` found. Present whenever the session has a working directory, including when it produced no row: `could not read` and `there is none` are different sentences.",
+          "$ref": "links.schema.json#/$defs/ProjectRepository"
+        },
+        "repositoryUnreadable": { "$ref": "links.schema.json#/$defs/ProjectGitFailure" }
       }
     },
     "SessionInfoReply": {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
@@ -418,6 +419,21 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		}
 	}
 	info.Limits = s.sessionLimits(item.Assistant, time.Now())
+	// Where this project can be opened, from the same maintained projection
+	// the Links sheet reads (links.go), so the card, the sheet and the status
+	// line cannot show one project three ways. The Swift app deferred these
+	// out of `?parts=summary` because the walk cost it 350 ms on every
+	// request; here the walk happens once per directory and a held reading is
+	// handed back, so the summary carries them too — which is what puts the
+	// chip under the conversation rather than only inside an opened card.
+	if cwd := strings.TrimSpace(item.CWD); cwd != "" {
+		reading, at := s.projectLinks(ctx, cwd)
+		info.Links = wireLinks(reading.Links)
+		info.Deploy = deployRows(info.Links)
+		info.LinksObservedAt = seconds(at)
+		info.Repository = contract.ProjectRepository(reading.Repo)
+		info.RepositoryUnreadable = contract.ProjectGitFailure(reading.Unreadable)
+	}
 	writeJSON(w, contract.SessionInfoReply{Info: info})
 }
 
