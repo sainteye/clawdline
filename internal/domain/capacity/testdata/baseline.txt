@@ -124,6 +124,7 @@ internal/adapters/push.MaxPayload # admission: one push payload
 internal/adapters/push.secretLimit # read: the VAPID key file
 internal/adapters/swiftstore.maxBytes # read: one of the Swift app's files, read-only
 internal/adapters/transcript.recordReadLimit # read: the tail of one transcript (limits N17)
+internal/adapters/transcript.statusCacheLimit # read: Claude Code's own per-session status-line cache, where the context reading gets its exact window and the session's cost; a fixed handful of fields rewritten in place, so nothing accumulates behind it and past this it is not read at all (limits N17, the transcript read family)
 internal/adapters/tunnel.attemptLimit # parameter: launches of cloudflared in a row that may die before the tunnel gives up and says so on /v1/tunnel
 internal/adapters/tunnel.complaintLimit # page: one cloudflared complaint, cut to 200 bytes on a character, for the settings card
 internal/adapters/tunnel.lineLimit # read: one line of cloudflared's output; a longer run without a newline is dropped whole and logged

@@ -384,12 +384,21 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 	for _, m := range transcript.Models(home, string(item.Assistant)) {
 		info.Models = append(info.Models, contract.SessionModel{ID: m.ID, Name: m.Name, Command: m.Command})
 	}
-	// No record, or one that cannot be read, leaves the model and the usage
-	// absent: a session whose record was not found has not spent nothing.
+	// Claude Code's status line writes one small file per session, and it
+	// carries both the cost and the exact context window. It is read once
+	// here: twice would be two answers about one moment.
+	var status transcript.ClaudeStatusLine
+	if item.Assistant == session.AssistantClaude {
+		status = transcript.ReadClaudeStatusLine(home, item.ConversationID)
+	}
+	// No record, or one that cannot be read, leaves the model, the usage and
+	// the context absent: a session whose record was not found has not spent
+	// nothing, and it is not 0% full.
 	if path := recordPath(item); path != "" {
 		if facts, err := s.facts.Read(path, string(item.Assistant)); err == nil {
 			info.Session.Model = facts.Model
-			info.Usage = wireSessionUsage(facts.Usage, item, home)
+			info.Usage = wireSessionUsage(facts.Usage, item, status)
+			info.Context = wireSessionContext(facts, item.Assistant, status)
 		}
 	}
 	info.Limits = s.sessionLimits(item.Assistant, time.Now())
@@ -400,7 +409,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 // show: Claude Code's own session total when its status line wrote one down,
 // otherwise the tokens at list price. The usage has to be there for either,
 // as it does there — a total nobody could count is not replaced by a cost.
-func wireSessionUsage(u *transcript.Summary, item session.Session, home string) *contract.SessionInfoUsage {
+func wireSessionUsage(u *transcript.Summary, item session.Session, status transcript.ClaudeStatusLine) *contract.SessionInfoUsage {
 	if u == nil {
 		return nil
 	}
@@ -413,13 +422,43 @@ func wireSessionUsage(u *transcript.Summary, item session.Session, home string) 
 		Model:      u.Model,
 	}
 	cost, known := u.Cost, u.HasCost
-	if item.Assistant == session.AssistantClaude {
-		if own, ok := transcript.ClaudeSessionCost(home, item.ConversationID); ok {
-			cost, known = own, true
-		}
+	if item.Assistant == session.AssistantClaude && status.HasCost {
+		cost, known = status.CostUsd, true
 	}
 	if known {
 		out.CostUsd = cost
+	}
+	return out
+}
+
+// wireSessionContext carries the context reading across, and is where a
+// guessed window stops.
+//
+// `usedPercent` always goes: a percentage a client draws as one number is read
+// as an approximation. `windowTokens` goes only when the assistant itself said
+// how much fits, because `162,277 / 1,000,000 tokens` in a tooltip is read as
+// a measurement, and only one of those two survives being wrong. The Swift
+// app's `SessionInfo.infoPayload` draws the same line in the same place.
+//
+// Codex carries both sides in its own rollout; Claude's window comes from its
+// status line's cache, and when that is absent from this build's estimate for
+// the model — which is exactly the case this gate exists for.
+func wireSessionContext(facts transcript.Facts, assistant session.Assistant, status transcript.ClaudeStatusLine) *contract.SessionInfoContext {
+	at := facts.Context
+	if assistant == session.AssistantClaude {
+		if found, ok := transcript.ClaudeContext(facts.Fill, status, facts.Model); ok {
+			at = &found
+		}
+	}
+	if at == nil {
+		return nil
+	}
+	out := &contract.SessionInfoContext{UsedPercent: at.UsedPercent}
+	if at.HasUsedTokens {
+		out.UsedTokens = at.UsedTokens
+	}
+	if at.WindowIsExact {
+		out.WindowTokens = at.WindowTokens
 	}
 	return out
 }

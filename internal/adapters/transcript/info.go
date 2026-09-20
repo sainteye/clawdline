@@ -37,6 +37,14 @@ type Facts struct {
 	Usage *Summary
 	// Model is what the session is on now, or empty when nothing said.
 	Model string
+	// Fill is the used side of the context window, for a record that says
+	// only that much: Claude's newest turn. The window comes from Claude
+	// Code's status-line cache, which is not a record and is not read here.
+	Fill *Fill
+	// Context is the whole reading, for a record that carries both sides:
+	// Codex repeats its own window beside its own usage. Never set for
+	// Claude, whose records name no window.
+	Context *Context
 }
 
 // RecordFacts reads the model and the spend out of an assistant's own record,
@@ -161,7 +169,7 @@ func reversedLines(data []byte, fn func(line []byte) (stop bool)) {
 // Per-turn counters are not cumulative, so a partial sum would be a smaller
 // number labelled as the total.
 func claudeFacts(data []byte, complete bool) Facts {
-	out := Facts{Model: claudeStatedModel(data)}
+	out := Facts{Model: claudeStatedModel(data), Fill: claudeFill(data)}
 	if complete {
 		out.Usage = claudeSummary(data)
 	}
@@ -367,14 +375,21 @@ func claudeModelID(word, printed string) (string, bool) {
 
 // ---------- Codex ----------
 
-// codexFacts reads Codex's own cumulative total and the model it is on from
-// the end of its rollout: the last `token_count` event, and the last
-// `turn_context` model — or, failing that, the last model anything named.
+// codexFacts reads Codex's own cumulative total, its live context fill and the
+// model it is on from the end of its rollout: the last `token_count` event,
+// and the last `turn_context` model — or, failing that, the last model
+// anything named.
+//
+// Codex needs no status-line cache for its context: one `token_count` carries
+// both what the last turn sent (`last_token_usage`) and how much fits
+// (`model_context_window`), so the window is the assistant's own answer rather
+// than this build's estimate.
 func codexFacts(data []byte) Facts {
 	var usage *Summary
+	var fill *Context
 	model, fallback := "", ""
 	reversedLines(data, func(line []byte) bool {
-		wantsTokens := usage == nil && bytes.Contains(line, []byte("token_count"))
+		wantsTokens := (usage == nil || fill == nil) && bytes.Contains(line, []byte("token_count"))
 		wantsModel := model == "" && bytes.Contains(line, []byte(`"model"`))
 		if !wantsTokens && !wantsModel {
 			return false
@@ -405,6 +420,16 @@ func codexFacts(data []byte) Facts {
 						}
 						usage = &u
 					}
+					if fill == nil {
+						if current, ok := info.object("last_token_usage"); ok {
+							used, okUsed := looseIntOK(current, "total_tokens")
+							window, okWindow := looseIntOK(info, "model_context_window")
+							if okUsed && used >= 0 && okWindow && window > 0 {
+								at := contextOf(used, window, true)
+								fill = &at
+							}
+						}
+					}
 				}
 			}
 		}
@@ -417,7 +442,7 @@ func codexFacts(data []byte) Facts {
 				}
 			}
 		}
-		return usage != nil && model != ""
+		return usage != nil && fill != nil && model != ""
 	})
 	if model == "" {
 		model = fallback
@@ -426,7 +451,7 @@ func codexFacts(data []byte) Facts {
 		usage.Model = model
 		usage.Cost, usage.HasCost = Cost(*usage)
 	}
-	return Facts{Usage: usage, Model: model}
+	return Facts{Usage: usage, Model: model, Context: fill}
 }
 
 // looseInt is a number the way `SessionInfo.int` reads one: an integer, a

@@ -40,37 +40,6 @@ func Cost(u Summary) (float64, bool) {
 	return math.Round(dollars/1_000_000*10_000) / 10_000, true
 }
 
-// ClaudeSessionCost is Claude Code's own running total for one session, as its
-// status line wrote it down: `cost.total_cost_usd` in
-// `~/.claude/statusline-cache/session-<id>.json`.
-//
-// The Swift app prefers this to the price it works out itself, because it is
-// the assistant's own account and it counts what the transcript cannot see —
-// work another model did on the session's behalf. Absent when no status line
-// has written one.
-func ClaudeSessionCost(home, sessionID string) (float64, bool) {
-	if sessionID == "" || strings.ContainsAny(sessionID, `/\`) {
-		return 0, false
-	}
-	data, err := os.ReadFile(filepath.Join(home, ".claude", "statusline-cache", "session-"+sessionID+".json"))
-	if err != nil {
-		return 0, false
-	}
-	rec, ok := decodeObject(data)
-	if !ok {
-		return 0, false
-	}
-	cost, ok := rec.object("cost")
-	if !ok {
-		return 0, false
-	}
-	v, ok := looseFloat(cost["total_cost_usd"])
-	if !ok || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
-		return 0, false
-	}
-	return v, true
-}
-
 func looseFloat(raw json.RawMessage) (float64, bool) {
 	if s, ok := rawString(raw); ok {
 		v, err := strconv.ParseFloat(s, 64)

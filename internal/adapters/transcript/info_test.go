@@ -133,18 +133,11 @@ func TestCodexFactsReadTheRunningTotalAndHaveNoPrice(t *testing.T) {
 }
 
 func TestClaudeSessionCostIsTheStatusLinesOwnTotal(t *testing.T) {
-	home := t.TempDir()
-	dir := filepath.Join(home, ".claude", "statusline-cache")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
+	home := statusCache(t, "abc", `{"cost":{"total_cost_usd":208.37865}}`)
+	if status := ReadClaudeStatusLine(home, "abc"); !status.HasCost || status.CostUsd != 208.37865 {
+		t.Fatalf("cost = %v, %v", status.CostUsd, status.HasCost)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "session-abc.json"), []byte(`{"cost":{"total_cost_usd":208.37865}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if v, ok := ClaudeSessionCost(home, "abc"); !ok || v != 208.37865 {
-		t.Fatalf("cost = %v, %v", v, ok)
-	}
-	if _, ok := ClaudeSessionCost(home, "missing"); ok {
+	if status := ReadClaudeStatusLine(home, "missing"); status.HasCost {
 		t.Fatal("a session with no cache has no cost")
 	}
 }

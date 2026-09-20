@@ -4701,15 +4701,48 @@ export interface SessionCoordinatorCommand {
 
 /**
  * The facts behind the status line under an open session. This daemon serves the
- * transcript-derived part the Swift app calls the summary, and the plan windows;
- * the working tree, context use, links, permission and fast mode are not read here
- * and their keys are absent.
+ * transcript-derived part the Swift app calls the summary, the context reading and
+ * the plan windows; the working tree, links, permission and fast mode are not read
+ * here and their keys are absent.
  */
 export interface SessionInfo {
+  context?: SessionInfoContext
   limits?: SessionLimits
   models: SessionModel[]
   session: SessionInfoSession
   usage?: SessionInfoUsage
+}
+
+/**
+ * How full this conversation's context window is. The used side is counted —
+ * Claude's newest parent assistant turn, or Codex's own last turn — and survives
+ * a transcript too large to total, because the newest turn is at the end of the
+ * file. Absent when nothing said how much fits: a Claude session on a model with no
+ * window row and no status-line cache draws no reading at all, because unknown is
+ * not 0%.
+ */
+export interface SessionInfoContext {
+  /**
+   * 0…100, clamped: a conversation past its window is full, not 104% full.
+   */
+  usedPercent: number
+
+  /**
+   * The counted used side. Absent when the only reading available was a percentage
+   * somebody else worked out; also absent at exactly zero, which `usedPercent`
+   * still states.
+   */
+  usedTokens?: number
+
+  /**
+   * How much fits — **only when the assistant itself said so** (Claude Code's
+   * `context_window_size`, Codex's `model_context_window`). A window this daemon
+   * guessed from the model id does not go on the wire, while `usedPercent` still
+   * does: a percentage a client draws as one number is read as an approximation,
+   * and `162,277 / 1,000,000 tokens` in a tooltip is read as a measurement — only
+   * one of those two survives being wrong.
+   */
+  windowTokens?: number
 }
 
 /**
