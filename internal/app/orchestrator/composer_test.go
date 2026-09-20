@@ -224,3 +224,74 @@ func TestSilenceFromALiveChildIsNotASpawnFailure(t *testing.T) {
 		}
 	}
 }
+
+// What is in the composer. The fixture above is a running Claude session with a
+// message already queued — "Press up to edit queued messages" — which is one of
+// the shapes the person saw four times: a copy of this notice was already
+// waiting to be read and a second one was typed behind it.
+//
+// The `Try "…"` line is the one that matters most. Claude Code draws it in an
+// *empty* composer, so reading "any text at all" as a draft — which this first
+// did — would have held every notice on this machine and dead lettered them all.
+func TestWhatIsInTheComposerIsToldApartFromTheCLIsOwnHints(t *testing.T) {
+	frame := strings.Repeat("─", 80)
+	framed := func(input string) string {
+		return "  ctrl+x ctrl+s to send now\n\n" + frame + "\n" + input + "\n" + frame + "\n  ▀ ▄ ▀ a root"
+	}
+	for _, c := range []struct {
+		name  string
+		input string
+		want  ComposerState
+	}{
+		{"nothing in it", "❯", ComposerEmpty},
+		{"a block cursor sitting in it", "❯ ▌", ComposerEmpty},
+		{"Claude Code's hint for an empty line", `❯ Try "refactor internal/app/orchestrator/notice.go"`, ComposerEmpty},
+		{"Codex's hint for an empty line", "› Ask Codex to do anything", ComposerEmpty},
+		{"messages waiting to be read", "❯ Press up to edit queued messages", ComposerQueued},
+		{"messages waiting, the longer spelling", "❯ Press up to edit queued messages, Enter to send them immediately", ComposerQueued},
+		{"one message waiting", "❯ Press up to select a queued message, then Enter to edit it", ComposerQueued},
+		{"a half-written line", "❯ so about the landing, I think we", ComposerDraft},
+	} {
+		if got := ReadComposer(framed(c.input), session.AssistantClaude); got != c.want {
+			t.Errorf("%s: read as %v, want %v", c.name, got, c.want)
+		}
+	}
+	if got := ReadComposer(screen(t, "claude-composer"), session.AssistantClaude); got != ComposerQueued {
+		t.Errorf("the captured composer with a message queued read as %v", got)
+	}
+	// A dialog's highlighted row is not a composer at all: Choosing answers that
+	// screen, and this one says nothing about it.
+	if got := ReadComposer(screen(t, "claude-trust"), session.AssistantClaude); got != ComposerNone {
+		t.Errorf("a chooser's highlighted option read as a composer holding %v", got)
+	}
+	// A session still starting has no input line to read.
+	if got := ReadComposer("Loading…\n\n  ▀ ▄ ▀ starting", session.AssistantClaude); got != ComposerNone {
+		t.Errorf("a starting session read as %v", got)
+	}
+}
+
+// The same question asked of Codex, which draws no frame. Reading a composer as
+// "a caret with a rule under it" — which this first did — answered
+// ComposerNone for every Codex root on the machine, so a notice was never held
+// for one: not because the composer was empty, but because nobody had looked.
+func TestACodexRootsComposerIsReadFromItsStatusBar(t *testing.T) {
+	barred := func(input string) string {
+		return "  • Worked for 12s\n\n" + input + "\n\n  gpt-5.6-sol high · ~/code/clawdline-go · main"
+	}
+	for _, c := range []struct {
+		name  string
+		input string
+		want  ComposerState
+	}{
+		{"nothing in it", "› ", ComposerEmpty},
+		{"its own hint for an empty line", "› Ask Codex to do anything", ComposerEmpty},
+		{"a half-written line", "› so about the landing, I think we", ComposerDraft},
+	} {
+		if got := ReadComposer(barred(c.input), session.AssistantCodex); got != c.want {
+			t.Errorf("%s: read as %v, want %v", c.name, got, c.want)
+		}
+		if got := ReadComposer(barred(c.input), session.AssistantClaude); got != ComposerNone {
+			t.Errorf("%s: asked for Claude's frame, a Codex screen answered %v", c.name, got)
+		}
+	}
+}

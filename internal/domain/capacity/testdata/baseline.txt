@@ -87,6 +87,14 @@
 # handed out longest ago let go). The lines it added are what one reading of a
 # provider's own files reads: the status line's cache, and the Codex rollouts
 # under a directory this daemon does not own (read).
+# The completion notice's retry (2026-09-20) split one ladder into two and gave
+# the pump a hold that is not an attempt (internal/app/orchestrator/notice.go).
+# It registered no row: a notice is one ledger row per task, already measured by
+# store.db, and the ladders hold nothing — they only decide when the next pass
+# may type. The lines it added are the top rung of the delivered ladder and the
+# bound on one hold (parameter). The two bases, ackWaitBase and retryBase, are
+# steps of those ladders rather than bounds of their own, as retryCeiling has
+# been since the first wave.
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -141,7 +149,9 @@ internal/adapters/tunnel.lineLimit # read: one line of cloudflared's output; a l
 internal/adapters/tunnel.nameLimit # admission: a hand-edited remote_tunnel_name, refused by name past it
 internal/app/cloudops.cloudEnvelopeCiphertextLimit # admission: one Cloud answer's ciphertext
 internal/app/orchestrator.(*Broker).SubscribeProgress:chan(64) # store: a progress subscriber's buffer (limits N19 buffer class, C3)
-internal/app/orchestrator.AttemptLimit # parameter: completion notice attempts before dead letter (limits N7: a dead letter is pushed once, W5, and counted on the Dashboard, C4)
+internal/app/orchestrator.AttemptLimit # parameter: completion notice attempts before dead letter, spent on either ladder and never on a hold (limits N7: a dead letter is pushed once, W5, and counted on the Dashboard, C4)
+internal/app/orchestrator.maxAckWait # parameter: the longest this broker waits between two typings of one completion notice, and so the top rung of the delivered ladder; what it waits for is a root finishing a turn and answering, which asking again inside a minute does not help
+internal/app/orchestrator.maxNoticeHold # parameter: how long one notice is held back for a menu, a busy terminal lane or a composer with something already in it before the hold spends an attempt instead of holding again; nothing accumulates, and the reason is on the notice where GET /v1/orchestrator/completions shows it
 internal/app/orchestrator.assignmentFieldLimit # admission: one Root Assignment field, refused past it (W6; the Swift app's 8192 bytes)
 internal/app/orchestrator.assignmentLabelLimit # admission: a Root Assignment's label, refused past it (W6)
 internal/app/orchestrator.assignmentListLimit # page: one read of the Root Assignments; the rows ride on store.db (W6)

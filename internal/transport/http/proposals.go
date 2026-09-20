@@ -360,8 +360,23 @@ func (s *Server) propose(w http.ResponseWriter, r *http.Request) {
 		TaskID: strings.TrimSpace(body.TaskID), Leftover: body.Leftover, Title: body.Title, Project: body.Project,
 		Effects: body.Effects}
 	principal := "machine"
+	// seenTask is the task whose completion notice this proposal proves its root
+	// read (orchestrator.NoticeSeen). A leftover is a row of a delivery's
+	// result.json, and the line this broker types into a root is what tells it
+	// this route exists and what those rows are called — so a root proposing one
+	// of its own child's leftovers has read the notice, and typing that line at
+	// it again is noise. Only from the root's own session: the same route takes
+	// a child's proposal *for* its root, and a child cannot observe on its
+	// behalf.
+	seenTask := ""
 	switch {
 	case machineAuthed(r):
+		if s.broker != nil && req.Leftover != "" && req.Session != "" && orchestrator.IsTaskID(req.TaskID) {
+			if rec, _, err := s.broker.Record(r.Context(), req.TaskID); err == nil &&
+				rec.Root != nil && rec.Root.SessionID == req.Session {
+				seenTask = req.TaskID
+			}
+		}
 	case taskSecret(r) != "":
 		if s.broker == nil || !orchestrator.IsTaskID(req.TaskID) {
 			writeRefusal(w, http.StatusUnauthorized, "unauthorized", "A child proposes with its task_id and its task secret.")
@@ -398,6 +413,9 @@ func (s *Server) propose(w http.ResponseWriter, r *http.Request) {
 		_, err := s.participation().Propose(r.Context(), req, func(v app.ProposalView) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			return file(proposalAnswerOf(v, true))
 		})
+		if err == nil && seenTask != "" {
+			s.broker.NoticeSeen(r.Context(), seenTask, orchestrator.SeenByProposal)
+		}
 		return err
 	})
 }

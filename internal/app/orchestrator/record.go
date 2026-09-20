@@ -194,9 +194,13 @@ const (
 	NoticeDeadLetter   NoticeState = "dead_letter"
 )
 
-// NoticeError is why one delivery attempt did not happen, in the Swift app's
-// vocabulary: root_missing, identity_stale, conversation_ambiguous,
-// root_choosing, terminal_timeout, transport_failed, acknowledgement_timeout.
+// NoticeError is why one delivery attempt did not happen, or why the last pass
+// held the notice back instead of typing it. The Swift app's vocabulary is
+// root_missing, identity_stale, conversation_ambiguous, root_choosing,
+// terminal_timeout, transport_failed and acknowledgement_timeout; this broker
+// adds terminal_busy and composer_occupied, the two holds (notice.go) it keeps
+// on the record rather than in memory alone, so "is there anything I have not
+// been told" can be answered from `GET /v1/orchestrator/completions`.
 type NoticeError struct {
 	Code    string    `json:"code"`
 	Message string    `json:"message"`
@@ -225,18 +229,52 @@ type Notice struct {
 	Recipient      string       `json:"recipient,omitempty"`
 }
 
-// AttemptLimit and the retry ladder are the Swift app's measured values:
-// 5, 10, 20, 40, 80, 160, 300, 300 … seconds, and eight attempts in all.
+// AttemptLimit and the two ladders one notice climbs.
+//
+// **A notice has two waits in it, and they are not the same wait.** One is
+// "nothing was typed, try again" — a root that is not on this machine yet, a
+// terminal that refused the bytes. The other is "the line is on the root's
+// screen, and nobody has said they read it". The Swift app's 5, 10, 20, 40, 80,
+// 160, 300-second ladder was measured for the first and used for both, so a
+// root that was merely busy integrating its child was told the same thing again
+// five seconds later, and again ten seconds after that: the person watching saw
+// one "task finished" four and five times inside a minute and asked whether the
+// work had been dispatched twice.
+//
+// So the delivered case climbs its own ladder, with a first rung longer than a
+// turn: 2, 4, 8, 16, 30, 30 … minutes. What it is waiting for is a person or an
+// agent finishing what it is doing and answering, and nothing about that is
+// helped by asking again inside a minute. Eight attempts in all either way, and
+// then dead letter — the whole budget is about two and a half hours of
+// unanswered delivery instead of ten minutes of shouting.
 const (
-	AttemptLimit   = 8
-	retryBase      = 5 * time.Second
-	retryCeiling   = 300 * time.Second
+	AttemptLimit = 8
+	retryBase    = 5 * time.Second
+	retryCeiling = 300 * time.Second
+	ackWaitBase  = 2 * time.Minute
+	// maxAckWait is the longest this broker will wait between two typings of
+	// one notice, and so the top rung of the delivered ladder.
+	maxAckWait     = 30 * time.Minute
 	NoticeProtocol = "clawdline.notice"
 	NoticeVersion  = 2
 )
 
-// RetryDelay is the wait before attempt n+1, given n attempts already made.
+// RetryDelay is the wait before attempt n+1 when attempt n put nothing on the
+// root's screen, given n attempts already made.
 func RetryDelay(attempts int) time.Duration {
+	return ladder(retryBase, retryCeiling, attempts)
+}
+
+// AckWaitDelay is the wait before the same line is typed at the same root
+// again, given n attempts already made and the last one delivered.
+func AckWaitDelay(attempts int) time.Duration {
+	return ladder(ackWaitBase, maxAckWait, attempts)
+}
+
+// ladder doubles from base to ceiling. The shift is capped before it is taken:
+// a notice re-armed by hand carries its old attempt count, and shifting a
+// duration by sixty is zero rather than a long wait.
+func ladder(base, ceiling time.Duration, attempts int) time.Duration {
 	if attempts <= 0 {
 		return 0
 	}
@@ -244,9 +282,9 @@ func RetryDelay(attempts int) time.Duration {
 	if shift > 10 {
 		shift = 10
 	}
-	d := retryBase << shift
-	if d > retryCeiling {
-		return retryCeiling
+	d := base << shift
+	if d > ceiling || d <= 0 {
+		return ceiling
 	}
 	return d
 }

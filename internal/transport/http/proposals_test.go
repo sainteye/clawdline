@@ -10,9 +10,11 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 	"github.com/sainteye/clawdline-go/internal/domain/auth"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
 // The participation routes over HTTP: the session's door and the person's,
@@ -248,5 +250,85 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	}
 	if rec := do(person, http.MethodGet, "/v1/work/digests?kind=monthly", "", ""); rec.Code != 400 {
 		t.Fatalf("a kind that is not one: %d", rec.Code)
+	}
+}
+
+// A root proposing one of its child's leftovers has read the line this broker
+// typed at it: that line is what says the route exists and what the leftover is
+// called. So the proposal ends the resend, the same way a landing does — and
+// only from the root's own session, because the same route takes a child's
+// proposal for its root and a child cannot observe on its behalf.
+func TestALeftoverProposalFromTheRootEndsTheResend(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	dir := t.TempDir()
+	b := &orchestrator.Broker{Store: st, Tasks: taskdir.New(dir), Dir: dir}
+	s := &Server{store: st, broker: b}
+	mux := http.NewServeMux()
+	s.participationRoutes(mux)
+	machine := access{machine: true}
+	ctx := context.Background()
+
+	settled := func(id string) orchestrator.Record {
+		r := orchestrator.Record{Protocol: orchestrator.Protocol, ID: id, Kind: "custom", Assistant: "claude",
+			Title: "child", ProjectDir: "/p", State: orchestrator.StateBriefed, CreatedAt: time.Now(),
+			Root: &orchestrator.RootRef{SessionID: "root-conv", Assistant: "claude"}}
+		body, _ := json.Marshal(r)
+		if _, err := st.CreateBrokerTask(ctx, store.BrokerRow{ID: id, Project: "/p", Assistant: "claude",
+			State: string(r.State), CreatedAt: r.CreatedAt, SecretHash: orchestrator.HashSecret("s"),
+			Record: body}, nil); err != nil {
+			t.Fatal(err)
+		}
+		out, err := b.Settle(ctx, id, orchestrator.StateSuccess, "done", &taskdir.Result{
+			Status: "success", Summary: "done",
+			Leftovers: []work.Leftover{{Title: "the retry ladder has no ceiling", Why: "out of budget"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Notice == nil {
+			t.Fatal("a finished task with no completion envelope")
+		}
+		return out
+	}
+	propose := func(key, session, id string, as access) *httptest.ResponseRecorder {
+		body := `{"session_id":"` + session + `","task_id":"` + id + `","leftover":"the retry ladder has no ceiling"}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/orchestrator/proposals", strings.NewReader(body))
+		req.Header.Set("Idempotency-Key", key)
+		if !as.machine {
+			req.Header.Set("X-Clawdline-Task-Secret", "s")
+		}
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{}, as))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+	state := func(id string) orchestrator.NoticeState {
+		after, _, err := b.Record(ctx, id)
+		if err != nil || after.Notice == nil {
+			t.Fatalf("reading the notice back: %v", err)
+		}
+		return after.Notice.State
+	}
+
+	mine := settled("7a5c0000-0000-4000-8000-000000000011")
+	if rec := propose("q1", "root-conv", mine.ID, machine); rec.Code != 201 {
+		t.Fatalf("the root's own proposal: %d %s", rec.Code, rec.Body)
+	}
+	if got := state(mine.ID); got != orchestrator.NoticeAcknowledged {
+		t.Fatalf("the root proposed its child's leftover and the notice is %q", got)
+	}
+
+	// The child's own proposal about its own leftover arrives on the same route,
+	// with the task secret, and is recorded as its root's line of work — but the
+	// root has still been told nothing, so the notice stands.
+	childs := settled("7a5c0000-0000-4000-8000-000000000012")
+	if rec := propose("q2", "", childs.ID, access{}); rec.Code != 201 {
+		t.Fatalf("the child's own proposal: %d %s", rec.Code, rec.Body)
+	}
+	if got := state(childs.ID); got == orchestrator.NoticeAcknowledged {
+		t.Fatal("a child's proposal closed the notice its root had not read")
 	}
 }

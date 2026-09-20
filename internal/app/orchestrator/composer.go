@@ -64,14 +64,14 @@ const composerTail = 20
 
 // ComposerReady reports whether a screen shows an input line ready for text.
 func ComposerReady(screen string, assistant session.Assistant) bool {
-	caret, furnished := readComposer(screen, assistant)
+	caret, furnished, _ := readComposer(screen, assistant)
 	return caret && furnished
 }
 
 // Choosing is the same reading from the other side: a caret with no furniture
 // under it is something waiting to be answered, and nothing may be typed at it.
 func Choosing(screen string, assistant session.Assistant) bool {
-	caret, furnished := readComposer(screen, assistant)
+	caret, furnished, _ := readComposer(screen, assistant)
 	return caret && !furnished
 }
 
@@ -79,7 +79,7 @@ func Choosing(screen string, assistant session.Assistant) bool {
 // assistant's own furniture is under it. No caret at all is a session still
 // drawing itself: neither answer is yes, because typing at it drops the bytes
 // and calling it a chooser would stop a briefing that is about to be possible.
-func readComposer(screen string, assistant session.Assistant) (caret, furnished bool) {
+func readComposer(screen string, assistant session.Assistant) (caret, furnished bool, line string) {
 	lines := strings.Split(screen, "\n")
 	written := make([]int, 0, len(lines))
 	for i, line := range lines {
@@ -88,7 +88,7 @@ func readComposer(screen string, assistant session.Assistant) (caret, furnished 
 		}
 	}
 	if len(written) == 0 {
-		return false, false
+		return false, false, ""
 	}
 	bottom := written[len(written)-1]
 	from := len(written) - composerTail
@@ -103,10 +103,113 @@ func readComposer(screen string, assistant session.Assistant) (caret, furnished 
 		// Stop at the lowest caret rather than looking further up: the topmost
 		// caret on a screen full of options would eventually find some
 		// furniture and say yes.
-		return true, furnitureUnder(lines, i, bottom, assistant)
+		return true, furnitureUnder(lines, i, bottom, assistant), lines[i]
 	}
-	return false, false
+	return false, false, ""
 }
+
+// ComposerState is what a composer holds, once there is one.
+type ComposerState int
+
+const (
+	// ComposerNone is a screen with no composer on it at all — a dialog, a
+	// session still starting. Whether anything may be typed there is
+	// ComposerReady's and Choosing's question, not this one's.
+	ComposerNone ComposerState = iota
+	// ComposerEmpty is an input line with nothing in it, or with nothing but
+	// the CLI's own hint about what could be typed.
+	ComposerEmpty
+	// ComposerQueued is an empty input line with messages behind it that the
+	// session has not read yet.
+	ComposerQueued
+	// ComposerDraft is an input line with something in it that nobody has sent.
+	ComposerDraft
+)
+
+// ReadComposer answers what is in the composer, and exists because of the other
+// way a typed line does damage.
+//
+// A send is a paste and then Return (internal/adapters/terminal/submit.go); it
+// does not clear the input line first. So a completion notice typed at a root
+// whose person had half a sentence in the composer is appended to that sentence,
+// and the Return submits both — the draft is gone, and what the assistant reads
+// is somebody's unfinished thought with a protocol envelope glued to the end of
+// it. That has happened on this machine, and a second delivery reported it
+// independently.
+//
+// **What is in the line cannot be read as "any text at all", which is what this
+// first tried.** Claude Code draws a hint in its *empty* composer — one of eight
+// `Try "…"` sentences, from the same function that draws its queued-message hint
+// (read off the installed 2.1.278, and Codex's is the `Ask Codex to do anything`
+// that session.ReadState already knows). An idle root would have read as
+// occupied, so every notice on this machine would have been held and then dead
+// lettered. The hints are therefore named here, which is a list of strings and
+// has the cost a list of strings has: a hint nobody has met yet reads as a
+// draft. That direction is the survivable one — the notice is held, and a hold
+// that runs out spends an attempt and ends visibly in the completion list with
+// its reason (notice.go) — where the other direction loses a person's sentence.
+//
+// The queued hint is its own answer rather than "empty", because it says
+// something is already waiting to be read, and whether that matters depends on
+// whether this notice is what is waiting. That is the caller's question.
+//
+// Whether there is a composer at all is readComposer's answer, which asks the
+// named CLI for its own furniture. Asking for a frame here, as this first did,
+// would have answered ComposerNone for every Codex root on the machine — Codex
+// draws no frame — and a notice is not held for a composer that was never
+// looked at.
+func ReadComposer(screen string, assistant session.Assistant) ComposerState {
+	caret, furnished, line := readComposer(screen, assistant)
+	if !caret || !furnished {
+		return ComposerNone
+	}
+	text := composerText(line)
+	switch {
+	case text == "":
+		return ComposerEmpty
+	case hasAnyPrefix(text, composerQueuedHints):
+		return ComposerQueued
+	case hasAnyPrefix(text, composerPlaceholders):
+		return ComposerEmpty
+	}
+	return ComposerDraft
+}
+
+// composerPlaceholders are what each CLI draws in an input line that is empty.
+// Claude Code's is one of eight `Try "…"` sentences built from the files this
+// repository's history touches most; Codex's is fixed.
+var composerPlaceholders = []string{`Try "`, "Ask Codex to do anything"}
+
+// composerQueuedHints are what Claude Code draws in an empty input line while
+// messages it has not read yet wait behind it. All four spellings of it begin
+// this way.
+var composerQueuedHints = []string{"Press up to edit queued message", "Press up to select a queued message"}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// composerText is what an input line holds after its caret, without the block
+// glyphs a terminal draws for the cursor and without the frame's right edge.
+func composerText(line string) string {
+	trimmed := strings.TrimSpace(line)
+	for _, caret := range composerCarets {
+		if rest, ok := strings.CutPrefix(trimmed, caret); ok {
+			return strings.TrimSpace(strings.Trim(rest, cursorGlyphs))
+		}
+	}
+	return ""
+}
+
+// cursorGlyphs are what the two CLIs and the terminals they run in draw for a
+// caret sitting in an empty input line, plus the frame's vertical rule. None of
+// them is text a person typed.
+const cursorGlyphs = " \t│┃▏▎▍▌▋▊▉█▁▂▃▄▅▆▇_"
 
 // furnitureUnder asks the one question that tells a composer from a chooser,
 // in the spelling of the CLI that drew the screen.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/app/lane"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 	"github.com/sainteye/clawdline-go/internal/domain/work"
 )
 
@@ -22,12 +23,31 @@ import (
 //
 //   - **A transport success is not an observation.** Bytes reached a composer;
 //     nothing says a turn read them. So a successful send reschedules rather
-//     than stops, and only `/completion/ack` ends the sequence.
-//   - **The sequence ends anyway.** Eight attempts on a 5→300-second ladder,
-//     then dead letter. A notice that retries for ever is one nobody has to
-//     answer.
+//     than stops, and only an acknowledgement ends the sequence.
+//   - **The sequence ends anyway.** Eight attempts, then dead letter. A notice
+//     that retries for ever is one nobody has to answer.
 //   - **Never type into a session showing a menu.** The keystroke would answer
 //     the menu instead, which is how "Tea" once became "Water".
+//
+// Three things this broker learned after that, all of them from one report — a
+// person who watched the same "task finished" arrive four and five times and
+// asked whether the work had been dispatched twice:
+//
+//   - **The delivered wait is not the failure wait.** Both used the 5-second
+//     ladder, so a root busy integrating its child was told again five seconds
+//     later, and again ten seconds after that. The delivered case has its own
+//     ladder now (AckWaitDelay, record.go), whose first rung is longer than a
+//     turn.
+//   - **A hold is not an attempt, and is not silence either.** A menu, a busy
+//     lane and an occupied composer are all reasons nothing was typed and
+//     nobody is at fault; spending the budget on them would walk a notice to
+//     dead letter for being polite. They are recorded as the notice's last
+//     error all the same — once per hold, not once per pass — so a person
+//     reading `GET /v1/orchestrator/completions` can see what this machine is
+//     sitting on and why.
+//   - **Evidence beats a receipt.** A root that landed the task's work knew it
+//     had finished; asking it to also curl the ACK route, and typing the line
+//     again until it does, is noise about something already done (NoticeSeen).
 
 var zeroTime time.Time
 
@@ -195,23 +215,33 @@ func sameStored(a, b store.BrokerNotice) bool {
 // the event that explains it. It answers whether the move happened; false
 // means somebody moved the notice first and this decision no longer applies.
 func (b *Broker) moveNotice(ctx context.Context, taskID string, seen Notice, kind string, change func(n *Notice)) bool {
+	return b.moveNoticeWith(ctx, taskID, seen, kind, nil, change)
+}
+
+// moveNoticeWith is moveNotice with fields of its own on the event, for a move
+// whose reason is not in the notice itself.
+func (b *Broker) moveNoticeWith(ctx context.Context, taskID string, seen Notice, kind string, extra map[string]any, change func(n *Notice)) bool {
 	next := seen
 	if seen.LastError != nil {
 		e := *seen.LastError
 		next.LastError = &e
 	}
 	change(&next)
-	payload, _ := json.Marshal(map[string]any{
+	fields := map[string]any{
 		"task": taskID, "notice": seen.ID, "attempt": next.Attempts, "state": next.State,
 		"error": errorCode(next.LastError),
-	})
+	}
+	for k, v := range extra {
+		fields[k] = v
+	}
+	payload, _ := json.Marshal(fields)
 	// A notice entering dead letter owes the person a push (D24): the one
 	// line of this machine that nobody acknowledged is exactly what a person
 	// must hear about, and the root it was for has not. It is recorded as
 	// intent in the move's own transaction and sent after it commits.
 	var effects []store.Effect
 	if next.State == NoticeDeadLetter && seen.State != NoticeDeadLetter {
-		body, _ := json.Marshal(deadLetterEffect{Notice: seen.ID, Attempts: next.Attempts})
+		body, _ := json.Marshal(deadLetterEffect{Notice: seen.ID, Attempts: next.Attempts, Reason: errorCode(next.LastError)})
 		effects = append(effects, store.Effect{Kind: EffectDeadLetterPush, Subject: taskID, Payload: body})
 	}
 	applied, ids, err := b.Store.UpdateBrokerNoticeWith(ctx,
@@ -306,60 +336,54 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		return false
 	}
 
-	fail := func(code, message string) bool {
-		b.moveNotice(ctx, r.ID, seen, "task.completion.attempt", func(n *Notice) {
-			n.Attempts++
-			n.LastAttemptAt = at
-			n.LastError = &NoticeError{Code: code, Message: message, At: at}
-			// The Swift app's rule: the attempt that uses the last of the
-			// budget ends the sequence then, rather than one ladder rung
-			// later.
-			if n.Attempts >= AttemptLimit {
-				n.State = NoticeDeadLetter
-				n.DeadLetterAt = at
-				n.NextRetryAt = zeroTime
-				return
-			}
-			n.NextRetryAt = at.Add(RetryDelay(n.Attempts))
-		})
-		return false
-	}
-
 	if r.Root == nil {
-		return fail("root_missing", "This task has no root to tell.")
+		return b.spendAttempt(ctx, r.ID, seen, at, "root_missing", "This task has no root to tell.")
 	}
 	target, err := b.terminalFor(ctx, r.Root.SessionID, r.Root.Assistant)
 	if err != nil {
 		if ref, ok := err.(Refusal); ok && ref.Code == "conversation_ambiguous" {
-			return fail("conversation_ambiguous", ref.Message)
+			return b.spendAttempt(ctx, r.ID, seen, at, "conversation_ambiguous", ref.Message)
 		}
-		return fail("root_missing", "The root session is not on this machine right now.")
+		return b.spendAttempt(ctx, r.ID, seen, at, "root_missing",
+			"The root session is not on this machine right now.")
 	}
-	// Backpressure, not an attempt: a root showing a chooser would have the
-	// notice typed into its menu. Waiting costs a pass; typing costs an answer
-	// nobody gave. The wait is remembered in memory only.
+	// A root showing a chooser would have the notice typed into its menu.
+	// Waiting costs a pass; typing costs an answer nobody gave.
 	if b.Choosing != nil && b.Choosing(ctx, target.ID) {
-		b.observed.deferNotice(seen.ID, at.Add(10*time.Second))
-		return false
+		return b.holdNotice(ctx, r.ID, seen, at, holdChoosing)
+	}
+	switch b.readComposer(ctx, target.ID, r.Root.Assistant) {
+	case ComposerDraft:
+		// A root whose composer holds a half-written line would have the notice
+		// appended to it and submitted with it.
+		return b.holdNotice(ctx, r.ID, seen, at, holdComposer)
+	case ComposerQueued:
+		// Something is already waiting to be read there. Whether that matters
+		// depends on whether it is this notice: a copy typed once and not yet
+		// reached is exactly what the person saw four times, and a second copy
+		// behind it changes nothing except how many they read. A notice never
+		// delivered queues behind whatever that is, which is how it gets read.
+		if !seen.DeliveredAt.IsZero() {
+			return b.holdNotice(ctx, r.ID, seen, at, holdQueued)
+		}
 	}
 	wire, err := b.NoticeWire(r)
 	if err != nil {
-		return fail("transport_failed", err.Error())
+		return b.spendAttempt(ctx, r.ID, seen, at, "transport_failed", err.Error())
 	}
 	if b.Type == nil {
-		return fail("transport_failed", "this daemon cannot type into a terminal")
+		return b.spendAttempt(ctx, r.ID, seen, at, "transport_failed",
+			"this daemon cannot type into a terminal")
 	}
 	if err := b.typeLine(ctx, target.ID, wire); err != nil {
-		// Backpressure, not an attempt, for the same reason as a chooser: the
-		// root's terminal was being written to by somebody else (its lane,
-		// D22), and nothing was typed. Counting it would walk a notice toward
-		// dead letter for being polite.
+		// A hold for the same reason as a chooser: the root's terminal was
+		// being written to by somebody else (its lane, D22), and nothing was
+		// typed.
 		var busy lane.Busy
 		if errors.As(err, &busy) {
-			b.observed.deferNotice(seen.ID, at.Add(10*time.Second))
-			return false
+			return b.holdNotice(ctx, r.ID, seen, at, holdLane)
 		}
-		return fail("transport_failed", err.Error())
+		return b.spendAttempt(ctx, r.ID, seen, at, "transport_failed", err.Error())
 	}
 
 	b.moveNotice(ctx, r.ID, seen, "task.completion.delivered", func(n *Notice) {
@@ -371,10 +395,188 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		if n.DeliveredAt.IsZero() {
 			n.DeliveredAt = at
 		}
-		// Armed again on purpose. Delivered is not observed.
-		n.NextRetryAt = at.Add(RetryDelay(n.Attempts))
+		// Armed again on purpose: delivered is not observed. On the other
+		// ladder, though — what this one waits for is somebody finishing a
+		// turn and answering, and nothing about that is helped by asking
+		// again inside a minute.
+		n.NextRetryAt = at.Add(AckWaitDelay(n.Attempts))
 	})
 	return true
+}
+
+// spendAttempt records one attempt that put nothing on the root's screen, and
+// arms the next on the failure ladder.
+func (b *Broker) spendAttempt(ctx context.Context, taskID string, seen Notice, at time.Time, code, message string) bool {
+	b.moveNotice(ctx, taskID, seen, "task.completion.attempt", func(n *Notice) {
+		n.Attempts++
+		n.LastAttemptAt = at
+		n.LastError = &NoticeError{Code: code, Message: message, At: at}
+		// The Swift app's rule: the attempt that uses the last of the budget
+		// ends the sequence then, rather than one ladder rung later.
+		if n.Attempts >= AttemptLimit {
+			n.State = NoticeDeadLetter
+			n.DeadLetterAt = at
+			n.NextRetryAt = zeroTime
+			return
+		}
+		n.NextRetryAt = at.Add(RetryDelay(n.Attempts))
+	})
+	return false
+}
+
+// noticeHold is a reason nothing was typed that is nobody's fault and that the
+// next look may find gone.
+type noticeHold struct {
+	Code    string
+	Message string
+}
+
+var (
+	holdChoosing = noticeHold{"root_choosing",
+		"The root is showing something waiting to be answered; a line typed at it would answer that instead."}
+	holdLane = noticeHold{"terminal_busy",
+		"Somebody else is writing to the root's terminal; nothing was typed."}
+	holdComposer = noticeHold{"composer_occupied",
+		"The root's composer already holds something; a line typed at it would be appended to that and submitted with it."}
+	holdQueued = noticeHold{"notice_queued",
+		"A copy of this notice is already waiting to be read in the root's composer."}
+)
+
+// noticeHoldStep is how long one hold lasts before the root is looked at again.
+// Short, because what it is waiting for — a menu answered, a lane released, a
+// draft sent — is over in seconds and the notice should go the moment it is.
+const noticeHoldStep = 20 * time.Second
+
+// maxNoticeHold is how long one notice may be held for one reason before the
+// hold stops being free.
+//
+// A hold has to be bounded, and both ways of bounding it are wrong on their
+// own: holding for ever is how a notice quietly never arrives, and typing
+// anyway is the draft this hold exists to protect. So at the limit the hold
+// spends an attempt instead — the record says the machine tried and could not,
+// the budget walks toward dead letter as it does for any other reason nothing
+// was typed, and the person is pushed when it gets there. Ten minutes: three
+// rungs of the acknowledgement ladder, and somebody who has not touched a
+// dialog or a half-written line in ten minutes is not about to.
+const maxNoticeHold = 10 * time.Minute
+
+// holdNotice defers one notice without spending an attempt, and writes the
+// reason the first time it is held for it. It always answers false: nothing was
+// sent.
+func (b *Broker) holdNotice(ctx context.Context, taskID string, seen Notice, at time.Time, h noticeHold) bool {
+	held := seen.LastError != nil && seen.LastError.Code == h.Code
+	if held && at.Sub(seen.LastError.At) >= maxNoticeHold {
+		return b.spendAttempt(ctx, taskID, seen, at, h.Code,
+			h.Message+" Held for "+maxNoticeHold.String()+" for this reason, so this attempt is spent rather than held again.")
+	}
+	if !held {
+		// Once per hold, not once per pass: a clock written down every pass is
+		// the Swift app's six-megabyte file over again (observe.go). What the
+		// row carries afterwards is the reason and when the hold began, which
+		// is what both the limit above and a person reading the ledger need.
+		b.moveNotice(ctx, taskID, seen, "task.completion.held", func(n *Notice) {
+			n.LastError = &NoticeError{Code: h.Code, Message: h.Message, At: at}
+			n.NextRetryAt = at.Add(noticeHoldStep)
+		})
+	}
+	b.observed.deferNotice(seen.ID, at.Add(noticeHoldStep))
+	return false
+}
+
+// readComposer asks the root's own screen what is in its composer.
+//
+// A daemon with no screen reader at all answers empty, as the briefing path
+// does (composerReady): the machines where that is true are the ones this broker
+// can only drive blind, and a notice that is never typed there is a promise
+// broken to keep a draft that may not exist.
+//
+// A reader that is there and did not answer this time also answers empty, and
+// the direction is the opposite of the briefing's on purpose. A briefing's
+// Return can answer a workspace-trust dialog and kill the task; a notice typed
+// onto a draft submits that draft, which is a person's sentence lost and not the
+// machine's state corrupted. Weighed against holding every notice on a Mac whose
+// root terminal cannot be captured — which would turn every completion into a
+// dead letter and a push — the notice goes.
+func (b *Broker) readComposer(ctx context.Context, terminalID, assistant string) ComposerState {
+	if b.Screen == nil {
+		return ComposerEmpty
+	}
+	screen, ok := b.Screen(ctx, terminalID)
+	if !ok {
+		return ComposerEmpty
+	}
+	return ReadComposer(screen, session.Assistant(assistant))
+}
+
+// How the broker learns a root already knows, spelled once so a reader can see
+// the whole set in one place.
+const (
+	SeenByLanding  = "landing"
+	SeenByProposal = "leftover_proposal"
+)
+
+// NoticeSeen closes a completion notice on evidence instead of on a receipt.
+//
+// The chain is accepted, executed, delivered, observed, acknowledged, and the
+// ACK route exists because a line typed into a terminal proves nothing about
+// anybody having read it. But some things a root does are *better* evidence
+// than the ACK curl is, and when the broker has one of those, typing the line
+// again is noise about work already integrated — which is what the person
+// actually complained about.
+//
+// What counts:
+//
+//   - **A landing recorded with the orchestrator token.** Saying where a
+//     child's work went, or that there was none to land, is something only a
+//     root that had read the child's delivery could say. The token is part of
+//     the rule: a landing written with the *task* secret is the child's own
+//     voice, and a child cannot observe on its root's behalf.
+//   - **A leftover proposal naming this task from the root's own session.** The
+//     line this broker types is what tells a root that route exists and what
+//     its leftovers are called; writing one is reading it.
+//
+// What does not, and why the reasons are different:
+//
+//   - **Reading result.json.** Not weak evidence — invisible evidence. The
+//     child writes the file and the root opens it, and nothing in between comes
+//     through this daemon. A rung the broker cannot observe cannot be one it
+//     acts on.
+//   - **A GET of the task.** It names nobody. The console's own polling, the
+//     Dashboard and any other holder of the machine token read that route, so
+//     counting it would let this daemon silence its own notices by looking at
+//     them.
+//   - **A transport success.** The rule this whole file is built on.
+//
+// Best effort, and never an error to its caller: the landing is the fact, and a
+// notice this could not move is left to the pump exactly as before.
+func (b *Broker) NoticeSeen(ctx context.Context, taskID, how string) {
+	if b.Store == nil {
+		return
+	}
+	// Twice, for the same reason Acknowledge retries: the pump may move the
+	// notice between the read and the compare-and-set, and what it learned
+	// does not outrank this.
+	for tries := 0; tries < 2; tries++ {
+		r, _, err := b.Record(ctx, taskID)
+		if err != nil || r.Notice == nil || r.Notice.State == NoticeAcknowledged {
+			return
+		}
+		seen := *r.Notice
+		now := b.now()
+		if b.moveNoticeWith(ctx, taskID, seen, "task.completion.observed",
+			map[string]any{"how": how}, func(n *Notice) {
+				if n.ObservedAt.IsZero() {
+					n.ObservedAt = now
+				}
+				n.AcknowledgedAt = now
+				n.State = NoticeAcknowledged
+				n.NextRetryAt = zeroTime
+				n.LastError = nil
+			}) {
+			b.observed.forgetNotice(seen.ID)
+			return
+		}
+	}
 }
 
 func deadLetter(n *Notice, at time.Time) {

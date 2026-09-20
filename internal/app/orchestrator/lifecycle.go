@@ -237,6 +237,20 @@ type LandingRequest struct {
 // answered `ok` to a correction it had not applied, and a record on that
 // machine came to name another task's commit for good.
 func (b *Broker) Land(ctx context.Context, id string, req LandingRequest) (Record, error) {
+	record, err := b.land(ctx, id, req)
+	// A landing the root recorded is the root saying it read the delivery, and
+	// a better receipt than the ACK it was asked for (NoticeSeen). Written here
+	// rather than inside land() so every way of getting to a landing — the
+	// first one, a replay of it, a correction — closes the notice the same way;
+	// the credential is the rule, because a landing written with the task
+	// secret is the child's own voice.
+	if err == nil && req.Machine {
+		b.NoticeSeen(ctx, id, SeenByLanding)
+	}
+	return record, err
+}
+
+func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Record, error) {
 	r, hash, err := b.Record(ctx, id)
 	if err != nil {
 		return Record{}, err
