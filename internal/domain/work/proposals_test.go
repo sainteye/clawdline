@@ -50,8 +50,14 @@ func TestTheGateRefusesAndItsControlsPass(t *testing.T) {
 			Prior: []Proposal{{State: ProposalExpired, Signals: ok.Signals},
 				{State: ProposalAnswered, Answer: AnswerNo, Signals: []Signal{SignalLongLived}}}}, RefuseDuplicate, false, ""},
 		{"from a child", ProposalFacts{Signals: ok.Signals, HeardAt: here, FromChild: true}, "", false, AskFromChild},
-		{"by the rules", ProposalFacts{Signals: ok.Signals, HeardAt: here, ByRule: true}, "", false, AskByRule},
+		{"by the rules", ProposalFacts{Signals: []Signal{SignalCrossSession, SignalLongLived}, HeardAt: here,
+			ByRule: true}, "", false, AskByRule},
 		{"by the rules, below threshold", ProposalFacts{HeardAt: here, ByRule: true}, RefuseBelowThreshold, false, ""},
+		// I1 on its own is every dispatch there is; a rule resting on it
+		// would ask once per dispatch (RuleWorthy). The control above is the
+		// same facts with a to-do of it owed past a day.
+		{"by the rules, on a dispatch alone", ProposalFacts{Signals: ok.Signals, HeardAt: here, ByRule: true},
+			RefuseBelowThreshold, false, ""},
 		{"nobody heard", ProposalFacts{Signals: ok.Signals}, "", false, AskHumanAbsent},
 		{"heard too long ago", ProposalFacts{Signals: ok.Signals, HeardAt: gateNow.Add(-31 * time.Minute)}, "", false,
 			AskHumanAbsent},

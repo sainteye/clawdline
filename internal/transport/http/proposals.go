@@ -145,7 +145,11 @@ type proposalWire struct {
 	ExpiresAt     int64    `json:"expires_at"`
 	AskedInlineAt *int64   `json:"asked_inline_at"`
 	Unprompted    bool     `json:"unprompted"`
-	Version       int64    `json:"version"`
+	// WithdrawnReason and WithdrawnAt say which fact about the subject ended
+	// the question, and when; null in every other state.
+	WithdrawnReason *string `json:"withdrawn_reason"`
+	WithdrawnAt     *int64  `json:"withdrawn_at"`
+	Version         int64   `json:"version"`
 }
 
 func proposalOf(p work.Proposal) proposalWire {
@@ -162,7 +166,9 @@ func proposalOf(p work.Proposal) proposalWire {
 		Reason: p.AskReason, Channel: string(p.Channel), Question: optionalString(p.Question), State: string(p.State),
 		Answer: optionalString(string(p.Answer)), AnsweredBy: optionalString(p.AnsweredBy),
 		AnsweredAt: optionalUnix(p.AnsweredAt), CreatedAt: p.CreatedAt.Unix(), ExpiresAt: p.ExpiresAt.Unix(),
-		AskedInlineAt: optionalUnix(p.AskedInlineAt), Unprompted: p.Unprompted(), Version: p.Version}
+		AskedInlineAt: optionalUnix(p.AskedInlineAt), Unprompted: p.Unprompted(),
+		WithdrawnReason: optionalString(p.WithdrawnReason), WithdrawnAt: optionalUnix(p.WithdrawnAt),
+		Version: p.Version}
 }
 
 // The one sentence the answer tells the session what to do with it. It is
@@ -542,9 +548,10 @@ func (s *Server) workProposalsRoute(w http.ResponseWriter, r *http.Request) {
 			state = work.ProposalPending
 		case "all":
 			state = ""
-		case work.ProposalPending, work.ProposalAnswered, work.ProposalExpired:
+		case work.ProposalPending, work.ProposalAnswered, work.ProposalExpired, work.ProposalWithdrawn:
 		default:
-			writeRefusal(w, http.StatusBadRequest, "invalid_state", "state is pending, answered, expired or all.")
+			writeRefusal(w, http.StatusBadRequest, "invalid_state",
+				"state is pending, answered, expired, withdrawn or all.")
 			return
 		}
 		page, err := s.participation().ProposalList(r.Context(), state, q["project"], q["cursor"])
@@ -555,7 +562,7 @@ func (s *Server) workProposalsRoute(w http.ResponseWriter, r *http.Request) {
 		out := proposalListWire{OK: true, State: optionalString(string(state)), Project: optionalString(q["project"]),
 			Counts: map[string]int64{}, Rows: []proposalWire{}, NextCursor: optionalString(page.Next),
 			PageSize: app.WorkPageSize}
-		for _, st := range []work.ProposalState{work.ProposalPending, work.ProposalAnswered, work.ProposalExpired} {
+		for _, st := range work.ProposalStates {
 			out.Counts[string(st)] = page.Counts[st]
 		}
 		for _, row := range page.Rows {

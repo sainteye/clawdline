@@ -161,17 +161,34 @@
 
 你只在三個地方被拉進來：提議、決定、摘要。其他一律不打擾你（D31、DG-10）。
 
-**PT-1** 提議（待辦 → 看板或 Backlog）：root 用 orchestrator token `POST /v1/orchestrator/proposals`，帶 `work_id` 或 `task_id`；child 用自己的 task secret 與 `task_id`，記在 root 名下、不問人。伺服器從事實算 I1 派了 child、I2 待辦超過 24 小時、I3 外部效果（session 宣告 `deploy`／`publish`／`push_default_branch`／`spend`／`email`，或 broker 看到落地在 `main`／`master`）。拒絕時什麼都不記：422 `proposal_below_threshold`、409 `proposal_duplicate`、409 `proposal_already_tracked`、409 `not_the_root`、429 `proposals_full`、400 `unknown_effect`。〔已實作 `domain/work/proposals.go` `GateProposal`、`app/proposals.go` `Propose`〕
+**PT-1** 提議（待辦 → 看板或 Backlog）：root 用 orchestrator token `POST /v1/orchestrator/proposals`，帶 `work_id` 或 `task_id`；child 用自己的 task secret 與 `task_id`，記在 root 名下、不問人。伺服器從事實算 I1 派了 child、I2 待辦超過 24 小時、I3 外部效果（session 宣告 `deploy`／`publish`／`push_default_branch`／`spend`／`email`，或 broker 看到落地在 `main`／`master`）。拒絕時什麼都不記：422 `proposal_below_threshold`（含規則自己提的門檻，見 PT-3）、409 `proposal_duplicate`、409 `proposal_already_tracked`、409 `not_the_root`、429 `proposals_full`、400 `unknown_effect`。已 `withdrawn` 的舊提議不算重複也不算被拒絕過（PT-4），同一條線復活後還提得起來。〔已實作 `domain/work/proposals.go` `GateProposal`、`app/proposals.go` `Propose`〕
 
 **PT-2** 在對話裡問不問，看回應的 `ask`：你 30 分鐘內透過這個 daemon 送過訊息給那個 session、它這一輪還沒問過、今天全機問不到 3 次，才是 `ask:true`，並附上要問的那一句；問完回報 `POST /v1/orchestrator/proposals/{id}/asked`。其他一律進「待確認」、不推播。daemon 重啟後當作你不在。〔已實作 `GateProposal`、`app/proposals.go` `Heard`、`ReportAsked`〕
 
-**PT-3** 規則自己提：sweep 對「派工帶了 `work_id`、但還沒有項目」的工作線提議，只進待確認、不在對話裡問。〔已實作 `app/proposals.go` `RuleProposals`：每個有 root 的派工都在一條線上；待辦還欠著、第一個派工滿 30 分鐘（`ProposalPolicy.RuleAfter`，先讓 root 自己提、自己在對話裡問）才提，已結束的不提〕
+**PT-3** 規則自己提：sweep 對「派工帶了 `work_id`、但還沒有項目」的工作線提議，只進待確認、不在對話裡問。**規則自己提的門檻比 root 高：光有 I1 不夠，要 I2 或 I3**（`RuleWorthy`）。I1「派了 child」是照「派 child 是件事」校準的；在這台機器上派 child 就是做事的方式，於是每一條線都帶著 I1，規則就變成「一次派工一個問題」——2026-09-20 一天 23 筆，長得一模一樣，沒有一筆被回答。I2（它的待辦欠了超過 24 小時）與 I3（有外部效果）才挑得出值得打擾人的線，而且兩者都會自己限流。root 自己判斷值得，仍然可以用 I1 單獨提；child 也可以——有人選擇要問的那一筆不是會淹人的那一筆。〔已實作 `app/proposals.go` `RuleProposals`、`domain/work/proposals.go` `RuleWorthy`：每個有 root 的派工都在一條線上；待辦還欠著、第一個派工滿 30 分鐘（`ProposalPolicy.RuleAfter`，先讓 root 自己提、自己在對話裡問）才提，已結束的不提。規則這一趟現在會把那條線的待辦一起讀進來算訊號——先前傳 `nil`，所以 I2 對規則而言不可能成立〕
 
-**PT-4** 回答提議：你 `POST /v1/work/proposals/{id}` `{"answer":"track"|"later"|"no"}`；7 天沒回答變成 `expired`，工作留在待辦、不上你的看板；過期之後仍然可以回答。〔已實作 `app/proposals.go` `Answer`、`domain/work/proposals.go` `ExpireProposal`〕
+**PT-4** 提議的四種結束方式，與誰讓它結束：
+
+| 結束 | 誰讓它結束 | 憑什麼 | 之後 |
+|---|---|---|---|
+| `answered` | 你 | 你答 `track`／`later`／`no` | `track` 上看板、`later` 進 Backlog、`no` 留在待辦 |
+| `expired` | 時鐘 | 7 天沒有人回答 | 安全預設成立：工作留在待辦、不上你的看板；**過期之後仍然可以回答** |
+| `withdrawn` | 伺服器 | **主體變了，問題不成立了** | 離開「待確認」，紀錄留著、狀態說話；**不能再回答** |
+| — | 沒有人 | — | 沒有刪除這條路：機器不刪提議 |
+
+你 `POST /v1/work/proposals/{id}` `{"answer":"track"|"later"|"no"}` 回答。`withdrawn` 是這一版補上的那一格：提議原本只有兩個出口，而兩個都是在問「人答了沒有」——沒有一個在問「這件事還成不成立」。於是一條提出一小時後就落地的線，剩下的七天還在問「要不要追蹤」。sweep 每一趟都拿提議當初依據的那幾列重新判一次（`WithdrawProposal`），理由是事實，寫在 `withdrawn_reason`：
+
+- `subject_tracked`——這條線現在有看板／Backlog 項目了（你自己開的，或某次派工把它帶上去）。這就是 `GateProposal` 本來就會擋掉新提議的那個事實（`proposal_already_tracked`），現在也追得上已經記下來的那一筆；
+- `subject_settled`——這條線的待辦全部結束了（收回來落地了，或結束時本來就不欠）。PT-3 當初要「待辦還欠著」才提得起來，這是同一個條件再讀一次。**一條完全沒有待辦的線不算結束**：leftover 的主體就是一條還沒有人派過工的線（PT-9），「全部都結束了」對零筆成立的話，唯一真的需要你回答的那一筆會第一個消失；
+- `rule_no_longer_applies`——規則自己提的，而規則現在不會再提它（PT-3 的門檻）。**只有 `source` 是 `rule` 的會這樣結束**；人或 child 選擇要問的那一筆，不因為規則改了就被收走。
+
+已經 `withdrawn` 的那一列不擋路：規則挑「還沒有提議過」的線時會跳過它（`UnproposedLines`），`GateProposal` 也不把它算成重複或被拒絕過。所以今天因為「光是派了 child 不值得問」而退場的線，明天要是還欠著超過 24 小時，會再被問一次——那時候問的是 I2，也就是真的值得問的那個理由。
+
+退場不是刪除。那一列留著，`GET /v1/work/proposals?state=withdrawn` 讀得到，當天的每日摘要也有一節（PT-6）。不能再回答，是因為它跟 `expired` 不同：`expired` 是「關於你」的預設，你的話當然蓋得過去；`withdrawn` 是「關於主體」的事實——主體已經被追蹤或已經結束，這時候答 `track` 等於把做完的事放上看板。之後還想追，是你自己開一個項目（`POST /v1/work/items`），拒絕的訊息就是這麼寫的（`proposal_withdrawn`）。〔已實作 `app/proposals.go` `Answer`、`WithdrawProposals`，`domain/work/proposals.go` `ExpireProposal`、`WithdrawProposal`、`SubjectFacts`；`adapters/store/proposals.go` `PendingProposals`、`SubjectOf`、`widenProposalStates`〕
 
 **PT-5** 決定：root `POST /v1/orchestrator/decisions`，2 到 4 個選項，必填 `default`（沒有回 400 `decision_default_required`），期限 60 到 10,080 分鐘（預設 7 天），到期就採用預設（`defaulted`）。只有 `blocking:true` 的推播一次，推播的結果另記一筆（`sent`／`not_subscribed`／`over_budget`／`failed`／`unknown`）。你在 console 或 `POST /v1/work/decisions/{id}` 回答；掛在看板項目上時，它的 3 天時鐘停住。〔已實作 `NewDecision`、`OpenDecision`、`PushDecision`〕
 
-**PT-6** 摘要：每天一則（前一天完成的、落地的、停擺的、自動搬動的、待確認的、等收尾的、這次要問的收尾），每週一則（30 天沒看過的 Backlog）。存在 `digests` 表，用 `GET /v1/work/digests` 讀，console 工作頁會顯示。〔部分：只存不送（缺口 3）〕
+**PT-6** 摘要：每天一則（前一天完成的、落地的、停擺的、自動搬動的、待確認的、**當天自己退場的提議與理由**、等收尾的、這次要問的收尾），每週一則（30 天沒看過的 Backlog）。存在 `digests` 表，用 `GET /v1/work/digests` 讀，console 工作頁會顯示。〔部分：只存不送（缺口 3）〕
 
 **PT-7** 量 agent 有沒有照伺服器說的做：`/v1/diagnostics` 的 `proposals.ask_true`、`asked_inline`、`asked_inline_unprompted`。〔已實作 `transport/http/proposals.go` `proposalDiagnostics`〕
 
@@ -181,6 +198,23 @@
 
 **容量**：`proposals.open` 500、`decisions.open` 256，到頂拒絕新的（429）；`work.digests` 800，淘汰最舊的。
 一筆交付最多 8 筆 leftover，每筆 title 200 字、why 與 suggested_acceptance 各 500 字，超過的 `result.json` 由 child 自己的驗證整份退回；登記在 `internal/domain/capacity` 的 baseline。
+
+### 2026-09-20 的 26 筆，與這一版之後會怎樣
+
+那天「待確認」堆到 26 筆，使用者的原話是「我不知道他們為何存在也不知道他們的目的」。實際量到的是
+（唯讀 `GET /v1/work/proposals`、`/v1/orchestrator/tasks/{id}` 與 store 的唯讀快照）：
+
+| 來源 | 筆數 | 訊號 | 主體現在的狀態 | 這一版之後 |
+|---|---|---|---|---|
+| `rule` | 6 | `cross_session` | 待辦 `done/landed` | `withdrawn` / `subject_settled` |
+| `rule` | 17 | `cross_session` | 待辦還 `open`，task 都已結束、landing 還沒記 | `withdrawn` / `rule_no_longer_applies`（I1 單獨已經不夠了）；其中還欠著超過 24 小時的，會以 I2 再被問一次 |
+| `session` | 3 | `leftover` | 主體是沒有任何派工的新線 | 仍然 `pending`——這三筆才是真的在問你 |
+
+26 → 3。沒有一筆被刪除，沒有一筆是靠「關掉提議」換來的：CM-2 的保護原封不動，session 還是不能自己
+往看板上放東西，退場的線仍然留在那個 session 的待辦裡。**使用者抽驗的第一筆正好是 leftover**：它的
+`task_id`（`6202bff8`）已經落地也已經被 `accept` 收掉，看起來像「問題早就不成立」，但那個 task 對
+leftover 而言只是出處，不是主體（PT-9）。卡片上只印了標題與理由、沒有印這件事，所以看不出差別——這是
+第 3 個問題（呈現）造成第 2 個問題（誤判）的實例，兩邊都改了。
 
 ## 8. 今天真的長怎樣（2026-09-19，執行中的 daemon，只做唯讀 GET）
 

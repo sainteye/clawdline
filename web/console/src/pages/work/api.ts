@@ -82,7 +82,15 @@ export interface BacklogPage {
 export interface Proposal {
   id: string
   work_id: string
+  /**
+   * The dispatch the proposal names. For a line of work it is that line's
+   * first task; for a leftover it is only provenance — which delivery said it
+   * did not do this — and the subject is a line nobody has dispatched
+   * anything for (PT-9). The two must not read the same on a card.
+   */
+  task_id: string | null
   session_id: string
+  source: string
   project: string
   title: string
   signals: string[]
@@ -90,6 +98,9 @@ export interface Proposal {
   state: string
   created_at: number
   expires_at: number
+  /** Which fact about the subject ended the question; null while it is one. */
+  withdrawn_reason: string | null
+  withdrawn_at: number | null
 }
 
 export interface ProposalPage {

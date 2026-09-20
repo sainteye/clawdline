@@ -243,6 +243,7 @@ internal/domain/work.LeftoverTitleLimit # admission: a leftover's title, the wor
 internal/domain/work.LeftoverWhyLimit # admission: a leftover's why, the sentence its proposal's question carries
 internal/domain/work.LeftoverAcceptanceLimit # admission: a leftover's suggested_acceptance
 internal/app.ruleLineLimit # page: the named lines one sweep pass proposes by rule; the rest are the next pass's
+internal/app.withdrawLimit # page: the pending proposals one sweep pass re-decides against their subjects; the rest are the next pass's
 cmd/clawdline.collectAnswerLimit # read: the broker's answer to `clawdline task finish` asking it to collect now, one refusal envelope (W7); result.json and task.json themselves are read under internal/adapters/taskdir.resultLimit
 internal/transport/http.workflowBodyLimit # admission: one command to the retired workflow route (W8), the Swift route's 64 KiB, which is what its helper checks before sending
 cmd/clawdline.brokerAnswerLimit # read: one daemon answer to a thin command (landings, assistants, send, notify, session report); the largest, landings, is tens of kilobytes

@@ -172,6 +172,37 @@ const (
 	// default stood — the work stays with its to-dos, and nothing was put on
 	// a person's board (board-redesign §10 #4).
 	ProposalExpired ProposalState = "expired"
+	// ProposalWithdrawn was taken back by the server because the question
+	// stopped being a question — its subject settled, or was tracked by
+	// another route, or the rule that made it would not make it now. It is a
+	// statement about the subject, not about the person: nobody failed to
+	// answer, so it is neither a decline nor a default, and the row stays
+	// with WithdrawnReason saying which fact ended it.
+	ProposalWithdrawn ProposalState = "withdrawn"
+)
+
+// ProposalStates is every state a proposal can be read in, in the order the
+// counts are listed.
+var ProposalStates = []ProposalState{ProposalPending, ProposalAnswered, ProposalExpired, ProposalWithdrawn}
+
+// Why a pending proposal was withdrawn. Each is a fact about the subject,
+// read again on the sweep from the same rows the proposal was made from.
+const (
+	// WithdrawnSubjectTracked: a work item for this line exists now — the
+	// person, or a dispatch that named it, put it on the board or the
+	// Backlog. GateProposal already refuses a new proposal in this case
+	// (RefuseAlreadyTracked); this is the same fact reaching one already
+	// recorded.
+	WithdrawnSubjectTracked = "subject_tracked"
+	// WithdrawnSubjectSettled: every to-do of the line is over — it was
+	// collected and landed, or it ended owing nothing. PT-3 required an owed
+	// to-do to propose the line at all; this is that requirement read again.
+	WithdrawnSubjectSettled = "subject_settled"
+	// WithdrawnRuleSpent: the rules made this one, and the rules would not
+	// make it now. Only a rule-made proposal can end this way: a person's
+	// counterpart asked a question of their own, and no change of rule
+	// withdraws that.
+	WithdrawnRuleSpent = "rule_no_longer_applies"
 )
 
 // Answer is a person's answer to a proposal: Track / Later (backlog) / No.
@@ -261,6 +292,10 @@ type Proposal struct {
 	AnsweredAt time.Time
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
+	// WithdrawnReason and WithdrawnAt are why the server took the question
+	// back, and when. Empty in every other state.
+	WithdrawnReason string
+	WithdrawnAt     time.Time
 	// AskedInlineAt is when the session reported it asked in the
 	// conversation: the measurement of whether ask:false was obeyed (§4.4).
 	AskedInlineAt time.Time
@@ -370,6 +405,12 @@ func GateProposal(f ProposalFacts, p ProposalPolicy, now time.Time) (Verdict, er
 	seen := map[Signal]bool{}
 	for _, prior := range f.Prior {
 		switch {
+		case prior.State == ProposalWithdrawn:
+			// Nobody answered it and nobody let it lapse: the server took
+			// the question back because its subject had moved on. It is
+			// neither a duplicate to refuse nor a decline to count, so a
+			// line that comes back to life may be proposed again.
+			continue
 		case prior.State == ProposalPending:
 			return Verdict{}, refuse(409, RefuseDuplicate,
 				"This line of work is already proposed and waits for an answer (%s).", prior.ID)
@@ -385,6 +426,9 @@ func GateProposal(f ProposalFacts, p ProposalPolicy, now time.Time) (Verdict, er
 	if len(f.Signals) == 0 {
 		return Verdict{}, refuse(422, RefuseBelowThreshold,
 			"Nothing here is worth a person's attention yet: no child was sent for it, no to-do of it is a day old, and no effect outside this machine was declared or landed. It stays a to-do.")
+	}
+	if f.ByRule && !RuleWorthy(f.Signals) {
+		return Verdict{}, refuse(422, RefuseBelowThreshold, ruleBarRefusal)
 	}
 	if declined > 0 {
 		fresh := false
@@ -454,6 +498,16 @@ func AnswerProposal(p Proposal, a Answer, actor string, now time.Time) (Proposal
 	if p.State == ProposalAnswered {
 		return Proposal{}, refuse(409, "proposal_answered", "This proposal was already answered (%s).", p.Answer)
 	}
+	if p.State == ProposalWithdrawn {
+		// The expiry is a default about a person, and a person's word beats
+		// it. A withdrawal is a fact about the subject — the line is already
+		// tracked, or already over — and answering `track` would put
+		// finished work on a board. What a person wants followed after that
+		// is an item they make (POST /v1/work/items), which says so.
+		return Proposal{}, refuse(409, "proposal_withdrawn",
+			"This proposal was withdrawn (%s): its subject moved on, so there is nothing left to answer. Make an item on the board if you want it followed.",
+			p.WithdrawnReason)
+	}
 	p.State, p.Answer, p.AnsweredBy, p.AnsweredAt = ProposalAnswered, a, actor, now
 	return p, nil
 }
@@ -466,6 +520,94 @@ func ExpireProposal(p Proposal, now time.Time) (Proposal, bool) {
 	}
 	p.State = ProposalExpired
 	return p, true
+}
+
+const ruleBarRefusal = "A dispatch on its own is not worth asking a person about: on a machine where sending a child is " +
+	"how work is done, every dispatch would be a question. The rules propose a line only once it has outlived a day " +
+	"of nobody following it, or has an effect outside this machine. Its root may still propose it."
+
+// RuleWorthy is the bar a proposal the rules make for themselves must clear:
+// a signal other than I1.
+//
+// I1 (a root sent a child) was calibrated for a machine where a second
+// session was an event. Where dispatching is how the work is done, I1 alone
+// is carried by every line there is, so a rule resting on it asks one
+// identically-shaped question per dispatch — 23 of them in one day here on
+// 2026-09-20, none of which was ever answered. I2 (a to-do of it owed past a
+// day) and I3 (an effect outside this machine) are the signals that pick out
+// a line worth interrupting somebody for, and each is self-limiting.
+//
+// It binds the rules only. A root that judges a line worth a person's
+// attention still proposes it on I1 alone, and so does a child: a proposal
+// somebody chose to make is not the one that floods.
+func RuleWorthy(signals []Signal) bool {
+	for _, s := range signals {
+		if s != SignalCrossSession {
+			return true
+		}
+	}
+	return false
+}
+
+// SubjectFacts is what the sweep reads back about a pending proposal's
+// subject — the line of work it names — to decide whether it is still a
+// question. They are the same rows the proposal was made from: the work item
+// under its work id, and the to-dos of that line.
+type SubjectFacts struct {
+	// HasItem says a work item exists for the line now.
+	HasItem bool
+	// Todos are every to-do on the line. A line with none is not settled:
+	// a leftover's subject is a line nobody has dispatched anything for, and
+	// "all of nothing is over" would retire the question before it was asked
+	// (leftovers.go).
+	Todos []Todo
+}
+
+// WithdrawProposal is the exit the lifecycle was missing: a pending proposal
+// whose question has stopped being a question is taken back by the server,
+// with the fact that ended it.
+//
+// A proposal has two exits that need nobody — an answer and the wait — and
+// both are about the person. Neither is about the subject, so a line that
+// landed an hour after it was proposed went on asking "shall I follow this?"
+// for the rest of its seven days. The sweep re-decides every pending
+// proposal from the rows it was made from, in the order of what is truest:
+// tracked by another route, settled, or made by a rule that no longer
+// applies.
+//
+// Withdrawing is not deleting. The row stays and its state says why, which is
+// what makes "it went away" readable afterwards (GET /v1/work/proposals
+// ?state=withdrawn) instead of a question a person half-remembers.
+func WithdrawProposal(p Proposal, f SubjectFacts, now time.Time) (Proposal, bool) {
+	if p.State != ProposalPending {
+		return p, false
+	}
+	reason := ""
+	switch {
+	case f.HasItem:
+		reason = WithdrawnSubjectTracked
+	case settled(f.Todos):
+		reason = WithdrawnSubjectSettled
+	case p.Source == SourceRule && !RuleWorthy(p.Signals):
+		reason = WithdrawnRuleSpent
+	default:
+		return p, false
+	}
+	p.State, p.WithdrawnReason, p.WithdrawnAt = ProposalWithdrawn, reason, now
+	return p, true
+}
+
+// settled says the line had to-dos and none of them is owed any more.
+func settled(todos []Todo) bool {
+	if len(todos) == 0 {
+		return false
+	}
+	for _, td := range todos {
+		if td.State.Outstanding() {
+			return false
+		}
+	}
+	return true
 }
 
 // Placing is where a proposal answered track or later puts its work item:

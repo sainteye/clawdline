@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -50,15 +51,19 @@ CREATE TABLE IF NOT EXISTS proposals (
                     ('human_present','human_absent','proposal_budget_exhausted','proposal_from_child','made_by_rule')),
   channel         TEXT    NOT NULL CHECK (channel IN ('session','to_confirm')),
   question        TEXT    NOT NULL DEFAULT '',
-  state           TEXT    NOT NULL CHECK (state IN ('pending','answered','expired')),
+  state           TEXT    NOT NULL CHECK (state IN ('pending','answered','expired','withdrawn')),
   answer          TEXT    CHECK (answer IN ('track','later','no')),
   answered_by     TEXT,
   answered_at     INTEGER,
   created_at      INTEGER NOT NULL,
   expires_at      INTEGER NOT NULL,
   asked_inline_at INTEGER,
+  withdrawn_reason TEXT   CHECK (withdrawn_reason IN
+                    ('subject_tracked','subject_settled','rule_no_longer_applies')),
+  withdrawn_at    INTEGER,
   version         INTEGER NOT NULL DEFAULT 0,
   CHECK ((state = 'answered') = (answer IS NOT NULL AND answered_at IS NOT NULL)),
+  CHECK ((state = 'withdrawn') = (withdrawn_reason IS NOT NULL AND withdrawn_at IS NOT NULL)),
   CHECK (ask = (channel = 'session'))
 );
 CREATE INDEX IF NOT EXISTS proposals_work ON proposals(work_id, created_at);
@@ -137,24 +142,79 @@ var (
 )
 
 func openParticipation(db *sql.DB) error {
+	if err := widenProposalStates(db); err != nil {
+		return err
+	}
 	_, err := db.Exec(participationSchema)
 	return err
+}
+
+// widenProposalStates lets a store made before withdrawal record one.
+//
+// `CREATE TABLE IF NOT EXISTS` never revisits a table that exists, and a CHECK
+// constraint cannot be altered, so a store that has been running since before
+// `withdrawn` would refuse every withdrawal at the write — on exactly the
+// machines with proposals old enough to need one. It is stated as what it
+// wants, like the rest of migrate(): a table whose own DDL already names
+// `withdrawn` is left alone, so running it twice does nothing.
+//
+// The rows are carried over unchanged. Nothing here decides anything about a
+// proposal; the sweep does that afterwards, from the same rules a new store
+// uses.
+func widenProposalStates(db *sql.DB) error {
+	var ddl string
+	err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'proposals'`).Scan(&ddl)
+	if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "withdrawn")) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	steps := []string{
+		`ALTER TABLE proposals RENAME TO proposals_before_withdrawn`,
+		// The indexes followed the rename and still hold their names.
+		`DROP INDEX IF EXISTS proposals_work`,
+		`DROP INDEX IF EXISTS proposals_task`,
+		`DROP INDEX IF EXISTS proposals_state`,
+		`DROP INDEX IF EXISTS proposals_asks`,
+		`DROP INDEX IF EXISTS proposals_one_pending`,
+		participationSchema,
+		`INSERT INTO proposals (id, work_id, task_id, session, source, project, title, signals, effects, ask,
+			ask_reason, channel, question, state, answer, answered_by, answered_at, created_at, expires_at,
+			asked_inline_at, withdrawn_reason, withdrawn_at, version)
+		 SELECT id, work_id, task_id, session, source, project, title, signals, effects, ask, ask_reason, channel,
+			question, state, answer, answered_by, answered_at, created_at, expires_at, asked_inline_at, NULL, NULL,
+			version FROM proposals_before_withdrawn`,
+		`DROP TABLE proposals_before_withdrawn`,
+	}
+	for _, step := range steps {
+		if _, err := tx.Exec(step); err != nil {
+			return fmt.Errorf("proposals.withdrawn: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 // ——— Proposals ———
 
 const proposalColumns = `id, work_id, COALESCE(task_id, ''), session, source, project, title, signals, effects,
   ask, ask_reason, channel, question, state, COALESCE(answer, ''), COALESCE(answered_by, ''),
-  COALESCE(answered_at, 0), created_at, expires_at, COALESCE(asked_inline_at, 0), version`
+  COALESCE(answered_at, 0), created_at, expires_at, COALESCE(asked_inline_at, 0),
+  COALESCE(withdrawn_reason, ''), COALESCE(withdrawn_at, 0), version`
 
 func scanProposal(sc scanner) (work.Proposal, error) {
 	var p work.Proposal
 	var signals, effects, channel, state, answer string
 	var ask int
-	var answered, created, expires, asked int64
+	var answered, created, expires, asked, withdrawn int64
 	err := sc.Scan(&p.ID, &p.WorkID, &p.TaskID, &p.Session, &p.Source, &p.Project, &p.Title, &signals, &effects,
 		&ask, &p.AskReason, &channel, &p.Question, &state, &answer, &p.AnsweredBy, &answered, &created, &expires,
-		&asked, &p.Version)
+		&asked, &p.WithdrawnReason, &withdrawn, &p.Version)
 	if err == sql.ErrNoRows {
 		return work.Proposal{}, ErrNoProposal
 	}
@@ -171,6 +231,7 @@ func scanProposal(sc scanner) (work.Proposal, error) {
 	p.Ask, p.Channel, p.State, p.Answer = ask == 1, work.Channel(channel), work.ProposalState(state), work.Answer(answer)
 	p.AnsweredAt, p.CreatedAt, p.ExpiresAt, p.AskedInlineAt = unixOrZero(answered), time.Unix(created, 0),
 		time.Unix(expires, 0), unixOrZero(asked)
+	p.WithdrawnAt = unixOrZero(withdrawn)
 	return p, nil
 }
 
@@ -236,16 +297,20 @@ func (t *WorkTx) PutProposal(next work.Proposal, prev *work.Proposal, limit int6
 		}
 		res, err = t.tx.ExecContext(t.ctx, `INSERT INTO proposals (id, work_id, task_id, session, source, project,
 			title, signals, effects, ask, ask_reason, channel, question, state, answer, answered_by, answered_at,
-			created_at, expires_at, asked_inline_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			created_at, expires_at, asked_inline_at, withdrawn_reason, withdrawn_at, version)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
 			next.ID, next.WorkID, emptyOrNull(next.TaskID), next.Session, next.Source, next.Project, next.Title,
 			string(signals), string(effects), ask, next.AskReason, string(next.Channel), next.Question,
 			string(next.State), emptyOrNull(string(next.Answer)), emptyOrNull(next.AnsweredBy),
-			zeroOrUnix(next.AnsweredAt), next.CreatedAt.Unix(), next.ExpiresAt.Unix(), zeroOrUnix(next.AskedInlineAt))
+			zeroOrUnix(next.AnsweredAt), next.CreatedAt.Unix(), next.ExpiresAt.Unix(), zeroOrUnix(next.AskedInlineAt),
+			emptyOrNull(next.WithdrawnReason), zeroOrUnix(next.WithdrawnAt))
 	} else {
 		res, err = t.tx.ExecContext(t.ctx, `UPDATE proposals SET state = ?, answer = ?, answered_by = ?,
-			answered_at = ?, asked_inline_at = ?, version = version + 1 WHERE id = ? AND version = ?`,
+			answered_at = ?, asked_inline_at = ?, withdrawn_reason = ?, withdrawn_at = ?, version = version + 1
+			WHERE id = ? AND version = ?`,
 			string(next.State), emptyOrNull(string(next.Answer)), emptyOrNull(next.AnsweredBy),
-			zeroOrUnix(next.AnsweredAt), zeroOrUnix(next.AskedInlineAt), next.ID, prev.Version)
+			zeroOrUnix(next.AnsweredAt), zeroOrUnix(next.AskedInlineAt), emptyOrNull(next.WithdrawnReason),
+			zeroOrUnix(next.WithdrawnAt), next.ID, prev.Version)
 	}
 	if err != nil {
 		return err
@@ -430,7 +495,14 @@ type UnproposedLine struct {
 }
 
 // UnproposedLines reads every named line of work with an owed to-do, no work
-// item and no proposal, at most limit. Its cost is the to-dos still owed.
+// item and no proposal still standing, at most limit. Its cost is the to-dos
+// still owed.
+//
+// A withdrawn proposal does not stand in the way. It is the server's own
+// statement that the question stopped being one, not a person's answer and
+// not a lapse (work.WithdrawProposal, GateProposal) — a line withdrawn today
+// because a dispatch alone is not worth asking about is asked about once it
+// has been owed for a day, which is the signal that made it worth asking.
 func (s *Store) UnproposedLines(ctx context.Context, limit int) ([]UnproposedLine, error) {
 	if err := reading(); err != nil {
 		return nil, err
@@ -439,7 +511,7 @@ func (s *Store) UnproposedLines(ctx context.Context, limit int) ([]UnproposedLin
 		MIN(t.project) FROM todos t
 		WHERE t.state IN ('open','handed_off') AND t.work_id IS NOT NULL AND t.task_id IS NOT NULL
 		  AND NOT EXISTS (SELECT 1 FROM work w WHERE w.id = t.work_id)
-		  AND NOT EXISTS (SELECT 1 FROM proposals p WHERE p.work_id = t.work_id)
+		  AND NOT EXISTS (SELECT 1 FROM proposals p WHERE p.work_id = t.work_id AND p.state <> 'withdrawn')
 		GROUP BY t.work_id ORDER BY MIN(t.created_at), t.work_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -452,6 +524,62 @@ func (s *Store) UnproposedLines(ctx context.Context, limit int) ([]UnproposedLin
 			return nil, err
 		}
 		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// PendingProposals is the ids of every proposal still waiting for an answer,
+// oldest first, at most limit: what the sweep re-decides against its subject
+// (work.WithdrawProposal).
+func (s *Store) PendingProposals(ctx context.Context, limit int) ([]string, error) {
+	return s.ids(ctx, `SELECT id FROM proposals WHERE state = 'pending' ORDER BY created_at, id LIMIT ?`, limit)
+}
+
+// SubjectOf reads what the rules need of a pending proposal's subject, as the
+// transaction sees it: whether the line is a work item now, and the to-dos on
+// it. Both are the rows the proposal was made from.
+func (t *WorkTx) SubjectOf(workID string) (work.SubjectFacts, error) {
+	var f work.SubjectFacts
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS (SELECT 1 FROM work WHERE id = ?)`, workID).
+		Scan(&f.HasItem); err != nil {
+		return work.SubjectFacts{}, err
+	}
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT `+todoColumns+` FROM todos WHERE work_id = ?`, workID)
+	if err != nil {
+		return work.SubjectFacts{}, err
+	}
+	defer rows.Close()
+	f.Todos = []work.Todo{}
+	for rows.Next() {
+		r, err := scanTodo(rows)
+		if err != nil {
+			return work.SubjectFacts{}, err
+		}
+		f.Todos = append(f.Todos, r.Todo)
+	}
+	return f, rows.Err()
+}
+
+// TodosOfWork reads the to-dos on one line of work. It is what I2 (a to-do of
+// it owed past a day) is read from outside a transaction: the rules' own pass
+// decided the signals of a line without ever reading its to-dos, so I2 could
+// not be one of them.
+func (s *Store) TodosOfWork(ctx context.Context, workID string) ([]work.Todo, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+todoColumns+` FROM todos WHERE work_id = ?`, workID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []work.Todo{}
+	for rows.Next() {
+		r, err := scanTodo(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r.Todo)
 	}
 	return out, rows.Err()
 }
@@ -796,8 +924,11 @@ func (s *Store) ProposalsClosedBetween(ctx context.Context, state work.ProposalS
 		return nil, err
 	}
 	column := "answered_at"
-	if state == work.ProposalExpired {
+	switch state {
+	case work.ProposalExpired:
 		column = "expires_at"
+	case work.ProposalWithdrawn:
+		column = "withdrawn_at"
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT `+proposalColumns+` FROM proposals WHERE state = ? AND `+column+
 		` >= ? AND `+column+` < ? ORDER BY `+column+`, id LIMIT ?`, string(state), from.Unix(), to.Unix(), limit)
