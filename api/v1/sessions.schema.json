@@ -305,6 +305,16 @@
         "sequence": { "type": "integer" }
       }
     },
+    "ScanSource": {
+      "description": "One source's own answer about itself. The merged `complete` is the AND of these, which is the right answer to `is this list all there is` and the wrong one to `is this pane gone`: only the source that reads panes can say that. A reader that must decide whether a session it remembers is really absent asks the source that would have seen it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "source"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "source": { "description": "The source's provenance, as the adapter names it: `ps`, `tmux`, `iterm`.", "type": "string" }
+      }
+    },
     "Scan": {
       "description": "What the reading behind this snapshot knows about itself. Without it an empty list cannot be told apart from a failed scan.",
       "type": "object",
@@ -316,7 +326,8 @@
         "emptyAuthoritative": { "description": "An empty list is only authoritative when the reading was complete. This is what stops a client reading a failed scan as `every session went away`.", "type": "boolean" },
         "epoch": { "description": "Identifies the process. A client reconnecting to a restarted daemon uses it to tell a reset generation from one that went backwards.", "type": "integer" },
         "generation": { "type": "integer" },
-        "provenance": { "type": "string" }
+        "provenance": { "type": "string" },
+        "sources": { "description": "Each source's own completeness, by provenance name, in a stable order. Optional: a reading with no per-source answer omits it, and a client written before it existed is unaffected.", "type": "array", "items": { "$ref": "#/$defs/ScanSource" } }
       }
     },
     "SessionsSnapshot": {

@@ -4700,11 +4700,34 @@ export interface Scan {
   epoch: number
   generation: number
   provenance: string
+
+  /**
+   * Each source's own completeness, by provenance name, in a stable order.
+   * Optional: a reading with no per-source answer omits it, and a client written
+   * before it existed is unaffected.
+   */
+  sources?: ScanSource[]
 }
 
 export interface ScanCompleted {
   complete: boolean
   sequence: number
+}
+
+/**
+ * One source's own answer about itself. The merged `complete` is the AND of these,
+ * which is the right answer to `is this list all there is` and the wrong one to `is
+ * this pane gone`: only the source that reads panes can say that. A reader that
+ * must decide whether a session it remembers is really absent asks the source that
+ * would have seen it.
+ */
+export interface ScanSource {
+  complete: boolean
+
+  /**
+   * The source's provenance, as the adapter names it: `ps`, `tmux`, `iterm`.
+   */
+  source: string
 }
 
 export interface ScheduleDeleted {
