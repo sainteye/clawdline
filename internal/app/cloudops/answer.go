@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"unicode/utf8"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // The layers a refusal can be decided at, as the wire spells them
@@ -273,12 +275,28 @@ const (
 )
 
 // imageMaxEncodedBytes is the largest PNG this transport carries in one
-// answer. **Derived, not chosen**: the relay caps one envelope's ciphertext,
-// the tag and the JSON wrapper come off it, base64 costs four bytes for every
-// three, and the base64 budget is rounded down to a multiple of four so the
-// encoded length is exact rather than approximately right.
+// answer. **Derived, not chosen**, from two ceilings, and the smaller wins:
+//
+//  1. the relay caps one envelope's ciphertext, and the tag and the JSON
+//     wrapper come off that;
+//  2. this machine's own spool caps what one wire channel may have owed to
+//     it (`cloud.spool_channel_bytes`), measured on the payload, and the JSON
+//     wrapper comes off that too.
+//
+// Base64 costs four bytes for every three and the budget is rounded down to a
+// multiple of four, so the encoded length is exact rather than approximately
+// right.
+//
+// **The second ceiling was missing and it is the one that binds.** The relay
+// allows 16 MiB and a channel holds 4, so every picture between them passed
+// this door and died at the spool — where, until 2026-09-21, it died silently.
+// A door that admits what the next room refuses is not a door; the byte count
+// a person is shown here is now one this machine can actually carry.
 func imageMaxEncodedBytes() int {
 	budget := cloudEnvelopeCiphertextLimit - aeadTagBytes - imageAnswerOverhead
+	if channel := int(capacity.Default(capacity.CloudSpoolChannelBytes)) - imageAnswerOverhead; channel < budget {
+		budget = channel
+	}
 	return (budget / 4) * 3
 }
 
@@ -308,7 +326,7 @@ func shapeImage(p plan, res LocalResponse) (json.RawMessage, Refusal) {
 	}
 	if limit := imageMaxEncodedBytes(); len(res.Body) > limit {
 		return nil, Refusal{Status: 413, Code: "image_too_large_for_cloud",
-			Message: "That image is larger than one cloud envelope can carry.", Layer: layerRoute,
+			Message: "That image is larger than one answer on this connection can carry.", Layer: layerRoute,
 			Detail: map[string]any{"byte_count": len(res.Body), "limit_bytes": limit}}
 	}
 	return mustJSON(map[string]any{

@@ -612,6 +612,12 @@ JSON 壞掉、不是物件、channel 或 sequence 壞掉，只會得到
 這句拒絕本身是從 spool 的保留額度進去的（`internal/adapters/cloud.spoolRefusalByteLimit`，每條
 channel 同時只有一句）。一條塞滿的 channel 沒辦法用塞滿它的那條路說自己塞滿了，這是唯一的例外。
 
+同一天順著這個問題做的稽核：**每一個決定「一筆答案可以多大」的地方，都要取兩個天花板裡小的那個**
+——relay 的單封 ciphertext 上限，以及這台機器自己一條 channel 裝得下的量
+（`cloud.spool_channel_bytes`）。`imageMaxEncodedBytes()` 原本只看前者，於是介於兩者之間的圖片會
+通過門口、死在 spool。文件（2 MiB）與看板快照（1,000,000 bytes）本來就在下面，transcript 回應
+（150 KiB）也是。
+
 ### 9.6 本機 broker 的 typed 拒絕
 
 遠端派工會得到本機 orchestrator 原本就有的那組 typed error：`workspace_busy`、`over_capacity`、
