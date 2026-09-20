@@ -694,13 +694,17 @@ function GateCard(props: {
                                 : T.webStartMachineStale}
                         </span>
                       </button>
-                      {/* A machine this browser was never paired with cannot be
-                          chosen and is exactly the kind that has to be
-                          removable, so this sits outside the row's own button
-                          and does not share its `disabled`. */}
+                      {/* Inside the row to look at, beside it in the markup: a
+                          button cannot be nested in a button, and a machine
+                          this browser was never paired with cannot be chosen —
+                          it is exactly the kind that has to be removable, so
+                          this must not share the row's `disabled` either. The
+                          glyph is not a word and is not translated; what a
+                          screen reader says is the label, which names the
+                          machine. */}
                       {!gone && (
                         <button
-                          className="chip danger cloud-forget"
+                          className="cloud-forget"
                           type="button"
                           data-forget={m.id}
                           disabled={forgetting}
@@ -708,7 +712,7 @@ function GateCard(props: {
                           aria-label={nextWord("cloudForgetOne", { machine: m.name || m.label || m.id })}
                           onClick={() => onAsk(m)}
                         >
-                          {nextWord("cloudForget")}
+                          <span aria-hidden="true">×</span>
                         </button>
                       )}
                     </li>

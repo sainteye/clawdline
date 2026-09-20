@@ -32,17 +32,21 @@
    this page. Nothing in `legacy/` is touched — it is byte-for-byte copied
    (`tools/check-legacy-css.sh`), which is why the red `.confirm-go` is spelled
    here rather than added to that file's list of `data-kind`s. */
-.cloud-machines li { display: flex; align-items: stretch; gap: 8px; }
-.cloud-machines li > button:first-child { flex: 1 1 auto; min-width: 0; }
-/* `.cloud-machines button` above styles every button in the list, and it is
-   the more specific of the two, so the chip states what it is rather than
-   inheriting a row's shape. */
+/* The row is the card; the × sits inside its bounds. They are siblings in the
+   markup because a button cannot be nested in a button, so the list item is
+   the positioned box and the row fills it. The row keeps enough padding on the
+   right that a long machine name never runs under the glyph. */
+.cloud-machines li { position: relative; }
+.cloud-machines li > button:first-child { padding-right: 40px; }
+/* `.cloud-machines button` above styles every button in the list and is the
+   more specific of the two, so this states its whole shape rather than
+   inheriting a row's. */
 .cloud-machines .cloud-forget {
-    flex: 0 0 auto; width: auto;
+    position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+    width: 26px; height: 26px; padding: 0;
     flex-direction: row; align-items: center; justify-content: center;
-    padding: 8px 14px; border-radius: 9px;
-    background: var(--card); border: 1px solid #57362e;
-    color: #e09985; font-size: 12.5px; text-align: center;
+    background: transparent; border: 1px solid transparent; border-radius: 7px;
+    color: var(--dim); font-size: 16px; line-height: 1; text-align: center;
 }
 .cloud-machines .cloud-forget:hover:not(:disabled) { background: #2f2322; color: #f0b6a2; border-color: #57362e; }
 .cloud-machines .cloud-forget:disabled { opacity: 0.4; cursor: default; }
