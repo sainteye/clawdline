@@ -14,7 +14,7 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { SessionInfo } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { CARRIED, CARRY_TABLE, DEFERRED, NO_MAC_ROUTE, notCarriedDetail, uncarried, uncarriedWordOf, words } from "./carry.ts"
+import { ANSWERED_HERE, CARRIED, CARRY_TABLE, DEFERRED, NO_MAC_ROUTE, notCarriedDetail, uncarried, uncarriedWordOf, words } from "./carry.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, type CloudIdentity, type CloudRow, type CloudSessions } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
@@ -52,6 +52,9 @@ class FakeMac implements CloudWriteClient {
   }
   transcript() {
     return Promise.resolve({ id: "s1", entries: [], signature: "1", evidence: "transcript" })
+  }
+  tasks() {
+    return Promise.resolve({ tasks: [] })
   }
   machineDescriptor(machine: string) {
     return this.commands && machine === "mac-a" ? { machine: { commands: this.commands } } : null
@@ -138,6 +141,27 @@ test("one word, one list, and every route names a word the table carries", () =>
   // this branch was open, and the count is re-measured rather than carried
   // over — a number copied across a merge is the one nobody checks.
   assert.equal(Object.keys(CARRIED).length, 16)
+})
+
+test("every route the table says is answered here is answered here, with no word behind it", async () => {
+  // `ANSWERED_HERE` used to be read by nothing, which is the same shape as the
+  // defect this table was built for: a hand-written list of GET paths and no
+  // way for it to notice it had stopped being true. The list is a claim about
+  // the reader, so it is made of the reader.
+  const mac = new FakeMac()
+  const reader = seam(mac)
+  for (const path of ANSWERED_HERE) {
+    const res = await reader.fetch(path)
+    assert.equal(res.status, 200, path + " is in ANSWERED_HERE and the seam does not answer it")
+    const row = reader.log[reader.log.length - 1]
+    assert.equal(row.path, path)
+    assert.equal(row.answer, "local", path + " is answered here, so nothing was asked of the Mac for it")
+    assert.equal(row.word, undefined, path + " is in ANSWERED_HERE and names a Cloud word")
+    assert.equal(uncarriedWordOf("GET", path), "", path + " stands for a word, so it is not answered here")
+  }
+  // And a route in neither list is still refused, so the list is what a page
+  // can reach and not merely some of it.
+  assert.equal((await reader.fetch("/v1/board")).status, 501)
 })
 
 test("a route this console does not carry is refused by the word it stands for", async () => {

@@ -120,13 +120,32 @@ export const NO_MAC_ROUTE = {
 /**
  * Own-origin routes this seam answers itself, with no Cloud word behind them.
  *
- * They are not part of the vocabulary and so not part of the drift guard; they
- * are here so that the one place that says what a hosted page can reach says
- * all of it. `/v1/sessions` is the relay's own snapshot of this machine's rows,
- * `/v1/health` is whether the line is up, and `/v1/strings` is the bundle's own
- * catalog (`cloud/strings.ts`).
+ * They are not part of the Mac's vocabulary and so not part of the Go drift
+ * guard; they are here so that the one place that says what a hosted page can
+ * reach says all of it, and `carry.test.ts` holds the reader to this list so
+ * that being here is a fact and not a note. `/v1/sessions` is the relay's own
+ * snapshot of this machine's rows, `/v1/orchestrator/tasks` is the dispatched
+ * work that rides on the same machine's descriptor, `/v1/health` is whether
+ * the line is up, and `/v1/strings` is the bundle's own catalog
+ * (`cloud/strings.ts`).
+ *
+ * **The task list is here and not in a word list**, and that is the whole
+ * answer to "which class does it belong to". A word is something a browser
+ * asks a Mac to do; this is something the Mac already said. It publishes its
+ * dispatched work on the `orch/` snapshot beside `machine.commands`
+ * (`internal/transport/cloud/tasklist.go`), the copied client keeps every
+ * descriptor it opens, and reading it back costs the relay nothing — exactly
+ * as the session rows do. `dispatch` stays in `NO_MAC_ROUTE` and is a
+ * different thing: it is *starting* a task from a browser, which this Mac
+ * refuses by name (`cloudDispatchUnpinned`) because no pinned wire shape says
+ * where the task file would be written. Reading the list was never that.
  */
-export const ANSWERED_HERE: readonly string[] = ["/v1/sessions", "/v1/health", "/v1/strings"]
+export const ANSWERED_HERE: readonly string[] = [
+  "/v1/sessions",
+  "/v1/orchestrator/tasks",
+  "/v1/health",
+  "/v1/strings",
+]
 
 /**
  * What the seam is handed: the words this bundle asks for, and what it says

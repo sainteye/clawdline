@@ -6,6 +6,7 @@ import { Row } from "./session/List.js"
 import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { Starting } from "./session/Starting.js"
+import { taskReads } from "./session/task-read.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 import { ScheduleSection } from "./pages/schedules.js"
 
@@ -495,9 +496,17 @@ function useTasks(arrived: boolean, rows: SessionRow[]): TaskRow[] | null {
       client
         .tasks()
         .then((d) => {
+          taskReads.arrived()
           if (alive) setList(d.tasks ?? [])
         })
-        .catch(() => {})
+        // Not shown to anybody: a list that did not arrive costs an indent and
+        // a chip, and a banner over that would be worse than the thing it
+        // reports. But it is said once, by name, because the version of this
+        // that said nothing at all is why a phone drew a flat list for as long
+        // as it did (`session/task-read.ts`).
+        .catch((error: unknown) => {
+          taskReads.failed(error)
+        })
         .finally(() => {
           inFlight = false
           if (alive && again) {
