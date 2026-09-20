@@ -359,8 +359,8 @@ func infoPath(r *http.Request) (string, bool) {
 // It follows /v1/sessions: whichever daemon answers the list answers this, so
 // an id always means the same session to both reads.
 func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id string) {
-	if !ownsSessions() {
-		s.proxy.ServeHTTP(w, r)
+	if !s.ownsSessions() {
+		s.forwardUpstream(w, r)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)

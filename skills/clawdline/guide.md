@@ -8,11 +8,13 @@ Traditional Chinese.
 
 ## 0. If you learned Clawdline from the Swift app, read this first
 
-The Swift app (port 7717, `~/.config/clawdline`) is being retired. This daemon is not a copy of it,
-and five differences are where people fall:
+The Swift app was retired on 2026-09-19: it is stopped, it no longer starts at login, and nothing
+answers port 7717. Its directory, `~/.config/clawdline`, is still on disk and is still read — only
+read — for history this daemon never held. This daemon is not a copy of that app, and five
+differences are where people fall:
 
-1. **Task directories are `<state dir>/tasks`, not `/tmp/.clawdline`.** The Swift broker owns
-   `/tmp/.clawdline`; two brokers writing one directory of task ids would collide where nobody
+1. **Task directories are `<state dir>/tasks`, not `/tmp/.clawdline`.** `/tmp/.clawdline` was the
+   Swift broker's; two brokers writing one directory of task ids would have collided where nobody
    looks. Do not hard-code either: read `task_root` from the inventory (§3) and write `task.json`
    under it.
 2. **There is no workflow envelope and no workflow route to call.** Messages no longer carry a
@@ -98,9 +100,12 @@ curl --fail-with-body -sS -H @<(auth) "http://127.0.0.1:$PORT/v1/orchestrator/in
   Extras such as `retry_after` sit inside `error`.
 - `{"error":"<code>","detail":"…"}` — route misses, wrong methods and some reads.
 
-A route this daemon does not own is forwarded to the Swift app while that app is running, and
-refused as `501 not_implemented` when the daemon runs alone. Neither is an answer from this
-daemon.
+A route this daemon does not own is refused as `501 not_implemented`, and the refusal names the
+route. That is the answer on any ordinary machine. It is only forwarded when somebody deliberately
+put another daemon behind this one with `CLAWDLINE_NEXT_UPSTREAM_PORT`, and then a `502
+upstream_unreachable` names the address that did not answer. Neither is an answer from this
+daemon. Before 2026-09-19 the forwarding was on by default and went to the Swift app on 7717, so a
+note written then will say an unowned route reaches that app; it does not.
 
 ## 3. Before you dispatch: read what is already there
 

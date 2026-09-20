@@ -95,24 +95,31 @@ type Server struct {
 	retired retiredWorkflow
 }
 
-// servedBy names which implementation answered. It is how a reader tells the Go
-// daemon from the Swift app when both can hold the same port.
+// servedBy names which implementation answered. It is how a reader tells this
+// daemon from the Swift app that held the same port until 2026-09-19, in a
+// transcript, a log or a capture taken while both existed.
 const servedBy = "clawdline-go"
 
 func New(cfg config.Config) (*Server, error) {
-	upstream, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cfg.UpstreamPort))
-	if err != nil {
-		return nil, err
-	}
-	proxy := httputil.NewSingleHostReverseProxy(upstream)
-	// Server-sent events must reach the client as they arrive. Without this the
-	// transport buffers and the console's stream looks dead.
-	proxy.FlushInterval = -1
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		// A refusal has to name which hop failed. "The upstream is not running"
-		// and "this daemon is broken" are different problems for the reader.
-		writeRefusalAbout(w, http.StatusBadGateway, "upstream_unreachable", err.Error(),
-			contract.Refusal{Upstream: upstream.String()})
+	// No upstream is the ordinary case, and then there is no proxy at all:
+	// nothing can accidentally forward to a port nobody is listening on.
+	var proxy *httputil.ReverseProxy
+	if port, ok := cfg.Upstream(); ok {
+		upstream, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
+		if err != nil {
+			return nil, err
+		}
+		proxy = httputil.NewSingleHostReverseProxy(upstream)
+		// Server-sent events must reach the client as they arrive. Without this
+		// the transport buffers and the console's stream looks dead.
+		proxy.FlushInterval = -1
+		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			// A refusal has to name which hop failed. "The upstream is not
+			// running" and "this daemon is broken" are different problems for
+			// the reader.
+			writeRefusalAbout(w, http.StatusBadGateway, "upstream_unreachable", err.Error(),
+				contract.Refusal{Upstream: upstream.String()})
+		}
 	}
 	// A store that cannot be opened is a refusal at startup, not a daemon that
 	// runs without durability and discovers it later.
@@ -371,10 +378,11 @@ func (s *Server) Handler() http.Handler {
 	// Web Push: the key, the subscription, the test and the way back out
 	// (push.go). Read-level, as in the Swift app.
 	mux.HandleFunc("/v1/push/", s.pushRoute)
-	// Standalone refuses what it has not implemented instead of borrowing it.
-	// Proxying is a scaffold, and a scaffold that never says what it is holding
-	// up cannot be removed on purpose.
-	if standalone() {
+	// By default this daemon refuses what it has not implemented instead of
+	// borrowing it. Proxying is a scaffold, and a scaffold that never says what
+	// it is holding up cannot be removed on purpose — so it is asked for by
+	// name (config.UpstreamPortEnv) and is off otherwise.
+	if !s.proxying() {
 		if root := WebRoot(); root != "" {
 			mux.Handle("/app/", newPage(root))
 			// The home-screen shell in front of the console (pwa.go): the
@@ -512,14 +520,47 @@ func (f *fallback) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.page.ServeHTTP(w, r)
 }
 
-// standalone reports whether this daemon runs without the Swift app behind it.
-func standalone() bool { return os.Getenv("CLAWDLINE_NEXT_STANDALONE") == "1" }
+// standaloneForced is CLAWDLINE_NEXT_STANDALONE=1, which says "never forward"
+// whatever else is configured.
+//
+// It was the way to opt out while 7717 — the port the Swift app held until
+// 2026-09-19 — was the default destination. Forwarding is now opt-in, so on an
+// ordinary machine this changes nothing and setting it is harmless; it is still
+// read so that a script or a bundle written before that flip keeps meaning what
+// it meant.
+func standaloneForced() bool { return os.Getenv("CLAWDLINE_NEXT_STANDALONE") == "1" }
+
+// proxying reports whether there is another daemon behind this one to forward
+// an unowned route to. False is the ordinary answer: an unowned route then
+// names itself rather than borrowing an answer.
+func (s *Server) proxying() bool {
+	if s.proxy == nil {
+		return false
+	}
+	if _, ok := s.cfg.Upstream(); !ok {
+		return false
+	}
+	return !standaloneForced()
+}
+
+// forwardUpstream hands one request to the daemon behind this one.
+//
+// Every route that used to reach for `s.proxy` directly comes through here, so
+// that "there is nobody behind me" is one answer written once, by name, instead
+// of a nil dereference or a 502 pointing at a port nobody holds.
+func (s *Server) forwardUpstream(w http.ResponseWriter, r *http.Request) {
+	if !s.proxying() {
+		s.notImplemented(w, r)
+		return
+	}
+	s.proxy.ServeHTTP(w, r)
+}
 
 // notImplemented answers a route this daemon does not own yet, by name.
 //
 // The list of these is exactly what P4 costs, and it is measured rather than
-// estimated: run the console against a standalone daemon and read what it asks
-// for.
+// estimated: run the console against this daemon with nothing behind it and
+// read what it asks for.
 func (s *Server) notImplemented(w http.ResponseWriter, r *http.Request) {
 	log.Printf("not implemented: %s %s", r.Method, r.URL.Path)
 	writeRefusalAbout(w, http.StatusNotImplemented, "not_implemented",
@@ -533,7 +574,12 @@ func (s *Server) ListenAndServe() error {
 		// wrong: this daemon is reachable from outside this machine.
 		log.Printf("WARNING: binding to %s, which is not loopback", s.cfg.Host)
 	}
-	log.Printf("clawdline-go listening on http://%s (proxying to :%d)", addr, s.cfg.UpstreamPort)
+	if port, ok := s.cfg.Upstream(); ok && !standaloneForced() {
+		log.Printf("clawdline-go listening on http://%s (forwarding unowned routes to :%d, asked for with %s)",
+			addr, port, config.UpstreamPortEnv)
+	} else {
+		log.Printf("clawdline-go listening on http://%s (nothing behind it: an unowned route answers 501 not_implemented and names itself)", addr)
+	}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           s.Handler(),

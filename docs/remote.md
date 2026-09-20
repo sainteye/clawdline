@@ -1,3 +1,10 @@
+<!-- retired-app-record: 遠端與 Cloud 的差距，量於 2026-09-17；該 app 已於 2026-09-19 停用，7717 無人監聽 -->
+
+> **主體與時間：** 這份文件記錄的是 **遠端與 Cloud 的差距**，量於 **2026-09-17**。
+> **舊 Swift app 已於 2026-09-19 停掉、取消登入時啟動，7717 現在沒有人在聽。**
+> 文中寫成現在式的「舊 app 還在跑」「7717」都是**量測當下**的事實，刻意保留，
+> 用來對照還有哪些功能要 migrate、當初怎麼實作——**不要照著它設定今天的 daemon**。
+
 # 遠端：免費版與 Cloud 版
 
 2026-09-17 使用者問「做完之後可以替換 app.clawdline.com 連到它使用了嗎」，並提醒「我們還有分免費版和
@@ -35,7 +42,9 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
 2. **hosted 網頁不用換。** Go 版只要照 PROTOCOL.md 跟 relay 溝通，現在的 app.clawdline.com 不必改就能連上。
    hosted 要不要換成 React 版，之後另外決定。
 3. **Go 版要有自己的裝置身分。** 不沿用舊 app 的身分，否則兩個 daemon 會搶同一台 Mac 的序號與重送。
-   測試時讓 Go 版以「第二台機器」配對，舊 app 照常運作。**把 Go 版配進使用者真正的 Cloud 帳號之前要先問他**：
+   當時（2026-09-17）的測法是讓 Go 版以「第二台機器」配對，舊 app 照常運作；舊 app 已於 2026-09-19 停用，
+   所以現在只剩一台在送，但身分仍然必須分開——已經用舊身分送出去的信封還在對方的序號空間裡。
+   **把 Go 版配進使用者真正的 Cloud 帳號之前要先問他**：
    這會動到他的帳號，也要他在已信任的裝置上按核准。
 4. **金鑰儲存要跨平台。** 舊版 `CloudKeys.swift` 有 63 處直接呼叫 Keychain。Go 版的配對核心這一版先用
    0600 檔案，留一個接縫；之後換成 macOS Keychain、Windows Credential Manager、Linux Secret Service，
@@ -54,7 +63,8 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
    瀏覽器要用 `clawdline open` 取得 cookie（見 replica.md 的量測段落）。
    刻意的取捨：密碼錯誤（24 小時 10 次）與配對猜錯（24 小時 5 次）是全體共用的額度，連得到 port 的人可以讓
    密碼登入或新配對停一天（已配對的裝置不受影響）；額度只存在記憶體，重啟會歸零。
-   配對猜錯次數跨配對累計，**與 Swift 不同**：Swift 每個配對各 5 次、換新配對就歸零，舊 app 仍有這個缺口。
+   配對猜錯次數跨配對累計，**與 Swift 不同**：Swift 每個配對各 5 次、換新配對就歸零；舊 app 退役
+   （2026-09-19）之前一直有這個缺口，這裡沒有照搬。
    已知還沒做：React console 的配對畫面、Dashboard 的派工按鈕（會 403）、send 的 Idempotency-Key、
    公開 health 的版本、真實 cloudflared 與原生殼寫入的驗證。
 3. 配對的網頁入口（照抄 `door/door.js`、`door.css`）與原生殼的 Remote 設定。**已做**，見下一節。

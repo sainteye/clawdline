@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/git"
@@ -202,18 +203,39 @@ func reclaimGrace() time.Duration {
 // The base is this daemon's own, shipped in the repository and projected into
 // its directory at start (orchestrator.ProjectPolicy, D23 ③). The local file
 // is the person's and is never written here; until they have one in this
-// daemon's directory, the Swift app's is read in its place, read-only — the
-// one file under ~/.config/clawdline this broker still opens, and only while
-// its own is missing (U8) and the legacy switch is on (cutover B1). A file that cannot be read is an empty one, which
-// is the Swift app's reading too: the policy is advice to a child.
+// daemon's directory, the retired Swift app's is read in its place, read-only
+// — the one file under ~/.config/clawdline this broker still opens, and only
+// while its own is missing (U8) and the legacy switch is on (cutover B1). A
+// file that cannot be read is an empty one, which was the Swift app's reading
+// too: the policy is advice to a child.
+//
+// **When the fallback is what answered, it is said out loud, once.** The Swift
+// app stopped on 2026-09-19 and its directory stayed where it was, so this is
+// no longer a read that ends by itself when the transition does — it can go on
+// quietly feeding every briefing on this machine out of a directory nothing
+// maintains. The line names both paths so the answer is a copy command, not an
+// investigation. Once, not per dispatch: this runs on every dispatch and a
+// line per dispatch is noise nobody reads.
 func dispatchPolicy(dir string) (base, local string) {
 	legacy := ""
 	if home, err := os.UserHomeDir(); err == nil && !swiftstore.Disabled() {
 		legacy = filepath.Join(home, ".config", "clawdline")
 	}
-	base, local, _ = orchestrator.ReadPolicy(dir, legacy)
+	base, local, src := orchestrator.ReadPolicy(dir, legacy)
+	if src.Local == "legacy" {
+		legacyPolicyWarned.Do(func() {
+			log.Printf("orchestrator: the local dispatch policy every briefing carries is still the retired "+
+				"Swift app's copy at %s, because %s does not exist. Nothing writes that directory any more; "+
+				"copy the file across and this daemon reads its own.",
+				filepath.Join(legacy, orchestrator.PolicyLocalFile),
+				filepath.Join(dir, orchestrator.PolicyLocalFile))
+		})
+	}
 	return base, local
 }
+
+// legacyPolicyWarned keeps the sentence above to one a process.
+var legacyPolicyWarned sync.Once
 
 func brokerLanguage(s *Server) string {
 	values, err := nextconfig.Open(s.cfg.Dir).Read()

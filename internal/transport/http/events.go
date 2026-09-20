@@ -16,13 +16,15 @@ import (
 
 // events serves the console's one stream.
 //
-// There are two ways to do that and the difference is which app is running.
-// Standing alone, this daemon publishes its own (see ownEvents). Standing in
-// front of the Swift app, it owns half of the stream and edits the rest. The stream carries two
-// whole-snapshot payloads — `sessions` and `orchestrator` — and this daemon has
-// a reading for the first and none for the second, so upstream's stream is
-// consumed frame by frame, `sessions` frames are replaced with ours, and
-// everything else passes through untouched.
+// There are two ways to do that and the difference is whether anything is
+// behind this daemon. With nothing behind it — the ordinary case — it publishes
+// its own (see ownEvents). Standing in front of another daemon, which is what
+// it did in front of the Swift app until 2026-09-19 and what an operator can
+// still ask for with config.UpstreamPortEnv, it owns half of the stream and
+// edits the rest. The stream carries two whole-snapshot payloads — `sessions`
+// and `orchestrator` — and this daemon has a reading for the first and none for
+// the second, so upstream's stream is consumed frame by frame, `sessions`
+// frames are replaced with ours, and everything else passes through untouched.
 //
 // Replacing in place rather than publishing on our own clock keeps the update
 // rhythm exactly as it was: upstream still decides when a session update is
@@ -30,19 +32,19 @@ import (
 // sources for one payload, which is what makes the generation counter it
 // enforces meaningful.
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
-	if !ownsSessions() {
-		s.proxy.ServeHTTP(w, r)
+	if !s.ownsSessions() {
+		s.forwardUpstream(w, r)
 		return
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		s.proxy.ServeHTTP(w, r)
+		s.forwardUpstream(w, r)
 		return
 	}
 
 	// With nothing behind this daemon there is nothing to splice into, so the
 	// stream is published rather than edited. See ownEvents for what that costs.
-	if standalone() {
+	if !s.proxying() {
 		s.ownEvents(w, r)
 		return
 	}

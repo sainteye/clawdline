@@ -9,12 +9,13 @@
 
 ## 0. 如果你是從 Swift app 學會 Clawdline 的，先讀這段
 
-Swift app（port 7717、`~/.config/clawdline`）正在退役。這個 daemon 不是它的複製品，最容易踩空的是
-下面五個差異：
+Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，port 7717 沒有人在聽。它的目錄
+`~/.config/clawdline` 還在，而且還會被讀——只讀不寫——裡面是這個 daemon 自己從來沒有的歷史。
+這個 daemon 不是它的複製品，最容易踩空的是下面五個差異：
 
-1. **Task 目錄是 `<state dir>/tasks`，不是 `/tmp/.clawdline`。** `/tmp/.clawdline` 歸 Swift broker
-   管；兩個 broker 往同一個目錄寫 task id，會在沒人看的地方撞在一起。兩個都不要寫死：從 inventory
-   （§3）讀 `task_root`，把 `task.json` 寫在它底下。
+1. **Task 目錄是 `<state dir>/tasks`，不是 `/tmp/.clawdline`。** `/tmp/.clawdline` 當初歸 Swift
+   broker 管；兩個 broker 往同一個目錄寫 task id，會在沒人看的地方撞在一起。兩個都不要寫死：從
+   inventory（§3）讀 `task_root`，把 `task.json` 寫在它底下。
 2. **沒有 workflow envelope，也沒有 workflow 路由可以呼叫。** 訊息不再帶看板分類，session 也從不
    自己開看板卡片。`POST /v1/orchestrator/sessions/<terminal>/workflow` 還在，只是為了讓舊的 helper
    不會在 turn 中途失敗：它回 `workflow_retired`，什麼都不記錄，新的程式碼不可以呼叫它。
@@ -93,8 +94,11 @@ curl --fail-with-body -sS -H @<(auth) "http://127.0.0.1:$PORT/v1/orchestrator/in
   `retry_after` 這類額外欄位放在 `error` 裡面。
 - `{"error":"<code>","detail":"…"}`——找不到路由、HTTP method 錯誤，以及部分讀取用這種。
 
-不歸這個 daemon 管的路由，在 Swift app 還在執行時會轉送給它；daemon 單獨執行時則回
-`501 not_implemented`。這兩種都不是這個 daemon 給的答案。
+不歸這個 daemon 管的路由會回 `501 not_implemented`，而且拒絕訊息會說出那條路由的名字——
+一般機器上就是這個答案。只有在有人刻意用 `CLAWDLINE_NEXT_UPSTREAM_PORT` 在它後面擺了另一個
+daemon 時才會轉送出去，轉不到則回 `502 upstream_unreachable`，並說出打不通的位址。兩種都不是
+這個 daemon 給的答案。2026-09-19 之前轉送是預設開著、且指向 7717 的 Swift app，所以當時寫的筆記
+會說沒接管的路由會跑到那個 app——現在不會。
 
 ## 3. 派工之前：先讀已經存在的東西
 

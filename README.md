@@ -45,11 +45,12 @@ checkout, and the last column says how.
 | Windows | The daemon cross-compiles and has not been run on Windows. It could not list or drive sessions there yet: no tmux, no ConPTY backend, no process inventory | `internal/adapters/process/ps_windows.go` |
 | Interface language | The console ships one catalog, Traditional Chinese. The command line is English | `web/console/public/strings/` |
 
-**It still expects to be run beside the Swift app unless you tell it otherwise.** It was built to
-run next to the app it replaces, so by default it uses its own port (7727), its own state
-directory (`clawdline-next`) and its own credentials, and it forwards any route it does not own to
-the Swift app on 7717. To run it on its own, set the three variables in
-[Install and run](#install-and-run). The macOS app sets them for you.
+**It answers for itself.** It was built to run next to the Swift app it replaces, so it has its
+own port (7727), its own state directory (`clawdline-next`) and its own credentials, and nothing
+in `~/.config/clawdline` is written. Until 2026-09-19 it also handed any route it did not own to
+that app on 7717; that app has been stopped, so it no longer does — a route it has not taken over
+answers `501 not_implemented` and names itself. Forwarding is still there for anyone who wants it,
+behind `CLAWDLINE_NEXT_UPSTREAM_PORT`.
 
 ## What it does
 
@@ -136,18 +137,21 @@ from a backup does not fire the moment the clock ticks.
 
 This repository used to hold the Swift app. What changes for you:
 
-- **The two can be installed at the same time.** This one has its own bundle id, state directory,
-  port and credentials. Nothing in `~/.config/clawdline` is written.
+- **Installing this one never disturbed that one.** It has its own bundle id, state directory,
+  port and credentials, and nothing in `~/.config/clawdline` is written — which is what made it
+  safe to run both while the move was happening, and is why the old app's files are still there to
+  read afterwards.
 - **Nothing is migrated for you.** New tasks, board items and settings start in this app's own
   store. The old task records and board cards are not converted. Schedules are the exception you
   can carry over yourself: `POST /v1/orchestrator/schedule-imports` takes the Swift app's schedule
   files byte for byte. It is off until you set `schedule_imports_enabled` in the config, because
   an import can name any project directory.
-- **While both are installed, this daemon reads a few of the Swift app's files, read-only,** so
-  that its screens match: session titles, old task records and board cards, the usage ledger,
-  saved pictures, and the dispatch policy. It never reads the Swift app's secrets, tokens or
-  keys. That read lives in one adapter, `internal/adapters/swiftstore`, so it can be removed in
-  one piece.
+- **This daemon reads a few of the Swift app's files, read-only,** so that its screens match:
+  session titles, old task records and board cards, the usage ledger, saved pictures, and the
+  dispatch policy. Those files stopped changing when the app did, so what they hold is history
+  this daemon fills gaps with, not a second live source. It never reads the Swift app's secrets,
+  tokens or keys. That read lives in one adapter, `internal/adapters/swiftstore`, so it can be
+  removed in one piece, and `CLAWDLINE_NEXT_LEGACY_STORE=off` stops it without a rebuild.
 - **Not in this generation yet:** a bundled tunnel binary (you install `cloudflared` yourself),
   Claude Code hook installation, snippets, the skills menu, the dev-server list, the project
   timeline, and interface languages other than Traditional Chinese.
@@ -166,8 +170,6 @@ cd clawdline
 (cd web && npm install && npm run build)        # the console, into web/console/dist
 go build -o bin/clawdline ./cmd/clawdline       # the daemon and CLI
 
-CLAWDLINE_NEXT_STANDALONE=1 \
-CLAWDLINE_NEXT_OWN_SESSIONS=1 \
 CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" \
   ./bin/clawdline serve                         # listens on 127.0.0.1:7727
 ```
@@ -179,14 +181,18 @@ In a second terminal:
 ./bin/clawdline open        # opens the console in your browser, signed in
 ```
 
-`STANDALONE` answers an unported route with `501 not_implemented` instead of forwarding it to the
-Swift app. `OWN_SESSIONS` makes this daemon answer `/v1/sessions` itself. `WEB` tells it where
-the console's files are. Without `STANDALONE`, a machine with no Swift app answers `502
-upstream_unreachable`.
+`WEB` tells it where the console's files are; it is the only one you need. An unported route
+answers `501 not_implemented` and names itself, and `/v1/sessions` is answered here.
+
+Older notes set `CLAWDLINE_NEXT_STANDALONE=1` and `CLAWDLINE_NEXT_OWN_SESSIONS=1` as well. Those
+were how you opted out of handing unowned routes to the Swift app on 7717 while that was the
+default; since that app was stopped on 2026-09-19 it is the default, and the two variables are
+read, still mean what they meant, and change nothing. To forward on purpose — this daemon in front
+of another that answers — set `CLAWDLINE_NEXT_UPSTREAM_PORT` to its port.
 
 **On a Mac**, `tools/package-macos.sh` builds `dist/Clawdline Next.app` (add `--dmg` for a disk
 image). It needs Xcode's command line tools for `swiftc`, as well as Go and npm. The app starts the
-daemon bundled inside it, with the three variables set, and signs its own window in.
+daemon bundled inside it, pointed at the console in its own bundle, and signs its own window in.
 
 ## From a browser or a phone
 

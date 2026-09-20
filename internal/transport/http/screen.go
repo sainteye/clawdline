@@ -51,8 +51,8 @@ type screenAnswerWire struct {
 // session answers `pending` and the screen arrives a few milliseconds later on
 // the `screen` event like every other one.
 func (s *Server) sessionScreenRoute(w http.ResponseWriter, r *http.Request, id string) {
-	if !ownsSessions() {
-		s.proxy.ServeHTTP(w, r)
+	if !s.ownsSessions() {
+		s.forwardUpstream(w, r)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)

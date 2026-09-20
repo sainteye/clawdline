@@ -31,8 +31,8 @@ func skillsPath(r *http.Request) (string, bool) {
 // because one key for both would hand a Codex session Claude's skills, a wrong
 // answer served quickly.
 func (s *Server) sessionSkillsRoute(w http.ResponseWriter, r *http.Request, id string) {
-	if !ownsSessions() {
-		s.proxy.ServeHTTP(w, r)
+	if !s.ownsSessions() {
+		s.forwardUpstream(w, r)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)

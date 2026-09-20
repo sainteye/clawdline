@@ -176,13 +176,17 @@ good copy stayed 5/5 afterwards). A truncated file and one with `"at": "25:00"` 
 `invalid` rows — `The file does not contain a JSON object.` and `when.at must be HH:MM in local time` —
 and are in the list; verify reports them `SAME  INVALID`.
 
-The Swift app's own answer is a fourth comparison: in a paired 7717 tab,
-`fetch('/v1/orchestrator/schedules')` and compare `next_fire` row by row (6/6 the same on 2026-09-18).
+The Swift app's own answer was a fourth comparison, and it is how this was checked on 2026-09-18:
+in a paired 7717 tab, `fetch('/v1/orchestrator/schedules')` and compare `next_fire` row by row
+(6/6 the same). That tab cannot be opened any more — the Swift app was stopped on 2026-09-19 and
+nothing answers 7717 — so the first three comparisons are the whole check now.
 
-**The order for the real switch** (the user's decision): the two apps must never both have the same
-schedule enabled, or the same moment opens two sessions. Import into the new daemon first and see
-verify say SAME everywhere; then disable those schedules in the Swift app (or stop its dispatch); last,
-leave the new daemon's dispatch on.
+**The order for the real switch** was the user's decision, and it was carried out on 2026-09-19:
+the two apps must never both have the same schedule enabled, or the same moment opens two sessions.
+Import into the new daemon first and see verify say SAME everywhere; then disable those schedules in
+the Swift app (or stop its dispatch); last, leave the new daemon's dispatch on. Stopping the app did
+the middle step for every schedule at once, so an import today lands on a machine where nothing else
+fires.
 
 ## 與舊版刻意不同的地方
 

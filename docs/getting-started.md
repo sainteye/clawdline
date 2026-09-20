@@ -38,20 +38,23 @@ version.
 ## 2. Start the daemon
 
 ```sh
-CLAWDLINE_NEXT_STANDALONE=1 \
-CLAWDLINE_NEXT_OWN_SESSIONS=1 \
-CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" \
-  ./bin/clawdline serve
+CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
 ```
 
-All three variables are needed for now. This build was made to run beside the Swift app it
-replaces, and without them it forwards what it does not own to that app on port 7717:
+One variable: where the console's built files are. Without it `/` answers `501 not_implemented`.
 
-| Variable | What it does |
-| --- | --- |
-| `CLAWDLINE_NEXT_STANDALONE=1` | answer a route this daemon has not implemented with `501 not_implemented`, instead of forwarding it |
-| `CLAWDLINE_NEXT_OWN_SESSIONS=1` | answer `/v1/sessions` and its event stream here |
-| `CLAWDLINE_NEXT_WEB` | where the console's built files are |
+**If you are following an older note, it will tell you to set three.** Until 2026-09-19 this
+daemon ran in front of the Swift app it replaces and handed it every route it had not taken over;
+`CLAWDLINE_NEXT_STANDALONE=1` and `CLAWDLINE_NEXT_OWN_SESSIONS=1` were how you said "there is
+nothing behind me". That is now the default. Both are still read and still mean what they meant,
+so an older script keeps working — they just no longer change anything on a machine with nothing
+behind this daemon:
+
+| Variable | What it does | Since 2026-09-19 |
+| --- | --- | --- |
+| `CLAWDLINE_NEXT_WEB` | where the console's built files are | still required |
+| `CLAWDLINE_NEXT_STANDALONE=1` | never forward an unimplemented route; answer `501 not_implemented` and name the route | the default; setting it changes nothing |
+| `CLAWDLINE_NEXT_OWN_SESSIONS=1` | answer `/v1/sessions` and its event stream here | the default while nothing is behind this daemon |
 
 Two more you may want:
 
@@ -59,6 +62,7 @@ Two more you may want:
 | --- | --- |
 | `CLAWDLINE_NEXT_PORT` | `7727` |
 | `CLAWDLINE_NEXT_DIR`, the state directory | `$XDG_CONFIG_HOME/clawdline-next`, else `~/.config/clawdline-next`. On Windows, `%APPDATA%\clawdline-next` |
+| `CLAWDLINE_NEXT_UPSTREAM_PORT`, another daemon to hand unowned routes to | none. Set it only if you are deliberately running this one in front of another that answers; it was `7717` by default until 2026-09-19, when the Swift app that held that port was stopped |
 
 The daemon binds `127.0.0.1` only. Its log goes to `logs/daemon.log` in the state directory, and
 the first line it prints says so.
@@ -185,7 +189,8 @@ with its sessions.
 
 | You see | It means |
 | --- | --- |
-| `502 upstream_unreachable` | The daemon is forwarding to a Swift app that is not there. Set the three variables in step 2 |
+| `501 not_implemented` on a `/v1/` route | This daemon has not taken that route over yet. The body names the route; nothing is wrong with your setup |
+| `502 upstream_unreachable` | You set `CLAWDLINE_NEXT_UPSTREAM_PORT` and nothing is listening on that port. The body names the address it tried. Unset it unless you are deliberately running this daemon in front of another one |
 | `501 not_implemented` on `/` | `CLAWDLINE_NEXT_WEB` is not set, or the console was not built |
 | `the daemon did not answer` from the CLI | Nothing is listening on that port, or the CLI and the daemon have different `CLAWDLINE_NEXT_PORT` values |
 | A session is missing from the list | It is not running inside tmux (or iTerm2 on a Mac), or tmux is not on `PATH` nor in `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` or `/opt/local/bin` |

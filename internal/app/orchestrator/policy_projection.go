@@ -24,9 +24,21 @@ import (
 //
 // The local file is the person's, and this daemon never writes it (U8). It is
 // read from this daemon's directory; while that file does not exist the
-// Swift app's is read in its place, read-only, so a machine whose person has
-// not copied it yet keeps their rules rather than silently losing them — and
-// PolicySource says which one a briefing used.
+// retired Swift app's is read in its place, read-only, so a machine whose
+// person has not copied it yet keeps their rules rather than silently losing
+// them — and PolicySource says which one a briefing used.
+//
+// **That fallback outlived the app it was written for, and it is still the
+// right answer.** The Swift app was stopped on 2026-09-19; its directory was
+// not deleted, so ~/.config/clawdline/dispatch-policy.local.md is on this
+// machine and is the only copy of what the person wrote there. Dropping the
+// fallback would not migrate those rules, it would drop them out of every
+// briefing without a word — the failure the fallback exists to prevent, at
+// the moment nobody is left to notice. What retirement did change is that it
+// is no longer a transitional read that will end by itself, so it must not be
+// silent: ReadPolicy already answers which file it used, and the caller says
+// so once in the log with the two paths, so the person can move the file and
+// make the fallback stop mattering (transport/http/orchestrator_wiring.go).
 
 //go:embed dispatch-policy.md
 var basePolicy []byte
@@ -65,14 +77,16 @@ type PolicySource struct {
 	// Base is "next" (this daemon's projected copy) or "shipped" (the copy in
 	// the binary, when the projected file could not be read).
 	Base string
-	// Local is "next", "legacy" (the Swift app's, read while this daemon has
-	// none of its own) or "none".
+	// Local is "next", "legacy" (the retired Swift app's, read while this
+	// daemon has none of its own) or "none".
 	Local string
 }
 
 // ReadPolicy is the house rules for one dispatch: the projected base, and the
-// person's local file from this daemon's directory, or else the Swift app's.
-// legacyDir empty skips the fallback.
+// person's local file from this daemon's directory, or else the retired Swift
+// app's. legacyDir empty skips the fallback. The PolicySource it returns is
+// not decoration: it is the only way anyone learns that a briefing is carrying
+// rules out of a directory this daemon is retiring.
 func ReadPolicy(dir, legacyDir string) (base, local string, src PolicySource) {
 	if held, err := os.ReadFile(filepath.Join(dir, PolicyBaseFile)); err == nil {
 		base, src.Base = string(held), "next"

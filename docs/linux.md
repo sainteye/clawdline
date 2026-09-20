@@ -24,17 +24,19 @@ infrastructure. On the box:
 export CLAWDLINE_NEXT_DIR=/var/lib/<user>/state       # optional; default below
 export CLAWDLINE_NEXT_PORT=7727                       # optional
 export CLAWDLINE_NEXT_WEB=/path/to/dist               # required, or the console 501s
-export CLAWDLINE_NEXT_STANDALONE=1                    # required on Linux, see below
-export CLAWDLINE_NEXT_OWN_SESSIONS=1                  # required on Linux, see below
 ./clawdline doctor      # prints version, port, state dir, store counts
 ./clawdline serve
 ```
 
-**The two required variables are the whole Linux install note.** Without them the daemon proxies
-every route it has not taken over to the Swift app on `:7717`, which exists only on macOS, so
-`GET /v1/sessions` answers `502 upstream_unreachable` on a machine where the session list is the
-product. `CLAWDLINE_NEXT_STANDALONE=1` makes it refuse unimplemented routes by name instead;
-`CLAWDLINE_NEXT_OWN_SESSIONS=1` makes it answer `/v1/sessions` itself.
+**This section said, when it was written on 2026-09-20, that two more variables were required on
+Linux.** They are not any more, and the same change is why: until 2026-09-19 the daemon forwarded
+every route it had not taken over to port 7717, where the Swift app answered on macOS and nothing
+answered anywhere else, so `GET /v1/sessions` came back `502 upstream_unreachable` on a machine
+where the session list is the product. Forwarding is now off unless
+`CLAWDLINE_NEXT_UPSTREAM_PORT` asks for it, so a stock Linux build refuses unimplemented routes by
+name and answers `/v1/sessions` itself with no variables at all.
+`CLAWDLINE_NEXT_STANDALONE=1` and `CLAWDLINE_NEXT_OWN_SESSIONS=1` are still read and still mean
+what they meant, so the command line above keeps working with them in — they just change nothing.
 
 State goes to `$XDG_CONFIG_HOME/clawdline-next`, else `~/.config/clawdline-next` — verified for
 both. The directory is created `0700` and `local-token`, `orchestrator-token` and the SQLite file

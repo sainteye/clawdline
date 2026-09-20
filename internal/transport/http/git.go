@@ -32,8 +32,8 @@ func gitPath(r *http.Request) (string, bool) {
 // go through `/send` with the confirmation sheet in front of them, exactly as
 // they do in the app being replicated.
 func (s *Server) sessionGitRoute(w http.ResponseWriter, r *http.Request, id string) {
-	if !ownsSessions() {
-		s.proxy.ServeHTTP(w, r)
+	if !s.ownsSessions() {
+		s.forwardUpstream(w, r)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)

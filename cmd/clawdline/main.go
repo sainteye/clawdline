@@ -213,7 +213,14 @@ func doctor() {
 	cfg := config.Load()
 	fmt.Printf("version   %s\n", version)
 	fmt.Printf("port      %d\n", cfg.Port)
-	fmt.Printf("upstream  %d\n", cfg.UpstreamPort)
+	// "0" would read like a port. Nobody behind this daemon is the ordinary
+	// answer and it is said in words (config.NoUpstream).
+	if port, ok := cfg.Upstream(); ok {
+		fmt.Printf("upstream  %d\n", port)
+	} else {
+		fmt.Printf("upstream  none (an unowned route answers 501 not_implemented; %s asks for one)\n",
+			config.UpstreamPortEnv)
+	}
 	fmt.Printf("dir       %s\n", cfg.Dir)
 
 	st, err := store.Open(cfg.Dir)
