@@ -9,7 +9,7 @@ Every document in this directory, and what kind it is.
   because the code and the design notes cite them. Parts of them describe a state that has since
   changed, and where one disagrees with a design note, the design note wins.
 
-Five pages are in English: the two that introduce the project, and the three design notes an
+Six pages are in English: the two that introduce the project, and the four design notes an
 outside reader judges it by. The rest are written in Traditional Chinese.
 
 ## Start here
@@ -36,6 +36,7 @@ outside reader judges it by. The rest are written in Traditional Chinese.
 | [remote.md](remote.md) | Public design note | Chinese | The line between the free product and Cloud, and the pairing promises. Its status table is dated |
 | [cloud-wire.md](cloud-wire.md) | Public design note | Chinese | The Cloud wire specification: envelope, canonical JSON, keys, pairing, commands, and what was measured at each stage |
 | [shell-bridge.md](shell-bridge.md) | Public design note | Chinese | The interface between a native shell and the web console, and the minimum a new platform's shell must implement |
+| [privacy-guard.md](privacy-guard.md) | Public design note | English | What keeps the person's own things out of a public repository: the working-tree scan, the history scan, the four answers, and the checkpoint that makes a daily run affordable |
 | [cross-platform.md](cross-platform.md) | Public design note | English | Every feature on macOS, Linux and Windows, and what a platform shows when it cannot do something |
 
 ## How it got here

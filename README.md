@@ -290,6 +290,7 @@ go test ./...                        # the Go tests
 go run ./tools/contract-gen -check   # the generated Go and TypeScript match api/v1
 tools/check-legacy-css.sh            # the copied files still match what they were copied from
 tools/check-private.sh               # nothing personal is about to be published
+tools/check-private.sh -history      # nor in any commit behind it
 ```
 
 Two of those need a word of explanation.
@@ -301,8 +302,15 @@ it cannot tell because the original is not on this machine. The third answer is 
 `check-private.sh` looks for what belongs to whoever ran this rather than to the project: a real
 home directory, a real task or session id, a credential, an email address. It also reads a word
 list from `.git/info/private-words`, one word per line, which git never commits — put the names
-of your own projects and machines there. The rules, and what each one lets through, are in
-`tools/check-private.sh -rules`.
+of your own projects and machines there. Without that list it answers **undetermined** (exit 3),
+not clean, because the rule that needs it could not run. The rules, and what each one lets
+through, are in `tools/check-private.sh -rules`.
+
+`-history` runs the same rules over the commits rather than the files on disk: a word committed
+and taken out again is gone from the working tree and still in what `git push` sends. It names
+the commit, the file and the line, says whether the working tree still carries the same thing,
+and never prints the text it matched. [docs/privacy-guard.md](docs/privacy-guard.md) is the whole
+of it.
 
 There is no CI yet. The API is defined in `api/v1/*.schema.json`. Change the schema, then run
 `go run ./tools/contract-gen`. Do not edit the generated files by hand. Commit messages and code

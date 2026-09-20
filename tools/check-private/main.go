@@ -10,20 +10,31 @@
 // node_modules and dist. A tracked symlink is published as the path it points
 // at, so that path is what is read.
 //
-// Three answers, like tools/check-legacy-css.sh: 0 is clean, 1 is a finding,
-// 2 is "this could not be checked". A run that read nothing is a 2, never a 0.
+// Four answers: 0 is clean, 1 is a finding, 2 is "this could not be checked",
+// 3 is "this could not be decided". A run that read nothing is a 2, never a 0,
+// and a run with no word list is a 3 — see below.
 //
 // A person's own words — project names, a client, their real name — cannot be
 // written into a public checker without publishing them. They live outside the
 // repository, one per line, in $CLAWDLINE_PRIVATE_WORDS or in
 // `$(git rev-parse --git-common-dir)/info/private-words`, which git never
-// commits and every worktree of the clone shares.
+// commits and every worktree of the clone shares. That is also why an absent
+// list is 3 and not 0: on another machine and on CI there is no list, the
+// private-word rule cannot fire at all, and a checker that answers "clean"
+// there is answering a question it did not ask.
+//
+// -history reads the objects of the commits instead of the files on disk,
+// because a word committed on Thursday and taken out on Friday is gone from
+// the tree and still in what `git push` sends (history.go).
 //
 // Usage:
 //
-//	tools/check-private.sh               # the whole repository
-//	tools/check-private.sh -- ':!docs'   # git pathspecs narrow it
-//	tools/check-private.sh -rules        # what each rule catches and what passes
+//	tools/check-private.sh                 # the working tree
+//	tools/check-private.sh -- ':!docs'     # git pathspecs narrow it
+//	tools/check-private.sh -rules          # what each rule catches and what passes
+//	tools/check-private.sh -history        # every commit, from the last checkpoint
+//	tools/check-private.sh -history -new   # red only if today's commits added one
+//	tools/check-private.sh -history -full  # every commit, whatever the checkpoint says
 package main
 
 import (
@@ -43,8 +54,13 @@ import (
 
 func main() {
 	rules := flag.Bool("rules", false, "print every rule, what it catches and what passes it")
+	history := flag.Bool("history", false, "read the commits, not the working tree")
+	revs := flag.String("revs", "HEAD", "what -history reads, as git rev-list spells it (e.g. --all)")
+	full := flag.Bool("full", false, "-history reads every commit, whatever the checkpoint says")
+	checkpoint := flag.String("checkpoint", "", "where -history remembers what it read; - keeps none")
+	onlyNew := flag.Bool("new", false, "-history is red only for a finding the checkpoint had not already recorded")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: check-private [-rules] [-- git-pathspec...]")
+		fmt.Fprintln(os.Stderr, "usage: check-private [-rules] [-history [-revs R] [-full] [-new] [-checkpoint P]] [-- git-pathspec...]")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -52,24 +68,27 @@ func main() {
 		printRules()
 		return
 	}
-	os.Exit(run(flag.Args()))
+	if *history {
+		os.Exit(int(runHistory(historyOptions{revs: *revs, full: *full, checkpoint: *checkpoint, onlyNew: *onlyNew})))
+	}
+	os.Exit(int(run(flag.Args())))
 }
 
-func run(pathspecs []string) int {
+func run(pathspecs []string) privacy.Answer {
 	root, err := repoRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cannot check:", err)
-		return 2
+		return privacy.CannotCheck
 	}
 	files, err := published(root, pathspecs)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cannot check:", err)
-		return 2
+		return privacy.CannotCheck
 	}
 	words, source, err := privateWords(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cannot check:", err)
-		return 2
+		return privacy.CannotCheck
 	}
 	scanner := privacy.New(words)
 
@@ -83,7 +102,7 @@ func run(pathspecs []string) int {
 		data, ok, err := content(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "cannot check:", err)
-			return 2
+			return privacy.CannotCheck
 		}
 		if !ok {
 			continue
@@ -95,7 +114,7 @@ func run(pathspecs []string) int {
 	}
 	if read == 0 {
 		fmt.Fprintln(os.Stderr, "cannot check: read no files; a run that read nothing is not a pass")
-		return 2
+		return privacy.CannotCheck
 	}
 
 	sort.SliceStable(hits, func(i, j int) bool {
@@ -115,17 +134,44 @@ func run(pathspecs []string) int {
 		}
 		fmt.Printf("%s: %s: %s\n", where, h.Rule, h.Match)
 	}
-	wordNote := "no private-words list"
-	if source != "" {
-		wordNote = fmt.Sprintf("%d private word(s) from %s", len(words), source)
+	wordNote := fmt.Sprintf("%d private word(s) from %s", len(words), source)
+	if len(words) == 0 {
+		wordNote = "no private words: the private-word rule did not run"
 	}
 	if len(hits) > 0 {
 		fmt.Fprintf(os.Stderr, "private: %d finding(s) in %d of %d file(s); %s. `tools/check-private.sh -rules` says what passes.\n",
 			len(hits), len(inFiles), read, wordNote)
-		return 1
+		return privacy.Found
+	}
+	// An empty word list is not a clean tree. The rules that need it did not
+	// run, so this run has not established what it is asked to establish, and
+	// saying "clean" would be the quiet green a fresh clone and a CI runner
+	// would get for ever.
+	if len(words) == 0 {
+		fmt.Printf("private: %d files read; nothing the fixed rules catch\n", read)
+		fmt.Fprintf(os.Stderr, "private: undetermined: no private-word list. Put one line per word in %s, or point CLAWDLINE_PRIVATE_WORDS at it. An empty list is not a clean tree.\n",
+			wordsPath(root))
+		return privacy.Undetermined
 	}
 	fmt.Printf("private: %d files clean; %s\n", read, wordNote)
-	return 0
+	return privacy.Clean
+}
+
+// wordsPath is where the list is looked for, said back to somebody who has
+// not got one. It is the same path privateWords reads.
+func wordsPath(root string) string {
+	if p := os.Getenv("CLAWDLINE_PRIVATE_WORDS"); p != "" {
+		return p
+	}
+	out, err := exec.Command("git", "-C", root, "rev-parse", "--git-common-dir").Output()
+	if err != nil {
+		return "$(git rev-parse --git-common-dir)/info/private-words"
+	}
+	dir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(root, dir)
+	}
+	return filepath.Join(dir, "info", "private-words")
 }
 
 func repoRoot() (string, error) {

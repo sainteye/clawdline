@@ -9,8 +9,14 @@
 # thing it is about, which its tests do. This script is the standalone entry,
 # run like tools/check-legacy-css.sh.
 #
-# Three answers: 0 clean, 1 a finding (each printed as file:line: rule: match),
-# 2 could not check. Arguments after -- are git pathspecs; -rules explains.
+# Four answers: 0 clean, 1 a finding (each printed as file:line: rule: match),
+# 2 could not check, 3 could not decide — no private-word list, so the rules
+# that need one did not run. The third answer is not a pass, for the same
+# reason check-legacy-css.sh's third answer is not.
+#
+# -history reads the commits instead of the working tree: what `git push`
+# publishes is every moment this repository ever had, not the one on disk.
+# Arguments after -- are git pathspecs; -rules explains the rules.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
