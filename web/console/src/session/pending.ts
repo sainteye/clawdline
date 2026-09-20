@@ -23,6 +23,14 @@
  *   the transcript when the send began, one turn per card. `ActionResult` is
  *   `ok` and nothing else.
  *
+ * **A card outlives the page.** The words and, more to the point, the card's
+ * one `request` are kept in this browser's store and put back by `restore`
+ * (`persist.ts`, F4) — because a card that went with the page took the request
+ * with it, and the same message written again under a new request is the thing
+ * the request exists to stop (F2). Nothing is sent on the way back: a restored
+ * card that was still sending is `unknown`, and the transcript, read as it
+ * always is, either shows the turn and takes the card with it or does not.
+ *
  * Nothing here is imported at run time, so `node --test` loads it as it is;
  * the part that talks to the daemon is `send.ts`.
  */
@@ -69,6 +77,16 @@ export interface PendingSend {
    * card says it is sending; `known` is still the failed attempt's.
    */
   checking: boolean
+  /**
+   * The card came back from this browser's store (`persist.ts`, F4) without
+   * its pictures, which did not fit in what may be kept. Each one is an empty
+   * string, so the card still counts as a message with pictures and is settled
+   * by its turn like any other, and the words are still here to read and copy —
+   * but it is never sent again: a second attempt under the same request with a
+   * different body is refused (`idempotency_key_reused`), and a new request
+   * would be the message twice, which is what the request exists to stop (F2).
+   */
+  partial: boolean
 }
 
 /** One transcript entry, as much of it as settling reads. */
@@ -101,6 +119,14 @@ export function newRequestID(): string {
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
+
+/**
+ * A mark for this page's cards. The token counts from one on every load, so two
+ * tabs of the same browser minting their nth card in the same millisecond would
+ * mint the same token — and the tokens are what tells one tab's kept cards from
+ * another's in the one store they share (`persist.ts`).
+ */
+const pageMark = newRequestID().slice(0, 8)
 
 /** `OPTIMISTIC_LIFETIME_SECONDS`: a card the transcript never confirms goes after this. */
 export const PENDING_LIFETIME_MS = 10 * 60 * 1000
@@ -169,7 +195,7 @@ export class PendingSends {
   add(session: string, text: string, pictures: readonly string[], now: number): PendingSend {
     this.count += 1
     const card: PendingSend = {
-      token: `p${this.count}-${now}`,
+      token: `p${this.count}-${now}-${pageMark}`,
       session,
       text,
       pictures: [...pictures],
@@ -181,10 +207,34 @@ export class PendingSends {
       acceptedAt: 0,
       known: occurrences(this.seen.get(session) ?? []),
       checking: false,
+      partial: false,
     }
     this.cards.push(card)
     this.changed()
     return card
+  }
+
+  /** Every card on the page, oldest first: what `persist.ts` keeps between page loads. */
+  all(): readonly PendingSend[] {
+    return this.cards
+  }
+
+  /**
+   * Cards kept by an earlier load of this page, put back (F4). A token already
+   * on the page is left alone: this page's own card is the live one.
+   */
+  restore(cards: readonly PendingSend[]): void {
+    let added = 0
+    for (const card of cards) {
+      if (this.find(card.token)) continue
+      this.cards.push(card)
+      added += 1
+    }
+    if (!added) return
+    // Past the restored tokens, so a card made later cannot be given one of them.
+    this.count += added
+    this.cards.sort((a, b) => a.sentAt - b.sentAt)
+    this.changed()
   }
 
   /** The daemon took it: the bytes reached the terminal. */
@@ -247,7 +297,8 @@ export class PendingSends {
    */
   retrying(token: string): PendingSend | null {
     const card = this.find(token)
-    if (!card || !(card.state === "failed" || (card.state === "unknown" && card.absent))) return null
+    if (!card || card.partial) return null
+    if (!(card.state === "failed" || (card.state === "unknown" && card.absent))) return null
     card.state = "sending"
     card.failure = ""
     card.checking = true
@@ -262,7 +313,8 @@ export class PendingSends {
    */
   resend(token: string, now: number): PendingSend | null {
     const card = this.find(token)
-    if (!card || (card.state !== "failed" && !card.checking)) return null
+    if (!card || card.partial) return null
+    if (card.state !== "failed" && !card.checking) return null
     card.state = "sending"
     card.failure = ""
     card.checking = false

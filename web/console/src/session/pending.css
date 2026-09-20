@@ -41,3 +41,8 @@
     border-radius: 6px;
 }
 .entry.pending .pending-state .dismiss:hover { color: var(--ink); background: var(--card-hi); }
+
+/* A card put back from this browser's store without its pictures (F4,
+   `persist.ts`): the sentence that stands where "send again" would be. `.fine`,
+   the catalog's own quiet line, less its margins, since this one sits in a row. */
+.entry.pending .pending-state .pending-partial { color: var(--faint); font-size: 11.5px; }

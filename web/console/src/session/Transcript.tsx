@@ -23,6 +23,7 @@ import * as L from "../legacy/bridge.js"
 import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images-bridge.js"
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
+import { INTERRUPTED } from "./persist.js"
 import { look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
@@ -282,15 +283,19 @@ function pendingHTML(card: PendingSend): ReactElement {
     '" title="' +
     close +
     '">×</button>'
+  // A card put back from this browser's store without its pictures (F4). The
+  // words are here to read; sending them again is not offered, because the
+  // pictures cannot go with them and the same words under a new request would
+  // be the message twice.
+  const partial = card.partial ? '<span class="pending-partial">' + esc(nextWord("sendKeptWords")) + "</span>" : ""
   if (card.state === "failed") {
     body +=
       '<div class="pending-state" role="alert"><span>' +
       esc(L.fillString(T.webFailWithTag, { text: T.sendFailed, tag: card.failure })) +
-      '</span><button type="button" class="go" data-pending-retry="' +
-      esc(card.token) +
-      '">' +
-      esc(T.webPlanRetry) +
-      "</button>" +
+      "</span>" +
+      (card.partial
+        ? partial
+        : '<button type="button" class="go" data-pending-retry="' + esc(card.token) + '">' + esc(T.webPlanRetry) + "</button>") +
       dismiss +
       "</div>"
   } else if (card.state === "unknown" && card.checking) {
@@ -303,11 +308,18 @@ function pendingHTML(card: PendingSend): ReactElement {
     // offers a look, not "try again"; only a look that read the transcript
     // and found no turn offers sending — under the card's one request, which
     // the Mac answers with the first attempt's answer if that one landed.
+    //
+    // A card the page was still sending when it was reloaded says that
+    // (`sendInterrupted`): the request went with the page, so nothing answered
+    // and nothing here knows. Looking is the same press as for any other
+    // unknown card.
+    const said = card.absent ? "sendAbsent" : card.failure === INTERRUPTED ? "sendInterrupted" : "sendUnknown"
     body +=
       '<div class="pending-state" role="alert"><span>' +
-      esc(nextWord(card.absent ? "sendAbsent" : "sendUnknown", { code: card.failure })) +
+      esc(nextWord(said, { code: card.failure })) +
       "</span>" +
-      (card.absent
+      partial +
+      (card.absent && !card.partial
         ? '<button type="button" class="go" data-pending-retry="' +
           esc(card.token) +
           '" title="' +

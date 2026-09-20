@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import App, { BRAND_MARK } from "../App.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { cardsAreFor } from "../session/send.js"
 import {
   chooseTransport,
   cloudOnboardingMode,
@@ -191,6 +192,12 @@ export function CloudGate({ declared }: { declared: string }) {
     // What the seam answered and how, for whoever is looking at this page's
     // behaviour from devtools; nothing reads it back.
     ;(globalThis as { __clawdlineCloudSeam?: RelayReader }).__clawdlineCloudSeam = next
+    // Which machine this page is talking to is settled here, and only here, so
+    // this is where the cards kept for it come back (F4, `session/persist.ts`).
+    // Not before: a session id is a terminal id, and a card kept for one
+    // machine's `%1` put back under another's would be words for whatever that
+    // one holds.
+    cardsAreFor(machine.id)
     setChosen(machine)
     setScreen({ at: "console" })
   }, [transport])

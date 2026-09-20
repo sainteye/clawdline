@@ -65,6 +65,9 @@ const words = {
     sendAbsent: "Not in the conversation on the Mac ({code}).",
     sendAgain: "Send again",
     sendAgainTip: "If the first attempt reached the Mac after all, it is not typed a second time.",
+    sendInterrupted: "This page was reloaded while this was being sent, so it is not known whether it reached the Mac.",
+    sendKeptWords:
+      "This page kept the words when it was reloaded, but not the pictures, so this one cannot be sent again from here.",
     menuUnknown: "Not known whether that answer reached the Mac. Waiting for the session to update.",
     menuChooseAgain: "Choose again",
     menuMoved: "The question changed before the answer landed, so nothing was typed. Read the new question and choose again.",
@@ -118,6 +121,8 @@ const words = {
     sendAbsent: "Mac 上的對話裡沒有這則（{code}）。",
     sendAgain: "再送一次",
     sendAgainTip: "如果第一次其實有送到，這次不會重打。",
+    sendInterrupted: "送出到一半這一頁被重新載入了，不知道有沒有送到 Mac。",
+    sendKeptWords: "重新載入時這一頁留住了文字，但沒有留住圖片，所以這一則不能從這裡再送一次。",
     menuUnknown: "不知道剛才的選擇有沒有送到 Mac，等畫面更新。",
     menuChooseAgain: "重新選擇",
     menuMoved: "送到之前題目已經換了，所以什麼都沒打。請看清楚新的題目再選。",
