@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
@@ -257,6 +258,13 @@ func (i *ITerm) Interrupt(ctx context.Context, s session.Session) error {
 // Close closes one iTerm2 session — the session, never its tab or window
 // (itermCloseScript) — found by its id.
 //
+// **It walks the farewell ladder first** (farewell.go): an assistant running
+// in that tab is sent its own quit word, watched until the kernel says its
+// foreground group is gone, and only then is the tab closed. Closing straight
+// away is what put "Close tab #N? This tab is running claude." on the person's
+// screen and left both the tab and the session where they were — the bug this
+// answers — and it is also how a transcript being appended to is cut off.
+//
 // It is bounded like every effect here, and its failures are typed: a session
 // that was not found, or not seen, is Unsent, and closed nothing; an Apple
 // Event that timed out (-1712, which a close on this Mac has answered) or was
@@ -266,7 +274,37 @@ func (i *ITerm) Close(ctx context.Context, s session.Session) error {
 	if s.ID == "" {
 		return Unsent{Why: "there is no iTerm2 session id to close"}
 	}
-	return closeITermByID(ctx, s.ID)
+	return i.farewell().say(ctx, s)
+}
+
+// farewell is Close's ladder on this backend's own steps.
+func (i *ITerm) farewell() farewell {
+	return farewell{
+		look:   itermSight,
+		send:   func(ctx context.Context, s session.Session, line string) error { return i.Send(ctx, s, line) },
+		signal: ttySignal,
+		close:  func(ctx context.Context, s session.Session) error { return closeITermByID(ctx, s.ID) },
+		polite: farewellPolite, afterTerm: farewellAfterTerm, afterKill: farewellAfterKill,
+		tick: farewellTick, now: time.Now,
+	}
+}
+
+// itermSight is one look into an iTerm2 session: iTerm2 for whether the tab is
+// still there and which tty it is, the kernel for what is in front of it.
+//
+// A session iTerm2 did not list past a window it could not read is neither
+// there nor gone, and that is an error rather than an absence: a close that
+// read "not seen" as "already closed" would report a tab taken away that is
+// still on the screen.
+func itermSight(ctx context.Context, s session.Session) (farewellSight, error) {
+	seen, tty := findITermSession(ctx, s.ID)
+	switch {
+	case seen == sightingGone:
+		return farewellSight{Gone: true}, nil
+	case seen != sightingThere || tty == "":
+		return farewellSight{}, errors.New("iTerm2 did not list that session, and did not list everything either")
+	}
+	return ttySight(tty, s)
 }
 
 // appleEvents serialises every iTerm2 Apple Event that has an effect —

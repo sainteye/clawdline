@@ -488,11 +488,75 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 	if err != nil {
 		return session.Session{}, err
 	}
+	// A close types into the session now — the assistant's own quit word,
+	// before anything is taken away (terminal.farewell) — so it takes the
+	// terminal's lane like every other write. Without it a close and a message
+	// would be two writers on one terminal, which is the one thing the lane
+	// exists to prevent.
+	release, err := a.turn(ctx, s)
+	if err != nil {
+		return s, err
+	}
+	defer release()
 	if err := h.Close(ctx, s); err != nil {
-		return s, Refusal{Code: "close_failed", Detail: err.Error()}
+		return s, closeRefusal(err)
 	}
 	a.record(ctx, "session.closed", s.ID, map[string]any{"forced": force, "owed": len(c.Reasons)})
 	return s, nil
+}
+
+// closeRefusal names which rung of the close stopped it.
+//
+// **One `close_failed` for every way a close can end is a refusal nobody can
+// act on.** The four things a person can do about a close that did not happen
+// are different things — wait for the assistant to finish, look at what else
+// is running in that terminal, answer the question iTerm2 put on the screen,
+// or simply look because nothing here can say — and a code that does not
+// distinguish them sends every one of them to the terminal to find out which.
+//
+// Each of these is a terminal refusal given *before* the terminal was taken
+// away, and every one of them leaves the session exactly as it was.
+func closeRefusal(err error) error {
+	var (
+		unreadable  terminal.Unreadable
+		occupied    terminal.Occupied
+		quitRefused terminal.QuitRefused
+		running     terminal.StillRunning
+		unconfirmed terminal.Unconfirmed
+		unsent      terminal.Unsent
+		failure     terminal.Failure
+	)
+	switch {
+	case errors.As(err, &unreadable):
+		return Refusal{Code: "close_unreadable", Detail: unreadable.Why, Cause: err}
+	case errors.As(err, &occupied):
+		return Refusal{Code: "close_occupied", Detail: occupied.Why, Cause: err}
+	case errors.As(err, &quitRefused):
+		return Refusal{Code: "close_quit_refused", Detail: quitRefused.Why, Cause: err}
+	case errors.As(err, &running):
+		return Refusal{Code: "close_assistant_running", Detail: running.Why, Cause: err}
+	case errors.As(err, &unconfirmed):
+		// The terminal was asked and did not answer, and a look afterwards
+		// could not settle it either way. Neither done nor failed: an iTerm2
+		// close that ran out of time has been seen to land later, when
+		// somebody answered the sheet it was waiting behind — and when that
+		// is what happened, the refusal says so, because a person can end it
+		// by walking to the machine.
+		if unconfirmed.Attention {
+			return Refusal{Code: "close_needs_a_person", Detail: unconfirmed.Why, Cause: err}
+		}
+		return Refusal{Code: "close_unconfirmed", Detail: unconfirmed.Why, Cause: err}
+	case errors.As(err, &unsent):
+		// Nothing was there to close. The reading the caller acted on is one
+		// moment behind the machine, which is not an error on anybody's part.
+		return Refusal{Code: "close_nothing_there", Detail: unsent.Why, Cause: err}
+	case errors.As(err, &failure) && failure.Attention:
+		// Something on the Mac's screen is waiting for a person — a close
+		// confirmation, a refused automation permission — and until they
+		// answer it, nothing else can happen to that terminal.
+		return Refusal{Code: "close_needs_a_person", Detail: failure.Message, Cause: err}
+	}
+	return Refusal{Code: "close_failed", Detail: err.Error(), Cause: err}
 }
 
 var errOwedUnwired = errors.New("this daemon has no reader for what sessions owe")

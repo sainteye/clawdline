@@ -187,9 +187,71 @@ func (t *Tmux) Interrupt(ctx context.Context, s session.Session) error {
 	return t.run(ctx, "send-keys", "-t", s.ID, "C-c")
 }
 
-// Close removes the pane.
+// Close removes the pane, once nothing this close may not end is running in
+// it.
+//
+// **It walks the same farewell ladder the iTerm2 close does** (farewell.go),
+// for the same reason and one of its own. `kill-pane` puts up no sheet — that
+// half is iTerm2's — but it does hang up the tty under whatever was running,
+// and an assistant killed mid-sentence loses the tail of the transcript it was
+// writing. So the assistant is sent its own quit word first, watched until it
+// has left, and the pane is taken after.
 func (t *Tmux) Close(ctx context.Context, s session.Session) error {
-	return t.run(ctx, "kill-pane", "-t", s.ID)
+	if s.ID == "" {
+		return Unsent{Why: "there is no tmux pane to close"}
+	}
+	return t.farewell().say(ctx, s)
+}
+
+// farewell is Close's ladder on this backend's own steps.
+func (t *Tmux) farewell() farewell {
+	return farewell{
+		look:   t.sight,
+		send:   func(ctx context.Context, s session.Session, line string) error { return t.Send(ctx, s, line) },
+		signal: ttySignal,
+		close:  func(ctx context.Context, s session.Session) error { return t.run(ctx, "kill-pane", "-t", s.ID) },
+		polite: farewellPolite, afterTerm: farewellAfterTerm, afterKill: farewellAfterKill,
+		tick: farewellTick, now: time.Now,
+	}
+}
+
+// sight is one look into a pane: tmux for whether it is still there and which
+// tty it is, and then the kernel for what is in front of that tty.
+//
+// **tmux's own answer is the fallback and not the first evidence.**
+// `#{pane_current_command}` names what is in front without saying which
+// process it is, which is enough to see an assistant and to see it leave, and
+// not enough to aim a signal at. Where the processes behind the tty can be
+// read they are, and the ladder gets its escalation rung; where they cannot —
+// every platform but macOS today (tty_other.go) — it stops at the polite word
+// and says so rather than signalling something it cannot name.
+//
+// The pane id tmux answers with is checked against the one asked for: tmux
+// matches a target by prefix when it is not exact, and a pane that answers
+// under another id is not the pane this close was about.
+func (t *Tmux) sight(ctx context.Context, s session.Session) (farewellSight, error) {
+	// A space, not a tab: under LC_ALL=C tmux rewrites control characters in
+	// format output, and neither a pane id nor a tty contains a space.
+	out, err := t.call(ctx, "", "display-message", "-p", "-t", s.ID,
+		"#{pane_id} #{pane_tty} #{pane_current_command}")
+	if err != nil {
+		// "can't find pane" and "no server" are the pane being gone, which
+		// leaves nothing of ours to close. Any other failure has proved
+		// nothing about what is in that pane.
+		if strings.Contains(err.Error(), "can't find") || NoServer(err.Error()) {
+			return farewellSight{Gone: true}, nil
+		}
+		return farewellSight{}, err
+	}
+	fields := strings.Fields(strings.TrimRight(out, "\n"))
+	if len(fields) < 3 || fields[0] != s.ID {
+		return farewellSight{Gone: true}, nil
+	}
+	if sight, err := ttySight(fields[1], s); err == nil {
+		return sight, nil
+	}
+	assistant := assistantOfComm(fields[2])
+	return farewellSight{Job: assistant != "", Assistant: assistant}, nil
 }
 
 // run carries tmux's own sentence out with the failure.

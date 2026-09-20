@@ -175,8 +175,15 @@ const (
 // settleUnansweredClose looks again for a session whose close was not
 // answered, and answers nil once a look finds it gone. Anything else is
 // Unconfirmed, saying what the last look saw.
+// **Why the asked-for error's own kind is carried through.** iTerm2 answers a
+// close it is holding a sheet behind with a timeout, and that timeout is the
+// only sign this daemon gets that there is a question on somebody's screen. A
+// settlement that flattened it into "not answered" threw away the one thing a
+// person could act on, so `Attention` travels with the answer.
 func settleUnansweredClose(ctx context.Context, id string, asked error,
 	look func(context.Context, string) sighting, looks int, gap time.Duration) error {
+	var failure Failure
+	attention := errors.As(asked, &failure) && failure.Attention
 	last := sightingUnknown
 	for i := 0; i < looks; i++ {
 		if i > 0 && !pause(ctx, gap) {
@@ -188,22 +195,12 @@ func settleUnansweredClose(ctx context.Context, id string, asked error,
 		}
 	}
 	if last == sightingThere {
-		return Unconfirmed{Why: asked.Error() + " The session was still open when it was looked for again, " +
-			"and a close iTerm2 has not answered can still land."}
+		return Unconfirmed{Attention: attention,
+			Why: asked.Error() + " The session was still open when it was looked for again, " +
+				"and a close iTerm2 has not answered can still land."}
 	}
-	return Unconfirmed{Why: asked.Error() + " Whether the session closed could not be seen afterwards."}
-}
-
-// pause waits d, or until ctx is done, and answers whether it waited it out.
-func pause(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-t.C:
-		return true
-	}
+	return Unconfirmed{Attention: attention,
+		Why: asked.Error() + " Whether the session closed could not be seen afterwards."}
 }
 
 // itermFindScript looks for one session by id and changes nothing. It answers

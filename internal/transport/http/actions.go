@@ -144,6 +144,12 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+			// A close walks a ladder now — the assistant's own quit word,
+			// the wait for it to leave, then the terminal — and the ordinary
+			// fifteen seconds is shorter than the ladder's own worst case, so
+			// the route would have cut it off part way through.
+			ctx, more := context.WithTimeout(r.Context(), closeBudget)
+			defer more()
 			if _, err := s.actions().Close(ctx, id, body.Force); err != nil {
 				writeActionRefusal(w, err)
 				return
@@ -158,6 +164,13 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 // closeBodyLimit is what a close's options weigh: `{"force":true}` and the
 // closeability version a Cloud viewer carries, with room to spare.
 const closeBodyLimit = 16 << 10
+
+// closeBudget is the whole of a close: looking for the session, typing the
+// assistant's quit word and watching for it to be read, the polite wait and
+// the two signal rungs after it, one last look, and the terminal's own close
+// (terminal.farewell). Every one of those is separately bounded; this is the
+// ceiling over all of them, and a close that reaches it has taken nothing away.
+const closeBudget = 45 * time.Second
 
 // scopeSessions is the receipt scope of a session's writes, and how long one
 // of them answers a retry.
@@ -279,6 +292,30 @@ func actionStatus(code string) int {
 		return http.StatusConflict
 	case "close_blocked":
 		return http.StatusConflict
+	case "close_nothing_there":
+		// The session was gone before the close reached it. The caller's
+		// reading was one moment behind the machine, and asking again against
+		// a fresh one is the whole remedy.
+		return http.StatusNotFound
+	case "close_occupied", "close_unreadable":
+		// Nothing was typed, nothing was signalled and nothing was closed:
+		// what holds that terminal is not this close's to end, or could not be
+		// read at all. 409, because a fresh reading is what changes the answer.
+		return http.StatusConflict
+	case "close_assistant_running":
+		// The assistant was asked to leave, by its own word and then by a
+		// signal, and did not. The terminal was left open on purpose and a
+		// fresh attempt is a reasonable thing for a person to make, so this
+		// is the one rung of the close whose idempotency key is handed back.
+		return http.StatusConflict
+	case "close_needs_a_person", "close_unconfirmed", "close_quit_refused":
+		// The terminal was touched and did not finish: a question is on the
+		// Mac's screen, or the close went unanswered and could still land, or
+		// the quit word may have reached the composer. The Swift server's
+		// status for a terminal command that did not complete, and the one
+		// that keeps a retry under the same key from asking a second question
+		// on the same screen.
+		return http.StatusBadGateway
 	case "empty_text", "bad_request":
 		return http.StatusBadRequest
 	case "busy":

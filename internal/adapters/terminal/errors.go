@@ -38,6 +38,52 @@ func (u Unsubmitted) Error() string { return u.Why }
 // close its session later all the same — iTerm2 was asking a person first — so
 // a caller must not count it done, the tab may still be there, and must not ask
 // again as though it had failed.
-type Unconfirmed struct{ Why string }
+type Unconfirmed struct {
+	Why string
+	// Attention is an effect that went unanswered because something on this
+	// Mac's screen is waiting for a person: iTerm2's own "Close tab #N? This
+	// tab is running …" sheet, or a refused automation permission. It is kept
+	// apart from every other unanswered effect because it is the one a person
+	// can end by walking to the machine, and telling them that is the whole
+	// difference between a dead end and a next step.
+	Attention bool
+}
 
 func (u Unconfirmed) Error() string { return u.Why }
+
+// The four ways a close can stop before it closes (farewell.go). They are
+// apart from one another because a person reading "it did not close" learns
+// nothing they can act on, and each of these says something different about
+// what to do next: wait, look at the terminal, or answer the question on the
+// screen.
+
+// Unreadable is a terminal whose contents could not be read. Nothing was
+// typed, nothing was signalled and nothing was closed: what is in a terminal
+// is the whole basis of a close, and an unreadable terminal is not an empty
+// one.
+type Unreadable struct{ Why string }
+
+func (u Unreadable) Error() string { return u.Why }
+
+// Occupied is a terminal holding something this close was not asked about — a
+// command somebody started, a different assistant, a process newer than the
+// reading the close is acting on. Nothing was signalled and the terminal was
+// left as it was.
+type Occupied struct{ Why string }
+
+func (o Occupied) Error() string { return o.Why }
+
+// QuitRefused is an assistant that would not take its own quit word, on a
+// machine with no way to ask the process itself. The session is still running
+// and the terminal is still open.
+type QuitRefused struct{ Why string }
+
+func (q QuitRefused) Error() string { return q.Why }
+
+// StillRunning is an assistant that was asked to leave — by its own word, and
+// then by a signal where this machine could send one — and did not. The
+// terminal is left open on purpose: closing it would hang up the tty under a
+// process that is demonstrably still writing.
+type StillRunning struct{ Why string }
+
+func (s StillRunning) Error() string { return s.Why }

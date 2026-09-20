@@ -1,0 +1,106 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
+	"github.com/sainteye/clawdline-go/internal/app/lane"
+	"github.com/sainteye/clawdline-go/internal/app/ports"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline-go/internal/domain/task"
+)
+
+// What a close that did not close says (actions.go, closeRefusal).
+//
+// One `close_failed` for every rung was the whole of it before, and the four
+// things a person can do about a close that did not happen are four different
+// things. Each row here is a refusal given before the terminal was taken away.
+func TestEachRungOfACloseSaysWhichOneItWas(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		code string
+	}{
+		{terminal.Unreadable{Why: "the tty could not be read"}, "close_unreadable"},
+		{terminal.Occupied{Why: "vim is in front of it"}, "close_occupied"},
+		{terminal.QuitRefused{Why: "it would not take /exit"}, "close_quit_refused"},
+		{terminal.StillRunning{Why: "it did not leave"}, "close_assistant_running"},
+		{terminal.Unconfirmed{Why: "no answer"}, "close_unconfirmed"},
+		{terminal.Unconfirmed{Why: "a sheet is up", Attention: true}, "close_needs_a_person"},
+		{terminal.Unsent{Why: "That session is gone"}, "close_nothing_there"},
+		{terminal.Failure{Attention: true, Message: "iTerm2 did not answer in time."}, "close_needs_a_person"},
+		{terminal.Failure{Message: "iTerm2 refused."}, "close_failed"},
+		{errors.New("something nobody typed"), "close_failed"},
+	} {
+		ref, ok := closeRefusal(c.err).(Refusal)
+		if !ok || ref.Code != c.code {
+			t.Errorf("%T %v: %v, want %s", c.err, c.err, closeRefusal(c.err), c.code)
+		}
+		if ref.Cause == nil {
+			t.Errorf("%s dropped the terminal's own error", c.code)
+		}
+	}
+}
+
+// closeHost records the order of everything a close does to a terminal.
+type closeHost struct {
+	calls []string
+	err   error
+}
+
+func (h *closeHost) Name() string { return "tmux" }
+func (h *closeHost) Inventory(context.Context) (session.Inventory, error) {
+	return session.Inventory{Complete: true, Provenance: "tmux", Sessions: []session.Session{
+		{ID: "%1", TTY: "ttys1", Backend: session.BackendTmux, Assistant: session.AssistantClaude, PID: 400},
+	}}, nil
+}
+func (h *closeHost) Open(context.Context, ports.OpenRequest) (session.Session, error) {
+	return session.Session{}, nil
+}
+func (h *closeHost) Send(context.Context, session.Session, string) error { return nil }
+func (h *closeHost) Interrupt(context.Context, session.Session) error    { return nil }
+func (h *closeHost) Close(context.Context, session.Session) error {
+	h.calls = append(h.calls, "close")
+	return h.err
+}
+func (h *closeHost) Reveal(context.Context, session.Session, bool) error         { return nil }
+func (h *closeHost) Screen(context.Context, session.Session, int) (string, bool) { return "", false }
+
+func closeActions(h *closeHost) Actions {
+	return Actions{
+		Inventory: Inventory{Terminals: []ports.TerminalHost{h}},
+		Terminals: []ports.TerminalHost{h},
+		Owed:      func(context.Context) ([]task.Obligation, error) { return nil, nil },
+	}
+}
+
+// A close types into the session now — the assistant's own quit word — so it
+// takes the terminal's lane like every other write. Without it a close and a
+// message would be two writers on one terminal.
+func TestACloseTakesTheTerminalsLane(t *testing.T) {
+	h := &closeHost{}
+	a := closeActions(h)
+	release, err := a.lanes().Acquire(context.Background(),
+		lane.TerminalKey(string(session.BackendTmux), "%1"))
+	if err != nil {
+		t.Fatalf("holding the lane: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := a.Close(ctx, "%1", false); err == nil {
+		t.Fatal("a close walked into a terminal somebody else was writing to")
+	} else if ref, ok := err.(Refusal); !ok || ref.Code != "busy" {
+		t.Fatalf("a full lane: %v", err)
+	}
+	if len(h.calls) != 0 {
+		t.Fatalf("the terminal was touched anyway: %v", h.calls)
+	}
+	release()
+	if _, err := a.Close(context.Background(), "%1", false); err != nil {
+		t.Fatalf("with the lane free: %v", err)
+	}
+	if len(h.calls) != 1 {
+		t.Fatalf("calls: %v", h.calls)
+	}
+}
