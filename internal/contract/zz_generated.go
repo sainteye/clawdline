@@ -1254,11 +1254,14 @@ type BrokerMessageRequest struct {
 }
 
 // `ok` means the bytes reached a composer. It never means the assistant read
-// them — that is a later fact with its own evidence.
+// them — that is a later fact with its own evidence. `accepted_at` is when
+// the intent became durable and `at` is when the line was typed: two facts, and
+// they used to be one number said twice.
 type BrokerMessageResult struct {
-	AcceptedAt int64 `json:"accepted_at"`
-	At         int64 `json:"at"`
-	OK         bool  `json:"ok"`
+	AcceptedAt int64         `json:"accepted_at"`
+	At         int64         `json:"at"`
+	OK         bool          `json:"ok"`
+	Stage      DeliveryStage `json:"stage"`
 }
 
 // The durable envelope for telling a root its child finished. It is a ledger
@@ -2577,6 +2580,23 @@ var CoordinatorStatusValues = []CoordinatorStatus{CoordinatorStatusOnline, Coord
 type CoordinatorStoreState struct {
 	Status string `json:"status"`
 }
+
+// How far one recorded intent got. `observed` and `acknowledged` are named and
+// never claimed by this daemon: the evidence for them is the receiver's own
+// next turn, which nothing here watches for.
+type DeliveryStage string
+
+const (
+	DeliveryStageAccepted     DeliveryStage = "accepted"
+	DeliveryStageExecuted     DeliveryStage = "executed"
+	DeliveryStageDelivered    DeliveryStage = "delivered"
+	DeliveryStageObserved     DeliveryStage = "observed"
+	DeliveryStageAcknowledged DeliveryStage = "acknowledged"
+	DeliveryStageUnknown      DeliveryStage = "unknown"
+)
+
+// DeliveryStageValues is every value the contract allows, in contract order.
+var DeliveryStageValues = []DeliveryStage{DeliveryStageAccepted, DeliveryStageExecuted, DeliveryStageDelivered, DeliveryStageObserved, DeliveryStageAcknowledged, DeliveryStageUnknown}
 
 // One process the file declares under `processes`.
 type DevProcess struct {

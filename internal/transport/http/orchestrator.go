@@ -455,6 +455,12 @@ func (s *Server) brokerMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	// The key is a receipt (D03): the same key and body answers what the
 	// first request answered, and types nothing a second time.
+	//
+	// The request's context is passed, and it decides only how long this
+	// handler waits. The typing itself is an effect with a life of its own:
+	// a browser closed mid-send leaves the message owed, typed and recorded,
+	// so the resend gets the answer rather than `request_in_progress` for
+	// ever (orchestrator/effects.go).
 	sent, err := s.broker.Relay(r.Context(), orchestrator.Message{From: body.From, To: body.To, Text: body.Text}, key)
 	if err != nil {
 		writeBrokerError(w, err)
@@ -463,7 +469,15 @@ func (s *Server) brokerMessages(w http.ResponseWriter, r *http.Request) {
 	if sent.Replayed {
 		w.Header().Set("Idempotent-Replayed", "true")
 	}
-	writeJSON(w, contract.BrokerMessageResult{OK: true, AcceptedAt: sent.At.Unix(), At: sent.At.Unix()})
+	// Two facts, two fields: when it was accepted, and when it was typed.
+	// They were the same number twice, which is how "the bytes went in" and
+	// "we owe this" stopped being told apart.
+	accepted := sent.AcceptedAt
+	if accepted.IsZero() {
+		accepted = sent.At
+	}
+	writeJSON(w, contract.BrokerMessageResult{OK: true, AcceptedAt: accepted.Unix(), At: sent.At.Unix(),
+		Stage: contract.DeliveryStage(sent.Stage)})
 }
 
 // brokerWhoAmI answers which tab a conversation is in.

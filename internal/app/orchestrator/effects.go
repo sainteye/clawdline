@@ -25,6 +25,30 @@ import (
 // never begun is run; one begun and unfinished is run again only when it can
 // find out for itself whether it already happened, and is otherwise recorded
 // as unknown rather than done twice.
+//
+// **An effect outlives the request that asked for it.** It used to run on the
+// caller's context, and a caller is a browser tab somebody closes. The line
+// was typed into the far session — that part of it reaches the world through
+// a terminal, not through the HTTP connection — and then the cancelled context
+// failed the store write that would have recorded it, so the bytes were in
+// somebody's composer and the account of them said `pending`. A resend under
+// the same Idempotency-Key found an outbox row that was open and a receipt
+// that was held, and was told `request_in_progress`; and because the row's
+// owner was this very process, still running, no recovery would ever take it.
+// `request_in_progress` was the last thing that key ever answered.
+//
+// The five words the fix keeps apart, because the old shape had them as one:
+//
+//   - **accepted** — the intent is durable. The request may go home now; this
+//     is what its answer is about, and it is true whether or not anybody is
+//     still listening.
+//   - **executed** — the effect ran here. Bounded by effectLifetime and by
+//     nothing the caller does.
+//   - **delivered** — the far side took it: the composer accepted the line.
+//   - **observed** and **acknowledged** — the receiver read it, and acted. No
+//     route here can claim either; the evidence is the receiver's own next
+//     turn, and this daemon does not watch for it. They are named so that
+//     nothing below quietly reports `delivered` as though it were one of them.
 
 // The effect kinds.
 const (
@@ -67,6 +91,74 @@ func outside() error {
 	return nil
 }
 
+// Stage is how far one recorded intent has got. The rungs are ordered, and
+// each is a different fact about a different party; see the note at the top of
+// this file for why they are not one word.
+type Stage string
+
+const (
+	// StageAccepted: the intent is durable and is owed. Nothing has reached
+	// the world yet.
+	StageAccepted Stage = "accepted"
+	// StageExecuted: the effect was attempted here and did not fail.
+	StageExecuted Stage = "executed"
+	// StageDelivered: the far side took it — for a message, the composer
+	// accepted the line.
+	StageDelivered Stage = "delivered"
+	// StageObserved: the receiver read it. Nothing on this daemon establishes
+	// this, and no answer here claims it.
+	StageObserved Stage = "observed"
+	// StageAcknowledged: the receiver acted on it. The same: named, never
+	// claimed.
+	StageAcknowledged Stage = "acknowledged"
+	// StageUnknown: the attempt began and its outcome cannot be established.
+	// It is not a rung — it is the admission that the ladder was lost.
+	StageUnknown Stage = "unknown"
+)
+
+const (
+	// effectLifetime is how long one attempt of an effect may take once it is
+	// no longer anybody's request. It is generous because the slowest of them
+	// — a checkout, a push through a provider's retries — is slow, and a
+	// caller that asked for longer keeps its own deadline (effectContext).
+	effectLifetime = 2 * time.Minute
+	// effectRecordGrace is the window an outcome has to be written after the
+	// attempt is over, on a context of its own. An attempt that ran out of
+	// time must still be able to say so; recording it under the deadline it
+	// just missed is how an effect ends up neither done nor recorded.
+	effectRecordGrace = 15 * time.Second
+	// unattendedPending and unattendedStarted are how long one of this
+	// handle's own open effects may sit with nothing in this process holding
+	// it before the beat settles it (RecoverEffects).
+	//
+	// They are different because the two states are different evidence. A
+	// `pending` row is recorded and then held microseconds later, by the very
+	// next statement, so half a minute unheld is not a race — it is a request
+	// that left. A `started` row may be an attempt in progress, and an attempt
+	// may take effectLifetime, so it is given that and a minute more.
+	unattendedPending = 30 * time.Second
+	unattendedStarted = effectLifetime + time.Minute
+)
+
+// effectContext is the context an effect runs on: its caller's values, none of
+// its cancellation, and a deadline of its own — at least effectLifetime, and
+// longer when the caller asked for longer (the dead-letter push does).
+func effectContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	d := effectLifetime
+	if until, ok := ctx.Deadline(); ok {
+		if left := time.Until(until); left > d {
+			d = left
+		}
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), d)
+}
+
+// recordContext is the context an outcome is written on. Never the attempt's:
+// see effectRecordGrace.
+func recordContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), effectRecordGrace)
+}
+
 // typeLine is b.Type behind the effect guard.
 func (b *Broker) typeLine(ctx context.Context, terminalID, text string) error {
 	if err := outside(); err != nil {
@@ -87,6 +179,13 @@ type effectResult struct {
 	// the reservation back instead, for an answer about this moment only.
 	answer  *store.ReceiptAnswer
 	release bool
+	// stage is the rung this attempt reached. Empty means the effect never
+	// got as far as being attempted.
+	stage Stage
+	// err is why there is no answer, carried as an error so that a caller
+	// decides on `errors.Is` and not on the shape of `outcome` — which is
+	// prose for a person and has been rewritten more than once.
+	err error
 }
 
 // effectHandler runs one kind of effect. idempotent says a second attempt
@@ -116,22 +215,34 @@ func (b *Broker) fault(point string, e store.Effect) {
 // runEffect starts one of this broker's effects, attempts it and records how
 // it ended. The answer is how it ended, or the store's refusal to let it
 // start — which means somebody else has it, or it is over.
-func (b *Broker) runEffect(ctx context.Context, id int64) (effectResult, error) {
+//
+// The attempt runs on a context of its own (effectContext): the intent is
+// already durable, so what the caller's cancellation still decides is when to
+// stop waiting for the answer, never whether the effect happens. While it runs
+// the row is held, so the beat can tell it from one nobody is attending.
+func (b *Broker) runEffect(ctx context.Context, id int64) (res effectResult, err error) {
 	if err := outside(); err != nil {
-		return effectResult{}, err
+		return effectResult{err: err}, err
 	}
-	e, err := b.Store.StartEffect(ctx, id)
+	b.hold(id)
+	defer b.release(id)
+	run, cancel := effectContext(ctx)
+	defer cancel()
+	e, err := b.Store.StartEffect(run, id)
 	if err != nil {
-		return effectResult{}, err
+		return effectResult{err: err}, err
 	}
 	h, ok := effectHandlers[e.Kind]
 	if !ok {
 		res := effectResult{state: store.EffectFailed, outcome: "no handler for effect kind " + e.Kind}
-		return res, b.finishEffect(ctx, e, res)
+		return res, b.finishEffect(run, e, res)
 	}
 	b.fault("started", e)
-	res := h.run(ctx, b, e)
-	return res, b.finishEffect(ctx, e, res)
+	res = h.run(run, b, e)
+	if res.stage == "" && res.state == store.EffectDone {
+		res.stage = StageExecuted
+	}
+	return res, b.finishEffect(run, e, res)
 }
 
 func (b *Broker) finishEffect(ctx context.Context, e store.Effect, res effectResult) error {
@@ -142,9 +253,11 @@ func (b *Broker) finishEffect(ctx context.Context, e store.Effect, res effectRes
 	if res.release {
 		answer = nil
 	}
-	err := b.Store.FinishEffect(ctx, e.ID, res.state, res.outcome, res.events, answer)
+	rec, cancel := recordContext(ctx)
+	defer cancel()
+	err := b.Store.FinishEffect(rec, e.ID, res.state, res.outcome, res.events, answer)
 	if err == nil && res.release && e.Receipt != nil {
-		err = b.Store.ReleaseReceipt(ctx, *e.Receipt)
+		err = b.Store.ReleaseReceipt(rec, *e.Receipt)
 	}
 	if err != nil {
 		log.Printf("orchestrator: effect %d (%s %s) ran and could not be recorded: %v", e.ID, e.Kind, e.Subject, err)
@@ -162,19 +275,30 @@ func (b *Broker) runRecorded(ctx context.Context, ids []int64) []effectResult {
 		}
 		res, err := b.runEffect(ctx, id)
 		if err != nil {
-			res = effectResult{state: store.EffectFailed, outcome: err.Error()}
+			res = effectResult{state: store.EffectFailed, outcome: err.Error(), err: err}
 		}
 		out = append(out, res)
 	}
 	return out
 }
 
-// RecoverEffects takes over the effects a broker that has since died left
-// unfinished, and settles each one exactly once: an effect never attempted is
-// run now; one attempted and unfinished is run again only when its handler can
-// tell whether the first attempt happened, and is otherwise recorded `unknown`
-// — with the request it answered told so — rather than done twice. It answers
-// how many it settled.
+// RecoverEffects settles the effects nobody is attending to, and settles each
+// one exactly once: an effect never attempted is run now; one attempted and
+// unfinished is run again only when its handler can tell whether the first
+// attempt happened, and is otherwise recorded `unknown` — with the request it
+// answered told so — rather than done twice. It answers how many it settled.
+//
+// Two sets, for two different ways of being unattended.
+//
+//   - A broker that has since died left rows under its own name. They are
+//     taken over by AdoptEffects, which proves the owner gone before it moves
+//     one.
+//   - This broker's own rows, recorded by a request that then went away —
+//     `unattended` below. AdoptEffects will not touch these and must not: an
+//     owner that is running is exactly what it refuses to take from. Only this
+//     process knows which of its rows have somebody on them, so only this
+//     process can settle the rest, and the proof it uses is the in-memory hold
+//     plus an age past which a row that is still unheld is not a race.
 func (b *Broker) RecoverEffects(ctx context.Context) int {
 	adopted, err := b.Store.AdoptEffects(ctx)
 	if err != nil {
@@ -183,30 +307,67 @@ func (b *Broker) RecoverEffects(ctx context.Context) int {
 	}
 	n := 0
 	for _, e := range adopted {
-		h, known := effectHandlers[e.Kind]
-		if e.State == store.EffectStarted && (!known || !h.idempotent) {
-			res := effectResult{
-				state: store.EffectUnknown,
-				outcome: "The broker that began this effect stopped before it recorded the outcome, and this kind " +
-					"cannot find out whether it happened; it is not repeated.",
-			}
-			if e.Receipt != nil {
-				res.answer = refusalAnswer(refuse(http.StatusConflict, "request_outcome_unknown",
-					"The daemon stopped while this request was being carried out, so whether it took effect is "+
-						"unknown. It was not repeated; look before asking again under a new key."))
-			}
-			payload, _ := json.Marshal(map[string]any{"effect": e.ID, "kind": e.Kind, "subject": e.Subject})
-			res.events = []store.Event{{Kind: "effect.unknown", Subject: e.Subject, Payload: payload}}
-			if err := b.Store.FinishEffect(ctx, e.ID, res.state, res.outcome, res.events, res.answer); err == nil {
-				n++
-			}
-			continue
-		}
-		if _, err := b.runEffect(ctx, e.ID); err == nil {
-			n++
-		}
+		n += b.settleEffect(ctx, e, "The broker that began this effect stopped before it recorded the outcome, "+
+			"and this kind cannot find out whether it happened; it is not repeated.")
+	}
+	for _, e := range b.unattended(ctx) {
+		n += b.settleEffect(ctx, e, "The request that recorded this effect went away while it was being carried "+
+			"out, and this kind cannot find out whether it happened; it is not repeated.")
 	}
 	return n
+}
+
+// unattended is this handle's own open effects that nothing in this process is
+// holding and that are past the age at which "unheld" stops being a race.
+func (b *Broker) unattended(ctx context.Context) []store.Effect {
+	own, err := b.Store.OwnOpenEffects(ctx)
+	if err != nil {
+		log.Printf("orchestrator: this broker's own unfinished effects could not be read: %v", err)
+		return nil
+	}
+	now := b.now()
+	out := make([]store.Effect, 0, len(own))
+	for _, e := range own {
+		if b.holding(e.ID) {
+			continue
+		}
+		since, limit := e.CreatedAt, unattendedPending
+		if e.State == store.EffectStarted {
+			since, limit = e.StartedAt, unattendedStarted
+		}
+		if since.IsZero() || now.Sub(since) < limit {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// settleEffect runs or closes one unattended effect and answers 1 when it
+// settled it. why is what the `unknown` outcome says about how it was left.
+func (b *Broker) settleEffect(ctx context.Context, e store.Effect, why string) int {
+	h, known := effectHandlers[e.Kind]
+	if e.State == store.EffectStarted && (!known || !h.idempotent) {
+		res := effectResult{state: store.EffectUnknown, outcome: why, stage: StageUnknown}
+		if e.Receipt != nil {
+			res.answer = refusalAnswer(refuse(http.StatusConflict, "request_outcome_unknown",
+				"The request was being carried out when whoever was carrying it out stopped, so whether it took "+
+					"effect is unknown. It was not repeated; look before asking again under a new key."))
+		}
+		payload, _ := json.Marshal(map[string]any{"effect": e.ID, "kind": e.Kind, "subject": e.Subject,
+			"stage": string(StageUnknown)})
+		res.events = []store.Event{{Kind: "effect.unknown", Subject: e.Subject, Payload: payload}}
+		rec, cancel := recordContext(ctx)
+		defer cancel()
+		if err := b.Store.FinishEffect(rec, e.ID, res.state, res.outcome, res.events, res.answer); err == nil {
+			return 1
+		}
+		return 0
+	}
+	if _, err := b.runEffect(ctx, e.ID); err == nil {
+		return 1
+	}
+	return 0
 }
 
 // refusalAnswer is a refusal as a receipt keeps it.
@@ -340,11 +501,18 @@ type messageEffect struct {
 	Target string `json:"target"`
 	Source string `json:"source"`
 	Wire   string `json:"wire"`
+	// Accepted is when the intent became durable, carried through the effect
+	// so the answer can report it beside the moment of delivery rather than
+	// giving one timestamp two meanings.
+	Accepted int64 `json:"accepted,omitempty"`
 }
 
-// messageAnswer is a relayed message's answer as its receipt keeps it.
+// messageAnswer is a relayed message's answer as its receipt keeps it: when it
+// was accepted, when it was delivered, and which of those the answer is.
 type messageAnswer struct {
-	At int64 `json:"at"`
+	At       int64  `json:"at"`
+	Accepted int64  `json:"accepted,omitempty"`
+	Stage    string `json:"stage,omitempty"`
 }
 
 // runMessage types one message. It is not idempotent — nothing can tell
@@ -382,10 +550,14 @@ func runMessage(ctx context.Context, b *Broker, e store.Effect) effectResult {
 			answer: refusalAnswer(refuse(http.StatusBadGateway, "delivery_failed", err.Error()))}
 	}
 	at := b.now()
-	body, _ := json.Marshal(messageAnswer{At: at.Unix()})
-	payload, _ := json.Marshal(map[string]any{"from": m.Source, "effect": e.ID})
+	// Delivered: the composer took the line. Not observed, and not
+	// acknowledged — the receiver's own next turn is the evidence for those,
+	// and nothing here waits for it.
+	body, _ := json.Marshal(messageAnswer{At: at.Unix(), Accepted: m.Accepted, Stage: string(StageDelivered)})
+	payload, _ := json.Marshal(map[string]any{"from": m.Source, "effect": e.ID, "stage": string(StageDelivered),
+		"accepted": m.Accepted, "delivered": at.Unix()})
 	return effectResult{
-		state: store.EffectDone, outcome: "typed",
+		state: store.EffectDone, outcome: "typed", stage: StageDelivered,
 		answer: &store.ReceiptAnswer{Status: http.StatusOK, Body: body},
 		events: []store.Event{{Kind: "session.message", Subject: target.ID, Payload: payload}},
 	}

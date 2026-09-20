@@ -347,15 +347,21 @@
       }
     },
     "BrokerMessageResult": {
-      "description": "`ok` means the bytes reached a composer. It never means the assistant read them — that is a later fact with its own evidence.",
+      "description": "`ok` means the bytes reached a composer. It never means the assistant read them — that is a later fact with its own evidence. `accepted_at` is when the intent became durable and `at` is when the line was typed: two facts, and they used to be one number said twice.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["accepted_at", "at", "ok"],
+      "required": ["accepted_at", "at", "ok", "stage"],
       "properties": {
         "ok": { "type": "boolean" },
         "accepted_at": { "type": "integer" },
-        "at": { "type": "integer" }
+        "at": { "type": "integer" },
+        "stage": { "$ref": "#/$defs/DeliveryStage" }
       }
+    },
+    "DeliveryStage": {
+      "description": "How far one recorded intent got. `observed` and `acknowledged` are named and never claimed by this daemon: the evidence for them is the receiver's own next turn, which nothing here watches for.",
+      "type": "string",
+      "enum": ["accepted", "executed", "delivered", "observed", "acknowledged", "unknown"]
     },
     "BrokerWhoAmI": {
       "description": "Which tab a conversation is in. Five fields and no more: what that session is working on is not the broker's to hand to whoever knows a conversation id.",

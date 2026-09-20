@@ -177,8 +177,10 @@ type HandoffRequest struct {
 	Title       string `json:"title"`
 	FromSession string `json:"from_session"`
 	// Plain is the sender's word that this is a plain handoff and not the
-	// machine role's succession, which has a route of its own. Only the JSON
-	// value true is that word.
+	// machine role's succession. Only the JSON value true is that word. The
+	// word is still asked for although succession is not implemented: the
+	// sender is saying what it means, and a build that gains succession must
+	// not inherit a pile of handoffs that never said.
 	Plain *bool `json:"coordinator_plain_handoff"`
 }
 
@@ -272,9 +274,10 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 		}
 		return Handoff{}, false, err
 	}
-	// The machine role hands itself over by succession, which moves the
-	// crown with the work; a plain handoff from its holder would leave the
-	// crown behind with nobody under it.
+	// A plain handoff from the role's holder would leave the crown behind
+	// with nobody under it. Succession — moving the crown with the work — is
+	// what would answer that, and this daemon does not have it: the refusal
+	// says so plainly rather than naming a route that answers 501 (remedy.go).
 	rec, status, err := b.Store.Coordinator(ctx)
 	switch {
 	case err != nil:
@@ -286,7 +289,9 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 			"The machine role is stored in a form this daemon cannot read; nothing was opened.")
 	case rec != nil && rec.ConversationID == from:
 		return Handoff{}, false, refuseWith(http.StatusConflict, "succession_required",
-			"The sender holds the machine role; it hands over by succession, which moves the role with the work.",
+			"The sender holds the machine role, and a plain handoff would leave the role behind with nobody "+
+				"under it. Moving the role with the work is not something this daemon can do; the remediation "+
+				"in this refusal says what is missing and what can be done instead.",
 			withRemedy(map[string]any{"coordinator_id": rec.ID, "expected_generation": rec.Generation,
 				"sender_session_id": from}, "succession_required"))
 	}
@@ -416,7 +421,7 @@ func (b *Broker) handoffReceipt(ctx context.Context, h Handoff) {
 	if err != nil || strings.ContainsAny(string(encoded), "\n\r") {
 		return
 	}
-	payload, _ := json.Marshal(messageEffect{Target: h.FromTerm, Source: "clawdline",
+	payload, _ := json.Marshal(messageEffect{Target: h.FromTerm, Source: "clawdline", Accepted: b.now().Unix(),
 		Wire: "<clawdline-notice>" + string(encoded) + "</clawdline-notice>"})
 	accepted, _ := json.Marshal(map[string]any{"handoff": h.ID, "state": state})
 	ids, err := b.Store.RecordIntent(ctx,

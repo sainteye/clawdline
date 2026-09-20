@@ -1514,12 +1514,15 @@ export interface BrokerMessageRequest {
 
 /**
  * `ok` means the bytes reached a composer. It never means the assistant read them
- * — that is a later fact with its own evidence.
+ * — that is a later fact with its own evidence. `accepted_at` is when the intent
+ * became durable and `at` is when the line was typed: two facts, and they used to
+ * be one number said twice.
  */
 export interface BrokerMessageResult {
   accepted_at: number
   at: number
   ok: boolean
+  stage: DeliveryStage
 }
 
 /**
@@ -3055,6 +3058,21 @@ export const CoordinatorStatusValues: readonly CoordinatorStatus[] = ["online", 
 export interface CoordinatorStoreState {
   status: string
 }
+
+/**
+ * How far one recorded intent got. `observed` and `acknowledged` are named and
+ * never claimed by this daemon: the evidence for them is the receiver's own next
+ * turn, which nothing here watches for.
+ */
+export type DeliveryStage =
+    "accepted"
+  | "executed"
+  | "delivered"
+  | "observed"
+  | "acknowledged"
+  | "unknown"
+
+export const DeliveryStageValues: readonly DeliveryStage[] = ["accepted", "executed", "delivered", "observed", "acknowledged", "unknown"] as const
 
 /**
  * One process the file declares under `processes`.

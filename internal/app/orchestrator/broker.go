@@ -184,6 +184,40 @@ type Broker struct {
 	// owed again. A pass run by hand owes none, so its cost stays the live
 	// tasks' (G33).
 	todosOwed atomic.Bool
+
+	// effectsMu guards held, which is the effect ids something in this
+	// process is running right now (effects.go). It is in memory on purpose:
+	// the question it answers — "is anybody here still attending to this row"
+	// — is about this process and has no answer after a restart, where the
+	// durable owner name answers it instead. It has a lock of its own because
+	// it is taken around every effect and mu is taken around dispatch.
+	effectsMu sync.Mutex
+	held      map[int64]bool
+}
+
+// hold and release are this process's claim on an effect row: taken before
+// the row is attempted and given up after its outcome is recorded, so the
+// beat can tell a row somebody is running from one a departed request left
+// behind. holding answers whether it is claimed now.
+func (b *Broker) hold(id int64) {
+	b.effectsMu.Lock()
+	defer b.effectsMu.Unlock()
+	if b.held == nil {
+		b.held = map[int64]bool{}
+	}
+	b.held[id] = true
+}
+
+func (b *Broker) release(id int64) {
+	b.effectsMu.Lock()
+	defer b.effectsMu.Unlock()
+	delete(b.held, id)
+}
+
+func (b *Broker) holding(id int64) bool {
+	b.effectsMu.Lock()
+	defer b.effectsMu.Unlock()
+	return b.held[id]
 }
 
 const (

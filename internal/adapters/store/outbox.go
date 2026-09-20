@@ -297,6 +297,44 @@ func (s *Store) AdoptEffects(ctx context.Context) ([]Effect, error) {
 	return out, err
 }
 
+// OwnOpenEffects answers this handle's own unfinished effects, oldest first.
+//
+// AdoptEffects deliberately leaves these alone: a row this process owns is
+// normally a row this process is running. "Normally" is the word that cost
+// something. An effect is recorded inside the request that owes it and run
+// straight afterwards, and a request whose caller has gone can fail between
+// the two — the store write that would mark the row `started` takes the
+// request's context, and a cancelled context fails it. The row then stays
+// `pending` under a live owner: AdoptEffects will not take it, because its
+// owner is not gone, and nothing else in the process is running it. The
+// receipt it answers stays `pending` with it, and every resend of that
+// Idempotency-Key is told `request_in_progress` — for the life of the daemon.
+//
+// So the caller reads its own open rows too, and settles the ones nothing in
+// this process is holding. Which rows those are is a question only the process
+// can answer, so it answers it (orchestrator/effects.go): this is the read.
+func (s *Store) OwnOpenEffects(ctx context.Context) ([]Effect, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+effectColumns+` FROM outbox WHERE state IN ('pending', 'started') AND owner = ? ORDER BY id ASC`,
+		s.owner.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Effect{}
+	for rows.Next() {
+		e, err := scanEffect(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // OutboxCounts is the outbox's shape at one moment, for /v1/diagnostics.
 type OutboxCounts struct {
 	Pending, Started, Done, Failed, Unknown int

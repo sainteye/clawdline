@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -47,9 +48,18 @@ type messageSource struct {
 // ScopeMessages is the receipt scope of the message route (D03).
 const ScopeMessages = "orchestrator.messages"
 
-// Relayed is a relayed message's answer.
+// Relayed is a relayed message's answer, with the two facts it used to give
+// one timestamp for kept apart (effects.go).
 type Relayed struct {
+	// AcceptedAt is when the intent became durable. From that moment the
+	// message is owed whatever happens to the caller's connection.
+	AcceptedAt time.Time
+	// At is when the bytes were typed into the target's composer: delivered,
+	// which is not read and is not acted on.
 	At time.Time
+	// Stage is the rung this answer reports, so a caller reads which fact it
+	// has rather than inferring one from a timestamp being non-zero.
+	Stage Stage
 	// Replayed is true when this request had already been answered and the
 	// answer is that one, returned again rather than typed again.
 	Replayed bool
@@ -57,6 +67,13 @@ type Relayed struct {
 
 // Relay types one session's message into another's composer — once per
 // Idempotency-Key.
+//
+// What the caller's context decides is how long this call waits for the
+// answer. It does not decide whether the message is typed: past the commit
+// below, the intent is durable and the effect runs on a life of its own
+// (effects.go). A caller that leaves mid-flight is answered by nobody, and the
+// receipt it left behind is completed all the same, so its resend gets that
+// answer instead of `request_in_progress` for ever.
 //
 // The two lookups are deliberately different. A **source** may be named by its
 // terminal id or by its conversation id, because the sender is describing
@@ -158,9 +175,10 @@ func (b *Broker) Relay(ctx context.Context, m Message, key string) (Relayed, err
 		return Relayed{}, refuse(http.StatusBadGateway, "delivery_failed",
 			"this daemon cannot type into a terminal")
 	}
-	payload, _ := json.Marshal(messageEffect{Target: target.ID, Source: source.ID,
+	acceptedAt := b.now()
+	payload, _ := json.Marshal(messageEffect{Target: target.ID, Source: source.ID, Accepted: acceptedAt.Unix(),
 		Wire: "<clawdline-message>" + string(encoded) + "</clawdline-message>"})
-	accepted, _ := json.Marshal(map[string]any{"from": source.ID, "key": key})
+	accepted, _ := json.Marshal(map[string]any{"from": source.ID, "key": key, "stage": string(StageAccepted)})
 	ids, err := b.Store.RecordIntent(ctx,
 		[]store.Event{{Kind: "session.message.accepted", Subject: target.ID, Payload: accepted}},
 		[]store.Effect{{Kind: EffectMessage, Subject: target.ID, Payload: payload, Receipt: &receipt}})
@@ -170,14 +188,37 @@ func (b *Broker) Relay(ctx context.Context, m Message, key string) (Relayed, err
 	recorded = true
 	results := b.runRecorded(ctx, ids)
 	if len(results) != 1 || results[0].answer == nil {
-		outcome := ""
-		if len(results) == 1 {
-			outcome = results[0].outcome
-		}
-		return Relayed{}, refuse(http.StatusServiceUnavailable, "orchestrator_store_unavailable",
-			"The message was accepted and its delivery could not be recorded: "+outcome)
+		return Relayed{}, unsettled(acceptedAt, results)
 	}
 	return relayedOf(*results[0].answer, false)
+}
+
+// unsettled is the answer to a request whose intent is durable and whose
+// effect did not settle inside this call — the store would not let the effect
+// start, or another holder has it. It is deliberately not a 5xx: nothing was
+// lost, the beat settles the row (RecoverEffects), and the same key asked
+// again gets the real answer.
+//
+// The cause is read with errors.Is off the typed error the effect carried
+// back, never by looking at `outcome`, which is prose for a person.
+func unsettled(acceptedAt time.Time, results []effectResult) error {
+	var cause error
+	if len(results) == 1 {
+		cause = results[0].err
+	}
+	if errors.Is(cause, ErrEffectInsideWrite) {
+		// A bug in this daemon, not a thing to retry into.
+		return refuse(http.StatusInternalServerError, "effect_inside_write",
+			"The message was accepted and this daemon tried to type it while holding the store's write right; "+
+				"it was refused. The message is still owed and will be typed by the next pass.")
+	}
+	extra := map[string]any{"retry_after": 1, "stage": string(StageAccepted), "accepted_at": acceptedAt.Unix()}
+	if cause != nil && !errors.Is(cause, store.ErrEffectTaken) {
+		extra["cause"] = cause.Error()
+	}
+	return refuseWith(http.StatusConflict, "request_in_progress",
+		"The message was accepted and is durable; whether it has reached the target's composer is not settled "+
+			"here. Ask again under the same Idempotency-Key for its answer.", extra)
 }
 
 // claimed answers a request whose receipt says it is not new, and done is
@@ -224,7 +265,14 @@ func relayedOf(a store.ReceiptAnswer, replayed bool) (Relayed, error) {
 		if err := json.Unmarshal(a.Body, &m); err != nil {
 			return Relayed{}, refuse(http.StatusInternalServerError, "receipt_unreadable", err.Error())
 		}
-		return Relayed{At: time.Unix(m.At, 0), Replayed: replayed}, nil
+		out := Relayed{At: time.Unix(m.At, 0), Stage: Stage(m.Stage), Replayed: replayed}
+		if m.Accepted > 0 {
+			out.AcceptedAt = time.Unix(m.Accepted, 0)
+		}
+		if out.Stage == "" {
+			out.Stage = StageDelivered
+		}
+		return out, nil
 	}
 	var r storedRefusal
 	if err := json.Unmarshal(a.Body, &r); err != nil {

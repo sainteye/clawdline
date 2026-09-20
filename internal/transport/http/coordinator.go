@@ -142,12 +142,28 @@ func (s *Server) orchestratorCoordinatorRoute(w http.ResponseWriter, r *http.Req
 		}
 		writeJSON(w, contract.CoordinatorRebindResult{OK: true, Rebound: moved, Coordinator: coordinatorMetadata(st)})
 	case strings.HasPrefix(p, "/v1/orchestrator/coordinator/successions"):
-		// Succession opens its receiver through a handoff, and this daemon
-		// has no handoffs yet (W6). Said by name rather than answered 404,
-		// so a caller following the Swift guide learns why.
+		// Not implemented, said by name rather than answered 404, so a caller
+		// following the Swift guide learns why.
+		//
+		// What this used to say was wrong twice over. Handoffs arrived (W6)
+		// and the sentence still said they had not; and "move the role with
+		// /rebind once the bound session is offline" was offered to the one
+		// caller who cannot use it — `succession_required` is raised while the
+		// holder is **live**, and a live holder asking for /rebind is told
+		// `coordinator_online`. The truthful answer is that a live session
+		// cannot give the role away on this build at all, so the message says
+		// that, and says who can do what instead. The same words are in the
+		// remedy table (orchestrator/remedy.go), which is what the refusal
+		// carries; this route keeps its own copy because a caller reaching it
+		// directly never sees that refusal.
 		writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusNotImplemented, Code: "succession_unavailable",
-			Message: "Succession opens its receiver through a handoff, which this daemon does not have yet. " +
-				"Move the role with /rebind once the bound session is offline."})
+			Message: "Succession — moving the machine role together with the work — is not implemented on this " +
+				"daemon, and nothing else moves the role while its session is live: /v1/orchestrator/coordinator/rebind " +
+				"answers coordinator_online until a reading proves the bound session offline. What does work: the " +
+				"work itself goes over as an ordinary handoff from a session that does not hold the role, and once " +
+				"the holder is gone the receiver moves the role with POST /v1/orchestrator/coordinator/rebind, using " +
+				"the id and generation from GET /v1/orchestrator/coordinator.",
+			Extra: map[string]any{"implemented": false}})
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such coordinator route.")
 	}
