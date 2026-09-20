@@ -116,6 +116,31 @@ test("empty is believed only after the machine's inventory, and not while it is 
   assert.equal(recovering.scan.epoch, before.scan.epoch)
 })
 
+// A viewer that connected after the machine's last change holds no inventory
+// marker for it. Two facts follow, and the page needs both: the list it can
+// draw is whatever rows did arrive, and it must not be read as the whole set.
+//
+// This is what the empty state's wording rests on. A viewer with rows draws
+// them — the "waiting" sentence is only ever for a genuinely empty list — and
+// a viewer with neither rows nor marker is waiting on the machine, not on an
+// app it has no line to.
+test("rows that arrived without the machine's marker are drawn, and are still not the whole set", async () => {
+  const client = new FakeClient()
+  client.rows = [row("mac-a", "s1"), row("mac-a", "s3")]
+  const r = reader(client, { t: 1000 })
+
+  const waiting = await r.snapshot()
+  assert.deepEqual(waiting.sessions.map((s) => s.id), ["s1", "s3"], "the rows it has are handed over")
+  assert.equal(waiting.scan.complete, false, "without the marker no reading is the whole set")
+  assert.equal(waiting.scan.emptyAuthoritative, false)
+
+  // The marker arriving is what makes it whole; nothing else does.
+  client.sessionInventoryByMachine.set("mac-a", { ids: new Set(["s1", "s3"]) })
+  const whole = await r.snapshot()
+  assert.equal(whole.scan.complete, true)
+  assert.deepEqual(whole.sessions.map((s) => s.id), ["s1", "s3"])
+})
+
 test("with no writer carried, a write is refused as not carried, as an uncarried read is, both typed", async () => {
   const r = reader(new FakeClient(), { t: 0 })
   const post = await r.fetch("/v1/sessions/s1/send", { method: "POST", body: "{}" })

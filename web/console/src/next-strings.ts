@@ -50,6 +50,13 @@ const words = {
     cloudMachinesFine: "Account {account} · this browser {device}",
     cloudMachinesWaiting: "Waiting for the machines on this account to report in…",
     cloudMachinesNone: "No machine on this account has reported in yet.",
+    // Two different things had one sentence between them. The copied catalog's
+    // `webEmptyWaitTitle` ("Waiting for the app") is the honest one for a page
+    // with no line to anything; it was also being said to a page whose line is
+    // up and whose machine simply has not stated its list yet, which is a
+    // different fact and a different thing to do about it.
+    sessionsListWaitTitle: "Waiting for this machine's list",
+    sessionsListWaitHint: "The line is up. This machine has not said yet which sessions it has.",
     cloudMachineSessions: "{count} sessions",
     cloudAccessProblem: "A machine's data could not be read here ({code}).",
     cloudSwitch: "Other machines",
@@ -150,6 +157,8 @@ const words = {
     cloudMachinesFine: "帳號 {account} · 這個瀏覽器 {device}",
     cloudMachinesWaiting: "正在等這個帳號的機器回報…",
     cloudMachinesNone: "這個帳號還沒有任何機器回報。",
+    sessionsListWaitTitle: "在等這台機器的清單",
+    sessionsListWaitHint: "線已經通了。這台機器還沒說它現在有哪些 session。",
     cloudMachineSessions: "{count} 個 session",
     cloudAccessProblem: "有一台機器的資料在這裡讀不出來（{code}）。",
     cloudSwitch: "換一台機器",

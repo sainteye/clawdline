@@ -10,6 +10,7 @@ import { taskReads } from "./session/task-read.js"
 import { swipes } from "./session/swipe.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 import { ScheduleSection } from "./pages/schedules.js"
+import { nextWord } from "./next-strings.js"
 
 /**
  * The session list page: the list, and the conversation beside it.
@@ -124,8 +125,19 @@ export function SessionsPage({
   })
 
   // The empty state, `renderList`'s tail. Four cases told apart: nothing
-  // matches what was typed, there are genuinely no sessions, or nothing has
-  // arrived yet (a stream that is not up, or a reading that did not complete).
+  // matches what was typed, there are genuinely no sessions, nothing has
+  // arrived because there is no line, and — the fourth — a line that is up
+  // over a list that has not been stated.
+  //
+  // **The last two are not the same thing and no longer say the same words.**
+  // "Waiting for the app" is true of a page with nothing to talk to. It was
+  // also what a page saw with its stream up, its machine in the list and its
+  // schedules on screen, waiting on one envelope that machine had no reason to
+  // re-send (`internal/transport/cloud/publish.go`'s unchanged-row skip): the
+  // sentence sent the person to look at an app that was running and connected.
+  // A different fact gets a different sentence, and this one names what is
+  // actually missing.
+  //
   // The original's fifth, a browser that was refused, has no counterpart on
   // this daemon. What the element holds is only rewritten when it is shown, as
   // there, so a skeleton that has been taken down is still inside it, hidden.
@@ -136,9 +148,11 @@ export function SessionsPage({
   else if (empty) {
     said.current = rows.length
       ? [L.fillString(T.webEmptyFilterTitle, { q: filter }), T.webEmptyFilterHint]
-      : live && emptyAuthoritative
-        ? [T.noSession, T.webEmptyNoneHint]
-        : [T.webEmptyWaitTitle, T.webEmptyWaitHint]
+      : !live
+        ? [T.webEmptyWaitTitle, T.webEmptyWaitHint]
+        : emptyAuthoritative
+          ? [T.noSession, T.webEmptyNoneHint]
+          : [nextWord("sessionsListWaitTitle"), nextWord("sessionsListWaitHint")]
   }
   const emptyClass = skeleton ? "skel" : "empty" + (homeEmpty ? " home-hero-list" : "")
 

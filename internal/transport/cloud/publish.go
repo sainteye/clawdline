@@ -36,6 +36,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/app/cloudops"
@@ -107,6 +108,9 @@ type Publisher struct {
 	// Every is the poll interval; zero is SnapshotInterval.
 	Every time.Duration
 	Log   func(format string, args ...any)
+	// Now exists so a test can drive the clock the heartbeat is measured on.
+	// Nil is time.Now.
+	Now func() time.Time
 
 	// published is each row's identity bytes as last sent, so an unchanged row
 	// is skipped. Keyed by session id; the inventory and the descriptor have
@@ -127,6 +131,22 @@ type Publisher struct {
 	// omitted is how many reachable records the last projection's bounds left
 	// out, so the log says it when it changes rather than every pass.
 	omitted int
+
+	// mu guards the two fields below and nothing else. They are written by
+	// Seen, which runs on the socket's read loop, and read by pass, which runs
+	// on the publisher's own goroutine; every other field here belongs to the
+	// publisher's goroutine alone.
+	mu sync.Mutex
+	// audience is the viewer devices this publisher has stated its channels to
+	// since this socket came up. It is bounded by the account's paired devices
+	// (`devices.list` in internal/domain/capacity): a sender only reaches Seen
+	// once the transport has found it in the roster and checked its signature
+	// (`internal/adapters/cloud.(*Transport).handleEnvelope`), so a stranger
+	// cannot put a name in here.
+	audience map[string]bool
+	// restate is set when a device that is not in the audience has been heard
+	// from, and cleared by the pass that re-states everything for it.
+	restate bool
 
 	// inventoried is the last inventory this publisher stated, by id, with
 	// enough of each row to decide later which source would have seen it
@@ -181,6 +201,12 @@ func (p *Publisher) Run(ctx context.Context) error {
 	p.published = map[string][32]byte{}
 	p.sent = map[string]time.Time{}
 	p.inventoried = map[string]inventoriedRow{}
+	// A new socket is a new audience. Nothing this publisher said on the last
+	// one was heard on this one — the relay holds each connection's realign
+	// snapshots, not this machine's — so the first pass below states
+	// everything anyway, and the audience starts empty rather than carrying a
+	// belief about who holds what across a line that went down.
+	p.forgetAudience()
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
 	p.pass(ctx)
@@ -202,6 +228,15 @@ func (p *Publisher) Pass(ctx context.Context) { p.pass(ctx) }
 // which finished tasks the descriptor's task list carries depends on which
 // sessions a viewer will hold, and the descriptor still has to arrive first.
 func (p *Publisher) pass(ctx context.Context) {
+	if p.takeRestate() {
+		// A viewer this machine has not stated its channels to is out there.
+		// What it holds is not this machine's to guess, so the skip's memory
+		// is dropped and this pass says everything again, in the order that
+		// makes it readable: descriptor, then rows, then the marker that names
+		// them.
+		p.published = map[string][32]byte{}
+		p.sent = map[string]time.Time{}
+	}
 	reading, ok := p.readSessions(ctx)
 	var inventory []string
 	if ok {
@@ -505,7 +540,7 @@ func incompleteSources(sources map[string]bool) []string {
 // viewer reads differs from last time, or because the heartbeat came due.
 func (p *Publisher) changed(key string, identity []byte) bool {
 	sum := sha256.Sum256(identity)
-	now := time.Now()
+	now := p.now()
 	if p.published[key] == sum && now.Sub(p.sent[key]) < Heartbeat {
 		return false
 	}
@@ -567,6 +602,75 @@ func (p *Publisher) send(ctx context.Context, channel string, body []byte, what 
 	if err := p.Publish(ctx, out); err != nil {
 		p.logf("cloud: the %s snapshot was not published: %v", what, err)
 	}
+}
+
+// Seen records that `device` is out there and has sent this machine something.
+//
+// **A viewer that has just arrived holds nothing, and the skip cannot know
+// that.** `changed` remembers what this machine last *sent*, which is a fact
+// about the wire and not about who was listening to it. The relay hands a
+// viewer the latest value of each channel when it connects — but only the ones
+// it still has: its Durable Object is evicted and its realign memory goes with
+// it, which is exactly the case the hosted console's own recovery path was
+// written for (`cloud-client.js`'s `_recoverSessions`: "may follow a relay
+// eviction, whose replay holds no rows"). A viewer that arrives after that
+// eviction and after this machine's last change is told nothing at all until
+// the heartbeat comes due — 240 seconds of a session list that says only that
+// it is waiting.
+//
+// So the machine listens for the one piece of evidence it already receives for
+// free: every envelope addressed to it names its sender. A device this
+// publisher has not stated its channels to since the socket came up is a
+// viewer that needs them, and the next pass gives it the lot. Nothing extra is
+// sent to ask the question and nothing is sent when no new device appears, so
+// the unchanged-row skip keeps every byte it was saving on an idle Mac.
+//
+// It is bounded by construction: a device is added once per socket, so the
+// most this can cost is one full re-statement per paired device per
+// connection, and a viewer that asks a hundred things costs exactly one.
+//
+// Called on the transport's read loop (`Relay.Deliver`), so it takes the lock,
+// touches two fields and returns.
+func (p *Publisher) Seen(device string) {
+	if device == "" || device == p.MachineID {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.audience[device] {
+		return
+	}
+	if p.audience == nil {
+		p.audience = map[string]bool{}
+	}
+	p.audience[device] = true
+	p.restate = true
+	p.logf("cloud: %s has been heard from and holds nothing this machine has stated; the next pass states it all again", device)
+}
+
+// takeRestate answers whether this pass owes the audience a full re-statement,
+// and clears the debt.
+func (p *Publisher) takeRestate() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	owed := p.restate
+	p.restate = false
+	return owed
+}
+
+// forgetAudience empties the audience, for a socket that is starting.
+func (p *Publisher) forgetAudience() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.audience = map[string]bool{}
+	p.restate = false
+}
+
+func (p *Publisher) now() time.Time {
+	if p.Now != nil {
+		return p.Now()
+	}
+	return time.Now()
 }
 
 func (p *Publisher) platform() string {
