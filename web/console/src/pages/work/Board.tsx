@@ -323,9 +323,54 @@ const SIGNAL_WORD: Record<string, WorkWord> = {
   cross_session: "signalCrossSession",
   long_lived: "signalLongLived",
   external_effect: "signalExternalEffect",
+  leftover: "signalLeftover",
 }
 
-/** The "to confirm" area: proposals nobody has answered (board-redesign §4.3). */
+/**
+ * The "to confirm" area: proposals nobody has answered (board-redesign §4.3).
+ *
+ * Twenty-six of them looked alike on 2026-09-20 and the person could not tell
+ * which were worth reading, so two things are said here that the rows carried
+ * and did not show:
+ *
+ *   - what the question is about. A row's task id is the subject for a line of
+ *     work and is only provenance for a leftover (PT-9), and a card that
+ *     printed neither made a finished delivery look like an unanswered
+ *     question;
+ *   - when it goes away by itself. Every row expires, and none of them said so.
+ *
+ * Ordering is by what can still change the answer, not by when it arrived: an
+ * effect outside this machine first, then a line owed past a day, then the
+ * leftovers nobody has picked up, then the rest — and inside each, whatever
+ * runs out of time first.
+ */
+const GROUPS = [
+  { word: "proposalGroupEffect", has: (p: Proposal) => p.signals.includes("external_effect") },
+  { word: "proposalGroupStuck", has: (p: Proposal) => p.signals.includes("long_lived") },
+  { word: "proposalGroupLeftover", has: (p: Proposal) => p.signals.includes("leftover") },
+  { word: "proposalGroupOther", has: () => true },
+] as const
+
+type GroupWord = (typeof GROUPS)[number]["word"]
+
+function grouped(rows: Proposal[]): { word: GroupWord; rows: Proposal[] }[] {
+  const out: { word: GroupWord; rows: Proposal[] }[] = []
+  const taken = new Set<string>()
+  for (const g of GROUPS) {
+    const mine = rows.filter((p) => !taken.has(p.id) && g.has(p))
+    for (const p of mine) taken.add(p.id)
+    if (mine.length) {
+      out.push({ word: g.word, rows: mine.sort((a, b) => a.expires_at - b.expires_at) })
+    }
+  }
+  return out
+}
+
+/** Whole days left before it leaves on its own; never negative. */
+function daysLeft(p: Proposal, now: number): number {
+  return Math.max(0, Math.floor((p.expires_at - now) / 86_400))
+}
+
 function ProposalsFold({
   proposals,
   total,
@@ -340,6 +385,8 @@ function ProposalsFold({
   onAnswer: (p: Proposal, a: "track" | "later" | "no") => Promise<unknown>
 }) {
   const rows = proposals ?? []
+  const now = Date.now() / 1000
+  const groups = grouped(rows)
   return (
     <details className="work-fold" id="work-confirm">
       <summary>
@@ -355,35 +402,50 @@ function ProposalsFold({
         ) : rows.length === 0 ? (
           <p>{workWord("toConfirmNone")}</p>
         ) : (
-          <ul className="work-lines">
-            {rows.map((p) => (
-              <li key={p.id} data-proposal-id={p.id}>
-                <b>{p.title}</b>
-                <span className="work-sub">
-                  {p.project} ·{" "}
-                  {workWord("proposalWhy", {
-                    why: p.signals.map((s) => (SIGNAL_WORD[s] ? workWord(SIGNAL_WORD[s]) : s)).join("、"),
-                  })}
-                </span>
-                <div className="work-actions" style={{ marginTop: 6 }}>
-                  <button className="chip on" type="button" disabled={busy} data-answer="track"
-                    onClick={() => run(() => onAnswer(p, "track"))}>
-                    {workWord("answerTrack")}
-                  </button>
-                  <button className="chip" type="button" disabled={busy} data-answer="later"
-                    onClick={() => run(() => onAnswer(p, "later"))}>
-                    {workWord("answerLater")}
-                  </button>
-                  <button className="chip" type="button" disabled={busy} data-answer="no"
-                    onClick={() => run(() => onAnswer(p, "no"))}>
-                    {workWord("answerNo")}
-                  </button>
-                </div>
-              </li>
-            ))}
-            {total > rows.length && <li className="work-note">{workWord("more", { n: total - rows.length })}</li>}
-          </ul>
+          groups.map((g) => (
+            <div key={g.word} className="work-group" data-proposal-group={g.word}>
+              {groups.length > 1 && <p className="work-note">{workWord(g.word)}</p>}
+              <ul className="work-lines">
+                {g.rows.map((p) => {
+                  const left = daysLeft(p, now)
+                  return (
+                    <li key={p.id} data-proposal-id={p.id}>
+                      <b>{p.title}</b>
+                      <span className="work-sub">
+                        {p.signals.includes("leftover")
+                          ? workWord("proposalKindLeftover", { task: (p.task_id ?? "").slice(0, 8) })
+                          : workWord("proposalKindLine")}
+                      </span>
+                      <span className="work-sub">
+                        {p.project} ·{" "}
+                        {workWord("proposalWhy", {
+                          why: p.signals.map((s) => (SIGNAL_WORD[s] ? workWord(SIGNAL_WORD[s]) : s)).join("、"),
+                        })}
+                        {" · "}
+                        {left > 0 ? workWord("proposalLeaves", { n: left }) : workWord("proposalLeavesToday")}
+                      </span>
+                      <div className="work-actions" style={{ marginTop: 6 }}>
+                        <button className="chip on" type="button" disabled={busy} data-answer="track"
+                          onClick={() => run(() => onAnswer(p, "track"))}>
+                          {workWord("answerTrack")}
+                        </button>
+                        <button className="chip" type="button" disabled={busy} data-answer="later"
+                          onClick={() => run(() => onAnswer(p, "later"))}>
+                          {workWord("answerLater")}
+                        </button>
+                        <button className="chip" type="button" disabled={busy} data-answer="no"
+                          onClick={() => run(() => onAnswer(p, "no"))}>
+                          {workWord("answerNo")}
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ))
         )}
+        {total > rows.length && <p className="work-note">{workWord("more", { n: total - rows.length })}</p>}
       </div>
     </details>
   )

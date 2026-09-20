@@ -320,6 +320,13 @@ func TestTheRulesProposeALineOnceAfterItsRootsGrace(t *testing.T) {
 		t.Fatalf("inside the grace the rules made %d: %v", n, err)
 	}
 	clock.at = clock.at.Add(time.Second)
+	// Past the grace and still nothing: a dispatch on its own is I1, and I1
+	// is what every line here carries. The rules wait for a line that has
+	// outlived a day of nobody following it (RuleWorthy).
+	if n, err := p.RuleProposals(ctx); err != nil || n != 0 {
+		t.Fatalf("I1 alone made %d: %v", n, err)
+	}
+	clock.at = clock.at.Add(work.LongLived)
 	if n, err := p.RuleProposals(ctx); err != nil || n != 1 {
 		t.Fatalf("the rules made %d: %v", n, err)
 	}
@@ -873,5 +880,142 @@ func TestWhatWaitsForAPersonIsBounded(t *testing.T) {
 	}
 	if got, _ := p.Decision(ctx, d.ID); got.State != work.DecisionOpen {
 		t.Fatalf("the open one was let go: %+v", got)
+	}
+}
+
+// ——— The exit a proposal was missing ———
+
+// lands closes a task's to-do the way the broker's landing record does, and
+// marks the task itself landed on the default branch.
+func lands(t *testing.T, st *store.Store, task, workID, owner string, at time.Time) {
+	t.Helper()
+	row, err := st.BrokerTask(context.Background(), task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := orchestrator.Decode(row.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.State, r.FinishedAt = orchestrator.StateSuccess, at
+	r.Landing = &orchestrator.Landing{State: orchestrator.LandingLanded, Target: "main", At: at, Commit: "abc"}
+	putTask(t, st, r)
+	_, _, err = st.UpdateBrokerTask(context.Background(), task, func(tx *store.Tx, _ store.BrokerRow) (*store.BrokerWrite, error) {
+		prev, err := tx.Todo(work.TodoID(work.OriginDispatch, task))
+		if err != nil {
+			return nil, err
+		}
+		next := prev.Todo
+		next.State, next.Reason, next.UpdatedAt, next.ClosedAt = work.TodoStateDone, work.ReasonLanded, at, at
+		return nil, tx.PutTodo(next, &prev)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func stateOf(t *testing.T, p *Participation, id string) (work.ProposalState, string) {
+	t.Helper()
+	got, err := p.Proposal(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got.State, got.WithdrawnReason
+}
+
+// The defect this exists for: a proposal has two exits and both are about the
+// person — an answer, and the wait. Neither is about the subject, so a line
+// that landed an hour after it was proposed went on asking "shall I follow
+// this?" for the rest of its seven days. The sweep re-decides it: every to-do
+// of the line is over, so the question is over, and it says which fact ended
+// it. The control beside it is a line still owed, which stays pending.
+func TestASettledSubjectWithdrawsItsProposal(t *testing.T) {
+	p, _, st, clock := newParticipation(t)
+	ctx := context.Background()
+	landed, owed := newWorkID(), newWorkID()
+	sent(t, st, taskID(1), landed, "custom", theRoot, clock.at)
+	owes(t, st, taskID(1), landed, theRoot, clock.at)
+	sent(t, st, taskID(2), owed, "custom", theRoot, clock.at)
+	owes(t, st, taskID(2), owed, theRoot, clock.at)
+	over, err := propose(p, landed, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	still, err := propose(p, owed, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Nothing has happened to either subject yet.
+	if err := p.Sweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := stateOf(t, p, over.Proposal.ID); got != work.ProposalPending {
+		t.Fatalf("withdrawn before its subject moved: %s", got)
+	}
+	clock.at = clock.at.Add(time.Hour)
+	lands(t, st, taskID(1), landed, theRoot, clock.at)
+	if err := p.Sweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, why := stateOf(t, p, over.Proposal.ID)
+	if got != work.ProposalWithdrawn || why != work.WithdrawnSubjectSettled {
+		t.Fatalf("a landed subject left its proposal %s (%s)", got, why)
+	}
+	if got, _ := stateOf(t, p, still.Proposal.ID); got != work.ProposalPending {
+		t.Fatalf("control: a line still owed is %s", got)
+	}
+	// Withdrawing is not deleting: the row is still readable, under its own
+	// state, and it is no longer in the "to confirm" area.
+	page, err := p.ProposalList(ctx, work.ProposalWithdrawn, "", "")
+	if err != nil || len(page.Rows) != 1 || page.Rows[0].ID != over.Proposal.ID {
+		t.Fatalf("withdrawn list: %+v %v", page.Rows, err)
+	}
+	if page.Counts[work.ProposalPending] != 1 || page.Counts[work.ProposalWithdrawn] != 1 {
+		t.Fatalf("counts: %+v", page.Counts)
+	}
+	// And it is not a question any more: answering it is refused by name.
+	_, err = p.Answer(ctx, over.Proposal.ID, work.AnswerTrack, "user", "local", nil, nil)
+	if codeOf(err) != "proposal_withdrawn" {
+		t.Fatalf("answering a withdrawn proposal: %v", err)
+	}
+}
+
+// A rule's own proposal is withdrawn when the rules would not make it now:
+// I1 alone is every dispatch there is. A person's counterpart is not — nobody
+// withdraws a question somebody chose to ask.
+func TestARuleWithdrawsWhatItWouldNoLongerPropose(t *testing.T) {
+	p, _, st, clock := newParticipation(t)
+	ctx := context.Background()
+	line, mine := newWorkID(), newWorkID()
+	sent(t, st, taskID(1), line, "custom", theRoot, clock.at)
+	owes(t, st, taskID(1), line, theRoot, clock.at)
+	sent(t, st, taskID(2), mine, "custom", theRoot, clock.at)
+	owes(t, st, taskID(2), mine, theRoot, clock.at)
+	byRule, err := p.Propose(ctx, ProposalRequest{Session: theRoot, WorkID: line, TaskID: taskID(1),
+		Title: "made before the bar was raised", Project: "/p"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Written as the rules wrote it before the bar was raised.
+	if err := p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		prev, err := tx.Proposal(byRule.Proposal.ID)
+		if err != nil {
+			return err
+		}
+		next := prev
+		next.Source = work.SourceRule
+		return tx.PutProposal(next, &prev, 0)
+	}); err != nil {
+		t.Skip("the store cannot restate a proposal's source")
+	}
+	chosen, err := propose(p, mine, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Sweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := stateOf(t, p, chosen.Proposal.ID); got != work.ProposalPending {
+		t.Fatalf("a session's own proposal was withdrawn: %s", got)
 	}
 }

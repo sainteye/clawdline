@@ -91,6 +91,11 @@ const (
 	// ruleLineLimit is the most named lines one pass proposes by rule; the
 	// rest are the next pass's.
 	ruleLineLimit = 50
+	// withdrawLimit is the most pending proposals one pass re-decides against
+	// their subjects; the rest are the next pass's. It is above the register's
+	// pending cap for a single project's worth of questions, so a day's pile
+	// clears in one pass rather than 15 seconds at a time.
+	withdrawLimit = 200
 )
 
 func (p *Participation) now() time.Time { return seconds(p.Board.now()) }
@@ -954,6 +959,7 @@ func (p *Participation) Decision(ctx context.Context, id string) (work.Decision,
 func (p *Participation) Sweep(ctx context.Context) error {
 	now := p.now()
 	var errs []error
+	errs = append(errs, p.WithdrawProposals(ctx))
 	due, err := p.Board.Store.DueProposals(ctx, now)
 	errs = append(errs, err)
 	for _, id := range due {
@@ -1014,6 +1020,44 @@ func (p *Participation) Sweep(ctx context.Context) error {
 	return nil
 }
 
+// WithdrawProposals is the exit a proposal was missing: every pending one is
+// re-decided against its own subject, and the ones whose question has stopped
+// being a question are taken back with the fact that ended it
+// (work.WithdrawProposal).
+//
+// It runs first in the sweep, before the expiry, so a question that is over
+// leaves as what it is — withdrawn, with a reason — rather than waiting out
+// seven days to be recorded as one a person ignored. Each row is decided
+// again inside its own write, from the rows it was made from.
+func (p *Participation) WithdrawProposals(ctx context.Context) error {
+	ids, err := p.Board.Store.PendingProposals(ctx, withdrawLimit)
+	if err != nil {
+		return err
+	}
+	now := p.now()
+	for _, id := range ids {
+		err := p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+			prev, err := tx.Proposal(id)
+			if err != nil {
+				return err
+			}
+			facts, err := tx.SubjectOf(prev.WorkID)
+			if err != nil {
+				return err
+			}
+			next, ok := work.WithdrawProposal(prev, facts, now)
+			if !ok {
+				return nil
+			}
+			return tx.PutProposal(next, &prev, 0)
+		})
+		if err != nil && !errors.Is(err, store.ErrConflict) {
+			return err
+		}
+	}
+	return nil
+}
+
 // RuleProposals is §6's "session to-do → board (promotion)": a line of work the
 // rules find worth following is proposed without anybody calling anything —
 // a design that waits for an agent to remember a call misses what 43.6% of
@@ -1063,7 +1107,13 @@ func (p *Participation) RuleProposals(ctx context.Context) (int, error) {
 		if !work.RuleDue(first, p.Proposals, now) {
 			continue
 		}
-		if signals, _ := work.SignalsOf(facts, nil, nil, now); len(signals) == 0 {
+		todos, err := p.Board.Store.TodosOfWork(ctx, l.WorkID)
+		if err != nil {
+			return made, err
+		}
+		if signals, _ := work.SignalsOf(facts, todos, nil, now); !work.RuleWorthy(signals) {
+			// I1 on its own is every dispatch there is; the gate refuses it
+			// too, and this saves the write that would be rolled back.
 			continue
 		}
 		title := l.Title
@@ -1124,8 +1174,11 @@ type DigestBody struct {
 	// the totals are then of the ones read.
 	MovesTruncated bool `json:"moves_truncated"`
 
-	ProposalsPending   int64         `json:"proposals_pending"`
-	ProposalsExpired   DigestSection `json:"proposals_expired"`
+	ProposalsPending int64         `json:"proposals_pending"`
+	ProposalsExpired DigestSection `json:"proposals_expired"`
+	// ProposalsWithdrawn is what the server took back that day and why — the
+	// only place a question that left on its own is said to have left.
+	ProposalsWithdrawn DigestSection `json:"proposals_withdrawn"`
 	DecisionsOpen      int64         `json:"decisions_open"`
 	DecisionsDefaulted DigestSection `json:"decisions_defaulted"`
 	AwaitingClosure    int           `json:"awaiting_closure"`
@@ -1153,7 +1206,8 @@ func (p *Participation) WriteDigest(ctx context.Context, kind work.DigestKind) (
 	}
 	body := DigestBody{Kind: string(kind), Key: key, From: from.Unix(), To: to.Unix(),
 		Stalled: section(), FromBacklog: section(), Automatic: section(), Completed: section(),
-		ProposalsExpired: section(), DecisionsDefaulted: section(), ClosureAsked: section(), BacklogStale: section()}
+		ProposalsExpired: section(), ProposalsWithdrawn: section(), DecisionsDefaulted: section(),
+		ClosureAsked: section(), BacklogStale: section()}
 	candidates := []string{}
 	if kind == work.DigestDaily {
 		if err := p.daily(ctx, &body, from, to); err != nil {
@@ -1256,6 +1310,14 @@ func (p *Participation) daily(ctx context.Context, b *DigestBody, from, to time.
 	for _, e := range expired {
 		b.ProposalsExpired.add(DigestLine{WorkID: e.WorkID, ID: e.ID, Title: e.Title, What: "expired",
 			At: e.ExpiresAt.Unix()})
+	}
+	withdrawn, err := st.ProposalsClosedBetween(ctx, work.ProposalWithdrawn, from, to, digestLineLimit+1)
+	if err != nil {
+		return err
+	}
+	for _, e := range withdrawn {
+		b.ProposalsWithdrawn.add(DigestLine{WorkID: e.WorkID, ID: e.ID, Title: e.Title, What: e.WithdrawnReason,
+			At: e.WithdrawnAt.Unix()})
 	}
 	defaulted, err := st.DecisionsClosedBetween(ctx, work.DecisionDefaulted, from, to, digestLineLimit+1)
 	if err != nil {
