@@ -107,6 +107,7 @@ undone. Numbers come from a run, not from memory.
 | What each platform does and does not do | `docs/cross-platform.md`, `docs/linux.md` |
 | The broker: dispatch, landing, handoff | `docs/broker.md` |
 | Cloud and the phone | `docs/remote.md`, `docs/cloud-wire.md` |
+| Deploying app.clawdline.com | `docs/hosted-console.md` |
 | Every bound and where it is enforced | `docs/limits.md` |
 
 Where instruction files conflict, the nearest one wins, and a task brief wins over all of them.
