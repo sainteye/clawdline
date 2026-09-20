@@ -7,7 +7,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { SessionsSnapshot, TranscriptPage } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { RelayReader, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudReadClient, type CloudRow, type CloudSchedules } from "./relay-reader.ts"
+import { RelayReader, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudIdentity, type CloudReadClient, type CloudRow, type CloudSchedules, type CloudSnippets } from "./relay-reader.ts"
 
 class FakeClient implements CloudReadClient {
   ready = true
@@ -43,6 +43,18 @@ class FakeClient implements CloudReadClient {
     this.scheduleAsks.push(options)
     return this.scheduleAnswer()
   }
+  /** Every reading of the snippet list: the identity it named and the options. */
+  snippetAsks: { identity: CloudIdentity; options?: { fresh?: boolean } }[] = []
+  snippetAnswer: () => Promise<CloudSnippets> = async () => ({ snippets: [], at: 0 })
+  snippets?: (identity: CloudIdentity, options?: { fresh?: boolean }) => Promise<CloudSnippets> = (identity, options) => {
+    this.snippetAsks.push({ identity, options })
+    return this.snippetAnswer()
+  }
+}
+
+/** A snippet row as the copied client tags it, with nothing of anybody's in it. */
+function snippet(machine: string, id: string, extra: Record<string, unknown> = {}) {
+  return { id, machine, title: "a title", body: "a body", scope: "global", position: 0, ...extra }
 }
 
 /** A schedule row as the copied client tags it: the Mac's own row, plus the machine. */
@@ -370,4 +382,70 @@ test("a client that cannot ask for schedules is refused by name", async () => {
   const refusal = await body<{ error: string; detail: string }>(res)
   assert.equal(refusal.error, "cloud_not_carried")
   assert.match(refusal.detail, /schedules/)
+})
+
+// 常用句 on a phone: the sheet that answered "這件事還不能經由 Clawdline Cloud
+// 做，請直接在 Mac 上操作。" That sentence was true — this Mac's catalog knew the
+// word `snippets` and had no route behind it, so the seam refused the read to
+// itself rather than asking. Both halves have changed, and this is the read.
+test("the snippet list is asked of the machine the session is on, and is that machine's rows", async () => {
+  const client = new FakeClient()
+  client.snippetAnswer = async () => ({
+    snippets: [snippet("mac-a", "sn-1"), snippet("mac-b", "sn-2"), snippet("mac-a", "sn-3")],
+    at: 1_700,
+  })
+  const r = reader(client, { t: 1000 })
+  const res = await r.fetch("/v1/snippets?session=s1")
+  assert.equal(res.status, 200)
+  const list = await body<{ snippets: { id: string }[]; project?: unknown }>(res)
+  assert.deepEqual(list.snippets.map((row) => row.id), ["sn-1", "sn-3"], "another Mac's snippets are not this list")
+  // **No project.** The local route resolves one from the session and names
+  // it; the wire carries no session, so an answer that named a project would
+  // be this page guessing one. `snippetGroups` groups by the session's own
+  // `cwd` instead.
+  assert.equal("project" in list, false)
+  assert.deepEqual(client.snippetAsks, [{ identity: { machine: "mac-a", session: "s1" }, options: { fresh: true } }])
+  const last = r.log[r.log.length - 1]
+  assert.equal(last.answer, "relay")
+  assert.equal(last.word, "snippets")
+})
+
+// The same distinction the schedule list is drawn around, and the sheet has
+// two different things to draw for it: an empty group offers the starters,
+// and a refusal says what could not be read. A refusal must never arrive as
+// `{snippets: []}`.
+test("a machine with no snippets and a machine nobody could ask are not the same answer", async () => {
+  const empty = new FakeClient()
+  const said = await reader(empty, { t: 1000 }).fetch("/v1/snippets?session=s1")
+  assert.equal(said.status, 200)
+  assert.deepEqual(await said.json(), { snippets: [] }, "an answer with no rows is an answer")
+
+  // The copied client's own two, which it raises for this one machine rather
+  // than for the account: a Mac whose inventory carries no such field, and a
+  // Mac nothing has arrived from at all.
+  for (const code of ["cloud_snippets_unpublished", "cloud_read_unavailable"]) {
+    const client = new FakeClient()
+    client.snippetAnswer = async () => {
+      throw Object.assign(new Error(code), { code })
+    }
+    const res = await reader(client, { t: 1000 }).fetch("/v1/snippets?session=s1")
+    assert.equal(res.status, 502, code + " must not resolve")
+    assert.equal((await body<{ error: string }>(res)).error, code)
+  }
+})
+
+test("a snippet list with no session named is refused, and an older client by name", async () => {
+  const client = new FakeClient()
+  const unnamed = await reader(client, { t: 0 }).fetch("/v1/snippets")
+  assert.equal(unnamed.status, 400)
+  assert.equal((await body<{ error: string }>(unnamed)).error, "bad_request")
+  assert.deepEqual(client.snippetAsks, [], "nothing is asked of the Mac for a request that named no session")
+
+  const older = new FakeClient()
+  older.snippets = undefined
+  const res = await reader(older, { t: 0 }).fetch("/v1/snippets?session=s1")
+  assert.equal(res.status, 501)
+  const refusal = await body<{ error: string; detail: string }>(res)
+  assert.equal(refusal.error, "cloud_not_carried")
+  assert.match(refusal.detail, /snippets/)
 })

@@ -23,6 +23,11 @@ const taskID = "7a000000-0000-4000-8000-000000000001"
 // constant for both would pass while they disagreed.
 const scheduleID = "5c000000-0000-4000-8000-000000000002"
 
+// snippetID is one stored snippet's own id, as `orchestrator.NewUUID` mints
+// one. It is a made-up id and there is nothing of anybody's in it — which is
+// the whole of what a snippet fixture in this repository may be.
+const snippetID = "3b000000-0000-4000-8000-000000000004"
+
 // pushID is one stored subscription's name, as `newPushID` writes one: this
 // machine's name for a row, and not a uuid like the two above.
 const pushID = "9f1c0b3a4d5e6f708192a3b4c5d6e7f8"
@@ -193,6 +198,16 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-schedules",
 		method: "GET", path: "/v1/orchestrator/schedules",
 	}, {
+		// The whole machine's list, and no `?session=` on it: the wire has
+		// nowhere to put a session, so this read must not put one in the query
+		// either — a list filtered under a guessed session would be somebody
+		// else's snippets.
+		word:    "snippets",
+		body:    map[string]any{"type": "snippets", "session": machine, "request": "req-snippets"},
+		session: machine, name: "read:req-snippets",
+		method: "GET", path: "/v1/snippets",
+		answers: &router{body: `{"snippets":[]}`},
+	}, {
 		// Asking for the key is the first thing a phone does when somebody
 		// presses "notify me", and the whole registration stops here when it
 		// is not carried.
@@ -306,6 +321,40 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/orchestrator/schedules/" + scheduleID + "/run",
 		body2: `{}`,
 	}, {
+		// The four snippet writes, in the producer's own key sets. Nothing of
+		// the person's is in these: the fields are invented here and the Mac
+		// is what decides whether they are a snippet.
+		word: "snippet-create",
+		body: map[string]any{"type": "snippet-create", "session": machine, "request": "req-new",
+			"snippet": map[string]any{"title": "stand up the branch", "body": "git switch -c",
+				"scope": "global"}},
+		session: machine, name: "action:req-new",
+		method: "POST", path: "/v1/snippets",
+		body2: `{"body":"git switch -c","scope":"global","title":"stand up the branch"}`,
+	}, {
+		word: "snippet-update",
+		body: map[string]any{"type": "snippet-update", "session": machine, "request": "req-save",
+			"id": snippetID, "snippet": map[string]any{"title": "stand up the branch",
+				"body": "git switch -c", "scope": "global"}},
+		session: machine, name: "action:req-save",
+		method: "PATCH", path: "/v1/snippets/" + snippetID,
+		body2: `{"body":"git switch -c","scope":"global","title":"stand up the branch"}`,
+	}, {
+		word: "snippet-delete",
+		body: map[string]any{"type": "snippet-delete", "session": machine, "request": "req-gone",
+			"id": snippetID},
+		session: machine, name: "action:req-gone",
+		method: "DELETE", path: "/v1/snippets/" + snippetID,
+	}, {
+		// `ordering` on the wire, and the same three fields under no name at
+		// all on the route: the one place the two spellings differ.
+		word: "snippet-order",
+		body: map[string]any{"type": "snippet-order", "session": machine, "request": "req-order",
+			"ordering": map[string]any{"scope": "global", "order": []any{snippetID}}},
+		session: machine, name: "action:req-order",
+		method: "POST", path: "/v1/snippets/order",
+		body2: `{"order":["` + snippetID + `"],"scope":"global"}`,
+	}, {
 		// The browser's own subscription object, handed to the route whole:
 		// its endpoint and its keys are the browser's, and anything reshaped
 		// on the way past is a chance to get a credential wrong.
@@ -355,10 +404,6 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 			"project": "clawdline-go", "entry": "", "cursor": "", "environment": "",
 			"category": "", "upcoming": false},
 		session: machine, name: "read:req-timeline", code: "unknown_command", status: 400,
-	}, {
-		word:    "snippets",
-		body:    map[string]any{"type": "snippets", "session": machine, "request": "req-snippets"},
-		session: machine, name: "read:req-snippets", code: "unknown_command", status: 400,
 	}, {
 		word: "schedule",
 		body: map[string]any{"type": "schedule", "session": machine, "request": "req-schedule",
@@ -489,7 +534,8 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 	r := &router{}
 	closed := Bridge{MachineID: "mac-01", Router: r}
 	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
-		"schedule-create", "schedule-update", "schedule-delete", "schedule-run", "dispatch"} {
+		"schedule-create", "schedule-update", "schedule-delete", "schedule-run",
+		"snippet-create", "snippet-update", "snippet-delete", "snippet-order", "dispatch"} {
 		body := map[string]any{"type": word, "session": pane, "request": "req-" + word}
 		switch word {
 		case "send":
@@ -506,6 +552,19 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 			body["place"], body["past"], body["assistant"] = "/tmp", "abc", "claude"
 		case "voice":
 			body["session"] = MachineReplySession
+		case "snippet-create":
+			body["session"] = MachineReplySession
+			body["snippet"] = map[string]any{"title": "a title", "body": "a body", "scope": "global"}
+		case "snippet-update":
+			body["session"] = MachineReplySession
+			body["id"] = snippetID
+			body["snippet"] = map[string]any{"title": "a title", "body": "a body", "scope": "global"}
+		case "snippet-delete":
+			body["session"] = MachineReplySession
+			body["id"] = snippetID
+		case "snippet-order":
+			body["session"] = MachineReplySession
+			body["ordering"] = map[string]any{"scope": "global", "order": []any{snippetID}}
 			body["audio"], body["rate"] = "AAAA", 16000
 		case "schedule-create":
 			body["session"] = MachineReplySession
@@ -974,7 +1033,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		}
 	}
 	// The daemon's published list must not promise what it refuses.
-	for _, word := range []string{"agent", "shell", "skills", "snippets", "timeline",
+	for _, word := range []string{"agent", "shell", "skills", "timeline",
 		"schedule", "diagnostics.report", "diagnostics.events", "dispatch"} {
 		if implemented[word] {
 			t.Fatalf("%s is advertised and has no local capability", word)
@@ -983,7 +1042,8 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
 		"transcript", "info", "git", "screen", "image", "documents", "document", "places",
 		"past-sessions", "schedules", "schedule-create", "schedule-update", "schedule-delete",
-		"schedule-run", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
+		"schedule-run", "snippets", "snippet-create", "snippet-update", "snippet-delete",
+		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
