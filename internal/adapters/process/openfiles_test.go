@@ -21,8 +21,8 @@ const (
 // this machine's own fault and will not resolve at all. Flattening them into
 // "no id" is what made a fresh Codex look like a session that was not there.
 func TestUnreadableIsNotTheSameAnswerAsNoRecord(t *testing.T) {
-	unread, unreadBinding, unreadDetail := codexConversation(nil, false, nil)
-	absent, absentBinding, absentDetail := codexConversation(nil, true, nil)
+	unread, unreadBinding, unreadDetail, _ := codexConversation(nil, false, nil)
+	absent, absentBinding, absentDetail, _ := codexConversation(nil, true, nil)
 
 	if unreadBinding == absentBinding {
 		t.Fatalf("both answered %q; an unread table and an empty one are different facts", unreadBinding)
@@ -45,7 +45,7 @@ func TestUnreadableIsNotTheSameAnswerAsNoRecord(t *testing.T) {
 }
 
 func TestTheOpenRolloutNamesTheConversation(t *testing.T) {
-	id, binding, _ := codexConversation([]string{
+	id, binding, _, _ := codexConversation([]string{
 		"/Users/x/.codex/state_5.sqlite",
 		"/Users/x/.codex/thread-writer-locks/" + idA + ".lock",
 		rolloutA,
@@ -62,7 +62,7 @@ func TestTheOpenRolloutNamesTheConversation(t *testing.T) {
 // one of them would give a session another session's name, which costs far
 // more than a row with no name on it.
 func TestTwoConversationsAreAmbiguousRatherThanAGuess(t *testing.T) {
-	id, binding, detail := codexConversation([]string{rolloutA, rolloutB}, true, heads(nil))
+	id, binding, detail, _ := codexConversation([]string{rolloutA, rolloutB}, true, heads(nil))
 	if id != "" {
 		t.Fatalf("got %q, want no id at all", id)
 	}
@@ -74,7 +74,7 @@ func TestTwoConversationsAreAmbiguousRatherThanAGuess(t *testing.T) {
 	}
 	// The same rollout listed twice — one descriptor per reader — is one
 	// thread, not two.
-	if id, binding, _ := codexConversation([]string{rolloutA, rolloutA}, true, heads(nil)); id != idA || binding != session.BindingOpenFile {
+	if id, binding, _, _ := codexConversation([]string{rolloutA, rolloutA}, true, heads(nil)); id != idA || binding != session.BindingOpenFile {
 		t.Fatalf("got %q/%q", id, binding)
 	}
 }
@@ -141,16 +141,17 @@ func TestATableThatCouldNotBeReadLeavesEveryRowUnreadable(t *testing.T) {
 
 // heads is a stand-in for reading the rollouts themselves: a path this table
 // does not name is a thread that started its own conversation, which is what
-// the file's name already says.
+// the file's name already says. It carries no directory, which is how a head
+// that named none is read — the rollout tests on disk cover the ones that do.
 func heads(tree map[string]string) RolloutHead {
-	return func(path string) (string, string, bool) {
+	return func(path string) (RolloutMeta, bool) {
 		thread, ok := codexRolloutID(path)
 		if !ok {
-			return "", "", false
+			return RolloutMeta{}, false
 		}
 		if conversation, sub := tree[thread]; sub {
-			return conversation, thread, true
+			return RolloutMeta{Conversation: conversation, Thread: thread}, true
 		}
-		return thread, thread, true
+		return RolloutMeta{Conversation: thread, Thread: thread}, true
 	}
 }
