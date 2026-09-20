@@ -10,7 +10,8 @@ There are two scans, and the second one exists because of a measurement.
 ## Why the tree scan is not enough
 
 `tools/check-private.sh` reads the **working tree**: every file `git` would commit. On
-2026-09-20 somebody scanned the 289 commits behind it by hand and found this:
+2026-09-20 somebody scanned the 289 commits behind it by hand — nothing asked them to — and
+found this:
 
 - `docs/cutover.md` gained three lines at commit `ef067d70` (2026-09-18) carrying a word from the
   person's own list.
@@ -71,7 +72,7 @@ check people stop reading, and then it may as well not exist.
 So there are two gates, and they ask different questions.
 
 **Before a commit: `-history -new`.** It prints every standing finding, marks the ones the
-checkpoint had not already recorded with `[new]`, and is red only for those. 4.4 seconds. The
+checkpoint had not already recorded with `[new]`, and is red only for those. 3.9 seconds. The
 question it answers is the only one a commit can act on: *did what I am about to add put
 something else in?* Without a checkpoint it believes nothing is standing, so everything is new
 and it is red — the first run of the day on a fresh clone is the full answer, not a free pass.
@@ -103,13 +104,24 @@ front of you — and masks a credential either way.)
 
 ## The checkpoint
 
-A full read of this repository's history costs about **18 seconds** (measured 2026-09-21: 362
-commits, 2,588 objects, 51.7 MB). That grows with the total bytes the repository has ever held,
-not with how much changed today, so a guard meant to run on every commit cannot pay it every
-time. So a run remembers what it read, in
+A full read of this repository's history costs about **17 seconds**. Measured 2026-09-21, on the
+same machine, same word list:
+
+| Scope | Commits | Objects | Read | Time |
+| --- | --- | --- | --- | --- |
+| The whole history | 364 | 2,599 | 51.9 MB | 16.6s |
+| The first 289 of them (`9dec9d9e`) | 289 | 2,180 | 40.0 MB | 13.4s |
+| Nothing new, from a checkpoint | 0 | 0 | — | 3.9s |
+| The working tree alone | — | 949 files | 11.6 MB | 3.7s |
+
+Both full reads come out at about **3 MB/s**, which is the shape of the cost: it follows the
+total bytes the repository has ever held, not how much changed today, and it only ever goes up.
+At 289 commits it was 13 seconds and nobody would notice; the interesting number is that four
+days of work added 12 MB and 3 seconds to a check meant to run before every commit. So a run
+remembers what it read, in
 `$(git rev-parse --git-common-dir)/info/private-history` — beside the word list, in the one
 directory git never commits and every worktree of the clone shares. The next run is
-`git rev-list --not <those tips>` over it: **4.4 seconds** when nothing new has been committed,
+`git rev-list --not <those tips>` over it: **3.9 seconds** when nothing new has been committed,
 and it still reports everything the skipped commits held.
 
 It carries the findings forward on purpose. This repository's history has one that cannot be
