@@ -55,6 +55,12 @@ func (in Inventory) screens() ports.ScreenHost {
 // only tmux can answer, and the AND would let an iTerm2 that cannot be asked
 // veto it for ever — or, read the other way, let a reading with iTerm2 rows
 // in it stand in for a tmux listing that failed.
+//
+// The named regions a source could not read (session.Gap) are merged with the
+// same rule and for the same reason one rung further down: a source that is
+// incomplete because of one window it cannot open has told a reader something
+// much narrower than "this source is unreliable", and Inventory.ProvesAbsence
+// is where the narrower thing is read.
 func (in Inventory) Read(ctx context.Context) session.Inventory {
 	// The identity source is refreshed here rather than by whoever calls this.
 	// It used to be the caller's job, and of the six places that read an
@@ -89,6 +95,10 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 			merged.Sources[src.Provenance] = src.Complete
 		}
 		merged.Notes = append(merged.Notes, src.Notes...)
+		// A gap keeps its own source's name, so a merged reading can still
+		// say which part of which source was not read — which is the whole
+		// point of carrying it rather than a single flag.
+		merged.Gaps = append(merged.Gaps, src.Gaps...)
 		for _, s := range src.Sessions {
 			key := s.TTY
 			if key == "" {
