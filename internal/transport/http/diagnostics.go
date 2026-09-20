@@ -371,6 +371,17 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			_, bytes := s.spoolReadings()
 			return bytes
 		},
+		// The stuck channel (2026-09-21): the per-channel bound that was
+		// refusing answers unregistered, and the receipts that were being
+		// charged as though they were queue.
+		capacity.CloudSpoolChannelBytes: func() capacity.Reading {
+			channelBytes, _ := s.spoolChannelReadings()
+			return channelBytes
+		},
+		capacity.CloudSpoolReceipts: func() capacity.Reading {
+			_, receipts := s.spoolChannelReadings()
+			return receipts
+		},
 		capacity.SSEScreenPending: func() capacity.Reading {
 			if s.screenBus == nil {
 				return capacity.Unmeasured("this server publishes no event stream")
@@ -453,6 +464,30 @@ func (s *Server) spoolReadings() (rows, bytes capacity.Reading) {
 		return never, never
 	}
 	return rows, bytes
+}
+
+// spoolChannelReadings are the same spool's other two rows, answered the same
+// way as the two above: a line that is off, or was never built, is a known
+// zero said in the note rather than an unmeasured row.
+func (s *Server) spoolChannelReadings() (channelBytes, receipts capacity.Reading) {
+	line, ok := cloudLines.Load(s.cfg.Dir)
+	if !ok {
+		off := capacity.Reading{Known: true, Note: "the Cloud line is off: there is no spool"}
+		return off, off
+	}
+	q, ok := line.(interface {
+		SpoolChannelReadings() (channelBytes, receipts capacity.Reading, ok bool)
+	})
+	if !ok {
+		unknown := capacity.Unmeasured("this Cloud line does not report its spool")
+		return unknown, unknown
+	}
+	channelBytes, receipts, ok = q.SpoolChannelReadings()
+	if !ok {
+		never := capacity.Reading{Known: true, Note: "the Cloud line was never built: there is no spool"}
+		return never, never
+	}
+	return channelBytes, receipts
 }
 
 // StartCapacity runs the register's beat on the scheduler's tick, the first

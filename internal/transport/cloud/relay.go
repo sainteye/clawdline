@@ -233,9 +233,16 @@ func (r *Relay) Publish(ctx context.Context, out Outbound) error {
 	// different reads on one session are two facts, and coalescing them would
 	// settle one waiter with the other's payload. Only `s/` and `orch/` carry
 	// a whole current value, and only those are reserved as latest-value.
-	if kind.IsLatestValue() {
+	switch {
+	case out.Refusal:
+		// The sentence that says this channel is full, admitted under the
+		// reserve. It is never coalesced: a snapshot may be replaced by a
+		// newer snapshot, and a refusal is not a value, it is the only thing
+		// the waiter is going to get.
+		seq, err = r.Spool.ReserveRefusal(kind, out.Channel, out.Channel, len(out.Payload))
+	case kind.IsLatestValue():
 		seq, err = r.Spool.ReserveLatestValue(kind, out.Channel, out.Channel, len(out.Payload))
-	} else {
+	default:
 		seq, err = r.Spool.Reserve(kind, out.Channel, out.Channel, len(out.Payload))
 	}
 	if err != nil {
@@ -262,6 +269,26 @@ func (r *Relay) Publish(ctx context.Context, out Outbound) error {
 		return err
 	}
 	return r.Spool.Seal(seq, sealed, now)
+}
+
+// ChannelFull reports whether this error is one channel at its cap.
+//
+// The fairness reserve counts too: past 90% of the spool a loud recipient is
+// held to a smaller allowance, and from the waiter's side that is the same
+// fact — this channel may not have any more right now. What is deliberately
+// **not** here is a line that is down, an envelope that would not seal or a
+// sequence past the safe-integer domain: those are not "try again shortly".
+func (r *Relay) ChannelFull(err error) bool {
+	return errors.Is(err, adaptercloud.ErrSpoolCapacity) || errors.Is(err, adaptercloud.ErrSpoolFairness)
+}
+
+// ChannelByteLimit is what one wire channel may have owed to it, the
+// register's `cloud.spool_channel_bytes`.
+func (r *Relay) ChannelByteLimit() int {
+	if r.Spool == nil {
+		return int(capacity.Default(capacity.CloudSpoolChannelBytes))
+	}
+	return r.Spool.ChannelByteLimit()
 }
 
 func (r *Relay) keyID() string {

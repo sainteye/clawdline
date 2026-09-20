@@ -43,6 +43,11 @@ type Outbound struct {
 	// Reply names the request this answers, for the transport's own log and
 	// for the receipt it may correlate. It is not part of the payload.
 	Reply Reply
+	// Refusal marks the small typed answer that tells a waiter its channel is
+	// full. It is the one publication admitted past that channel's own caps
+	// (`Spool.ReserveRefusal`), because everything else about a full channel
+	// is exactly what cannot get through it.
+	Refusal bool
 }
 
 // Reply is who an answer is for, which the payload itself does not say.
@@ -100,6 +105,25 @@ type Service struct {
 // everything past `ch` is ciphertext to it.
 func AnswerChannel(machine, session string) string {
 	return "t/" + cloudops.ChannelSegment(machine) + "/" + cloudops.ChannelSegment(session)
+}
+
+// Congested is a transport that can tell "this channel is full" from every
+// other reason an answer did not leave, and say what that channel's bound is.
+//
+// It is an interface and not an error comparison in Service because the fact
+// belongs to whoever owns the spool: the relay knows that a reservation was
+// refused at a capacity cap, a fake knows what it was told to fail with, and
+// Service knows only that Publish said no. What Service does with the answer
+// is the same either way — the person waiting is told, rather than left to
+// find out in sixty seconds that nothing is coming.
+type Congested interface {
+	// ChannelFull reports whether this error is a channel at its cap, as
+	// opposed to a line that is down or an envelope that would not seal.
+	ChannelFull(err error) bool
+	// ChannelByteLimit is what one channel may have owed to it, which the
+	// refusal's detail carries so the person is told a number and not an
+	// adjective.
+	ChannelByteLimit() int
 }
 
 // Refuser is a transport whose queue can turn a request away (Relay). Service
@@ -171,11 +195,57 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 			Status: answer.Status, Code: answer.Code}}
 	if err := s.Transport.Publish(ctx, out); err != nil {
 		// The answer's own channel is the only way back to the asker, so a
-		// publication that cannot leave is recorded rather than retried into a
-		// second effect.
+		// publication that cannot leave is never retried into a second
+		// effect. But a full channel is not a reason to say nothing: the
+		// answer is what will not fit, and the sentence saying so will, under
+		// the reserve. Measured on 2026-09-21: a transcript channel refused
+		// 34 answers over one evening, each of them one log line on this
+		// machine and sixty seconds of "loading" on somebody's phone.
+		if c, ok := s.Transport.(Congested); ok && c.ChannelFull(err) {
+			s.tellChannelFull(ctx, request, answer, c.ChannelByteLimit(), err)
+			return answer
+		}
 		s.logf("cloud: %s was not delivered: %v", answer.Name, err)
 	}
 	return answer
+}
+
+// tellChannelFull publishes the typed refusal that says a channel is full, on
+// that same channel, and records it when even that could not go.
+//
+// The refusal is deliberately built from the request rather than from the
+// answer: whether the sender may be told "busy" or must be told "your command
+// ran and the reply is lost" is a fact about what was asked, and the answer
+// that will not fit is not evidence about it (Bridge.Undeliverable).
+func (s Service) tellChannelFull(ctx context.Context, request Inbound, answer cloudops.Answer, limit int, cause error) {
+	refusal := s.Bridge.Undeliverable(cloudops.Command{
+		Channel:   request.Channel,
+		Class:     cloudops.Class(request.Class),
+		Sender:    request.Sender,
+		Sequence:  request.Sequence,
+		Plaintext: request.Plaintext,
+	}, limit)
+	if !refusal.Published() {
+		s.logf("cloud: %s did not fit its channel and its sender could not be told: the request names no waiter (%s): %v",
+			answer.Name, refusal.Code, cause)
+		return
+	}
+	channel := AnswerChannel(s.MachineID, refusal.Session)
+	if err := cloud.ProducibleChannel(channel); err != nil {
+		s.logf("cloud: %s did not fit its channel and its sender could not be told: %v", answer.Name, err)
+		return
+	}
+	out := Outbound{Channel: channel, Class: string(cloud.ClassStream), Payload: refusal.Payload,
+		Refusal: true,
+		Reply: Reply{Sender: request.Sender, Sequence: request.Sequence, Name: refusal.Name,
+			Status: refusal.Status, Code: refusal.Code}}
+	if err := s.Transport.Publish(ctx, out); err != nil {
+		s.logf("cloud: %s did not fit its channel and the refusal did not either: %v (channel: %v)",
+			answer.Name, err, cause)
+		return
+	}
+	s.logf("cloud: %s did not fit its channel and its sender was told %s (%d): %v",
+		answer.Name, refusal.Code, refusal.Status, cause)
 }
 
 // refuse tells every request the transport turned away that it was.

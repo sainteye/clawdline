@@ -596,6 +596,28 @@ JSON 壞掉、不是物件、channel 或 sequence 壞掉，只會得到
 
 單筆超過上限永遠不會塞得下，所以是終局的 `command_too_large`，而不是一個邀請對方重試的「忙碌」。
 
+### 9.5.1 Mac 端的出站容量拒絕（2026-09-21）
+
+入站滿了會回一句話，出站滿了以前只寫一行 log。答案已經算完、卻塞不進它要走的那條 channel 時：
+
+| 請求是什麼 | 回給 viewer 的 code | layer | HTTP |
+|---|---|---|---|
+| 讀（沒有副作用，重試會成功） | `cloud_read_busy` | `mac_transport` | 429 |
+| 指令（副作用已經發生，只有回執掉了） | `command_answer_undeliverable` | `mac_reply` | 503 |
+
+兩個 code hosted console 本來就認得（`core/failure-text.js`），差別在於**發生過什麼**：讀可以重試，
+指令不行——重試等於再跑一次。`detail` 只有讀那一條帶（`lane: "egress"`、`limit`、`retry_after`），
+因為 copied client 的白名單沒有指令那一條，帶了也會被丟掉。
+
+這句拒絕本身是從 spool 的保留額度進去的（`internal/adapters/cloud.spoolRefusalByteLimit`，每條
+channel 同時只有一句）。一條塞滿的 channel 沒辦法用塞滿它的那條路說自己塞滿了，這是唯一的例外。
+
+同一天順著這個問題做的稽核：**每一個決定「一筆答案可以多大」的地方，都要取兩個天花板裡小的那個**
+——relay 的單封 ciphertext 上限，以及這台機器自己一條 channel 裝得下的量
+（`cloud.spool_channel_bytes`）。`imageMaxEncodedBytes()` 原本只看前者，於是介於兩者之間的圖片會
+通過門口、死在 spool。文件（2 MiB）與看板快照（1,000,000 bytes）本來就在下面，transcript 回應
+（150 KiB）也是。
+
 ### 9.6 本機 broker 的 typed 拒絕
 
 遠端派工會得到本機 orchestrator 原本就有的那組 typed error：`workspace_busy`、`over_capacity`、

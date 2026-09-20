@@ -177,6 +177,11 @@ const (
 	// C4: the Cloud answers waiting to leave (limits N22).
 	CloudSpool      = "cloud.spool"
 	CloudSpoolBytes = "cloud.spool_bytes"
+	// The same spool per wire channel, and its receipts. The per-channel
+	// bound is the one that refuses a Cloud answer in practice; the receipts
+	// are the tombstones that used to be charged as though they were queue.
+	CloudSpoolChannelBytes = "cloud.spool_channel_bytes"
+	CloudSpoolReceipts     = "cloud.spool_receipts"
 	// The slash menu's skills, per working directory and assistant.
 	CacheSessionSkills = "cache.session_skills"
 	// The plan-window reading of each assistant's account.
@@ -500,16 +505,19 @@ func Register() []Entry {
 		},
 		{
 			// The Cloud line's outbound spool (limits N22): answers and
-			// snapshots sealed for the relay and not yet answered by it,
-			// tombstones of answered ones included until they are collected,
-			// because that is what a reservation is measured against. At the
-			// limit a new answer is refused and nothing already queued is let
-			// go — a queued row is somebody's answer — and the refusal is
+			// snapshots sealed for the relay and not yet answered by it. At
+			// the limit a new answer is refused and nothing already queued is
+			// let go — a queued row is somebody's answer — and the refusal is
 			// counted here rather than only logged. So are the rows the spool
 			// burns: an older snapshot replaced by a newer one (coalesced), a
 			// row too old to send (dropped), and a row written and never
 			// answered within its window, whose delivery is unknown (in the
 			// note: unknown is neither sent nor dropped).
+			//
+			// **Answered rows are not in this figure.** They were, and both
+			// this row and the byte row below therefore measured a population
+			// no reservation is really competing for; the receipts have a row
+			// of their own now (CloudSpoolReceipts).
 			Name: CloudSpool, Class: Buffer, Unit: Rows,
 			Limit: 2_000, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Notice, Log},
@@ -521,6 +529,55 @@ func Register() []Entry {
 			Name: CloudSpoolBytes, Class: Buffer, Unit: Bytes,
 			Limit: 16 << 20, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Notice, Log},
+			EvictedBy: Daemon,
+		},
+		{
+			// What one wire channel may have owed to it at once, and the
+			// bound that refuses a Cloud answer in practice: measured on
+			// 2026-09-21, one session's transcript channel was refused 34
+			// times over while the two rows above stood at 401/2,000 and
+			// 3.09 MB/16 MiB.
+			//
+			// **Four mebibytes, and where the four comes from.** One channel
+			// has to hold the largest single answer that may legally be
+			// published on it, or that answer can never be delivered at all;
+			// the largest this daemon builds outside a picture is a document,
+			// bounded at 2 MiB by internal/adapters/documents.MaximumBytes.
+			// It has to hold a second one behind it, because the first is
+			// still waiting for its receipt while the next read is answered.
+			// Two of them is 4 MiB, which is also exactly the spool's
+			// in-flight window (OutboundWindowByteCap): past it a channel
+			// would be queueing more than the line can carry, which is a
+			// backlog to refuse rather than to keep. For scale, the answers
+			// measured on this machine the same day were 151,932 bytes for a
+			// full transcript page and 362,457 bytes for the largest of 35
+			// project boards.
+			//
+			// A refusal is admitted past this cap under a reserve of its own
+			// (internal/adapters/cloud.spoolRefusalByteLimit), because a
+			// channel that cannot say it is full is the silence this row
+			// exists to end.
+			Name: CloudSpoolChannelBytes, Class: Buffer, Unit: Bytes,
+			Limit: 4 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Log},
+			EvictedBy: Daemon,
+		},
+		{
+			// The spool's tombstones: a row that has been answered, kept for
+			// ten minutes so that a second receipt for the same sequence is
+			// answered "late, ignored" rather than "no such row" — which is
+			// what a receipt for a sequence this machine never sent must
+			// mean, and only that.
+			//
+			// It is an idempotency table and not a queue, which is the whole
+			// point of separating it: the payload went at Settle, so a
+			// receipt holds no delivery capacity and must not be charged as
+			// though it did. Past the cap the oldest receipt expires early
+			// and is counted, because from then on a late ack for that
+			// sequence reads as a correlation failure.
+			Name: CloudSpoolReceipts, Class: Idempotency, Unit: Rows,
+			Limit: 4_096, AtLimit: Expire,
+			Told:      []Channel{Diagnostics, Log},
 			EvictedBy: Daemon,
 		},
 		{

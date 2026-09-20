@@ -188,6 +188,13 @@ type LinkOptions struct {
 	// number above the default, is the default.
 	SpoolRows  int
 	SpoolBytes int
+	// SpoolChannelBytes and SpoolReceipts are the same spool's other two
+	// registered rows: `cloud.spool_channel_bytes`, what one wire channel may
+	// have owed to it, and `cloud.spool_receipts`, the tombstone table. Zero,
+	// or a number above the default, is the default — an override may only
+	// lower a bound, as it may for the two above.
+	SpoolChannelBytes int
+	SpoolReceipts     int
 }
 
 // Link is one machine's Cloud line.
@@ -331,6 +338,12 @@ func (l *Link) wire() error {
 	}
 	if opts.SpoolBytes > 0 && opts.SpoolBytes < limits.GlobalByteCap {
 		limits.GlobalByteCap = opts.SpoolBytes
+	}
+	if opts.SpoolChannelBytes > 0 && opts.SpoolChannelBytes < limits.RecipientByteCap {
+		limits.RecipientByteCap = opts.SpoolChannelBytes
+	}
+	if opts.SpoolReceipts > 0 && opts.SpoolReceipts < limits.ReceiptCap {
+		limits.ReceiptCap = opts.SpoolReceipts
 	}
 	spool, err := adaptercloud.NewSpool(limits, fence, opts.Now)
 	if err != nil {
@@ -690,14 +703,24 @@ func (l *Link) RelayQueue() (waiting, depth int, counters capacity.Counters, ok 
 	return waiting, depth, counters, true
 }
 
-// SpoolReadings are the outbound spool's two capacity rows. ok is false when
-// this link has no spool: its line has never been built.
+// SpoolReadings are the outbound spool's two global capacity rows. ok is
+// false when this link has no spool: its line has never been built.
 func (l *Link) SpoolReadings() (rows, bytes capacity.Reading, ok bool) {
 	if l.relay == nil || l.relay.Spool == nil {
 		return capacity.Reading{}, capacity.Reading{}, false
 	}
 	rows, bytes = l.relay.Spool.Readings()
 	return rows, bytes, true
+}
+
+// SpoolChannelReadings are the same spool's per-channel bound and its receipt
+// table, `cloud.spool_channel_bytes` and `cloud.spool_receipts`.
+func (l *Link) SpoolChannelReadings() (channelBytes, receipts capacity.Reading, ok bool) {
+	if l.relay == nil || l.relay.Spool == nil {
+		return capacity.Reading{}, capacity.Reading{}, false
+	}
+	channelBytes, receipts = l.relay.Spool.ChannelReadings()
+	return channelBytes, receipts, true
 }
 
 // Status is what the status route answers.

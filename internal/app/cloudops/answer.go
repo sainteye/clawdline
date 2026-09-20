@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"unicode/utf8"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // The layers a refusal can be decided at, as the wire spells them
@@ -13,6 +15,10 @@ const (
 	layerPreflight = "mac_preflight"
 	layerRoute     = "mac_route"
 	layerTransport = "mac_transport"
+	// layerReply is the one decided after this machine already did the thing:
+	// the answer exists and could not be put on the wire. A browser must not
+	// read it as "it did not happen" (`net/cloud-failure.js`'s MAC_LAYERS).
+	layerReply = "mac_reply"
 )
 
 // Refusal is a typed no, in the shape the whole Cloud path already has: a code
@@ -39,9 +45,14 @@ var detailWhitelist = map[string]map[string]bool{
 	"replay":                  {"highest_seq": true},
 	"cloud_ingress_busy":      {"retry_after": true, "lane": true, "limit": true},
 	"cloud_read_busy":         {"retry_after": true, "lane": true, "limit": true},
-	"no_whisper":              {"reason": true},
-	"terminal_closed":         {"app": true},
-	"would_lose_work":         {"lost": true},
+	// The answer was built and the channel it belongs on had no room. The
+	// hosted console already draws both of these (`core/failure-text.js`);
+	// only the read carries detail, because the copied client's own
+	// whitelist has no entry for the command one and would drop it.
+	"command_answer_undeliverable": {},
+	"no_whisper":                   {"reason": true},
+	"terminal_closed":              {"app": true},
+	"would_lose_work":              {"lost": true},
 	// Two of this daemon's own, named here so the reason a picture or a
 	// document stayed home can be shown rather than guessed at.
 	"image_too_large_for_cloud": {"byte_count": true, "limit_bytes": true},
@@ -264,12 +275,28 @@ const (
 )
 
 // imageMaxEncodedBytes is the largest PNG this transport carries in one
-// answer. **Derived, not chosen**: the relay caps one envelope's ciphertext,
-// the tag and the JSON wrapper come off it, base64 costs four bytes for every
-// three, and the base64 budget is rounded down to a multiple of four so the
-// encoded length is exact rather than approximately right.
+// answer. **Derived, not chosen**, from two ceilings, and the smaller wins:
+//
+//  1. the relay caps one envelope's ciphertext, and the tag and the JSON
+//     wrapper come off that;
+//  2. this machine's own spool caps what one wire channel may have owed to
+//     it (`cloud.spool_channel_bytes`), measured on the payload, and the JSON
+//     wrapper comes off that too.
+//
+// Base64 costs four bytes for every three and the budget is rounded down to a
+// multiple of four, so the encoded length is exact rather than approximately
+// right.
+//
+// **The second ceiling was missing and it is the one that binds.** The relay
+// allows 16 MiB and a channel holds 4, so every picture between them passed
+// this door and died at the spool — where, until 2026-09-21, it died silently.
+// A door that admits what the next room refuses is not a door; the byte count
+// a person is shown here is now one this machine can actually carry.
 func imageMaxEncodedBytes() int {
 	budget := cloudEnvelopeCiphertextLimit - aeadTagBytes - imageAnswerOverhead
+	if channel := int(capacity.Default(capacity.CloudSpoolChannelBytes)) - imageAnswerOverhead; channel < budget {
+		budget = channel
+	}
 	return (budget / 4) * 3
 }
 
@@ -299,7 +326,7 @@ func shapeImage(p plan, res LocalResponse) (json.RawMessage, Refusal) {
 	}
 	if limit := imageMaxEncodedBytes(); len(res.Body) > limit {
 		return nil, Refusal{Status: 413, Code: "image_too_large_for_cloud",
-			Message: "That image is larger than one cloud envelope can carry.", Layer: layerRoute,
+			Message: "That image is larger than one answer on this connection can carry.", Layer: layerRoute,
 			Detail: map[string]any{"byte_count": len(res.Body), "limit_bytes": limit}}
 	}
 	return mustJSON(map[string]any{
@@ -436,6 +463,55 @@ func itoa(v int64) string { return strconv.FormatInt(v, 10) }
 // the wrong sentence — the Swift bridge checks the switch first for the same
 // reason. A body that names no safe waiter is a notice, as every other refusal
 // of such a body is.
+// Undeliverable is the answer to a request this machine did answer and could
+// not put on the wire, because the channel that answer belongs on is full
+// (limits N22). limit is that channel's byte cap, which the detail carries.
+//
+// **It is two different sentences, and the difference is whether anything
+// happened.** A read has no effect: nothing was done, the answer definitely
+// did not leave, and retrying once the channel drains works — so it is
+// `cloud_read_busy`, which the hosted console already draws as "this Mac is
+// busy" and already treats as retryable. A command's effect has already
+// happened and only its receipt was lost; telling that sender to retry would
+// run it twice, so it is `command_answer_undeliverable` at layer `mac_reply`,
+// which the same console reads as "the reply was lost" and refuses to retry
+// (`net/cloud-failure.js`'s RETRYABLE_CODES).
+//
+// It is built from the request rather than from the answer for the same
+// reason Busy is: what may be published, and where, is a question about the
+// request's own identity fields, and an answer that could not be sent is not
+// evidence about them.
+func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
+	parsed, parseErr := decodeBody(cmd.Plaintext)
+	word, _ := parsed.str("type")
+	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
+		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
+			Message: "This Cloud request addresses another Mac."})
+	}
+	full := Refusal{Status: 429, Code: "cloud_read_busy",
+		Message: "This Mac answered, and the channel that answer goes on is full; try again shortly.",
+		Detail:  map[string]any{"lane": "egress", "limit": limit, "retry_after": 5},
+		Layer:   layerTransport}
+	if parseErr != nil || word == "" {
+		return b.notice(cmd, full)
+	}
+	o, known := catalog[word]
+	if known && !o.read {
+		// The effect happened. This is a lost receipt, not a refusal, and it
+		// carries no detail because the reader would drop it anyway.
+		lost := Refusal{Status: 503, Code: "command_answer_undeliverable",
+			Message: "This Mac carried out the command and its reply could not be delivered.",
+			Layer:   layerReply}
+		return b.refuse(cmd, parsed, word, lost)
+	}
+	if known && o.read && cmd.Class == ClassCtl {
+		if p, ok := o.decode(parsed); ok {
+			return b.publish(cmd, p, full, nil)
+		}
+	}
+	return b.refuse(cmd, parsed, word, full)
+}
+
 func (b Bridge) Busy(cmd Command, limit int) Answer {
 	parsed, parseErr := decodeBody(cmd.Plaintext)
 	word, _ := parsed.str("type")

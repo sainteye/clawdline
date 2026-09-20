@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 )
 
 // A question's fingerprint, as session.MenuFingerprint writes one.
@@ -126,5 +128,29 @@ func TestARouteRefusalCarriesOnlyWhatItsCodeMayShow(t *testing.T) {
 	}
 	if _, ok := failure["pid"]; ok {
 		t.Fatalf("pid crossed: %v", failure)
+	}
+}
+
+// The picture door is the smaller of the two ceilings, and the smaller one is
+// this machine's own.
+//
+// Before 2026-09-21 it was the relay's 16 MiB alone, so every picture between
+// what a channel holds and what an envelope allows was admitted here and
+// refused at the spool — where, at the time, a refusal was a log line. A door
+// that admits what the next room refuses is not a door.
+func TestThePictureDoorIsTheSmallerOfTheTwoCeilings(t *testing.T) {
+	limit := imageMaxEncodedBytes()
+	channel := int(capacity.Default(capacity.CloudSpoolChannelBytes))
+	// What goes on the wire is base64 of the PNG plus the JSON around it, and
+	// that is what the spool charges the channel for.
+	payload := (limit+2)/3*4 + imageAnswerOverhead
+	if payload > channel {
+		t.Fatalf("a picture at the door is %d bytes on the wire; one channel holds %d", payload, channel)
+	}
+	// And it is not needlessly smaller than that: the largest picture allowed
+	// uses the channel it is going to travel on.
+	if payload < channel-8*1024 {
+		t.Fatalf("a picture at the door is %d bytes on the wire and the channel holds %d; the door is smaller than it needs to be",
+			payload, channel)
 	}
 }

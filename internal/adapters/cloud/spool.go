@@ -96,8 +96,21 @@ type SpoolLimits struct {
 	GlobalRowCap  int
 	GlobalByteCap int
 
+	// RecipientRowCap and RecipientByteCap are what one wire channel may hold.
+	// They measure **live** rows only — reserved, ready and sent — because
+	// that is what is owed to that recipient. A terminal row's payload is
+	// released the moment it becomes terminal (Settle, BurnExpired), so
+	// charging its bytes to the channel charges for memory nobody holds, and
+	// holds a channel shut for the whole tombstone window (limits N22).
 	RecipientRowCap  int
 	RecipientByteCap int
+
+	// ReceiptCap is how many terminal rows — tombstones — this spool keeps at
+	// once, across every channel. They are receipts, not queue: see
+	// TombstoneRetention. Past the cap the oldest is let go early, which is
+	// counted, because a receipt that arrives after its tombstone has gone
+	// reads as a sequence this machine never sent.
+	ReceiptCap int
 
 	// FairnessRecipientRowCap and FairnessRecipientByteCap apply once the
 	// spool is 90% full: past that the remaining room is a reserve, and one
@@ -118,6 +131,12 @@ type SpoolLimits struct {
 	// that from a receipt for a sequence it never sent. The first is a late
 	// ack to be counted and ignored; the second is a correlation failure
 	// (`CloudOutboundSpool.swift:190`, settle at :946-948).
+	//
+	// So what it protects is the **sequence number's identity**, and that
+	// costs one struct. It is not delivery capacity and is not charged as
+	// any: the payload went at Settle, and a tombstone that kept a channel's
+	// byte budget for ten minutes was charging a receipt for bytes it had
+	// already let go.
 	TombstoneRetention time.Duration
 	// SealedFrameFreshness is deliberately tighter than the relay's 300-second
 	// skew window: a frame sealed 4 minutes ago and sent now would arrive
@@ -132,15 +151,18 @@ type SpoolLimits struct {
 	OutboundWindowByteCap int
 }
 
-// DefaultSpoolLimits is what production uses. The two global caps are the
-// capacity register's `cloud.spool` and `cloud.spool_bytes` rows, so the
-// number has one spelling and an override can only lower it (LinkOptions).
+// DefaultSpoolLimits is what production uses. The four registered caps — the
+// two global ones, the per-channel byte cap and the receipt table — are the
+// capacity register's `cloud.spool`, `cloud.spool_bytes`,
+// `cloud.spool_channel_bytes` and `cloud.spool_receipts` rows, so each number
+// has one spelling and an override can only lower it (LinkOptions).
 func DefaultSpoolLimits() SpoolLimits {
 	return SpoolLimits{
 		GlobalRowCap:             int(capacity.Default(capacity.CloudSpool)),
 		GlobalByteCap:            int(capacity.Default(capacity.CloudSpoolBytes)),
 		RecipientRowCap:          200,
-		RecipientByteCap:         2 << 20,
+		RecipientByteCap:         int(capacity.Default(capacity.CloudSpoolChannelBytes)),
+		ReceiptCap:               int(capacity.Default(capacity.CloudSpoolReceipts)),
 		FairnessRecipientRowCap:  20,
 		FairnessRecipientByteCap: 256 << 10,
 		AttemptWindow:            30 * time.Second,
@@ -151,6 +173,22 @@ func DefaultSpoolLimits() SpoolLimits {
 		OutboundWindowByteCap:    4 << 20,
 	}
 }
+
+// spoolRefusalByteLimit is the reserve that lets a full channel say it is
+// full. A refusal is the one answer whose delivery cannot be postponed until
+// the channel that is blocked has drained, because the channel drains only
+// when somebody stops waiting on it — so a row no larger than this is
+// admitted past the recipient's own caps, one live at a time.
+//
+// The number is the largest typed refusal this transport seals: the payload
+// is `{"read","status","error":{code,message,layer,seq,detail}}`, whose every
+// field is bounded, and a kibibyte is four times the largest one measured.
+const spoolRefusalByteLimit = 4 << 10
+
+// RefusalByteLimit is the reserve a refusal is admitted under. It is not a
+// configured field: a limit that could be lowered to nothing would make the
+// silence this reserve exists to prevent a setting.
+func (l SpoolLimits) RefusalByteLimit() int { return spoolRefusalByteLimit }
 
 // Spool refusals. Nothing is evicted to make room for anything
 // (`CloudOutboundSpool.swift:597-600`): a live row is somebody's unsent
@@ -165,6 +203,13 @@ var (
 	ErrSpoolSettle   = errors.New("that row has not been sent")
 	ErrSpoolMismatch = errors.New("the receipt does not correlate with the row")
 	ErrSpoolSequence = errors.New("the sequence counter is outside the safe-integer domain")
+	// ErrSpoolRefusalSize and ErrSpoolRefusalPending are the reserve's own
+	// two refusals. They are separate from ErrSpoolCapacity because a caller
+	// that cannot get a refusal out has a different problem from one that
+	// cannot get an answer out, and telling them apart is the difference
+	// between "nobody was told" and "somebody already was".
+	ErrSpoolRefusalSize    = errors.New("that is too large for the refusal reserve")
+	ErrSpoolRefusalPending = errors.New("this channel is already being told it is full")
 )
 
 // SpoolRow is one outbound record.
@@ -180,6 +225,11 @@ type SpoolRow struct {
 	// ChargedBytes is the logical record's canonical byte length, the figure
 	// the account is billed in. It is *not* the sealed frame's size.
 	ChargedBytes int
+	// Refusal marks a row admitted through the reserve (ReserveRefusal): the
+	// small typed answer that tells a waiter its channel is full. It is kept
+	// on the row so the next reservation can see that this channel is already
+	// being told.
+	Refusal bool
 	// Sealed is the exact envelope JSON that went, or will go, on the wire.
 	// It is dropped once the row is terminal: a 6.5 MB snapshot kept for an
 	// answered row is 6.5 MB of nothing.
@@ -269,7 +319,11 @@ type spoolTally struct {
 	// uncertain is rows written and never answered within their window.
 	// Whether they arrived is unknown, so they are neither sent nor dropped.
 	uncertain int64
-	lastAt    time.Time
+	// expired is tombstones let go before their retention window was up,
+	// because the receipt table was full. Each one is a sequence whose late
+	// receipt will now read as one this machine never sent.
+	expired int64
+	lastAt  time.Time
 }
 
 // SequenceFence is the durable high-water mark for the sequence counter. It is
@@ -341,40 +395,91 @@ func (s *Spool) ReserveLatestValue(channel SpoolChannel, recipient, logicalID st
 	return s.reserveLocked(channel, recipient, logicalID, chargedBytes)
 }
 
+// ReserveRefusal takes a sequence for the answer that says a channel is full.
+//
+// It is the one admission that may pass the recipient's own caps, and the
+// reason is that nothing else can get through them. A channel fills because
+// its answers are not being delivered; the person waiting on it is told
+// nothing; and the only thing that would make them stop waiting is the
+// sentence that cannot be sent. So a row no larger than spoolRefusalByteLimit
+// is admitted with one live refusal per recipient at a time — bounded by
+// construction, since the second refusal waits for the first to settle.
+//
+// The global caps still hold. Past those there is no memory to put it in, and
+// a machine that admitted one more row to explain why it could not admit a
+// row would be spending the last of the budget on the explanation.
+func (s *Spool) ReserveRefusal(channel SpoolChannel, recipient, logicalID string, chargedBytes int) (uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if chargedBytes > s.limits.RefusalByteLimit() {
+		return 0, fmt.Errorf("%w: a refusal of %d bytes is past the %d-byte reserve",
+			ErrSpoolRefusalSize, chargedBytes, s.limits.RefusalByteLimit())
+	}
+	return s.admitLocked(channel, recipient, logicalID, chargedBytes, true)
+}
+
 func (s *Spool) reserveLocked(channel SpoolChannel, recipient, logicalID string, chargedBytes int) (uint64, error) {
+	return s.admitLocked(channel, recipient, logicalID, chargedBytes, false)
+}
+
+// admitLocked is every capacity check, the counter move and the insert, under
+// one lock, as they happen inside one store transaction in the Swift original.
+//
+// **What is counted is what is owed.** A row that is reserved, ready or sent
+// is an answer somebody is waiting for and holds its bytes; a terminal row is
+// a receipt whose payload went at Settle. Counting the second against a cap
+// meant for the first is what shut one transcript channel for ten minutes at
+// a time while the global budget was at 18% (measured 2026-09-21).
+func (s *Spool) admitLocked(channel SpoolChannel, recipient, logicalID string, chargedBytes int, refusal bool) (uint64, error) {
 	now := s.now()
 	s.collectLocked(now)
 
 	rowsBefore, bytesBefore := 0, 0
-	recipientRows, recipientBytes := 0, 0
+	recipientRows, recipientBytes, recipientRefusals := 0, 0, 0
 	for _, row := range s.rows {
+		if row.State.IsTerminal() {
+			continue
+		}
 		rowsBefore++
 		bytesBefore += row.ChargedBytes
 		if row.Recipient == recipient {
 			recipientRows++
 			recipientBytes += row.ChargedBytes
+			if row.Refusal {
+				recipientRefusals++
+			}
 		}
 	}
 
-	// The reserve opens at 90% of either global dimension. The threshold is
-	// the Swift `(9*cap+9)/10` — a ceiling, so the reserve is never one row
-	// wider than it says.
-	reserveOpen := rowsBefore >= (9*s.limits.GlobalRowCap+9)/10 ||
-		bytesBefore >= (9*s.limits.GlobalByteCap+9)/10
-	if reserveOpen {
-		if recipientRows+1 > s.limits.FairnessRecipientRowCap ||
-			recipientBytes+chargedBytes > s.limits.FairnessRecipientByteCap {
-			s.refusedLocked(now)
-			return 0, fmt.Errorf("%w: %s holds %d rows", ErrSpoolFairness, recipient, recipientRows)
+	if refusal {
+		// One live refusal per recipient. A second would be the same sentence
+		// about the same channel, and the first is already on its way.
+		if recipientRefusals > 0 {
+			return 0, fmt.Errorf("%w: %s is already being told", ErrSpoolRefusalPending, recipient)
 		}
-	}
-	if recipientRows+1 > s.limits.RecipientRowCap {
-		s.refusedLocked(now)
-		return 0, fmt.Errorf("%w: %s holds %d rows", ErrSpoolCapacity, recipient, recipientRows)
-	}
-	if recipientBytes+chargedBytes > s.limits.RecipientByteCap {
-		s.refusedLocked(now)
-		return 0, fmt.Errorf("%w: %s holds %d bytes", ErrSpoolCapacity, recipient, recipientBytes)
+	} else {
+		// The reserve opens at 90% of either global dimension. The threshold
+		// is the Swift `(9*cap+9)/10` — a ceiling, so the reserve is never
+		// one row wider than it says.
+		reserveOpen := rowsBefore >= (9*s.limits.GlobalRowCap+9)/10 ||
+			bytesBefore >= (9*s.limits.GlobalByteCap+9)/10
+		if reserveOpen {
+			if recipientRows+1 > s.limits.FairnessRecipientRowCap ||
+				recipientBytes+chargedBytes > s.limits.FairnessRecipientByteCap {
+				s.refusedLocked(now)
+				return 0, fmt.Errorf("%w: %s holds %d rows", ErrSpoolFairness, recipient, recipientRows)
+			}
+		}
+		if recipientRows+1 > s.limits.RecipientRowCap {
+			s.refusedLocked(now)
+			return 0, fmt.Errorf("%w: %s holds %d rows of %d", ErrSpoolCapacity,
+				recipient, recipientRows, s.limits.RecipientRowCap)
+		}
+		if recipientBytes+chargedBytes > s.limits.RecipientByteCap {
+			s.refusedLocked(now)
+			return 0, fmt.Errorf("%w: %s holds %d bytes of %d", ErrSpoolCapacity,
+				recipient, recipientBytes, s.limits.RecipientByteCap)
+		}
 	}
 	if rowsBefore+1 > s.limits.GlobalRowCap {
 		s.refusedLocked(now)
@@ -404,6 +509,7 @@ func (s *Spool) reserveLocked(channel SpoolChannel, recipient, logicalID string,
 		Recipient:    recipient,
 		LogicalID:    logicalID,
 		ChargedBytes: chargedBytes,
+		Refusal:      refusal,
 		State:        SpoolReserved,
 		ReservedAt:   now,
 	}
@@ -597,6 +703,14 @@ func (s *Spool) Row(seq uint64) (SpoolRow, bool) {
 	return *row, true
 }
 
+// ChannelByteLimit is what one wire channel may have owed to it: the
+// register's `cloud.spool_channel_bytes`, as this spool is running it.
+func (s *Spool) ChannelByteLimit() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.limits.RecipientByteCap
+}
+
 // Rows is how many rows are held, terminal ones included until they are
 // collected.
 func (s *Spool) Rows() int {
@@ -657,20 +771,56 @@ func (s *Spool) normalizeReadyLocked(now time.Time) {
 // answered "late, ignored" rather than "no such row" — which is what a
 // receipt for a sequence this machine never sent should mean, and only that.
 func (s *Spool) collectLocked(now time.Time) {
+	held := 0
 	for seq, row := range s.rows {
 		switch {
 		case row.State.IsTerminal():
 			if !row.Tombstoned.IsZero() && now.Sub(row.Tombstoned) > s.limits.TombstoneRetention {
 				delete(s.rows, seq)
+				continue
 			}
+			held++
 		case row.State == SpoolReserved && now.Sub(row.ReservedAt) > s.limits.StaleReservedAfter:
 			row.State = SpoolBurned
 			row.BurnReason = BurnStaleReservation
 			row.Tombstoned = now
 			s.tally.dropped++
 			s.tally.lastAt = now
+			held++
 		}
 	}
+	s.expireReceiptsLocked(now, held)
+}
+
+// expireReceiptsLocked bounds the receipt table, oldest first.
+//
+// The tombstones are the only thing here that is not queue, so they are the
+// only thing here that may be let go while it is still wanted: past the cap
+// the oldest receipt goes, and what is lost is the ability to tell a late ack
+// for that sequence from a receipt for a sequence never sent. That is counted
+// as an expiry rather than passed over, because it is the one case where this
+// spool answers a correlation question worse than it did a moment ago.
+func (s *Spool) expireReceiptsLocked(now time.Time, held int) {
+	over := held - s.limits.ReceiptCap
+	if s.limits.ReceiptCap <= 0 || over <= 0 {
+		return
+	}
+	terminal := make([]uint64, 0, held)
+	for seq, row := range s.rows {
+		if row.State.IsTerminal() {
+			terminal = append(terminal, seq)
+		}
+	}
+	// Tombstoned order is sequence order: a row becomes terminal after it was
+	// reserved, and a sequence is never reused.
+	sort.Slice(terminal, func(i, j int) bool {
+		return s.rows[terminal[i]].Tombstoned.Before(s.rows[terminal[j]].Tombstoned)
+	})
+	for _, seq := range terminal[:min(over, len(terminal))] {
+		delete(s.rows, seq)
+		s.tally.expired++
+	}
+	s.tally.lastAt = now
 }
 
 func (s *Spool) refusedLocked(now time.Time) {
@@ -678,33 +828,83 @@ func (s *Spool) refusedLocked(now time.Time) {
 	s.tally.lastAt = now
 }
 
-// Readings are the spool's two capacity rows, `cloud.spool` and
-// `cloud.spool_bytes`: what a reservation is measured against — every row
-// held, tombstones included until they are collected, and their charged
-// bytes — and what the spool did at its limits. The counters are the same on
-// both rows, because one refusal or burn is one event whichever cap it met.
-// A written row burned at its attempt window is said in the note and counted
-// nowhere else: whether it arrived is unknown, and unknown is neither.
+// Readings are the spool's two global capacity rows, `cloud.spool` and
+// `cloud.spool_bytes`: what a reservation is measured against — the rows
+// still owed delivery and their charged bytes — and what the spool did at its
+// limits. The counters are the same on both rows, because one refusal or burn
+// is one event whichever cap it met. A written row burned at its attempt
+// window is said in the note and counted nowhere else: whether it arrived is
+// unknown, and unknown is neither.
+//
+// **Tombstones are not in this figure any more.** They were, and the gauge
+// therefore read 18% full while one channel had been shut for ten minutes;
+// they are `cloud.spool_receipts` now, which is what they are.
 func (s *Spool) Readings() (rows, bytes capacity.Reading) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var held, charged int64
+	var live, charged, tombstones int64
 	for _, row := range s.rows {
-		held++
+		if row.State.IsTerminal() {
+			tombstones++
+			continue
+		}
+		live++
 		charged += int64(row.ChargedBytes)
 	}
 	counters := capacity.Counters{
 		Refused: s.tally.refused, Dropped: s.tally.dropped, Coalesced: s.tally.coalesced,
 		LastActionAt: s.tally.lastAt,
 	}
-	note := ""
+	note := fmt.Sprintf("%d answered row(s) are held as receipts and are not counted here", tombstones)
 	if s.tally.uncertain > 0 {
-		note = fmt.Sprintf("%d written answer(s) went unanswered past their window and were let go; whether they arrived is unknown",
+		note += fmt.Sprintf("; %d written answer(s) went unanswered past their window and were let go, and whether they arrived is unknown",
 			s.tally.uncertain)
 	}
-	rows = capacity.Reading{Known: true, Used: held, Counters: counters, Note: note}
+	rows = capacity.Reading{Known: true, Used: live, Counters: counters, Note: note}
 	bytes = capacity.Reading{Known: true, Used: charged, Counters: counters, Note: note}
 	return rows, bytes
+}
+
+// ChannelReadings are the spool's other two rows.
+//
+// `cloud.spool_channel_bytes` is the bound that actually refuses a Cloud
+// answer in practice, and it is per channel, so the gauge is the **fullest**
+// channel: the one number that predicts the next refusal. The channel is not
+// named — a `t/<machine>/<session>` names a session of the person's, and this
+// reading is read by a notice as well as by diagnostics — so the note says
+// how many channels are holding anything and how full the worst of them is.
+//
+// `cloud.spool_receipts` is the tombstone table: terminal rows kept for
+// TombstoneRetention so that a second receipt for a sequence is answered
+// "late, ignored" rather than "no such row". Its `Expired` counter is the
+// receipts let go early because the table was full.
+func (s *Spool) ChannelReadings() (channelBytes, receipts capacity.Reading) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	perChannel := map[string]int64{}
+	var tombstones int64
+	for _, row := range s.rows {
+		if row.State.IsTerminal() {
+			tombstones++
+			continue
+		}
+		perChannel[row.Recipient] += int64(row.ChargedBytes)
+	}
+	var fullest int64
+	for _, held := range perChannel {
+		if held > fullest {
+			fullest = held
+		}
+	}
+	counters := capacity.Counters{
+		Refused: s.tally.refused, LastActionAt: s.tally.lastAt,
+	}
+	channelBytes = capacity.Reading{Known: true, Used: fullest, Counters: counters,
+		Note: fmt.Sprintf("the fullest of %d channel(s) with anything owed", len(perChannel))}
+	receipts = capacity.Reading{Known: true, Used: tombstones,
+		WindowSeconds: int64(s.limits.TombstoneRetention / time.Second),
+		Counters:      capacity.Counters{Expired: s.tally.expired, LastActionAt: s.tally.lastAt}}
+	return channelBytes, receipts
 }
 
 func (s *Spool) sortedSequencesLocked() []uint64 {
