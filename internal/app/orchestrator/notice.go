@@ -62,7 +62,16 @@ type noticeBody struct {
 	Task     noticeTask `json:"task"`
 	State    string     `json:"state"`
 	Result   string     `json:"result_path"`
-	Outstand int        `json:"outstanding"`
+	// Outstand is how many other tasks of the root being told are still
+	// running. It is the Swift app's field (`Orchestrator.swift:8661`:
+	// `liveTasks(under: [parentTaskId]).count`), whose parent is a task
+	// where this daemon's is a root session, and until now nothing here
+	// wrote it — so every completion notice this broker had ever sent said
+	// `"outstanding": 0`, which reads as "nothing else of yours is running"
+	// and meant "nobody counted" (work-system-review §2.2). It counts the
+	// live rows this broker can decode; a row it cannot decode is named as
+	// unreadable wherever tasks are listed and is not counted here.
+	Outstand int `json:"outstanding"`
 	// Leftovers is how many things this delivery says it did not do. The list
 	// itself is in result.json and on the task, which the root is being told
 	// to read; what belongs in one line typed at a session is the number and
@@ -93,7 +102,7 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 		line += " — claims released; child tab may still be writing"
 	}
 	if r.Landing != nil && r.Landing.State == LandingPending {
-		line += " — claimed work may still be in the shared tree; mark landing pending so other roots can see it"
+		line += " — " + landingLine(r)
 	}
 	// The moment this whole path exists for. A root integrating a child has
 	// just read what it did not do, and until now the only place that went
@@ -113,10 +122,82 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	return line
 }
 
+// landingLine is the one sentence the completion notice spends on the landing
+// this delivery has just opened.
+//
+// **It used to ask for an action that had already happened.** "claimed work
+// may still be in the shared tree; mark landing pending so other roots can see
+// it" was typed at a root whose child's landing the broker had itself just
+// opened as pending — so the only thing it asked for was already done, and the
+// one thing worth saying was left unsaid. Measured on 2026-09-20: sixteen
+// deliveries were refused `nothing_delivered` four hours after this line went
+// out, every one of them for a branch that was empty at the moment it was
+// typed and that nobody had been told was empty (work-system-review §2.3,
+// W1-a; G3: knowing and not saying is the most expensive silence here).
+//
+// So it says what this broker knew at that moment and nothing else, and for an
+// empty branch it says it while the checkout is still on disk — which is the
+// whole point of saying it now. It never refuses the delivery and it never
+// commits anything itself: rejecting finished work does not bring the work
+// back, and a daemon committing somebody's changes is an irreversible act it
+// has no standing to take (§2.3, the two paths deliberately not taken).
+func landingLine(r Record) string {
+	branch, path := "", ""
+	if r.Worktree != nil {
+		branch, path = r.Worktree.Branch, r.Worktree.Path
+	}
+	switch r.Landing.Settlement {
+	case SettlementEmpty:
+		return "nothing is committed on its delivery branch " + branch + ", and a landing is proved from that " +
+			"branch — so as it stands there is nothing this task could ever be recorded as landing. Its checkout " +
+			path + " is still on disk: commit there, on that branch, now. Once the sweep takes the checkout the " +
+			"only records left for it are abandoned and nothing_to_land"
+	case SettlementCarried:
+		return "its delivery is committed on branch " + branch + "; merge that branch into its target and record " +
+			"the landing with the commit that carries it"
+	case SettlementUnreadable:
+		return "its delivery branch " + branch + " could not be read when it ended, so whether anything was " +
+			"committed is not known; look at the branch before recording this landing"
+	}
+	return "it wrote the shared checkout under its claims; record the landing with the commit that carries that " +
+		"work onto its target, or abandoned"
+}
+
+// outstandingFor is how many other tasks of one root are still running: the
+// `outstanding` field, which nothing wrote until now.
+//
+// A store that cannot answer refuses rather than answering 0. The number
+// would be indistinguishable from "nothing else of yours is running", which
+// is the sentence this field existed to say wrongly; the attempt is spent as
+// any other failure to put the line on the root's screen is, and retried.
+func (b *Broker) outstandingFor(ctx context.Context, r Record) (int, error) {
+	if r.Root == nil || r.Root.SessionID == "" {
+		return 0, nil
+	}
+	live, err := b.liveTasks(ctx)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, other := range live {
+		if other.ID == r.ID || other.Root == nil {
+			continue
+		}
+		if other.Root.SessionID == r.Root.SessionID {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // NoticeWire is the whole line typed into the root, wrapper and all.
-func (b *Broker) NoticeWire(r Record) (string, error) {
+func (b *Broker) NoticeWire(ctx context.Context, r Record) (string, error) {
 	if r.Notice == nil {
 		return "", fmt.Errorf("this task has no completion envelope")
+	}
+	outstanding, err := b.outstandingFor(ctx, r)
+	if err != nil {
+		return "", fmt.Errorf("this machine could not count the root's other running tasks: %w", err)
 	}
 	body := noticeBody{
 		Protocol:  NoticeProtocol,
@@ -126,6 +207,7 @@ func (b *Broker) NoticeWire(r Record) (string, error) {
 		Task:      noticeTask{ID: r.ID, Title: r.Title},
 		State:     string(r.State),
 		Result:    filepath.Join(b.Tasks.Path(r.ID), "result.json"),
+		Outstand:  outstanding,
 		Leftovers: len(leftoversOf(r)),
 		Released:  r.State == StateTimeout && len(r.Lease()) > 0,
 		MayWrite:  r.State == StateTimeout && len(r.Lease()) > 0,
@@ -367,7 +449,7 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 			return b.holdNotice(ctx, r.ID, seen, at, holdQueued)
 		}
 	}
-	wire, err := b.NoticeWire(r)
+	wire, err := b.NoticeWire(ctx, r)
 	if err != nil {
 		return b.spendAttempt(ctx, r.ID, seen, at, "transport_failed", err.Error())
 	}

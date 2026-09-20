@@ -307,12 +307,13 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 	}
 	commits, commitsKnown := b.Git.Commits(ctx, r.Worktree.Repository, r.Worktree.Base, r.Worktree.Branch)
 	dirty, dirtyKnown := false, false
+	kept := ""
 	if row.OnDisk {
 		dirty, dirtyKnown = b.Git.Dirty(ctx, r.Worktree.Path)
 	} else {
 		// A checkout the sweep took is not unknown: what it held was
 		// recorded before it went (reclaim.go).
-		dirty, _, dirtyKnown = b.reclaimedDirty(ctx, r.ID)
+		dirty, kept, dirtyKnown = b.reclaimedDirty(ctx, r.ID)
 	}
 
 	// Droppable is decided first and fails safe: the branch must have been
@@ -367,7 +368,7 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 		row.Section = VisibilityUnlanded
 	}
 
-	row.Do, row.Why = landingAdvice(r, commits, commitsKnown, dirty, dirtyKnown)
+	row.Do, row.Why = landingAdvice(r, commits, commitsKnown, dirty, dirtyKnown, kept)
 	return row
 }
 
@@ -375,8 +376,12 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 //
 // The order is the Swift app's and each clause is a separate sentence on
 // purpose: "this task declared paths" and "its branch carries commits" send a
-// person to two different places.
-func landingAdvice(r Record, commits int, commitsKnown, dirty, dirtyKnown bool) (string, string) {
+// person to two different places. What the checkout itself shows is one
+// sentence shared with the gate that admits `nothing_to_land`
+// (deliveryEvidence, nothingToLandRefusal), because a reason the advice gives
+// and a reason the refusal gives are answers to the same question and were
+// two copies of it.
+func landingAdvice(r Record, commits int, commitsKnown, dirty, dirtyKnown bool, kept string) (string, string) {
 	// The lease, not the declared list: for a task in the shared tree they
 	// are the same paths, and for an isolated one its branch is the evidence
 	// of what it wrote, as it was before D21 kept the list.
@@ -387,15 +392,8 @@ func landingAdvice(r Record, commits int, commitsKnown, dirty, dirtyKnown bool) 
 		return DoLandOrAbandon, "its landing obligation already names the target " + r.Landing.Target
 	}
 	if r.Worktree != nil {
-		if !commitsKnown || !dirtyKnown {
-			return DoLandOrAbandon,
-				"this Mac has no commit count for its checkout, and an unknown count is not permission"
-		}
-		if commits > 0 {
-			return DoLandOrAbandon, "its branch carries " + strconv.Itoa(commits) + " commit(s)"
-		}
-		if dirty {
-			return DoLandOrAbandon, "its checkout has uncommitted changes"
+		if why := deliveryEvidence(commits, commitsKnown, dirty, dirtyKnown, kept); why != "" {
+			return DoLandOrAbandon, why
 		}
 	}
 	return DoNothingToLand, ""

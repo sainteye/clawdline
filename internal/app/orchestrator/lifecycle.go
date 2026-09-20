@@ -300,6 +300,13 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 	settled := prev != nil && prev.State != LandingPending
 
 	next := &Landing{State: LandingState(req.State), Target: req.Target, Note: req.Note}
+	// What the branch held when the task ended is this broker's own reading of
+	// git at a moment that has passed (LandingSettlement), not a claim the
+	// caller is making, so a landing written over it carries it rather than
+	// dropping it.
+	if prev != nil {
+		next.Settlement = prev.Settlement
+	}
 	// The target is the record's once the root has named one (D19): a
 	// request that leaves it out means the one on the record, and one that
 	// names another on a settled landing is a different claim.
@@ -454,19 +461,7 @@ func (b *Broker) nothingToLandRefusal(ctx context.Context, r Record) string {
 		// Taken by the sweep, which recorded what it held (reclaim.go).
 		dirty, kept, dirtyKnown = b.reclaimedDirty(ctx, r.ID)
 	}
-	if !commitsKnown || !dirtyKnown {
-		return "this Mac has no commit count for its checkout, and an unknown count is not permission"
-	}
-	if commits > 0 {
-		return "its branch carries " + strconv.Itoa(commits) + " commit(s)"
-	}
-	if dirty {
-		if kept != "" {
-			return "its checkout had uncommitted changes, kept on the branch " + kept + " when it was reclaimed"
-		}
-		return "its checkout has uncommitted changes"
-	}
-	return ""
+	return deliveryEvidence(commits, commitsKnown, dirty, dirtyKnown, kept)
 }
 
 // NotifyResult is what a push answered.

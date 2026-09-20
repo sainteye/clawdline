@@ -899,8 +899,10 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 	now := b.now()
 	// What the delivery branch holds as the task ends, asked of git before the
 	// write right is taken (D08) and applied inside it only to the branch it
-	// was read from (D17, G17).
-	head := b.settlementHead(ctx, id)
+	// was read from (D17, G17). What it carries past its base is asked in the
+	// same breath and kept on the landing, because this is the last moment
+	// anybody can act on the answer (LandingSettlement).
+	head, settled := b.settlement(ctx, id)
 	// The settlement's event says what the end did to the child's tab and by
 	// which rule (tabPolicy), so "why is this tab still open" has an answer
 	// in the store rather than only in this code.
@@ -918,8 +920,10 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 		}
 		// Empty when the branch is gone or could not be read: the base it
 		// held at creation is no longer a claim anybody can stand on.
+		settlement := LandingSettlement("")
 		if head.asked && r.Worktree != nil && r.Worktree.Branch == head.branch {
 			r.Worktree.Head = head.commit
+			settlement = settled
 		}
 		// A task that reserved paths in the shared tree still owes a landing,
 		// and so does an isolated one, whose declared paths became its landing
@@ -931,7 +935,11 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 		// until then every reader treats the target as not decided — never as
 		// whatever the repository's HEAD happens to be.
 		if r.Landing == nil && (len(r.Claims) > 0 || r.Worktree != nil) {
-			r.Landing = &Landing{State: LandingPending, Note: "not yet on its target"}
+			r.Landing = &Landing{
+				State:      LandingPending,
+				Note:       settlementNote(settlement),
+				Settlement: settlement,
+			}
 		}
 		if r.Root != nil && r.Notice == nil {
 			r.Notice = &Notice{

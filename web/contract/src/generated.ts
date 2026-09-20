@@ -1370,6 +1370,7 @@ export interface BrokerLanding {
   note?: string
   obligation?: BrokerLandingObligation
   repo?: string
+  settlement?: BrokerLandingSettlement
   state: BrokerLandingState
 
   /**
@@ -1441,6 +1442,24 @@ export type BrokerLandingOwnershipStatus =
   | "unknown"
 
 export const BrokerLandingOwnershipStatusValues: readonly BrokerLandingOwnershipStatus[] = ["observed_working", "observed_ready_or_holding", "observed_other", "task_still_live", "not_observed", "unknown"] as const
+
+/**
+ * What the task's delivery branch carried past the commit it was cut from at the
+ * moment the task ended, asked of git then and never recomputed — the checkout is
+ * swept within the day, and a branch does not say when what is on it arrived.
+ * Absent when nobody asked: a task that wrote the shared checkout and so has no
+ * branch of its own, or a record written before this was kept. `branch_empty`: the
+ * branch carried nothing, so nothing could be proved landed from it and the
+ * delivery was still loose files in a checkout somebody could still commit.
+ * `branch_carries_commits`: it carried a delivery. `branch_unreadable`: git could
+ * not count it, which is not a kind of empty.
+ */
+export type BrokerLandingSettlement =
+    "branch_empty"
+  | "branch_carries_commits"
+  | "branch_unreadable"
+
+export const BrokerLandingSettlementValues: readonly BrokerLandingSettlement[] = ["branch_empty", "branch_carries_commits", "branch_unreadable"] as const
 
 /**
  * The three readings a landing list is made of, each with its own time: the

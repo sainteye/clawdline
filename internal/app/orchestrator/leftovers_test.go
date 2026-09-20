@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -35,7 +36,7 @@ func TestTheFinishedLineCarriesWhatIsLeftOver(t *testing.T) {
 
 	// The envelope carries the count, and stays one physical line whatever
 	// the child wrote.
-	wire, err := b.NoticeWire(r)
+	wire, err := b.NoticeWire(context.Background(), r)
 	if err != nil {
 		t.Fatal(err)
 	}

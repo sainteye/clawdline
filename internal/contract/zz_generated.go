@@ -1135,6 +1135,7 @@ type BrokerLanding struct {
 	Note         string                  `json:"note,omitempty"`
 	Obligation   BrokerLandingObligation `json:"obligation,omitempty"`
 	Repo         string                  `json:"repo,omitempty"`
+	Settlement   BrokerLandingSettlement `json:"settlement,omitempty"`
 	State        BrokerLandingState      `json:"state"`
 
 	// The branch the root named the first time it recorded this landing. Absent until
@@ -1203,6 +1204,26 @@ const (
 
 // BrokerLandingOwnershipStatusValues is every value the contract allows, in contract order.
 var BrokerLandingOwnershipStatusValues = []BrokerLandingOwnershipStatus{BrokerLandingOwnershipStatusObservedWorking, BrokerLandingOwnershipStatusObservedReadyOrHolding, BrokerLandingOwnershipStatusObservedOther, BrokerLandingOwnershipStatusTaskStillLive, BrokerLandingOwnershipStatusNotObserved, BrokerLandingOwnershipStatusUnknown}
+
+// What the task's delivery branch carried past the commit it was cut from at
+// the moment the task ended, asked of git then and never recomputed — the
+// checkout is swept within the day, and a branch does not say when what is on
+// it arrived. Absent when nobody asked: a task that wrote the shared checkout
+// and so has no branch of its own, or a record written before this was kept.
+// `branch_empty`: the branch carried nothing, so nothing could be proved landed
+// from it and the delivery was still loose files in a checkout somebody could
+// still commit. `branch_carries_commits`: it carried a delivery.
+// `branch_unreadable`: git could not count it, which is not a kind of empty.
+type BrokerLandingSettlement string
+
+const (
+	BrokerLandingSettlementBranchEmpty          BrokerLandingSettlement = "branch_empty"
+	BrokerLandingSettlementBranchCarriesCommits BrokerLandingSettlement = "branch_carries_commits"
+	BrokerLandingSettlementBranchUnreadable     BrokerLandingSettlement = "branch_unreadable"
+)
+
+// BrokerLandingSettlementValues is every value the contract allows, in contract order.
+var BrokerLandingSettlementValues = []BrokerLandingSettlement{BrokerLandingSettlementBranchEmpty, BrokerLandingSettlementBranchCarriesCommits, BrokerLandingSettlementBranchUnreadable}
 
 // The three readings a landing list is made of, each with its own time: the
 // sessions were read separately from the records, and saying so is the honest
