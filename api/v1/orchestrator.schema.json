@@ -74,6 +74,7 @@
         "target_commit": { "description": "What the target branch named when `landed` was proved.", "type": "string" },
         "delivery_head": { "description": "The isolated branch's head the landed commit was proved to carry.", "type": "string" },
         "base": { "description": "The commit the task was dispatched from, which the landed commit was proved not to be under.", "type": "string" },
+        "settlement": { "$ref": "#/$defs/BrokerLandingSettlement" },
         "corrected_from": { "description": "The settled landing this one replaced. A resend that says what the record says is a replay and writes nothing; one that differs passes the same gate, and what it replaced is kept here and in a `landing.corrected` event. One level deep.", "$ref": "#/$defs/BrokerLanding" },
         "obligation": { "$ref": "#/$defs/BrokerLandingObligation" }
       }
@@ -81,6 +82,11 @@
     "BrokerLandingState": {
       "type": "string",
       "enum": ["pending", "landed", "abandoned", "nothing_to_land"]
+    },
+    "BrokerLandingSettlement": {
+      "description": "What the task's delivery branch carried past the commit it was cut from at the moment the task ended, asked of git then and never recomputed — the checkout is swept within the day, and a branch does not say when what is on it arrived. Absent when nobody asked: a task that wrote the shared checkout and so has no branch of its own, or a record written before this was kept. `branch_empty`: the branch carried nothing, so nothing could be proved landed from it and the delivery was still loose files in a checkout somebody could still commit. `branch_carries_commits`: it carried a delivery. `branch_unreadable`: git could not count it, which is not a kind of empty.",
+      "type": "string",
+      "enum": ["branch_empty", "branch_carries_commits", "branch_unreadable"]
     },
     "BrokerLandingObligation": {
       "description": "What a pending landing means now, derived from the broker's last reading of the machine and never stored. `pending_live`: the root that owes it is running. `pending_orphaned`: nothing can land it — the task has no root, or the process table answered completely, named every assistant in it, and the root is not one. `pending_unknown`: neither could be shown, which is not a kind of either.",

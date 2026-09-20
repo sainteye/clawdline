@@ -69,6 +69,30 @@ const (
 	LandingNothingToLand LandingState = "nothing_to_land"
 )
 
+// LandingSettlement is what a task's delivery branch held the moment the task
+// ended, as git answered then.
+//
+// The broker already asked that question at that moment — it reads the branch
+// head before every settling write (landing.go, D08) — and until now it used
+// the answer to update Worktree.Head and threw the rest away. What it threw
+// away is the only evidence that is cheap while it is still actionable: the
+// checkout is on disk, the changes are in it, and the person who could commit
+// them is reading the line this settlement writes. Measured on 2026-09-20:
+// sixteen deliveries that had been merged into master were each refused
+// `unverified_landing / nothing_delivered` four hours later, because every
+// brief that day had told the child not to commit and by then the evidence
+// lived only in directories that had been removed.
+//
+// Unreadable is a third answer and not a kind of empty: a branch git could not
+// count has not said it carries nothing (DG-7).
+type LandingSettlement string
+
+const (
+	SettlementEmpty      LandingSettlement = "branch_empty"
+	SettlementCarried    LandingSettlement = "branch_carries_commits"
+	SettlementUnreadable LandingSettlement = "branch_unreadable"
+)
+
 // Isolation is where the child's checkout is.
 const (
 	IsolationNone     = "none"
@@ -145,6 +169,12 @@ type Landing struct {
 	TargetCommit string `json:"target_commit,omitempty"`
 	DeliveryHead string `json:"delivery_head,omitempty"`
 	Base         string `json:"base,omitempty"`
+
+	// Settlement is what the delivery branch held at the moment the task
+	// ended, asked of git then (dispatch.go) because it cannot be asked
+	// later. Empty means nobody asked: a task with no branch of its own, or
+	// a record written before this was kept.
+	Settlement LandingSettlement `json:"settlement,omitempty"`
 
 	// CorrectedFrom is the settled landing this one replaced (D18): a
 	// resend that disagrees with a settled record is a write, it passes the

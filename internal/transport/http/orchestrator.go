@@ -1037,6 +1037,7 @@ func brokerLanding(l *orchestrator.Landing, obligation orchestrator.Obligation) 
 		TargetCommit: l.TargetCommit,
 		DeliveryHead: l.DeliveryHead,
 		Base:         l.Base,
+		Settlement:   contract.BrokerLandingSettlement(l.Settlement),
 		Obligation:   contract.BrokerLandingObligation(obligation),
 	}
 	if !l.At.IsZero() {

@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/domain/work"
@@ -68,15 +69,81 @@ func (b *Broker) deliveryHead(ctx context.Context, w *Worktree) branchHead {
 	return out
 }
 
-// settlementHead is the delivery head a task is settled with: asked of git
-// before the settling write takes the write right (D08), and only for a live
+// settlement is what a task is settled with: the delivery head, and what the
+// branch carried past its base when it was read. Both are asked of git before
+// the settling write takes the write right (D08), and only for a live
 // isolated task, since a terminal one is not settled again.
-func (b *Broker) settlementHead(ctx context.Context, id string) branchHead {
+func (b *Broker) settlement(ctx context.Context, id string) (branchHead, LandingSettlement) {
 	r, _, err := b.Record(ctx, id)
 	if err != nil || r.Worktree == nil || r.State.Terminal() {
-		return branchHead{}
+		return branchHead{}, ""
 	}
-	return b.deliveryHead(ctx, r.Worktree)
+	return b.deliveryHead(ctx, r.Worktree), b.branchSettlement(ctx, r.Worktree)
+}
+
+// branchSettlement asks git what a delivery branch carries past the commit it
+// was cut from. It is the same question `proveDelivery` asks a branch hours
+// later, put at the one moment the answer can still be acted on.
+func (b *Broker) branchSettlement(ctx context.Context, w *Worktree) LandingSettlement {
+	commits, known := b.Git.Commits(ctx, w.Repository, w.Base, w.Branch)
+	switch {
+	case !known:
+		return SettlementUnreadable
+	case commits == 0:
+		return SettlementEmpty
+	}
+	return SettlementCarried
+}
+
+// settlementNote is the sentence a pending landing opens with: what the
+// branch held, rather than the one thing every pending landing already says.
+func settlementNote(s LandingSettlement) string {
+	switch s {
+	case SettlementEmpty:
+		return "nothing was committed on its delivery branch when it ended"
+	case SettlementCarried:
+		return "delivered on its branch, not yet on its target"
+	case SettlementUnreadable:
+		return "its delivery branch could not be read when it ended"
+	}
+	return "not yet on its target"
+}
+
+// deliveryEvidence is the sentence that says what a task's own checkout shows
+// it wrote. Empty means it shows it wrote nothing, and that is the one answer
+// `nothing_to_land` may rest on.
+//
+// **Two facts, asked of two different things.** What the branch carries is
+// asked of the repository, which is still there; what the checkout holds
+// uncommitted is asked of a directory the sweep takes within the day. So one
+// of them is routinely unknown while the other is known exactly, and a
+// sentence that reports either unknown as "no commit count" sends a reader to
+// look at something that has no problem. Measured on 2026-09-20: nineteen
+// unlanded rows all read "this Mac has no commit count for its checkout",
+// while every one of their branches was still there and every count was
+// known — what was missing was the worktree (work-system-review §3.2, G2).
+//
+// A positive answer from either fact beats an unknown from the other: a branch
+// that carries three commits has something to land whether or not its checkout
+// can be read.
+func deliveryEvidence(commits int, commitsKnown, dirty, dirtyKnown bool, kept string) string {
+	if commitsKnown && commits > 0 {
+		return "its branch carries " + strconv.Itoa(commits) + " commit(s)"
+	}
+	if dirtyKnown && dirty {
+		if kept != "" {
+			return "its checkout had uncommitted changes, kept on the branch " + kept + " when it was reclaimed"
+		}
+		return "its checkout has uncommitted changes"
+	}
+	if !commitsKnown {
+		return "this Mac could not count what its delivery branch carries, and an unknown count is not permission"
+	}
+	if !dirtyKnown {
+		return "its branch carries nothing past its base, and this Mac could not read its checkout to say " +
+			"whether anything is uncommitted there"
+	}
+	return ""
 }
 
 // unverified is the refusal every failed proof gives. The code is the one a
