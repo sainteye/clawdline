@@ -23,7 +23,7 @@
 // little of it this file reads, so the rules here run under `node --test`
 // without a page (`relay-reader.test.ts`).
 import type { CarriedWord, CarryTable } from "./carry.js"
-import type { Health, SessionRow, SessionsSnapshot, TranscriptPage } from "@clawdline/contract"
+import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
 
@@ -52,6 +52,22 @@ export interface CloudSessions {
   }
 }
 
+/**
+ * One task as the Mac published it, plus the machine it came from.
+ *
+ * It is not a `TaskRow`: the Mac cuts the record to the nine paths a viewer
+ * reads before it goes out (`internal/transport/cloud/tasklist.go`
+ * `cloudTaskFields`), so most of the contract's fields are simply not there.
+ * Typed as what it is — an object with a machine on it — so nothing here reads
+ * a field that was never sent.
+ */
+export type CloudTask = Record<string, unknown> & { machine?: string }
+
+/** `CloudClient.tasks()`'s answer: every machine's rows, merged. */
+export interface CloudTasks {
+  tasks?: CloudTask[]
+}
+
 /** What `CloudClient.events()` hands a listener; only these fields are read. */
 export interface CloudEvent {
   type: string
@@ -70,6 +86,17 @@ export interface CloudReadClient {
   readonly sessionInventoryByMachine?: Map<string, unknown>
   events(listener: (event: CloudEvent) => void): () => void
   sessions(): Promise<CloudSessions>
+  /**
+   * The dispatched work every machine on this account published, out of the
+   * `orch/` snapshots this client has already decrypted
+   * (`_allOrchestratorRows("tasks")`). Nothing is asked of any Mac for it: the
+   * list rides on the machine descriptor, which arrives whether or not a page
+   * reads it.
+   *
+   * Optional for the same reason `pushKey` is: a copied client older than the
+   * method must be refused by name rather than throw where nobody is catching.
+   */
+  tasks?(): Promise<CloudTasks>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
   /**
    * The application server key, as the Mac's `push-key` read answers it.
@@ -338,6 +365,27 @@ export class RelayReader {
         case "/v1/sessions":
           this.note(method, path, "local")
           return json(200, await this.snapshot())
+        case "/v1/orchestrator/tasks": {
+          // The list the session list's indent is computed from. Without it
+          // `groupUnderRoots` has nothing to group by and returns the rows as
+          // they stand, which is what a phone showed: a flat list of sessions
+          // where the console on the Mac itself puts each child under the
+          // session that dispatched it.
+          //
+          // It is answered here and not asked of the Mac. The Mac publishes
+          // the list on its machine descriptor (`tasklist.go`), the copied
+          // client holds every descriptor it has opened, and `tasks()` reads
+          // it back out of that. So this costs the relay nothing at all — it
+          // is the same bytes the page was already holding and throwing away.
+          const client = this.connected()
+          if (typeof client.tasks !== "function") {
+            return this.refuse(method, path, 501, "cloud_not_carried",
+              "This console cannot read this Mac's dispatched work.")
+          }
+          const list = taskList(await client.tasks(), this.machine, Math.floor(this.now() / 1000))
+          this.note(method, path, "local")
+          return json(200, list)
+        }
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
@@ -630,6 +678,43 @@ function json(status: number, body: unknown): Response {
 function consoleRow(row: CloudRow): SessionRow {
   const { identity: _identity, optimisticIdentity: _optimistic, ...rest } = row as CloudRow & { optimisticIdentity?: unknown }
   return { ...rest, id: typeof row.id === "string" && row.id ? row.id : String(row.session ?? "") } as unknown as SessionRow
+}
+
+/**
+ * The Mac's published task list, as `/v1/orchestrator/tasks` would answer it.
+ *
+ * **This machine's rows only.** The copied client merges every machine's
+ * `orch/` snapshot into one list, and a terminal id is a tmux pane name — two
+ * Macs both have a `%1`. A row from another machine would sit under whichever
+ * session here happened to share its name, so the machine is the filter, as it
+ * is for the session list (`snapshot`). The rows keep the `machine` the client
+ * tagged them with, for the reason a session row does: a row read across the
+ * relay is not on this machine and says so.
+ *
+ * `page` and `store` are answered rather than left out. The type says they are
+ * there, nothing in this console reads them, and a field that is declared and
+ * absent is the kind of thing that is discovered by something breaking. So:
+ * `store` is `unknown`, because this page has not read the Mac's task store
+ * and cannot say how fresh it is; and this is not a page — the Mac publishes
+ * the whole list a viewer can reach on its descriptor, bounded there, and this
+ * hands that over whole, so there is no cursor to follow and no limit was
+ * asked for. `fields` says `cloud` rather than `list` because the rows are the
+ * Mac's Cloud projection — nine paths (`internal/transport/cloud/tasklist.go`)
+ * — and a reader that finds a field missing can see from the answer why.
+ */
+function taskList(answer: CloudTasks, machine: string, at: number): TaskList {
+  const rows = (answer.tasks ?? []).filter((row) => row.machine === machine)
+  // Over, or still going, by the field the wire already decides it with rather
+  // than by a third copy of the state rule: a finished task carries
+  // `finishedAt`, and that is what holds its child's row in place while the
+  // tab is open (`legacy/js/view/derive.js` `taskShaping`).
+  const finished = rows.filter((row) => typeof row.finishedAt === "number" && row.finishedAt > 0).length
+  return {
+    at,
+    page: { cursor: 0, fields: "cloud", limit: 0, finished, unfinished: rows.length - finished },
+    store: "unknown",
+    tasks: rows as unknown as TaskRow[],
+  }
 }
 
 /** A transcript answer as `/v1/transcript` would give it. */
