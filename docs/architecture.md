@@ -116,6 +116,12 @@ empty cell is debugged in the right place:
 | The `.deploy` cell and a session's deploy/CI links | `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json` | Whatever `statusLine.command` names in `~/.claude/settings.json`. Claude Code runs it to draw its own status line; these files are its side effect |
 | A project's health and run rows | `~/.claude/statusline-cache/health-*.json`, `run-*.json` | The same tool |
 
+On the machine this was written on that tool is
+[claude-bestiary](https://github.com/sainteye/claude-bestiary), by the same person — a status line
+that draws each project a creature and polls git, the deploy and the service health it needs to
+draw them. Those polls are what lands in that directory, which is how Clawdline shows a deploy row
+without ever reaching the network. Another machine will have a different tool there, or none.
+
 **Clawdline never writes them**, a missing file is a legitimate answer, and `state: "none"` means
 that tool found nothing worth reporting — not that the repository has no runs. So an empty deploy
 cell has two causes wearing one face: there is no run, or nobody is writing these files any more.

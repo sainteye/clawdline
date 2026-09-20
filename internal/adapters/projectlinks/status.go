@@ -20,10 +20,18 @@
 // Not Clawdline. `~/.claude/statusline-cache/` is written by whatever
 // `statusLine.command` names in `~/.claude/settings.json` — Claude Code runs
 // that command to draw its own status line, and the tool a person has
-// configured there leaves these files behind as a side effect. It is a
-// different tool on a different machine, and on a machine with no status line
-// configured the directory does not exist at all. Clawdline only ever reads
-// it, and a missing file is not an error here.
+// configured there leaves these files behind as a side effect.
+//
+// On the machine this was written on, that tool is **claude-bestiary**
+// (https://github.com/sainteye/claude-bestiary), by the same person: a status
+// line that draws each project a creature and, on the way, polls git, the
+// deploy and the service health it needs to draw. Those polls are what lands
+// in this directory, which is why Clawdline can show a deploy row without ever
+// reaching the network.
+//
+// It is a different tool on a different machine, and on a machine with no
+// status line configured the directory does not exist at all. Clawdline only
+// ever reads it, and a missing file is not an error here.
 //
 // `ghrun-<owner>-<repo>.json` is that tool's reading of the repository's
 // GitHub workflow runs. Its `state` is `running`, `ok`, `fail` or `none`, and
