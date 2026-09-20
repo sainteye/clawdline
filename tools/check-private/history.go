@@ -191,7 +191,7 @@ func runHistory(o historyOptions) privacy.Answer {
 	// this one skipped. A finding does not stop being true because the commit
 	// carrying it was read yesterday.
 	records := map[string]privacy.Recorded{}
-	stillThere := map[string]bool{}
+	stillThere := map[string][]string{}
 	for _, h := range hits {
 		at := where[h.blob]
 		path := h.path
@@ -204,8 +204,8 @@ func runHistory(o historyOptions) privacy.Answer {
 		}
 		r := privacy.Recorded{Commit: commit, Blob: h.blob, Path: path, Line: h.line, Rule: h.rule}
 		records[recordKey(r)] = r
-		if inTree[matchKey(h.rule, h.match)] {
-			stillThere[recordKey(r)] = true
+		if paths := inTree[matchKey(h.rule, h.match)]; len(paths) > 0 {
+			stillThere[recordKey(r)] = paths
 		}
 	}
 	// A carried finding's blob was not read this time. Read those objects —
@@ -220,8 +220,8 @@ func runHistory(o historyOptions) privacy.Answer {
 		records[recordKey(r)] = r
 		reread = append(reread, r)
 	}
-	for key := range g.carriedInTree(scanner, reread, inTree) {
-		stillThere[key] = true
+	for key, paths := range g.carriedInTree(scanner, reread, inTree) {
+		stillThere[key] = paths
 	}
 
 	all := make([]privacy.Recorded, 0, len(records))
@@ -246,12 +246,11 @@ func runHistory(o historyOptions) privacy.Answer {
 	for _, r := range all {
 		commitsWith[r.Commit] = true
 		filesWith[r.Path] = true
-		state := "history only, not in the working tree"
-		if stillThere[recordKey(r)] {
-			state = "still in the working tree"
+		paths := stillThere[recordKey(r)]
+		if len(paths) > 0 {
 			live++
 		}
-		fmt.Printf("%s %s %s:%d: %s — %s\n", short(r.Commit), dates[r.Commit], r.Path, r.Line, r.Rule, state)
+		fmt.Printf("%s %s %s:%d: %s — %s\n", short(r.Commit), dates[r.Commit], r.Path, r.Line, r.Rule, whereNow(r.Path, paths))
 	}
 
 	elapsed := time.Since(start)
@@ -287,7 +286,7 @@ func runHistory(o historyOptions) privacy.Answer {
 		if len(words) == 0 || len(oversize) > 0 {
 			partial = " This is not the whole answer: see the undetermined line above."
 		}
-		fmt.Fprintf(os.Stderr, "private-history: %d finding(s) in %d commit(s), %d file(s); %d still in the working tree, %d in history only. The word itself is not printed: `git show <commit>:<file>` reads the line.%s\n",
+		fmt.Fprintf(os.Stderr, "private-history: %d finding(s) in %d commit(s), %d file(s); %d the working tree still carries, %d in history only. The word itself is not printed: `git show <commit>:<file>` reads the line.%s\n",
 			len(all), len(commitsWith), len(filesWith), live, len(all)-live, partial)
 	}
 
@@ -324,13 +323,17 @@ func recordKey(r privacy.Recorded) string {
 // It never leaves the process.
 func matchKey(rule, match string) string { return rule + "\x00" + strings.ToLower(match) }
 
-// treeMatches is every rule-and-match the working tree carries right now.
-func treeMatches(root string, scanner *privacy.Scanner) (map[string]bool, error) {
+// treeMatches is every rule-and-match the working tree carries right now, and
+// the files carrying it. Which files, and not merely whether: a word taken
+// out of one document and left in another is gone from the line being
+// reported and still published, and those are two different things to do
+// next.
+func treeMatches(root string, scanner *privacy.Scanner) (map[string][]string, error) {
 	files, err := published(root, nil)
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]bool{}
+	out := map[string][]string{}
 	for _, rel := range files {
 		data, ok, err := content(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
@@ -340,10 +343,35 @@ func treeMatches(root string, scanner *privacy.Scanner) (map[string]bool, error)
 			continue
 		}
 		for _, f := range scanner.Scan(rel, data) {
-			out[matchKey(f.Rule, f.Match)] = true
+			key := matchKey(f.Rule, f.Match)
+			if n := len(out[key]); n == 0 || out[key][n-1] != rel {
+				out[key] = append(out[key], rel)
+			}
 		}
 	}
 	return out, nil
+}
+
+// where says what to do about one finding: the same thing at the same path,
+// the same thing somewhere else, or nothing left in the tree at all.
+func whereNow(path string, paths []string) string {
+	if len(paths) == 0 {
+		return "history only, not in the working tree"
+	}
+	for _, p := range paths {
+		if p == path {
+			return "still in the working tree"
+		}
+	}
+	shown := paths
+	if len(shown) > 2 {
+		shown = shown[:2]
+	}
+	more := ""
+	if len(paths) > len(shown) {
+		more = fmt.Sprintf(" and %d more", len(paths)-len(shown))
+	}
+	return "gone from this file; the working tree carries it in " + strings.Join(shown, ", ") + more
 }
 
 type oversized struct {
@@ -732,8 +760,8 @@ func (g *git) findObject(tips []string, blob string) (commitAt, bool) {
 // them the working tree still carries. The blobs are read in one batch: a git
 // process per finding turned a run that reads nothing into an eleven-second
 // one, which is the cost the checkpoint exists to remove.
-func (g *git) carriedInTree(scanner *privacy.Scanner, carried []privacy.Recorded, inTree map[string]bool) map[string]bool {
-	out := map[string]bool{}
+func (g *git) carriedInTree(scanner *privacy.Scanner, carried []privacy.Recorded, inTree map[string][]string) map[string][]string {
+	out := map[string][]string{}
 	if len(carried) == 0 {
 		return out
 	}
@@ -750,15 +778,15 @@ func (g *git) carriedInTree(scanner *privacy.Scanner, carried []privacy.Recorded
 		rule string
 	}
 	err := g.contents(objects, func(o object, data []byte) {
-		live := map[at]bool{}
+		live := map[at][]string{}
 		for _, f := range scanner.Scan(o.path, data) {
-			if inTree[matchKey(f.Rule, f.Match)] {
-				live[at{f.Line, f.Rule}] = true
+			if paths := inTree[matchKey(f.Rule, f.Match)]; len(paths) > 0 {
+				live[at{f.Line, f.Rule}] = paths
 			}
 		}
 		for _, r := range byBlob[o.sha] {
-			if live[at{r.Line, r.Rule}] {
-				out[recordKey(r)] = true
+			if paths := live[at{r.Line, r.Rule}]; len(paths) > 0 {
+				out[recordKey(r)] = paths
 			}
 		}
 	})
