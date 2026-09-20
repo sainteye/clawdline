@@ -212,9 +212,13 @@ type plan struct {
 	place, past, assistant, model     string
 	parts, priority, text, key, audio string
 	// expect is a menu answer's question, session.MenuFingerprint's hex.
-	expect                          string
-	project, item, audience, entry  string
-	environment, category, cursor   string
+	expect                         string
+	project, item, audience, entry string
+	environment, category, cursor  string
+	// kind is a digest's daily-or-weekly, and graph the one Feature a
+	// verification-ledger read asks for. Both are the whole parameter of
+	// their word, so they are named rather than folded into `id`.
+	kind, graph                     string
 	images                          []string
 	upcoming, acceptLoss            bool
 	closeability                    string
@@ -256,6 +260,68 @@ type op struct {
 	// here rather than in a document because whoever decides what to advertise
 	// needs it at that moment (see Divergences).
 	divergence string
+}
+
+// someOf is the query a route is given: the pairs whose value is not empty.
+//
+// It is not tidiness. The routes under `/v1/work/` refuse a query field that
+// is present and empty by name (`workQuery`, "Unknown or repeated query field
+// project."), and `/v1/timeline` reads an absent `environment` as production
+// and an empty one as a bad one. So "the viewer did not say" has to reach
+// these routes as silence, which is what a browser on this machine's own
+// network already sends (`URLSearchParams` is only given what was chosen).
+func someOf(pairs map[string]string) map[string]string {
+	out := map[string]string{}
+	for key, value := range pairs {
+		if value != "" {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+// decodeWorkPage is the body the two paged board reads share: a Project to
+// narrow to, and the opaque cursor the previous page answered. Both may be
+// empty, which is the first page of everything.
+func decodeWorkPage(word string) func(b body) (plan, bool) {
+	return func(b body) (plan, bool) {
+		if !b.has("type", "session", "request", "project", "cursor") {
+			return plan{}, false
+		}
+		p, ok := machinePlan(b)
+		if !ok {
+			return plan{}, false
+		}
+		project, projectOK := b.str("project")
+		cursor, cursorOK := b.str("cursor")
+		if !projectOK || !cursorOK || len(project) > 200 || len(cursor) > 200 {
+			return plan{}, false
+		}
+		p.project, p.cursor = project, cursor
+		return p, true
+	}
+}
+
+// decodeProject is the body of the two Project worktree reads: one bounded,
+// non-empty Project. Non-empty because one of the two spells it into the path
+// (`/v1/projects/{project}/worktrees`), where an empty segment is a different
+// route, and because the other refuses an empty one anyway — so the refusal
+// is made here, where it names the word, rather than as a 400 about a query
+// field.
+func decodeProject(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "project") {
+		return plan{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, false
+	}
+	project, ok := b.nonEmpty("project")
+	if !ok || len(project) > 200 {
+		return plan{}, false
+	}
+	p.project = project
+	return p, true
 }
 
 var catalog = map[string]op{}
@@ -710,6 +776,194 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/board", Query: query}
 			}},
 
+		// MARK: the work system, and what a person is looking at while it runs
+		//
+		// Five words, not one word with an `area` parameter, and the reason is
+		// the one the copied client already wrote down for `board.items`
+		// (`legacy/js/net/cloud-client.js`): every read's decoder here compares
+		// the body's key set for exact equality, so a parameter that grows is a
+		// machine that refuses. One word carrying `area` would also make this
+		// machine advertise the whole board in its descriptor the moment it
+		// could answer any part of it — `commands` is a list of words, so a
+		// word is the finest thing a browser can be told about. Five words let
+		// an older Mac say exactly which areas it has, let the page learn
+		// `unknown_command` per area (`machineLacks`), and let a divergence be
+		// stated about one of them. The cost is five entries in a table.
+		//
+		// All five are the same page's reads (`web/console/src/pages/work/`),
+		// and this round carries only what that page reads. `GET
+		// /v1/work/items/{id}` has no console reader — the page draws an item
+		// out of the board and the Backlog pages — and every `POST
+		// /v1/work/*` is a person answering, which is a write and is not here.
+
+		op{name: "work.board", read: true,
+			decode: decodeWorkPage("work.board"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/board", Query: someOf(map[string]string{
+					"project": p.project, "cursor": p.cursor,
+				})}
+			}},
+
+		op{name: "work.backlog", read: true,
+			decode: decodeWorkPage("work.backlog"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/backlog", Query: someOf(map[string]string{
+					"project": p.project, "cursor": p.cursor,
+				})}
+			}},
+
+		op{name: "work.proposals", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "project") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				project, projectOK := b.str("project")
+				if !projectOK || len(project) > 200 {
+					return plan{}, false
+				}
+				p.project = project
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/proposals",
+					Query: someOf(map[string]string{"project": p.project})}
+			}},
+
+		op{name: "work.decisions", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/decisions"}
+			}},
+
+		op{name: "work.digests", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "kind") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				// Which kinds there are is the route's rule (`invalid_kind`),
+				// not this bridge's: a second copy of a closed set is a second
+				// thing to keep right, and the route's refusal is the one the
+				// page already reads.
+				kind, kindOK := b.str("kind")
+				if !kindOK || len(kind) > 32 {
+					return plan{}, false
+				}
+				p.kind = kind
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/digests",
+					Query: someOf(map[string]string{"kind": p.kind})}
+			}},
+
+		// The Projects page's three reads. `places` above is its fourth and
+		// was already carried; these are the ones that left a phone saying it
+		// could not read a project's worktrees.
+		op{name: "projects", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/projects"}
+			}},
+
+		op{name: "project-worktrees", read: true,
+			decode: decodeProject,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/usage/project-worktrees",
+					Query: map[string]string{"project": p.project}}
+			}},
+
+		// The lifecycle read only. `project-worktree-lifecycle-refresh` runs
+		// processes and rewrites this machine's cache, which is a command and
+		// not this round's.
+		op{name: "project-worktree-lifecycle", read: true,
+			decode: decodeProject,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET",
+					Path: "/v1/projects/" + segment(p.project) + "/worktrees"}
+			}},
+
+		op{name: "timeline", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "project", "entry", "cursor",
+					"environment", "category", "upcoming") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				project, projectOK := b.str("project")
+				entry, entryOK := b.str("entry")
+				cursor, cursorOK := b.str("cursor")
+				environment, environmentOK := b.str("environment")
+				category, categoryOK := b.str("category")
+				upcoming, upcomingOK := b.boolean("upcoming")
+				if !projectOK || !entryOK || !cursorOK || !environmentOK || !categoryOK || !upcomingOK ||
+					len(project) > 200 || len(entry) > 200 || len(cursor) > 20 ||
+					len(environment) > 32 || len(category) > 32 {
+					return plan{}, false
+				}
+				p.project, p.entry, p.cursor = project, entry, cursor
+				p.environment, p.category, p.upcoming = environment, category, upcoming
+				return p, true
+			},
+			// `upcoming` is sent every time and both values mean something —
+			// the route's default is on and the page's filter turns it off —
+			// so it is not in `someOf`. The rest are left out when empty,
+			// because this route reads an absent parameter and an empty one
+			// differently (`environment` defaults to production; an empty one
+			// would be refused `bad_environment`).
+			route: func(p plan) LocalRequest {
+				query := someOf(map[string]string{
+					"project": p.project, "entry": p.entry, "cursor": p.cursor,
+					"environment": p.environment, "category": p.category,
+				})
+				query["upcoming"] = "false"
+				if p.upcoming {
+					query["upcoming"] = "true"
+				}
+				return LocalRequest{Method: "GET", Path: "/v1/timeline", Query: query}
+			}},
+
+		op{name: "verification-ledger", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "graph") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				graph, graphOK := b.str("graph")
+				if !graphOK || len(graph) > 200 {
+					return plan{}, false
+				}
+				p.graph = graph
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/usage/verification-ledger",
+					Query: someOf(map[string]string{"graph": p.graph})}
+			}},
+
 		// MARK: reads this daemon has no local capability for
 
 		op{name: "agent", read: true,
@@ -801,32 +1055,6 @@ func init() {
 					"project": p.project, "audience": p.audience,
 					"cursor": strconv.FormatInt(p.offset, 10), "limit": strconv.FormatInt(p.limit, 10),
 				}}
-			}},
-
-		op{name: "timeline", read: true,
-			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "project", "entry", "cursor",
-					"environment", "category", "upcoming") {
-					return plan{}, false
-				}
-				p, ok := machinePlan(b)
-				if !ok {
-					return plan{}, false
-				}
-				project, projectOK := b.str("project")
-				entry, entryOK := b.str("entry")
-				cursor, cursorOK := b.str("cursor")
-				environment, environmentOK := b.str("environment")
-				category, categoryOK := b.str("category")
-				upcoming, upcomingOK := b.boolean("upcoming")
-				if !projectOK || !entryOK || !cursorOK || !environmentOK || !categoryOK || !upcomingOK ||
-					len(project) > 200 || len(entry) > 200 || len(cursor) > 20 ||
-					len(environment) > 32 || len(category) > 32 {
-					return plan{}, false
-				}
-				p.project, p.entry, p.cursor = project, entry, cursor
-				p.environment, p.category, p.upcoming = environment, category, upcoming
-				return p, true
 			}},
 
 		op{name: "snippets", read: true,

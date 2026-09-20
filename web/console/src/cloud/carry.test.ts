@@ -143,12 +143,14 @@ test("one word, one list, and every route names a word the table carries", () =>
   // are: the guard reads the table.
   assert.ok("transcript" in CARRIED)
   assert.ok("schedules" in CARRIED)
-  // 21, not the 16 this was last measured at: the schedule list and the four
-  // schedule writes moved out of DEFERRED, whose sentences had been saying
-  // this console did not read or write schedules long after the Mac started
-  // answering all five. The count is re-measured rather than carried over — a
-  // number copied across a change is the one nobody checks.
-  assert.equal(Object.keys(CARRIED).length, 21)
+  // 33, not the 21 this was last measured at. Twelve reads moved in at once:
+  // the five words of the work system, this daemon's Project catalog, the two
+  // Project worktree reads, the verification ledger, the Project timeline and
+  // the Swift board's two. Before them a phone drew none of it — the whole
+  // work system was `cloud_not_carried`, which is what a person opening
+  // "Projects" on a phone met. The count is re-measured rather than carried
+  // over — a number copied across a change is the one nobody checks.
+  assert.equal(Object.keys(CARRIED).length, 33)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -168,8 +170,9 @@ test("every route the table says is answered here is answered here, with no word
     assert.equal(uncarriedWordOf("GET", path), "", path + " stands for a word, so it is not answered here")
   }
   // And a route in neither list is still refused, so the list is what a page
-  // can reach and not merely some of it.
-  assert.equal((await reader.fetch("/v1/board")).status, 501)
+  // can reach and not merely some of it. `/v1/board` stood here until this
+  // console began asking for it; `/v1/devstacks` is no Cloud word at all.
+  assert.equal((await reader.fetch("/v1/devstacks")).status, 501)
 })
 
 test("a route this console does not carry is refused by the word it stands for", async () => {
@@ -186,6 +189,12 @@ test("a route this console does not carry is refused by the word it stands for",
   // sentence too, not the same one.
   assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/git"), "git")
   assert.equal(notCarriedDetail("GET", "/v1/sessions/s1/git"), DEFERRED.git)
+  // A word this console now carries stands for nothing here, because what is
+  // carried is parsed once by the reader's own case: the work board and a
+  // Project's timeline were both in this function and are not any more.
+  assert.equal(uncarriedWordOf("GET", "/v1/work/board"), "", "the work board is carried")
+  assert.equal(uncarriedWordOf("GET", "/v1/timeline?project=p"), "", "a Project's timeline is carried")
+  assert.equal(uncarried("work.board"), "", "a carried word has no refusal sentence")
   // One schedule in full is the one schedule word this Mac has no route for
   // (`op{name: "schedule"}` in cloudops/ops.go carries no `route`), so the
   // sheets behind a schedule row say that and not "not read yet", while the
@@ -227,8 +236,8 @@ test("the seam says what this Mac can do that this bundle never asks for", async
   const mac = new FakeMac()
   const reader = seam(mac)
   assert.equal(reader.drift(), null, "no descriptor is not agreement")
-  mac.commands = [...Object.keys(CARRIED), "snippets", "board"]
-  assert.deepEqual(reader.drift(), { notCarried: ["board", "snippets"], notOnThisMac: [] })
+  mac.commands = [...Object.keys(CARRIED), "snippets", "git"]
+  assert.deepEqual(reader.drift(), { notCarried: ["git", "snippets"], notOnThisMac: [] })
   mac.commands = Object.keys(CARRIED).filter((word) => word !== "info")
   assert.deepEqual(reader.drift(), { notCarried: [], notOnThisMac: ["info"] })
 
