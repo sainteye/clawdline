@@ -9,12 +9,12 @@
 // is the catalog this build ships.
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { SessionInfo } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ANSWERED_HERE, CARRIED, CARRY_TABLE, DEFERRED, NO_MAC_ROUTE, notCarriedDetail, uncarried, uncarriedWordOf, words } from "./carry.ts"
+import { ANSWERED_HERE, CARRIED, CARRY_TABLE, DEFERRED, DEFERRED_ASKED, NO_MAC_ROUTE, notCarriedDetail, uncarried, uncarriedWordOf, words } from "./carry.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, type CloudIdentity, type CloudRow, type CloudSessions } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
@@ -36,6 +36,9 @@ const INFO = {
     context: { usedPercent: 62.4, usedTokens: 124_800, windowTokens: 200_000 },
   },
 }
+
+/** The `git` answer this daemon writes (`internal/transport/http/git.go`). */
+const GIT = { git: { branch: "main", head: "46203ec", ahead: 46, behind: 0, clean: false, files: [{ path: "a.ts", kind: "modified", staged: false, unstaged: true }] } }
 
 class FakeMac implements CloudWriteClient {
   ready = true
@@ -66,6 +69,10 @@ class FakeMac implements CloudWriteClient {
   infoSummary(identity: CloudIdentity) {
     this.asked.push("infoSummary:" + identity.session)
     return Promise.resolve(INFO)
+  }
+  git(identity: CloudIdentity) {
+    this.asked.push("git:" + identity.session)
+    return Promise.resolve(GIT)
   }
   send() {
     return Promise.resolve({})
@@ -141,6 +148,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/sessions/s1/close"],
     ["POST", "/v1/sessions/s1/focus"],
     ["GET", "/v1/sessions/s1/info"],
+    ["GET", "/v1/sessions/s1/git"],
     ["POST", "/v1/places/p1/start"],
     ["POST", "/v1/places/p1/resume/claude/abc"],
     ["POST", "/v1/voice"],
@@ -171,17 +179,15 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("schedules" in CARRIED)
   assert.ok("snippets" in CARRIED)
   assert.ok("timeline" in CARRIED)
-  // 38, counted on this tree after the two lines met, and equal to neither
-  // number either of them carried: the snippet line measured 26 against a base
-  // of 21 and the work-system line measured 33 against the same 21, so 38 is
-  // 21 plus both sets of arrivals — the snippet list and its four writes, and
-  // the twelve reads of the work system (its five words, this daemon's Project
-  // catalog, the two Project worktree reads, the verification ledger, the
-  // Project timeline and the Swift board's two). Neither branch could see the
-  // other's five, and Git does not mark a conflict when two sides write the
-  // same number, so this count is re-measured at every merge rather than
-  // carried over — a number copied across a change is the one nobody checks.
-  assert.equal(Object.keys(CARRIED).length, 38)
+  // 39, counted on this tree — `node -e` over this file's own `CARRIED` at
+  // 46203ec, not carried over from the line before. The tree this branch was
+  // cut from measured 38, which was itself 21 plus the snippet list and its
+  // four writes plus the twelve reads of the work system, re-measured where
+  // those two lines met. The one this branch adds is `git`: one word, one
+  // read, and the difference is checked by subtraction rather than by trust,
+  // because Git does not mark a conflict when two sides write the same number
+  // and a count copied across a change is the one nobody checks.
+  assert.equal(Object.keys(CARRIED).length, 39)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -222,9 +228,13 @@ test("a route this console does not carry is refused by the word it stands for",
   assert.equal(uncarriedWordOf("GET", "/v1/snippets"), "", "the snippet list is carried, so it stands for nothing here")
   assert.equal(uncarried("snippets"), "", "a carried word has no refusal sentence")
   // A word this Mac answers and this console has not carried yet says its own
-  // sentence too, not the same one.
-  assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/git"), "git")
-  assert.equal(notCarriedDetail("GET", "/v1/sessions/s1/git"), DEFERRED.git)
+  // sentence too, not the same one. This used to be `git`, whose sentence had
+  // been false for months; what is left in `DEFERRED` with a console route
+  // behind it is the terminal's own picture.
+  assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/screen"), "screen")
+  assert.equal(notCarriedDetail("GET", "/v1/sessions/s1/screen"), DEFERRED.screen)
+  assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/git"), "", "the Git panel's read is carried")
+  assert.equal(uncarried("git"), "", "a carried word has no refusal sentence")
   // A word this console now carries stands for nothing here, because what is
   // carried is parsed once by the reader's own case: the work board and a
   // Project's timeline were both in this function and are not any more.
@@ -242,6 +252,109 @@ test("a route this console does not carry is refused by the word it stands for",
   // And a route that is no Cloud word at all still says where to go.
   assert.match(notCarriedDetail("GET", "/v1/devstacks"), /is not carried over Clawdline Cloud/)
   assert.equal(uncarried("info"), "", "a carried word has no refusal sentence")
+})
+
+/**
+ * Every `/v1/…` path this console spells, with the pieces it builds one out of
+ * joined back together.
+ *
+ * A console route is rarely one literal: `"/v1/sessions/" + encodeURIComponent(id) + "/git"`
+ * is three. So each line's double-quoted fragments are joined in the order
+ * they appear with `X` where an expression stood, which turns that line into
+ * `/v1/sessions/X/git` — a path `uncarriedWordOf` can be asked about. It is a
+ * text scan and it is meant to be: it reads what a page would send, not what
+ * a module exports, so a route reached through a helper is still found as
+ * long as the helper spells the path.
+ */
+function consolePaths(): { path: string; where: string }[] {
+  const out: { path: string; where: string }[] = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolve(dir, entry.name)
+      if (entry.isDirectory()) {
+        // The seam is where a refusal is decided, not where a screen asks, and
+        // its own tests spell every route on purpose.
+        if (entry.name !== "cloud" && entry.name !== "node_modules") walk(full)
+        continue
+      }
+      if (!/\.(ts|tsx|js)$/.test(entry.name) || /\.test\.[tj]sx?$/.test(entry.name)) continue
+      const source = readFileSync(full, "utf8")
+      source.split("\n").forEach((line, index) => {
+        if (!line.includes('"/v1/')) return
+        const fragments = [...line.matchAll(/"([^"\\]*)"/g)].map((m) => m[1])
+        const start = fragments.findIndex((f) => f.startsWith("/v1/"))
+        if (start < 0) return
+        const joined = fragments.slice(start).join("X")
+        out.push({ path: joined.replace(/X+$/, ""), where: full.slice(console_.length + 1) + ":" + (index + 1) })
+      })
+    }
+  }
+  walk(resolve(console_, "src"))
+  return out
+}
+
+test("a deferred word a screen in this console already asks for says so", () => {
+  // **The guard `git` did not have.** `DEFERRED` says these are words "this
+  // console does not ask for yet", and for `git` that had been false since
+  // `legacy/git-bridge.ts` was copied in: 「Git 變更」 asked on every press,
+  // the seam refused its own page, and nothing anywhere compared the sentence
+  // with the tree it was written about. Classification was checked; the claim
+  // was not.
+  //
+  // So the claim is checked, in both directions, against the paths this
+  // console actually spells. Deferring stays legal — this is not a red light
+  // for a word being in `DEFERRED` — but a deferral that is costing somebody a
+  // screen has to be named in `DEFERRED_ASKED`, which makes it the roster a
+  // person re-reads instead of a sentence nobody revisits.
+  const asked = new Map<string, string>()
+  for (const { path, where } of consolePaths()) {
+    const word = uncarriedWordOf("GET", path)
+    if (word && word in DEFERRED && !asked.has(word)) asked.set(word, where)
+  }
+  const listed = new Set<string>(DEFERRED_ASKED)
+  for (const [word, where] of asked) {
+    assert.ok(
+      listed.has(word),
+      word + " is in DEFERRED and " + where + " asks for it: the refusal is this console's own. " +
+        "Carry the word, or name it in DEFERRED_ASKED so the deferral is visible.",
+    )
+  }
+  for (const word of listed) {
+    assert.ok(word in DEFERRED, word + " is in DEFERRED_ASKED and not in DEFERRED")
+    assert.ok(asked.has(word), "DEFERRED_ASKED names " + word + " and no screen in this console asks for it any more")
+  }
+  // And the scan itself has to be able to see a route, or every assertion
+  // above passes by finding nothing. The terminal's picture is the one this
+  // round leaves deferred with a screen in front of it.
+  assert.ok(asked.has("screen"), "the path scan found no console route for `screen`; it has stopped reading this tree")
+})
+
+test("the Git panel's read reaches the Mac, and its refusals keep their names", async () => {
+  const mac = new FakeMac()
+  const reader = seam(mac)
+
+  const res = await reader.fetch("/v1/sessions/s1/git")
+  assert.equal(res.status, 200)
+  assert.deepEqual(mac.asked, ["git:s1"], "asked of the Mac, under this page's identity for the row")
+  const body = (await res.json()) as { git?: { ahead?: number; files?: unknown[] } }
+  assert.equal(body.git?.ahead, 46)
+  assert.equal(body.git?.files?.length, 1)
+  const row = reader.log[reader.log.length - 1]
+  assert.equal(row.word, "git")
+  assert.equal(row.answer, "relay")
+
+  // A refusal from the Mac's own route crosses as its code, because that is
+  // what the panel branches on (`legacy/git-bridge.ts`, `gitSentence`).
+  mac.git = () => Promise.reject(Object.assign(new Error("not a repository"), { code: "not_a_repo", status: 404 }))
+  const refused = await reader.fetch("/v1/sessions/s1/git")
+  assert.equal(refused.status, 404)
+  assert.equal(((await refused.json()) as { error: string }).error, "not_a_repo")
+
+  // And a session this page holds no row for is refused rather than addressed
+  // by the raw id (F5), as every other session read is.
+  const gone = await reader.fetch("/v1/sessions/s9/git")
+  assert.equal(gone.status, 404)
+  assert.equal(((await gone.json()) as { error: string }).error, "session_not_found")
 })
 
 test("the status line's read reaches the Mac, and its context cell draws", async () => {
@@ -273,12 +386,11 @@ test("the seam says what this Mac can do that this bundle never asks for", async
   const reader = seam(mac)
   assert.equal(reader.drift(), null, "no descriptor is not agreement")
   // Two words this Mac knows and this bundle does not ask for, one from each
-  // uncarried list: `git` is DEFERRED and `shell` is NO_MAC_ROUTE. Both of the
-  // pairs this test used before — `board` and `snippets` — became carried
-  // words, on the two branches that met here, which is exactly the drift this
-  // assertion is about.
-  mac.commands = [...Object.keys(CARRIED), "shell", "git"]
-  assert.deepEqual(reader.drift(), { notCarried: ["git", "shell"], notOnThisMac: [] })
+  // uncarried list: `screen` is DEFERRED and `shell` is NO_MAC_ROUTE. Every
+  // pair this test has used before — `board`, `snippets`, and now `git` —
+  // became a carried word, which is exactly the drift this assertion is about.
+  mac.commands = [...Object.keys(CARRIED), "shell", "screen"]
+  assert.deepEqual(reader.drift(), { notCarried: ["screen", "shell"], notOnThisMac: [] })
   mac.commands = Object.keys(CARRIED).filter((word) => word !== "info")
   assert.deepEqual(reader.drift(), { notCarried: [], notOnThisMac: ["info"] })
 

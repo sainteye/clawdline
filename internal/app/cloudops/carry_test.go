@@ -37,6 +37,15 @@ import (
 // a route taken away — fails this by name, and the failure says which list the
 // word belongs in.
 //
+// **What this half cannot check is whether a DEFERRED sentence is still true.**
+// It asks only whether a word is classified, and `git` stayed classified,
+// correctly, for months while its sentence — "the working tree is not read
+// over Clawdline Cloud yet" — was false in front of a Git panel that asked for
+// the route on every press. The claim is about the console, so the guard for
+// it is in the console: `carry.test.ts` reads every `/v1/…` path this bundle
+// spells and holds `DEFERRED_ASKED` to the deferrals a screen here is already
+// paying for. Deferring stays legal there; being silent about it does not.
+//
 // It reads the TypeScript rather than a generated file on purpose. A generator
 // would make this tree consistent and prove nothing about the bundle actually
 // being served, which is an older build of this repository; the runtime half of

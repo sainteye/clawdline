@@ -13,6 +13,8 @@ import type { GitFile, GitSnapshot } from "@clawdline/contract"
 import { T } from "./js/core/i18n.js"
 import { esc } from "./js/core/esc.js"
 import { phone } from "./js/core/env.js"
+import { failureSentence as failureSentenceOriginal } from "./js/core/failure-text.js"
+import { nextWord } from "../next-strings.js"
 
 const S = T as Record<string, string>
 const e = esc as (s: unknown) => string
@@ -100,6 +102,41 @@ export function bodyHTML(state: { loading: boolean; error: string | null; snapsh
 
 /** A refusal as `net/fetch.js` hands it on: the code, with the sentence as the message. */
 export type GitFailure = Error & { code?: string }
+
+/** `core/failure-text.js`'s `failureSentence`, typed for this module's callers. */
+const failureSentence = failureSentenceOriginal as (
+  error: unknown,
+  fallback?: string | { sentence?: string; fallback?: string },
+) => string
+
+/**
+ * What the panel says about a failed read, decided by the code and never by
+ * the machine's English `message` (`docs/cloud-error-transparency.md` §5
+ * rule 1).
+ *
+ * **Every refusal used to arrive here as one sentence.** The panel branched on
+ * `not_a_repo` and sent everything else to `webGitFailed` — "無法讀取 Git
+ * 變更" — so a hosted reader was told a read had failed and nothing about why:
+ * not that the line was down, not that this Mac was busy, not that this
+ * console was refusing its own request. That last one was the case for months
+ * (`cloud/carry.ts`, `git` in `DEFERRED`), and it is the shape
+ * `docs/work-system-review.md` §3.2 names: **the thing that blocks people is
+ * not a strict rule, it is silence.** Three of the four "擋到我" that day were
+ * refusals nobody was told about.
+ *
+ * So: the panel's own two sentences where it has better words than the general
+ * catalog, this app's sentence for `cloud_not_carried` — which is this
+ * generation's code and is not in the copied catalog, so it fell through to
+ * "請求失敗" (`session/Snippets.tsx` took the same turn first) — and otherwise
+ * the catalog's own sentence for the code, with `code · ref` after it, which is
+ * the pair somebody debugging it will be asked for.
+ */
+export function gitSentence(failure: unknown, fallback: string): string {
+  const code = (failure as { code?: unknown } | null)?.code
+  if (code === "not_a_repo") return S.webGitNotRepo
+  if (code === "cloud_not_carried") return nextWord("cloudNotCarried")
+  return failureSentence(failure, fallback)
+}
 
 /**
  * `net/live.js`'s `git`: the open session's repository, read when the panel is
