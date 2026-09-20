@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
 )
@@ -115,14 +116,21 @@ func writeScheduleReply(w http.ResponseWriter, reply app.ScheduleReply) {
 	writeAuthRefusal(w, reply.Status, reply.Code, reply.Message)
 }
 
-// scheduleBody is the request's JSON object with exact numbers. A body that is
-// not one is an empty object, as the Swift route reads it: the parser then says
-// which field is missing, in its own sentence.
-func scheduleBody(r *http.Request) map[string]any {
+// scheduleRaw is the bytes a schedule write sent, read once: they are part of
+// what its Idempotency-Key names, so the receipt and the parser must see the
+// same request rather than two reads of one body.
+func scheduleRaw(r *http.Request) []byte {
 	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 256<<10))
 	if err != nil {
-		return map[string]any{}
+		return nil
 	}
+	return raw
+}
+
+// scheduleBody is those bytes as a JSON object with exact numbers. Bytes that
+// are not one are an empty object, as the Swift route reads them: the parser
+// then says which field is missing, in its own sentence.
+func scheduleBody(raw []byte) map[string]any {
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.UseNumber()
 	var body map[string]any
@@ -146,8 +154,8 @@ func (s *Server) schedules(w http.ResponseWriter, r *http.Request) {
 		// Not cancelled with the request: a phone that drops between the write
 		// and its read-back must not leave a schedule the answer says was removed.
 		ctx := context.WithoutCancel(r.Context())
-		s.scheduleWriting(w, r, true, func(machine bool) app.ScheduleReply {
-			return s.scheduleBook().Create(ctx, scheduleBody(r), machine)
+		s.scheduleWriting(w, r, true, func(machine bool, body map[string]any) app.ScheduleReply {
+			return s.scheduleBook().Create(ctx, body, machine)
 		})
 	default:
 		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request", "No such route")
@@ -165,7 +173,8 @@ func (s *Server) scheduleRoute(w http.ResponseWriter, r *http.Request) {
 	case run && r.Method == http.MethodPost:
 		// A manual run through this machine's token needs no key, as there;
 		// a device's does.
-		s.scheduleWriting(w, r, !machineAuthed(r), func(bool) app.ScheduleReply { return book.Run(ctx, id) })
+		s.scheduleWriting(w, r, !machineAuthed(r),
+			func(bool, map[string]any) app.ScheduleReply { return book.Run(ctx, id) })
 	case run:
 		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No such route")
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
@@ -180,11 +189,11 @@ func (s *Server) scheduleRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"schedule": record})
 	case r.Method == http.MethodPatch:
-		s.scheduleWriting(w, r, true, func(machine bool) app.ScheduleReply {
-			return book.Update(ctx, id, scheduleBody(r), machine)
+		s.scheduleWriting(w, r, true, func(machine bool, body map[string]any) app.ScheduleReply {
+			return book.Update(ctx, id, body, machine)
 		})
 	case r.Method == http.MethodDelete:
-		s.scheduleWriting(w, r, true, func(machine bool) app.ScheduleReply {
+		s.scheduleWriting(w, r, true, func(machine bool, _ map[string]any) app.ScheduleReply {
 			return book.Delete(ctx, id, machine)
 		})
 	default:
@@ -192,60 +201,55 @@ func (s *Server) scheduleRoute(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// scopeSchedules is the receipt scope of a schedule write.
+const scopeSchedules = "schedules"
+
+// scheduleWriteFiled is which answers a key keeps. `429` and anything from
+// five hundred up are not filed — they are facts about this moment, not about
+// the request, and filing them would refuse the retry they ask for.
+func scheduleWriteFiled(status int) bool {
+	return status != http.StatusTooManyRequests && status < 500
+}
+
 // scheduleWriting is `schedulingWrite`: this machine's token, or a device that
-// may send; the key; and the first answer to that key for ten minutes. `429`
-// and anything from five hundred up are not filed — they are facts about this
-// moment, not about the request, and filing them would refuse a retry.
-func (s *Server) scheduleWriting(w http.ResponseWriter, r *http.Request, needKey bool, answer func(machine bool) app.ScheduleReply) {
+// may send; the key; and the first answer to that key, for the whole of the
+// key's window.
+//
+// **The answer is filed in the store's receipts, not in this process** (D03,
+// G15). It used to be a map here for ten minutes, which is the wrong half of
+// the problem: the moment a caller is least sure a schedule was made is after
+// the daemon restarted under it, and that map was gone. Across Clawdline Cloud
+// it is worse again — the answer can be lost after this Mac wrote the file,
+// and "try again" was then a second schedule with a second id. So a key names
+// one request, and a request is a method, a route and the exact body; a retry
+// under it is answered with the first answer, and the same key with another
+// body is refused. It is the spelling a session's writes already have
+// (actions.go), which is the point: one idempotency, not three.
+func (s *Server) scheduleWriting(w http.ResponseWriter, r *http.Request, needKey bool,
+	answer func(machine bool, body map[string]any) app.ScheduleReply) {
 	machine := machineAuthed(r)
 	if !machine && !maySend(r) {
 		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "This device may read, and not send.")
 		return
 	}
+	raw := scheduleRaw(r)
+	run := func(w http.ResponseWriter) { writeScheduleReply(w, answer(machine, scheduleBody(raw))) }
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
-	if key == "" {
+	if key == "" || s.store == nil {
 		if needKey {
 			writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "That needs an Idempotency-Key header.")
 			return
 		}
-		writeScheduleReply(w, answer(machine))
+		run(w)
 		return
 	}
 	who := accessOf(r).verdict.Device
 	if machine {
 		who = "orchestrator"
 	}
-	entry, owner := replays.claim(who + "\x00" + r.Method + "\x00" + routePath(r) + "\x00" + key)
-	if !owner {
-		select {
-		case <-entry.done:
-		case <-r.Context().Done():
-			return
-		}
-		if entry.status == 0 {
-			writeAuthRefusal(w, http.StatusTooManyRequests, "busy", "That request is still being answered; try again shortly.")
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(entry.status)
-		_, _ = w.Write(entry.body)
-		return
-	}
-	rec := &recorder{header: http.Header{}}
-	writeScheduleReply(rec, answer(machine))
-	entry.status, entry.body, entry.at = rec.status, rec.body.Bytes(), time.Now()
-	if entry.status == 0 {
-		entry.status = http.StatusOK
-	}
-	close(entry.done)
-	if entry.status == http.StatusTooManyRequests || entry.status >= 500 {
-		replays.forget(entry)
-	}
-	for k, vs := range rec.header {
-		w.Header()[k] = vs
-	}
-	w.WriteHeader(entry.status)
-	_, _ = w.Write(entry.body)
+	k := store.ReceiptKey{Scope: scopeSchedules, Actor: who, Key: key}
+	s.receipted(w, r, k, requestDigest([]byte(r.Method), []byte(routePath(r)), raw),
+		scheduleWriteFiled, run)
 }
 
 // scheduleWebhookBindRoute is the local half of the Cloud's
@@ -262,7 +266,7 @@ func (s *Server) scheduleWebhookBindRoute(w http.ResponseWriter, r *http.Request
 		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "That needs the orchestrator token.")
 		return
 	}
-	body := scheduleBody(r)
+	body := scheduleBody(scheduleRaw(r))
 	keys := make([]string, 0, len(body))
 	for k := range body {
 		keys = append(keys, k)

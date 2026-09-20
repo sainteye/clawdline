@@ -57,7 +57,34 @@ const (
 	sessionCookie = "clawdline-next"
 	// machineHeader carries the orchestrator credential, as in the Swift app.
 	machineHeader = "X-Clawdline-Orchestrator"
+	// actorHeader is a request saying it must not be judged as this machine's
+	// orchestrator, whatever credential it happens to carry, and actorDevice
+	// is its one value.
+	//
+	// **It can only take authority away.** A request that names it is judged
+	// by its device credential alone; it cannot name a device, a capability or
+	// a sender, so a caller that sets it can reach nothing it could not reach
+	// without it and loses every route the machine door opens. That is why the
+	// gate honours it from anybody, which a credential-shaped header could
+	// never be.
+	//
+	// It exists because this daemon answers a Cloud viewer through its own
+	// routes in process, stamped with this machine's own credentials
+	// (internal/transport/cloud's `LocalAuthorizer`), and one of those routes —
+	// a schedule write — asks *which door* the caller came in by and gives a
+	// narrower answer to the machine than to a person. The Swift app has no
+	// such header because it has no such problem: a verified Cloud request is
+	// a source of its own there, with `read` and `send` and no orchestrator
+	// credential (`RemoteServer.permission(for:)`). This is the same sentence,
+	// said where this port can say it. See internal/app/cloudops.
+	actorHeader = "X-Clawdline-Actor"
+	actorDevice = "device"
 )
+
+// judgedAsDevice is whether this request asked not to be the machine.
+func judgedAsDevice(r *http.Request) bool {
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get(actorHeader)), actorDevice)
+}
 
 // gate holds what the checks read. One per state directory per process,
 // because the authority behind it is the only writer of that directory's
@@ -221,7 +248,8 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 			return
 		}
 		p := routePath(r)
-		machine := machineScoped(p) && g.verifyMachine(r.Header.Get(machineHeader))
+		machine := machineScoped(p) && !judgedAsDevice(r) &&
+			g.verifyMachine(r.Header.Get(machineHeader))
 		verdict := g.permission(r)
 		if !openPath(p) && !machine && !taskSecretRoute(r.Method, p) && !verdict.Allowed {
 			if g.err != nil {

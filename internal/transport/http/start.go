@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
@@ -43,61 +42,11 @@ import (
 // the session list's own reader does.
 var pastTitles = transcript.NewTitles()
 
-// startReplay is RemoteServer.idempotent for these two routes: what a key was
-// answered with, for ten minutes, and a key still being answered.
-type startReplay struct {
-	mu      sync.Mutex
-	entries map[string]*replayEntry
-}
-
-type replayEntry struct {
-	at     time.Time
-	done   chan struct{}
-	status int
-	body   []byte
-}
-
 var (
-	replays = &startReplay{entries: map[string]*replayEntry{}}
 	// opening admits one terminal opening at a time and three more waiting.
 	opening   = make(chan struct{}, 1)
 	openQueue = make(chan struct{}, 4)
 )
-
-const replayWindow = 10 * time.Minute
-
-// claim returns the entry for key and whether this request owns answering it.
-func (t *startReplay) claim(key string) (*replayEntry, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	now := time.Now()
-	for k, e := range t.entries {
-		select {
-		case <-e.done:
-			if now.Sub(e.at) >= replayWindow {
-				delete(t.entries, k)
-			}
-		default:
-		}
-	}
-	if e, ok := t.entries[key]; ok {
-		return e, false
-	}
-	e := &replayEntry{at: now, done: make(chan struct{})}
-	t.entries[key] = e
-	return e, true
-}
-
-// forget drops an entry that must not answer a retry.
-func (t *startReplay) forget(entry *replayEntry) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for k, e := range t.entries {
-		if e == entry {
-			delete(t.entries, k)
-		}
-	}
-}
 
 // recorder keeps what a handler wrote so it can be filed under its key.
 type recorder struct {

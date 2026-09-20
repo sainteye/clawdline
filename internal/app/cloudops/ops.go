@@ -613,6 +613,35 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/places"}
 			}},
 
+		op{name: "past-sessions", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "place", "assistant") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				place, placeOK := b.nonEmpty("place")
+				// An empty assistant is the Claude-only spelling of this route
+				// and is not a missing field: the key is required, its value
+				// may be "". The route below leaves the segment off for it,
+				// which is the same request the console makes locally.
+				assistant, assistantOK := b.str("assistant")
+				if !placeOK || !assistantOK {
+					return plan{}, false
+				}
+				p.place, p.assistant = place, assistant
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				route := "/v1/places/" + segment(p.place) + "/sessions"
+				if p.assistant != "" {
+					route += "/" + segment(p.assistant)
+				}
+				return LocalRequest{Method: "GET", Path: route}
+			}},
+
 		op{name: "schedules", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request") {
@@ -970,6 +999,37 @@ func init() {
 					Body: jsonBody(map[string]any{"audio": p.audio, "rate": p.rate})}
 			}},
 
+		op{name: "schedule-create",
+			decode: decodeScheduleWrite(false),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/orchestrator/schedules",
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "schedule-update",
+			decode: decodeScheduleWrite(true),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "PATCH",
+					Path: "/v1/orchestrator/schedules/" + segment(p.id),
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "schedule-delete",
+			decode: decodeNamedSchedule,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "DELETE",
+					Path: "/v1/orchestrator/schedules/" + segment(p.id), Header: asDevice()}
+			}},
+
+		op{name: "schedule-run",
+			decode: decodeNamedSchedule,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST",
+					Path:   "/v1/orchestrator/schedules/" + segment(p.id) + "/run",
+					Body:   []byte("{}"),
+					Header: asDevice()}
+			}},
+
 		// MARK: commands this daemon refuses or has no local capability for
 
 		op{name: "dispatch", refusal: &cloudDispatchUnpinned, anyClass: true,
@@ -1035,6 +1095,98 @@ func init() {
 // voiceRate is the one rate this machine transcribes, as
 // internal/adapters/whisper spells it.
 const voiceRate = 16000
+
+// scheduleMaximumBytes is what one schedule weighs on the wire, matching the
+// local route's own reader (`scheduleBody` in internal/transport/http). This
+// bridge does not know what a schedule looks like; it knows how much of one
+// the route on the other side will read.
+const scheduleMaximumBytes = 256 << 10
+
+// The header a Cloud write puts on its own local request, and the reason the
+// schedule words carry it.
+//
+// A schedule write has two doors on this machine (internal/app's
+// `MachineRefusal`): a person's paired device that may send, which arranges
+// any schedule, and this machine's own orchestrator token, which may make,
+// change and remove only a schedule that runs **once**. The second door is
+// narrow because the orchestrator token is what this machine's own automation
+// holds; an automation that could rewrite a daily arrangement could quietly
+// rewrite what it itself does every day, and nobody would have decided that.
+//
+// A Cloud viewer is the first kind and not the second — the Swift producer
+// says so in one line, giving a verified Cloud request the identity
+// `cloud:<sender>` with `read` and `send` and no orchestrator credential at
+// all (`RemoteServer.permission(for:)`). This daemon reaches its own routes
+// in process instead, and the credential stamped on them covers every path
+// `/v1/orchestrator/*` (`internal/transport/cloud.LocalAuthorizer`) — so
+// without this header a person editing a daily schedule from their phone
+// would be refused as though they were a cron job, by a sentence that tells
+// them to use a paired device that may send, which is what they are.
+//
+// The header only ever takes authority away: it cannot grant the machine door
+// to anyone, it can only close it. That is why the gate may honour it from
+// any caller (internal/transport/http's `actorHeader`).
+const (
+	actorHeader = "X-Clawdline-Actor"
+	actorDevice = "device"
+)
+
+// asDevice is that header, fresh per request: LocalRequest.Header is written
+// to by the router (the idempotency key), so two routes must not share a map.
+func asDevice() map[string]string { return map[string]string{actorHeader: actorDevice} }
+
+// decodeScheduleWrite is `schedule-create` and `schedule-update`, which differ
+// by one key: the id of the schedule being saved.
+func decodeScheduleWrite(named bool) func(b body) (plan, bool) {
+	want := []string{"type", "session", "request", "schedule"}
+	if named {
+		want = []string{"type", "session", "request", "id", "schedule"}
+	}
+	return func(b body) (plan, bool) {
+		if !b.has(want...) {
+			return plan{}, false
+		}
+		p, ok := actionPlan(b, false)
+		if !ok || p.request == "" {
+			return plan{}, false
+		}
+		if named {
+			id, ok := b.nonEmpty("id")
+			if !ok {
+				return plan{}, false
+			}
+			p.id = id
+		}
+		// The object is carried as the bytes it will travel as. What counts as
+		// a schedule is the route's question, and it answers it with its own
+		// sentence naming the field that is wrong — which is the sentence the
+		// form already shows over this machine's own network.
+		document, ok := b.object("schedule", scheduleMaximumBytes)
+		if !ok {
+			return plan{}, false
+		}
+		p.document = document
+		return p, true
+	}
+}
+
+// decodeNamedSchedule is `schedule-delete` and `schedule-run`: one id, and
+// nothing else to get wrong.
+func decodeNamedSchedule(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "id") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok || p.request == "" {
+		return plan{}, false
+	}
+	id, ok := b.nonEmpty("id")
+	if !ok {
+		return plan{}, false
+	}
+	p.id = id
+	return p, true
+}
 
 // decodeAnswer is the one case behind two words. The field's name follows the
 // word, which is the only difference between them.

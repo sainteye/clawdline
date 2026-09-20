@@ -18,6 +18,11 @@ const pane = "%19"
 
 const taskID = "7a000000-0000-4000-8000-000000000001"
 
+// scheduleID is a schedule file's own id, which is a uuid too and is not a
+// task's: the two travel on neighbouring words and a test that used one
+// constant for both would pass while they disagreed.
+const scheduleID = "5c000000-0000-4000-8000-000000000002"
+
 // router records what it was asked and answers what the test told it to.
 type router struct {
 	seen     []LocalRequest
@@ -172,6 +177,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-places",
 		method: "GET", path: "/v1/places",
 	}, {
+		word: "past-sessions",
+		body: map[string]any{"type": "past-sessions", "session": machine, "request": "req-past",
+			"place": "/Users/sean/code/clawdline-go", "assistant": "codex"},
+		session: machine, name: "read:req-past",
+		method: "GET",
+		path:   "/v1/places/%2FUsers%2Fsean%2Fcode%2Fclawdline-go/sessions/codex",
+	}, {
 		word:    "schedules",
 		body:    map[string]any{"type": "schedules", "session": machine, "request": "req-schedules"},
 		session: machine, name: "read:req-schedules",
@@ -247,6 +259,40 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-voice",
 		method: "POST", path: "/v1/voice",
 		body2: `{"audio":"AAAAAA==","rate":16000}`,
+	}, {
+		// The schedule the form sends, handed to the route whole: this bridge
+		// knows what a request looks like, not what a schedule looks like.
+		word: "schedule-create",
+		body: map[string]any{"type": "schedule-create", "session": machine,
+			"request": "req-make", "schedule": map[string]any{
+				"title": "morning", "at": "09:00", "days": "daily",
+				"place_id": "place-1", "assistant": "claude", "instructions": "look"}},
+		session: machine, name: "action:req-make",
+		method: "POST", path: "/v1/orchestrator/schedules",
+		body2: `{"assistant":"claude","at":"09:00","days":"daily","instructions":"look",` +
+			`"place_id":"place-1","title":"morning"}`,
+	}, {
+		word: "schedule-update",
+		body: map[string]any{"type": "schedule-update", "session": machine, "request": "req-save",
+			"id": scheduleID, "schedule": map[string]any{"title": "morning", "at": "10:00",
+				"days": "daily", "place_id": "place-1", "assistant": "claude", "instructions": "look"}},
+		session: machine, name: "action:req-save",
+		method: "PATCH", path: "/v1/orchestrator/schedules/" + scheduleID,
+		body2: `{"assistant":"claude","at":"10:00","days":"daily","instructions":"look",` +
+			`"place_id":"place-1","title":"morning"}`,
+	}, {
+		word: "schedule-delete",
+		body: map[string]any{"type": "schedule-delete", "session": machine, "request": "req-gone",
+			"id": scheduleID},
+		session: machine, name: "action:req-gone",
+		method: "DELETE", path: "/v1/orchestrator/schedules/" + scheduleID,
+	}, {
+		word: "schedule-run",
+		body: map[string]any{"type": "schedule-run", "session": machine, "request": "req-now",
+			"id": scheduleID},
+		session: machine, name: "action:req-now",
+		method: "POST", path: "/v1/orchestrator/schedules/" + scheduleID + "/run",
+		body2: `{}`,
 	}, {
 		// The words this daemon knows and cannot answer. `unknown_command` is
 		// not a guess at a code: it is the one the hosted console learns from
@@ -403,7 +449,7 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 	r := &router{}
 	closed := Bridge{MachineID: "mac-01", Router: r}
 	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
-		"dispatch"} {
+		"schedule-create", "schedule-update", "schedule-delete", "schedule-run", "dispatch"} {
 		body := map[string]any{"type": word, "session": pane, "request": "req-" + word}
 		switch word {
 		case "send":
@@ -421,6 +467,15 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 		case "voice":
 			body["session"] = MachineReplySession
 			body["audio"], body["rate"] = "AAAA", 16000
+		case "schedule-create":
+			body["session"] = MachineReplySession
+			body["schedule"] = map[string]any{"title": "morning"}
+		case "schedule-update":
+			body["session"] = MachineReplySession
+			body["id"], body["schedule"] = scheduleID, map[string]any{"title": "morning"}
+		case "schedule-delete", "schedule-run":
+			body["session"] = MachineReplySession
+			body["id"] = scheduleID
 		case "dispatch":
 			body["session"] = MachineReplySession
 			body["task"] = map[string]any{}
@@ -514,6 +569,23 @@ func TestAMalformedBodyIsRefusedWhereItSafelyNames(t *testing.T) {
 		name: "a word nobody knows",
 		body: map[string]any{"type": "rm-rf", "session": MachineReplySession, "request": "req"},
 		code: "unknown_command", published: true,
+	}, {
+		// The key is required and its value may be empty; a body that leaves
+		// it out is the older word, not this one.
+		name: "a past-sessions read that names no assistant at all",
+		body: map[string]any{"type": "past-sessions", "session": MachineReplySession,
+			"request": "req", "place": "/tmp"},
+		code: "malformed_read", published: true,
+	}, {
+		name: "a schedule that is not an object",
+		body: map[string]any{"type": "schedule-create", "session": MachineReplySession,
+			"request": "req", "schedule": "morning at nine"},
+		code: "malformed_command", published: true,
+	}, {
+		name: "a save that names no schedule to save over",
+		body: map[string]any{"type": "schedule-update", "session": MachineReplySession,
+			"request": "req", "id": "", "schedule": map[string]any{"title": "morning"}},
+		code: "malformed_command", published: true,
 	}}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -852,10 +924,58 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 	}
 	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
 		"transcript", "info", "git", "screen", "image", "documents", "document", "places",
-		"schedules", "board", "board.items"} {
+		"past-sessions", "schedules", "schedule-create", "schedule-update", "schedule-delete",
+		"schedule-run", "board", "board.items"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}
+	}
+}
+
+// TestAScheduleWriteIsJudgedAsTheDeviceThatSentIt is the one rule these four
+// words have that the other commands do not.
+//
+// A schedule write reaches `/v1/orchestrator/schedules`, and the credential
+// this daemon stamps on its own in-process requests covers every path under
+// `/v1/orchestrator/` — so without a word from the request itself, a person
+// changing a daily schedule from their phone would be judged as this
+// machine's own automation and refused by `MachineRefusal`, which exists to
+// keep cron jobs out of a standing arrangement rather than people. The header
+// can only take the machine door away, never open it.
+func TestAScheduleWriteIsJudgedAsTheDeviceThatSentIt(t *testing.T) {
+	writes := map[string]map[string]any{
+		"schedule-create": {"type": "schedule-create", "session": MachineReplySession,
+			"request": "req", "schedule": map[string]any{"title": "morning"}},
+		"schedule-update": {"type": "schedule-update", "session": MachineReplySession,
+			"request": "req", "id": scheduleID, "schedule": map[string]any{"title": "morning"}},
+		"schedule-delete": {"type": "schedule-delete", "session": MachineReplySession,
+			"request": "req", "id": scheduleID},
+		"schedule-run": {"type": "schedule-run", "session": MachineReplySession,
+			"request": "req", "id": scheduleID},
+	}
+	for word, body := range writes {
+		t.Run(word, func(t *testing.T) {
+			r := &router{}
+			if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); !answer.OK() {
+				t.Fatalf("%s was refused: %+v", word, answer)
+			}
+			if got := r.last().Header[actorHeader]; got != actorDevice {
+				t.Fatalf("%s carried %s=%q, wanted %q", word, actorHeader, got, actorDevice)
+			}
+			// And the key is still the viewer's own request id: a retried
+			// save is not a second schedule.
+			if got := r.last().Header["Idempotency-Key"]; got != "req" {
+				t.Fatalf("%s carried the key %q, wanted the request id", word, got)
+			}
+		})
+	}
+	// A read of the same schedules asks for nothing of the sort: it changes
+	// nothing, so which door it came in by does not arise.
+	r := &router{}
+	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "schedules", "session": MachineReplySession, "request": "req"}))
+	if _, named := r.last().Header[actorHeader]; named {
+		t.Fatalf("a read named an actor: %v", r.last().Header)
 	}
 }
 
