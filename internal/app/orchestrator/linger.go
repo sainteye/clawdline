@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -71,8 +72,10 @@ func (b *Broker) childLinger() time.Duration {
 // The tab policy: what a task's end does to its child's tab, decided in one
 // place (tabPolicy) and named by one of these rules. The rule is readable
 // where it matters: CHILD.md states it for the task before it starts
-// (tabPolicyBrief), the settlement's event carries the plan that applied, and a
-// close still owed is a row in the store.
+// (tabPolicyBrief), the task's own answer carries it as `tab`
+// (GET /v1/orchestrator/tasks/{id}) so that reading the child's files is not
+// the only way to know, the settlement's event carries the plan that applied,
+// and a close still owed is a row in the store.
 const (
 	// TabRuleLinger: an unscheduled task that ended in success or failure is
 	// closed `orchestrator_child_linger` after it ended.
@@ -109,6 +112,56 @@ type TabPlan struct {
 	Rule  string
 	Close bool
 	After time.Duration
+}
+
+// TabEnd is one way a task can end, and what that end does to its tab.
+type TabEnd struct {
+	End  State
+	Plan TabPlan
+}
+
+// The two settings a task's tab rules come from, named wherever the policy is
+// read so that a reader knows which one to change.
+const (
+	TabSettingLinger   = "orchestrator_child_linger"
+	TabSettingCloseTab = "close_tab"
+)
+
+// tabEndStates are the ends a task that started can reach, in the order both
+// CHILD.md and the task's answer state them. spawn_failed is not one of them:
+// it is an end that happened instead of the work, and it reaches
+// TabPolicy.Applied on its own.
+var tabEndStates = []State{StateSuccess, StateFailure, StateTimeout, StateCancelled}
+
+// TabPolicy is one task's whole tab policy: which setting decided it, what
+// each way of ending does, and — once the task has ended — the rule that
+// applied and when the close it asks for falls due.
+//
+// One value, two readers, and that is the point. CHILD.md's section is
+// rendered from it before the work starts (tabPolicyBrief) and the task's
+// answer on the wire is projected from it (contract.BrokerTab, brokerTab):
+// neither is a description of the other, so there is no second description to
+// drift. What they could still both be is wrong together — a guard comparing
+// two texts never caught that either — and the only place that can be fixed is
+// tabPolicy's own table.
+type TabPolicy struct {
+	// Setting is `orchestrator_child_linger` or a schedule's `close_tab`, and
+	// Value is what it was set to: the linger's seconds, "-1" when it is off,
+	// or one of close_tab's three words.
+	Setting string
+	Value   string
+	// Ends is what each of tabEndStates does to this tab.
+	Ends []TabEnd
+	// Decided says the task has ended, and Applied is the end that happened
+	// with the rule it chose. Before that there is no single rule to name:
+	// which one applies is still the task's to decide by how it ends.
+	Decided bool
+	Applied TabEnd
+	// CloseAt is when the close Applied asks for falls due, zero when none is
+	// owed. It is the rule's deadline and not an observation: whether the
+	// close was made is the linger's own events (task.child.linger.*), and a
+	// tab still open well past this is the thing worth looking into.
+	CloseAt time.Time
 }
 
 // scheduleCloseTab is a scheduled task's close_tab. A record written before
@@ -152,34 +205,70 @@ func tabPlanPayload(p TabPlan) map[string]any {
 	return map[string]any{"rule": p.Rule, "close": p.Close, "after_seconds": int64(p.After / time.Second)}
 }
 
+// tabPolicyOf answers one task's whole policy, the value CHILD.md and the
+// task's answer are both made of.
+func tabPolicyOf(r Record, linger time.Duration) TabPolicy {
+	p := TabPolicy{Setting: TabSettingLinger, Value: strconv.FormatInt(int64(linger/time.Second), 10)}
+	if linger < 0 {
+		p.Value = "-1"
+	}
+	if r.ScheduleID != "" {
+		p.Setting, p.Value = TabSettingCloseTab, r.scheduleCloseTab()
+	}
+	for _, end := range tabEndStates {
+		p.Ends = append(p.Ends, TabEnd{End: end, Plan: tabPolicy(r, end, linger)})
+	}
+	if r.State.Terminal() {
+		p.Decided = true
+		p.Applied = TabEnd{End: r.State, Plan: tabPolicy(r, r.State, linger)}
+		if p.Applied.Plan.Close && !r.FinishedAt.IsZero() {
+			p.CloseAt = r.FinishedAt.Add(p.Applied.Plan.After)
+		}
+	}
+	return p
+}
+
+// TabPolicy is this task's tab policy under the linger this broker is running
+// with: what CHILD.md tells the child, and what GET /v1/orchestrator/tasks/{id}
+// answers, from the one value.
+func (b *Broker) TabPolicy(r Record) TabPolicy {
+	return tabPolicyOf(r, b.childLinger())
+}
+
+// TabPlanSentence is one plan in words — the same words in CHILD.md and in
+// anything else that reads a plan back to a person.
+func TabPlanSentence(p TabPlan) string {
+	switch {
+	case p.Close && p.After > 0:
+		return fmt.Sprintf("closed about %d seconds after it ends", int64(p.After/time.Second))
+	case p.Close:
+		return "closed as soon as it is at rest"
+	}
+	return "left open"
+}
+
 // tabPolicyBrief is the policy as CHILD.md states it for one task: which rule,
-// and what each way of ending does to this tab.
+// and what each way of ending does to this tab. Every line of it is rendered
+// from tabPolicyOf, so the section cannot say something the task's answer does
+// not.
 func tabPolicyBrief(r Record, linger time.Duration) []string {
+	policy := tabPolicyOf(r, linger)
 	intro := "For this task the rule is "
 	switch {
-	case r.ScheduleID != "":
-		intro += fmt.Sprintf("its schedule's `close_tab: %s`:", r.scheduleCloseTab())
-	case linger < 0:
+	case policy.Setting == TabSettingCloseTab:
+		intro += fmt.Sprintf("its schedule's `close_tab: %s`:", policy.Value)
+	case policy.Value == "-1":
 		intro += "`orchestrator_child_linger` = -1, which keeps every finished child open:"
 	default:
-		intro += fmt.Sprintf("`orchestrator_child_linger` = %d seconds:", int64(linger/time.Second))
+		intro += fmt.Sprintf("`%s` = %s seconds:", policy.Setting, policy.Value)
 	}
 	lines := []string{intro, ""}
-	ends := []State{StateSuccess, StateFailure, StateTimeout, StateCancelled}
-	for i, end := range ends {
-		p := tabPolicy(r, end, linger)
-		what := "left open"
-		switch {
-		case p.Close && p.After > 0:
-			what = fmt.Sprintf("closed about %d seconds after it ends", int64(p.After/time.Second))
-		case p.Close:
-			what = "closed as soon as it is at rest"
-		}
+	for i, e := range policy.Ends {
 		stop := ";"
-		if i == len(ends)-1 {
+		if i == len(policy.Ends)-1 {
 			stop = "."
 		}
-		lines = append(lines, fmt.Sprintf("- %s: %s (`%s`)%s", end, what, p.Rule, stop))
+		lines = append(lines, fmt.Sprintf("- %s: %s (`%s`)%s", e.End, TabPlanSentence(e.Plan), e.Plan.Rule, stop))
 	}
 	return lines
 }

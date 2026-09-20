@@ -145,6 +145,115 @@ func TestTheTabPolicyIsOneTable(t *testing.T) {
 	}
 }
 
+// One task's policy names the rule that applied to *it*, not the setting it
+// was read from: three tasks that ended three ways name three different rules,
+// and a task still running names none, because which rule applies is decided
+// by how it ends.
+func TestOneTasksTabPolicyNamesTheRuleThatApplied(t *testing.T) {
+	linger := 3 * time.Minute
+	end := time.Date(2026, 9, 20, 6, 0, 0, 0, time.UTC)
+	ended := func(r Record, state State) Record {
+		r.State, r.FinishedAt, r.ChildTerminalID = state, end, "%1"
+		return r
+	}
+	sched := func(closeTab string) Record {
+		return Record{ScheduleID: "5c000000-0000-4000-8000-000000000002", ScheduleCloseTab: closeTab}
+	}
+	cases := []struct {
+		name    string
+		r       Record
+		linger  time.Duration
+		rule    string
+		close   bool
+		closeAt time.Time
+		setting string
+		value   string
+	}{
+		{"it ended normally", ended(Record{}, StateSuccess), linger,
+			TabRuleLinger, true, end.Add(linger), TabSettingLinger, "180"},
+		{"it timed out", ended(Record{}, StateTimeout), linger,
+			TabRuleUnfinished, false, time.Time{}, TabSettingLinger, "180"},
+		{"its schedule says close_tab: always", ended(sched(closeTabAlways), StateTimeout), linger,
+			TabRuleScheduleAlways, true, end, TabSettingCloseTab, closeTabAlways},
+		{"its schedule says close_tab: never", ended(sched(closeTabNever), StateSuccess), linger,
+			TabRuleScheduleNever, false, time.Time{}, TabSettingCloseTab, closeTabNever},
+		{"the linger is off", ended(Record{}, StateSuccess), -1,
+			TabRuleLingerOff, false, time.Time{}, TabSettingLinger, "-1"},
+		{"its child never started", ended(Record{}, StateSpawnFailed), linger,
+			TabRuleSpawnFailed, true, end, TabSettingLinger, "180"},
+	}
+	seen := map[string]string{}
+	for _, c := range cases {
+		p := tabPolicyOf(c.r, c.linger)
+		if !p.Decided {
+			t.Errorf("%s: a task that ended has no rule", c.name)
+			continue
+		}
+		if p.Applied.End != c.r.State || p.Applied.Plan.Rule != c.rule || p.Applied.Plan.Close != c.close {
+			t.Errorf("%s: applied %+v, want end %s rule %s close %v", c.name, p.Applied, c.r.State, c.rule, c.close)
+		}
+		if !p.CloseAt.Equal(c.closeAt) {
+			t.Errorf("%s: close_at %v, want %v", c.name, p.CloseAt, c.closeAt)
+		}
+		if p.Setting != c.setting || p.Value != c.value {
+			t.Errorf("%s: setting %s=%s, want %s=%s", c.name, p.Setting, p.Value, c.setting, c.value)
+		}
+		seen[c.rule] = c.name
+	}
+	// The three the acceptance names — a normal end, a timeout, and a schedule
+	// carrying close_tab — are three different answers and not one sentence
+	// repeated.
+	for _, rule := range []string{TabRuleLinger, TabRuleUnfinished, TabRuleScheduleAlways} {
+		if seen[rule] == "" {
+			t.Errorf("no task answered %s", rule)
+		}
+	}
+	if len(seen) != len(cases) {
+		t.Errorf("%d rules for %d tasks: some answered the same thing", len(seen), len(cases))
+	}
+
+	// A task still running names no rule, and still says what each end would do.
+	live := tabPolicyOf(Record{State: StateBriefed}, linger)
+	if live.Decided || live.Applied.Plan.Rule != "" {
+		t.Errorf("a running task already named a rule: %+v", live.Applied)
+	}
+	if len(live.Ends) != len(tabEndStates) {
+		t.Errorf("a running task states %d ends, want %d", len(live.Ends), len(tabEndStates))
+	}
+}
+
+// CHILD.md and the task's answer are one description read twice, not two kept
+// in step: every line of the briefing's table is rendered from the policy
+// value, so a row cannot be in one and missing from the other, and the words
+// are the same words.
+func TestTheBriefIsRenderedFromTheTabPolicy(t *testing.T) {
+	records := map[string]Record{
+		"an ordinary task":      {},
+		"a scheduled task":      {ScheduleID: "5c000000-0000-4000-8000-000000000003", ScheduleCloseTab: closeTabNever},
+		"a task that has ended": {State: StateSuccess, FinishedAt: time.Unix(1000, 0)},
+	}
+	for name, r := range records {
+		for _, linger := range []time.Duration{3 * time.Minute, -1} {
+			p := tabPolicyOf(r, linger)
+			lines := tabPolicyBrief(r, linger)
+			if len(lines) != len(p.Ends)+2 {
+				t.Fatalf("%s: the brief has %d lines for %d ends", name, len(lines), len(p.Ends))
+			}
+			if !strings.Contains(lines[0], p.Value) {
+				t.Errorf("%s: the brief's opening %q does not carry %q", name, lines[0], p.Value)
+			}
+			for i, e := range p.Ends {
+				line := lines[i+2]
+				for _, want := range []string{string(e.End), "`" + e.Plan.Rule + "`", TabPlanSentence(e.Plan)} {
+					if !strings.Contains(line, want) {
+						t.Errorf("%s: the brief's %s line %q does not carry %q", name, e.End, line, want)
+					}
+				}
+			}
+		}
+	}
+}
+
 // An iTerm2 child is owed a close like a tmux one, and closed on a reading
 // whose iTerm2 half did not answer completely: the tab itself was seen, by its
 // id, at rest. The end time travels with the close, so a job in the tab is

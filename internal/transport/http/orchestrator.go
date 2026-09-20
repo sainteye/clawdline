@@ -922,6 +922,10 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 			Backend:    contract.Backend(r.ChildBackend),
 		}
 	}
+	// What this task's end does to its child's tab, so that "is this tab still
+	// being open normal or not" is answered here rather than only inside the
+	// child's own CHILD.md (linger.go).
+	row.Tab = brokerTab(s.broker.TabPolicy(r))
 	if r.Root != nil {
 		row.Root = &contract.BrokerRoot{
 			SessionID:  r.Root.SessionID,
@@ -974,6 +978,41 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		}
 	}
 	return row
+}
+
+// brokerTab is one task's tab policy on the wire: what each way of ending does
+// to the tab, and — once the task has ended — the rule that applied and when
+// the close it asks for falls due.
+//
+// It is projected from orchestrator.TabPolicy, the same value CHILD.md's own
+// section is rendered from. That is what keeps the two from drifting: there is
+// one description of this policy, read twice, rather than two kept in step.
+func brokerTab(p orchestrator.TabPolicy) *contract.BrokerTab {
+	out := &contract.BrokerTab{Setting: p.Setting, Value: p.Value}
+	for _, e := range p.Ends {
+		out.Ends = append(out.Ends, brokerTabEnd(e))
+	}
+	// Absent while the task is still running: which rule applies is decided by
+	// how it ends, and naming one before that would be a guess presented as an
+	// answer.
+	if p.Decided {
+		applied := brokerTabEnd(p.Applied)
+		out.Applied = &applied
+	}
+	if !p.CloseAt.IsZero() {
+		out.CloseAt = p.CloseAt.Unix()
+	}
+	return out
+}
+
+func brokerTabEnd(e orchestrator.TabEnd) contract.BrokerTabEnd {
+	return contract.BrokerTabEnd{
+		End:          contract.TaskState(e.End),
+		Rule:         contract.BrokerTabRule(e.Plan.Rule),
+		Close:        e.Plan.Close,
+		AfterSeconds: int64(e.Plan.After / time.Second),
+		What:         orchestrator.TabPlanSentence(e.Plan),
+	}
 }
 
 func brokerWorktree(r orchestrator.Record) *contract.BrokerWorktree {

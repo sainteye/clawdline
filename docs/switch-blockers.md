@@ -91,11 +91,23 @@ a row:
 | scheduled, `close_tab: never` | anything | left open | `schedule_never` |
 | any | `spawn_failed` | closed at once when the tab is there (D11) | `spawn_failed` |
 
-It is readable in three places: CHILD.md states the rule for the task, per way of ending, before the
-work starts; the settlement's event (`task.success`, `task.failure`, …) carries
-`tab: {rule, close, after_seconds}`; and a close still owed is a `broker_lingers` row. A scheduled
-run's record keeps its schedule's `close_tab` as `schedule_close_tab`, the Swift app's name, and a
-respawn carries it.
+It is readable in four places: CHILD.md states the rule for the task, per way of ending, before the
+work starts; `GET /v1/orchestrator/tasks/{id}` carries the same thing as `tab`, so that judging
+whether a tab still being open is normal no longer means reading the child's own files; the
+settlement's event (`task.success`, `task.failure`, …) carries `tab: {rule, close, after_seconds}`;
+and a close still owed is a `broker_lingers` row. A scheduled run's record keeps its schedule's
+`close_tab` as `schedule_close_tab`, the Swift app's name, and a respawn carries it.
+
+**CHILD.md and the task's answer are one description, not two.** Both are made from one value,
+`TabPolicy` (`tabPolicyOf`): the briefing's table is rendered from its `ends` and the task's `tab`
+field is projected from the same rows, down to the sentence each end gets (`TabPlanSentence`). So
+there is no second description to drift — which is the only guarantee worth having here, because
+this table above is prose and a guard that compared it with the code would pass just as happily on
+two matching wrong answers. The answer adds what a briefing written before the work cannot know:
+`applied`, the rule this task's end actually chose, absent while it is still running because which
+rule applies is decided by how it ends, and `close_at`, when that close falls due. `close_at` is
+the rule's deadline and not an observation — whether the close was made is in the task's
+`task.child.linger.*` events — so a tab still open well past it is the thing worth looking into.
 
 **A close the rule asks for is still made only while the tab is the child's.** Both backends are
 decided by one step (`lingerStepFor`):

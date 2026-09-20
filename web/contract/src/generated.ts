@@ -2026,6 +2026,86 @@ export type BrokerStoreStatus =
 export const BrokerStoreStatusValues: readonly BrokerStoreStatus[] = ["ready", "unavailable"] as const
 
 /**
+ * What this task's end does to its child's tab — the policy CHILD.md states for
+ * the child, answered here so that `is this tab still being open normal or not` has
+ * an answer without reading the child's own files. `applied` names the rule this
+ * task's end actually chose and is absent while it is still running, because which
+ * rule applies is decided by how it ends.
+ */
+export interface BrokerTab {
+  applied?: BrokerTabEnd
+
+  /**
+   * When the close `applied` asks for falls due, in Unix seconds; absent when no
+   * close is owed. It is the rule's deadline and not an observation — whether the
+   * close was made is in the task's `task.child.linger.*` events — so a tab still
+   * open well past it is the thing worth looking into.
+   */
+  close_at?: number
+
+  /**
+   * What each way of ending does to this tab — the same rows, in the same order,
+   * that CHILD.md states for the child.
+   */
+  ends: BrokerTabEnd[]
+
+  /**
+   * Which setting decided this task's rules: this Mac's
+   * `orchestrator_child_linger`, or the schedule's own `close_tab` for a scheduled
+   * run.
+   */
+  setting: string
+
+  /**
+   * What that setting was set to: the linger in seconds, `-1` when it is off, or
+   * one of close_tab's three words.
+   */
+  value: string
+}
+
+/**
+ * One way a task can end, and what that end does to its child's tab. `close` says a
+ * close is owed, never that it may be forced: the broker still closes only a tab
+ * that is the child's own, at rest, and unused since the task ended.
+ */
+export interface BrokerTabEnd {
+  /**
+   * How long after the end the close falls due. Absent means as soon as the tab is
+   * at rest.
+   */
+  after_seconds?: number
+  close: boolean
+  end: TaskState
+  rule: BrokerTabRule
+
+  /**
+   * This row in words — the same sentence CHILD.md gives the child for this end,
+   * rendered from the same value rather than written beside it.
+   */
+  what?: string
+}
+
+/**
+ * Which rule decides one task's child tab. `child_linger` closes a finished
+ * unscheduled child `orchestrator_child_linger` after it ends; `child_linger_off`
+ * is that setting negative, which keeps every finished child open;
+ * `unfinished_left_open` is a timeout or a cancel, whose child may still be
+ * working; the three `schedule_…` rules are a scheduled run's `close_tab`;
+ * `spawn_failed` is a child that never started, closed at once whatever else is
+ * set.
+ */
+export type BrokerTabRule =
+    "child_linger"
+  | "child_linger_off"
+  | "unfinished_left_open"
+  | "schedule_on_success"
+  | "schedule_always"
+  | "schedule_never"
+  | "spawn_failed"
+
+export const BrokerTabRuleValues: readonly BrokerTabRule[] = ["child_linger", "child_linger_off", "unfinished_left_open", "schedule_on_success", "schedule_always", "schedule_never", "spawn_failed"] as const
+
+/**
  * One dispatched piece of work, as the console and a dispatching root read it.
  */
 export interface BrokerTask {
@@ -2096,6 +2176,7 @@ export interface BrokerTask {
   spawnedAt?: number
   state: TaskState
   summary?: string
+  tab?: BrokerTab
 
   /**
    * The task's whole budget, on the wall clock, counted from `created` — when the
