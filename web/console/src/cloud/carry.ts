@@ -51,12 +51,17 @@ export type CarriedWord = keyof typeof CARRIED
  */
 export const CARRIED = {
   answer: "POST /v1/sessions/{id}/key",
+  board: "GET /v1/board?project=&item=",
+  "board.items": "GET /v1/board?project=&audience=&cursor=&limit=",
   end: "POST /v1/sessions/{id}/close",
   focus: "POST /v1/sessions/{id}/focus",
   image: "GET /v1/artifacts/images/{id}?session={id}",
   info: "GET /v1/sessions/{id}/info[?parts=summary]",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
   places: "GET /v1/places",
+  "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",
+  "project-worktrees": "GET /v1/orchestrator/usage/project-worktrees?project=",
+  projects: "GET /v1/projects",
   "push-key": "GET /v1/push/key",
   "push-subscribe": "POST /v1/push/subscribe",
   "push-test": "POST /v1/push/test",
@@ -74,8 +79,15 @@ export const CARRIED = {
   "snippet-update": "PATCH /v1/snippets/{id}",
   snippets: "GET /v1/snippets",
   start: "POST /v1/places/{id}/start[/{assistant}[/{model}]]",
+  timeline: "GET /v1/timeline?project=&entry=&cursor=&environment=&category=&upcoming=",
   transcript: "GET /v1/transcript?session={id}",
+  "verification-ledger": "GET /v1/orchestrator/usage/verification-ledger[?graph=]",
   voice: "POST /v1/voice",
+  "work.backlog": "GET /v1/work/backlog[?project=&cursor=]",
+  "work.board": "GET /v1/work/board[?project=&cursor=]",
+  "work.decisions": "GET /v1/work/decisions",
+  "work.digests": "GET /v1/work/digests?kind=",
+  "work.proposals": "GET /v1/work/proposals[?project=]",
 } as const
 
 /**
@@ -87,8 +99,6 @@ export const CARRIED = {
  * left out of both.
  */
 export const DEFERRED = {
-  board: "The work board is not read over Clawdline Cloud yet: read it on the Mac.",
-  "board.items": "The work board's items are not read over Clawdline Cloud yet: read them on the Mac.",
   document: "A document's text is not read over Clawdline Cloud yet: open it on the Mac.",
   documents: "A session's documents are not listed over Clawdline Cloud yet: open them on the Mac.",
   git: "The working tree is not read over Clawdline Cloud yet: read it on the Mac.",
@@ -127,7 +137,6 @@ export const NO_MAC_ROUTE = {
   schedule: "This Mac does not answer one schedule in full over Clawdline Cloud: the list is read here, and a schedule's runs and its form are opened on the Mac.",
   shell: "A session's shell is not read over Clawdline Cloud: read it on the Mac.",
   skills: "A session's skills are not listed over Clawdline Cloud: read them on the Mac.",
-  timeline: "A project's timeline is not read over Clawdline Cloud yet: read it on the Mac.",
 } as const
 
 /**
@@ -201,12 +210,12 @@ export function uncarriedWordOf(method: string, path: string): string {
     return ""
   }
   const [head, a, b] = segments
-  // `/v1/snippets*` is not here any more: the list and the four writes are
-  // carried, so they are parsed once — by the reader's own case and by
-  // `writeRoute` — and naming them a second time here would be a second
-  // spelling to keep right.
-  if (head === "board") return method === "GET" ? "board" : "board.items"
-  if (head === "timeline") return "timeline"
+  // `/v1/snippets*`, `board`, `board.items` and `timeline` were all here until
+  // this console began asking for them. What is carried is parsed once — by
+  // the reader's own case and by `writeRoute` — and a second spelling of it
+  // here would be a second thing to keep right. A POST to `/v1/board` is an
+  // item write, which this daemon refuses by name at the route, so it is not a
+  // word this table has to name either.
   if (head === "diagnostics" && a === "report") return "diagnostics.report"
   // The list and the four writes are carried, so they are parsed once, by the
   // reader's own case and by `writeRoute`, and are deliberately not spelled a

@@ -181,6 +181,30 @@ export interface CloudReadClient {
    * three requests that follow it live.
    */
   pushKey?(): Promise<unknown>
+  /**
+   * One read of one machine, by the word the machine lists.
+   *
+   * The copied client has a method per word of the Swift console's vocabulary
+   * and none for a word that console never had — the whole work system, and
+   * this daemon's Project catalog and verification ledger are four such words
+   * — and the copy is held to its source byte for byte
+   * (`tools/check-legacy-css.sh`), so a method cannot be added to it here.
+   * This is the generic underneath all of them (`_machineRequest`), and the
+   * reads carried through it get exactly what the named methods get: the
+   * machine's own capability gate before anything is sealed, the
+   * `unknown_command` a Mac that lacks the word answers, and the
+   * `machineLacks` memory that stops the page asking it twice.
+   *
+   * It is called for every word this file carries, including the four the
+   * copied client does name, because those four pick their own machine —
+   * `board` asks the account for one, `projectWorktrees` looks one up in the
+   * places it has read — and this seam is reading one machine that was chosen
+   * before the console was drawn. One path, one gate, one machine.
+   *
+   * Optional for the reason `pushKey` is: a client without it is refused by
+   * name rather than throwing where nobody is catching.
+   */
+  _machineRequest?(machine: string, word: string, body: Record<string, unknown>, kind: "read"): Promise<unknown>
 }
 
 /**
@@ -433,6 +457,13 @@ export class RelayReader {
       if (method !== "GET") {
         return this.refuse(method, path, 501, "cloud_not_carried", this.notCarried(method, path))
       }
+      // The one carried read whose parameter is a path segment rather than a
+      // query field, so it cannot be a case below.
+      const project = worktreeLifecycleProject(path)
+      if (project) {
+        this.only(url, path)
+        return await this.machineRead(method, path, "project-worktree-lifecycle", { project })
+      }
       switch (path) {
         case "/v1/sessions":
           this.note(method, path, "local")
@@ -566,6 +597,80 @@ export class RelayReader {
           const key = await client.pushKey()
           this.note(method, path, "relay", undefined, { word: "push-key" })
           return json(200, key)
+        }
+        case "/v1/board": {
+          // One path, two words, told apart exactly as the page tells them
+          // apart: a read that names an audience is the paged card list and
+          // everything else is the envelope (`legacy/board-bridge.ts`).
+          const q = this.only(url, path, "project", "item", "audience", "cursor", "limit")
+          if (q.audience === undefined) {
+            return await this.machineRead(method, path, "board", {
+              project: q.project ?? "", item: q.item ?? "",
+            })
+          }
+          return await this.machineRead(method, path, "board.items", {
+            project: q.project ?? "", audience: q.audience,
+            // Absent is not zero and not the maximum: this route reads a
+            // missing `cursor` as 0 and a missing `limit` as its own default
+            // (`clampInt`, internal/transport/http/board.go), and the page
+            // leaves both off for the first page of a Project it has just
+            // opened. The word carries two integers and no absence, so the
+            // route's own numbers are what is sent — anything else would page
+            // a phone differently from the browser on the Mac.
+            cursor: whole(q.cursor, 0),
+            limit: whole(q.limit, BOARD_PAGE_DEFAULT),
+          })
+        }
+        case "/v1/work/board":
+        case "/v1/work/backlog": {
+          // The board and the Backlog, paged the same way
+          // (`pages/work/api.ts`). Two words and not one with an `area`,
+          // because a word is the finest thing a machine's descriptor can
+          // tell this page it has.
+          const q = this.only(url, path, "project", "cursor")
+          const word: CarriedWord = path === "/v1/work/board" ? "work.board" : "work.backlog"
+          return await this.machineRead(method, path, word, {
+            project: q.project ?? "", cursor: q.cursor ?? "",
+          })
+        }
+        case "/v1/work/proposals": {
+          const q = this.only(url, path, "project")
+          return await this.machineRead(method, path, "work.proposals", { project: q.project ?? "" })
+        }
+        case "/v1/work/decisions": {
+          this.only(url, path)
+          return await this.machineRead(method, path, "work.decisions", {})
+        }
+        case "/v1/work/digests": {
+          const q = this.only(url, path, "kind")
+          return await this.machineRead(method, path, "work.digests", { kind: q.kind ?? "" })
+        }
+        case "/v1/projects": {
+          // This daemon's Project catalog, which the Projects page reads as
+          // its `board` (`legacy/projects-bridge.ts`); the Swift app's
+          // `board` is the different, older reading above.
+          this.only(url, path)
+          return await this.machineRead(method, path, "projects", {})
+        }
+        case "/v1/orchestrator/usage/project-worktrees": {
+          const q = this.only(url, path, "project")
+          return await this.machineRead(method, path, "project-worktrees", { project: q.project ?? "" })
+        }
+        case "/v1/orchestrator/usage/verification-ledger": {
+          const q = this.only(url, path, "graph")
+          return await this.machineRead(method, path, "verification-ledger", { graph: q.graph ?? "" })
+        }
+        case "/v1/timeline": {
+          // `upcoming` is a filter with two meanings and the page sends it
+          // every time; the rest are left as the page left them, because this
+          // route reads an absent `environment` as production and an empty one
+          // as a refusal (`internal/transport/http/timeline.go`).
+          const q = this.only(url, path, "project", "entry", "cursor", "environment", "category", "upcoming")
+          return await this.machineRead(method, path, "timeline", {
+            project: q.project ?? "", entry: q.entry ?? "", cursor: q.cursor ?? "",
+            environment: q.environment ?? "", category: q.category ?? "",
+            upcoming: q.upcoming !== "false",
+          })
         }
         case "/v1/strings": {
           // The words are the bundle's own file, not the Mac's (`cloud/strings.ts`):
@@ -715,6 +820,51 @@ export class RelayReader {
     }
   }
 
+  /**
+   * One carried read, asked of the machine this page is reading.
+   *
+   * Every word goes out the same way, and the answer is the route's own body:
+   * a refusal from the Mac's route arrives as a typed failure and is turned
+   * into the same refusal a daemon on this machine's own network would have
+   * sent, by the `catch` in `fetch` above. Nothing here reads the body, so a
+   * page's own shape is never a thing this seam has to keep right.
+   */
+  private async machineRead(method: string, path: string, word: CarriedWord, body: Record<string, unknown>): Promise<Response> {
+    const client = this.connected()
+    if (typeof client._machineRequest !== "function") {
+      // A copied client older than the generic. Named rather than thrown:
+      // this is the page refusing itself, and it says which word it is about.
+      return this.refuse(method, path, 501, "cloud_not_carried",
+        `This console cannot ask this Mac for ${word}.`)
+    }
+    const answer = await client._machineRequest(this.machine, word, body, "read")
+    this.note(method, path, "relay", undefined, { word })
+    return json(200, answer)
+  }
+
+  /**
+   * The query fields a carried read may carry, or a refusal naming one it may
+   * not.
+   *
+   * A field this seam drops silently is the failure this whole table exists to
+   * stop: the page asks a narrower question, the Mac answers a wider one, and
+   * the screen draws the answer to a question nobody asked. A word's body is a
+   * fixed key set on this wire, so a field with nowhere to go is not carried —
+   * and says so by its own name.
+   */
+  private only(url: URL, path: string, ...carried: string[]): Record<string, string | undefined> {
+    const out: Record<string, string | undefined> = {}
+    for (const [key, value] of url.searchParams) {
+      if (!carried.includes(key)) {
+        throw Object.assign(new Error(`${path}?${key}= is not carried over Clawdline Cloud: read it on the Mac.`), {
+          code: "cloud_not_carried", status: 501,
+        })
+      }
+      out[key] = value
+    }
+    return out
+  }
+
   private hold(session: string): HeldTranscript {
     const entry: HeldTranscript = { answer: null, at: 0, rowKey: "", line: "", inflight: null, stale: false, expectUntil: 0, expectFrom: null }
     this.transcripts.set(session, entry)
@@ -805,6 +955,36 @@ class NotConnected extends Error {
   readonly code = "offline"
   constructor() {
     super("the relay connection is not up")
+  }
+}
+
+/**
+ * The page size `/v1/board` uses when a read names no `limit`
+ * (`boardstore.DefaultPageLimit`, internal/adapters/board/board.go). It is
+ * here because the Cloud word carries two integers and no absence, so the
+ * seam has to say what the route would have said. The two are checked against
+ * each other by `TestTheBoardsCloudPageSizeIsTheRoutesOwn`.
+ */
+const BOARD_PAGE_DEFAULT = 30
+
+/** A whole number from a query field, or `fallback` when it names none. */
+function whole(value: string | undefined, fallback: number): number {
+  const n = Number(value)
+  return value !== undefined && Number.isSafeInteger(n) && n >= 0 ? n : fallback
+}
+
+/**
+ * The Project id in `/v1/projects/{project}/worktrees`, or "" for any other
+ * path. The refresh beside it (`/worktrees/refresh`) is a POST that runs
+ * processes on the Mac, so it is not this read and not this round.
+ */
+function worktreeLifecycleProject(path: string): string {
+  const parts = path.split("/")
+  if (parts.length !== 5 || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== "worktrees") return ""
+  try {
+    return decodeURIComponent(parts[3])
+  } catch {
+    return ""
   }
 }
 

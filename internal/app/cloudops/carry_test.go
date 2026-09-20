@@ -5,8 +5,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline-go/internal/adapters/board"
 )
 
 // The console's carry table, and the one thing that notices when it and this
@@ -209,5 +212,44 @@ func moduleRoot(t *testing.T) string {
 			t.Fatalf("no go.mod above %s", dir)
 		}
 		dir = parent
+	}
+}
+
+// The board's page size, which is written down twice and must not be.
+//
+// `board.items` carries two integers and no absence: the Cloud word's body is
+// a fixed key set, so "the page named no limit" cannot travel. A browser on
+// this machine's own network leaves the field off and the route fills it in
+// (`clampInt`, internal/transport/http/board.go); a browser on the relay must
+// send the number the route would have chosen, or a phone pages a Project
+// differently from the Mac it is reading.
+//
+// So the seam holds the route's own default, and this is what notices when the
+// route changes its mind.
+const readerSeam = "web/console/src/cloud/relay-reader.ts"
+
+func TestTheBoardsCloudPageSizeIsTheRoutesOwn(t *testing.T) {
+	root := moduleRoot(t)
+	source, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(readerSeam)))
+	if err != nil {
+		t.Fatalf("%s: %v", readerSeam, err)
+	}
+	found := regexp.MustCompile(`(?m)^const BOARD_PAGE_DEFAULT = (\d+)$`).FindSubmatch(source)
+	if found == nil {
+		t.Fatalf("%s: no `const BOARD_PAGE_DEFAULT = <n>`; this test reads that number "+
+			"and cannot be satisfied without it", readerSeam)
+	}
+	carried, err := strconv.Atoi(string(found[1]))
+	if err != nil {
+		t.Fatalf("%s: BOARD_PAGE_DEFAULT is %q", readerSeam, found[1])
+	}
+	if carried != board.DefaultPageLimit {
+		t.Errorf("%s carries %d cards a page and %s answers %d: a phone and this Mac's own "+
+			"browser would page one Project two ways", readerSeam, carried,
+			"internal/adapters/board", board.DefaultPageLimit)
+	}
+	if board.DefaultPageLimit < 1 || board.DefaultPageLimit > board.MaximumPageLimit {
+		t.Errorf("the route's own default (%d) is outside what the word may carry (1..%d)",
+			board.DefaultPageLimit, board.MaximumPageLimit)
 	}
 }
