@@ -81,7 +81,35 @@ const words = {
     cloudForgetAbsent: "This account has no machine {machine} ({code}). Nothing was changed.",
     cloudForgetUnreadable:
       "Clawdline Cloud's answer about forgetting {machine} could not be read ({code}), so it is not known whether it was forgotten. Reload this page before asking again.",
+    // Renaming a machine. It is an account write like forgetting one and it is
+    // asked the same way, but it is not destructive, so what it says after is
+    // about where the new name has and has not arrived yet.
+    cloudRename: "Rename",
+    cloudRenameOne: "Rename {machine}",
+    cloudRenameTitle: "Rename {machine}?",
+    cloudRenameAsk:
+      "This changes what {machine} is called on this account, for every browser signed in to it. It changes nothing on the machine itself.",
+    cloudRenameLater:
+      "This list is what the machines themselves last said about themselves, so it goes on showing the old name until this one reports in again.",
+    cloudRenameField: "New name",
+    cloudRenaming: "Renaming {machine}…",
+    cloudRenamed: "{machine} is called {name} on this account now.",
+    cloudRenameRefused:
+      "Clawdline Cloud refused to rename {machine} ({code}). This browser is not signed in to that account any more. Nothing was changed.",
+    cloudRenameAbsent: "This account has no machine {machine} ({code}). Nothing was changed.",
+    cloudRenameUnreadable:
+      "Clawdline Cloud's answer about renaming {machine} could not be read ({code}), so it is not known whether the name was changed. Reload this page and look at the list before asking again.",
+    cloudRenameTooLong: "A machine's name is at most {max} characters on this account.",
     cloudBlocked: "This console was built for {origin} and is being served from {here}, so it does not connect.",
+    // The Devices page's own sentence about the list under it. The copied
+    // catalog has one (`webDevicesLede`) and it describes an account; only one
+    // of the two consoles here has an account's list to show, so the other
+    // says what it does have (`legacy/devices-bridge.ts`).
+    devicesLedeAccount:
+      "The machines on this account, their status, and whether this browser can read them.",
+    devicesLedeThisMachine:
+      "Only the machine serving this page. A console served by the daemon reaches no other machine; which machines are on your account is answered by the Clawdline Cloud console.",
+    devicesThisMachine: "This machine",
     cloudMisdeclared: "This console's Clawdline Cloud declaration cannot be used: {reason}",
     cloudNotCarried: "This cannot be done over Clawdline Cloud yet. Do it on the Mac itself.",
     cloudPastUnavailable:
@@ -180,7 +208,24 @@ const words = {
     cloudForgetAbsent: "這個帳號上沒有 {machine} 這台機器（{code}）。什麼都沒有改變。",
     cloudForgetUnreadable:
       "Clawdline Cloud 對「忘記 {machine}」的回應讀不到（{code}），所以不知道它到底有沒有被忘記。請重新整理這一頁再看一次，不要直接再按一次。",
+    cloudRename: "改名",
+    cloudRenameOne: "把 {machine} 改名",
+    cloudRenameTitle: "要把 {machine} 改名嗎？",
+    cloudRenameAsk: "這會改掉 {machine} 在這個帳號上的名字，每一個登入這個帳號的瀏覽器都會看到新的。機器本身不會有任何改變。",
+    cloudRenameLater: "這份清單是各台機器自己上次說的，所以在這一台重新回報之前，它還是會顯示舊的名字。",
+    cloudRenameField: "新的名字",
+    cloudRenaming: "正在把 {machine} 改名…",
+    cloudRenamed: "{machine} 在這個帳號上現在叫做 {name}。",
+    cloudRenameRefused: "Clawdline Cloud 拒絕把 {machine} 改名（{code}）：這個瀏覽器已經不是那個帳號的登入狀態。什麼都沒有改變。",
+    cloudRenameAbsent: "這個帳號上沒有 {machine} 這台機器（{code}）。什麼都沒有改變。",
+    cloudRenameUnreadable:
+      "Clawdline Cloud 對「把 {machine} 改名」的回應讀不到（{code}），所以不知道名字到底有沒有改成功。請重新整理這一頁、看過清單之後再決定要不要再改一次。",
+    cloudRenameTooLong: "在這個帳號上，一台機器的名字最多 {max} 個字元。",
     cloudBlocked: "這個 console 是給 {origin} 用的，現在卻從 {here} 打開，所以不會連線。",
+    devicesLedeAccount: "這個帳號上的機器、目前狀態，以及這個瀏覽器能不能讀取它們。",
+    devicesLedeThisMachine:
+      "只有服務這一頁的那一台機器。daemon 服務的 console 連不到別台；帳號上有哪些機器，要問 Clawdline Cloud 的 console。",
+    devicesThisMachine: "這台機器",
     cloudMisdeclared: "這個 console 的 Clawdline Cloud 宣告不能用：{reason}",
     cloudNotCarried: "這件事還不能經由 Clawdline Cloud 做，請直接在 Mac 上操作。",
     cloudPastUnavailable:

@@ -215,7 +215,10 @@ func cloudCommandsCommand(args []string) {
 	}
 	fmt.Printf("commands %-3s %s\n", args[0], parts.file.Path())
 	if on {
-		fmt.Printf("           a paired viewer may now type into this Mac's sessions\n")
+		// "this Mac" was this line for as long as there was only ever a Mac
+		// under it. This daemon is built for macOS, Linux and Windows, and the
+		// sentence is printed by whichever one it is running on.
+		fmt.Printf("           a paired viewer may now type into this machine's sessions\n")
 	}
 }
 

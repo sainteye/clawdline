@@ -37,7 +37,7 @@
    the positioned box and the row fills it. The row keeps enough padding on the
    right that a long machine name never runs under the glyph. */
 .cloud-machines li { position: relative; }
-.cloud-machines li > button:first-child { padding-right: 40px; }
+.cloud-machines li > button:first-child { padding-right: 70px; }
 /* `.cloud-machines button` above styles every button in the list and is the
    more specific of the two, so this states its whole shape rather than
    inheriting a row's. */
@@ -50,6 +50,17 @@
 }
 .cloud-machines .cloud-forget:hover:not(:disabled) { background: #2f2322; color: #f0b6a2; border-color: #57362e; }
 .cloud-machines .cloud-forget:disabled { opacity: 0.4; cursor: default; }
+/* Renaming one, beside it. Same shape, and deliberately not the removing
+   colour: one of the two is irreversible and the other is a label. */
+.cloud-machines .cloud-rename {
+    position: absolute; top: 50%; right: 36px; transform: translateY(-50%);
+    width: 26px; height: 26px; padding: 0;
+    flex-direction: row; align-items: center; justify-content: center;
+    background: transparent; border: 1px solid transparent; border-radius: 7px;
+    color: var(--dim); font-size: 13px; line-height: 1; text-align: center;
+}
+.cloud-machines .cloud-rename:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); border-color: var(--line); }
+.cloud-machines .cloud-rename:disabled { opacity: 0.4; cursor: default; }
 .cloud-machines li[data-forgotten] > button:first-child { text-decoration: line-through; }
 .cloud-machines li[data-forgotten] .cloud-machine-facts { text-decoration: none; color: #e09985; }
 
@@ -64,5 +75,22 @@
 .cloud-forget-ask .confirm-go { border-color: #57362e; color: #e09985; }
 .cloud-forget-ask .confirm-go:hover:not(:disabled) { background: #2f2322; color: #f0b6a2; }
 
+.cloud-rename-ask .say {
+    margin: 12px 0 0 0; color: var(--dim); font-size: 12.5px; line-height: 1.55;
+    white-space: pre-line;
+}
+.cloud-rename-ask label { display: block; margin: 16px 0 0 0; color: var(--dim); font-size: 12px; }
+.cloud-rename-ask input {
+    width: 100%; margin-top: 6px; padding: 9px 11px;
+    background: #101014; border: 1px solid var(--line); border-radius: 8px;
+    color: var(--ink); font: inherit; font-size: 14px;
+}
+.cloud-rename-ask input:focus { outline: none; border-color: var(--accent-ed); }
+.cloud-rename-ask .buttons {
+    display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
+}
+.cloud-rename-ask .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+
 #cloud-forget-told { white-space: pre-line; }
+#cloud-rename-told { white-space: pre-line; }
 #cloud-forget-leave { margin-top: 14px; }

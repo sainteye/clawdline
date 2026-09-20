@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type MouseEvent } from "react"
 import type { PageModule } from "./types.js"
-import { bindDevices, type DevicesPage } from "../legacy/devices-bridge.js"
+import { bindDevices, devicesLede, type DevicesPage } from "../legacy/devices-bridge.js"
+import { nextWord } from "../next-strings.js"
 import sectionMarkup from "./devices/section.html?raw"
 
 /**
@@ -12,9 +13,13 @@ import sectionMarkup from "./devices/section.html?raw"
  * it: the heading's words, the status line and one card per machine. React
  * owns the section element and nothing inside it.
  *
- * On the page the Mac serves there is one card, this Mac, because the
- * original's local transport answers with that one machine and nothing else —
- * see legacy/devices-bridge.ts.
+ * Which machines it draws is the transport's answer, not this file's: the
+ * hosted console's gate installs the account's own list before the console is
+ * drawn, and the console the daemon serves has only the machine serving it.
+ * The sentence under the heading is whichever of those two is true — the
+ * copied module paints the catalog's, which describes an account, and only one
+ * of the two consoles has an account's list to put under it. See
+ * legacy/devices-bridge.ts.
  *
  * What the original's `main.js` and page registry do for this page is done
  * here: bind once, `enter` on arrival, `leave` on departure, the keyboard lands
@@ -30,7 +35,12 @@ function DevicesPageView({ shown }: { shown: boolean }) {
   const was = useRef(false)
 
   useLayoutEffect(() => {
-    if (!page.current) page.current = bindDevices(document, () => navigate("sessions"))
+    if (!page.current) {
+      page.current = bindDevices(document, () => navigate("sessions"), {
+        thisMachine: () => nextWord("devicesThisMachine"),
+        lede: () => nextWord(devicesLede()),
+      })
+    }
   }, [])
 
   useLayoutEffect(() => {
