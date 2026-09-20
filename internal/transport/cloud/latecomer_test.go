@@ -41,7 +41,7 @@ func TestAnIdleMacSaysNothingBetweenHeartbeats(t *testing.T) {
 		silent = at.Sub(time.Unix(1_700_000_000, 0))
 	}
 	if silent != Heartbeat-SnapshotInterval {
-		t.Errorf("an idle Mac was quiet for %v; the skip and the %v heartbeat make that %v",
+		t.Errorf("an idle machine was quiet for %v; the skip and the %v heartbeat make that %v",
 			silent, Heartbeat, Heartbeat-SnapshotInterval)
 	}
 	if len(out.channels()) != 3 {

@@ -102,7 +102,7 @@ export function deliver(card: PendingSend): Promise<string> {
 
 /**
  * `deliver`, or sooner: the moment the card has gone because its turn was read
- * back. What the answer could still say — "the Mac has it" — the transcript
+ * back. What the answer could still say — "the machine has it" — the transcript
  * already shows, and across Clawdline Cloud an answer that was lost on the way
  * back is only given up on after a minute (`cloud-client.js`
  * `READ_TIMEOUT_MS`); the composer should not hold its button for that.

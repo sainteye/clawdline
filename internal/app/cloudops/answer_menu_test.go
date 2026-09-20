@@ -82,7 +82,7 @@ func TestAnExpectationThatIsNotAFingerprintIsMalformed(t *testing.T) {
 	}
 }
 
-// F6, the Mac's half: a route's refusal crosses with its code, its sentence
+// F6, the machine's half: a route's refusal crosses with its code, its sentence
 // and the fields its code may show — §11.6 — and nothing else. A blocked
 // close's reasons cross as what blocks it, without the mover's record, whose
 // title is somebody's task name; a field the route put beside the code for a

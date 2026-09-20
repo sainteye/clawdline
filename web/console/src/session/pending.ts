@@ -11,7 +11,7 @@
  *   had the Send button's sweep for the round trip and added its card when the
  *   Mac answered. Here the round trip is short and the wait left bare is the one
  *   after it, until the transcript is read again, so one card covers both:
- *   "sending", then the catalog's "the Mac has it".
+ *   "sending", then the catalog's "the machine has it".
  * - **A send that fails keeps its card**, saying so, with the words still on it
  *   and a way to send them again. The Swift app toasted and the words were
  *   gone. They are still not put back in the box (see `Composer.tsx`): a send

@@ -25,7 +25,7 @@ const VECTOR: SessionMenu = {
 }
 const VECTOR_HEX = "8eca80fffc9359d5f0fca31f3e36b741bd50218b658fc086f05931747bd4c5ce"
 
-test("the page names a question with the same hex the Mac computes", () => {
+test("the page names a question with the same hex the machine computes", () => {
   assert.equal(menuFingerprint(VECTOR), VECTOR_HEX)
 })
 

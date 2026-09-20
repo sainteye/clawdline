@@ -1,0 +1,43 @@
+# Lines where Mac is the right word, for tools/check-machine-words.sh.
+#
+# One entry per line: the path, a tab, then the literal exactly as the check
+# printed it. A reason goes above it. An entry that stops matching stops
+# excusing anything, so a sentence that changes comes back through the check.
+#
+# Keep this short. It is the list of places where this product really is a Mac,
+# and every line that does not belong is a sentence somebody will read on a
+# Linux machine.
+
+# This machine really is one: the platform word for a nameless Mac, and the
+# tests that drive the linux and windows shapes of the same ladder.
+internal/transport/cloud/name.go	"Unnamed Mac"
+internal/transport/cloud/name_test.go	"Unnamed Mac"
+internal/transport/cloud/name_test.go	"Mac"
+internal/transport/cloud/name_test.go	"a %s machine published itself as %q: the account's machine list would show a Mac that is not one"
+internal/transport/cloud/name_test.go	"a nameless Mac publishes %q"
+
+# The local card is called a Mac only where /v1/diagnostics says darwin, and
+# these are the two tests that hold it to that — one for each answer.
+web/console/src/legacy/devices-bridge.test.ts	"Mac · Studio"
+web/console/src/legacy/devices-bridge.test.ts	"Mac · This Mac"
+web/console/src/legacy/devices-bridge.test.ts	"Mac"
+web/console/src/legacy/devices-bridge.test.ts	"a Linux daemon's own machine is not called a Mac"
+web/console/src/legacy/devices-bridge.test.ts	"a Mac is still called one, and the daemon is asked once"
+
+# The retired Swift app ran on macOS and nowhere else, so a case about it names
+# a Mac correctly.
+web/console/src/cloud/relay-writer.test.ts	"a Mac that answers without checking (a Swift app)"
+internal/config/retiredapp_test.go	"PENDING: says that app is running on this same Mac right now; rewrite as why the identities must stay apart"
+
+# What a browser calls itself. Read off navigator, not off this machine.
+web/console/src/door/Door.tsx	"Mac"
+
+# Host names Apple hardware gives itself, which the privacy word list has to
+# recognise to keep one out of this public repository.
+internal/domain/privacy/privacy.go	"a machine's own name: a MacBook, iMac or Mac mini host name, or a hyphenated or URL-borne .local name"
+internal/domain/privacy/privacy.go	`\b[A-Za-z]+-(?:MacBook(?:-Pro|-Air)?|iMac|Mac-mini|Mac-Studio|Mac-Pro)(?:-[0-9]+)?\b`
+
+# A host name in a fixture, there to prove the comparison folds case. The word
+# is the test data, not a claim about anything.
+internal/adapters/tunnel/supervisor_test.go	"https://Mac.Example.com/"
+internal/adapters/tunnel/tunnel_test.go	"  Mac.Example.com "

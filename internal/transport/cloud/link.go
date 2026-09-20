@@ -393,7 +393,7 @@ func (l *Link) wire() error {
 	}
 	l.publisher = &Publisher{
 		MachineID:   identity.MachineID,
-		MachineName: machineName(identity, settings),
+		MachineName: machineName(identity, settings, HostName(), runtime.GOOS),
 		Platform:    runtime.GOOS,
 		Version:     opts.Version,
 		Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
@@ -408,18 +408,17 @@ func (l *Link) wire() error {
 	return nil
 }
 
-// machineName is what a person picks this Mac out by in their machine list.
-// The identity's name is what was registered; the settings key overrides it
-// without re-registering, because renaming a machine should not need the
-// control plane.
-func machineName(identity adaptercloud.Identity, settings adaptercloud.Settings) string {
-	if settings.MachineName != "" {
-		return settings.MachineName
-	}
-	if identity.Name != "" {
-		return identity.Name
-	}
-	return "Mac"
+// machineName is the name this machine publishes to the account's machine
+// list. The identity's name is what was registered; the settings key overrides
+// it without re-registering, because renaming a machine should not need the
+// control plane. `host` and `goos` are parameters rather than reads so that a
+// test can drive the shape of a machine it is not running on — the whole
+// defect this answers was invisible on the machine that shipped it.
+//
+// The rungs below the two names are `MachineName`'s, shared with the name
+// login registers (name.go).
+func machineName(identity adaptercloud.Identity, settings adaptercloud.Settings, host, goos string) string {
+	return MachineName(host, goos, settings.MachineName, identity.Name)
 }
 
 // Enabled reports whether the switch was on when this link was opened.
@@ -483,7 +482,7 @@ func (l *Link) runOnce(ctx context.Context) error {
 	// stale roster when an envelope arrives, which is enough to admit a new
 	// viewer — but a machine that has received nothing all morning would then
 	// report a roster from this morning, and the status route is read by a
-	// person asking "does this Mac know about my phone yet".
+	// person asking "does this machine know about my phone yet".
 	go l.refreshRoster(ctx)
 	// The snapshots this machine publishes without being asked. They start
 	// only once the first handshake has completed: a snapshot reserved before
@@ -628,7 +627,7 @@ func (l *Link) pairingKeys() (domaincloud.DeviceKey, domaincloud.ContentKey, err
 // The roster is the account's, not this machine's: a device the person removed
 // in the hosted console stops being able to act here at the next refresh. The
 // capability check is the same borrowing — a viewer enrolled without
-// `send_prompt` may read this Mac and may not type into it, and that is the
+// `send_prompt` may read this machine and may not type into it, and that is the
 // account's decision rather than one this file makes up.
 func (l *Link) authority(ctx context.Context, sender string, requiresWriteGate bool) cloudops.Authority {
 	readable, _ := l.roster.Readable()
@@ -711,7 +710,7 @@ func (l *Link) Status() Status {
 		APIBase:     l.settings.APIBase,
 		Account:     l.identity.AccountID,
 		MachineID:   l.identity.MachineID,
-		MachineName: l.identity.Name,
+		MachineName: machineName(l.identity, l.settings, HostName(), runtime.GOOS),
 		Fingerprint: l.fingerprint,
 		LastError:   l.lastErr,
 		Answered:    l.answered,

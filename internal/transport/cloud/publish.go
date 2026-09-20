@@ -25,7 +25,7 @@ package cloud
 //     after the rows, not before, so a viewer that reads the marker and then
 //     asks for those rows never asks for one this machine has not sent.
 //   - **An unchanged row is not re-sent.** The Swift bridge compares each row's
-//     identity bytes and skips the ones nobody would read differently; a Mac
+//     identity bytes and skips the ones nobody would read differently; a machine
 //     with nine idle sessions otherwise republishes nine envelopes a tick, for
 //     ever, and every one of them is billed and fanned out.
 
@@ -59,7 +59,7 @@ const (
 const SnapshotInterval = 5 * time.Second
 
 // FeatureWords is `CloudAppBridge.swift:1436`'s `cloudFeatures`: the words a
-// newer Mac answers that an older one does not. A page sends such a word only
+// newer machine answers that an older one does not. A page sends such a word only
 // to a machine that listed it.
 var FeatureWords = []string{"sessions.snapshot", "board.items"}
 
@@ -93,7 +93,7 @@ func Features() []string {
 type Publisher struct {
 	// MachineID is the channel owner: `s/<machine>/…` and `orch/<machine>`.
 	MachineID string
-	// MachineName is the display name a person picks this Mac out by. It is
+	// MachineName is the display name a person picks this machine out by. It is
 	// display metadata and never routes anything.
 	MachineName string
 	// Platform and Version fill the descriptor's `platform` and the app stamp.
@@ -324,7 +324,7 @@ func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
 	if err != nil || res.Status != http.StatusOK {
 		// A machine that cannot read its own sessions publishes nothing rather
 		// than an empty list: an empty inventory is a claim, and the claim
-		// "this Mac has no sessions" would tombstone every row a viewer holds.
+		// "this machine has no sessions" would tombstone every row a viewer holds.
 		p.logf("cloud: this machine's own session list could not be read: status=%d err=%v", res.Status, err)
 		return sessionReading{}, false
 	}
@@ -623,7 +623,7 @@ func (p *Publisher) send(ctx context.Context, channel string, body []byte, what 
 // publisher has not stated its channels to since the socket came up is a
 // viewer that needs them, and the next pass gives it the lot. Nothing extra is
 // sent to ask the question and nothing is sent when no new device appears, so
-// the unchanged-row skip keeps every byte it was saving on an idle Mac.
+// the unchanged-row skip keeps every byte it was saving on an idle machine.
 //
 // It is bounded by construction: a device is added once per socket, so the
 // most this can cost is one full re-statement per paired device per

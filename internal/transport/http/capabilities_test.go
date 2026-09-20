@@ -92,7 +92,7 @@ func TestSettingsRefuseWhatThisMachineCannotDo(t *testing.T) {
 	}
 	mac := desktop.Host{GOOS: "darwin"}.Capabilities(context.Background())
 	if got := platformSettingRefusal(mac, "darwin", map[string]any{"hotkey": "cmd+shift+k", "notch": true}); got != nil {
-		t.Errorf("a Mac refused its own shell's settings: %+v", got)
+		t.Errorf("a machine refused its own shell's settings: %+v", got)
 	}
 
 	// And through the route, on whatever this test runs on.
@@ -101,7 +101,7 @@ func TestSettingsRefuseWhatThisMachineCannotDo(t *testing.T) {
 	switch runtime.GOOS {
 	case "darwin":
 		if rec.Code != http.StatusOK {
-			t.Fatalf("a Mac: %d %s", rec.Code, rec.Body)
+			t.Fatalf("a machine: %d %s", rec.Code, rec.Body)
 		}
 	default:
 		if rec.Code != http.StatusNotImplemented || refusal.Error != "capability_unavailable" ||

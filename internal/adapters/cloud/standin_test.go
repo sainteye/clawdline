@@ -36,7 +36,7 @@ import (
 var standInScenarios = map[string]string{
 	"approve":          "login: pending once, then approved; connect: a full handshake",
 	"deny":             "login: the person declines",
-	"expire":           "login: the code expires unapproved (also what a full plan looks like from the Mac)",
+	"expire":           "login: the code expires unapproved (also what a full plan looks like from the machine)",
 	"pending":          "login: nobody ever approves (run login with a short --wait)",
 	"start_not_found":  "login: a control plane without /v1/auth/device/start",
 	"start_html":       "login: a web page answering 200 where the control plane should be",

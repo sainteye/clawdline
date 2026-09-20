@@ -11,7 +11,7 @@ package cloud
 // 0700 key directory that `clawdline cloud status` also creates.
 //
 // Each row is ok, warn or block. A block means the next step would fail or do
-// the wrong thing — a leftover local relay URL would register this Mac with a
+// the wrong thing — a leftover local relay URL would register this machine with a
 // test control plane, for instance — and it is refused here, where it costs
 // nothing, rather than discovered after the person has approved a code.
 
@@ -86,7 +86,7 @@ func Preflight(opts LinkOptions) PreflightReport {
 		add("switch", PreflightOK, "%s is off; it is turned on after sign-in (step 3)", adaptercloud.KeyEnabled)
 	}
 	if settings.Commands {
-		add("commands", PreflightWarn, "%s is already true: a browser paired with this Mac could type into its sessions; the runbook turns this on last", adaptercloud.KeyCommands)
+		add("commands", PreflightWarn, "%s is already true: a browser paired with this machine could type into its sessions; the runbook turns this on last", adaptercloud.KeyCommands)
 	} else {
 		add("commands", PreflightOK, "%s is off: a paired browser may read and may not act", adaptercloud.KeyCommands)
 	}
@@ -108,7 +108,7 @@ func Preflight(opts LinkOptions) PreflightReport {
 	switch {
 	case err != nil:
 		// An identity that exists and cannot be read is never "none": signing
-		// in over it would register a second machine for the same Mac.
+		// in over it would register a second machine for the same host.
 		add("identity", PreflightBlock, "exists and cannot be read: %v", err)
 	case !found:
 		add("identity", PreflightOK, "none yet; `clawdline cloud login` creates it")

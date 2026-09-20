@@ -97,7 +97,7 @@ func (s *Server) imageRoute(w http.ResponseWriter, r *http.Request) {
 			// Same code, so every reader that branches on it still does; the
 			// sentence says which of the two happened (limits N15).
 			writeRefusal(w, http.StatusGone, "artifact_expired",
-				"That image artifact was let go to make room for newer pictures: this Mac keeps the newest "+
+				"That image artifact was let go to make room for newer pictures: this machine keeps the newest "+
 					strconv.Itoa(s.pictures.store.Policy.MaxCount)+".")
 			return
 		}

@@ -84,7 +84,7 @@ func TestAnAnswerWithNowhereToGoIsRecordedRatherThanSent(t *testing.T) {
 		Sender: "viewer-device-01", Sequence: 412,
 		Plaintext: plaintext(t, map[string]any{"type": "git", "session": "%19"})})
 	if len(fake.Published()) != 0 {
-		t.Fatalf("an answer for another Mac was published: %+v", fake.Published())
+		t.Fatalf("an answer for another machine was published: %+v", fake.Published())
 	}
 	if len(lines) != 1 || !strings.Contains(lines[0], "answered nobody") {
 		t.Fatalf("that drop was not recorded: %v", lines)

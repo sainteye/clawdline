@@ -293,7 +293,7 @@ func (s *Server) cloudPairing(w http.ResponseWriter) (*cloudtransport.Pairing, b
 	pairing := holder.Pairing()
 	if pairing == nil {
 		writeAuthRefusal(w, http.StatusConflict, "cloud_not_signed_in",
-			"This Mac is not connected to a Clawdline Cloud account. Run `clawdline cloud login` first.")
+			"This machine is not connected to a Clawdline Cloud account. Run `clawdline cloud login` first.")
 		return nil, false
 	}
 	return pairing, true

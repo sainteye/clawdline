@@ -469,7 +469,7 @@ func refusalReply(b body, word string, class Class) (string, string, bool) {
 	case "send", "answer", "key", "end", "focus", "shell-kill":
 		return session, "action:" + request, true
 	}
-	// Every machine command, and any word this Mac does not know, is answered
+	// Every machine command, and any word this machine does not know, is answered
 	// only on the one machine reply channel.
 	if session != MachineReplySession {
 		return "", "", false
@@ -505,7 +505,7 @@ func jsonBody(value map[string]any) []byte {
 // written. This daemon has a dispatch route and still refuses, because
 // inventing the missing half here would put a file somewhere nobody agreed on.
 var cloudDispatchUnpinned = Refusal{Status: 409, Code: "cloud_dispatch_unpinned",
-	Message: "Cloud dispatch has no pinned wire shape on this Mac."}
+	Message: "Cloud dispatch has no pinned wire shape on this machine."}
 
 func init() {
 	register(
@@ -786,7 +786,7 @@ func init() {
 		// machine advertise the whole board in its descriptor the moment it
 		// could answer any part of it — `commands` is a list of words, so a
 		// word is the finest thing a browser can be told about. Five words let
-		// an older Mac say exactly which areas it has, let the page learn
+		// an older machine say exactly which areas it has, let the page learn
 		// `unknown_command` per area (`machineLacks`), and let a divergence be
 		// stated about one of them. The cost is five entries in a table.
 		//
@@ -1734,7 +1734,7 @@ func answerNamesItsQuestion(p plan) *Refusal {
 		return nil
 	}
 	return &Refusal{Status: 428, Code: "menu_unverified",
-		Message: "This Mac answers a menu over Clawdline Cloud only when the answer names the question it was chosen for. Reload the page and answer again."}
+		Message: "This machine answers a menu over Clawdline Cloud only when the answer names the question it was chosen for. Reload the page and answer again."}
 }
 
 // routeAnswer is the menu-answer route, which is not `send`.

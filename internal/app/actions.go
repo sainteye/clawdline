@@ -440,7 +440,7 @@ func takePasteboard(ctx context.Context) (func(), error) {
 	if pasteboardWaiting.Add(1) > pasteboardQueue {
 		pasteboardWaiting.Add(-1)
 		return nil, Refusal{Code: "busy", Detail: fmt.Sprintf(
-			"This Mac already has %d picture sends in hand. Try again after they drain.", pasteboardQueue)}
+			"This machine already has %d picture sends in hand. Try again after they drain.", pasteboardQueue)}
 	}
 	defer pasteboardWaiting.Add(-1)
 	select {

@@ -285,7 +285,7 @@ const documentsMaximumListed = 200
 // saying why it stayed home.
 //
 // **The bytes are the answer and there is nothing shorter to send.** A URL
-// cannot be: this Mac is not reachable from the console, which is the entire
+// cannot be: this machine is not reachable from the console, which is the entire
 // reason a relay exists. So the only question left is how large a picture may
 // be, and that is the relay's per-envelope cap arithmetic and nothing else.
 func shapeImage(p plan, res LocalResponse) (json.RawMessage, Refusal) {
@@ -346,15 +346,15 @@ func shapeDocuments(_ plan, res LocalResponse) (json.RawMessage, Refusal) {
 	}
 	var listing map[string]json.RawMessage
 	if err := json.Unmarshal(res.Body, &listing); err != nil {
-		return nil, invalid("The Mac returned an invalid document listing.")
+		return nil, invalid("The machine returned an invalid document listing.")
 	}
 	raw, only := listing["documents"]
 	if !only || len(listing) != 1 {
-		return nil, invalid("The Mac returned an invalid document listing.")
+		return nil, invalid("The machine returned an invalid document listing.")
 	}
 	var source []map[string]any
 	if err := json.Unmarshal(raw, &source); err != nil || len(source) > documentsMaximumListed {
-		return nil, invalid("The Mac returned an invalid document listing.")
+		return nil, invalid("The machine returned an invalid document listing.")
 	}
 	rows := make([]map[string]any, 0, len(source))
 	for _, row := range source {
@@ -367,30 +367,30 @@ func shapeDocuments(_ plan, res LocalResponse) (json.RawMessage, Refusal) {
 		_ = url
 		if !pathOK || label != path || !bytesOK || bytes < 0 || bytes > documentMaximumBytes ||
 			!modifiedOK || !urlOK {
-			return nil, invalid("The Mac returned invalid document metadata.")
+			return nil, invalid("The machine returned invalid document metadata.")
 		}
 		switch scope {
 		case "project":
 			if len(row) != 6 {
-				return nil, invalid("The Mac returned unexpected document metadata.")
+				return nil, invalid("The machine returned unexpected document metadata.")
 			}
 			rows = append(rows, map[string]any{
 				"scope": "project", "path": path, "bytes": bytes, "modified": modified})
 		case "task":
 			task, taskOK := row["task"].(map[string]any)
 			if len(row) != 7 || !taskOK || len(task) != 2 {
-				return nil, invalid("The Mac returned invalid task document metadata.")
+				return nil, invalid("The machine returned invalid task document metadata.")
 			}
 			id, idOK := task["id"].(string)
 			title, titleOK := task["title"].(string)
 			if !idOK || !isTaskID(id) || !titleOK || len(title) > 300 {
-				return nil, invalid("The Mac returned invalid task document metadata.")
+				return nil, invalid("The machine returned invalid task document metadata.")
 			}
 			rows = append(rows, map[string]any{
 				"scope": "task", "task": id, "title": title, "path": path,
 				"bytes": bytes, "modified": modified})
 		default:
-			return nil, invalid("The Mac returned an unknown document scope.")
+			return nil, invalid("The machine returned an unknown document scope.")
 		}
 	}
 	return mustJSON(map[string]any{"documents": rows}), Refusal{}
@@ -426,7 +426,7 @@ func itoa(v int64) string { return strconv.FormatInt(v, 10) }
 // Busy is the answer to a request this machine did not take because the queue
 // in front of the bridge was full (limits N20): the Swift bridge's
 // `consumeInboundRefusal` for a count cap, and the code the hosted console
-// already draws as "this Mac is busy" (`cloud_ingress_busy`, 429, retry after a
+// already draws as "this machine is busy" (`cloud_ingress_busy`, 429, retry after a
 // second). limit is the queue's depth, which the detail carries.
 //
 // It decides where the refusal goes and nothing else: no route is asked and no
@@ -441,7 +441,7 @@ func (b Bridge) Busy(cmd Command, limit int) Answer {
 	word, _ := parsed.str("type")
 	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
 		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
-			Message: "This Cloud request addresses another Mac."})
+			Message: "This Cloud request addresses another machine."})
 	}
 	busy := Refusal{Status: 429, Code: "cloud_ingress_busy",
 		Message: "This request was not accepted because Cloud ingress is full; try again shortly.",
@@ -458,7 +458,7 @@ func (b Bridge) Busy(cmd Command, limit int) Answer {
 	}
 	if known && !o.read && !o.readLevel && !b.allowCommands() {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 403, Code: "cloud_commands_disabled",
-			Message: "Cloud commands are disabled on this Mac."})
+			Message: "Cloud commands are disabled on this machine."})
 	}
 	return b.refuse(cmd, parsed, word, busy)
 }

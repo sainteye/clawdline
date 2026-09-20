@@ -380,7 +380,7 @@ func (b *ScheduleBook) MachineRefusal(ctx context.Context, method, id string, bo
 		return nil
 	}
 	r := refusedSchedule(403, "forbidden",
-		"This Mac's orchestrator token may make, change and remove a schedule that runs once — "+
+		"This machine's orchestrator token may make, change and remove a schedule that runs once — "+
 			"a when with an on date. A repeating schedule is arranged by a person: in Settings, or "+
 			"from a paired device that may send. GET /v1/orchestrator/schedules/:id reads back what "+
 			"you wrote, through the same parser this route would have used.")
@@ -546,7 +546,7 @@ func (b *ScheduleBook) takeWriteRate() bool {
 
 func rateLimited() ScheduleReply {
 	return refusedSchedule(429, "rate_limited",
-		"This Mac has been asked for several schedules in the last few minutes. Try again shortly.")
+		"This machine has been asked for several schedules in the last few minutes. Try again shortly.")
 }
 
 // Create is `createSchedule`.

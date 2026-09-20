@@ -4,7 +4,7 @@
 // The other half of these rules is a Go test that reads `carry.ts` against this
 // machine's own catalog (internal/app/cloudops/carry_test.go). This half is
 // what the page does with the table: that the routes and the table cannot
-// disagree, that a refusal names the word, that `info` reaches the Mac and
+// disagree, that a refusal names the word, that `info` reaches the machine and
 // comes back as the status line's own read, and that the document's language
 // is the catalog this build ships.
 import { test } from "node:test"
@@ -14,7 +14,7 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { SessionInfo } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ANSWERED_HERE, CARRIED, CARRY_TABLE, DEFERRED, DEFERRED_ASKED, NO_MAC_ROUTE, notCarriedDetail, uncarried, uncarriedWordOf, words } from "./carry.ts"
+import { ANSWERED_HERE, CARRIED, CARRY_TABLE, DEFERRED, DEFERRED_ASKED, NO_MACHINE_ROUTE, notCarriedDetail, uncarried, uncarriedWordOf, words } from "./carry.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, type CloudIdentity, type CloudRow, type CloudSessions } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
@@ -106,7 +106,7 @@ class FakeMac implements CloudWriteClient {
     return Promise.resolve({
       snippets: [
         { id: "sn-1", machine: "mac-a", scope: "global", title: "a title", body: "a body" },
-        { id: "sn-2", machine: "mac-b", scope: "global", title: "elsewhere", body: "another Mac's" },
+        { id: "sn-2", machine: "mac-b", scope: "global", title: "elsewhere", body: "another machine's" },
       ],
       at: 9,
     })
@@ -141,7 +141,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   }
   // Every word a route can produce is a carried one. The types say so at
   // compile time (`Carried<K>`); this says so of the parser's actual output,
-  // which is what reaches the Mac.
+  // which is what reaches the machine.
   const routes: [string, string][] = [
     ["POST", "/v1/sessions/s1/send"],
     ["POST", "/v1/sessions/s1/key"],
@@ -202,7 +202,7 @@ test("every route the table says is answered here is answered here, with no word
     assert.equal(res.status, 200, path + " is in ANSWERED_HERE and the seam does not answer it")
     const row = reader.log[reader.log.length - 1]
     assert.equal(row.path, path)
-    assert.equal(row.answer, "local", path + " is answered here, so nothing was asked of the Mac for it")
+    assert.equal(row.answer, "local", path + " is answered here, so nothing was asked of the machine for it")
     assert.equal(row.word, undefined, path + " is in ANSWERED_HERE and names a Cloud word")
     assert.equal(uncarriedWordOf("GET", path), "", path + " stands for a word, so it is not answered here")
   }
@@ -215,7 +215,7 @@ test("every route the table says is answered here is answered here, with no word
 test("a route this console does not carry is refused by the word it stands for", async () => {
   const mac = new FakeMac()
   const reader = seam(mac)
-  // 常用句 used to be here — a word this Mac knew and had no route for, so
+  // 常用句 used to be here — a word this machine knew and had no route for, so
   // the page refused the read to itself. It is carried now, and the shape it
   // left behind is the one this asserts on a word that still is not: a
   // session's skills.
@@ -223,11 +223,11 @@ test("a route this console does not carry is refused by the word it stands for",
   assert.equal(res.status, 501)
   const body = (await res.json()) as { error: string; detail: string }
   assert.equal(body.error, "cloud_not_carried", "the code the screens choose their sentence by")
-  assert.equal(body.detail, NO_MAC_ROUTE.skills)
-  assert.match(body.detail, /on the Mac/, "a named refusal says what can be done instead")
+  assert.equal(body.detail, NO_MACHINE_ROUTE.skills)
+  assert.match(body.detail, /on the machine/, "a named refusal says what can be done instead")
   assert.equal(uncarriedWordOf("GET", "/v1/snippets"), "", "the snippet list is carried, so it stands for nothing here")
   assert.equal(uncarried("snippets"), "", "a carried word has no refusal sentence")
-  // A word this Mac answers and this console has not carried yet says its own
+  // A word this machine answers and this console has not carried yet says its own
   // sentence too, not the same one. This used to be `git`, whose sentence had
   // been false for months; what is left in `DEFERRED` with a console route
   // behind it is the terminal's own picture.
@@ -241,12 +241,12 @@ test("a route this console does not carry is refused by the word it stands for",
   assert.equal(uncarriedWordOf("GET", "/v1/work/board"), "", "the work board is carried")
   assert.equal(uncarriedWordOf("GET", "/v1/timeline?project=p"), "", "a Project's timeline is carried")
   assert.equal(uncarried("work.board"), "", "a carried word has no refusal sentence")
-  // One schedule in full is the one schedule word this Mac has no route for
+  // One schedule in full is the one schedule word this machine has no route for
   // (`op{name: "schedule"}` in cloudops/ops.go carries no `route`), so the
   // sheets behind a schedule row say that and not "not read yet", while the
   // list beside it is carried and says nothing at all.
   assert.equal(uncarriedWordOf("GET", "/v1/orchestrator/schedules/sch-1"), "schedule")
-  assert.equal(notCarriedDetail("GET", "/v1/orchestrator/schedules/sch-1"), NO_MAC_ROUTE.schedule)
+  assert.equal(notCarriedDetail("GET", "/v1/orchestrator/schedules/sch-1"), NO_MACHINE_ROUTE.schedule)
   assert.equal(uncarriedWordOf("GET", "/v1/orchestrator/schedules"), "", "the list is carried, so it stands for nothing here")
   assert.equal(uncarried("schedules"), "", "a carried word has no refusal sentence")
   // And a route that is no Cloud word at all still says where to go.
@@ -329,13 +329,13 @@ test("a deferred word a screen in this console already asks for says so", () => 
   assert.ok(asked.has("screen"), "the path scan found no console route for `screen`; it has stopped reading this tree")
 })
 
-test("the Git panel's read reaches the Mac, and its refusals keep their names", async () => {
+test("the Git panel's read reaches the machine, and its refusals keep their names", async () => {
   const mac = new FakeMac()
   const reader = seam(mac)
 
   const res = await reader.fetch("/v1/sessions/s1/git")
   assert.equal(res.status, 200)
-  assert.deepEqual(mac.asked, ["git:s1"], "asked of the Mac, under this page's identity for the row")
+  assert.deepEqual(mac.asked, ["git:s1"], "asked of the machine, under this page's identity for the row")
   const body = (await res.json()) as { git?: { ahead?: number; files?: unknown[] } }
   assert.equal(body.git?.ahead, 46)
   assert.equal(body.git?.files?.length, 1)
@@ -343,7 +343,7 @@ test("the Git panel's read reaches the Mac, and its refusals keep their names", 
   assert.equal(row.word, "git")
   assert.equal(row.answer, "relay")
 
-  // A refusal from the Mac's own route crosses as its code, because that is
+  // A refusal from the machine's own route crosses as its code, because that is
   // what the panel branches on (`legacy/git-bridge.ts`, `gitSentence`).
   mac.git = () => Promise.reject(Object.assign(new Error("not a repository"), { code: "not_a_repo", status: 404 }))
   const refused = await reader.fetch("/v1/sessions/s1/git")
@@ -357,7 +357,7 @@ test("the Git panel's read reaches the Mac, and its refusals keep their names", 
   assert.equal(((await gone.json()) as { error: string }).error, "session_not_found")
 })
 
-test("the status line's read reaches the Mac, and its context cell draws", async () => {
+test("the status line's read reaches the machine, and its context cell draws", async () => {
   const mac = new FakeMac()
   const reader = seam(mac)
 
@@ -381,18 +381,18 @@ test("the status line's read reaches the Mac, and its context cell draws", async
   assert.equal(row.answer, "relay")
 })
 
-test("the seam says what this Mac can do that this bundle never asks for", async () => {
+test("the seam says what this machine can do that this bundle never asks for", async () => {
   const mac = new FakeMac()
   const reader = seam(mac)
   assert.equal(reader.drift(), null, "no descriptor is not agreement")
-  // Two words this Mac knows and this bundle does not ask for, one from each
-  // uncarried list: `screen` is DEFERRED and `shell` is NO_MAC_ROUTE. Every
+  // Two words this machine knows and this bundle does not ask for, one from each
+  // uncarried list: `screen` is DEFERRED and `shell` is NO_MACHINE_ROUTE. Every
   // pair this test has used before — `board`, `snippets`, and now `git` —
   // became a carried word, which is exactly the drift this assertion is about.
   mac.commands = [...Object.keys(CARRIED), "shell", "screen"]
-  assert.deepEqual(reader.drift(), { notCarried: ["screen", "shell"], notOnThisMac: [] })
+  assert.deepEqual(reader.drift(), { notCarried: ["screen", "shell"], notOnThisMachine: [] })
   mac.commands = Object.keys(CARRIED).filter((word) => word !== "info")
-  assert.deepEqual(reader.drift(), { notCarried: [], notOnThisMac: ["info"] })
+  assert.deepEqual(reader.drift(), { notCarried: [], notOnThisMachine: ["info"] })
 
   // And it reaches this page's own log, once, the first time the list is read.
   mac.commands = [...Object.keys(CARRIED), "shell"]

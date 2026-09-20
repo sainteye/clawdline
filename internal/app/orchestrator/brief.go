@@ -169,7 +169,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	}
 
 	if policy := b.policy(); policy != "" {
-		w("## What this Mac says")
+		w("## What this machine says")
 		w("")
 		w("House rules from this machine's dispatch policy. They are the person's, not this app's;")
 		w("where they and your own judgement disagree, follow them and say so in your summary.")

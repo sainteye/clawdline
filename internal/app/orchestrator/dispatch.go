@@ -220,7 +220,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	}
 	if len(live) >= b.machineChildren() {
 		return Dispatched{}, refuseWith(http.StatusTooManyRequests, "over_capacity",
-			fmt.Sprintf("All %d child sessions on this Mac are busy; retry when one finishes.", b.machineChildren()),
+			fmt.Sprintf("All %d child sessions on this machine are busy; retry when one finishes.", b.machineChildren()),
 			map[string]any{"retry_after": 60})
 	}
 
@@ -325,7 +325,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		release, err := b.Lanes.Acquire(ctx, "open:child:"+record.ID)
 		if err != nil {
 			return Dispatched{}, refuseWith(http.StatusTooManyRequests, "terminal_busy",
-				"This Mac already has as many terminal writes in hand as it admits; nothing was recorded or opened.",
+				"This machine already has as many terminal writes in hand as it admits; nothing was recorded or opened.",
 				map[string]any{"retry_after": 5})
 		}
 		opening = release
@@ -525,7 +525,7 @@ func (b *Broker) planWorktree(ctx context.Context, r Record) (*Worktree, []Warni
 	branch := BranchName(r.ID)
 	if exists, known := b.Git.BranchExists(ctx, repo, branch); !known || exists {
 		return nil, nil, refuse(http.StatusConflict, "worktree_unavailable",
-			"The delivery branch "+branch+" already exists, or this Mac could not tell whether it does.")
+			"The delivery branch "+branch+" already exists, or this machine could not tell whether it does.")
 	}
 	warnings := []Warning{}
 	if dirty, known := b.Git.Dirty(ctx, repo); known && dirty {

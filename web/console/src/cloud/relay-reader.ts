@@ -33,7 +33,7 @@ export interface CloudIdentity {
   session: string
 }
 
-/** A row as `CloudClient` holds it: the Mac's own row, plus where it came from. */
+/** A row as `CloudClient` holds it: the machine's own row, plus where it came from. */
 export type CloudRow = Record<string, unknown> & {
   id?: string
   machine?: string
@@ -53,9 +53,9 @@ export interface CloudSessions {
 }
 
 /**
- * One task as the Mac published it, plus the machine it came from.
+ * One task as the machine published it, plus the machine it came from.
  *
- * It is not a `TaskRow`: the Mac cuts the record to the nine paths a viewer
+ * It is not a `TaskRow`: the machine cuts the record to the nine paths a viewer
  * reads before it goes out (`internal/transport/cloud/tasklist.go`
  * `cloudTaskFields`), so most of the contract's fields are simply not there.
  * Typed as what it is — an object with a machine on it — so nothing here reads
@@ -68,7 +68,7 @@ export interface CloudTasks {
   tasks?: CloudTask[]
 }
 
-/** One schedule row as the Mac's list answers it, plus the machine it came from. */
+/** One schedule row as the machine's list answers it, plus the machine it came from. */
 export type CloudSchedule = Record<string, unknown> & { machine?: string }
 
 /**
@@ -79,7 +79,7 @@ export type CloudSchedule = Record<string, unknown> & { machine?: string }
  * typed failure; `unconfirmed` is one that was never asked because its
  * descriptor has not arrived. Both matter here for one reason: the copied
  * client resolves as long as *some* machine answered, and a resolved answer
- * that is missing this machine's rows would be read as "this Mac has none".
+ * that is missing this machine's rows would be read as "this machine has none".
  */
 export interface CloudSchedules {
   schedules?: CloudSchedule[]
@@ -88,7 +88,7 @@ export interface CloudSchedules {
   unconfirmed?: string[]
 }
 
-/** One snippet as the Mac's list answers it, plus the machine it came from. */
+/** One snippet as the machine's list answers it, plus the machine it came from. */
 export type CloudSnippet = Record<string, unknown> & { machine?: string }
 
 /**
@@ -101,7 +101,7 @@ export type CloudSnippet = Record<string, unknown> & { machine?: string }
  * one machine, asks that one, and throws its own failure — `cloud_read_
  * unavailable` for a machine nothing has told us about, `cloud_snippets_
  * unpublished` for one whose inventory carries no such field. Neither ever
- * resolves as an empty list, because "this Mac has none" and "nobody answered"
+ * resolves as an empty list, because "this machine has none" and "nobody answered"
  * are opposite facts and the sheet draws a different thing for each.
  */
 export interface CloudSnippets {
@@ -130,7 +130,7 @@ export interface CloudReadClient {
   /**
    * The dispatched work every machine on this account published, out of the
    * `orch/` snapshots this client has already decrypted
-   * (`_allOrchestratorRows("tasks")`). Nothing is asked of any Mac for it: the
+   * (`_allOrchestratorRows("tasks")`). Nothing is asked of any machine for it: the
    * list rides on the machine descriptor, which arrives whether or not a page
    * reads it.
    *
@@ -145,10 +145,10 @@ export interface CloudReadClient {
    * schedules on it (`internal/transport/cloud/publish.go` carries `tasks` and
    * not these), so the retained reading refuses `cloud_schedules_unpublished`
    * forever. `fresh` asks each machine the word instead, which is the read the
-   * Mac has always answered.
+   * machine has always answered.
    *
    * It is also what makes the four writes reachable: the copied client finds
-   * which Mac a schedule id belongs to by looking it up in the snapshot
+   * which machine a schedule id belongs to by looking it up in the snapshot
    * (`_scheduleMachine`), and `fresh` is what puts the rows there.
    *
    * Optional for the same reason `pushKey` and `tasks` are: a copied client
@@ -171,7 +171,7 @@ export interface CloudReadClient {
   snippets?(identity: CloudIdentity, options?: { fresh?: boolean }): Promise<CloudSnippets>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
   /**
-   * The application server key, as the Mac's `push-key` read answers it.
+   * The application server key, as the machine's `push-key` read answers it.
    *
    * Optional because a copied client older than the word does not have it, and
    * a page that reached that build must be refused by name rather than throw
@@ -192,7 +192,7 @@ export interface CloudReadClient {
    * This is the generic underneath all of them (`_machineRequest`), and the
    * reads carried through it get exactly what the named methods get: the
    * machine's own capability gate before anything is sealed, the
-   * `unknown_command` a Mac that lacks the word answers, and the
+   * `unknown_command` a machine that lacks the word answers, and the
    * `machineLacks` memory that stops the page asking it twice.
    *
    * It is called for every word this file carries, including the four the
@@ -230,7 +230,7 @@ export const TRANSCRIPT_MAX_REUSE_MS = 30_000
  * How long, after this page did something to a session, every poll asks the
  * machine again until the transcript it answers has changed. A message just
  * typed is the turn the page is waiting to see (`session/pending.ts`); reusing
- * the answer from before it would hold the card at "the Mac has it" for up to
+ * the answer from before it would hold the card at "the machine has it" for up to
  * `TRANSCRIPT_MAX_REUSE_MS` with the turn already written.
  */
 export const TRANSCRIPT_EXPECT_MS = 45_000
@@ -329,7 +329,7 @@ export class RelayReader {
   private readonly rows: SeamRow[] = []
   private readonly options: RelayReaderOptions
   private writer: WriteSeam | null = null
-  /** Whether this page has already said what it and the Mac disagree about (`drift`). */
+  /** Whether this page has already said what it and the machine disagree about (`drift`). */
   private saidDrift = false
   /** The one machine this reads. */
   readonly machine: string
@@ -381,7 +381,7 @@ export class RelayReader {
 
   /**
    * Something was done to `session`. The next read asks the machine whatever
-   * the row says, and — unless the Mac refused, which changes nothing — every
+   * the row says, and — unless the machine refused, which changes nothing — every
    * read for the next `TRANSCRIPT_EXPECT_MS` does too, until the transcript it
    * answers is not the one from before.
    */
@@ -394,22 +394,22 @@ export class RelayReader {
   }
 
   /**
-   * What this bundle and this Mac disagree about, right now, on the page.
+   * What this bundle and this machine disagree about, right now, on the page.
    *
    * The build-time half of this is a Go test that reads `carry.ts`
    * (internal/app/cloudops/carry_test.go), and it can only compare this bundle
    * with the checkout it was built from. A hosted console is an *older* bundle
-   * reading a Mac that has been updated since, which no test in either repo can
-   * see. The Mac says what it can do in its own descriptor —
+   * reading a machine that has been updated since, which no test in either repo can
+   * see. The machine says what it can do in its own descriptor —
    * `cloudops.Implemented()`, carried as `machine.commands` — so the same
    * question is asked here of the machine actually being read.
    *
-   * `notCarried` is what this Mac answers and this bundle never asks for;
-   * `notOnThisMac` is what this bundle would ask for and this Mac does not
+   * `notCarried` is what this machine answers and this bundle never asks for;
+   * `notOnThisMachine` is what this bundle would ask for and this machine does not
    * list. Empty when the descriptor has not arrived: unknown is not agreement,
    * and `null` says which of the two this is.
    */
-  drift(): { notCarried: string[]; notOnThisMac: string[] } | null {
+  drift(): { notCarried: string[]; notOnThisMachine: string[] } | null {
     const carried = this.options.carry?.carried
     if (!carried) return null
     const client = this.client as { machineDescriptor?: (machine: string) => { machine?: { commands?: unknown } } | null } | null
@@ -418,7 +418,7 @@ export class RelayReader {
     const listed = new Set(commands.filter((word): word is string => typeof word === "string"))
     return {
       notCarried: [...listed].filter((word) => !carried.includes(word)).sort(),
-      notOnThisMac: carried.filter((word) => !listed.has(word)).sort(),
+      notOnThisMachine: carried.filter((word) => !listed.has(word)).sort(),
     }
   }
 
@@ -426,7 +426,7 @@ export class RelayReader {
    * Put `drift` in this page's own log, once, as soon as the machine's
    * descriptor has arrived. It is a row and not a refusal because nothing is
    * broken: the page carries what it carries. It is recorded because the
-   * alternative is what happened with `info` — a Mac answering a word for
+   * alternative is what happened with `info` — a machine answering a word for
    * months, a page never asking for it, and nothing anywhere saying so.
    */
   private sayDrift(): void {
@@ -434,9 +434,9 @@ export class RelayReader {
     const found = this.drift()
     if (!found) return
     this.saidDrift = true
-    if (!found.notCarried.length && !found.notOnThisMac.length) return
+    if (!found.notCarried.length && !found.notOnThisMachine.length) return
     this.note("GET", "/v1/sessions", "local", "cloud_vocabulary_drift", {
-      word: [...found.notCarried, ...found.notOnThisMac.map((w) => "-" + w)].join(" "),
+      word: [...found.notCarried, ...found.notOnThisMachine.map((w) => "-" + w)].join(" "),
     })
   }
 
@@ -472,10 +472,10 @@ export class RelayReader {
           // The list the session list's indent is computed from. Without it
           // `groupUnderRoots` has nothing to group by and returns the rows as
           // they stand, which is what a phone showed: a flat list of sessions
-          // where the console on the Mac itself puts each child under the
+          // where the console on the machine itself puts each child under the
           // session that dispatched it.
           //
-          // It is answered here and not asked of the Mac. The Mac publishes
+          // It is answered here and not asked of the machine. The machine publishes
           // the list on its machine descriptor (`tasklist.go`), the copied
           // client holds every descriptor it has opened, and `tasks()` reads
           // it back out of that. So this costs the relay nothing at all — it
@@ -483,7 +483,7 @@ export class RelayReader {
           const client = this.connected()
           if (typeof client.tasks !== "function") {
             return this.refuse(method, path, 501, "cloud_not_carried",
-              "This console cannot read this Mac's dispatched work.")
+              "This console cannot read this machine's dispatched work.")
           }
           const list = taskList(await client.tasks(), this.machine, Math.floor(this.now() / 1000))
           this.note(method, path, "local")
@@ -492,23 +492,23 @@ export class RelayReader {
         case "/v1/orchestrator/schedules": {
           // The list under the session list, which on a phone drew nothing at
           // all: the word was in `DEFERRED` with a sentence saying schedules
-          // were not read over Cloud yet, and the Mac had been answering it
+          // were not read over Cloud yet, and the machine had been answering it
           // the whole time. The sentence was what had stopped being true.
           //
-          // Unlike the task list this is asked of the Mac (`schedules` is a
+          // Unlike the task list this is asked of the machine (`schedules` is a
           // word, and this daemon publishes no schedules on its descriptor),
           // and the answer is cut to this machine's rows for the reason the
           // session list is: the copied client merges every machine's into
-          // one, and a row from another Mac under this one's list would be a
+          // one, and a row from another machine under this one's list would be a
           // schedule this page cannot open, edit or run.
           const client = this.connected()
           if (typeof client.schedules !== "function") {
             return this.refuse(method, path, 501, "cloud_not_carried",
-              "This console cannot read this Mac's schedules.")
+              "This console cannot read this machine's schedules.")
           }
           const answer = await client.schedules({ fresh: true })
           // **A resolved answer is not this machine's answer.** The read fans
-          // out and settles as long as one machine replied, so a Mac that
+          // out and settles as long as one machine replied, so a machine that
           // refused, timed out or was never asked comes back as an account
           // with fewer rows in it — which is this page saying "there are
           // none" on its behalf. Its own failure is raised instead, and the
@@ -517,7 +517,7 @@ export class RelayReader {
           if (missed) throw missed.error ?? new NotConnected()
           if ((answer.unconfirmed ?? []).includes(this.machine)) {
             return this.refuse(method, path, 503, "cloud_read_unavailable",
-              "This Mac has not published an inventory to this account yet.")
+              "This machine has not published an inventory to this account yet.")
           }
           const schedules = (answer.schedules ?? []).filter((row) => row?.machine === this.machine)
           // Typed against the table, as `transcript` below is: dropping it
@@ -529,27 +529,27 @@ export class RelayReader {
         }
         case "/v1/snippets": {
           // 常用句 — the sheet a phone could not open. Both halves were true
-          // at once: this Mac's catalog knew the word and had no route behind
-          // it, so the seam listed it in `NO_MAC_ROUTE` and refused the read
-          // to itself rather than asking a Mac that would have said
+          // at once: this machine's catalog knew the word and had no route behind
+          // it, so the seam listed it in `NO_MACHINE_ROUTE` and refused the read
+          // to itself rather than asking a machine that would have said
           // `unknown_command`. The sentence was honest; what it described is
           // gone.
           //
           // **The whole machine's list, and the grouping stays on the page.**
           // The wire carries no session (`cloudops`' `snippets` op), so the
-          // Mac cannot resolve this session's project the way the local route
+          // machine cannot resolve this session's project the way the local route
           // does and the answer names none: `view/snippets-data.js`'s
           // `snippetGroups` matches each row's `project` against the session's
           // own `cwd` instead. The rows are cut to this machine's for the
           // reason the schedule list's are — the copied client merges every
-          // Mac's rows into one, and another Mac's snippet is text this
+          // machine's rows into one, and another machine's snippet is text this
           // session cannot even be about.
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
           const client = this.connected()
           if (typeof client.snippets !== "function") {
             return this.refuse(method, path, 501, "cloud_not_carried",
-              "This console cannot read this Mac's snippets.")
+              "This console cannot read this machine's snippets.")
           }
           const answer = await client.snippets({ machine: this.machine, session }, { fresh: true })
           const snippets = (answer.snippets ?? []).filter((row) => row?.machine === this.machine)
@@ -592,7 +592,7 @@ export class RelayReader {
           const client = this.connected()
           if (typeof client.pushKey !== "function") {
             return this.refuse(method, path, 501, "cloud_not_carried",
-              "This console cannot ask this Mac for a notification key.")
+              "This console cannot ask this machine for a notification key.")
           }
           const key = await client.pushKey()
           this.note(method, path, "relay", undefined, { word: "push-key" })
@@ -616,7 +616,7 @@ export class RelayReader {
             // leaves both off for the first page of a Project it has just
             // opened. The word carries two integers and no absence, so the
             // route's own numbers are what is sent — anything else would page
-            // a phone differently from the browser on the Mac.
+            // a phone differently from the browser on the machine.
             cursor: whole(q.cursor, 0),
             limit: whole(q.limit, BOARD_PAGE_DEFAULT),
           })
@@ -673,7 +673,7 @@ export class RelayReader {
           })
         }
         case "/v1/strings": {
-          // The words are the bundle's own file, not the Mac's (`cloud/strings.ts`):
+          // The words are the bundle's own file, not the machine's (`cloud/strings.ts`):
           // they belong to the screen and the screen is here. An empty answer
           // is not a failure — the console has built-in English and uses it —
           // but it is a degradation, and the seam log says so by name rather
@@ -824,7 +824,7 @@ export class RelayReader {
    * One carried read, asked of the machine this page is reading.
    *
    * Every word goes out the same way, and the answer is the route's own body:
-   * a refusal from the Mac's route arrives as a typed failure and is turned
+   * a refusal from the machine's route arrives as a typed failure and is turned
    * into the same refusal a daemon on this machine's own network would have
    * sent, by the `catch` in `fetch` above. Nothing here reads the body, so a
    * page's own shape is never a thing this seam has to keep right.
@@ -835,7 +835,7 @@ export class RelayReader {
       // A copied client older than the generic. Named rather than thrown:
       // this is the page refusing itself, and it says which word it is about.
       return this.refuse(method, path, 501, "cloud_not_carried",
-        `This console cannot ask this Mac for ${word}.`)
+        `This console cannot ask this machine for ${word}.`)
     }
     const answer = await client._machineRequest(this.machine, word, body, "read")
     this.note(method, path, "relay", undefined, { word })
@@ -847,7 +847,7 @@ export class RelayReader {
    * not.
    *
    * A field this seam drops silently is the failure this whole table exists to
-   * stop: the page asks a narrower question, the Mac answers a wider one, and
+   * stop: the page asks a narrower question, the machine answers a wider one, and
    * the screen draws the answer to a question nobody asked. A word's body is a
    * fixed key set on this wire, so a field with nowhere to go is not carried —
    * and says so by its own name.
@@ -856,7 +856,7 @@ export class RelayReader {
     const out: Record<string, string | undefined> = {}
     for (const [key, value] of url.searchParams) {
       if (!carried.includes(key)) {
-        throw Object.assign(new Error(`${path}?${key}= is not carried over Clawdline Cloud: read it on the Mac.`), {
+        throw Object.assign(new Error(`${path}?${key}= is not carried over Clawdline Cloud: read it on the machine.`), {
           code: "cloud_not_carried", status: 501,
         })
       }
@@ -925,7 +925,7 @@ export class RelayReader {
   private notCarried(method: string, path: string): string {
     return (
       this.options.carry?.detail(method, path) ??
-      `${method} ${path} is not carried over Clawdline Cloud: do it on the Mac itself.`
+      `${method} ${path} is not carried over Clawdline Cloud: do it on the machine itself.`
     )
   }
 
@@ -976,7 +976,7 @@ function whole(value: string | undefined, fallback: number): number {
 /**
  * The Project id in `/v1/projects/{project}/worktrees`, or "" for any other
  * path. The refresh beside it (`/worktrees/refresh`) is a POST that runs
- * processes on the Mac, so it is not this read and not this round.
+ * processes on the machine, so it is not this read and not this round.
  */
 function worktreeLifecycleProject(path: string): string {
   const parts = path.split("/")
@@ -993,9 +993,9 @@ function json(status: number, body: unknown): Response {
 }
 
 /**
- * A relay row as the console's list takes it. The Mac's own row is kept whole;
+ * A relay row as the console's list takes it. The machine's own row is kept whole;
  * the relay's routing key is dropped, and `machine` stays, so the list can say
- * which Mac a row is on rather than "this Mac" (`legacy/bridge.ts`).
+ * which machine a row is on rather than "this machine" (`legacy/bridge.ts`).
  */
 function consoleRow(row: CloudRow): SessionRow {
   const { identity: _identity, optimisticIdentity: _optimistic, ...rest } = row as CloudRow & { optimisticIdentity?: unknown }
@@ -1003,11 +1003,11 @@ function consoleRow(row: CloudRow): SessionRow {
 }
 
 /**
- * The Mac's published task list, as `/v1/orchestrator/tasks` would answer it.
+ * The machine's published task list, as `/v1/orchestrator/tasks` would answer it.
  *
  * **This machine's rows only.** The copied client merges every machine's
  * `orch/` snapshot into one list, and a terminal id is a tmux pane name — two
- * Macs both have a `%1`. A row from another machine would sit under whichever
+ * machines both have a `%1`. A row from another machine would sit under whichever
  * session here happened to share its name, so the machine is the filter, as it
  * is for the session list (`snapshot`). The rows keep the `machine` the client
  * tagged them with, for the reason a session row does: a row read across the
@@ -1016,12 +1016,12 @@ function consoleRow(row: CloudRow): SessionRow {
  * `page` and `store` are answered rather than left out. The type says they are
  * there, nothing in this console reads them, and a field that is declared and
  * absent is the kind of thing that is discovered by something breaking. So:
- * `store` is `unknown`, because this page has not read the Mac's task store
- * and cannot say how fresh it is; and this is not a page — the Mac publishes
+ * `store` is `unknown`, because this page has not read the machine's task store
+ * and cannot say how fresh it is; and this is not a page — the machine publishes
  * the whole list a viewer can reach on its descriptor, bounded there, and this
  * hands that over whole, so there is no cursor to follow and no limit was
  * asked for. `fields` says `cloud` rather than `list` because the rows are the
- * Mac's Cloud projection — nine paths (`internal/transport/cloud/tasklist.go`)
+ * machine's Cloud projection — nine paths (`internal/transport/cloud/tasklist.go`)
  * — and a reader that finds a field missing can see from the answer why.
  */
 function taskList(answer: CloudTasks, machine: string, at: number): TaskList {

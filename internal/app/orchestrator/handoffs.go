@@ -21,7 +21,7 @@ import (
 )
 
 // The hand-over routes (broker-design B8; the dispatch role contract in this
-// Mac's dispatch policy):
+// machine's dispatch policy):
 //
 //   - a **handoff** continues an existing line of work in a new session: the
 //     sender writes a package, and the receiver is told to walk its
@@ -82,7 +82,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model st
 		release, err := b.Lanes.Acquire(ctx, "open:"+name)
 		if err != nil {
 			return openedSession{}, refuseWith(http.StatusTooManyRequests, "terminal_busy",
-				"This Mac already has as many terminal writes in hand as it admits; nothing was opened.",
+				"This machine already has as many terminal writes in hand as it admits; nothing was opened.",
 				map[string]any{"retry_after": 5})
 		}
 		defer release()
@@ -104,7 +104,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model st
 	case projects.PlanNotRunning:
 		err = terminal.Failure{Message: "iTerm2 is not running, and this will not launch it for you."}
 	default:
-		err = terminal.Failure{Message: "tmux is the terminal for new sessions in Settings, and there is no tmux on this Mac."}
+		err = terminal.Failure{Message: "tmux is the terminal for new sessions in Settings, and there is no tmux on this machine."}
 	}
 	if err != nil {
 		return openedSession{}, err

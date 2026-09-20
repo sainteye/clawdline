@@ -242,7 +242,7 @@ func TestRevokeAndCaps(t *testing.T) {
 	store := &memStore{}
 	a, _ := newAuthority(t, store)
 	local, _ := a.LocalToken()
-	id, token, err := a.AddDevice("Browser on this Mac", NewCaps(Read), false)
+	id, token, err := a.AddDevice("Browser on this machine", NewCaps(Read), false)
 	if err != nil {
 		t.Fatal(err)
 	}

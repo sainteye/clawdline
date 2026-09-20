@@ -106,7 +106,7 @@ func fail(err error) {
 }
 
 // openCommand is the Swift app's "Open in a browser": a device of its own
-// named "Browser on this Mac", handed over in the address. In the fragment,
+// named "Browser on this machine", handed over in the address. In the fragment,
 // not the query — a browser never sends a fragment and never logs it.
 func openCommand(args []string) {
 	fs := flag.NewFlagSet("open", flag.ExitOnError)
@@ -214,7 +214,7 @@ func pairCommand(args []string) {
 }
 
 func printPairing(n contract.PairingNotice) {
-	fmt.Printf("\n%s wants to pair with this Mac\n\n", n.Name)
+	fmt.Printf("\n%s wants to pair with this machine\n\n", n.Name)
 	fmt.Printf("Type this code into it:\n\n%s\n\n", n.Code)
 	fmt.Printf("It is good for two minutes. If you did not just ask for this, ignore it — "+
 		"whoever asked cannot finish without this code.\n(expires %s)\n",

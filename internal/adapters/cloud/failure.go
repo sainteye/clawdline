@@ -99,9 +99,9 @@ func (f LineFailure) Remedy() string {
 	case KindNotSignedIn:
 		return "Run `clawdline cloud login` and approve the code in the browser (docs/cloud-cutover.md step 2)."
 	case KindNotApproved:
-		return "Run `clawdline cloud login` again and finish the approval page. If that page said the plan allows no more Macs, this is the entitlement row of docs/cloud-cutover.md, not a fault."
+		return "Run `clawdline cloud login` again and finish the approval page. If that page said the plan allows no more machines, this is the entitlement row of docs/cloud-cutover.md, not a fault."
 	case KindEntitlement:
-		return "The account's plan has no room for this machine; the Mac already holding the slot is not affected. Free a slot or change the plan at app.clawdline.com → Plan."
+		return "The account's plan has no room for this machine; the machine already holding the slot is not affected. Free a slot or change the plan at app.clawdline.com → Plan."
 	case KindVersionMismatch:
 		return "The endpoint does not speak this build's protocol. Leave cloud_api_base and cloud_relay_url unset for production (or fix them), then update this build if it persists."
 	case KindRelayRefused:

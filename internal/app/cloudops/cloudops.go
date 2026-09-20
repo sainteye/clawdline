@@ -214,7 +214,7 @@ func (b Bridge) Handle(ctx context.Context, cmd Command) Answer {
 	// an answer of ours would be read by nobody. The notice is the reply.
 	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
 		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
-			Message: "This Cloud request addresses another Mac."})
+			Message: "This Cloud request addresses another machine."})
 	}
 	if parseErr != nil || word == "" {
 		return b.refuse(cmd, parsed, "", Refusal{Status: 400, Code: "malformed_command",
@@ -223,7 +223,7 @@ func (b Bridge) Handle(ctx context.Context, cmd Command) Answer {
 	o, known := catalog[word]
 	if !known {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 400, Code: "unknown_command",
-			Message: "This Mac does not know that Cloud command."})
+			Message: "This machine does not know that Cloud command."})
 	}
 	if o.read {
 		return b.serveRead(ctx, cmd, parsed, o)
@@ -260,7 +260,7 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 		// the Swift bridge's, because it is the code the hosted console learns
 		// from: `machineLacks` stops it asking this machine for the word again.
 		return b.publish(cmd, plan, Refusal{Status: 400, Code: "unknown_command",
-			Message: "This Mac does not know that Cloud command."}, nil)
+			Message: "This machine does not know that Cloud command."}, nil)
 	}
 	return b.route(ctx, cmd, plan, o)
 }
@@ -273,7 +273,7 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op) Answer {
 	if !o.readLevel && !b.allowCommands() {
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 403, Code: "cloud_commands_disabled",
-			Message: "Cloud commands are disabled on this Mac."})
+			Message: "Cloud commands are disabled on this machine."})
 	}
 	// A command rides the class its envelope was sealed under, and every word
 	// but `dispatch` rides `ctl`. A body that reads perfectly under the wrong
@@ -304,7 +304,7 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 	}
 	if o.route == nil {
 		return b.publish(cmd, plan, Refusal{Status: 400, Code: "unknown_command",
-			Message: "This Mac does not know that Cloud command."}, nil)
+			Message: "This machine does not know that Cloud command."}, nil)
 	}
 	return b.route(ctx, cmd, plan, o)
 }
@@ -313,7 +313,7 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer {
 	if b.Router == nil {
 		return b.publish(cmd, plan, Refusal{Status: 503, Code: "router_unavailable",
-			Message: "This Mac's own routes are not reachable from its Cloud bridge.",
+			Message: "This machine's own routes are not reachable from its Cloud bridge.",
 			Layer:   layerRoute}, nil)
 	}
 	req := o.route(plan)
@@ -330,7 +330,7 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 	res, err := b.Router.Do(ctx, req)
 	if err != nil {
 		return b.publish(cmd, plan, Refusal{Status: 502, Code: "route_failed",
-			Message: "This Mac could not answer that.", Layer: layerRoute}, nil)
+			Message: "This machine could not answer that.", Layer: layerRoute}, nil)
 	}
 	return b.answer(cmd, plan, o, res)
 }
@@ -364,17 +364,17 @@ func (b Bridge) authorize(ctx context.Context, sender string, requiresWriteGate 
 			detail["clears_in_ms"] = a.ClockClearsInMS
 		}
 		return Refusal{Status: 503, Code: "command_clock_uncertain",
-			Message: "This Mac is still confirming the time; try again shortly.",
+			Message: "This machine is still confirming the time; try again shortly.",
 			Detail:  detail}, true
 	case !a.RosterReadable:
 		return Refusal{Status: 503, Code: "command_roster_unreadable",
-			Message: "This Mac could not read its paired devices."}, true
+			Message: "This machine could not read its paired devices."}, true
 	case !a.RosterAllowsSender:
 		return Refusal{Status: 403, Code: "unknown_sender",
-			Message: "This Mac does not recognise this device."}, true
+			Message: "This machine does not recognise this device."}, true
 	case !a.WriteGateAllows:
 		return Refusal{Status: 403, Code: "cloud_commands_disabled",
-			Message: "Cloud commands are disabled on this Mac."}, true
+			Message: "Cloud commands are disabled on this machine."}, true
 	}
 	return Refusal{}, false
 }

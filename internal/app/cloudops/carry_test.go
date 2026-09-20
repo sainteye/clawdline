@@ -15,24 +15,24 @@ import (
 // The console's carry table, and the one thing that notices when it and this
 // catalog stop agreeing.
 //
-// `Implemented()` is what this Mac tells every browser it can do — it is
+// `Implemented()` is what this machine tells every browser it can do — it is
 // published in the machine descriptor as `machine.commands`
 // (internal/transport/cloud/publish.go) and the copied client refuses to send a
 // word that is not in it. Adding a word here therefore changes what a browser
 // may ask for, and nothing made a browser ask. The hosted console's seam had a
 // hand-written list of four GET paths against a catalog of twenty-four routed
 // words, so `info` — the one read the status line under every session is drawn
-// from — was answered by this Mac and never asked for by the page. The page
+// from — was answered by this machine and never asked for by the page. The page
 // refused it to itself, 501 `cloud_not_carried`, and this machine's log held
 // no refusal at all because none had been asked for.
 //
 // So the console's three lists are read here and compared with the catalog:
 //
-//	CARRIED       the words the console asks for
-//	DEFERRED      the words this Mac answers and the console does not ask for
-//	NO_MAC_ROUTE  the words this Mac knows and has no route for
+//	CARRIED           the words the console asks for
+//	DEFERRED          the words this machine answers and the console does not ask for
+//	NO_MACHINE_ROUTE  the words this machine knows and has no route for
 //
-// CARRIED ∪ DEFERRED must be exactly Implemented(), and NO_MAC_ROUTE exactly
+// CARRIED ∪ DEFERRED must be exactly Implemented(), and NO_MACHINE_ROUTE exactly
 // the rest of Vocabulary(). Either half of a new word — a route added here, or
 // a route taken away — fails this by name, and the failure says which list the
 // word belongs in.
@@ -63,9 +63,9 @@ func TestTheConsoleCarryTableMatchesThisMachinesVocabulary(t *testing.T) {
 
 	carried := carryList(t, text, "CARRIED")
 	deferred := carryList(t, text, "DEFERRED")
-	noRoute := carryList(t, text, "NO_MAC_ROUTE")
+	noRoute := carryList(t, text, "NO_MACHINE_ROUTE")
 
-	for _, pair := range [][2]string{{"CARRIED", "DEFERRED"}, {"CARRIED", "NO_MAC_ROUTE"}, {"DEFERRED", "NO_MAC_ROUTE"}} {
+	for _, pair := range [][2]string{{"CARRIED", "DEFERRED"}, {"CARRIED", "NO_MACHINE_ROUTE"}, {"DEFERRED", "NO_MACHINE_ROUTE"}} {
 		for word := range listOf(pair[0], carried, deferred, noRoute) {
 			if _, twice := listOf(pair[1], carried, deferred, noRoute)[word]; twice {
 				t.Errorf("%s is in both %s and %s; one word, one list", word, pair[0], pair[1])
@@ -73,11 +73,11 @@ func TestTheConsoleCarryTableMatchesThisMachinesVocabulary(t *testing.T) {
 		}
 	}
 
-	// What this Mac answers must be asked for or deliberately not asked for.
+	// What this machine answers must be asked for or deliberately not asked for.
 	answers := set(Implemented())
 	asked := union(carried, deferred)
 	for _, word := range missing(answers, asked) {
-		t.Errorf("this Mac answers %q and %s lists it in neither CARRIED nor DEFERRED: "+
+		t.Errorf("this machine answers %q and %s lists it in neither CARRIED nor DEFERRED: "+
 			"carry it, or say in DEFERRED why not and where it can be done instead", word, carryTable)
 	}
 	for _, word := range missing(asked, answers) {
@@ -86,14 +86,14 @@ func TestTheConsoleCarryTableMatchesThisMachinesVocabulary(t *testing.T) {
 			where = "DEFERRED"
 		}
 		if !Knows(word) {
-			t.Errorf("%s lists %q in %s and this Mac has no such word at all", carryTable, word, where)
+			t.Errorf("%s lists %q in %s and this machine has no such word at all", carryTable, word, where)
 			continue
 		}
-		t.Errorf("%s lists %q in %s and this Mac has no route for it: it belongs in NO_MAC_ROUTE", carryTable, word, where)
+		t.Errorf("%s lists %q in %s and this machine has no route for it: it belongs in NO_MACHINE_ROUTE", carryTable, word, where)
 	}
 
-	// And what this Mac knows without answering must be the third list exactly,
-	// so a word that gains a route stops being "the Mac cannot" and has to be
+	// And what this machine knows without answering must be the third list exactly,
+	// so a word that gains a route stops being "the machine cannot" and has to be
 	// decided again.
 	unrouted := map[string]bool{}
 	for _, word := range Vocabulary() {
@@ -102,10 +102,10 @@ func TestTheConsoleCarryTableMatchesThisMachinesVocabulary(t *testing.T) {
 		}
 	}
 	for _, word := range missing(unrouted, noRoute) {
-		t.Errorf("this Mac knows %q and has no route for it, and %s does not say so in NO_MAC_ROUTE", word, carryTable)
+		t.Errorf("this machine knows %q and has no route for it, and %s does not say so in NO_MACHINE_ROUTE", word, carryTable)
 	}
 	for _, word := range missing(noRoute, unrouted) {
-		t.Errorf("%s says this Mac has no route for %q, and it has one now: move it to CARRIED or DEFERRED", carryTable, word)
+		t.Errorf("%s says this machine has no route for %q, and it has one now: move it to CARRIED or DEFERRED", carryTable, word)
 	}
 
 	// A list entry with nothing in it is a word nobody decided about. The
@@ -114,7 +114,7 @@ func TestTheConsoleCarryTableMatchesThisMachinesVocabulary(t *testing.T) {
 	for _, list := range []struct {
 		name  string
 		words map[string]string
-	}{{"DEFERRED", deferred}, {"NO_MAC_ROUTE", noRoute}} {
+	}{{"DEFERRED", deferred}, {"NO_MACHINE_ROUTE", noRoute}} {
 		for word, sentence := range list.words {
 			if len(sentence) < 40 {
 				t.Errorf("%s: %s says %q, which says too little to act on", list.name, word, sentence)
@@ -231,7 +231,7 @@ func moduleRoot(t *testing.T) string {
 // this machine's own network leaves the field off and the route fills it in
 // (`clampInt`, internal/transport/http/board.go); a browser on the relay must
 // send the number the route would have chosen, or a phone pages a Project
-// differently from the Mac it is reading.
+// differently from the machine it is reading.
 //
 // So the seam holds the route's own default, and this is what notices when the
 // route changes its mind.
@@ -253,7 +253,7 @@ func TestTheBoardsCloudPageSizeIsTheRoutesOwn(t *testing.T) {
 		t.Fatalf("%s: BOARD_PAGE_DEFAULT is %q", readerSeam, found[1])
 	}
 	if carried != board.DefaultPageLimit {
-		t.Errorf("%s carries %d cards a page and %s answers %d: a phone and this Mac's own "+
+		t.Errorf("%s carries %d cards a page and %s answers %d: a phone and this machine's own "+
 			"browser would page one Project two ways", readerSeam, carried,
 			"internal/adapters/board", board.DefaultPageLimit)
 	}
