@@ -1,0 +1,18 @@
+G_TOKEN -u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_EFFORT -u AI_AGENT claude --a
+dd-dir '/tmp/.clawdline/0ca0b8c0/work/next-dir/tasks' --permission-mode bypassPermissions
+
+────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /private/tmp/.clawdline/0ca0b8c0/work/next-dir/worktrees/demo-205be400/428264f6
+
+ Quick safety check: Is this a project you created or one you trust?
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel

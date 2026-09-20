@@ -260,7 +260,8 @@ func TestTheSpawnClockAsksTheTabsOwnSource(t *testing.T) {
 	// A pane that is there and holding a dialog: spawn_failed, and closed.
 	stuck := "d2222222-2222-4222-8222-222222222222"
 	spawning(stuck, "%8")
-	b.Screen = func(_ context.Context, id string) (string, bool) { return trustDialog, id == "%8" }
+	trust := screen(t, "claude-trust")
+	b.Screen = func(_ context.Context, id string) (string, bool) { return trust, id == "%8" }
 	inv = session.Inventory{Complete: false, Sources: map[string]bool{"tmux": true, "iterm": false},
 		Sessions: []session.Session{iterm, {ID: "%8", Backend: session.BackendTmux, Assistant: session.AssistantClaude}}}
 	p = b.Pass(ctx)

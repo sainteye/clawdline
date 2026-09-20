@@ -1,55 +1,161 @@
 package orchestrator
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
 
-// The screen that cost a child its life, captured from the pane it happened in
-// (tmux capture-pane, 2026-09-18). The broker saw an assistant on a tty, typed
-// the briefing, and the Return at the end of it answered this dialog — which
-// was highlighting "No, exit".
-const trustDialog = `G_TOKEN -u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_EFFORT -u AI_AGENT claude --a
-dd-dir '/tmp/.clawdline/0ca0b8c0/work/next-dir/tasks' --permission-mode bypassPermissions
+	"github.com/sainteye/clawdline-go/internal/domain/session"
+)
 
-────────────────────────────────────────────────────────────────────────────────
- Accessing workspace:
-
- /private/tmp/.clawdline/0ca0b8c0/work/next-dir/worktrees/demo-205be400/428264f6
-
- Quick safety check: Is this a project you created or one you trust?
-
- Claude Code'll be able to read, edit, and execute files here.
-
- Security guide
-
- ❯ No, exit
-   Yes, I trust this folder
-
- Enter to confirm · Esc to cancel`
-
-// The composer of a running Claude session, captured the same way. The caret is
-// the same glyph; what is different is the frame drawn under it.
-const claudeComposer = `  ctrl+x ctrl+s to send now
-
-────────────────────────────────────────────────────────────────────────────────
-❯ Press up to edit queued messages
-────────────────────────────────────────────────────────────────────────────────
-  ▀ ▄ ▀ 943e0000-0000-4000-8000-000000000001
-  ▀▀▀▀▀ ~/Library/Application Support/Clawdline/worktrees/clawdline-…  ctx 23%`
-
-func TestADialogIsNeverTypedInto(t *testing.T) {
-	if ComposerReady(trustDialog) {
-		t.Error("the workspace-trust dialog was read as a composer; the briefing would answer it")
+// The screens under testdata/ are captures, `tmux capture-pane -p -J`, of a
+// pane 120 columns by 40 rows.
+//
+// `claude-trust` is the screen that cost a child its life on 2026-09-18: the
+// broker saw an assistant on a tty, typed the briefing, and the Return at the
+// end of it answered the dialog — which was highlighting "No, exit".
+// `claude-composer` is a running Claude Code session, captured the same way.
+//
+// The `codex-*` screens are codex-cli 0.155.1, captured on 2026-09-20 from a
+// disposable session on a private tmux server: the first screen of a fresh run
+// in a directory Codex has not been told about, the composer it draws once it
+// has, the same composer while a turn runs, its own `/model` picker, and the
+// composer again in the eighty columns tmux gives a new session, where the
+// status bar is cut off after its first field. Their directories and every word
+// anybody typed into them are this test's own.
+//
+// **They are kept as files rather than as string constants because the blank
+// rows matter.** Codex draws thirteen rows into a forty-row tab and the other
+// twenty-seven are empty; a reading that looked at the last twenty rows of the
+// capture saw none of the thirteen, and that is the whole of why no Codex child
+// was ever briefed. A Go raw string would hold the same rows and show nobody
+// they were there.
+func screen(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile("testdata/" + name + ".txt")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !Choosing(trustDialog) {
-		t.Error("the workspace-trust dialog was not recognised as something waiting to be answered")
+	return string(b)
+}
+
+// What each captured screen is, to each assistant's reading of it.
+func TestTheTwoCLIsDrawTheirOwnComposer(t *testing.T) {
+	for _, c := range []struct {
+		screen    string
+		assistant session.Assistant
+		ready     bool
+		choosing  bool
+		why       string
+	}{
+		{"claude-composer", session.AssistantClaude, true, false,
+			"a drawn Claude Code composer, so no child would ever be briefed"},
+		{"claude-trust", session.AssistantClaude, false, true,
+			"the workspace-trust dialog, whose highlighted answer is \"No, exit\""},
+		{"codex-composer", session.AssistantCodex, true, false,
+			"the composer of a fresh Codex session, which is every Codex child's first screen"},
+		{"codex-composer-narrow", session.AssistantCodex, true, false,
+			"the same composer in the eighty columns tmux gives a new session, its status bar cut after one field"},
+		{"codex-working", session.AssistantCodex, true, false,
+			"the composer Codex keeps drawn while a turn of its own runs"},
+		{"codex-trust", session.AssistantCodex, false, true,
+			"Codex asking whether to trust the directory, before it has drawn anything else"},
+		{"codex-picker", session.AssistantCodex, false, true,
+			"Codex's own model picker, which it draws where the composer was"},
+	} {
+		s := screen(t, c.screen)
+		if got := ComposerReady(s, c.assistant); got != c.ready {
+			t.Errorf("%s read as ready=%v: it is %s", c.screen, got, c.why)
+		}
+		if got := Choosing(s, c.assistant); got != c.choosing {
+			t.Errorf("%s read as choosing=%v: it is %s", c.screen, got, c.why)
+		}
 	}
 }
 
-func TestAFramedCaretIsAComposer(t *testing.T) {
-	if !ComposerReady(claudeComposer) {
-		t.Error("a drawn composer was not recognised, so no child would ever be briefed")
+// Neither CLI's furniture is the other's.
+//
+// This is the fault that stopped every Codex dispatch on this machine: the one
+// reading there was asked for a box rule under the caret, which is Claude
+// Code's composer and nothing Codex draws, so a live Codex composer was read as
+// neither ready nor choosing for the whole 90 seconds of the briefing and the
+// task was recorded as "the child session did not reach a prompt".
+//
+// The other direction is the reason the two are separate rather than joined by
+// an `or`: Codex's status bar under a Claude Code screen would be somebody's
+// prose, and a briefing typed on the strength of it would land in a dialog.
+func TestOneCLIsFurnitureIsNotTheOthers(t *testing.T) {
+	if ComposerReady(screen(t, "codex-composer"), session.AssistantClaude) {
+		t.Error("a Codex composer passed Claude Code's reading, which asks for a frame Codex never draws")
 	}
-	if Choosing(claudeComposer) {
-		t.Error("a drawn composer was read as a chooser")
+	if ComposerReady(screen(t, "claude-composer"), session.AssistantCodex) {
+		t.Error("a Claude Code composer passed Codex's reading, which asks for a status bar it never draws")
+	}
+}
+
+// A caret twenty-nine rows above the bottom of the tab is still a caret.
+//
+// Both screens below are read by counting rows that have something on them,
+// because a capture is the whole pane: Codex's composer sits on row 11 of 40,
+// and Claude Code's trust dialog sits just as far up when the tab is taller
+// than the dialog. Counting rows instead — the first version of this — reached
+// neither, and answered no to both questions, which is the one pair of answers
+// that decides nothing at all: not ready, so never briefed; not choosing, so
+// never reported as holding a dialog either.
+func TestBlankRowsUnderAScreenAreNotTheScreen(t *testing.T) {
+	codex := screen(t, "codex-composer")
+	if rows := strings.Count(codex, "\n"); rows < 30 {
+		t.Fatalf("the capture is %d rows; it is meant to be a whole 40-row pane with the session at the top", rows)
+	}
+	if !ComposerReady(codex, session.AssistantCodex) {
+		t.Error("a Codex composer with the rest of the tab empty under it was not found")
+	}
+
+	// The same tab, one dialog taller than its contents. The padding is this
+	// test's own; the dialog above it is the capture.
+	padded := screen(t, "claude-trust") + strings.Repeat("\n", 20)
+	if ComposerReady(padded, session.AssistantClaude) {
+		t.Error("a trust dialog in a tall tab was read as a composer; the briefing would answer it")
+	}
+	if !Choosing(padded, session.AssistantClaude) {
+		t.Error("a trust dialog in a tall tab was not recognised as something waiting to be answered")
+	}
+}
+
+// Codex prints middle dots in prose of its own. While a turn runs, three rows
+// above the composer, it draws
+//
+//	"• Working (17s • esc to interrupt) · 1 background terminal running · …"
+//
+// which is a row of dot-divided fields under a caret and is not the status bar.
+// Two things say so: the bar is the lowest thing Codex draws, and that row
+// begins with the marker every turn of the session's own begins with.
+func TestOnlyTheLowestRowIsCodexsStatusBar(t *testing.T) {
+	working := screen(t, "codex-working")
+	rows := strings.Split(working, "\n")
+	found := false
+	for _, row := range rows {
+		if strings.Contains(row, "background terminal running") {
+			found = true
+			if isStatusBar(row) {
+				t.Error("a turn of the session's own was read as the status bar under a composer")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the captured working screen no longer holds the dot-divided row this test is about")
+	}
+	// Cut the capture off directly under that row: the composer and the real
+	// bar are gone, and what is left is a caret with prose under it.
+	cut := []string{}
+	for _, row := range rows {
+		cut = append(cut, row)
+		if strings.Contains(row, "background terminal running") {
+			break
+		}
+	}
+	if ComposerReady(strings.Join(cut, "\n"), session.AssistantCodex) {
+		t.Error("a screen whose lowest row is a turn of the session's own was read as a composer")
 	}
 }
 
@@ -57,12 +163,35 @@ func TestAFramedCaretIsAComposer(t *testing.T) {
 // may be yes: typing at it drops the bytes, and calling it a chooser would stop
 // the briefing that is about to become possible.
 func TestAStartingSessionIsNeitherReadyNorChoosing(t *testing.T) {
-	screen := "Loading…\n\n  ▀ ▄ ▀ starting"
-	if ComposerReady(screen) {
-		t.Error("a starting session was read as ready")
+	for _, assistant := range []session.Assistant{session.AssistantClaude, session.AssistantCodex, ""} {
+		s := "Loading…\n\n  ▀ ▄ ▀ starting"
+		if ComposerReady(s, assistant) {
+			t.Errorf("%q: a starting session was read as ready", assistant)
+		}
+		if Choosing(s, assistant) {
+			t.Errorf("%q: a starting session was read as a chooser", assistant)
+		}
 	}
-	if Choosing(screen) {
-		t.Error("a starting session was read as a chooser")
+}
+
+// An assistant this broker was not told the name of is read for a frame: the
+// reading every assistant got before Codex was looked at.
+//
+// Reading it for either furniture instead is what made this test: the lowest
+// row of Claude Code's trust dialog is `Enter to confirm · Esc to cancel`,
+// divided by a middle dot exactly as Codex's status bar is, so a screen whose
+// highlighted answer is "No, exit" would have been read as ready to be typed
+// into. Every dispatch, hand-over and assignment records its CLI, so what this
+// branch costs is a Codex session nobody named waiting for a frame — a delay,
+// which is the side to be wrong on.
+func TestAnUnnamedAssistantIsReadForAFrame(t *testing.T) {
+	if !ComposerReady(screen(t, "claude-composer"), "") {
+		t.Error("a framed composer was not read by a broker that was not told which CLI drew it")
+	}
+	for _, name := range []string{"claude-trust", "codex-trust", "codex-picker"} {
+		if !Choosing(screen(t, name), "") {
+			t.Errorf("%s was not read as a dialog by a broker that was not told which CLI drew it", name)
+		}
 	}
 }
 

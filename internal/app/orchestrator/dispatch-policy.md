@@ -130,13 +130,13 @@ is for: a leaf that knows what its output feeds writes a usable output, one that
 essay, and leaves are narrow enough to state in a sentence. **Stagger dispatches 30–45 seconds** or
 they compete, and a tab that has not reached a prompt in four minutes is `spawn_failed`, whose retry
 needs a fresh id and secret. **Say when you did it yourself.**
-- **Do not ask a task to echo a clear briefing.** Use progress only for a material boundary change —
-  the task-directory file for
-  a stock codex sandbox, whose outbound connections are blocked, or either channel when this
-  machine's `dispatch-policy.local.md` says network access was opened; its briefing carries the one
-  that works. Send one short note only when the discovered write set, approach, dependency, risk
-  or blocker materially differs from the briefing, or a long-running task needs an early root
-  choice. Do not send periodic heartbeat notes.
+- **Do not ask a task to echo a clear briefing.** Use progress only for a material boundary change.
+  A child of either assistant posts it over `127.0.0.1`, and the task-directory file is the fallback
+  for a sandbox with no loopback rather than the route a Codex child is expected to take — measured
+  2026-09-20, a dispatched Codex child read `/inflight` and signed `/accepted` over the loopback
+  address; its briefing carries both and says which is which. Send one short note only when the
+  discovered write set, approach, dependency, risk or blocker materially differs from the briefing,
+  or a long-running task needs an early root choice. Do not send periodic heartbeat notes.
 - **An interrupted review is handed over, not restarted.** A reviewer that died or was cancelled has
   usually written part of its findings; hand that file to whoever picks it up. Review is both the
   most expensive node and the one most often thrown away — 30 of 101 review dispatches on one

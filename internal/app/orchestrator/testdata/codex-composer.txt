@@ -1,0 +1,40 @@
+╭────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.155.1)                     │
+│                                                │
+│ model:     gpt-5.6-sol high   /model to change │
+│ directory: /private/tmp/cl-composer-probe      │
+╰────────────────────────────────────────────────╯
+
+  Tip: New Use /fast to enable our fastest inference with increased plan usage.
+ 
+ 
+› Ask Codex to do anything
+ 
+  gpt-5.6-sol high · /private/tmp/cl-composer-probe · cl-composer-probe · master …
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

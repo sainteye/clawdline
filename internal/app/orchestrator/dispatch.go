@@ -17,6 +17,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/app/lane"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
 // DispatchRequest is the whole HTTP body: three fields.
@@ -564,7 +565,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		r.FinishedAt = b.now()
 		return r
 	}
-	line := "cd " + projects.ShellQuoted(cwd) + " && " + shellCommand(launch, r, b.Tasks.Dir)
+	line := "cd " + projects.ShellQuoted(cwd) + " && " + shellCommand(launch, r, b.Tasks.Dir, cwd)
 
 	// The same decision the dispatch was admitted on (capability.go), read
 	// again: the facts may have moved since.
@@ -594,7 +595,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		// equivalent of the iTerm tab above: its own place, named after the
 		// task, easy to find and easy to close.
 		terminalID, openErr = b.Launcher.NewTmuxSession(ctx, cwd, ChildSessionName(r.ID),
-			shellCommand(launch, r, b.Tasks.Dir))
+			shellCommand(launch, r, b.Tasks.Dir, cwd))
 		backend = "tmux"
 	default:
 		openErr = terminal.Failure{Message: plan.failure(runtime.GOOS)}
@@ -662,10 +663,11 @@ func ChildSessionName(taskID string) string {
 }
 
 // shellCommand is the one line the child's shell runs.
-func shellCommand(l projects.Launch, r Record, taskRoot string) string {
+func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 	args := append([]string{}, l.Arguments...)
 	args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
 	args = append(args, permissionArgs(r)...)
+	args = append(args, trustArgs(r.Assistant, cwd)...)
 	prefix := ""
 	if keys := projects.InheritedIdentityKeys(l.Assistant); len(keys) > 0 {
 		parts := make([]string, len(keys))
@@ -697,6 +699,42 @@ func permissionArgs(r Record) []string {
 		}
 	}
 	return nil
+}
+
+// trustArgs says, for this one run only, that the directory the child is
+// opened in is one to work in.
+//
+// Codex asks before it will work anywhere it has not been told about —
+//
+//	Do you trust the contents of this directory? …
+//	› 1. Yes, continue
+//	  2. No, quit
+//
+// — and it asks on the first screen, before it draws a composer. A child's cwd
+// is a checkout this broker made minutes ago, or the project directory the
+// dispatcher named, so that question is new every time and no Codex child ever
+// got past it: the dialog sat there for the whole 90 seconds and the task was
+// recorded as one that never reached a prompt.
+//
+// The answer is not to press 1. That is exactly the keystroke composer.go
+// exists to refuse, and the option under the highlight is somebody's decision
+// about somebody's files. It is to not raise the question: the directory was
+// named by the dispatch, so the launch carries the answer for that one path and
+// nothing else.
+//
+// `-c` overrides in memory and writes nothing, which is the point — answering
+// the dialog by hand records the path in the person's `~/.codex/config.toml`
+// for ever, and a broker that dispatches fifty children would fill it with
+// worktrees that no longer exist. The whole `projects` table is replaced rather
+// than one key added, because a dotted path cannot hold a directory: `-c
+// projects."/a/b".trust_level=trusted` is read as four keys and leaves the
+// dialog up (measured against codex-cli 0.155.1, 2026-09-20).
+func trustArgs(assistant, cwd string) []string {
+	if assistant != "codex" || cwd == "" {
+		return nil
+	}
+	table := fmt.Sprintf("projects={%q={trust_level=%q}}", cwd, "trusted")
+	return []string{"-c", projects.ShellQuoted(table)}
 }
 
 // brief types the one line that carries the secret.
@@ -735,7 +773,7 @@ func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 	for b.now().Before(deadline) {
 		if s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID); ok && s.IsAssistant() {
 			listed = true
-			ready, why := b.composerReady(ctx, r.ChildTerminalID)
+			ready, why := b.composerReady(ctx, r.ChildTerminalID, r.Assistant)
 			if ready {
 				err := b.typeLine(ctx, r.ChildTerminalID, FirstLine(r, secret, b.Language))
 				if err == nil {
@@ -792,7 +830,15 @@ func nothingTyped(err error) bool {
 // did not list the tab this once, and the screen it could not show may be the
 // workspace-trust dialog whose highlighted answer is "No, exit". Not ready: the
 // next round asks again, and a wait that ends here says so.
-func (b *Broker) composerReady(ctx context.Context, terminalID string) (bool, error) {
+//
+// Every not-ready carries a reason, and the three are different work for
+// whoever reads the record: a screen that could not be read, a dialog nobody
+// but a person may answer, and a session that has drawn no input line yet.
+// The third used to be no reason at all, and a wait that ended on it fell back
+// to "the child session did not reach a prompt" — the sentence every Codex
+// dispatch on this machine ended with while its composer sat on screen,
+// naming neither what was there nor what was looked for.
+func (b *Broker) composerReady(ctx context.Context, terminalID, assistant string) (bool, error) {
 	if b.Screen == nil {
 		return true, nil
 	}
@@ -801,13 +847,26 @@ func (b *Broker) composerReady(ctx context.Context, terminalID string) (bool, er
 		return false, errors.New("the child's screen could not be read, so whether it showed a prompt or a " +
 			"dialog was not known")
 	}
-	if Choosing(screen) {
+	which := session.Assistant(assistant)
+	if Choosing(screen, which) {
 		return false, errors.New("the child is showing a dialog; the briefing would have answered it")
 	}
-	if !ComposerReady(screen) {
-		return false, nil
+	if !ComposerReady(screen, which) {
+		return false, fmt.Errorf("the child's screen showed no input line %s draws, so it had not finished "+
+			"starting", assistantName(assistant))
 	}
 	return true, nil
+}
+
+// assistantName is what to call the CLI in a sentence a person reads.
+func assistantName(assistant string) string {
+	switch assistant {
+	case "claude":
+		return "Claude Code"
+	case "codex":
+		return "Codex"
+	}
+	return "an assistant"
 }
 
 // errAlreadyTerminal is Settle finding that somebody settled the task first.

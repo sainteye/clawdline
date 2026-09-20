@@ -1,0 +1,40 @@
+╭────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.155.1)                     │
+│                                                │
+│ model:     gpt-5.6-sol high   /model to change │
+│ directory: /private/tmp/cl-composer-probe      │
+╰────────────────────────────────────────────────╯
+
+  Tip: New Use /fast to enable our fastest inference with increased plan usage.
+ 
+ 
+  Select Model and Effort
+  Access legacy models by running codex -m <model_name> or in your config.toml
+ 
+  1. gpt-6-astra (default)  Our most capable model for complex, demanding work.
+› 2. gpt-5.6-sol (current)  Reliable agentic workhorse for everyday tasks.
+  3. gpt-5.6-terra          Balanced agentic coding model for everyday work.
+  4. gpt-5.6-luna           Fast and affordable agentic coding model.
+  5. gpt-5.5                Proven previous-generation model for coding and general work.
+ 
+  Press enter to confirm or esc to go back                                                                              
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

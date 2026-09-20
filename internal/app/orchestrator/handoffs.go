@@ -64,6 +64,10 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model st
 	for _, dir := range addDirs {
 		args = append(args, "--add-dir", projects.ShellQuoted(dir))
 	}
+	// The same answer a child's launch carries: Codex asks whether to trust
+	// the directory before it draws anything, and a session nobody can type
+	// into is a hand-over nobody receives (trustArgs).
+	args = append(args, trustArgs(launch.Assistant, cwd)...)
 	prefix := ""
 	if keys := projects.InheritedIdentityKeys(launch.Assistant); len(keys) > 0 {
 		parts := make([]string, len(keys))
@@ -110,13 +114,16 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model st
 }
 
 // waitComposer waits, at most within, for the session in terminalID to be an
-// assistant drawing a composer — never a dialog (composer.go).
-func (b *Broker) waitComposer(ctx context.Context, terminalID string, within time.Duration) error {
+// assistant drawing a composer — never a dialog (composer.go). Which composer
+// it is waiting for is the assistant the session was opened with: the two CLIs
+// draw different ones, and asking a Codex session for Claude Code's is waiting
+// for something it never draws.
+func (b *Broker) waitComposer(ctx context.Context, terminalID, assistant string, within time.Duration) error {
 	deadline := b.now().Add(within)
 	var last error
 	for b.now().Before(deadline) {
 		if s, ok := b.sessionByTerminal(ctx, terminalID); ok && s.IsAssistant() {
-			ready, why := b.composerReady(ctx, terminalID)
+			ready, why := b.composerReady(ctx, terminalID, assistant)
 			if ready {
 				return nil
 			}
@@ -359,7 +366,7 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 	}
 	h, _ = b.updateHandoff(ctx, h.ID, "handoff.opened", func(x *Handoff) { x.Opened = &opened })
 
-	typed := b.typeOnce(ctx, opened.TerminalID, HandoffLine(pkg), func() error {
+	typed := b.typeOnce(ctx, opened.TerminalID, assistant, HandoffLine(pkg), func() error {
 		_, err := b.updateHandoff(ctx, h.ID, "handoff.typing", func(x *Handoff) { x.TypeAttemptedAt = b.now().Unix() })
 		return err
 	})
@@ -378,8 +385,8 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 
 // typeOnce waits for a composer, records the attempt, then types — the
 // attempt is durable before the keystroke, so it is never made twice.
-func (b *Broker) typeOnce(ctx context.Context, terminalID, line string, attempt func() error) error {
-	if err := b.waitComposer(ctx, terminalID, composerWait); err != nil {
+func (b *Broker) typeOnce(ctx context.Context, terminalID, assistant, line string, attempt func() error) error {
+	if err := b.waitComposer(ctx, terminalID, assistant, composerWait); err != nil {
 		return err
 	}
 	if err := attempt(); err != nil {
@@ -724,7 +731,7 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 	a, _ = b.updateAssignment(ctx, id, "root_assignment.terminal_opened", func(x *RootAssignment) {
 		x.State, x.Executor = AssignmentTerminalOpened, &opened
 	})
-	typed := b.typeOnce(ctx, opened.TerminalID, AssignmentLine(id, a.BriefPath), func() error {
+	typed := b.typeOnce(ctx, opened.TerminalID, req.Assistant, AssignmentLine(id, a.BriefPath), func() error {
 		_, err := b.updateAssignment(ctx, id, "root_assignment.briefing", func(x *RootAssignment) {
 			x.BriefAttemptedAt = b.now().Unix()
 		})

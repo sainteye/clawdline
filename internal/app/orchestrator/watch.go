@@ -12,6 +12,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
 // The beat: what the broker does when nobody asked it anything.
@@ -420,7 +421,7 @@ func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) 
 		choosing := false
 		if present && b.Screen != nil {
 			if screen, ok := b.Screen(ctx, r.ChildTerminalID); ok {
-				choosing = Choosing(screen)
+				choosing = Choosing(screen, session.Assistant(r.Assistant))
 			}
 		}
 		// Completeness is asked of the tab's own source, not of the whole
