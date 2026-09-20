@@ -393,7 +393,7 @@ func (l *Link) wire() error {
 	}
 	l.publisher = &Publisher{
 		MachineID:   identity.MachineID,
-		MachineName: machineName(identity, settings),
+		MachineName: machineName(identity, settings, HostName(), runtime.GOOS),
 		Platform:    runtime.GOOS,
 		Version:     opts.Version,
 		Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
@@ -408,18 +408,17 @@ func (l *Link) wire() error {
 	return nil
 }
 
-// machineName is what a person picks this Mac out by in their machine list.
-// The identity's name is what was registered; the settings key overrides it
-// without re-registering, because renaming a machine should not need the
-// control plane.
-func machineName(identity adaptercloud.Identity, settings adaptercloud.Settings) string {
-	if settings.MachineName != "" {
-		return settings.MachineName
-	}
-	if identity.Name != "" {
-		return identity.Name
-	}
-	return "Mac"
+// machineName is the name this machine publishes to the account's machine
+// list. The identity's name is what was registered; the settings key overrides
+// it without re-registering, because renaming a machine should not need the
+// control plane. `host` and `goos` are parameters rather than reads so that a
+// test can drive the shape of a machine it is not running on — the whole
+// defect this answers was invisible on the machine that shipped it.
+//
+// The rungs below the two names are `MachineName`'s, shared with the name
+// login registers (name.go).
+func machineName(identity adaptercloud.Identity, settings adaptercloud.Settings, host, goos string) string {
+	return MachineName(host, goos, settings.MachineName, identity.Name)
 }
 
 // Enabled reports whether the switch was on when this link was opened.
@@ -711,7 +710,7 @@ func (l *Link) Status() Status {
 		APIBase:     l.settings.APIBase,
 		Account:     l.identity.AccountID,
 		MachineID:   l.identity.MachineID,
-		MachineName: l.identity.Name,
+		MachineName: machineName(l.identity, l.settings, HostName(), runtime.GOOS),
 		Fingerprint: l.fingerprint,
 		LastError:   l.lastErr,
 		Answered:    l.answered,

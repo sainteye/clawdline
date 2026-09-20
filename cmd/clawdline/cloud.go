@@ -243,17 +243,13 @@ func cloudLoginCommand(args []string) {
 		os.Exit(1)
 	}
 
-	machineName := *name
-	if machineName == "" {
-		machineName = parts.settings.MachineName
-	}
-	if machineName == "" {
-		host, _ := os.Hostname()
-		machineName = strings.TrimSuffix(host, ".local")
-	}
-	if machineName == "" {
-		machineName = "clawdline-next"
-	}
+	// The same ladder the publisher climbs every heartbeat
+	// (`internal/transport/cloud/name.go`). Registering one name and
+	// publishing another is how a machine ends up on the account's list twice
+	// under two spellings, and the two ladders' last rungs used to be
+	// different words — `clawdline-next` here and `Mac` there.
+	machineName := cloudtransport.MachineName(cloudtransport.HostName(), runtime.GOOS,
+		*name, parts.settings.MachineName)
 
 	// Signing in again over an identity is allowed — it is how a machine moves
 	// from a local test control plane to production — but it is said out loud.
