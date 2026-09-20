@@ -128,7 +128,7 @@ func lifecycleTasks(snap swiftstore.Snapshot) projects.TaskEvidence {
 func (s *Server) liveEvidence(ctx context.Context) projects.LiveEvidence {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	inv := s.inventory.Read(ctx)
+	inv := s.reading(ctx)
 	out := projects.LiveEvidence{Complete: inv.Complete, ObservedAt: inv.ObservedAt}
 	for _, item := range inv.Sessions {
 		if item.IsAssistant() && item.CWD != "" {

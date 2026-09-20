@@ -16,7 +16,24 @@ type Inventory struct {
 	Process   ports.ProcessHost
 	Terminals []ports.TerminalHost
 	Identity  ports.IdentityHost
-	Screen    ports.ScreenHost
+	// Screen is one capture, now, on the caller's own clock. It is what
+	// answers a menu (Actions.Key) and what the broker reads before it types a
+	// briefing into a child — both of which act on what is drawn now, and a
+	// screen from eight seconds ago is not that.
+	Screen ports.ScreenHost
+	// Held is what the list reads instead: a screen kept and refreshed behind
+	// the answer, bounded in how many captures it may have in flight and left
+	// alone after a failure (screen_held.go). Nil falls back to Screen, which
+	// is what a hand-built Inventory in a test wants.
+	Held *HeldScreens
+}
+
+// screens is the reader the list uses: the held one where there is one.
+func (in Inventory) screens() ports.ScreenHost {
+	if in.Held != nil {
+		return in.Held
+	}
+	return in.Screen
 }
 
 // Read takes one reading of the machine from every source and merges them.
@@ -195,14 +212,15 @@ func (in Inventory) named(s session.Session) session.Session {
 // for AskUserQuestion's flush-left caret; nothing else here does, because this
 // daemon installs no hooks.
 func (in Inventory) readScreen(ctx context.Context, s session.Session) session.Session {
-	if in.Screen == nil || !s.IsAssistant() {
+	reader := in.screens()
+	if reader == nil || !s.IsAssistant() {
 		return s
 	}
 	registry := s.Evidence == session.EvidenceRegistry
 	if registry && s.State != session.StateWorking && s.State != session.StateWaiting {
 		return s
 	}
-	screen, ok := in.Screen.Capture(ctx, s)
+	screen, ok := reader.Capture(ctx, s)
 	if !ok {
 		return s
 	}

@@ -126,7 +126,7 @@ func (s *Server) boardRead(w http.ResponseWriter, r *http.Request) {
 // boardPresence is the live inventory, keyed on the conversation id the board
 // joins on, and the paths the running sessions name, keyed on project id.
 func (s *Server) boardPresence(ctx context.Context) (boardstore.Presence, map[string]string) {
-	inv := s.inventory.Read(ctx)
+	inv := s.reading(ctx)
 	presence := boardstore.Presence{Complete: inv.Complete, Fresh: true,
 		ObservedAt: inv.ObservedAt, ByConversation: map[string][]boardstore.PresenceRow{}}
 	paths := map[string]string{}

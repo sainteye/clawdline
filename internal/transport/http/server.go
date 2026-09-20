@@ -35,6 +35,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/capacity"
 	"github.com/sainteye/clawdline-go/internal/domain/icon"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
 type Server struct {
@@ -70,6 +71,12 @@ type Server struct {
 	// watching which terminal, and the leases that decide whether a pipe stays
 	// on a pane. Nothing else may attach or detach one.
 	screens *app.Screens
+	// readings is the one producer of this machine's session reading. Every
+	// loop that used to scan for itself — the event stream, the Cloud
+	// publisher, the broker's beat — reads it instead, and each says whether
+	// it may be answered from the held reading (`reading`) or must have one
+	// taken for it (`freshReading`). See internal/app/inventory_reading.go.
+	readings *app.InventoryReading
 	// screenBus carries a moved screen's revision to every open event stream.
 	screenBus *screenBus
 	// broker is the loop from a root asking for work to a child reporting that
@@ -129,8 +136,15 @@ func New(cfg config.Config) (*Server, error) {
 			Terminals: terminal.Hosts(),
 			Identity:  transcript.NewHost(),
 			Screen:    terminal.NewScreens(),
+			// The list's screens are held and refreshed behind the answer; the
+			// live reader above stays what a keystroke and the broker read.
+			Held: app.NewHeldScreens(terminal.NewScreens()),
 		},
 	}
+	// One producer in front of it, so three loops are one scan.
+	srv.readings = app.NewInventoryReading(srv.inventory.Read, 0)
+	srv.inventory.Held.SetLimits(CapacityLimit(capacity.ScreensCaptureSlots),
+		CapacityLimit(capacity.CacheTerminalScreens))
 	// The transcript caches and the skills cache hold their register rows' limits.
 	srv.ledger.SetLimit(CapacityLimit(capacity.CacheTranscriptUsage))
 	srv.skillMenu.SetLimit(CapacityLimit(capacity.CacheSessionSkills))
@@ -158,6 +172,33 @@ func New(cfg config.Config) (*Server, error) {
 		}
 	}()
 	return srv, nil
+}
+
+// reading is this machine's session list, as it was taken a moment ago.
+//
+// Every route that draws or projects rows reads this. It may be answered from
+// the held reading while that is younger than app.InventoryTTL, which is what
+// makes one scan serve the console, the Cloud publisher and the broker's pass
+// at once instead of three.
+func (s *Server) reading(ctx context.Context) session.Inventory {
+	if s.readings == nil {
+		return s.inventory.Read(ctx)
+	}
+	return s.readings.Recent(ctx)
+}
+
+// freshReading is a reading taken for this call.
+//
+// It is for the two callers that decide something from it rather than draw it:
+// the broker's beat, which settles a task and closes a session when a child's
+// tab is no longer there, and a person's action, which names a session and
+// then types into it. Neither may be answered from a snapshot that had already
+// finished before they asked (docs/design-decisions.md D05 ③).
+func (s *Server) freshReading(ctx context.Context) session.Inventory {
+	if s.readings == nil {
+		return s.inventory.Read(ctx)
+	}
+	return s.readings.Fresh(ctx)
 }
 
 func (s *Server) Handler() http.Handler {

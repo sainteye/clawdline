@@ -639,7 +639,7 @@ func (s *Server) brokerLandings(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	inv := s.inventory.Read(ctx)
+	inv := s.reading(ctx)
 	snap := s.sessionsPayloadFrom(ctx, inv)
 	rd := orchestrator.LandingReading{Processes: inv.Sources["ps"]}
 	for _, row := range snap.Sessions {

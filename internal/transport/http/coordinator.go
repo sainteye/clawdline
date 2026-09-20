@@ -29,7 +29,7 @@ func (s *Server) coordinator() *app.Coordinator {
 	return &app.Coordinator{
 		Store: s.store,
 		Read: func(ctx context.Context) session.Inventory {
-			return s.inventory.Read(ctx)
+			return s.reading(ctx)
 		},
 		ProcessStart: swiftstore.ProcessStart,
 		Broker:       s.broker,

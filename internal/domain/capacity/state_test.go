@@ -60,8 +60,19 @@ func kinds(events []Event) string {
 
 // limits.md §4.7, layer 1: every row with its limit injected at 20, written to
 // the 16th (80%), 19th (95%), 20th (100%) and 21st item.
+//
+// A row whose own limit is below twenty is walked at its own instead
+// (theSmallRow below). An override may only lower a limit, so twenty cannot be
+// injected into a row that holds two — and a row that holds two is a real
+// bound, not a missing one: how many terminal captures this daemon may have in
+// flight is the bound that keeps a queue from forming in front of a person's
+// keystroke, and it is small on purpose.
 func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 	for _, e := range Register() {
+		if e.Limit < 20 {
+			t.Run(e.Name, func(t *testing.T) { theSmallRow(t, e) })
+			continue
+		}
 		t.Run(e.Name, func(t *testing.T) {
 			res, problems := Resolve([]Entry{e}, e.Name+"=20")
 			if len(problems) != 0 {
@@ -146,6 +157,49 @@ func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 				t.Errorf("exhausted = %v at the end", st.Exhausted)
 			}
 		})
+	}
+}
+
+// theSmallRow is the same walk for a row that holds fewer than twenty things:
+// empty is ok, full is full, and the write past the limit does what the row
+// says it does, once, and leaves an event saying so.
+//
+// The four ratios the states are defined at cannot all be crossed by a row of
+// two — 1/2 is fifty per cent, which is ok — so what is checked here is what a
+// row of any size must do, and the transitions in between are the larger
+// walk's business.
+func theSmallRow(t *testing.T, e Entry) {
+	t.Helper()
+	res := Resolved{Entry: e, Limit: e.Limit}
+	tr := NewTracker()
+	f := &fill{e: e, limit: e.Limit}
+	now := t0
+	st, _ := tr.Observe(res, f.reading(), now)
+	if st.State != OK {
+		t.Fatalf("empty: %+v", st)
+	}
+	var events []Event
+	for i := int64(1); i <= e.Limit; i++ {
+		f.write()
+		now = now.Add(time.Minute)
+		st, events = tr.Observe(res, f.reading(), now)
+	}
+	if st.State != Full {
+		t.Fatalf("%d/%d is %s", e.Limit, e.Limit, st.State)
+	}
+	f.write()
+	now = now.Add(time.Minute)
+	st, events = tr.Observe(res, f.reading(), now)
+	acted := f.counters.Rotated + f.counters.Evicted + f.counters.Dropped + f.counters.Refused +
+		f.counters.Expired + f.counters.Disconnected
+	if e.AtLimit != Nothing && acted != 1 {
+		t.Fatalf("the write past the limit did not %s once: %+v", e.AtLimit, f.counters)
+	}
+	if kind := kinds(events); e.AtLimit != Nothing && !strings.Contains(kind, "capacity.") {
+		t.Fatalf("the action at the limit left no event: %q", kind)
+	}
+	if st.Exhausted != (e.Class == Evidence) {
+		t.Errorf("exhausted = %v at the end", st.Exhausted)
 	}
 }
 

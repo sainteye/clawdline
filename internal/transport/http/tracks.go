@@ -56,7 +56,7 @@ func (s *Server) tracks() *tracksDeps {
 func (s *Server) tracksPresence(ctx context.Context) (work.Presence, work.PresenceSource) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	inv := s.inventory.Read(ctx)
+	inv := s.reading(ctx)
 	p := work.Presence{Complete: inv.Complete, Sessions: map[string]bool{}}
 	count := 0
 	for _, item := range inv.Sessions {

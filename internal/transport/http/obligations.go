@@ -23,7 +23,7 @@ import (
 // read was written by a dispatch path the broker never took, so a delivery
 // waiting to land was never on it.
 func (s *Server) obligations(w http.ResponseWriter, r *http.Request) {
-	open, err := s.owed(r.Context(), s.inventory.Read(r.Context()).Sessions)
+	open, err := s.owed(r.Context(), s.reading(r.Context()).Sessions)
 	if err != nil {
 		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return

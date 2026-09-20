@@ -26,6 +26,14 @@ import (
 // the point: the broker's questions — which sessions are live, is that one
 // showing a menu, which terminal does this machine open — are all about *now*,
 // and a held answer is wrong by the time the next beat asks.
+//
+// *Now* is not one thing, though, and the two words for it are `freshReading`
+// and `reading` (server.go). The beat's own reading of the machine decides
+// whether a child's tab is still there, so it is taken for that call and never
+// answered from one already on the shelf; everything the pass then asks about
+// a row it has already read is answered from that same reading, because asking
+// the machine again per task both costs a full scan and puts two decisions in
+// one pass at two different moments.
 
 // outboxFault is CLAWDLINE_NEXT_OUTBOX_FAULT: the name of an effect point
 // (orchestrator effects.go — "committed", "started") at which this daemon
@@ -55,11 +63,16 @@ func newBroker(s *Server) *orchestrator.Broker {
 		Store:       s.store,
 		Tasks:       taskdir.New(s.cfg.Dir),
 		Git:         git.New(),
+		// The beat's own reading, and the only consumer that may not be
+		// answered from a held one: it decides from this whether a child's tab
+		// is still there, and that decision settles a task and closes a
+		// session. A snapshot taken before the tab opened would be evidence of
+		// something nobody observed (D05 ③).
 		Live: func(ctx context.Context) []session.Session {
-			return s.inventory.Read(ctx).Sessions
+			return s.freshReading(ctx).Sessions
 		},
 		Reading: func(ctx context.Context) session.Inventory {
-			return s.inventory.Read(ctx)
+			return s.freshReading(ctx)
 		},
 		Fault: beatFault(),
 		// Every line the broker types — a briefing, a completion notice, a
@@ -70,20 +83,29 @@ func newBroker(s *Server) *orchestrator.Broker {
 			_, err := s.actions().Send(ctx, terminalID, text)
 			return err
 		},
-		// A session showing a menu is read from the inventory this daemon has
+		// A session showing a menu is read from the reading this daemon has
 		// already taken, rather than by capturing its screen again: a second
 		// capture is a second subprocess against a terminal somebody is typing
 		// in, and the answer would be from a different moment anyway.
+		//
+		// Both of these are asked once per task inside a pass that has just
+		// taken a reading of its own, so they read the held one. Scanning the
+		// machine again per task was the amplification this change is about,
+		// and the answer would be from a different moment than the one the
+		// pass decided everything else on.
 		Choosing: func(ctx context.Context, terminalID string) bool {
-			for _, item := range s.inventory.Read(ctx).Sessions {
+			for _, item := range s.reading(ctx).Sessions {
 				if item.ID == terminalID {
 					return item.Menu != nil
 				}
 			}
 			return false
 		},
+		// The row is found in the held reading; the screen itself is captured
+		// live, because what this answers is whether a briefing may be typed
+		// into that tab now.
 		Screen: func(ctx context.Context, terminalID string) (string, bool) {
-			for _, item := range s.inventory.Read(ctx).Sessions {
+			for _, item := range s.reading(ctx).Sessions {
 				if item.ID == terminalID {
 					return s.inventory.Screen.Capture(ctx, item)
 				}

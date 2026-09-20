@@ -181,7 +181,7 @@ type startReading struct {
 func (s *Server) readForStart(ctx context.Context) startReading {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	inv := s.inventory.Read(ctx)
+	inv := s.freshReading(ctx)
 	home, _ := os.UserHomeDir()
 	out := startReading{openClaude: map[string]bool{}, openCodex: map[string]bool{}}
 	for _, item := range inv.Sessions {

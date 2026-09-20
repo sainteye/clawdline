@@ -150,7 +150,7 @@ func (s *Server) screen(ctx context.Context) []swiftstore.OnScreen {
 	if held := s.lastScreen.Load(); held != nil && time.Since(held.at) < screenMaxAge {
 		return held.rows
 	}
-	inv := s.inventory.Read(ctx)
+	inv := s.reading(ctx)
 	rows := onScreen(inv.Sessions)
 	s.lastScreen.Store(&screenReading{at: time.Now(), rows: rows})
 	return rows

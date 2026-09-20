@@ -70,7 +70,7 @@ type sessionsSnapshotWire struct {
 // publish. They are the same payload, so they are the same code: two builders
 // would drift, and the client would have no way to tell which one it got.
 func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
-	return s.sessionsPayloadFrom(ctx, s.inventory.Read(ctx))
+	return s.sessionsPayloadFrom(ctx, s.reading(ctx))
 }
 
 // sessionsPayloadFrom is that snapshot built from a reading the caller already
@@ -78,13 +78,17 @@ func (s *Server) sessionsPayload(ctx context.Context) sessionsSnapshotWire {
 // (orchestrator.go): one reading, so a row and the source completeness read
 // with it are of the same moment.
 func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory) sessionsSnapshotWire {
+	// This daemon's own records get a clock of their own, and not what the
+	// terminal scan left of the request's (recordsContext).
+	records, releaseRecords := recordsContext(ctx)
+	defer releaseRecords()
 
 	// One reading of what is owed, for the whole list, against this same
 	// reading of the sessions. Asking per row would ask the same question
 	// eight times and let two rows disagree about the same moment. An
 	// unreadable broker makes the projection incomplete, not wrong in one
 	// place: it is carried as missing evidence rather than as zero.
-	owed, owedErr := s.owed(ctx, inv.Sessions)
+	owed, owedErr := s.owed(records, inv.Sessions)
 	// One reading of the Swift app's store, for the same reason. It is history
 	// now (cutover B1): this daemon's own records are laid over it below, and
 	// with the legacy switch off it is read as holding nothing.
@@ -93,7 +97,7 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	// crown is drawn from it and from nothing else — one role, one source.
 	// An unreadable role draws no crown of its own and falls back to the
 	// Swift store's, as before this daemon had a role at all.
-	role, roleStatus, _ := s.store.Coordinator(ctx)
+	role, roleStatus, _ := s.store.Coordinator(records)
 	ownRole := roleStatus == store.CoordinatorReady
 
 	// Only assistant sessions are rows. A terminal running an ordinary shell is
@@ -118,7 +122,7 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	// in the Swift store's shape, so the one set of rules reads both
 	// (ownrecords.go). A source of ours that could not be read is evidence
 	// missing for every row, as an unreadable Swift store is.
-	own, ownErr := s.ownOverlay(ctx, lives)
+	own, ownErr := s.ownOverlay(records, lives)
 	swift = swift.With(own)
 
 	// Names first, because a coordination wait names the sessions on either
@@ -171,6 +175,34 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			},
 		},
 	}
+}
+
+// recordsBudget is what this daemon's own records are given to answer in.
+//
+// Two seconds, and they are SQLite reads of files on this machine: the whole
+// overlay measured in single-digit milliseconds, so this is a bound on a
+// pathology, not a schedule.
+const recordsBudget = 2 * time.Second
+
+// recordsContext is that budget, and it deliberately does not inherit the
+// request's deadline.
+//
+// **A read that was never given any time did not find nothing; it was not
+// asked.** The session list's request carried one eight-second deadline for
+// everything, the terminal scan spent all of it, and the record reads that
+// follow then ran on a context that was already dead. Every one of them failed
+// at once, the response carried `obligation_list_unreadable` and
+// `own_records_unreadable`, and the rows lost the broker's task titles and
+// fell back to `Clawdline task <id>` — while the titles sat in the database,
+// readable, a millisecond away.
+//
+// So the records are taken off that clock. The cancellation is dropped with
+// it, which is the right trade for reads of this daemon's own store: they are
+// local, they are bounded here, and a client that hung up costs at most this
+// long. What it buys is that "unreadable" in the answer means the store could
+// not be read — never that the scan in front of it was slow.
+func recordsContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), recordsBudget)
 }
 
 // liveOf is a session reduced to the identity the Swift store's records are

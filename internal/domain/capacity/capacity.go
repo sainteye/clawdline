@@ -185,6 +185,10 @@ const (
 	// many this machine holds, and how many are in one group of them.
 	SnippetsTotal = "snippets.total"
 	SnippetsScope = "snippets.scope"
+	// The screens the session list reads: how many captures may be in flight
+	// at once, and how many screens are held between them.
+	ScreensCaptureSlots  = "screens.capture_slots"
+	CacheTerminalScreens = "cache.terminal_screens"
 )
 
 // Entry is one row of the register.
@@ -562,6 +566,35 @@ func Register() []Entry {
 			EvictedBy: Person,
 			Projects:  true,
 			Sources:   []string{"internal/adapters/store.SnippetScopeLimit"},
+		},
+		{
+			// The screen captures the session list may have in flight at once
+			// (internal/app/screen_held.go). This is the row that bounds how
+			// deep a queue this daemon can put in front of a person's own
+			// keystroke: every iTerm2 capture is an AppleScript behind one
+			// process-wide Apple Events lock, and the list used to start one
+			// per qualifying row per reader — twenty rows times three loops,
+			// each waiting for all the ones before it. At this limit a refresh
+			// is not started at all; the reader is answered from the held
+			// screen and the skip is counted, because the alternative is a
+			// queue whose length is the number of rows.
+			Name: ScreensCaptureSlots, Class: Buffer, Unit: Rows,
+			Limit: 2, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.ScreenCaptureLimit"},
+		},
+		{
+			// The screens held between those captures, one per session the
+			// list has asked about. Past the limit the screen asked about
+			// longest ago is let go, and a screen nobody has asked about for
+			// two minutes goes with it; a miss is one capture behind the
+			// answer, like every other refresh here.
+			Name: CacheTerminalScreens, Class: Cache, Unit: Rows,
+			Limit: 64, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.ScreenHeldLimit"},
 		},
 	}
 }

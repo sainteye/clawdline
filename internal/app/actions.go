@@ -27,6 +27,11 @@ import (
 // terminal will happily close a session that still owes somebody a landing.
 type Actions struct {
 	Inventory Inventory
+	// Reading is the machine's one reading, when the daemon wiring this holds
+	// one. Find asks it for a reading taken now, because what Find answers
+	// refuses a person's action by saying their session is not there; nil
+	// scans through Inventory directly, which is what a test wants.
+	Reading   *InventoryReading
 	Terminals []ports.TerminalHost
 	Store     *store.Store
 	// Owed is what the sessions on this machine still owe — the broker's
@@ -102,7 +107,7 @@ func (r Refusal) Unwrap() error { return r.Cause }
 // one has proved nothing, and answering `not_found` there would turn a terminal
 // that lost accessibility for a moment into a session somebody deleted.
 func (a Actions) Find(ctx context.Context, id string) (session.Session, error) {
-	inv := a.Inventory.Read(ctx)
+	inv := a.read(ctx)
 	for _, item := range inv.Sessions {
 		if item.ID == id {
 			return item, nil
@@ -118,6 +123,16 @@ func (a Actions) Find(ctx context.Context, id string) (session.Session, error) {
 		Code:   "session_not_found",
 		Detail: fmt.Sprintf("no session %s in a complete reading of this machine", id),
 	}
+}
+
+// read is a reading taken for this call. An action names a session and then
+// acts on it, so a held reading could refuse a tab opened a second ago as
+// absent, or type into one that has since gone.
+func (a Actions) read(ctx context.Context) session.Inventory {
+	if a.Reading != nil {
+		return a.Reading.Fresh(ctx)
+	}
+	return a.Inventory.Read(ctx)
 }
 
 // host returns the terminal that owns this session.

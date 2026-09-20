@@ -215,6 +215,25 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return h.Titles().Reading()
 		},
 		capacity.CacheSessionSkills: func() capacity.Reading { return s.skillsReading() },
+		// The screens the session list holds, and the captures it has in
+		// flight (internal/app/screen_held.go).
+		// An inventory with no held screens is a known zero, not an
+		// unmeasured row: it reads its terminals live, so it holds none and
+		// has none in flight.
+		capacity.CacheTerminalScreens: func() capacity.Reading {
+			if s.inventory.Held == nil {
+				return capacity.Reading{Known: true, Note: "this inventory holds no screens"}
+			}
+			held, _ := s.inventory.Held.Reading()
+			return held
+		},
+		capacity.ScreensCaptureSlots: func() capacity.Reading {
+			if s.inventory.Held == nil {
+				return capacity.Reading{Known: true, Note: "this inventory takes no screen captures"}
+			}
+			_, slots := s.inventory.Held.Reading()
+			return slots
+		},
 		// The plan-window readings held. Measuring counts the map; it takes no
 		// reading, which would be this row measuring itself into existence.
 		capacity.CacheAssistantQuota: func() capacity.Reading { return quotaReader().Reading() },

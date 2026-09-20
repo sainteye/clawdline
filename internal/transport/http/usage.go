@@ -48,7 +48,7 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 
-	inv := s.inventory.Read(ctx)
+	inv := s.reading(ctx)
 	rows := make([]contract.UsageRow, 0, len(inv.Sessions))
 	var total int64
 	for _, item := range inv.Sessions {
