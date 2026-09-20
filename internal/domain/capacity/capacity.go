@@ -181,6 +181,10 @@ const (
 	CacheSessionSkills = "cache.session_skills"
 	// The plan-window reading of each assistant's account.
 	CacheAssistantQuota = "cache.assistant_quota"
+	// The text somebody wrote once and presses instead of typing again: how
+	// many this machine holds, and how many are in one group of them.
+	SnippetsTotal = "snippets.total"
+	SnippetsScope = "snippets.scope"
 )
 
 // Entry is one row of the register.
@@ -531,6 +535,33 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/limits.quotaCacheLimit"},
+		},
+		{
+			// Every snippet on this machine. Each one is a piece of text a
+			// person wrote, so nothing is let go at the limit: one more is
+			// refused with 409 `snippet_limit_reached`, in the answer to the
+			// sheet that asked, and only a person deletes one. The bytes they
+			// hold are bounded per field at the door (internal/domain/snippet)
+			// and accumulate on store.db, which has its own row.
+			Name: SnippetsTotal, Class: Evidence, Unit: Rows,
+			Limit: 100, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/store.SnippetTotalLimit"},
+		},
+		{
+			// One group of them: every project, or one project. The second
+			// bound exists because the first is reached by a hundred snippets
+			// anywhere, and a list of fifty in one sheet is already longer than
+			// anybody scrolls. Refused the same way, and Used is the fullest
+			// group, named in the reading.
+			Name: SnippetsScope, Class: Evidence, Unit: Rows,
+			Limit: 50, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/store.SnippetScopeLimit"},
 		},
 	}
 }

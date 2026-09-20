@@ -253,6 +253,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/schedule-webhooks/bind", s.scheduleWebhookBindRoute)
 	mux.HandleFunc("/v1/orchestrator/schedule-imports", s.scheduleImportRoute)
 	mux.HandleFunc("/v1/orchestrator/schedule-exports", s.scheduleExportRoute)
+	// The text somebody wrote once and presses instead of typing it again
+	// (snippets.go). This daemon's own store, never the Swift app's directory.
+	mux.HandleFunc("/v1/snippets", s.snippetsRoute)
+	mux.HandleFunc("/v1/snippets/", s.snippetRoute)
 	mux.HandleFunc("/v1/orchestrator/tasks", s.tasksRoute)
 	// The broker (orchestrator.go): everything under a task id, plus the five
 	// routes beside it. A child's own routes are let through the gate by

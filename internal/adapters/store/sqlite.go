@@ -171,6 +171,9 @@ func Open(dir string) (*Store, error) {
 	if err := openSchedules(db); err != nil {
 		return nil, err
 	}
+	if err := openSnippets(db); err != nil {
+		return nil, err
+	}
 	if err := openW2(db); err != nil {
 		return nil, err
 	}

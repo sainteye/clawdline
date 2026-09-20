@@ -251,19 +251,64 @@ func (r *Registry) For(cwd string) Grid {
 
 // Label returns the name the registry gives a directory, if it gives one.
 func (r *Registry) Label(cwd string) string {
-	best := ""
+	_, label, _ := r.Match(cwd)
+	return label
+}
+
+// Match is the registry row a working directory falls under: the registered
+// path itself, the name that row gives it, and whether there was a row.
+//
+// The same longest-match rule `For` draws with, exposed because a caller may
+// need the row's *path* and not only its picture: that path is what a project
+// this machine has registered is called, so two sessions in two
+// subdirectories of one project agree about which project they are in. `label`
+// is the row's own and is empty where the row gives none — the caller decides
+// what to call a project the registry did not name, and the answers differ.
+func (r *Registry) Match(cwd string) (path, label string, ok bool) {
+	return r.MatchSpelled(cwd, nil)
+}
+
+// MatchSpelled is Match with both sides of the comparison put through one
+// spelling first, and the matched path answered in that spelling.
+//
+// One side alone is not a comparison. A registry row is written by hand and may
+// name a directory through a symbolic link; a caller that has already resolved
+// its own path can never match such a row, and the answer is then not "no row"
+// but "the wrong no". `spell` nil is Match's plain string comparison.
+//
+// Two spellings of one directory can collapse onto one key here, so the longest
+// match still wins and, between two rows that spell to the same path, the first
+// by registered path — rather than whichever the map happened to hand over.
+func (r *Registry) MatchSpelled(cwd string, spell func(string) string) (path, label string, ok bool) {
+	if spell == nil {
+		spell = func(p string) string { return p }
+	}
+	here := spell(cwd)
+	if here == "" {
+		return "", "", false
+	}
+	best, bestRaw := "", ""
 	var bestRow entry
-	for path, row := range r.load() {
-		if cwd == path || strings.HasPrefix(cwd, path+"/") {
-			if len(path) > len(best) {
-				best, bestRow = path, row
-			}
+	for raw, row := range r.load() {
+		candidate := spell(raw)
+		if candidate == "" {
+			continue
 		}
+		if here != candidate && !strings.HasPrefix(here, candidate+"/") {
+			continue
+		}
+		if len(candidate) < len(best) {
+			continue
+		}
+		if len(candidate) == len(best) && (bestRaw == "" || raw >= bestRaw) {
+			continue
+		}
+		best, bestRaw, bestRow = candidate, raw, row
 	}
 	if best == "" {
-		return ""
+		return "", "", false
 	}
-	return bestRow.Label
+	return best, bestRow.Label, true
 }
 
 func fromEntry(e entry) (Grid, bool) {

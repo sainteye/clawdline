@@ -13,6 +13,7 @@ import { toast, toastFailure } from "../overlays/toast.js"
 import * as L from "../legacy/bridge.js"
 import { requestDocuments } from "../legacy/documents-bridge.js"
 import { requestUserMessages } from "../legacy/user-messages-bridge.js"
+import { SNIPPET_PROJECT_KNOWN, requestSnippets, snippetProjectFor } from "../legacy/snippets-bridge.js"
 import { askFocus } from "../legacy/screen-bridge.js"
 import { Transcript } from "./Transcript.js"
 import { GitPanel } from "./GitPanel.js"
@@ -21,15 +22,21 @@ import { ScreenPanel } from "./ScreenPanel.js"
 import { StatusLine } from "./StatusLine.js"
 import { Todos } from "./Todos.js"
 import { UserMessages } from "./UserMessages.js"
+import { Snippets } from "./Snippets.js"
 
 /**
  * Whether this transport can read a project's snippets — `snippetControls(api).read`
- * in `view/snippets-data.js`. This daemon has no snippets route, so the answer is
- * no, and the header and the `⋯` row both take the original's "no route" shape
- * from this one answer, as they take it from one function there: the mark is an
- * inert picture named after its folder, and the menu row is hidden and disabled.
+ * in `view/snippets-data.js`. This daemon owns the five routes now
+ * (internal/transport/http/snippets.go), so the answer is yes, and the header's
+ * mark and the `⋯` row both take their shape from this one answer, as they take
+ * it from one function there.
+ *
+ * A transport that turns out not to carry them — the Cloud does not — says so in
+ * the answer to the sheet's own read, by name, rather than by a control that was
+ * never drawn. There is no relay client object here to ask the way the original
+ * asks one, so this is the one place the question is answered.
  */
-const SNIPPETS_READABLE = false
+const SNIPPETS_READABLE = true
 
 /**
  * The conversation, which is what this pane is for.
@@ -91,9 +98,26 @@ export function Detail({
     if (trigger && !trigger.disabled) trigger.focus({ preventScroll: true })
   }
 
-  // No snippets route means no resolved project (`snippetProjectFor`), so the
-  // mark is keyed by the session's own `cwd`.
-  const mark = useMemo(() => markForSession(row), [row?.icon, row?.cwd])
+  // The project the machine resolved for this session, once the sheet has read
+  // it (`snippetProjectFor`): a session in a subdirectory of a project, or in a
+  // worktree cut from one, is keyed by that project and not by its own `cwd`.
+  // Until something has said, the mark is keyed by the `cwd`, which is the
+  // honest answer to a question nobody has asked yet.
+  const [resolvedProject, setResolvedProject] = useState("")
+  useEffect(() => {
+    setResolvedProject("")
+  }, [row?.id])
+  useEffect(() => {
+    if (!row) return
+    const look = () => setResolvedProject(snippetProjectFor(row.id)?.key ?? "")
+    look()
+    document.addEventListener(SNIPPET_PROJECT_KNOWN, look)
+    return () => document.removeEventListener(SNIPPET_PROJECT_KNOWN, look)
+  }, [row?.id])
+  const mark = useMemo(
+    () => markForSession(row, resolvedProject),
+    [row?.icon, row?.cwd, resolvedProject],
+  )
   const markRef = useRef<HTMLCanvasElement>(null)
   const [drew, setDrew] = useState(false)
   useLayoutEffect(() => {
@@ -130,6 +154,14 @@ export function Detail({
             data-plain={SNIPPETS_READABLE ? "off" : "on"}
             title={snippetsSays}
             aria-label={snippetsSays || undefined}
+            onClick={(event) => {
+              // The second entrance, and the reason the sheet is asked for by an
+              // event rather than called: the header owns whether this button is
+              // enabled and what it is called, and only says what it does.
+              event.preventDefault()
+              event.stopPropagation()
+              requestSnippets()
+            }}
           >
             <span className="detail-identity">
               {/* `coordinatorForSession`: shown on the registered Clawdfather's session. */}
@@ -202,6 +234,7 @@ export function Detail({
           one is drawn into the body from here, because the `⋯` row that opens
           it is this component's. */}
       <UserMessages row={row} />
+      <Snippets row={row} />
     </section>
   )
 }
@@ -562,7 +595,22 @@ function Tools({
               >
                 {userMessagesTitle()}
               </button>
-              <button id="session-snippets" type="button" role="menuitem" hidden={!SNIPPETS_READABLE} disabled>
+              {/* `disabled` as well as `hidden` where there is no route, because
+                  `SessionActions.items()` collects `button:not(:disabled)` for the
+                  keyboard: a row that is only hidden is still a stop on the way
+                  down the menu with the arrow keys. */}
+              <button
+                id="session-snippets"
+                type="button"
+                role="menuitem"
+                hidden={!SNIPPETS_READABLE}
+                disabled={!SNIPPETS_READABLE || !row || ending}
+                onClick={() => {
+                  if (!row) return
+                  closeMenu(false)
+                  requestSnippets()
+                }}
+              >
                 {T.webSnippets}
               </button>
               {/* "Git", "commit" and "push" are literal in the original's index.html, not catalog strings. */}

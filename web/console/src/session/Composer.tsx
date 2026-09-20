@@ -13,6 +13,7 @@ import {
   subscribeShots,
 } from "../legacy/shots-bridge.js"
 import * as V from "../legacy/voice-bridge.js"
+import { COMPOSE_APPEND } from "../legacy/snippets-bridge.js"
 import {
   clampSkillPickerIndex,
   filterSkills,
@@ -332,6 +333,19 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
   }
   const sink = useRef(appendMsg)
   sink.current = appendMsg
+
+  // The other thing that writes into the box: a snippet somebody pressed
+  // (`session/Snippets.tsx`). Same function dictation uses, through the same
+  // `sink`, so the two cannot join their text to what is there by two rules —
+  // and like dictation it stops here, because nothing but the send button sends.
+  useEffect(() => {
+    const appended = (event: Event) => {
+      const text = (event as CustomEvent<{ text?: unknown }>).detail?.text
+      if (typeof text === "string" && text) sink.current(text)
+    }
+    document.addEventListener(COMPOSE_APPEND, appended)
+    return () => document.removeEventListener(COMPOSE_APPEND, appended)
+  }, [])
 
   // The microphone, attached once. `Voice` is a module rather than a hook for
   // the reason the original is one object: there is one recorder on the page,

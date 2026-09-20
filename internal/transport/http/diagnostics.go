@@ -218,6 +218,10 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		// The plan-window readings held. Measuring counts the map; it takes no
 		// reading, which would be this row measuring itself into existence.
 		capacity.CacheAssistantQuota: func() capacity.Reading { return quotaReader().Reading() },
+		// The two snippet rows (snippets.go): one COUNT each, over at most a
+		// hundred rows.
+		capacity.SnippetsTotal: func() capacity.Reading { return s.snippetsReading(false) },
+		capacity.SnippetsScope: func() capacity.Reading { return s.snippetsReading(true) },
 		capacity.AuditSecurity: func() capacity.Reading {
 			g := s.gate()
 			if g.files == nil {
