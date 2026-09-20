@@ -125,7 +125,10 @@ func TestServeTheWritePathForAPage(t *testing.T) {
 		mu.Unlock()
 		reply(w, map[string]any{"ok": true})
 	})
-	mux.HandleFunc("/acts", func(w http.ResponseWriter, r *http.Request) { reply(w, p.done()) })
+	mux.HandleFunc("/acts", func(w http.ResponseWriter, r *http.Request) {
+		// An empty list is a list: `null` would read as "could not say".
+		reply(w, append([]string{}, p.done()...))
+	})
 	mux.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
 		reply(w, map[string]any{"ok": true})
 		once.Do(func() { close(stop) })

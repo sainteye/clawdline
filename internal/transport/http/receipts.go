@@ -49,10 +49,19 @@ func requestDigest(parts ...[]byte) string {
 // request, a full queue — gives the reservation back so a retry is run.
 func (s *Server) receipted(w http.ResponseWriter, r *http.Request, k store.ReceiptKey, digest string,
 	file func(status int) bool, body func(http.ResponseWriter)) {
+	s.receiptedFor(w, r, k, digest, store.ReceiptPolicy{}, file, body)
+}
+
+// receiptedFor is `receipted` with a scope's own policy. A scope whose
+// requests are frequent keeps a shorter window: the limit is per scope inside
+// its window, and a window long enough to fill it would refuse new requests
+// rather than answering retries (see scopeSessions).
+func (s *Server) receiptedFor(w http.ResponseWriter, r *http.Request, k store.ReceiptKey, digest string,
+	policy store.ReceiptPolicy, file func(status int) bool, body func(http.ResponseWriter)) {
 	ctx := r.Context()
 	deadline := time.Now().Add(receiptWait)
 	for {
-		claim, err := s.store.ClaimReceipt(ctx, k, digest, store.ReceiptPolicy{}, time.Now())
+		claim, err := s.store.ClaimReceipt(ctx, k, digest, policy, time.Now())
 		if err != nil {
 			if errors.Is(err, store.ErrBusy) {
 				w.Header().Set("Retry-After", "1")

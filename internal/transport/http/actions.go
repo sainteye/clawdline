@@ -159,8 +159,20 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 // closeability version a Cloud viewer carries, with room to spare.
 const closeBodyLimit = 16 << 10
 
-// scopeSessions is the receipt scope of a session's writes.
+// scopeSessions is the receipt scope of a session's writes, and how long one
+// of them answers a retry.
+//
+// **Shorter than the default day** (`store.ReceiptWindow`). The store holds
+// `store.ReceiptLimit` receipts per scope inside its window and refuses a new
+// request past that, and these are the most frequent writes this daemon has:
+// every message and every menu answer files one. Two hours is far longer than
+// any retry of a card somebody is looking at, and short enough that a busy day
+// cannot fill the scope and start refusing new messages. A retry past it is
+// told `receipt_expired`, which the page reads as "not known" and offers a
+// look at (`session/outcome.ts`) — never a silent second send.
 const scopeSessions = "sessions"
+
+const sessionReceiptWindow = 2 * time.Hour
 
 // sessionWrite answers one write to a session — a message, a menu answer, a
 // close — once per Idempotency-Key, when the caller names one (D03, F2).
@@ -196,7 +208,8 @@ func (s *Server) sessionWrite(w http.ResponseWriter, r *http.Request, limit int6
 		return
 	}
 	k := store.ReceiptKey{Scope: scopeSessions, Actor: accessOf(r).verdict.Device, Key: key}
-	s.receipted(w, r, k, requestDigest([]byte(r.Method), []byte(routePath(r)), raw), sessionWriteFiled,
+	s.receiptedFor(w, r, k, requestDigest([]byte(r.Method), []byte(routePath(r)), raw),
+		store.ReceiptPolicy{Window: sessionReceiptWindow}, sessionWriteFiled,
 		func(w http.ResponseWriter) { act(w, raw) })
 }
 
