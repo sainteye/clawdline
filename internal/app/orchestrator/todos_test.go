@@ -591,6 +591,9 @@ func TestADispatchCarriesItsWorkID(t *testing.T) {
 	b.Clock = nil
 	repo := gitRepo(t)
 	workID := "0f0f0f0f-1234-4000-8000-00000000abcd"
+	// The item that dispatch names, because a dispatch may name only an item
+	// there is (BD-4): the line it carries is that item's from here on.
+	plannedItem(t, b, ctx, workID, repo, time.Now())
 	dispatch := func(id string, extra map[string]any) (Dispatched, error) {
 		writeBrief(t, b, id, repo, extra)
 		inv, err := b.ReadInventory(ctx, repo, nil)

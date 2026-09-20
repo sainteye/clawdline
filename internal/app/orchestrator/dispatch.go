@@ -157,6 +157,12 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	if err := b.bindLine(ctx, &record); err != nil {
 		return Dispatched{}, err
 	}
+	// And, when the dispatch named a work item, that the item is one this
+	// dispatch may serve: it exists, it is this project's, and it is not
+	// finished (lines.go, BD-4). Refused here, before anything exists.
+	if err := b.checkNamedWork(ctx, record); err != nil {
+		return Dispatched{}, err
+	}
 	// A node of a graph is admitted only where the graph can take it now
 	// (graphs.go): not running twice, not done twice, not ahead of what it
 	// depends on.
@@ -345,6 +351,15 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		return Dispatched{}, err
 	}
 	refund = false
+
+	// The task is durable, so the commitment it carries is real: the item
+	// this dispatch named goes onto the board now, rather than waiting for a
+	// person to say a second time what the dispatch already said (BD-4).
+	if err := b.commitNamedWork(ctx, record); err != nil {
+		warnings = append(warnings, Warning{Code: "work_not_placed", Task: record.ID,
+			Message: "The work item this dispatch names could not be moved onto the board (" + err.Error() +
+				"); the board's sweep makes the same change from the same facts within a tick."})
+	}
 
 	// The checkout, now that the task that owes it is durable.
 	for _, res := range b.runRecorded(ctx, ids) {

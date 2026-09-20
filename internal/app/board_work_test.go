@@ -288,3 +288,84 @@ func TestAStoppedSweepIsStalled(t *testing.T) {
 		t.Fatal("a sweep that was stopped on purpose reads as stalled")
 	}
 }
+
+// BD-17 against the real store: work a person says was done, whose delivery
+// named no item, closes as done — the row says `done_elsewhere`, the move
+// says who said so and why, and `dropped` keeps meaning what it says.
+func TestDoneElsewhereClosesWithoutSayingSomebodyGaveUp(t *testing.T) {
+	w, st, clock := newBoard(t)
+	ctx := context.Background()
+	made, err := w.Create(ctx, NewWork{Title: "⌘Tab does not raise the window", Project: "/p",
+		Place: work.PlaceBacklog, Actor: "user", Principal: "local"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := made.Item.ID
+	why := "landed by task 3f21, which named no work_id"
+
+	// Without the reason, nothing is written.
+	if _, err := w.Command(ctx, id, WorkCommand{Command: work.Command{Op: work.OpDoneElsewhere, Actor: "user"},
+		Principal: "local"}, nil); !refusedWith(err, "reason_required") {
+		t.Fatalf("no reason: %v", err)
+	}
+	clock.at = clock.at.Add(time.Hour)
+	v, err := w.Command(ctx, id, WorkCommand{Command: work.Command{Op: work.OpDoneElsewhere, Actor: "user",
+		Reason: why}, Principal: "local"}, nil)
+	if err != nil {
+		t.Fatalf("done elsewhere: %v", err)
+	}
+	if v.Item.Place != work.PlaceBoard || v.Item.State != work.ItemDone ||
+		v.Item.ClosedReason != work.ClosedDoneElsewhere || v.Derived.Landed {
+		t.Fatalf("the closed item: %+v landed=%v", v.Item, v.Derived.Landed)
+	}
+	if v.Section != work.SectionDone || !v.OnPage {
+		t.Fatalf("it is not among the recently done: %s %v", v.Section, v.OnPage)
+	}
+	// It is in the store that way, not only in the answer: the CHECK on the
+	// board's own table admits the reason.
+	stored, err := st.WorkItem(ctx, id)
+	if err != nil || stored.ClosedReason != work.ClosedDoneElsewhere {
+		t.Fatalf("the stored row: %+v %v", stored, err)
+	}
+	last := moves(t, st, id)
+	m := last[len(last)-1]
+	if m.Trigger != string(work.OpDoneElsewhere) || m.Actor != "user" || m.State != work.ItemDone {
+		t.Fatalf("the move: %+v", m)
+	}
+	var evidence map[string]any
+	if err := json.Unmarshal(m.Evidence, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if evidence["reason"] != why || evidence["principal"] != "local" || evidence["landed"] != false {
+		t.Fatalf("the move does not say who said it or why: %v", evidence)
+	}
+	// Closed once: a second one is refused and the record keeps the first.
+	if _, err := w.Command(ctx, id, WorkCommand{Command: work.Command{Op: work.OpDoneElsewhere, Actor: "user",
+		Reason: why}, Principal: "local"}, nil); !refusedWith(err, "already_closed") {
+		t.Fatalf("closing it twice: %v", err)
+	}
+	if n := len(moves(t, st, id)); n != len(last) {
+		t.Fatalf("the refusal wrote a move: %d then %d", len(last), n)
+	}
+
+	// Control: an item with a delivery bound to it is refused, because that
+	// delivery is what answers for it — this closure is only for the item
+	// nothing was bound to.
+	bound, err := w.Create(ctx, NewWork{Title: "the one with a task", Project: "/p", Place: work.PlaceBoard,
+		Actor: "user", Principal: "local"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putTask(t, st, orchestrator.Record{ID: "d15a0000-0000-4000-8000-0000000000b1", WorkID: bound.Item.ID,
+		State: orchestrator.StateSuccess, CreatedAt: clock.now(), ProjectDir: "/p",
+		Root: &orchestrator.RootRef{SessionID: "root-conv", Assistant: "claude"}})
+	if _, err := w.Command(ctx, bound.Item.ID, WorkCommand{Command: work.Command{Op: work.OpDoneElsewhere,
+		Actor: "user", Reason: why}, Principal: "local"}, nil); !refusedWith(err, "delivery_bound") {
+		t.Fatalf("with a delivery bound: %v", err)
+	}
+}
+
+func refusedWith(err error, code string) bool {
+	var e *WorkError
+	return errors.As(err, &e) && e.Code == code
+}

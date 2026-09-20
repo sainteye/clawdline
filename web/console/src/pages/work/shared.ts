@@ -47,6 +47,8 @@ export function reasonWords(it: Item): string {
       return workWord("reasonUnconfirmed")
     case "dropped":
       return workWord("reasonDropped")
+    case "done_elsewhere":
+      return workWord("reasonDoneElsewhere")
   }
   return it.derived.reason
 }

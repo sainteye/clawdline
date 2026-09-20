@@ -63,7 +63,7 @@
 - (w) 派工帶這一項的 `work_id`：那個 task 的進行、交付、落地都算這一項的事實（BD-4）。
 - (a) Backlog 有了承諾：派工帶它的 `work_id`、日期進入 7 天內、你按 start（BL-6）。
 - (b) 看板 3 天沒有新事實、排定的日期錯過、你按 defer（BD-13）。(u) 你按 untrack，只剩待辦（BD-13）。
-- (e) 看板項目結束：落地、收下、未確認、放棄（BD-9～BD-12）。(x) Backlog 只有你能丟（BL-7）。
+- (e) 看板項目結束：落地、收下、未確認、做完但交付沒綁上、放棄（BD-9～BD-12、BD-17）。(x) Backlog 只有你能丟（BL-7）。
 - (k) 待辦由落地紀錄關掉，或沒人接 24 小時後放掉（TD-9、TD-10）。
 - (q) session 需要你拍板：發一個「決定」，掛在它的工作上（PT-5）。
 - (g1) 外面的人開 issue（GH-2）；(g2) 本機項目連到 issue，只存連結（GH-4）；(g3) 落地 commit 寫
@@ -80,7 +80,8 @@
 | 要做，但還沒有開始的承諾？ | Backlog | 同上，帶 `"place":"backlog"`；有日期就排 `schedule`（§5） |
 
 **它會怎麼結束**：看板項目在 broker 記下落地時自己結束；交付了沒落地的，等你收下，問過你一次之後 7 天
-沒回就以「未確認」結束；3 天沒有新事實就退回 Backlog。Session 待辦由落地紀錄關掉。Backlog 只有你能丟掉，
+沒回就以「未確認」結束；做完了而交付沒綁上這一項的，你說一聲就以「做完了、在別處交付」結束（BD-17），
+不必記成放棄；3 天沒有新事實就退回 Backlog。Session 待辦由落地紀錄關掉。Backlog 只有你能丟掉，
 有了承諾就自己上看板。GitHub Issue 由 GitHub 自己關，本機不以它為準。
 
 不在這四個物件裡的：`/v1/board`（console 的「專案 · 看板」）是舊 app 的 787 張卡，唯讀、不遷移（U1），不再投資（D34）。
@@ -106,11 +107,11 @@
 ## 3. 看板項目
 
 讀者是你。狀態：`active`（進行中）→ `awaiting_closure`（交付了、等收尾）→ `done`（`landed`／`accepted`／
-`unconfirmed`），或 `dropped`。看板分四區：等你決定（等收尾的交付）、進行中、本週排入、最近完成（7 天內結束的）。
+`unconfirmed`／`done_elsewhere`），或 `dropped`。看板分四區：等你決定（等收尾的交付）、進行中、本週排入、最近完成（7 天內結束的）。
 
 | 什麼情況下用 | 怎麼開始 | 怎麼推進 | 怎麼結束 | 達成什麼 |
 |---|---|---|---|---|
-| **BD-1** 你要現在看到它的進度，而且它有承諾：有派工綁著、你自己接了、7 天內要開始、或交付在等你收。承諾記在 `commitment` 欄（`dispatch`／`assigned`／`scheduled`）。〔部分：`decision`、`delivered` 兩個值沒有程式會寫（缺口 8）〕 | **BD-2** 你在 console「工作」頁新增，或 `POST /v1/work/items` `{"place":"board","title":…,"project":…}`；`owner` 省略就是你自己。缺欄位回 400 `project_required`／`invalid_title`；未結束的項目滿 2,000 回 507 `work_full`。在 session 裡說「追蹤這個」走 CM-2。〔已實作 `app/board_work.go` `Create`〕<br>從 Backlog 上來見 BL-6，從提議來見下一列。 | **BD-4** root 派工時在 `POST /v1/orchestrator/tasks` 帶這一項的 `work_id`：那個 task 的進行、交付、落地就算這一項的事實；格式不對回 422 `bad_task`。〔已實作 `domain/work/lines.go` `LineOf`、`app/orchestrator/lines.go` `bindLine`：沒帶的由 broker 在接受派工時依規則綁定（respawn 沿用原本的、同一個 graph 同一條、否則以 task id 開一條，review／test 這類步驟不綁），record 記 `work_from`；帶了還沒有項目的 id 照收，那是一條還沒上板的線〕<br>**BD-5** 狀態每次讀取時推導、不存：有 task 在跑是 `active`；交付了沒落地是 `awaiting_closure`；全部落地是 `done`。〔已實作 `domain/work/board.go` `Derive`〕<br>**BD-6** sweep 每 15 秒（`CLAWDLINE_NEXT_WORK_TICK`）依序套 8 條自動規則，有變化才寫一筆 `moves`；連續 3 個 tick 沒跑完，`/v1/health` 回 `ok:false`、`reason:"work_sweep_stalled"`。〔已實作 `app/board_work.go` `Run`、`Stalled`，規則在 `SweepRules`〕<br>**BD-7** 你的指令 `POST /v1/work/items/{id}` `{"op":…}`：start、track、schedule、defer、accept、rework、drop、handover、untrack、rank。帶 `expected_version` 而項目已經變了，回 409 `version_conflict` 並附上目前的樣子；綁的 task 讀不到，回 409 `facts_unknown`；`land`、`complete`、`close` 這類字回 422 `landing_is_broker_fact`；多帶不認得的欄位回 400 `invalid_command`。〔已實作 `domain/work/board.go` `Decide`、`ParseOp`，`transport/http/work.go` `readWorkBody`〕<br>**BD-8** 有「決定」在等你時，3 天的時鐘停住；交付等收尾滿 3 天，每日摘要問你一次（寫一筆 `closure_asked`）。〔部分：摘要只存不送（缺口 3）；時鐘停住已實作 `Derive` 讀的 `DecisionSince`〕 | **BD-9** 落地：這一輪綁的 task 全部是 `landed` 或 `nothing_to_land` → `done`（`landed`），actor 是 `broker`。〔已實作 `ruleLanded`〕<br>**BD-10** 收下：等收尾時你按 accept → `done`（`accepted`，證據記 `landed:false`）；還沒交付就按，回 409 `not_awaiting_closure`。〔已實作 `Decide`〕<br>**BD-11** 沒人回：問過之後 7 天 → `done`（`unconfirmed`）。只清掉看板，不宣稱落地，未落地的交付仍在 broker 的 inventory 裡。〔已實作 `ruleUnconfirmed`〕<br>**BD-12** 放棄：只有你能 drop → `dropped`。〔已實作 `Decide`〕<br>**BD-13** 離開看板但沒結束：沒有 task 在跑、3 天沒有新事實 → 回 Backlog（`stalled_3d`）；排定日期過了一整天還沒派工 → 回 Backlog（`schedule_missed`）；你按 defer → 回 Backlog；你按 untrack → 只剩待辦。〔已實作 `ruleStalled`、`ruleScheduleMissed`、`Decide`〕<br>**BD-14** 結束之後又有新 task 綁上 → 重開成 `active`（`redispatched`）。〔已實作 `ruleRedispatched`〕<br>**BD-15** owner 那段對話不在了 → 標「無人負責」、寫進摘要。〔只是設計（缺口 7）〕<br>**BD-16** 同一件事開了兩項：以 `duplicate` 結束並帶 `duplicate_of`；每一項另有專案內唯一的短編號 `#N`。〔只是設計（G5，缺口 10）〕 | 看板上的每一項都有承諾、負責人和下一個時鐘（讀取時的 `derived.stall_at`、`derived.closure_due_at`）；做完的靠 broker 的落地紀錄自己離開，不再出現「證據上做完、看板沒動」。驗法：`GET /v1/work/board` 的每一列都有 `owner` 與 `commitment`（資料庫 CHECK 擋住空值），`derived.reason` 說得出它在這一區的理由。 |
+| **BD-1** 你要現在看到它的進度，而且它有承諾：有派工綁著、你自己接了、7 天內要開始、或交付在等你收。承諾記在 `commitment` 欄（`dispatch`／`assigned`／`scheduled`）。〔部分：`decision`、`delivered` 兩個值沒有程式會寫（缺口 8）〕 | **BD-2** 你在 console「工作」頁新增，或 `POST /v1/work/items` `{"place":"board","title":…,"project":…}`；`owner` 省略就是你自己。缺欄位回 400 `project_required`／`invalid_title`；未結束的項目滿 2,000 回 507 `work_full`。在 session 裡說「追蹤這個」走 CM-2。〔已實作 `app/board_work.go` `Create`〕<br>從 Backlog 上來見 BL-6，從提議來見下一列。 | **BD-4** root 派工時在 `POST /v1/orchestrator/tasks` 帶這一項的 `work_id`：那個 task 的進行、交付、落地就算這一項的事實。帶了就驗，每一種不合各有自己的 code，而且都在任何東西被建立之前拒絕：格式不對 422 `bad_task`、沒有這一列 422 `work_not_found`、是別的專案的 422 `work_other_project`、已經結束了 422 `work_closed`。驗過的那一列在 task 寫進資料庫之後隨即上看板（派工就是承諾，不必再 `track` 一次），`moves` 記 `dispatched`、actor 是 `root:<對話 id>`；那個 task 落地時項目照 BD-9 自己結束。〔已實作 `domain/work/board.go` `Nameable`、`DispatchChange`，`app/orchestrator/lines.go` `checkNamedWork`、`commitNamedWork`；沒帶 `work_id` 的照舊由 broker 依規則綁定（respawn 沿用原本的、同一個 graph 同一條、否則以 task id 開一條，review／test 這類步驟不綁），record 記 `work_from`，行為沒有變〕<br>**BD-5** 狀態每次讀取時推導、不存：有 task 在跑是 `active`；交付了沒落地是 `awaiting_closure`；全部落地是 `done`。〔已實作 `domain/work/board.go` `Derive`〕<br>**BD-6** sweep 每 15 秒（`CLAWDLINE_NEXT_WORK_TICK`）依序套 8 條自動規則，有變化才寫一筆 `moves`；連續 3 個 tick 沒跑完，`/v1/health` 回 `ok:false`、`reason:"work_sweep_stalled"`。〔已實作 `app/board_work.go` `Run`、`Stalled`，規則在 `SweepRules`〕<br>**BD-7** 你的指令 `POST /v1/work/items/{id}` `{"op":…}`：start、track、schedule、defer、accept、rework、drop、handover、untrack、rank。帶 `expected_version` 而項目已經變了，回 409 `version_conflict` 並附上目前的樣子；綁的 task 讀不到，回 409 `facts_unknown`；`land`、`complete`、`close` 這類字回 422 `landing_is_broker_fact`；多帶不認得的欄位回 400 `invalid_command`。〔已實作 `domain/work/board.go` `Decide`、`ParseOp`，`transport/http/work.go` `readWorkBody`〕<br>**BD-8** 有「決定」在等你時，3 天的時鐘停住；交付等收尾滿 3 天，每日摘要問你一次（寫一筆 `closure_asked`）。〔部分：摘要只存不送（缺口 3）；時鐘停住已實作 `Derive` 讀的 `DecisionSince`〕 | **BD-9** 落地：這一輪綁的 task 全部是 `landed` 或 `nothing_to_land` → `done`（`landed`），actor 是 `broker`。〔已實作 `ruleLanded`〕<br>**BD-10** 收下：等收尾時你按 accept → `done`（`accepted`，證據記 `landed:false`）；還沒交付就按，回 409 `not_awaiting_closure`。〔已實作 `Decide`〕<br>**BD-11** 沒人回：問過之後 7 天 → `done`（`unconfirmed`）。只清掉看板，不宣稱落地，未落地的交付仍在 broker 的 inventory 裡。〔已實作 `ruleUnconfirmed`〕<br>**BD-12** 放棄：只有你能 drop → `dropped`，意思是「這件事你不做了」。〔已實作 `Decide`〕<br>**BD-17** 做完了，只是交付沒綁上：只有你能下 `{"op":"done_elsewhere","reason":"…"}` → `done`（`done_elsewhere`），證據記你寫的 `reason`、當時綁著幾個 task、以及 `landed:false`。不是萬用出口：沒寫 `reason` 回 400 `reason_required`、還有 task 在跑回 409 `task_running`、已經有交付或落地綁著回 409 `delivery_bound`（那要 accept，或等落地）、已經結束回 409 `already_closed`。Backlog 上的項目下這個命令會一起上看板再結束，因為它終究是做過的工作。〔已實作 `Decide`、`adapters/store/work.go` 的 `closed_reason` CHECK 與 rebuild migration〕<br>**BD-13** 離開看板但沒結束：沒有 task 在跑、3 天沒有新事實 → 回 Backlog（`stalled_3d`）；排定日期過了一整天還沒派工 → 回 Backlog（`schedule_missed`）；你按 defer → 回 Backlog；你按 untrack → 只剩待辦。〔已實作 `ruleStalled`、`ruleScheduleMissed`、`Decide`〕<br>**BD-14** 結束之後又有新 task 綁上 → 重開成 `active`（`redispatched`）。〔已實作 `ruleRedispatched`〕<br>**BD-15** owner 那段對話不在了 → 標「無人負責」、寫進摘要。〔只是設計（缺口 7）〕<br>**BD-16** 同一件事開了兩項：以 `duplicate` 結束並帶 `duplicate_of`；每一項另有專案內唯一的短編號 `#N`。〔只是設計（G5，缺口 10）〕 | 看板上的每一項都有承諾、負責人和下一個時鐘（讀取時的 `derived.stall_at`、`derived.closure_due_at`）；做完的靠 broker 的落地紀錄自己離開，不再出現「證據上做完、看板沒動」。驗法：`GET /v1/work/board` 的每一列都有 `owner` 與 `commitment`（資料庫 CHECK 擋住空值），`derived.reason` 說得出它在這一區的理由。 |
 | 你沒開，但 session 在做的一條工作線值得你追：它派了 child、它的待辦開超過 24 小時、或它有外部效果 | **BD-3** 經 PT-1 或 PT-3 提議，你在「待確認」答 `track`：項目上看板，owner 是提議的 root，這條線已經派出去的 task 都算這一輪。〔已實作 `app/proposals.go` `Answer`、`domain/work/proposals.go` `Placing`；提議的 task 若還不在線上，提議與回答後由 broker 綁上（`BindWork`），項目才跟得到它的落地〕 | 同上一列 | 同上一列 | 只在規則說值得的時候問你；問不問由伺服器決定，不由 agent 自己判斷 |
 
 **容量**：`work.open` 上限 2,000（看板未結束的加上 Backlog 的 `planned`），到頂時新增回 507 `work_full`，
@@ -133,7 +134,7 @@
 
 | 什麼情況下用 | 怎麼開始 | 怎麼推進 | 怎麼結束 | 達成什麼 |
 |---|---|---|---|---|
-| **BL-1** 決定要做，但還沒有開始的承諾：沒有派工、沒人接、沒有 7 天內的日期。〔已實作：`backlog` 表沒有 owner，放進來就不在看板上（CM-4）〕 | **BL-2** 你新增 `POST /v1/work/items` `{"place":"backlog"}`，可以帶 `start_on`、`rank`；帶 `owner` 回 400 `owner_on_board_only`。〔已實作 `app/board_work.go` `Create`〕<br>**BL-3** 提議答 `later`。〔已實作 `Placing`〕<br>**BL-8** child 交回的「我沒做的事」經 PT-9 提出來、你答 `later`：這是 Backlog 第一個不是你自己開、也不是 root 代轉的來源，那一列的第一筆 `moves` 記 `leftover_of_task`（哪一個交付提出來的）。〔已實作 `domain/work/proposals.go` `Placing`〕<br>看板退回來的見 BD-13。 | **BL-4** 排順序 `{"op":"rank","rank":N}`（0 是不排，排在最後）；排日期 `{"op":"schedule","start_on":"YYYY-MM-DD"}`，日期在 7 天內（含已經過去的）就直接上看板。不是 `planned` 回 409 `wrong_place`。〔已實作 `Decide`〕<br>**BL-5** 每週摘要列出 30 天沒被看過的項目（rank、schedule 會重設這個鐘），問「要留嗎」；同一項 30 天內只問一次，不回答就是留。〔部分：列出已實作 `app/proposals.go` `weekly`；摘要只存不送（缺口 3）〕 | **BL-6** 上看板：放進 Backlog 之後有派工帶它的 `work_id` → `dispatched`（owner 是那個 root）；`start_on` 進入 7 天內 → `start_on_within_7d`（已經過去的日期不會自己上去）；你按 start（可以指定 owner）。〔已實作 `ruleDispatched`、`ruleStartSoon`、`Decide`〕<br>**BL-7** 丟掉：只有你能 drop；機器永遠不刪 Backlog，滿了只拒絕新增。〔已實作 `Decide`、`adapters/store/work.go` `WorkOpenLimit`〕 | 規劃留得住，又不假裝在進行；看板與 Backlog 的界線是一個事實（有沒有承諾），不是形容詞。驗法：`GET /v1/work/backlog` 的每一項 `owner` 都是 null、`commitment` 都是 null。 |
+| **BL-1** 決定要做，但還沒有開始的承諾：沒有派工、沒人接、沒有 7 天內的日期。〔已實作：`backlog` 表沒有 owner，放進來就不在看板上（CM-4）〕 | **BL-2** 你新增 `POST /v1/work/items` `{"place":"backlog"}`，可以帶 `start_on`、`rank`；帶 `owner` 回 400 `owner_on_board_only`。〔已實作 `app/board_work.go` `Create`〕<br>**BL-3** 提議答 `later`。〔已實作 `Placing`〕<br>**BL-8** child 交回的「我沒做的事」經 PT-9 提出來、你答 `later`：這是 Backlog 第一個不是你自己開、也不是 root 代轉的來源，那一列的第一筆 `moves` 記 `leftover_of_task`（哪一個交付提出來的）。〔已實作 `domain/work/proposals.go` `Placing`〕<br>看板退回來的見 BD-13。 | **BL-4** 排順序 `{"op":"rank","rank":N}`（0 是不排，排在最後）；排日期 `{"op":"schedule","start_on":"YYYY-MM-DD"}`，日期在 7 天內（含已經過去的）就直接上看板。不是 `planned` 回 409 `wrong_place`。〔已實作 `Decide`〕<br>**BL-5** 每週摘要列出 30 天沒被看過的項目（rank、schedule 會重設這個鐘），問「要留嗎」；同一項 30 天內只問一次，不回答就是留。〔部分：列出已實作 `app/proposals.go` `weekly`；摘要只存不送（缺口 3）〕 | **BL-6** 上看板：有派工帶它的 `work_id` → broker 在接受那筆派工時就把它移上去（`dispatched`，owner 是那個 root），sweep 只負責補上沒寫成的那一次；`start_on` 進入 7 天內 → `start_on_within_7d`（已經過去的日期不會自己上去）；你按 start（可以指定 owner）。〔已實作 `ruleDispatched`、`ruleStartSoon`、`Decide`〕<br>**BL-7** 丟掉：只有你能 drop；機器永遠不刪 Backlog，滿了只拒絕新增。〔已實作 `Decide`、`adapters/store/work.go` `WorkOpenLimit`〕<br>**BL-9** 做完了才發現沒綁上：`done_elsewhere`（BD-17）讓它以 `done` 離開 Backlog、進看板的「最近完成」，而不是被記成你放棄了。〔已實作 `Decide`〕 | 規劃留得住，又不假裝在進行；看板與 Backlog 的界線是一個事實（有沒有承諾），不是形容詞。驗法：`GET /v1/work/backlog` 的每一項 `owner` 都是 null、`commitment` 都是 null。 |
 
 **容量**：和看板共用 `work.open`（§3）。
 
@@ -202,6 +203,10 @@
 
 每一條寫：缺什麼、影響哪幾條、下一步誰決定。補上的那一個 commit 把它從這裡刪掉（§10）。
 
+1. **派工可以不說它在服務哪一列，伺服器不會攔**（BD-4、BL-6、PT-3）。2026-09-20 這一天量到：派了 **52 件
+   task**、Backlog 登記 **14 列**，而 52 件裡綁到項目的是 **0 件**；看板整天 **0 列**、提議 **0 筆**。
+   現在帶了 `work_id` 就會驗、就會上板，但「要帶」仍然只靠 root 自己記得：一件說不出它在服務哪一列的派工
+   照樣被接受。要不要對沒帶 `work_id` 的派工回一個 warning、或乾脆拒絕，由使用者決定。
 3. **摘要只存不送**（BD-8、BL-5、PT-6）。「問你一次」只寫進 `digests` 表；你沒打開 console 工作頁就等於沒被問，
    7 天後照樣以 `unconfirmed` 結束。`board-redesign.md` §8 設計的是每天一則訊息。
 4. **待辦只有派工一種來源**（TD-3）。`result.json` 沒有 `remaining`，交付收據只有一句話，obligation 表正在退役（D07）。
@@ -214,6 +219,10 @@
 9. **待辦沒有容量登記**（DG-2）。`internal/domain/capacity` 沒有 `todos` 的列，而它每個派工多一列、永遠保留。
 10. **GitHub 這一側都還沒做**（GH-2、GH-4～GH-6、BD-16）：issue form（G1，repo 替換那一步）、`link`／`unlink` 與
     `Fixes` 提醒（G3，T 線之後）、`duplicate` 與短編號（G5）。
+12. **被誤記成 `dropped` 的三列救不回來**（BD-12、BD-17）。`done_elsewhere` 從現在起把「做完」跟「丟掉」分開，
+    但 2026-09-20 已經有三列（標題含「⌘Tab」「網址不帶 session」「via.run」）以 `dropped` 結束：`moves` 只能
+    新增，已結束的項目也不接受第二個結束理由（409 `already_closed`）。要更正得新增一個只允許
+    `dropped → done_elsewhere` 的更正命令，那會改變「結束就是結束」的意思，由使用者拍板。
 11. **run 證明人說過話，證明不了是哪個 session 在代轉**（CM-2）。orchestrator token 是整台機器共用的（`local-token` 同一個使用者的程序也都讀得到），
     伺服器分不出呼叫的是哪個 session：任何 session 都能讀別的 session 的 run 並拿來代轉看板指令；`run_other_session` 只擋得住誤用。
     要分得出來得給每個 session 自己的憑證，由使用者決定要不要做。

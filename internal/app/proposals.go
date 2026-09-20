@@ -1239,7 +1239,10 @@ func (p *Participation) daily(ctx context.Context, b *DigestBody, from, to time.
 		case m.From == work.PlaceBacklog && m.To == work.PlaceBoard:
 			b.FromBacklog.add(line)
 		}
-		if m.State == work.ItemDone && m.From == work.PlaceBoard {
+		// Where it ended up, not where it came from: an item a person closes
+		// as done elsewhere (BD-17) comes onto the board in the same move it
+		// closes in, and it did finish that day.
+		if m.State == work.ItemDone && m.To == work.PlaceBoard {
 			b.Completed.add(line)
 			if m.Trigger == work.TriggerLanded {
 				b.Landed++

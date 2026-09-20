@@ -113,19 +113,10 @@ func Facts(rows []store.BrokerRow) ([]work.TaskFacts, int) {
 			unknown++
 			continue
 		}
-		f := work.TaskFacts{
-			Task: r.ID, WorkID: r.WorkID, Title: r.Title, Kind: r.Kind, Project: r.ProjectDir,
-			CreatedAt: seconds(r.CreatedAt), State: string(r.State), Ended: r.State.Terminal(),
-			Attempt: r.RespawnGeneration, FinishedAt: seconds(r.FinishedAt),
-		}
-		if r.Root != nil && !r.Root.PollOnly {
-			f.Owner, f.OwnerAssistant = r.Root.SessionID, r.Root.Assistant
-		}
-		if r.Landing != nil {
-			f.Landing, f.LandedAt = string(r.Landing.State), seconds(r.Landing.At)
-			f.LandingTarget = r.Landing.Target
-		}
-		out = append(out, f)
+		// One reader for one task, beside the broker's own Decode: the
+		// sweep and the dispatch that commits an item to the board must not
+		// read the same row two ways (orchestrator/lines.go).
+		out = append(out, orchestrator.TaskFactsOf(r))
 	}
 	return out, unknown
 }
@@ -353,6 +344,13 @@ func (w *WorkBoard) Command(ctx context.Context, id string, cmd WorkCommand, fil
 	}
 	if n := utf8.RuneCountInString(cmd.Owner); n > workOwnerLimit {
 		return WorkView{}, workRefusal(400, "invalid_owner", "owner is at most "+strconv.Itoa(workOwnerLimit)+" characters.")
+	}
+	// What a person writes about work whose delivery named no item
+	// (`done_elsewhere`) is prose about one item, and is held to the same
+	// length as the acceptance they write on it rather than to a bound of
+	// its own.
+	if n := utf8.RuneCountInString(cmd.Reason); n > workAcceptLimit {
+		return WorkView{}, workRefusal(400, "invalid_reason", "reason is at most "+strconv.Itoa(workAcceptLimit)+" characters.")
 	}
 	var out WorkView
 	err := w.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
