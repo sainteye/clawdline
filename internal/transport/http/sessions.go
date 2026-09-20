@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -185,8 +186,33 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 				Sequence: gen,
 				Complete: inv.Complete,
 			},
+			// Each source's own answer travels beside the AND. A reader
+			// deciding whether a session it remembers is really gone needs the
+			// answer of the source that would have seen it: the AND is false
+			// whenever any source failed, so on its own it would make every
+			// absence unprovable and nothing could ever be tombstoned.
+			Sources: scanSources(inv.Sources),
 		},
 	}
+}
+
+// scanSources orders the per-source answers by name, because this snapshot is
+// compared byte for byte against the last one published (the Cloud publisher
+// skips a row nobody would read differently) and a map's order is not stable.
+func scanSources(sources map[string]bool) []contract.ScanSource {
+	if len(sources) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(sources))
+	for name := range sources {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]contract.ScanSource, 0, len(names))
+	for _, name := range names {
+		out = append(out, contract.ScanSource{Source: name, Complete: sources[name]})
+	}
+	return out
 }
 
 // recordsBudget is what this daemon's own records are given to answer in.

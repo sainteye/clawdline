@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/app/cloudops"
@@ -126,6 +127,23 @@ type Publisher struct {
 	// omitted is how many reachable records the last projection's bounds left
 	// out, so the log says it when it changes rather than every pass.
 	omitted int
+
+	// inventoried is the last inventory this publisher stated, by id, with
+	// enough of each row to decide later which source would have seen it
+	// again. It is what a partial reading is measured against: an id this
+	// machine published and has now stopped seeing is either gone or merely
+	// unread, and only the source that owns it can tell those apart.
+	inventoried map[string]inventoriedRow
+}
+
+// inventoriedRow is what is remembered about a published id. The tty is kept
+// because identity here degrades: when iTerm2 cannot be read, the process
+// table publishes the same session again under its tty
+// (docs/switch-blockers.md), and a retained GUID would then be a second row
+// for one session rather than the rescue it was meant to be.
+type inventoriedRow struct {
+	tty     string
+	backend string
 }
 
 // Heartbeat is how often an unchanged value is published anyway. The Linux
@@ -162,6 +180,7 @@ func (p *Publisher) Run(ctx context.Context) error {
 	}
 	p.published = map[string][32]byte{}
 	p.sent = map[string]time.Time{}
+	p.inventoried = map[string]inventoriedRow{}
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
 	p.pass(ctx)
@@ -184,13 +203,20 @@ func (p *Publisher) Pass(ctx context.Context) { p.pass(ctx) }
 // sessions a viewer will hold, and the descriptor still has to arrive first.
 func (p *Publisher) pass(ctx context.Context) {
 	reading, ok := p.readSessions(ctx)
+	var inventory []string
 	if ok {
-		p.noteListed(reading.ids, reading.authoritative())
+		inventory = p.inventoryIDs(reading, append([]string(nil), reading.ids...))
+		sort.Strings(inventory)
+		// The set a viewer will hold is the one the marker states — so it is
+		// worked out here, before the task list is projected over it, and it
+		// replaces what a viewer held unless the marker is refused for being
+		// past its bound, in which case the viewer keeps every row it had.
+		p.noteListed(inventory, len(inventory) <= InventoryLimit)
 	}
 	p.refreshTasks(ctx)
 	p.publishDescriptor(ctx)
 	if ok {
-		p.publishSessions(ctx, reading)
+		p.publishSessions(ctx, reading, inventory)
 	}
 }
 
@@ -239,16 +265,23 @@ type sessionReading struct {
 	at, scan json.RawMessage
 	// ids are the sessions that will be published, in the order read.
 	ids []string
+	// rows is each of those ids as this reading saw it, which is what the
+	// next partial reading will be measured against.
+	rows map[string]inventoriedRow
+	// ttys is every tty this reading has a row for, so a retained id whose
+	// terminal is already spoken for is not published twice.
+	ttys map[string]bool
 	// complete and emptyAuthoritative are the scan's own words for whether
 	// the list is the whole set.
 	complete, emptyAuthoritative bool
+	// sources is each source's own completeness, which is the only thing that
+	// can prove an absence. The merged complete above is their AND and so
+	// proves nothing about any one of them.
+	sources map[string]bool
 }
 
-// authoritative is whether this reading publishes the inventory, which is what
-// tombstones a row a viewer holds.
-func (r sessionReading) authoritative() bool {
-	return (r.complete || r.emptyAuthoritative) && len(r.ids) <= InventoryLimit
-}
+// whole is whether this reading is the whole set by its own account.
+func (r sessionReading) whole() bool { return r.complete || r.emptyAuthoritative }
 
 // readSessions reads this machine's sessions, or answers false.
 func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
@@ -268,6 +301,10 @@ func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
 	var scan struct {
 		Complete           bool `json:"complete"`
 		EmptyAuthoritative bool `json:"emptyAuthoritative"`
+		Sources            []struct {
+			Source   string `json:"source"`
+			Complete bool   `json:"complete"`
+		} `json:"sources"`
 	}
 	if err := json.Unmarshal(res.Body, &root); err != nil {
 		p.logf("cloud: this machine's own session list was unreadable: %v", err)
@@ -275,26 +312,61 @@ func (p *Publisher) readSessions(ctx context.Context) (sessionReading, bool) {
 	}
 	_ = json.Unmarshal(root.Scan, &scan)
 	reading := sessionReading{sessions: root.Sessions, at: root.At, scan: root.Scan,
-		complete: scan.Complete, emptyAuthoritative: scan.EmptyAuthoritative}
+		complete: scan.Complete, emptyAuthoritative: scan.EmptyAuthoritative,
+		rows: map[string]inventoriedRow{}, ttys: map[string]bool{}, sources: map[string]bool{}}
+	// An absent `sources` leaves the map empty, which reads as "no source has
+	// said it is complete" — so nothing can be disproved and nothing is
+	// dropped. That is the safe direction for a reading from a daemon older
+	// than this field.
+	for _, source := range scan.Sources {
+		if source.Source == "" {
+			continue
+		}
+		reading.sources[source.Source] = source.Complete
+	}
 	for _, session := range root.Sessions {
 		id, _ := session["id"].(string)
 		if id == "" || id == InventorySessionID {
 			continue
 		}
 		reading.ids = append(reading.ids, id)
+		tty, _ := session["tty"].(string)
+		backend, _ := session["backend"].(string)
+		reading.rows[id] = inventoriedRow{tty: tty, backend: backend}
+		if tty != "" {
+			reading.ttys[tty] = true
+		}
 	}
 	return reading, true
 }
 
-// publishSessions puts this machine's sessions in the viewer's list.
-func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading) {
-	ids := make([]string, 0, len(reading.sessions))
+// owningSource names the source that would have seen this row again, which is
+// the only source whose silence means anything about it.
+//
+// The three are told apart the way the reading itself makes them: a tmux pane
+// id is spelled `%<n>` and nothing else is; an iTerm2 row carries that
+// backend and a GUID of its own; and a row whose id *is* its tty is the
+// degraded one the process table produced when the terminal could not be
+// asked, so the process table is what owns it.
+func owningSource(id string, row inventoriedRow) string {
+	if strings.HasPrefix(id, "%") {
+		return "tmux"
+	}
+	if row.backend == "iterm" && id != row.tty {
+		return "iterm"
+	}
+	return "ps"
+}
+
+// publishSessions puts this machine's sessions in the viewer's list. The ids
+// the marker will name are decided before this runs (inventoryIDs), because
+// the task list is projected over that same set.
+func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading, ids []string) {
 	for _, session := range reading.sessions {
 		id, _ := session["id"].(string)
 		if id == "" || id == InventorySessionID {
 			continue
 		}
-		ids = append(ids, id)
 		row, err := json.Marshal(map[string]any{"session": session, "at": reading.at, "scan": reading.scan})
 		if err != nil {
 			continue
@@ -306,23 +378,18 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading)
 		}
 		p.send(ctx, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+cloudops.ChannelSegment(id), row, "session "+id)
 	}
-	sort.Strings(ids)
-	// **The inventory is a deletion barrier, not a hint.** A viewer drops every
-	// row of this machine that the marker does not name, so a scan that missed
-	// a session would delete a session the person is looking at. The Swift
-	// bridge publishes it only from an authoritative reading
-	// (`CloudAppBridge.swift:1974-2031`) and so does this: a partial scan
-	// publishes its rows and says nothing about the set.
-	if !reading.complete && !reading.emptyAuthoritative {
-		return
-	}
 	if len(ids) > InventoryLimit {
 		// The bound is the Swift bridge's and is a refusal rather than a
 		// truncation: half an inventory is a list that says sessions were
 		// removed, which is worse than saying nothing this pass.
-		p.logf("cloud: %d sessions is past the %d the inventory may name", len(ids), InventoryLimit)
+		p.logf("cloud: inventory not published: %d sessions is past the %d it may name", len(ids), InventoryLimit)
 		return
 	}
+	// The set about to be stated is what a viewer will hold, so it is what the
+	// next partial reading has to be measured against — remembered here rather
+	// than after the send, because an unchanged marker is not re-sent and the
+	// viewer holds it just the same.
+	p.rememberInventory(reading, ids)
 	marker := map[string]any{
 		// `inventory` must hold exactly `version` and `sessions`: the consumer
 		// compares the sorted key list literally and throws `bad_payload` on
@@ -341,6 +408,97 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading)
 		return
 	}
 	p.send(ctx, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+InventorySessionID, inventory, "inventory")
+}
+
+// inventoryIDs is the set the marker will name.
+//
+// **The inventory is a deletion barrier, not a hint.** A viewer drops every row
+// of this machine that the marker does not name, so a scan that missed a
+// session would delete a session the person is looking at. That is why a
+// partial reading used to say nothing at all about the set.
+//
+// Saying nothing turned out to be permanent. One unreadable iTerm2 window
+// makes the iterm source incomplete, the merged completeness is the AND of
+// every source, and so this machine never published another marker: the rows
+// a viewer had already been told about stayed for ever and no scan could ever
+// take one back. Silence protected the sessions the scan missed by protecting
+// the ones that were really gone with them.
+//
+// So a partial reading publishes too, and the barrier moves from the reading
+// as a whole to each id in it. An id this machine last stated and no longer
+// sees is dropped only when the source that owns it answered completely this
+// pass — that source looked and it was not there. While that source is
+// unreadable no reading can disprove the id, and it is carried.
+func (p *Publisher) inventoryIDs(reading sessionReading, seen []string) []string {
+	if reading.whole() {
+		return seen
+	}
+	ids := seen
+	for id, row := range p.inventoried {
+		if _, still := reading.rows[id]; still {
+			continue
+		}
+		source := owningSource(id, row)
+		if complete, answered := reading.sources[source]; answered && complete {
+			// The source that would have seen it looked, and it was not
+			// there. This is the half the old barrier also refused to say,
+			// and refusing it is what kept closed sessions on screen.
+			continue
+		}
+		if row.tty != "" && reading.ttys[row.tty] {
+			// Its terminal already has a row this pass. When iTerm2 cannot be
+			// read the process table republishes the same session under its
+			// tty, so keeping the remembered GUID as well would split one
+			// session into two rows rather than rescue it.
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// rememberInventory records what the marker is about to state, and says in one
+// line why.
+//
+// The log line is not decoration. While a partial reading published nothing,
+// it also wrote nothing, so a machine that had silently stopped tombstoning
+// rows looked exactly like a machine with nothing to tombstone — which is how
+// this went unnoticed for the best part of two hours at a time.
+func (p *Publisher) rememberInventory(reading sessionReading, ids []string) {
+	retained := 0
+	for _, id := range ids {
+		if _, seen := reading.rows[id]; !seen {
+			retained++
+		}
+	}
+	p.logf("cloud: inventory published: complete=%v ids=%d unseen_kept=%d incomplete_sources=[%s]",
+		reading.whole(), len(ids), retained, strings.Join(incompleteSources(reading.sources), " "))
+
+	kept := make(map[string]inventoriedRow, len(ids))
+	for _, id := range ids {
+		if row, seen := reading.rows[id]; seen {
+			kept[id] = row
+			continue
+		}
+		// A carried id keeps the row it was first published with: what it is
+		// measured against next pass is the terminal it was seen in, and this
+		// pass did not see it at all.
+		kept[id] = p.inventoried[id]
+	}
+	p.inventoried = kept
+}
+
+// incompleteSources names the sources that could not answer for themselves,
+// in a stable order.
+func incompleteSources(sources map[string]bool) []string {
+	var out []string
+	for source, complete := range sources {
+		if !complete {
+			out = append(out, source)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // changed reports whether this key is due to be published: because what a
