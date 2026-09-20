@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react"
 import * as L from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
 import { toast } from "../overlays/index.js"
 import {
   createPlacesCache,
@@ -271,7 +272,16 @@ const Schedules = (() => {
         })
       })
       .catch(() => {
-        // A refusal means the inventory is unknown; nothing is drawn from here.
+        // **Nothing is drawn from here, and that is the point.** A refusal —
+        // the relay seam's `cloud_read_unavailable` and
+        // `cloud_schedules_unpublished`, a machine that did not answer the
+        // fan-out, or a dropped request on the direct path — means the
+        // inventory is unknown, and `renderSchedules([])` would be this page
+        // saying "there are none" on the Mac's behalf. Not drawing keeps the
+        // section as it was: absent before any answer, and holding the last
+        // truthful list after one. An inventory that really is empty still
+        // arrives as an answer and still draws, which is the difference a
+        // person can see (`net/schedules.js`, the same rule).
       })
       .then(() => {
         inFlight = false
@@ -821,11 +831,19 @@ const Schedule = (() => {
     const code = e && e.code
     return failureSentence(e, {
       sentence:
-        code === "write_disabled"
-          ? T().webStartOff
-          : code === "rate_limited" || code === "busy"
-            ? T().webFailRateLimited
-            : "",
+        // Reading one schedule in full has no route on the Mac's Cloud bridge
+        // (`carry.ts`, `NO_MAC_ROUTE.schedule`), so this is what Edit meets
+        // on a phone. Said the way `Start.tsx` and `Snippets.tsx` say it —
+        // the copied catalog has no sentence for a code the Swift app never
+        // sent — rather than as "The request failed", which is what a person
+        // can only report.
+        code === "cloud_not_carried"
+          ? nextWord("cloudNotCarried")
+          : code === "write_disabled"
+            ? T().webStartOff
+            : code === "rate_limited" || code === "busy"
+              ? T().webFailRateLimited
+              : "",
       fallback,
     })
   }
@@ -1086,6 +1104,9 @@ const ScheduleHistory = (() => {
   const projectPlace = (selected: ScheduleRun | null) => scheduleRunPlace(selected, places)
 
   function why(e: ScheduleFailureLike): string {
+    // As in the form above: the sheet is opened by reading one schedule in
+    // full, which this Mac has no Cloud route for.
+    if (e && e.code === "cloud_not_carried") return nextWord("cloudNotCarried")
     if (e && e.code === "write_disabled") return T().webStartOff
     if (e && e.code === "not_found") return T().webResumeGone
     if (e && e.app && e.code === "terminal_closed") {

@@ -128,19 +128,27 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/push/subscribe"],
     ["POST", "/v1/push/unsubscribe"],
     ["POST", "/v1/push/test"],
+    ["POST", "/v1/orchestrator/schedules"],
+    ["PATCH", "/v1/orchestrator/schedules/sch-1"],
+    ["DELETE", "/v1/orchestrator/schedules/sch-1"],
+    ["POST", "/v1/orchestrator/schedules/sch-1/run"],
   ]
   for (const [method, path] of routes) {
     const word = writeRoute(method, path)?.word
     assert.ok(word, method + " " + path + " parses to no route")
     assert.ok(word! in CARRIED, method + " " + path + " asks for " + word + ", which CARRIED does not list")
   }
-  // `/v1/transcript` is carried by the reader rather than by a route, and it is
-  // in the table for the same reason the rest are: the guard reads the table.
+  // `/v1/transcript` and the schedule list are carried by the reader rather
+  // than by a route, and they are in the table for the same reason the rest
+  // are: the guard reads the table.
   assert.ok("transcript" in CARRIED)
-  // 16, not the 12 this was written with: the four push words landed while
-  // this branch was open, and the count is re-measured rather than carried
-  // over — a number copied across a merge is the one nobody checks.
-  assert.equal(Object.keys(CARRIED).length, 16)
+  assert.ok("schedules" in CARRIED)
+  // 21, not the 16 this was last measured at: the schedule list and the four
+  // schedule writes moved out of DEFERRED, whose sentences had been saying
+  // this console did not read or write schedules long after the Mac started
+  // answering all five. The count is re-measured rather than carried over — a
+  // number copied across a change is the one nobody checks.
+  assert.equal(Object.keys(CARRIED).length, 21)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -178,6 +186,14 @@ test("a route this console does not carry is refused by the word it stands for",
   // sentence too, not the same one.
   assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/git"), "git")
   assert.equal(notCarriedDetail("GET", "/v1/sessions/s1/git"), DEFERRED.git)
+  // One schedule in full is the one schedule word this Mac has no route for
+  // (`op{name: "schedule"}` in cloudops/ops.go carries no `route`), so the
+  // sheets behind a schedule row say that and not "not read yet", while the
+  // list beside it is carried and says nothing at all.
+  assert.equal(uncarriedWordOf("GET", "/v1/orchestrator/schedules/sch-1"), "schedule")
+  assert.equal(notCarriedDetail("GET", "/v1/orchestrator/schedules/sch-1"), NO_MAC_ROUTE.schedule)
+  assert.equal(uncarriedWordOf("GET", "/v1/orchestrator/schedules"), "", "the list is carried, so it stands for nothing here")
+  assert.equal(uncarried("schedules"), "", "a carried word has no refusal sentence")
   // And a route that is no Cloud word at all still says where to go.
   assert.match(notCarriedDetail("GET", "/v1/devstacks"), /is not carried over Clawdline Cloud/)
   assert.equal(uncarried("info"), "", "a carried word has no refusal sentence")

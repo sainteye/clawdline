@@ -92,6 +92,26 @@ export interface CloudWriteClient extends CloudReadClient {
   pushSubscribe?(subscription: unknown): Promise<unknown>
   pushUnsubscribe?(id: string): Promise<unknown>
   pushTest?(session: string): Promise<unknown>
+  /**
+   * The four schedule writes. Each routes itself to the Mac that owns the
+   * schedule — `createSchedule` by the Project the body names, the other three
+   * by which machine published the id (`_scheduleMachine`) — so none of them
+   * takes a machine, and none of them may be sent before the list has been
+   * read fresh at least once (`CloudReadClient.schedules`).
+   *
+   * They mint their own request id per call, which is what becomes the Mac's
+   * `Idempotency-Key` (`cloudops.route`). That is not a divergence from the
+   * local path: `schedules-bridge.ts` mints a fresh `uuid()` per press too, so
+   * one press is one key on either transport and a second press is a second
+   * one on both.
+   *
+   * Optional for the reason the push words are: a copied client older than
+   * them is refused by name rather than throwing where nobody is catching.
+   */
+  createSchedule?(schedule: unknown): Promise<unknown>
+  updateSchedule?(id: string, schedule: unknown): Promise<unknown>
+  deleteSchedule?(id: string): Promise<unknown>
+  runSchedule?(id: string): Promise<unknown>
   image?(identity: CloudIdentity, id: string): Promise<{ id: string; media_type: string; bytes: Uint8Array }>
   /**
    * The copied client's one read, which `answer` itself calls for a Mac that
@@ -140,6 +160,10 @@ export type WriteRoute =
   | { op: "push-subscribe"; word: Carried<"push-subscribe"> }
   | { op: "push-unsubscribe"; word: Carried<"push-unsubscribe"> }
   | { op: "push-test"; word: Carried<"push-test"> }
+  | { op: "schedule-create"; word: Carried<"schedule-create"> }
+  | { op: "schedule-update"; word: Carried<"schedule-update">; schedule: string }
+  | { op: "schedule-delete"; word: Carried<"schedule-delete">; schedule: string }
+  | { op: "schedule-run"; word: Carried<"schedule-run">; schedule: string }
   // `interrupt` and `title` are not Cloud words at all — not here and not in
   // the Swift app's vocabulary — so this one is a plain string.
   | { op: "uncarried"; word: string; session?: string }
@@ -252,7 +276,22 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     return null
   }
+  // The three schedule writes that are not a POST. They are parsed before the
+  // gate below rather than after it, because that gate is what said "this
+  // console writes with POST and nothing else" — and a schedule is saved with
+  // PATCH and removed with DELETE, exactly as `schedules-bridge.ts` spells
+  // them against a daemon on this machine's own network.
+  if (head === "orchestrator" && a === "schedules" && b && segments.length === 3) {
+    if (method === "PATCH" || method === "PUT") return { op: "schedule-update", word: "schedule-update", schedule: b }
+    if (method === "DELETE") return { op: "schedule-delete", word: "schedule-delete", schedule: b }
+  }
   if (method !== "POST") return null
+  if (head === "orchestrator" && a === "schedules") {
+    // `GET /v1/orchestrator/schedules` is the reader's, and falls out above.
+    if (segments.length === 2) return { op: "schedule-create", word: "schedule-create" }
+    if (segments.length === 4 && b && c === "run") return { op: "schedule-run", word: "schedule-run", schedule: b }
+    return null
+  }
   if (head === "sessions" && a && segments.length === 3) {
     switch (b) {
       case "send":
@@ -322,6 +361,17 @@ function spellingOf(route: WriteRoute): Spelling {
     case "push-subscribe":
     case "push-unsubscribe":
     case "push-test":
+      return "nested"
+    // The four schedule writes are named rather than left to the default for
+    // the reason the push ones are: theirs is the spelling their own route
+    // answers. `/v1/orchestrator/schedules*` refuses through `writeAuthRefusal`
+    // and `writeBrokerRefusal` (internal/transport/http/schedules.go), both of
+    // which send `{"error":{"code","message",…}}` — and a broker refusal's
+    // extra fields ride inside that object, where the form reads them.
+    case "schedule-create":
+    case "schedule-update":
+    case "schedule-delete":
+    case "schedule-run":
       return "nested"
     default:
       return "nested"
@@ -485,6 +535,37 @@ export class RelayWriter {
           throw failure("cloud_not_carried", "push-test", 501)
         }
         return client.pushTest(typeof body.session_id === "string" ? body.session_id : "")
+      }
+      case "schedule-create": {
+        // The form's own body, whole: `input/schedule.js` gives both
+        // transports the flat request the local route reads (`at`, `days`,
+        // `place_id`, …) and the Mac is what turns it into a stored record.
+        // The copied client reads `place_id` out of it to find which Mac the
+        // Project is on, so nothing may be reshaped on the way past.
+        const schedule = await bodyOf(init)
+        if (typeof client.createSchedule !== "function") {
+          throw failure("cloud_not_carried", "schedule-create", 501)
+        }
+        return client.createSchedule(schedule)
+      }
+      case "schedule-update": {
+        const schedule = await bodyOf(init)
+        if (typeof client.updateSchedule !== "function") {
+          throw failure("cloud_not_carried", "schedule-update", 501)
+        }
+        return client.updateSchedule(route.schedule, schedule)
+      }
+      case "schedule-delete": {
+        if (typeof client.deleteSchedule !== "function") {
+          throw failure("cloud_not_carried", "schedule-delete", 501)
+        }
+        return client.deleteSchedule(route.schedule)
+      }
+      case "schedule-run": {
+        if (typeof client.runSchedule !== "function") {
+          throw failure("cloud_not_carried", "schedule-run", 501)
+        }
+        return client.runSchedule(route.schedule)
       }
       case "uncarried":
         throw failure("cloud_not_carried", route.word, 501)

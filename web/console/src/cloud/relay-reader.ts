@@ -68,6 +68,26 @@ export interface CloudTasks {
   tasks?: CloudTask[]
 }
 
+/** One schedule row as the Mac's list answers it, plus the machine it came from. */
+export type CloudSchedule = Record<string, unknown> & { machine?: string }
+
+/**
+ * `CloudClient.schedules()`'s answer: every machine's rows, merged, and — for
+ * the `fresh` reading this seam makes — what the fan-out could not settle.
+ *
+ * `unanswered` is a machine that could have answered and did not, with its own
+ * typed failure; `unconfirmed` is one that was never asked because its
+ * descriptor has not arrived. Both matter here for one reason: the copied
+ * client resolves as long as *some* machine answered, and a resolved answer
+ * that is missing this machine's rows would be read as "this Mac has none".
+ */
+export interface CloudSchedules {
+  schedules?: CloudSchedule[]
+  at?: number
+  unanswered?: { machine?: string; label?: string; error?: unknown }[]
+  unconfirmed?: string[]
+}
+
 /** What `CloudClient.events()` hands a listener; only these fields are read. */
 export interface CloudEvent {
   type: string
@@ -97,6 +117,24 @@ export interface CloudReadClient {
    * method must be refused by name rather than throw where nobody is catching.
    */
   tasks?(): Promise<CloudTasks>
+  /**
+   * This account's schedules. `{ fresh: true }` is the only reading this seam
+   * makes, and not for freshness' sake: the retained `orch/` snapshot is where
+   * `schedules()` answers from otherwise, and this daemon does not put its
+   * schedules on it (`internal/transport/cloud/publish.go` carries `tasks` and
+   * not these), so the retained reading refuses `cloud_schedules_unpublished`
+   * forever. `fresh` asks each machine the word instead, which is the read the
+   * Mac has always answered.
+   *
+   * It is also what makes the four writes reachable: the copied client finds
+   * which Mac a schedule id belongs to by looking it up in the snapshot
+   * (`_scheduleMachine`), and `fresh` is what puts the rows there.
+   *
+   * Optional for the same reason `pushKey` and `tasks` are: a copied client
+   * older than the word must be refused by name rather than throw where
+   * nobody is catching.
+   */
+  schedules?(options?: { fresh?: boolean }): Promise<CloudSchedules>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
   /**
    * The application server key, as the Mac's `push-key` read answers it.
@@ -386,6 +424,44 @@ export class RelayReader {
           this.note(method, path, "local")
           return json(200, list)
         }
+        case "/v1/orchestrator/schedules": {
+          // The list under the session list, which on a phone drew nothing at
+          // all: the word was in `DEFERRED` with a sentence saying schedules
+          // were not read over Cloud yet, and the Mac had been answering it
+          // the whole time. The sentence was what had stopped being true.
+          //
+          // Unlike the task list this is asked of the Mac (`schedules` is a
+          // word, and this daemon publishes no schedules on its descriptor),
+          // and the answer is cut to this machine's rows for the reason the
+          // session list is: the copied client merges every machine's into
+          // one, and a row from another Mac under this one's list would be a
+          // schedule this page cannot open, edit or run.
+          const client = this.connected()
+          if (typeof client.schedules !== "function") {
+            return this.refuse(method, path, 501, "cloud_not_carried",
+              "This console cannot read this Mac's schedules.")
+          }
+          const answer = await client.schedules({ fresh: true })
+          // **A resolved answer is not this machine's answer.** The read fans
+          // out and settles as long as one machine replied, so a Mac that
+          // refused, timed out or was never asked comes back as an account
+          // with fewer rows in it — which is this page saying "there are
+          // none" on its behalf. Its own failure is raised instead, and the
+          // page draws nothing rather than an empty list (`pages/schedules.tsx`).
+          const missed = (answer.unanswered ?? []).find((row) => row?.machine === this.machine)
+          if (missed) throw missed.error ?? new NotConnected()
+          if ((answer.unconfirmed ?? []).includes(this.machine)) {
+            return this.refuse(method, path, 503, "cloud_read_unavailable",
+              "This Mac has not published an inventory to this account yet.")
+          }
+          const schedules = (answer.schedules ?? []).filter((row) => row?.machine === this.machine)
+          // Typed against the table, as `transcript` below is: this is the
+          // reader's second carried word, and dropping it from `CARRIED` is a
+          // compile error here rather than a silent disagreement.
+          const word: CarriedWord = "schedules"
+          this.note(method, path, "relay", undefined, { word })
+          return json(200, { schedules, at: answer.at || Math.floor(this.now() / 1000) })
+        }
         case "/v1/transcript": {
           const session = url.searchParams.get("session")
           if (!session) return this.refuse(method, path, 400, "bad_request", "No session was named.")
@@ -394,9 +470,10 @@ export class RelayReader {
           // after all before it types them a second time (`session/send.ts`).
           const fresh = init?.cache === "no-store" || init?.cache === "reload" || init?.cache === "no-cache"
           const { page, reused } = await this.transcript(session, fresh)
-          // The one word this file carries itself; the rest are the writer's.
-          // Typed against the table so that dropping it from `CARRIED` is a
-          // compile error here rather than a silent disagreement.
+          // One of the two words this file carries itself — the other is the
+          // schedule list above; the rest are the writer's. Typed against the
+          // table so that dropping it from `CARRIED` is a compile error here
+          // rather than a silent disagreement.
           const word: CarriedWord = "transcript"
           this.note(method, path, reused ? "cache" : "relay", undefined, { word })
           return json(200, page)
