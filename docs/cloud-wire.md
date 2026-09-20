@@ -660,8 +660,10 @@ relay 的 `delivered` 只證明 fan-out 送出去了，不證明機器執行或�
 `project-worktree-lifecycle`(-refresh)、`past-sessions`、`schedules`、`snippets`、`schedule`、
 `push-key`。
 
-Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一波（地基）一種都不做**；第三階段接了
-17 種、對 10 種回具名的拒絕，逐項在 §10.5。
+Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一波（地基）一種都不做**；第三階段開始接，
+逐項在 §10.5。**數字是量出來的，不要抄**：`cloudops.Vocabulary()` 與 `Implemented()` 都是從 catalog 推
+出來的，2026-09-20 量到詞彙 37 個字、接上 28 個、其餘回具名的拒絕（8 個 `unknown_command`、
+`dispatch` 回 `cloud_dispatch_unpinned`），`Divergences()` 5 筆。
 
 ### 10.4 派工就是 task.json
 
@@ -690,6 +692,7 @@ Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一�
 | `document` | read | `GET /v1/sessions/{id}/documents/{scope}[/{task}]/{path}` | 404 `document_not_found` | 接上（只送 inert UTF-8） |
 | `places` | read | `GET /v1/places` | 200 | 接上 |
 | `schedules` | read | `GET /v1/orchestrator/schedules` | 200 | 接上 |
+| `push-key` | read | `GET /v1/push/key` | 200（問它就是鑄它） | 接上（2026-09-20） |
 | `board` | read | `GET /v1/board` | 200 | 接上，**但 body 形狀不同**（見下） |
 | `send` | command | `POST /v1/sessions/{id}/send` | 400 `empty_text` | 接上 |
 | `answer`（與別名 `key`） | command | `POST /v1/sessions/{id}/key` | 400 `bad_request` | 接上 |
@@ -698,6 +701,9 @@ Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一�
 | `start` | command | `POST /v1/places/{place}/start[/{assistant}[/{model}]]` | 沒實測（會真的開 session） | 接上，路由由 `start.go` 讀出 |
 | `resume` | command | `POST /v1/places/{place}/resume/[{assistant}/]{past}` | 沒實測（同上） | 接上，路由由 `start.go` 讀出 |
 | `voice` | command | `POST /v1/voice` | 400 `bad_request`（rate） | 接上 |
+| `push-subscribe` | read-level command | `POST /v1/push/subscribe` | 200 / 400 `bad_request` | 接上（2026-09-20），**但每個 Cloud viewer 都是同一台裝置**（見下） |
+| `push-unsubscribe` | read-level command | `POST /v1/push/unsubscribe` | 200 | 接上（2026-09-20） |
+| `push-test` | read-level command | `POST /v1/push/test` | 沒實測（會真的對 `web.push.apple.com` 發 HTTPS） | 接上（2026-09-20），路由由 `push.go` 讀出 |
 | `agent` | read | — | `GET …/agents/{id}` 405 | 回 `unknown_command` |
 | `shell` | read | — | `GET …/shells/{id}` 405 | 回 `unknown_command` |
 | `skills` | read | — | `GET …/skills` 405 | 回 `unknown_command` |
@@ -720,7 +726,7 @@ Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一�
 `{task}`，本機 broker 要的是 materialized `task.json` 加 task id 與 secret，沒有任何 pinned wire shape
 說這些怎麼帶、那個檔案可以寫到哪裡。舊版為此回 409 `cloud_dispatch_unpinned`，這裡一字不改。
 
-**兩個「接上了但答案不一樣」的地方**（`cloudops.Divergences()` 會把它們列出來，接線的人在決定要對外
+**三個「接上了但答案不一樣」的地方**（`cloudops.Divergences()` 會把它們列出來，接線的人在決定要對外
 advertise 哪些字時讀得到）：
 
 1. `board`：這個 daemon 的 `/v1/board` 是「從現在跑著的 session 推出來的 projects 快照」
@@ -733,14 +739,34 @@ advertise 哪些字時讀得到）：
    但 viewer 以為的「拿我看到的那一版做 compare-and-swap」在這裡不成立。要補要動
    `internal/transport/http`（另一條線的 claims），不在這一波。
 
+3. `push-subscribe`：**每一個 Cloud viewer 在這裡都是同一台裝置。** in-process 的 Cloud 請求帶的是這台
+   機器自己的 local token（`internal/transport/cloud.LocalAuthorizer`），而 push store 一台裝置只留一列
+   （`push.Store.Add` 以 endpoint 或 device 取代舊列），所以第二個用 Cloud 開通知的瀏覽器會把第一個
+   擠掉——同一台 Mac 在自己網域上配對的兩支手機則是各留一列。存下來的 web-app origin 也因此是這個
+   daemon 自己的 `http://127.0.0.1`，而那正是 iOS declarative notification 用來解析網址的那個 origin。
+   要修的不是這四個字，而是「viewer 自己的身分要到得了路由」，這條 wire 上沒有任何字帶得了它。
+   量在 `internal/transport/http` 的 `TestEveryCloudViewerIsTheSameDeviceHere`（2026-09-20）。
+
 其餘兩個較小的：`transcript` 的 `priority` 收下不用（這裡只有一條 lane），`info` 的 `parts` 兩半回同一個
 body（`summary` 在這裡其實是 full）。
 
 **權限。** Cloud 來的指令屬於已配對的 viewer，照舊版分三層：read 不過寫入閘門（transcript 讀不進任何東西）；
-`diagnostics.report`／`diagnostics.events` 是 read-level command（遠端寫入關掉也能送，但仍要過 roster 與時鐘）；
+`diagnostics.report`／`diagnostics.events`／`push-subscribe`／`push-unsubscribe`／`push-test` 是 read-level
+command（遠端寫入關掉也能送，但仍要過 roster 與時鐘——問這台 Mac 有事時通知我，是「讀」的另一條路，
+不是往誰的 session 裡打字）；
 其餘 command 先過機器的寫入開關（關著回 403 `cloud_commands_disabled`），解碼後在「不可回頭的那一點」
 重讀一次授權，依序回 `command_clock_uncertain` 503、`command_roster_unreadable` 503、`unknown_sender` 403、
 `cloud_commands_disabled` 403。**預設全部拒絕**：`Bridge` 的零值不允許任何 command。
+
+**`X-Clawdline-Actor: device`——只拿得走，給不了。** 這個 daemon 是用 in-process 的方式打自己的路由，
+請求上蓋的是這台機器自己的憑證，所以有些路由會問「你是從哪道門進來的」，而 Cloud viewer 進來的時候
+會穿著這台機器的身分。這台機器有兩個「我」：orchestrator token（開 `/v1/orchestrator/*`），以及
+local token（shell 與自己的腳本拿的那把，verdict 上是 `Local`）。會對 `Local` 放行的路由，放行的就是
+這台機器自己的手——`/v1/push/unsubscribe` 讓它移掉任何一台裝置的訂閱（腳本收自己的尾），`/v1/settings`
+讓它改全域快捷鍵。所以帶了這個 header 的請求，兩道門一起關掉，**而且它一道也開不了**：它講不出裝置、
+講不出能力、講不出 sender，帶了它只會變少。會寫入的 schedule 四個字與 push 三個字都帶它。
+沒有這個 header 之前量到的：Cloud viewer 可以移掉手機自己配對時留下的那一列訂閱
+（`TestACloudViewerDoesNotInheritThisMachinesOwnExemption`，2026-09-20）。
 
 **回應形狀。** 這一版產生的是已上線 producer 的形狀，也就是 `t/<machine>/<session>` 上的
 `{"read": <name>, "status": <http>, "body"|"error": …}`（`CloudAppBridge.publishJSONAnswer`、
@@ -791,7 +817,7 @@ PWA 會拒絕（§11 的 `GAP-CTLR`），所以這一波不產生它。
 | §2、§4.1、§4.2 envelope | `internal/domain/cloud/envelope.go` | `TestSealReproducesEveryPublishedEnvelope`（6 個向量的 `ct` 與 `sig` 逐位元組相同）、`TestCanonicalEnvelopeBytes`（byte_length 與 SHA-256）、`TestChannelGrammar` |
 | §4.4 ctlr reply key | 同上 | `TestControlResponseUsesTheRequestReplyKey`（master secret 開不開得了，兩個結果都讀向量自己的宣告） |
 | §5 金鑰與指紋 | `internal/domain/cloud/keys.go` | `TestDeviceKeyMatchesThePublishedSeed`、`TestFingerprintMatchesThePublishedPairingValues`（machine 與 viewer 兩個 oracle） |
-| §10.3、§10.5 27 種操作 | `internal/app/cloudops/`、`internal/transport/cloud/` | `TestEveryOperationIsAnsweredAsItself`（28 個字各一筆真形狀的指令，斷言回哪個 channel 與打哪條路由或回哪個碼）、`TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise`、`TestTheAuthorityIsRereadAtThePointOfNoReturn` |
+| §10.3、§10.5 27 種操作 | `internal/app/cloudops/`、`internal/transport/cloud/` | `TestEveryOperationIsAnsweredAsItself`（整個詞彙各一筆真形狀的指令，斷言回哪個 channel 與打哪條路由或回哪個碼；表的筆數與 `Vocabulary()` 對不上就 fail，所以不用手抄數字）、`TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise`、`TestTheAuthorityIsRereadAtThePointOfNoReturn` |
 | §5.4 儲存 | `internal/adapters/cloudkeys/files.go` | `TestAnUnreadableSecretIsNeverAnAbsentOne`、`TestASymlinkIsNotAKeyFile`、`TestRefusesTheSwiftAppsDirectory` |
 | §6.1、§6.2 時鐘 | `internal/domain/cloud/clock.go` | `TestAdmissionOpensOnlyAfterAWholeStableWindow`、`TestEachAnomalyClosesAdmissionAndOwesCleanup`、`TestOfferDoesNotRestartALiveWindow` |
 

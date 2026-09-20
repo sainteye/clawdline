@@ -31,6 +31,11 @@ class FakeClient implements CloudReadClient {
     this.asks += 1
     return this.answer()
   }
+  pushKeyAsks = 0
+  pushKey?: () => Promise<unknown> = async () => {
+    this.pushKeyAsks += 1
+    return { key: "BPk" }
+  }
 }
 
 function row(machine: string, session: string, extra: Record<string, unknown> = {}): CloudRow {
@@ -226,4 +231,46 @@ test("a fresh read is never handed an answer asked before it", async () => {
   release(now)
   const page = await body<TranscriptPage>(await fresh)
   assert.equal(page.signature, "new", "the fresh read was handed the answer asked before it")
+})
+
+// The first thing a phone does when somebody presses "notify me". It is a
+// read — the Mac mints the key and nothing else changes — so it is answered
+// here rather than by the writer, and it is what the whole registration
+// stopped on: before this route existed, `GET /v1/push/key` was refused
+// `cloud_not_carried` in the browser and the request never left the phone.
+test("the application server key is asked of the machine", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 1000 })
+  const res = await r.fetch("/v1/push/key")
+  assert.equal(res.status, 200)
+  assert.deepEqual(await res.json(), { key: "BPk" })
+  assert.equal(client.pushKeyAsks, 1)
+  const last = r.log[r.log.length - 1]
+  assert.equal(last.answer, "relay")
+  assert.equal(last.word, "push-key")
+})
+
+// A copied client too old to know the word, and a machine that answered no.
+// Both settle the request typed, in the flat spelling `push/api.ts` reads
+// through `isRefusal` — never the static host's page as a body that is not
+// JSON.
+test("a key nobody can ask for is refused by name, not left to the network", async () => {
+  const older = new FakeClient()
+  older.pushKey = undefined
+  const noWord = await reader(older, { t: 0 }).fetch("/v1/push/key")
+  assert.equal(noWord.status, 501)
+  assert.equal((await body<{ error: string }>(noWord)).error, "cloud_not_carried")
+
+  const client = new FakeClient()
+  client.pushKey = async () => {
+    throw Object.assign(new Error("this Mac does not carry notifications"), {
+      code: "cloud_feature_unavailable",
+      status: 501,
+    })
+  }
+  const refused = await reader(client, { t: 0 }).fetch("/v1/push/key")
+  assert.equal(refused.status, 501)
+  const refusal = await body<{ error: string; detail: string }>(refused)
+  assert.equal(refusal.error, "cloud_feature_unavailable")
+  assert.equal(typeof refusal.detail, "string", "`isRefusal` needs a string detail")
 })

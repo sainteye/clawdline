@@ -94,6 +94,15 @@ class FakeClient implements CloudWriteClient {
     this.fail.voice = undefined
     return this.act("setVoiceHost", [machine], {})
   }
+  pushSubscribe(subscription: unknown) {
+    return this.act("pushSubscribe", [subscription], { ok: true, id: "sub-1" })
+  }
+  pushUnsubscribe(id: string) {
+    return this.act("pushUnsubscribe", [id], { ok: true })
+  }
+  pushTest(session: string | null) {
+    return this.act("pushTest", [session], { ok: true, sent: 1, failed: 0 })
+  }
   image(identity: CloudIdentity, id: string) {
     return this.act("image", [identity, id], { id, media_type: "image/png", bytes: new Uint8Array([137, 80, 78, 71]) }) as Promise<{
       id: string
@@ -140,6 +149,12 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
     ["GET", "/v1/artifacts/images/img-1", "image"],
     ["POST", "/v1/sessions/s1/interrupt", "interrupt"],
+    ["POST", "/v1/push/subscribe", "push-subscribe"],
+    ["POST", "/v1/push/unsubscribe", "push-unsubscribe"],
+    ["POST", "/v1/push/test", "push-test"],
+    // The key is a read and is answered by `relay-reader.ts`, not here.
+    ["GET", "/v1/push/key", null],
+    ["POST", "/v1/push/key", null],
     ["GET", "/v1/sessions", null],
     ["GET", "/v1/transcript", null],
     ["POST", "/v1/orchestrator/tasks", null],
@@ -492,3 +507,72 @@ test("F6: a blocked close keeps its reasons across Clawdline Cloud",
     const body = await json(await reader.fetch("/v1/sessions/s1/close", post({ force: false })))
     assert.deepEqual(body.reasons, reasons)
   })
+
+// The three requests that change something about notifications. Each goes as
+// the word the Mac lists, with the browser's own subscription handed over
+// whole: it is the browser's endpoint and the browser's keys, and anything
+// reshaped on the way past is a chance to get a credential wrong.
+test("registering for notifications goes as the Mac's own three words", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const subscription = {
+    endpoint: "https://web.push.apple.com/QWxpY2U",
+    keys: { p256dh: "BPk", auth: "c2VjcmV0" },
+  }
+
+  const subscribed = await reader.fetch("/v1/push/subscribe", post(subscription))
+  assert.equal(subscribed.status, 200)
+  assert.deepEqual(await json(subscribed), { ok: true, id: "sub-1" })
+
+  const tested = await reader.fetch("/v1/push/test", post({ session_id: "s1" }))
+  assert.equal(tested.status, 200)
+  assert.deepEqual(await json(tested), { ok: true, sent: 1, failed: 0 })
+
+  // No session to tap back to is the account's test, and the word carries it
+  // as an empty target rather than leaving the key out.
+  await reader.fetch("/v1/push/test", post({}))
+  await reader.fetch("/v1/push/unsubscribe", post({ id: "sub-1" }))
+
+  assert.deepEqual(client.calls, [
+    ["pushSubscribe", subscription],
+    ["pushTest", "s1"],
+    ["pushTest", ""],
+    ["pushUnsubscribe", "sub-1"],
+  ])
+  assert.deepEqual(reader.log.map((x: { word?: string }) => x.word), [
+    "push-subscribe", "push-test", "push-test", "push-unsubscribe",
+  ])
+})
+
+// `push/api.ts` says it at the top: these four routes answer the gate's
+// nested envelope, not the flat `{error, detail}` the rest of this daemon
+// uses. It reads both, and what must not happen is a third spelling.
+test("a refused registration comes back in the nested spelling `push/api.ts` reads", async () => {
+  const client = new FakeClient()
+  client.fail.pushSubscribe = failureFromMac(
+    { code: "subscriptions_full", layer: "mac_route", message: "already notifies as many devices as it keeps" },
+    507, REF,
+  )
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/push/subscribe", post({ endpoint: "https://web.push.apple.com/QWxpY2U" }))
+  assert.equal(res.status, 507)
+  const body = await json<{ error: { code: string; message: string; layer: string; word: string } }>(res)
+  assert.equal(typeof body.error, "object", "the flat spelling would put a string here")
+  assert.equal(body.error.code, "subscriptions_full")
+  assert.equal(typeof body.error.message, "string")
+  assert.equal(body.error.layer, "mac_route")
+  assert.equal(body.error.word, "push-subscribe")
+  assert.equal(reader.log[reader.log.length - 1].code, "subscriptions_full")
+})
+
+// With the line down, the page is told so rather than left waiting: a write
+// settles with a typed refusal, never a silence.
+test("a registration with the line down is refused, not left to a transport error", async () => {
+  const client = new FakeClient()
+  client.ready = false
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/push/subscribe", post({ endpoint: "https://web.push.apple.com/QWxpY2U" }))
+  assert.equal(res.status, 503)
+  const body = await json<{ error: { code: string } }>(res)
+  assert.equal(body.error.code, "offline")
+})
