@@ -174,3 +174,80 @@ func TestARelayReplaysAfterItsRunExpires(t *testing.T) {
 		t.Fatalf("a new request under an old run: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// BD-17 on the route: the command a person gives work whose delivery named
+// no item. It carries their words, it is refused without them, and a session
+// may give it only as a relay of what a person said — this is the one
+// closure with no fact behind it but a person's word, so whose word it was
+// has to be on the record.
+func TestDoneElsewhereCarriesThePersonsWords(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &Server{store: st}
+	person := access{verdict: auth.Verdict{Allowed: true, Local: true}}
+	machine := access{machine: true}
+	do := func(a access, method, target, key, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, target, strings.NewReader(body))
+		if key != "" {
+			req.Header.Set("Idempotency-Key", key)
+		}
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{}, a))
+		rec := httptest.NewRecorder()
+		s.workRoute(rec, req)
+		return rec
+	}
+	code := func(rec *httptest.ResponseRecorder) string {
+		var body struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		return body.Error
+	}
+	rec := do(person, http.MethodPost, "/v1/work/items", "c1",
+		`{"title":"the URL carries no session","project":"/p","place":"backlog"}`)
+	if rec.Code != 201 {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	var made struct {
+		Item struct {
+			ID string `json:"id"`
+		} `json:"item"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &made)
+	item := "/v1/work/items/" + made.Item.ID
+
+	if rec := do(person, http.MethodPost, item, "d0", `{"op":"done_elsewhere"}`); rec.Code != 400 ||
+		code(rec) != "reason_required" {
+		t.Fatalf("with no words: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(machine, http.MethodPost, item, "d1",
+		`{"op":"done_elsewhere","reason":"shipped in task 3f21"}`); rec.Code != 403 ||
+		code(rec) != "session_cannot_decide" {
+		t.Fatalf("a session on its own: %d %s", rec.Code, rec.Body)
+	}
+	rec = do(person, http.MethodPost, item, "d2",
+		`{"op":"done_elsewhere","reason":"shipped in task 3f21, which named no work_id"}`)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"closed_reason":"done_elsewhere"`) {
+		t.Fatalf("done elsewhere: %d %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"place":"board"`) {
+		t.Fatalf("it did not come out of the Backlog onto the board: %s", rec.Body)
+	}
+	moves := do(person, http.MethodGet, item+"/moves", "", "")
+	if !strings.Contains(moves.Body.String(), `"trigger":"done_elsewhere"`) ||
+		!strings.Contains(moves.Body.String(), `"actor":"user"`) ||
+		!strings.Contains(moves.Body.String(), "named no work_id") {
+		t.Fatalf("the moves do not say who said it, or why: %s", moves.Body)
+	}
+	// Control: `drop` is still there and still says a person dropped it.
+	rec = do(person, http.MethodPost, "/v1/work/items", "c2",
+		`{"title":"the other one","project":"/p","place":"backlog"}`)
+	_ = json.Unmarshal(rec.Body.Bytes(), &made)
+	if rec := do(person, http.MethodPost, "/v1/work/items/"+made.Item.ID, "d3", `{"op":"drop"}`); rec.Code != 200 ||
+		!strings.Contains(rec.Body.String(), `"state":"dropped"`) {
+		t.Fatalf("drop: %d %s", rec.Code, rec.Body)
+	}
+}

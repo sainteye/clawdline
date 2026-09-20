@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -50,7 +51,7 @@ CREATE TABLE IF NOT EXISTS board_items (
   cycle_since   INTEGER NOT NULL,
   evidence_at   INTEGER NOT NULL,
   asked_at      INTEGER,
-  closed_reason TEXT    CHECK (closed_reason IN ('landed','accepted','unconfirmed','dropped')),
+  closed_reason TEXT    CHECK (closed_reason IN ('landed','accepted','unconfirmed','dropped','done_elsewhere')),
   closed_at     INTEGER,
   start_on      TEXT,
   CHECK ((state IN ('done','dropped')) = (closed_reason IS NOT NULL AND closed_at IS NOT NULL)),
@@ -116,7 +117,75 @@ func openWork(db *sql.DB) error {
 	if _, err := db.Exec(workSchema); err != nil {
 		return err
 	}
+	if err := migrateClosedReasons(db); err != nil {
+		return err
+	}
 	_, err := db.Exec(boardSettingsSchema)
+	return err
+}
+
+// migrateClosedReasons widens `board_items.closed_reason` to the reason a
+// person gives for work whose delivery named no item (work.ClosedDoneElsewhere).
+//
+// CREATE TABLE IF NOT EXISTS leaves an existing store with its old CHECK for
+// ever, and SQLite cannot alter one: the table is rebuilt, which is the
+// documented way and the only way. It is stated as what it wants rather than
+// as a version number, so running it twice does nothing and a store can
+// arrive here from any age (sqlite.go, migrate).
+//
+// The two place triggers are dropped first and made again by the schema
+// above: ALTER TABLE ... RENAME re-reads the whole schema, and a trigger
+// naming a table that is mid-rebuild fails the rename.
+func migrateClosedReasons(db *sql.DB) error {
+	var ddl string
+	err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'board_items'`).Scan(&ddl)
+	if err != nil || strings.Contains(ddl, "done_elsewhere") {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	steps := []string{
+		`DROP TRIGGER IF EXISTS work_one_place_board`,
+		`DROP TRIGGER IF EXISTS work_one_place_backlog`,
+		`CREATE TABLE board_items_rebuilt (
+  work_id       TEXT    PRIMARY KEY REFERENCES work(id),
+  state         TEXT    NOT NULL CHECK (state IN ('active','awaiting_closure','done','dropped')),
+  owner         TEXT    NOT NULL CHECK (owner <> ''),
+  commitment    TEXT    NOT NULL CHECK (commitment IN ('dispatch','assigned','scheduled','decision','delivered')),
+  cycle_since   INTEGER NOT NULL,
+  evidence_at   INTEGER NOT NULL,
+  asked_at      INTEGER,
+  closed_reason TEXT    CHECK (closed_reason IN ('landed','accepted','unconfirmed','dropped','done_elsewhere')),
+  closed_at     INTEGER,
+  start_on      TEXT,
+  CHECK ((state IN ('done','dropped')) = (closed_reason IS NOT NULL AND closed_at IS NOT NULL)),
+  CHECK (state <> 'dropped' OR closed_reason = 'dropped'),
+  CHECK (closed_reason <> 'dropped' OR state = 'dropped')
+)`,
+		`INSERT INTO board_items_rebuilt (work_id, state, owner, commitment, cycle_since, evidence_at, asked_at,
+		   closed_reason, closed_at, start_on)
+		 SELECT work_id, state, owner, commitment, cycle_since, evidence_at, asked_at,
+		   closed_reason, closed_at, start_on FROM board_items`,
+		`DROP TABLE board_items`,
+		`ALTER TABLE board_items_rebuilt RENAME TO board_items`,
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, step := range steps {
+		if _, err := tx.Exec(step); err != nil {
+			return fmt.Errorf("board_items.closed_reason: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// The index and the two triggers went with the old table; the schema
+	// makes them again.
+	_, err = db.Exec(workSchema)
 	return err
 }
 

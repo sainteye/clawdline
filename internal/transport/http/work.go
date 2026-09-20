@@ -460,10 +460,14 @@ type workCreateWire struct {
 }
 
 type workCommandWire struct {
-	Op              string       `json:"op"`
-	Owner           string       `json:"owner"`
-	StartOn         string       `json:"start_on"`
-	Rank            *int64       `json:"rank"`
+	Op      string `json:"op"`
+	Owner   string `json:"owner"`
+	StartOn string `json:"start_on"`
+	Rank    *int64 `json:"rank"`
+	// Reason is what a person says about work whose delivery named no item
+	// (`done_elsewhere`): what was done and where it landed. It is refused
+	// empty rather than recorded empty, so the move is a record.
+	Reason          string       `json:"reason"`
 	ExpectedVersion *int64       `json:"expected_version"`
 	Via             *workViaWire `json:"via"`
 }
@@ -679,7 +683,8 @@ func (s *Server) workCommand(w http.ResponseWriter, r *http.Request, id string) 
 			return app.WorkView{}, err
 		}
 		return s.work().Command(r.Context(), id, app.WorkCommand{
-			Command:   work.Command{Op: op, Actor: actor, Owner: body.Owner, StartOn: body.StartOn, Rank: body.Rank},
+			Command: work.Command{Op: op, Actor: actor, Owner: body.Owner, StartOn: body.StartOn, Rank: body.Rank,
+				Reason: body.Reason},
 			Principal: principal, Via: run, ExpectedVersion: body.ExpectedVersion}, file)
 	})
 }

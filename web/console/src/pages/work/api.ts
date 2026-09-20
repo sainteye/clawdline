@@ -250,13 +250,25 @@ async function decide<T>(path: string, body: unknown): Promise<T> {
   }
 }
 
-export type Op = "start" | "schedule" | "defer" | "accept" | "rework" | "drop" | "handover" | "untrack" | "rank"
+export type Op =
+  | "start"
+  | "schedule"
+  | "defer"
+  | "accept"
+  | "done_elsewhere"
+  | "rework"
+  | "drop"
+  | "handover"
+  | "untrack"
+  | "rank"
 
 export interface Command {
   op: Op
   owner?: string
   start_on?: string
   rank?: number
+  /** Why no delivery named this item: required by `done_elsewhere`, refused empty (BD-17). */
+  reason?: string
 }
 
 export const command = (item: Item, c: Command) =>

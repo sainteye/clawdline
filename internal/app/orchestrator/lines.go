@@ -2,7 +2,9 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/domain/work"
@@ -107,4 +109,101 @@ func (b *Broker) BindWork(ctx context.Context, taskID, workID, from string) erro
 				map[string]any{"task": taskID, "work_id": r.WorkID})
 		})
 	return err
+}
+
+// ——— The work item a dispatch names (D36, BD-4) ———
+
+// A work_id a dispatch names is the one place where a dispatch says which of
+// a person's lines it is serving, and until now the broker only checked its
+// shape. A name that matched no item bound the task to a line no board row
+// follows, and the item it was supposed to be serving stayed in the Backlog
+// with nothing on it — which is how 52 dispatches in one day came to say
+// nothing about the 14 items they were for.
+//
+// So a named item is read before anything exists (checkNamedWork), and the
+// dispatch is what puts it on the board (commitNamedWork): a root sending
+// work out has committed to it, and nothing was ever going to make a person
+// press "track" a second time to say so.
+
+// TaskFactsOf is what the board's rules read of one task record. It is here,
+// beside Decode, so that the broker and the board read a task the same way:
+// app.Facts is this function over the stored rows.
+func TaskFactsOf(r Record) work.TaskFacts {
+	f := work.TaskFacts{
+		Task: r.ID, WorkID: r.WorkID, Title: r.Title, Kind: r.Kind, Project: r.ProjectDir,
+		CreatedAt: atSecond(r.CreatedAt), State: string(r.State), Ended: r.State.Terminal(),
+		Attempt: r.RespawnGeneration, FinishedAt: atSecond(r.FinishedAt),
+	}
+	if r.Root != nil && !r.Root.PollOnly {
+		f.Owner, f.OwnerAssistant = r.Root.SessionID, r.Root.Assistant
+	}
+	if r.Landing != nil {
+		f.Landing, f.LandedAt = string(r.Landing.State), atSecond(r.Landing.At)
+		f.LandingTarget = r.Landing.Target
+	}
+	return f
+}
+
+// atSecond is a time at the store's resolution, so a task's time and an
+// item's compare the way the store's own queries compare them.
+func atSecond(t time.Time) time.Time {
+	if t.IsZero() {
+		return t
+	}
+	return time.Unix(t.Unix(), 0)
+}
+
+// checkNamedWork refuses a dispatch that names a work item it cannot be bound
+// to, before the task, its tab or its checkout exist. A store that did not
+// answer is not an absent item: it refuses too, because admitting the
+// dispatch would decide the question by not asking it.
+func (b *Broker) checkNamedWork(ctx context.Context, r Record) error {
+	if r.WorkID == "" || r.WorkFrom != work.WorkNamed {
+		return nil
+	}
+	it, err := b.Store.WorkItem(ctx, r.WorkID)
+	found := true
+	switch {
+	case errors.Is(err, store.ErrNoWork):
+		found = false
+	case err != nil:
+		return refuse(http.StatusServiceUnavailable, "store_unavailable",
+			"The board could not be read, so the work item this dispatch names could not be checked; nothing was started.")
+	}
+	var ref *work.Refusal
+	if err := work.Nameable(it, found, r.ProjectDir); errors.As(err, &ref) {
+		return refuseWith(ref.Status, ref.Code, ref.Message, map[string]any{"work_id": r.WorkID})
+	}
+	return nil
+}
+
+// commitNamedWork puts the item a dispatch named onto the board, with the
+// move that says which root committed to it. It runs once the task is
+// durable, because the commitment rests on the task: an item moved by a
+// dispatch that then failed to be recorded would be a commitment to nothing.
+//
+// Its failure does not fail the dispatch — the work has started, and saying
+// otherwise would leave a task running that its caller believes was refused.
+// The sweep's dispatch rule makes the same change within a tick, from the
+// same facts; the dispatcher is told with a warning that it has not happened
+// yet.
+func (b *Broker) commitNamedWork(ctx context.Context, r Record) error {
+	if r.WorkID == "" || r.WorkFrom != work.WorkNamed {
+		return nil
+	}
+	f := TaskFactsOf(r)
+	return b.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		it, err := tx.Item(r.WorkID)
+		if err != nil {
+			return err
+		}
+		// Decided again here, inside the write, from the row as it is now: a
+		// person may have moved the item between the check and this (DG-6).
+		c, ok := work.DispatchChange(it, f)
+		if !ok {
+			return nil
+		}
+		now := b.now()
+		return tx.Put(it, c.Apply(it, now), store.MoveOf(it.ID, c, now))
+	})
 }

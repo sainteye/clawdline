@@ -59,9 +59,10 @@ function BacklogRow({
   run: Run
   onCommand: (it: Item, c: Command) => Promise<unknown>
 }) {
-  const [asking, setAsking] = useState<"schedule" | "rank" | "drop" | null>(null)
+  const [asking, setAsking] = useState<"schedule" | "rank" | "done_elsewhere" | "drop" | null>(null)
   const [date, setDate] = useState(item.start_on ?? today())
   const [rank, setRank] = useState(String(item.rank ?? 0))
+  const [why, setWhy] = useState("")
   return (
     <li className="work-backlog-row" data-work-id={item.id}>
       <span className="work-rank">{item.rank ? workWord("rank", { n: item.rank }) : workWord("rankNone")}</span>
@@ -128,6 +129,32 @@ function BacklogRow({
             {L.strings.webCancel}
           </button>
         </form>
+      ) : asking === "done_elsewhere" ? (
+        <form
+          className="work-actions"
+          onSubmit={(ev) => {
+            ev.preventDefault()
+            const said = why.trim()
+            if (!said) return
+            setAsking(null)
+            run(() => onCommand(item, { op: "done_elsewhere", reason: said }))
+          }}
+        >
+          <input
+            className="work-input"
+            aria-label={workWord("doneElsewhereWhy")}
+            placeholder={workWord("doneElsewhereWhy")}
+            value={why}
+            autoFocus
+            onChange={(ev) => setWhy(ev.target.value)}
+          />
+          <button className="chip on" type="submit" disabled={busy || !why.trim()}>
+            {workWord("opDoneElsewhere")}
+          </button>
+          <button className="chip" type="button" onClick={() => setAsking(null)}>
+            {L.strings.webCancel}
+          </button>
+        </form>
       ) : asking === "drop" ? (
         <div className="work-actions" role="group">
           <button
@@ -157,6 +184,15 @@ function BacklogRow({
           </button>
           <button className="chip" type="button" data-op="rank" disabled={busy} onClick={() => setAsking("rank")}>
             {workWord("opRank")}
+          </button>
+          <button
+            className="chip"
+            type="button"
+            data-op="done_elsewhere"
+            disabled={busy}
+            onClick={() => setAsking("done_elsewhere")}
+          >
+            {workWord("opDoneElsewhere")}
           </button>
           <button className="chip danger" type="button" data-op="drop" disabled={busy} onClick={() => setAsking("drop")}>
             {workWord("opDiscard")}

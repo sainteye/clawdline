@@ -119,3 +119,91 @@ func TestBoundTasksAreFoundByTheirWorkID(t *testing.T) {
 		t.Fatalf("the bound-task query does not use its index: %s", plan)
 	}
 }
+
+// A store made before `done_elsewhere` existed keeps its old CHECK for ever
+// under CREATE TABLE IF NOT EXISTS, so the one machine that has been running
+// longest is the one where a person's "this was done" would be refused by the
+// database. The rebuild is what prevents that, and it keeps every row.
+func TestAnOlderStoreLearnsTheDoneElsewhereReason(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	at := time.Unix(1_789_700_000, 0)
+	// Put the old table back, with a row in it, the way a store from before
+	// this change looks.
+	old := []string{
+		`DROP TRIGGER IF EXISTS work_one_place_board`,
+		`DROP TRIGGER IF EXISTS work_one_place_backlog`,
+		`DROP TABLE board_items`,
+		`CREATE TABLE board_items (
+  work_id       TEXT    PRIMARY KEY REFERENCES work(id),
+  state         TEXT    NOT NULL CHECK (state IN ('active','awaiting_closure','done','dropped')),
+  owner         TEXT    NOT NULL CHECK (owner <> ''),
+  commitment    TEXT    NOT NULL CHECK (commitment IN ('dispatch','assigned','scheduled','decision','delivered')),
+  cycle_since   INTEGER NOT NULL,
+  evidence_at   INTEGER NOT NULL,
+  asked_at      INTEGER,
+  closed_reason TEXT    CHECK (closed_reason IN ('landed','accepted','unconfirmed','dropped')),
+  closed_at     INTEGER,
+  start_on      TEXT,
+  CHECK ((state IN ('done','dropped')) = (closed_reason IS NOT NULL AND closed_at IS NOT NULL)),
+  CHECK (state <> 'dropped' OR closed_reason = 'dropped'),
+  CHECK (closed_reason <> 'dropped' OR state = 'dropped')
+)`,
+		`INSERT INTO work (id, project_id, title, created_at, created_by, placed_at, version)
+		 VALUES ('0b0a0000-0000-4000-8000-0000000000e1', '/p', 'kept', 1789700000, 'user', 1789700000, 0)`,
+		`INSERT INTO board_items (work_id, state, owner, commitment, cycle_since, evidence_at)
+		 VALUES ('0b0a0000-0000-4000-8000-0000000000e1', 'active', 'user', 'assigned', 1789700000, 1789700000)`,
+	}
+	for _, q := range old {
+		if _, err := s.db.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	// Red, on the old shape: the reason a person may now give is refused by
+	// the database.
+	if _, err := s.db.ExecContext(ctx, `UPDATE board_items SET state = 'done', closed_reason = 'done_elsewhere',
+		closed_at = 1789700001`); err == nil {
+		t.Fatal("the old CHECK accepted done_elsewhere; this test proves nothing")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Opened again: the rebuild runs, the row is still there, and the reason
+	// is accepted. The place triggers came back with it.
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatalf("reopening a store of the old shape: %v", err)
+	}
+	defer s.Close()
+	it, err := s.WorkItem(ctx, "0b0a0000-0000-4000-8000-0000000000e1")
+	if err != nil || it.Title != "kept" || it.Place != work.PlaceBoard || it.State != work.ItemActive ||
+		!it.EvidenceAt.Equal(at) {
+		t.Fatalf("the rebuild lost the row: %+v %v", it, err)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE board_items SET state = 'done', closed_reason = 'done_elsewhere',
+		closed_at = 1789700001`); err != nil {
+		t.Fatalf("after the rebuild: %v", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO backlog (work_id, state) VALUES
+		('0b0a0000-0000-4000-8000-0000000000e1', 'planned')`); err == nil ||
+		!strings.Contains(err.Error(), "work_in_two_places") {
+		t.Fatalf("the place trigger did not come back: %v", err)
+	}
+	// And a second open is a no-op rather than a second rebuild.
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatalf("a second open: %v", err)
+	}
+	if it, err := s.WorkItem(ctx, "0b0a0000-0000-4000-8000-0000000000e1"); err != nil ||
+		it.ClosedReason != work.ClosedDoneElsewhere {
+		t.Fatalf("the second open changed the row: %+v %v", it, err)
+	}
+}

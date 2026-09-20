@@ -32,8 +32,8 @@ import (
 //   - automatic changes follow broker facts and the clock, by the ordered
 //     rules in sweepRules — a landing closes the item, a delivery puts it in
 //     the closure queue, three quiet days send it back to the Backlog;
-//   - a person's commands (Decide) start, schedule, defer, accept, rework,
-//     drop, hand over or stop following an item;
+//   - a person's commands (Decide) start, schedule, defer, accept, close as
+//     done elsewhere, rework, drop, hand over or stop following an item;
 //   - and a person's command never says what only the broker may say. There
 //     is no command that lands anything: "accept" closes an item as accepted,
 //     and an item is landed only when every delivery bound to it is landed in
@@ -90,6 +90,13 @@ const (
 	ClosedAccepted    = "accepted"    // a person accepted what was delivered
 	ClosedUnconfirmed = "unconfirmed" // asked once, nobody answered, the wait passed
 	ClosedDropped     = "dropped"     // a person dropped it
+	// ClosedDoneElsewhere is work a person says was done, whose delivery
+	// named no item: done, and not dropped. Without it the only way out for
+	// such an item is `drop`, which in this record means a person gave the
+	// work up — so the record would say three things were abandoned that
+	// were in fact finished and shipped, and a board nobody can trust is
+	// worse than no board (BD-17).
+	ClosedDoneElsewhere = "done_elsewhere"
 )
 
 // OwnerUser is an item a person holds themselves: on the board and not yet
@@ -604,13 +611,79 @@ func ruleDispatched(it Item, _ Derived, tasks []TaskFacts, _ Policy, _ time.Time
 	if first == nil {
 		return Change{}, false
 	}
+	return dispatchCommitment(*first), true
+}
+
+// dispatchCommitment is the change one dispatch that named an item makes to
+// it, written once so that the sweep's rule and the broker's own write
+// (DispatchChange) cannot drift into two answers.
+func dispatchCommitment(t TaskFacts) Change {
 	owner, actor := OwnerUser, ActorBroker
-	if first.Owner != "" {
-		owner, actor = first.Owner, "root:"+first.Owner
+	if t.Owner != "" {
+		// Who committed is on the move, not only that somebody did: a board
+		// row whose commitment nobody owns is the old board's 12.1%.
+		owner, actor = t.Owner, "root:"+t.Owner
 	}
 	return Change{To: PlaceBoard, State: ItemActive, Owner: owner, Commitment: CommitDispatch,
-		Since: first.CreatedAt, EvidenceAt: first.CreatedAt, Trigger: TriggerDispatched, Actor: actor,
-		Evidence: map[string]any{"task": first.Task, "task_created_at": first.CreatedAt.Unix()}}, true
+		Since: t.CreatedAt, EvidenceAt: t.CreatedAt, Trigger: TriggerDispatched, Actor: actor,
+		Evidence: map[string]any{"task": t.Task, "task_created_at": t.CreatedAt.Unix()}}
+}
+
+// ——— A dispatch that names an item (D36, BD-4) ———
+
+// Codes a dispatch naming a work item is refused with. Each mistake has its
+// own: "there is no such item", "that item is another project's" and "that
+// item is finished" are three different things to have got wrong, and a
+// caller told only `bad_task` has to guess which.
+const (
+	RefusedWorkNotFound     = "work_not_found"
+	RefusedWorkOtherProject = "work_other_project"
+	RefusedWorkClosed       = "work_closed"
+)
+
+// Nameable is whether a dispatch in project may name this item, checked
+// before the task exists. found is whether the item was there to read at all:
+// a work_id of the right shape naming nothing is the mistake this catches,
+// and admitting it would bind the task to a line no board row will ever
+// follow — which is how a dispatch comes to say nothing about which item it
+// serves.
+func Nameable(it Item, found bool, project string) error {
+	switch {
+	case !found:
+		return refuse(422, RefusedWorkNotFound,
+			"work_id names no work item on this machine. Read the board or the Backlog for the id, or leave work_id out and let the broker bind a line of its own.")
+	case it.Project != project:
+		return refuse(422, RefusedWorkOtherProject,
+			"That work item belongs to %s, and this dispatch is in %s. An item follows the work of one project.",
+			it.Project, project)
+	case it.State.Closed():
+		return refuse(422, RefusedWorkClosed,
+			"That work item is already closed (%s). Name an open item, or leave work_id out.", it.ClosedReason)
+	}
+	return nil
+}
+
+// DispatchChange is what a dispatch that names an item does to it: the
+// dispatch **is** the commitment (§3.2), so the item goes onto the board as
+// the task is admitted rather than waiting for a person to press "track"
+// — nothing was ever going to make them press it, and the board stayed empty
+// all day while 52 tasks ran.
+//
+// It is the change ruleDispatched makes, made at once. The rule remains the
+// answer for everything the broker's own write does not cover: a task bound
+// to a line later (BindWork), and a write that did not happen.
+//
+// Nothing moves for an item already on the board — it is already committed —
+// nor for one a person untracked: a dispatch binds its facts to the item
+// either way, and undoing a person's "don't follow this" is not a dispatch's
+// to do.
+func DispatchChange(it Item, t TaskFacts) (Change, bool) {
+	if it.Place != PlaceBacklog || it.State != ItemPlanned {
+		return Change{}, false
+	}
+	c := dispatchCommitment(t)
+	c.From = it.Place
+	return c, true
 }
 
 // ruleStartSoon: a planned start date entered the short window — planning
@@ -664,15 +737,20 @@ const (
 	OpSchedule Op = "schedule" // Schedule: a start date; inside the short window it is on the board
 	OpDefer    Op = "defer"    // Back to Backlog
 	OpAccept   Op = "accept"   // Accept: close a delivery as accepted — never as landed
-	OpRework   Op = "rework"   // Needs changes: a delivery goes back to work
-	OpDrop     Op = "drop"     // Drop
-	OpHandover Op = "handover" // Hand over
-	OpUntrack  Op = "untrack"  // Don't track: off the board, left to the to-dos
-	OpRank     Op = "rank"     // the Backlog's order
+	// OpDoneElsewhere closes work a person says was done and whose delivery
+	// named no item. It is the other half of Accept: both say "this is
+	// finished" without saying "this landed", and neither is Drop.
+	OpDoneElsewhere Op = "done_elsewhere"
+	OpRework        Op = "rework"   // Needs changes: a delivery goes back to work
+	OpDrop          Op = "drop"     // Drop
+	OpHandover      Op = "handover" // Hand over
+	OpUntrack       Op = "untrack"  // Don't track: off the board, left to the to-dos
+	OpRank          Op = "rank"     // the Backlog's order
 )
 
 // Ops is every command, in the order they are documented.
-var Ops = []Op{OpStart, OpTrack, OpSchedule, OpDefer, OpAccept, OpRework, OpDrop, OpHandover, OpUntrack, OpRank}
+var Ops = []Op{OpStart, OpTrack, OpSchedule, OpDefer, OpAccept, OpDoneElsewhere, OpRework, OpDrop, OpHandover,
+	OpUntrack, OpRank}
 
 // landingWords are commands a person might reach for that would say what only
 // the broker may say. Each is refused by name rather than as unknown, so the
@@ -687,6 +765,11 @@ type Command struct {
 	Owner   string
 	StartOn string
 	Rank    *int64
+	// Reason is what a person says when no delivery of this item can answer
+	// for it (OpDoneElsewhere): where the work went, so that the move is a
+	// record and not a shrug. It is the person's words, stored as they wrote
+	// them in the move's evidence.
+	Reason string
 }
 
 // Refusal is a command the rules will not carry out, and why. Nothing was
@@ -797,6 +880,48 @@ func Decide(it Item, tasks []TaskFacts, cmd Command, p Policy, now time.Time) (C
 		}
 		c.State, c.ClosedReason = ItemDone, ClosedAccepted
 		evidence["delivered"] = d.Tasks.Delivered
+		evidence["landed"] = false
+	case OpDoneElsewhere:
+		// Done, and not dropped. This is the only closure a person may give
+		// an item no delivery of its own can answer for, and it is not a way
+		// out of the rules: every item whose own facts still have something
+		// to say is refused by its own name, so "done elsewhere" can only
+		// ever mean what it says.
+		reason := strings.TrimSpace(cmd.Reason)
+		switch {
+		case reason == "":
+			return Change{}, refuse(400, "reason_required",
+				"This closure records why no delivery named this item — say what was done and where it landed. "+
+					"Without that it is a state change nobody can check later.")
+		case it.State.Closed():
+			return Change{}, refuse(409, "already_closed", "This item is already closed (%s).", it.ClosedReason)
+		case d.Tasks.Live > 0:
+			return Change{}, refuse(409, "task_running",
+				"A task bound to this item is still running, so what it delivers still answers for this item. "+
+					"Wait for it, or defer the item.")
+		case d.Tasks.Delivered+d.Tasks.Landed > 0:
+			return Change{}, refuse(409, "delivery_bound",
+				"A delivery bound to this item answers for it: accept it, or let its landing record close it as landed.")
+		case it.Place == PlaceBacklog && it.State == ItemPlanned:
+			// It turned out to be work, so it is recorded where work is
+			// recorded: on the board, among the recently done, rather than
+			// disappearing out of the Backlog with no account of itself.
+			owner := cmd.Owner
+			if owner == "" {
+				owner = OwnerUser
+			}
+			c.To, c.Owner, c.Commitment = PlaceBoard, owner, CommitAssigned
+			c.Since, c.EvidenceAt = now, now
+		case it.Place == PlaceBoard:
+		default:
+			return Change{}, refuse(409, "wrong_place",
+				"Only a board or Backlog item is closed as done elsewhere; this one is in the %s.", it.Place)
+		}
+		c.State, c.ClosedReason = ItemDone, ClosedDoneElsewhere
+		evidence["reason"] = reason
+		// What the item's own facts amounted to when a person said this, so
+		// that a reader can see there was nothing to close it with.
+		evidence["bound_tasks"] = d.Tasks.Total
 		evidence["landed"] = false
 	case OpRework:
 		if it.Place != PlaceBoard || d.State != ItemAwaitingClosure {

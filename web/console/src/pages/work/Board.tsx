@@ -136,12 +136,14 @@ function opsFor(section: Section): { op: Command["op"]; word: WorkWord; tone?: "
       return [
         { op: "defer", word: "opDefer" },
         { op: "handover", word: "opHandover" },
+        { op: "done_elsewhere", word: "opDoneElsewhere" },
         { op: "untrack", word: "opUntrack" },
         { op: "drop", word: "opDrop", tone: "danger" },
       ]
     case "scheduled":
       return [
         { op: "defer", word: "opDefer" },
+        { op: "done_elsewhere", word: "opDoneElsewhere" },
         { op: "handover", word: "opHandover" },
         { op: "drop", word: "opDrop", tone: "danger" },
       ]
@@ -163,9 +165,11 @@ function ItemCard({
   run: Run
   onCommand: (it: Item, c: Command) => Promise<unknown>
 }) {
-  // One question at a time on a card: who to hand it to, or "really drop it?".
-  const [asking, setAsking] = useState<"handover" | "drop" | null>(null)
+  // One question at a time on a card: who to hand it to, why no delivery
+  // named this item, or "really drop it?".
+  const [asking, setAsking] = useState<"handover" | "done_elsewhere" | "drop" | null>(null)
   const [owner, setOwner] = useState("")
+  const [why, setWhy] = useState("")
   const d = item.derived
   return (
     <article className="work-card" data-work-id={item.id} data-state={d.state}>
@@ -206,6 +210,32 @@ function ItemCard({
             {L.strings.webCancel}
           </button>
         </form>
+      ) : asking === "done_elsewhere" ? (
+        <form
+          className="work-actions"
+          onSubmit={(ev) => {
+            ev.preventDefault()
+            const said = why.trim()
+            if (!said) return
+            setAsking(null)
+            run(() => onCommand(item, { op: "done_elsewhere", reason: said }))
+          }}
+        >
+          <input
+            className="work-input"
+            aria-label={workWord("doneElsewhereWhy")}
+            placeholder={workWord("doneElsewhereWhy")}
+            value={why}
+            autoFocus
+            onChange={(ev) => setWhy(ev.target.value)}
+          />
+          <button className="chip on" type="submit" disabled={busy || !why.trim()}>
+            {workWord("opDoneElsewhere")}
+          </button>
+          <button className="chip" type="button" onClick={() => setAsking(null)}>
+            {L.strings.webCancel}
+          </button>
+        </form>
       ) : asking === "drop" ? (
         <div className="work-actions" role="group">
           <button
@@ -235,7 +265,7 @@ function ItemCard({
                 data-op={op}
                 disabled={busy}
                 onClick={() => {
-                  if (op === "handover" || op === "drop") setAsking(op)
+                  if (op === "handover" || op === "drop" || op === "done_elsewhere") setAsking(op)
                   else run(() => onCommand(item, { op }))
                 }}
               >

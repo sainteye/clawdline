@@ -402,3 +402,143 @@ func TestCommandsApplyOnlyWhereTheyMeanSomething(t *testing.T) {
 		t.Fatalf("unknown: %v", err)
 	}
 }
+
+// BD-17: work a person did, whose delivery never named the item, closes as
+// done and not as dropped — "a person dropped it" and "it was done" are two
+// different sentences, and the record has to be able to say the second one.
+// The closure is not a way past the rules: an item whose own facts can answer
+// for it is refused by name, each refusal its own.
+func TestDoneOutsideTheSystemIsNotADrop(t *testing.T) {
+	p := policy()
+	now := bt0.Add(4 * time.Hour)
+	done := Command{Op: OpDoneElsewhere, Actor: "user", Reason: "landed by task 9f2c, which named no work_id"}
+
+	// A Backlog item nothing was bound to: it was work, so it is recorded
+	// where work is recorded — on the board, among the recently done.
+	c, err := Decide(backlogItem(), nil, done, p, now)
+	if err != nil {
+		t.Fatalf("done_elsewhere from the Backlog: %v", err)
+	}
+	if c.To != PlaceBoard || c.State != ItemDone || c.ClosedReason != ClosedDoneElsewhere || c.Actor != "user" {
+		t.Fatalf("done_elsewhere from the Backlog: %+v", c)
+	}
+	if c.Evidence["reason"] != done.Reason || c.Evidence["bound_tasks"] != 0 || c.Evidence["landed"] != false {
+		t.Fatalf("the move does not say why there was no delivery: %+v", c.Evidence)
+	}
+	closed := c.Apply(backlogItem(), now)
+	d := Derive(closed, nil, p, now.Add(time.Hour))
+	if d.State != ItemDone || d.Reason != ClosedDoneElsewhere || d.Landed {
+		t.Fatalf("closed as done elsewhere reads as %s/%s landed=%v", d.State, d.Reason, d.Landed)
+	}
+	if sec, on := SectionOf(closed, d, p, now.Add(time.Hour)); sec != SectionDone || !on {
+		t.Fatalf("it is not among the recently done: %s %v", sec, on)
+	}
+	// And nothing the rules do afterwards rewrites a person's word.
+	if c, ok := Next(SweepRules(), closed, nil, p, now.Add(10*24*time.Hour)); ok {
+		t.Fatalf("a rule moved an item closed as done elsewhere: %+v", c)
+	}
+
+	// The board item a person says was done elsewhere closes where it is.
+	if c, err := Decide(boardItem(ItemActive), nil, done, p, now); err != nil ||
+		c.To != PlaceBoard || c.ClosedReason != ClosedDoneElsewhere {
+		t.Fatalf("done_elsewhere on the board: %+v %v", c, err)
+	}
+
+	// Refused, each by its own name.
+	quiet := Command{Op: OpDoneElsewhere, Actor: "user"}
+	if _, err := Decide(backlogItem(), nil, quiet, p, now); !refusedAs(err, "reason_required") {
+		t.Fatalf("no reason: %v", err)
+	}
+	running := []TaskFacts{task("a", bt0, "briefed", "")}
+	if _, err := Decide(boardItem(ItemActive), running, done, p, now); !refusedAs(err, "task_running") {
+		t.Fatalf("while a bound task runs: %v", err)
+	}
+	delivered := []TaskFacts{task("a", bt0, "success", "pending")}
+	if _, err := Decide(boardItem(ItemActive), delivered, done, p, now); !refusedAs(err, "delivery_bound") {
+		t.Fatalf("with a delivery bound: %v", err)
+	}
+	landed := []TaskFacts{task("a", bt0, "success", "landed")}
+	if _, err := Decide(boardItem(ItemActive), landed, done, p, now); !refusedAs(err, "delivery_bound") {
+		t.Fatalf("with a landing bound: %v", err)
+	}
+	// Attempts that only failed answer for nothing: this is exactly the item
+	// a person finished by hand.
+	failed := []TaskFacts{task("a", bt0, "failure", "")}
+	if c, err := Decide(boardItem(ItemActive), failed, done, p, now); err != nil || c.ClosedReason != ClosedDoneElsewhere {
+		t.Fatalf("after every attempt failed: %+v %v", c, err)
+	}
+	dropped := func() Item {
+		i := backlogItem()
+		i.State, i.ClosedReason, i.ClosedAt = ItemDropped, ClosedDropped, bt0
+		return i
+	}()
+	if _, err := Decide(dropped, nil, done, p, now); !refusedAs(err, "already_closed") {
+		t.Fatalf("an item already closed: %v", err)
+	}
+	todo := Change{To: PlaceTodo}.Apply(boardItem(ItemActive), now)
+	if _, err := Decide(todo, nil, done, p, now); !refusedAs(err, "wrong_place") {
+		t.Fatalf("an item nobody follows: %v", err)
+	}
+
+	// Control: the same item dropped says a person dropped it, which is the
+	// sentence this command exists so that nobody has to write.
+	if c, err := Decide(backlogItem(), nil, Command{Op: OpDrop, Actor: "user"}, p, now); err != nil ||
+		c.State != ItemDropped || c.ClosedReason == ClosedDoneElsewhere {
+		t.Fatalf("drop still means dropped: %+v %v", c, err)
+	}
+}
+
+// BD-4 and BL-6: a dispatch that names a work item is the commitment to it.
+// The broker checks the name before the task exists — three mistakes, three
+// refusals — and moves the item onto the board with the task, by the same
+// change the sweep's dispatch rule makes.
+func TestADispatchThatNamesAnItemIsTheCommitment(t *testing.T) {
+	it := backlogItem()
+	if err := Nameable(Item{}, false, "/p"); !refusedAs(err, RefusedWorkNotFound) {
+		t.Fatalf("no such item: %v", err)
+	}
+	if err := Nameable(it, true, "/other"); !refusedAs(err, RefusedWorkOtherProject) {
+		t.Fatalf("another project's item: %v", err)
+	}
+	shut := func() Item { i := backlogItem(); i.State, i.ClosedReason = ItemDropped, ClosedDropped; return i }()
+	if err := Nameable(shut, true, "/p"); !refusedAs(err, RefusedWorkClosed) {
+		t.Fatalf("a closed item: %v", err)
+	}
+	if err := Nameable(it, true, "/p"); err != nil {
+		t.Fatalf("a planned item of this project: %v", err)
+	}
+	if err := Nameable(boardItem(ItemActive), true, "/p"); err != nil {
+		t.Fatalf("an item already on the board: %v", err)
+	}
+
+	// The change: the same one the sweep would make, made at the dispatch.
+	fresh := task("fresh", bt0.Add(time.Hour), "briefed", "")
+	c, ok := DispatchChange(it, fresh)
+	if !ok || c.From != PlaceBacklog || c.To != PlaceBoard || c.State != ItemActive ||
+		c.Commitment != CommitDispatch || c.Owner != "root-conv" || c.Actor != "root:root-conv" ||
+		c.Trigger != TriggerDispatched || c.Evidence["task"] != "fresh" {
+		t.Fatalf("the dispatch's own change: %+v %v", c, ok)
+	}
+	swept, ok := Next(SweepRules(), it, []TaskFacts{fresh}, policy(), bt0.Add(time.Hour+time.Second))
+	if !ok || swept.To != c.To || swept.State != c.State || swept.Owner != c.Owner || swept.Actor != c.Actor ||
+		swept.Trigger != c.Trigger || swept.Commitment != c.Commitment {
+		t.Fatalf("the sweep's change and the dispatch's differ:\n %+v\n %+v", swept, c)
+	}
+	// An item already on the board is already committed; one a person
+	// untracked stays untracked. A dispatch binds its facts either way.
+	if _, ok := DispatchChange(boardItem(ItemActive), fresh); ok {
+		t.Fatal("a dispatch moved an item that was already on the board")
+	}
+	if _, ok := DispatchChange(Change{To: PlaceTodo}.Apply(boardItem(ItemActive), bt0), fresh); ok {
+		t.Fatal("a dispatch undid a person's untrack")
+	}
+
+	// And the item then ends the way work grown inside the system ends: its
+	// task lands, and the landing closes it.
+	on := c.Apply(it, bt0.Add(time.Hour))
+	landed := task("fresh", bt0.Add(time.Hour), "success", "landed")
+	end, ok := Next(SweepRules(), on, []TaskFacts{landed}, policy(), bt0.Add(4*time.Hour))
+	if !ok || end.State != ItemDone || end.ClosedReason != ClosedLanded || end.Actor != ActorBroker {
+		t.Fatalf("the landing of the task it named: %+v %v", end, ok)
+	}
+}
