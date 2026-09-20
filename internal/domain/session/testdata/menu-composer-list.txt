@@ -1,0 +1,30 @@
+
+ ▐▛███▛█   Claude Code v2.1.278
+▝▜██████▀  Haiku 4.5 · Claude Max
+  ▝▝ ▝▝    /private/tmp/cl-menu-probe · /rc            
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                        auto mode unavailable for this model
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 1. the cloud stopped taking my commands                                                                     
+  2. it says this Mac is no longer online                                                                     
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ▄▀▀▀▄ cl-menu-probe  (this stretch has no name yet - /rename gives it one)                                  
+  ▀▀▀▀▀ /private/tmp/cl-menu-probe  Haiku 4.5                                                 5h 4% · 7d 58%
+  ⏸ manual mode on                                   

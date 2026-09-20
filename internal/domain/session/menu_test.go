@@ -10,6 +10,11 @@ import (
 // a disposable Claude Code v2.1.274 session on 2026-09-17, while the Swift app
 // (7717) was reading the same pane. Where a test states a whole menu, it is the
 // menu that app published for that screen.
+//
+// `menu-ask-live`, `menu-composer-list` and `menu-echo-list` were captured the
+// same way from Claude Code v2.1.278 on 2026-09-20, and `menu-codex-*` from
+// codex-cli 0.155.1 the same day. Their words are this test's own; nothing here
+// is anybody's message.
 
 func fixture(t *testing.T, name string) string {
 	t.Helper()
@@ -178,5 +183,87 @@ func TestRefillOnlyTheQuestionOnScreen(t *testing.T) {
 	m.Question = ""
 	if got := RefillMenu(m, twins); got.Options[1].Label != "Ca…" {
 		t.Fatal("an ambiguous screen was refilled")
+	}
+}
+
+// **A message that began with a number is not a question.** Somebody reported
+// two things, one to a line, and the console drew them as two buttons: the
+// transcript echoes such a message as `\u276f 1. \u2026` with `2. \u2026` under it, which is
+// the shape AskUserQuestion draws, and the frame the reading asks for was the
+// one a markdown table printed a moment earlier. Below the rows is a turn still
+// being written and the composer, and above them the previous turn's own line,
+// which the card then showed as the question.
+func TestAMessageThatBeganWithANumberIsNotAMenu(t *testing.T) {
+	screen := fixture(t, "menu-echo-list.txt")
+	for _, gate := range []bool{false, true} {
+		if m, ok := ReadMenu(screen, AssistantClaude, gate); ok {
+			t.Fatalf("gate %v read somebody's message as %+v", gate, m.Options)
+		}
+	}
+}
+
+// The composer holds whatever is typed into it, between two rules of its own.
+// The capture is rejected twice over: Claude Code writes a no-break space after
+// the caret it takes typing at, where every picker writes an ordinary one — and
+// with that written as an ordinary space, which is all that stands between this
+// screen and a menu, the frame closing straight onto the rows still is not a
+// question being asked.
+func TestTheComposerIsNotAMenu(t *testing.T) {
+	screen := fixture(t, "menu-composer-list.txt")
+	if m, ok := ReadMenu(screen, AssistantClaude, true); ok {
+		t.Fatalf("the composer read as %+v", m.Options)
+	}
+	if m, ok := ReadMenu(strings.ReplaceAll(screen, "\u00a0", " "), AssistantClaude, true); ok {
+		t.Fatalf("the composer read as %+v once its caret took an ordinary space", m.Options)
+	}
+}
+
+// The control: a picker really on screen, captured from the version that drew
+// the message above, is still read whole.
+func TestALivePickerIsStillRead(t *testing.T) {
+	m, ok := ReadMenu(fixture(t, "menu-ask-live.txt"), AssistantClaude, true)
+	if !ok {
+		t.Fatal("no menu on a screen with a picker on it")
+	}
+	if got := labels(m); got != "Tea|Water|Coffee|Type something.|Chat about this" {
+		t.Fatalf("labels %q", got)
+	}
+	if m.Question != "What would you like this afternoon?" || m.Selected == nil || *m.Selected != 1 {
+		t.Fatalf("menu %+v", m)
+	}
+	if m.Options[1].Detail != "Pure hydration, refreshing and essential." {
+		t.Fatalf("detail %q", m.Options[1].Detail)
+	}
+	// One question of one is not a set, so the picker's `\u2610 Drink` bar names
+	// no steps (stepsInLine).
+	if len(m.Steps) != 0 {
+		t.Fatalf("steps %+v", m.Steps)
+	}
+}
+
+// Codex has no gate in front of this reading at all, so its composer was the
+// cheaper accident: type a numbered list into it and the row went to a phone
+// with buttons under it. What Codex draws over a picker's rows is the question
+// it is asking; over the composer, two blank rows and the transcript.
+func TestCodexComposerIsNotAMenu(t *testing.T) {
+	screen := fixture(t, "menu-codex-composer.txt")
+	for _, gate := range []bool{false, true} {
+		if m, ok := ReadMenu(screen, AssistantCodex, gate); ok {
+			t.Fatalf("gate %v read the Codex composer as %+v", gate, m.Options)
+		}
+	}
+}
+
+// The control on that side: Codex's own picker, captured from the same build.
+func TestCodexPickerIsStillRead(t *testing.T) {
+	m, ok := ReadMenu(fixture(t, "menu-codex-trust.txt"), AssistantCodex, false)
+	if !ok {
+		t.Fatal("no menu on a screen with a Codex picker on it")
+	}
+	if got := labels(m); got != "Yes, continue|No, quit" {
+		t.Fatalf("labels %q", got)
+	}
+	if m.Selected == nil || *m.Selected != 1 || !m.Numbered {
+		t.Fatalf("menu %+v", m)
 	}
 }

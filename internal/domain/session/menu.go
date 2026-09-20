@@ -78,6 +78,12 @@ var scrollArrows = runeSet("↓↑")
 // spinner on one still being written.
 var turnMarkers = runeSet("⏺✳✻✽✢✶✱✴◐◑◒◓◴◵◶◷")
 
+// turnGutters hang a tool's result under the call that made it. They head a
+// turn of the session's own as surely as a marker does, and they are read
+// separately because a gutter under the last row is not the evidence a marker
+// there is: the result of a call made before the dialog can still be on screen.
+var turnGutters = runeSet("⎿")
+
 // stepBoxes mark a question in the picker's tab bar: ☐ open, others answered.
 var stepBoxes = runeSet("☐☑☒")
 
@@ -136,7 +142,7 @@ func readMenu(screen string, assistant Assistant, tailLines int, gate bool) (Men
 		tailText[i] = t.element
 	}
 	if assistant == AssistantCodex {
-		return codexMenu(tailText)
+		return codexMenu(tail, lines)
 	}
 
 	// AskUserQuestion's selected row is flush left. That row is trusted only
@@ -193,7 +199,13 @@ func readMenu(screen string, assistant Assistant, tailLines int, gate bool) (Men
 
 	// An unframed flush-left caret is text, not a dialog: auto mode keeps the
 	// gate open while the session prints whatever it prints.
-	if flushLeftSelection >= 0 && dialogStart == 0 {
+	//
+	// A frame is not enough either, because the screen is full of frames that
+	// are not a dialog's: the composer is drawn between two rules, and a
+	// markdown table the session printed leaves `├──┼──┤` and `└──┴──┘` in the
+	// transcript. Between a dialog's frame and its rows stands the question it
+	// is asking, so that is what is required here (askedAbove).
+	if flushLeftSelection >= 0 && (dialogStart == 0 || !askedAbove(tailText, dialogStart, flushLeftSelection)) {
 		flushLeftSelection = -1
 	}
 
@@ -265,6 +277,57 @@ func readMenu(screen string, assistant Assistant, tailLines int, gate bool) (Men
 		menu.Submit = &MenuSubmit{Label: submit.label, Selected: submit.selected}
 	}
 	return menu, true
+}
+
+// askedAbove is whether what stands between a dialog's frame and its first row
+// is the dialog's own question.
+//
+// **A picker asks something; a composer does not.** Every AskUserQuestion
+// screen captured from a terminal draws its step bar and its question under the
+// frame and its rows below those, so there is always a line in between. The
+// composer's frame closes straight onto what somebody is typing, and a message
+// that began "1. …" echoes as `❯ 1. …` with `2. …` under it — the picker's
+// shape exactly, and framed, because the screen is full of frames that are not
+// a dialog's: the composer is drawn between two rules and a markdown table the
+// session printed leaves `├──┼──┤` and `└──┴──┘` behind in the transcript.
+//
+// What stands there has to be the dialog's own words as well. A turn of the
+// session's — a marker line, a tool result's gutter — or another caret means
+// the frame was borrowed from the conversation and the rows under it are
+// scrollback: on 2026-09-20 a two-line message reporting two things went out to
+// a phone as two buttons, under the previous turn's "done" line read as the
+// question, with the line below the message read as the second button's
+// description.
+func askedAbove(tail []string, start, row int) bool {
+	if row <= start {
+		return false
+	}
+	for i := start; i < row; i++ {
+		if isTurnMarker(tail[i]) || isTurnGutter(tail[i]) || hasCaret(tail[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// askedOver is the same question asked of the physical lines, for a dialog
+// whose frame is not what marks its top: prose drawn directly over the row,
+// with at most one blank row of padding between them. Two blanks are an edge
+// — questionAbove reads prose by the same rule — and what is above an edge
+// belongs to the conversation.
+func askedOver(lines []string, row int) bool {
+	blanks := 0
+	for i := row - 1; i >= 0; i-- {
+		if trimSpaces(lines[i]) == "" {
+			blanks++
+			if blanks > 1 {
+				return false
+			}
+			continue
+		}
+		return !hasCaret(lines[i]) && !isTurnMarker(lines[i]) && !isTurnGutter(lines[i])
+	}
+	return false
 }
 
 func firstSelected(options []MenuOption) *int {
@@ -508,13 +571,32 @@ func isTurnMarker(raw string) bool {
 	return len(t) > 0 && turnMarkers[t[0]]
 }
 
+func isTurnGutter(raw string) bool {
+	t := []rune(trimSpaces(raw))
+	return len(t) > 0 && turnGutters[t[0]]
+}
+
 // codexMenu: Codex puts the selected row's caret in column zero, where its
 // composer caret also sits, but takes the composer away while a dialog is up —
 // so the last caret on screen decides.
-func codexMenu(lines []string) (Menu, bool) {
+//
+// That settles which caret, and nothing about the rows under it. Codex's
+// composer holds whatever somebody typed, and a message that begins "1. …"
+// with "2. …" under it is the picker's shape exactly — `› 1. …` at the left
+// margin, the rest indented to the same column — so a person reporting two
+// things became two buttons a phone could press, with no gate in front of this
+// reading at all.
+//
+// **A picker asks something.** Codex draws a dialog as its title, its subtitle
+// and its rows, one blank row of padding between the words and the first row;
+// its composer is set off from the transcript by two, and two blank rows are an
+// edge (questionAbove reads prose by the same rule). So the question over the
+// first row is what is required here, and the tail is carried with its physical
+// line numbers to count the blanks that are not in it.
+func codexMenu(tail []tailLine, lines []string) (Menu, bool) {
 	caret := -1
-	for i := len(lines) - 1; i >= 0; i-- {
-		if hasCaret(lines[i]) {
+	for i := len(tail) - 1; i >= 0; i-- {
+		if hasCaret(tail[i].element) {
 			caret = i
 			break
 		}
@@ -522,26 +604,28 @@ func codexMenu(lines []string) (Menu, bool) {
 	if caret < 0 {
 		return Menu{}, false
 	}
-	head, ok := menuRow(lines[caret])
+	head, ok := menuRow(tail[caret].element)
 	if !ok || !head.caret {
 		return Menu{}, false
 	}
+	first := caret
 	options := []MenuOption{{Number: head.number, Label: head.label, Selected: true}}
 	for i := caret - 1; i >= 0; i-- {
-		row, ok := menuRow(lines[i])
+		row, ok := menuRow(tail[i].element)
 		if !ok {
 			break
 		}
+		first = i
 		options = append([]MenuOption{{Number: row.number, Label: row.label}}, options...)
 	}
-	for i := caret + 1; i < len(lines); i++ {
-		row, ok := menuRow(lines[i])
+	for i := caret + 1; i < len(tail); i++ {
+		row, ok := menuRow(tail[i].element)
 		if !ok {
 			break
 		}
 		options = append(options, MenuOption{Number: row.number, Label: row.label})
 	}
-	if len(options) < 2 {
+	if len(options) < 2 || !askedOver(lines, tail[first].offset) {
 		return Menu{}, false
 	}
 	return Menu{Options: options, Selected: firstSelected(options), Numbered: true}, true
