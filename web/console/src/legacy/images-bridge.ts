@@ -14,6 +14,7 @@
 // as the Swift app's hosted console hands `CloudClient.image` to the same tile.
 import { T, fill } from "./js/core/i18n.js"
 import { esc } from "./js/core/esc.js"
+import { failureSentence as failureSentenceOriginal } from "./js/core/failure-text.js"
 import {
   connectArtifactTile as connectArtifactTileOriginal,
   createImageLightbox as createImageLightboxOriginal,
@@ -78,14 +79,27 @@ export function artifactTilesHTML(artifacts: readonly unknown[] | undefined, fir
   return '<div class="message-images">' + tiles + "</div>"
 }
 
-/** `describeArtifactFailure`: the words a tile shows when the picture did not come. */
+/** `core/failure-text.js`'s `failureSentence`, typed for this module. */
+const failureSentence = failureSentenceOriginal as (error: unknown, fallback: string) => string
+
+/**
+ * `describeArtifactFailure`: the words a tile shows when the picture did not
+ * come.
+ *
+ * Two codes have words of their own here and one has none on purpose — an
+ * expired or missing artifact is the tile's ordinary end and says nothing. The
+ * rest used to be `T.webImageUnavailable`, one sentence with no subject for
+ * `forbidden`, `rate_limited`, `machine_offline` and `cloud_not_carried`
+ * alike; they now go through the catalog, which names the code and puts
+ * `code · ref` after it.
+ */
 function describeArtifactFailure(code: string, artifact: ArtifactRef | undefined): string {
   if (code === "artifact_expired" || code === "artifact_not_found") return ""
   if (code === "image_too_large_for_cloud") {
     const bytes = artifact && artifact.byte_count ? artifact.byte_count : 0
     return fill(T.webImageTooLarge, { mb: (bytes / 1048576).toFixed(1) })
   }
-  return T.webImageUnavailable
+  return failureSentence({ code }, T.webImageUnavailable)
 }
 
 let lightbox: Lightbox | null = null

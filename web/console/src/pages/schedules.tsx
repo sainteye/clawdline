@@ -109,6 +109,7 @@ function relativeTime(unix: number | undefined, at?: number): string {
   try {
     return new Intl.RelativeTimeFormat(document.documentElement.lang || undefined, { numeric: "auto" }).format(value, unit)
   } catch {
+    // refusal-ok: Intl.RelativeTimeFormat refusing a locale is not a machine refusal and carries no code
     const amount = Math.abs(value) + unit.charAt(0)
     return value < 0 ? amount + " ago" : "in " + amount
   }
@@ -1103,7 +1104,34 @@ const ScheduleHistory = (() => {
 
   const projectPlace = (selected: ScheduleRun | null) => scheduleRunPlace(selected, places)
 
+  /**
+   * What the history sheet says about a refusal.
+   *
+   * It used to end `return T().webRequestFailed`, so the five codes below were
+   * named and every other one — `machine_offline`, `rate_limited`, `busy`,
+   * `forbidden`, `store_unavailable`, `cloud_read_timeout` — arrived as "請求
+   * 失敗" with no code after it. A person reading that could neither act on it
+   * nor report it. The five stay, because this sheet has better words for them
+   * than the general catalog; everything else now goes where every other
+   * refusal in this console goes (`core/failure-text.js`), which has a sentence
+   * per code and puts `code · ref` after it.
+   */
   function why(e: ScheduleFailureLike): string {
+    return failureSentence(e, { sentence: ownWhy(e), fallback: T().webRequestFailed })
+  }
+
+  /** The five codes `scheduleRunMessage` names; everything else is the catalog's. */
+  const RUN_NAMED = ["schedule_active", "schedule_spent", "orchestrator_disabled", "write_disabled", "not_found"]
+
+  /** "Run now" refused: the copied words where they exist, the catalog's otherwise. */
+  function runSentence(error: ScheduleFailureLike): string {
+    const code = (error && error.code) || ""
+    const own = RUN_NAMED.includes(code) ? scheduleRunMessage(error, lang()) : ""
+    return failureSentence(error, { sentence: own, fallback: scheduleRunMessage(error, lang()) })
+  }
+
+  /** This sheet's own words, where it has better ones; "" to let the catalog answer. */
+  function ownWhy(e: ScheduleFailureLike): string {
     // As in the form above: the sheet is opened by reading one schedule in
     // full, which this Mac has no Cloud route for.
     if (e && e.code === "cloud_not_carried") return nextWord("cloudNotCarried")
@@ -1115,7 +1143,7 @@ const ScheduleHistory = (() => {
     if (e && e.code === "terminal_unsupported") {
       return T().webStartTerminalUnsupported
     }
-    return T().webRequestFailed
+    return ""
   }
 
   function draw(): void {
@@ -1253,7 +1281,13 @@ const ScheduleHistory = (() => {
         if (scheduleId !== id) return
         runningNow = false
         if (error && error.code === "write_disabled") write = false
-        el("schedule-history-said").textContent = scheduleRunMessage(error, lang())
+        // `scheduleRunMessage` is the Swift app's (`js/input/schedule-run.js`,
+        // copied byte for byte and so not correctable there): it names five
+        // codes and answers every other one with "無法啟動這個排程。" That was
+        // the sentence a `machine_offline` or a `rate_limited` press got. The
+        // five keep their words — they are better than the catalog's — and the
+        // rest now reach the catalog, which names them and tags them.
+        el("schedule-history-said").textContent = runSentence(error)
         draw()
       })
   }

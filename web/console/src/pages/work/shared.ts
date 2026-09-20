@@ -74,7 +74,11 @@ export function taskWords(it: Item): string {
 export function failureWords(e: unknown): string {
   if (e instanceof RefusalError) {
     if (e.code === "version_conflict") return workWord("failedConflict")
-    return workWord("failed", { detail: `${e.code} — ${e.detail}` })
+    // `detail` is the daemon's English. This used to print it, so a reader of
+    // the Chinese console was shown `store_unavailable — the board store could
+    // not be opened`; the catalog has a sentence per code and puts `code · ref`
+    // after it, which is the pair somebody reporting it will be asked for.
+    return L.failureSentence(e, workWord("failed", { detail: e.code }))
   }
   return workWord("failedNetwork")
 }

@@ -230,6 +230,7 @@ function complain(e: VoiceFailure | null): string {
   const code = e?.code
   let own = ""
   if (code === "busy") own = S.webVoiceBusy
+  // refusal-ok: `no_whisper` carries exactly two reasons, so the other arm is the other one and not a catch-all
   else if (code === "no_whisper") own = e?.reason === "no_model" ? S.webVoiceNoModel : S.webVoiceNoBinary
   // `bad_request` from this route means the audio was not what the server
   // would take, and the audio was built here — so it is this page's fault and
@@ -339,6 +340,7 @@ function begin(got: MediaStream, mine: number): void {
     release()
     state = "off"
     show()
+    // refusal-ok: a MediaRecorder the browser will not build throws a DOMException, which has no daemon code to name
     host.say(S.webVoiceUnsupported, true)
     return
   }
