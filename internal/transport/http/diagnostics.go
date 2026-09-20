@@ -215,6 +215,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return h.Titles().Reading()
 		},
 		capacity.CacheSessionSkills: func() capacity.Reading { return s.skillsReading() },
+		// The plan-window readings held. Measuring counts the map; it takes no
+		// reading, which would be this row measuring itself into existence.
+		capacity.CacheAssistantQuota: func() capacity.Reading { return quotaReader().Reading() },
 		capacity.AuditSecurity: func() capacity.Reading {
 			g := s.gate()
 			if g.files == nil {

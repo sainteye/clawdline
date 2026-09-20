@@ -179,6 +179,8 @@ const (
 	CloudSpoolBytes = "cloud.spool_bytes"
 	// The slash menu's skills, per working directory and assistant.
 	CacheSessionSkills = "cache.session_skills"
+	// The plan-window reading of each assistant's account.
+	CacheAssistantQuota = "cache.assistant_quota"
 )
 
 // Entry is one row of the register.
@@ -511,6 +513,24 @@ func Register() []Entry {
 			Limit: 64, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
+		},
+		{
+			// What the providers last said about each account's plan windows
+			// (limits N18), one reading per assistant, held for five seconds.
+			// The row is here for what it rules out as much as for what it
+			// holds: the reading is taken when somebody asks, out of files
+			// the providers write anyway, so this cache grows with the number
+			// of assistants and with nothing else — not with sessions, not
+			// with projects, and never on a beat that would spend quota to
+			// ask how much quota is left. Past the limit the reading handed
+			// out longest ago is let go, and a miss reads the files again.
+			// Two readings is all it has ever held; the limit is headroom,
+			// and what the row is for is that nothing makes it grow.
+			Name: CacheAssistantQuota, Class: Cache, Unit: Rows,
+			Limit: 32, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/limits.quotaCacheLimit"},
 		},
 	}
 }

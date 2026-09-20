@@ -234,13 +234,18 @@
       }
     },
     "SessionLimits": {
-      "description": "The plan windows of the account this session's assistant runs on: an account-level reading shared by every session of that assistant (the Swift app's `AssistantQuota.machineLimits`), not this conversation's. An empty `windows` is \"nobody said\", never 0%.",
+      "description": "The plan windows of the account this session's assistant runs on: an account-level reading shared by every session of that assistant (the Swift app's `AssistantQuota.machineLimits`), not this conversation's. An empty `windows` is \"nobody said\", never 0%, and `unknownReason` says which kind of nothing it was. It is the same reading GET /v1/orchestrator/assistants answers with, age and all, so the two can never show one account two ways.",
       "type": "object",
       "additionalProperties": false,
       "required": ["windows"],
       "properties": {
         "at": { "description": "Unix seconds of the provider record the windows came from. Absent when nothing has been read.", "type": "integer" },
         "readAtMs": { "description": "Unix milliseconds when this daemon took the reading. A client holding readings from several answers keeps the newest by this. Absent for a session with no assistant.", "type": "integer" },
+        "ageSeconds": { "description": "How old the provider's record is, in seconds, at the moment this answer was made. Absent when nothing has been read. A percentage is drawn beside its age or it reads as a number from now.", "type": "integer", "nullable": true },
+        "stale": { "description": "The reading is older than `freshForSeconds`, so these percentages are a lower bound and not a current reading.", "type": "boolean" },
+        "freshForSeconds": { "description": "How long this reading was good for: five percent of its shortest live window, never under fifteen minutes and never over six hours. Null when there is no reading to age.", "type": "integer", "nullable": true },
+        "detail": { "description": "The same sentence GET /v1/orchestrator/assistants puts in `detail`: what the windows say and how old they are, or which kind of nothing an empty reading was.", "type": "string" },
+        "unknownReason": { "description": "Why there is no reading, when there is none. Absent when windows were read.", "$ref": "orchestrator.schema.json#/$defs/AssistantUnknownReason" },
         "windows": { "type": "array", "items": { "$ref": "#/$defs/SessionLimitWindow" } }
       }
     },

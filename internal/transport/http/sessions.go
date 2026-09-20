@@ -502,6 +502,11 @@ func wireWindows(windows []limits.Window) []contract.SessionLimitWindow {
 // account-level plan windows of the session's assistant
 // (`AssistantQuota.machineLimits`), stamped with the moment they were read. A
 // session with no assistant has none and no stamp.
+//
+// The windows come with the age of the record they were read from, the line
+// that age is judged against, and — when there are none — which of the four
+// kinds of nothing that was. A status line that draws a percentage without
+// them draws a number from three hours ago as a number from now.
 func (s *Server) sessionLimits(assistant session.Assistant, now time.Time) *contract.SessionLimits {
 	out := &contract.SessionLimits{Windows: []contract.SessionLimitWindow{}}
 	if assistant != session.AssistantClaude && assistant != session.AssistantCodex {
@@ -511,7 +516,25 @@ func (s *Server) sessionLimits(assistant session.Assistant, now time.Time) *cont
 	out.Windows = append(out.Windows, wireWindows(read.Windows)...)
 	if read.At != nil {
 		out.At = *read.At
+		out.AgeSeconds = ageSeconds(*read.At, now)
 	}
+	if read.FreshFor > 0 {
+		fresh := read.FreshFor
+		out.FreshForSeconds = &fresh
+	}
+	out.Stale = read.Stale
+	out.Detail = read.Detail
+	out.UnknownReason = contract.AssistantUnknownReason(read.Reason)
 	out.ReadAtMs = now.UnixMilli()
 	return out
+}
+
+// ageSeconds is how old a provider record is now, never negative: a record
+// stamped in the future is nought seconds old, not a negative age.
+func ageSeconds(observedAt int64, now time.Time) *int64 {
+	age := now.Unix() - observedAt
+	if age < 0 {
+		age = 0
+	}
+	return &age
 }

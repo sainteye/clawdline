@@ -662,8 +662,13 @@
       "type": "string",
       "enum": ["observed", "probed", "self_reported"]
     },
+    "AssistantUnknownReason": {
+      "description": "Which kind of nothing an `unknown` is. One word for four facts is what made an `unknown` unusable: a root choosing whom to dispatch to cannot tell \"this assistant has never run here\" from \"the file is there and could not be read\", and those want opposite actions. `no_record`: nothing the reader looks at exists — an assistant that has never run on this machine writes no file, and dispatching to it once, even a dispatch that fails, is what produces a signal. `no_reading`: a record is there and names no window with a usable percentage, or every window it names has since reset. `unreadable`: a record is there and could not be turned into one (permission, a broken file). `too_old`: there was a reading and it is past the age it was good for.",
+      "type": "string",
+      "enum": ["no_record", "no_reading", "unreadable", "too_old"]
+    },
     "AssistantQuota": {
-      "description": "One row of GET /v1/orchestrator/assistants: what this Mac can say about one assistant's account, as the Swift app's `AssistantQuota.payload` spells it. `logged_in` and `plan` stay null because no identity probe runs. An old `ok` decays to `unknown` with `last_known`; `low` keeps saying `low` and is marked `stale`; `exhausted` leaves only when its window resets.",
+      "description": "One row of GET /v1/orchestrator/assistants: what this Mac can say about one assistant's account, as the Swift app's `AssistantQuota.payload` spells it. `logged_in` and `plan` stay null because no identity probe runs. An old `ok` decays to `unknown` with `last_known`; `low` keeps saying `low`; `exhausted` leaves only when its window resets. Any reading past the age it was good for is marked `stale` whatever it says — an `exhausted` from eight hours ago is still the best answer there is, and still an answer from eight hours ago — and `age_seconds` beside `fresh_for_seconds` says how old it is against the line it was measured on. Every `unknown` carries an `unknown_reason`.",
       "type": "object",
       "additionalProperties": false,
       "required": ["availability", "detail", "id", "installed", "label", "source", "stale", "windows"],
@@ -677,11 +682,13 @@
         "source": { "$ref": "#/$defs/AssistantQuotaSource" },
         "observed_at": { "description": "Unix seconds of the provider's own record; null when nothing usable has been seen.", "type": "integer", "nullable": true },
         "age_seconds": { "type": "integer", "nullable": true },
-        "stale": { "type": "boolean" },
+        "stale": { "description": "The reading is older than `fresh_for_seconds`. Set whatever the availability, so a percentage drawn from an old reading is never drawn as a number from now.", "type": "boolean" },
+        "fresh_for_seconds": { "description": "How long this reading was good for: five percent of its shortest live window, never under fifteen minutes and never over six hours. The shortest window sets it because it is the one that moves fastest — a reading still honest about a week is not therefore honest about five hours. Null when there is no reading to age.", "type": "integer", "nullable": true },
         "resets_at": { "description": "The tightest live window's reset.", "type": "integer", "nullable": true },
-        "detail": { "description": "One sentence a client can print as it stands.", "type": "string" },
+        "detail": { "description": "One sentence a client can print as it stands: the windows and how old the reading behind them is, or, for an `unknown`, which of the four kinds of nothing it is and the file that says so. Each of the four reads differently on purpose.", "type": "string" },
         "windows": { "type": "array", "items": { "$ref": "sessions.schema.json#/$defs/SessionLimitWindow" } },
-        "last_known": { "description": "What an `unknown` was before it aged out of `ok`. Absent on an `unknown` that is plain silence.", "$ref": "#/$defs/AssistantAvailability" }
+        "last_known": { "description": "What an `unknown` was before it aged out of `ok`. Absent on an `unknown` that is plain silence.", "$ref": "#/$defs/AssistantAvailability" },
+        "unknown_reason": { "description": "Why there is no reading. Present exactly when `availability` is `unknown`.", "$ref": "#/$defs/AssistantUnknownReason" }
       }
     },
     "AssistantList": {

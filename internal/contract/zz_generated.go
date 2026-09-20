@@ -557,15 +557,28 @@ type AssistantList struct {
 // One row of GET /v1/orchestrator/assistants: what this Mac can say about one
 // assistant's account, as the Swift app's `AssistantQuota.payload` spells it.
 // `logged_in` and `plan` stay null because no identity probe runs. An old `ok`
-// decays to `unknown` with `last_known`; `low` keeps saying `low` and is marked
-// `stale`; `exhausted` leaves only when its window resets.
+// decays to `unknown` with `last_known`; `low` keeps saying `low`; `exhausted`
+// leaves only when its window resets. Any reading past the age it was good for
+// is marked `stale` whatever it says — an `exhausted` from eight hours ago is
+// still the best answer there is, and still an answer from eight hours ago —
+// and `age_seconds` beside `fresh_for_seconds` says how old it is against the
+// line it was measured on. Every `unknown` carries an `unknown_reason`.
 type AssistantQuota struct {
 	AgeSeconds   *int64                `json:"age_seconds"`
 	Availability AssistantAvailability `json:"availability"`
 
-	// One sentence a client can print as it stands.
-	Detail string    `json:"detail"`
-	ID     Assistant `json:"id"`
+	// One sentence a client can print as it stands: the windows and how old the
+	// reading behind them is, or, for an `unknown`, which of the four kinds of nothing
+	// it is and the file that says so. Each of the four reads differently on purpose.
+	Detail string `json:"detail"`
+
+	// How long this reading was good for: five percent of its shortest live window,
+	// never under fifteen minutes and never over six hours. The shortest window sets
+	// it because it is the one that moves fastest — a reading still honest about a
+	// week is not therefore honest about five hours. Null when there is no reading to
+	// age.
+	FreshForSeconds *int64    `json:"fresh_for_seconds"`
+	ID              Assistant `json:"id"`
 
 	// The assistant's home directory exists on this Mac.
 	Installed bool   `json:"installed"`
@@ -584,8 +597,14 @@ type AssistantQuota struct {
 	// The tightest live window's reset.
 	ResetsAt *int64               `json:"resets_at"`
 	Source   AssistantQuotaSource `json:"source"`
-	Stale    bool                 `json:"stale"`
-	Windows  []SessionLimitWindow `json:"windows"`
+
+	// The reading is older than `fresh_for_seconds`. Set whatever the availability, so
+	// a percentage drawn from an old reading is never drawn as a number from now.
+	Stale bool `json:"stale"`
+
+	// Why there is no reading. Present exactly when `availability` is `unknown`.
+	UnknownReason AssistantUnknownReason `json:"unknown_reason,omitempty"`
+	Windows       []SessionLimitWindow   `json:"windows"`
 }
 
 // Where a reading came from. `observed` is a file the provider itself wrote
@@ -614,6 +633,28 @@ type AssistantSkill struct {
 	Name   string      `json:"name"`
 	Source SkillSource `json:"source"`
 }
+
+// Which kind of nothing an `unknown` is. One word for four facts is what made
+// an `unknown` unusable: a root choosing whom to dispatch to cannot tell "this
+// assistant has never run here" from "the file is there and could not be read",
+// and those want opposite actions. `no_record`: nothing the reader looks at
+// exists — an assistant that has never run on this machine writes no file,
+// and dispatching to it once, even a dispatch that fails, is what produces a
+// signal. `no_reading`: a record is there and names no window with a usable
+// percentage, or every window it names has since reset. `unreadable`: a record
+// is there and could not be turned into one (permission, a broken file).
+// `too_old`: there was a reading and it is past the age it was good for.
+type AssistantUnknownReason string
+
+const (
+	AssistantUnknownReasonNoRecord   AssistantUnknownReason = "no_record"
+	AssistantUnknownReasonNoReading  AssistantUnknownReason = "no_reading"
+	AssistantUnknownReasonUnreadable AssistantUnknownReason = "unreadable"
+	AssistantUnknownReasonTooOld     AssistantUnknownReason = "too_old"
+)
+
+// AssistantUnknownReasonValues is every value the contract allows, in contract order.
+var AssistantUnknownReasonValues = []AssistantUnknownReason{AssistantUnknownReasonNoRecord, AssistantUnknownReasonNoReading, AssistantUnknownReasonUnreadable, AssistantUnknownReasonTooOld}
 
 // The inside of every refusal the gate and the auth routes give. `code` is the
 // part a client may branch on; `message` is English, for a person.
@@ -4062,17 +4103,40 @@ type SessionLimitWindow struct {
 // The plan windows of the account this session's assistant runs on: an
 // account-level reading shared by every session of that assistant (the Swift
 // app's `AssistantQuota.machineLimits`), not this conversation's. An empty
-// `windows` is "nobody said", never 0%.
+// `windows` is "nobody said", never 0%, and `unknownReason` says which kind of
+// nothing it was. It is the same reading GET /v1/orchestrator/assistants
+// answers with, age and all, so the two can never show one account two ways.
 type SessionLimits struct {
+	// How old the provider's record is, in seconds, at the moment this answer was
+	// made. Absent when nothing has been read. A percentage is drawn beside its age or
+	// it reads as a number from now.
+	AgeSeconds *int64 `json:"ageSeconds"`
+
 	// Unix seconds of the provider record the windows came from. Absent when nothing
 	// has been read.
 	At int64 `json:"at,omitempty"`
 
+	// The same sentence GET /v1/orchestrator/assistants puts in `detail`: what the
+	// windows say and how old they are, or which kind of nothing an empty reading was.
+	Detail string `json:"detail,omitempty"`
+
+	// How long this reading was good for: five percent of its shortest live window,
+	// never under fifteen minutes and never over six hours. Null when there is no
+	// reading to age.
+	FreshForSeconds *int64 `json:"freshForSeconds"`
+
 	// Unix milliseconds when this daemon took the reading. A client holding readings
 	// from several answers keeps the newest by this. Absent for a session with no
 	// assistant.
-	ReadAtMs int64                `json:"readAtMs,omitempty"`
-	Windows  []SessionLimitWindow `json:"windows"`
+	ReadAtMs int64 `json:"readAtMs,omitempty"`
+
+	// The reading is older than `freshForSeconds`, so these percentages are a lower
+	// bound and not a current reading.
+	Stale bool `json:"stale,omitempty"`
+
+	// Why there is no reading, when there is none. Absent when windows were read.
+	UnknownReason AssistantUnknownReason `json:"unknownReason,omitempty"`
+	Windows       []SessionLimitWindow   `json:"windows"`
 }
 
 // The question on a waiting session's screen, as rows a finger can hit (the

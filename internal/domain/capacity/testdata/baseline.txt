@@ -80,6 +80,13 @@
 # let go). The server list keeps nothing between asks. The lines it added are
 # what one menu or one list reads (read), what one answer carries (page) and
 # the ports asked at once (lane).
+#
+# The four unknowns (2026-09-20) made the plan-quota reader say why it has no
+# reading instead of only that it has none. It registered one row,
+# cache.assistant_quota (one reading per assistant, held five seconds, the one
+# handed out longest ago let go). The lines it added are what one reading of a
+# provider's own files reads: the status line's cache, and the Codex rollouts
+# under a directory this daemon does not own (read).
 
 internal/adapters/analytics.(*Collector).run:chan(64) # lane: the usage collector's work queue inside one collection
 internal/adapters/analytics.MaxPageSize # page: one analytics answer's rows
@@ -112,6 +119,9 @@ internal/adapters/documents.maximumPath # admission: a document path
 internal/adapters/documents.MaximumTasksListed # page: task documents listed
 internal/adapters/documents.MaximumWalked # page: entries one listing walks; a walk that stops there says so in X-Clawdline-Truncated (limits N28, C3)
 internal/adapters/git.outputLimit # read: one git command's output
+internal/adapters/limits.rateLimitsReadLimit # read: the status line's rate-limits.json, a few hundred bytes; anything larger is not that file (limits N18's reader)
+internal/adapters/limits.rolloutScanLimit # read: Codex rollout files one plan-window reading looks at, in a directory this daemon does not own; it stops at the first five that said anything (limits N17, N18)
+internal/adapters/limits.rolloutTailLimit # read: the tail of one Codex rollout, as transcript.recordReadLimit bounds a transcript (limits N17)
 internal/adapters/projects.changedPathLimit # page: changed paths in one project row
 internal/adapters/projects.codexThreadList:chan(16) # lane: lines from one codex app-server read
 internal/adapters/projects.dirtyPathLimit # page: dirty paths in one project row

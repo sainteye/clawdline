@@ -563,6 +563,12 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 // whom to dispatch to. Read-level, as in the Swift app: a paired device reads
 // it too. Files only — the status line's cache and Codex's rollouts — and the
 // same five-second reading a session's `/info` shows.
+//
+// Answering runs no assistant and asks no provider anything: it reads files
+// they were going to write anyway, when somebody asks. An `unknown` here
+// means those files said nothing, and `unknown_reason` says which kind of
+// nothing — an assistant that has never run on this machine has no record at
+// all, and one dispatch, even a failed one, is what gives it a signal.
 func (s *Server) brokerAssistants(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "the assistants are read with GET")
@@ -578,20 +584,21 @@ func (s *Server) brokerAssistants(w http.ResponseWriter, r *http.Request) {
 			Installed:    q.Installed,
 			Availability: contract.AssistantAvailability(q.Availability),
 			// Every reading here is a file the provider wrote.
-			Source:     contract.AssistantQuotaSourceObserved,
-			ObservedAt: q.ObservedAt,
-			ResetsAt:   q.ResetsAt,
-			Stale:      q.Stale,
-			Detail:     q.Detail,
-			Windows:    wireWindows(q.Windows),
-			LastKnown:  contract.AssistantAvailability(q.LastKnown),
+			Source:        contract.AssistantQuotaSourceObserved,
+			ObservedAt:    q.ObservedAt,
+			ResetsAt:      q.ResetsAt,
+			Stale:         q.Stale,
+			Detail:        q.Detail,
+			Windows:       wireWindows(q.Windows),
+			LastKnown:     contract.AssistantAvailability(q.LastKnown),
+			UnknownReason: contract.AssistantUnknownReason(q.Reason),
 		}
 		if q.ObservedAt != nil {
-			age := now.Unix() - *q.ObservedAt
-			if age < 0 {
-				age = 0
-			}
-			row.AgeSeconds = &age
+			row.AgeSeconds = ageSeconds(*q.ObservedAt, now)
+		}
+		if q.FreshFor > 0 {
+			fresh := q.FreshFor
+			row.FreshForSeconds = &fresh
 		}
 		out.Assistants = append(out.Assistants, row)
 	}
