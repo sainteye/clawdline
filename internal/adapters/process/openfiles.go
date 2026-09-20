@@ -72,12 +72,27 @@ const (
 // name — which costs far more than a row with no name on it. What is new is
 // that the answer says what it counted (session.OpenTranscripts), so the next
 // reader does not have to open the same files to find out why.
-func codexConversation(paths []string, read bool, head RolloutHead) (string, session.Binding, string) {
+//
+// **The working directory comes out of the same heads, on the same read.**
+// Codex keeps no registry of running sessions the way Claude Code does, so
+// until now a Codex row carried no directory at all and the console had no
+// project to draw beside it. The head already in hand carries `cwd`, and the
+// rule for which one is the session's is the rule for which thread is the
+// session: the thread that started the conversation answers when its rollout
+// is among the open ones, and otherwise the heads that were read have to agree.
+// A sub-agent can be started somewhere else, two directories are not one
+// directory, and an unnamed conversation gets no directory either — in all
+// three the cell stays empty, because empty here reads as "this machine did not
+// read one" and anything inferred from the process or its terminal would read
+// as a project the person never opened.
+func codexConversation(paths []string, read bool, head RolloutHead) (string, session.Binding, string, string) {
 	if !read {
-		return "", session.BindingUnreadable, session.UnreadableTranscriptsDetail
+		return "", session.BindingUnreadable, session.UnreadableTranscriptsDetail, ""
 	}
 	counted := session.OpenTranscripts{}
 	conversations := map[string]bool{}
+	directories := map[string]bool{}
+	started := ""
 	for _, p := range paths {
 		name, ok := codexRolloutID(p)
 		if !ok {
@@ -90,33 +105,57 @@ func codexConversation(paths []string, read bool, head RolloutHead) (string, ses
 		// disagrees with its conversation and the answer stays ambiguous —
 		// and never to naming one session after another.
 		conversation := name
-		if conv, thread, readable := headOf(head, p); !readable {
+		if meta, readable := headOf(head, p); !readable {
 			counted.Unread++
-		} else if conv != "" {
-			conversation = conv
-			if thread != "" && thread != conv {
-				counted.SubThreads++
+		} else {
+			if meta.Conversation != "" {
+				conversation = meta.Conversation
+				if meta.Thread != "" && meta.Thread != meta.Conversation {
+					counted.SubThreads++
+				}
+			}
+			if meta.CWD != "" {
+				directories[meta.CWD] = true
+				if meta.Thread != "" && meta.Thread == meta.Conversation {
+					started = meta.CWD
+				}
 			}
 		}
 		conversations[conversation] = true
 	}
 	counted.Conversations = len(conversations)
 	if counted.Open == 0 {
-		return "", session.BindingNoRecord, session.NoTranscriptDetail
+		return "", session.BindingNoRecord, session.NoTranscriptDetail, ""
 	}
 	if counted.Conversations == 1 {
 		for id := range conversations {
-			return id, session.BindingOpenFile, ""
+			return id, session.BindingOpenFile, "", oneDirectory(started, directories)
 		}
 	}
-	return "", session.BindingAmbiguous, counted.Detail()
+	return "", session.BindingAmbiguous, counted.Detail(), ""
+}
+
+// oneDirectory is the directory a bound session is in, or the empty string for
+// every way of not knowing. The thread that started the conversation wins
+// outright; failing that the heads must have agreed on one.
+func oneDirectory(started string, seen map[string]bool) string {
+	if started != "" {
+		return started
+	}
+	if len(seen) != 1 {
+		return ""
+	}
+	for dir := range seen {
+		return dir
+	}
+	return ""
 }
 
 // headOf reads one rollout's head, or answers that it could not be read. A
 // scan built without a reader is one that cannot read any of them.
-func headOf(head RolloutHead, path string) (string, string, bool) {
+func headOf(head RolloutHead, path string) (RolloutMeta, bool) {
 	if head == nil {
-		return "", "", false
+		return RolloutMeta{}, false
 	}
 	return head(path)
 }

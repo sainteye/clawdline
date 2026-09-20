@@ -123,6 +123,20 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 // any of them and the binary held every one — so asking the wrong one of the
 // two would have turned every session into a false `no_record`.
 //
+// The same heads say where the session is, so the row carries its working
+// directory out of this too (codexConversation). It is the only place a
+// running Codex says so: `~/.codex/session_index.jsonl` carries a thread's
+// name and nothing about a directory, and the Claude registry these rows were
+// sharing a cell with has no entry for a Codex pid at all — which is why a
+// Codex row used to reach the console with the directory column empty and no
+// project icon beside it.
+//
+// A session resumed from the command line is named without any head being
+// read, and so still arrives here with no directory. That is left as it is
+// rather than reading a head for it: it would be the one extra open per row
+// this whole path was built to avoid, and it is written up rather than done
+// quietly.
+//
 // It runs as one call for every row that needs it, after the table is built,
 // so a machine with no unnamed Codex on it pays nothing.
 func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Session {
@@ -143,10 +157,16 @@ func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Se
 		if s.Assistant != session.AssistantCodex || s.ConversationID != "" || s.PID == 0 {
 			continue
 		}
-		id, binding, detail := codexConversation(files[s.PID], read, p.Head)
+		id, binding, detail, cwd := codexConversation(files[s.PID], read, p.Head)
 		rows[i].ConversationID = id
 		rows[i].Binding = binding
 		rows[i].BindingDetail = detail
+		// A directory nobody read never takes one away: the row keeps
+		// whatever else proved where the session is, and an empty answer here
+		// stays the empty cell the console draws no project beside.
+		if cwd != "" {
+			rows[i].CWD = cwd
+		}
 	}
 	return rows
 }

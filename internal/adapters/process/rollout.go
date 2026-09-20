@@ -7,13 +7,34 @@ import (
 	"os"
 )
 
-// RolloutHead answers which conversation a Codex rollout belongs to: the
-// thread tree's own id, and this file's thread within it. `ok` is false when
-// the file could not be read or does not start with a `session_meta` record.
+// RolloutHead answers what a Codex rollout's head record says about itself.
+// `ok` is false when the file could not be read or does not start with a
+// `session_meta` record.
 //
 // The kernel names the file; this says what is in it. Nothing else is read —
 // not one line past the head, and never the conversation itself.
-type RolloutHead func(path string) (conversation, thread string, ok bool)
+type RolloutHead func(path string) (RolloutMeta, bool)
+
+// RolloutMeta is the part of that record this machine has a use for.
+//
+// It is one value rather than a widening list of results because the head is
+// opened once and decoded once: the first line is already in memory and the
+// decoder already walks the whole object, so a field taken from it costs a
+// string and no I/O at all, while the same field fetched later would cost a
+// second open of the same file. Anything the session list needs out of a
+// rollout belongs here for that reason, and a reader that wants more is a
+// field, never a second read.
+type RolloutMeta struct {
+	// Conversation is `session_id`: the thread tree this file belongs to.
+	Conversation string
+	// Thread is `id`: this file's own thread within that tree. A thread that
+	// started the conversation has the two equal.
+	Thread string
+	// CWD is `cwd`: the directory the thread was started in, as Codex wrote
+	// it. It is empty when the record did not carry one, and empty is read as
+	// "this did not say", never as a directory.
+	CWD string
+}
 
 // readRolloutHead is that reader against the filesystem.
 //
@@ -23,10 +44,17 @@ type RolloutHead func(path string) (conversation, thread string, ok bool)
 // the 781 that are not sub-threads. So `session_id` is the conversation and
 // `id` is one thread of it — which is the whole reason this file is read at
 // all rather than the name being parsed (openfiles.go).
-func readRolloutHead(path string) (string, string, bool) {
+//
+// Read again over the 1,198 there on 2026-09-20 after the sessions of that
+// day: all 1,198 also carry `cwd`, and all 1,198 of those are absolute. The
+// head line they come out of is 18.5 KB at its shortest and 48.9 KB at its
+// longest, which this already reads and already decodes whole — so the
+// directory is a field on a record this machine had in its hands, not a
+// reading anybody now pays for.
+func readRolloutHead(path string) (RolloutMeta, bool) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", "", false
+		return RolloutMeta{}, false
 	}
 	// The head is one line, and one line of a rollout carries a whole tool
 	// result: the reader is sized for the ordinary case and the limit is what
@@ -34,22 +62,27 @@ func readRolloutHead(path string) (string, string, bool) {
 	head, err := bufio.NewReaderSize(io.LimitReader(f, headLimit), 64<<10).ReadBytes('\n')
 	f.Close()
 	if err != nil && len(head) == 0 {
-		return "", "", false
+		return RolloutMeta{}, false
 	}
 	var meta struct {
 		Type    string `json:"type"`
 		Payload struct {
 			SessionID string `json:"session_id"`
 			ID        string `json:"id"`
+			CWD       string `json:"cwd"`
 		} `json:"payload"`
 	}
 	if json.Unmarshal(head, &meta) != nil || meta.Type != "session_meta" {
-		return "", "", false
+		return RolloutMeta{}, false
 	}
 	if meta.Payload.SessionID == "" && meta.Payload.ID == "" {
-		return "", "", false
+		return RolloutMeta{}, false
 	}
-	return meta.Payload.SessionID, meta.Payload.ID, true
+	return RolloutMeta{
+		Conversation: meta.Payload.SessionID,
+		Thread:       meta.Payload.ID,
+		CWD:          meta.Payload.CWD,
+	}, true
 }
 
 // headLimit bounds the first line this will read before giving up on it.
