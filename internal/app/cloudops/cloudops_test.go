@@ -627,6 +627,7 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 			body["place"], body["past"], body["assistant"] = "/tmp", "abc", "claude"
 		case "voice":
 			body["session"] = MachineReplySession
+			body["audio"], body["rate"] = "AAAA", 16000
 		case "snippet-create":
 			body["session"] = MachineReplySession
 			body["snippet"] = map[string]any{"title": "a title", "body": "a body", "scope": "global"}
@@ -640,7 +641,6 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 		case "snippet-order":
 			body["session"] = MachineReplySession
 			body["ordering"] = map[string]any{"scope": "global", "order": []any{snippetID}}
-			body["audio"], body["rate"] = "AAAA", 16000
 		case "schedule-create":
 			body["session"] = MachineReplySession
 			body["schedule"] = map[string]any{"title": "morning"}
@@ -665,6 +665,12 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 		}
 		if !answer.Published() {
 			t.Fatalf("%s: the refusal reaches nobody", word)
+		}
+		// The gate comes before the body, so nothing above reads it. Each body
+		// is sent again with the switch on, where it has to decode: otherwise
+		// this walk proves only that the switch refuses what is refused anyway.
+		if answer := open(&router{}).Handle(context.Background(), request(t, class, body)); answer.Code == "malformed_command" {
+			t.Errorf("%s: with the switch on this body is malformed, so its refusal says nothing about the switch", word)
 		}
 	}
 	if len(r.seen) != 0 {
