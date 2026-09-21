@@ -42,6 +42,17 @@
         "poll_only": { "type": "boolean" }
       }
     },
+    "BrokerAssistantQuotaDecision": {
+      "description": "The account evidence available when this task was dispatched. It is fixed at that moment: this answers why the dispatch selected one assistant, while GET /assistants answers what the accounts say now. A read failure is recorded and warned about, never treated as healthy quota and never used to refuse the dispatch.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistants", "read_at"],
+      "properties": {
+        "read_at": { "description": "Unix seconds when the broker took this dispatch's snapshot.", "type": "integer" },
+        "assistants": { "type": "array", "items": { "$ref": "#/$defs/AssistantQuota" } },
+        "read_error": { "description": "Why no assistant rows could be read. Present instead of silently treating a missing reading as healthy quota.", "type": "string" }
+      }
+    },
     "BrokerWorktree": {
       "description": "The isolated checkout a task was given. `base` is recorded once and never recomputed: a reader asking whether this branch produced anything compares head against it, and recomputing would answer against a tree that has moved.",
       "type": "object",
@@ -186,6 +197,7 @@
         "kind": { "type": "string" },
         "title": { "type": "string" },
         "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "assistant_quota": { "$ref": "#/$defs/BrokerAssistantQuotaDecision" },
         "projectDir": { "type": "string" },
         "repository": { "type": "string" },
         "dispatch_base": { "description": "Where the repository stood when a task that writes the shared checkout was admitted: a commit it lands must not be under this line. Absent for an isolated task, whose line is worktree.base, and when it could not be read.", "type": "string" },

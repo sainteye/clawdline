@@ -821,6 +821,22 @@ type BrokerAssignment struct {
 	Scope              string `json:"scope"`
 }
 
+// The account evidence available when this task was dispatched. It is fixed at
+// that moment: this answers why the dispatch selected one assistant, while GET
+// /assistants answers what the accounts say now. A read failure is recorded and
+// warned about, never treated as healthy quota and never used to refuse the
+// dispatch.
+type BrokerAssistantQuotaDecision struct {
+	Assistants []AssistantQuota `json:"assistants"`
+
+	// Unix seconds when the broker took this dispatch's snapshot.
+	ReadAt int64 `json:"read_at"`
+
+	// Why no assistant rows could be read. Present instead of silently treating a
+	// missing reading as healthy quota.
+	ReadError string `json:"read_error,omitempty"`
+}
+
 // The loop reporting itself. `stalled` is decided from outside the loop —
 // more than three ticks since the last finished pass — because a loop that
 // has stopped cannot say so.
@@ -1841,10 +1857,11 @@ type BrokerTask struct {
 	// When the child signed for its briefing with its own secret — POST
 	// …/accepted, or accepted.json. The only proof the briefing was read; a tab that
 	// starts a turn proves only that something is running.
-	AcceptedAt int64        `json:"accepted_at,omitempty"`
-	Assistant  Assistant    `json:"assistant"`
-	Child      *BrokerChild `json:"child,omitempty"`
-	Claims     []string     `json:"claims"`
+	AcceptedAt     int64                         `json:"accepted_at,omitempty"`
+	Assistant      Assistant                     `json:"assistant"`
+	AssistantQuota *BrokerAssistantQuotaDecision `json:"assistant_quota,omitempty"`
+	Child          *BrokerChild                  `json:"child,omitempty"`
+	Claims         []string                      `json:"claims"`
 
 	// Whether the dispatch said anything about claims at all. `I declared none` and `I
 	// did not say` are different requests, and only one of them can be arbitrated.

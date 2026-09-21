@@ -37,6 +37,12 @@ type Broker struct {
 	Store *store.Store
 	Tasks taskdir.Root
 	Git   *git.Git
+	// AssistantQuotas reads the account-level evidence used when this dispatch
+	// chose an assistant. The result is copied into the task record: a later
+	// reader must be able to answer what the broker knew then, rather than
+	// re-reading accounts that have since moved. A read failure warns and is
+	// recorded; it never refuses the dispatch.
+	AssistantQuotas func(now time.Time) ([]AssistantQuotaSnapshot, error)
 
 	// Live is a current reading of the machine's sessions. The broker asks for
 	// it rather than holding one, because every question it uses it for —
