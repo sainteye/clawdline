@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	boardstore "github.com/sainteye/clawdline-go/internal/adapters/board"
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	boardstore "github.com/sainteye/clawdline/internal/adapters/board"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // The board's two settings, kept in clawdline.sqlite3 (design-decisions D37).

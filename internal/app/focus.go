@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Focus brings a session's terminal to the front on this machine.

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 func env(values map[string]string) func(string) string {

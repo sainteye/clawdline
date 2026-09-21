@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // What the broker says about itself, on the two routes that describe this

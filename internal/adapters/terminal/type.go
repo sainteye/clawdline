@@ -3,7 +3,7 @@ package terminal
 import (
 	"context"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Type puts text in a pane's input line and does not submit it: Send without

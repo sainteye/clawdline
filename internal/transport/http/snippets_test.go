@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/app"
-	"github.com/sainteye/clawdline-go/internal/domain/auth"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // snippetSessions is a process table that answers one fixed reading.

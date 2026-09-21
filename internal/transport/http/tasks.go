@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
-	"github.com/sainteye/clawdline-go/internal/contract"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // tasksRoute reads the tasks this daemon knows about, or accepts a new one.

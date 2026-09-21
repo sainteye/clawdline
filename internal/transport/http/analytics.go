@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/analytics"
+	"github.com/sainteye/clawdline/internal/adapters/analytics"
 )
 
 // How long a Usage read waits for the records to be scanned. The scan carries

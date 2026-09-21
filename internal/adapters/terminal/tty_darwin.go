@@ -5,7 +5,7 @@ package terminal
 import (
 	"syscall"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // What is in front of a terminal, asked of the kernel.

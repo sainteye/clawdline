@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 )
 
 func TestATaskRowCarriesTheQuotaDecisionThatDispatchedIt(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // A one-off rehearsal of the 26 proposals of 2026-09-20 against a store of its

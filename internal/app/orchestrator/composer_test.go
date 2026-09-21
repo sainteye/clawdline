@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The screens under testdata/ are captures, `tmux capture-pane -p -J`, of a

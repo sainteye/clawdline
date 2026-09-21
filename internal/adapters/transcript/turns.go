@@ -15,8 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
-	"github.com/sainteye/clawdline-go/internal/config"
+	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/config"
 )
 
 // The kinds of entry a conversation is read into. They are the Swift app's

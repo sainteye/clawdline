@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/devices"
-	"github.com/sainteye/clawdline-go/internal/adapters/skillfile"
+	"github.com/sainteye/clawdline/internal/adapters/devices"
+	"github.com/sainteye/clawdline/internal/adapters/skillfile"
 )
 
 const (

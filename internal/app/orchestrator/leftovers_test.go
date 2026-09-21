@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // The moment a root is told. Until now what a child did not do reached the

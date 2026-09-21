@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // Leases: one holder of a resource at a time, with a clock on the proof of

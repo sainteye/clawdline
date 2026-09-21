@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
 )
 
 // The switch is the whole of `docs/remote.md` design principle 1: the free

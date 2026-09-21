@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // The retired per-message workflow route.

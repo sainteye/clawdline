@@ -16,14 +16,14 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/devices"
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
-	"github.com/sainteye/clawdline-go/internal/adapters/tunnel"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/internal/contract"
-	"github.com/sainteye/clawdline-go/internal/domain/auth"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/adapters/devices"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/adapters/tunnel"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // The gate is in front of every route, and it is the Swift app's

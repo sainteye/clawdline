@@ -5,11 +5,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/logs"
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
-	httptransport "github.com/sainteye/clawdline-go/internal/transport/http"
+	"github.com/sainteye/clawdline/internal/adapters/logs"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	httptransport "github.com/sainteye/clawdline/internal/transport/http"
 )
 
 // daemonLog moves this process's log from stderr into the state directory,

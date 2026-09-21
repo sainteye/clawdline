@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // When a session last moved, out of the record the assistant keeps about it.

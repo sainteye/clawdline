@@ -38,8 +38,8 @@ import (
 	"sync"
 	"time"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // Pairing phases, as the status route and the settings page name them.

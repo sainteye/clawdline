@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 func timelineAsk(project string) timelineQuery {

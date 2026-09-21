@@ -1,7 +1,7 @@
 package swiftstore
 
 import (
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // OnScreen is one session on screen, for resolving a task's root terminal.

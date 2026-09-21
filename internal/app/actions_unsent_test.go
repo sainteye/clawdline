@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
-	"github.com/sainteye/clawdline-go/internal/app/ports"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // failingHost is one tmux pane whose every send fails the way it is told to.

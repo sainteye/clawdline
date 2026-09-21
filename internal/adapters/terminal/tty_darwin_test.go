@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // What the kernel says is in front of a terminal (tty_darwin.go), as the

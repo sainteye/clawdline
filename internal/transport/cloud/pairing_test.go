@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // fakeControlPlane is the three pairing routes, with the rules that matter:

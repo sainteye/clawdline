@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/app"
-	"github.com/sainteye/clawdline-go/internal/contract"
-	"github.com/sainteye/clawdline-go/internal/domain/task"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/task"
 )
 
 // sessionVerb reads `/v1/sessions/{id}/{verb}` off the string the mux

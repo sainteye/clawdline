@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 )
 
 // With the legacy switch off the Swift board and its card logs are not

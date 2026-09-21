@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // The old cards, as the three-track projection reads them

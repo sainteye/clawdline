@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
 )
 
 // 常用句 over Clawdline Cloud, end to end and in one process: the plaintext a

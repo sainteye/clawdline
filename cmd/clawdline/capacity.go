@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/devices"
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
-	httptransport "github.com/sainteye/clawdline-go/internal/transport/http"
+	"github.com/sainteye/clawdline/internal/adapters/devices"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	httptransport "github.com/sainteye/clawdline/internal/transport/http"
 )
 
 // capacityCommand is `clawdline doctor capacity --drill <row>`: fill one row

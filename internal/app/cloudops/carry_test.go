@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/board"
+	"github.com/sainteye/clawdline/internal/adapters/board"
 )
 
 // The console's carry table, and the one thing that notices when it and this

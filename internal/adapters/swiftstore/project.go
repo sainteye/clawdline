@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // The projections below are the Swift app's, restated over its records. Each

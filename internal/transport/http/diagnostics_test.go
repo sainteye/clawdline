@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
-	"github.com/sainteye/clawdline-go/internal/adapters/logs"
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
-	"github.com/sainteye/clawdline-go/internal/app"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/internal/contract"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/adapters/logs"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 func capacityServer(t *testing.T) *Server {

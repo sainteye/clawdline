@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // OpenFiles lists the files each pid holds open. `ok` is false when the table

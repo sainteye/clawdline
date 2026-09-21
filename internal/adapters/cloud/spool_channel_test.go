@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // The sizes this channel really carries, measured on one machine on

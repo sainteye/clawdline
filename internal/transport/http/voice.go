@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/adapters/whisper"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/whisper"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // POST /v1/voice: a recording made in a browser, turned into words by this

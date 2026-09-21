@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // Pairing refusals, typed. They are `errors.Is`-able because the settings page

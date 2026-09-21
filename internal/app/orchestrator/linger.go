@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Linger: closing a finished child's tab a little after it finished

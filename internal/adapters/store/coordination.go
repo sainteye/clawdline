@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/coordinator"
+	"github.com/sainteye/clawdline/internal/domain/coordinator"
 )
 
 // The coordination plane's tables (docs/design-decisions.md §6 W5): the

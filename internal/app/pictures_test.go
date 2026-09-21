@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
-	"github.com/sainteye/clawdline-go/internal/app/ports"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // fakeHost records every act on a session, in order, and can be told to fail

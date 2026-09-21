@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // DBFile is the store's database, under the state directory.

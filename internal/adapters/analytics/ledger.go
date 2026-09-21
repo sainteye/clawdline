@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 )
 
 // The Usage page's rows are this daemon's own reading of the assistants'

@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // itermTypeScript writes text into one iTerm2 session without a newline, as

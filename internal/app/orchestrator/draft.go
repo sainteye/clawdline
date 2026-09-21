@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 )
 
 // Reading the brief a caller wrote, and refusing it by name.

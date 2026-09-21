@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/projects"
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // The Projects page's routes: the start places, the Board store's Project

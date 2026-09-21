@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // These run Send against a real, private tmux server whose one pane holds a

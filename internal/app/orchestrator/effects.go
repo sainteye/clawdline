@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
-	"github.com/sainteye/clawdline-go/internal/app/lane"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/app/lane"
 )
 
 // Effects: what the broker does to the world, and the rule that it is never

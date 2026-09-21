@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	boardstore "github.com/sainteye/clawdline-go/internal/adapters/board"
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	boardstore "github.com/sainteye/clawdline/internal/adapters/board"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // tracksFixture is a daemon with its own store, reading a board of 251 cards

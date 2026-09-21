@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // What a delivery branch held the moment its task ended, said at that moment

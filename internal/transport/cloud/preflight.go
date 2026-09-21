@@ -19,9 +19,9 @@ import (
 	"errors"
 	"fmt"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	"github.com/sainteye/clawdline-go/internal/adapters/cloudkeys"
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 )
 
 // Preflight results.

@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 // What this machine's terminals can do, asked without doing any of it

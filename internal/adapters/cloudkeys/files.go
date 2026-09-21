@@ -37,7 +37,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sainteye/clawdline-go/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 const (

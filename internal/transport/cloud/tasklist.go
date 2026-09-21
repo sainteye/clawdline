@@ -73,8 +73,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 )
 
 const (

@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/app/lane"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/lane"
 )
 
 // File waits: one session holds paths in a repository, others wait for it to

@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/app"
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
-	"github.com/sainteye/clawdline-go/internal/domain/icon"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/icon"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // oneBlindWindow is this Mac on 2026-09-20: iTerm2 listed eleven sessions and

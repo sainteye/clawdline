@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/internal/domain/icon"
-	"github.com/sainteye/clawdline-go/internal/transport/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/icon"
+	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // The two words a hosted page could not ask this Mac for, end to end and in

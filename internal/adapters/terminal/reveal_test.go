@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // fixtureTmux is a tmux that answers `list-clients` from a file of rows and

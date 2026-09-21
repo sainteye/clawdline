@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/skillmenu"
-	"github.com/sainteye/clawdline-go/internal/app"
-	"github.com/sainteye/clawdline-go/internal/contract"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/skillmenu"
+	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The slash menu is read per session, by the id on its row: Claude's from its

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/ports"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The keys the menu-answer route may send (TerminalMenuAnswerPolicy). A byte

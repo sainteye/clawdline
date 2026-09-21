@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 )
 
 // Retrying a tab that never opened, without making the root write the task

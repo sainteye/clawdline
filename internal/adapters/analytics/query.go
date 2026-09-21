@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 )
 
 // Limits, as `UsageQueryService` has them.

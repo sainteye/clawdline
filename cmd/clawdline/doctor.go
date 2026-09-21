@@ -16,13 +16,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/artifacts"
-	"github.com/sainteye/clawdline-go/internal/adapters/devices"
-	"github.com/sainteye/clawdline-go/internal/adapters/logs"
-	"github.com/sainteye/clawdline-go/internal/adapters/push"
-	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
-	"github.com/sainteye/clawdline-go/internal/domain/auth"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/adapters/devices"
+	"github.com/sainteye/clawdline/internal/adapters/logs"
+	"github.com/sainteye/clawdline/internal/adapters/push"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // A drill fills one row of the capacity register on purpose, through the

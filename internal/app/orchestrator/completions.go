@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 )
 
 // The manual path a dead letter needs, as the Swift app has it

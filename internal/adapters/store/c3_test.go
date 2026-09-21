@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // limits N2: a write the database refuses is counted, turns the store.db row

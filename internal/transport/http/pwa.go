@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/domain/icon"
+	"github.com/sainteye/clawdline/internal/domain/icon"
 )
 
 // The shell a phone needs before any of this is an app on a home screen: the

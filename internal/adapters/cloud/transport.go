@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // Options configure one transport.

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	boardstore "github.com/sainteye/clawdline-go/internal/adapters/board"
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	boardstore "github.com/sainteye/clawdline/internal/adapters/board"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // `GET /v1/board/tracks?project=&track=&cursor=`: the old app's cards placed

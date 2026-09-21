@@ -24,8 +24,8 @@ import (
 	"strings"
 	"sync"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	cloudtransport "github.com/sainteye/clawdline-go/internal/transport/cloud"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // CloudLine is the half of a Cloud link this route reads. It is an interface so

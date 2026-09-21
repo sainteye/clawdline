@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 )
 
 // The capacity register's pushes (design-decisions C4, docs/limits.md §4.5).

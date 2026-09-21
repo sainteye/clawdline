@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 // Every platform's answer, checked on whichever one runs the test: the

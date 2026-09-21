@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // lru is a map that holds at most limit entries and, to make room, lets go of

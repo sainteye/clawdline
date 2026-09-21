@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/process"
+	"github.com/sainteye/clawdline/internal/adapters/process"
 )
 
 // The morning of 2026-09-21 in one process: something holds the port, it is a

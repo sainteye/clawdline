@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // Fake is a transport with no relay behind it: requests are handed in, answers

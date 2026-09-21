@@ -36,7 +36,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 const (

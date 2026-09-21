@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // limits N20: a full request queue refuses the new request and keeps every

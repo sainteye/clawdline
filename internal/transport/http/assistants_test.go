@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // The assistants route is the check a root runs before choosing whom to

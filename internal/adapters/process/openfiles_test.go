@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 const (

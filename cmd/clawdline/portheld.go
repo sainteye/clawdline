@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/process"
+	"github.com/sainteye/clawdline/internal/adapters/process"
 )
 
 // exitPortHeld is the status of a daemon that exits because another process

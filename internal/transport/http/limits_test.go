@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/devices"
-	"github.com/sainteye/clawdline-go/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/adapters/devices"
+	"github.com/sainteye/clawdline/internal/domain/auth"
 )
 
 // bodyMux is the patterns the body bound tells apart, each answering how much

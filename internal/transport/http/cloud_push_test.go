@@ -10,14 +10,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	adapterpush "github.com/sainteye/clawdline-go/internal/adapters/push"
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/internal/domain/auth"
-	"github.com/sainteye/clawdline-go/internal/domain/icon"
-	"github.com/sainteye/clawdline-go/internal/transport/cloud"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/domain/icon"
+	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // The four words a phone needs before it can be notified at all, end to end

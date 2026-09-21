@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Whether a new child is ready to be typed into.

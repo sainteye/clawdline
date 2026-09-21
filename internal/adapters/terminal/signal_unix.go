@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 // paneSignal is `pipe-pane` into a FIFO, where the readability of the FIFO is

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 )
 
 // The client goes away mid-flight, which is the ordinary way a request ends:

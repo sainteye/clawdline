@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // The session to-do list (board-redesign §3.2, design-decisions T2).

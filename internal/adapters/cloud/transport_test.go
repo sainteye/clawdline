@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	domain "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	domain "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // tokenServer answers the one control-plane route the transport needs.

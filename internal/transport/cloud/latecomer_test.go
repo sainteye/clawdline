@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // A viewer that arrives after this machine's last change.

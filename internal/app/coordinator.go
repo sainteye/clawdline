@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
-	"github.com/sainteye/clawdline-go/internal/domain/coordinator"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/coordinator"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Coordinator is the machine role on this daemon (Clawdfather): registering

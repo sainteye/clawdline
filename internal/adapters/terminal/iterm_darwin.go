@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/ports"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // ITerm enumerates iTerm2's own sessions over Apple Events.

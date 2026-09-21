@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	boardstore "github.com/sainteye/clawdline-go/internal/adapters/board"
-	"github.com/sainteye/clawdline-go/internal/domain/auth"
-	domainboard "github.com/sainteye/clawdline-go/internal/domain/board"
+	boardstore "github.com/sainteye/clawdline/internal/adapters/board"
+	"github.com/sainteye/clawdline/internal/domain/auth"
+	domainboard "github.com/sainteye/clawdline/internal/domain/board"
 )
 
 // The board: `GET /v1/board` in the Swift app's envelope, and `POST /v1/board`

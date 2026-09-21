@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // The board and the Backlog (board-redesign §3.2, design-decisions T3).

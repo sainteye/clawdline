@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 )
 
 // What the delivery branch held when the task ended reaches the wire, under

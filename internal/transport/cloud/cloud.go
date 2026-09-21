@@ -17,8 +17,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
-	"github.com/sainteye/clawdline-go/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // Inbound is one decrypted request, as the transport hands it over. It is the

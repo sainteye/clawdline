@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/privacy"
+	"github.com/sainteye/clawdline/internal/domain/privacy"
 )
 
 // historyOptions are the flags that only mean something in -history mode.

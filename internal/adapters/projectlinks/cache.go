@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // FreshFor is how long one reading is served before it is read again.

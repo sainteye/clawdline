@@ -18,7 +18,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/sainteye/clawdline-go/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 // Host is this machine's desktop.

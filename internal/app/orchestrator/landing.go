@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // Landing has one record, and it proves what it says (W3: D17, D18, D19, D51,

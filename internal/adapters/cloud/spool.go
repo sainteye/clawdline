@@ -34,7 +34,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // SpoolChannel is the wire channel kind a row belongs to.

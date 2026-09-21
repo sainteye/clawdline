@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/git"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/adapters/git"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // gitPath recognises GET /v1/sessions/{id}/git and returns the id, decoded —

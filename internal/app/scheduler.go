@@ -7,8 +7,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
-	"github.com/sainteye/clawdline-go/internal/domain/schedule"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/schedule"
 )
 
 // Pulse is what one pass of the scheduler says about itself.

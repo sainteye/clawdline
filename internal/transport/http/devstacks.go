@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/devstack"
-	"github.com/sainteye/clawdline-go/internal/adapters/projects"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/adapters/devstack"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // devStacksRoute answers the input bar's server list (devstacks.schema.json).

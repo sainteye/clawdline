@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Closing a session a person asked to close.

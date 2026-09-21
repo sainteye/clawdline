@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // tunnelCommand prints what the daemon's tunnel is doing, from GET /v1/tunnel

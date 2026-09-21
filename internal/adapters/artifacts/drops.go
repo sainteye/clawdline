@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // Drops is `Drop.store` and `Drop.prune`: pictures written out so a terminal

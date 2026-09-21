@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/projects"
-	"github.com/sainteye/clawdline-go/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 // Whether this machine can open a child, answered before anything exists

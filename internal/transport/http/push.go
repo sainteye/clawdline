@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/devices"
-	adapterpush "github.com/sainteye/clawdline-go/internal/adapters/push"
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/contract"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
-	cloudtransport "github.com/sainteye/clawdline-go/internal/transport/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/devices"
+	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // The /v1/push/* routes, which are the Swift app's (`RemoteServer.swift`, the

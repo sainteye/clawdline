@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // itermRevealScript is iterm.js's `reveal`, `revealtmux`, `revealtty`,

@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // AccountClient talks to the control plane.

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 )
 
 // A capacity push is an outbox row like any other, so a daemon that died

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // The on-disk half, whose manners are internal/adapters/cloudkeys's because

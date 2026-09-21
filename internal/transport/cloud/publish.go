@@ -39,8 +39,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
-	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // The inventory marker's literal session id and the bound on how many ids it

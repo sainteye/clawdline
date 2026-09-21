@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
-	"github.com/sainteye/clawdline-go/internal/contract"
-	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/contract"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // A local router that answers by path: the session list and the task list are

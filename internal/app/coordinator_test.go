@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/domain/coordinator"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/coordinator"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The machine role on this daemon's own store (W5, cutover A7). Each test has

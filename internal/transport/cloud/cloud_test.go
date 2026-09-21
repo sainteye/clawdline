@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
 )
 
 func plaintext(t *testing.T, object map[string]any) []byte {

@@ -33,9 +33,9 @@ import (
 	"sync"
 	"time"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
-	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // How many decrypted requests may wait for the bridge is the capacity

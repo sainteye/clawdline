@@ -18,7 +18,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // The child's half of finishing: `clawdline task finish <task dir>`

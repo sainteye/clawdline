@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/sainteye/clawdline-go/internal/app/ports"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Host answers the identity port from the assistants' own records on disk.

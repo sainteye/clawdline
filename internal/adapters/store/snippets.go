@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/snippet"
+	"github.com/sainteye/clawdline/internal/domain/snippet"
 )
 
 // Snippets live in this daemon's own store, one row per snippet.

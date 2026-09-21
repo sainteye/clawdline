@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 )
 
 // LegacyPath is where the Swift app keeps its board. CLAWDLINE_BOARD_STORE is

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/domain/privacy"
+	"github.com/sainteye/clawdline/internal/domain/privacy"
 )
 
 // The history scan, driven against a repository built for it. The live case —

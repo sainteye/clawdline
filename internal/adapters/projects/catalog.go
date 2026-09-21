@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 )
 
 // BoardStorePath is ProjectBoardStore.defaultURL, including its override.

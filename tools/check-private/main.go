@@ -49,7 +49,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/domain/privacy"
+	"github.com/sainteye/clawdline/internal/domain/privacy"
 )
 
 func main() {

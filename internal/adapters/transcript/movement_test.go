@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 func writeTranscript(t *testing.T, path string, stamps ...string) {

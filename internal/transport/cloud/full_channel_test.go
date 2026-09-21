@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 )
 
 // answerPayload is the shape every answer on this transport has.

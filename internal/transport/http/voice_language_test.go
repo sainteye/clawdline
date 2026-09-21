@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/whisper"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/adapters/whisper"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // A machine this test decides, rather than the one running it. This one is set

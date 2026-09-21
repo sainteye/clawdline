@@ -6,7 +6,7 @@ package ports
 import (
 	"context"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // ProcessHost answers what is running on this machine.

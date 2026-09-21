@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // Where a person takes part (board-redesign §4, §8; design-decisions T4).

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	git "github.com/sainteye/clawdline-go/internal/adapters/git"
+	git "github.com/sainteye/clawdline/internal/adapters/git"
 )
 
 // The fixtures here are invented, and deliberately: this repository is public,

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	"github.com/sainteye/clawdline-go/internal/adapters/cloudkeys"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
 )
 
 func writeSettings(t *testing.T, dir, body string) {

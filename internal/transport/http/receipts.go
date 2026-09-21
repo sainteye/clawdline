@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 )
 
 // Durable request receipts for the routes that open things (D03, G15).

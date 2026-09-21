@@ -14,15 +14,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
-	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
-	"github.com/sainteye/clawdline-go/internal/app/ports"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/session"
 
-	"github.com/sainteye/clawdline-go/internal/config"
-	cloudtransport "github.com/sainteye/clawdline-go/internal/transport/cloud"
-	httptransport "github.com/sainteye/clawdline-go/internal/transport/http"
+	"github.com/sainteye/clawdline/internal/config"
+	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
+	httptransport "github.com/sainteye/clawdline/internal/transport/http"
 )
 
 const version = "0.0.1-p0"

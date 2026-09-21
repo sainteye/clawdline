@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/orchestrator"
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // `GET /v1/orchestrator/sessions/{session_id}/todos?state=&cursor=`: what one

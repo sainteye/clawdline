@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
-	"github.com/sainteye/clawdline-go/internal/domain/auth"
-	"github.com/sainteye/clawdline-go/internal/transport/cloud"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // The whole Mac half of a Cloud write, in one process: the plaintext a hosted

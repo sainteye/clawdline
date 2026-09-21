@@ -44,8 +44,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
-	domain "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	domain "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 const (

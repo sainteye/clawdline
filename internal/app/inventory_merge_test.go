@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // An assistant in an iTerm2 tab is listed by the tab's session id, the name a

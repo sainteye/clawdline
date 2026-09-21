@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // page serves the console itself: the document and every asset under it.

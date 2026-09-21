@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/snippet"
+	"github.com/sainteye/clawdline/internal/domain/snippet"
 )
 
 func openSnippetStore(t *testing.T) (*Store, context.Context) {

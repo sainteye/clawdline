@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 func settingsCall(t *testing.T, s *Server, method, contentType, body string) (*httptest.ResponseRecorder, contract.SettingsSnapshot, contract.Refusal) {

@@ -38,12 +38,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	"github.com/sainteye/clawdline-go/internal/adapters/cloudkeys"
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
-	"github.com/sainteye/clawdline-go/internal/config"
-	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
-	cloudtransport "github.com/sainteye/clawdline-go/internal/transport/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/config"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
+	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 func cloudCommand(args []string) {

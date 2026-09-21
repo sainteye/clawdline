@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/skillfile"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/skills"
+	"github.com/sainteye/clawdline/internal/adapters/skillfile"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/skills"
 )
 
 // `clawdline guide` and `clawdline skill`: the guide a session reads, and the

@@ -2,7 +2,7 @@
 
 package terminal
 
-import "github.com/sainteye/clawdline-go/internal/app/ports"
+import "github.com/sainteye/clawdline/internal/app/ports"
 
 // NewPaneSignal has nothing to build on Windows: there is no `mkfifo`, and the
 // whole shape of the tmux signal is a FIFO whose readability is the message.

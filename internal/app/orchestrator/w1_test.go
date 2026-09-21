@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/lane"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/app/lane"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // W1 (docs/design-decisions.md §6): the shapes the first wave of this broker

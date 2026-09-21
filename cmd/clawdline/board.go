@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/board"
-	"github.com/sainteye/clawdline-go/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/adapters/board"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // `clawdline board tracks`: the old cards on the three tracks of

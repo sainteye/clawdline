@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The iTerm2 scripts are run here, as they are, against a model of iTerm2 in

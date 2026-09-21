@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
-	"github.com/sainteye/clawdline-go/internal/domain/task"
+	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/task"
 )
 
 // What this broker's records say a session still owes (docs/design-decisions.md

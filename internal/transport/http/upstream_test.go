@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/config"
+	"github.com/sainteye/clawdline/internal/config"
 )
 
 // upstreamFixture is a daemon built the way `clawdline serve` builds one, with

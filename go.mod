@@ -1,4 +1,4 @@
-module github.com/sainteye/clawdline-go
+module github.com/sainteye/clawdline
 
 go 1.25.0
 

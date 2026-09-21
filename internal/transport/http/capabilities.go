@@ -4,9 +4,9 @@ import (
 	"context"
 	"runtime"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/desktop"
-	"github.com/sainteye/clawdline-go/internal/app/ports"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/adapters/desktop"
+	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // This machine's platform capabilities, by name (broker-design #43,

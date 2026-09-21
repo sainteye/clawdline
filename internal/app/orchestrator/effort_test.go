@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 )
 
 // refusalMessage is what a refusal said, for the sentences a caller fixes a

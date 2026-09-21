@@ -32,7 +32,7 @@ import (
 	"testing"
 	"time"
 
-	domain "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	domain "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 type liveEnvironment struct {

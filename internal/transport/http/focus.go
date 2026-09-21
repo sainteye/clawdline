@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // focusPath is POST /v1/sessions/{id}/focus.

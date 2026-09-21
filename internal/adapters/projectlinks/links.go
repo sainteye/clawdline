@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/devstack"
-	git "github.com/sainteye/clawdline-go/internal/adapters/git"
+	"github.com/sainteye/clawdline/internal/adapters/devstack"
+	git "github.com/sainteye/clawdline/internal/adapters/git"
 )
 
 // MaxLinks bounds the rows one answer carries (page). Past it the rest are not

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 )
 
 func settingsFile(t *testing.T, body string) *nextconfig.File {

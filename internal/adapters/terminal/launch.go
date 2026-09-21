@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
 // Failure is TerminalFailure: an opening that did not happen, with the

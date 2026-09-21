@@ -4,7 +4,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // Ledger keeps what has already been counted, so a transcript is read once

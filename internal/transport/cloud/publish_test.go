@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
 )
 
 // A fake local router that answers one canned `/v1/sessions` body.

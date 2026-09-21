@@ -20,7 +20,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 )
 
 // Settings keys. They are prefixed `cloud_` so that one glance at the file

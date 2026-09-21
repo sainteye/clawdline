@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/tunnel"
-	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline/internal/adapters/tunnel"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // The tunnel's wiring (internal/adapters/tunnel holds its rules).

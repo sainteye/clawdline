@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	boardstore "github.com/sainteye/clawdline-go/internal/adapters/board"
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	boardstore "github.com/sainteye/clawdline/internal/adapters/board"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 )
 
 // D37: the board's settings are a row in the store. The old document is

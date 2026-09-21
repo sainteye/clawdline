@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	cloudtransport "github.com/sainteye/clawdline-go/internal/transport/cloud"
+	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // cloudDaemonJSON does one request to the daemon and decodes its answer.

@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
 )
 
 // Router answers a Cloud operation out of this daemon's own routes, in this

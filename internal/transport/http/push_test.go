@@ -14,10 +14,10 @@ import (
 	"strings"
 	"testing"
 
-	adapterpush "github.com/sainteye/clawdline-go/internal/adapters/push"
-	"github.com/sainteye/clawdline-go/internal/config"
-	"github.com/sainteye/clawdline-go/internal/contract"
-	"github.com/sainteye/clawdline-go/internal/domain/auth"
+	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
+	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/auth"
 )
 
 // pushServer is a Server over its own state directory, so nothing here shares a

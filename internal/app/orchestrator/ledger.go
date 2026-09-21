@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"sync"
 
-	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 )
 
 // decodedRecords is every record the whole-table readers have decoded, by id,

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // W3 (docs/design-decisions.md §6): landing has one record, and it proves what

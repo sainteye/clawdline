@@ -33,12 +33,12 @@ import (
 	"sync"
 	"time"
 
-	adaptercloud "github.com/sainteye/clawdline-go/internal/adapters/cloud"
-	"github.com/sainteye/clawdline-go/internal/adapters/cloudkeys"
-	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
-	"github.com/sainteye/clawdline-go/internal/app/cloudops"
-	"github.com/sainteye/clawdline-go/internal/domain/capacity"
-	domaincloud "github.com/sainteye/clawdline-go/internal/domain/cloud"
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 // SendCapability is the roster capability a Cloud viewer needs before this
