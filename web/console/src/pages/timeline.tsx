@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef } from "react"
 import type { PageModule } from "./types.js"
-import { openBoard } from "../legacy/board-bridge.js"
 import { bindTimeline, requestedTimeline, timelineReturn, type TimelinePage } from "../legacy/timeline-bridge.js"
 import { ActionConfirm, Info, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./timeline/section.html?raw"
@@ -18,40 +17,40 @@ import sectionMarkup from "./timeline/section.html?raw"
  * reached from something that already has a Project, which is what hands it
  * the Project through `openTimeline`.
  *
- * **Where it is reached from changed** (work-system-review §5.2, W6). It used
- * to hang off the old Project Board alone, and on this machine that board
- * draws nothing — `/v1/board` answers `items: 0` — so the one live thing here
- * was reached only through a dead one, and the pills on its own cards pointed
- * back into it. A work item now opens it too (`pages/work/Board.tsx`), which
- * is where "the history of this one thing" belongs. The old Board's tab is
- * left exactly as it was (U1); it is simply no longer the only door.
+ * **Where it is reached from changed** (work-system-review §5.2, W6). The old
+ * Project Board was a frozen snapshot presented as a live page. It has been
+ * removed, and a work item now opens this page (`pages/work/Board.tsx`), which
+ * is where "the history of this one thing" belongs.
  *
- * So "back" is no longer a constant. `timelineReturn()` names the page that
- * sent the reader here, and the Board's own entry still says `projects`.
+ * `boardItemIds` belong to the old store and have no proved mapping to work
+ * ids. The copied renderer still emits their pills, so this host removes them
+ * as they are drawn instead of turning an unknown relation into a link.
  *
  * What the original's `main.js` does for this page is done here: bind once,
  * `enter(project)` on arrival, `leave` on departure, and the keyboard lands on
  * the heading. Escape is the module's own: an open entry gives itself back, and
- * the page gives itself back to the board.
+ * the page gives itself back to the page that opened it.
  */
 function TimelinePageView({ shown }: { shown: boolean }) {
   const page = useRef<TimelinePage | null>(null)
   const was = useRef(false)
 
   useLayoutEffect(() => {
-    if (!page.current) {
-      page.current = bindTimeline(document, (project, item) => {
-        // A card's work-item pill points at the old Project Board, which on
-        // this machine has no items to show. A reader who came from a work
-        // item is given back to the work page instead of being dropped on an
-        // empty one; a reader who came from the Board still gets the Board.
-        if (timelineReturn() !== "projects") {
-          navigate(timelineReturn())
-          return
-        }
-        if (!openBoard(project, item)) navigate("projects")
-      })
+    const root = document.getElementById("timeline")
+    root?.querySelector("#timeline-board-tab")?.remove()
+    const discardUnmappedPills = () => {
+      for (const pill of root?.querySelectorAll(".timeline-board-pill, .timeline-board-more") ?? []) pill.remove()
     }
+    discardUnmappedPills()
+    const observer = root ? new MutationObserver(discardUnmappedPills) : null
+    if (root && observer) observer.observe(root, { childList: true, subtree: true })
+    if (!page.current) {
+      // In the copied module this callback means "back to Board". With that
+      // page retired it returns to the page that supplied the Project. Pill
+      // calls never survive the observer above.
+      page.current = bindTimeline(document, () => navigate(timelineReturn()))
+    }
+    return () => observer?.disconnect()
   }, [])
 
   useLayoutEffect(() => {

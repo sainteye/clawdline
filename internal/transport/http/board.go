@@ -16,8 +16,11 @@ import (
 	domainboard "github.com/sainteye/clawdline/internal/domain/board"
 )
 
-// The board: `GET /v1/board` in the Swift app's envelope, and `POST /v1/board`
-// for the two board-level commands the settings page sends.
+// The retired board's compatibility resource: `GET /v1/board` in the Swift
+// app's envelope, and `POST /v1/board` for the two board-level commands the
+// settings page still sends. The React board page is gone, but this route is
+// not page-private: Cloud carry, the board settings block, `/v1/board/tracks`
+// and `clawdline board tracks` still consume this adapter's wire or source.
 //
 // What is and is not here follows docs/board-design.md: the wire, the card
 // allow-list and the progress rules are carried over; item writes are refused

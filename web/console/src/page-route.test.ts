@@ -9,6 +9,10 @@ test("a removed Dashboard address lands on the session list", () => {
   assert.equal(pageFromHash("#page=dashboard", knows), "sessions")
 })
 
+test("a removed Board address and its old selectors land on the session list", () => {
+  assert.equal(pageFromHash("#page=board&machine=this-mac&project=p1&item=i1", knows), "sessions")
+})
+
 test("a known page address still opens that page", () => {
   assert.equal(pageFromHash("#page=devices", knows), "devices")
 })

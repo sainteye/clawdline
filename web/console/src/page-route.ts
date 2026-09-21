@@ -9,7 +9,7 @@ function pageInHash(hash: string): string | null {
   }
 }
 
-/** An absent or retired page address always has the session list to land on. */
+/** An absent or retired page address (including Dashboard and Board) lands on Sessions. */
 export function pageFromHash<Page extends string>(
   hash: string,
   knows: (name: string) => name is Page,

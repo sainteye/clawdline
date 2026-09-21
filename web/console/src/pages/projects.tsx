@@ -1,6 +1,10 @@
 import { useLayoutEffect, useRef } from "react"
 import type { PageModule } from "./types.js"
 import { bindProjects, type ProjectsPage } from "../legacy/projects-bridge.js"
+import {
+  registerRetiredBoardProjectFallback,
+  type RetiredBoardProject,
+} from "../legacy/board-bridge.js"
 import { ActionConfirm, Info, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./projects/section.html?raw"
 import { nextWord, type NextWord } from "../next-strings.js"
@@ -27,12 +31,25 @@ import { nextWord, type NextWord } from "../next-strings.js"
  * close first is open.
  */
 function ProjectsPageView({ shown }: { shown: boolean }) {
-  const page = useRef<ProjectsPage | null>(null)
+  const page = useRef<(ProjectsPage & { openProject(project: RetiredBoardProject): Promise<void> }) | null>(null)
   const was = useRef(false)
   const painted = useRef(false)
 
   useLayoutEffect(() => {
-    if (!page.current) page.current = bindProjects(document, navigate)
+    // The copied Projects view still calls its old `openBoard(place)` seam for
+    // rows joined to the frozen catalog. Keep the copy byte-for-byte, but open
+    // that same repository in Projects' own detail after discarding the old
+    // association. Nothing on this path reads an old card.
+    const bound =
+      page.current ??
+      (bindProjects(document, navigate) as ProjectsPage & {
+        openProject(project: RetiredBoardProject): Promise<void>
+      })
+    page.current = bound
+    return registerRetiredBoardProjectFallback((old) => {
+      const { boardProjectId: _retired, ...project } = old
+      void bound.openProject(project)
+    })
   }, [])
 
   useLayoutEffect(() => {

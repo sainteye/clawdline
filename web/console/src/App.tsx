@@ -44,7 +44,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "sessions" | "devices" | "projects" | "board" | "usage" | "ledger" | "timeline" | "plan" | "settings" | "work" | "now"
+type Page = "sessions" | "devices" | "projects" | "usage" | "ledger" | "timeline" | "plan" | "settings" | "work" | "now"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -52,11 +52,6 @@ type Asked = "none" | "waiting" | "opened" | "gone"
 // The drawer's rows as `index.html` has them: its order and its ids. Pages
 // whose backend this daemon does not own stay on screen and
 // disabled rather than missing, so what is not here can be seen.
-//
-// The Board module declares that it has no drawer entry: it keeps its address
-// for Project links, but is reached from a Project rather than as a second,
-// machine-wide board. This is routing metadata, not a `hidden` presentation
-// flag, so adding the module cannot accidentally add the row.
 //
 // `usage-open` and `nav-ledger` are hidden in the markup and shown by that same
 // `apply` on a board answer that carries `enabled: false` — Board mode off,
@@ -70,13 +65,12 @@ type Asked = "none" | "waiting" | "opened" | "gone"
 // to nothing — and does not here, because this drawer is React's and reads the
 // catalog like every other row.
 //
-// The Timeline is in neither drawer: a timeline is one Project's, so it is
-// reached from that Project's board and has no row to be in.
+// The Timeline is in neither drawer: it is one work item's Project history,
+// reached from that item on the work page.
 const PAGES: { id: Page; nav: string; key?: string; text?: string; ready: boolean }[] = [
   { id: "sessions", nav: "nav-sessions", key: "webSessions", ready: true },
   { id: "devices", nav: "nav-devices", key: "webDevices", ready: false },
   { id: "projects", nav: "nav-projects", key: "webProjects", ready: false },
-  { id: "board", nav: "nav-board", text: "Projects · Board", ready: false },
   { id: "usage", nav: "usage-open", key: "webUsage", ready: false },
   { id: "ledger", nav: "nav-ledger", key: "webLedger", ready: false },
   { id: "plan", nav: "nav-plan", key: "webPlan", ready: false },
@@ -757,10 +751,8 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
               {p.key ? T[p.key] : p.text}
             </button>
           ))}
-          {/* The new board (design-decisions T6): not one of the original's pages
-              either, and where it belongs is not decided yet (U6), so it is a row
-              of its own at the end, and the original's rows — the Project Board's
-              among them — are left as they are. */}
+          {/* The work system (design-decisions T6): not one of the retired app's
+              pages, so it remains a row of its own at the end. */}
           <button
             className="sidebar-item"
             id="nav-work"

@@ -8,7 +8,11 @@
  * no longer contains it, the test fails and the obsolete correction must go.
  */
 export interface LegacyCorrection {
-  id: "session-state-unrecognized" | "device-session-count-unknown" | "ledger-reader-busy"
+  id:
+    | "session-state-unrecognized"
+    | "device-session-count-unknown"
+    | "ledger-reader-busy"
+    | "timeline-board-pills-unmapped"
   sources: readonly {
     file: string
     line: number
@@ -63,5 +67,19 @@ export const LEGACY_CORRECTIONS: readonly LegacyCorrection[] = [
     copiedBehaviour: "Explains graph_not_found but sends usage_analytics_busy to the generic ledger failure sentence.",
     whyWrong: "A busy reader is available but occupied; the sessions and their records are not broken.",
     consoleBehaviour: "Keeps the usage_analytics_busy code and says the reader is busy and to try again shortly.",
+  },
+  {
+    id: "timeline-board-pills-unmapped",
+    sources: [
+      {
+        file: "web/console/src/legacy/js/view/timeline.js",
+        line: 152,
+        contains: "function boardPills(parent, entry)",
+      },
+    ],
+    copiedBehaviour: "Draws a clickable pill for each of an entry's boardItemIds and opens the old Project Board on it.",
+    whyWrong:
+      "The old Board was removed as a frozen store nobody writes, and a boardItemId has no proved mapping to a work id. A pill that opens nothing, or that guesses which work item it meant, would draw an unknown relation as a certainty.",
+    consoleBehaviour: "Removes the pills as they are drawn, so an entry shows only what it can stand behind.",
   },
 ] as const
