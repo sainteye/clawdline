@@ -325,10 +325,12 @@ does, the hosted console cannot be pointed at this machine, and so
    machine, so it is not on this path — but on a paired second machine it would be an affordance
    that does not do what it says.
 
-Neither swallows a refusal. `web/console/src/refusals/scan.ts` reports `0 unanswered` over 119
-files and 29 refusal ladders, and it is right to: a row nobody can press produces no refusal for a
-guard to find. That is the shape worth remembering — **the silence here is upstream of every
-refusal path, which is exactly why every refusal path is clean.**
+Neither swallows a refusal. On 2026-09-21 the original TypeScript pass in
+`web/console/src/refusals/scan.ts` reported `0 unanswered` over 119 files and 29 refusal ladders,
+and it was right about that narrow shape: a row nobody can press produces no refusal for a guard
+to find. The command now follows that pass with a cross-language certainty and language audit;
+its separate open list must not be read as contradicting the refusal-ladder result. The shape worth
+remembering is unchanged — **the silence here is upstream of every refusal path.**
 
 **Later the same day: the first of the two is answered, and a third thing turned up under it.**
 The row now carries **Pair** (`web/console/src/cloud/pair.ts`, `PairPanel.tsx`), and so do a

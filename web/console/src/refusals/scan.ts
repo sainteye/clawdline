@@ -34,6 +34,11 @@
 // back; `selfCheck()` runs the same fixture so the command-line guard cannot
 // pass by having quietly stopped working.
 //
+// This command also coordinates `audit.ts`, whose source contracts cross the
+// TypeScript/HTML/Go boundary. Keeping the two detectors behind one report is
+// deliberate: the AST pass finds new local spellings, while the cross-language
+// pass can prove that a reason was already lost before this parser could see it.
+//
 // Nothing here is imported by the console at run time, so `node --test` loads
 // it as it is:  `node --test web/console/src/refusals/scan.test.ts`
 // and, for the list:  `node web/console/src/refusals/scan.ts`
@@ -41,6 +46,8 @@ import * as ts from "typescript"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
+// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
+import { scanAudits, selfCheckAudits, type AuditReport } from "./audit.ts"
 
 /** One place where a named refusal is turned into something a person sees. */
 export interface Site {
@@ -48,7 +55,7 @@ export interface Site {
   file: string
   /** 1-based line of the decision, as an editor counts. */
   line: number
-  kind: "fixed_catch_all" | "refusal_dropped" | "reason_dropped" | "code_unspent"
+  kind: "fixed_catch_all" | "refusal_dropped" | "reason_dropped" | "code_unspent" | "uncertainty_dropped"
   /** The codes this site decides on, in source order; empty where it looks at none. */
   codes: string[]
   /** The catch-all as written, cut to one line. */
@@ -66,6 +73,8 @@ export interface Report {
   sites: Site[]
   violations: Site[]
   allowed: Site[]
+  /** Cross-language product issues that the original TypeScript-only pass could not see. */
+  audits: AuditReport
   indeterminate: string | null
 }
 
@@ -383,7 +392,7 @@ function holdsTheCode(node: ts.Node): boolean {
   let found = false
   const walk = (n: ts.Node): void => {
     if (found) return
-    if (ts.isPropertyAccessExpression(n) && (n.name.text === "code" || n.name.text === "detail")) {
+    if (ts.isPropertyAccessExpression(n) && (n.name.text === "code" || n.name.text === "detail" || n.name.text === "message")) {
       found = true
       return
     }
@@ -404,6 +413,40 @@ interface Handler {
   body: ts.Node
   at: ts.Node
   looked: boolean
+}
+
+/**
+ * A refusal-free handler that replaces the missing answer with a value a
+ * screen can mistake for evidence. Cleanup such as `setBusy(false)` is not a
+ * finding; an empty collection/value is, as is a boolean explicitly named as
+ * failure state.
+ */
+function dropsIntoPlaceholder(node: ts.Node): boolean {
+  let found = false
+  const placeholder = (value: ts.Expression): boolean =>
+    (ts.isNumericLiteral(value) && value.text === "0") ||
+    (ts.isArrayLiteralExpression(value) && value.elements.length === 0) ||
+    (ts.isObjectLiteralExpression(value) && value.properties.length === 0)
+  const walk = (n: ts.Node): void => {
+    if (found) return
+    if (ts.isCallExpression(n) && /^set[A-Z]/.test(calleeName(n))) {
+      const value = n.arguments[0]
+      if (value && (placeholder(value) || (/Failed|Error|Unavailable|Missing/.test(calleeName(n)) && value.kind === ts.SyntaxKind.TrueKeyword))) {
+        found = true
+        return
+      }
+    }
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const left = n.left.getText()
+      if (placeholder(n.right) || (/failed|error|unavailable|missing/i.test(left) && n.right.kind === ts.SyntaxKind.TrueKeyword)) {
+        found = true
+        return
+      }
+    }
+    ts.forEachChild(n, walk)
+  }
+  walk(node)
+  return found
 }
 
 function handlerOf(fn: ts.Node): Handler | null {
@@ -490,7 +533,12 @@ export function scanSource(file: string, text: string): { sites: Site[]; chains:
    * whether the refusal was never looked at, or looked at and spent on nothing.
    */
   const report = (at: ts.Node, handler: Handler, terminal: string): void => {
-    if (!saysWords(handler.body) || keepsTheCode(handler.body, wrappers)) return
+    if (keepsTheCode(handler.body, wrappers)) return
+    if (!handler.looked && dropsIntoPlaceholder(handler.body)) {
+      add(at, { kind: "uncertainty_dropped", codes: [], terminal })
+      return
+    }
+    if (!saysWords(handler.body)) return
     if (!handler.looked) {
       add(at, { kind: "refusal_dropped", codes: [], terminal })
       return
@@ -664,6 +712,7 @@ const FEWEST_CHAINS = 8
  */
 export function scanConsole(repo: string): Report {
   const root = resolve(repo, "web/console/src")
+  const audits = scanAudits(repo)
   let files: string[]
   try {
     files = sources(root)
@@ -674,6 +723,7 @@ export function scanConsole(repo: string): Report {
       sites: [],
       violations: [],
       allowed: [],
+      audits,
       indeterminate: "cannot read " + root + ": " + String(error),
     }
   }
@@ -692,11 +742,12 @@ export function scanConsole(repo: string): Report {
     sites,
     violations: sites.filter((s) => !s.allowed),
     allowed: sites.filter((s) => !!s.allowed),
+    audits,
     indeterminate: null,
   }
   if (files.length < FEWEST_FILES) report.indeterminate = `only ${files.length} files under ${root}`
   else if (chains < FEWEST_CHAINS) report.indeterminate = `only ${chains} refusal ladders found; the scan is not reading this tree`
-  else report.indeterminate = selfCheck()
+  else report.indeterminate = selfCheck() ?? selfCheckAudits() ?? audits.indeterminate
   return report
 }
 
@@ -764,15 +815,23 @@ function main(): void {
     process.stdout.write(`${mark} ${site.file}:${site.line} ${site.kind}${codes} → ${site.terminal}\n`)
     if (site.allowed) process.stdout.write(`      refusal-ok: ${site.allowed}\n`)
   }
+  for (const issue of report.audits.findings) {
+    const mark = issue.disposition === "locked" ? "LOCK" : "OPEN"
+    const where = issue.evidence.map((item) => `${item.file}:${item.line}`).join(", ")
+    process.stdout.write(`${mark} ${issue.id} ${issue.family}/${issue.cause} — ${issue.title}\n`)
+    process.stdout.write(`     ${where}\n`)
+  }
   process.stdout.write(
     `\n${report.files} files, ${report.chains} refusal ladders, ` +
-      `${report.violations.length} unanswered, ${report.allowed.length} allowed\n`,
+      `${report.violations.length} unanswered, ${report.allowed.length} allowed; ` +
+      `${report.audits.rules} cross-language rules over ${report.audits.files} files, ` +
+      `${report.audits.open.length} open, ${report.audits.locked.length} locked\n`,
   )
   if (report.indeterminate) {
     process.stdout.write("indeterminate: " + report.indeterminate + "\n")
-    process.exit(2)
+    process.exit(3)
   }
-  process.exit(report.violations.length ? 1 : 0)
+  process.exit(report.violations.length || report.audits.open.length ? 1 : 0)
 }
 
 if (process.argv[1] && process.argv[1].endsWith("refusals/scan.ts")) main()

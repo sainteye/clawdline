@@ -5,13 +5,14 @@ Measured 2026-09-21 against `web/console/src` (excluding `legacy/js/**` and
 continues `first-run-audit.md` §U4, which named the family and gave it a
 whole-class acceptance; four of those are fixed and are not repeated here.
 
-**The guard for this family reports zero.** `web/console/src/refusals/scan.ts`
-finds no unanswered refusal in the tree today, and every finding below is a
-shape it cannot see: a `catch` that only sets a boolean, a reject that returns
-an empty array, a literal `0`, or a reason already dropped on the Go side
-before TypeScript could have it. A green guard is not the same as a finished
-family — which is the same lesson as the rest of this list, applied to the
-list's own instrument.
+**Before the cross-language pass, the guard for this family reported zero.**
+The AST pass in `web/console/src/refusals/scan.ts` now also recognizes a handler
+that discards its error and substitutes an empty collection or failure boolean;
+the cross-language pass coordinated by that same command reports all seventeen
+findings below, plus the two byte-locked legacy findings at the end as `LOCK`.
+Together they treat a `catch` that keeps only a boolean, a rejected empty array,
+a literal `0`, and a reason dropped on the Go side as different causes of the
+same false certainty.
 
 | # | Where | What a person is shown | Why it is wrong |
 |---|---|---|---|
