@@ -126,7 +126,7 @@ const words = {
     newToBacklog: "In the Backlog: later",
     create: "Create",
 
-    failed: "Not done: {detail}",
+    failed: "Not done.",
     failedConflict: "It changed while you were deciding; nothing was done. The board has been read again.",
     failedNetwork: "The daemon did not answer; nothing is known to have been done.",
 
@@ -254,7 +254,7 @@ const words = {
     newToBacklog: "放進 Backlog：之後再做",
     create: "建立",
 
-    failed: "沒有成功：{detail}",
+    failed: "沒有成功。",
     failedConflict: "在你決定的時候它變了，所以什麼都沒做。看板已經重新讀過。",
     failedNetwork: "daemon 沒有回應；不知道有沒有做成。",
 

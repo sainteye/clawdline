@@ -24,6 +24,7 @@ import * as L from "../legacy/bridge.js"
 import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images-bridge.js"
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
+import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
 import { INTERRUPTED } from "./persist.js"
 import { look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
@@ -348,11 +349,13 @@ function pendingHTML(card: PendingSend): ReactElement {
   if (card.state === "failed") {
     body +=
       '<div class="pending-state" role="alert"><span>' +
-      esc(L.fillString(T.webFailWithTag, { text: T.sendFailed, tag: card.failure })) +
+      esc(pendingFailureSentence(card.failure)) +
       "</span>" +
       (card.partial
         ? partial
-        : '<button type="button" class="go" data-pending-retry="' + esc(card.token) + '">' + esc(T.webPlanRetry) + "</button>") +
+        : pendingFailureCanRetry(card.failure)
+          ? '<button type="button" class="go" data-pending-retry="' + esc(card.token) + '">' + esc(T.webPlanRetry) + "</button>"
+          : "") +
       dismiss +
       "</div>"
   } else if (card.state === "unknown" && card.checking) {

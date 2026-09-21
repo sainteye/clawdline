@@ -1,5 +1,44 @@
 import type { CloseReason, Refusal } from "@clawdline/contract"
 
+/** The gate/broker refusal envelope, whose metadata lives under `error`. */
+export interface NestedRefusal {
+  error: {
+    code: string
+    message?: string
+    route?: string
+    reasons?: CloseReason[]
+    [key: string]: unknown
+  }
+  route?: string
+}
+
+/** Either refusal spelling that may arrive on the wire. */
+export type RefusalBody =
+  | (Omit<Refusal, "detail"> & { detail?: string; reasons?: CloseReason[] })
+  | NestedRefusal
+
+function refusalFields(body: RefusalBody): {
+  code: string
+  detail: string
+  route?: string
+  reasons: readonly CloseReason[]
+} {
+  const error = body.error
+  const nested = typeof error === "object" ? error : null
+  const code = typeof error === "string" ? error : nested!.code
+  const detail = "detail" in body && typeof body.detail === "string"
+    ? body.detail
+    : typeof nested?.message === "string"
+      ? nested.message
+      : code
+  const reasons = "reasons" in body && Array.isArray(body.reasons)
+    ? body.reasons
+    : Array.isArray(nested?.reasons)
+      ? nested.reasons
+      : []
+  return { code, detail, route: body.route ?? nested?.route, reasons }
+}
+
 /**
  * A refusal the daemon returned, kept whole.
  *
@@ -15,14 +54,15 @@ export class RefusalError extends Error {
   /** What a blocked close is blocked by. Empty for every other refusal. */
   readonly reasons: readonly CloseReason[]
 
-  constructor(status: number, body: Refusal, route?: string) {
-    super(`${body.error}: ${body.detail}`)
+  constructor(status: number, body: RefusalBody, route?: string) {
+    const refusal = refusalFields(body)
+    super(`${refusal.code}: ${refusal.detail}`)
     this.name = "RefusalError"
-    this.code = body.error
-    this.detail = body.detail
+    this.code = refusal.code
+    this.detail = refusal.detail
     this.status = status
-    this.route = body.route ?? route
-    this.reasons = (body as { reasons?: CloseReason[] }).reasons ?? []
+    this.route = refusal.route ?? route
+    this.reasons = refusal.reasons
   }
 }
 
@@ -43,11 +83,9 @@ export class TransportError extends Error {
   }
 }
 
-export function isRefusal(value: unknown): value is Refusal {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as Refusal).error === "string" &&
-    typeof (value as Refusal).detail === "string"
-  )
+export function isRefusal(value: unknown): value is RefusalBody {
+  if (typeof value !== "object" || value === null) return false
+  const error = (value as { error?: unknown }).error
+  if (typeof error === "string") return true
+  return typeof error === "object" && error !== null && typeof (error as { code?: unknown }).code === "string"
 }
