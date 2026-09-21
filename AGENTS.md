@@ -112,6 +112,11 @@ undone. Numbers come from a run, not from memory.
   person's daemon as well as yours: it is the same command line. On 2026-09-21 that one line took
   port 7727 down for thirty-four seconds while somebody was reading their phone. Keep the PID your
   own `serve` printed and kill that.
+- **Checks a restart by what it was restarted for.** `/v1/health` answers whether the daemon is
+  alive, and a daemon started without `CLAWDLINE_NEXT_WEB` is alive and shows no page. On
+  2026-09-21 two restarts were each confirmed with health while `/` answered 501 to everybody for
+  seven and a half hours. The console is back when `GET /` answers 200, or when the line under
+  `listening` in `logs/daemon.log` says `console: served from …`.
 
 
 ## The single pages
