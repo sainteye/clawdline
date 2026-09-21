@@ -1,8 +1,10 @@
 import { useLayoutEffect, useRef } from "react"
 import type { PageModule } from "./types.js"
+import * as L from "../legacy/bridge.js"
 import { bindLedger, paintLedgerStatic, type LedgerPage } from "../legacy/ledger-bridge.js"
 import { ActionConfirm, Info, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./ledger/section.html?raw"
+import { localizeLedgerCatalog } from "./ledger/zh-Hant.js"
 
 /**
  * The verification ledger: `section#ledger` in the Swift app's `index.html`,
@@ -45,9 +47,12 @@ function LedgerPageView({ shown }: { shown: boolean }) {
     // then, so arrival waits for them as the original's does.
     const arrive = () => {
       if (!was.current) return
+      localizeLedgerCatalog(L.strings, document.documentElement.lang || navigator.language)
       if (!painted.current) {
         painted.current = true
         paintLedgerStatic(document)
+        const back = document.getElementById("ledger-back")
+        if (back) back.textContent = `‹ ${L.strings.webLedger}`
       }
       void page.current?.enter()
       document.getElementById("ledger-title")?.focus({ preventScroll: true })

@@ -7,6 +7,15 @@
 > [`github-issues.md`](github-issues.md)（GitHub 對照）、[`board-design.md`](board-design.md)（舊卡）、
 > [`limits.md`](limits.md)（上限）。
 
+## Two console pages that answer different questions
+
+| Page | Subject | Question | Entry |
+|---|---|---|---|
+| **Project Board** (`web/console/src/pages/board.tsx`) | One Project | Which column is each item in now: Now, To Do, or Backlog? | Choose a Project on the Projects page. This is the byte-for-byte Project Board carried from the retired app. It has an address of its own, but is not another drawer-level board. |
+| **Now** (`web/console/src/pages/now.tsx`) | The whole machine | What is in progress, which deliveries are still unrecorded, and which questions await the person? | Choose Now in the drawer. Each of its three blocks reports its own freshness. It reads existing facts and adds no storage. |
+
+Both pages remain. The Project Board is a way into one Project; Now is the machine-wide reading. Listing the Project Board in the drawer makes it look like another machine-wide entry, so its page registration says explicitly: the address is routable, but the drawer has no row for it.
+
 ## 0. 這套系統在解什麼問題
 
 舊版只有一種東西：看板卡。同一張卡同時是人要看的進度、也是 session 的備忘，結果兩邊都壞掉。

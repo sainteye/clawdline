@@ -8,10 +8,13 @@ import type { ComponentType } from "react"
  * without two people editing the same routing table.
  *
  * `id` is the original's page name (`#page=<id>`, `data-page-to`), and a page
- * that registers here is the one that makes its drawer item enabled.
+ * that registers here makes its drawer item enabled unless it explicitly has
+ * no drawer entry.
  */
 export interface PageModule {
   id: string
+  /** False when this page has an address but is entered through another page. */
+  drawer?: boolean
   /** The page's root element, as the original's `section.page`. */
   Component: ComponentType<{ shown: boolean }>
 }
