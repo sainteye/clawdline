@@ -27,6 +27,7 @@ import { INTERRUPTED } from "./persist.js"
 import { look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
+import { conversationNotStarted } from "./readiness.js"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -172,18 +173,37 @@ function TranscriptOf({ id }: { id: string }) {
   // Newest end: the bottom, or the top when the transcript reads newest first.
   const pending = (newestFirst ? [...cards].reverse() : cards).map(pendingHTML)
   if (!data && !error) return pending.length ? <>{pending}</> : null
-  // The original has no "evidence: none"; a transcript it could not read is its
-  // `view.error`, and that is how it is drawn.
-  const failed = error ?? (data?.evidence === "none" ? data.note || T.webTranscriptFailed : null)
-  if (failed && !entries.length) {
+  // The daemon's note is diagnostic English. It is useful evidence in the
+  // disclosure below, but never the main sentence in a translated interface.
+  // `no_record` is not a failure at all: the provider has not created its
+  // first conversation record yet.
+  const technical = error ? String(error) : data?.evidence === "none" ? data.note || "" : ""
+  const notStarted = conversationNotStarted(session)
+  if (notStarted && !entries.length) {
     return (
       <>
-        <div className="tx-note err">{failed}</div>
+        <div className="tx-note">{nextWord("sessionNotStarted")}</div>
+        {technicalDetails(technical)}
         {pending}
       </>
     )
   }
-  const notice = failed ? <div className="tx-note err">{failed}</div> : null
+  const failed = technical ? T.webTranscriptFailed : null
+  if (failed && !entries.length) {
+    return (
+      <>
+        <div className="tx-note err">{failed}</div>
+        {technicalDetails(technical)}
+        {pending}
+      </>
+    )
+  }
+  const notice = failed ? (
+    <>
+      <div className="tx-note err">{failed}</div>
+      {technicalDetails(technical)}
+    </>
+  ) : null
   if (!entries.length) {
     // A window that ran out before reaching a single entry is not a
     // conversation with nothing in it.
@@ -252,6 +272,17 @@ function TranscriptOf({ id }: { id: string }) {
       {cut && newestFirst && cut}
       {!newestFirst && pending}
     </>
+  )
+}
+
+/** Internal producer text stays available without becoming the screen's claim. */
+function technicalDetails(detail: string): ReactElement | null {
+  if (!detail) return null
+  return (
+    <details className="tx-note">
+      <summary>{nextWord("transcriptTechnicalDetails")}</summary>
+      <code>{detail}</code>
+    </details>
   )
 }
 

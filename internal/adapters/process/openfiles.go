@@ -8,8 +8,8 @@ import (
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
-// OpenFiles lists the files each pid holds open. `ok` is false when the table
-// itself could not be read.
+// OpenFiles lists the files each pid holds open and the directory it is
+// running in. `ok` is false when the open-file table itself could not be read.
 //
 // It is the one place a running Codex says which conversation it is having.
 // Claude Code writes `~/.claude/sessions/<pid>.json` and so can be asked about
@@ -22,7 +22,7 @@ import (
 // The false answer is kept apart from an empty one on purpose. A process that
 // holds nothing open is early; a table that could not be read has said nothing
 // at all, and only the second is this machine's own fault to fix (DG-7).
-type OpenFiles func(ctx context.Context, pids []int) (map[int][]string, bool)
+type OpenFiles func(ctx context.Context, pids []int) (files map[int][]string, cwds map[int]string, ok bool)
 
 // codexRollout is the prefix and suffix of a Codex transcript's file name,
 // which is where the conversation id is: `rollout-<timestamp>-<id>.jsonl`,

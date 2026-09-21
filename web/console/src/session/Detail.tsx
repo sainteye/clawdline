@@ -23,6 +23,8 @@ import { StatusLine } from "./StatusLine.js"
 import { Todos } from "./Todos.js"
 import { UserMessages } from "./UserMessages.js"
 import { Snippets } from "./Snippets.js"
+import { conversationNotStarted } from "./readiness.js"
+import { nextWord } from "../next-strings.js"
 
 /**
  * Whether this transport can read a project's snippets — `snippetControls(api).read`
@@ -268,6 +270,7 @@ function detailSub(row: SessionRow | null): string {
   if (row.tty) sub.push(row.tty)
   if (row.state === "waiting") sub.push(T.sessionWaiting)
   else if (row.state === "working") sub.push(T.webStateWorking)
+  else if (conversationNotStarted(row)) sub.push(nextWord("sessionNotStartedShort"))
   else if (row.state === "unknown") sub.push(T.webStateUnreadable)
   const task = L.taskOfChild(row.id)
   if (task) {

@@ -93,13 +93,13 @@ func TestOnlyARolloutNamesAThread(t *testing.T) {
 	}
 }
 
-// Only the rows that need one are asked about, and a row the command line
-// already named is not asked at all.
-func TestOnlyUnnamedCodexRowsAreLookedUp(t *testing.T) {
+// Only Codex rows missing an id or directory are asked about. A command-line
+// id still needs the process cwd; its known identity is left untouched.
+func TestOnlyIncompleteCodexRowsAreLookedUp(t *testing.T) {
 	asked := [][]int{}
-	p := &PS{Head: heads(nil), Open: func(ctx context.Context, pids []int) (map[int][]string, bool) {
+	p := &PS{Head: heads(nil), Open: func(ctx context.Context, pids []int) (map[int][]string, map[int]string, bool) {
 		asked = append(asked, pids)
-		return map[int][]string{41: {rolloutA}}, true
+		return map[int][]string{41: {rolloutA}}, map[int]string{22: "/code/resumed", 42: "/code/fresh"}, true
 	}}
 	rows := p.bindCodex(context.Background(), []session.Session{
 		{Assistant: session.AssistantClaude, PID: 11},
@@ -107,8 +107,8 @@ func TestOnlyUnnamedCodexRowsAreLookedUp(t *testing.T) {
 		{Assistant: session.AssistantCodex, PID: 41},
 		{Assistant: session.AssistantCodex, PID: 42},
 	})
-	if len(asked) != 1 || len(asked[0]) != 2 || asked[0][0] != 41 || asked[0][1] != 42 {
-		t.Fatalf("asked %v, want one call for pids 41 and 42", asked)
+	if len(asked) != 1 || len(asked[0]) != 3 || asked[0][0] != 22 || asked[0][1] != 41 || asked[0][2] != 42 {
+		t.Fatalf("asked %v, want one call for pids 22, 41 and 42", asked)
 	}
 	if rows[0].Binding != "" {
 		t.Fatalf("a Claude row was answered for: %q", rows[0].Binding)
@@ -116,18 +116,24 @@ func TestOnlyUnnamedCodexRowsAreLookedUp(t *testing.T) {
 	if rows[1].ConversationID != "resumed" || rows[1].Binding != session.BindingCommandLine {
 		t.Fatalf("a resumed row was overwritten: %+v", rows[1])
 	}
+	if rows[1].CWD != "/code/resumed" {
+		t.Fatalf("resumed cwd = %q", rows[1].CWD)
+	}
 	if rows[2].ConversationID != idA || rows[2].Binding != session.BindingOpenFile {
 		t.Fatalf("got %+v", rows[2])
 	}
 	if rows[3].ConversationID != "" || rows[3].Binding != session.BindingNoRecord {
 		t.Fatalf("got %+v, want the fresh session named as having written nothing yet", rows[3])
 	}
+	if rows[3].CWD != "/code/fresh" {
+		t.Fatalf("fresh cwd = %q, want the process directory", rows[3].CWD)
+	}
 }
 
 // With nothing to read the whole answer is unreadable, and no row is called
 // empty on the strength of a reading that did not happen.
 func TestATableThatCouldNotBeReadLeavesEveryRowUnreadable(t *testing.T) {
-	p := &PS{Head: heads(nil), Open: func(ctx context.Context, pids []int) (map[int][]string, bool) { return nil, false }}
+	p := &PS{Head: heads(nil), Open: func(ctx context.Context, pids []int) (map[int][]string, map[int]string, bool) { return nil, nil, false }}
 	rows := p.bindCodex(context.Background(), []session.Session{{Assistant: session.AssistantCodex, PID: 7}})
 	if rows[0].Binding != session.BindingUnreadable {
 		t.Fatalf("got %q", rows[0].Binding)

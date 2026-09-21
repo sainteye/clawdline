@@ -11,6 +11,6 @@ import "context"
 // an empty answer would say that a session holds no transcript open, which is
 // a claim this has no way to make. False says only that it could not look, and
 // a Codex row on Windows is `unreadable` rather than `no_record`.
-func systemOpenFiles(ctx context.Context, pids []int) (map[int][]string, bool) {
-	return nil, false
+func systemOpenFiles(ctx context.Context, pids []int) (map[int][]string, map[int]string, bool) {
+	return nil, nil, false
 }

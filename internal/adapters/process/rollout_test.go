@@ -74,8 +74,8 @@ func writeRollout(t *testing.T, dir, conversation, thread, cwd string) string {
 func bound(t *testing.T, open []string) session.Session {
 	t.Helper()
 	p := &PS{
-		Open: func(ctx context.Context, pids []int) (map[int][]string, bool) {
-			return map[int][]string{7: open}, true
+		Open: func(ctx context.Context, pids []int) (map[int][]string, map[int]string, bool) {
+			return map[int][]string{7: open}, nil, true
 		},
 		Head: readRolloutHead,
 	}

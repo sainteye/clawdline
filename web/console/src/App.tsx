@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import type { Icon } from "@clawdline/contract"
+import type { Icon, SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client } from "./client.js"
 import { useFleet, usePoll } from "./useFleet.js"
 import { SessionsPage } from "./Sessions.js"
 import { toggleOrder } from "./session/Transcript.js"
+import { conversationNotStarted } from "./session/readiness.js"
 import Dashboard from "./Dashboard.js"
 import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
@@ -863,21 +864,24 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
  * `failures` part has no input here; when it does, its words need
  * `describeFailure` (`core/failure-text.js`) from the bridge.
  */
-function Counts({ rows, recovering }: { rows: { state: string; shells?: unknown[] }[]; recovering: boolean }) {
+function Counts({ rows, recovering }: { rows: SessionRow[]; recovering: boolean }) {
   const T = L.strings
   let working = 0
   let waiting = 0
+  let notStarted = 0
   let unknown = 0
   let shells = 0
   for (const s of rows) {
     if (s.state === "working") working++
     else if (s.state === "waiting") waiting++
+    else if (conversationNotStarted(s)) notStarted++
     else if (s.state === "unknown") unknown++
     shells += (s.shells ?? []).length
   }
   const bits: { cls: string; text: string }[] = []
   if (working) bits.push({ cls: "part", text: L.fillString(T.webCountWorking, { n: working }) })
   if (waiting) bits.push({ cls: "part waiting", text: L.fillString(T.webCountWaiting, { n: waiting }) })
+  if (notStarted) bits.push({ cls: "part quiet", text: nextWord("sessionCountNotStarted", { n: notStarted }) })
   if (shells) {
     bits.push({
       cls: "part quiet",
