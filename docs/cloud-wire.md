@@ -1222,3 +1222,25 @@ transport 的 `Options` 加了 `TLSConfig`／`NetDial`，daemon 裡都是 nil。
 - 帳號層刪除一台 Mac 的介面：api 有 `DELETE /v1/machines/:id`，但只收瀏覽器 session，hosted console 沒有按鈕。
 - `cloud_enabled` 仍只在 daemon 啟動時讀；打開開關要重啟 daemon。
 - 設定頁沒有直接畫 `last_error_kind`；它顯示的 `last_error` 字串以類別開頭，所以不改前端也看得到。
+
+## 19. 配對是讀取能力，不是舊查詢的備忘錄（2026-09-21）
+
+機器列曾經能同時持有兩個互相矛盾的事實：`viewerVerified` 記著這個瀏覽器已經驗過簽章、解開這台機器的
+`orch/` 信封，`unpairedMachines` 卻還留著較早一次「當時找不到 pairing」的負面答案。
+`cloud-client.js` 的 `_machineRows()` 原本讓後者先贏，於是同一列可以畫出剛解密得到的上次看到時間與
+session 數，最後卻說「尚未與這個瀏覽器配對」。
+
+這不是機器 roster 能回答的問題。`paired-devices-v1.json` 只證明機器收下瀏覽器公鑰；真正能回答
+「這個瀏覽器現在是不是配對好了」的是瀏覽器有沒有成功驗簽並解密機器信封。hosted console 的 typed
+boundary 現在用 `viewerVerified` 校正舊的負面記憶，並清掉該 client 的 pairing miss。沒有解密證據的
+account row 仍是 `not_paired`，不會因為帳號認得它或機器 roster 有一列就猜成 paired。
+
+瀏覽器先出碼的路徑另有一個不同的斷點。`clawdline cloud pair -offer …` 做完時，機器只把一次性的
+handover 放進 control plane；瀏覽器還得拿著產生 offer 時那把 X25519 私鑰呼叫 `pairing/claim`，解開後
+才會把 machine master key 與 sender key 寫進永久 key store。先前那把私鑰只活在等待卡的 Promise 裡，
+關卡片或重載就遺失；所以機器可以印出 paired，而瀏覽器永遠收不到自己的那一半。
+
+現在 offer **顯示以前**，待領取資料與 non-extractable X25519 `CryptoKey` 會先以 structured clone 寫進
+IndexedDB。卡片關掉只停止卡片本身的等待，背景會繼續 claim；頁面重載後，登入 session 一恢復也會讀出
+同一筆繼續 claim。成功後才刪除；具名的 terminal pairing 答案或過期會刪除；沒有型別的網路中斷保留到
+下一次頁面／連線再試。這沒有把私鑰變成可匯出的 bytes，也沒有讓 cloud 看到它。

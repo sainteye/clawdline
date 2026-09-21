@@ -52,6 +52,13 @@ export interface CloudMachine {
 export interface CloudClientHandle extends CloudReadClient {
   account: string | null
   deviceID: string | null
+  /**
+   * Machines for which this client has verified and decrypted an authenticated
+   * envelope. The copied client keeps this proof across its token renewals.
+   */
+  readonly viewerVerified?: ReadonlyMap<string, unknown>
+  /** Clear an older negative pairing lookup after stronger capability evidence. */
+  forgetMachinePairingAnswer?(machine: string): void
   machines(): Promise<{ machines: CloudMachine[]; syncing: boolean; retryAfterMs: number }>
   /**
    * What the last authenticated `orch/` snapshot of `machine` said it is, or
@@ -84,6 +91,10 @@ export interface CloudSession {
   readonly account: string | null
   readonly deviceID: string | null
   signInURL(): string
+  now(): number
+  startPairing(): Promise<PendingPairing>
+  acceptPairingInvitation(invitation: PairingInvitation, pending: PendingPairing): Promise<PendingPairing>
+  claimPairing(pending: PendingPairing): Promise<OpenedPairing>
 }
 
 export interface CloudConnection {
@@ -125,6 +136,17 @@ export const keepConnected = keepConnectedOriginal as (
 export interface PairingInvitation {
   invitation_id: string
   expires_at: number
+}
+
+/**
+ * The browser half needed to claim a handover. In particular the private
+ * X25519 key must survive leaving the waiting card; it is non-extractable but
+ * can be structured-cloned by IndexedDB.
+ */
+export interface PendingPairing extends PendingOffer {
+  claimNonce: string
+  offer: Record<string, unknown>
+  ephemeralPrivateKey: CryptoKey
 }
 
 export const decodePairingInvitation = decodePairingInvitationOriginal as (fragment: string, nowMilliseconds: number) => PairingInvitation
