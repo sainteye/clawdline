@@ -15,6 +15,7 @@ import { requestPage } from "../../overlays/index.js"
 import { proposalFoldShouldOpen } from "./fold.js"
 import { ownerWords, reasonWords, taskWords, when } from "./shared.js"
 import { workWord, type WorkWord } from "./words.js"
+import { nextWord } from "../../next-strings.js"
 import { readAnswered, type ReadState } from "../../read-state.js"
 
 /** A command a card asks the page to carry out; the page reads the board again after it. */
@@ -474,6 +475,9 @@ function ProposalsFold({
                         {" · "}
                         {left > 0 ? workWord("proposalLeaves", { n: left }) : workWord("proposalLeavesToday")}
                       </span>
+                      {p.subject_status === "unknown" && (
+                        <span className="work-sub">{nextWord("proposalNeedsYourDecision")}</span>
+                      )}
                       <div className="work-actions" style={{ marginTop: 6 }}>
                         <button className="chip on" type="button" disabled={busy} data-answer="track"
                           onClick={() => run(() => onAnswer(p, "track"))}>

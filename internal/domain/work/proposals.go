@@ -278,6 +278,11 @@ type Proposal struct {
 	Title   string
 	Signals []Signal
 	Effects []Effect
+	// SubjectStatus is the current answer to whether the subject's to-dos
+	// can settle this question. It is derived when a proposal is read, not
+	// stored with it: the sweep and the screen therefore speak from the same
+	// current to-dos rather than from the facts at proposal time.
+	SubjectStatus SubjectStatus
 	// Ask is the server's answer to "may the session ask in the
 	// conversation", AskReason why, and Channel where it went.
 	Ask       bool
@@ -563,6 +568,32 @@ type SubjectFacts struct {
 	Todos []Todo
 }
 
+// SubjectStatus is the three-way answer to a proposal's to-do evidence. An
+// empty list is not an open subject: it is no evidence with which the sweep
+// can decide that the subject settled.
+type SubjectStatus string
+
+const (
+	SubjectUnknown SubjectStatus = "unknown"
+	SubjectOwed    SubjectStatus = "owed"
+	SubjectSettled SubjectStatus = "settled"
+)
+
+// SubjectStatusOf reads the evidence without collapsing "none observed" into
+// "still owed". That distinction is shown to the person for proposals whose
+// subject the sweep cannot re-decide from to-dos.
+func SubjectStatusOf(todos []Todo) SubjectStatus {
+	if len(todos) == 0 {
+		return SubjectUnknown
+	}
+	for _, td := range todos {
+		if td.State.Outstanding() {
+			return SubjectOwed
+		}
+	}
+	return SubjectSettled
+}
+
 // WithdrawProposal is the exit the lifecycle was missing: a pending proposal
 // whose question has stopped being a question is taken back by the server,
 // with the fact that ended it.
@@ -586,7 +617,7 @@ func WithdrawProposal(p Proposal, f SubjectFacts, now time.Time) (Proposal, bool
 	switch {
 	case f.HasItem:
 		reason = WithdrawnSubjectTracked
-	case settled(f.Todos):
+	case SubjectStatusOf(f.Todos) == SubjectSettled:
 		reason = WithdrawnSubjectSettled
 	case p.Source == SourceRule && !RuleWorthy(p.Signals):
 		reason = WithdrawnRuleSpent
@@ -595,19 +626,6 @@ func WithdrawProposal(p Proposal, f SubjectFacts, now time.Time) (Proposal, bool
 	}
 	p.State, p.WithdrawnReason, p.WithdrawnAt = ProposalWithdrawn, reason, now
 	return p, true
-}
-
-// settled says the line had to-dos and none of them is owed any more.
-func settled(todos []Todo) bool {
-	if len(todos) == 0 {
-		return false
-	}
-	for _, td := range todos {
-		if td.State.Outstanding() {
-			return false
-		}
-	}
-	return true
 }
 
 // Placing is where a proposal answered track or later puts its work item:

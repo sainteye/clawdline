@@ -33,6 +33,8 @@ const words = {
     sessionNotStartedShort: "Conversation not started yet",
     sessionStateUnrecognizedList:
       "Clawdline read the screen but could not identify its state. Open this session to inspect it.",
+    proposalNeedsYourDecision:
+      "The system has no to-do it can reassess. Finishing work will not withdraw this proposal; answer it, or it will wait until expiry.",
     sessionStateUnrecognizedDetail:
       "Clawdline read the screen but could not identify its state. Inspect the conversation below before deciding what to do.",
     sessionCountNotStarted: "{n} not started yet",
@@ -538,6 +540,8 @@ const words = {
     projectsLifecycleBoundary: "唯讀總覽。重新整理只會向擁有這個版本庫的機器取得一次有界觀測；瀏覽器刻意不提供清理操作。",
     projectsDeliveredNotLanded: "做完了，沒有落地",
     projectsUnattributedWorktrees: "歸不到專案的工作樹",
+    proposalNeedsYourDecision:
+      "系統沒有待辦可重新判定；工作完成不會撤回這筆提議，請自行回答，否則它會等到過期。",
   },
 } as const
 

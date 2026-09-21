@@ -58,6 +58,40 @@ func TestASettledSubjectLeavesTheToConfirmArea(t *testing.T) {
 	}
 }
 
+func TestPendingProposalsSayWhetherTheirSubjectCanBeReassessed(t *testing.T) {
+	p, _, st, clock := newParticipation(t)
+	ctx := context.Background()
+	line := newWorkID()
+	sent(t, st, taskID(1), line, "custom", theRoot, clock.at)
+	owes(t, st, taskID(1), line, theRoot, clock.at)
+	if _, err := propose(p, line, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	delivered(t, st, taskID(2), theRoot, clock.at,
+		work.Leftover{Title: "a result nobody picked up", Why: "the task ended first"})
+	if _, err := raise(p, taskID(2), "a result nobody picked up"); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := p.ProposalList(ctx, work.ProposalPending, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]work.SubjectStatus{}
+	for _, proposal := range page.Rows {
+		got[proposal.Title] = proposal.SubjectStatus
+	}
+	if got["a result nobody picked up"] != work.SubjectUnknown {
+		t.Fatalf("leftover status %q, want %q", got["a result nobody picked up"], work.SubjectUnknown)
+	}
+	for title, status := range got {
+		if title != "a result nobody picked up" && status != work.SubjectOwed {
+			t.Fatalf("line %q status %q, want %q", title, status, work.SubjectOwed)
+		}
+	}
+}
+
 // A line withdrawn because a dispatch alone is not worth asking about is
 // asked about once it has been owed for a day — the signal that makes it
 // worth asking. A withdrawal is the server's own statement, not an answer, so

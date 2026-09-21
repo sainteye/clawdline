@@ -15,6 +15,25 @@ func wasClosed() Todo {
 	return Todo{State: TodoStateDone, Reason: ReasonLanded, CreatedAt: withdrawNow.Add(-time.Hour)}
 }
 
+func TestATodoSubjectHasThreeReadableStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		todos []Todo
+		want  SubjectStatus
+	}{
+		{"no evidence to reassess", nil, SubjectUnknown},
+		{"at least one to-do is still owed", []Todo{wasClosed(), stillOwed()}, SubjectOwed},
+		{"every observed to-do is over", []Todo{wasClosed(), wasClosed()}, SubjectSettled},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := SubjectStatusOf(c.todos); got != c.want {
+				t.Fatalf("status %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 func TestWhatEndsAQuestionAndWhatDoesNot(t *testing.T) {
 	rule := Proposal{State: ProposalPending, Source: SourceRule, Signals: []Signal{SignalCrossSession}}
 	mine := Proposal{State: ProposalPending, Source: SourceSession, Signals: []Signal{SignalCrossSession}}

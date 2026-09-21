@@ -304,6 +304,7 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 		var signals []work.Signal
 		var ignored []work.Ignored
 		var prior []work.Proposal
+		subjectStatus := work.SubjectUnknown
 		if leftover {
 			sub, err := leftoverSubject(tx, req)
 			if err != nil {
@@ -389,6 +390,7 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 			if err != nil {
 				return err
 			}
+			subjectStatus = work.SubjectStatusOf(todos)
 			signals, ignored = work.SignalsOf(facts, todos, effects, now)
 			if prior, err = tx.PriorProposals(workID, req.TaskID); err != nil {
 				return err
@@ -411,7 +413,8 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 		}
 		prop := work.Proposal{ID: newWorkID(), WorkID: workID, TaskID: req.TaskID, Session: req.Session,
 			Source: source, Project: project, Title: title, Signals: signals, Effects: effects,
-			Ask: verdict.Ask, AskReason: verdict.Reason, Channel: verdict.Channel, State: work.ProposalPending,
+			SubjectStatus: subjectStatus,
+			Ask:           verdict.Ask, AskReason: verdict.Reason, Channel: verdict.Channel, State: work.ProposalPending,
 			CreatedAt: now, ExpiresAt: now.Add(p.Proposals.Expiry)}
 		switch {
 		case leftover:
@@ -527,6 +530,11 @@ func (p *Participation) ReportAsked(ctx context.Context, id, session string) (Pr
 		if err != nil {
 			return err
 		}
+		subject, err := tx.SubjectOf(prev.WorkID)
+		if err != nil {
+			return err
+		}
+		prev.SubjectStatus = work.SubjectStatusOf(subject.Todos)
 		if session != "" && prev.Session != session {
 			return workRefusal(409, "not_your_proposal", "That proposal belongs to another session.")
 		}
@@ -567,6 +575,11 @@ func (p *Participation) Answer(ctx context.Context, id string, answer work.Answe
 		if err != nil {
 			return err
 		}
+		subject, err := tx.SubjectOf(prev.WorkID)
+		if err != nil {
+			return err
+		}
+		prev.SubjectStatus = work.SubjectStatusOf(subject.Todos)
 		if via != nil {
 			if err := work.RelayTo(*via, prev.Session, prev.CreatedAt); err != nil {
 				return err
@@ -673,13 +686,37 @@ func (p *Participation) ProposalList(ctx context.Context, state work.ProposalSta
 		last := page.Rows[len(page.Rows)-1]
 		page.Next = strconv.FormatInt(last.CreatedAt.Unix(), 10) + ":" + last.ID
 	}
+	if err := p.subjectStatuses(ctx, page.Rows); err != nil {
+		return ProposalPage{}, participationRefusal(err)
+	}
 	return page, nil
 }
 
 // Proposal reads one proposal.
 func (p *Participation) Proposal(ctx context.Context, id string) (work.Proposal, error) {
 	prop, err := p.Board.Store.ProposalRow(ctx, id)
-	return prop, participationRefusal(err)
+	if err != nil {
+		return prop, participationRefusal(err)
+	}
+	rows := []work.Proposal{prop}
+	if err := p.subjectStatuses(ctx, rows); err != nil {
+		return work.Proposal{}, participationRefusal(err)
+	}
+	return rows[0], nil
+}
+
+// subjectStatuses adds the current three-way reading of each proposal's
+// to-dos. It is deliberately derived on read: persisting it would make the
+// screen repeat the proposal-time answer after the subject changed.
+func (p *Participation) subjectStatuses(ctx context.Context, rows []work.Proposal) error {
+	for i := range rows {
+		todos, err := p.Board.Store.TodosOfWork(ctx, rows[i].WorkID)
+		if err != nil {
+			return err
+		}
+		rows[i].SubjectStatus = work.SubjectStatusOf(todos)
+	}
+	return nil
 }
 
 func parseCreatedCursor(cursor string) (int64, string, error) {

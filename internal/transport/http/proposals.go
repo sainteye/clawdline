@@ -133,6 +133,7 @@ type proposalWire struct {
 	Title         string   `json:"title"`
 	Signals       []string `json:"signals"`
 	Effects       []string `json:"effects"`
+	SubjectStatus string   `json:"subject_status"`
 	Ask           bool     `json:"ask"`
 	Reason        string   `json:"reason"`
 	Channel       string   `json:"channel"`
@@ -163,7 +164,8 @@ func proposalOf(p work.Proposal) proposalWire {
 	}
 	return proposalWire{ID: p.ID, WorkID: p.WorkID, TaskID: optionalString(p.TaskID), SessionID: p.Session,
 		Source: p.Source, Project: p.Project, Title: p.Title, Signals: signals, Effects: effects, Ask: p.Ask,
-		Reason: p.AskReason, Channel: string(p.Channel), Question: optionalString(p.Question), State: string(p.State),
+		SubjectStatus: string(p.SubjectStatus),
+		Reason:        p.AskReason, Channel: string(p.Channel), Question: optionalString(p.Question), State: string(p.State),
 		Answer: optionalString(string(p.Answer)), AnsweredBy: optionalString(p.AnsweredBy),
 		AnsweredAt: optionalUnix(p.AnsweredAt), CreatedAt: p.CreatedAt.Unix(), ExpiresAt: p.ExpiresAt.Unix(),
 		AskedInlineAt: optionalUnix(p.AskedInlineAt), Unprompted: p.Unprompted(),

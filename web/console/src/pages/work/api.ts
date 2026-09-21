@@ -95,6 +95,8 @@ export interface Proposal {
   title: string
   signals: string[]
   effects: string[]
+  /** Current to-do evidence the sweep can use to re-decide this proposal. */
+  subject_status: "unknown" | "owed" | "settled"
   state: string
   created_at: number
   expires_at: number
