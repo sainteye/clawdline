@@ -11,8 +11,9 @@ Every document in this directory, and what kind it is.
 - **Work list**: an inventory of what is still wrong, written to be dispatched. Each item says how to
   make it fail, and the list goes stale as items land.
 
-Six pages are in English: the two that introduce the project, and the four design notes an
-outside reader judges it by. The rest are written in Traditional Chinese.
+Seven pages are in English: the two that introduce the project, the four design notes an
+outside reader judges it by, and the publishing operations guide. The rest are written in
+Traditional Chinese.
 
 ## Start here
 
@@ -39,6 +40,7 @@ outside reader judges it by. The rest are written in Traditional Chinese.
 | [cloud-wire.md](cloud-wire.md) | Public design note | Chinese | The Cloud wire specification: envelope, canonical JSON, keys, pairing, commands, and what was measured at each stage |
 | [shell-bridge.md](shell-bridge.md) | Public design note | Chinese | The interface between a native shell and the web console, and the minimum a new platform's shell must implement |
 | [privacy-guard.md](privacy-guard.md) | Public design note | English | What keeps the person's own things out of a public repository: the working-tree scan, the history scan, the four answers, and the checkpoint that makes a daily run affordable |
+| [publishing.md](publishing.md) | Public operations guide | English | CI coverage, the guarded development remote, the filtered publication path, and when GitHub status becomes visible |
 | [cross-platform.md](cross-platform.md) | Public design note | English | Every feature on macOS, Linux and Windows, and what a platform shows when it cannot do something |
 
 ## How it got here
