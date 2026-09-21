@@ -24,8 +24,9 @@ import { Todos } from "./Todos.js"
 import { UserMessages } from "./UserMessages.js"
 import { Snippets } from "./Snippets.js"
 import { conversationNotStarted } from "./readiness.js"
-import { workTree, type WorkNode } from "./work-tree.js"
+import { agentDisplayName, runningAgentCount, workTree } from "./work-tree.js"
 import { nextWord } from "../next-strings.js"
+import "./work-tree.css"
 
 /**
  * Whether this transport can read a project's snippets — `snippetControls(api).read`
@@ -59,8 +60,8 @@ const SNIPPETS_READABLE = true
  */
 export function Detail({
   row,
-  tasks,
-  onOpenSession,
+  tasks: _tasks,
+  onOpenSession: _onOpenSession,
   onBack,
   onDid,
   listUnknown = false,
@@ -149,7 +150,12 @@ export function Detail({
       data-panel={screenOpen ? "screen" : gitOpen ? "git" : undefined}
     >
       {selectedAgent ? (
-        <AgentHead agent={selectedAgent} onBack={() => setAgentId(null)} />
+        <AgentHead
+          agent={selectedAgent}
+          assistant={row?.assistant}
+          ordinal={(row?.agents ?? []).findIndex((agent) => agent.id === selectedAgent.id) + 1}
+          onBack={() => setAgentId(null)}
+        />
       ) : <div className="detail-head" id="detail-head" data-closing={ending ? "on" : "off"}>
         <button className="back" id="back" onClick={onBack} aria-label={T.webBackLabel} disabled={ending}>
           ‹ {T.webBack}
@@ -231,21 +237,14 @@ export function Detail({
       />
 
       <GitPanel row={row} open={gitOpen} onClose={closeGit} />
-      {/* Not in the original: the session's to-dos (T6), folded under its header. */}
-      <Todos row={row} />
-
-      {row ? (
-        <WorkTree
-          row={row}
-          tasks={tasks}
-          selected={agentId}
-          onProvider={setAgentId}
-          onBroker={(node) => {
-            const terminal = node.source === "broker" ? node.task.child?.terminalId : undefined
-            if (terminal) onOpenSession(terminal)
-          }}
-        />
-      ) : null}
+      {/* Session-owned secondary facts share one fold: the conversation remains
+          the first thing on screen, while a live provider subagent count says
+          when opening this quiet strip is worthwhile. */}
+      <Todos
+        row={row}
+        agentCount={row ? foldedAgentCount(row) : undefined}
+        agentPanel={row ? <WorkTree row={row} selected={agentId} onProvider={setAgentId} /> : null}
+      />
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
@@ -264,12 +263,21 @@ export function Detail({
   )
 }
 
-function AgentHead({ agent, onBack }: { agent: SessionAgent; onBack: () => void }) {
+function AgentHead({
+  agent,
+  assistant,
+  ordinal,
+  onBack,
+}: {
+  agent: SessionAgent
+  assistant?: string
+  ordinal: number
+  onBack: () => void
+}) {
   const T = L.strings
   const seconds = Math.max(0, Math.round(agent.seconds ?? 0))
   const clock = seconds ? (seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`) : ""
-  const state = agent.state === "done" ? T.webAgentDone : agent.state === "failed" ? T.webAgentFailed :
-    agent.state === "unknown" ? nextWord("agentsUnknown") : T.agentRunning
+  const state = agentStateWord(agent, assistant)
   const facts = [agent.type, state, agent.model, clock, agent.tokens ? `↓ ${L.agentTokens(agent.tokens)}` : "",
     agent.tools ? L.fillString(T.agentTools, { n: agent.tools }) : ""]
     .filter(Boolean).join(" · ")
@@ -277,7 +285,7 @@ function AgentHead({ agent, onBack }: { agent: SessionAgent; onBack: () => void 
     <div className="agent-head">
       <button className="back" type="button" onClick={onBack}>‹ {T.agentBack}</button>
       <span className="who">
-        <span className="name">{agent.what || agent.type}</span>
+        <span className="name">{agentName(agent, assistant, ordinal)}</span>
         <span className="sub">{facts}</span>
       </span>
     </div>
@@ -285,46 +293,42 @@ function AgentHead({ agent, onBack }: { agent: SessionAgent; onBack: () => void 
 }
 
 function WorkTree({
-  row, tasks, selected, onProvider, onBroker,
+  row, selected, onProvider,
 }: {
   row: SessionRow
-  tasks: TaskRow[] | null
   selected: string | null
   onProvider: (id: string | null) => void
-  onBroker: (node: WorkNode) => void
 }) {
-  const nodes = workTree(row, tasks ?? [])
+  const nodes = workTree(row)
   const reading = row.agents_reading
-  if (!nodes.length && reading?.state === "complete" && tasks !== null) return null
+  if (!nodes.length && reading?.state === "complete" && !reading.truncated) return null
   const providerReason = reading?.state === "complete" ? "" : nextWord(
     !reading ? "agentsUnknown" : reading.reason === "unreadable" ? "agentsUnreadable" :
       reading.reason === "unrecognized" ? "agentsUnrecognized" : "agentsNoRecord",
   )
-  const reason = [tasks === null ? nextWord("brokerTasksUnknown") : "", providerReason].filter(Boolean).join(" · ")
   return (
     <section className="agents" aria-label={L.strings.webAgents}>
-      <div className="head"><span>{L.strings.webAgents}</span><span className="n">{reason || nodes.length}</span></div>
+      <div className="head"><span>{L.strings.webAgents}</span><span className="n">{providerReason || nodes.length}</span></div>
       <button className="one root" type="button" aria-current={!selected} onClick={() => onProvider(null)}>
         <span className="mark"/><span className="kind">session</span><span className="what">{row.label || row.id}</span>
       </button>
-      {nodes.map((node) => {
-        const broker = node.source === "broker"
-        const what = broker ? node.task.title : node.agent.what
-        const doing = broker ? node.exactState : node.agent.doing || node.agent.result
-        const canOpen = broker ? !!node.task.child?.terminalId : true
-        const stateWord = broker ? L.taskWord(node.task) :
-          node.state === "done" ? L.strings.webAgentDone : node.state === "failed" ? L.strings.webAgentFailed :
-            node.state === "unknown" ? nextWord("agentsUnknown") : L.strings.agentRunning
+      {nodes.map((node, index) => {
+        const what = agentName(node.agent, row.assistant, index + 1)
+        const detail = node.agent.doing && node.agent.doing !== what && node.agent.doing !== node.agent.type
+          ? node.agent.doing
+          : node.agent.result && node.agent.result !== what && node.agent.result !== node.agent.type
+            ? node.agent.result
+            : node.agent.at ? agentStarted(node.agent.at) : ""
+        const stateWord = agentStateWord(node.agent, row.assistant)
         return (
           <button
-            className="one" type="button" key={`${node.source}:${node.id}`}
-            data-state={node.state} aria-current={!broker && selected === node.id}
-            disabled={!canOpen}
-            title={`${broker ? nextWord("brokerWork") : nextWord("providerWork")} · ${node.exactState}`}
-            onClick={() => broker ? onBroker(node) : onProvider(node.id)}
+            className="one child" type="button" key={`${node.source}:${node.id}`}
+            data-state={node.state} aria-current={selected === node.id}
+            title={`${nextWord("providerWork")} · ${stateWord}`}
+            onClick={() => onProvider(node.id)}
           >
-            <span className="mark"/><span className="kind">{broker ? "broker" : node.agent.type}</span>
-            <span className="what">{what || node.id}</span><span className="doing">{doing}</span>
+            <span className="mark"/><span className="kind">{node.agent.type}</span>
+            <span className="what">{what}</span><span className="doing">{detail}</span>
             <span className="said">{stateWord}</span>
           </button>
         )
@@ -332,6 +336,36 @@ function WorkTree({
       {reading?.truncated ? <div className="head"><span>{nextWord("agentsTruncated", { count: reading.truncated })}</span></div> : null}
     </section>
   )
+}
+
+function foldedAgentCount(row: SessionRow): number | null | undefined {
+  const reading = row.agents_reading
+  if (!reading || reading.state !== "complete") return null
+  if (!(row.agents?.length ?? 0) && !reading.truncated) return undefined
+  return runningAgentCount(row)
+}
+
+function agentName(agent: SessionAgent, assistant: string | undefined, ordinal: number): string {
+  return agentDisplayName(agent, assistant, ordinal, agentWords().codexMissing, L.strings.webAgents)
+}
+
+function agentStateWord(agent: SessionAgent, assistant: string | undefined): string {
+  if (agent.state === "done") return L.strings.webAgentDone
+  if (agent.state === "failed") return L.strings.webAgentFailed
+  if (agent.state === "unknown") return nextWord("agentsUnknown")
+  return assistant === "claude" ? agentWords().claudeRunning : L.strings.agentRunning
+}
+
+function agentStarted(at: number): string {
+  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(at * 1000))
+  return `${agentWords().started} ${time}`
+}
+
+function agentWords(): { codexMissing: string; claudeRunning: string; started: string } {
+  const lang = (document.documentElement.lang || navigator.language || "en").toLowerCase()
+  return lang.startsWith("zh")
+    ? { codexMissing: "Codex 沒有記下這個 thread 在做什麼", claudeRunning: "推測仍在跑", started: "開始" }
+    : { codexMissing: "Codex did not record what this thread is doing", claudeRunning: "appears to be running", started: "started" }
 }
 
 /** The home screen `renderTranscript` writes into `#tx` when no session is open. */

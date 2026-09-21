@@ -1,43 +1,43 @@
-import type { SessionAgent, SessionRow, TaskRow } from "@clawdline/contract"
+import type { SessionAgent, SessionRow } from "@clawdline/contract"
 
 export type WorkState = "running" | "done" | "failed" | "unknown"
 
-export type WorkNode =
-  | { source: "provider"; id: string; state: WorkState; exactState: string; agent: SessionAgent }
-  | { source: "broker"; id: string; state: WorkState; exactState: string; task: TaskRow }
-
-const LIVE = new Set(["queued", "spawning", "briefed"])
-const FAILED = new Set(["failure", "timeout", "cancelled", "spawn_failed"])
-
-export function taskWorkState(state: TaskRow["state"]): WorkState {
-  if (LIVE.has(state)) return "running"
-  if (state === "success") return "done"
-  if (FAILED.has(state)) return "failed"
-  return "unknown"
+export type WorkNode = {
+  source: "provider"
+  id: string
+  state: WorkState
+  exactState: string
+  agent: SessionAgent
 }
 
-export function workTree(row: SessionRow, tasks: TaskRow[], nowSeconds = Date.now() / 1000): WorkNode[] {
-  const provider: WorkNode[] = (row.agents ?? []).map((agent) => ({
+/**
+ * Provider-native work only. Broker children already have first-class rows in
+ * the session list, so repeating them here makes Clawdline's own tasks look
+ * like the invisible work this fold exists to reveal.
+ */
+export function workTree(row: SessionRow): WorkNode[] {
+  return (row.agents ?? []).map((agent) => ({
     source: "provider",
     id: agent.id,
     state: agent.state,
     exactState: agent.state,
     agent,
   }))
-  const broker: WorkNode[] = tasks
-    .filter((task) => {
-      const root = task.root
-      const ours = root?.terminalId === row.id || (!!row.sessionId && root?.sessionId === row.sessionId)
-      if (!ours) return false
-      if (LIVE.has(task.state)) return true
-      return !!task.finishedAt && nowSeconds-task.finishedAt < 180
-    })
-    .map((task) => ({
-      source: "broker" as const,
-      id: task.id,
-      state: taskWorkState(task.state),
-      exactState: task.state,
-      task,
-    }))
-  return [...broker, ...provider]
+}
+
+export function runningAgentCount(row: SessionRow): number {
+  return (row.agents ?? []).filter((agent) => agent.state === "running").length
+}
+
+export function agentDisplayName(
+  agent: SessionAgent,
+  assistant: string | undefined,
+  ordinal: number,
+  codexMissing: string,
+  generic: string,
+): string {
+  const what = agent.what?.trim()
+  if (what && what !== agent.type) return what
+  if (assistant === "codex") return `${codexMissing} · ${ordinal}`
+  return what || `${generic} ${ordinal}`
 }

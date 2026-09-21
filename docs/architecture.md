@@ -100,6 +100,16 @@ evidence: what its screen shows and what its own records say. With no evidence, 
 `unknown`. Transcripts are read from the assistant's own files under `~/.claude` and `~/.codex`.
 Nothing is written there.
 
+Provider-native subagents are part of that same read-only inventory, not broker tasks. Claude Code
+puts the description written by the spawning turn in an immutable sidecar; Codex identifies an
+open subagent through process evidence and puts a distinct nickname and start time in the
+rollout's `session_meta` head. The daemon reads those names without reading the conversation below
+the head. Claude's running state remains an inference from a recent transcript without a
+completion notice; Codex's is direct evidence that the parent process still holds the rollout
+open. In the console they are folded into **Session to-dos**, with only their running count on the
+closed row. Broker children stay in the main session list, where each already has its own session
+row, and are not drawn a second time as provider subagents.
+
 `GET /v1/sessions` answers one inventory. `GET /v1/events` streams whole snapshots, named
 `sessions` and `orchestrator`, plus `screen` frames for a session being watched. Whole snapshots,
 not patches, because a view built from two sources that update at different times shows a state

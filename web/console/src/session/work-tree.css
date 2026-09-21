@@ -1,0 +1,53 @@
+/* Provider-native work belongs inside the already-folded Session to-dos strip.
+   The transcript therefore keeps the whole pane until somebody asks for these
+   secondary facts, and the 40vh ceiling on the fold keeps the composer clear. */
+.session-todos-agent-count {
+    margin-left: auto;
+    color: var(--dim);
+    font: 11px/1.5 var(--mono);
+    white-space: nowrap;
+}
+
+.session-todos .agents {
+    padding: 2px 0 9px;
+    border-top: 0;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 9px;
+}
+
+.session-todos .agents .head { margin-bottom: 3px; }
+
+/* The filled session dot is the parent. Every provider thread is indented and
+   hangs from one quiet rail, so a row cannot be mistaken for a peer session. */
+.session-todos .agents .one.child {
+    position: relative;
+    width: calc(100% - 13px);
+    margin-left: 8px;
+    padding-left: 17px;
+}
+
+.session-todos .agents .one.child::before {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: -4px;
+    bottom: 50%;
+    width: 7px;
+    border-left: 1px solid var(--line-hi);
+    border-bottom: 1px solid var(--line-hi);
+    border-radius: 0 0 0 4px;
+}
+
+.session-todos-list > p {
+    margin: 0 0 6px;
+    color: var(--faint);
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+@media (max-width: 480px) {
+    .session-todos > summary { padding-left: 12px; padding-right: 12px; }
+    .session-todos-body { padding-left: 12px; padding-right: 12px; }
+    .session-todos .agents .one .kind { width: 68px; }
+    .session-todos .agents .one .doing { display: none; }
+}

@@ -1,32 +1,34 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import type { SessionRow, TaskRow } from "@clawdline/contract"
+import type { SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { taskWorkState, workTree } from "./work-tree.ts"
+import { agentDisplayName, runningAgentCount, workTree } from "./work-tree.ts"
 
 const row = {
   id: "%fixture",
   sessionId: "conversation-fixture",
   agents_reading: { state: "complete" },
-  agents: [{ id: "provider-fixture", at: 0, depth: 1, type: "Explore", what: "inspect", state: "running" }],
+  agents: [
+    { id: "provider-running", at: 0, depth: 1, type: "Explore", what: "inspect fixture", state: "running" },
+    { id: "provider-done", at: 0, depth: 1, type: "Explore", what: "verify fixture", state: "done" },
+  ],
 } as SessionRow
 
-const broker = {
-  id: "broker-fixture", task_id: "broker-fixture", title: "verify", state: "briefed",
-  root: { terminalId: "%fixture", sessionId: "conversation-fixture" },
-  child: { terminalId: "%child-fixture" },
-} as TaskRow
-
-test("broker children and provider agents share one tree without losing source or exact state", () => {
-  const nodes = workTree(row, [broker], 100)
-  assert.deepEqual(nodes.map((node) => [node.source, node.state, node.exactState]), [
-    ["broker", "running", "briefed"],
-    ["provider", "running", "running"],
+test("the work tree is provider-native work, not a second broker task list", () => {
+  const nodes = workTree(row)
+  assert.deepEqual(nodes.map((node) => [node.source, node.state, node.agent.what]), [
+    ["provider", "running", "inspect fixture"],
+    ["provider", "done", "verify fixture"],
   ])
 })
 
-test("the shared display state does not pretend an unreadable broker record succeeded", () => {
-  assert.equal(taskWorkState("success"), "done")
-  assert.equal(taskWorkState("failure"), "failed")
-  assert.equal(taskWorkState("unreadable"), "unknown")
+test("the folded summary counts running provider work", () => {
+  assert.equal(runningAgentCount(row), 1)
+})
+
+test("Codex uses its nickname, then an honest numbered fallback instead of repeating thread_spawn", () => {
+  const named = { ...row.agents![0], type: "thread_spawn", what: "Fixture Scout" }
+  const unnamed = { ...named, what: "thread_spawn" }
+  assert.equal(agentDisplayName(named, "codex", 1, "not recorded", "agent"), "Fixture Scout")
+  assert.equal(agentDisplayName(unnamed, "codex", 2, "not recorded", "agent"), "not recorded · 2")
 })

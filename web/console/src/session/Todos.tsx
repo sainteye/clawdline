@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import * as L from "../legacy/bridge.js"
@@ -22,7 +22,16 @@ import "../pages/work/work.css"
  * the fold is. A session whose conversation is not known yet, or a list that
  * could not be read, says that — neither is shown as "owes nothing" (DG-7).
  */
-export function Todos({ row }: { row: SessionRow | null }) {
+export function Todos({
+  row,
+  agentCount,
+  agentPanel,
+}: {
+  row: SessionRow | null
+  /** undefined is a known empty reading; null is an unreadable count. */
+  agentCount?: number | null
+  agentPanel?: ReactNode
+}) {
   const [open, setOpen] = useState(false)
   const [closed, setClosed] = useState(false)
   const [page, setPage] = useState<TodoPage | null>(null)
@@ -76,44 +85,52 @@ export function Todos({ row }: { row: SessionRow | null }) {
         <span id="session-todos-count">
           {failure ? "?" : owed === null ? L.strings.webLoading : workWord("todosOpen", { n: owed })}
         </span>
+        {agentCount !== undefined ? (
+          <span className="session-todos-agent-count">
+            {L.strings.webAgents} {agentCount === null ? "?" : agentCount}
+          </span>
+        ) : null}
       </summary>
       <div className="session-todos-body">
-        <p>{workWord("todosLede")}</p>
-        {failure === "unknown" ? (
-          <p>{workWord("todosUnknown")}</p>
-        ) : failure ? (
-          <p>{failure}</p>
-        ) : page && page.todos.length === 0 ? (
-          <p>{workWord("todosNone")}</p>
-        ) : (
-          page?.todos.map((t) => (
-            <div
-              key={t.id}
-              className="session-todo"
-              data-todo-id={t.id}
-              data-state={t.state}
-              data-escalated={t.escalation.length ? "" : undefined}
-            >
-              <b>{t.title || t.task_id}</b>
-              <span className="session-todo-state">
-                {t.escalation.length && t.state === "open" ? workWord("todoEscalated") : stateWords(t.state)}
-              </span>
-              <small>
-                {t.origin === "dispatch" ? workWord("todoDispatch") : t.origin} · {t.task_id.slice(0, 8)} ·{" "}
-                {when(t.closed_at ?? t.updated_at)}
-                {t.state !== "open" ? ` · ${reasonWords(t.reason)}` : ""}
-              </small>
-            </div>
-          ))
-        )}
-        {page?.next_cursor && (
-          <p>{workWord("more", { n: Math.max(0, shownTotal(page, open && closed) - page.todos.length) })}</p>
-        )}
-        {page && (
-          <button className="chip" type="button" style={{ marginTop: 8 }} onClick={() => setClosed((c) => !c)}>
-            {workWord(closed ? "todosHideClosed" : "todosShowClosed")}
-          </button>
-        )}
+        {agentPanel}
+        <section className="session-todos-list" aria-label={workWord("todosTitle")}>
+          <p>{workWord("todosLede")}</p>
+          {failure === "unknown" ? (
+            <p>{workWord("todosUnknown")}</p>
+          ) : failure ? (
+            <p>{failure}</p>
+          ) : page && page.todos.length === 0 ? (
+            <p>{workWord("todosNone")}</p>
+          ) : (
+            page?.todos.map((t) => (
+              <div
+                key={t.id}
+                className="session-todo"
+                data-todo-id={t.id}
+                data-state={t.state}
+                data-escalated={t.escalation.length ? "" : undefined}
+              >
+                <b>{t.title || t.task_id}</b>
+                <span className="session-todo-state">
+                  {t.escalation.length && t.state === "open" ? workWord("todoEscalated") : stateWords(t.state)}
+                </span>
+                <small>
+                  {t.origin === "dispatch" ? workWord("todoDispatch") : t.origin} · {t.task_id.slice(0, 8)} ·{" "}
+                  {when(t.closed_at ?? t.updated_at)}
+                  {t.state !== "open" ? ` · ${reasonWords(t.reason)}` : ""}
+                </small>
+              </div>
+            ))
+          )}
+          {page?.next_cursor && (
+            <p>{workWord("more", { n: Math.max(0, shownTotal(page, open && closed) - page.todos.length) })}</p>
+          )}
+          {page && (
+            <button className="chip" type="button" style={{ marginTop: 8 }} onClick={() => setClosed((c) => !c)}>
+              {workWord(closed ? "todosHideClosed" : "todosShowClosed")}
+            </button>
+          )}
+        </section>
       </div>
     </details>
   )
