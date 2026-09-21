@@ -156,3 +156,20 @@ fast-forward. Before adding one, ask `git log -S <string> --all` whether any
 published commit carries it. A string that only your unpublished commits carry
 is a safe extension; one that an older commit carries is a history rewrite and
 is the person's decision, not a detail of this publish.
+
+## The rule to add is the one your own commit carries, not the bare id
+
+A finding cites a file and a line, and the obvious fix is to add the private
+string itself to the replacement file. That is usually the wrong rule: an id
+that has been in the repository for days is in commits that are already
+published, so rewriting it stops the push being a fast-forward.
+
+Read the rule that fired first. `task-id` matches `task` followed by eight hex
+digits, so `live task \`31c4bd21…\`` is a finding while `in-flight
+\`31c4bd21\`` in another file is not — the same id, and only one of them is
+cited as a task. Replacing the whole phrase your own commit introduced rewrites
+only your own commits, and `git log -S <phrase> <published-tip>` proves it
+before you run anything.
+
+When a rewrite of already-published commits really is needed, that is the
+person's decision, not a step in a publish.
