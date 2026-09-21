@@ -169,6 +169,7 @@ export interface Todo {
   project: string
   state: string
   reason: string
+  landing_state: string | null
   created_at: number
   updated_at: number
   closed_at: number | null

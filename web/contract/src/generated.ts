@@ -1361,12 +1361,14 @@ export interface BrokerInflightRow {
 /**
  * What became of a delivery, and the one record of it: every other answer to "did
  * this land" is read from this one. Delivered is not reviewed and reviewed is not
- * landed; `landed` is the one rung a caller cannot assert on its own word, because
- * the broker proves that this task's work — an isolated task's branch head, or
- * for a task in the shared checkout a commit made after it was dispatched — is on
- * the target, by asking git for ancestry. The commit the task was dispatched from,
- * or anything already under it, is refused as `unverified_landing` with reason
- * `predates_dispatch`.
+ * landed. `landed` proves this task's own delivery commit reached the target by
+ * ancestry. `incorporated` records the distinct case where that ancestry is false
+ * but another task's exact commit has its own broker-verified `landed` record on
+ * the same repository and target; `carrier_task` names that task, `commit` names
+ * its landing commit, and `delivery_head` remains this task's delivery. Git cannot
+ * prove that a semantic conflict resolution preserved every intended behaviour, so
+ * that judgement remains in `note` rather than being misrepresented as tree
+ * identity.
  */
 export interface BrokerLanding {
   at?: number
@@ -1376,6 +1378,12 @@ export interface BrokerLanding {
    * to be under.
    */
   base?: string
+
+  /**
+   * For `incorporated`, the other task whose exact broker-verified landing commit
+   * and target back this settlement.
+   */
+  carrier_task?: string
   commit?: string
 
   /**
@@ -1386,7 +1394,8 @@ export interface BrokerLanding {
   corrected_from?: BrokerLanding
 
   /**
-   * The isolated branch's head the landed commit was proved to carry.
+   * The isolated branch's delivery head: carried by the landed commit for `landed`,
+   * or retained as the non-ancestral original delivery for `incorporated`.
    */
   delivery_head?: string
   note?: string
@@ -1402,7 +1411,8 @@ export interface BrokerLanding {
   target?: string
 
   /**
-   * What the target branch named when `landed` was proved.
+   * What the target branch named when `landed` was proved, or what the carrier
+   * task's landing proved for `incorporated`.
    */
   target_commit?: string
 }
@@ -1497,10 +1507,11 @@ export interface BrokerLandingSources {
 export type BrokerLandingState =
     "pending"
   | "landed"
+  | "incorporated"
   | "abandoned"
   | "nothing_to_land"
 
-export const BrokerLandingStateValues: readonly BrokerLandingState[] = ["pending", "landed", "abandoned", "nothing_to_land"] as const
+export const BrokerLandingStateValues: readonly BrokerLandingState[] = ["pending", "landed", "incorporated", "abandoned", "nothing_to_land"] as const
 
 /**
  * The terminal lanes: one writer per terminal, and one machine-wide ceiling on

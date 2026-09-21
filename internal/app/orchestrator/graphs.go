@@ -224,9 +224,9 @@ func nodeState(r Record, kind string) string {
 		switch r.Landing.State {
 		case LandingPending:
 			return NodeAwaitingLanding
-		case LandingLanded:
-			// O10: landed with the proof its landing carried (D17), never the
-			// word alone.
+		case LandingLanded, LandingIncorporated:
+			// O10: settled with durable landing evidence (D17), never the word
+			// alone.
 			if r.Landing.TargetCommit == "" && r.Landing.DeliveryHead == "" {
 				return NodeAwaitingLanding
 			}

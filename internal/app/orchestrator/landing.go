@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -32,9 +33,10 @@ import (
 // built (D17): a shared-checkout task is landed on the commit its root names,
 // or recorded as `nothing_to_land`.
 
-// landingProof is what a landed commit was proved against.
+// landingProof is the durable Git evidence behind landed or incorporated.
 type landingProof struct {
 	commit       string
+	repo         string
 	targetCommit string
 	deliveryHead string
 	base         string
@@ -182,6 +184,15 @@ const (
 	UnverifiedDelivery   = "delivery_unknown"
 	UnverifiedNothing    = "nothing_delivered"
 	UnverifiedNotCarried = "not_the_delivery"
+
+	UnverifiedCarrierRequired = "carrier_required"
+	UnverifiedCarrierSelf     = "carrier_is_delivery"
+	UnverifiedCarrierMissing  = "carrier_unresolved"
+	UnverifiedCarrierLanded   = "carrier_not_landed"
+	UnverifiedCarrierRepo     = "carrier_repository_mismatch"
+	UnverifiedCarrierTarget   = "carrier_target_mismatch"
+	UnverifiedCarrierCommit   = "carrier_commit_mismatch"
+	UnverifiedAlreadyCarried  = "delivery_is_ancestor"
 )
 
 // proveDelivery proves a landed commit is this task's work on the target, or
@@ -231,7 +242,7 @@ func (b *Broker) proveDelivery(ctx context.Context, r Record, commit, target str
 				"), so it is not this task's work. Name the commit that carries the delivery onto the target.",
 			map[string]any{"reason": UnverifiedPredates, "base": base})
 	}
-	proof := landingProof{commit: c, targetCommit: t, base: base}
+	proof := landingProof{commit: c, repo: repo, targetCommit: t, base: base}
 	if r.Worktree == nil {
 		return proof, branchHead{}, nil
 	}
@@ -264,6 +275,102 @@ func (b *Broker) proveDelivery(ctx context.Context, r Record, commit, target str
 	}
 	proof.deliveryHead = h
 	return proof, head, nil
+}
+
+// proveIncorporated proves the part of a semantic integration the ledger can
+// prove without pretending Git understands program meaning:
+//
+//   - this task has a non-empty, resolvable delivery that is not itself an
+//     ancestor of the named commit (otherwise ordinary `landed` is the word);
+//   - another task in the same repository has a broker-verified
+//     `landed` record for this exact target and commit.
+//
+// The link, repository, target and commits are facts. Whether a conflict
+// resolution preserves every intended behaviour of the first delivery is a
+// review judgement and remains in Landing.Note; comparing trees cannot prove
+// it when the point of the integration was to rewrite conflicting changes.
+func (b *Broker) proveIncorporated(ctx context.Context, r Record, carrierID, commit, target string) (landingProof, branchHead, error) {
+	if carrierID == "" {
+		return landingProof{}, branchHead{}, unverified(UnverifiedCarrierRequired,
+			"incorporated must name the other task whose verified landing carried this delivery.")
+	}
+	if !IsTaskID(carrierID) {
+		return landingProof{}, branchHead{}, unverified(UnverifiedCarrierMissing,
+			"carrier_task must be a lowercase task UUID recorded by this broker.")
+	}
+	if carrierID == r.ID {
+		return landingProof{}, branchHead{}, unverified(UnverifiedCarrierSelf,
+			"A delivery cannot be its own integration carrier; use landed when its own commit reached the target.")
+	}
+	carrier, _, err := b.Record(ctx, carrierID)
+	if err != nil {
+		return landingProof{}, branchHead{}, unverified(UnverifiedCarrierMissing,
+			"The named carrier task is not a readable record in this broker.")
+	}
+	if carrier.Landing == nil || carrier.Landing.State != LandingLanded || carrier.Landing.Commit == "" {
+		return landingProof{}, branchHead{}, unverified(UnverifiedCarrierLanded,
+			"The named carrier task has no broker-verified landed commit.")
+	}
+
+	repo := landingRepository(r)
+	carrierRepo := landingRepository(carrier)
+	if repo == "" || carrierRepo == "" || filepath.Clean(repo) != filepath.Clean(carrierRepo) {
+		return landingProof{}, branchHead{}, unverified(UnverifiedCarrierRepo,
+			"The delivery and its carrier must belong to the same repository.")
+	}
+	if carrier.Landing.Target != target {
+		return landingProof{}, branchHead{}, unverified(UnverifiedCarrierTarget,
+			"The carrier task's verified landing names another target.")
+	}
+	c, err := b.Git.ResolveCommit(ctx, repo, commit)
+	if err != nil || c != carrier.Landing.Commit {
+		return landingProof{}, branchHead{}, unverified(UnverifiedCarrierCommit,
+			"The commit must be the exact commit in the carrier task's verified landing.")
+	}
+
+	if r.Worktree == nil || r.Worktree.Base == "" {
+		return landingProof{}, branchHead{}, unverified(UnverifiedDelivery,
+			"This task has no isolated delivery head and base to distinguish from the carrier's work.")
+	}
+	head := b.deliveryHead(ctx, r.Worktree)
+	h := head.commit
+	if h == "" {
+		h = r.Worktree.Head
+	}
+	if h == "" {
+		return landingProof{}, head, unverified(UnverifiedDelivery,
+			"The original delivery branch is gone and no delivery head was recorded when the task settled.")
+	}
+	resolvedHead, err := b.Git.ResolveCommit(ctx, repo, h)
+	if err != nil {
+		return landingProof{}, head, unverified(UnverifiedDelivery,
+			"The original delivery head no longer resolves in the task's repository.")
+	}
+	base, err := b.Git.ResolveCommit(ctx, repo, r.Worktree.Base)
+	if err != nil {
+		return landingProof{}, head, unverified(UnverifiedBase,
+			"The original delivery's recorded base no longer resolves in the task's repository.")
+	}
+	if under, err := b.Git.IsAncestor(ctx, repo, resolvedHead, base); err != nil || under {
+		return landingProof{}, head, unverified(UnverifiedNothing,
+			"The original delivery carries nothing past its recorded base.")
+	}
+	if carried, err := b.Git.IsAncestor(ctx, repo, resolvedHead, c); err != nil {
+		return landingProof{}, head, unverified(UnverifiedDelivery,
+			"Git could not compare the original delivery with the carrier commit.")
+	} else if carried {
+		return landingProof{}, head, unverified(UnverifiedAlreadyCarried,
+			"The carrier commit already contains the delivery commit by ancestry; record it as landed instead.")
+	}
+	return landingProof{commit: c, repo: repo, targetCommit: carrier.Landing.TargetCommit,
+		deliveryHead: resolvedHead, base: base}, head, nil
+}
+
+func landingRepository(r Record) string {
+	if r.Worktree != nil && r.Worktree.Repository != "" {
+		return r.Worktree.Repository
+	}
+	return r.Repository
 }
 
 // --- pending, split -------------------------------------------------------

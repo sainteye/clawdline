@@ -246,13 +246,13 @@ func (s *Server) brokerLanding(w http.ResponseWriter, r *http.Request, id string
 	var body map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request",
-			"state must be pending, landed, abandoned, or nothing_to_land.")
+			"state must be pending, landed, incorporated, abandoned, or nothing_to_land.")
 		return
 	}
 	unknown := []string{}
 	for key := range body {
 		switch key {
-		case "state", "target", "delivery", "commit", "note":
+		case "state", "target", "delivery", "commit", "carrier_task", "note":
 		default:
 			unknown = append(unknown, key)
 		}
@@ -267,13 +267,14 @@ func (s *Server) brokerLanding(w http.ResponseWriter, r *http.Request, id string
 		return strings.TrimSpace(v)
 	}
 	record, err := s.broker.Land(r.Context(), id, orchestrator.LandingRequest{
-		State:    str("state"),
-		Target:   str("target"),
-		Delivery: str("delivery"),
-		Commit:   str("commit"),
-		Note:     str("note"),
-		Machine:  machineAuthed(r),
-		Secret:   taskSecret(r),
+		State:       str("state"),
+		Target:      str("target"),
+		Delivery:    str("delivery"),
+		Commit:      str("commit"),
+		CarrierTask: str("carrier_task"),
+		Note:        str("note"),
+		Machine:     machineAuthed(r),
+		Secret:      taskSecret(r),
 	})
 	if err != nil {
 		writeBrokerError(w, err)
@@ -1091,6 +1092,7 @@ func brokerLanding(l *orchestrator.Landing, obligation orchestrator.Obligation) 
 		Target:       l.Target,
 		Commit:       l.Commit,
 		Repo:         l.Repo,
+		CarrierTask:  l.CarrierTask,
 		Note:         l.Note,
 		TargetCommit: l.TargetCommit,
 		DeliveryHead: l.DeliveryHead,

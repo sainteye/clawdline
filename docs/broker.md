@@ -15,7 +15,7 @@
 | `POST /v1/orchestrator/tasks` | orchestrator token | `dispatch.go`、`draft.go`、`brief.go` |
 | `GET /v1/orchestrator/tasks`、`/tasks/<id>` | 同 inventory | `transport/http/tasks.go`（併入 console 的列表）、`orchestrator.go` |
 | `POST /tasks/<id>/progress`、`/complete`、`/notify`、`GET /tasks/<id>/inflight` | 該 task 的 secret | `lifecycle.go` |
-| `POST /tasks/<id>/landing` | `pending`／`abandoned`：secret 或 token；`landed`／`nothing_to_land`：只有 token | `lifecycle.go` |
+| `POST /tasks/<id>/landing` | `pending`／`abandoned`：secret 或 token；`landed`／`incorporated`／`nothing_to_land`：只有 token | `lifecycle.go` |
 | `POST /tasks/<id>/completion/ack` | orchestrator token | `lifecycle.go` |
 | `GET /v1/orchestrator/inflight?project=` | 同 inventory | `lifecycle.go` |
 | `POST /v1/orchestrator/messages` | orchestrator token＋`Idempotency-Key` | `messages.go` |
@@ -25,11 +25,49 @@
 | 完成通知（`<clawdline-notice>`）與重送 | — | `notice.go`、`watch.go` |
 
 **Session 待辦（T2，design-decisions D36、board-redesign §5.2）**：每次派工替 root 開一筆 `dispatch:<task id>`，
-與 task 同一筆交易寫入；之後每一筆 broker 事實（結算、landing）在它自己的交易裡推進待辦——`landed`／`nothing_to_land`／
+與 task 同一筆交易寫入；之後每一筆 broker 事實（結算、landing）在它自己的交易裡推進待辦——`landed`／`incorporated`／`nothing_to_land`／
 `abandoned`／沒有落地義務的結束→`done`，寫不進待辦就連事實一起不寫。root 被讀數**確定**不在→`handed_off`，
 回來→`open`，移交 24 小時仍確定不在→`dropped`；讀不到（unknown）什麼都不動。daemon 啟動的第一個 beat 補齊沒有待辦的
 task、跟上還沒結束的待辦。不問人、不推播、不進看板；升級訊號（`cross_session`／`long_lived`／`repeated_failure`）只放在
 回應裡給 T4 用。派工的 `task.json` 可帶 `work_id`（小寫 UUID），respawn 會沿用。
+
+## Landing ledger 的字
+
+Landing 是 task 的終止狀態以外、唯一回答「這份交付後來怎麼了」的帳本。它目前有五個字：
+
+| 狀態 | 意思 | 誰可以寫 | 機器驗什麼 |
+|---|---|---|---|
+| `pending` | 還欠著一個處置 | task secret 或 orchestrator token | 只記義務；不宣稱 Git 現實 |
+| `landed` | 這個 task 自己的 delivery commit 已在 target | 只有 orchestrator token | target 與 commit 都能解析；commit 在 target 上；delivery head 是 commit 的祖先；delivery 不是 dispatch base |
+| `incorporated` | 這個 task 的非祖先 delivery 由另一個 task 的已驗證 landing 整合進 target | 只有 orchestrator token | 原 delivery 非空且可解析、不是 carrier commit 的祖先；`carrier_task` 是同一 repo 的可讀 task；它的 landing 是 `landed`；target 與 exact commit 都相同；`note` 留下語意判斷 |
+| `nothing_to_land` | task 沒有寫出要落地的東西 | 只有 orchestrator token | branch 與 checkout 的既有證據都沒有顯示寫入 |
+| `abandoned` | 這份交付不採用 | task secret 或 orchestrator token | 這是處置決定，不冒充 Git 證明 |
+
+`incorporated` 刻意不假裝 Git 會讀程式語意。它擋得住不存在的 carrier、尚未落地的 carrier、別的 repo、別的 target、
+別的 commit、空 delivery，以及其實可以正常記成 `landed` 的祖先關係；它擋不住「整合者解衝突時漏掉一個行為」。後者不是
+tree equality 能回答的問題：語意整合本來就會讓兩棵樹不同。判斷依據必須留在 `note`，code review 與測試仍負責內容正確性。
+帳本證明的是那個判斷綁在**哪一份原 delivery**以及**哪一筆已驗證落地**上，不是讓人裸寫一句「應該有進去」。
+若 carrier 的 landing 日後被更正，舊 landing 仍由 carrier 的 `corrected_from` 與 `landing.corrected` event 保留；
+`incorporated` 自己也保存當時驗過的 carrier commit、target commit、原 delivery head 與 base，不會只剩一個會漂移的 task id。
+
+目前看得到、但還沒有新增狀態的形狀：
+
+- 一份 delivery 被拆到兩個以上的 landing commit；一個 `commit` 與一個 `carrier_task` 表達不了完整集合。
+- delivery 後來被另一份工作刻意取代，舊內容不應仍被說成在 target；這跟 `abandoned` 的「沒有出貨」不同。
+- delivery branch 已被清掉，但 target 上仍有內容證據；現在缺少可在 branch 消失後重建 delivery 身分的證明。
+
+這次只加 `incorporated`：它對應已經發生、而且現有兩筆 task 與 Git commit 都能留下可檢查連結的形狀。其餘形狀需要不同的
+證據模型，不能共用一個模糊的「差不多有落地」。
+
+### 下一次要替 ledger 加一個字
+
+1. 在 `internal/app/orchestrator/record.go` 加常數與該狀態專屬的 durable evidence；同步決定 replay／correction 的 `sameAs` 身分。
+2. 在 `lifecycle.go` 關閉 request schema、認證與 transition；把證明放在 `landing.go`，所有 unknown 都拒絕，不降級成 false。
+3. 逐一走過 projection：inventory 是否 settled、session 待辦與 board 是否關閉、graph、timeline、舊 task projection，以及 reclaim
+   是否真的有足夠證據刪東西。這些讀者不一定該把新字當 `landed`；要各自說明。
+4. 改 `api/v1/orchestrator.schema.json`，執行 `go run ./tools/contract-gen` 同時產生 Go 與 TypeScript contract；不要手改 generated file。
+5. 在非 legacy 的 console 加人能看懂的字。`web/console/src/legacy/js/**` 與 copied string catalog 是 byte-for-byte 資產，不在這條路上改。
+6. 測試要一正一反地釘住每一個 proof gate、wire evidence、derived closing 行為與 replay；最後跑 `contract-gen -check` 和 web checks。
 
 錯誤碼與文字照舊版，包括信封：`{"error":{"code","message","request_id", …extra}}`，**extra 放在 `error` 裡面**。
 `stale_inventory` 因此能把整份 inventory 帶回來，重送只要一次來回。

@@ -138,10 +138,21 @@ func TaskFactsOf(r Record) work.TaskFacts {
 		f.Owner, f.OwnerAssistant = r.Root.SessionID, r.Root.Assistant
 	}
 	if r.Landing != nil {
-		f.Landing, f.LandedAt = string(r.Landing.State), atSecond(r.Landing.At)
+		f.Landing, f.LandedAt = workLandingState(r.Landing.State), atSecond(r.Landing.At)
 		f.LandingTarget = r.Landing.Target
 	}
 	return f
+}
+
+// workLandingState maps the richer landing ledger onto the board and to-do
+// rules' older outcome vocabulary. Incorporated is a proved settlement, so it
+// closes the obligation as landed while the landing record keeps the exact
+// distinction for task and console readers.
+func workLandingState(state LandingState) string {
+	if state == LandingIncorporated {
+		return string(LandingLanded)
+	}
+	return string(state)
 }
 
 // atSecond is a time at the store's resolution, so a task's time and an

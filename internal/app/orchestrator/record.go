@@ -65,6 +65,7 @@ type LandingState string
 const (
 	LandingPending       LandingState = "pending"
 	LandingLanded        LandingState = "landed"
+	LandingIncorporated  LandingState = "incorporated"
 	LandingAbandoned     LandingState = "abandoned"
 	LandingNothingToLand LandingState = "nothing_to_land"
 )
@@ -154,18 +155,24 @@ type Landing struct {
 	// Target is the branch the root named, the first time it named one
 	// (D19). Until then it is empty, and empty is "not decided", which no
 	// reader may fill in with the repository's HEAD.
-	Target string    `json:"target,omitempty"`
-	Commit string    `json:"commit,omitempty"`
-	Repo   string    `json:"repo,omitempty"`
-	At     time.Time `json:"at,omitempty"`
-	Note   string    `json:"note,omitempty"`
+	Target string `json:"target,omitempty"`
+	Commit string `json:"commit,omitempty"`
+	Repo   string `json:"repo,omitempty"`
+	// CarrierTask is the other task whose broker-verified landing brought
+	// this delivery's work to Target. It is present only for incorporated:
+	// Commit is that task's proved landing commit, while DeliveryHead remains
+	// this task's own non-ancestral delivery.
+	CarrierTask string    `json:"carrier_task,omitempty"`
+	At          time.Time `json:"at,omitempty"`
+	Note        string    `json:"note,omitempty"`
 
-	// What a `landed` was proved against (D17), kept because none of it can
-	// be read back later: the target moves on, and the branch may go.
-	// TargetCommit is what the target branch named when the proof ran;
-	// DeliveryHead is the isolated branch's head the proof showed the commit
-	// carries; Base is the commit the dispatch started from, which the landed
-	// commit was shown not to be under.
+	// What `landed` or `incorporated` was proved against (D17), kept because
+	// none of it can be read back later: the target moves on, and the branch
+	// may go. TargetCommit is what the target branch named when the ordinary
+	// landing proof ran; DeliveryHead is this task's isolated branch head;
+	// Base is the commit the dispatch started from. For landed, Commit carries
+	// DeliveryHead. For incorporated, it deliberately does not: Commit is the
+	// carrier task's separately verified landing.
 	TargetCommit string `json:"target_commit,omitempty"`
 	DeliveryHead string `json:"delivery_head,omitempty"`
 	Base         string `json:"base,omitempty"`
@@ -187,7 +194,8 @@ type Landing struct {
 // sameAs is whether two landings say the same thing, ignoring when each was
 // said and what each replaced. It is what tells a resend from a correction.
 func (l Landing) sameAs(o Landing) bool {
-	return l.State == o.State && l.Target == o.Target && l.Commit == o.Commit && l.Note == o.Note
+	return l.State == o.State && l.Target == o.Target && l.Commit == o.Commit &&
+		l.CarrierTask == o.CarrierTask && l.Note == o.Note
 }
 
 // replaced is the landing as a correction keeps it: itself, without the one

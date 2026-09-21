@@ -783,3 +783,13 @@ func TestAStartBindsATaskToTheLineAProposalNamed(t *testing.T) {
 		t.Fatalf("the control is on %q", got.WorkID)
 	}
 }
+
+func TestAnIncorporatedLandingClosesOlderWorkRulesAsLanded(t *testing.T) {
+	r := Record{Landing: &Landing{State: LandingIncorporated, Target: "main", CarrierTask: "carrier"}}
+	if got := taskFacts(r).Landing; got != string(LandingLanded) {
+		t.Fatalf("to-do facts read incorporated as %q, want landed", got)
+	}
+	if got := TaskFactsOf(r).Landing; got != string(LandingLanded) {
+		t.Fatalf("board facts read incorporated as %q, want landed", got)
+	}
+}

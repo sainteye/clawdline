@@ -41,3 +41,18 @@ func TestTheWireCarriesWhatTheBranchHeld(t *testing.T) {
 		t.Errorf("a landing nobody asked about still carries a settlement: %s", body)
 	}
 }
+
+func TestAnIncorporatedLandingNamesItsCarrierOnTheWire(t *testing.T) {
+	l := &orchestrator.Landing{State: orchestrator.LandingIncorporated, Target: "main", Commit: "carrier-commit",
+		CarrierTask: "carrier-task", DeliveryHead: "original-delivery"}
+	body, err := json.Marshal(brokerLanding(l, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"state":"incorporated"`, `"carrier_task":"carrier-task"`,
+		`"commit":"carrier-commit"`, `"delivery_head":"original-delivery"`} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("wire %s does not contain %s", body, want)
+		}
+	}
+}

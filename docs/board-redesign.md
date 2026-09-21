@@ -432,7 +432,7 @@ active / awaiting_closure ──(person: drop)──► dropped
 | Transition | Trigger | By whom | Evidence |
 |---|---|---|---|
 | →`active` | A person creates it, a person confirms a proposal, the backlog moves it in per §6 | Person / rule | One `moves` entry |
-| `active`→`done` | Every bound task `landed` or `nothing_to_land`, and no unresolved blocking obligation/finding | **Rule (automatic)** | The broker's landing record (D4) |
+| `active`→`done` | Every bound task `landed`, `incorporated` or `nothing_to_land`, and no unresolved blocking obligation/finding | **Rule (automatic)** | The broker's landing record (D4) |
 | `active`→`awaiting_closure` | Every bound execution has finished, at least one delivery, but no evidence for the row above (not code, the session's own claim of delivery, landing has not happened yet) | Rule | Task terminal state + delivery |
 | `awaiting_closure`→`done` | Landing evidence arrives | Rule | The broker |
 | `awaiting_closure`→`done` | The person presses "Accept" (= a generalization of the old `accept_artifact`, recorded as the person's decision; a fact, not an opinion) | **Person** | One `decisions` entry |
@@ -462,7 +462,7 @@ open ──(meets the escalation conditions of §6)──► stays open, and a d
 | Transition | Trigger | By whom |
 |---|---|---|
 | Created | A dispatch is accepted (root's "collect the result and land it" to-do); the `remaining` of `result.json`/`deliver`; an obligation not for the user | The broker (automatic) |
-| →`done` | Task terminal state + landing (`landed`/`nothing_to_land`); obligation resolved; covered by a later `deliver` | The broker (automatic) |
+| →`done` | Task terminal state + landing (`landed`/`incorporated`/`nothing_to_land`); obligation resolved; covered by a later `deliver` | The broker (automatic) |
 | →`done` (unlanded) | Task terminal but `abandoned`, or the broker's landing obligation closed by a person or root | The broker (automatic) |
 | →`handed_off` | The owner session ends | Rule: moved to its root; with a `handoff`, moved to the session taking over |
 | →`dropped` | Still no owner 24 hours after being handed off | Rule, in the digest |
