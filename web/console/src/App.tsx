@@ -9,6 +9,7 @@ import { conversationNotStarted } from "./session/readiness.js"
 import Dashboard from "./Dashboard.js"
 import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
+import { drawerEntries, pageReady } from "./pages/registry.js"
 import { workWord } from "./pages/work/words.js"
 import { nowWord } from "./pages/now/words.js"
 import { nextWord } from "./next-strings.js"
@@ -52,13 +53,14 @@ type Page = "sessions" | "dashboard" | "devices" | "projects" | "board" | "usage
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
 
-// The drawer's rows as `index.html` has them: its order, its ids, and its
-// `hidden`. Pages whose backend this daemon does not own stay on screen and
+// The drawer's rows as `index.html` has them: its order and its ids. Pages
+// whose backend this daemon does not own stay on screen and
 // disabled rather than missing, so what is not here can be seen.
 //
-// `nav-board` is hidden by `BoardControls.apply` whatever the answer, and
-// `static.js` never paints it, so it keeps the markup's English and stays out
-// of the drawer here too; the Board is reached from a Project, as there.
+// The Board module declares that it has no drawer entry: it keeps its address
+// for Project links, but is reached from a Project rather than as a second,
+// machine-wide board. This is routing metadata, not a `hidden` presentation
+// flag, so adding the module cannot accidentally add the row.
 //
 // `usage-open` and `nav-ledger` are hidden in the markup and shown by that same
 // `apply` on a board answer that carries `enabled: false` — Board mode off,
@@ -74,11 +76,11 @@ type Asked = "none" | "waiting" | "opened" | "gone"
 //
 // The Timeline is in neither drawer: a timeline is one Project's, so it is
 // reached from that Project's board and has no row to be in.
-const PAGES: { id: Page; nav: string; key?: string; text?: string; ready: boolean; hidden?: boolean }[] = [
+const PAGES: { id: Page; nav: string; key?: string; text?: string; ready: boolean }[] = [
   { id: "sessions", nav: "nav-sessions", key: "webSessions", ready: true },
   { id: "devices", nav: "nav-devices", key: "webDevices", ready: false },
   { id: "projects", nav: "nav-projects", key: "webProjects", ready: false },
-  { id: "board", nav: "nav-board", text: "Projects · Board", ready: false, hidden: true },
+  { id: "board", nav: "nav-board", text: "Projects · Board", ready: false },
   { id: "usage", nav: "usage-open", key: "webUsage", ready: false },
   { id: "ledger", nav: "nav-ledger", key: "webLedger", ready: false },
   { id: "plan", nav: "nav-plan", key: "webPlan", ready: false },
@@ -107,7 +109,7 @@ const PAGE_MODULES: Record<string, PageModule> = Object.fromEntries(
 
 /** Whether this console can show a page: built in, or registered in pages/. */
 function ready(id: string): boolean {
-  return PAGES.some((p) => p.id === id && p.ready) || id in PAGE_MODULES
+  return pageReady(id, PAGES.some((p) => p.id === id && p.ready), PAGE_MODULES)
 }
 
 /** The pages a fragment may name here: `Pages.knows`, less the ones this daemon cannot show. */
@@ -759,7 +761,7 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
         }}
       >
         <div className="sidebar-panel" id="sidebar-panel">
-          {PAGES.map((p) => (
+          {drawerEntries(PAGES, PAGE_MODULES).map((p) => (
             <button
               key={p.id}
               className="sidebar-item"
@@ -767,7 +769,6 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
               type="button"
               data-page-to={p.id}
               aria-current={page === p.id ? "page" : undefined}
-              hidden={p.hidden}
               disabled={!ready(p.id)}
               onClick={() => go(p.id)}
             >

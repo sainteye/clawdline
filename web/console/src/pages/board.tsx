@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from "react"
 import type { PageModule } from "./types.js"
+import { boardRegistration } from "./board-registration.js"
 import { bindBoard, boardIntent, enterProjectBoard, refreshBoardMode, type BoardPage } from "../legacy/board-bridge.js"
 import { openTimeline } from "../legacy/timeline-bridge.js"
 import { ActionConfirm, Info, requestPage, shown as overlayShown } from "../overlays/index.js"
@@ -145,4 +146,4 @@ function openLive(id: string): void {
   }
 }
 
-export const page: PageModule = { id: "board", Component: BoardPageView }
+export const page: PageModule = { ...boardRegistration, Component: BoardPageView }

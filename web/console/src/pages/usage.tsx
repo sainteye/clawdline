@@ -3,6 +3,7 @@ import type { PageModule } from "./types.js"
 import { bindUsagePage, type UsagePortfolio } from "../legacy/usage-bridge.js"
 import sectionMarkup from "./usage/section.html?raw"
 import dialogMarkup from "./usage/dialog.html?raw"
+import { translateUsage } from "./usage/zh-Hant.js"
 
 /**
  * The Usage page: `section#usage-analytics` and `dialog#usage-detail` in the
@@ -11,10 +12,10 @@ import dialogMarkup from "./usage/dialog.html?raw"
  * The two fragments beside this file are that markup as it stands between
  * the elements' own tags (index.html lines 723–811 and 815–816), whitespace
  * included, and the copied module fills them — so the rows, cards and
- * sentences are the original's own, English as there: `static.js` translates
- * only the drawer row, not the page. React owns the two outer elements and
- * nothing inside them; nothing inside is ever re-rendered, so what the module
- * wrote stays written.
+ * sentences are the original's own. `static.js` translates only the drawer
+ * row, so this wrapper repaints the copied page after every draw when the
+ * chosen language is Traditional Chinese. React owns the two outer elements
+ * and nothing inside them.
  *
  * What the original's page registry does for this page is done here:
  * `enter` on arrival asks for the portfolio, `leave` on departure, the
@@ -36,6 +37,24 @@ function UsagePage({ shown }: { shown: boolean }) {
   // control.
   useLayoutEffect(() => {
     if (!portfolio.current) portfolio.current = bindUsagePage(document)
+    const roots = [document.getElementById("usage-analytics"), document.getElementById("usage-detail")].filter(
+      (root): root is HTMLElement => !!root,
+    )
+    const repaint = () => {
+      for (const root of roots) translateUsage(root, document.documentElement.lang)
+    }
+    const watch = new MutationObserver(repaint)
+    for (const root of roots) {
+      watch.observe(root, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ["aria-label", "title", "data-label"],
+      })
+    }
+    repaint()
+    return () => watch.disconnect()
   }, [])
 
   useLayoutEffect(() => {
@@ -43,6 +62,10 @@ function UsagePage({ shown }: { shown: boolean }) {
     was.current = shown
     if (shown) {
       portfolio.current?.enter()
+      const page = document.getElementById("usage-analytics")
+      const detail = document.getElementById("usage-detail")
+      if (page) translateUsage(page, document.documentElement.lang)
+      if (detail) translateUsage(detail, document.documentElement.lang)
       document.getElementById("usage-close")?.focus({ preventScroll: true })
     } else {
       portfolio.current?.leave()
