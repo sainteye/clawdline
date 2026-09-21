@@ -60,6 +60,10 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 			Reason        string `json:"reason"`
 			Question      string `json:"question"`
 			SubjectStatus string `json:"subject_status"`
+			State         string `json:"state"`
+			Resolution    string `json:"resolution"`
+			Evidence      string `json:"resolution_evidence"`
+			ResolvedBy    string `json:"resolved_by"`
 		} `json:"proposal"`
 		Item *struct {
 			ID    string `json:"id"`
@@ -89,7 +93,8 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	}
 
 	// Two lines of work, each a child its root sent.
-	lines := []string{"0b0e0000-0000-4000-8000-000000000001", "0b0e0000-0000-4000-8000-000000000002"}
+	lines := []string{"0b0e0000-0000-4000-8000-000000000001", "0b0e0000-0000-4000-8000-000000000002",
+		"0b0e0000-0000-4000-8000-000000000003"}
 	for i, l := range lines {
 		r := orchestrator.Record{ID: "7a5c0000-0000-4000-8000-00000000000" + string(rune('1'+i)), Kind: "custom",
 			Title: "child", WorkID: l, State: orchestrator.StateBriefed, CreatedAt: time.Now(),
@@ -141,7 +146,8 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	}
 	// The second, in the same turn, goes to the "to confirm" area.
 	held := read(do(machine, http.MethodPost, "/v1/orchestrator/proposals", "p3", propose(lines[1])))
-	if held.Proposal.Ask || held.Proposal.Reason != "proposal_budget_exhausted" || strings.Contains(held.Instructions, "/asked") {
+	if held.Proposal.Ask || held.Proposal.Reason != "proposal_budget_exhausted" || strings.Contains(held.Instructions, "/asked") ||
+		!strings.Contains(held.Instructions, held.Proposal.ID+"/resolve") || !strings.Contains(held.Instructions, "evidence") {
 		t.Fatalf("held: %+v", held)
 	}
 	d := diagnostics()
@@ -254,6 +260,46 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	}
 	if rec := do(person, http.MethodGet, "/v1/work/digests?kind=monthly", "", ""); rec.Code != 400 {
 		t.Fatalf("a kind that is not one: %d", rec.Code)
+	}
+
+	// Resolving is not another answer. The owning root may record an observed
+	// fact without pretending a person said it, but both its conclusion and
+	// source are mandatory, and it may not resolve another root's proposal.
+	rootResolve := "/v1/orchestrator/proposals/" + held.Proposal.ID + "/resolve"
+	if rec := do(machine, http.MethodPost, rootResolve, "r1",
+		`{"session_id":"root-conv","resolution":"The gap is already covered.","evidence":""}`); rec.Code != 400 ||
+		code(rec) != "proposal_evidence_required" {
+		t.Fatalf("resolution without evidence: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(machine, http.MethodPost, rootResolve, "r2",
+		`{"session_id":"other-conv","resolution":"The gap is already covered.","evidence":"daemon response: ok"}`); rec.Code != 409 || code(rec) != "not_your_proposal" {
+		t.Fatalf("another root resolving it: %d %s", rec.Code, rec.Body)
+	}
+	resolved := read(do(machine, http.MethodPost, rootResolve, "r3",
+		`{"session_id":"root-conv","resolution":"The gap is already covered.","evidence":"daemon response: ok"}`))
+	if resolved.Proposal.State != "resolved" || resolved.Proposal.Resolution == "" ||
+		resolved.Proposal.Evidence != "daemon response: ok" || resolved.Proposal.ResolvedBy != "root:root-conv" {
+		t.Fatalf("root resolution: %+v", resolved.Proposal)
+	}
+	if rec := do(person, http.MethodGet, "/v1/work/proposals?state=resolved", "", ""); rec.Code != 200 ||
+		!strings.Contains(rec.Body.String(), `"resolved":1`) ||
+		!strings.Contains(rec.Body.String(), `"id":"`+held.Proposal.ID+`"`) {
+		t.Fatalf("resolved list: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(machine, http.MethodPost, "/v1/orchestrator/proposals", "p4", propose(lines[1])); rec.Code != 409 ||
+		code(rec) != "proposal_resolved" {
+		t.Fatalf("resolved line proposed again: %d %s", rec.Code, rec.Body)
+	}
+
+	// The person has the same evidence-backed exit directly on the work
+	// route; unlike a session answer it needs no relayed run.
+	third := read(do(machine, http.MethodPost, "/v1/orchestrator/proposals", "p5", propose(lines[2])))
+	personResolve := "/v1/work/proposals/" + third.Proposal.ID + "/resolve"
+	if rec := do(person, http.MethodPost, personResolve, "r4",
+		`{"resolution":"The premise no longer exists.","evidence":"command output: no matching rows"}`); rec.Code != 200 ||
+		!strings.Contains(rec.Body.String(), `"state":"resolved"`) ||
+		!strings.Contains(rec.Body.String(), `"resolved_by":"user"`) {
+		t.Fatalf("person resolution: %d %s", rec.Code, rec.Body)
 	}
 }
 

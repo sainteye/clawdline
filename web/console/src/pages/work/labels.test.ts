@@ -6,6 +6,8 @@ import { nowWord } from "../now/words.ts"
 import { workWord } from "./words.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { proposalFoldShouldOpen } from "./fold.ts"
+// @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
+import { nextWord } from "../../next-strings.ts"
 
 test("Now names proposals separately from work that is already waiting to close", () => {
   const prior = Object.getOwnPropertyDescriptor(globalThis, "navigator")
@@ -29,4 +31,21 @@ test("pending proposals open their controls on arrival without defeating a manua
   assert.equal(proposalFoldShouldOpen(0, 25), true)
   assert.equal(proposalFoldShouldOpen(25, 25), false)
   assert.equal(proposalFoldShouldOpen(25, 24), true)
+})
+
+test("declining for now and recording an evidence-backed resolution are visibly different", () => {
+  const prior = Object.getOwnPropertyDescriptor(globalThis, "navigator")
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { language: "zh-TW" },
+  })
+  try {
+    assert.equal(nextWord("proposalNotNow"), "現在不要")
+    assert.equal(nextWord("proposalResolve"), "已完成／已不存在")
+    assert.notEqual(nextWord("proposalNotNow"), nextWord("proposalResolve"))
+    assert.match(nextWord("proposalResolveEvidence"), /檔案:行號|指令輸出|daemon/)
+  } finally {
+    if (prior) Object.defineProperty(globalThis, "navigator", prior)
+    else Reflect.deleteProperty(globalThis, "navigator")
+  }
 })

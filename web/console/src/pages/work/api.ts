@@ -103,6 +103,11 @@ export interface Proposal {
   /** Which fact about the subject ended the question; null while it is one. */
   withdrawn_reason: string | null
   withdrawn_at: number | null
+  /** Checked conclusion and source for an evidence-backed resolution. */
+  resolution: string | null
+  resolution_evidence: string | null
+  resolved_by: string | null
+  resolved_at: number | null
 }
 
 export interface ProposalPage {
@@ -293,6 +298,9 @@ export const createItem = (n: { title: string; project: string; place: "board" |
 
 export const answerProposal = (id: string, answer: "track" | "later" | "no") =>
   decide<unknown>(`/v1/work/proposals/${id}`, { answer })
+
+export const resolveProposal = (id: string, resolution: string, evidence: string) =>
+  decide<unknown>(`/v1/work/proposals/${id}/resolve`, { resolution, evidence })
 
 export const answerDecision = (id: string, option: string) =>
   decide<unknown>(`/v1/work/decisions/${id}`, { answer: option })

@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS proposals (
                     ('human_present','human_absent','proposal_budget_exhausted','proposal_from_child','made_by_rule')),
   channel         TEXT    NOT NULL CHECK (channel IN ('session','to_confirm')),
   question        TEXT    NOT NULL DEFAULT '',
-  state           TEXT    NOT NULL CHECK (state IN ('pending','answered','expired','withdrawn')),
+  state           TEXT    NOT NULL CHECK (state IN ('pending','answered','expired','withdrawn','resolved')),
   answer          TEXT    CHECK (answer IN ('track','later','no')),
   answered_by     TEXT,
   answered_at     INTEGER,
@@ -61,9 +61,16 @@ CREATE TABLE IF NOT EXISTS proposals (
   withdrawn_reason TEXT   CHECK (withdrawn_reason IN
                     ('subject_tracked','subject_settled','rule_no_longer_applies')),
   withdrawn_at    INTEGER,
+  resolution      TEXT,
+  resolution_evidence TEXT,
+  resolved_by     TEXT,
+  resolved_at     INTEGER,
   version         INTEGER NOT NULL DEFAULT 0,
   CHECK ((state = 'answered') = (answer IS NOT NULL AND answered_at IS NOT NULL)),
   CHECK ((state = 'withdrawn') = (withdrawn_reason IS NOT NULL AND withdrawn_at IS NOT NULL)),
+  CHECK ((state = 'resolved') = (resolution IS NOT NULL AND resolution <> '' AND
+         resolution_evidence IS NOT NULL AND resolution_evidence <> '' AND
+         resolved_by IS NOT NULL AND resolved_by <> '' AND resolved_at IS NOT NULL)),
   CHECK (ask = (channel = 'session'))
 );
 CREATE INDEX IF NOT EXISTS proposals_work ON proposals(work_id, created_at);
@@ -149,14 +156,14 @@ func openParticipation(db *sql.DB) error {
 	return err
 }
 
-// widenProposalStates lets a store made before withdrawal record one.
+// widenProposalStates lets a store made before withdrawal or resolution
+// record those terminal states.
 //
 // `CREATE TABLE IF NOT EXISTS` never revisits a table that exists, and a CHECK
 // constraint cannot be altered, so a store that has been running since before
-// `withdrawn` would refuse every withdrawal at the write — on exactly the
-// machines with proposals old enough to need one. It is stated as what it
-// wants, like the rest of migrate(): a table whose own DDL already names
-// `withdrawn` is left alone, so running it twice does nothing.
+// either state would refuse it at the write. It is stated as what it wants,
+// like the rest of migrate(): a table whose own DDL already names `resolved`
+// and its evidence is left alone, so running it twice does nothing.
 //
 // The rows are carried over unchanged. Nothing here decides anything about a
 // proposal; the sweep does that afterwards, from the same rules a new store
@@ -164,7 +171,8 @@ func openParticipation(db *sql.DB) error {
 func widenProposalStates(db *sql.DB) error {
 	var ddl string
 	err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'proposals'`).Scan(&ddl)
-	if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "withdrawn")) {
+	if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "'resolved'") &&
+		strings.Contains(ddl, "resolution_evidence")) {
 		return nil
 	}
 	if err != nil {
@@ -175,8 +183,12 @@ func widenProposalStates(db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
+	withdrawn := "NULL, NULL"
+	if strings.Contains(ddl, "withdrawn_reason") {
+		withdrawn = "withdrawn_reason, withdrawn_at"
+	}
 	steps := []string{
-		`ALTER TABLE proposals RENAME TO proposals_before_withdrawn`,
+		`ALTER TABLE proposals RENAME TO proposals_before_resolution`,
 		// The indexes followed the rename and still hold their names.
 		`DROP INDEX IF EXISTS proposals_work`,
 		`DROP INDEX IF EXISTS proposals_task`,
@@ -186,15 +198,16 @@ func widenProposalStates(db *sql.DB) error {
 		participationSchema,
 		`INSERT INTO proposals (id, work_id, task_id, session, source, project, title, signals, effects, ask,
 			ask_reason, channel, question, state, answer, answered_by, answered_at, created_at, expires_at,
-			asked_inline_at, withdrawn_reason, withdrawn_at, version)
+			asked_inline_at, withdrawn_reason, withdrawn_at, resolution, resolution_evidence, resolved_by, resolved_at,
+			version)
 		 SELECT id, work_id, task_id, session, source, project, title, signals, effects, ask, ask_reason, channel,
-			question, state, answer, answered_by, answered_at, created_at, expires_at, asked_inline_at, NULL, NULL,
-			version FROM proposals_before_withdrawn`,
-		`DROP TABLE proposals_before_withdrawn`,
+			question, state, answer, answered_by, answered_at, created_at, expires_at, asked_inline_at, ` + withdrawn + `,
+			NULL, NULL, NULL, NULL, version FROM proposals_before_resolution`,
+		`DROP TABLE proposals_before_resolution`,
 	}
 	for _, step := range steps {
 		if _, err := tx.Exec(step); err != nil {
-			return fmt.Errorf("proposals.withdrawn: %w", err)
+			return fmt.Errorf("proposals.states: %w", err)
 		}
 	}
 	return tx.Commit()
@@ -205,16 +218,18 @@ func widenProposalStates(db *sql.DB) error {
 const proposalColumns = `id, work_id, COALESCE(task_id, ''), session, source, project, title, signals, effects,
   ask, ask_reason, channel, question, state, COALESCE(answer, ''), COALESCE(answered_by, ''),
   COALESCE(answered_at, 0), created_at, expires_at, COALESCE(asked_inline_at, 0),
-  COALESCE(withdrawn_reason, ''), COALESCE(withdrawn_at, 0), version`
+  COALESCE(withdrawn_reason, ''), COALESCE(withdrawn_at, 0), COALESCE(resolution, ''),
+  COALESCE(resolution_evidence, ''), COALESCE(resolved_by, ''), COALESCE(resolved_at, 0), version`
 
 func scanProposal(sc scanner) (work.Proposal, error) {
 	var p work.Proposal
 	var signals, effects, channel, state, answer string
 	var ask int
-	var answered, created, expires, asked, withdrawn int64
+	var answered, created, expires, asked, withdrawn, resolved int64
 	err := sc.Scan(&p.ID, &p.WorkID, &p.TaskID, &p.Session, &p.Source, &p.Project, &p.Title, &signals, &effects,
 		&ask, &p.AskReason, &channel, &p.Question, &state, &answer, &p.AnsweredBy, &answered, &created, &expires,
-		&asked, &p.WithdrawnReason, &withdrawn, &p.Version)
+		&asked, &p.WithdrawnReason, &withdrawn, &p.Resolution, &p.ResolutionEvidence, &p.ResolvedBy, &resolved,
+		&p.Version)
 	if err == sql.ErrNoRows {
 		return work.Proposal{}, ErrNoProposal
 	}
@@ -232,6 +247,7 @@ func scanProposal(sc scanner) (work.Proposal, error) {
 	p.AnsweredAt, p.CreatedAt, p.ExpiresAt, p.AskedInlineAt = unixOrZero(answered), time.Unix(created, 0),
 		time.Unix(expires, 0), unixOrZero(asked)
 	p.WithdrawnAt = unixOrZero(withdrawn)
+	p.ResolvedAt = unixOrZero(resolved)
 	return p, nil
 }
 
@@ -297,20 +313,24 @@ func (t *WorkTx) PutProposal(next work.Proposal, prev *work.Proposal, limit int6
 		}
 		res, err = t.tx.ExecContext(t.ctx, `INSERT INTO proposals (id, work_id, task_id, session, source, project,
 			title, signals, effects, ask, ask_reason, channel, question, state, answer, answered_by, answered_at,
-			created_at, expires_at, asked_inline_at, withdrawn_reason, withdrawn_at, version)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			created_at, expires_at, asked_inline_at, withdrawn_reason, withdrawn_at, resolution, resolution_evidence,
+			resolved_by, resolved_at, version)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
 			next.ID, next.WorkID, emptyOrNull(next.TaskID), next.Session, next.Source, next.Project, next.Title,
 			string(signals), string(effects), ask, next.AskReason, string(next.Channel), next.Question,
 			string(next.State), emptyOrNull(string(next.Answer)), emptyOrNull(next.AnsweredBy),
 			zeroOrUnix(next.AnsweredAt), next.CreatedAt.Unix(), next.ExpiresAt.Unix(), zeroOrUnix(next.AskedInlineAt),
-			emptyOrNull(next.WithdrawnReason), zeroOrUnix(next.WithdrawnAt))
+			emptyOrNull(next.WithdrawnReason), zeroOrUnix(next.WithdrawnAt), emptyOrNull(next.Resolution),
+			emptyOrNull(next.ResolutionEvidence), emptyOrNull(next.ResolvedBy), zeroOrUnix(next.ResolvedAt))
 	} else {
 		res, err = t.tx.ExecContext(t.ctx, `UPDATE proposals SET state = ?, answer = ?, answered_by = ?,
-			answered_at = ?, asked_inline_at = ?, withdrawn_reason = ?, withdrawn_at = ?, version = version + 1
+			answered_at = ?, asked_inline_at = ?, withdrawn_reason = ?, withdrawn_at = ?, resolution = ?,
+			resolution_evidence = ?, resolved_by = ?, resolved_at = ?, version = version + 1
 			WHERE id = ? AND version = ?`,
 			string(next.State), emptyOrNull(string(next.Answer)), emptyOrNull(next.AnsweredBy),
 			zeroOrUnix(next.AnsweredAt), zeroOrUnix(next.AskedInlineAt), emptyOrNull(next.WithdrawnReason),
-			zeroOrUnix(next.WithdrawnAt), next.ID, prev.Version)
+			zeroOrUnix(next.WithdrawnAt), emptyOrNull(next.Resolution), emptyOrNull(next.ResolutionEvidence),
+			emptyOrNull(next.ResolvedBy), zeroOrUnix(next.ResolvedAt), next.ID, prev.Version)
 	}
 	if err != nil {
 		return err

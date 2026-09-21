@@ -150,7 +150,13 @@ type proposalWire struct {
 	// the question, and when; null in every other state.
 	WithdrawnReason *string `json:"withdrawn_reason"`
 	WithdrawnAt     *int64  `json:"withdrawn_at"`
-	Version         int64   `json:"version"`
+	// Resolution and ResolutionEvidence are the checked conclusion and its
+	// source for the distinct resolved state; null in every other state.
+	Resolution         *string `json:"resolution"`
+	ResolutionEvidence *string `json:"resolution_evidence"`
+	ResolvedBy         *string `json:"resolved_by"`
+	ResolvedAt         *int64  `json:"resolved_at"`
+	Version            int64   `json:"version"`
 }
 
 func proposalOf(p work.Proposal) proposalWire {
@@ -170,6 +176,8 @@ func proposalOf(p work.Proposal) proposalWire {
 		AnsweredAt: optionalUnix(p.AnsweredAt), CreatedAt: p.CreatedAt.Unix(), ExpiresAt: p.ExpiresAt.Unix(),
 		AskedInlineAt: optionalUnix(p.AskedInlineAt), Unprompted: p.Unprompted(),
 		WithdrawnReason: optionalString(p.WithdrawnReason), WithdrawnAt: optionalUnix(p.WithdrawnAt),
+		Resolution: optionalString(p.Resolution), ResolutionEvidence: optionalString(p.ResolutionEvidence),
+		ResolvedBy: optionalString(p.ResolvedBy), ResolvedAt: optionalUnix(p.ResolvedAt),
 		Version: p.Version}
 }
 
@@ -180,9 +188,13 @@ const (
 	askInstructions = "Ask the person at the end of this turn, in the words of `question`, without waiting for the answer. " +
 		"Then POST /v1/orchestrator/proposals/{id}/asked. Relay their answer to POST /v1/work/proposals/{id} " +
 		"with {\"answer\":\"track\"|\"later\"|\"no\",\"via\":{\"run\":\"<the run that carried it>\"}}, " +
-		"the run read from GET /v1/orchestrator/sessions/<your conversation id>/run after their reply arrives."
+		"the run read from GET /v1/orchestrator/sessions/<your conversation id>/run after their reply arrives. " +
+		resolveInstructions
 	holdInstructions = "Do not ask about this in the conversation. It is in the person's \"to confirm\" area and their daily digest; " +
-		"if nobody answers by expires_at it stays with its to-dos."
+		"if nobody answers by expires_at it stays with its to-dos. " + resolveInstructions
+	resolveInstructions = "If you inspect the subject and verify that it was already completed or its premise no longer exists, " +
+		"POST /v1/orchestrator/proposals/{id}/resolve with session_id, a one-sentence resolution, and evidence naming " +
+		"the source (file:line, command output, or daemon response). This is not the person's `no`."
 )
 
 type proposalOneWire struct {
@@ -202,8 +214,9 @@ func proposalAnswerOf(v app.ProposalView, withInstructions bool) proposalOneWire
 	if withInstructions {
 		out.Instructions = holdInstructions
 		if v.Proposal.Ask {
-			out.Instructions = strings.ReplaceAll(askInstructions, "{id}", v.Proposal.ID)
+			out.Instructions = askInstructions
 		}
+		out.Instructions = strings.ReplaceAll(out.Instructions, "{id}", v.Proposal.ID)
 	}
 	return out
 }
@@ -345,6 +358,17 @@ type askedWire struct {
 	SessionID string `json:"session_id"`
 }
 
+type resolveProposalWire struct {
+	SessionID  string `json:"session_id"`
+	Resolution string `json:"resolution"`
+	Evidence   string `json:"evidence"`
+}
+
+type personResolveProposalWire struct {
+	Resolution string `json:"resolution"`
+	Evidence   string `json:"evidence"`
+}
+
 type openDecisionWire struct {
 	SessionID    string        `json:"session_id"`
 	WorkID       string        `json:"work_id"`
@@ -396,9 +420,33 @@ func (s *Server) sessionProposalsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, proposalAnswerOf(v, false))
+	case rest == "resolve" && r.Method == http.MethodPost:
+		var body resolveProposalWire
+		raw, ok := readWorkBody(w, r, &body)
+		if !ok {
+			return
+		}
+		session := strings.TrimSpace(body.SessionID)
+		if session == "" {
+			writeRefusal(w, http.StatusBadRequest, "session_required",
+				"A root resolving a proposal names its conversation in session_id.")
+			return
+		}
+		k, ok := workKey(w, r, "machine")
+		if !ok {
+			return
+		}
+		k.Scope = participationScope
+		s.participationWrite(w, r, k, raw, func(file func(any) (store.ReceiptKey, store.ReceiptAnswer, bool)) error {
+			_, err := s.participation().ResolveProposal(r.Context(), id, body.Resolution, body.Evidence,
+				"root:"+session, session, func(v app.ProposalView) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+					return file(proposalAnswerOf(v, false))
+				})
+			return err
+		})
 	default:
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed",
-			"A proposal is read with GET; POST …/asked reports that it was asked.")
+			"A proposal is read with GET; POST …/asked reports that it was asked; POST …/resolve records an evidence-backed resolution.")
 	}
 }
 
@@ -597,10 +645,10 @@ func (s *Server) workProposalsRoute(w http.ResponseWriter, r *http.Request) {
 			state = work.ProposalPending
 		case "all":
 			state = ""
-		case work.ProposalPending, work.ProposalAnswered, work.ProposalExpired, work.ProposalWithdrawn:
+		case work.ProposalPending, work.ProposalAnswered, work.ProposalExpired, work.ProposalWithdrawn, work.ProposalResolved:
 		default:
 			writeRefusal(w, http.StatusBadRequest, "invalid_state",
-				"state is pending, answered, expired, withdrawn or all.")
+				"state is pending, answered, expired, withdrawn, resolved or all.")
 			return
 		}
 		page, err := s.participation().ProposalList(r.Context(), state, q["project"], q["cursor"])
@@ -621,8 +669,37 @@ func (s *Server) workProposalsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, rest, ok := idAfter(p, "/v1/work/proposals/")
-	if !ok || rest != "" {
+	if !ok || (rest != "" && rest != "resolve") {
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such proposal route.")
+		return
+	}
+	if rest == "resolve" {
+		if r.Method != http.MethodPost {
+			writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed",
+				"A proposal is resolved with POST.")
+			return
+		}
+		var body personResolveProposalWire
+		raw, ok := readWorkBody(w, r, &body)
+		if !ok {
+			return
+		}
+		actor, principal, _, ok := workActor(w, r, nil)
+		if !ok {
+			return
+		}
+		k, ok := workKey(w, r, principal)
+		if !ok {
+			return
+		}
+		k.Scope = participationScope
+		s.participationWrite(w, r, k, raw, func(file func(any) (store.ReceiptKey, store.ReceiptAnswer, bool)) error {
+			_, err := s.participation().ResolveProposal(r.Context(), id, body.Resolution, body.Evidence,
+				actor, "", func(v app.ProposalView) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+					return file(proposalAnswerOf(v, false))
+				})
+			return err
+		})
 		return
 	}
 	switch r.Method {
