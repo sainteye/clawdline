@@ -53,6 +53,7 @@ go vet ./...
 go build ./...
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
+GOOS=windows go vet ./...      # the Windows-only files, and every test, as Windows compiles them
 go test ./...
 go run ./tools/contract-gen -check      # Go and TypeScript are generated together
 tools/check-legacy-css.sh               # the byte-for-byte copies still match
@@ -61,6 +62,12 @@ tools/check-private.sh                  # nothing of the person's is in a public
 tools/check-private.sh -history -new    # no commit behind it added one either
 ( cd web && npm run check && npm run build )   # when anything under web/ changed
 ```
+
+`go vet ./...` on a Mac never reads a `_windows.go` or `!unix` file, and the Windows cross-build
+compiles no test, so a test that calls a POSIX-only `syscall` breaks Windows without either noticing.
+The Windows vet was red on exactly that from the day it could have been run until 2026-09-21, and
+a check that is always red is one nobody runs. A test that needs a Unix facility asks for it through
+a per-platform file (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.
 
 A new bound — a limit, a cache size, a number of rows — must be registered in
 `internal/domain/capacity`; `TestEveryBoundIsRegistered` fails otherwise. Drive the guard red

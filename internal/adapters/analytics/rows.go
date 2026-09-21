@@ -112,6 +112,10 @@ type Collector struct {
 	home   string
 	swift  *swiftstore.Store
 	ledger *swiftstore.UsageLedger
+	// open opens one record; os.Open outside tests. A test holds it shut to
+	// stand for a disk that has stopped answering, which no file can do on
+	// every platform: a FIFO blocks an open on Unix, and Windows has none.
+	open func(name string) (*os.File, error)
 
 	mu      sync.Mutex
 	claude  map[string]*claudeFile
@@ -138,6 +142,7 @@ func NewCollector(home string, swift *swiftstore.Store) *Collector {
 		home:   home,
 		swift:  swift,
 		ledger: swiftstore.OpenUsageLedger(swiftstore.ObservabilityDirIn(home)),
+		open:   os.Open,
 		claude: map[string]*claudeFile{},
 		codex:  map[string]*codexFile{},
 		keys:   map[string]string{},
@@ -316,7 +321,7 @@ func (c *Collector) readClaude(cand candidate) {
 		f = &claudeFile{sessionID: strings.TrimSuffix(filepath.Base(cand.path), ".jsonl")}
 	}
 	f.size, f.mtime, f.err = size, mtime, nil
-	if err := f.readFrom(cand.path); err != nil {
+	if err := f.readFrom(c.open, cand.path); err != nil {
 		f.err = err
 	}
 	c.mu.Lock()
@@ -326,8 +331,8 @@ func (c *Collector) readClaude(cand candidate) {
 
 var assistantNeedle = []byte(`"type":"assistant"`)
 
-func (f *claudeFile) readFrom(path string) error {
-	fh, err := os.Open(path)
+func (f *claudeFile) readFrom(open func(string) (*os.File, error), path string) error {
+	fh, err := open(path)
 	if err != nil {
 		return err
 	}
@@ -451,14 +456,14 @@ func (c *Collector) readCodex(cand candidate) {
 		return
 	}
 	f := &codexFile{size: size, mtime: mtime}
-	f.err = f.read(cand.path)
+	f.err = f.read(c.open, cand.path)
 	c.mu.Lock()
 	c.codex[cand.path] = f
 	c.mu.Unlock()
 }
 
-func (f *codexFile) read(path string) error {
-	fh, err := os.Open(path)
+func (f *codexFile) read(open func(string) (*os.File, error), path string) error {
+	fh, err := open(path)
 	if err != nil {
 		return err
 	}

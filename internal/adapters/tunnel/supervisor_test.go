@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -31,7 +30,11 @@ type fake struct {
 func newFake(t *testing.T, body string) fake {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("the fake cloudflared is a shell script")
+		// A fake that is not a shell script would not be enough on its own:
+		// BinaryPath takes a file for a program by its Unix execute bits,
+		// which Go never reports for a file on Windows, so a supervisor there
+		// refuses every cloudflared, a fake one included, as not installed.
+		t.Skip("the fake cloudflared is a shell script, and BinaryPath does not recognise a program on Windows yet")
 	}
 	dir := t.TempDir()
 	f := fake{dir: dir, bin: filepath.Join(dir, "cloudflared"), argv: filepath.Join(dir, "argv")}
@@ -100,7 +103,16 @@ func waitFor(t *testing.T, s *Supervisor, what string, ok func(Status) bool) Sta
 	}
 }
 
-func gone(pid int) bool { return syscall.Kill(pid, 0) != nil }
+// gone is the system's answer that pid is no longer there. A platform that
+// cannot answer fails the test rather than have it read as either.
+func gone(t *testing.T, pid int) bool {
+	t.Helper()
+	g, known := processGone(pid)
+	if !known {
+		t.Fatalf("this platform cannot say whether pid %d is running", pid)
+	}
+	return g
+}
 
 func readPID(t *testing.T, dir string) pidRecord {
 	t.Helper()
@@ -179,7 +191,7 @@ func TestQuickTunnelUpThenRevoked(t *testing.T) {
 		t.Fatalf("config mode: %v %v", info.Mode(), err)
 	}
 	rec := readPID(t, dir)
-	if rec.Config != config || gone(rec.PID) {
+	if rec.Config != config || gone(t, rec.PID) {
 		t.Fatalf("pid record: %+v", rec)
 	}
 	if !strings.Contains(l.all(), "tunnel: up at https://denied-franchise-william-jade.trycloudflare.com — via tpe01") {
@@ -193,7 +205,7 @@ func TestQuickTunnelUpThenRevoked(t *testing.T) {
 		t.Fatalf("after revocation: %+v", st)
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for !gone(rec.PID) {
+	for !gone(t, rec.PID) {
 		if time.Now().After(deadline) {
 			t.Fatalf("pid %d still running after the revocation", rec.PID)
 		}
@@ -221,7 +233,7 @@ func TestSamePlanIsLeftAlone(t *testing.T) {
 	first := readPID(t, dir).PID
 	s.Apply(quickInputs(f.bin))
 	s.Apply(quickInputs(f.bin))
-	if st := s.Status(); st.Phase != PhaseUp || readPID(t, dir).PID != first || gone(first) {
+	if st := s.Status(); st.Phase != PhaseUp || readPID(t, dir).PID != first || gone(t, first) {
 		t.Fatalf("an unchanged plan restarted the tunnel: %+v", st)
 	}
 }
@@ -245,7 +257,7 @@ func TestReplacedChildIsNotAFailure(t *testing.T) {
 	if st = s.Status(); st.Attempts != 0 || st.Phase != PhaseUp {
 		t.Fatalf("the stopped child was charged as a failure: %+v\n%s", st, l.all())
 	}
-	if !gone(first) {
+	if !gone(t, first) {
 		t.Fatalf("the replaced child %d is still running", first)
 	}
 }
@@ -313,7 +325,7 @@ func TestStopTakesTheChildWithIt(t *testing.T) {
 	waitFor(t, s, "up", func(st Status) bool { return st.Phase == PhaseUp })
 	pid := readPID(t, dir).PID
 	s.Stop()
-	if !gone(pid) {
+	if !gone(t, pid) {
 		t.Fatalf("pid %d outlived Stop", pid)
 	}
 	if st := s.Status(); st.Phase != PhaseOff {
@@ -361,7 +373,7 @@ func TestReclaim(t *testing.T) {
 	s.writePID(other.Process.Pid)
 	s.Reclaim()
 	time.Sleep(100 * time.Millisecond)
-	if gone(other.Process.Pid) {
+	if gone(t, other.Process.Pid) {
 		t.Fatal("a process that is not this daemon's cloudflared was stopped")
 	}
 	if !strings.Contains(l.all(), "is not this daemon's cloudflared") {
