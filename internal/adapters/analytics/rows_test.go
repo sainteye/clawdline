@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -20,13 +19,21 @@ func TestRowsAreBusyWhileARecordIsStuck(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// A FIFO blocks the reader's open until something writes to it: a record
-	// on a disk that has stopped answering.
 	stuck := filepath.Join(dir, "5a100000-0000-4000-8000-000000000001.jsonl")
-	if err := syscall.Mkfifo(stuck, 0o600); err != nil {
-		t.Skipf("no FIFO here: %v", err)
+	if err := os.WriteFile(stuck, nil, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	c := NewCollector(home, nil)
+	// The record's open does not return until the test lets it: a record on a
+	// disk that has stopped answering. This was a FIFO, which only Unix has;
+	// held here, the same stall reaches the collector on every platform.
+	answer := make(chan struct{})
+	c.open = func(name string) (*os.File, error) {
+		if name == stuck {
+			<-answer
+		}
+		return os.Open(name)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -34,17 +41,13 @@ func TestRowsAreBusyWhileARecordIsStuck(t *testing.T) {
 		t.Fatalf("want ErrBusy while the record is stuck, got %d rows, err %v", len(rows), err)
 	}
 
-	w, err := os.OpenFile(stuck, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
 	// Two lines of one reply, as Claude Code writes them: each carries the
 	// usage, and the Swift app adds both.
 	line := `{"type":"assistant","timestamp":"2026-09-01T00:00:00Z","cwd":"/nowhere","entrypoint":"cli","message":{"id":"m1","model":"claude-opus-5","usage":{"input_tokens":1,"output_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4}}}` + "\n"
-	if _, err := w.WriteString(line + line); err != nil {
+	if err := os.WriteFile(stuck, []byte(line+line), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	w.Close()
+	close(answer)
 
 	rows, err := c.Rows(context.Background(), time.Time{})
 	if err != nil {
