@@ -108,6 +108,11 @@ undone. Numbers come from a run, not from memory.
   records carry real session ids and whose daemon will type into somebody's live terminal.
 - Does not read the person's `~/.config/clawdline` (the retired app's own directory) except where
   the code already does, and never writes it.
+- **Stops its own daemon by PID, never by pattern.** `pkill -f "clawdline serve"` matches the
+  person's daemon as well as yours: it is the same command line. On 2026-09-21 that one line took
+  port 7727 down for thirty-four seconds while somebody was reading their phone. Keep the PID your
+  own `serve` printed and kill that.
+
 
 ## The single pages
 
