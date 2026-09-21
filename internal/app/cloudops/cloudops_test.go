@@ -464,14 +464,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/push/test",
 		body2: `{"session_id":"%19"}`,
 	}, {
+		word:    "agent",
+		body:    map[string]any{"type": "agent", "session": pane, "agent": "ag_4", "limit": 200},
+		session: pane, name: "agent:ag_4", method: "GET",
+		path: "/v1/sessions/%2519/agents/ag_4", query: map[string]string{"limit": "200"},
+	}, {
 		// The words this daemon knows and cannot answer. `unknown_command` is
 		// not a guess at a code: it is the one the hosted console learns from
 		// (`machineLacks` in net/cloud-client.js), so a machine that says it stops
 		// being asked.
-		word:    "agent",
-		body:    map[string]any{"type": "agent", "session": pane, "agent": "ag_4", "limit": 200},
-		session: pane, name: "agent:ag_4", code: "unknown_command", status: 400,
-	}, {
 		word:    "shell",
 		body:    map[string]any{"type": "shell", "session": pane, "shell": "sh_2", "bytes": 65536},
 		session: pane, name: "shell:sh_2", code: "unknown_command", status: 400,
@@ -1114,13 +1115,13 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		}
 	}
 	// The daemon's published list must not promise what it refuses.
-	for _, word := range []string{"agent", "shell", "skills",
+	for _, word := range []string{"shell", "skills",
 		"schedule", "diagnostics.report", "diagnostics.events", "dispatch"} {
 		if implemented[word] {
 			t.Fatalf("%s is advertised and has no local capability", word)
 		}
 	}
-	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
+	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "agent",
 		"transcript", "info", "git", "screen", "image", "documents", "document", "places",
 		"past-sessions", "schedules", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "snippets", "snippet-create", "snippet-update", "snippet-delete",

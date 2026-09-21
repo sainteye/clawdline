@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"sort"
 )
 
 // RolloutHead answers what a Codex rollout's head record says about itself.
@@ -34,6 +35,13 @@ type RolloutMeta struct {
 	// it. It is empty when the record did not carry one, and empty is read as
 	// "this did not say", never as a directory.
 	CWD string
+	// ThreadSource is Codex's positive classification of this rollout. Missing
+	// does not mean subagent: old records predate the field, and absence is only
+	// absence (retired Codex.swift:94-101).
+	ThreadSource string
+	// AgentType is the stable key/value Codex put below source.subagent, when
+	// it wrote one. It is a provider word, not a description inferred here.
+	AgentType string
 }
 
 // readRolloutHead is that reader against the filesystem.
@@ -67,9 +75,11 @@ func readRolloutHead(path string) (RolloutMeta, bool) {
 	var meta struct {
 		Type    string `json:"type"`
 		Payload struct {
-			SessionID string `json:"session_id"`
-			ID        string `json:"id"`
-			CWD       string `json:"cwd"`
+			SessionID    string `json:"session_id"`
+			ID           string `json:"id"`
+			CWD          string `json:"cwd"`
+			ThreadSource string `json:"thread_source"`
+			Source       any    `json:"source"`
 		} `json:"payload"`
 	}
 	if json.Unmarshal(head, &meta) != nil || meta.Type != "session_meta" {
@@ -78,10 +88,33 @@ func readRolloutHead(path string) (RolloutMeta, bool) {
 	if meta.Payload.SessionID == "" && meta.Payload.ID == "" {
 		return RolloutMeta{}, false
 	}
+	agentType := ""
+	var subagent map[string]any
+	if source, ok := meta.Payload.Source.(map[string]any); ok {
+		subagent, _ = source["subagent"].(map[string]any)
+	}
+	if len(subagent) > 0 {
+		keys := make([]string, 0, len(subagent))
+		for key := range subagent {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if value, ok := subagent[key].(string); ok && value != "" {
+				agentType = value
+				break
+			}
+			if agentType == "" {
+				agentType = key
+			}
+		}
+	}
 	return RolloutMeta{
 		Conversation: meta.Payload.SessionID,
 		Thread:       meta.Payload.ID,
 		CWD:          meta.Payload.CWD,
+		ThreadSource: meta.Payload.ThreadSource,
+		AgentType:    agentType,
 	}, true
 }
 

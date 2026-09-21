@@ -13,6 +13,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/subagents"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/config"
@@ -37,7 +38,7 @@ func capacityServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { _ = w.Close(); daemonLogs.Delete(dir) })
 	SetDaemonLog(dir, w)
-	return &Server{cfg: config.Config{Dir: dir}, store: st, ledger: transcript.NewLedger(),
+	return &Server{cfg: config.Config{Dir: dir}, store: st, ledger: transcript.NewLedger(), agents: subagents.New(t.TempDir()),
 		inventory: app.Inventory{Identity: transcript.NewHost()},
 		screenBus: newScreenBus(),
 		pictures:  pictures{store: artifacts.NewStore(dir), drops: artifacts.NewDrops(dir)}}

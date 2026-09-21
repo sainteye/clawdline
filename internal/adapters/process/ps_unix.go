@@ -132,12 +132,15 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 // head is read for it. When its directory is missing it still joins this one
 // batched kernel read; the identity stays untouched and only cwd is filled.
 //
-// It runs as one call for every row that needs it, after the table is built,
-// so a machine with no unnamed Codex on it pays nothing.
+// It runs as one call for every Codex row after the table is built. The open
+// file table now answers two questions from the same observation: which
+// conversation an unnamed process belongs to, and which positively-classified
+// subagent threads it currently holds open. Running is therefore direct
+// process evidence for Codex, not the missing-ending inference Claude needs.
 func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Session {
 	var pids []int
 	for _, s := range rows {
-		if s.Assistant == session.AssistantCodex && s.PID != 0 && (s.ConversationID == "" || s.CWD == "") {
+		if s.Assistant == session.AssistantCodex && s.PID != 0 {
 			pids = append(pids, s.PID)
 		}
 	}
@@ -148,6 +151,26 @@ func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Se
 	if p.Open != nil {
 		files, cwds, read = p.Open(ctx, pids)
 	}
+	// Identity and background work ask the same first-line questions. Cache
+	// them for this one process-table reading so a rollout is opened once,
+	// even when it answers both.
+	head := p.Head
+	if head != nil {
+		values := map[string]RolloutMeta{}
+		known := map[string]bool{}
+		original := head
+		head = func(path string) (RolloutMeta, bool) {
+			if ok, seen := known[path]; seen {
+				return values[path], ok
+			}
+			value, ok := original(path)
+			known[path] = ok
+			if ok {
+				values[path] = value
+			}
+			return value, ok
+		}
+	}
 	for i, s := range rows {
 		if s.Assistant != session.AssistantCodex || s.PID == 0 {
 			continue
@@ -155,21 +178,63 @@ func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Se
 		if rows[i].CWD == "" {
 			rows[i].CWD = cwds[s.PID]
 		}
-		if s.ConversationID != "" {
-			continue
+		if s.ConversationID == "" {
+			id, binding, detail, cwd := codexConversation(files[s.PID], read, head)
+			rows[i].ConversationID = id
+			rows[i].Binding = binding
+			rows[i].BindingDetail = detail
+			// A directory nobody read never takes one away: the row keeps
+			// whatever else proved where the session is, and an empty answer here
+			// stays the empty cell the console draws no project beside.
+			if cwd != "" {
+				rows[i].CWD = cwd
+			}
 		}
-		id, binding, detail, cwd := codexConversation(files[s.PID], read, p.Head)
-		rows[i].ConversationID = id
-		rows[i].Binding = binding
-		rows[i].BindingDetail = detail
-		// A directory nobody read never takes one away: the row keeps
-		// whatever else proved where the session is, and an empty answer here
-		// stays the empty cell the console draws no project beside.
-		if cwd != "" {
-			rows[i].CWD = cwd
-		}
+		rows[i].Agents, rows[i].AgentReading = codexAgents(
+			files[s.PID], read, rows[i].ConversationID, head)
 	}
 	return rows
+}
+
+// codexAgents is the current provider-native work under one conversation.
+//
+// A rollout is admitted only when Codex positively wrote `thread_source:
+// subagent`; a missing field is not a subagent (retired Codex.swift:94-101).
+// An unreadable table or an unrecognised rollout head makes the reading
+// unknown instead of turning it into zero, which is the U4 rule.
+func codexAgents(paths []string, read bool, conversation string, head RolloutHead) ([]session.Agent, session.AgentReading) {
+	if !read {
+		return nil, session.AgentReading{State: session.AgentsUnknown, Reason: session.AgentsUnreadable}
+	}
+	agents := []session.Agent{}
+	for _, path := range paths {
+		if _, ok := codexRolloutID(path); !ok {
+			continue
+		}
+		meta, ok := headOf(head, path)
+		if !ok {
+			return nil, session.AgentReading{State: session.AgentsUnknown, Reason: session.AgentsUnrecognized}
+		}
+		if meta.ThreadSource == "" {
+			// This is an older person's rollout unless another positive field
+			// says otherwise. Absence is deliberately not classification.
+			continue
+		}
+		if meta.ThreadSource != "subagent" {
+			continue
+		}
+		if conversation == "" || meta.Conversation != conversation || meta.Thread == "" || meta.Thread == conversation {
+			return nil, session.AgentReading{State: session.AgentsUnknown, Reason: session.AgentsUnrecognized}
+		}
+		kind := meta.AgentType
+		if kind == "" {
+			kind = "subagent"
+		}
+		agents = append(agents, session.Agent{
+			ID: meta.Thread, What: kind, Type: kind, State: session.AgentRunning,
+		})
+	}
+	return agents, session.AgentReading{State: session.AgentsComplete}
 }
 
 // classify decides whether a command line is an assistant we coordinate. It

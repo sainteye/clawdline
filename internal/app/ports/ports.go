@@ -55,6 +55,13 @@ type IdentityHost interface {
 	ForSession(ctx context.Context, s session.Session) (Identity, bool)
 }
 
+// AgentHost reads provider-native background threads after a session's
+// identity has been resolved. Broker children do not come through this port:
+// their durable records are joined with these at the console boundary.
+type AgentHost interface {
+	ForSession(s session.Session) session.Session
+}
+
 // ScreenHost reads what is currently drawn in a terminal. It is the weakest
 // evidence this daemon has and is only consulted where nothing better exists.
 type ScreenHost interface {

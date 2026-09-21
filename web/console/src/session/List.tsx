@@ -191,6 +191,14 @@ function taskPlace(row: SessionRow): {
   return { depth: 0, chip: null }
 }
 
+function agentCount(row: SessionRow): string {
+  const provider = (row.agents ?? []).filter((agent) => agent.state === "running").length
+  const broker = L.tasksOfRoot(row.id).filter(L.taskLive).length
+  const known = provider + broker
+  if (row.agents_reading?.state !== "complete" || !L.taskListKnown()) return known ? `${known}+?` : "?"
+  return known ? String(known) : ""
+}
+
 /**
  * One row. The highlight and the open session are two things: arrows move
  * `.selected` without opening anything, and a session can stay open while the
@@ -300,9 +308,9 @@ export function Row({
         </span>
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.tty || row.backend || ""}</span>
-        <span className="agents-chip" hidden>
+        <span className="agents-chip" hidden={!agentCount(row)} title={L.strings.webAgents}>
           <span className="dot" />
-          <span className="n" />
+          <span className="n">{agentCount(row)}</span>
         </span>
         {coordinator && (
           <span className="coordinator-chip" title={coordinator.label}>

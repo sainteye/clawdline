@@ -275,7 +275,7 @@ export function SessionsPage({
           <NotifyFooter />
         </section>
 
-        <Detail row={open} onBack={onBack} onDid={onDid} listUnknown={listUnknown} />
+        <Detail row={open} tasks={tasks} onOpenSession={onOpen} onBack={onBack} onDid={onDid} listUnknown={listUnknown} />
       </main>
       <StartSheet />
     </>
@@ -639,6 +639,7 @@ function useTasks(arrived: boolean, rows: SessionRow[]): TaskRow[] | null {
         // as it did (`session/task-read.ts`).
         .catch((error: unknown) => {
           taskReads.failed(error)
+          if (alive) setList(null)
         })
         .finally(() => {
           inFlight = false

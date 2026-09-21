@@ -16,6 +16,7 @@ type Inventory struct {
 	Process   ports.ProcessHost
 	Terminals []ports.TerminalHost
 	Identity  ports.IdentityHost
+	Agents    ports.AgentHost
 	// Screen is one capture, now, on the caller's own clock. It is what
 	// answers a menu (Actions.Key) and what the broker reads before it types a
 	// briefing into a child — both of which act on what is drawn now, and a
@@ -128,8 +129,14 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 	// this machine costs and not on what one row does.
 	budget := in.Activity.budget()
 	var read, unread int64
+	if h, ok := in.Agents.(interface{ Begin() }); ok {
+		h.Begin()
+	}
 	for _, key := range order {
 		row := in.enrich(ctx, byTTY[key])
+		if in.Agents != nil {
+			row = in.Agents.ForSession(row)
+		}
 		row = in.readScreen(ctx, row)
 		row = in.readShells(ctx, row)
 		row = in.readActivity(ctx, row, &budget, &read, &unread)
@@ -351,6 +358,15 @@ func richer(a, b session.Session) session.Session {
 	}
 	if out.Assistant == "" {
 		out.Assistant = b.Assistant
+	}
+	// Codex background threads are learned from the process row's open files.
+	// A terminal row normally wins the identity merge, but it must not erase
+	// that stronger, already-scoped reading.
+	if len(out.Agents) == 0 && len(b.Agents) > 0 {
+		out.Agents = b.Agents
+	}
+	if out.AgentReading.State == "" && b.AgentReading.State != "" {
+		out.AgentReading = b.AgentReading
 	}
 	// A pane id survives a restart in a way a tty does not, so it is the better
 	// identity when both are present.

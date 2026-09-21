@@ -206,6 +206,11 @@ const (
 	CacheSessionActivity  = "cache.session_activity"
 	// Where each project can be opened, one reading per working directory.
 	CacheSessionLinks = "cache.session_links"
+	// Provider-native work under a session: how many rows the fleet carries,
+	// and the immutable metadata/changing-tail cursors held to make a one-second
+	// reading cheap.
+	SessionsAgentRows     = "sessions.agent_rows"
+	CacheBackgroundAgents = "cache.background_agents"
 )
 
 // Entry is one row of the register.
@@ -368,6 +373,24 @@ func Register() []Entry {
 			Limit: 256, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
+		},
+		{
+			// Provider-native child work carried on one session row. The newest
+			// running work wins; the payload says how many rows were omitted.
+			Name: SessionsAgentRows, Class: Observation, Unit: Rows,
+			Limit: 6, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/subagents.MaximumShown"},
+		},
+		{
+			// Claude sidecars, changing transcript tails and append cursors.
+			// Each cache is bounded at this row; Used is the fullest of them.
+			Name: CacheBackgroundAgents, Class: Cache, Unit: Rows,
+			Limit: 256, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/subagents.MaximumCache"},
 		},
 		{
 			// The screens one event stream has been told moved and has not

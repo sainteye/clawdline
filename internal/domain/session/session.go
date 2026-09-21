@@ -31,6 +31,67 @@ const (
 	StateUnknown State = "unknown"
 )
 
+// AgentState is the small presentation vocabulary shared by provider
+// subagents and broker children. It is deliberately not a replacement for a
+// broker task's own state: the console keeps that source state beside this
+// projection. Unknown is the source saying it could not establish whether the
+// work ended, never a spelling of idle.
+type AgentState string
+
+const (
+	AgentRunning AgentState = "running"
+	AgentDone    AgentState = "done"
+	AgentFailed  AgentState = "failed"
+	AgentUnknown AgentState = "unknown"
+)
+
+// AgentReadState says whether the provider's child-work source was read. An
+// empty complete reading proves there are no provider subagents; an unknown
+// reading proves no count at all.
+type AgentReadState string
+
+const (
+	AgentsComplete AgentReadState = "complete"
+	AgentsUnknown  AgentReadState = "unknown"
+)
+
+// AgentUnknownReason is the actionably different ways a child-work reading
+// can fail. The UI translates the reason rather than displaying adapter prose.
+type AgentUnknownReason string
+
+const (
+	AgentsNoRecord     AgentUnknownReason = "no_record"
+	AgentsUnreadable   AgentUnknownReason = "unreadable"
+	AgentsUnrecognized AgentUnknownReason = "unrecognized"
+)
+
+// Agent is one provider-native background thread. Broker children do not go
+// in this slice: they are durable task records and are joined with these in the
+// console, where both sources and both original state vocabularies remain.
+type Agent struct {
+	ID      string
+	What    string
+	Type    string
+	Model   string
+	Depth   int
+	State   AgentState
+	At      time.Time
+	Doing   string
+	Result  string
+	Tokens  int64
+	Tools   int64
+	Seconds float64
+}
+
+// AgentReading accompanies Agents even when it is empty. Omitted is not a
+// complete empty list, and Truncated says how many known rows did not fit the
+// presentation bound.
+type AgentReading struct {
+	State     AgentReadState
+	Reason    AgentUnknownReason
+	Truncated int
+}
+
 // Evidence says HOW a reading was obtained. The Swift app carries the reading
 // without the provenance, so a screen-scraped guess and a structured event are
 // indistinguishable on the wire. Every field derived from observation travels
@@ -119,6 +180,14 @@ type Session struct {
 	// newest first. Empty for most sessions, and always for Codex, which keeps
 	// no record of them.
 	Shells []Shell `json:"shells,omitempty"`
+
+	// Agents are the provider-native background threads this session spawned.
+	// The broker's own children are joined with them at the UI boundary rather
+	// than inferred from files. Neither field is serialized from the domain
+	// shape; the transport has a contract that keeps an unknown reading apart
+	// from an authoritative empty one.
+	Agents       []Agent      `json:"-"`
+	AgentReading AgentReading `json:"-"`
 
 	// Activity is when this session last moved, by the one definition in
 	// movement.go: the moment its own conversation record last grew. It is

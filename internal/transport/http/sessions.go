@@ -398,8 +398,10 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		// A row with no `sessionId` is three different situations, and only
 		// one of them — a session that has not written anything yet — is
 		// worth waiting out rather than acting on.
-		Identity: contract.IdentityBinding(item.Binding),
-		Shells:   wireShells(item.Shells),
+		Identity:      contract.IdentityBinding(item.Binding),
+		Shells:        wireShells(item.Shells),
+		Agents:        wireAgents(item.Agents),
+		AgentsReading: wireAgentReading(item.AgentReading),
 		// When this row last moved, from this daemon: the list's order no
 		// longer depends on what any one browser happened to have watched.
 		Activity: wireActivity(item.Activity),
@@ -555,6 +557,37 @@ func wireShells(shells []session.Shell) []contract.SessionShell {
 		})
 	}
 	return out
+}
+
+func wireAgents(agents []session.Agent) []contract.SessionAgent {
+	if len(agents) == 0 {
+		return nil
+	}
+	out := make([]contract.SessionAgent, 0, len(agents))
+	for _, agent := range agents {
+		var at int64
+		if !agent.At.IsZero() {
+			at = agent.At.Unix()
+		}
+		out = append(out, contract.SessionAgent{
+			ID: agent.ID, What: agent.What, Type: agent.Type, Model: agent.Model,
+			Depth: int64(agent.Depth), State: contract.SessionAgentState(agent.State), At: at,
+			Doing: agent.Doing, Result: agent.Result, Tokens: agent.Tokens,
+			Tools: agent.Tools, Seconds: agent.Seconds,
+		})
+	}
+	return out
+}
+
+func wireAgentReading(reading session.AgentReading) *contract.SessionAgentReading {
+	if reading.State == "" {
+		return nil
+	}
+	return &contract.SessionAgentReading{
+		State:     contract.SessionAgentReadState(reading.State),
+		Reason:    contract.SessionAgentUnknownReason(reading.Reason),
+		Truncated: int64(reading.Truncated),
+	}
 }
 
 // wireIcon carries a mark across to the wire in the shape the console draws.

@@ -26,6 +26,7 @@ import { contextCell } from "../session/context.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const console_ = resolve(here, "../..")
+const core_ = resolve(console_, "../core")
 
 /** The `info` answer this daemon writes (`internal/transport/http/usage.go`). */
 const INFO = {
@@ -257,8 +258,9 @@ test("a route this console does not carry is refused by the word it stands for",
 })
 
 /**
- * Every `/v1/…` path this console spells, with the pieces it builds one out of
- * joined back together.
+ * Every `/v1/…` path this console bundle spells, with the pieces it builds one
+ * out of joined back together. That includes the shared core client where the
+ * session route helpers live.
  *
  * A console route is rarely one literal: `"/v1/sessions/" + encodeURIComponent(id) + "/git"`
  * is three. So each line's double-quoted fragments are joined in the order
@@ -270,13 +272,13 @@ test("a route this console does not carry is refused by the word it stands for",
  */
 function consolePaths(): { path: string; where: string }[] {
   const out: { path: string; where: string }[] = []
-  const walk = (dir: string) => {
+  const walk = (dir: string, root: string, label: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = resolve(dir, entry.name)
       if (entry.isDirectory()) {
         // The seam is where a refusal is decided, not where a screen asks, and
         // its own tests spell every route on purpose.
-        if (entry.name !== "cloud" && entry.name !== "node_modules") walk(full)
+        if (entry.name !== "cloud" && entry.name !== "node_modules") walk(full, root, label)
         continue
       }
       if (!/\.(ts|tsx|js)$/.test(entry.name) || /\.test\.[tj]sx?$/.test(entry.name)) continue
@@ -286,12 +288,15 @@ function consolePaths(): { path: string; where: string }[] {
         const fragments = [...line.matchAll(/"([^"\\]*)"/g)].map((m) => m[1])
         const start = fragments.findIndex((f) => f.startsWith("/v1/"))
         if (start < 0) return
-        const joined = fragments.slice(start).join("X")
-        out.push({ path: joined.replace(/X+$/, ""), where: full.slice(console_.length + 1) + ":" + (index + 1) })
+        const lastQuote = line.lastIndexOf('"')
+        const terminalExpression = /\+\s*[^,;]+[,;]?\s*$/.test(line.slice(lastQuote + 1)) ? "X" : ""
+        const joined = fragments.slice(start).join("X") + terminalExpression
+        out.push({ path: joined, where: label + "/" + full.slice(root.length + 1) + ":" + (index + 1) })
       })
     }
   }
-  walk(resolve(console_, "src"))
+  walk(resolve(console_, "src"), console_, "console")
+  walk(resolve(core_, "src"), core_, "core")
   return out
 }
 

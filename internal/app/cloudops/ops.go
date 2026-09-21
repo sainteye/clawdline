@@ -981,8 +981,6 @@ func init() {
 					Query: someOf(map[string]string{"graph": p.graph})}
 			}},
 
-		// MARK: reads this daemon has no local capability for
-
 		op{name: "agent", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "agent", "limit") {
@@ -1006,7 +1004,13 @@ func init() {
 				}
 				p.id, p.limit = agent, limit
 				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.session) + "/agents/" + segment(p.id),
+					Query: map[string]string{"limit": strconv.FormatInt(p.limit, 10)}}
 			}},
+
+		// MARK: reads this daemon has no local capability for
 
 		op{name: "shell", read: true,
 			decode: func(b body) (plan, bool) {

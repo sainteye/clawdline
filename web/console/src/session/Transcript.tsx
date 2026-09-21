@@ -81,23 +81,26 @@ type Block =
 
 type Toggle = (key: string, defaultOpen?: boolean) => void
 
-export function Transcript({ id }: { id: string }) {
+export function Transcript({ id, agentId }: { id: string; agentId?: string }) {
   // Keyed, so a different session starts from nothing: no previous session's
   // turns, error or opened folds are shown under the new name.
-  return <TranscriptOf key={id} id={id} />
+  return <TranscriptOf key={`${id}:${agentId ?? ""}`} id={id} agentId={agentId} />
 }
 
-function TranscriptOf({ id }: { id: string }) {
-  const read = useMemo(() => () => client.transcript(id, LIMIT), [id])
+function TranscriptOf({ id, agentId }: { id: string; agentId?: string }) {
+  const read = useMemo(
+    () => () => agentId ? client.agentTranscript(id, agentId, LIMIT) : client.transcript(id, LIMIT),
+    [id, agentId],
+  )
   useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
-  const cards = pendingSends.of(id)
+  const cards = agentId ? [] : pendingSends.of(id)
   const following = cards.some((card) => card.state !== "failed")
   const { data, error } = usePoll<TranscriptPage>(read, following ? FOLLOW_MS : POLL_MS)
   // Each read settles the cards it confirms before it is painted, so the turn
   // and the card standing for it are never on screen together.
   useLayoutEffect(() => {
-    if (data) pendingSends.reconcile(id, data.entries, Date.now())
-  }, [data, id])
+    if (data && !agentId) pendingSends.reconcile(id, data.entries, Date.now())
+  }, [data, id, agentId])
   // The cards' spinners turn on the page's one clock, drawn once now so they
   // have their size before the clock's next tick.
   useLayoutEffect(turnPendingSpinners)
@@ -210,7 +213,7 @@ function TranscriptOf({ id }: { id: string }) {
     return (
       <>
         {cutNote(data)}
-        <div className="tx-note">{T.noOutput}</div>
+        <div className="tx-note">{agentId ? T.agentEmpty : T.noOutput}</div>
         {pending}
       </>
     )

@@ -106,6 +106,8 @@
       "required": ["backend", "closeability", "evidence", "id", "isClaude", "state", "work_state"],
       "properties": {
         "activity": { "$ref": "#/$defs/SessionActivity" },
+		"agents": { "description": "Provider-native background threads, newest running work first. Broker children stay in the task list and are joined with these in the console, so their durable state is not flattened into a file inference.", "type": "array", "items": { "$ref": "#/$defs/SessionAgent" } },
+		"agents_reading": { "$ref": "#/$defs/SessionAgentReading" },
         "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
         "backend": { "$ref": "common.schema.json#/$defs/Backend" },
         "closeability": { "$ref": "#/$defs/Closeability" },
@@ -135,6 +137,52 @@
         "work_state": { "$ref": "#/$defs/WorkState" }
       }
     },
+	"SessionAgentState": {
+	  "description": "A shared presentation state. `unknown` means the source could not establish an ending; it is never idle. Broker tasks keep their original state beside this projection.",
+	  "type": "string",
+	  "enum": ["running", "done", "failed", "unknown"]
+	},
+	"SessionAgent": {
+	  "description": "One provider-native background thread. `what` and `type` are provider words; neither is inferred from an id.",
+	  "type": "object",
+	  "additionalProperties": false,
+	  "required": ["at", "depth", "id", "state", "type", "what"],
+	  "properties": {
+		"at": { "description": "Unix seconds; zero when the provider did not expose one.", "type": "integer" },
+		"depth": { "type": "integer" },
+		"doing": { "type": "string" },
+		"id": { "type": "string" },
+		"model": { "type": "string" },
+		"result": { "type": "string" },
+		"seconds": { "type": "number" },
+		"state": { "$ref": "#/$defs/SessionAgentState" },
+		"tokens": { "type": "integer" },
+		"tools": { "type": "integer" },
+		"type": { "type": "string" },
+		"what": { "type": "string" }
+	  }
+	},
+	"SessionAgentReadState": {
+	  "description": "`complete` makes an empty list authoritative. `unknown` makes it no count at all.",
+	  "type": "string",
+	  "enum": ["complete", "unknown"]
+	},
+	"SessionAgentUnknownReason": {
+	  "description": "Why provider-native child work could not be counted. The console translates this instead of displaying adapter prose.",
+	  "type": "string",
+	  "enum": ["no_record", "unreadable", "unrecognized"]
+	},
+	"SessionAgentReading": {
+	  "description": "The evidence state accompanying `agents`. Omitted on an older daemon is unknown, never complete empty.",
+	  "type": "object",
+	  "additionalProperties": false,
+	  "required": ["state"],
+	  "properties": {
+		"reason": { "$ref": "#/$defs/SessionAgentUnknownReason" },
+		"state": { "$ref": "#/$defs/SessionAgentReadState" },
+		"truncated": { "description": "Known rows omitted by the per-session presentation bound.", "type": "integer" }
+	  }
+	},
     "SessionMenu": {
       "description": "The question on a waiting session's screen, as rows a finger can hit (the Swift app's menuObject). Present only on a waiting session whose screen could be read as a menu; a waiting row without it is a question drawn in a shape nothing recognised. The row labels and details may be refilled from the session's own transcript, but only once the screen proves which question it is showing; the numbers, the caret, Submit and the steps are always the screen's.",
       "type": "object",

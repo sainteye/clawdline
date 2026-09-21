@@ -4617,6 +4617,74 @@ type SessionActivity struct {
 	UnknownReason ActivityUnknownReason `json:"unknown_reason,omitempty"`
 }
 
+// One provider-native background thread. `what` and `type` are provider words;
+// neither is inferred from an id.
+type SessionAgent struct {
+	// Unix seconds; zero when the provider did not expose one.
+	At      int64             `json:"at"`
+	Depth   int64             `json:"depth"`
+	Doing   string            `json:"doing,omitempty"`
+	ID      string            `json:"id"`
+	Model   string            `json:"model,omitempty"`
+	Result  string            `json:"result,omitempty"`
+	Seconds float64           `json:"seconds,omitempty"`
+	State   SessionAgentState `json:"state"`
+	Tokens  int64             `json:"tokens,omitempty"`
+	Tools   int64             `json:"tools,omitempty"`
+	Type    string            `json:"type"`
+	What    string            `json:"what"`
+}
+
+// `complete` makes an empty list authoritative. `unknown` makes it no count at
+// all.
+type SessionAgentReadState string
+
+const (
+	SessionAgentReadStateComplete SessionAgentReadState = "complete"
+	SessionAgentReadStateUnknown  SessionAgentReadState = "unknown"
+)
+
+// SessionAgentReadStateValues is every value the contract allows, in contract order.
+var SessionAgentReadStateValues = []SessionAgentReadState{SessionAgentReadStateComplete, SessionAgentReadStateUnknown}
+
+// The evidence state accompanying `agents`. Omitted on an older daemon is
+// unknown, never complete empty.
+type SessionAgentReading struct {
+	Reason SessionAgentUnknownReason `json:"reason,omitempty"`
+	State  SessionAgentReadState     `json:"state"`
+
+	// Known rows omitted by the per-session presentation bound.
+	Truncated int64 `json:"truncated,omitempty"`
+}
+
+// A shared presentation state. `unknown` means the source could not establish
+// an ending; it is never idle. Broker tasks keep their original state beside
+// this projection.
+type SessionAgentState string
+
+const (
+	SessionAgentStateRunning SessionAgentState = "running"
+	SessionAgentStateDone    SessionAgentState = "done"
+	SessionAgentStateFailed  SessionAgentState = "failed"
+	SessionAgentStateUnknown SessionAgentState = "unknown"
+)
+
+// SessionAgentStateValues is every value the contract allows, in contract order.
+var SessionAgentStateValues = []SessionAgentState{SessionAgentStateRunning, SessionAgentStateDone, SessionAgentStateFailed, SessionAgentStateUnknown}
+
+// Why provider-native child work could not be counted. The console translates
+// this instead of displaying adapter prose.
+type SessionAgentUnknownReason string
+
+const (
+	SessionAgentUnknownReasonNoRecord     SessionAgentUnknownReason = "no_record"
+	SessionAgentUnknownReasonUnreadable   SessionAgentUnknownReason = "unreadable"
+	SessionAgentUnknownReasonUnrecognized SessionAgentUnknownReason = "unrecognized"
+)
+
+// SessionAgentUnknownReasonValues is every value the contract allows, in contract order.
+var SessionAgentUnknownReasonValues = []SessionAgentUnknownReason{SessionAgentUnknownReasonNoRecord, SessionAgentUnknownReasonUnreadable, SessionAgentUnknownReasonUnrecognized}
+
 // Who this session is parked on, and who is parked on it. Absent when neither.
 // `state` is `waiting_on_session` whenever `waitingOn` is not empty, otherwise
 // `has_waiters`.
@@ -4882,19 +4950,25 @@ type SessionModel struct {
 // One assistant session. Fields that cannot be supported are absent rather than
 // invented; a reader that handles absence handles this too.
 type SessionRow struct {
-	Activity     *SessionActivity     `json:"activity,omitempty"`
-	Assistant    Assistant            `json:"assistant,omitempty"`
-	Backend      Backend              `json:"backend"`
-	Closeability Closeability         `json:"closeability"`
-	Coordination *SessionCoordination `json:"coordination,omitempty"`
-	Coordinator  *SessionCoordinator  `json:"coordinator,omitempty"`
-	CWD          string               `json:"cwd,omitempty"`
-	Disposition  *WorkDisposition     `json:"disposition,omitempty"`
-	Evidence     Evidence             `json:"evidence"`
-	Icon         *Icon                `json:"icon,omitempty"`
-	ID           string               `json:"id"`
-	Identity     IdentityBinding      `json:"identity,omitempty"`
-	IsClaude     bool                 `json:"isClaude"`
+	Activity *SessionActivity `json:"activity,omitempty"`
+
+	// Provider-native background threads, newest running work first. Broker children
+	// stay in the task list and are joined with these in the console, so their durable
+	// state is not flattened into a file inference.
+	Agents        []SessionAgent       `json:"agents,omitempty"`
+	AgentsReading *SessionAgentReading `json:"agents_reading,omitempty"`
+	Assistant     Assistant            `json:"assistant,omitempty"`
+	Backend       Backend              `json:"backend"`
+	Closeability  Closeability         `json:"closeability"`
+	Coordination  *SessionCoordination `json:"coordination,omitempty"`
+	Coordinator   *SessionCoordinator  `json:"coordinator,omitempty"`
+	CWD           string               `json:"cwd,omitempty"`
+	Disposition   *WorkDisposition     `json:"disposition,omitempty"`
+	Evidence      Evidence             `json:"evidence"`
+	Icon          *Icon                `json:"icon,omitempty"`
+	ID            string               `json:"id"`
+	Identity      IdentityBinding      `json:"identity,omitempty"`
+	IsClaude      bool                 `json:"isClaude"`
 
 	// What the session is called, by the Swift app's rungs (ITerm.swift
 	// preferredDisplayLabel): a name typed in Clawdline (the Swift store's config.json

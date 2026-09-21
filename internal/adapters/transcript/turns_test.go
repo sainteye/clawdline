@@ -90,6 +90,26 @@ func TestClaudeToolRowsCarryTheirSubject(t *testing.T) {
 	}
 }
 
+func TestDedicatedClaudeAgentKeepsSidechainTurns(t *testing.T) {
+	path := writeRecord(t,
+		claudeRow("assistant", []m{{"type": "text", "text": "background answer"}}, m{"isSidechain": true}),
+	)
+	parent, err := ReadClaude(path, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parent.Entries) != 0 {
+		t.Fatalf("parent read kept %d sidechain entries", len(parent.Entries))
+	}
+	agent, err := ReadClaudeAgent(path, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agent.Entries) != 1 || agent.Entries[0].Text != "background answer" {
+		t.Fatalf("agent entries %+v", agent.Entries)
+	}
+}
+
 func TestClaudeQuestionCarriesItsOptions(t *testing.T) {
 	path := writeRecord(t, claudeRow("assistant", []m{{"type": "tool_use", "name": AskTool, "input": m{
 		"questions": []m{{"question": " Which one? ", "header": "Pick", "multiSelect": false,

@@ -183,7 +183,16 @@ type Page struct {
 // ReadClaude returns the newest `limit` entries of a Claude conversation.
 func ReadClaude(path string, limit int) (Page, error) {
 	return readPage(path, func(r io.ReaderAt, size int64) ([]Entry, int64) {
-		return parseClaude(r, size, limit)
+		return parseClaude(r, size, limit, false)
+	})
+}
+
+// ReadClaudeAgent reads a dedicated Claude subagent record. Sidechain rows
+// are noise in the parent transcript and the substance of this one, so this
+// entry point deliberately includes them.
+func ReadClaudeAgent(path string, limit int) (Page, error) {
+	return readPage(path, func(r io.ReaderAt, size int64) ([]Entry, int64) {
+		return parseClaude(r, size, limit, true)
 	})
 }
 
@@ -294,7 +303,7 @@ func eachLineFromEnd(r io.ReaderAt, size int64, body func([]byte) bool) (unread 
 
 // ---------- Claude ----------
 
-func parseClaude(r io.ReaderAt, size int64, limit int) ([]Entry, int64) {
+func parseClaude(r io.ReaderAt, size int64, limit int, sidechains bool) ([]Entry, int64) {
 	var newestFirst []Entry
 	// While a turn is running, Claude records a queued cross-session message
 	// and later its delivered peer turn, sometimes a whole busy turn apart. The
@@ -305,7 +314,7 @@ func parseClaude(r io.ReaderAt, size int64, limit int) ([]Entry, int64) {
 	queuedKeys := map[string]bool{}
 
 	unread := eachLineFromEnd(r, size, func(line []byte) bool {
-		rowEntries := claudeEntries(line)
+		rowEntries := claudeEntries(line, sidechains)
 		for i := len(rowEntries) - 1; i >= 0; i-- {
 			e := rowEntries[i]
 			if e.Kind == KindPeer {
@@ -360,7 +369,7 @@ func oldestFirst(newestFirst []Entry, limit int) []Entry {
 // claudeEntries is the entries one Claude row yields, in the order they were
 // written: the Swift app's `Transcript.entries(inRow:)`. Anything it does not
 // recognise yields nothing rather than a guess.
-func claudeEntries(line []byte) []Entry {
+func claudeEntries(line []byte, sidechains bool) []Entry {
 	row, ok := decodeObject(line)
 	if !ok {
 		return nil
@@ -370,7 +379,7 @@ func claudeEntries(line []byte) []Entry {
 		return nil
 	}
 	// Sidechains are subagents talking among themselves.
-	if v, ok := row.boolean("isSidechain"); ok && v {
+	if v, ok := row.boolean("isSidechain"); ok && v && !sidechains {
 		return nil
 	}
 	at := row.time("timestamp")

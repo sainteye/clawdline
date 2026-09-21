@@ -5477,6 +5477,75 @@ export interface SessionActivity {
 }
 
 /**
+ * One provider-native background thread. `what` and `type` are provider words;
+ * neither is inferred from an id.
+ */
+export interface SessionAgent {
+  /**
+   * Unix seconds; zero when the provider did not expose one.
+   */
+  at: number
+  depth: number
+  doing?: string
+  id: string
+  model?: string
+  result?: string
+  seconds?: number
+  state: SessionAgentState
+  tokens?: number
+  tools?: number
+  type: string
+  what: string
+}
+
+/**
+ * `complete` makes an empty list authoritative. `unknown` makes it no count at all.
+ */
+export type SessionAgentReadState =
+    "complete"
+  | "unknown"
+
+export const SessionAgentReadStateValues: readonly SessionAgentReadState[] = ["complete", "unknown"] as const
+
+/**
+ * The evidence state accompanying `agents`. Omitted on an older daemon is unknown,
+ * never complete empty.
+ */
+export interface SessionAgentReading {
+  reason?: SessionAgentUnknownReason
+  state: SessionAgentReadState
+
+  /**
+   * Known rows omitted by the per-session presentation bound.
+   */
+  truncated?: number
+}
+
+/**
+ * A shared presentation state. `unknown` means the source could not establish an
+ * ending; it is never idle. Broker tasks keep their original state beside this
+ * projection.
+ */
+export type SessionAgentState =
+    "running"
+  | "done"
+  | "failed"
+  | "unknown"
+
+export const SessionAgentStateValues: readonly SessionAgentState[] = ["running", "done", "failed", "unknown"] as const
+
+/**
+ * Why provider-native child work could not be counted. The console translates this
+ * instead of displaying adapter prose.
+ */
+export type SessionAgentUnknownReason =
+    "no_record"
+  | "unreadable"
+  | "unrecognized"
+
+export const SessionAgentUnknownReasonValues: readonly SessionAgentUnknownReason[] = ["no_record", "unreadable", "unrecognized"] as const
+
+/**
  * Who this session is parked on, and who is parked on it. Absent when neither.
  * `state` is `waiting_on_session` whenever `waitingOn` is not empty, otherwise
  * `has_waiters`.
@@ -5833,6 +5902,14 @@ export interface SessionModel {
  */
 export interface SessionRow {
   activity?: SessionActivity
+
+  /**
+   * Provider-native background threads, newest running work first. Broker children
+   * stay in the task list and are joined with these in the console, so their
+   * durable state is not flattened into a file inference.
+   */
+  agents?: SessionAgent[]
+  agents_reading?: SessionAgentReading
   assistant?: Assistant
   backend: Backend
   closeability: Closeability

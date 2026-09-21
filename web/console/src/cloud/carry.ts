@@ -112,6 +112,7 @@ export const CARRIED = {
  * that question a machine can answer.
  */
 export const DEFERRED = {
+  agent: "An agent's own record is not read over Clawdline Cloud yet: open it on the machine.",
   document: "A document's text is not read over Clawdline Cloud yet: open it on the machine.",
   documents: "A session's documents are not listed over Clawdline Cloud yet: open them on the machine.",
   // `key` and `answer` are one command under two names on the wire. This
@@ -141,7 +142,7 @@ export const DEFERRED = {
  * `git` needed and did not have — the day `git-bridge.ts` landed, the entry
  * had to say so.
  */
-export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["document", "documents", "screen"]
+export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["agent", "document", "documents", "screen"]
 
 /**
  * Words the machine knows and has nothing behind. Asking for one is answered
@@ -153,7 +154,6 @@ export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["document", "
  * and not a comment.
  */
 export const NO_MACHINE_ROUTE = {
-  agent: "This machine does not answer an agent's own record over Clawdline Cloud: read it on the machine.",
   "diagnostics.events": "This machine does not take a page's diagnostic events over Clawdline Cloud.",
   "diagnostics.report": "This machine does not take a diagnostic report over Clawdline Cloud.",
   dispatch: "Dispatching a task over Clawdline Cloud has no pinned wire shape on this machine: dispatch it on the machine.",
@@ -257,6 +257,8 @@ export function uncarriedWordOf(method: string, path: string): string {
   }
   if (head === "sessions" && a && b) {
     switch (b) {
+      case "agents":
+        return segments.length === 4 && segments[3] ? "agent" : ""
       case "screen":
         return "screen"
       case "skills":

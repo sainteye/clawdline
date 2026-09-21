@@ -221,6 +221,18 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return h.Movements().Reading()
 		},
+		capacity.SessionsAgentRows: func() capacity.Reading {
+			if s.agents == nil {
+				return capacity.Unmeasured("this server reads no provider background work")
+			}
+			return s.agents.RowsReading()
+		},
+		capacity.CacheBackgroundAgents: func() capacity.Reading {
+			if s.agents == nil {
+				return capacity.Unmeasured("this server keeps no background-work cache")
+			}
+			return s.agents.Reading()
+		},
 		// What the last reading of the machine spent asking when each row
 		// last moved (internal/app/activity_reads.go). An inventory with no
 		// bound of its own is a known zero, not an unmeasured row: it reads

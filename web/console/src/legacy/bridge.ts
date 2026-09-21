@@ -90,8 +90,13 @@ export function publish(
   // with no answer yet passes nothing and the last list stands; the original
   // starts from an empty one, which leaves every task function answering as
   // though the feature did not exist.
-  if (tasks) state.tasks = tasks
-  else state.tasks = state.tasks ?? []
+  if (tasks) {
+    state.tasks = tasks
+    taskListRead = true
+  } else {
+    state.tasks = state.tasks ?? []
+    taskListRead = false
+  }
   state.arrived = true
   // Two ids, as in the original: the highlight and the conversation on screen
   // are separate since the keyboard can move one without the other.
@@ -99,6 +104,10 @@ export function publish(
   state.selectedId = selectedId
   state.filter = filter
 }
+
+let taskListRead = false
+/** Whether a task list has actually arrived; an empty list is an answer. */
+export function taskListKnown(): boolean { return taskListRead }
 
 /* The list's order is not the copied `ordered()`: it adds the time a session
    last moved — the daemon's answer, on the row itself — inside each state, and

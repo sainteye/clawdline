@@ -27,6 +27,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
 	"github.com/sainteye/clawdline/internal/adapters/skillmenu"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/subagents"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
@@ -72,6 +73,9 @@ type Server struct {
 	// the request, so the walk's one subprocess is never on a request a person
 	// is waiting on twice.
 	links *projectlinks.Cache
+	// agents reads provider-native background threads. Broker children are
+	// already first-class records and are joined with these in the console.
+	agents *subagents.Reader
 	// lastScreen is the sessions the last list was built from, so a task list
 	// can place a task under its root without scanning the machine again.
 	lastScreen atomic.Pointer[screenReading]
@@ -135,6 +139,8 @@ func New(cfg config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open the store at %s: %w", cfg.Dir, err)
 	}
+	home, _ := os.UserHomeDir()
+	agents := subagents.New(home)
 	srv := &Server{
 		store:     st,
 		cfg:       cfg,
@@ -147,10 +153,12 @@ func New(cfg config.Config) (*Server, error) {
 		pictures:  newPictures(cfg.Dir),
 		skillMenu: skillmenu.NewCache(),
 		links:     projectlinks.NewCache(),
+		agents:    agents,
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
 			Identity:  transcript.NewHost(),
+			Agents:    agents,
 			Screen:    terminal.NewScreens(),
 			// The list's screens are held and refreshed behind the answer; the
 			// live reader above stays what a keystroke and the broker read.
@@ -168,6 +176,7 @@ func New(cfg config.Config) (*Server, error) {
 	srv.ledger.SetLimit(CapacityLimit(capacity.CacheTranscriptUsage))
 	srv.skillMenu.SetLimit(CapacityLimit(capacity.CacheSessionSkills))
 	srv.links.SetLimit(CapacityLimit(capacity.CacheSessionLinks))
+	srv.agents.SetLimit(CapacityLimit(capacity.CacheBackgroundAgents))
 	srv.inventory.Activity.SetLimit(CapacityLimit(capacity.SessionsActivityReads))
 	if h, ok := srv.inventory.Identity.(*transcript.Host); ok {
 		h.Titles().SetLimit(CapacityLimit(capacity.CacheTranscriptTitles))
@@ -251,6 +260,10 @@ func (s *Server) Handler() http.Handler {
 	// each, because the id is a path segment and Go's mux matches prefixes,
 	// not patterns.
 	mux.HandleFunc("/v1/sessions/", func(w http.ResponseWriter, r *http.Request) {
+		if sessionID, agentID, ok := agentPath(r); ok {
+			s.sessionAgentRoute(w, r, sessionID, agentID)
+			return
+		}
 		if id, ok := infoPath(r); ok {
 			s.sessionInfoRoute(w, r, id)
 			return

@@ -78,6 +78,10 @@ export class ClawdlineClient {
     return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}`)
   }
 
+  agentTranscript(id: string, agent: string, limit = 40): Promise<TranscriptPage> {
+    return this.get(`${sessionRoutes.agent(id, agent)}?limit=${limit}`)
+  }
+
   strings(): Promise<Record<string, string>> {
     return this.get(routes.strings)
   }

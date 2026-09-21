@@ -1,4 +1,4 @@
-import type { Icon, SessionRow } from "@clawdline/contract"
+import type { Icon, SessionAgent, SessionRow, TaskRow } from "@clawdline/contract"
 import {
   useEffect,
   useLayoutEffect,
@@ -24,6 +24,7 @@ import { Todos } from "./Todos.js"
 import { UserMessages } from "./UserMessages.js"
 import { Snippets } from "./Snippets.js"
 import { conversationNotStarted } from "./readiness.js"
+import { workTree, type WorkNode } from "./work-tree.js"
 import { nextWord } from "../next-strings.js"
 
 /**
@@ -58,16 +59,23 @@ const SNIPPETS_READABLE = true
  */
 export function Detail({
   row,
+  tasks,
+  onOpenSession,
   onBack,
   onDid,
   listUnknown = false,
 }: {
   row: SessionRow | null
+  tasks: TaskRow[] | null
+  onOpenSession: (id: string) => void
   onBack: () => void
   onDid: () => void
   listUnknown?: boolean
 }) {
   const T = L.strings
+  const [agentId, setAgentId] = useState<string | null>(null)
+  useEffect(() => setAgentId(null), [row?.id])
+  const selectedAgent = row?.agents?.find((agent) => agent.id === agentId) ?? null
   // Which session is being closed, as `closingSelectionKey()` is there: the
   // header is "ending" only while the session it shows is the one going away.
   // Which session is being closed is the confirmation sheet's to know; the
@@ -140,7 +148,9 @@ export function Detail({
       id="pane-detail"
       data-panel={screenOpen ? "screen" : gitOpen ? "git" : undefined}
     >
-      <div className="detail-head" id="detail-head" data-closing={ending ? "on" : "off"}>
+      {selectedAgent ? (
+        <AgentHead agent={selectedAgent} onBack={() => setAgentId(null)} />
+      ) : <div className="detail-head" id="detail-head" data-closing={ending ? "on" : "off"}>
         <button className="back" id="back" onClick={onBack} aria-label={T.webBackLabel} disabled={ending}>
           ‹ {T.webBack}
         </button>
@@ -207,7 +217,7 @@ export function Detail({
             onOpenGit={() => setGitOpen(true)}
           />
         </div>
-      </div>
+      </div>}
 
       <ScreenPanel
         row={row}
@@ -224,19 +234,102 @@ export function Detail({
       {/* Not in the original: the session's to-dos (T6), folded under its header. */}
       <Todos row={row} />
 
+      {row ? (
+        <WorkTree
+          row={row}
+          tasks={tasks}
+          selected={agentId}
+          onProvider={setAgentId}
+          onBroker={(node) => {
+            const terminal = node.source === "broker" ? node.task.child?.terminalId : undefined
+            if (terminal) onOpenSession(terminal)
+          }}
+        />
+      ) : null}
+
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
-          {row ? <Transcript id={row.id} /> : home ? <HomeHero /> : null}
+          {row ? <Transcript id={row.id} agentId={selectedAgent?.id} /> : home ? <HomeHero /> : null}
         </div>
       </div>
 
-      <Composer row={row} onDid={onDid} />
-      <StatusLine row={row} />
+      {selectedAgent ? null : <Composer row={row} onDid={onDid} />}
+      {selectedAgent ? null : <StatusLine row={row} />}
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens
           it is this component's. */}
       <UserMessages row={row} />
       <Snippets row={row} />
+    </section>
+  )
+}
+
+function AgentHead({ agent, onBack }: { agent: SessionAgent; onBack: () => void }) {
+  const T = L.strings
+  const seconds = Math.max(0, Math.round(agent.seconds ?? 0))
+  const clock = seconds ? (seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`) : ""
+  const state = agent.state === "done" ? T.webAgentDone : agent.state === "failed" ? T.webAgentFailed :
+    agent.state === "unknown" ? nextWord("agentsUnknown") : T.agentRunning
+  const facts = [agent.type, state, agent.model, clock, agent.tokens ? `↓ ${L.agentTokens(agent.tokens)}` : "",
+    agent.tools ? L.fillString(T.agentTools, { n: agent.tools }) : ""]
+    .filter(Boolean).join(" · ")
+  return (
+    <div className="agent-head">
+      <button className="back" type="button" onClick={onBack}>‹ {T.agentBack}</button>
+      <span className="who">
+        <span className="name">{agent.what || agent.type}</span>
+        <span className="sub">{facts}</span>
+      </span>
+    </div>
+  )
+}
+
+function WorkTree({
+  row, tasks, selected, onProvider, onBroker,
+}: {
+  row: SessionRow
+  tasks: TaskRow[] | null
+  selected: string | null
+  onProvider: (id: string | null) => void
+  onBroker: (node: WorkNode) => void
+}) {
+  const nodes = workTree(row, tasks ?? [])
+  const reading = row.agents_reading
+  if (!nodes.length && reading?.state === "complete" && tasks !== null) return null
+  const providerReason = reading?.state === "complete" ? "" : nextWord(
+    !reading ? "agentsUnknown" : reading.reason === "unreadable" ? "agentsUnreadable" :
+      reading.reason === "unrecognized" ? "agentsUnrecognized" : "agentsNoRecord",
+  )
+  const reason = [tasks === null ? nextWord("brokerTasksUnknown") : "", providerReason].filter(Boolean).join(" · ")
+  return (
+    <section className="agents" aria-label={L.strings.webAgents}>
+      <div className="head"><span>{L.strings.webAgents}</span><span className="n">{reason || nodes.length}</span></div>
+      <button className="one root" type="button" aria-current={!selected} onClick={() => onProvider(null)}>
+        <span className="mark"/><span className="kind">session</span><span className="what">{row.label || row.id}</span>
+      </button>
+      {nodes.map((node) => {
+        const broker = node.source === "broker"
+        const what = broker ? node.task.title : node.agent.what
+        const doing = broker ? node.exactState : node.agent.doing || node.agent.result
+        const canOpen = broker ? !!node.task.child?.terminalId : true
+        const stateWord = broker ? L.taskWord(node.task) :
+          node.state === "done" ? L.strings.webAgentDone : node.state === "failed" ? L.strings.webAgentFailed :
+            node.state === "unknown" ? nextWord("agentsUnknown") : L.strings.agentRunning
+        return (
+          <button
+            className="one" type="button" key={`${node.source}:${node.id}`}
+            data-state={node.state} aria-current={!broker && selected === node.id}
+            disabled={!canOpen}
+            title={`${broker ? nextWord("brokerWork") : nextWord("providerWork")} · ${node.exactState}`}
+            onClick={() => broker ? onBroker(node) : onProvider(node.id)}
+          >
+            <span className="mark"/><span className="kind">{broker ? "broker" : node.agent.type}</span>
+            <span className="what">{what || node.id}</span><span className="doing">{doing}</span>
+            <span className="said">{stateWord}</span>
+          </button>
+        )
+      })}
+      {reading?.truncated ? <div className="head"><span>{nextWord("agentsTruncated", { count: reading.truncated })}</span></div> : null}
     </section>
   )
 }

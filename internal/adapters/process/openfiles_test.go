@@ -93,17 +93,27 @@ func TestOnlyARolloutNamesAThread(t *testing.T) {
 	}
 }
 
-// Only Codex rows missing an id or directory are asked about. A command-line
-// id still needs the process cwd; its known identity is left untouched.
-func TestOnlyIncompleteCodexRowsAreLookedUp(t *testing.T) {
+// Every Codex process is asked in one batch: unnamed rows need identity and
+// already named rows can still have live subagents.
+func TestEveryCodexRowIsLookedUpOnce(t *testing.T) {
 	asked := [][]int{}
-	p := &PS{Head: heads(nil), Open: func(ctx context.Context, pids []int) (map[int][]string, map[int]string, bool) {
+	opened := map[string]int{}
+	p := &PS{Head: func(path string) (RolloutMeta, bool) {
+		opened[path]++
+		switch path {
+		case rolloutA:
+			return RolloutMeta{Conversation: idA, Thread: idA, CWD: "/code/from-rollout"}, true
+		case rolloutB:
+			return RolloutMeta{Conversation: "resumed", Thread: "c0de0002-0000-4000-8000-000000000002", ThreadSource: "subagent", AgentType: "explorer"}, true
+		}
+		return RolloutMeta{}, false
+	}, Open: func(ctx context.Context, pids []int) (map[int][]string, map[int]string, bool) {
 		asked = append(asked, pids)
-		return map[int][]string{41: {rolloutA}}, map[int]string{22: "/code/resumed", 42: "/code/fresh"}, true
+		return map[int][]string{22: {rolloutB}, 41: {rolloutA}}, map[int]string{22: "/wrong", 42: "/code/fresh"}, true
 	}}
 	rows := p.bindCodex(context.Background(), []session.Session{
 		{Assistant: session.AssistantClaude, PID: 11},
-		{Assistant: session.AssistantCodex, PID: 22, ConversationID: "resumed", Binding: session.BindingCommandLine},
+		{Assistant: session.AssistantCodex, PID: 22, ConversationID: "resumed", Binding: session.BindingCommandLine, CWD: "/code/resumed"},
 		{Assistant: session.AssistantCodex, PID: 41},
 		{Assistant: session.AssistantCodex, PID: 42},
 	})
@@ -117,7 +127,10 @@ func TestOnlyIncompleteCodexRowsAreLookedUp(t *testing.T) {
 		t.Fatalf("a resumed row was overwritten: %+v", rows[1])
 	}
 	if rows[1].CWD != "/code/resumed" {
-		t.Fatalf("resumed cwd = %q", rows[1].CWD)
+		t.Fatalf("a known cwd was replaced with %q", rows[1].CWD)
+	}
+	if len(rows[1].Agents) != 1 || rows[1].Agents[0].Type != "explorer" {
+		t.Fatalf("the already-complete row lost its background work: %+v", rows[1].Agents)
 	}
 	if rows[2].ConversationID != idA || rows[2].Binding != session.BindingOpenFile {
 		t.Fatalf("got %+v", rows[2])
@@ -127,6 +140,29 @@ func TestOnlyIncompleteCodexRowsAreLookedUp(t *testing.T) {
 	}
 	if rows[3].CWD != "/code/fresh" {
 		t.Fatalf("fresh cwd = %q, want the process directory", rows[3].CWD)
+	}
+	if opened[rolloutA] != 1 || opened[rolloutB] != 1 {
+		t.Fatalf("one scan opened rollout heads %v, want each shared answer once", opened)
+	}
+}
+
+func TestOnlyPositiveCodexSubagentsBecomeRunningWork(t *testing.T) {
+	head := func(path string) (RolloutMeta, bool) {
+		switch path {
+		case rolloutA:
+			return RolloutMeta{Conversation: idA, Thread: idA}, true
+		case rolloutB:
+			return RolloutMeta{Conversation: idA, Thread: "c0de0002-0000-4000-8000-000000000002", ThreadSource: "subagent", AgentType: "explorer"}, true
+		}
+		return RolloutMeta{}, false
+	}
+	agents, reading := codexAgents([]string{rolloutA, rolloutB}, true, idA, head)
+	if reading.State != session.AgentsComplete || len(agents) != 1 || agents[0].Type != "explorer" || agents[0].State != session.AgentRunning {
+		t.Fatalf("agents %+v reading %+v", agents, reading)
+	}
+	_, reading = codexAgents([]string{rolloutA}, false, idA, head)
+	if reading.State != session.AgentsUnknown || reading.Reason != session.AgentsUnreadable {
+		t.Fatalf("unreadable table became %+v", reading)
 	}
 }
 
