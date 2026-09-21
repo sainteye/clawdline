@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, type MouseEvent } from "react"
 import type { PageModule } from "./types.js"
-import { bindDevices, devicesLede, type DevicesPage } from "../legacy/devices-bridge.js"
+import { bindDevices, devicesLede, offerPairing, type DevicesPage } from "../legacy/devices-bridge.js"
 import { nextWord } from "../next-strings.js"
 import sectionMarkup from "./devices/section.html?raw"
 
@@ -29,6 +29,12 @@ import sectionMarkup from "./devices/section.html?raw"
  *
  * "New session" on the card goes back to the Session list. The original then
  * opens the Start sheet for that machine; this console has no Start sheet yet.
+ *
+ * A card for a machine this browser is not paired with gets a Pair button once
+ * the copied module has drawn it (`offerPairing`), because that module draws a
+ * sentence pointing at a control the machine may not have and nothing to press.
+ * The list is watched rather than decorated once: the module rebuilds its cards
+ * whenever what they say changes.
  */
 function DevicesPageView({ shown }: { shown: boolean }) {
   const page = useRef<DevicesPage | null>(null)
@@ -41,6 +47,20 @@ function DevicesPageView({ shown }: { shown: boolean }) {
         lede: () => nextWord(devicesLede()),
       })
     }
+    const rows = document.getElementById("devices-rows")
+    if (!rows) return
+    const words = {
+      pair: () => nextWord("cloudPair"),
+      pairOne: (machine: string) => nextWord("cloudPairOne", { machine }),
+      help: () => nextWord("devicesPairHelp"),
+    }
+    const decorate = () => {
+      offerPairing(rows as unknown as Parameters<typeof offerPairing>[0], words)
+    }
+    const watch = new MutationObserver(decorate)
+    watch.observe(rows, { childList: true })
+    decorate()
+    return () => watch.disconnect()
   }, [])
 
   useLayoutEffect(() => {

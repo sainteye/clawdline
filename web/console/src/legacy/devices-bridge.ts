@@ -197,6 +197,95 @@ export async function localMachines(thisMachine: string, read: typeof fetch = fe
 }
 
 /**
+ * How a machine this browser is not paired with gets paired, when something
+ * here can do it.
+ *
+ * The copied module draws such a card with `webDevicePairHelp` under it — "Start
+ * Pair a Browser on this machine" — which names a control the machine may not
+ * have (a Linux daemon has a terminal, not a window) and gives the person
+ * nothing to press. The Cloud gate installs the one thing that can finish the
+ * job: it opens its pairing card for that machine (`cloud/CloudGate.tsx`,
+ * `cloud/pair.ts`). The console the daemon serves installs nothing, and never
+ * draws an unpaired card either — the only machine it lists is itself.
+ */
+let pairing: ((machine: string) => void) | null = null
+
+export function setMachinePairing(open: ((machine: string) => void) | null): void {
+  pairing = open
+}
+
+/** A drawn element, as far as `offerPairing` reads one: the DOM's, or a test's stand-in. */
+interface Drawn {
+  className: string
+  title: string
+  textContent: string | null
+  type?: string
+  dataset: Record<string, string | undefined>
+  children: ArrayLike<Drawn>
+  ownerDocument: { createElement(tag: string): Drawn } | null
+  appendChild(child: Drawn): unknown
+  onclick: ((this: unknown, ev: never) => unknown) | null
+  setAttribute?(name: string, value: string): void
+}
+
+/** The words `offerPairing` puts on a card, read when it draws. */
+export interface PairWords {
+  /** What the button says. */
+  pair(): string
+  /** What it says to a screen reader, with the machine's name in it. */
+  pairOne(machine: string): string
+  /** The sentence that replaces the copied one under the card. */
+  help(): string
+}
+
+function classes(node: Drawn): string[] {
+  return String(node.className || "").split(/\s+/)
+}
+
+function childWith(node: Drawn, className: string): Drawn | null {
+  for (const child of Array.from(node.children)) if (classes(child).includes(className)) return child
+  return null
+}
+
+/**
+ * Put a Pair button on every card the copied module drew for a machine this
+ * browser is not paired with, and say what it does in place of the sentence
+ * that sends the person to a control that may not exist. Answers how many
+ * cards it changed.
+ *
+ * It runs after the copied module has drawn — `pages/devices.tsx` watches the
+ * list — because `js/view/devices.js` is byte for byte and rebuilds its cards
+ * whenever what they say changes. So it is idempotent: a card that already
+ * carries the button is left alone. The machine's id is the one the copied
+ * card itself carries, in the title of the short id under its name.
+ */
+export function offerPairing(list: Drawn | null, words: PairWords, open: ((machine: string) => void) | null = pairing): number {
+  if (!list || !open) return 0
+  let changed = 0
+  for (const card of Array.from(list.children)) {
+    if (card.dataset.pairing !== "not_paired") continue
+    if (childWith(card, "device-pair")) continue
+    const heading = childWith(card, "device-card-heading")
+    const labelled = heading ? Array.from(heading.children) : []
+    const id = labelled.find((node) => node.title)?.title ?? ""
+    if (!id || !card.ownerDocument) continue
+    const name = labelled[0]?.textContent || id
+    const help = childWith(card, "device-help")
+    if (help) help.textContent = words.help()
+    const button = card.ownerDocument.createElement("button")
+    button.type = "button"
+    button.className = "device-start device-pair"
+    button.textContent = words.pair()
+    button.title = words.pairOne(name)
+    button.setAttribute?.("aria-label", words.pairOne(name))
+    button.onclick = () => open(id)
+    card.appendChild(button)
+    changed += 1
+  }
+  return changed
+}
+
+/**
  * Bind the page once its markup is in the document. `start` is what a card's
  * "New session" does with the machine it names.
  *

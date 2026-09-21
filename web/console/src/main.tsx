@@ -1,6 +1,7 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { DoorGate } from "./door/Door.js"
+import { keepSamePageLinksHere } from "./same-page-links.js"
 
 // The original stylesheet, all of it, in the order index.html links it. These
 // are byte-for-byte copies (see legacy/README.md). The first cut copied only the
@@ -42,6 +43,11 @@ import "./shell.css"
 
 const host = document.getElementById("root")
 if (!host) throw new Error("no #root in the document")
+
+// Both consoles can be a Home Screen app, and in one a link to the console
+// itself must not leave for a browser that holds none of its keys
+// (same-page-links.ts). Installed before anything draws a link.
+keepSamePageLinksHere(window)
 
 // Which console this build is. Served by the daemon it is that daemon's, and
 // the door stands in front of it: until the daemon says the browser is let in,

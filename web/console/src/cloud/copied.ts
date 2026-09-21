@@ -11,13 +11,17 @@ import {
   CloudViewerSession as CloudViewerSessionOriginal,
   chooseTransport as chooseTransportOriginal,
   keepConnected as keepConnectedOriginal,
+  pairViewer as pairViewerOriginal,
+  pairViewerFromInvitation as pairViewerFromInvitationOriginal,
   readCloudConfig as readCloudConfigOriginal,
 } from "../legacy/js/net/cloud-boot.js"
+import { decodePairingInvitation as decodePairingInvitationOriginal } from "../legacy/js/net/cloud-pairing.js"
 import {
   cloudOnboardingMode as cloudOnboardingModeOriginal,
   cloudViewerDeviceMetadata as cloudViewerDeviceMetadataOriginal,
 } from "../legacy/js/net/cloud-onboarding.js"
 import type { CloudReadClient } from "./relay-reader.js"
+import type { OpenedPairing, PendingOffer } from "./pair.js"
 
 /** A build's Cloud declaration, checked (`readCloudConfig`). */
 export interface CloudConfig {
@@ -49,6 +53,12 @@ export interface CloudClientHandle extends CloudReadClient {
   account: string | null
   deviceID: string | null
   machines(): Promise<{ machines: CloudMachine[]; syncing: boolean; retryAfterMs: number }>
+  /**
+   * What the last authenticated `orch/` snapshot of `machine` said it is, or
+   * null when this browser has opened none — which is every machine it is not
+   * paired with (`cloud-client.js`).
+   */
+  machineDescriptor?(machine: string): { machine?: { name?: string; platform?: string } } | null
 }
 
 /** A typed failure from the copied modules (`cloud-failure.js`, `bootError`). */
@@ -110,3 +120,31 @@ export const keepConnected = keepConnectedOriginal as (
   session: CloudSession,
   options: { onState: (update: CloudUpdate) => void },
 ) => CloudConnection
+
+/** A machine's link, decoded and checked (`decodePairingInvitation`); throws `invitation_expired` or `bad_*`. */
+export interface PairingInvitation {
+  invitation_id: string
+  expires_at: number
+}
+
+export const decodePairingInvitation = decodePairingInvitationOriginal as (fragment: string, nowMilliseconds: number) => PairingInvitation
+
+interface PairingHooks {
+  onOffer?: (pending: PendingOffer) => void
+  sleep?: (ms: number) => Promise<void>
+  intervalMs?: number
+}
+
+/**
+ * Show this browser's offer and claim what the machine seals for it
+ * (`pairViewer`). The session must be past `ensureSession`: signed in, with a
+ * device key — which `connected` and `pairing_required` both are.
+ */
+export const pairViewer = pairViewerOriginal as (session: CloudSession, options: PairingHooks) => Promise<OpenedPairing>
+
+/** The same, answering the link a machine printed (`pairViewerFromInvitation`). */
+export const pairViewerFromInvitation = pairViewerFromInvitationOriginal as (
+  session: CloudSession,
+  invitation: PairingInvitation,
+  options: PairingHooks,
+) => Promise<OpenedPairing>
