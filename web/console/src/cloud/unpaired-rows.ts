@@ -102,8 +102,10 @@ export function withAccountNames<T extends Row>(
  * How many sessions a row may claim. A count is only a count when this
  * browser could read the machine's list; see above.
  */
-export function sessionsFact(machine: { pairing: string; sessions: number }): { count: number } | "unread" | "unknown" {
-  if (machine.pairing === "paired" || machine.sessions > 0) return { count: machine.sessions }
+export function sessionsFact(machine: { pairing: string; sessions?: number }): { count: number } | "unread" | "unknown" {
+  if (Number.isSafeInteger(machine.sessions) && (machine.pairing === "paired" || machine.sessions! > 0)) {
+    return { count: machine.sessions! }
+  }
   return machine.pairing === "not_paired" ? "unread" : "unknown"
 }
 

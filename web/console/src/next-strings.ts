@@ -31,6 +31,10 @@ const words = {
     sessionGone: "The session in this address is no longer on this machine, so here is the list.",
     sessionNotStarted: "This session has not started a conversation yet. Send the first message and its contents will appear here.",
     sessionNotStartedShort: "Conversation not started yet",
+    sessionStateUnrecognizedList:
+      "Clawdline read the screen but could not identify its state. Open this session to inspect it.",
+    sessionStateUnrecognizedDetail:
+      "Clawdline read the screen but could not identify its state. Inspect the conversation below before deciding what to do.",
     sessionCountNotStarted: "{n} not started yet",
     transcriptTechnicalDetails: "Technical details",
     scheduleUnreadableJSON: "This schedule file is not a readable JSON object and was disabled.",
@@ -318,6 +322,8 @@ const words = {
     sessionGone: "網址裡的那個 session 已經不在這台機器上了，先回到清單。",
     sessionNotStarted: "這個 session 還沒有開始對話。送出第一則訊息後，內容就會顯示在這裡。",
     sessionNotStartedShort: "對話還沒開始",
+    sessionStateUnrecognizedList: "Clawdline 已讀到畫面，但無法辨認狀態。請開啟這個 session 查看。",
+    sessionStateUnrecognizedDetail: "Clawdline 已讀到畫面，但無法辨認狀態。決定下一步前，請查看下方對話。",
     sessionCountNotStarted: "{n} 個還沒開始對話",
     transcriptTechnicalDetails: "技術細節",
     scheduleUnreadableJSON: "這個排程檔不是可讀取的 JSON 物件，已停用。",

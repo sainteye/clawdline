@@ -43,7 +43,8 @@ export interface CloudMachine {
   observedAt: number | null
   freshness: "current" | "stale" | "unknown"
   pairing: "paired" | "not_paired" | "unknown"
-  sessions: number
+  /** Absent when this browser has no readable session inventory for the machine. */
+  sessions?: number
   selectable: boolean
   autoSelectable: boolean
 }

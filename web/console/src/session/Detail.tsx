@@ -398,7 +398,7 @@ function detailSub(row: SessionRow | null): string {
   if (row.state === "waiting") sub.push(T.sessionWaiting)
   else if (row.state === "working") sub.push(T.webStateWorking)
   else if (conversationNotStarted(row)) sub.push(nextWord("sessionNotStartedShort"))
-  else if (row.state === "unknown") sub.push(T.webStateUnreadable)
+  else if (row.state === "unknown") sub.push(nextWord("sessionStateUnrecognizedDetail"))
   const task = L.taskOfChild(row.id)
   if (task) {
     if (task.title) sub.push(task.title)

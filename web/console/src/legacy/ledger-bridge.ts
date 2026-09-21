@@ -101,11 +101,25 @@ export function paintLedgerStatic(doc: Document): void {
   if (lede && T.webLedgerLede) lede.textContent = T.webLedgerLede
 }
 
+/**
+ * Correct the one refusal the copied Ledger page sends to its generic
+ * fallback. Only the sentence changes: the original `usage_analytics_busy`
+ * tag remains byte for byte, so the screen never claims a different error.
+ */
+export function correctLedgerBusyText(text: string): string {
+  if (!text.includes("usage_analytics_busy") || !text.includes(T.webLedgerFailed)) return text
+  return text.replace(T.webLedgerFailed, T.webProjectBusy)
+}
+
+function correctLedgerBusy(element: HTMLElement | null): void {
+  if (element) element.textContent = correctLedgerBusyText(element.textContent || "")
+}
+
 /** Bind the page, as `main.js` binds it. */
 export function bindLedger(doc: Document, navigate: (name: string) => void): LedgerPage {
   const elements: Record<string, HTMLElement | null> = {}
   for (const id of LEDGER_ELEMENT_IDS) elements[id] = doc.getElementById(id)
-  return bindLedgerPage(elements, {
+  const copied = bindLedgerPage(elements, {
     document: doc,
     verificationLedger,
     // This daemon owns the read, so the page never draws the "open the app's
@@ -113,4 +127,12 @@ export function bindLedger(doc: Document, navigate: (name: string) => void): Led
     carries: () => true,
     navigate,
   }) as LedgerPage
+  const after = (work: Promise<void>, target: HTMLElement | null): Promise<void> =>
+    work.then(() => correctLedgerBusy(target))
+  return {
+    ...copied,
+    enter: () => after(copied.enter(), elements["ledger-status"]),
+    load: () => after(copied.load(), elements["ledger-status"]),
+    openFeature: (graphID: string) => after(copied.openFeature(graphID), elements["ledger-detail-status"]),
+  }
 }

@@ -39,6 +39,10 @@
 // - `start` goes back to the Session list. The original then opens the Start
 //   sheet for the machine; this console has no Start sheet yet.
 import type { NextWord } from "../next-strings.js"
+// @ts-expect-error -- the `.ts` path lets Node's strip-types tests load the same module Vite bundles.
+import { nextWord } from "../next-strings.ts"
+// @ts-expect-error -- the `.ts` path lets Node's strip-types tests load this bridge without built JavaScript.
+import { sessionsFact } from "../cloud/unpaired-rows.ts"
 import { T } from "./js/core/i18n.js"
 import { LOCAL_SESSION_MACHINE } from "./js/session/selection.js"
 import { bindDevicesPage as bindDevicesPageOriginal } from "./js/view/devices.js"
@@ -66,10 +70,11 @@ export type MachineSource = () => Promise<MachineAnswer>
 /**
  * The two sentences this side of the page needs, read when the page asks.
  *
- * They are passed in rather than imported: `next-strings.ts` is a `.ts` module
- * and this one is loaded as it is by `node --test`, which resolves no `.js`
- * specifier to it. Both are read late, because the catalog lands after the
- * first render (`legacy/bridge.ts` `loadStrings`).
+ * They are passed in because the choice of lede belongs to the page's source,
+ * and read late because the catalog lands after the first render
+ * (`legacy/bridge.ts` `loadStrings`). The session-knowledge decorator below
+ * imports this console's own two fixed keys through their source `.ts` path so
+ * both Vite and Node's strip-types tests load the same module.
  */
 export interface DevicesWords {
   /** `nextWord("devicesThisMachine")`: what to call the machine serving this page. */
@@ -289,6 +294,12 @@ export interface SeenWords {
   seen(at: number | null): string
 }
 
+/** The two honest alternatives to a session count. */
+export interface SessionKnowledgeWords {
+  unread(): string
+  unknown(): string
+}
+
 function classes(node: Drawn): string[] {
   return String(node.className || "").split(/\s+/)
 }
@@ -374,6 +385,7 @@ export function offerForgetting(
 /** Add last-seen evidence to each account card, without guessing it from reachability. */
 export function offerLastSeen(list: Drawn | null, words: SeenWords): number {
   if (!list || !account) return 0
+  offerSessionKnowledge(list)
   let changed = 0
   for (const card of Array.from(list.children)) {
     const heading = childWith(card, "device-card-heading")
@@ -389,6 +401,44 @@ export function offerLastSeen(list: Drawn | null, words: SeenWords): number {
     fact.className = "device-last-seen"
     fact.textContent = words.seen(at)
     facts.appendChild(fact)
+    changed += 1
+  }
+  return changed
+}
+
+/**
+ * Say why a copied card has no session count.
+ *
+ * `view/devices.js` correctly omits a non-integer; this bridge owns the fact
+ * that distinguishes "this browser has no key" from "not answered yet". The
+ * account row is the same row handed to the copied renderer, after the Cloud
+ * gate removed the client's invented zero.
+ */
+export function offerSessionKnowledge(
+  list: Drawn | null,
+  words: SessionKnowledgeWords = {
+    unread: () => nextWord("cloudMachineSessionsUnread"),
+    unknown: () => nextWord("cloudMachineSessionsUnknown"),
+  },
+): number {
+  if (!list || !account) return 0
+  let changed = 0
+  for (const card of Array.from(list.children)) {
+    const heading = childWith(card, "device-card-heading")
+    const labelled = heading ? Array.from(heading.children) : []
+    const id = labelled.find((node) => node.title)?.title ?? ""
+    const row = id ? accountMachineRow(id) : null
+    const facts = childWith(card, "device-facts")
+    if (!row || !facts || !card.ownerDocument || childWith(facts, "device-session-knowledge")) continue
+    const fact = sessionsFact({
+      pairing: typeof row.pairing === "string" ? row.pairing : "unknown",
+      sessions: typeof row.sessions === "number" ? row.sessions : undefined,
+    })
+    if (typeof fact !== "string") continue
+    const note = card.ownerDocument.createElement("span")
+    note.className = "device-session-knowledge"
+    note.textContent = fact === "unread" ? words.unread() : words.unknown()
+    facts.appendChild(note)
     changed += 1
   }
   return changed

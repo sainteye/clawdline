@@ -284,20 +284,26 @@ const RULES: Rule[] = [
     family: U,
     title: "The byte-locked ledger cannot yet explain usage_analytics_busy",
     cause: "locked_copy",
-    probes: [{ file: "web/console/src/legacy/js/view/ledger.js", all: ["code === \"graph_not_found\"", "fallback: T.webLedgerFailed"] }],
+    probes: [
+      { file: "web/console/src/legacy/js/view/ledger.js", all: ["code === \"graph_not_found\"", "fallback: T.webLedgerFailed"] },
+      { file: "web/console/src/legacy/ledger-bridge.ts", all: ["return bindLedgerPage(elements, {"] },
+    ],
   },
   {
     id: "L02",
     family: U,
     title: "The byte-locked device view still draws an unknown list as zero",
     cause: "locked_copy",
-    probes: [{ file: "web/console/src/legacy/js/view/devices.js", all: ["machine.sessions + \" \" + copy.webSessions"] }],
+    probes: [
+      { file: "web/console/src/legacy/js/view/devices.js", all: ["machine.sessions + \" \" + copy.webSessions"] },
+      { file: "web/console/src/cloud/copied.ts", all: ["sessions: number"] },
+    ],
   },
 ]
 
 const EXPECTED_RULES = 33
 const EXPECTED_OPEN = 0
-const EXPECTED_LOCKED = 2
+const EXPECTED_LOCKED = 0
 
 export function dispositionFor(file: string): AuditDisposition {
   const normalized = file.replaceAll("\\", "/")
