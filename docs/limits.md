@@ -317,8 +317,9 @@ O39 task 目錄刪除沒有 audit——**這些都是對的行為**，缺的是�
 （`MaximumItems` 宣告了卻沒人用），這正好是它會紅的證明（`plan.md` §10：「那個守衛自己要能證明會紅」）。
 
 背景工作樹新增兩列。`sessions.agent_rows` 是每個 session 最多帶到畫面的 provider agent 數，限制 6，較舊列留在 provider 的原始紀錄並以
-`agents_reading.truncated` 明說省略數；`cache.background_agents` 是 Claude sidecar、transcript tail 與完成通知 cursor 各自的可重建 LRU，
-每類最多 256。穩定的一次掃描仍會 `stat` 近期 agent 以判斷是否有變，但快取命中不再開 transcript；讀不到來源時讀數是 `unknown`，不把它畫成 0。
+`agents_reading.truncated` 明說省略數；`cache.background_agents` 有三張可重建的 LRU：immutable metadata（Claude sidecar 與 Codex rollout head 共用）、
+transcript tail、完成通知 cursor，每張最多 256。穩定的一次掃描仍會 `stat` 近期 Claude agent 以判斷是否有變，但快取命中不再開 transcript；Codex 則用已知的 thread id
+命中快取，不在每次 beat 重走 rollout 目錄。讀不到來源時讀數是 `unknown`，不把它畫成 0。
 
 ### 4.2 資料分類：什麼絕不能丟、什麼可以摘要後丟、什麼可以直接丟
 

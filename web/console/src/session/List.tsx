@@ -202,10 +202,8 @@ function taskPlace(row: SessionRow): {
 
 function agentCount(row: SessionRow): string {
   const provider = (row.agents ?? []).filter((agent) => agent.state === "running").length
-  const broker = L.tasksOfRoot(row.id).filter(L.taskLive).length
-  const known = provider + broker
-  if (row.agents_reading?.state !== "complete" || !L.taskListKnown()) return known ? `${known}+?` : "?"
-  return known ? String(known) : ""
+  if (row.agents_reading?.state !== "complete") return provider ? `${provider}+?` : "?"
+  return provider ? String(provider) : ""
 }
 
 /**

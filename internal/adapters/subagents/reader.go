@@ -50,11 +50,15 @@ type Measurement struct {
 }
 
 type meta struct {
-	What   string
-	Type   string
-	Model  string
-	Parent string
-	Depth  int
+	What         string
+	Type         string
+	Model        string
+	Parent       string
+	Depth        int
+	At           time.Time
+	Conversation string
+	Thread       string
+	Source       string
 }
 
 type verdict struct {
@@ -154,8 +158,16 @@ func (r *Reader) RowsReading() capacity.Reading {
 func (r *Reader) ForSession(s session.Session) session.Session {
 	if s.Assistant == session.AssistantCodex {
 		// The process adapter already asked the kernel which rollouts this pid
-		// holds open. Re-reading the filesystem would be weaker and dearer.
+		// holds open. Their immutable heads add the nickname and start time that
+		// distinguish several otherwise identical `thread_spawn` rows. Cache
+		// those heads just like Claude's immutable sidecars: a stable beat opens
+		// nothing, and process evidence remains the authority for "running".
+		started := time.Now()
+		cost := Measurement{}
+		s.Agents = r.enrichCodex(s, &cost)
+		cost.Duration = time.Since(started)
 		r.mu.Lock()
+		r.lastCost = cost
 		if rows := int64(len(s.Agents) + s.AgentReading.Truncated); rows > r.lastRows {
 			r.lastRows = rows
 		}
@@ -177,6 +189,29 @@ func (r *Reader) ForSession(s session.Session) session.Session {
 	r.mu.Unlock()
 	s.Agents, s.AgentReading = agents, reading
 	return s
+}
+
+func (r *Reader) enrichCodex(s session.Session, cost *Measurement) []session.Agent {
+	agents := append([]session.Agent(nil), s.Agents...)
+	for i := range agents {
+		m, identity, ok := r.readCodexMeta(agents[i].ID, cost)
+		if !ok || identity.conversation != s.ConversationID || identity.thread != agents[i].ID || identity.source != "subagent" {
+			// The kernel already proved this rollout is open and the process
+			// adapter already classified it. Failure to read optional naming
+			// fields must not erase that stronger running-work evidence.
+			continue
+		}
+		if m.What != "" {
+			agents[i].What = m.What
+		}
+		if m.Type != "" {
+			agents[i].Type = m.Type
+		}
+		if !m.At.IsZero() {
+			agents[i].At = m.At
+		}
+	}
+	return agents
 }
 
 type candidate struct {
@@ -379,6 +414,50 @@ func (r *Reader) readMeta(path string, cost *Measurement) (meta, bool) {
 	r.trimLocked()
 	r.mu.Unlock()
 	return value, true
+}
+
+// readCodexMeta reads only a rollout's immutable session_meta head. It never
+// reaches the conversation beneath it. Codex's source name says how the thread
+// was spawned; agent_nickname is the separate, useful name that tells sibling
+// threads apart.
+func (r *Reader) readCodexMeta(id string, cost *Measurement) (meta, codexMeta, bool) {
+	if !validID(id) {
+		return meta{}, codexMeta{}, false
+	}
+	cacheKey := "codex:" + id
+	r.mu.Lock()
+	if hit, ok := r.metas[cacheKey]; ok {
+		r.clock++
+		hit.used = r.clock
+		r.metas[cacheKey] = hit
+		r.mu.Unlock()
+		identity := codexMeta{conversation: hit.value.Conversation, thread: hit.value.Thread, source: hit.value.Source}
+		return hit.value, identity, identity.conversation != "" && identity.thread != ""
+	}
+	r.mu.Unlock()
+
+	path := transcript.CodexPath(r.Home, id)
+	f, err := os.Open(path)
+	if err != nil {
+		return meta{}, codexMeta{}, false
+	}
+	line, readErr := bufio.NewReaderSize(io.LimitReader(f, 1<<20), 64<<10).ReadBytes('\n')
+	_ = f.Close()
+	cost.Opened++
+	cost.Bytes += int64(len(line))
+	if readErr != nil && len(line) == 0 {
+		return meta{}, codexMeta{}, false
+	}
+	value, identity, ok := decodeCodexHead(line)
+	if !ok {
+		return meta{}, codexMeta{}, false
+	}
+	r.mu.Lock()
+	r.clock++
+	r.metas[cacheKey] = metaCache{value: value, used: r.clock}
+	r.trimLocked()
+	r.mu.Unlock()
+	return value, identity, true
 }
 
 func (r *Reader) readDoing(path string, cost *Measurement) (string, bool) {
@@ -690,16 +769,43 @@ func codexHead(path string) (codexMeta, bool) {
 	if err != nil && len(line) == 0 {
 		return codexMeta{}, false
 	}
+	_, identity, ok := decodeCodexHead(line)
+	return identity, ok
+}
+
+func decodeCodexHead(line []byte) (meta, codexMeta, bool) {
 	var row struct {
 		Type    string `json:"type"`
 		Payload struct {
-			SessionID    string `json:"session_id"`
-			ID           string `json:"id"`
-			ThreadSource string `json:"thread_source"`
+			SessionID     string `json:"session_id"`
+			ID            string `json:"id"`
+			ThreadSource  string `json:"thread_source"`
+			AgentNickname string `json:"agent_nickname"`
+			Timestamp     string `json:"timestamp"`
+			Source        struct {
+				Subagent map[string]json.RawMessage `json:"subagent"`
+			} `json:"source"`
 		} `json:"payload"`
 	}
 	if json.Unmarshal(line, &row) != nil || row.Type != "session_meta" {
-		return codexMeta{}, false
+		return meta{}, codexMeta{}, false
 	}
-	return codexMeta{row.Payload.SessionID, row.Payload.ID, row.Payload.ThreadSource}, true
+	identity := codexMeta{row.Payload.SessionID, row.Payload.ID, row.Payload.ThreadSource}
+	if identity.conversation == "" || identity.thread == "" {
+		return meta{}, codexMeta{}, false
+	}
+	keys := make([]string, 0, len(row.Payload.Source.Subagent))
+	for key := range row.Payload.Source.Subagent {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	value := meta{
+		What: row.Payload.AgentNickname, Conversation: identity.conversation,
+		Thread: identity.thread, Source: identity.source,
+	}
+	if len(keys) > 0 {
+		value.Type = keys[0]
+	}
+	value.At, _ = time.Parse(time.RFC3339Nano, row.Payload.Timestamp)
+	return value, identity, true
 }

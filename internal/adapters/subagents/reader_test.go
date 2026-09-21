@@ -12,6 +12,7 @@ import (
 )
 
 const testConversation = "a0000000-0000-4000-8000-000000000001"
+const testCodexAgent = "b0000000-0000-4000-8000-000000000002"
 
 func fixture(t *testing.T) (string, session.Session, string, string) {
 	t.Helper()
@@ -59,6 +60,35 @@ func TestRunningAgentIsReadAndStableBeatOpensNothing(t *testing.T) {
 	got = r.ForSession(row)
 	if cost := r.LastMeasurement(); cost.Opened != 0 {
 		t.Fatalf("stable beat opened %d files, want 0 (stats=%d bytes=%d)", cost.Opened, cost.Stats, cost.Bytes)
+	}
+}
+
+func TestCodexHeadNamesOtherwiseIdenticalSpawnRowsAndIsMemoized(t *testing.T) {
+	home := t.TempDir()
+	folder := filepath.Join(home, ".codex", "sessions", "2026", "09", "21")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	head := fmt.Sprintf(`{"type":"session_meta","payload":{"session_id":%q,"id":%q,"thread_source":"subagent","agent_nickname":"fixture scout","timestamp":"2026-09-21T03:04:05.123Z","source":{"subagent":{"thread_spawn":{}}}}}`+"\n", testConversation, testCodexAgent)
+	if err := os.WriteFile(filepath.Join(folder, "rollout-fixture-"+testCodexAgent+".jsonl"), []byte(head), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	row := session.Session{
+		Assistant: session.AssistantCodex, ConversationID: testConversation,
+		Agents:       []session.Agent{{ID: testCodexAgent, What: "thread_spawn", Type: "thread_spawn", State: session.AgentRunning}},
+		AgentReading: session.AgentReading{State: session.AgentsComplete},
+	}
+	r := New(home)
+	got := r.ForSession(row)
+	if len(got.Agents) != 1 || got.Agents[0].What != "fixture scout" || got.Agents[0].Type != "thread_spawn" || got.Agents[0].At.IsZero() {
+		t.Fatalf("agent metadata %+v", got.Agents)
+	}
+	if cost := r.LastMeasurement(); cost.Opened != 1 || cost.Bytes != int64(len(head)) {
+		t.Fatalf("cold reading %+v, want one measured head read", cost)
+	}
+	r.ForSession(row)
+	if cost := r.LastMeasurement(); cost.Opened != 0 || cost.Bytes != 0 {
+		t.Fatalf("stable reading %+v, want no file opens", cost)
 	}
 }
 
