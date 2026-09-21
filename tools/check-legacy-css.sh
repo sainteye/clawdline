@@ -10,12 +10,26 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+allow_missing=0
+case "${1:-}" in
+  "") ;;
+  --allow-missing-source) allow_missing=1 ;;
+  *) echo "usage: tools/check-legacy-css.sh [--allow-missing-source]" >&2; exit 2 ;;
+esac
+
 SRC="${CLAWDLINE_WEB_SOURCE_TREE:-$HOME/code/clawdline/Resources/web}"
 DST="web/console/src/legacy"
 MANIFEST="$DST/MANIFEST.json"
 
 [ -f "$MANIFEST" ] || { echo "no manifest at $MANIFEST" >&2; exit 1; }
-[ -d "$SRC" ] || { echo "cannot check: no source tree at $SRC" >&2; exit 2; }
+if [ ! -d "$SRC" ]; then
+  if [ "$allow_missing" -eq 1 ]; then
+    echo "legacy: skipped: comparison source is not present at $SRC"
+    exit 0
+  fi
+  echo "cannot check: no source tree at $SRC" >&2
+  exit 2
+fi
 
 drift=0
 checked=0

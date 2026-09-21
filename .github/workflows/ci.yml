@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux, Windows cross-checks, and console
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install process and terminal test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lsof tmux
+
+      - name: Install console dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          changed=$(gofmt -l internal cmd)
+          if [[ -n "$changed" ]]; then
+            printf 'gofmt is required for:\n%s\n' "$changed" >&2
+            exit 1
+          fi
+
+      - name: Vet Linux
+        run: go vet ./...
+
+      - name: Build Linux
+        run: go build ./...
+
+      - name: Build static Linux daemon
+        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
+
+      - name: Build static Windows daemon
+        run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
+
+      - name: Vet Windows, including Windows-only tests
+        run: GOOS=windows go vet ./...
+
+      - name: Run Go tests with four named host exclusions
+        run: tools/test-go-ci.sh
+
+      - name: Check generated Go and TypeScript contracts
+        run: go run ./tools/contract-gen -check
+
+      - name: Check the safe public remote guard
+        run: tools/test-public-remote-guard.sh
+
+      - name: Check explicit CI modes
+        run: tools/test-ci-check-modes.sh
+
+      - name: Report the unavailable retired-app comparison
+        run: tools/check-legacy-css.sh --allow-missing-source
+
+      - name: Run privacy rules and report the unavailable private-word rules
+        env:
+          CLAWDLINE_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: tools/check-private-ci.sh
+
+      - name: Check machine-neutral screen text
+        run: tools/check-machine-words.sh
+
+      - name: Type-check the console
+        working-directory: web
+        run: npm run check
+
+      - name: Build the local console
+        working-directory: web
+        run: npm run build
+
+      - name: Build the hosted console
+        working-directory: web
+        env:
+          VITE_HOSTED_CONSOLE: '{"v":1,"app_origin":"https://app.example.invalid","api_origin":"https://api.example.invalid","relay_url":"wss://relay.example.invalid/v1/connect"}'
+        run: npm run build
+
+      - name: Run console tests
+        working-directory: web/console
+        run: node --test --experimental-strip-types "src/**/*.test.ts"
+
+  darwin:
+    name: macOS and Darwin-only paths
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install tmux integration-test dependency
+        run: command -v tmux >/dev/null || brew install tmux
+
+      - name: Vet Darwin
+        run: go vet ./...
+
+      - name: Build Darwin
+        run: go build ./...
+
+      - name: Run Darwin tests with four named host exclusions
+        run: tools/test-go-ci.sh

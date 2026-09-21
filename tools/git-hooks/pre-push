@@ -1,0 +1,8 @@
+#!/bin/sh
+cat >&2 <<'EOF'
+Push blocked: this checkout contains unfiltered development history.
+The public repository has rewritten history; pushing this checkout could publish private material.
+Publish only from a clean clone after the documented filter-repo and privacy checks.
+See docs/publishing.md.
+EOF
+exit 1
