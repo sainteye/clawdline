@@ -31,6 +31,7 @@ export const DEFAULTS = {
   backdrop: 0.5,
   output_newest_first: false,
   voice_engine: "auto",
+  voice_language: "auto",
   voice_settle_seconds: 1.8,
   voice_stop_seconds: 4.0,
   remote: false,

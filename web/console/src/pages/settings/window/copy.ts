@@ -199,7 +199,94 @@ export const W = {
   webCloudPairRevoke: "撤銷",
   webCloudPairPinnedFailed: "讀不到這台 Mac 的已配對清單，所以現在不接受任何瀏覽器：{why}",
   webFailMacWritesOff: "Mac 目前不接受來自 Cloud 的指令。",
+
+  // **Not from the Swift app.** Its voice tab had no language row — the key was
+  // only ever hand-edited, and `auto` meant whisper's own habit, which writes
+  // Chinese in Simplified. These are this build's own words for the row that
+  // replaced the hand edit, and for saying where `auto` landed and why.
+  settingsVoiceLanguage: "辨識語言",
+  settingsVoiceLanguageFollow: "跟著 Clawdline",
+  settingsVoiceLanguageHint:
+    "語音是在這台機器上用 whisper 讀的，不管錄音是從哪個瀏覽器、哪支手機送來。選「跟著 Clawdline」就是：先看「一般」分頁的語言；那裡也是自動，就看這台機器的語言與地區設定；都沒說，就用 Clawdline 介面本身的語言。",
+  voiceLanguageFixed: "每段錄音都當成{name}來讀。",
+  voiceLanguageChinese: "現在是{name}——{why}。",
+  voiceLanguageDetect: "語言交給 whisper 自己判斷——{why}。聽到中文時寫成{script}——{scriptWhy}。",
+  voiceLanguageDetectBare: "語言交給 whisper 自己判斷——{why}。沒有任何設定說中文該用哪一種字，whisper 習慣寫成簡體。",
+  voiceLanguageNobody: "語言交給 whisper 自己判斷。沒有任何設定說中文該用哪一種字，whisper 習慣寫成簡體。",
+  voiceWhyLanguage: "「一般」分頁的語言是{tag}",
+  voiceWhyMachine: "Clawdline 的語言是自動，而這台機器的{where}是{tag}",
+  voiceWhyCatalog: "Clawdline 的語言是自動，這台機器也沒說它用什麼語言，所以跟著 Clawdline 介面本身的語言",
+  voiceWhyChosen: "這裡選的是{tag}",
 } as const
+
+/**
+ * Where `auto` landed, said in one sentence under the voice language picker.
+ *
+ * The daemon decides (`GET /v1/voice/language`, whisper/locale.go) and this only
+ * puts it into words: the picker's value alone cannot say it, because `auto`
+ * on this machine and `auto` on another are different answers.
+ */
+export function voiceLanguageSaid(v: {
+  setting: string
+  code: string
+  script: string
+  source: string
+  tag: string
+  script_source: string
+  script_tag: string
+}): string {
+  const tag = (value: string) => languageName(value)
+  const why = (source: string, value: string): string => {
+    switch (source) {
+      case "voice_language":
+        return fill(W.voiceWhyChosen, { tag: tag(value) })
+      case "language":
+        return fill(W.voiceWhyLanguage, { tag: tag(value) })
+      case "catalog":
+        return W.voiceWhyCatalog
+      case "AppleLanguages":
+      case "AppleLocale":
+        return fill(W.voiceWhyMachine, { where: "語言與地區設定", tag: tag(value) })
+      case "Windows":
+        return fill(W.voiceWhyMachine, { where: "Windows 地區設定", tag: tag(value) })
+      default:
+        // LANG, LC_ALL, LC_MESSAGES, LANGUAGE: the variable is named, because
+        // it is the thing somebody would go and change. The leading space is
+        // the one between Han and Latin.
+        return fill(W.voiceWhyMachine, { where: ` ${source} 環境變數`, tag: tag(value) })
+    }
+  }
+  const script = (value: string) => (value === "Hant" ? "繁體" : "簡體")
+  if (v.setting !== "auto" && v.source === "voice_language") {
+    return fill(W.voiceLanguageFixed, {
+      name: v.code === "zh" ? `${script(v.script)}中文` : tag(v.tag),
+    })
+  }
+  if (v.code === "zh") {
+    return fill(W.voiceLanguageChinese, { name: `${script(v.script)}中文`, why: why(v.source, v.tag) })
+  }
+  if (!v.source) return W.voiceLanguageNobody
+  if (!v.script) return fill(W.voiceLanguageDetectBare, { why: why(v.source, v.tag) })
+  return fill(W.voiceLanguageDetect, {
+    why: why(v.source, v.tag),
+    script: script(v.script),
+    scriptWhy: why(v.script_source, v.script_tag),
+  })
+}
+
+/**
+ * A language tag's name in this window's language, from the platform's own
+ * table as the General tab's picker names them. A POSIX spelling (`zh_TW.UTF-8`)
+ * is read as the tag it means; a runtime without the table shows the tag.
+ */
+export function languageName(value: string): string {
+  const tag = value.split(/[.@]/)[0]!.replace(/_/g, "-")
+  try {
+    return new Intl.DisplayNames(["zh-Hant"], { type: "language" }).of(tag) ?? value
+  } catch {
+    return value
+  }
+}
 
 /**
  * `fill(_:_:)` (`view/cloud-status.js:64`): the `{name}` placeholders the Cloud
