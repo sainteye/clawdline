@@ -148,6 +148,56 @@ func TestClaudeSlashCommandAndQueuedInput(t *testing.T) {
 	}
 }
 
+func TestClaudeSubagentHandBackKeepsItsSpeakerAndReport(t *testing.T) {
+	raw := `<agent-message from="agent-fixture">
+[Subagent hand-back]
+This framing explains how the report is delivered.
+Its wording is not part of the report.
+
+    ## Finding
+
+    The report stays visible.
+      Its own indentation stays relative.
+</agent-message>`
+	path := writeRecord(t, claudeRow("user", raw))
+	page, err := ReadClaude(path, 10)
+	if err != nil || len(page.Entries) != 1 {
+		t.Fatalf("%v %+v", err, page.Entries)
+	}
+	got := page.Entries[0]
+	if got.Kind != KindAgent || got.Source != "agent-fixture" {
+		t.Fatalf("speaker: %+v", got)
+	}
+	want := "## Finding\n\nThe report stays visible.\n  Its own indentation stays relative."
+	if got.Text != want {
+		t.Fatalf("report\n got: %q\nwant: %q", got.Text, want)
+	}
+}
+
+func TestClaudeSubagentEnvelopeFallsBackWithoutDeletingWords(t *testing.T) {
+	unframed := `<agent-message from="agent-fallback">
+[Subagent hand-back]
+Harness wording.
+
+Report without the promised indentation.
+</agent-message>`
+	unknown := `<future-agent-message from="agent-future">leave every byte</future-agent-message>`
+	path := writeRecord(t,
+		m{"type": "queue-operation", "operation": "enqueue", "content": unframed},
+		claudeRow("user", unknown),
+	)
+	page, err := ReadClaude(path, 10)
+	if err != nil || len(page.Entries) != 2 {
+		t.Fatalf("%v %+v", err, page.Entries)
+	}
+	if got := page.Entries[0]; got.Kind != KindAgent || got.Source != "agent-fallback" || got.Text != strings.Trim(unframed[len(`<agent-message from="agent-fallback">`):len(unframed)-len(`</agent-message>`)], "\r\n") {
+		t.Fatalf("known envelope fallback: %+v", got)
+	}
+	if got := page.Entries[1]; got.Kind != KindUser || got.Text != unknown {
+		t.Fatalf("unknown envelope changed: %+v", got)
+	}
+}
+
 func codexItem(item m) m {
 	return m{"timestamp": "2026-09-16T00:36:44.416Z", "type": "event_msg",
 		"payload": m{"type": "item_completed", "item": item}}

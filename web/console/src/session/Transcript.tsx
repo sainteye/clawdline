@@ -9,6 +9,7 @@ import {
   type ReactElement,
 } from "react"
 import type {
+  SessionAgent,
   SessionRow,
   TranscriptActivity,
   TranscriptAction,
@@ -28,6 +29,8 @@ import { look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
 import { conversationNotStarted } from "./readiness.js"
+import { agentReportIdentity } from "./agent-report.js"
+import "./agent-report.css"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -40,6 +43,8 @@ import { conversationNotStarted } from "./readiness.js"
  * `runHTML`, `askOf`, `patchHTML`…) so each can be read beside the one it
  * replicates, and the wire is the original's too: `entries` with `role`,
  * `text`, `tool`, `at`, `fileChanges`, `plan`, `activity`, `notice`, `source`.
+ * A provider hand-back adds `role: agent`; its `source` joins the same agent
+ * id the work tree shows, rather than being drawn as the person.
  *
  * Pictures are the original's too: an assistant turn or a Clawdline message
  * with `artifacts` carries `artifactTilesHTML`'s static tiles, numbered into one
@@ -81,13 +86,21 @@ type Block =
 
 type Toggle = (key: string, defaultOpen?: boolean) => void
 
-export function Transcript({ id, agentId }: { id: string; agentId?: string }) {
+export function Transcript({
+  id,
+  agentId,
+  onAgent,
+}: {
+  id: string
+  agentId?: string
+  onAgent?: (id: string) => void
+}) {
   // Keyed, so a different session starts from nothing: no previous session's
   // turns, error or opened folds are shown under the new name.
-  return <TranscriptOf key={`${id}:${agentId ?? ""}`} id={id} agentId={agentId} />
+  return <TranscriptOf key={`${id}:${agentId ?? ""}`} id={id} agentId={agentId} onAgent={onAgent} />
 }
 
-function TranscriptOf({ id, agentId }: { id: string; agentId?: string }) {
+function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; onAgent?: (id: string) => void }) {
   const read = useMemo(
     () => () => agentId ? client.agentTranscript(id, agentId, LIMIT) : client.transcript(id, LIMIT),
     [id, agentId],
@@ -222,6 +235,7 @@ function TranscriptOf({ id, agentId }: { id: string; agentId?: string }) {
   const who: Record<string, string> = {
     user: T.webWhoYou,
     assistant: L.assistantDisplayName(session?.assistant),
+    agent: T.webAgents,
     peer: "Claude ↔",
     message: "Clawdline ↔",
     notice: "Clawdline",
@@ -246,7 +260,16 @@ function TranscriptOf({ id, agentId }: { id: string; agentId?: string }) {
     slots.set(e, queue.current.length)
     queue.current.push(...(e.artifacts ?? []))
   }
-  const view: View = { who, expanded, toggle, assistant: session?.assistant, icons, slots }
+  const view: View = {
+    who,
+    expanded,
+    toggle,
+    assistant: session?.assistant,
+    agents: session?.agents ?? [],
+    onAgent,
+    icons,
+    slots,
+  }
 
   let at = 0
   const drawn = blocks.map((block) => {
@@ -441,6 +464,8 @@ interface View {
   expanded: Record<string, boolean>
   toggle: Toggle
   assistant: string | undefined
+  agents: SessionAgent[]
+  onAgent: ((id: string) => void) | undefined
   /** `S.assistantIcons` as this draw read it. */
   icons: boolean
   /** Where each entry's pictures start in this draw's queue. */
@@ -780,6 +805,33 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
           onClick={copyFrom}
           dangerouslySetInnerHTML={{ __html: card }}
         />
+      </div>
+    )
+  }
+  if (role === "agent") {
+    const identity = agentReportIdentity(e.source, v.agents, v.assistant, document.documentElement.lang || "")
+    const source = identity.known ? (
+      <>
+        <button
+          type="button"
+          title={identity.id}
+          onClick={(event) => {
+            event.stopPropagation()
+            if (identity.id) v.onAgent?.(identity.id)
+          }}
+        >
+          {identity.label}
+        </button>
+        <span className="agent-report-id">{identity.id}</span>
+      </>
+    ) : <span className="agent-report-unknown">{identity.detail}</span>
+    return (
+      <div className="entry" data-role="agent" key={"m:" + at}>
+        {whoHTML(v, "agent", e.at)}
+        <div className="body agent-report-card" onClick={copyFrom}>
+          <div className="agent-report-source">{source}</div>
+          <div dangerouslySetInnerHTML={{ __html: L.richTextHTML(e.text) }} />
+        </div>
       </div>
     )
   }

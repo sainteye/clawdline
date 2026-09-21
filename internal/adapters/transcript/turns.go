@@ -26,6 +26,7 @@ import (
 const (
 	KindUser       = "user"
 	KindAssistant  = "assistant"
+	KindAgent      = "agent"   // a provider-native background agent reporting back
 	KindPeer       = "peer"    // another Claude Code session addressing this one
 	KindMessage    = "message" // another session addressing this one through Clawdline
 	KindNotice     = "notice"  // a versioned Clawdline message, not a person's words
@@ -61,8 +62,9 @@ type Entry struct {
 	// At is Unix seconds, or 0 when the record carried no timestamp.
 	At         int64
 	ImageCount int
-	// Source and SourceMode say who spoke on a peer or message entry;
-	// SourceAssistant says which assistant sent a Clawdline message.
+	// Source identifies the background agent, peer or Clawdline session that
+	// spoke. SourceMode belongs to peer and message entries; SourceAssistant
+	// says which assistant sent a Clawdline message.
 	Source          string
 	SourceMode      string
 	SourceAssistant string
@@ -436,6 +438,9 @@ func claudeEntries(line []byte, sidechains bool) []Entry {
 		if e, ok := crossSessionMessage(raw, at); ok {
 			return []Entry{e}
 		}
+		if e, ok := agentMessage(raw, at); ok {
+			return []Entry{e}
+		}
 		if n, ok := decodeNotice(raw); ok {
 			return []Entry{{Kind: KindNotice, Text: n.Body, At: at, Notice: n}}
 		}
@@ -464,6 +469,9 @@ func claudeEntries(line []byte, sidechains bool) []Entry {
 		if kind, _ := blocks[0].str("type"); kind == "text" {
 			if raw, ok := blocks[0].str("text"); ok {
 				if e, ok := sessionMessage(raw, at); ok {
+					return []Entry{e}
+				}
+				if e, ok := agentMessage(raw, at); ok {
 					return []Entry{e}
 				}
 				if n, ok := decodeNotice(raw); ok {
@@ -723,6 +731,104 @@ func firstLineOf(text string) string {
 
 var machineTags = []string{"task-notification", "system-reminder", "local-command-stdout",
 	"local-command-stderr", "command-name", "command-message", "command-args"}
+
+var agentMessageEnvelope = regexp.MustCompile(`(?s)^\s*<agent-message\s+from="([^"<>\r\n]+)">\r?\n?(.*)\r?\n?</agent-message>\s*$`)
+
+// agentMessage recognises the provider's background-agent envelope. Unlike
+// machineTags, its contents are work somebody asked an agent to return, so the
+// entry keeps them and carries the envelope's from id as its speaker.
+//
+// The hand-back harness protects the report by putting every report line one
+// indentation level below its own top-level prose. That framing is the
+// boundary: the harness's wording and number of lines are deliberately not
+// matched. If the boundary cannot be proved, the entire inner message is kept.
+func agentMessage(text string, at int64) (Entry, bool) {
+	match := agentMessageEnvelope.FindStringSubmatch(text)
+	if len(match) != 3 {
+		return Entry{}, false
+	}
+	source := strings.TrimSpace(match[1])
+	inner := strings.Trim(match[2], "\r\n")
+	if source == "" || strings.TrimSpace(inner) == "" {
+		return Entry{}, false
+	}
+	if report, ok := indentedHandBack(inner); ok {
+		inner = report
+	}
+	return Entry{Kind: KindAgent, Text: inner, At: at, Source: source}, true
+}
+
+// indentedHandBack returns the final, wholly-indented block after the
+// top-level hand-back marker. A blank line must separate it from the harness.
+// Anything less exact is not a licence to delete bytes.
+func indentedHandBack(text string) (string, bool) {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	marker := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if line != "[Subagent hand-back]" {
+			return "", false
+		}
+		marker = i
+		break
+	}
+	if marker < 0 {
+		return "", false
+	}
+	for start := marker + 2; start < len(lines); start++ {
+		if strings.TrimSpace(lines[start-1]) != "" || !hasLeadingSpace(lines[start]) {
+			continue
+		}
+		if report, ok := dedentWholeBlock(lines[start:]); ok {
+			return report, true
+		}
+	}
+	return "", false
+}
+
+func hasLeadingSpace(line string) bool {
+	return len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
+}
+
+func dedentWholeBlock(lines []string) (string, bool) {
+	prefix := ""
+	seen := false
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if !hasLeadingSpace(line) {
+			return "", false
+		}
+		space := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		if !seen {
+			prefix, seen = space, true
+			continue
+		}
+		for !strings.HasPrefix(space, prefix) {
+			prefix = prefix[:len(prefix)-1]
+			if prefix == "" {
+				return "", false
+			}
+		}
+	}
+	if !seen || prefix == "" {
+		return "", false
+	}
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			lines[i] = ""
+			continue
+		}
+		lines[i] = strings.TrimPrefix(line, prefix)
+	}
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n"), true
+}
 
 // withoutMachineBlocks takes out what Claude Code injects into the user's side
 // of the conversation — reminders, notifications, a command's expansion —
