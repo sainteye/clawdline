@@ -782,6 +782,83 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 	return answered(body)
 }
 
+// RunWebhook admits a Cloud delivery with the task id already durably chosen
+// by the delivery journal. Unlike a manual validation press, a webhook honors
+// enabled: it is unattended execution and must not revive a paused schedule.
+func (b *ScheduleBook) RunWebhook(ctx context.Context, id, taskID string) ScheduleReply {
+	if !b.dispatchEnabled() {
+		return refusedSchedule(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	h, ok, err := b.named(ctx, id)
+	if err != nil {
+		return refusedSchedule(500, "binding_store_unavailable", "The schedule could not be read.")
+	}
+	if !ok {
+		return refusedSchedule(404, "schedule_not_found", "No schedule named that")
+	}
+	runs, err := b.Store.ScheduleRuns(ctx, id)
+	if err != nil {
+		return refusedSchedule(500, "binding_store_unavailable", "The schedule's runs could not be read.")
+	}
+	replay := false
+	for _, run := range runs {
+		if run.TaskID == taskID {
+			// The broker is idempotent by task id. Let it replay the exact
+			// dispatch so a crash after admission advances the receipt journal.
+			replay = true
+			continue
+		}
+		if run.State != "" && !finished(run.State) {
+			return refusedSchedule(409, "schedule_active", "The previous task from this schedule is still active.")
+		}
+	}
+	if !replay && !h.s.Enabled {
+		return refusedSchedule(409, "schedule_disabled", "This schedule is disabled.")
+	}
+	if !replay && !h.s.FiredAt.IsZero() {
+		return refusedSchedule(409, "schedule_spent", "This one-time schedule already ran.")
+	}
+	b.audit("orchestrator.schedule.run", map[string]string{"schedule": id, "how": "webhook"})
+	id, dir, replayed, warning, err := b.dispatchID(ctx, h.s, time.Time{}, "webhook", taskID)
+	if err != nil {
+		var refusal orchestrator.Refusal
+		if errors.As(err, &refusal) {
+			status := refusal.Status
+			if status == 0 {
+				status = 500
+			}
+			r := refusedSchedule(status, refusal.Code, refusal.Message)
+			r.Extra = refusal.Extra
+			return r
+		}
+		return refusedSchedule(500, "dispatch_failed", err.Error())
+	}
+	if h.s.When.Once() {
+		b.markFired(ctx, h.s.ID, b.now())
+	}
+	body := map[string]any{"ok": true, "task_id": id, "task_dir": dir, "replayed": replayed}
+	if warning != "" {
+		body["warnings"] = []string{warning}
+	}
+	return answered(body)
+}
+
+// WebhookTaskState reads the broker-backed state of one webhook run.
+func (b *ScheduleBook) WebhookTaskState(ctx context.Context, scheduleID, taskID string) (string, error) {
+	runs, err := b.Store.ScheduleRuns(ctx, scheduleID)
+	if err != nil {
+		return "", err
+	}
+	for _, run := range runs {
+		if run.TaskID == taskID {
+			return run.State, nil
+		}
+	}
+	return "", nil
+}
+
 // dispatch hands one occurrence to the broker, which runs it as a task like
 // any other: the same claims arbitration, record, briefing, secret, timeout
 // and result collection (D07). No rule is repeated here.
@@ -798,7 +875,10 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 // given its first message is a run, answered with a warning: the broker's
 // beat decides what became of it, and its timeout ends it either way.
 func (b *ScheduleBook) dispatch(ctx context.Context, s schedule.Schedule, fire time.Time, how string) (string, string, bool, string, error) {
-	id := newUUID()
+	return b.dispatchID(ctx, s, fire, how, newUUID())
+}
+
+func (b *ScheduleBook) dispatchID(ctx context.Context, s schedule.Schedule, fire time.Time, how, id string) (string, string, bool, string, error) {
 	if b.Broker == nil {
 		return id, "", false, "", errors.New("this daemon has no broker to run a schedule through")
 	}

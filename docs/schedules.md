@@ -199,7 +199,7 @@ fires.
 | 第一次看見的時間 | — | 無條件進位到下一秒 | 存的是秒；09:00:00.4 看見的列存成 09:00:00 會讓 09:00 那次「不早於看見」而當場發射 |
 | 開了分頁但第一句打不進去 | — | 算這個排程的一次 run（不記 `spawn_failed`），回應帶 `warnings` | 分頁真的在；記成沒開會讓它不算「還在跑」，也不會寫 `fired_at` |
 | 一個排程的 run 還沒結束 | 由 broker 的心跳推進 | 同樣由 broker 的 beat 推進（收 `result.json`、跑逾時）；「還在跑嗎」直接讀 broker 那一列的 state | 一個不寫 result 的 run 在自己的逾時到時結束，放行下一次（D53） |
-| webhook 綁定 | Cloud 指令在 app 內處理 | 同樣的帳本與規則，走本機路由 | 這個 daemon 的 Cloud 線以路由接本機能力 |
+| webhook 綁定與投遞 | Cloud 指令在 app 內處理 | 同樣的綁定帳本；機器憑證啟用 hook，持久 claim／lease／receipt journal 再走既有 broker | 收到但尚未回 receipt 或已派工但尚未記 receipt 時重啟，都以同一 task id 重播，不重複開 Agent |
 
 ## 還沒有的（依賴別的工作線）
 
@@ -209,9 +209,6 @@ fires.
   範本裡 broker 還不支援的欄位（`serialize`、`graph`）會在發射時被具名拒絕（`bad_task`），
   不再像舊骨架那樣安靜地忽略。`reasoning_effort` 2026-09-20 起支援了：存得下去、也發得出去，
   不再是「存檔說好、每次發射說 `bad_task`」的陷阱。
-- **webhook 的啟用與投遞**：綁定寫進本機帳本後，要向 Cloud 啟用 hook；這個 daemon 沒有 Cloud 帳號用戶端，
-  所以回舊版遇到「沒有機器憑證」時的 `401 no_machine_credential`（綁定本身仍留著，與舊版相同）。Cloud 送來的
-  delivery（claim／lease／receipt）整段沒有做。
 - **Cloud 的 `schedule`／`schedule-create` 等指令**：`internal/app/cloudops` 還回 `unknown_command`；
   路由已經有了，接上是 cloudops 那邊的事。
 - **執行紀錄的 `terminal_id`／`session_id`、`finished_at`**：Go 的 task 記錄沒有這些，run 列只能是「沒有動作」。

@@ -16,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 )
 
 // The schedule routes, as the Swift app serves them (`RemoteServer.swift`, the
@@ -99,6 +100,19 @@ func (s *Server) scheduleBook() *app.ScheduleBook {
 		}
 	}
 	return actual.(*app.ScheduleBook)
+}
+
+// StartScheduleWebhooks attaches the Cloud activation method to the same book
+// used by HTTP and the clock, then starts the durable claim/receipt loop.
+func (s *Server) StartScheduleWebhooks(ctx context.Context, identity schedulewebhook.Identity, cloud schedulewebhook.Cloud, build string) {
+	book := s.scheduleBook()
+	book.Activate = cloud.Activate
+	runtime := &app.ScheduleWebhookRuntime{
+		Cloud: cloud, Identity: identity, Store: s.store, Book: book, Build: build,
+		Log: func(format string, args ...any) { log.Printf(format, args...) },
+	}
+	go runtime.Run(ctx)
+	log.Printf("schedule webhooks: delivery poller started")
 }
 
 func writeScheduleReply(w http.ResponseWriter, reply app.ScheduleReply) {

@@ -240,6 +240,9 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 	if !link.Enabled() {
 		return
 	}
+	if identity, webhooks, ok := link.ScheduleWebhooks(); ok {
+		srv.StartScheduleWebhooks(ctx, identity, webhooks, version)
+	}
 	go func() {
 		if err := link.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("cloud: the line stopped: %v", err)

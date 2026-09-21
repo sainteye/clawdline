@@ -222,6 +222,10 @@ func (c *AccountClient) MintDeviceToken(ctx context.Context, machineCredential s
 }
 
 func (c *AccountClient) post(ctx context.Context, path, bearer string, body any, out any) error {
+	return c.postWithHeaders(ctx, path, bearer, body, nil, out)
+}
+
+func (c *AccountClient) postWithHeaders(ctx context.Context, path, bearer string, body any, headers map[string]string, out any) error {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -239,6 +243,9 @@ func (c *AccountClient) post(ctx context.Context, path, bearer string, body any,
 	}
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

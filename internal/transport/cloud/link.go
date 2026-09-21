@@ -39,6 +39,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
+	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 )
 
 // SendCapability is the roster capability a Cloud viewer needs before this
@@ -436,6 +437,19 @@ func machineName(identity adaptercloud.Identity, settings adaptercloud.Settings,
 
 // Enabled reports whether the switch was on when this link was opened.
 func (l *Link) Enabled() bool { return l.settings.Enabled }
+
+// ScheduleWebhooks returns the machine-authenticated control-plane seam when
+// this link has a usable enrolled identity. The credential remains captured
+// by the adapter and is never exposed to HTTP handlers or logs.
+func (l *Link) ScheduleWebhooks() (schedulewebhook.Identity, schedulewebhook.Cloud, bool) {
+	if !l.settings.Enabled || !l.identity.Valid() || l.settings.APIBase == "" {
+		return schedulewebhook.Identity{}, nil, false
+	}
+	return schedulewebhook.Identity{AccountID: l.identity.AccountID, MachineID: l.identity.MachineID},
+		adaptercloud.ScheduleWebhookClient{
+			Client: adaptercloud.NewAccountClient(l.settings.APIBase), Credential: l.identity.MachineCredential,
+		}, true
+}
 
 // Run holds the line up until ctx is done.
 //

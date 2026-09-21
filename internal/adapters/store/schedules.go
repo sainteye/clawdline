@@ -53,6 +53,15 @@ CREATE TABLE IF NOT EXISTS schedule_webhook_binds (
   created_at   INTEGER NOT NULL,
   completed_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS schedule_webhook_deliveries (
+  delivery_id     TEXT    PRIMARY KEY,
+  delivery_digest TEXT    NOT NULL,
+  state           TEXT    NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  body            TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS schedule_webhook_deliveries_state
+  ON schedule_webhook_deliveries(state, updated_at);
 `
 
 func openSchedules(db *sql.DB) error {
@@ -338,6 +347,22 @@ func (s *Store) ScheduleWebhook(ctx context.Context, scheduleID string) (string,
 		return "", false, err
 	}
 	return hook, true, nil
+}
+
+// ScheduleForWebhook is the inverse lookup used by the delivery poller. The
+// Cloud sees only the opaque hook id; this local row is the sole mapping to a
+// schedule.
+func (s *Store) ScheduleForWebhook(ctx context.Context, hookID string) (string, bool, error) {
+	var scheduleID string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT schedule_id FROM schedule_webhook_bindings WHERE hook_id = ?`, hookID).Scan(&scheduleID)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return scheduleID, true, nil
 }
 
 // BindScheduleWebhook is `ScheduleWebhookBindingStore.bind`: the same pair
