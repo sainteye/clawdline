@@ -68,6 +68,41 @@
         "nothing_declared"
       ]
     },
+    "ProjectDeployQuietKind": {
+      "description": "Which kind of silence a workflow file kept. `no_file`: nothing has written one for this repository, so there is no deploy row because nobody looked and not because there is no run. `unreadable`: a file is there and could not be read as one small JSON object. `state_not_drawn`: it was read and says a state no reader here draws — `none` is what a producer with nothing to say writes, and a dot drawn for it would be the always-wrong mark. `no_address`: it names a run and no page to open it on, and a row with nowhere to go is not a row. Four words because what to do about each is different: start the poller, look at the file, read `why`, look at the producer.",
+      "type": "string",
+      "enum": [
+        "no_file",
+        "unreadable",
+        "state_not_drawn",
+        "no_address"
+      ]
+    },
+    "ProjectDeployQuiet": {
+      "description": "What the workflow file said on a beat it drew no row. `repository: github` answers that a run *could* be named; this answers what was found under that name, so that no deploy row stops being one silence and becomes the sentence the file already contains. Present only with `repository: github`, and absent whenever a deploy row was drawn.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ProjectDeployQuietKind"
+        },
+        "state": {
+          "description": "The producer's own state word, verbatim and untranslated — `none` where it had nothing to say, and whatever else it writes. Absent with `no_file` and `unreadable`, where nothing was read.",
+          "type": "string"
+        },
+        "why": {
+          "description": "The producer's own reason, verbatim and untranslated, from the file's `why`. **This vocabulary is not this daemon's and is not closed**: the tool that writes `~/.claude/statusline-cache/` chooses these words, and a reader that carried only the ones it already knew would go silent again the first time that tool learned a new one — which is the whole shape this field exists to end. A reader turns the ones it knows into a sentence and says the rest as the words they are. Absent when the file carried none.",
+          "type": "string"
+        },
+        "updatedAt": {
+          "description": "The file's own `updated_at`, in seconds since 1970, which is a different moment from `observedAt`: this is when that tool last decided, `observedAt` is when this walk read what it decided. A reason written three days ago is a poller that stopped, not a project that has nothing to show, and nothing else on this wire can tell those apart. Absent where the file carried no `updated_at` or none was read.",
+          "type": "number"
+        }
+      }
+    },
     "ProjectRepository": {
       "description": "What the one git read found, which is a different question from what it produced. A deploy row is a file named after the repository's GitHub remote, so four of these five answers produce no deploy row — and only `unreadable` leaves it unknown whether there was one to produce. They are separate words because 'could not read' and 'there is none' must not be one sentence on a screen.",
       "type": "string",
@@ -114,6 +149,9 @@
         },
         "unreadable": {
           "$ref": "#/$defs/ProjectGitFailure"
+        },
+        "deployQuiet": {
+          "$ref": "#/$defs/ProjectDeployQuiet"
         },
         "truncated": {
           "description": "More rows were found than one answer carries, and the rest are not in `links`. Absent when nothing was left out.",

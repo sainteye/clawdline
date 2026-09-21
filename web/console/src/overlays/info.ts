@@ -1,7 +1,8 @@
-import type { ProjectGitFailure, ProjectLink, ProjectRepository, SessionInfo, SessionModel } from "@clawdline/contract"
+import type { ProjectLink, SessionInfo, SessionModel } from "@clawdline/contract"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { repositoryNote } from "./links-note.js"
 import { SessionFacts } from "./facts.js"
 import {
   byId,
@@ -327,43 +328,6 @@ function openable(url: string): boolean {
 }
 
 /**
- * Why this project has no deploy row, in the words for **which kind of
- * nothing** it was.
- *
- * The distinction is the whole reason the daemon answers `repository` at all:
- * a directory that is not a repository, one with no `origin`, one whose
- * `origin` is elsewhere and a git that would not answer all produce no deploy
- * row, and only the last leaves it unknown whether there was one to produce.
- * "No links" for all four tells somebody their project has no CI when what
- * happened is that git is wedged.
- */
-function repositoryNote(repo: ProjectRepository | undefined, failure: ProjectGitFailure | undefined): string {
-  switch (repo) {
-    case "no_remote":
-      return nextWord("linksNoRemote")
-    case "not_a_repository":
-      return nextWord("linksNotRepository")
-    case "remote_not_github":
-      return nextWord("linksRemoteNotGitHub")
-    case "unreadable":
-      return nextWord("linksGitUnreadable", { reason: gitFailureWord(failure) })
-  }
-  return ""
-}
-
-function gitFailureWord(failure: ProjectGitFailure | undefined): string {
-  switch (failure) {
-    case "git_missing":
-      return nextWord("linksGitMissing")
-    case "git_timeout":
-      return nextWord("linksGitTimeout")
-    case "git_answer_too_large":
-      return nextWord("linksGitTooLarge")
-  }
-  return nextWord("linksGitFailed")
-}
-
-/**
  * `linksHTML` in `input/info.js`, row for row: a `.dep-row` holding a `.dep`
  * with its dot, label, state word and host, and a `.dep-note` under it when
  * there is one line worth saying about why.
@@ -374,7 +338,8 @@ function gitFailureWord(failure: ProjectGitFailure | undefined): string {
  * which kind of nothing it was where the receipt's word would go.
  */
 function linksHTML(links: ProjectLink[], d: Facts): string {
-  const note = repositoryNote(d.repository, d.repositoryUnreadable)
+  const note = repositoryNote(d.repository, d.repositoryUnreadable, d.deployQuiet,
+    { word: nextWord, clock: L.clock })
   const noteHTML = note ? '<p class="note">' + esc(note) + "</p>" : ""
   if (!links.length) return '<p class="note">' + esc(T.webLinksEmpty) + "</p>" + noteHTML
   const rows = links

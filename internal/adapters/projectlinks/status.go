@@ -46,14 +46,24 @@
 // writes, these rows quietly become empty — and no guard in this repository
 // goes red, because an absent file is a legitimate answer. A deploy row
 // disappearing is therefore two different facts wearing one face: "there is
-// no run" and "nobody is looking any more". Anybody debugging an empty
-// `.deploy` cell should check the file's own `updated_at` before looking
-// anywhere in this package.
+// no run" and "nobody is looking any more".
+//
+// That face now comes off on the wire. `DeployQuiet` carries which kind of
+// silence it was, the producer's own `state` and `why`, and the file's own
+// `updated_at` — the number this paragraph used to send a person to a
+// terminal for. `why` is the producer's word and is never translated in Go:
+// `gh-run-status.py` writes `no-gh`, `no-branch`, `gh-failed`, `no-runs`,
+// `workflow-disabled` and `stale-fail`, that list is that tool's to grow, and
+// the words a screen says for each of them belong to whatever draws the
+// screen. Measured 2026-09-21: this package had never read the `why` key at
+// all, in a directory where one file had carried one for days.
 package projectlinks
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -115,6 +125,64 @@ type Deploy struct {
 	StartedAt      float64
 	TypicalSeconds float64
 	URL            string
+	// Why is the file's own `why`, verbatim. The producer writes one beside a
+	// state it wants explained; this reader carries it rather than deciding
+	// which states deserve a sentence.
+	Why string
+	// UpdatedAt is the file's own `updated_at`: when that tool last decided,
+	// which is not when this walk read the decision.
+	UpdatedAt float64
+}
+
+// DeployQuietKind is which kind of silence a workflow file kept on a beat that
+// drew no row.
+//
+// Four words rather than one because the thing to do about each is different,
+// and because **no row is not one fact**: a poller that never ran, a file this
+// reader could not follow, a producer that says it has nothing to show, and a
+// run with no page to open all arrive at the same empty cell. The package
+// comment above says an empty `.deploy` is two facts wearing one face; this is
+// the type that takes the face off.
+type DeployQuietKind string
+
+const (
+	// DeployQuietNoFile is nothing written under this repository's name at
+	// all. Nobody looked; it does not say there is no run.
+	DeployQuietNoFile DeployQuietKind = "no_file"
+	// DeployQuietUnreadable is a file that is there and is not one small
+	// JSON object.
+	DeployQuietUnreadable DeployQuietKind = "unreadable"
+	// DeployQuietStateNotDrawn is a state outside deployStates — `none` and
+	// whatever else that tool writes. The dot stays off; the sentence does
+	// not.
+	DeployQuietStateNotDrawn DeployQuietKind = "state_not_drawn"
+	// DeployQuietNoAddress is a drawable state with nowhere to go, which
+	// links.go refuses as a row.
+	DeployQuietNoAddress DeployQuietKind = "no_address"
+)
+
+// DeployQuiet is the workflow file on a beat it drew nothing, and the reason
+// this package stopped throwing that beat away.
+//
+// Measured 2026-09-21 on the machine this was written on: seventeen
+// `ghrun-*.json` files, and one of them read
+// `{"state":"none","why":"stale-fail","updated_at":…}` — a named reason, in a
+// file, that no line of this package had ever read. `why` is the producer's
+// own word and is **not translated here**: the vocabulary belongs to whatever
+// writes `~/.claude/statusline-cache/`, and a reader that carried only the
+// words it already knew would go quiet again the first time that tool learned
+// a new one.
+type DeployQuiet struct {
+	Kind DeployQuietKind
+	// State is the producer's state word, verbatim. Empty with
+	// DeployQuietNoFile and DeployQuietUnreadable, where nothing was read.
+	State string
+	// Why is the producer's reason, verbatim. Empty when the file carried
+	// none, which is itself an answer and not the same as having no file.
+	Why string
+	// UpdatedAt is the file's own `updated_at`. A reason written three days
+	// ago is a poller that stopped, not a project between runs.
+	UpdatedAt float64
 }
 
 // Run is a test or a build on this machine, from `run-<directory key>.json`.
@@ -168,7 +236,11 @@ func (h Health) VisualState() string {
 // Status is what one directory's status files say.
 type Status struct {
 	Deploy *Deploy
-	Run    *Run
+	// DeployQuiet is set exactly when a workflow file was looked for and
+	// Deploy is nil: the two are never both present and never both absent
+	// once a repository name was available to look one up with.
+	DeployQuiet *DeployQuiet
+	Run         *Run
 	// Components are the lossless rows of a multi-surface receipt. Older
 	// receipts have none, and then Health is the one overall check.
 	Health     *Health
@@ -217,10 +289,12 @@ func ReadStatus(dir, cwd, repo string, now float64) Status {
 	var out Status
 	key := DirectoryKey(cwd)
 	if repo != "" {
-		out.Deploy = parseDeploy(readJSON(filepath.Join(dir, "ghrun-"+repo+".json")))
+		row, there := readJSON(filepath.Join(dir, "ghrun-"+repo+".json"))
+		out.Deploy, out.DeployQuiet = parseDeploy(row, there)
 	}
-	out.Run = parseRun(readJSON(filepath.Join(dir, "run-"+key+".json")), now)
-	health := readJSON(filepath.Join(dir, "health-"+key+".json"))
+	run, _ := readJSON(filepath.Join(dir, "run-"+key+".json"))
+	out.Run = parseRun(run, now)
+	health, _ := readJSON(filepath.Join(dir, "health-"+key+".json"))
 	out.Health = parseHealth(health, health)
 	out.Components, out.Truncated = parseComponents(health)
 	return out
@@ -229,25 +303,33 @@ func ReadStatus(dir, cwd, repo string, now float64) Status {
 // readJSON is one bounded read of one object. A file larger than
 // maxStatusBytes, or one that is not an object, is nothing rather than half of
 // something.
-func readJSON(path string) map[string]any {
+//
+// The second answer is whether there is a file there at all, and it is
+// separate from the first for the same reason `Repo` has five values and not
+// one: **nothing written here and written and unreadable are different facts**,
+// and only a caller with both can say which of them an empty cell is. Absent
+// is the normal case and is not an error; anything else — a directory, a
+// device, a file this process may not open — counts as there, because
+// something is under that name and it is not this reader's to explain away.
+func readJSON(path string) (map[string]any, bool) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil
+		return nil, !errors.Is(err, fs.ErrNotExist)
 	}
 	defer file.Close()
 	st, err := file.Stat()
 	if err != nil || !st.Mode().IsRegular() || st.Size() > maxStatusBytes {
-		return nil
+		return nil, true
 	}
 	data, err := io.ReadAll(io.LimitReader(file, maxStatusBytes+1))
 	if err != nil || len(data) > maxStatusBytes {
-		return nil
+		return nil, true
 	}
 	var obj map[string]any
 	if json.Unmarshal(data, &obj) != nil {
-		return nil
+		return nil, true
 	}
-	return obj
+	return obj, true
 }
 
 func str(row map[string]any, key string) string {
@@ -263,13 +345,44 @@ func num(row map[string]any, key string) (float64, bool) {
 	return v, true
 }
 
-func parseDeploy(row map[string]any) *Deploy {
+// parseDeploy is one workflow file, and **it answers twice**: the row, or why
+// there is none.
+//
+// Before this it answered once and `nil` carried four different facts into one
+// blank cell. The file it was measured against said
+// `{"state":"none","why":"stale-fail"}` — a reason the producer wrote down
+// deliberately (`gh-run-status.py`: *"Keep `why` so the next person reading
+// this file can tell 'nothing to show' apart from 'the poller is broken'"*) —
+// and this function read `state`, found it outside deployStates, and returned
+// `nil`. The reason was in the file the whole time and never left it.
+//
+// The dot is unchanged: a state this reader does not know still draws nothing,
+// because a red mark that is always wrong is worse than no mark. What changed
+// is that **no mark is no longer no sentence**.
+func parseDeploy(row map[string]any, there bool) (*Deploy, *DeployQuiet) {
 	if row == nil {
-		return nil
+		if !there {
+			return nil, &DeployQuiet{Kind: DeployQuietNoFile}
+		}
+		return nil, &DeployQuiet{Kind: DeployQuietUnreadable}
 	}
-	state := str(row, "state")
+	updated, _ := num(row, "updated_at")
+	// `state` and `why` are another program's words and are carried as they
+	// were written, one line long. Nothing here maps them: the set is that
+	// tool's to grow, and a reader that kept only the members it recognised
+	// would fall silent again on the first new one.
+	state := oneLine(str(row, "state"))
+	why := oneLine(str(row, "why"))
 	if !deployStates[state] {
-		return nil
+		return nil, &DeployQuiet{Kind: DeployQuietStateNotDrawn,
+			State: state, Why: why, UpdatedAt: updated}
+	}
+	url := address(str(row, "url"))
+	if url == "" {
+		// links.go refuses a row with nowhere to go, so the silence is
+		// decided here rather than left for it to produce twice.
+		return nil, &DeployQuiet{Kind: DeployQuietNoAddress,
+			State: state, Why: why, UpdatedAt: updated}
 	}
 	started, _ := num(row, "started_at")
 	typical, _ := num(row, "typical_seconds")
@@ -278,8 +391,10 @@ func parseDeploy(row map[string]any) *Deploy {
 		State:          state,
 		StartedAt:      started,
 		TypicalSeconds: typical,
-		URL:            address(str(row, "url")),
-	}
+		URL:            url,
+		Why:            why,
+		UpdatedAt:      updated,
+	}, nil
 }
 
 func parseRun(row map[string]any, now float64) *Run {

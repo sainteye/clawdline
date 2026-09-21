@@ -433,6 +433,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		info.LinksObservedAt = seconds(at)
 		info.Repository = contract.ProjectRepository(reading.Repo)
 		info.RepositoryUnreadable = contract.ProjectGitFailure(reading.Unreadable)
+		info.DeployQuiet = wireDeployQuiet(reading.DeployQuiet)
 	}
 	writeJSON(w, contract.SessionInfoReply{Info: info})
 }
