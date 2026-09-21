@@ -54,10 +54,46 @@ transcript.
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
 | `clawdline assistants` | What each assistant's account has left |
 | `clawdline landings` | Every landing still owed on this machine |
+| `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
 
-The ones that ask the daemon print its JSON on success; on a refusal they print
-`refused, <status> <code>: <message>` and exit 1. `--port` overrides the port.
+The orchestration commands above print the daemon's JSON on success; on a refusal they print
+`refused, <status> <code>: <message>` and exit 1. Cloud commands use their own human-readable
+success and error output. `--port` overrides the port.
+
+### Pair a Cloud browser
+
+Pairing changes who may read this machine. A paired browser may read it immediately and, when
+Cloud `commands` are on, may drive it. Run a pairing command only when the person explicitly asks
+to pair that browser or gives you the exact pairing command or offer. Pairing does not turn
+commands on; that remains a separate setting.
+
+There are two supported directions:
+
+1. **The browser shows an offer.** Run the exact line it gives you on the machine:
+
+   ```sh
+   clawdline cloud pair -offer '<code>'
+   ```
+
+   Keep the single quotes. The offer is an opaque, short-lived, one-use secret: do not decode,
+   edit, store, or repeat it in the final answer. If it expires or was already used, get a fresh
+   offer from the browser instead of retrying or modifying it.
+2. **The machine makes the invitation.** Run `clawdline cloud pair`. It prints a one-time
+   `https://app.clawdline.com/#pair=…` link and waits. The person opens that complete link in the
+   browser they want to pair, while signed in to the same Clawdline Cloud account. Treat the link
+   like the offer: do not publish or retain it.
+
+Success prints three lines: `paired` names the browser device id, `browser` is the browser
+fingerprint, and `machine` is the machine fingerprint. Compare the browser fingerprint with the
+one shown in the browser and the machine fingerprint with the one shown for this machine. A
+mismatch is not success: immediately run `clawdline cloud revoke <device-id>` using the `paired`
+id, then report the mismatch. `clawdline cloud devices` lists the current browser roster and its
+local trust status; it is also the read-only check to use after pairing.
+
+These commands go through the running local daemon. If one fails, report its exact stderr. Do not
+turn Cloud on, log in, enable commands, rotate keys, or replace the supplied offer unless the
+person separately asked for that change.
 
 **Where things are.**
 

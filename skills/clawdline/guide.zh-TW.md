@@ -50,10 +50,41 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
 | `clawdline assistants` | 每個助理的帳號還剩多少額度 |
 | `clawdline landings` | 這台機器上所有還欠著的 landing |
+| `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
 
-會去問 daemon 的那幾個指令，成功時印出 daemon 回的 JSON；被拒絕時印出
-`refused, <status> <code>: <message>`，exit code 是 1。`--port` 可以覆寫 port。
+上面那些 orchestration 指令成功時會印出 daemon 回的 JSON；被拒絕時印出
+`refused, <status> <code>: <message>`，exit code 是 1。Cloud 指令另有自己給人看的成功與錯誤輸出。
+`--port` 可以覆寫 port。
+
+### 配對一個 Cloud 瀏覽器
+
+配對會改變誰能讀這台機器。配對過的瀏覽器立刻就能讀；Cloud 的 `commands` 開啟時，它還能操作這台
+機器。只有在人明確要求配對該瀏覽器，或直接給了完整配對指令或 offer 時，才執行配對指令。配對本身
+不會開啟 commands；那是另一個獨立設定。
+
+支援兩個方向：
+
+1. **瀏覽器顯示 offer。** 在機器上照原樣執行它給的整行指令：
+
+   ```sh
+   clawdline cloud pair -offer '<code>'
+   ```
+
+   單引號要保留。offer 是不透明、短效且只能使用一次的秘密；不要解碼、修改、保存，也不要在最後答覆
+   中重貼。若已失效或用過，請瀏覽器產生新的 offer，不要重試或自行改內容。
+2. **由機器建立邀請。** 執行 `clawdline cloud pair`。它會印出一個一次性的
+   `https://app.clawdline.com/#pair=…` 連結並等待。使用者要在想配對的瀏覽器裡、登入同一個 Clawdline
+   Cloud 帳號後，完整開啟該連結。連結與 offer 一樣：不要公開或保留。
+
+成功時會印三行：`paired` 是瀏覽器 device id，`browser` 是 browser fingerprint（瀏覽器指紋），
+`machine` 是 machine fingerprint（機器指紋）。把 browser fingerprint 與瀏覽器顯示的值比對，也把
+machine fingerprint 與該機器顯示的值比對。對不上就不算成功：立刻用 `paired` 的 id 執行
+`clawdline cloud revoke <device-id>`，再回報指紋不符。`clawdline cloud devices` 會列出目前的瀏覽器
+roster 與本機信任狀態；配對後要唯讀複查，也用這條。
+
+這些指令都透過本機正在執行的 daemon。失敗時回報 stderr 原文。除非使用者另外要求，否則不要順手
+開啟 Cloud、登入、開啟 commands、rotate key，也不要替換使用者給的 offer。
 
 **東西在哪裡。**
 

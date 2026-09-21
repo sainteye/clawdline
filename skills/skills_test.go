@@ -159,3 +159,30 @@ func TestTheStubCarriesNoRoutes(t *testing.T) {
 		}
 	}
 }
+
+// Pairing authorizes a browser to read this machine (and to drive it when
+// commands are enabled). Both guides must therefore carry the complete,
+// security-relevant operator path instead of leaving an assistant to infer it
+// from CLI help or source code.
+func TestEveryGuideExplainsCloudPairing(t *testing.T) {
+	wants := []string{
+		"clawdline cloud pair",
+		"clawdline cloud pair -offer '<code>'",
+		"clawdline cloud devices",
+		"clawdline cloud revoke <device-id>",
+		"browser fingerprint",
+		"machine fingerprint",
+		"commands",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain pairing with %q", topic, want)
+			}
+		}
+	}
+}

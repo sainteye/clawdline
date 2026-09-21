@@ -4,11 +4,12 @@ description: |
   Use Clawdline to dispatch a bounded child task while this session keeps synthesis, integration
   and landing; to hand an existing line of work to another session; to open an independent Root
   for a new feature; to send a message or a picture to another live session; to tell the person
-  something through a notification; or to record this session's own finished turn as a delivery
-  receipt — the check that says "delivered, awaiting approval" on Clawdline's screen, in any
-  repository Clawdline watches. Triggers include "dispatch a task", "open a child session",
-  "hand this off", "report my milestone", "record this turn as delivered", "show the user this
-  screenshot", and 「派任務」「開 child」「交接給下一個 session」「回報這一輪做完了」
+  something through a notification; to pair or revoke a Clawdline Cloud browser; or to record this
+  session's own finished turn as a delivery receipt — the check that says "delivered, awaiting
+  approval" on Clawdline's screen, in any repository Clawdline watches. Triggers include
+  "dispatch a task", "open a child session", "hand this off", "pair this browser", `clawdline
+  cloud pair`, "report my milestone", "record this turn as delivered", "show the user this
+  screenshot", and 「派任務」「開 child」「交接給下一個 session」「配對瀏覽器」「回報這一輪做完了」
   「更新 milestone」「在 Clawdline 上顯示完成」「把這張截圖給他看」. Do not use for work this
   conversation can simply do, or for provider-native subagents. When this session is a Clawdline
   child, the CHILD.md its briefing names governs instead.
