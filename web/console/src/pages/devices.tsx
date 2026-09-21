@@ -1,8 +1,10 @@
 import { useLayoutEffect, useRef, type MouseEvent } from "react"
 import type { PageModule } from "./types.js"
-import { bindDevices, devicesLede, offerPairing, type DevicesPage } from "../legacy/devices-bridge.js"
+import { bindDevices, devicesLede, offerForgetting, offerLastSeen, offerPairing, watchMachineActions, type DevicesPage } from "../legacy/devices-bridge.js"
 import { nextWord } from "../next-strings.js"
+import { machineSeenWord } from "../cloud/machine-seen.js"
 import sectionMarkup from "./devices/section.html?raw"
+import "./devices-actions.css"
 
 /**
  * The Devices page: `section#devices` in the Swift app's `index.html`, drawn
@@ -54,13 +56,23 @@ function DevicesPageView({ shown }: { shown: boolean }) {
       pairOne: (machine: string) => nextWord("cloudPairOne", { machine }),
       help: () => nextWord("devicesPairHelp"),
     }
+    const forgetWords = {
+      forget: () => nextWord("cloudForget"),
+      forgetOne: (machine: string) => nextWord("cloudForgetOne", { machine }),
+    }
     const decorate = () => {
       offerPairing(rows as unknown as Parameters<typeof offerPairing>[0], words)
+      offerForgetting(rows as unknown as Parameters<typeof offerForgetting>[0], forgetWords)
+      offerLastSeen(rows as unknown as Parameters<typeof offerLastSeen>[0], { seen: machineSeenWord })
     }
     const watch = new MutationObserver(decorate)
     watch.observe(rows, { childList: true })
+    const stopActions = watchMachineActions(decorate)
     decorate()
-    return () => watch.disconnect()
+    return () => {
+      watch.disconnect()
+      stopActions()
+    }
   }, [])
 
   useLayoutEffect(() => {

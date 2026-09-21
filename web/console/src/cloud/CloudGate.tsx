@@ -22,9 +22,10 @@ import {
 import { CARRY_TABLE } from "./carry.js"
 import { afterForget, forgetMachine, honestyIsOurs, type ForgetOutcome } from "./forget.js"
 import { NAME_MAX, renameMachine, type RenameOutcome } from "./rename.js"
-import { setAccountMachines, setMachinePairing } from "../legacy/devices-bridge.js"
+import { setAccountMachines, setMachineForgetting, setMachinePairing } from "../legacy/devices-bridge.js"
 import { machinePresentation } from "../legacy/js/session/selection.js"
 import { accountMachineNames, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
+import { machineSeenWord } from "./machine-seen.js"
 import { PairingRun, dropInvitation, takeInvitation, type PairStart, type PairState } from "./pair.js"
 import {
   browserPendingPairings,
@@ -144,25 +145,6 @@ function platformWord(platform: ReturnType<typeof machineIdentityFacts>["platfor
   }
 }
 
-/** Relative last-seen text, from the last authenticated machine envelope this browser observed. */
-function seenWord(at: number | null): string {
-  if (!at) return nextWord("cloudMachineSeenUnknown")
-  // A sender's clock can be a little ahead. "Last seen" cannot truthfully be
-  // in the future from this browser, so clamp that display to now.
-  const seconds = Math.min(0, (at - Date.now()) / 1000)
-  const absolute = Math.abs(seconds)
-  const unit: Intl.RelativeTimeFormatUnit = absolute < 90 * 60 ? "minute" : absolute < 36 * 3600 ? "hour" : "day"
-  const size = unit === "minute" ? 60 : unit === "hour" ? 3600 : 86400
-  const value = Math.round(seconds / size)
-  try {
-    const relative = new Intl.RelativeTimeFormat(document.documentElement.lang || undefined, { numeric: "auto" }).format(value, unit)
-    return nextWord("cloudMachineSeen", { time: relative })
-  } catch {
-    // refusal-ok: a browser refusing a locale is not a machine refusal.
-    return nextWord("cloudMachineSeenAt", { time: new Date(at).toLocaleString() })
-  }
-}
-
 /**
  * The build's own catalog for this browser (`cloud/strings.ts`).
  *
@@ -205,6 +187,9 @@ export function CloudGate({ declared }: { declared: string }) {
   const [forgetting, setForgetting] = useState(false)
   const [forgotten, setForgotten] = useState<readonly string[]>([])
   const [told, setTold] = useState<{ machine: string; outcome: ForgetOutcome } | null>(null)
+  // Cancel returns to the list that opened the question. A picker press stays
+  // on the picker; a Devices-page press uncovers that page again.
+  const forgetReturn = useRef<"machines" | "console">("machines")
   // Renaming one (`rename.ts`): which machine is being renamed, and what the
   // account answered about the last one. The new name is not written into the
   // list here, because this list is not the control plane's — it is what the
@@ -539,8 +524,29 @@ export function CloudGate({ declared }: { declared: string }) {
       const named = known ? withAccountNames([known], namesRef.current, described, present)[0] : null
       openPairing({ id, name: named ? named.name || named.label || id : id })
     })
-    return () => setMachinePairing(null)
+    setMachineForgetting((id) => {
+      const known = machinesRef.current?.find((m) => m.id === id)
+      if (!known || gone.current.includes(id)) return
+      const named = withAccountNames([known], namesRef.current, described, present)[0]
+      setTold(null)
+      forgetReturn.current = "console"
+      setAsking(named)
+      setScreen({ at: "machines" })
+    })
+    return () => {
+      setMachinePairing(null)
+      setMachineForgetting(null)
+    }
   }, [openPairing])
+
+  const askForget = useCallback((machine: CloudMachine | null) => {
+    if (machine) forgetReturn.current = "machines"
+    setAsking(machine)
+    if (!machine && forgetReturn.current === "console") {
+      forgetReturn.current = "machines"
+      setScreen({ at: "console" })
+    }
+  }, [])
 
   /** Whether this browser has read `machine`'s own snapshot, and so has its own word for its name. */
   function described(machine: string): boolean {
@@ -778,7 +784,7 @@ export function CloudGate({ declared }: { declared: string }) {
           forgotten={forgotten}
           told={told}
           reading={chosen?.id ?? null}
-          onAsk={setAsking}
+          onAsk={askForget}
           onForget={forget}
           onLeave={leave}
           naming={naming}
@@ -1202,7 +1208,7 @@ function GateCard(props: {
                           {nextWord("cloudMachineID", { id: identity.shortID })}
                         </span>
                         <span className="cloud-machine-facts">
-                          {seenWord(identity.seenAt)}
+                          {machineSeenWord(identity.seenAt)}
                           {" · "}
                           {typeof count === "object"
                             ? nextWord("cloudMachineSessions", { count: count.count })

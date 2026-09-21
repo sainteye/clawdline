@@ -108,6 +108,21 @@ test("the list is the chosen machine's rows, with the machine kept and the relay
   assert.equal("identity" in snap.sessions[0], false)
 })
 
+test("an agent transcript is asked of the chosen machine with both decoded ids and the local limit", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 1000 })
+
+  const answer = await r.fetch("/v1/sessions/root%20pane/agents/agent%204?limit=5000")
+  assert.equal(answer.status, 200)
+  assert.deepEqual(client.reads, [{
+    machine: "mac-a",
+    word: "agent",
+    body: { session: "root pane", agent: "agent 4", limit: 1000 },
+  }])
+  assert.deepEqual(await answer.json(), { read: "agent" })
+  assert.equal(r.log.at(-1)?.word, "agent")
+})
+
 test("empty is believed only after the machine's inventory, and not while it is still sending rows", async () => {
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })

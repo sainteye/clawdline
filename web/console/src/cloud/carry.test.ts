@@ -187,17 +187,17 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("schedules" in CARRIED)
   assert.ok("snippets" in CARRIED)
   assert.ok("timeline" in CARRIED)
-  // 40, counted on this tree — `node -e` over this file's own `CARRIED` at
+  // 41, counted on this tree — `node -e` over this file's own `CARRIED` at
   // f001f9b, not carried over from the line before. The tree this branch was
   // cut from measured 39, which was itself 38 plus `git`, and 38 was 21 plus
   // the snippet list and its four writes plus the twelve reads of the work
   // system, re-measured where those two lines met. The one this branch adds
-  // is `landings`: one word, one read, and the difference is checked by
+  // is `agent`: one word, one read, and the difference is checked by
   // subtraction rather than by trust, because Git does not mark a conflict
   // when two sides write the same number and a count copied across a change
   // is the one nobody checks.
-  assert.ok("landings" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 40)
+  assert.ok("agent" in CARRIED)
+  assert.equal(Object.keys(CARRIED).length, 41)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

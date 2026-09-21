@@ -98,9 +98,16 @@ export const DEVICES_ELEMENT_IDS = [
  * which is what a gate that has lost its line leaves behind.
  */
 let account: MachineSource | null = null
+let accountRows = new Map<string, MachineRow>()
 
 export function setAccountMachines(source: MachineSource | null): void {
   account = source
+  if (!source) accountRows = new Map()
+}
+
+/** The last account row the page itself drew, for decorators outside the copied module. */
+export function accountMachineRow(id: string): MachineRow | null {
+  return accountRows.get(id) ?? null
 }
 
 /** Whether an account's list is installed — that is, whether the lede is true. */
@@ -226,9 +233,25 @@ export async function localMachines(thisMachine: string, read: typeof fetch = fe
  * draws an unpaired card either — the only machine it lists is itself.
  */
 let pairing: ((machine: string) => void) | null = null
+const actionListeners = new Set<() => void>()
 
 export function setMachinePairing(open: ((machine: string) => void) | null): void {
   pairing = open
+  for (const listener of actionListeners) listener()
+}
+
+/** The Cloud gate's existing forget confirmation, opened for one account row. */
+let forgetting: ((machine: string) => void) | null = null
+
+export function setMachineForgetting(open: ((machine: string) => void) | null): void {
+  forgetting = open
+  for (const listener of actionListeners) listener()
+}
+
+/** Re-decorate rows when the Cloud gate installs or removes an account action. */
+export function watchMachineActions(listener: () => void): () => void {
+  actionListeners.add(listener)
+  return () => actionListeners.delete(listener)
 }
 
 /** A drawn element, as far as `offerPairing` reads one: the DOM's, or a test's stand-in. */
@@ -253,6 +276,17 @@ export interface PairWords {
   pairOne(machine: string): string
   /** The sentence that replaces the copied one under the card. */
   help(): string
+}
+
+/** The existing Cloud forget action's two labels, read in the page's language. */
+export interface ForgetWords {
+  forget(): string
+  forgetOne(machine: string): string
+}
+
+/** The one fact the copied page does not draw: when this browser last saw the row. */
+export interface SeenWords {
+  seen(at: number | null): string
 }
 
 function classes(node: Drawn): string[] {
@@ -303,6 +337,64 @@ export function offerPairing(list: Drawn | null, words: PairWords, open: ((machi
 }
 
 /**
+ * Put the account's existing Forget action on every account machine card.
+ *
+ * This does not revoke anything itself. The callback belongs to `CloudGate`,
+ * which opens the same named confirmation, sends the same single DELETE and
+ * renders the same typed outcome as the machine picker. A locally served page
+ * installs no callback and therefore gets no account action.
+ */
+export function offerForgetting(
+  list: Drawn | null,
+  words: ForgetWords,
+  open: ((machine: string) => void) | null = forgetting,
+): number {
+  if (!list || !open) return 0
+  let changed = 0
+  for (const card of Array.from(list.children)) {
+    if (childWith(card, "device-forget")) continue
+    const heading = childWith(card, "device-card-heading")
+    const labelled = heading ? Array.from(heading.children) : []
+    const id = labelled.find((node) => node.title)?.title ?? ""
+    if (!id || !card.ownerDocument) continue
+    const name = labelled[0]?.textContent || id
+    const button = card.ownerDocument.createElement("button")
+    button.type = "button"
+    button.className = "device-start device-forget"
+    button.textContent = words.forget()
+    button.title = words.forgetOne(name)
+    button.setAttribute?.("aria-label", words.forgetOne(name))
+    button.onclick = () => open(id)
+    card.appendChild(button)
+    changed += 1
+  }
+  return changed
+}
+
+/** Add last-seen evidence to each account card, without guessing it from reachability. */
+export function offerLastSeen(list: Drawn | null, words: SeenWords): number {
+  if (!list || !account) return 0
+  let changed = 0
+  for (const card of Array.from(list.children)) {
+    const heading = childWith(card, "device-card-heading")
+    const labelled = heading ? Array.from(heading.children) : []
+    const id = labelled.find((node) => node.title)?.title ?? ""
+    const row = id ? accountMachineRow(id) : null
+    const facts = childWith(card, "device-facts")
+    if (!row || !facts || !card.ownerDocument) continue
+    if (childWith(facts, "device-last-seen")) continue
+    const observed = row.observedAt
+    const at = typeof observed === "number" && Number.isFinite(observed) && observed > 0 ? observed : null
+    const fact = card.ownerDocument.createElement("span")
+    fact.className = "device-last-seen"
+    fact.textContent = words.seen(at)
+    facts.appendChild(fact)
+    changed += 1
+  }
+  return changed
+}
+
+/**
  * Bind the page once its markup is in the document. `start` is what a card's
  * "New session" does with the machine it names.
  *
@@ -320,7 +412,13 @@ export function bindDevices(
   const page = (bindDevicesPageOriginal as (elements: Record<string, HTMLElement | null>, environment: Record<string, unknown>) => DevicesPage)(
     elements,
     {
-      machines: () => (account ? account() : localMachines(words.thisMachine())),
+      machines: async () => {
+        const answer = account ? await account() : await localMachines(words.thisMachine())
+        accountRows = account
+          ? new Map(answer.machines.flatMap((row) => typeof row.id === "string" && row.id ? [[row.id, row] as const] : []))
+          : new Map()
+        return answer
+      },
       start,
     },
   )

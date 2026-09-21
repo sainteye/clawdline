@@ -1,0 +1,10 @@
+/* Account actions added around the byte-locked Devices view. */
+.device-card .device-forget {
+  margin-left: 8px;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+@media (max-width: 560px) {
+  .device-card .device-forget { margin-left: 0; }
+}
