@@ -4,6 +4,7 @@ import { bindUsagePage, type UsagePortfolio } from "../legacy/usage-bridge.js"
 import sectionMarkup from "./usage/section.html?raw"
 import dialogMarkup from "./usage/dialog.html?raw"
 import { translateUsage } from "./usage/zh-Hant.js"
+import { nextWord, type NextWord } from "../next-strings.js"
 
 /**
  * The Usage page: `section#usage-analytics` and `dialog#usage-detail` in the
@@ -41,7 +42,10 @@ function UsagePage({ shown }: { shown: boolean }) {
       (root): root is HTMLElement => !!root,
     )
     const repaint = () => {
-      for (const root of roots) translateUsage(root, document.documentElement.lang)
+      for (const root of roots) {
+        paintNextWords(root)
+        translateUsage(root, document.documentElement.lang)
+      }
     }
     const watch = new MutationObserver(repaint)
     for (const root of roots) {
@@ -53,6 +57,7 @@ function UsagePage({ shown }: { shown: boolean }) {
         attributeFilter: ["aria-label", "title", "data-label"],
       })
     }
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] })
     repaint()
     return () => watch.disconnect()
   }, [])
@@ -109,3 +114,12 @@ function followPageLink(ev: MouseEvent<HTMLElement>): void {
 }
 
 export const page: PageModule = { id: "usage", Component: UsagePage }
+
+function paintNextWords(root: ParentNode): void {
+  for (const node of root.querySelectorAll<HTMLElement>("[data-next-word]")) {
+    const key = node.dataset.nextWord as NextWord | undefined
+    if (!key) continue
+    const value = nextWord(key)
+    if (node.textContent !== value) node.textContent = value
+  }
+}

@@ -6,8 +6,8 @@
                     <!-- `tabindex="-1"` so the keyboard can be given the heading on arrival and
                          on the way back from a Project: it is the one thing on this page that is
                          always there and always says where you are. -->
-                    <h1 id="projects-title" tabindex="-1">Projects</h1>
-                    <p class="projects-lede" id="projects-lede">Directories an assistant has actually been run in, and that are still there.</p>
+                    <h1 id="projects-title" tabindex="-1" data-next-word="projectsTitle"></h1>
+                    <p class="projects-lede" id="projects-lede" data-next-word="projectsLede"></p>
                 </div>
                 <span class="projects-stat" id="projects-count"></span>
             </div>
@@ -16,7 +16,7 @@
         </div>
 
         <div id="projects-detail-view" hidden>
-            <button class="projects-back" id="projects-back" type="button">‹ Projects</button>
+            <button class="projects-back" id="projects-back" type="button" data-next-word="projectsBack"></button>
             <div class="projects-heading project-identity">
                 <canvas class="project-mark none" id="project-mark" width="0" height="0" aria-hidden="true"></canvas>
                 <div>
@@ -31,13 +31,12 @@
                      aria-labelledby="project-worktree-title">
                 <div class="project-worktree-heading">
                     <div>
-                        <p class="project-worktree-eyebrow">Repository lifecycle</p>
-                        <h2 id="project-worktree-title">Worktrees</h2>
+                        <p class="project-worktree-eyebrow" data-next-word="projectsRepositoryLifecycle"></p>
+                        <h2 id="project-worktree-title" data-next-word="projectsWorktrees"></h2>
                     </div>
-                    <button id="project-worktree-refresh" type="button">Refresh observation</button>
+                    <button id="project-worktree-refresh" type="button" data-next-word="projectsRefreshObservation"></button>
                 </div>
-                <p class="project-worktree-boundary">Read-only overview. Refresh asks the owning Mac
-                    for one bounded observation. Cleanup is intentionally unavailable in a browser.</p>
+                <p class="project-worktree-boundary" data-next-word="projectsLifecycleBoundary"></p>
                 <p class="project-worktree-summary" id="project-worktree-summary"></p>
                 <p class="project-worktree-status" id="project-worktree-status" role="status"
                    aria-live="polite"></p>
@@ -54,7 +53,7 @@
                 <div class="project-delivered-head">
                     <strong class="project-delivered-count" id="project-delivered-count">—</strong>
                     <div>
-                        <h2 id="project-delivered-title">Delivered, not landed</h2>
+                        <h2 id="project-delivered-title" data-next-word="projectsDeliveredNotLanded"></h2>
                         <p class="project-delivered-say" id="project-delivered-say"></p>
                     </div>
                 </div>
@@ -77,7 +76,7 @@
                  visible — see docs/usage-attribution.md for the migration that would end it. -->
             <section class="project-unattributed" id="project-unattributed"
                      aria-labelledby="project-unattributed-title" hidden>
-                <h2 id="project-unattributed-title">Unattributed worktrees</h2>
+                <h2 id="project-unattributed-title" data-next-word="projectsUnattributedWorktrees"></h2>
                 <p id="project-unattributed-say"></p>
             </section>
 
