@@ -225,7 +225,7 @@ func onScreen(items []session.Session) []swiftstore.OnScreen {
 func (s *Server) strings(w http.ResponseWriter, r *http.Request) {
 	lang := r.URL.Query().Get("lang")
 	if lang == "" {
-		lang = "zh-Hant"
+		lang = defaultCatalog
 	}
 	// The name is used as a path segment, so anything that is not a plain tag
 	// is refused rather than cleaned: a "fixed" path is a path somebody did not

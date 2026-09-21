@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/whisper"
 	"github.com/sainteye/clawdline-go/internal/contract"
@@ -29,7 +30,7 @@ import (
 // machine. So the browser records, the samples come here, and the model that
 // reads them is the one already on this disk. No client may name a different
 // one — neither the binary, nor the model, nor the language is taken from the
-// request.
+// request. The language is this machine's to decide (`whisper` below).
 //
 // **Answered off the request's own path, and that is the design rather than an
 // optimisation.** Whisper takes about a second and a half warm and twelve
@@ -150,7 +151,11 @@ func (s *Server) transcribe(w http.ResponseWriter, r *http.Request) {
 		writeVoiceFailure(w, err)
 		return
 	}
-	log.Printf("audit voice.transcribe seconds=%.1f ms=%d chars=%d ok=1", seconds, ms, len([]rune(text)))
+	// Which language it was read as, and who said so: the question a
+	// Simplified transcript raises, answered without one word of it.
+	plan := engine.Plan()
+	log.Printf("audit voice.transcribe seconds=%.1f ms=%d chars=%d ok=1 lang=%s script=%s from=%s",
+		seconds, ms, len([]rune(text)), plan.Code, plan.Script, plan.From.Source)
 	// **Nothing heard is a 200.** Whisper answers with nothing for silence,
 	// for a clip it decided was a groove, and for a recording of a room — and
 	// none of those is a failure of the request. What was asked is "what was
@@ -262,11 +267,26 @@ func voiceLeave() {
 // consulting what is actually installed on the machine running it.
 var voiceEngine = (*Server).whisper
 
+// voiceMachine is how `auto` reads this machine's languages. A variable so a
+// test can be a machine set to zh-CN, or one that says nothing, on a machine
+// that is neither — this one is zh-TW, which is exactly where a wrong rule
+// passes by accident.
+var voiceMachine = whisper.Machine{}
+
 // whisper builds the transcriber from this machine's own settings, which are
 // the Swift app's key spellings in this app's own file: `whisper_binary`,
 // `whisper_model`, `voice_language` and `voice_vocabulary`. A file that cannot
 // be read is not a refusal — it means every key has its default, which is the
 // ordinary first-run state.
+//
+// **`auto` follows Clawdline, and the request still names nothing.** The
+// language comes from this machine's side of the wire — its own `language`
+// setting, then its own locale, then the catalog it serves (whisper/locale.go)
+// — so a recording from the hosted console on a phone, which is a different
+// build with its own idea of the interface's language, is read exactly as one
+// from the page this daemon serves. A client that could name a language could
+// also be an old client that names none, and the answer would depend on which
+// build somebody happened to have open.
 func (s *Server) whisper() whisper.Transcriber {
 	out := whisper.Transcriber{
 		Language: "auto",
@@ -276,6 +296,7 @@ func (s *Server) whisper() whisper.Transcriber {
 		TempDir: filepath.Join(s.cfg.Dir, "voice"),
 	}
 	values, err := s.settingsFile().Read()
+	out.Follow = voiceFollow(values, err == nil)
 	if err != nil {
 		return out
 	}
@@ -298,6 +319,42 @@ func (s *Server) whisper() whisper.Transcriber {
 		}
 	}
 	return out
+}
+
+// voiceFollow is who `auto` asks, in order: Clawdline's own language when the
+// file names one, this machine's languages, and last the catalog this daemon
+// serves, which is what every page it draws is written in when nothing
+// narrows it.
+func voiceFollow(values nextconfig.Values, readable bool) []whisper.Answer {
+	follow := []whisper.Answer{}
+	if readable {
+		if v, ok := values.String("language"); ok && whisper.Usable(v) {
+			follow = append(follow, whisper.Answer{Tag: v, Source: whisper.FromLanguage})
+		}
+	}
+	follow = append(follow, voiceMachine.Languages(context.Background())...)
+	return append(follow, whisper.Answer{Tag: defaultCatalog, Source: whisper.FromCatalog})
+}
+
+// voiceLanguageRoute is GET /v1/voice/language: what the next recording will
+// be read as, and who said so. The settings window says it back under the
+// picker, so "auto" is never a word standing in for an answer nobody can see.
+func (s *Server) voiceLanguageRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET")
+		return
+	}
+	engine := voiceEngine(s)
+	plan := engine.Plan()
+	setting := engine.Language
+	if strings.TrimSpace(setting) == "" {
+		setting = "auto"
+	}
+	writeJSON(w, contract.VoiceLanguage{
+		Setting: setting, Code: plan.Code, Script: plan.Script,
+		Source: plan.From.Source, Tag: plan.From.Tag,
+		ScriptSource: plan.ScriptFrom.Source, ScriptTag: plan.ScriptFrom.Tag,
+	})
 }
 
 // voiceCode is the machine-readable half of each failure, and the only part

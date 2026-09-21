@@ -81,6 +81,12 @@ func (p *page) document(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(html))
 }
 
+// defaultCatalog is the one catalog this daemon ships, and so the language
+// every page it serves is written in when nothing narrows it. The page, the
+// `/v1/strings` default, a child's briefing and dictation's last resort all
+// read it here, so they cannot come to disagree.
+const defaultCatalog = "zh-Hant"
+
 // strings returns the one line that carries the catalog into the document.
 //
 // It is JSON inside a script element, so the one sequence that could end the
@@ -88,7 +94,7 @@ func (p *page) document(w http.ResponseWriter) {
 // already dealt with quotes and backslashes, and a second pass over them would
 // corrupt the very strings it was meant to protect.
 func (p *page) strings() string {
-	body, err := os.ReadFile(filepath.Join(p.root, "strings", "zh-Hant.json"))
+	body, err := os.ReadFile(filepath.Join(p.root, "strings", defaultCatalog+".json"))
 	if err != nil {
 		return ""
 	}
@@ -96,7 +102,7 @@ func (p *page) strings() string {
 	if json.Unmarshal(body, &catalog) != nil {
 		return ""
 	}
-	catalog["lang"] = "zh-Hant"
+	catalog["lang"] = defaultCatalog
 	catalog["dir"] = "ltr"
 	out, err := json.Marshal(catalog)
 	if err != nil {

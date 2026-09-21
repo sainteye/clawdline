@@ -120,6 +120,11 @@
           "nullable": true,
           "type": "string"
         },
+        "voice_language": {
+          "description": "What whisper reads a recording as: `auto`, which follows `language`, then this machine's languages, then the shipped catalog — or a tag such as `zh-Hant`, `zh-Hans` or `en`.",
+          "nullable": true,
+          "type": "string"
+        },
         "voice_settle_seconds": {
           "description": "How long a pause ends a sentence. 0 is off.",
           "nullable": true,
@@ -311,6 +316,11 @@
         },
         "voice_engine": {
           "description": "`auto`, `apple` or `whisper`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "voice_language": {
+          "description": "`auto`, or a language tag: letters, digits and dashes.",
           "nullable": true,
           "type": "string"
         },

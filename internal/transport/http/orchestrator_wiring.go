@@ -247,7 +247,7 @@ func brokerLanguage(s *Server) string {
 	// This daemon ships one catalog and /v1/strings defaults to it, so the one
 	// line a child says out loud defaults to the same language rather than to
 	// English nobody chose.
-	return "zh-Hant"
+	return defaultCatalog
 }
 
 func brokerMaxChildren(s *Server) int {

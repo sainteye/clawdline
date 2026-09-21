@@ -114,6 +114,10 @@ type Transcriber struct {
 	Model string
 	// Language is a BCP-47 tag like "zh-TW", or "auto".
 	Language string
+	// Follow is who `auto` asks, in order (locale.go): Clawdline's own
+	// language, this machine's, then the catalog this daemon ships. Empty
+	// leaves `auto` to whisper, which writes Chinese in Simplified.
+	Follow []Answer
 	// Vocabulary is repaired in the text afterwards, never put in the prompt.
 	// See ApplyVocabulary for the measurement behind that.
 	Vocabulary []string
@@ -341,10 +345,11 @@ func Language(tag string) (code, seed string) {
 }
 
 // WantsTraditional is whether this language tag asks for Traditional
-// characters.
+// characters. A script subtag is the answer when the tag has one — `zh-Hans-HK`
+// is Simplified written in Hong Kong — and the region is the answer when not.
 func WantsTraditional(tag string) bool {
 	lower := strings.ToLower(tag)
-	if !strings.HasPrefix(lower, "zh") {
+	if !strings.HasPrefix(lower, "zh") || strings.Contains(lower, "hans") {
 		return false
 	}
 	for _, mark := range []string{"tw", "hk", "hant", "mo"} {
@@ -354,6 +359,9 @@ func WantsTraditional(tag string) bool {
 	}
 	return false
 }
+
+// Plan is what this transcriber will give whisper, and who decided it.
+func (t Transcriber) Plan() Plan { return Decide(t.Language, t.Follow) }
 
 // Transcribe reads one recording and answers with what was said.
 //
@@ -391,10 +399,10 @@ func (t Transcriber) Transcribe(ctx context.Context, samples []byte) (string, er
 	// thing this is allowed to leave behind.
 	defer os.Remove(wav)
 
-	code, seed := Language(t.Language)
+	plan := t.Plan()
 	args := []string{
 		"-m", model, "-f", wav,
-		"-l", code,
+		"-l", plan.Code,
 		"-nt",         // no timestamps: this is a prompt, not a subtitle file
 		"-np",         // no progress bar in the output we are about to parse
 		"-sns",        // drop non-speech tokens rather than writing them down
@@ -407,8 +415,8 @@ func (t Transcriber) Transcribe(ctx context.Context, samples []byte) (string, er
 	// towards spellings the model is already good at. The names are repaired
 	// afterwards instead, by ApplyVocabulary, which cannot make a sentence
 	// worse.
-	if seed != "" {
-		args = append(args, "--prompt", seed)
+	if plan.Seed != "" {
+		args = append(args, "--prompt", plan.Seed)
 	}
 
 	timeout := t.Timeout
@@ -439,7 +447,10 @@ func (t Transcriber) Transcribe(ctx context.Context, samples []byte) (string, er
 	if LooksLikeLoop(text) {
 		return "", nil
 	}
-	if WantsTraditional(t.Language) {
+	// The guarantee behind the seed, and behind `auto` too: when whisper was
+	// left to detect the language, what it wrote is converted only if it came
+	// back Chinese.
+	if plan.Script == "Hant" && (plan.Code == "zh" || LooksChinese(text)) {
 		text = ToTraditional(text)
 	}
 	text = Tidy(text)
