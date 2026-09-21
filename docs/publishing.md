@@ -134,3 +134,25 @@ worktrees of the same remote share one `ghrun-<owner>-<repo>.json` file. A
 `master` checkout can later overwrite it with `no-runs`. CI and the remote are
 necessary, but they do not by themselves make the shared cache stable until
 the producer resolves the local branch to its upstream/default GitHub branch.
+
+## Read the guard's exit code, not the last command in the pipe
+
+`tools/check-private.sh -history` answers 0 clean, 1 a finding, 2 could not
+check, 3 could not decide. Piping it through `tail` to read its report replaces
+that answer with `tail`'s, which is 0 whatever the guard said. On 2026-09-21
+three publishes were reported as "history clean" on the strength of `tail`'s
+exit code while the guard was exiting 1 the whole time. Nothing new reached the
+public repository — the findings were the same 529 before and after, all of
+them already published — but the check that would have caught a new one was
+not being read.
+
+Run it twice, or capture it: `out=$(tools/check-private.sh -history ...); rc=$?`.
+
+## A new replacement rule can break the fast-forward
+
+Adding a rule to the `--replace-text` file rewrites every commit that contains
+that string, including ones already published, and the push stops being a
+fast-forward. Before adding one, ask `git log -S <string> --all` whether any
+published commit carries it. A string that only your unpublished commits carry
+is a safe extension; one that an older commit carries is a history rewrite and
+is the person's decision, not a detail of this publish.
