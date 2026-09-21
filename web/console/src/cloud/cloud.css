@@ -101,7 +101,8 @@
    Rename and Forget; it is a word because unlike the two familiar glyphs it
    is the next step the person is looking for. */
 .cloud-machines .cloud-pair {
-    display: block; width: auto; height: 26px; padding: 0 7px;
+    display: flex; width: auto; height: 26px; padding: 0 7px;
+    flex-direction: row; align-items: center; justify-content: center;
     background: var(--card-hi); border: 1px solid var(--accent-ed); border-radius: 7px;
     color: var(--ink); font-size: 11px; font-weight: 600; line-height: 1; text-align: center;
 }

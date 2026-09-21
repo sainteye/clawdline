@@ -10,8 +10,6 @@ import {
   decodePairingInvitation,
   keepConnected,
   newCloudSession,
-  pairViewer,
-  pairViewerFromInvitation,
   readCloudConfig,
   type PairingInvitation,
   type CloudClientHandle,
@@ -28,8 +26,15 @@ import { setAccountMachines, setMachinePairing } from "../legacy/devices-bridge.
 import { machinePresentation } from "../legacy/js/session/selection.js"
 import { accountMachineNames, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
 import { PairingRun, dropInvitation, takeInvitation, type PairStart, type PairState } from "./pair.js"
+import {
+  browserPendingPairings,
+  durablePairViewer,
+  durablePairViewerFromInvitation,
+  resumePendingPairing,
+} from "./pair-pending.js"
 import { PairPanel, type PairRequest } from "./PairPanel.js"
 import { readThroughRelay } from "./install.js"
+import { machinesByCapability } from "./machine-access.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
@@ -216,7 +221,10 @@ export function CloudGate({ declared }: { declared: string }) {
   const [pairRequest, setPairRequest] = useState<PairRequest | null>(null)
   const [pairState, setPairState] = useState<PairState>({ phase: "idle" })
   const [names, setNames] = useState<ReadonlyMap<string, AccountName>>(new Map())
+  const [connectionVersion, setConnectionVersion] = useState(0)
+  const pairingStore = useMemo(() => browserPendingPairings(), [])
   const run = useRef<PairingRun | null>(null)
+  const recoveringPairing = useRef<Promise<void> | null>(null)
   const invitation = useRef<PairingInvitation | null>(null)
   const namesRef = useRef(names)
   namesRef.current = names
@@ -266,7 +274,7 @@ export function CloudGate({ declared }: { declared: string }) {
     const current = client.current
     if (!current) return
     if (recheck.current) clearTimeout(recheck.current)
-    current.machines().then(
+    machinesByCapability(current).then(
       (answer) => {
         setMachines(answer.machines)
         setSyncing(answer.syncing)
@@ -395,6 +403,30 @@ export function CloudGate({ declared }: { declared: string }) {
   )
 
   /**
+   * Finish a pairing whose waiting card went away. The X25519 private half is
+   * in IndexedDB, not in this component; after the handover opens, reconnect
+   * so retained envelopes are read with the keys just stored.
+   */
+  const recoverPairing = useCallback(() => {
+    const current = session.current
+    const active = run.current?.state.phase
+    if (!current || recoveringPairing.current || active === "asking" || active === "waiting") return
+    const recovery = resumePendingPairing(current, pairingStore)
+      .then((opened) => {
+        if (opened) setConnectionVersion((version) => version + 1)
+      })
+      .catch((error: unknown) => {
+        // A live untyped interruption stays durable for the next reconnect.
+        // Typed terminal answers remove themselves in `pair-pending.ts`.
+        console.warn("clawdline: pending browser pairing was not settled", error)
+      })
+      .finally(() => {
+        if (recoveringPairing.current === recovery) recoveringPairing.current = null
+      })
+    recoveringPairing.current = recovery
+  }, [pairingStore])
+
+  /**
    * Start one pairing. It is only ever called from a press — a row, a card,
    * the door's button, a link's confirm — never from a render, because a
    * machine's link accepts one answer and a render can happen twice.
@@ -409,20 +441,23 @@ export function CloudGate({ declared }: { declared: string }) {
     })
     run.current = next
     setPairState(next.state)
-    void next.begin().then(() => {
+    void next.begin().then((state) => {
       // A machine's link is good for one answer, whatever the answer was.
       if (request.mode === "invitation") dropInvitation(sessionStorage)
+      // Stopping only puts the card away. The offer and its private claim key
+      // remain live, so settle them without requiring this UI to stay open.
+      if (state.phase === "stopped") recoverPairing()
     })
-  }, [])
+  }, [recoverPairing])
 
   /** Show this browser's code for `machine`, or for whichever machine runs it. */
   const pairOffer = useCallback(
     (machine: { id: string; name: string } | null) => {
       const current = session.current
       if (!current) return
-      pair({ mode: "offer", machine }, (hooks) => pairViewer(current, hooks))
+      pair({ mode: "offer", machine }, durablePairViewer(current, pairingStore))
     },
-    [pair],
+    [pair, pairingStore],
   )
 
   /** Open the guide first; choosing the browser-first path is what mints an offer. */
@@ -440,8 +475,8 @@ export function CloudGate({ declared }: { declared: string }) {
     const current = session.current
     const link = invitation.current
     if (!current || !link) return
-    pair({ mode: "invitation", ok: true, code: "" }, (hooks) => pairViewerFromInvitation(current, link, hooks))
-  }, [pair])
+    pair({ mode: "invitation", ok: true, code: "" }, durablePairViewerFromInvitation(current, link, pairingStore))
+  }, [pair, pairingStore])
 
   /** Put the card away. A run still waiting stops waiting; see `PairingRun.stop`. */
   const closePairing = useCallback(() => {
@@ -451,7 +486,8 @@ export function CloudGate({ declared }: { declared: string }) {
     invitation.current = null
     setPairRequest(null)
     setPairState({ phase: "idle" })
-  }, [pairRequest])
+    recoverPairing()
+  }, [pairRequest, recoverPairing])
 
   /**
    * A machine's pairing link, when this page was opened from one — at boot,
@@ -519,7 +555,7 @@ export function CloudGate({ declared }: { declared: string }) {
           setAccountMachines(async () => {
             const current = client.current
             if (!current) return { machines: [], syncing: true, retryAfterMs: 1000 }
-            const answer = await current.machines()
+            const answer = await machinesByCapability(current)
             // The same two corrections the gate's list makes: the account's
             // name where this browser has none of its own, and no session
             // count where it could not read the sessions to count them.
@@ -545,6 +581,7 @@ export function CloudGate({ declared }: { declared: string }) {
             const code = event.type === "error" ? (event as { error?: { code?: unknown } }).error?.code : null
             if (typeof code === "string" && ACCESS_PROBLEMS.has(code)) setProblem(code)
           })
+          recoverPairing()
           if (reader.current) {
             // A renewal or a reconnect: the console keeps reading, through the new client.
             reader.current.attach(next)
@@ -566,6 +603,7 @@ export function CloudGate({ declared }: { declared: string }) {
           if (transport.kind === "cloud") {
             void accountMachineNames(transport.config.apiOrigin).then(setNames)
           }
+          recoverPairing()
           return
         case "device_limit_reached":
           setScreen({ at: "device_limit", tier: update.tier, limit: update.limit })
@@ -590,7 +628,7 @@ export function CloudGate({ declared }: { declared: string }) {
           return
       }
     },
-    [listMachines, transport],
+    [listMachines, transport, recoverPairing],
   )
 
   const start = useCallback(() => {
@@ -619,7 +657,7 @@ export function CloudGate({ declared }: { declared: string }) {
       unlisten.current = null
       if (recheck.current) clearTimeout(recheck.current)
     }
-  }, [start])
+  }, [start, connectionVersion])
 
   // A machine this tab chose before, once it is listed again.
   useEffect(() => {
