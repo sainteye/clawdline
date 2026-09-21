@@ -57,6 +57,12 @@
 # The memory of when a person last wrote to a session (app.Heard) has no
 # constant: it keeps only the last thirty minutes, pruned on every write.
 #
+# The waiting push (2026-09-21, docs/push.md) added two parameters: how long
+# a question stands before it is pushed, and the hour's budget of those pushes.
+# What it remembers of a stop is one row per session it saw waiting, let go a
+# day after the last reading that saw it; what it decided is events in
+# store.db, one to three per stop.
+#
 # C4 (2026-09-19) registered two rows, cloud.spool and cloud.spool_bytes (the
 # Cloud line's outbound spool, limits N22). Their caps are struct fields the
 # scan does not read; the register is now where their defaults are spelled.
@@ -240,6 +246,8 @@ internal/app.workScanLimit # read: board rows one read derives; past it the answ
 internal/app.workTitleLimit # admission: a work item's title
 internal/transport/http.workBodyLimit # admission: one board command body
 internal/app.decisionPushHourLimit # parameter: blocking decisions pushed per hour, the agent notifications' 30 counted apart (board-redesign §4.3); over it a decision is recorded over_budget and waits on the board
+internal/app.maxUnseenWait # parameter: how long a session stands on a question to the person before the machine pushes it, once per stop (docs/push.md, measured: 11 of 45 questions in seven days went past it)
+internal/app.waitingPushHourLimit # parameter: stopped sessions pushed per hour, counted apart from the agents' 30 and the decisions' 30; over it a stop is recorded over_budget and never pushed later
 internal/app.digestLineLimit # page: the lines one digest section lists; its total is always there
 internal/app.digestMoveLimit # read: the moves one daily digest reads, and past it the digest says moves_truncated
 internal/domain/work.decisionOptionsLimit # admission: the options one decision offers

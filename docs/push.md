@@ -174,12 +174,77 @@ console 原本寫了 `viewport-fit=cover`，而它抄來的那份 stylesheet 在
 （那正好是**上**方的 inset）。`viewport` meta 在桌面瀏覽器不生效，所以這個改動不影響已經量過的
 1:1 比對。
 
+## 有人在等你回答（2026-09-21）
+
+在這之前，每一則「有人在等你」的推播都是**等的那一方自己送的**：child 的 `/notify`、root 的
+`/v1/orchestrator/notify`、blocking decision 開立時的那一則。會忘記的就是「送」這個動作——
+2026-09-21 三個短命的配對連結只有一個被推出去。所以這裡加了一條**機器自己說**的：
+
+> **一個 session 停在問你的問題上，十分鐘沒有人回答，推一則；同一次停頓只推這一則。**
+
+**機器怎麼知道它在等。** 讀數本來就知道：Claude 自己的狀態檔寫 `waiting`，或畫面上畫著選單
+（`AskUserQuestion`、權限詢問）。列表上畫成 🙋、`work_state: waiting_you` 的就是它。
+`internal/app/waiting.go` 跟 board sweep 同一個時鐘（15 秒），取的是手上最近一次、15 秒內的
+讀數（`InventoryReading.Within`）——broker 的 beat 每 5 秒本來就會讀一次，所以它不自己另外掃。
+這是舊版唯一一條由狀態變化觸發的推播（`StateHook.swift:341-360`），差在下面兩點。
+
+| | 值 | 為什麼 |
+|---|---|---|
+| 門檻 `maxUnseenWait` | 10 分鐘 | 舊版一進 `waiting` 就推。實測一半的問題兩分鐘內就有人答，那一則推到的是正在看的人。見下面的分布：十分鐘是回答跑完的地方，再往後幾乎都是很久。 |
+| 一次停頓一則 | 寫進 store | 停頓從第一個看到 `waiting` 的讀數，到第一個看到它在做別的事的讀數。決定（`pushed`、`over_budget`、`silent`）寫成 `session.waiting` event；`pushed` 跟推播的 outbox effect 在同一個 transaction（D08）。重啟後讀回來，不重新決定。outbox 的 recovery 對開始了沒結束的推播記 `unknown`、不重送。 |
+| 預算 `waitingPushHourLimit` | 6／小時 | 跟 agent 的 30、decision 的 30 分開算。一週裡單日最多 3 則；這個數是給「一整波 child 卡在同一個權限詢問」那種下午用的，那是一件事，不該是十則。超過的記 `over_budget`，之後也不補推。 |
+| 派出去的 child | 帶「時限還剩 N 分鐘」 | 那個分頁沒有人在看，它的 timeout 在倒數（`StateHook.swift:278-287`）。task 已經結束的分頁不推（記 `silent`）。 |
+| 開關 | `orchestrator_agent_notify` | 目前唯一一個管「session 在做什麼」的推播開關；關掉時停頓不決定，重新打開時還在等的會推。 |
+| 點開 | 那個 session | `terminal` 帶在推播上；tag 是 `waiting-<terminal>`，同一個 session 的新一則蓋掉舊的。 |
+
+**只有讀數能結束一次停頓。** `unknown` 不是「沒在等」；讀數看不到那個終端機（例如 iTerm2 沒回應）
+時，列表上少了那一列也不是它不在了。沒有人看到結束的停頓（daemon 當時沒在跑）就當作已經推過：
+推兩次比讓他在列表上看到更糟（DG-7）。
+
+### 不推的，以及為什麼
+
+- **提案（proposal）。** 它有安全預設（留在 to-do），不擋任何人。最近一天 38 筆，**0 筆被人回答**，
+  28 筆後來被機器自己撤回（問題自己消失了）。若規則是「pending 超過 30 分鐘就推」會是 37 則，
+  一小時是 33 則，四小時也還有 14 則——幾乎全是會自己解決的事。它們留在「待確認」與每日摘要。
+- **非 blocking 的 decision。** 它自己說不擋工作。blocking 的在開立時已經推過一次（`PushDecision`），
+  不推第二次。附帶一個事實：`decisions` 表**從來沒有過一筆**——agent 要人拍板時沒有走這條路。
+- **用文字問完就結束 turn 的 session。** 畫面上它是 `idle`，跟做完了分不出來，機器看不到。
+  要被看見，就用 `AskUserQuestion` 問（那是 `waiting`，這條規則接得到），或開 decision。
+
+### 期限
+
+機器只知道**自己**開的東西的期限：它自己的 Cloud 配對邀請（`internal/transport/cloud/pairing.go`，
+本機上限 10 分鐘，control plane 實際給 3 分鐘——2026-09-19 本機 log 的五個邀請每一個都剛好 3:00 過期）。
+2026-09-21 過期的三個連結是**另一台機器**開的，這台 daemon 看不到。
+
+而且三分鐘本身就不是推播救得回來的：下面的分布裡 16／45（36%）的問題超過三分鐘才有人答，那還是
+多半有人在旁邊的情況；十分鐘以上沒人答的 11 次全部都會錯過。所以這一類要改的是**順序**：先把人叫到
+（一則不帶碼的 notify，或 `AskUserQuestion`——後者現在會被推），他回了再產生碼。
+
+由送的一方帶上期限（例如 `/notify` 帶 `expires_at`，讓機器拒絕已經過期的、並在窗口比人回應時間短時
+回一個警告）是對的方向，但那是 `api/v1` 的 contract 變更，這一版沒有做。
+
+### 2026-09-21 的量測
+
+| 來源 | 窗 | 數字 |
+|---|---|---|
+| Claude transcript 的 `AskUserQuestion`（tool_use → tool_result 的間隔） | 7 天 | 45 次；≥1 分 33、≥2 分 20、≥3 分 16、≥5 分 14、**≥10 分 11**、≥15 分 9、≥30 分 5、≥60 分 2；中位數 107 秒、p75 462 秒 |
+| 同上，≥10 分鐘的逐日 | 7 天 | 0、3、3、0、1、0、1、3 → **這條規則一週 11 則，一天最多 3 則** |
+| `proposals` | 最早一筆起約 26 小時 | 38 筆；0 answered、28 withdrawn、10 pending |
+| `decisions` | 全部 | 0 筆 |
+| `daemon.log` 的 `push:` 行 | 09-18 22:44 起約 2.5 天 | 9 則：容量 1、dead letter 3、child `/notify` 4、root `/notify` 1 |
+
+**沒量到的：** 權限詢問與 Codex 的核准等待——transcript 裡沒有「停在詢問上」的紀錄，所以 11 是下限。
+量測腳本只讀時間戳、tool 名稱與 id，不讀內容。
+
 ## 還沒接的線
 
-- **沒有東西會在 session 開始等待時自動送通知。** sender 與路由都在，`Server.PushSend` 就是那個
-  接縫（`internal/transport/http/push.go`），但舊版在 `StateHook.swift`、`DeployWatch.swift`、
-  `Orchestrator.swift`、`SmartNotification.swift` 四個地方呼叫它，那四條線在 Go 版還沒有對應的
-  觀察點。現在唯一會送出通知的是設定頁那顆測試按鈕。
+- **session 開始等待時的通知接上了（上一節），但只有這一條。** 舊版另外在 `DeployWatch.swift`、
+  `Orchestrator.swift`、`SmartNotification.swift` 呼叫 `WebPush.send`，那三條在 Go 版還沒有對應的
+  觀察點。現在會送出通知的：設定頁的測試按鈕、容量告警、dead letter、child 與 root 的 `/notify`、
+  blocking decision、排程失敗，以及上一節這一條。
+- **機器自己的推播沒有自己的開關。** 等待推播沿用 `orchestrator_agent_notify`；要分開需要一個新的
+  設定鍵（`nextconfig`、contract、設定頁三處）。
 - **通知上的專案圖示。** 舊版帶 `icon: /project-<size>-<packed>.png`，那是一條動態路由
   （`RemoteIcon.project`）。`Notification.Icon` 欄位已經在，路由還沒有。
 - **撤銷裝置不會連帶清掉它的訂閱。** `Store.RemoveDevice` 寫好了也測了，但 `/v1/auth/devices/{id}/revoke`

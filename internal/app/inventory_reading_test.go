@@ -93,3 +93,29 @@ func TestOneScanAnswersEverybodyExceptTheOneThatDecides(t *testing.T) {
 		t.Fatal("the unread reading does not say why it is empty")
 	}
 }
+
+// A reader on a slow clock rides on whatever reading is held while it is
+// younger than that clock, and past it is one more Recent reader: it shares a
+// scan rather than starting its own, and never takes a reading older than it
+// asked for.
+func TestASlowReaderRidesOnTheHeldReading(t *testing.T) {
+	var scans atomic.Int64
+	clock := time.Unix(1_000_000, 0)
+	r := NewInventoryReading(func(ctx context.Context) session.Inventory {
+		scans.Add(1)
+		return session.Inventory{Complete: true, ObservedAt: clock}
+	}, 2*time.Second)
+	r.now = func() time.Time { return clock }
+	r.Fresh(context.Background())
+	clock = clock.Add(10 * time.Second)
+	if inv := r.Within(context.Background(), 15*time.Second); scans.Load() != 1 || !inv.ObservedAt.Equal(clock.Add(-10*time.Second)) {
+		t.Fatalf("a reading ten seconds old cost %d scans for a fifteen-second reader", scans.Load())
+	}
+	clock = clock.Add(10 * time.Second)
+	if inv := r.Within(context.Background(), 15*time.Second); scans.Load() != 2 || !inv.ObservedAt.Equal(clock) {
+		t.Fatalf("a reading twenty seconds old was given to a fifteen-second reader (%d scans)", scans.Load())
+	}
+	if r.Within(context.Background(), 0); scans.Load() != 2 {
+		t.Fatalf("an age under the TTL is the TTL: %d scans", scans.Load())
+	}
+}

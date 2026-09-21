@@ -114,6 +114,23 @@ func (r *InventoryReading) Recent(ctx context.Context) session.Inventory {
 	return r.take(ctx, false)
 }
 
+// Within is Recent for a reader whose own clock is slower than the TTL: it is
+// answered from the held reading while that is younger than age. The waiting
+// watcher asks this way — its rule is measured in minutes, so a reading the
+// broker's beat took a few seconds ago is as good as a new one, and taking a
+// new one for it would be a scan nobody else asked for.
+func (r *InventoryReading) Within(ctx context.Context, age time.Duration) session.Inventory {
+	r.mu.Lock()
+	if r.holds && r.now().Sub(r.held.ObservedAt) < max(age, r.ttl) {
+		inv := r.held
+		r.counts.Held++
+		r.mu.Unlock()
+		return inv
+	}
+	r.mu.Unlock()
+	return r.take(ctx, false)
+}
+
 // Fresh is a reading taken for this call: the broker's beat, which decides from
 // it whether a child's tab is still there.
 //

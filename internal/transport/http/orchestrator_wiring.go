@@ -138,21 +138,14 @@ func newBroker(s *Server) *orchestrator.Broker {
 		// The person's switch for agent-authored pushes, read at every
 		// notification so turning it off needs no restart. Absent or
 		// unreadable is the setting's default, on.
-		NotifyEnabled: func() bool {
-			values, err := nextconfig.Open(s.cfg.Dir).Read()
-			if err != nil {
-				return true
-			}
-			on, ok := values.Bool("orchestrator_agent_notify")
-			return !ok || on
-		},
-		ProcessStart: swiftstore.ProcessStart,
-		LeaseLine:    int(CapacityLimit(capacity.LeasesQueue)),
-		OpenWaits:    int(CapacityLimit(capacity.WaitsOpen)),
-		Port:         s.cfg.Port,
-		Dir:          s.cfg.Dir,
-		Language:     brokerLanguage(s),
-		MaxChildren:  brokerMaxChildren(s),
+		NotifyEnabled: s.agentNotifyEnabled,
+		ProcessStart:  swiftstore.ProcessStart,
+		LeaseLine:     int(CapacityLimit(capacity.LeasesQueue)),
+		OpenWaits:     int(CapacityLimit(capacity.WaitsOpen)),
+		Port:          s.cfg.Port,
+		Dir:           s.cfg.Dir,
+		Language:      brokerLanguage(s),
+		MaxChildren:   brokerMaxChildren(s),
 		// W6 (handover.go): the finished child's linger, and the sweep.
 		ChildLinger:  func() time.Duration { return brokerChildLinger(s) },
 		ReclaimAuto:  os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",
