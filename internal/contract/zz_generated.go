@@ -2341,12 +2341,13 @@ var CapacityStateValues = []CapacityState{CapacityStateOK, CapacityStateWarn, Ca
 type CapacityUnit string
 
 const (
-	CapacityUnitBytes CapacityUnit = "bytes"
-	CapacityUnitRows  CapacityUnit = "rows"
+	CapacityUnitBytes   CapacityUnit = "bytes"
+	CapacityUnitRows    CapacityUnit = "rows"
+	CapacityUnitSeconds CapacityUnit = "seconds"
 )
 
 // CapacityUnitValues is every value the contract allows, in contract order.
-var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitRows}
+var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitRows, CapacityUnitSeconds}
 
 // POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other
 // grant. Local token only.
@@ -4232,6 +4233,12 @@ type Scan struct {
 	Generation int64  `json:"generation"`
 	Provenance string `json:"provenance"`
 
+	// What the whole displayed batch is worth. `unverified` means at least one
+	// terminal source failed this pass and rows from its last complete reading were
+	// retained; `missing` means at least one failed source had no retained reading
+	// inside cache.session_inventory. Per-row source says which rows are current.
+	Source *BearingsSource `json:"source,omitempty"`
+
 	// Each source's own completeness, by provenance name, in a stable order. Optional:
 	// a reading with no per-source answer omits it, and a client written before it
 	// existed is unaffected.
@@ -4923,8 +4930,15 @@ type SessionRow struct {
 	// six. Absent rather than empty when there are none, as the Swift app sends it;
 	// always absent for Codex, which keeps no record of them.
 	Shells []SessionShell `json:"shells,omitempty"`
-	State  SessionState   `json:"state"`
-	TTY    string         `json:"tty,omitempty"`
+
+	// When and how this row's terminal state was read. `current` was read this pass;
+	// `unverified` is the last complete row retained across a failed source reading;
+	// `missing` means that source has never answered or its retained answer crossed
+	// the cache.session_inventory honesty line. A retained state is a true statement
+	// about that earlier moment, never authority for an action now.
+	Source *BearingsSource `json:"source,omitempty"`
+	State  SessionState    `json:"state"`
+	TTY    string          `json:"tty,omitempty"`
 
 	// Who the declaring session said will move it — a session id, or a person.
 	WorkMovedBy string `json:"work_moved_by,omitempty"`

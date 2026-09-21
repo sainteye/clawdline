@@ -4,6 +4,7 @@ import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { requestConfirm } from "../overlays/events.js"
 import { ACTION_WIDTH, revealFor, swipes, type Reveal } from "./swipe.js"
+import { retainedStateWords } from "../session-reading.js"
 
 export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: number; id?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -91,9 +92,13 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
     }
   }
 
-  let workSaid = L.workStateHTML(row)
   const closeable = L.closeability(row)
-  if (closeable.block) workSaid += L.closeabilityHTML(row)
+  const retained = retainedStateWords(row)
+  let workSaid = L.workStateHTML(row)
+  // The batch banner owns a source failure. A retained row says its earlier
+  // state and age once; its swipe action still carries the closeability reason
+  // if somebody asks to act on it.
+  if (closeable.block && !retained) workSaid += L.closeabilityHTML(row)
 
   const waitShape = [
     ...waitingOn.map((wait) => [wait.id || "wait", wait.ownerLabel || wait.ownerSessionId || "", wait.releaseCondition || ""].join(":")),
@@ -114,10 +119,13 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
     work.state +
     (closeable.block ? "+cl" + L.closeabilityShape(row) : "") +
     (n ? "+sh" + n : "") +
-    (waitShape ? "+cw" + waitShape : "")
+    (waitShape ? "+cw" + waitShape : "") +
+    (row.source ? "+src" + row.source.freshness + ":" + row.source.observed_at : "")
 
   let html: string
-  if (work.state === "waiting_you") {
+  if (retained) {
+    html = `<span class="unread retained">${L.escapeHTML(retained)}</span>` + peerSaid + workSaid + shellsSaid
+  } else if (work.state === "waiting_you") {
     html = `<span class="wants">${L.glyphHTML("🙋", T.sessionWaiting)}</span>` + peerSaid + workSaid + shellsSaid
   } else if (work.state === "working") {
     html = '<canvas class="spin"></canvas><span class="line"></span>' + peerSaid + workSaid + shellsSaid

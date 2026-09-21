@@ -167,6 +167,8 @@ export interface WriteHost {
   connected(): CloudWriteClient
   /** Something was just done to this session: its transcript is about to change. */
   wrote(session: string, outcome: "done" | "unknown" | "refused"): void
+  /** The machine's terminal backend confirmed that this session was closed. */
+  closed(session: string): void
   note(row: Omit<SeamRow, "at">): void
 }
 
@@ -500,6 +502,11 @@ export class RelayWriter {
       // it does not set every poll re-reading it (F12).
       const session = route.op === "focus" ? null : sessionOf(route)
       if (session) this.host.wrote(session, "done")
+      // This is not an optimistic delete. A successful `end` answer is the
+      // daemon reporting that its terminal backend took the tab or pane away.
+      // Apply that existence fact before an older retained Cloud row can win
+      // the redraw; a later current terminal enumeration may supersede it.
+      if (route.op === "end") this.host.closed(route.session)
       this.host.note({ method, path, answer: "relay", word: route.word, ms })
       return json(200, cleanAnswer(body))
     } catch (error) {

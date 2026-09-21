@@ -326,6 +326,8 @@ export class RelayReader {
   private generation = 0
   private readonly streams = new Set<OpenStream>()
   private readonly transcripts = new Map<string, HeldTranscript>()
+  /** Successful terminal closes waiting for a newer terminal enumeration. */
+  private readonly closedAt = new Map<string, number>()
   private readonly rows: SeamRow[] = []
   private readonly options: RelayReaderOptions
   private writer: WriteSeam | null = null
@@ -370,6 +372,7 @@ export class RelayReader {
       machine: this.machine,
       connected: () => this.connected() as CloudWriteClient,
       wrote: (session, outcome) => this.wrote(session, outcome),
+      closed: (session) => this.closed(session),
       note: (row) => this.note(row.method, row.path, row.answer, row.code, row),
     }
   }
@@ -391,6 +394,18 @@ export class RelayReader {
     if (outcome === "refused") return
     held.expectUntil = this.now() + TRANSCRIPT_EXPECT_MS
     held.expectFrom = held.answer?.signature ?? null
+  }
+
+  /**
+   * A successful `end` is the daemon's terminal backend answering that the tab
+   * or pane is gone. Hide a row observed before that answer immediately, and
+   * tell every open list. This is deliberately not permanent client state: a
+   * newer current terminal observation can show the same id again, while an
+   * authoritative inventory without it confirms the deletion and clears it.
+   */
+  closed(session: string): void {
+    this.closedAt.set(session, Math.floor(this.now() / 1000))
+    for (const stream of this.streams) this.queueFrame(stream)
   }
 
   /**
@@ -741,7 +756,28 @@ export class RelayReader {
     const failed = (all.scan.failures ?? []).some((f) => f.machine === this.machine)
     const inventory = client.sessionInventoryByMachine?.has(this.machine) === true
     const whole = inventory && !recovering && !failed
-    const sessions = all.sessions.filter((row) => row.machine === this.machine).map(consoleRow)
+    const machineRows = all.sessions.filter((row) => row.machine === this.machine)
+    const sessions = machineRows.filter((row) => {
+      const id = typeof row.session === "string" ? row.session : typeof row.id === "string" ? row.id : ""
+      const closedAt = this.closedAt.get(id)
+      if (closedAt === undefined) return true
+      const source = row.source && typeof row.source === "object" && !Array.isArray(row.source)
+        ? row.source as { freshness?: unknown; observed_at?: unknown }
+        : null
+      // Only the terminal source may reverse the earlier terminal answer. A
+      // carried/unverified row is display history, never existence evidence.
+      if (source?.freshness === "current" && typeof source.observed_at === "number" && source.observed_at > closedAt) {
+        this.closedAt.delete(id)
+        return true
+      }
+      return false
+    }).map(consoleRow)
+    if (whole) {
+      const present = new Set(machineRows.map((row) => typeof row.session === "string" ? row.session : row.id))
+      for (const id of this.closedAt.keys()) {
+        if (!present.has(id)) this.closedAt.delete(id)
+      }
+    }
     this.generation += 1
     return {
       at: all.at || Math.floor(this.now() / 1000),

@@ -186,6 +186,7 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 				Sequence: gen,
 				Complete: inv.Complete,
 			},
+			Source: wireInventoryObservation(inv),
 			// Each source's own answer travels beside the AND. A reader
 			// deciding whether a session it remembers is really gone needs the
 			// answer of the source that would have seen it: the AND is false
@@ -377,6 +378,7 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		Assistant: contract.Assistant(item.Assistant),
 		Label:     in.label,
 		Line:      item.Line,
+		Source:    wireSessionObservation(item, in.inv),
 		CWD:       item.CWD,
 		SessionID: item.ConversationID,
 		// How that id was obtained, or which kind of nothing took its place.
@@ -464,6 +466,52 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 	})
 	out.SessionRow = row
 	return out
+}
+
+// wireInventoryObservation and wireSessionObservation put the cache's answer
+// on the wire in the same four-word vocabulary the rest of the daemon uses.
+// Hand-built inventories in older tests carry no Observation; their existing
+// complete flag remains the fallback rather than turning every fixture into a
+// missing reading.
+func wireInventoryObservation(inv session.Inventory) *contract.BearingsSource {
+	obs := inv.Observation
+	if obs.Freshness == "" {
+		obs = session.Observation{ObservedAt: inv.ObservedAt, Provenance: inv.Provenance}
+		if inv.Complete {
+			obs.Freshness = session.FreshnessCurrent
+		} else {
+			obs.Freshness = session.FreshnessMissing
+		}
+	}
+	return wireObservation(obs)
+}
+
+func wireSessionObservation(item session.Session, inv session.Inventory) *contract.BearingsSource {
+	obs := item.Observation
+	if obs.Freshness == "" {
+		obs = session.Observation{
+			ObservedAt: inv.ObservedAt,
+			Provenance: session.SourceFor(item.Backend),
+		}
+		if sourceComplete(inv, item.Backend) {
+			obs.Freshness = session.FreshnessCurrent
+		} else {
+			obs.Freshness = session.FreshnessMissing
+		}
+	}
+	return wireObservation(obs)
+}
+
+func wireObservation(obs session.Observation) *contract.BearingsSource {
+	at := int64(0)
+	if !obs.ObservedAt.IsZero() {
+		at = obs.ObservedAt.Unix()
+	}
+	return &contract.BearingsSource{
+		ObservedAt: at,
+		Provenance: obs.Provenance,
+		Freshness:  contract.SourceFreshness(obs.Freshness),
+	}
 }
 
 var errSwiftUnknown = errors.New("the Swift store could not be read")

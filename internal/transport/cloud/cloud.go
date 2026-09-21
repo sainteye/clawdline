@@ -206,8 +206,33 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 			return answer
 		}
 		s.logf("cloud: %s was not delivered: %v", answer.Name, err)
+		return answer
+	}
+	// Successful delivery used to leave no trace at all for a Cloud command.
+	// In particular, a phone could close a terminal and the daemon log showed
+	// only the reply ack and later inventory counts — nothing tied the effect
+	// to the request. Log only authenticated envelope metadata and the typed
+	// outcome; never the command body, message text, or credentials.
+	if answer.Mutating {
+		s.logf("cloud: command answered: operation=%s session=%s status=%d code=%s sender=%s seq=%d",
+			operationOrUnknown(answer.Operation), subjectOrUnknown(answer.Subject), answer.Status,
+			codeOrOK(answer.Code), request.Sender, request.Sequence)
 	}
 	return answer
+}
+
+func operationOrUnknown(operation string) string {
+	if operation == "" {
+		return "unknown"
+	}
+	return operation
+}
+
+func codeOrOK(code string) string {
+	if code == "" {
+		return "ok"
+	}
+	return code
 }
 
 // tellChannelFull publishes the typed refusal that says a channel is full, on

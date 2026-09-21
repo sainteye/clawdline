@@ -123,6 +123,10 @@
         "menu": { "$ref": "#/$defs/SessionMenu" },
         "owed": { "$ref": "#/$defs/WorkOwed" },
         "root_assignment": { "$ref": "#/$defs/RootAssignmentRecord" },
+        "source": {
+          "description": "When and how this row's terminal state was read. `current` was read this pass; `unverified` is the last complete row retained across a failed source reading; `missing` means that source has never answered or its retained answer crossed the cache.session_inventory honesty line. A retained state is a true statement about that earlier moment, never authority for an action now.",
+          "$ref": "coordination.schema.json#/$defs/BearingsSource"
+        },
         "sessionId": { "description": "The assistant's own conversation id, when one was recovered from its command line.", "type": "string" },
         "shells": { "description": "The commands this session left running in the background, newest first, at most six. Absent rather than empty when there are none, as the Swift app sends it; always absent for Codex, which keeps no record of them.", "type": "array", "items": { "$ref": "#/$defs/SessionShell" } },
         "state": { "$ref": "common.schema.json#/$defs/SessionState" },
@@ -364,6 +368,10 @@
         "epoch": { "description": "Identifies the process. A client reconnecting to a restarted daemon uses it to tell a reset generation from one that went backwards.", "type": "integer" },
         "generation": { "type": "integer" },
         "provenance": { "type": "string" },
+        "source": {
+          "description": "What the whole displayed batch is worth. `unverified` means at least one terminal source failed this pass and rows from its last complete reading were retained; `missing` means at least one failed source had no retained reading inside cache.session_inventory. Per-row source says which rows are current.",
+          "$ref": "coordination.schema.json#/$defs/BearingsSource"
+        },
         "sources": { "description": "Each source's own completeness, by provenance name, in a stable order. Optional: a reading with no per-source answer omits it, and a client written before it existed is unaffected.", "type": "array", "items": { "$ref": "#/$defs/ScanSource" } }
       }
     },

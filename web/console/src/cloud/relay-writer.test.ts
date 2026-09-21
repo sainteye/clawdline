@@ -355,6 +355,24 @@ test("a close carries force and the close gates last read", async () => {
   // the copied client's own failure path rather than an error built by hand.
 })
 
+test("a confirmed close removes an older Cloud row until the terminal speaks again", async () => {
+  const client = new FakeClient()
+  const clock = { t: 100_500 }
+  client.rows = [row("s1", { source: { freshness: "current", observed_at: 100, provenance: "iterm" } })]
+  const { reader } = seam(client, clock)
+  assert.deepEqual((await reader.snapshot()).sessions.map((s) => s.id), ["s1"])
+
+  const closed = await reader.fetch("/v1/sessions/s1/close", post({ force: false }))
+  assert.equal(closed.status, 200)
+  assert.deepEqual((await reader.snapshot()).sessions, [],
+    "the row retained by the Cloud client predates the terminal's successful close")
+
+  clock.t = 102_000
+  client.rows = [row("s1", { source: { freshness: "current", observed_at: 102, provenance: "iterm" } })]
+  assert.deepEqual((await reader.snapshot()).sessions.map((s) => s.id), ["s1"],
+    "a later current terminal enumeration is the new existence truth")
+})
+
 test("start and resume go as the machine's words; a refusal keeps `app` in the nested spelling the sheet reads", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)

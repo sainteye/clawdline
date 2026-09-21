@@ -13,6 +13,7 @@ import { nowWord } from "./pages/now/words.js"
 import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
 import { NewBuild } from "./NewBuild.js"
+import { sessionReadingChinese, totalSessionWords } from "./session-reading.js"
 import {
   ActionConfirm,
   GO_PAGE,
@@ -825,6 +826,7 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
         arrived={fleet.snapshot !== null}
         live={fleet.live}
         emptyAuthoritative={fleet.snapshot?.scan.emptyAuthoritative ?? false}
+        readingSource={fleet.snapshot?.scan.source}
         shown={page === "sessions"}
         view={view}
         paneOpen={paneOpen}
@@ -875,7 +877,9 @@ function Counts({ rows, recovering }: { rows: { state: string; shells?: unknown[
     else if (s.state === "unknown") unknown++
     shells += (s.shells ?? []).length
   }
-  const bits: { cls: string; text: string }[] = []
+  const bits: { cls: string; text: string }[] = [
+    { cls: "part quiet", text: totalSessionWords(rows.length) },
+  ]
   if (working) bits.push({ cls: "part", text: L.fillString(T.webCountWorking, { n: working }) })
   if (waiting) bits.push({ cls: "part waiting", text: L.fillString(T.webCountWaiting, { n: waiting }) })
   if (shells) {
@@ -889,11 +893,8 @@ function Counts({ rows, recovering }: { rows: { state: string; shells?: unknown[
   // sentence is about the list, not about the app (`Sessions.tsx`'s empty
   // state, and `next-strings.ts` on why these are two words and not one).
   if (recovering) bits.push({ cls: "part quiet", text: nextWord("sessionsListWaitTitle") })
-  if (!bits.length) {
-    const quiet = rows.length
-      ? L.fillString(rows.length === 1 ? T.webCountQuietOne : T.webCountQuietMany, { n: rows.length })
-      : T.webCountNone
-    bits.push({ cls: "part quiet", text: quiet })
+  if (rows.length > 0 && !working && !waiting && !unknown && !shells && !recovering) {
+    bits.push({ cls: "part quiet", text: sessionReadingChinese() ? "都很安靜" : "all quiet" })
   }
   return (
     <div className="counts" id="counts">

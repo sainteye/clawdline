@@ -537,6 +537,13 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 	if err := h.Close(ctx, s); err != nil {
 		return s, closeRefusal(err)
 	}
+	// The terminal backend just answered the existence question positively:
+	// the tab or pane is gone. Do not let a last-good display reading, or a
+	// scan that began before this close, put it back while the next terminal
+	// enumeration is on its way.
+	if a.Reading != nil {
+		a.Reading.Forget(s)
+	}
 	a.record(ctx, "session.closed", s.ID, map[string]any{"forced": force, "owed": len(c.Reasons)})
 	return s, nil
 }

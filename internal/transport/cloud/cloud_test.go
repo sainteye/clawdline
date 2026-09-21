@@ -72,6 +72,31 @@ func TestAnAnswerRidesTheSessionsOwnTranscriptChannel(t *testing.T) {
 	}
 }
 
+// A Cloud mutation is an externally initiated machine change. Its typed
+// outcome must be readable later without decrypting or logging its body.
+func TestACloudCommandThatRanLeavesOneAuditLine(t *testing.T) {
+	fake := NewFake(4)
+	var lines []string
+	service := Service{MachineID: "mac-01", Bridge: answering(t), Transport: fake,
+		Log: func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }}
+	service.Answer(context.Background(), Inbound{Channel: "ctl/mac-01", Class: "ctl",
+		Sender: "viewer-device-01", Sequence: 414,
+		Plaintext: plaintext(t, map[string]any{"type": "end", "session": "%19", "request": "req-end",
+			"accept_loss": false, "expected_closeability_version": ""})})
+	if len(lines) != 1 {
+		t.Fatalf("a successful Cloud command left %d lines: %v", len(lines), lines)
+	}
+	for _, wanted := range []string{"operation=end", "session=%19", "status=200", "code=ok",
+		"sender=viewer-device-01", "seq=414"} {
+		if !strings.Contains(lines[0], wanted) {
+			t.Errorf("log %q does not contain %q", lines[0], wanted)
+		}
+	}
+	if strings.Contains(lines[0], "req-end") || strings.Contains(lines[0], "accept_loss") {
+		t.Fatalf("the log contains command-body data: %q", lines[0])
+	}
+}
+
 // TestAnAnswerWithNowhereToGoIsRecordedRatherThanSent.
 func TestAnAnswerWithNowhereToGoIsRecordedRatherThanSent(t *testing.T) {
 	fake := NewFake(4)
