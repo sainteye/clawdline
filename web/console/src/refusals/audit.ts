@@ -296,7 +296,7 @@ const RULES: Rule[] = [
 ]
 
 const EXPECTED_RULES = 33
-const EXPECTED_OPEN = 9
+const EXPECTED_OPEN = 3
 const EXPECTED_LOCKED = 2
 
 export function dispositionFor(file: string): AuditDisposition {

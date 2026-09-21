@@ -14,6 +14,7 @@ import { pushShape, sendPushTest, startPush, subscribePush, togglePush } from ".
 import { legacyState } from "../legacy/overlay-bridge.js"
 import { ShellBlocks } from "./settings/ShellBlocks.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
+import { nextWord } from "../next-strings.js"
 
 /**
  * The settings page, `section#settings` in `index.html` and `input/settings.js`.
@@ -31,9 +32,9 @@ import { BoardBlock } from "./settings/BoardBlock.js"
  * - **Project Board**: `BoardBlock` (settings/BoardBlock.tsx) is
  *   `BoardControls`: drawn from the last board answer that says whether the
  *   board is on, and its two toggles send `set_enabled` and `set_ai_consent`.
- * - **Project Timeline**: `view/timeline.js` paints its three words when it is
- *   bound and draws its toggle only from a timeline it has read; with no
- *   project entered it has read none, so the toggle stays "Loading…" there too.
+ * - **Project Timeline**: this settings page has no project context to read,
+ *   so its permanently disabled toggle says that the setting belongs to each
+ *   project instead of presenting an unfinished read.
  * - **Version**: the Mac's version from `/v1/health`, which this daemon's does
  *   not carry, so the line is empty and hidden by `.foot span:empty`.
  *
@@ -291,7 +292,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
                 ></path>
               </svg>
               <span id="settings-order-label">
-                {entered ? (newest ? T.webOrderNewest : T.webOrderOldest) : "Oldest first"}
+                {entered ? (newest ? T.webOrderNewest : T.webOrderOldest) : ""}
               </span>
             </button>
           </div>
@@ -304,7 +305,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
             {timelineWords("Keep a traceable history of deliveries and availability.", "保留可追溯的交付與上線紀錄。")}
           </p>
           <button className="chip" id="settings-timeline-toggle" type="button" aria-pressed="false" disabled>
-            Loading…
+            {nextWord("timelineSetPerProject")}
           </button>{" "}
           <button
             className="chip"

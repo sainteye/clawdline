@@ -165,7 +165,7 @@ function validRow(schedule: ScheduleListRow, at?: number): string {
     enabled +
     '"></span>' +
     '<span class="schedule-title">' +
-    esc(schedule.title || "Untitled schedule") +
+    esc(schedule.title || nextWord("scheduleUntitled")) +
     "</span></div>" +
     '<span class="schedule-result" data-state="' +
     esc(outcome.state) +
@@ -188,11 +188,15 @@ function validRow(schedule: ScheduleListRow, at?: number): string {
 function invalidRow(schedule: ScheduleListRow): string {
   return (
     '<li class="schedule-row invalid">' +
-    '<div class="schedule-name"><span class="enabled-dot" data-enabled="invalid" role="img" aria-label="Invalid"></span>' +
+    '<div class="schedule-name"><span class="enabled-dot" data-enabled="invalid" role="img" aria-label="' +
+    esc(nextWord("scheduleInvalidStatus")) +
+    '"></span>' +
     '<span class="schedule-title">' +
-    esc(schedule.file || "Invalid schedule") +
+    esc(schedule.file || nextWord("scheduleInvalid")) +
     "</span></div>" +
-    '<span class="schedule-result" data-state="invalid">invalid</span>' +
+    '<span class="schedule-result" data-state="invalid">' +
+    esc(nextWord("scheduleInvalidStatus")) +
+    "</span>" +
     invalidScheduleErrorHTML(schedule, nextWord) +
     "</li>"
   )
@@ -1374,7 +1378,7 @@ let paintedCatalog = ""
 
 function paintStatic(): void {
   const t = T()
-  const signature = [t.webScheduleNew, t.webScheduleTitle, t.webCancel].join("")
+  const signature = [t.webScheduleNew, t.webScheduleTitle, t.webScheduleModel, t.webScheduleDelete, t.webCancel].join("")
   if (signature === paintedCatalog) return
   paintedCatalog = signature
   const text = (node: Element | null, value: string | undefined) => {
@@ -1411,7 +1415,10 @@ function paintStatic(): void {
     node("schedule-timeout-label") && node("schedule-timeout-label")!.querySelector(".field-label"),
     t.webScheduleTimeout,
   )
+  text(node("schedule-model-label"), t.webScheduleModel)
+  text(node("schedule-delete"), t.webScheduleDelete)
   text(node("schedule-cancel"), t.webCancel)
+  text(node("schedule-delete-confirm-cancel"), t.webCancel)
 }
 
 /* ---- the three sheets, put in once, and their wiring ---------------------- */
@@ -1597,15 +1604,15 @@ export function ScheduleSection({ arrived, onOpen }: { arrived: boolean; onOpen?
   return (
     <details className="schedules" id="schedules" open hidden>
       <summary>
-        <span>Schedules</span>
+        <span>{nextWord("schedulesHeading")}</span>
         <span className="count" id="schedules-count"></span>
-        <button className="add" id="schedule-new" type="button" title="New schedule" aria-label="Make a new schedule">
+        <button className="add" id="schedule-new" type="button" title={T().webScheduleNew} aria-label={T().webScheduleNew}>
           <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
             <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"></path>
           </svg>
         </button>
       </summary>
-      <ul className="schedule-rows" id="schedule-rows" aria-label="Scheduled tasks"></ul>
+      <ul className="schedule-rows" id="schedule-rows" aria-label={nextWord("schedulesListLabel")}></ul>
     </details>
   )
 }

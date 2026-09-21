@@ -133,14 +133,14 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
 
   return (
     <div className="block" id="settings-board">
-      <b id="settings-board-title">{board ? words("Enable Project Board", "啟用看板系統") : "Enable Project Board"}</b>
+      <b id="settings-board-title">{words("Enable Project Board", "啟用看板系統")}</b>
       <p className="say" id="settings-board-say">
         {board
           ? words(
               "Currently free. Organize work, sessions, usage and delivery under each Project. Disable to use the standard workflow; history is retained.",
               "目前免費。以 Project 項目整合派工、進度、用量與成果。關閉後使用一般流程，歷史紀錄仍保留。",
             )
-          : "Currently free. Turn off to use the standard workflow; history is retained."}
+          : ""}
       </p>
       <button
         className={board?.enabled ? "chip on" : "chip"}
@@ -150,7 +150,7 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
         disabled={!board || saving || !canManage}
         onClick={pressMode}
       >
-        {board ? (board.enabled ? words("Enabled", "已啟用") : words("Disabled", "已關閉")) : "Loading…"}
+        {board ? (board.enabled ? words("Enabled", "已啟用") : words("Disabled", "已關閉")) : ""}
       </button>{" "}
       <button
         className="chip"
@@ -159,12 +159,12 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
         data-page-to="projects"
         onClick={() => goToPage("projects")}
       >
-        {board ? words("Open projects", "開啟專案") : "Open projects"}
+        {words("Open projects", "開啟專案")}
       </button>
       <p className="say" id="settings-board-status" role="status">
         {status}
       </p>
-      <b id="settings-board-ai-title">{board ? words("AI reading summaries", "AI 閱讀摘要") : "AI reading summaries"}</b>
+      <b id="settings-board-ai-title">{words("AI reading summaries", "AI 閱讀摘要")}</b>
       <p className="say" id="settings-board-ai-say">
         {board
           ? words(
@@ -176,7 +176,7 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
               " to summarize in your Clawdline language. Uses the configured naming model and its quota. No transcript, credential-file or attachment reading. Original text stays available; Board OFF stops generation.",
               "，以 Clawdline 設定語言整理；使用已設定的命名模型與其額度。不讀取完整對話、憑證檔或附件；原文保留，關閉看板即停止生成。",
             )
-          : "Off until you consent to sending stored Board titles, descriptions and documented outcomes to your selected AI provider. No transcript or attachment reading."}
+          : ""}
       </p>
       <button
         className="chip"
@@ -190,9 +190,8 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
           ? aiAllowed
             ? words("Stop AI sharing", "停止 AI 外送整理")
             : words("Allow sharing with ", "同意送至 ") + providerName
-          : "Loading…"}
+          : ""}
       </button>
     </div>
   )
 }
-
