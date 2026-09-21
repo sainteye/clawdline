@@ -182,6 +182,7 @@ HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST
 | N29 | daemon log | Go 標準 `log` 寫 stderr，全 repo 沒有 `SetOutput`；打包的殼沒有轉向輸出（`shell/darwin/main.swift:300-322`） | 目前由啟動者導到 `/tmp/clawdline-next.log`（491 B，實測 `lsof`）；打包後去哪裡未驗證 | — | 可能遺失 | c |
 | N30 | scheduler | `MinInterval = 1m`（`schedule.go:54-60`） | 400；錯過的 tick 合併 | `/v1/diagnostics.scheduler` | 否 | ✓ |
 | N31 | health／diagnostics | — | `GET /v1/health` 只有 `at, ok, served_by`；`GET /v1/diagnostics` 是 `at, dir, ok, port, served_by, upstream, scheduler{…}`（實測 7727）。**沒有任何填充度、容量或丟棄數**；唯一的丟棄計數在 `/v1/cloud/status` | — | — | — |
+| N32 | Session inventory cache | **120 seconds**, registered as `cache.session_inventory`; overrides may only lower it | The last complete rows for one failed terminal source expire and that source becomes `missing`. A terminal-confirmed close suppresses any older in-flight or retained copy inside the same window and leaves sooner when a complete terminal enumeration takes authority back. Action and decision callers bypass retained observations entirely. | `/v1/diagnostics.capacity` reports age and expiry count; the session list labels retained rows and the batch once | No; this is a reproducible observation cache | ✓ |
 
 另外兩件跟「誰會知道」直接相關的：`plan.md` §3.2 與 `cross-platform.md` 還寫 `scheduler` 在 `/v1/health`，實際已經在
 `/v1/diagnostics`；`git/changes.go:80-82` 的註解說「every file read goes through an `io.LimitReader`」，至少 6 處不是

@@ -254,6 +254,12 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			held, _ := s.inventory.Held.Reading()
 			return held
 		},
+		capacity.CacheSessionInventory: func() capacity.Reading {
+			if s.readings == nil {
+				return capacity.Reading{Known: true, Note: "this server retains no inventory readings"}
+			}
+			return s.readings.RetentionReading()
+		},
 		capacity.ScreensCaptureSlots: func() capacity.Reading {
 			if s.inventory.Held == nil {
 				return capacity.Reading{Known: true, Note: "this inventory takes no screen captures"}

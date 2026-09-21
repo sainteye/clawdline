@@ -198,6 +198,12 @@ func onScreen(items []session.Session) []swiftstore.OnScreen {
 		if !item.IsAssistant() {
 			continue
 		}
+		// A retained row is for drawing only. Stamping it into lastScreen as
+		// just seen would let task placement turn an earlier observation into
+		// a present-tense identity binding.
+		if item.Observation.Freshness == session.FreshnessUnverified || item.Observation.Freshness == session.FreshnessMissing {
+			continue
+		}
 		out = append(out, swiftstore.OnScreen{
 			TerminalID:     item.ID,
 			Assistant:      string(item.Assistant),

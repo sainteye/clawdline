@@ -19,3 +19,16 @@
 html.booting body {
   visibility: hidden;
 }
+/* One inventory pass owns one failure. It sits above the rows instead of
+   making every row claim its terminal failed independently. */
+.session-reading {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 7%, transparent);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.session-reading[hidden] { display: none; }

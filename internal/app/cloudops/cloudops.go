@@ -71,6 +71,15 @@ type Command struct {
 // browser told `not_found` can say so, and a browser told nothing at all waits
 // forever behind a skeleton.
 type Answer struct {
+	// Operation is the command word the viewer sent (`end`, `send`, `git`, ...).
+	// Name is the reply waiter and may instead be `action:<request>`; keeping
+	// both is what lets the transport log which state-changing command ran
+	// without opening the encrypted payload a second time.
+	Operation string
+	// Mutating is true for a command and false for an effect-free read. The
+	// transport uses it to record machine changes without turning frequent
+	// transcript and status reads into log noise.
+	Mutating bool
 	// Session names the channel — `t/<machine>/<session>` — that this payload
 	// is published on. Empty means there is nowhere safe to publish it, and
 	// the refusal is a local notice instead (see replyTo in the Swift bridge):
@@ -205,9 +214,11 @@ func Knows(name string) bool { _, ok := catalog[name]; return ok }
 // question: is this addressed to us, is it a word we know, may this sender
 // cause an effect, does the body mean anything, and only then — what does this
 // machine say. A step that refuses names its own code; none of them is silent.
-func (b Bridge) Handle(ctx context.Context, cmd Command) Answer {
+func (b Bridge) Handle(ctx context.Context, cmd Command) (answer Answer) {
 	parsed, parseErr := decodeBody(cmd.Plaintext)
 	word, _ := parsed.str("type")
+	mutating := false
+	defer func() { answer.Operation, answer.Mutating = word, mutating }()
 
 	// Before anything about the request: is it even ours. The viewer listens
 	// on the channel it addressed, which is not one this machine publishes, so
@@ -225,6 +236,7 @@ func (b Bridge) Handle(ctx context.Context, cmd Command) Answer {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 400, Code: "unknown_command",
 			Message: "This machine does not know that Cloud command."})
 	}
+	mutating = !o.read
 	if o.read {
 		return b.serveRead(ctx, cmd, parsed, o)
 	}

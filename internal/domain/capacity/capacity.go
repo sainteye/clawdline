@@ -83,7 +83,7 @@ var allowed = map[Class][]Action{
 	Observation:   {EvictOldest},
 	Journal:       {EvictOldest, Rotate},
 	Work:          {EvictOldest},
-	Cache:         {EvictOldest},
+	Cache:         {EvictOldest, Expire},
 	DiagnosticLog: {Rotate},
 	Buffer:        {Coalesce, Refuse, Disconnect},
 }
@@ -107,6 +107,10 @@ type Unit string
 const (
 	Bytes Unit = "bytes"
 	Rows  Unit = "rows"
+	// Seconds is the age of an observation whose honesty depends on a time
+	// horizon. It is a capacity in the literal sense: once filled, the held
+	// observation expires and the reader must say it does not know.
+	Seconds Unit = "seconds"
 )
 
 // Channel is a way a full row reaches somebody.
@@ -192,8 +196,9 @@ const (
 	SnippetsScope = "snippets.scope"
 	// The screens the session list reads: how many captures may be in flight
 	// at once, and how many screens are held between them.
-	ScreensCaptureSlots  = "screens.capture_slots"
-	CacheTerminalScreens = "cache.terminal_screens"
+	ScreensCaptureSlots   = "screens.capture_slots"
+	CacheTerminalScreens  = "cache.terminal_screens"
+	CacheSessionInventory = "cache.session_inventory"
 	// The two pages that read this daemon's own history: the verification
 	// ledger and the Project Timeline. Both are projections that store
 	// nothing, so what is bounded is the read (limits §3.3).
@@ -675,6 +680,18 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app.ScreenCaptureLimit"},
+		},
+		{
+			// The last complete per-terminal-source inventory kept across a
+			// failed scan (internal/app/inventory_reading.go). At this age it
+			// expires: two minutes spans twelve complete iTerm2 list timeouts and
+			// matches the held-screen backoff ceiling, while anything older would
+			// be a claim about the present rather than a named prior observation.
+			Name: CacheSessionInventory, Class: Cache, Unit: Seconds,
+			Limit: 120, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.LastGoodInventoryAgeLimit"},
 		},
 		{
 			// The screens held between those captures, one per session the

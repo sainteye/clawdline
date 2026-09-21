@@ -201,6 +201,36 @@ func TestWhatCannotBeSeenEndsNothing(t *testing.T) {
 	}
 }
 
+// A retained row is useful for drawing, but it is still an earlier fact. It
+// neither starts a waiting stop nor ends one that a current reading started.
+func TestRetainedWaitingRowDoesNotDriveNotifications(t *testing.T) {
+	r := newWaitingRig(t)
+	s := asking("A")
+	s.Observation = session.Observation{ObservedAt: r.now.Add(-time.Minute),
+		Provenance: "iterm", Freshness: session.FreshnessUnverified}
+	for _, d := range []time.Duration{0, 10 * time.Minute, 30 * time.Minute} {
+		if n := r.at(d, s); n != 0 {
+			t.Fatalf("retained row pushed %d notifications at %s", n, d)
+		}
+	}
+	if ph := r.phase(s); ph != "" {
+		t.Fatalf("retained row opened phase %q", ph)
+	}
+
+	s.Observation = session.Observation{ObservedAt: r.now,
+		Provenance: "iterm", Freshness: session.FreshnessCurrent}
+	r.at(31*time.Minute, s)
+	s.Observation.Freshness = session.FreshnessUnverified
+	s.State = session.StateWorking
+	r.at(42*time.Minute, s)
+	if _, ok := r.w.stops[WaitingKey(s)]; !ok {
+		t.Fatal("retained non-waiting row ended the current stop")
+	}
+	if ph := r.phase(s); ph != "" {
+		t.Fatalf("retained non-waiting row recorded phase %q", ph)
+	}
+}
+
 // The budget: a wave of sessions stopping at once is one fact, and past the
 // hour's allowance each further stop is written down over_budget and never
 // pushed — not held and sent later, when it would be about something older.

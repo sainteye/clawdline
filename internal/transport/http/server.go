@@ -170,6 +170,7 @@ func New(cfg config.Config) (*Server, error) {
 	}
 	// One producer in front of it, so three loops are one scan.
 	srv.readings = app.NewInventoryReading(srv.inventory.Read, 0)
+	srv.readings.SetRetentionAge(CapacityLimit(capacity.CacheSessionInventory))
 	srv.inventory.Held.SetLimits(CapacityLimit(capacity.ScreensCaptureSlots),
 		CapacityLimit(capacity.CacheTerminalScreens))
 	// The transcript caches and the skills cache hold their register rows' limits.

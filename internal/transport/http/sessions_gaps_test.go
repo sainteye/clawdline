@@ -105,3 +105,34 @@ func TestTheSnapshotSaysWhichWindowWouldNotOpen(t *testing.T) {
 		t.Fatal("no iterm source on the snapshot")
 	}
 }
+
+func TestSnapshotCarriesBatchAndRowReadingAge(t *testing.T) {
+	s := gapServer(t)
+	inv := oneBlindWindow()
+	observed := time.Unix(1_000_000, 0)
+	inv.Observation = session.Observation{
+		ObservedAt: observed, Provenance: "merged", Freshness: session.FreshnessUnverified,
+	}
+	inv.Sessions[0].Observation = session.Observation{
+		ObservedAt: observed.Add(time.Minute), Provenance: "tmux", Freshness: session.FreshnessCurrent,
+	}
+	inv.Sessions[1].Observation = session.Observation{
+		ObservedAt: observed, Provenance: "iterm", Freshness: session.FreshnessUnverified,
+	}
+
+	snap := s.sessionsPayloadFrom(context.Background(), inv)
+	if snap.Scan.Source == nil || snap.Scan.Source.Freshness != "unverified" || snap.Scan.Source.ObservedAt != observed.Unix() {
+		t.Fatalf("batch source = %+v", snap.Scan.Source)
+	}
+	byID := map[string]sessionRowWire{}
+	for _, row := range snap.Sessions {
+		byID[row.ID] = row
+	}
+	if got := byID["%8"].Source; got == nil || got.Freshness != "current" || got.Provenance != "tmux" {
+		t.Fatalf("tmux source = %+v", got)
+	}
+	if got := byID["7A5C0000-0000-4000-8000-000000000009"].Source; got == nil ||
+		got.Freshness != "unverified" || got.ObservedAt != observed.Unix() {
+		t.Fatalf("iTerm source = %+v", got)
+	}
+}

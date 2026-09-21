@@ -183,6 +183,14 @@ func (w *Waiting) Observe(ctx context.Context, r session.Inventory) (int, error)
 		}
 		key := WaitingKey(s)
 		st := w.stops[key]
+		if s.Observation.Freshness == session.FreshnessUnverified || s.Observation.Freshness == session.FreshnessMissing {
+			// The list may draw the last known state; a watcher must not turn
+			// "it was waiting two minutes ago" into a new push now. Like a
+			// current unknown row, it keeps an existing stop open and decides
+			// nothing.
+			seen[key] = true
+			continue
+		}
 		switch s.State {
 		case session.StateWaiting:
 			seen[key] = true

@@ -115,6 +115,25 @@ const (
 	EvidenceNone Evidence = "none"
 )
 
+// Freshness says whether an observation was taken this pass, carried from an
+// earlier complete pass, or never obtained. These are facts about the reading,
+// not alternate session states: a session can truthfully be "working, as read
+// two minutes ago" without claiming it is working now.
+type Freshness string
+
+const (
+	FreshnessCurrent    Freshness = "current"
+	FreshnessUnverified Freshness = "unverified"
+	FreshnessMissing    Freshness = "missing"
+)
+
+// Observation is where and when one row's state was read.
+type Observation struct {
+	ObservedAt time.Time
+	Provenance string
+	Freshness  Freshness
+}
+
 // StateFromAssistantStatus maps an assistant's own word for what it is doing.
 // An unrecognised word is `unknown`, never `idle`: a status we cannot read has
 // told us nothing, and flattening it into "nothing is happening" is the one
@@ -195,6 +214,13 @@ type Session struct {
 	// browser kept for itself. Not on the wire in this shape; the transport
 	// sends it as the row's `activity`.
 	Activity Activity `json:"-"`
+
+	// Observation accompanies the row's terminal state. It is filled by the
+	// inventory reading cache: current for a source that answered this pass,
+	// unverified for the last complete row retained across a failed pass, and
+	// missing when that source has never answered (or its retained answer is
+	// too old to keep describing the present).
+	Observation Observation `json:"-"`
 }
 
 // IsAssistant separates a Claude or Codex session from an ordinary shell.
@@ -225,6 +251,10 @@ type Inventory struct {
 	// the parts nothing was hiding. Not on the wire in this shape; the
 	// transport puts it beside the source it belongs to.
 	Gaps []Gap `json:"-"`
+	// Observation says what the whole displayed reading is worth. Rows carry
+	// their own because a merged reading may contain current tmux rows beside
+	// retained iTerm2 rows.
+	Observation Observation `json:"-"`
 }
 
 func (i Inventory) Assistants() []Session {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
-import type { SessionRow, TaskRow } from "@clawdline/contract"
+import type { BearingsSource, SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { paintSwipe, Row } from "./session/List.js"
@@ -11,6 +11,7 @@ import { swipes } from "./session/swipe.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 import { ScheduleSection } from "./pages/schedules.js"
 import { nextWord } from "./next-strings.js"
+import { batchReadingWords } from "./session-reading.js"
 
 /**
  * The session list page: the list, and the conversation beside it.
@@ -25,6 +26,7 @@ export function SessionsPage({
   arrived,
   live,
   emptyAuthoritative,
+  readingSource,
   shown: onScreen,
   view,
   paneOpen,
@@ -44,6 +46,8 @@ export function SessionsPage({
   /** The stream is up: the original's `S.conn === "live"`. */
   live: boolean
   emptyAuthoritative: boolean
+  /** The whole batch's freshness; rows carry the source they came from. */
+  readingSource?: BearingsSource
   /** This is the page on screen. Another page hides it; nothing takes it down. */
   shown: boolean
   /** The phone's one screen at a time: `main#app[data-view]`. */
@@ -78,6 +82,7 @@ export function SessionsPage({
   // row does not close it.
   const open = rows.find((r) => r.id === openId) ?? null
   const T = L.strings
+  const readingSaid = batchReadingWords(readingSource)
 
   // `thawOrder` redraws the list through the session UI seam once the order it
   // held is let go, and this page is that list.
@@ -242,6 +247,9 @@ export function SessionsPage({
                 <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"></path>
               </svg>
             </button>
+          </div>
+          <div className="session-reading" role="status" hidden={!readingSaid}>
+            {readingSaid}
           </div>
           <div className="scroller list-scroll" id="list-scroll" ref={scrollRef}>
             <div className="ptr" id="ptr" ref={ptrRef}>
