@@ -124,9 +124,25 @@ without ever reaching the network. Another machine will have a different tool th
 
 **Clawdline never writes them**, a missing file is a legitimate answer, and `state: "none"` means
 that tool found nothing worth reporting — not that the repository has no runs. So an empty deploy
-cell has two causes wearing one face: there is no run, or nobody is writing these files any more.
-Nothing in this repository can tell them apart, and no guard goes red for either;
-`internal/adapters/projectlinks/status.go` says the same thing beside the code that reads them.
+cell used to have two causes wearing one face: there is no run, or nobody is writing these files
+any more.
+
+**It now says which.** The workflow file carries a `why` beside a state it has nothing to show
+for, and until 2026-09-21 no line of this repository had read that key — a person asked twice why
+their GitHub row was blank while `{"state":"none","why":"stale-fail"}` sat in the file explaining
+itself. `deployQuiet` on `GET /v1/sessions/{id}/info` and `/links` now carries which kind of
+silence it was (`no_file`, `unreadable`, `state_not_drawn`, `no_address`), the producer's own
+`state` and `why` untranslated, and the file's own `updated_at` — which is how a poller that
+stopped is told apart from a project between runs. The dot is unchanged: a state this daemon does
+not know still draws nothing, because a red mark that is always wrong is worse than no mark. No
+guard goes red when that tool stops writing, and nothing here can make one:
+`internal/adapters/projectlinks/status.go` says so beside the code that reads them, and the
+console's sentence for each kind is in `web/console/src/overlays/links-note.ts`.
+
+That `why` vocabulary is the producer's and is not closed, so neither Go nor the wire maps it:
+the console turns the words it knows into sentences and says an unknown one as the word it was
+given. A reader that kept only what it recognised would be silent again the first time that tool
+learned a new one.
 
 ## The broker
 

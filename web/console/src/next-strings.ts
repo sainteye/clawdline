@@ -170,7 +170,7 @@ const words = {
       "that workflow is disabled, so its last failure will never be replaced and is not news",
     linksDeployWhyStaleFail:
       "the last run failed long enough ago that it stopped counting as the current state",
-    linksDeployWhyUnknown: "that tool gave a reason this app does not know: `{why}`",
+    linksDeployWhyUnknown: "That tool gave a reason this app does not know: `{why}`.",
     linksDeployWhen: "That tool last wrote this down: {when}.",
     linksTruncated: "More addresses were found than this list carries; the rest are not shown.",
     // The swipe. A confirmation reached from the list has to name what it
@@ -300,7 +300,7 @@ const words = {
       "那個 workflow 已經停用，所以最後一次失敗永遠不會被取代，也就不算現況",
     linksDeployWhyStaleFail:
       "上一次執行是失敗的，而那已經久到不再算是現在的狀態",
-    linksDeployWhyUnknown: "這個工具說了一個我不認得的理由：「{why}」",
+    linksDeployWhyUnknown: "這個工具說了一個我不認得的理由：「{why}」。",
     linksDeployWhen: "那個工具最後一次寫下這件事：{when}。",
     linksTruncated: "找到的位址比這份清單裝得下的多，其餘沒有列出。",
     endNamedTitle: "要關閉 {session} 嗎？",

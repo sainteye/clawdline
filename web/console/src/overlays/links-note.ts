@@ -124,5 +124,8 @@ export function deployWhyWord(why: string | undefined, say: Say): string {
     case "stale-fail":
       return because(say.word("linksDeployWhyStaleFail"))
   }
-  return because(say.word("linksDeployWhyUnknown", { why }))
+  // Not wrapped: `linksDeployWhyUnknown` is already a whole sentence, and
+  // "its reason: that tool gave a reason this app does not know" says reason
+  // twice. Seen in a render before it was seen in a diff.
+  return say.word("linksDeployWhyUnknown", { why })
 }
