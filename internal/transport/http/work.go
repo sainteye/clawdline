@@ -90,6 +90,11 @@ func (s *Server) StartWork(ctx context.Context) {
 	}
 	go s.work().Run(ctx, tick)
 	log.Printf("board sweep ticking every %s", tick)
+	// A session standing on a question is watched on the same clock. It needs
+	// the broker: its push is one of the broker's outbox effects.
+	if s.broker != nil {
+		go s.watchWaiting(ctx, tick)
+	}
 }
 
 // workHealth turns /v1/health red when the sweep has stopped (DG-1): the

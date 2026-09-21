@@ -204,6 +204,7 @@ var effectHandlers = map[string]effectHandler{
 	EffectDeadLetterPush: {idempotent: false, run: runDeadLetterPush},
 	EffectWaitDelivery:   {idempotent: false, run: runWaitDelivery},
 	EffectCapacityPush:   {idempotent: false, run: runCapacityPush},
+	EffectWaitingPush:    {idempotent: false, run: runWaitingPush},
 }
 
 func (b *Broker) fault(point string, e store.Effect) {
