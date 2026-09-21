@@ -829,6 +829,8 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
         live={fleet.live}
         emptyAuthoritative={fleet.snapshot?.scan.emptyAuthoritative ?? false}
         readingSource={fleet.snapshot?.scan.source}
+        scanNotes={fleet.snapshot?.scan.notes}
+        scanSources={fleet.snapshot?.scan.sources}
         shown={page === "sessions"}
         view={view}
         paneOpen={paneOpen}

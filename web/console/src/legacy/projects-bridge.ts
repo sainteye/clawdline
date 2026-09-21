@@ -25,6 +25,7 @@ import { drawIcon } from "./js/core/pixels.js"
 import { tint } from "./js/core/util.js"
 import { bindProjectsPage as bindProjectsPageOriginal, readProjectPlaces } from "./js/view/projects.js"
 import { openBoard } from "./board-bridge.js"
+import { projectFeatureMeasurementWords } from "../pages/projects/measurement.js"
 
 /** `net/client.js`'s LOCAL_MACHINE: a page served by this daemon is looking at this machine. */
 const LOCAL_MACHINE = "this-mac"
@@ -110,6 +111,31 @@ const post = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 })
 
+let measuredProjectWords: { empty: string; read: string } | null = null
+let unmeasuredProjectWords: { empty: string; read: string } | null = null
+
+function applyProjectFeatureMeasurementWords(doc: Document, answer: Record<string, unknown>): void {
+  const project = answer.projectWorktrees as { status?: unknown; read?: { featureRowsStatus?: unknown } } | undefined
+  const unmeasured = project?.status === "not_measured" || project?.read?.featureRowsStatus === "not_measured"
+  // Remember the active catalog only while it is not our replacement. This
+  // preserves the loaded locale if a later machine really does measure the
+  // field and the copied view should return to its original sentence.
+  if (!unmeasuredProjectWords || T.webProjectNoWorktrees !== unmeasuredProjectWords.empty) {
+    measuredProjectWords = { empty: T.webProjectNoWorktrees, read: T.webProjectRead }
+  }
+  if (!unmeasured) {
+    if (measuredProjectWords) {
+      T.webProjectNoWorktrees = measuredProjectWords.empty
+      T.webProjectRead = measuredProjectWords.read
+    }
+    return
+  }
+  const chinese = /^zh/i.test(doc.documentElement.lang || navigator.language || "")
+  unmeasuredProjectWords = projectFeatureMeasurementWords(chinese)
+  T.webProjectNoWorktrees = unmeasuredProjectWords.empty
+  T.webProjectRead = unmeasuredProjectWords.read
+}
+
 /** The transport `readProjectPlaces` reads, as `net/live.js` spells it. */
 const transport = {
   places: (machine?: string) => {
@@ -175,7 +201,13 @@ export function bindProjects(doc: Document, navigate: (name: string) => void): P
       carries: () => true,
       places: () => (readProjectPlaces as (t: unknown, onMode?: unknown) => Promise<unknown>)(transport, applyBoardMode),
       openBoard: (place: Place) => openBoard(place.boardProjectId, null, place),
-      projectWorktrees: (place: Place) => transport.projectWorktrees(place),
+      projectWorktrees: async (place: Place) => {
+        const answer = await transport.projectWorktrees(place)
+        // The copied view reads these two keys in its continuation of this
+        // promise, so the replacement is in place before the first paint.
+        applyProjectFeatureMeasurementWords(doc, answer)
+        return answer
+      },
       lifecycleAvailable: () => true,
       projectWorktreeLifecycle: (place: Place) => transport.projectWorktreeLifecycle(place.boardProjectId || place.id),
       projectWorktreeLifecycleRefresh: (place: Place) =>

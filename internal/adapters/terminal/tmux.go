@@ -44,7 +44,13 @@ func splitPaneFields(line string) []string {
 // gives up without pressing Enter.
 var sendConfirm = 6 * time.Second
 
-type Tmux struct{ Binary string }
+type Tmux struct {
+	Binary string
+	// fallbacks is nil in production, where tmuxFallbacks is used. Tests set
+	// an explicit list so the Finder-style PATH case does not depend on what
+	// package manager is installed on the machine running them.
+	fallbacks []string
+}
 
 func NewTmux() *Tmux { return &Tmux{Binary: "tmux"} }
 
@@ -69,8 +75,18 @@ func (t *Tmux) Inventory(ctx context.Context) (session.Inventory, error) {
 		Provenance: "tmux",
 		Complete:   true,
 	}
-	if _, err := exec.LookPath(t.Binary); err != nil {
+	found, onPath := t.binary()
+	if found == "" {
 		inv.Notes = append(inv.Notes, "tmux is not installed")
+		return inv, nil
+	}
+	if !onPath {
+		// A package-manager tmux outside this process's PATH may have a live
+		// server, but this backend cannot ask it consistently: Capture, Send
+		// and Close still run t.Binary. This is therefore an unread source,
+		// never authoritative evidence that the server has no panes.
+		inv.Complete = false
+		inv.Notes = append(inv.Notes, tmuxOutsidePATHReason(found))
 		return inv, nil
 	}
 

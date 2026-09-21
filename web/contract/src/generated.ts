@@ -256,8 +256,9 @@ export interface AnalyticsFeatureProject {
 }
 
 /**
- * Accepted Feature attribution. This daemon records none, so `groups` is empty and
- * every run is the Unknown Feature.
+ * Accepted Feature attribution. This daemon has no attribution producer, so
+ * `status` is `not_measured`, `groups` is empty and every run stays in the
+ * explicitly unknown remainder.
  */
 export interface AnalyticsFeatures {
   automaticAttribution: boolean
@@ -267,7 +268,7 @@ export interface AnalyticsFeatures {
   roleEvidence: AnalyticsRoleEvidence
 
   /**
-   * available or no_accepted_attribution.
+   * `not_measured` until this daemon has an accepted-attribution producer.
    */
   status: string
   unknown: AnalyticsUnknownFeature
@@ -330,6 +331,19 @@ export interface AnalyticsLineage {
   status: string
   unknownRuns: number
 }
+
+/**
+ * Whether a measurement actually ran. `not_measured` means this daemon has no
+ * producer for the fact; `unconfigured` means the producer exists only when its
+ * classifier is configured. Neither is a measured zero.
+ */
+export type AnalyticsMeasurementStatus =
+    "complete"
+  | "partial"
+  | "not_measured"
+  | "unconfigured"
+
+export const AnalyticsMeasurementStatusValues: readonly AnalyticsMeasurementStatus[] = ["complete", "partial", "not_measured", "unconfigured"] as const
 
 /**
  * One slice of a Project's assistant or work mix.
@@ -460,10 +474,10 @@ export interface AnalyticsRangeFreshness {
  * How much review evidence was read.
  */
 export interface AnalyticsReviewReceipts {
-  limit: number
-  read: number
-  status: string
-  truncated: boolean
+  limit?: number
+  read?: number
+  status: AnalyticsMeasurementStatus
+  truncated?: boolean
 }
 
 /**
@@ -4780,7 +4794,8 @@ export interface ProjectWorktrees {
   schemaVersion: number
 
   /**
-   * available or partial.
+   * `not_measured` while this daemon has no Feature-attribution producer; `partial`
+   * or `available` only after one exists.
    */
   status: string
   unattributed: ProjectWorktreesUnattributed
@@ -4811,7 +4826,13 @@ export interface ProjectWorktreesProject {
  * What a project-worktrees read covered.
  */
 export interface ProjectWorktreesRead {
-  featureRows: number
+  featureRows?: number
+
+  /**
+   * Whether Feature attribution rows were actually measured. `not_measured` is
+   * accompanied by no `featureRows` number.
+   */
+  featureRowsStatus: AnalyticsMeasurementStatus
   maxScannedRows: number
   projectRows: number
   rows: number
@@ -5010,6 +5031,14 @@ export interface Scan {
    */
   epoch: number
   generation: number
+
+  /**
+   * The terminal adapters' reasons this reading did not finish. Optional on a
+   * complete reading. These diagnostic details cross the wire so a client can
+   * translate the named failure into an action instead of drawing an unexplained
+   * empty list.
+   */
+  notes?: string[]
   provenance: string
 
   /**

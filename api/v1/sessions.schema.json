@@ -415,6 +415,7 @@
         "emptyAuthoritative": { "description": "An empty list is only authoritative when the reading was complete. This is what stops a client reading a failed scan as `every session went away`.", "type": "boolean" },
         "epoch": { "description": "Identifies the process. A client reconnecting to a restarted daemon uses it to tell a reset generation from one that went backwards.", "type": "integer" },
         "generation": { "type": "integer" },
+        "notes": { "description": "The terminal adapters' reasons this reading did not finish. Optional on a complete reading. These diagnostic details cross the wire so a client can translate the named failure into an action instead of drawing an unexplained empty list.", "type": "array", "items": { "type": "string" } },
         "provenance": { "type": "string" },
         "source": {
           "description": "What the whole displayed batch is worth. `unverified` means at least one terminal source failed this pass and rows from its last complete reading were retained; `missing` means at least one failed source had no retained reading inside cache.session_inventory. Per-row source says which rows are current.",

@@ -62,9 +62,9 @@ func ParseWorktrees(values url.Values) (WorktreeQuery, error) {
 var projectIDShape = regexp.MustCompile(`^project-[0-9a-f]{16}$`)
 
 // Worktrees answers which worktrees under one Project finished a Feature.
-// With no accepted Feature attribution on this daemon, no worktree qualifies;
-// the read still resolves the Project and says what it excluded, so an empty
-// list is told apart from a Project that was not found.
+// This daemon has no Feature-attribution producer, so no worktree qualifies.
+// The read still resolves the Project and says that attribution was not
+// measured; an empty list must never claim the measured answer was zero.
 func Worktrees(q WorktreeQuery, all []Row, now time.Time) (map[string]any, error) {
 	rows, truncated := q.Usage.filter(all, q.Usage.start, q.Usage.end)
 	groups, order := groupProjects(rows)
@@ -119,22 +119,18 @@ func Worktrees(q WorktreeQuery, all []Row, now time.Time) (map[string]any, error
 			reasons[why] = n + 1
 		}
 	}
-	status := "available"
-	if truncated {
-		status = "partial"
-	}
 	return map[string]any{
 		"schemaVersion": 1,
-		"status":        status,
+		"status":        "not_measured",
 		"policy":        "one_unambiguous_accepted_head",
 		"outcomeRule":   "landed_by_record_then_landed_by_nonempty_merged_branch_then_settled_then_branch_gone_then_delivered_then_live_then_abandoned",
 		"generatedAt":   iso(now),
 		"range":         map[string]any{"timezone": q.Usage.Zone, "from": strOrNil(q.Usage.From), "to": strOrNil(q.Usage.To)},
 		"project":       map[string]any{"id": ProjectID(g.identity), "label": projectLabel(g.identity)},
 		"read": map[string]any{"rows": len(rows), "projectRows": len(g.rows), "worktreeRows": worktreeRows,
-			"featureRows": 0, "truncated": truncated, "maxScannedRows": MaxScannedRows},
+			"featureRowsStatus": "not_measured", "truncated": truncated, "maxScannedRows": MaxScannedRows},
 		"worktrees":    []any{},
-		"excluded":     map[string]any{"worktreesWithoutFeature": len(worktrees), "reason": "no_unambiguous_accepted_head"},
+		"excluded":     map[string]any{"worktreesWithoutFeature": len(worktrees), "reason": "feature_attribution_not_measured"},
 		"unattributed": map[string]any{"worktrees": len(unattributed), "reasons": reasons},
 	}, nil
 }

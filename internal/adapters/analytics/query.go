@@ -1136,23 +1136,19 @@ func (res Result) scheduledWork() obj {
 }
 
 // features has no accepted attribution to read: this daemon records none and
-// runs no classifier, so every run is the Unknown Feature.
+// runs no classifier, so every run is the explicitly unknown remainder. None
+// of the evidence subreads may call that absence a complete zero-row read.
 func features(rows []Row) obj {
-	status := "available"
-	if len(rows) > 0 {
-		status = "no_accepted_attribution"
-	}
 	return obj{
-		"status":               status,
+		"status":               "not_measured",
 		"automaticAttribution": false,
 		"policy":               "one_unambiguous_accepted_head",
 		"classifier":           obj{"configured": false},
-		"roleEvidence": obj{"reviewReceipts": obj{"status": "complete", "read": 0, "limit": 5000,
-			"truncated": false}},
-		"groups": []obj{},
+		"roleEvidence":         obj{"reviewReceipts": obj{"status": "unconfigured"}},
+		"groups":               []obj{},
 		"unknown": obj{"label": "Unknown Feature", "runs": distinctRuns(rows, nil),
 			"output": intOrNil(totalOutput(rows)), "unknownOutputRuns": unknownOutputRuns(rows),
-			"reason": "no_unambiguous_accepted_head"},
+			"reason": "feature_attribution_not_measured"},
 	}
 }
 

@@ -36,18 +36,45 @@ var _ ports.Launcher = Launcher{}
 
 func NewLauncher() Launcher { return Launcher{Tmux: NewTmux()} }
 
+var tmuxFallbacks = []string{
+	"/opt/homebrew/bin/tmux",
+	"/usr/local/bin/tmux",
+	"/usr/bin/tmux",
+	"/opt/local/bin/tmux",
+}
+
+// binary resolves the executable this backend names, then the package-manager
+// locations a desktop-launched daemon commonly cannot see. The bool says the
+// first lookup succeeded: only then can every operation on Tmux run the same
+// binary by name.
+func (t *Tmux) binary() (string, bool) {
+	if found, err := exec.LookPath(t.Binary); err == nil {
+		return found, true
+	}
+	fallbacks := t.fallbacks
+	if fallbacks == nil {
+		fallbacks = tmuxFallbacks
+	}
+	for _, path := range fallbacks {
+		if found, err := exec.LookPath(path); err == nil {
+			return found, false
+		}
+	}
+	return "", false
+}
+
+func tmuxOutsidePATHReason(found string) string {
+	return "tmux is at " + found + ", which is not on this daemon's PATH, and the tmux backend runs `tmux` from the PATH"
+}
+
 // binary is Tmux.binary: an app has no login PATH, so the places package
 // managers put tmux are tried after the PATH this process has.
 func (l Launcher) binary() string {
-	if found, err := exec.LookPath(l.Tmux.Binary); err == nil {
-		return found
+	if l.Tmux == nil {
+		return ""
 	}
-	for _, p := range []string{"/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux", "/opt/local/bin/tmux"} {
-		if found, err := exec.LookPath(p); err == nil {
-			return found
-		}
-	}
-	return ""
+	found, _ := l.Tmux.binary()
+	return found
 }
 
 // TmuxReach is StartPoints.tmuxReach. A listing that failed is read as a

@@ -208,8 +208,9 @@ type AnalyticsFeatureProject struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// Accepted Feature attribution. This daemon records none, so `groups` is empty
-// and every run is the Unknown Feature.
+// Accepted Feature attribution. This daemon has no attribution producer, so
+// `status` is `not_measured`, `groups` is empty and every run stays in the
+// explicitly unknown remainder.
 type AnalyticsFeatures struct {
 	AutomaticAttribution bool                  `json:"automaticAttribution"`
 	Classifier           AnalyticsClassifier   `json:"classifier"`
@@ -217,7 +218,7 @@ type AnalyticsFeatures struct {
 	Policy               string                `json:"policy"`
 	RoleEvidence         AnalyticsRoleEvidence `json:"roleEvidence"`
 
-	// available or no_accepted_attribution.
+	// `not_measured` until this daemon has an accepted-attribution producer.
 	Status  string                  `json:"status"`
 	Unknown AnalyticsUnknownFeature `json:"unknown"`
 }
@@ -263,6 +264,21 @@ type AnalyticsLineage struct {
 	Status      string `json:"status"`
 	UnknownRuns int64  `json:"unknownRuns"`
 }
+
+// Whether a measurement actually ran. `not_measured` means this daemon has no
+// producer for the fact; `unconfigured` means the producer exists only when its
+// classifier is configured. Neither is a measured zero.
+type AnalyticsMeasurementStatus string
+
+const (
+	AnalyticsMeasurementStatusComplete     AnalyticsMeasurementStatus = "complete"
+	AnalyticsMeasurementStatusPartial      AnalyticsMeasurementStatus = "partial"
+	AnalyticsMeasurementStatusNotMeasured  AnalyticsMeasurementStatus = "not_measured"
+	AnalyticsMeasurementStatusUnconfigured AnalyticsMeasurementStatus = "unconfigured"
+)
+
+// AnalyticsMeasurementStatusValues is every value the contract allows, in contract order.
+var AnalyticsMeasurementStatusValues = []AnalyticsMeasurementStatus{AnalyticsMeasurementStatusComplete, AnalyticsMeasurementStatusPartial, AnalyticsMeasurementStatusNotMeasured, AnalyticsMeasurementStatusUnconfigured}
 
 // One slice of a Project's assistant or work mix.
 type AnalyticsMix struct {
@@ -364,10 +380,10 @@ type AnalyticsRangeFreshness struct {
 
 // How much review evidence was read.
 type AnalyticsReviewReceipts struct {
-	Limit     int64  `json:"limit"`
-	Read      int64  `json:"read"`
-	Status    string `json:"status"`
-	Truncated bool   `json:"truncated"`
+	Limit     int64                      `json:"limit,omitempty"`
+	Read      int64                      `json:"read,omitempty"`
+	Status    AnalyticsMeasurementStatus `json:"status"`
+	Truncated bool                       `json:"truncated,omitempty"`
 }
 
 // Evidence behind the per-role split.
@@ -4062,7 +4078,8 @@ type ProjectWorktrees struct {
 	Read          ProjectWorktreesRead     `json:"read"`
 	SchemaVersion int64                    `json:"schemaVersion"`
 
-	// available or partial.
+	// `not_measured` while this daemon has no Feature-attribution producer; `partial`
+	// or `available` only after one exists.
 	Status       string                       `json:"status"`
 	Unattributed ProjectWorktreesUnattributed `json:"unattributed"`
 
@@ -4084,12 +4101,16 @@ type ProjectWorktreesProject struct {
 
 // What a project-worktrees read covered.
 type ProjectWorktreesRead struct {
-	FeatureRows    int64 `json:"featureRows"`
-	MaxScannedRows int64 `json:"maxScannedRows"`
-	ProjectRows    int64 `json:"projectRows"`
-	Rows           int64 `json:"rows"`
-	Truncated      bool  `json:"truncated"`
-	WorktreeRows   int64 `json:"worktreeRows"`
+	FeatureRows int64 `json:"featureRows,omitempty"`
+
+	// Whether Feature attribution rows were actually measured. `not_measured` is
+	// accompanied by no `featureRows` number.
+	FeatureRowsStatus AnalyticsMeasurementStatus `json:"featureRowsStatus"`
+	MaxScannedRows    int64                      `json:"maxScannedRows"`
+	ProjectRows       int64                      `json:"projectRows"`
+	Rows              int64                      `json:"rows"`
+	Truncated         bool                       `json:"truncated"`
+	WorktreeRows      int64                      `json:"worktreeRows"`
 }
 
 // GET /v1/orchestrator/usage/project-worktrees.
@@ -4238,9 +4259,15 @@ type Scan struct {
 
 	// Identifies the process. A client reconnecting to a restarted daemon uses it to
 	// tell a reset generation from one that went backwards.
-	Epoch      int64  `json:"epoch"`
-	Generation int64  `json:"generation"`
-	Provenance string `json:"provenance"`
+	Epoch      int64 `json:"epoch"`
+	Generation int64 `json:"generation"`
+
+	// The terminal adapters' reasons this reading did not finish. Optional on a
+	// complete reading. These diagnostic details cross the wire so a client can
+	// translate the named failure into an action instead of drawing an unexplained
+	// empty list.
+	Notes      []string `json:"notes,omitempty"`
+	Provenance string   `json:"provenance"`
 
 	// What the whole displayed batch is worth. `unverified` means at least one
 	// terminal source failed this pass and rows from its last complete reading were

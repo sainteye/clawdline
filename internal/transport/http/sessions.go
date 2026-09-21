@@ -182,6 +182,7 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			Epoch:      epoch,
 			Generation: gen,
 			Complete:   inv.Complete,
+			Notes:      append([]string(nil), inv.Notes...),
 			Provenance: inv.Provenance,
 			// An empty list is only authoritative when the reading was
 			// complete. Saying so here is what stops a client from treating a

@@ -131,6 +131,7 @@ const words = {
     // different fact and a different thing to do about it.
     sessionsListWaitTitle: "Waiting for this machine's list",
     sessionsListWaitHint: "The line is up. This machine has not said yet which sessions it has.",
+    sessionsListIncompleteTitle: "This machine's list is incomplete",
     cloudMachineSessions: "{count} sessions",
     cloudAccessProblem: "A machine's data could not be read here ({code}).",
     cloudSwitch: "Other machines",
@@ -362,6 +363,7 @@ const words = {
     cloudMachinesNone: "這個帳號還沒有任何機器回報。",
     sessionsListWaitTitle: "在等這台機器的清單",
     sessionsListWaitHint: "線已經通了。這台機器還沒說它現在有哪些 session。",
+    sessionsListIncompleteTitle: "這台機器的清單沒有讀完整",
     cloudMachineSessions: "{count} 個 session",
     cloudAccessProblem: "有一台機器的資料在這裡讀不出來（{code}）。",
     cloudSwitch: "換一台機器",

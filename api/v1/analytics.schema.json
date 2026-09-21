@@ -1220,13 +1220,18 @@
         "configured"
       ]
     },
+    "AnalyticsMeasurementStatus": {
+      "description": "Whether a measurement actually ran. `not_measured` means this daemon has no producer for the fact; `unconfigured` means the producer exists only when its classifier is configured. Neither is a measured zero.",
+      "type": "string",
+      "enum": ["complete", "partial", "not_measured", "unconfigured"]
+    },
     "AnalyticsReviewReceipts": {
       "description": "How much review evidence was read.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "status": {
-          "type": "string"
+          "$ref": "#/$defs/AnalyticsMeasurementStatus"
         },
         "read": {
           "type": "integer"
@@ -1239,10 +1244,7 @@
         }
       },
       "required": [
-        "limit",
-        "read",
-        "status",
-        "truncated"
+        "status"
       ]
     },
     "AnalyticsRoleEvidence": {
@@ -1355,12 +1357,12 @@
       ]
     },
     "AnalyticsFeatures": {
-      "description": "Accepted Feature attribution. This daemon records none, so `groups` is empty and every run is the Unknown Feature.",
+      "description": "Accepted Feature attribution. This daemon has no attribution producer, so `status` is `not_measured`, `groups` is empty and every run stays in the explicitly unknown remainder.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "status": {
-          "description": "available or no_accepted_attribution.",
+          "description": "`not_measured` until this daemon has an accepted-attribution producer.",
           "type": "string"
         },
         "automaticAttribution": {
@@ -1640,6 +1642,10 @@
         "featureRows": {
           "type": "integer"
         },
+        "featureRowsStatus": {
+          "description": "Whether Feature attribution rows were actually measured. `not_measured` is accompanied by no `featureRows` number.",
+          "$ref": "#/$defs/AnalyticsMeasurementStatus"
+        },
         "truncated": {
           "type": "boolean"
         },
@@ -1648,7 +1654,7 @@
         }
       },
       "required": [
-        "featureRows",
+        "featureRowsStatus",
         "maxScannedRows",
         "projectRows",
         "rows",
@@ -1716,7 +1722,7 @@
           "type": "integer"
         },
         "status": {
-          "description": "available or partial.",
+          "description": "`not_measured` while this daemon has no Feature-attribution producer; `partial` or `available` only after one exists.",
           "type": "string"
         },
         "policy": {
