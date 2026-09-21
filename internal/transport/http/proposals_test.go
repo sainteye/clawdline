@@ -54,11 +54,12 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	}
 	type answer struct {
 		Proposal struct {
-			ID       string `json:"id"`
-			WorkID   string `json:"work_id"`
-			Ask      bool   `json:"ask"`
-			Reason   string `json:"reason"`
-			Question string `json:"question"`
+			ID            string `json:"id"`
+			WorkID        string `json:"work_id"`
+			Ask           bool   `json:"ask"`
+			Reason        string `json:"reason"`
+			Question      string `json:"question"`
+			SubjectStatus string `json:"subject_status"`
 		} `json:"proposal"`
 		Item *struct {
 			ID    string `json:"id"`
@@ -126,7 +127,8 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 		t.Fatalf("propose: %d %s", rec.Code, rec.Body)
 	}
 	asked := read(rec)
-	if !asked.Proposal.Ask || asked.Proposal.Question == "" || !strings.Contains(asked.Instructions, asked.Proposal.ID+"/asked") {
+	if !asked.Proposal.Ask || asked.Proposal.Question == "" || asked.Proposal.SubjectStatus != string(work.SubjectUnknown) ||
+		!strings.Contains(asked.Instructions, asked.Proposal.ID+"/asked") {
 		t.Fatalf("asked: %s", rec.Body)
 	}
 	if again := do(machine, http.MethodPost, "/v1/orchestrator/proposals", "p1", propose(lines[0])); again.Body.String() != rec.Body.String() ||
@@ -161,7 +163,8 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 
 	// The "to confirm" area is the person's to read.
 	list := do(person, http.MethodGet, "/v1/work/proposals", "", "")
-	if list.Code != 200 || !strings.Contains(list.Body.String(), `"pending":2`) {
+	if list.Code != 200 || !strings.Contains(list.Body.String(), `"pending":2`) ||
+		strings.Count(list.Body.String(), `"subject_status":"unknown"`) != 2 {
 		t.Fatalf("to confirm: %d %s", list.Code, list.Body)
 	}
 	// A session answers only by relaying a person, under their run.
@@ -210,7 +213,8 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	}
 	rec = do(machine, http.MethodPost, path, "a1", `{"answer":"track","via":{"run":"`+mine.ID+`"}}`)
 	made := read(rec)
-	if rec.Code != 200 || made.Item == nil || made.Item.Place != "board" || made.Item.ID != lines[0] {
+	if rec.Code != 200 || made.Item == nil || made.Item.Place != "board" || made.Item.ID != lines[0] ||
+		made.Proposal.SubjectStatus != string(work.SubjectUnknown) {
 		t.Fatalf("track: %d %s", rec.Code, rec.Body)
 	}
 	moves := do(person, http.MethodGet, "/v1/work/items/"+lines[0]+"/moves", "", "")
