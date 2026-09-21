@@ -179,32 +179,11 @@ const RULES: Rule[] = [
     probes: [{ file: "web/console/src/pages/work/shared.ts", all: ["failureSentence(e, workWord(\"failed\", { detail: e.code }))"] }],
   },
   {
-    id: "E01",
-    family: E,
-    title: "The drawer writes Dashboard outside the catalog",
-    cause: "raw_ui_english",
-    probes: [{ file: "web/console/src/App.tsx", all: [">\n            Dashboard\n          </button>"] }],
-  },
-  {
     id: "E02",
     family: E,
     title: "The schedule summary writes three English labels",
     cause: "raw_ui_english",
     probes: [{ file: "web/console/src/pages/schedules.tsx", all: ["<span>Schedules</span>", "title=\"New schedule\"", "aria-label=\"Scheduled tasks\""] }],
-  },
-  {
-    id: "E03",
-    family: E,
-    title: "Dashboard panel headings bypass the catalog",
-    cause: "raw_ui_english",
-    probes: [{ file: "web/console/src/Dashboard.tsx", all: ["Sessions<span", "Obligations", "Tasks<span", "Schedules<span", "Coordinator"] }],
-  },
-  {
-    id: "E04",
-    family: E,
-    title: "Dashboard renders wire enums and generation notation as prose",
-    cause: "wire_value_as_prose",
-    probes: [{ file: "web/console/src/Dashboard.tsx", all: ["{row.state} / {row.evidence}", "gen {data.record.generation}"] }],
   },
   {
     id: "E05",
@@ -254,13 +233,6 @@ const RULES: Rule[] = [
     title: "The schedule list prints a Go parse error verbatim",
     cause: "producer_prose",
     probes: [{ file: "web/console/src/pages/schedules.tsx", all: ["schedule.error || \"The schedule could not be read.\""] }],
-  },
-  {
-    id: "E12",
-    family: E,
-    title: "Dashboard prints the same schedule parse error verbatim",
-    cause: "producer_prose",
-    probes: [{ file: "web/console/src/Dashboard.tsx", all: ["{row.file} — {row.error}"] }],
   },
   {
     id: "E13",
@@ -323,8 +295,8 @@ const RULES: Rule[] = [
   },
 ]
 
-const EXPECTED_RULES = 37
-const EXPECTED_OPEN = 15
+const EXPECTED_RULES = 33
+const EXPECTED_OPEN = 11
 const EXPECTED_LOCKED = 2
 
 export function dispositionFor(file: string): AuditDisposition {

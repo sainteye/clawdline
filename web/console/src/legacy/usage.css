@@ -1,5 +1,5 @@
 /* Project Portfolio is an application surface, not a report pasted into the Session UI. All
-   selectors stay under .usage-analytics so the dashboard can evolve without moving the bar. */
+   selectors stay under .usage-analytics so that surface can evolve without moving the bar. */
 #usage-open:focus-visible,
 .usage-analytics button:focus-visible,
 .usage-analytics input:focus-visible,

@@ -28,8 +28,8 @@ prose reaching a screen without `failureSentence` as `producer_prose`.
 |---|---|---|---|
 | 1 | `App.tsx:789` | `Dashboard` in the drawer | A. The comment admits it: no catalog key names it. `看板` and `現在` next to it both go through their words module. |
 | 2 | `pages/schedules.tsx:1581`, `:1583`, `:1589` | `Schedules`, `New schedule`, `Scheduled tasks` | A. `:207` keeps the section visible with no schedules when the tab may write, so it is on the first screen. Twenty other labels on that page are translated. |
-| 3 | `Dashboard.tsx:336`, `411-412`, `439`, `468`, `508` | `Sessions`, `Obligations`, `Tasks`, `Schedules`, `Coordinator` | A. Every empty state in the same file is Chinese; only the panel headings are not. |
-| 4 | `Dashboard.tsx:388`, `523` | `running / transcript`, `gen 12` | A, and not translation: wire enums used as prose. |
+| 3 | `Dashboard.tsx:336`, `411-412`, `439`, `468`, `508` | `Sessions`, `Obligations`, `Tasks`, `Schedules`, `Coordinator` | A. Every empty state in the same file is Chinese; only the panel headings are not. **隨 Dashboard 一起移除，未修正。** |
+| 4 | `Dashboard.tsx:388`, `523` | `running / transcript`, `gen 12` | A, and not translation: wire enums used as prose. **隨 Dashboard 一起移除，未修正。** |
 | 5 | `pages/usage/section.html` (34 lines) | the whole Usage page | A. Its drawer row is shown and `ready()` lets it through, so a new person can reach it; the file's claim that `#page=usage` is the only way in was true of the Swift app, not here. |
 | 6 | `pages/projects/section.html:9-10`, `19`, `34-40` | `Projects`, its lede, the worktree block | A. `projects-title` is only ever `.focus()`ed, never written; the lede has a translation path that runs only when a board answer carries the mode. |
 | 7 | `pages/settings.tsx:307` | `Loading…`, forever | A, and a lie: nothing writes that id, so it is not loading — the toggle does not exist on this daemon. |

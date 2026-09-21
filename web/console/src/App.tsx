@@ -7,10 +7,10 @@ import { useFleet, usePoll } from "./useFleet.js"
 import { SessionsPage } from "./Sessions.js"
 import { toggleOrder } from "./session/Transcript.js"
 import { conversationNotStarted } from "./session/readiness.js"
-import Dashboard from "./Dashboard.js"
 import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
 import { drawerEntries, pageReady } from "./pages/registry.js"
+import { pageFromHash } from "./page-route.js"
 import { workWord } from "./pages/work/words.js"
 import { nowWord } from "./pages/now/words.js"
 import { nextWord } from "./next-strings.js"
@@ -43,13 +43,8 @@ import {
  * Same elements and same classes as `Resources/web/index.html`, because the
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
- *
- * The dashboard is the one entry that is not in the original. It was this
- * console for a while and it is a different idea — the fleet as the subject
- * rather than the conversation — so it is kept, as a page rather than as the
- * app.
  */
-type Page = "sessions" | "dashboard" | "devices" | "projects" | "board" | "usage" | "ledger" | "timeline" | "plan" | "settings" | "work" | "now"
+type Page = "sessions" | "devices" | "projects" | "board" | "usage" | "ledger" | "timeline" | "plan" | "settings" | "work" | "now"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -115,18 +110,7 @@ function ready(id: string): boolean {
 
 /** The pages a fragment may name here: `Pages.knows`, less the ones this daemon cannot show. */
 function knows(name: string): name is Page {
-  return name === "dashboard" || ready(name)
-}
-
-/** `pageInHash` (`core/pages.js`): the page a fragment names, or null when it names none. */
-function pageInHash(hash: string): string | null {
-  const found = /(?:^|[#&])page=([^&]*)/.exec(String(hash || ""))
-  if (!found || !found[1]) return null
-  try {
-    return decodeURIComponent(found[1])
-  } catch {
-    return found[1]
-  }
+  return ready(name)
 }
 
 /**
@@ -345,10 +329,7 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
   const openAskedRef = useRef<() => Asked>(() => "none")
   useEffect(() => {
     const routeTo = () => {
-      const wanted = pageInHash(location.hash)
-      if (wanted) {
-        if (knows(wanted)) goRef.current(wanted, { hash: false })
-      } else goRef.current("sessions", { hash: false })
+      goRef.current(pageFromHash(location.hash, knows), { hash: false })
       askedRef.current = sessionsInFragment(location.hash)
       if (askedRef.current) openAskedRef.current()
     }
@@ -776,20 +757,6 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
               {p.key ? T[p.key] : p.text}
             </button>
           ))}
-          {/* Not one of the original's pages, so it comes after all of them.
-              It was this console for a while and it answers a different
-              question — the fleet as the subject rather than the conversation —
-              and the user agreed to keep it. No catalog key names it. */}
-          <button
-            className="sidebar-item"
-            id="nav-dashboard"
-            type="button"
-            data-page-to="dashboard"
-            aria-current={page === "dashboard" ? "page" : undefined}
-            onClick={() => go("dashboard")}
-          >
-            Dashboard
-          </button>
           {/* The new board (design-decisions T6): not one of the original's pages
               either, and where it belongs is not decided yet (U6), so it is a row
               of its own at the end, and the original's rows — the Project Board's
@@ -843,7 +810,6 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
         onBack={() => closeDetail()}
         onDid={fleet.refresh}
       />
-      {page === "dashboard" && <Dashboard fleet={fleet} />}
       {Object.values(PAGE_MODULES).map(({ id, Component }) => (
         // Mounted once opened and kept, as the original keeps its sections in
         // the document and only hides them.
