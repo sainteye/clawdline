@@ -29,7 +29,11 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/clawdline-private-ci.XXXXXX") || exit 2
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 words="$tmp/fixed-rules-only"
 checkpoint="$tmp/history-checkpoint"
-printf '%s\n' 'clawdline-ci-private-word-sentinel-not-used-by-the-project' >"$words"
+# The list needs one word so the fixed rules run, and it must be a word this
+# project never says. Written in halves because a whole one would be a word
+# this project says — in the file that defines it, which is where the scan
+# below found it on CI's first run.
+printf '%s%s\n' 'clawdline-ci-private-word-sentinel' '-not-used-by-the-project' >"$words"
 
 CLAWDLINE_PRIVATE_WORDS="$words" tools/check-private.sh \
   -history -revs="$base" -checkpoint="$checkpoint" >"$tmp/baseline.out" 2>&1
