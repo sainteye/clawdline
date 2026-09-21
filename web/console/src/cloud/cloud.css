@@ -13,6 +13,7 @@
 .cloud-machines button:hover:not(:disabled) { border-color: var(--accent-ed); }
 .cloud-machines button:disabled { opacity: 0.55; cursor: default; }
 .cloud-machine-name { font-size: 14px; font-weight: 600; }
+.cloud-machine-identity { font-size: 11px; color: var(--faint); font-family: var(--mono); }
 .cloud-machine-facts { font-size: 12px; color: var(--dim); }
 
 /* In the header, shaped like the connection light beside it (`legacy/header.css` `.conn`). */
@@ -32,32 +33,33 @@
    this page. Nothing in `legacy/` is touched — it is byte-for-byte copied
    (`tools/check-legacy-css.sh`), which is why the red `.confirm-go` is spelled
    here rather than added to that file's list of `data-kind`s. */
-/* The row is the card; the × sits inside its bounds. They are siblings in the
-   markup because a button cannot be nested in a button, so the list item is
-   the positioned box and the row fills it. The row keeps enough padding on the
-   right that a long machine name never runs under the glyph. */
+/* The row is the card; its action group sits inside its bounds. They are
+   siblings in the markup because a button cannot be nested in a button, so
+   the list item is the positioned box and the row fills it. The row keeps
+   enough padding on the right that its facts never run under the controls. */
 .cloud-machines li { position: relative; }
 .cloud-machines li > button:first-child { padding-right: 70px; }
-/* `.cloud-machines button` above styles every button in the list and is the
-   more specific of the two, so this states its whole shape rather than
-   inheriting a row's. */
-.cloud-machines .cloud-forget {
+.cloud-machines li[data-pairable] > button:first-child { padding-right: 126px; }
+.cloud-machine-actions {
     position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+    display: flex; align-items: center; gap: 2px;
+}
+/* `.cloud-machines button` above styles every button in the list and is more
+   specific, so every action states its compact shape in full. */
+.cloud-machines .cloud-forget,
+.cloud-machines .cloud-rename {
     width: 26px; height: 26px; padding: 0;
     flex-direction: row; align-items: center; justify-content: center;
     background: transparent; border: 1px solid transparent; border-radius: 7px;
-    color: var(--dim); font-size: 16px; line-height: 1; text-align: center;
+    color: var(--dim); line-height: 1; text-align: center;
 }
+.cloud-machines .cloud-forget { font-size: 16px; }
 .cloud-machines .cloud-forget:hover:not(:disabled) { background: #2f2322; color: #f0b6a2; border-color: #57362e; }
 .cloud-machines .cloud-forget:disabled { opacity: 0.4; cursor: default; }
 /* Renaming one, beside it. Same shape, and deliberately not the removing
    colour: one of the two is irreversible and the other is a label. */
 .cloud-machines .cloud-rename {
-    position: absolute; top: 50%; right: 36px; transform: translateY(-50%);
-    width: 26px; height: 26px; padding: 0;
-    flex-direction: row; align-items: center; justify-content: center;
-    background: transparent; border: 1px solid transparent; border-radius: 7px;
-    color: var(--dim); font-size: 13px; line-height: 1; text-align: center;
+    font-size: 13px;
 }
 .cloud-machines .cloud-rename:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); border-color: var(--line); }
 .cloud-machines .cloud-rename:disabled { opacity: 0.4; cursor: default; }
@@ -95,20 +97,46 @@
 #cloud-rename-told { white-space: pre-line; }
 #cloud-forget-leave { margin-top: 14px; }
 
-/* Pairing (`PairPanel.tsx`). The row's Pair button sits under a row that
-   cannot be pressed, full width, because it is the one thing that row offers;
-   `.cloud-machines button` styles every button in the list, so this states
-   its whole shape. */
+/* Pairing (`PairPanel.tsx`). Pair is one action on the machine row, beside
+   Rename and Forget; it is a word because unlike the two familiar glyphs it
+   is the next step the person is looking for. */
 .cloud-machines .cloud-pair {
-    display: block; width: 100%; margin-top: 6px; padding: 9px 12px;
-    background: var(--card-hi); border: 1px solid var(--accent-ed); border-radius: 10px;
-    color: var(--ink); font-size: 13px; font-weight: 600; text-align: center;
+    display: block; width: auto; height: 26px; padding: 0 7px;
+    background: var(--card-hi); border: 1px solid var(--accent-ed); border-radius: 7px;
+    color: var(--ink); font-size: 11px; font-weight: 600; line-height: 1; text-align: center;
 }
 .cloud-machines .cloud-pair:hover:not(:disabled) { background: #1c1c24; }
 .cloud-machines .cloud-pair:disabled { opacity: 0.4; cursor: default; }
 
 .cloud-pair-ask .say { margin: 12px 0 0 0; white-space: pre-line; }
 .cloud-pair-ask .fine { margin: 8px 0 0 0; }
+.cloud-pair-status {
+    margin: 10px 0 6px 0; padding: 8px 10px;
+    border: 1px solid var(--accent-ed); border-radius: 8px;
+    color: var(--ink); font-size: 12px; line-height: 1.4;
+}
+.cloud-pair-ways { display: grid; gap: 9px; margin-top: 12px; }
+.cloud-pair-ways article {
+    padding: 10px; border: 1px solid var(--line); border-radius: 10px;
+    background: #101014; color: var(--dim); font-size: 12px; line-height: 1.45;
+}
+.cloud-pair-ways article[data-recommended] { border-color: var(--accent-ed); }
+.cloud-pair-way-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cloud-pair-way-head h3 { margin: 0; color: var(--ink); font-size: 13px; }
+.cloud-pair-way-head span { color: var(--accent); font-size: 10.5px; text-align: right; }
+.cloud-pair-ways article > p { margin: 5px 0 0 0; }
+.cloud-pair-ways ol { margin: 7px 0 0 20px; padding: 0; }
+.cloud-pair-ways li + li { margin-top: 3px; }
+.cloud-pair-ways code {
+    display: block; margin-top: 7px; padding: 6px 7px;
+    border-radius: 6px; background: #09090c; color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+}
+.cloud-pair-ways .cloud-pair-success { color: var(--ink); }
+.cloud-pair-ways .cloud-pair-generate {
+    width: 100%; margin-top: 8px; padding: 8px 10px; text-align: center;
+}
+.cloud-pair-protection { padding-top: 2px; }
 .cloud-pair-step { margin: 14px 0 6px 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
 .cloud-pair-command {
     display: block; box-sizing: border-box; width: 100%; resize: none;

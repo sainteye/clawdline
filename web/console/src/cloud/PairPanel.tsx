@@ -95,7 +95,55 @@ export function PairPanel(props: {
     }
     switch (state.phase) {
       case "idle":
-        // Only a machine's link stops here: a row's press has already begun.
+        if (offer) {
+          return (
+            <>
+              <p className="cloud-pair-status">{nextWord("cloudPairStatusUnpaired")}</p>
+              <p className="fine">{nextWord("cloudPairWaysIntro")}</p>
+              <div className="cloud-pair-ways">
+                <article data-recommended="true">
+                  <div className="cloud-pair-way-head">
+                    <h3>{nextWord("cloudPairFromMachineTitle")}</h3>
+                    <span>{nextWord("cloudPairRecommended")}</span>
+                  </div>
+                  <p>{nextWord("cloudPairFromMachineWhen")}</p>
+                  <ol>
+                    <li>{nextWord("cloudPairFromMachineStep1")}</li>
+                    <li>{nextWord("cloudPairFromMachineStep2")}</li>
+                  </ol>
+                  <code>clawdline cloud pair</code>
+                  <p className="cloud-pair-success">{nextWord("cloudPairFromMachineSuccess")}</p>
+                </article>
+                <article>
+                  <div className="cloud-pair-way-head">
+                    <h3>{nextWord("cloudPairFromBrowserTitle")}</h3>
+                  </div>
+                  <p>{nextWord("cloudPairFromBrowserWhen")}</p>
+                  <ol>
+                    <li>{nextWord("cloudPairFromBrowserStep1")}</li>
+                    <li>{nextWord("cloudPairFromBrowserStep2")}</li>
+                  </ol>
+                  <p className="cloud-pair-success">{nextWord("cloudPairFromBrowserSuccess")}</p>
+                  <button
+                    className="chip cloud-pair-generate"
+                    type="button"
+                    id="cloud-pair-go"
+                    ref={first}
+                    onClick={onBegin}
+                  >
+                    {nextWord("cloudPairGenerate")}
+                  </button>
+                </article>
+              </div>
+              <p className="fine cloud-pair-protection">{nextWord("cloudPairWhy")}</p>
+              <div className="buttons">
+                <button className="chip" type="button" id="cloud-pair-close" onClick={onClose}>
+                  {T.webClose}
+                </button>
+              </div>
+            </>
+          )
+        }
         return (
           <>
             <p className="fine">{nextWord("cloudPairLinkFine")}</p>

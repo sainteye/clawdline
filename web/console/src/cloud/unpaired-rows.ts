@@ -39,6 +39,13 @@ export interface AccountName {
   platform: string
 }
 
+/** Facts every machine row can use to distinguish one registration from another. */
+export interface MachineIdentityFacts {
+  shortID: string
+  platform: "macos" | "linux" | "linux_aws" | "unknown"
+  seenAt: number | null
+}
+
 type Get = (url: string, init?: RequestInit) => Promise<{ status: number; json(): Promise<unknown> }>
 
 /** The account's names for its machines, by id; empty when it would not say. */
@@ -98,4 +105,30 @@ export function withAccountNames<T extends Row>(
 export function sessionsFact(machine: { pairing: string; sessions: number }): { count: number } | "unread" | "unknown" {
   if (machine.pairing === "paired" || machine.sessions > 0) return { count: machine.sessions }
   return machine.pairing === "not_paired" ? "unread" : "unknown"
+}
+
+/**
+ * The small, truthful identity line beside a machine's mutable account name.
+ *
+ * Names can repeat and one physical host can leave more than one registration.
+ * The opaque id fragment is therefore always shown. `observedAt` is the last
+ * authenticated envelope this browser saw; it is not invented from the
+ * control-plane roster, whose machine records carry no last-seen field.
+ */
+export function machineIdentityFacts(machine: { id: string; kind?: string; observedAt?: number | null }): MachineIdentityFacts {
+  const id = typeof machine.id === "string" ? machine.id.trim() : ""
+  const kind =
+    machine.kind === "mac"
+      ? "macos"
+      : machine.kind === "linux-aws"
+        ? "linux_aws"
+        : machine.kind === "linux"
+          ? "linux"
+          : "unknown"
+  const observed = machine.observedAt
+  return {
+    shortID: Array.from(id || "unknown").slice(-8).join(""),
+    platform: kind,
+    seenAt: typeof observed === "number" && Number.isFinite(observed) && observed > 0 ? observed : null,
+  }
 }

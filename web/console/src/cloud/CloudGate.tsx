@@ -26,7 +26,7 @@ import { afterForget, forgetMachine, honestyIsOurs, type ForgetOutcome } from ".
 import { NAME_MAX, renameMachine, type RenameOutcome } from "./rename.js"
 import { setAccountMachines, setMachinePairing } from "../legacy/devices-bridge.js"
 import { machinePresentation } from "../legacy/js/session/selection.js"
-import { accountMachineNames, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
+import { accountMachineNames, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
 import { PairingRun, dropInvitation, takeInvitation, type PairStart, type PairState } from "./pair.js"
 import { PairPanel, type PairRequest } from "./PairPanel.js"
 import { readThroughRelay } from "./install.js"
@@ -114,6 +114,39 @@ function present(id: string, name: string, platform: string) {
     L.strings,
   )
   return { name: shown.name, label: shown.label, kind: shown.kind }
+}
+
+/** A platform word only when this browser or the account actually supplied one. */
+function platformWord(platform: ReturnType<typeof machineIdentityFacts>["platform"]): string {
+  switch (platform) {
+    case "macos":
+      return nextWord("cloudMachinePlatformMac")
+    case "linux":
+      return nextWord("cloudMachinePlatformLinux")
+    case "linux_aws":
+      return nextWord("cloudMachinePlatformLinuxAWS")
+    default:
+      return nextWord("cloudMachinePlatformUnknown")
+  }
+}
+
+/** Relative last-seen text, from the last authenticated machine envelope this browser observed. */
+function seenWord(at: number | null): string {
+  if (!at) return nextWord("cloudMachineSeenUnknown")
+  // A sender's clock can be a little ahead. "Last seen" cannot truthfully be
+  // in the future from this browser, so clamp that display to now.
+  const seconds = Math.min(0, (at - Date.now()) / 1000)
+  const absolute = Math.abs(seconds)
+  const unit: Intl.RelativeTimeFormatUnit = absolute < 90 * 60 ? "minute" : absolute < 36 * 3600 ? "hour" : "day"
+  const size = unit === "minute" ? 60 : unit === "hour" ? 3600 : 86400
+  const value = Math.round(seconds / size)
+  try {
+    const relative = new Intl.RelativeTimeFormat(document.documentElement.lang || undefined, { numeric: "auto" }).format(value, unit)
+    return nextWord("cloudMachineSeen", { time: relative })
+  } catch {
+    // refusal-ok: a browser refusing a locale is not a machine refusal.
+    return nextWord("cloudMachineSeenAt", { time: new Date(at).toLocaleString() })
+  }
 }
 
 /**
@@ -392,6 +425,16 @@ export function CloudGate({ declared }: { declared: string }) {
     [pair],
   )
 
+  /** Open the guide first; choosing the browser-first path is what mints an offer. */
+  const openPairing = useCallback((machine: { id: string; name: string } | null) => {
+    run.current?.stop()
+    run.current = null
+    setAsking(null)
+    setNaming(null)
+    setPairState({ phase: "idle" })
+    setPairRequest({ mode: "offer", machine })
+  }, [])
+
   /** Answer the machine's link this page was opened with, once the person has said so. */
   const pairInvitation = useCallback(() => {
     const current = session.current
@@ -449,10 +492,10 @@ export function CloudGate({ declared }: { declared: string }) {
     setMachinePairing((id) => {
       const known = machinesRef.current?.find((m) => m.id === id)
       const named = known ? withAccountNames([known], namesRef.current, described, present)[0] : null
-      pairOffer({ id, name: named ? named.name || named.label || id : id })
+      openPairing({ id, name: named ? named.name || named.label || id : id })
     })
     return () => setMachinePairing(null)
-  }, [pairOffer])
+  }, [openPairing])
 
   /** Whether this browser has read `machine`'s own snapshot, and so has its own word for its name. */
   function described(machine: string): boolean {
@@ -633,7 +676,10 @@ export function CloudGate({ declared }: { declared: string }) {
             const account = names.get(id)
             return account ? present(id, account.name, account.platform).label : id
           },
-          onBegin: pairInvitation,
+          onBegin: () => {
+            if (pairRequest.mode === "offer") pairOffer(pairRequest.machine)
+            else pairInvitation()
+          },
           onStop: () => run.current?.stop(),
           onAgain: () => pairOffer(pairRequest.mode === "offer" ? pairRequest.machine : null),
           onClose: closePairing,
@@ -679,7 +725,7 @@ export function CloudGate({ declared }: { declared: string }) {
           onName={setNaming}
           onRename={rename}
           pairing={pairing}
-          onPair={pairOffer}
+          onPair={openPairing}
         />
       )}
     </>
@@ -1065,16 +1111,29 @@ function GateCard(props: {
                   const gone = forgotten.includes(m.id)
                   const count = sessionsFact(m)
                   const name = m.name || m.label || m.id
+                  const identity = machineIdentityFacts(m)
+                  const pairable = !gone && m.pairing === "not_paired"
                   return (
-                    <li key={m.id} data-forgotten={gone ? "true" : undefined}>
+                    <li
+                      key={m.id}
+                      data-forgotten={gone ? "true" : undefined}
+                      data-pairable={pairable ? "true" : undefined}
+                    >
                       <button
                         type="button"
                         data-machine={m.id}
                         disabled={!m.selectable || gone}
                         onClick={() => onChoose(m)}
                       >
-                        <span className="cloud-machine-name">{m.label || m.id}</span>
+                        <span className="cloud-machine-name">{name}</span>
+                        <span className="cloud-machine-identity">
+                          {platformWord(identity.platform)}
+                          {" · "}
+                          {nextWord("cloudMachineID", { id: identity.shortID })}
+                        </span>
                         <span className="cloud-machine-facts">
+                          {seenWord(identity.seenAt)}
+                          {" · "}
                           {typeof count === "object"
                             ? nextWord("cloudMachineSessions", { count: count.count })
                             : count === "unread"
@@ -1090,54 +1149,51 @@ function GateCard(props: {
                                 : T.webStartMachineStale}
                         </span>
                       </button>
-                      {/* Inside the row to look at, beside it in the markup: a
-                          button cannot be nested in a button, and a machine
-                          this browser was never paired with cannot be chosen —
-                          it is exactly the kind that has to be removable, so
-                          this must not share the row's `disabled` either. The
-                          glyph is not a word and is not translated; what a
-                          screen reader says is the label, which names the
-                          machine. */}
-                      {/* The next step for a row that cannot be pressed, on the
-                          row itself: the one place a person meets a machine
-                          this browser cannot read. */}
-                      {!gone && m.pairing === "not_paired" && (
-                        <button
-                          className="cloud-pair"
-                          type="button"
-                          data-pair={m.id}
-                          disabled={forgetting || renaming}
-                          aria-label={nextWord("cloudPairOne", { machine: name })}
-                          onClick={() => onPair({ id: m.id, name })}
-                        >
-                          {nextWord("cloudPair")}
-                        </button>
-                      )}
                       {!gone && (
-                        <button
-                          className="cloud-rename"
-                          type="button"
-                          data-rename={m.id}
-                          disabled={forgetting || renaming}
-                          title={nextWord("cloudRenameOne", { machine: m.name || m.label || m.id })}
-                          aria-label={nextWord("cloudRenameOne", { machine: m.name || m.label || m.id })}
-                          onClick={() => onName(m)}
+                        /* The row and its controls are siblings: nesting buttons
+                           would be invalid, while a disabled unpaired row must
+                           leave Pair, Rename and Forget in the focus order. */
+                        <div
+                          className="cloud-machine-actions"
+                          role="group"
+                          aria-label={nextWord("cloudMachineActions", { machine: name })}
                         >
-                          <span aria-hidden="true">✎</span>
-                        </button>
-                      )}
-                      {!gone && (
-                        <button
-                          className="cloud-forget"
-                          type="button"
-                          data-forget={m.id}
-                          disabled={forgetting}
-                          title={nextWord("cloudForgetOne", { machine: m.name || m.label || m.id })}
-                          aria-label={nextWord("cloudForgetOne", { machine: m.name || m.label || m.id })}
-                          onClick={() => onAsk(m)}
-                        >
-                          <span aria-hidden="true">×</span>
-                        </button>
+                          {pairable && (
+                            <button
+                              className="cloud-pair"
+                              type="button"
+                              data-pair={m.id}
+                              disabled={forgetting || renaming}
+                              title={nextWord("cloudPairOne", { machine: name })}
+                              aria-label={nextWord("cloudPairOne", { machine: name })}
+                              onClick={() => onPair({ id: m.id, name })}
+                            >
+                              {nextWord("cloudPair")}
+                            </button>
+                          )}
+                          <button
+                            className="cloud-rename"
+                            type="button"
+                            data-rename={m.id}
+                            disabled={forgetting || renaming}
+                            title={nextWord("cloudRenameOne", { machine: name })}
+                            aria-label={nextWord("cloudRenameOne", { machine: name })}
+                            onClick={() => onName(m)}
+                          >
+                            <span aria-hidden="true">✎</span>
+                          </button>
+                          <button
+                            className="cloud-forget"
+                            type="button"
+                            data-forget={m.id}
+                            disabled={forgetting}
+                            title={nextWord("cloudForgetOne", { machine: name })}
+                            aria-label={nextWord("cloudForgetOne", { machine: name })}
+                            onClick={() => onAsk(m)}
+                          >
+                            <span aria-hidden="true">×</span>
+                          </button>
+                        </div>
                       )}
                     </li>
                   )

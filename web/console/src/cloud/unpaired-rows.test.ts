@@ -6,8 +6,11 @@
 // platforms, key fingerprints and a revocation stamp.
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
-import { accountMachineNames, sessionsFact, withAccountNames } from "./unpaired-rows.ts"
+import { accountMachineNames, machineIdentityFacts, sessionsFact, withAccountNames } from "./unpaired-rows.ts"
 
 const API = "https://api.example.test"
 
@@ -78,4 +81,34 @@ test("a count is only said where the sessions could be read", () => {
   assert.equal(sessionsFact({ pairing: "unknown", sessions: 0 }), "unknown")
   // Sessions this browser did open are a count whatever the pairing lookup said.
   assert.deepEqual(sessionsFact({ pairing: "unknown", sessions: 3 }), { count: 3 })
+})
+
+test("a row always has a stable id fragment and says only the identity facts it knows", () => {
+  assert.deepEqual(
+    machineIdentityFacts({ id: "mac_51463f04", kind: "linux", observedAt: Date.UTC(2026, 8, 19) }),
+    { shortID: "51463f04", platform: "linux", seenAt: Date.UTC(2026, 8, 19) },
+  )
+  assert.deepEqual(machineIdentityFacts({ id: "short", kind: "unknown", observedAt: null }), {
+    shortID: "short",
+    platform: "unknown",
+    seenAt: null,
+  })
+  assert.deepEqual(machineIdentityFacts({ id: "mac_bad", observedAt: Number.NaN }), {
+    shortID: "mac_bad",
+    platform: "unknown",
+    seenAt: null,
+  })
+})
+
+test("pairing is one action in the row's action group, and opens the two-path guide", () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const gate = readFileSync(resolve(here, "CloudGate.tsx"), "utf8")
+  const panel = readFileSync(resolve(here, "PairPanel.tsx"), "utf8")
+  const css = readFileSync(resolve(here, "cloud.css"), "utf8")
+  assert.match(gate, /className="cloud-machine-actions"/)
+  assert.match(gate, /aria-label=\{nextWord\("cloudMachineActions"/)
+  assert.match(panel, /className="cloud-pair-ways"/)
+  assert.match(panel, /cloudPairFromMachineTitle/)
+  assert.match(panel, /cloudPairFromBrowserTitle/)
+  assert.doesNotMatch(css, /\.cloud-machines \.cloud-pair \{\s*display: block; width: 100%/)
 })
