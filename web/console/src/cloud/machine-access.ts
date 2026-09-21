@@ -13,7 +13,10 @@ interface MachineCapabilityClient {
 }
 
 /**
- * A successfully verified and decrypted envelope is the pairing capability.
+ * A successfully opened pairing handover or a verified and decrypted envelope
+ * is the pairing capability. The handover is the bootstrap proof: it was
+ * authenticated with the out-of-band offer and stored this machine's keys,
+ * before a fresh browser could possibly have opened one of its envelopes.
  *
  * The copied client separately remembers failed pairing lookups. A renewal or
  * another tab completing a pairing can therefore leave both facts in memory,
@@ -21,14 +24,17 @@ interface MachineCapabilityClient {
  * that contradiction at the typed boundary: clear the stale negative memory
  * and draw the machine from the cryptographic proof.
  */
-export async function machinesByCapability(client: MachineCapabilityClient): Promise<MachineAnswer> {
+export async function machinesByCapability(
+  client: MachineCapabilityClient,
+  claimed: ReadonlySet<string> = new Set(),
+): Promise<MachineAnswer> {
   const answer = await client.machines()
   const verified = client.viewerVerified
-  if (!verified) return answer
+  if (!verified && claimed.size === 0) return answer
 
   let changed = false
   const machines = answer.machines.map((machine) => {
-    if (machine.pairing === "paired" || !verified.has(machine.id)) return machine
+    if (machine.pairing === "paired" || (!claimed.has(machine.id) && !verified?.has(machine.id))) return machine
     changed = true
     client.forgetMachinePairingAnswer?.(machine.id)
     return { ...machine, pairing: "paired" as const, selectable: true }

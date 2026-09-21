@@ -34,9 +34,9 @@ export function PairPanel(props: {
   onStop: () => void
   onAgain: () => void
   onClose: () => void
-  onReload: () => void
+  onPaired: () => void
 }) {
-  const { request, state, nameOf, onBegin, onStop, onAgain, onClose, onReload } = props
+  const { request, state, nameOf, onBegin, onStop, onAgain, onClose, onPaired } = props
   const T = L.strings
   const [copied, setCopied] = useState<"" | "yes" | "no">("")
   const field = useRef<HTMLTextAreaElement>(null)
@@ -236,8 +236,8 @@ export function PairPanel(props: {
             </div>
             {yourKey(state.fingerprint)}
             <div className="buttons">
-              <button className="chip" type="button" id="cloud-pair-reload" ref={first} onClick={onReload}>
-                {nextWord("cloudPairReload")}
+              <button className="chip" type="button" id="cloud-pair-close" ref={first} onClick={onPaired}>
+                {T.webClose}
               </button>
             </div>
           </>

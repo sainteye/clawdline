@@ -51,3 +51,22 @@ test("an account row without decryption proof stays unpaired", async () => {
   assert.equal(answer.syncing, true)
   assert.equal(answer.retryAfterMs, 800)
 })
+
+test("a newly claimed handover bootstraps a machine before its first envelope opens", async () => {
+  const unpaired = row("linux", "not_paired")
+  const forgotten: string[] = []
+  const client = {
+    viewerVerified: new Map(),
+    forgetMachinePairingAnswer(machine: string) {
+      forgotten.push(machine)
+    },
+    async machines() {
+      return { machines: [unpaired], syncing: false, retryAfterMs: 0 }
+    },
+  }
+
+  const answer = await machinesByCapability(client, new Set(["linux"]))
+  assert.equal(answer.machines[0].pairing, "paired")
+  assert.equal(answer.machines[0].selectable, true)
+  assert.deepEqual(forgotten, ["linux"])
+})

@@ -1230,10 +1230,18 @@ transport 的 `Options` 加了 `TLSConfig`／`NetDial`，daemon 裡都是 nil。
 `cloud-client.js` 的 `_machineRows()` 原本讓後者先贏，於是同一列可以畫出剛解密得到的上次看到時間與
 session 數，最後卻說「尚未與這個瀏覽器配對」。
 
-這不是機器 roster 能回答的問題。`paired-devices-v1.json` 只證明機器收下瀏覽器公鑰；真正能回答
-「這個瀏覽器現在是不是配對好了」的是瀏覽器有沒有成功驗簽並解密機器信封。hosted console 的 typed
-boundary 現在用 `viewerVerified` 校正舊的負面記憶，並清掉該 client 的 pairing miss。沒有解密證據的
-account row 仍是 `not_paired`，不會因為帳號認得它或機器 roster 有一列就猜成 paired。
+這不是機器 roster 或 control plane 能回答的問題。`paired-devices-v1.json` 只證明機器收下瀏覽器公鑰；
+control plane 保存的是帳號上的 machine route 與一次性的 pairing handover，不保存一個可供
+`client.machines()` 查詢的「這個瀏覽器已配對這台機器」欄位。該欄位完全由瀏覽器本地推導：key store
+查詢、失敗記憶，以及成功驗簽並解密的信封。hosted console 的 typed boundary 用 `viewerVerified` 校正
+舊的負面記憶，並清掉該 client 的 pairing miss。
+
+但是一個從沒解開過信封的瀏覽器還缺第一步：machine row 已經因先前的失敗被算成 `not_paired`，而舊的
+校正只承認 `viewerVerified`，所以剛剛成功解開並持久化的 pairing handover 沒有進入列的計算。現在這份
+經過帶外 offer、X25519 phase key 與 AEAD 驗證的 handover 也是 bootstrap capability；它一成功，該
+machine id 就立刻校正成 `paired` 並可選，連線同時重建，讓 relay 重播的 `orch/` 信封接手成為後續證據。
+沒有 handover 或解密證據的 account row 仍是 `not_paired`，不會因為帳號認得它或機器 roster 有一列就
+猜成 paired。
 
 瀏覽器先出碼的路徑另有一個不同的斷點。`clawdline cloud pair -offer …` 做完時，機器只把一次性的
 handover 放進 control plane；瀏覽器還得拿著產生 offer 時那把 X25519 私鑰呼叫 `pairing/claim`，解開後
@@ -1243,4 +1251,6 @@ handover 放進 control plane；瀏覽器還得拿著產生 offer 時那把 X255
 現在 offer **顯示以前**，待領取資料與 non-extractable X25519 `CryptoKey` 會先以 structured clone 寫進
 IndexedDB。卡片關掉只停止卡片本身的等待，背景會繼續 claim；頁面重載後，登入 session 一恢復也會讀出
 同一筆繼續 claim。成功後才刪除；具名的 terminal pairing 答案或過期會刪除；沒有型別的網路中斷保留到
-下一次頁面／連線再試。這沒有把私鑰變成可匯出的 bytes，也沒有讓 cloud 看到它。
+下一次頁面／連線再試。畫面仍在等待時的 claim 也走同一個成功出口：記下 bootstrap capability 並自動
+重連，不再要求人按「重新載入」才讓機器列得知結果。這沒有把私鑰變成可匯出的 bytes，也沒有讓 cloud
+看到它；未持有 handover 所寫金鑰的登入裝置即使收到同一份 `orch/` ciphertext，也無法驗簽解密。

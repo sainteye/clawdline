@@ -220,6 +220,10 @@ export function CloudGate({ declared }: { declared: string }) {
   const [names, setNames] = useState<ReadonlyMap<string, AccountName>>(new Map())
   const [connectionVersion, setConnectionVersion] = useState(0)
   const pairingStore = useMemo(() => browserPendingPairings(), [])
+  // An opened handover is the first cryptographic proof for a browser that has
+  // never decrypted this machine. Keep it until the reconnect below has read
+  // the machine's retained envelopes and `viewerVerified` can take over.
+  const claimedPairings = useRef(new Set<string>())
   const run = useRef<PairingRun | null>(null)
   const recoveringPairing = useRef<Promise<void> | null>(null)
   const invitation = useRef<PairingInvitation | null>(null)
@@ -271,7 +275,7 @@ export function CloudGate({ declared }: { declared: string }) {
     const current = client.current
     if (!current) return
     if (recheck.current) clearTimeout(recheck.current)
-    machinesByCapability(current).then(
+    machinesByCapability(current, claimedPairings.current).then(
       (answer) => {
         setMachineList(machineListAnswer(answer))
         // Inside the window after connecting, machines are still arriving
@@ -408,7 +412,10 @@ export function CloudGate({ declared }: { declared: string }) {
     if (!current || recoveringPairing.current || active === "asking" || active === "waiting") return
     const recovery = resumePendingPairing(current, pairingStore)
       .then((opened) => {
-        if (opened) setConnectionVersion((version) => version + 1)
+        if (opened) {
+          claimedPairings.current.add(opened.machineID)
+          setConnectionVersion((version) => version + 1)
+        }
       })
       .catch((error: unknown) => {
         // A live untyped interruption stays durable for the next reconnect.
@@ -439,6 +446,13 @@ export function CloudGate({ declared }: { declared: string }) {
     void next.begin().then((state) => {
       // A machine's link is good for one answer, whatever the answer was.
       if (request.mode === "invitation") dropInvitation(sessionStorage)
+      // The active card used to stop here and require a reload. Treat its
+      // authenticated handover as the bootstrap capability immediately, then
+      // reconnect so the relay replays the machine's retained snapshots.
+      if (state.phase === "paired") {
+        claimedPairings.current.add(state.machineID)
+        setConnectionVersion((version) => version + 1)
+      }
       // Stopping only puts the card away. The offer and its private claim key
       // remain live, so settle them without requiring this UI to stay open.
       if (state.phase === "stopped") recoverPairing()
@@ -550,7 +564,7 @@ export function CloudGate({ declared }: { declared: string }) {
           setAccountMachines(async () => {
             const current = client.current
             if (!current) return { machines: [], syncing: true, retryAfterMs: 1000 }
-            const answer = await machinesByCapability(current)
+            const answer = await machinesByCapability(current, claimedPairings.current)
             // The same two corrections the gate's list makes: the account's
             // name where this browser has none of its own, and no session
             // count where it could not read the sessions to count them.
@@ -730,10 +744,10 @@ export function CloudGate({ declared }: { declared: string }) {
           onStop: () => run.current?.stop(),
           onAgain: () => pairOffer(pairRequest.mode === "offer" ? pairRequest.machine : null),
           onClose: closePairing,
-          // Everything this browser had been told about the machine was told
-          // before it held the key; a fresh page reads it all again, and the
-          // relay replays what the machine last published.
-          onReload: () => location.reload(),
+          // Pairing already reconnected the line and bootstrapped the row from
+          // the authenticated handover. Closing reveals that updated list;
+          // the fingerprint stays here until the person has compared it.
+          onPaired: closePairing,
         }
       : null
   const shown = useMemo<MachineListState>(
