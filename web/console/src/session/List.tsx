@@ -4,7 +4,6 @@ import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { requestConfirm } from "../overlays/events.js"
 import { ACTION_WIDTH, revealFor, swipes, type Reveal } from "./swipe.js"
-import "./swipe.css"
 
 export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: number; id?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -328,44 +327,31 @@ export function Row({
         type="button"
         hidden={!swiped}
         data-closeability={reveal.state}
-        aria-label={
-          reveal.proven
-            ? nextWord("swipeEndLabel", { session: name })
-            : nextWord("swipeWhyLabel", { session: name, why: reveal.word })
-        }
-        title={[reveal.word, reveal.why].filter(Boolean).join(" · ")}
+        aria-label={nextWord("swipeEndLabel", { session: name })}
+        title={nextWord("swipeEndLabel", { session: name })}
         onClick={(event) => {
           event.stopPropagation()
           requestConfirm({ kind: "end", id: row.id, opener: event.currentTarget, subject: name, focus: "cancel" })
         }}
       >
         <span className="word">{reveal.word}</span>
-        {reveal.why && <span className="why">{reveal.why}</span>}
       </button>
     </li>
   )
 }
 
 /**
- * What the uncovered control says for this row, in the reader's language.
+ * The action the uncovered control offers, with the row's closeability kept
+ * only as state for diagnostics and tests.
  *
- * The projection and the words are the copied modules' — the same badge the
- * state line already draws beside the work state (`closeabilityHTML`) — so a
- * row says one thing about itself in both places. `swipe.ts` holds the rule
- * and imports nothing, which is what lets `node --test` load it.
+ * `StateLine` already draws the closeability badge beside the work state. The
+ * control therefore says only what pressing it does: open the named close
+ * confirmation. That confirmation is where the complete reasons and the
+ * second press live. `swipe.ts` holds the rule without importing the UI, so
+ * `node --test` can guard it.
  */
 function swipeReveal(row: SessionRow): Reveal {
-  const T = L.strings
-  const closeable = L.closeabilityOf(row)
-  const obligations = closeable.reasons.filter((reason) => reason.kind === "obligation").length
-  const forms = String(T.closeabilityBlocked || "").split("\u001f")
-  return revealFor(closeable, {
-    end: T.webEndSession,
-    blocked: L.fillString(obligations === 1 ? forms[0] : forms[1] || forms[0], { n: obligations }),
-    needsAttestation: T.closeabilityNeedsAttestation,
-    unknown: T.closeabilityUnknown,
-    mover: L.closeabilityMover(row),
-  })
+  return revealFor(L.closeabilityOf(row), { end: nextWord("swipeCloseAction") })
 }
 
 /**

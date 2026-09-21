@@ -42,6 +42,7 @@ const SAFE = pane(701)
 const BLOCKED = pane(702)
 const UNKNOWN = pane(703)
 const SPARE = pane(704)
+const NEEDS_ATTESTATION = pane(705)
 
 type Row = Record<string, unknown>
 
@@ -86,6 +87,18 @@ function unknownCloseability(): Row {
   }
 }
 
+/** The broker's checks passed, but this session has not made its own attestation. */
+function needsAttestationCloseability(): Row {
+  return {
+    ...safeCloseability(),
+    attestation_id: null,
+    mover: { kind: "session", self: true, session_id: NEEDS_ATTESTATION },
+    reasons: [{ code: "not_attested", kind: "attestation", mover: { kind: "session", self: true, session_id: NEEDS_ATTESTATION } }],
+    state: "needs_attestation",
+    version: "cl1_needs_attestation",
+  }
+}
+
 function row(id: string, label: string, closeability: Row, movedAt: number, extra: Row = {}): Row {
   return {
     id,
@@ -104,13 +117,14 @@ function row(id: string, label: string, closeability: Row, movedAt: number, extr
 }
 
 /**
- * Four rows: one of each closeability, and a fourth whose only job is to move.
+ * One row for every closeability, and a fifth whose only job is to move.
  *
  * The order is the page's own rule — working first, then the idle rows by when
- * each last moved — so `BLOCKED, SAFE, UNKNOWN, SPARE`. Moving `SPARE` to the
- * front of the idle band is what the held order has to refuse to follow.
+ * each last moved — so `BLOCKED, SAFE, NEEDS_ATTESTATION, UNKNOWN, SPARE`.
+ * Moving `SPARE` to the front of the idle band is what the held order has to
+ * refuse to follow.
  */
-const MOVED = { safe: 300, unknown: 200, spare: 100, spareAfter: 400 }
+const MOVED = { safe: 300, needsAttestation: 250, unknown: 200, spare: 100, spareAfter: 400 }
 let spareMoved = MOVED.spare
 
 function rows(): Row[] {
@@ -121,13 +135,14 @@ function rows(): Row[] {
       work_state: "working",
       line: "1m",
     }),
+    row(NEEDS_ATTESTATION, "Echo has not checked in", needsAttestationCloseability(), MOVED.needsAttestation),
     row(UNKNOWN, "Charlie cannot be read", unknownCloseability(), MOVED.unknown),
     row(SPARE, "Delta is finished too", safeCloseability(), spareMoved),
   ]
 }
 
-const ORDER_AT_REST = [BLOCKED, SAFE, UNKNOWN, SPARE]
-const ORDER_ONCE_SPARE_MOVED = [BLOCKED, SPARE, SAFE, UNKNOWN]
+const ORDER_AT_REST = [BLOCKED, SAFE, NEEDS_ATTESTATION, UNKNOWN, SPARE]
+const ORDER_ONCE_SPARE_MOVED = [BLOCKED, SPARE, SAFE, NEEDS_ATTESTATION, UNKNOWN]
 
 // ---- the stand-in daemon
 
@@ -327,6 +342,7 @@ const PROBE = `(() => {
     swipeX: swiped ? swiped.style.getPropertyValue("--swipe-x") : "",
     action: swiped ? (swiped.querySelector(".swipe-end")?.textContent ?? null) : null,
     actionKind: swiped ? (swiped.querySelector(".swipe-end")?.dataset.closeability ?? null) : null,
+    rowState: swiped ? (swiped.querySelector(".state")?.textContent ?? null) : null,
     ptrHeight: ptr ? ptr.style.height : "",
     ptrWord: label ? label.textContent : "",
     scrollTop: document.getElementById("list-scroll")?.scrollTop ?? -1,
@@ -343,6 +359,7 @@ interface Seen {
   swipeX: string
   action: string | null
   actionKind: string | null
+  rowState: string | null
   ptrHeight: string
   ptrWord: string
   scrollTop: number
@@ -610,7 +627,7 @@ test("a left swipe uncovers a close, and the swipe itself closes nothing", () =>
   inTab(async (tab) => {
     await list(tab)
     const open = await swipeOpen(tab, SAFE)
-    assert.equal(open.action, "關閉 session", "the uncovered control offers the close")
+    assert.equal(open.action, "關閉 Session", "the uncovered control says what pressing it does")
     assert.equal(open.actionKind, "safe")
     assert.equal(open.swipeX, "-126px", "and the row's contents have moved out of its way")
     await tab.shot("swipe-safe")
@@ -645,23 +662,51 @@ test("the second press is what closes it, once, under a key a retry can be answe
     assert.ok(closes[0].key.length > 0, "under an Idempotency-Key, so a lost answer is not a second close")
   }))
 
-test("a row with something still owed says what is standing, instead of offering the close", () =>
+test("a row with something still owed still uncovers the close action", () =>
   inTab(async (tab) => {
     await list(tab)
     const open = await swipeOpen(tab, BLOCKED)
     assert.equal(open.actionKind, "blocked")
-    assert.equal(open.action, "還有 1 項未了結由另一個 session 推進", "what is standing, and who moves it")
-    assert.notEqual(open.action, "關閉 session")
+    assert.equal(open.action, "關閉 Session", "the cell says what pressing it does, not why the close is blocked")
+    assert.match(open.rowState ?? "", /還有 1 項未了結/, "the row itself keeps the live closeability status")
+    await tab.press("li.row[data-swipe='open'] > .swipe-end")
+    const asked = await tab.until("the blocked confirmation is up", (s) => s.sheet !== null)
+    assert.equal(asked.sheet, "要關閉 Bravo is still working 嗎？")
+    assert.match(asked.sheetSay ?? "", /Agent 會先結束，接著關閉它的終端機分頁。/, "it says what closing does")
+    assert.match(asked.sheetSay ?? "", /broker 無法證明這個 session 可以安全關閉。/, "it says closing is not proven safe")
+    assert.match(asked.sheetSay ?? "", /terminal_working · 由另一個 session 推進/, "it says what blocks closing and who moves it")
     await tab.shot("swipe-blocked")
   }))
 
-test("a row nobody could read says so, rather than being drawn as closeable", () =>
+test("an unknown row keeps saying unknown while its swipe remains an action", () =>
   inTab(async (tab) => {
     await list(tab)
     const open = await swipeOpen(tab, UNKNOWN)
     assert.equal(open.actionKind, "unknown")
-    assert.equal(open.action, "無法判斷能否關閉重新讀一次才知道")
+    assert.equal(open.action, "關閉 Session")
+    assert.match(open.rowState ?? "", /無法判斷能否關閉/, "unknown remains distinct from blocked on the row")
+    await tab.press("li.row[data-swipe='open'] > .swipe-end")
+    const asked = await tab.until("the unknown confirmation is up", (s) => s.sheet !== null)
+    assert.equal(asked.sheet, "要關閉 Charlie cannot be read 嗎？")
+    assert.match(asked.sheetSay ?? "", /Agent 會先結束，接著關閉它的終端機分頁。/)
+    assert.match(asked.sheetSay ?? "", /broker 無法證明這個 session 可以安全關閉。/)
+    assert.match(asked.sheetSay ?? "", /session_identity_ambiguous · 重新讀一次才知道/)
     await tab.shot("swipe-unknown")
+  }))
+
+test("a session awaiting attestation explains that inside its named confirmation", () =>
+  inTab(async (tab) => {
+    await list(tab)
+    const open = await swipeOpen(tab, NEEDS_ATTESTATION)
+    assert.equal(open.actionKind, "needs_attestation")
+    assert.equal(open.action, "關閉 Session")
+    assert.match(open.rowState ?? "", /等這個 session 自己確認/)
+    await tab.press("li.row[data-swipe='open'] > .swipe-end")
+    const asked = await tab.until("the attestation confirmation is up", (s) => s.sheet !== null)
+    assert.equal(asked.sheet, "要關閉 Echo has not checked in 嗎？")
+    assert.match(asked.sheetSay ?? "", /Agent 會先結束，接著關閉它的終端機分頁。/)
+    assert.match(asked.sheetSay ?? "", /這不是系統發現工作尚未完成。/)
+    assert.match(asked.sheetSay ?? "", /這個 session 還沒確認是否留有本機修改、未交付事項或 Clawdline 以外的工作。/)
   }))
 
 test("one row is uncovered at a time, and the press that puts one away opens no session", () =>

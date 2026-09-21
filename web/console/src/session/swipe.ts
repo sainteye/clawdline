@@ -93,53 +93,29 @@ export interface Projected {
   reasons: readonly { kind: string; code: string }[]
 }
 
-/** The words the uncovered control can say, in the reader's language. */
+/** The action the uncovered control names, in the reader's language. */
 export interface RevealWords {
-  /** `webEndSession`. */
   end: string
-  /** `closeabilityBlocked`, already filled for the number of obligations. */
-  blocked: string
-  /** `closeabilityNeedsAttestation`. */
-  needsAttestation: string
-  /** `closeabilityUnknown`. */
-  unknown: string
-  /** `closeabilityMover…`: who moves what is standing in the way, or "". */
-  mover: string
 }
 
 /**
  * What the uncovered control says for one row.
  *
- * **A row nobody can say is closeable does not get a close button.** The three
- * states are three different sentences, because the alternative is either a
- * button that pretends the reading said something it did not, or a row that
- * will not move and never says why — and of the thirteen rows on this machine
- * on 2026-09-20, six were `unknown` for four different reasons. So the control
- * is uncovered for every row, and what it says is what the reading says: the
- * close for a proven one, the obligation for a blocked one, and the absence
- * itself for a row whose reading could not prove anything.
- *
- * `why` is the second line, and it is who moves it — the one thing a reader can
- * act on. The reasons themselves are the confirmation's, in full, because that
- * is where the decision is made and a 126px cell is not.
+ * Pressing this control always opens the close confirmation; it never performs
+ * the close. Its label therefore stays the action in all four states. The row's
+ * state line already says whether closing is safe, blocked, awaiting an
+ * attestation, or unknown, and the confirmation names the complete reasons.
  */
 export interface Reveal {
   /** `data-closeability` on the control. */
   state: "safe" | "blocked" | "needs_attestation" | "unknown"
   word: string
-  why: string
-  /** The reading proves this can be closed. Only `safe` is ever true. */
-  proven: boolean
 }
 
 export function revealFor(projected: Projected, words: RevealWords): Reveal {
   const state = projected.state
-  if (state === "safe") return { state: "safe", word: words.end, why: "", proven: true }
-  if (state === "blocked") return { state: "blocked", word: words.blocked, why: words.mover, proven: false }
-  if (state === "needs_attestation") {
-    return { state: "needs_attestation", word: words.needsAttestation, why: words.mover, proven: false }
-  }
-  return { state: "unknown", word: words.unknown, why: words.mover, proven: false }
+  if (state === "safe" || state === "blocked" || state === "needs_attestation") return { state, word: words.end }
+  return { state: "unknown", word: words.end }
 }
 
 interface Drag {

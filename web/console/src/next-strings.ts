@@ -177,8 +177,8 @@ const words = {
     // would act on: "this session" is enough beside the conversation and
     // nothing at all beside thirteen rows.
     endNamedTitle: "Close {session}?",
+    swipeCloseAction: "Close Session",
     swipeEndLabel: "Close {session}",
-    swipeWhyLabel: "{session}: {why}. Read why before closing it.",
   },
   "zh-Hant": {
     olderNotRead: "更早的對話沒有載入：這一頁只讀對話記錄的最後 {window}，前面還有 {bytes} 沒有讀。",
@@ -304,8 +304,8 @@ const words = {
     linksDeployWhen: "那個工具最後一次寫下這件事：{when}。",
     linksTruncated: "找到的位址比這份清單裝得下的多，其餘沒有列出。",
     endNamedTitle: "要關閉 {session} 嗎？",
+    swipeCloseAction: "關閉 Session",
     swipeEndLabel: "關閉 {session}",
-    swipeWhyLabel: "{session}：{why}。先看清楚原因再決定要不要關。",
   },
 } as const
 
