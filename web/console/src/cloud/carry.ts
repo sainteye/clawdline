@@ -51,6 +51,7 @@ export type CarriedWord = keyof typeof CARRIED
  * one of them.
  */
 export const CARRIED = {
+  agent: "GET /v1/sessions/{id}/agents/{agent}?limit=",
   answer: "POST /v1/sessions/{id}/key",
   board: "GET /v1/board?project=&item=",
   "board.items": "GET /v1/board?project=&audience=&cursor=&limit=",
@@ -112,7 +113,6 @@ export const CARRIED = {
  * that question a machine can answer.
  */
 export const DEFERRED = {
-  agent: "An agent's own record is not read over Clawdline Cloud yet: open it on the machine.",
   document: "A document's text is not read over Clawdline Cloud yet: open it on the machine.",
   documents: "A session's documents are not listed over Clawdline Cloud yet: open them on the machine.",
   // `key` and `answer` are one command under two names on the wire. This
@@ -142,7 +142,7 @@ export const DEFERRED = {
  * `git` needed and did not have — the day `git-bridge.ts` landed, the entry
  * had to say so.
  */
-export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["agent", "document", "documents", "screen"]
+export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["document", "documents", "screen"]
 
 /**
  * Words the machine knows and has nothing behind. Asking for one is answered
@@ -257,8 +257,6 @@ export function uncarriedWordOf(method: string, path: string): string {
   }
   if (head === "sessions" && a && b) {
     switch (b) {
-      case "agents":
-        return segments.length === 4 && segments[3] ? "agent" : ""
       case "screen":
         return "screen"
       case "skills":

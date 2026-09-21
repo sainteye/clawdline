@@ -486,6 +486,15 @@ export class RelayReader {
         this.only(url, path)
         return await this.machineRead(method, path, "project-worktree-lifecycle", { project })
       }
+      const agent = sessionAgent(path)
+      if (agent) {
+        const q = this.only(url, path, "limit")
+        return await this.machineRead(method, path, "agent", {
+          session: agent.session,
+          agent: agent.agent,
+          limit: clampedWhole(q.limit, 200, 1, 1000),
+        })
+      }
       switch (path) {
         case "/v1/sessions":
           this.note(method, path, "local")
@@ -1046,6 +1055,27 @@ const BOARD_PAGE_DEFAULT = 30
 function whole(value: string | undefined, fallback: number): number {
   const n = Number(value)
   return value !== undefined && Number.isSafeInteger(n) && n >= 0 ? n : fallback
+}
+
+/** An integer query field clamped the same way the local route clamps it. */
+function clampedWhole(value: string | undefined, fallback: number, low: number, high: number): number {
+  if (value === undefined || !/^[+-]?\d+$/.test(value)) return fallback
+  const n = Number(value)
+  if (!Number.isSafeInteger(n)) return fallback
+  return Math.min(high, Math.max(low, n))
+}
+
+/** The two ids in `/v1/sessions/{session}/agents/{agent}`, decoded after splitting. */
+function sessionAgent(path: string): { session: string; agent: string } | null {
+  const parts = path.split("/")
+  if (parts.length !== 6 || parts[1] !== "v1" || parts[2] !== "sessions" || parts[4] !== "agents") return null
+  try {
+    const session = decodeURIComponent(parts[3])
+    const agent = decodeURIComponent(parts[5])
+    return session && agent ? { session, agent } : null
+  } catch {
+    return null
+  }
 }
 
 /**

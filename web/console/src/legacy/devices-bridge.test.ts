@@ -12,7 +12,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts. It sits on one line because the directive answers for the line the path is on.
-import { DEVICES_ELEMENT_IDS, bindDevices, devicesLede, forgetLocalPlatform, localMachineKind, localMachines, offerPairing, type MachineAnswer, setAccountMachines, setMachinePairing } from "./devices-bridge.ts"
+import { DEVICES_ELEMENT_IDS, bindDevices, devicesLede, forgetLocalPlatform, localMachineKind, localMachines, offerForgetting, offerLastSeen, offerPairing, type MachineAnswer, setAccountMachines, setMachineForgetting, setMachinePairing } from "./devices-bridge.ts"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
 import { nextWord } from "../next-strings.ts"
 
@@ -134,6 +134,7 @@ function bound(doc: Doc) {
 
 test.afterEach(() => {
   setAccountMachines(null)
+  setMachineForgetting(null)
   setMachinePairing(null)
   forgetLocalPlatform()
 })
@@ -339,4 +340,56 @@ test("with nothing that can pair, the card keeps the copied sentence and gets no
   assert.equal(offerPairing(rows, PAIR_WORDS), 0)
   assert.equal(rows.children[2].all("device-start device-pair").length, 0)
   assert.notEqual(rows.children[2].all("device-help")[0].textContent, nextWord("devicesPairHelp"))
+})
+
+const FORGET_WORDS = {
+  forget: () => nextWord("cloudForget"),
+  forgetOne: (machine: string) => nextWord("cloudForgetOne", { machine }),
+}
+
+test("every account machine card opens the existing Forget action with its full id", async () => {
+  setAccountMachines(() => Promise.resolve(ACCOUNT))
+  const asked: string[] = []
+  setMachineForgetting((machine: string) => asked.push(machine))
+  const doc = new Doc()
+  const { page } = bound(doc)
+  page.enter()
+  await page.load()
+
+  const rows = doc.node("devices-rows")
+  assert.equal(offerForgetting(rows, FORGET_WORDS), 2)
+  const buttons = rows.all("device-start device-forget")
+  assert.equal(buttons.length, 2)
+  assert.equal(buttons[0].textContent, nextWord("cloudForget"))
+  assert.equal(buttons[0].title, nextWord("cloudForgetOne", { machine: "Mac · Studio" }))
+  buttons[1].onclick?.()
+  assert.deepEqual(asked, ["machine-two"], "the confirmation gets the account row's full id")
+  assert.equal(offerForgetting(rows, FORGET_WORDS), 0, "decoration is idempotent")
+})
+
+test("account cards say when this browser last saw them, or that it never has", async () => {
+  setAccountMachines(() => Promise.resolve({
+    ...ACCOUNT,
+    machines: [ACCOUNT.machines[0], { ...ACCOUNT.machines[1], observedAt: null, freshness: "unknown" }],
+  }))
+  const doc = new Doc()
+  const { page } = bound(doc)
+  page.enter()
+  await page.load()
+
+  const rows = doc.node("devices-rows")
+  assert.equal(offerLastSeen(rows, { seen: (at) => at ? `seen:${at}` : "never seen" }), 2)
+  assert.equal(rows.children[0].all("device-last-seen")[0].textContent, "seen:1")
+  assert.equal(rows.children[1].all("device-last-seen")[0].textContent, "never seen")
+  assert.equal(offerLastSeen(rows, { seen: () => "again" }), 0, "the evidence is added once")
+})
+
+test("a locally served Devices page offers no account revoke", async () => {
+  const doc = new Doc()
+  const { page } = bound(doc)
+  page.enter()
+  await page.load()
+
+  assert.equal(offerForgetting(doc.node("devices-rows"), FORGET_WORDS), 0)
+  assert.equal(doc.node("devices-rows").all("device-start device-forget").length, 0)
 })
