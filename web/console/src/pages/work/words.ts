@@ -29,12 +29,12 @@ const words = {
     sweepStalled: "The board's sweep has stopped: a landing will not close its item until it runs again.",
     more: "{n} more",
 
-    sectionDecide: "Waiting for you",
+    sectionDecide: "Deliveries to close, questions to decide",
     sectionActive: "In progress",
     sectionScheduled: "Scheduled this week",
     sectionDone: "Recently finished",
     sectionEmpty: "Nothing here right now.",
-    decideLede: "Deliveries waiting to be closed, and questions a session asked you.",
+    decideLede: "Work already on this board whose delivery needs closing, and questions a session asked you.",
 
     toConfirm: "To confirm",
     toConfirmLede:
@@ -159,12 +159,12 @@ const words = {
     sweepStalled: "看板的巡檢停了：在它恢復之前，落地不會自動收掉對應的項目。",
     more: "還有 {n} 項",
 
-    sectionDecide: "等你決定",
+    sectionDecide: "交付待收尾、問題待決定",
     sectionActive: "進行中",
     sectionScheduled: "本週排入",
     sectionDone: "最近完成",
     sectionEmpty: "這一區目前沒有東西。",
-    decideLede: "等著收尾的交付，以及 session 問你的事。",
+    decideLede: "已在看板上的工作所留下、等著收尾的交付，以及 session 問你的事。",
 
     toConfirm: "待確認",
     toConfirmLede: "還成立的問題。主體落地或被別的方式追蹤了，它會自己退場；7 天沒有回答，這件事就只留在 session 的待辦裡。",

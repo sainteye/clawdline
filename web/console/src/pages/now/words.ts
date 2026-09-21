@@ -48,13 +48,13 @@ const words = {
     owedWhoExecutor: "The session doing it",
     owedWhoRoot: "Its root",
 
-    waitingTitle: "Waiting for you",
-    waitingLede: "Proposals still to confirm, and questions a session asked you.",
+    waitingTitle: "Proposals to confirm, questions to answer",
+    waitingLede: "Whether to track each proposal, and questions a session is waiting for you to answer.",
     waitingNone: "Nothing is waiting for you.",
     waitingProposals: "{n} to confirm",
     waitingDecisions: "{n} to answer",
     waitingOldest: "Oldest: {age}",
-    waitingGo: "Open the board",
+    waitingGo: "Handle proposals to confirm",
 
     freshCurrent: "Read just now.",
     freshStale: "Read, and short: part of this source could not be reached, so there is more than this.",
@@ -99,13 +99,13 @@ const words = {
     owedWhoExecutor: "正在做它的那個 session",
     owedWhoRoot: "它的 root",
 
-    waitingTitle: "等你回答",
-    waitingLede: "還沒確認的提議，以及 session 問你的問題。",
+    waitingTitle: "提議待確認、問題待回答",
+    waitingLede: "是否把提議納入追蹤，以及 session 等你回答的問題。",
     waitingNone: "沒有在等你的事。",
     waitingProposals: "{n} 筆待確認",
     waitingDecisions: "{n} 筆等你決定",
     waitingOldest: "最老的：{age}",
-    waitingGo: "去看板",
+    waitingGo: "處理待確認的提議",
 
     freshCurrent: "剛剛讀到的。",
     freshStale: "讀到了，但不齊：這個來源有一部分連不上，所以實際上不只這些。",

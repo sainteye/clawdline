@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import * as L from "../../legacy/bridge.js"
 import {
   SECTIONS,
@@ -12,6 +12,7 @@ import {
 } from "./api.js"
 import { openTimeline } from "../../legacy/timeline-bridge.js"
 import { requestPage } from "../../overlays/index.js"
+import { proposalFoldShouldOpen } from "./fold.js"
 import { ownerWords, reasonWords, taskWords, when } from "./shared.js"
 import { workWord, type WorkWord } from "./words.js"
 import { readAnswered, type ReadState } from "../../read-state.js"
@@ -423,8 +424,21 @@ function ProposalsFold({
   const rows = proposals ?? []
   const now = Date.now() / 1000
   const groups = grouped(rows)
+  const [open, setOpen] = useState(false)
+  const previousTotal = useRef<number | null>(null)
+
+  // The Now page's action opens this page. When proposals have arrived,
+  // their answer controls must therefore be visible without a second,
+  // undiscoverable press on a folded summary. A person may still close the
+  // fold; the next 30-second refresh does not force it open again unless the
+  // pending total actually changes.
+  useEffect(() => {
+    if (proposalFoldShouldOpen(previousTotal.current, total)) setOpen(true)
+    previousTotal.current = total
+  }, [total])
+
   return (
-    <details className="work-fold" id="work-confirm">
+    <details className="work-fold" id="work-confirm" open={open} onToggle={(ev) => setOpen(ev.currentTarget.open)}>
       <summary>
         <strong>{workWord("toConfirm")}</strong>
         <span className="work-badge" data-zero={total === 0 ? "" : undefined}>
