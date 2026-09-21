@@ -179,11 +179,16 @@ const (
 	// answer, so it is neither a decline nor a default, and the row stays
 	// with WithdrawnReason saying which fact ended it.
 	ProposalWithdrawn ProposalState = "withdrawn"
+	// ProposalResolved says somebody inspected the reported condition and
+	// recorded evidence that it was already completed or no longer existed.
+	// Unlike `no`, this is a fact about the subject and permanently closes the
+	// line to another proposal.
+	ProposalResolved ProposalState = "resolved"
 )
 
 // ProposalStates is every state a proposal can be read in, in the order the
 // counts are listed.
-var ProposalStates = []ProposalState{ProposalPending, ProposalAnswered, ProposalExpired, ProposalWithdrawn}
+var ProposalStates = []ProposalState{ProposalPending, ProposalAnswered, ProposalExpired, ProposalWithdrawn, ProposalResolved}
 
 // Why a pending proposal was withdrawn. Each is a fact about the subject,
 // read again on the sweep from the same rows the proposal was made from.
@@ -252,6 +257,7 @@ const (
 	RefuseBelowThreshold = "proposal_below_threshold"
 	RefuseDuplicate      = "proposal_duplicate"
 	RefuseAlreadyTracked = "proposal_already_tracked"
+	RefuseResolved       = "proposal_resolved"
 )
 
 // Source is who made a proposal: the proposing root, one of its children, or
@@ -301,6 +307,13 @@ type Proposal struct {
 	// back, and when. Empty in every other state.
 	WithdrawnReason string
 	WithdrawnAt     time.Time
+	// Resolution is the checked conclusion that the condition was already
+	// completed or no longer existed. ResolutionEvidence names where that
+	// conclusion was observed; both are required for ProposalResolved.
+	Resolution         string
+	ResolutionEvidence string
+	ResolvedBy         string
+	ResolvedAt         time.Time
 	// AskedInlineAt is when the session reported it asked in the
 	// conversation: the measurement of whether ask:false was obeyed (§4.4).
 	AskedInlineAt time.Time
@@ -410,6 +423,10 @@ func GateProposal(f ProposalFacts, p ProposalPolicy, now time.Time) (Verdict, er
 	seen := map[Signal]bool{}
 	for _, prior := range f.Prior {
 		switch {
+		case prior.State == ProposalResolved:
+			return Verdict{}, refuse(409, RefuseResolved,
+				"This line of work was checked and resolved already: %s Evidence: %s",
+				prior.Resolution, prior.ResolutionEvidence)
 		case prior.State == ProposalWithdrawn:
 			// Nobody answered it and nobody let it lapse: the server took
 			// the question back because its subject had moved on. It is
@@ -513,8 +530,46 @@ func AnswerProposal(p Proposal, a Answer, actor string, now time.Time) (Proposal
 			"This proposal was withdrawn (%s): its subject moved on, so there is nothing left to answer. Make an item on the board if you want it followed.",
 			p.WithdrawnReason)
 	}
+	if p.State == ProposalResolved {
+		return Proposal{}, refuse(409, RefuseResolved,
+			"This proposal was checked and resolved already: %s Evidence: %s", p.Resolution, p.ResolutionEvidence)
+	}
 	p.State, p.Answer, p.AnsweredBy, p.AnsweredAt = ProposalAnswered, a, actor, now
 	return p, nil
+}
+
+// ResolveProposal records an inspected fact about the subject: the reported
+// condition was already completed or its premise no longer exists. It is not
+// `no`, which says only that a person does not want the line tracked now.
+// Both the conclusion and where it was observed are required, because without
+// them this would be an unreviewable opinion with a stronger effect than no.
+func ResolveProposal(p Proposal, resolution, evidence, actor string, now time.Time) (Proposal, error) {
+	resolution = strings.TrimSpace(resolution)
+	evidence = strings.TrimSpace(evidence)
+	actor = strings.TrimSpace(actor)
+	if resolution == "" {
+		return Proposal{}, refuse(400, "proposal_resolution_required",
+			"resolution is one sentence saying what was completed or which premise no longer exists.")
+	}
+	if evidence == "" {
+		return Proposal{}, refuse(400, "proposal_evidence_required",
+			"evidence names the source: file and line, command output, or daemon response.")
+	}
+	if actor == "" {
+		return Proposal{}, refuse(400, "proposal_actor_required", "The resolver must be named.")
+	}
+	switch p.State {
+	case ProposalResolved:
+		return Proposal{}, refuse(409, RefuseResolved,
+			"This proposal was checked and resolved already: %s Evidence: %s", p.Resolution, p.ResolutionEvidence)
+	case ProposalPending:
+		p.State, p.Resolution, p.ResolutionEvidence = ProposalResolved, resolution, evidence
+		p.ResolvedBy, p.ResolvedAt = actor, now
+		return p, nil
+	default:
+		return Proposal{}, refuse(409, "proposal_not_pending",
+			"Only a pending proposal can be resolved; this one is %s.", p.State)
+	}
 }
 
 // ExpireProposal is the safe default of §10 #4: a proposal nobody answered

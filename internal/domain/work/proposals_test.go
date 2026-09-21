@@ -81,6 +81,32 @@ func TestTheGateRefusesAndItsControlsPass(t *testing.T) {
 	}
 }
 
+// Resolving is the evidence-backed answer to a different question than `no`:
+// the subject was checked and no longer exists. It therefore closes the row
+// and the line, even when a later proposal carries a signal the old one did
+// not. A note without its source is only an opinion and is refused.
+func TestAResolvedProposalNeverReturns(t *testing.T) {
+	pending := Proposal{ID: "proposal", State: ProposalPending}
+	if _, err := ResolveProposal(pending, "The defect was fixed.", "", "root:session", gateNow); gateCode(err) != "proposal_evidence_required" {
+		t.Fatalf("resolution without evidence: %v", err)
+	}
+	resolved, err := ResolveProposal(pending, "The defect was fixed.", "internal/worker/retry.go:84", "root:session", gateNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.State != ProposalResolved || resolved.Resolution != "The defect was fixed." ||
+		resolved.ResolutionEvidence != "internal/worker/retry.go:84" || resolved.ResolvedBy != "root:session" ||
+		!resolved.ResolvedAt.Equal(gateNow) {
+		t.Fatalf("resolved row: %+v", resolved)
+	}
+
+	facts := ProposalFacts{Signals: []Signal{SignalCrossSession, SignalLongLived},
+		Prior: []Proposal{resolved}, HeardAt: gateNow.Add(-time.Minute)}
+	if _, err := GateProposal(facts, DefaultProposalPolicy(), gateNow); gateCode(err) != RefuseResolved {
+		t.Fatalf("the resolved line was proposed again: %v", err)
+	}
+}
+
 func TestTheSignalsNeverCountStepsOrRunsNobodyOwns(t *testing.T) {
 	tasks := []TaskFacts{{Task: "r", Kind: "code-review", Owner: "root"}, {Task: "s", Kind: "custom"},
 		{Task: "q", Kind: "question", Owner: "root"}}

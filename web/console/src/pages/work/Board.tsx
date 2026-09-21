@@ -54,6 +54,7 @@ export function BoardView({
   onCommand,
   onMore,
   onAnswerProposal,
+  onResolveProposal,
   onAnswerDecision,
 }: {
   data: BoardData
@@ -62,6 +63,7 @@ export function BoardView({
   onCommand: (it: Item, c: Command) => Promise<unknown>
   onMore: () => void
   onAnswerProposal: (p: Proposal, a: "track" | "later" | "no") => Promise<unknown>
+  onResolveProposal: (p: Proposal, resolution: string, evidence: string) => Promise<unknown>
   onAnswerDecision: (d: Decision, option: string) => Promise<unknown>
 }) {
   const board = data.board.phase === "ready" || data.board.phase === "empty_authoritative" ? data.board.value : null
@@ -80,7 +82,8 @@ export function BoardView({
         </p>
       ))}
       <DigestFold digest={data.digest} read={data.digestRead} />
-      <ProposalsFold proposals={data.proposals} total={data.proposalsTotal} busy={busy} run={run} onAnswer={onAnswerProposal} />
+      <ProposalsFold proposals={data.proposals} total={data.proposalsTotal} busy={busy} run={run}
+        onAnswer={onAnswerProposal} onResolve={onResolveProposal} />
       {data.board.phase === "loading" && (
         <p className="work-note" role="status">{L.strings.webLoading}</p>
       )}
@@ -415,17 +418,22 @@ function ProposalsFold({
   busy,
   run,
   onAnswer,
+  onResolve,
 }: {
   proposals: Proposal[] | null
   total: number
   busy: boolean
   run: Run
   onAnswer: (p: Proposal, a: "track" | "later" | "no") => Promise<unknown>
+  onResolve: (p: Proposal, resolution: string, evidence: string) => Promise<unknown>
 }) {
   const rows = proposals ?? []
   const now = Date.now() / 1000
   const groups = grouped(rows)
   const [open, setOpen] = useState(false)
+  const [resolving, setResolving] = useState<string | null>(null)
+  const [resolution, setResolution] = useState("")
+  const [evidence, setEvidence] = useState("")
   const previousTotal = useRef<number | null>(null)
 
   // The Now page's action opens this page. When proposals have arrived,
@@ -478,20 +486,60 @@ function ProposalsFold({
                       {p.subject_status === "unknown" && (
                         <span className="work-sub">{nextWord("proposalNeedsYourDecision")}</span>
                       )}
-                      <div className="work-actions" style={{ marginTop: 6 }}>
-                        <button className="chip on" type="button" disabled={busy} data-answer="track"
-                          onClick={() => run(() => onAnswer(p, "track"))}>
-                          {workWord("answerTrack")}
-                        </button>
-                        <button className="chip" type="button" disabled={busy} data-answer="later"
-                          onClick={() => run(() => onAnswer(p, "later"))}>
-                          {workWord("answerLater")}
-                        </button>
-                        <button className="chip" type="button" disabled={busy} data-answer="no"
-                          onClick={() => run(() => onAnswer(p, "no"))}>
-                          {workWord("answerNo")}
-                        </button>
-                      </div>
+                      {resolving === p.id ? (
+                        <form className="work-actions" style={{ marginTop: 6 }} onSubmit={(ev) => {
+                          ev.preventDefault()
+                          const said = resolution.trim()
+                          const source = evidence.trim()
+                          if (!said || !source) return
+                          setResolving(null)
+                          setResolution("")
+                          setEvidence("")
+                          run(() => onResolve(p, said, source))
+                        }}>
+                          <input className="work-input" autoFocus value={resolution}
+                            aria-label={nextWord("proposalResolveSummary")}
+                            placeholder={nextWord("proposalResolveSummary")}
+                            onChange={(ev) => setResolution(ev.target.value)} />
+                          <input className="work-input" value={evidence}
+                            aria-label={nextWord("proposalResolveEvidence")}
+                            placeholder={nextWord("proposalResolveEvidence")}
+                            onChange={(ev) => setEvidence(ev.target.value)} />
+                          <button className="chip on" type="submit" disabled={busy || !resolution.trim() || !evidence.trim()}>
+                            {nextWord("proposalResolveSubmit")}
+                          </button>
+                          <button className="chip" type="button" onClick={() => {
+                            setResolving(null)
+                            setResolution("")
+                            setEvidence("")
+                          }}>
+                            {L.strings.webCancel}
+                          </button>
+                        </form>
+                      ) : (
+                        <div className="work-actions" style={{ marginTop: 6 }}>
+                          <button className="chip on" type="button" disabled={busy} data-answer="track"
+                            onClick={() => run(() => onAnswer(p, "track"))}>
+                            {workWord("answerTrack")}
+                          </button>
+                          <button className="chip" type="button" disabled={busy} data-answer="later"
+                            onClick={() => run(() => onAnswer(p, "later"))}>
+                            {workWord("answerLater")}
+                          </button>
+                          <button className="chip" type="button" disabled={busy} data-answer="no"
+                            onClick={() => run(() => onAnswer(p, "no"))}>
+                            {nextWord("proposalNotNow")}
+                          </button>
+                          <button className="chip" type="button" disabled={busy} data-answer="resolve"
+                            onClick={() => {
+                              setResolving(p.id)
+                              setResolution("")
+                              setEvidence("")
+                            }}>
+                            {nextWord("proposalResolve")}
+                          </button>
+                        </div>
+                      )}
                     </li>
                   )
                 })}

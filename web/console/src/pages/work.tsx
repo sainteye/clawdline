@@ -12,6 +12,7 @@ import {
   readDecisions,
   readDigests,
   readProposals,
+  resolveProposal,
   type BacklogPage,
   type Command,
   type Item,
@@ -281,6 +282,7 @@ function WorkPageView({ shown }: { shown: boolean }) {
             onCommand={onCommand}
             onMore={() => void more()}
             onAnswerProposal={(p, a) => answerProposal(p.id, a)}
+            onResolveProposal={(p, resolution, evidence) => resolveProposal(p.id, resolution, evidence)}
             onAnswerDecision={(d, o) => answerDecision(d.id, o)}
           />
         ) : (

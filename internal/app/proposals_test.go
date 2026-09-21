@@ -980,6 +980,47 @@ func TestASettledSubjectWithdrawsItsProposal(t *testing.T) {
 	}
 }
 
+// A root that inspected the subject may close its own pending proposal with
+// the evidence it found. The row remains queryable under its own state, and
+// that state is the gate's durable reason not to ask about the same line
+// again. This is deliberately unlike `no`, which permits one new proposal on
+// a new signal.
+func TestAResolvedProposalIsKeptAndCannotBeProposedAgain(t *testing.T) {
+	p, _, st, clock := newParticipation(t)
+	ctx := context.Background()
+	line := newWorkID()
+	sent(t, st, taskID(1), line, "custom", theRoot, clock.at)
+	owes(t, st, taskID(1), line, theRoot, clock.at)
+	proposal, err := propose(p, line, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, err := p.ResolveProposal(ctx, proposal.Proposal.ID, "The reported gap is already covered.",
+		"internal/domain/work/proposals.go:417", "root:"+theRoot, theRoot, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Proposal.State != work.ProposalResolved || resolved.Proposal.ResolutionEvidence == "" {
+		t.Fatalf("resolved proposal: %+v", resolved.Proposal)
+	}
+	page, err := p.ProposalList(ctx, work.ProposalResolved, "", "")
+	if err != nil || len(page.Rows) != 1 || page.Rows[0].ID != proposal.Proposal.ID {
+		t.Fatalf("resolved list: %+v %v", page.Rows, err)
+	}
+	if page.Counts[work.ProposalPending] != 0 || page.Counts[work.ProposalResolved] != 1 {
+		t.Fatalf("counts: %+v", page.Counts)
+	}
+
+	// A genuinely new signal still does not revive a condition somebody
+	// inspected and proved gone.
+	_, err = p.Propose(ctx, ProposalRequest{Session: theRoot, WorkID: line, TaskID: taskID(1),
+		Title: "same line", Project: "/p", Effects: []string{string(work.EffectPublish)}}, nil)
+	if codeOf(err) != work.RefuseResolved {
+		t.Fatalf("resolved line was proposed again: %v", err)
+	}
+}
+
 // A rule's own proposal is withdrawn when the rules would not make it now:
 // I1 alone is every dispatch there is. A person's counterpart is not — nobody
 // withdraws a question somebody chose to ask.

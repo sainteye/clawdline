@@ -35,6 +35,11 @@ const words = {
       "Clawdline read the screen but could not identify its state. Open this session to inspect it.",
     proposalNeedsYourDecision:
       "The system has no to-do it can reassess. Finishing work will not withdraw this proposal; answer it, or it will wait until expiry.",
+    proposalNotNow: "Not now",
+    proposalResolve: "Already done / no longer applies",
+    proposalResolveSummary: "What was completed, or which premise no longer applies?",
+    proposalResolveEvidence: "Source: file:line, command output, or daemon response",
+    proposalResolveSubmit: "Record as resolved",
     sessionStateUnrecognizedDetail:
       "Clawdline read the screen but could not identify its state. Inspect the conversation below before deciding what to do.",
     sessionCountNotStarted: "{n} not started yet",
@@ -542,6 +547,11 @@ const words = {
     projectsUnattributedWorktrees: "歸不到專案的工作樹",
     proposalNeedsYourDecision:
       "系統沒有待辦可重新判定；工作完成不會撤回這筆提議，請自行回答，否則它會等到過期。",
+    proposalNotNow: "現在不要",
+    proposalResolve: "已完成／已不存在",
+    proposalResolveSummary: "哪件事已完成，或哪個前提已不存在？",
+    proposalResolveEvidence: "出處：檔案:行號、指令輸出或 daemon 回應",
+    proposalResolveSubmit: "記成已解決",
   },
 } as const
 

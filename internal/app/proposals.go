@@ -654,6 +654,43 @@ func (p *Participation) Answer(ctx context.Context, id string, answer work.Answe
 	return out, participationRefusal(err)
 }
 
+// ResolveProposal closes a pending proposal after somebody inspected its
+// subject and recorded both the conclusion and its source. A person may do
+// that directly; a root may do it for a proposal belonging to that root,
+// because the claim is made reviewable by evidence rather than made true by
+// a person's authority. session is empty for the person and the owning root's
+// conversation id for a root.
+func (p *Participation) ResolveProposal(ctx context.Context, id, resolution, evidence, actor, session string,
+	file ProposalFiler) (ProposalView, error) {
+	now := p.now()
+	var out ProposalView
+	err := p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		prev, err := tx.Proposal(id)
+		if err != nil {
+			return err
+		}
+		if session != "" && prev.Session != session {
+			return workRefusal(409, "not_your_proposal", "That proposal belongs to another session.")
+		}
+		next, err := work.ResolveProposal(prev, resolution, evidence, actor, now)
+		if err != nil {
+			return err
+		}
+		out = ProposalView{Proposal: next}
+		if err := tx.PutProposal(next, &prev, 0); err != nil {
+			return err
+		}
+		out.Proposal.Version = prev.Version + 1
+		if file != nil {
+			if k, a, ok := file(out); ok {
+				return tx.CompleteReceipt(k, a)
+			}
+		}
+		return nil
+	})
+	return out, participationRefusal(err)
+}
+
 // ProposalPage is one read of the proposals — the "to confirm" area when
 // narrowed to pending.
 type ProposalPage struct {
