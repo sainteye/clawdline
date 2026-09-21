@@ -1,4 +1,5 @@
 import type { BearingsSource, ScanSource, SessionRow } from "@clawdline/contract"
+import type { ReadState } from "./read-state.js"
 
 function ageWords(seconds: number, chinese: boolean): string {
   const s = Math.max(0, Math.floor(seconds))
@@ -119,4 +120,17 @@ export function totalSessionWords(total: number, chinese = sessionReadingChinese
   if (total === 0) return chinese ? "沒有 session" : "no sessions"
   if (chinese) return `${total} 個 session`
   return `${total} ${total === 1 ? "session" : "sessions"}`
+}
+
+/** The header count, derived without turning a missing snapshot into `[]`. */
+export function sessionCountState(reading: {
+  snapshot: { sessions: SessionRow[]; scan: { emptyAuthoritative: boolean } } | null
+  loaded: boolean
+  error: string | null
+}): ReadState<SessionRow[]> {
+  const rows = reading.snapshot?.sessions
+  if (rows && rows.length > 0) return { phase: "ready", value: rows }
+  if (reading.error) return { phase: "unanswered", error: reading.error }
+  if (rows && reading.snapshot?.scan.emptyAuthoritative) return { phase: "empty_authoritative", value: rows }
+  return { phase: "loading" }
 }

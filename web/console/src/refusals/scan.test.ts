@@ -115,14 +115,7 @@ test("the generic pass sees the currently measured handler shapes", () => {
   assert.equal(report.indeterminate, null, "a scan that cannot tell is a failure, not a pass")
   assert.ok(report.files >= 100, `only ${report.files} files were read`)
   assert.ok(report.chains >= 20, `only ${report.chains} refusal ladders were found`)
-  assert.deepEqual(
-    report.violations.map((s) => `${s.file}:${s.line} ${s.kind}`),
-    [
-      "web/console/src/pages/schedules.tsx:646 uncertainty_dropped",
-      "web/console/src/session/ScreenPanel.tsx:124 uncertainty_dropped",
-      "web/console/src/session/ScreenPanel.tsx:192 uncertainty_dropped",
-    ],
-  )
+  assert.deepEqual(report.violations.map((s) => `${s.file}:${s.line} ${s.kind}`), [])
 })
 
 test("a tree that cannot be read is indeterminate, never clean", () => {
@@ -140,7 +133,6 @@ test("the cross-language audit sees every measured issue and separates byte-lock
   assert.deepEqual(
     report.open.map((item) => item.id),
     [
-      "U01", "U03", "U06", "U09",
       "E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09", "E10", "E11", "E12", "E13", "E14", "E18",
     ],
   )

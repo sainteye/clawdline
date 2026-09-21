@@ -2,6 +2,9 @@ import type { Screen, SessionRow } from "@clawdline/contract"
 import { useEffect, useRef, useState } from "react"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
+import { readFailure, type ReadState } from "../read-state.js"
+import { screenFailureWord } from "./screen-state.js"
 import {
   paintRows,
   readScreen,
@@ -50,7 +53,7 @@ export function ScreenPanel({
 }) {
   const T = L.strings
   const [screen, setScreen] = useState<Screen | null>(null)
-  const [failed, setFailed] = useState(false)
+  const [reading, setReading] = useState<ReadState<Screen | null>>({ phase: "loading" })
   const closeRef = useRef<HTMLButtonElement>(null)
   // Two counters, because they answer two different questions and collapsing
   // them into one is what this panel was wrong about first.
@@ -88,7 +91,7 @@ export function ScreenPanel({
     asked.current = 0
     held.current = null
     setScreen(null)
-    setFailed(false)
+    setReading({ phase: "loading" })
     closeRef.current?.focus({ preventScroll: true })
   }, [open, id])
 
@@ -118,13 +121,13 @@ export function ScreenPanel({
           if (!alive || mineGeneration !== generation.current || order <= answered.current) return
           answered.current = order
           held.current = data
-          setFailed(false)
           setScreen(data)
+          setReading({ phase: "ready", value: data })
         },
-        () => {
+        (error) => {
           if (!alive || mineGeneration !== generation.current || order <= answered.current) return
           answered.current = order
-          setFailed(true)
+          setReading(readFailure(error))
         },
       )
     }
@@ -186,13 +189,13 @@ export function ScreenPanel({
           if (mineGeneration !== generation.current || order <= answered.current) return
           answered.current = order
           held.current = data
-          setFailed(false)
           setScreen(data)
+          setReading({ phase: "ready", value: data })
         },
-        () => {
+        (error) => {
           if (mineGeneration !== generation.current || order <= answered.current) return
           answered.current = order
-          setFailed(true)
+          setReading(readFailure(error))
         },
       )
     }, after)
@@ -204,10 +207,14 @@ export function ScreenPanel({
   }, [open, id, channel, askAgain])
 
   const body = () => {
-    if (failed) {
+    if (reading.phase === "refused" || reading.phase === "unanswered") {
+      const own = screenFailureWord(reading)
       return (
-        <div className="screen-note err" role="alert">
-          {T.webScreenGone}
+        <div className="screen-note err" role="alert" data-screen-read-state={reading.phase}>
+          {L.failureSentence(reading.error, {
+            sentence: own ? nextWord(own) : "",
+            fallback: T.webScreenGone,
+          })}
         </div>
       )
     }

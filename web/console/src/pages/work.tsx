@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import * as L from "../legacy/bridge.js"
 import type { PageModule } from "./types.js"
 import {
+  SECTIONS,
   answerDecision,
   answerProposal,
   command,
@@ -19,6 +20,7 @@ import { BacklogView } from "./work/Backlog.js"
 import { BoardView, type BoardData } from "./work/Board.js"
 import { failureWords } from "./work/shared.js"
 import { workWord } from "./work/words.js"
+import { readAnswer, readFailure, readValue } from "../read-state.js"
 import "./work/work.css"
 
 /**
@@ -42,7 +44,7 @@ import "./work/work.css"
 type Tab = "board" | "backlog"
 
 const EMPTY: BoardData = {
-  board: null, proposals: null, decisions: null, proposalsTotal: 0, decisionsTotal: 0, digest: null, digestRead: false,
+  board: { phase: "loading" }, proposals: null, decisions: null, proposalsTotal: 0, decisionsTotal: 0, digest: null, digestRead: false,
   unread: [],
 }
 
@@ -110,7 +112,12 @@ function WorkPageView({ shown }: { shown: boolean }) {
     // by the catalog that names the code (DG-7: a read that did not happen is
     // never drawn as a read that found nothing).
     const next: BoardData = {
-      board: board.status === "fulfilled" ? board.value : null,
+      board: board.status === "fulfilled"
+        ? readAnswer(
+            board.value,
+            board.value.rows.length === 0 && SECTIONS.every((section) => (board.value.counts[section] ?? 0) === 0),
+          )
+        : readFailure(board.reason),
       proposals: proposals.status === "fulfilled" ? proposals.value.rows : null,
       decisions: decisions.status === "fulfilled" ? decisions.value.rows : null,
       proposalsTotal: proposals.status === "fulfilled" ? (proposals.value.counts.pending ?? proposals.value.rows.length) : 0,
@@ -124,9 +131,10 @@ function WorkPageView({ shown }: { shown: boolean }) {
       ].filter(Boolean),
     }
     setData(next)
-    if (next.board) remember(next.board.rows)
+    const boardPage = readValue(next.board)
+    if (boardPage) remember(boardPage.rows)
     if (board.status === "rejected") setStatus({ text: workWord("unreadable") + " " + failureWords(board.reason), warn: true })
-    else if (next.board?.sweep.stalled) setStatus({ text: workWord("sweepStalled"), warn: true })
+    else if (boardPage?.sweep.stalled) setStatus({ text: workWord("sweepStalled"), warn: true })
     else setStatus(null)
   }, [tab, project])
 
@@ -165,12 +173,15 @@ function WorkPageView({ shown }: { shown: boolean }) {
   const onCommand = (it: Item, c: Command) => command(it, c)
 
   const more = async () => {
-    const cursor = tab === "board" ? data.board?.next_cursor : backlog?.next_cursor
+    const cursor = tab === "board" ? readValue(data.board)?.next_cursor : backlog?.next_cursor
     if (!cursor) return
     try {
       if (tab === "board") {
         const page = await readBoard(project || undefined, cursor)
-        setData((was) => (was.board ? { ...was, board: { ...page, rows: [...was.board.rows, ...page.rows] } } : was))
+        setData((was) => {
+          const held = readValue(was.board)
+          return held ? { ...was, board: { phase: "ready", value: { ...page, rows: [...held.rows, ...page.rows] } } } : was
+        })
         remember(page.rows)
       } else {
         const page = await readBacklog(project || undefined, cursor)

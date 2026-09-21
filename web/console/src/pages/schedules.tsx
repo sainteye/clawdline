@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { toast } from "../overlays/index.js"
+import { readAnswer, readFailure, readReady, type ReadState } from "../read-state.js"
 import {
   createPlacesCache,
   drawIcon,
@@ -355,6 +356,7 @@ const Schedule = (() => {
   const MODELS = ["haiku", "sonnet", "opus"]
 
   let places: SchedulePlace[] | null = null
+  let placesReading: ReadState<SchedulePlaces> = { phase: "loading" }
   let placesNote = ""
   let assistants: ScheduleAssistant[] = []
   let chosenPlace: string | null = null
@@ -370,7 +372,6 @@ const Schedule = (() => {
   let editingId: string | null = null
   let loadingEdit = false
   let deleteBusy = false
-  let placesFailed = false
 
   const busy = () => creating || loadingEdit
 
@@ -379,6 +380,8 @@ const Schedule = (() => {
   }
 
   function hint(): string {
+    const reading = placeReadProblem()
+    if (reading) return reading
     if (!el<HTMLInputElement>("schedule-at").value) return T().webScheduleNeedsTime
     if (!chosenPlace) return T().webScheduleNeedsPlace
     return ""
@@ -397,7 +400,8 @@ const Schedule = (() => {
       "schedule-go",
       "schedule-delete",
     ].forEach((id) => {
-      el<HTMLInputElement>(id).disabled = b
+      const placesReady = readReady(placesReading) && (places?.length ?? 0) > 0
+      el<HTMLInputElement>(id).disabled = b || (id === "schedule-go" && !placesReady)
     })
     ;["schedule-with", "schedule-model", "schedule-days", "schedule-close", "schedule-flags"].forEach((id) => {
       const chips = el(id).querySelectorAll<HTMLButtonElement>(".chip")
@@ -556,14 +560,15 @@ const Schedule = (() => {
   function drawPlaces(): void {
     const list = el("schedule-places")
     list.innerHTML = ""
-    const why = placesFailed ? T().webOffline : places && !places.length ? T().webStartEmpty : ""
+    list.dataset.readState = placesReading.phase
+    const why = placeReadProblem()
     if (why) {
       const none = document.createElement("li")
       none.className = "note"
       none.textContent = why
       list.appendChild(none)
     }
-    if (placesNote && !placesFailed) {
+    if (placesNote && placesReading.phase === "ready") {
       const partial = document.createElement("li")
       partial.className = "note"
       partial.setAttribute("role", "status")
@@ -635,20 +640,33 @@ const Schedule = (() => {
 
   function ensurePlaces(): Promise<void> {
     if (places && places.length && !placesNote) return Promise.resolve()
-    placesFailed = false
+    placesReading = { phase: "loading" }
     return scheduleApi
       .places()
       .then((d: SchedulePlaces) => {
         places = (d && d.places) || []
         assistants = (d && d.assistants) || []
         placesNote = unansweredSentence(d)
+        placesReading = readAnswer(d, places.length === 0 && placesNote === "")
       })
-      .catch(() => {
-        places = null
-        placesNote = ""
-        assistants = []
-        placesFailed = true
+      .catch((error) => {
+        placesReading = readFailure(error)
       })
+  }
+
+  function placeReadProblem(): string {
+    if (placesReading.phase === "loading") return T().webLoading
+    if (placesReading.phase === "empty_authoritative") return T().webStartEmpty
+    if (placesReading.phase === "unanswered") {
+      return failureSentence(placesReading.error, {
+        sentence: nextWord("schedulePlacesUnanswered"),
+        fallback: T().webRequestFailed,
+      })
+    }
+    if (placesReading.phase === "refused") {
+      return failureSentence(placesReading.error, { fallback: T().webRequestFailed })
+    }
+    return ""
   }
 
   function defaultAssistant(preferred: string | null | undefined): void {
@@ -660,6 +678,7 @@ const Schedule = (() => {
     editingId = null
     loadingEdit = false
     places = null
+    placesReading = { phase: "loading" }
     placesNote = ""
     assistants = []
     chosenPlace = null

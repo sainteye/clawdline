@@ -14,12 +14,13 @@ import { openTimeline } from "../../legacy/timeline-bridge.js"
 import { requestPage } from "../../overlays/index.js"
 import { ownerWords, reasonWords, taskWords, when } from "./shared.js"
 import { workWord, type WorkWord } from "./words.js"
+import { readAnswered, type ReadState } from "../../read-state.js"
 
 /** A command a card asks the page to carry out; the page reads the board again after it. */
 export type Run = (task: () => Promise<unknown>) => void
 
 export interface BoardData {
-  board: BoardPage | null
+  board: ReadState<BoardPage>
   proposals: Proposal[] | null
   decisions: Decision[] | null
   // The daemon's totals: a list is one page, and what did not fit is said.
@@ -61,7 +62,8 @@ export function BoardView({
   onAnswerProposal: (p: Proposal, a: "track" | "later" | "no") => Promise<unknown>
   onAnswerDecision: (d: Decision, option: string) => Promise<unknown>
 }) {
-  const board = data.board
+  const board = data.board.phase === "ready" || data.board.phase === "empty_authoritative" ? data.board.value : null
+  const boardAnswered = readAnswered(data.board)
   const bySection: Record<Section, Item[]> = { decide: [], active: [], scheduled: [], done: [] }
   for (const it of board?.rows ?? []) if (it.section) bySection[it.section].push(it)
   const shown = board?.rows.length ?? 0
@@ -77,9 +79,13 @@ export function BoardView({
       ))}
       <DigestFold digest={data.digest} read={data.digestRead} />
       <ProposalsFold proposals={data.proposals} total={data.proposalsTotal} busy={busy} run={run} onAnswer={onAnswerProposal} />
-      {SECTIONS.map((section) => {
+      {data.board.phase === "loading" && (
+        <p className="work-note" role="status">{L.strings.webLoading}</p>
+      )}
+      {boardAnswered && SECTIONS.map((section) => {
         const rows = bySection[section]
-        const count = (board?.counts[section] ?? 0) + (section === "decide" ? data.decisionsTotal : 0)
+        const counted = board ? board.counts[section] : 0
+        const count = (counted ?? 0) + (section === "decide" ? data.decisionsTotal : 0)
         const head = (
           <div className="work-section-head">
             <h2>{workWord(SECTION_WORD[section])}</h2>

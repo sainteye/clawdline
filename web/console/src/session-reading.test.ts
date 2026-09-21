@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node's strip-types runner.
-import { batchReadingWords, retainedStateWords, scanFailureWords, totalSessionWords } from "./session-reading.ts"
+import { batchReadingWords, retainedStateWords, scanFailureWords, sessionCountState, totalSessionWords } from "./session-reading.ts"
 
 const source = { observed_at: 1_000, provenance: "iterm", freshness: "unverified" as const }
 
@@ -49,4 +49,18 @@ test("a whole terminal-source failure says the next action instead of waiting fo
 test("the title's number is the same set as the list", () => {
   assert.equal(totalSessionWords(6, true), "6 個 session")
   assert.equal(totalSessionWords(1, false), "1 session")
+})
+
+test("the header tells first load, authoritative empty, and no answer apart", () => {
+  assert.equal(sessionCountState({ snapshot: null, loaded: false, error: null }).phase, "loading")
+  assert.equal(sessionCountState({ snapshot: null, loaded: true, error: "GET /v1/sessions did not complete" }).phase, "unanswered")
+  assert.equal(sessionCountState({
+    snapshot: { sessions: [], scan: { emptyAuthoritative: true } }, loaded: true, error: null,
+  }).phase, "empty_authoritative")
+  assert.equal(sessionCountState({
+    snapshot: { sessions: [], scan: { emptyAuthoritative: true } }, loaded: true, error: "connection lost",
+  }).phase, "unanswered", "a failed refresh does not keep presenting an older empty answer as current")
+  assert.equal(sessionCountState({
+    snapshot: { sessions: [{ id: "one" }], scan: { emptyAuthoritative: false } }, loaded: true, error: null,
+  } as never).phase, "ready")
 })

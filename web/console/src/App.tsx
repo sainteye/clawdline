@@ -16,7 +16,7 @@ import { nowWord } from "./pages/now/words.js"
 import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
 import { NewBuild } from "./NewBuild.js"
-import { sessionReadingChinese, totalSessionWords } from "./session-reading.js"
+import { sessionCountState, sessionReadingChinese, totalSessionWords } from "./session-reading.js"
 import {
   ActionConfirm,
   GO_PAGE,
@@ -736,7 +736,7 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
           <canvas id="brand-mark" width={0} height={0} ref={markRef} />
           <b>clawdline</b>
         </button>
-        <Counts rows={rows} recovering={!!fleet.snapshot && !fleet.snapshot.scan.complete} />
+        <Counts reading={sessionCountState(fleet)} recovering={!!fleet.snapshot && !fleet.snapshot.scan.complete} />
         {aside}
         <Conn live={fleet.live} onRetry={fleet.refresh} />
       </header>
@@ -870,8 +870,15 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
  * `failures` part has no input here; when it does, its words need
  * `describeFailure` (`core/failure-text.js`) from the bridge.
  */
-function Counts({ rows, recovering }: { rows: SessionRow[]; recovering: boolean }) {
+function Counts({
+  reading,
+  recovering,
+}: {
+  reading: ReturnType<typeof sessionCountState>
+  recovering: boolean
+}) {
   const T = L.strings
+  const rows = reading.phase === "ready" ? reading.value : []
   let working = 0
   let waiting = 0
   let notStarted = 0
@@ -884,9 +891,16 @@ function Counts({ rows, recovering }: { rows: SessionRow[]; recovering: boolean 
     else if (s.state === "unknown") unknown++
     shells += (s.shells ?? []).length
   }
-  const bits: { cls: string; text: string }[] = [
-    { cls: "part quiet", text: totalSessionWords(rows.length) },
-  ]
+  const bits: { cls: string; text: string }[] = []
+  if (reading.phase === "ready") bits.push({ cls: "part quiet", text: totalSessionWords(reading.value.length) })
+  else if (reading.phase === "empty_authoritative") bits.push({ cls: "part quiet", text: totalSessionWords(0) })
+  else if (reading.phase === "refused") {
+    bits.push({ cls: "part quiet", text: L.failureSentence(reading.error, nextWord("sessionsListUnansweredTitle")) })
+  } else if (reading.phase === "unanswered") {
+    bits.push({ cls: "part quiet", text: nextWord("sessionsListUnansweredTitle") })
+  } else {
+    bits.push({ cls: "part quiet", text: nextWord("sessionsListWaitTitle") })
+  }
   if (working) bits.push({ cls: "part", text: L.fillString(T.webCountWorking, { n: working }) })
   if (waiting) bits.push({ cls: "part waiting", text: L.fillString(T.webCountWaiting, { n: waiting }) })
   if (notStarted) bits.push({ cls: "part quiet", text: nextWord("sessionCountNotStarted", { n: notStarted }) })
@@ -900,7 +914,7 @@ function Counts({ rows, recovering }: { rows: SessionRow[]; recovering: boolean 
   // The line is up — this band is drawn from a snapshot that arrived — so the
   // sentence is about the list, not about the app (`Sessions.tsx`'s empty
   // state, and `next-strings.ts` on why these are two words and not one).
-  if (recovering) bits.push({ cls: "part quiet", text: nextWord("sessionsListWaitTitle") })
+  if (recovering && reading.phase === "ready") bits.push({ cls: "part quiet", text: nextWord("sessionsListWaitTitle") })
   if (rows.length > 0 && !working && !waiting && !unknown && !shells && !recovering) {
     bits.push({ cls: "part quiet", text: sessionReadingChinese() ? "都很安靜" : "all quiet" })
   }
