@@ -31,7 +31,18 @@ func ReadState(screen string, assistant Assistant) (State, bool) {
 
 	// An empty composer is positive evidence of an idle session: the assistant
 	// has drawn its prompt and is waiting for a person, not for itself.
-	for i := len(lines) - 1; i >= 0 && i > len(lines)-14; i-- {
+	//
+	// The window is counted from the last row that has anything on it, not from
+	// the bottom of the terminal. A tall window holding a short conversation
+	// comes back padded with blank rows, and counting those made the newest
+	// sessions the hardest ones to read: on 2026-09-21 a session whose only
+	// turn had been refused by the model sat 40 rows above the bottom and was
+	// reported as an unreadable terminal for 23 minutes.
+	end := len(lines) - 1
+	for end >= 0 && strings.TrimSpace(lines[end]) == "" {
+		end--
+	}
+	for i := end; i >= 0 && i > end-14; i-- {
 		switch assistant {
 		case AssistantCodex:
 			t := strings.TrimSpace(lines[i])
