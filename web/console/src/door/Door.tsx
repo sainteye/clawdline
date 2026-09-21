@@ -4,6 +4,7 @@ import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { toast } from "../overlays/toast.js"
 import { doorApi, type DoorFailure } from "./api.js"
+import { passwordFailureSentence } from "./failure.js"
 
 /**
  * The door: what is on screen when this daemon is answering, and not *this
@@ -432,7 +433,7 @@ function bindDoor(host: HTMLElement, onSignedIn: () => void): DoorControl {
           this.signedIn()
         })
         .catch((e: DoorFailure) => {
-          this.say(e.message || T.webDoorWrongPassword)
+          this.say(passwordFailureSentence(e))
         })
         .then(() => {
           els.pwGo.disabled = false

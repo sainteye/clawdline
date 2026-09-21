@@ -119,7 +119,6 @@ test("the generic pass sees the currently measured handler shapes", () => {
     report.violations.map((s) => `${s.file}:${s.line} ${s.kind}`),
     [
       "web/console/src/cloud/CloudGate.tsx:285 uncertainty_dropped",
-      "web/console/src/door/Door.tsx:434 code_unspent",
       "web/console/src/pages/schedules.tsx:646 uncertainty_dropped",
       "web/console/src/session/ScreenPanel.tsx:124 uncertainty_dropped",
       "web/console/src/session/ScreenPanel.tsx:192 uncertainty_dropped",
@@ -141,7 +140,10 @@ test("the cross-language audit sees every measured issue and separates byte-lock
   assert.equal(report.locked.length, AUDIT_EXPECTATIONS.locked)
   assert.deepEqual(
     report.open.map((item) => item.id),
-    [...Array.from({ length: 17 }, (_, i) => `U${String(i + 1).padStart(2, "0")}`), ...Array.from({ length: 18 }, (_, i) => `E${String(i + 1).padStart(2, "0")}`)],
+    [
+      "U01", "U02", "U03", "U04", "U05", "U06", "U09", "U11", "U12", "U13", "U14", "U15", "U16",
+      "E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09", "E10", "E11", "E12", "E13", "E14", "E18",
+    ],
   )
   assert.deepEqual(report.locked.map((item) => item.id), ["L01", "L02"])
 })

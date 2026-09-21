@@ -1,4 +1,5 @@
 import { client } from "../../client.js"
+import { RefusalError, isRefusal } from "@clawdline/core"
 
 /**
  * `/v1/cloud/status`, the line to app.clawdline.com.
@@ -131,8 +132,8 @@ async function cloudCall<T>(method: string, path: string, body?: unknown): Promi
     parsed = null
   }
   if (!res.ok) {
-    const refusal = parsed as { error?: { message?: string; code?: string } } | null
-    throw new Error(refusal?.error?.message || `${path} 回答 ${res.status}`)
+    if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
+    throw new Error(`${path} 回答 ${res.status}`)
   }
   return parsed as T
 }

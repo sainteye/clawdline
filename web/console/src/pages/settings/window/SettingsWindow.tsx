@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { SettingsSnapshot, TunnelStatus, VoiceLanguage } from "@clawdline/contract"
-import { RefusalError } from "@clawdline/core"
 import { readSettings, writeSettings } from "../api.js"
 import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyTrouble, seconds, voiceLanguageSaid } from "./copy.js"
 import {
@@ -28,6 +27,7 @@ import {
 } from "./bridge.js"
 import { Block, Chip, Head, MemoField, Mono, Note, PopUp, Row, Slider, Switch, TabStrip } from "./controls.js"
 import { PairingQr, expiredFailure } from "./PairingQr.js"
+import { settingsFailureSentence } from "./failure.js"
 
 /**
  * The native "Clawdline 設定" window, as a web page.
@@ -110,7 +110,7 @@ export function SettingsWindow() {
         setDraft({})
         setSaid("")
       },
-      (error: unknown) => setSaid(sentence(error)),
+      (error: unknown) => setSaid(settingsFailureSentence(error)),
     )
   }, [])
 
@@ -206,7 +206,7 @@ export function SettingsWindow() {
         for (const key of Object.keys(keys)) delete next[key as SettingKey]
         return next
       })
-      setSaid(sentence(error))
+      setSaid(settingsFailureSentence(error))
       throw error
     }
   }, [])
@@ -748,7 +748,7 @@ export function SettingsWindow() {
           }),
         (error: unknown) => {
           setPairingBusy(false)
-          say(sentence(error))
+          say(settingsFailureSentence(error))
         },
       )
     }
@@ -1339,19 +1339,6 @@ const VOICE_LANGUAGES = [
     return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
   }),
 ]
-
-/**
- * A refusal's own sentence, or the transport's.
- *
- * `detail` and never `code`: the code is the machine-readable half and the only
- * part anything may branch on, and a window that showed it would be showing
- * `invalid_output_size` to somebody who moved a slider.
- */
-function sentence(error: unknown): string {
-  if (error instanceof RefusalError) return error.detail || error.code
-  if (error instanceof Error) return error.message
-  return String(error)
-}
 
 /** Said under a control that needs a shell and has none. Not a `Copy+Chinese` word: the
  *  original window is only ever inside one, so it never had a sentence for this. */
