@@ -248,7 +248,7 @@ export function Detail({
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
-          {row ? <Transcript id={row.id} agentId={selectedAgent?.id} /> : home ? <HomeHero /> : null}
+          {row ? <Transcript id={row.id} agentId={selectedAgent?.id} onAgent={setAgentId} /> : home ? <HomeHero /> : null}
         </div>
       </div>
 

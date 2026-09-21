@@ -1,0 +1,41 @@
+.entry[data-role="agent"] .who { color: var(--peer); }
+
+.agent-report-card {
+  border: 1px solid var(--peer-ed);
+  border-left: 3px solid var(--peer);
+  border-radius: 10px;
+  background: var(--peer-in);
+  padding: 9px 11px 10px;
+  color: var(--ink);
+}
+
+.agent-report-source {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  margin-bottom: 7px;
+  color: var(--peer);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.3;
+  letter-spacing: 0.25px;
+}
+
+.agent-report-source button {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.agent-report-source button:hover,
+.agent-report-source button:focus-visible { color: var(--ink); }
+
+.agent-report-id { color: var(--faint); overflow-wrap: anywhere; }
+.agent-report-unknown { color: var(--dim); overflow-wrap: anywhere; }
