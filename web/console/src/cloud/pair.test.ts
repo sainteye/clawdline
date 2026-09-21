@@ -146,7 +146,10 @@ test("the three endings are three words: ran out, not this browser's, and anythi
     assert.deepEqual(pairingEnding({ code }), { phase: "refused", code }, code)
   }
   assert.deepEqual(pairingEnding({ code: "bad_handover" }), { phase: "failed", code: "bad_handover" })
-  assert.deepEqual(pairingEnding(new TypeError("Failed to fetch")), { phase: "failed", code: "pairing_failed" })
+  // A browser's own failure says what it was, not the fallback.
+  assert.deepEqual(pairingEnding(new TypeError("Failed to fetch")), { phase: "failed", code: "TypeError" })
+  assert.deepEqual(pairingEnding({ name: "NotSupportedError", code: 9 }), { phase: "failed", code: "NotSupportedError" })
+  assert.deepEqual(pairingEnding(new Error("nothing named")), { phase: "failed", code: "pairing_failed" })
   const run = new PairingRun(viewer([{ code: "wrong_claimant" }]), () => {})
   assert.deepEqual(await run.begin(), { phase: "refused", code: "wrong_claimant" })
 })
@@ -197,4 +200,28 @@ test("only #pair= with something after it is a machine's link", () => {
   assert.equal(invitationInHash("#page=devices"), null)
   assert.equal(invitationInHash(""), null)
   assert.equal(invitationInHash("#pair=abc"), "abc")
+})
+
+test("the wait between claims calls the timer as a browser requires: with no receiver", async () => {
+  // Measured in Chromium before this test existed: `this.timers.setTimeout(…)`
+  // threw "Illegal invocation" at the first 202, and every pairing ended
+  // `failed` half a second after it began. Node's timers do not care, so this
+  // one does, the way a window's do.
+  const strict = {
+    setTimeout: function (this: unknown, fn: () => void, ms: number) {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation")
+      return setTimeout(fn, Math.min(ms, 5))
+    } as unknown as typeof setTimeout,
+    clearTimeout: function (this: unknown, timer: ReturnType<typeof setTimeout>) {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation")
+      clearTimeout(timer)
+    } as unknown as typeof clearTimeout,
+  }
+  const run = new PairingRun(viewer(["pending", "pending", OPENED]), () => {}, strict)
+  assert.equal((await run.begin()).phase, "paired")
+  const stopped = new PairingRun(viewer(["pending", "pending", OPENED]), () => {}, strict)
+  const ended = stopped.begin()
+  await tick()
+  stopped.stop()
+  assert.equal((await ended).phase, "stopped")
 })

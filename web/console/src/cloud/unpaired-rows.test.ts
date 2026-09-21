@@ -49,13 +49,13 @@ test("an account that will not say leaves no names, and no error for the list to
 
 const present = (id: string, name: string, platform: string) => ({
   name,
-  label: (platform === "linux" ? "Linux" : "Mac") + " · " + name,
-  kind: platform === "linux" ? "linux" : "mac",
+  label: (platform === "linux" ? "Linux" : "Desk") + " · " + name,
+  kind: platform === "linux" ? "linux" : "desk",
 })
 
 test("a machine this browser cannot name is called what the account calls it; one it can name keeps its own", () => {
   const rows = [
-    { id: "mac_1", name: "Studio (published)", label: "Mac · Studio (published)", kind: "mac" },
+    { id: "mac_1", name: "Studio (published)", label: "Desk · Studio (published)", kind: "desk" },
     { id: "mac_51463f04", name: "Machine · 51463f04", label: "Machine · 51463f04", kind: "unknown" },
     { id: "mac_unlisted", name: "Machine · unlisted", label: "Machine · unlisted", kind: "unknown" },
   ]
@@ -66,7 +66,7 @@ test("a machine this browser cannot name is called what the account calls it; on
   const shown = withAccountNames(rows, names, (id: string) => id === "mac_1", present)
   assert.deepEqual(
     shown.map((row: { label: string }) => row.label),
-    ["Mac · Studio (published)", "Linux · build-box", "Machine · unlisted"],
+    ["Desk · Studio (published)", "Linux · build-box", "Machine · unlisted"],
   )
   assert.equal(shown[1].kind, "linux")
 })

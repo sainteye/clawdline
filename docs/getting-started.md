@@ -167,6 +167,12 @@ then saves this machine's identity. The daemon reads the Cloud switch when it st
 Open the link on your phone, in a browser signed in to the same Clawdline account. When it
 finishes, both screens show the same machine key, and the command prints the device it paired.
 
+The other way round works too, and suits a machine you reach only over SSH: in the hosted console,
+press **Pair** on the machine's row. It shows one line to run on the machine,
+`clawdline cloud pair -offer <code>`, with the browser's fingerprint beside it; the command prints
+the same fingerprint on its `browser` line, and the console then shows the one on its `machine`
+line.
+
 The phone can now read. To let it act on this machine too, meaning send text, answer, start or end
 a session:
 

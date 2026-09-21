@@ -520,6 +520,9 @@ export function CloudGate({ declared }: { declared: string }) {
           return
         case "pairing_required":
           setScreen({ at: "pairing", account: update.accountID })
+          if (transport.kind === "cloud") {
+            void accountMachineNames(transport.config.apiOrigin).then(setNames)
+          }
           return
         case "device_limit_reached":
           setScreen({ at: "device_limit", tier: update.tier, limit: update.limit })
@@ -621,8 +624,14 @@ export function CloudGate({ declared }: { declared: string }) {
           state: pairState,
           nameOf: (id: string) => {
             const known = machines?.find((m) => m.id === id)
-            const named = known ? withAccountNames([known], names, described, present)[0] : null
-            return named ? named.name || named.label || id : id
+            if (known) {
+              const named = withAccountNames([known], names, described, present)[0]
+              return named.name || named.label || id
+            }
+            // A browser that held no key had no list to find it in; the
+            // account still knows what the machine is called.
+            const account = names.get(id)
+            return account ? present(id, account.name, account.platform).label : id
           },
           onBegin: pairInvitation,
           onStop: () => run.current?.stop(),

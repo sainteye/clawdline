@@ -83,7 +83,7 @@ export function pairingCommand(fragment: string): string {
  * printed the fuller reason.
  */
 export function pairingEnding(error: unknown): PairState {
-  const code = error && typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : ""
+  const code = failureCode(error)
   if (code === "offer_expired" || code === "pairing_expired" || code === "invitation_expired") return { phase: "expired" }
   if (
     code === "wrong_invitation" ||
@@ -96,6 +96,20 @@ export function pairingEnding(error: unknown): PairState {
     return { phase: "refused", code }
   }
   return { phase: "failed", code: code || "pairing_failed" }
+}
+
+/**
+ * The copied modules' typed code, or the name of what the browser threw —
+ * a WebCrypto `NotSupportedError` carries its reason in `name`, and its
+ * `code` is a number that says nothing. "pairing_failed" is only for a
+ * failure that named nothing at all.
+ */
+function failureCode(error: unknown): string {
+  if (!error || typeof error !== "object") return ""
+  const { code, name } = error as { code?: unknown; name?: unknown }
+  if (typeof code === "string" && code) return code
+  if (typeof name === "string" && name && name !== "Error") return name
+  return ""
 }
 
 /** What stopping looks like to the loop inside `pairViewer`: its `sleep` rejects. */
@@ -154,12 +168,16 @@ export class PairingRun {
             reject(STOPPED)
             return
           }
-          const timer = this.timers.setTimeout(() => {
+          // Called without a receiver: a browser's `setTimeout` refuses to run
+          // with `this` set to anything but the window ("Illegal invocation"),
+          // which is what calling it as `this.timers.setTimeout` would do.
+          const { setTimeout: later, clearTimeout: cancel } = this.timers
+          const timer = later(() => {
             this.wake = null
             resolve()
           }, ms)
           this.wake = () => {
-            this.timers.clearTimeout(timer)
+            cancel(timer)
             this.wake = null
             reject(STOPPED)
           }

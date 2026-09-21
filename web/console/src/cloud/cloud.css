@@ -123,9 +123,13 @@
 .cloud-pair-key { margin-top: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
 .cloud-pair-key .fine { margin: 0; }
 .cloud-pair-key .fine + .fine { margin-top: 4px; }
+/* The fingerprint on a line of its own and never broken: it is read against
+   another screen four characters at a time, and a group split across two
+   lines is a group misread. */
 .cloud-pair-key b {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
-    color: var(--ink); letter-spacing: 0.02em; word-break: break-all;
+    display: block; margin: 2px 0 2px 0; white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px;
+    color: var(--ink); letter-spacing: 0.04em;
 }
 .cloud-pair-ask .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .cloud-pair-ask .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }

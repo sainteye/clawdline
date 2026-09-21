@@ -82,7 +82,8 @@ export function PairPanel(props: {
           <p className="say" id="cloud-pair-said">
             {request.code === "invitation_expired"
               ? nextWord("cloudPairLinkExpired")
-              : nextWord("cloudPairLinkBad", { code: request.code })}
+              : nextWord("cloudPairLinkBad", { code: request.code }) // refusal-ok: a link that ran out sends the person to the machine list, and any other unreadable link says its own code in the sentence
+            }
           </p>
           <div className="buttons">
             <button className="chip" type="button" id="cloud-pair-close" ref={first} onClick={onClose}>

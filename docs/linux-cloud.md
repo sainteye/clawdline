@@ -330,6 +330,30 @@ files and 29 refusal ladders, and it is right to: a row nobody can press produce
 guard to find. That is the shape worth remembering — **the silence here is upstream of every
 refusal path, which is exactly why every refusal path is clean.**
 
+**Later the same day: the first of the two is answered, and a third thing turned up under it.**
+The row now carries **Pair** (`web/console/src/cloud/pair.ts`, `PairPanel.tsx`), and so do a
+Devices card for such a machine and the door of a browser that holds no key yet. It runs the copied
+console's own `pairViewer`: the browser shows its offer as one line, `clawdline cloud pair -offer
+<code>`, with its fingerprint beside it; the person runs the line on the machine, over SSH if that
+is the only way in; the card then shows the machine's fingerprint. Both are compared against the
+`browser` and `machine` lines the command prints. Signing in to the account is still not enough to
+read a machine — the offer reaches the machine by a hop the cloud does not carry, and
+`POST /v1/cloud/pairing/offer` answers only the machine's own credential.
+
+The third thing: the console `app.clawdline.com` has served since 2026-09-20 **never read
+`#pair=` at all** — `pairViewerFromInvitation` in the copied `cloud-boot.js` had no caller — so the
+link `clawdline cloud pair` prints paired nothing wherever it was opened. In a Home Screen app it
+also left for Safari, because every renderer writes `target="_blank"` and an iPhone opens that in
+Safari even for the app's own address, whose storage is not the app's. Both are fixed: the link is
+read, taken out of the address and answered on a press, and in a standalone window a `_blank` link
+to this same page is followed in place (`web/console/src/same-page-links.ts`).
+
+The same row also said **"0 sessions"**, which was a count of the snapshots this browser had
+decrypted — always 0 for a machine it cannot decrypt — and was named by the last eight characters of
+its id, because the name is inside the same encrypted snapshot. It now says its sessions cannot be
+read here, and takes the name the account holds for it (`GET /v1/machines`,
+`web/console/src/cloud/unpaired-rows.ts`).
+
 ## 4. What the person has to do
 
 In order, and only the person can do 1 and 3:
@@ -338,8 +362,10 @@ In order, and only the person can do 1 and 3:
    in. The code lasts about ten minutes; if it has expired, the machine has to print a new one
    (`clawdline cloud login`) — see §2.
 2. On the machine: `clawdline cloud on`, then restart the daemon. The switch is read at start.
-3. **Open the pairing link on the phone** (`clawdline cloud pair` prints it) and check the two
-   fingerprints match.
+3. **Pair the phone.** Either press **Pair** on the machine's row in the hosted console and run the
+   line it shows on the machine (`clawdline cloud pair -offer <code>`), or run `clawdline cloud pair`
+   on the machine and open the link it prints in the app. Either way, check that both fingerprints
+   match what the machine prints.
 4. On the machine, if the phone is to act and not only watch: `clawdline cloud commands on`.
 
 It is not one button. It is two approvals and two switches, and the two switches are the machine's
