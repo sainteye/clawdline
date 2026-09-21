@@ -446,9 +446,7 @@ func (l *Link) ScheduleWebhooks() (schedulewebhook.Identity, schedulewebhook.Clo
 		return schedulewebhook.Identity{}, nil, false
 	}
 	return schedulewebhook.Identity{AccountID: l.identity.AccountID, MachineID: l.identity.MachineID},
-		adaptercloud.ScheduleWebhookClient{
-			Client: adaptercloud.NewAccountClient(l.settings.APIBase), Credential: l.identity.MachineCredential,
-		}, true
+		adaptercloud.NewScheduleWebhookClient(l.settings.APIBase, l.identity.MachineCredential), true
 }
 
 // Run holds the line up until ctx is done.

@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -15,6 +16,15 @@ import (
 type ScheduleWebhookClient struct {
 	Client     *AccountClient
 	Credential string
+}
+
+// NewScheduleWebhookClient gives claim's server-side long poll room to return.
+// AccountClient's ordinary opening timeout is deliberately shorter than the
+// protocol's 20-second wait and would cancel every empty claim first.
+func NewScheduleWebhookClient(baseURL, credential string) ScheduleWebhookClient {
+	client := NewAccountClient(baseURL)
+	client.HTTP = &http.Client{Timeout: 35 * time.Second}
+	return ScheduleWebhookClient{Client: client, Credential: credential}
 }
 
 func (c ScheduleWebhookClient) Activate(ctx context.Context, hookID, requestID string) (int64, error) {

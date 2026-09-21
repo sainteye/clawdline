@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 )
@@ -57,5 +58,12 @@ func TestScheduleWebhookClientUsesMachineCredentialAndIdempotencyKeys(t *testing
 		Kind: "mac_durable_accepted", OccurredAt: "2026-09-21T00:00:00Z", MacBuild: "test"}
 	if ack, err := client.Receipt(context.Background(), "swd_test", receipt); err != nil || ack.ReceiptVersion != 1 {
 		t.Fatalf("receipt: %+v %v", ack, err)
+	}
+}
+
+func TestScheduleWebhookClientOutlivesTheProtocolLongPoll(t *testing.T) {
+	client := NewScheduleWebhookClient("https://api.example.test", "credential")
+	if client.Client.HTTP.Timeout <= 25*time.Second {
+		t.Fatalf("webhook timeout %s cannot outlive a 25s server wait", client.Client.HTTP.Timeout)
 	}
 }
