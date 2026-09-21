@@ -27,6 +27,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 )
 
@@ -44,6 +45,11 @@ type fakeRelay struct {
 	published []json.RawMessage
 	// connections counts accepted handshakes.
 	connections int
+	// acceptedChanged closes and is replaced after each accepted handshake.
+	// Receiving a ready frame and recording the server-side connection happen
+	// in different goroutines, so tests that inspect the relay wait for this
+	// event too.
+	acceptedChanged chan struct{}
 	// live is the socket of the newest connection, so a test can drop it.
 	live net.Conn
 	// refuse, when set, makes the next connection answer this error frame
@@ -65,7 +71,13 @@ type fakeRelay struct {
 }
 
 func newFakeRelay(account, device string, publicKey ed25519.PublicKey) *fakeRelay {
-	relay := &fakeRelay{account: account, device: device, publicKey: publicKey, ackStatus: AckDelivered}
+	relay := &fakeRelay{
+		account:         account,
+		device:          device,
+		publicKey:       publicKey,
+		ackStatus:       AckDelivered,
+		acceptedChanged: make(chan struct{}),
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/connect", relay.connect)
 	relay.server = httptest.NewServer(mux)
@@ -90,6 +102,29 @@ func (r *fakeRelay) Connections() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.connections
+}
+
+// waitForConnections waits for the server-side half of a handshake event.
+// Transport's Ready channel is the client-side half, and may close before the
+// relay goroutine records the same accepted connection.
+func (r *fakeRelay) waitForConnections(t *testing.T, want int, timeout time.Duration) {
+	t.Helper()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		r.mu.Lock()
+		if r.connections >= want {
+			r.mu.Unlock()
+			return
+		}
+		changed := r.acceptedChanged
+		r.mu.Unlock()
+		select {
+		case <-changed:
+		case <-timer.C:
+			t.Fatalf("connections: %d, want at least %d", r.Connections(), want)
+		}
+	}
 }
 
 // DropLive closes the newest connection from the server side, which is what a
@@ -201,6 +236,8 @@ func (r *fakeRelay) serve(conn net.Conn, br *bufio.Reader) {
 	r.mu.Lock()
 	r.connections++
 	r.live = conn
+	close(r.acceptedChanged)
+	r.acceptedChanged = make(chan struct{})
 	r.mu.Unlock()
 
 	if silent {

@@ -112,6 +112,7 @@ func (l *testLine) run(t *testing.T) context.CancelFunc {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the handshake did not complete")
 	}
+	l.relay.waitForConnections(t, 1, 5*time.Second)
 	return cancel
 }
 
@@ -185,9 +186,7 @@ func TestADroppedSocketIsRedialled(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the line did not come back")
 	}
-	if line.relay.Connections() < 2 {
-		t.Fatalf("connections: %d, want at least 2", line.relay.Connections())
-	}
+	line.relay.waitForConnections(t, 2, 10*time.Second)
 	status := line.status.Snapshot()
 	if status.Reconnects == 0 {
 		t.Fatal("the reconnect was not counted")
