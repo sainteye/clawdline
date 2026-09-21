@@ -175,10 +175,13 @@ func ownTasks(records []orchestrator.Record, byTerminal map[string]swiftstore.Li
 		}
 		if l := r.Landing; l != nil {
 			switch l.State {
-			case orchestrator.LandingLanded:
+			case orchestrator.LandingLanded, orchestrator.LandingIncorporated:
 				// Proved against the target at the time (D17), which is what
 				// the Swift app calls a broker-verified target landing.
 				origin := "local_target_branch"
+				if l.State == orchestrator.LandingIncorporated {
+					origin = "other_task_landing"
+				}
 				t.Landing = &swiftstore.Landing{
 					State: string(l.State), Commit: stringPtr(l.Commit), VerifiedCommit: stringPtr(l.Commit),
 					VerifiedTargetCommit: stringPtr(l.TargetCommit), Target: stringPtr(l.Target),

@@ -143,6 +143,7 @@ const words = {
     todoHandedOff: "Handed off",
     todoDropped: "Let go",
     todoEscalated: "Worth asking you about",
+    todoIncorporated: "Integrated by another landed task",
   },
   "zh-Hant": {
     nav: "看板",
@@ -270,6 +271,7 @@ const words = {
     todoHandedOff: "已移交",
     todoDropped: "已放掉",
     todoEscalated: "值得問你",
+    todoIncorporated: "已由另一個落地任務整合",
   },
 } as const
 

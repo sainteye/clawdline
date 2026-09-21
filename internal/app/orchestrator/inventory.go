@@ -280,7 +280,7 @@ func (b *Broker) row(ctx context.Context, r Record, now time.Time) InventoryRow 
 	}
 
 	switch row.Landing {
-	case LandingLanded, LandingAbandoned, LandingNothingToLand:
+	case LandingLanded, LandingIncorporated, LandingAbandoned, LandingNothingToLand:
 		row.Section = VisibilitySettled
 	}
 

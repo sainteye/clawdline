@@ -277,7 +277,8 @@ func timelineNames(rec orchestrator.Record, project string) bool {
 // a task that is still running is not a thing that happened.
 func timelineEntry(rec orchestrator.Record) (contract.TimelineEntry, bool) {
 	delivered := rec.Result != nil && rec.Result.Status == "success"
-	landed := rec.Landing != nil && rec.Landing.State == orchestrator.LandingLanded
+	landed := rec.Landing != nil && (rec.Landing.State == orchestrator.LandingLanded ||
+		rec.Landing.State == orchestrator.LandingIncorporated)
 	if !delivered && !landed {
 		return contract.TimelineEntry{}, false
 	}

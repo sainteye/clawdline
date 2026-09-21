@@ -56,7 +56,7 @@ func taskFacts(r Record) work.TaskFacts {
 		f.Owner, f.OwnerAssistant = r.Root.SessionID, r.Root.Assistant
 	}
 	if r.Landing != nil {
-		f.Landing = string(r.Landing.State)
+		f.Landing = workLandingState(r.Landing.State)
 	}
 	return f
 }
@@ -286,6 +286,10 @@ func (f TodoFilter) states() ([]work.TodoState, bool) {
 type TodoView struct {
 	work.Todo
 	Escalation []work.Signal `json:"escalation"`
+	// Landing is the ledger's exact state. The to-do reason deliberately
+	// maps incorporated to landed so the older rule vocabulary still closes
+	// it; this field lets a reader show the distinction without guessing.
+	Landing LandingState `json:"landing_state,omitempty"`
 }
 
 // TodoPage is one read of a session's to-do list.
@@ -352,10 +356,13 @@ func (b *Broker) SessionTodos(ctx context.Context, session string, filter TodoFi
 		page.Next = strconv.FormatInt(last.CreatedAt.Unix(), 10) + ":" + last.ID
 	}
 	facts := map[string]work.TaskFacts{}
+	landings := map[string]LandingState{}
 	ids := []string{}
+	outstanding := map[string]bool{}
 	for _, t := range rows {
+		ids = append(ids, t.Task)
 		if t.State.Outstanding() {
-			ids = append(ids, t.Task)
+			outstanding[t.Task] = true
 		}
 	}
 	if len(ids) > 0 {
@@ -365,7 +372,12 @@ func (b *Broker) SessionTodos(ctx context.Context, session string, filter TodoFi
 		}
 		for id, row := range records {
 			if r, err := Decode(row.Record); err == nil {
-				facts[id] = taskFacts(r)
+				if outstanding[id] {
+					facts[id] = taskFacts(r)
+				}
+				if r.Landing != nil {
+					landings[id] = r.Landing.State
+				}
 			}
 		}
 	}
@@ -390,7 +402,7 @@ func (b *Broker) SessionTodos(ctx context.Context, session string, filter TodoFi
 		if f, ok := facts[t.Task]; ok {
 			signals = work.Escalation(t.Todo, f, held[t.WorkID], now)
 		}
-		page.Todos = append(page.Todos, TodoView{Todo: t.Todo, Escalation: signals})
+		page.Todos = append(page.Todos, TodoView{Todo: t.Todo, Escalation: signals, Landing: landings[t.Task]})
 	}
 	return page, nil
 }

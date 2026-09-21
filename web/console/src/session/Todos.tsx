@@ -101,7 +101,7 @@ export function Todos({ row }: { row: SessionRow | null }) {
               <small>
                 {t.origin === "dispatch" ? workWord("todoDispatch") : t.origin} · {t.task_id.slice(0, 8)} ·{" "}
                 {when(t.closed_at ?? t.updated_at)}
-                {t.state !== "open" ? ` · ${reasonWords(t.reason)}` : ""}
+                {t.state !== "open" ? ` · ${reasonWords(t.reason, t.landing_state)}` : ""}
               </small>
             </div>
           ))
@@ -133,8 +133,9 @@ const STATE_WORD: Record<string, WorkWord> = {
 }
 
 /** Why a to-do closed, in the catalog's words where it has them (the Projects page's landing words). */
-function reasonWords(reason: string): string {
+function reasonWords(reason: string, landing: string | null): string {
   const T = L.strings
+  if (landing === "incorporated") return workWord("todoIncorporated")
   switch (reason) {
     case "landed":
       return T.webProjectLanded

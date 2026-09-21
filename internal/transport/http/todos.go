@@ -32,6 +32,7 @@ type todoWire struct {
 	OwnerAssistant string        `json:"owner_assistant"`
 	State          string        `json:"state"`
 	Reason         string        `json:"reason"`
+	LandingState   *string       `json:"landing_state"`
 	HandedTo       *string       `json:"handed_to"`
 	CreatedAt      int64         `json:"created_at"`
 	UpdatedAt      int64         `json:"updated_at"`
@@ -114,7 +115,8 @@ func (s *Server) writeTodos(w http.ResponseWriter, r *http.Request, session stri
 		out.Todos = append(out.Todos, todoWire{
 			ID: t.ID, Origin: string(t.Origin), TaskID: t.Task, WorkID: optionalString(t.WorkID),
 			Title: t.Title, Project: t.Project, OwnerSession: t.Owner, OwnerAssistant: t.OwnerAssistant,
-			State: string(t.State), Reason: t.Reason, HandedTo: optionalString(t.HandedTo),
+			State: string(t.State), Reason: t.Reason, LandingState: optionalString(string(t.Landing)),
+			HandedTo:  optionalString(t.HandedTo),
 			CreatedAt: t.CreatedAt.Unix(), UpdatedAt: t.UpdatedAt.Unix(),
 			HandedOffAt: optionalUnix(t.HandedOffAt), ClosedAt: optionalUnix(t.ClosedAt),
 			Escalation: t.Escalation,

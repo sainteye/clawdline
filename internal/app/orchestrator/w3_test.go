@@ -238,6 +238,101 @@ func TestAnEmptyDeliveryCannotBeLanded(t *testing.T) {
 	}
 }
 
+// A delivery may be integrated by a later task without its commit becoming
+// an ancestor of the target. The ledger closes that obligation only by
+// linking it to the exact commit of another broker-verified landing.
+func TestAnIncorporatedLandingIsBackedByAnotherTasksLanding(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	repo := gitRepo(t)
+	originalID := "d3000009-0000-4000-8000-000000000009"
+	carrierID := "d3000010-0000-4000-8000-000000000010"
+
+	original := isolatedTask(t, b, ctx, repo, originalID)
+	delivery := onBranch(t, repo, BranchName(originalID), "original.go")
+	if _, err := b.Settle(ctx, originalID, StateSuccess, "done", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	carrier := isolatedTask(t, b, ctx, repo, carrierID)
+	carrierDelivery := onBranch(t, repo, BranchName(carrierID), "integrated.go")
+	if _, err := b.Settle(ctx, carrierID, StateSuccess, "integrated", nil); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "merge", "-q", "--no-ff", "-m", "integrate", BranchName(carrierID))
+	merge := gitIn(t, repo, "rev-parse", "HEAD")
+	if _, err := land(b, ctx, carrierID, "landed", "main", merge); err != nil {
+		t.Fatalf("carrier landing: %v", err)
+	}
+
+	request := LandingRequest{State: "incorporated", Target: "main", Commit: merge,
+		CarrierTask: carrierID, Note: "the integration task resolved both deliveries", Machine: true}
+	untrusted := request
+	untrusted.Machine, untrusted.Secret = false, "s"
+	if _, err := b.Land(ctx, originalID, untrusted); refusalCode(err) != "forbidden" {
+		t.Fatalf("a delivery certified its own incorporation: %v", err)
+	}
+	got, err := b.Land(ctx, originalID, request)
+	if err != nil {
+		t.Fatalf("incorporated landing: %v", err)
+	}
+	l := got.Landing
+	if l.State != LandingIncorporated || l.CarrierTask != carrierID || l.Commit != merge ||
+		l.Target != "main" || l.DeliveryHead != delivery || l.Base != original.Worktree.Base ||
+		l.TargetCommit != merge || l.Repo != repo {
+		t.Fatalf("incorporated landing = %+v", l)
+	}
+	if l.DeliveryHead == carrierDelivery {
+		t.Fatal("the carrier's delivery replaced the original delivery evidence")
+	}
+	if n := eventCount(t, b.Dir, originalID, "landing.incorporated"); n != 1 {
+		t.Fatalf("landing.incorporated events = %d, want 1", n)
+	}
+
+	// The exact same statement is a replay, not another event.
+	if _, err := b.Land(ctx, originalID, request); err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if n := eventCount(t, b.Dir, originalID, "landing.incorporated"); n != 1 {
+		t.Fatalf("replay added an event: %d", n)
+	}
+
+	// A real task id is not evidence unless that task's landing proves this
+	// exact target and commit.
+	badID := "d3000011-0000-4000-8000-000000000011"
+	bad := isolatedTask(t, b, ctx, repo, badID)
+	_ = onBranch(t, repo, BranchName(badID), "pending.go")
+	if _, err := b.Settle(ctx, badID, StateSuccess, "pending", nil); err != nil {
+		t.Fatal(err)
+	}
+	otherID := "d3000012-0000-4000-8000-000000000012"
+	other := isolatedTask(t, b, ctx, repo, otherID)
+	_ = onBranch(t, repo, BranchName(otherID), "other.go")
+	if _, err := b.Settle(ctx, otherID, StateSuccess, "done", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		req  LandingRequest
+		want string
+	}{
+		{"missing carrier", LandingRequest{State: "incorporated", Target: "main", Commit: merge, Machine: true}, "carrier_required"},
+		{"self", LandingRequest{State: "incorporated", Target: "main", Commit: merge, CarrierTask: other.ID, Note: "checked", Machine: true}, "carrier_is_delivery"},
+		{"pending carrier", LandingRequest{State: "incorporated", Target: "main", Commit: merge, CarrierTask: bad.ID, Note: "checked", Machine: true}, "carrier_not_landed"},
+		{"wrong target", LandingRequest{State: "incorporated", Target: "release", Commit: merge, CarrierTask: carrier.ID, Note: "checked", Machine: true}, "carrier_target_mismatch"},
+		{"wrong commit", LandingRequest{State: "incorporated", Target: "main", Commit: carrierDelivery, CarrierTask: carrier.ID, Note: "checked", Machine: true}, "carrier_commit_mismatch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := b.Land(ctx, otherID, tc.req); refusalReason(err) != tc.want {
+				t.Fatalf("answered %v, want unverified_landing/%s", err, tc.want)
+			}
+		})
+	}
+	if _, err := b.Land(ctx, otherID, LandingRequest{State: "incorporated", Target: "main", Commit: merge,
+		CarrierTask: carrier.ID, Machine: true}); refusalCode(err) != "bad_request" {
+		t.Fatalf("an incorporation with no semantic note answered %v", err)
+	}
+}
+
 // cutover A5 with D51, for a task that writes the shared checkout: the line is
 // where the repository stood when it was dispatched.
 func TestASharedCheckoutLandingMustPostdateItsDispatch(t *testing.T) {

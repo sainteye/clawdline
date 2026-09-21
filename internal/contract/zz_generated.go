@@ -1127,26 +1127,33 @@ type BrokerInflightRow struct {
 
 // What became of a delivery, and the one record of it: every other answer to
 // "did this land" is read from this one. Delivered is not reviewed and reviewed
-// is not landed; `landed` is the one rung a caller cannot assert on its own
-// word, because the broker proves that this task's work — an isolated task's
-// branch head, or for a task in the shared checkout a commit made after it was
-// dispatched — is on the target, by asking git for ancestry. The commit the
-// task was dispatched from, or anything already under it, is refused as
-// `unverified_landing` with reason `predates_dispatch`.
+// is not landed. `landed` proves this task's own delivery commit reached the
+// target by ancestry. `incorporated` records the distinct case where that
+// ancestry is false but another task's exact commit has its own broker-verified
+// `landed` record on the same repository and target; `carrier_task` names that
+// task, `commit` names its landing commit, and `delivery_head` remains this
+// task's delivery. Git cannot prove that a semantic conflict resolution
+// preserved every intended behaviour, so that judgement remains in `note`
+// rather than being misrepresented as tree identity.
 type BrokerLanding struct {
 	At int64 `json:"at,omitempty"`
 
 	// The commit the task was dispatched from, which the landed commit was proved not
 	// to be under.
-	Base   string `json:"base,omitempty"`
-	Commit string `json:"commit,omitempty"`
+	Base string `json:"base,omitempty"`
+
+	// For `incorporated`, the other task whose exact broker-verified landing commit
+	// and target back this settlement.
+	CarrierTask string `json:"carrier_task,omitempty"`
+	Commit      string `json:"commit,omitempty"`
 
 	// The settled landing this one replaced. A resend that says what the record says
 	// is a replay and writes nothing; one that differs passes the same gate, and what
 	// it replaced is kept here and in a `landing.corrected` event. One level deep.
 	CorrectedFrom *BrokerLanding `json:"corrected_from,omitempty"`
 
-	// The isolated branch's head the landed commit was proved to carry.
+	// The isolated branch's delivery head: carried by the landed commit for `landed`,
+	// or retained as the non-ancestral original delivery for `incorporated`.
 	DeliveryHead string                  `json:"delivery_head,omitempty"`
 	Note         string                  `json:"note,omitempty"`
 	Obligation   BrokerLandingObligation `json:"obligation,omitempty"`
@@ -1158,7 +1165,8 @@ type BrokerLanding struct {
 	// then: not decided, and never read as the repository's HEAD.
 	Target string `json:"target,omitempty"`
 
-	// What the target branch named when `landed` was proved.
+	// What the target branch named when `landed` was proved, or what the carrier
+	// task's landing proved for `incorporated`.
 	TargetCommit string `json:"target_commit,omitempty"`
 }
 
@@ -1255,12 +1263,13 @@ type BrokerLandingState string
 const (
 	BrokerLandingStatePending       BrokerLandingState = "pending"
 	BrokerLandingStateLanded        BrokerLandingState = "landed"
+	BrokerLandingStateIncorporated  BrokerLandingState = "incorporated"
 	BrokerLandingStateAbandoned     BrokerLandingState = "abandoned"
 	BrokerLandingStateNothingToLand BrokerLandingState = "nothing_to_land"
 )
 
 // BrokerLandingStateValues is every value the contract allows, in contract order.
-var BrokerLandingStateValues = []BrokerLandingState{BrokerLandingStatePending, BrokerLandingStateLanded, BrokerLandingStateAbandoned, BrokerLandingStateNothingToLand}
+var BrokerLandingStateValues = []BrokerLandingState{BrokerLandingStatePending, BrokerLandingStateLanded, BrokerLandingStateIncorporated, BrokerLandingStateAbandoned, BrokerLandingStateNothingToLand}
 
 // The terminal lanes: one writer per terminal, and one machine-wide ceiling on
 // writes held or waiting. A write past the ceiling is refused (429) before

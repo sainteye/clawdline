@@ -21,8 +21,9 @@ import (
 //     what it is doing, that it has finished, and that it wants somebody woken;
 //   - the **machine** proves it is this machine's broker with the orchestrator
 //     token, and may acknowledge a notice and settle a landing;
-//   - `landed` and `nothing_to_land` are machine-only even though the child
-//     holds a secret, because a delivery may not certify its own arrival.
+//   - `landed`, `incorporated` and `nothing_to_land` are machine-only even
+//     though the child holds a secret, because a delivery may not certify its
+//     own arrival or name another task as its carrier.
 
 // Progress records one material boundary change.
 func (b *Broker) Progress(ctx context.Context, id, secret, note string) (Record, error) {
@@ -211,11 +212,12 @@ func (b *Broker) Acknowledge(ctx context.Context, id, noticeID string) (changed 
 
 // LandingRequest is the body of the landing route.
 type LandingRequest struct {
-	State    string
-	Target   string
-	Delivery string
-	Commit   string
-	Note     string
+	State       string
+	Target      string
+	Delivery    string
+	Commit      string
+	CarrierTask string
+	Note        string
 	// Machine is whether the orchestrator token was presented.
 	Machine bool
 	// Secret is the task secret, header only on this route.
@@ -260,7 +262,8 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 	// moved in the meantime — the Swift app's `stale_write`.
 	readState := r.State
 	readLanding := landingKey(r.Landing)
-	machineOnly := req.State == string(LandingLanded) || req.State == string(LandingNothingToLand)
+	machineOnly := req.State == string(LandingLanded) || req.State == string(LandingIncorporated) ||
+		req.State == string(LandingNothingToLand)
 	if machineOnly {
 		if !req.Machine {
 			return Record{}, refuse(http.StatusForbidden, "forbidden",
@@ -272,14 +275,18 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 	}
 
 	switch LandingState(req.State) {
-	case LandingPending, LandingLanded, LandingAbandoned, LandingNothingToLand:
+	case LandingPending, LandingLanded, LandingIncorporated, LandingAbandoned, LandingNothingToLand:
 	default:
 		return Record{}, refuse(http.StatusBadRequest, "bad_request",
-			"state must be pending, landed, abandoned, or nothing_to_land.")
+			"state must be pending, landed, incorporated, abandoned, or nothing_to_land.")
 	}
-	if req.Commit != "" && req.State != string(LandingLanded) {
+	if req.Commit != "" && req.State != string(LandingLanded) && req.State != string(LandingIncorporated) {
 		return Record{}, refuse(http.StatusBadRequest, "bad_request",
-			"commit is valid only when state is landed.")
+			"commit is valid only when state is landed or incorporated.")
+	}
+	if req.CarrierTask != "" && req.State != string(LandingIncorporated) {
+		return Record{}, refuse(http.StatusBadRequest, "bad_request",
+			"carrier_task is valid only when state is incorporated.")
 	}
 	if req.Target != "" && req.State == string(LandingNothingToLand) {
 		return Record{}, refuse(http.StatusBadRequest, "bad_request",
@@ -299,7 +306,7 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 	// stands until it is corrected through its own gate.
 	settled := prev != nil && prev.State != LandingPending
 
-	next := &Landing{State: LandingState(req.State), Target: req.Target, Note: req.Note}
+	next := &Landing{State: LandingState(req.State), Target: req.Target, CarrierTask: req.CarrierTask, Note: req.Note}
 	// What the branch held when the task ended is this broker's own reading of
 	// git at a moment that has passed (LandingSettlement), not a claim the
 	// caller is making, so a landing written over it carries it rather than
@@ -313,6 +320,9 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 	if prev != nil && next.Target == "" {
 		next.Target = prev.Target
 	}
+	if prev != nil && prev.State == next.State && next.CarrierTask == "" {
+		next.CarrierTask = prev.CarrierTask
+	}
 	// A note left out of a resend of the same state is the note on the
 	// record. Moving to another state starts that state's own sentence.
 	if prev != nil && prev.State == next.State && next.Note == "" {
@@ -323,7 +333,7 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 			return Record{}, refuse(http.StatusConflict, "invalid_transition",
 				"A settled obligation cannot move to another state; open a new task.")
 		}
-		if next.State == LandingLanded && next.Target != prev.Target {
+		if (next.State == LandingLanded || next.State == LandingIncorporated) && next.Target != prev.Target {
 			return Record{}, refuseWith(http.StatusConflict, "landing_conflict",
 				"This obligation is already settled with a different target. A landing aimed somewhere "+
 					"else is another claim rather than a correction of this one; record it against its own task.",
@@ -371,6 +381,40 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 		next.DeliveryHead = proof.deliveryHead
 		next.Base = proof.base
 		next.At = b.now()
+	case LandingIncorporated:
+		if req.Commit == "" {
+			return Record{}, refuse(http.StatusBadRequest, "bad_request",
+				"commit is required when state is incorporated.")
+		}
+		if next.Target == "" {
+			return Record{}, refuse(http.StatusBadRequest, "bad_request",
+				"target is required when state is incorporated.")
+		}
+		if next.CarrierTask == "" {
+			return Record{}, unverified(UnverifiedCarrierRequired,
+				"incorporated must name the other task whose verified landing carried this delivery.")
+		}
+		if next.Note == "" {
+			return Record{}, refuse(http.StatusBadRequest, "bad_request",
+				"note is required when state is incorporated; it records the semantic judgement Git cannot make.")
+		}
+		if settled && next.CarrierTask == prev.CarrierTask && next.Note == prev.Note {
+			repo := landingRepository(r)
+			if c, err := b.Git.ResolveCommit(ctx, repo, req.Commit); err == nil && c == prev.Commit {
+				return r, nil
+			}
+		}
+		var proof landingProof
+		proof, head, err = b.proveIncorporated(ctx, r, next.CarrierTask, req.Commit, next.Target)
+		if err != nil {
+			return Record{}, err
+		}
+		next.Commit = proof.commit
+		next.Repo = proof.repo
+		next.TargetCommit = proof.targetCommit
+		next.DeliveryHead = proof.deliveryHead
+		next.Base = proof.base
+		next.At = b.now()
 	case LandingNothingToLand:
 		if settled && next.sameAs(*prev) {
 			return r, nil
@@ -396,6 +440,9 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 	extra := map[string]any{"landing": string(next.State), "target": next.Target}
 	if next.Commit != "" {
 		extra["commit"] = next.Commit
+	}
+	if next.CarrierTask != "" {
+		extra["carrier_task"] = next.CarrierTask
 	}
 	if settled {
 		// A correction keeps what it replaced; and when only the words
@@ -436,7 +483,7 @@ func landingKey(l *Landing) string {
 	if l == nil {
 		return ""
 	}
-	return string(l.State) + "\x00" + l.Target + "\x00" + l.Commit + "\x00" + l.Note
+	return string(l.State) + "\x00" + l.Target + "\x00" + l.Commit + "\x00" + l.CarrierTask + "\x00" + l.Note
 }
 
 // nothingToLandRefusal is the sentence that says a task did write something.

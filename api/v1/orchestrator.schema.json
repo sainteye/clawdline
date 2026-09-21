@@ -71,7 +71,7 @@
       }
     },
     "BrokerLanding": {
-      "description": "What became of a delivery, and the one record of it: every other answer to \"did this land\" is read from this one. Delivered is not reviewed and reviewed is not landed; `landed` is the one rung a caller cannot assert on its own word, because the broker proves that this task's work — an isolated task's branch head, or for a task in the shared checkout a commit made after it was dispatched — is on the target, by asking git for ancestry. The commit the task was dispatched from, or anything already under it, is refused as `unverified_landing` with reason `predates_dispatch`.",
+      "description": "What became of a delivery, and the one record of it: every other answer to \"did this land\" is read from this one. Delivered is not reviewed and reviewed is not landed. `landed` proves this task's own delivery commit reached the target by ancestry. `incorporated` records the distinct case where that ancestry is false but another task's exact commit has its own broker-verified `landed` record on the same repository and target; `carrier_task` names that task, `commit` names its landing commit, and `delivery_head` remains this task's delivery. Git cannot prove that a semantic conflict resolution preserved every intended behaviour, so that judgement remains in `note` rather than being misrepresented as tree identity.",
       "type": "object",
       "additionalProperties": false,
       "required": ["state"],
@@ -80,10 +80,11 @@
         "target": { "description": "The branch the root named the first time it recorded this landing. Absent until then: not decided, and never read as the repository's HEAD.", "type": "string" },
         "commit": { "type": "string" },
         "repo": { "type": "string" },
+        "carrier_task": { "description": "For `incorporated`, the other task whose exact broker-verified landing commit and target back this settlement.", "type": "string" },
         "note": { "type": "string" },
         "at": { "type": "integer" },
-        "target_commit": { "description": "What the target branch named when `landed` was proved.", "type": "string" },
-        "delivery_head": { "description": "The isolated branch's head the landed commit was proved to carry.", "type": "string" },
+        "target_commit": { "description": "What the target branch named when `landed` was proved, or what the carrier task's landing proved for `incorporated`.", "type": "string" },
+        "delivery_head": { "description": "The isolated branch's delivery head: carried by the landed commit for `landed`, or retained as the non-ancestral original delivery for `incorporated`.", "type": "string" },
         "base": { "description": "The commit the task was dispatched from, which the landed commit was proved not to be under.", "type": "string" },
         "settlement": { "$ref": "#/$defs/BrokerLandingSettlement" },
         "corrected_from": { "description": "The settled landing this one replaced. A resend that says what the record says is a replay and writes nothing; one that differs passes the same gate, and what it replaced is kept here and in a `landing.corrected` event. One level deep.", "$ref": "#/$defs/BrokerLanding" },
@@ -92,7 +93,7 @@
     },
     "BrokerLandingState": {
       "type": "string",
-      "enum": ["pending", "landed", "abandoned", "nothing_to_land"]
+      "enum": ["pending", "landed", "incorporated", "abandoned", "nothing_to_land"]
     },
     "BrokerLandingSettlement": {
       "description": "What the task's delivery branch carried past the commit it was cut from at the moment the task ended, asked of git then and never recomputed — the checkout is swept within the day, and a branch does not say when what is on it arrived. Absent when nobody asked: a task that wrote the shared checkout and so has no branch of its own, or a record written before this was kept. `branch_empty`: the branch carried nothing, so nothing could be proved landed from it and the delivery was still loose files in a checkout somebody could still commit. `branch_carries_commits`: it carried a delivery. `branch_unreadable`: git could not count it, which is not a kind of empty.",
