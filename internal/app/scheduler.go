@@ -135,7 +135,7 @@ func (b *ScheduleBook) Beat(ctx context.Context) Pulse {
 			_ = b.Store.MarkScheduleFire(ctx, s.ID, fire, true)
 			b.audit("orchestrator.schedule.skipped", map[string]string{"schedule": s.ID, "why": "missed"})
 			if s.NotifyOnFailure && b.Notify != nil {
-				b.Notify(ctx, s.Title, "Scheduled run missed its catch-up window.", "schedule-"+s.ID+"-missed")
+				b.Notify(ctx, s.Title, scheduleNotice(b.notificationLanguage(), scheduleNoticeMissed, ""), "schedule-"+s.ID+"-missed")
 			}
 		}
 	}
@@ -191,7 +191,7 @@ func (b *ScheduleBook) fireOne(ctx context.Context, decided schedule.Schedule, f
 		}
 		b.audit("orchestrator.schedule.refused", map[string]string{"schedule": s.ID, "code": code, "why": err.Error()})
 		if s.NotifyOnFailure && b.Notify != nil {
-			b.Notify(ctx, s.Title, "Scheduled run could not start: "+code, "schedule-"+s.ID+"-refused")
+			b.Notify(ctx, s.Title, scheduleNotice(b.notificationLanguage(), scheduleNoticeRefused, code), "schedule-"+s.ID+"-refused")
 		}
 		return false
 	}

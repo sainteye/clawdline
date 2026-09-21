@@ -3,6 +3,8 @@ import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { toast } from "../overlays/index.js"
 import { readAnswer, readFailure, readReady, type ReadState } from "../read-state.js"
+import { invalidScheduleErrorHTML } from "../schedule-errors.js"
+import "../schedule-errors.css"
 import {
   createPlacesCache,
   drawIcon,
@@ -191,9 +193,7 @@ function invalidRow(schedule: ScheduleListRow): string {
     esc(schedule.file || "Invalid schedule") +
     "</span></div>" +
     '<span class="schedule-result" data-state="invalid">invalid</span>' +
-    '<p class="schedule-error">' +
-    esc(schedule.error || "The schedule could not be read.") +
-    "</p>" +
+    invalidScheduleErrorHTML(schedule, nextWord) +
     "</li>"
   )
 }
