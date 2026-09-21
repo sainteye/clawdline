@@ -9,6 +9,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/app"
+	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
 // The waiting push's wiring (app.Waiting, docs/push.md "有人在等你回答").
@@ -76,14 +77,16 @@ func waitingAfter() time.Duration {
 }
 
 // watchWaiting reads the session list on the board's clock and hands it to
-// the watcher. The reading is the shared one (Server.reading), so this adds no
-// scan of its own while a console or Cloud is reading too.
+// the watcher. It takes whatever reading is held while that is younger than
+// its own tick — the broker's beat takes one every five seconds — so on a
+// running daemon it costs no scan of its own; only when nothing else has read
+// the machine for a whole tick does it share in a new one.
 func (s *Server) watchWaiting(ctx context.Context, tick time.Duration) {
 	t := time.NewTicker(tick)
 	defer t.Stop()
 	said := ""
 	for {
-		if _, err := s.waiting().Observe(ctx, s.reading(ctx)); err != nil {
+		if _, err := s.waiting().Observe(ctx, s.readingWithin(ctx, tick)); err != nil {
 			// Said once until it changes: the sweep runs every few seconds,
 			// and the same line every few seconds buries the ones that matter.
 			if err.Error() != said {
@@ -99,4 +102,13 @@ func (s *Server) watchWaiting(ctx context.Context, tick time.Duration) {
 		case <-t.C:
 		}
 	}
+}
+
+// readingWithin is Server.reading for a reader on a slower clock
+// (app.InventoryReading.Within).
+func (s *Server) readingWithin(ctx context.Context, age time.Duration) session.Inventory {
+	if s.readings == nil {
+		return s.inventory.Read(ctx)
+	}
+	return s.readings.Within(ctx, age)
 }

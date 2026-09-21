@@ -34,9 +34,10 @@ import (
 //   - **Once per stop, and written down.** A stop runs from the first reading
 //     that saw the session waiting to the first that saw it doing anything
 //     else. Whatever was decided about it — pushed, over the budget, or a
-//     finished task's tab that says nothing — is recorded with the push in
-//     one transaction (the outbox, D08), so a restart reads it back rather
-//     than deciding again. A stop whose end nobody saw (the daemon was down,
+//     finished task's tab that says nothing — is a session.waiting event, and
+//     a push's event is written with the push's outbox effect in one
+//     transaction (D08), so a restart reads the decision back rather than
+//     deciding again. A stop whose end nobody saw (the daemon was down,
 //     or the reading could not see that terminal) stays spent: a person
 //     pushed twice is worse than one who finds it on the list (DG-7).
 //
