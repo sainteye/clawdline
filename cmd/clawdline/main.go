@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -25,7 +26,35 @@ import (
 	httptransport "github.com/sainteye/clawdline/internal/transport/http"
 )
 
-const version = "0.0.1-p0"
+// version is what this build honestly is.
+//
+// A binary from `go install github.com/sainteye/clawdline/cmd/clawdline@vX.Y.Z`
+// carries that tag in its build info, and that is the number its user will
+// quote and the one Clawdline Cloud is told (`cloud.go`'s StartLogin). A
+// hard-coded constant would have every released binary claim the same number
+// forever: on 2026-09-21 the repository was published and tagged v0.9.0 while
+// every copy of it said `0.0.1-p0`.
+//
+// A build from a checkout has no module version. It says so, with the revision
+// it was built from when Go recorded one, rather than borrowing a release
+// number it is not.
+var version = buildVersion()
+
+func buildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "devel"
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	for _, s := range info.Settings {
+		if s.Key == "vcs.revision" && len(s.Value) >= 7 {
+			return "devel+" + s.Value[:7]
+		}
+	}
+	return "devel"
+}
 
 func main() {
 	if len(os.Args) < 2 {
