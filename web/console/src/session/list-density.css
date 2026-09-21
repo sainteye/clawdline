@@ -47,12 +47,54 @@
   min-width: 8ch;
 }
 
-.row .state .session-closeability,
-.row .state .session-work-owed,
-.row .state .session-work-copy,
-.row .state .coordination-wait,
-.row .state .shells {
+.row .state > .session-work-completion,
+.row .state > .session-closeability,
+.row .state > .session-work-owed,
+.row .state > .session-work-copy,
+.row .state > .coordination-wait,
+.row .state > .shells {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.row .state > .session-work-completion:not(:only-child),
+.row .state > .session-closeability:not(:only-child),
+.row .state > .session-work-owed:not(:only-child),
+.row .state > .session-work-copy:not(:only-child),
+.row .state > .coordination-wait:not(:only-child),
+.row .state > .shells:not(:only-child) {
   max-width: 46%;
+}
+
+/* The completion is one status segment. Its check and sentence share that
+ * segment's boundary; bounding the nested sentence a second time leaves the
+ * unused half of the completion between it and the next status. */
+.row .state > .session-work-completion > .session-work-copy {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+/* On a phone the total is hidden whenever a live count follows it. The old
+ * sibling separator still belonged to that hidden total, so the first visible
+ * count began with a dot. Each visible count gets its own shrink boundary as
+ * the status sentences above do. */
+@media (max-width: 899px) {
+  .counts {
+    display: flex;
+  }
+
+  .counts > .part {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .counts > .part.part:nth-child(2)::before {
+    content: none;
+    padding: 0;
+  }
 }
 
 /*

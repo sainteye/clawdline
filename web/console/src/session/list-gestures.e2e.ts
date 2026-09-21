@@ -45,7 +45,15 @@ const SPARE = pane(704)
 const NEEDS_ATTESTATION = pane(705)
 const RETAINED = pane(706)
 
-type ReadingScenario = "normal" | "five" | "ninety" | "expired" | "worst"
+type ReadingScenario =
+  | "normal"
+  | "five"
+  | "ninety"
+  | "expired"
+  | "worst"
+  | "status-one"
+  | "status-two"
+  | "status-three"
 let readingScenario: ReadingScenario = "normal"
 
 type Row = Record<string, unknown>
@@ -133,6 +141,25 @@ let spareMoved = MOVED.spare
 
 function rows(): Row[] {
   if (readingScenario === "expired") return []
+  if (readingScenario.startsWith("status-")) {
+    const extra: Row = {
+      work_state: "milestone_complete",
+      disposition: {
+        scope: "session",
+        evidence: "authenticated_session_delivery",
+      },
+    }
+    if (readingScenario === "status-three") {
+      extra.owed = {
+        note: "還有一個很長的交付決定等待負責人確認",
+        person_needed: true,
+        since: 1,
+      }
+    }
+    const status = row(RETAINED, "Status density fixture", needsAttestationCloseability(), 500, extra)
+    if (readingScenario === "status-one") delete status.closeability
+    return [status]
+  }
   if (readingScenario === "worst") {
     return [
       row(RETAINED, "A very long Clawdfather session title that must stay inside its card", {
@@ -853,6 +880,89 @@ test("the densest phone row gives each segment a boundary and never widens the l
       assert.equal(measured.agents, true)
       assert.equal(measured.task, true)
       await tab.shot("list-overflow-after")
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+for (const [scenario, segments] of [
+  ["status-one", 1],
+  ["status-two", 2],
+  ["status-three", 3],
+] as const) {
+  test(`${segments} status segment${segments === 1 ? "" : "s"} share the 390x844 row without an internal hole`, () =>
+    inTab(async (tab) => {
+      readingScenario = scenario
+      try {
+        await tab.go("/")
+        await tab.until("the status-density row arrives", (s) => s.order.join() === RETAINED)
+        const measured = await tab.run(`(() => {
+          const state = document.querySelector("#rows > li.row .state")
+          const completion = state.querySelector(":scope > .session-work-completion")
+          const copy = completion.querySelector(".session-work-copy")
+          const direct = [...state.children]
+          const box = (node) => {
+            const rect = node.getBoundingClientRect()
+            const style = getComputedStyle(node)
+            return {
+              left: rect.left,
+              right: rect.right,
+              width: rect.width,
+              clientWidth: node.clientWidth,
+              scrollWidth: node.scrollWidth,
+              overflow: style.overflow,
+              textOverflow: style.textOverflow,
+            }
+          }
+          return {
+            viewport: [innerWidth, innerHeight],
+            state: box(state),
+            completion: box(completion),
+            copy: box(copy),
+            direct: direct.map((node) => ({ cls: node.className, ...box(node) })),
+          }
+        })()`)
+        assert.deepEqual(measured.viewport, [390, 844])
+        assert.equal(measured.direct.length, segments, "the fixture draws the requested number of independent status axes")
+        assert.ok(measured.state.scrollWidth <= measured.state.clientWidth, "the complete state rail fits its row")
+        assert.ok(
+          Math.abs(measured.completion.right - measured.copy.right) <= 1,
+          "the delivered sentence reaches its own boundary instead of leaving empty space inside it: " + JSON.stringify(measured),
+        )
+        assert.equal(measured.copy.textOverflow, "ellipsis", "the delivered sentence owns its ellipsis")
+        for (const part of measured.direct) {
+          assert.ok(part.right <= measured.state.right + 1, "each status segment ends inside the state rail: " + JSON.stringify(part))
+        }
+        await tab.shot(scenario)
+      } finally {
+        readingScenario = "normal"
+      }
+    }))
+}
+
+test("the first visible phone count has no separator and owns its ellipsis", () =>
+  inTab(async (tab) => {
+    readingScenario = "worst"
+    try {
+      await tab.go("/")
+      await tab.until("the working count arrives", (s) => s.order.join() === RETAINED)
+      const measured = await tab.run(`(() => {
+        const shown = [...document.querySelectorAll("#counts > .part")]
+          .filter((node) => getComputedStyle(node).display !== "none")
+        const first = shown[0]
+        const style = getComputedStyle(first)
+        const before = getComputedStyle(first, "::before")
+        return {
+          text: first.textContent,
+          separator: before.content,
+          textOverflow: style.textOverflow,
+          clientWidth: first.clientWidth,
+          scrollWidth: first.scrollWidth,
+        }
+      })()`)
+      assert.equal(measured.text, "1 個在跑")
+      assert.ok(measured.separator === "none" || measured.separator === "normal" || measured.separator === "\"\"")
+      assert.equal(measured.textOverflow, "ellipsis", "the visible count owns its ellipsis instead of relying on header clipping")
     } finally {
       readingScenario = "normal"
     }
