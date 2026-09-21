@@ -1010,6 +1010,28 @@ export interface BrokerAssignment {
 }
 
 /**
+ * The account evidence available when this task was dispatched. It is fixed at that
+ * moment: this answers why the dispatch selected one assistant, while GET
+ * /assistants answers what the accounts say now. A read failure is recorded and
+ * warned about, never treated as healthy quota and never used to refuse the
+ * dispatch.
+ */
+export interface BrokerAssistantQuotaDecision {
+  assistants: AssistantQuota[]
+
+  /**
+   * Unix seconds when the broker took this dispatch's snapshot.
+   */
+  read_at: number
+
+  /**
+   * Why no assistant rows could be read. Present instead of silently treating a
+   * missing reading as healthy quota.
+   */
+  read_error?: string
+}
+
+/**
  * The loop reporting itself. `stalled` is decided from outside the loop — more
  * than three ticks since the last finished pass — because a loop that has stopped
  * cannot say so.
@@ -2166,6 +2188,7 @@ export interface BrokerTask {
    */
   accepted_at?: number
   assistant: Assistant
+  assistant_quota?: BrokerAssistantQuotaDecision
   child?: BrokerChild
   claims: string[]
 

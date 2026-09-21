@@ -349,7 +349,12 @@ type Record struct {
 	// two runs of one brief cost differently.
 	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
-	Root            *RootRef  `json:"root,omitempty"`
+	// AssistantQuota is the evidence available when this task was dispatched,
+	// fixed at that moment. It is deliberately not refreshed: its job is to
+	// answer why this dispatch spent this assistant's quota, not what either
+	// account says now.
+	AssistantQuota *AssistantQuotaDecision `json:"assistant_quota,omitempty"`
+	Root           *RootRef                `json:"root,omitempty"`
 	// WorkID is the line of work this task is on (D36): the key a task, its
 	// root's to-do and a board item are bound by, in place of guessing from
 	// titles. The dispatch names it, or the broker binds one by its rules
@@ -432,6 +437,43 @@ type Record struct {
 	// secret, so a task still `queued` after it has provably gone can never be
 	// briefed, and is settled rather than left to its timeout.
 	Dispatcher string `json:"dispatcher,omitempty"`
+}
+
+// AssistantQuotaDecision is the account evidence one dispatch was made with.
+// ReadAt is the broker's clock; each row's ObservedAt is the provider record's
+// own clock, and AgeSeconds is their difference at ReadAt. A whole-reader
+// failure is kept as ReadError instead of an empty list that looks like there
+// were no assistants to consider.
+type AssistantQuotaDecision struct {
+	ReadAt     time.Time                `json:"read_at"`
+	Assistants []AssistantQuotaSnapshot `json:"assistants"`
+	ReadError  string                   `json:"read_error,omitempty"`
+}
+
+// AssistantQuotaSnapshot is one immutable row of a dispatch's quota evidence.
+// It mirrors the assistants route's facts without depending on its wire type.
+type AssistantQuotaSnapshot struct {
+	ID              string                 `json:"id"`
+	Label           string                 `json:"label"`
+	Installed       bool                   `json:"installed"`
+	Availability    string                 `json:"availability"`
+	ObservedAt      *int64                 `json:"observed_at"`
+	AgeSeconds      *int64                 `json:"age_seconds"`
+	Stale           bool                   `json:"stale"`
+	FreshForSeconds *int64                 `json:"fresh_for_seconds"`
+	ResetsAt        *int64                 `json:"resets_at"`
+	Detail          string                 `json:"detail"`
+	Windows         []AssistantQuotaWindow `json:"windows"`
+	LastKnown       string                 `json:"last_known,omitempty"`
+	UnknownReason   string                 `json:"unknown_reason,omitempty"`
+}
+
+// AssistantQuotaWindow is one provider window as it stood at dispatch.
+type AssistantQuotaWindow struct {
+	Name        string   `json:"name"`
+	UsedPercent *float64 `json:"used_percent,omitempty"`
+	ResetsAt    *int64   `json:"resets_at,omitempty"`
+	Hit         bool     `json:"hit"`
 }
 
 // stored is the record as the store keeps it: the record without its long

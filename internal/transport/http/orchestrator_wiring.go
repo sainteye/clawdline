@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/git"
+	"github.com/sainteye/clawdline-go/internal/adapters/limits"
 	"github.com/sainteye/clawdline-go/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline-go/internal/adapters/projects"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
@@ -64,6 +65,34 @@ func newBroker(s *Server) *orchestrator.Broker {
 		Store:       s.store,
 		Tasks:       taskdir.New(s.cfg.Dir),
 		Git:         git.New(),
+		AssistantQuotas: func(now time.Time) ([]orchestrator.AssistantQuotaSnapshot, error) {
+			rows := make([]orchestrator.AssistantQuotaSnapshot, 0, len(limits.Assistants))
+			for _, id := range limits.Assistants {
+				q := quotaReader().Quota(id, now)
+				row := orchestrator.AssistantQuotaSnapshot{
+					ID: id, Label: assistantLabel(id), Installed: q.Installed,
+					Availability: string(q.Availability), ObservedAt: q.ObservedAt,
+					Stale: q.Stale, ResetsAt: q.ResetsAt, Detail: q.Detail,
+					LastKnown: string(q.LastKnown), UnknownReason: string(q.Reason),
+					Windows: []orchestrator.AssistantQuotaWindow{},
+				}
+				if q.ObservedAt != nil {
+					row.AgeSeconds = ageSeconds(*q.ObservedAt, now)
+				}
+				if q.FreshFor > 0 {
+					fresh := q.FreshFor
+					row.FreshForSeconds = &fresh
+				}
+				for _, window := range q.Windows {
+					row.Windows = append(row.Windows, orchestrator.AssistantQuotaWindow{
+						Name: window.Name, UsedPercent: window.UsedPercent,
+						ResetsAt: window.ResetsAt, Hit: window.Hit,
+					})
+				}
+				rows = append(rows, row)
+			}
+			return rows, nil
+		},
 		// The beat's own reading, and the only consumer that may not be
 		// answered from a held one: it decides from this whether a child's tab
 		// is still there, and that decision settles a task and closes a

@@ -66,6 +66,33 @@ task、跟上還沒結束的待辦。不問人、不推播、不進看板；升�
    存回去蓋掉剛被證明的 `briefed`。現在所有修改走 `mutate`：鎖內重讀、以**當下**的紀錄決定
    （`race_test.go` 三個測試，另一個寫入者直接在慢步驟裡面發生，不靠時序運氣）。
 
+## Quota evidence at dispatch (2026-09-21)
+
+`POST /v1/orchestrator/tasks` reads the same five-second, file-only account readings as
+`GET /v1/orchestrator/assistants`. The accepted task keeps that moment under `assistant_quota`:
+the broker's `read_at`, both assistants' availability, provider observation time, age, freshness
+line, stale flag, windows, and the reason for an unknown reading. This is historical evidence; a
+later task read never replaces it with the accounts' current state.
+
+A selected `low` or `exhausted` assistant produces a non-blocking response warning. When another
+installed assistant has a better known availability, `assistant_quota_choice` names both readings,
+including their numbers and observation times. A selected or installed assistant whose reading is
+unknown produces `assistant_quota_unknown`; failure of the whole reader produces
+`assistant_quota_unreadable` and is recorded with the task. A retry of an already accepted
+dispatch rebuilds these warnings from the stored snapshot rather than measuring the accounts
+again.
+
+Quota is not an admission gate. An explicit assistant may have model, capability, or continuity
+reasons that the quota reading cannot see, so every warning says that the dispatch continued. This
+keeps the guide's contract — nothing refuses a dispatch for quota — true.
+
+`assistant: "auto"` is deliberately not admitted. The providers expose different windows, and a
+reading may be stale or unknown; “most remaining” therefore has no stable ordering without a new
+policy for incomparable windows, ties, missing evidence, capability, and model requirements.
+Silently turning any of those cases into one provider would recreate the missing-evidence defect.
+The warning keeps the caller's explicit choice while putting the machine's contrary evidence at
+the decision boundary.
+
 ## 還沒做（這一波刻意不做，或做不到）
 
 - `detached-tasks`、`handoffs`、`root-assignments`、`respawn`、`landing-queue`、`graphs`、`waits`、`coordinator/*`。

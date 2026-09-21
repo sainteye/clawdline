@@ -921,6 +921,9 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		LeaseScope:     r.Scope(),
 		Verdict:        r.Verdict,
 	}
+	if r.AssistantQuota != nil {
+		row.AssistantQuota = brokerAssistantQuotaDecision(r.AssistantQuota)
+	}
 	if declared, known := r.DeclaredWrites(); known {
 		row.DeclaredWrites = declared
 	}
@@ -1003,6 +1006,36 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		}
 	}
 	return row
+}
+
+func brokerAssistantQuotaDecision(in *orchestrator.AssistantQuotaDecision) *contract.BrokerAssistantQuotaDecision {
+	out := &contract.BrokerAssistantQuotaDecision{
+		ReadAt: in.ReadAt.Unix(), Assistants: []contract.AssistantQuota{}, ReadError: in.ReadError,
+	}
+	for _, row := range in.Assistants {
+		windows := make([]contract.SessionLimitWindow, 0, len(row.Windows))
+		for _, window := range row.Windows {
+			w := contract.SessionLimitWindow{Name: window.Name, Hit: window.Hit}
+			if window.UsedPercent != nil {
+				w.UsedPercent = *window.UsedPercent
+			}
+			if window.ResetsAt != nil {
+				w.ResetsAt = *window.ResetsAt
+			}
+			windows = append(windows, w)
+		}
+		out.Assistants = append(out.Assistants, contract.AssistantQuota{
+			ID: contract.Assistant(row.ID), Label: row.Label, Installed: row.Installed,
+			Availability: contract.AssistantAvailability(row.Availability),
+			Source:       contract.AssistantQuotaSourceObserved, ObservedAt: row.ObservedAt,
+			AgeSeconds: row.AgeSeconds, Stale: row.Stale,
+			FreshForSeconds: row.FreshForSeconds, ResetsAt: row.ResetsAt,
+			Detail: row.Detail, Windows: windows,
+			LastKnown:     contract.AssistantAvailability(row.LastKnown),
+			UnknownReason: contract.AssistantUnknownReason(row.UnknownReason),
+		})
+	}
+	return out
 }
 
 // brokerTab is one task's tab policy on the wire: what each way of ending does

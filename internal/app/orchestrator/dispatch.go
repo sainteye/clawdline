@@ -115,7 +115,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	held, _, err := b.Record(ctx, req.TaskID)
 	switch {
 	case err == nil:
-		return Dispatched{Record: held, Replayed: true}, nil
+		return Dispatched{Record: held, Warnings: quotaWarnings(held.Assistant, held.AssistantQuota), Replayed: true}, nil
 	case !isNotFound(err):
 		return Dispatched{}, err
 	}
@@ -202,6 +202,9 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		return Dispatched{}, err
 	}
 	warnings := []Warning{}
+	quotaDecision, quotaAdvice := b.readAssistantQuota(record.Assistant)
+	record.AssistantQuota = quotaDecision
+	warnings = append(warnings, quotaAdvice...)
 
 	// Capacity, per root and per machine. Both are 429 with a retry_after,
 	// because "busy" without a number sends a caller into a loop.
