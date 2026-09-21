@@ -417,9 +417,9 @@ function detailSub(row: SessionRow | null): string {
  * The detail pane's controls, as the original has them.
  *
  * One chip and the `⋯` menu, and no more: the original has no interrupt button
- * here, so neither does this. The daemon can interrupt and the dashboard offers
- * it, but adding a control the screen being replicated does not have would make
- * this a different screen with the same paint.
+ * here, so neither does this. The daemon can interrupt, but adding a control the
+ * screen being replicated does not have would make this a different screen with
+ * the same paint.
  *
  * The menu is `index.html`'s two levels plus the two rows `user-messages.js` and
  * `snippets.js` insert before Git, switched the way `SessionActions.level` does

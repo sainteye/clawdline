@@ -119,7 +119,7 @@ export function devicesLede(): NextWord {
  *
  * `/v1/diagnostics` is this machine's own token's, and a browser opened on
  * this machine is exactly who reads this page, so the answer is normally
- * there; `Dashboard.tsx` reads the same route the same way. The path is
+ * there. The path is
  * written out rather than taken from `client`, because this module is loaded
  * as it is by `node --test` and the client is a workspace package; the console
  * is served by the daemon it asks, so the path is the whole address.

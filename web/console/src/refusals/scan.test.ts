@@ -133,7 +133,7 @@ test("the cross-language audit sees every measured issue and separates byte-lock
   assert.deepEqual(
     report.open.map((item) => item.id),
     [
-      "E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09", "E10", "E11", "E12", "E13", "E14", "E18",
+      "E02", "E05", "E06", "E07", "E08", "E09", "E10", "E11", "E13", "E14", "E18",
     ],
   )
   assert.deepEqual(report.locked.map((item) => item.id), ["L01", "L02"])
