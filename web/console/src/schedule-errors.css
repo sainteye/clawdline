@@ -1,0 +1,28 @@
+.schedule-error-details {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-left: 15px;
+  color: var(--dim);
+  font: 10.5px/1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.schedule-error-details summary {
+  cursor: pointer;
+  color: var(--faint);
+}
+
+.schedule-error-details code {
+  display: block;
+  margin-top: 5px;
+  white-space: pre-wrap;
+}
+
+.dashboard-page .row.unreadable .grow {
+  overflow: visible;
+  white-space: normal;
+}
+
+.dashboard-page .row.unreadable .schedule-error-details {
+  padding-left: 0;
+}

@@ -13,8 +13,11 @@ import type {
 } from "@clawdline/contract"
 import { RefusalError, needsYou, sortSessions } from "@clawdline/core"
 import { client } from "./client.js"
+import { nextWord } from "./next-strings.js"
+import { scheduleErrorCopy } from "./schedule-errors.js"
 import { useFleet, usePoll } from "./useFleet.js"
 import "./dashboard.css"
+import "./schedule-errors.css"
 
 /**
  * The dashboard.
@@ -479,12 +482,19 @@ function ScheduleRowView({ row }: { row: ScheduleRow }) {
   // A row the daemon could not parse is listed as the file it is, not as a
   // schedule somebody switched off: one is a decision, the other a thing to fix.
   if (row.state === "invalid") {
+    const problem = scheduleErrorCopy(row, nextWord)
     return (
       <div className="row unreadable">
         <span className="k">讀不懂</span>
-        <span className="grow">
-          {row.file} — {row.error}
-        </span>
+        <div className="grow">
+          {row.file} — {problem.sentence}
+          {problem.detail && (
+            <details className="schedule-error-details">
+              <summary>{problem.detailsLabel}</summary>
+              <code>{problem.detail}</code>
+            </details>
+          )}
+        </div>
         <span className="v">已停用</span>
       </div>
     )

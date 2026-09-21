@@ -194,7 +194,8 @@ func (b *ScheduleBook) load(ctx context.Context) (inventory, error) {
 	for _, n := range newly {
 		b.audit("orchestrator.schedule.invalid", map[string]string{"file": n.file, "why": n.why, "kind": n.kind})
 		if b.Notify != nil {
-			b.Notify(ctx, n.title, "Schedule file "+n.file+" is invalid: "+n.why, "schedule-invalid-"+n.file)
+			body := scheduleNotice(b.notificationLanguage(), invalidScheduleNoticeKind(n.kind), n.file)
+			b.Notify(ctx, n.title, body, "schedule-invalid-"+n.file)
 		}
 	}
 	sort.Slice(inv.valid, func(i, j int) bool { return inv.valid[i].s.ID < inv.valid[j].s.ID })
