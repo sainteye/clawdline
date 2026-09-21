@@ -12,7 +12,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts. It sits on one line because the directive answers for the line the path is on.
-import { DEVICES_ELEMENT_IDS, bindDevices, devicesLede, forgetLocalPlatform, localMachineKind, localMachines, type MachineAnswer, setAccountMachines } from "./devices-bridge.ts"
+import { DEVICES_ELEMENT_IDS, bindDevices, devicesLede, forgetLocalPlatform, localMachineKind, localMachines, offerPairing, type MachineAnswer, setAccountMachines, setMachinePairing } from "./devices-bridge.ts"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
 import { nextWord } from "../next-strings.ts"
 
@@ -131,6 +131,7 @@ function bound(doc: Doc) {
 
 test.afterEach(() => {
   setAccountMachines(null)
+  setMachinePairing(null)
   forgetLocalPlatform()
 })
 
@@ -221,4 +222,85 @@ test("a source that cannot answer leaves the page empty rather than showing a ma
 
   assert.equal(doc.node("devices-rows").all("device-card").length, 0)
   assert.equal(doc.node("devices-empty").hidden, false)
+})
+
+/** The account with a third machine on it that this browser was never paired with. */
+const WITH_UNPAIRED: MachineAnswer = {
+  ...ACCOUNT,
+  machines: [
+    ...ACCOUNT.machines,
+    {
+      id: "machine-three-51463f04",
+      name: "build-box",
+      label: "Linux · build-box",
+      kind: "linux",
+      observedAt: 3,
+      freshness: "current",
+      pairing: "not_paired",
+      // What the gate passes for a machine whose sessions it cannot read: no count at all.
+      selectable: false,
+      autoSelectable: false,
+    },
+  ],
+}
+
+const PAIR_WORDS = {
+  pair: () => nextWord("cloudPair"),
+  pairOne: (machine: string) => nextWord("cloudPairOne", { machine }),
+  help: () => nextWord("devicesPairHelp"),
+}
+
+test("a card for a machine this browser is not paired with gets a Pair button that names it", async () => {
+  setAccountMachines(() => Promise.resolve(WITH_UNPAIRED))
+  const asked: string[] = []
+  setMachinePairing((machine: string) => asked.push(machine))
+  const doc = new Doc()
+  const { page } = bound(doc)
+  page.enter()
+  await page.load()
+
+  const rows = doc.node("devices-rows")
+  assert.equal(offerPairing(rows, PAIR_WORDS), 1, "one card, the unpaired one")
+  const card = rows.children[2]
+  const pair = card.all("device-start device-pair")
+  assert.equal(pair.length, 1)
+  assert.equal(pair[0].textContent, nextWord("cloudPair"))
+  assert.equal(pair[0].title, nextWord("cloudPairOne", { machine: "Linux · build-box" }))
+  pair[0].onclick?.()
+  assert.deepEqual(asked, ["machine-three-51463f04"], "the full id the copied card carries, not its short form")
+
+  // The copied sentence sends a person to "Pair a Browser" on the machine, a
+  // control a Linux daemon does not have; with a button on the card, the card
+  // says what the button does instead.
+  assert.equal(card.all("device-help")[0].textContent, nextWord("devicesPairHelp"))
+  for (const paired of rows.children.slice(0, 2)) assert.equal(paired.all("device-start device-pair").length, 0)
+
+  assert.equal(offerPairing(rows, PAIR_WORDS), 0, "a card already carrying the button is left alone")
+  assert.equal(card.all("device-start device-pair").length, 1)
+})
+
+test("a machine whose sessions cannot be read is not drawn as having none", async () => {
+  setAccountMachines(() => Promise.resolve(WITH_UNPAIRED))
+  const doc = new Doc()
+  const { page } = bound(doc)
+  page.enter()
+  await page.load()
+
+  const facts = (card: Node) => card.all("device-facts")[0].children.map((fact) => fact.textContent)
+  const rows = doc.node("devices-rows")
+  assert.ok(facts(rows.children[1]).some((text) => /^0 /.test(text)), "a paired machine with no sessions says 0")
+  assert.ok(!facts(rows.children[2]).some((text) => /^\d+ /.test(text)), "the unpaired one says no number")
+})
+
+test("with nothing that can pair, the card keeps the copied sentence and gets no button", async () => {
+  setAccountMachines(() => Promise.resolve(WITH_UNPAIRED))
+  const doc = new Doc()
+  const { page } = bound(doc)
+  page.enter()
+  await page.load()
+
+  const rows = doc.node("devices-rows")
+  assert.equal(offerPairing(rows, PAIR_WORDS), 0)
+  assert.equal(rows.children[2].all("device-start device-pair").length, 0)
+  assert.notEqual(rows.children[2].all("device-help")[0].textContent, nextWord("devicesPairHelp"))
 })

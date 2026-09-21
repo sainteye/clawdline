@@ -7,9 +7,13 @@ import {
   chooseTransport,
   cloudOnboardingMode,
   cloudViewerDeviceMetadata,
+  decodePairingInvitation,
   keepConnected,
   newCloudSession,
+  pairViewer,
+  pairViewerFromInvitation,
   readCloudConfig,
+  type PairingInvitation,
   type CloudClientHandle,
   type CloudConfig,
   type CloudConnection,
@@ -20,7 +24,11 @@ import {
 import { CARRY_TABLE } from "./carry.js"
 import { afterForget, forgetMachine, honestyIsOurs, type ForgetOutcome } from "./forget.js"
 import { NAME_MAX, renameMachine, type RenameOutcome } from "./rename.js"
-import { setAccountMachines } from "../legacy/devices-bridge.js"
+import { setAccountMachines, setMachinePairing } from "../legacy/devices-bridge.js"
+import { machinePresentation } from "../legacy/js/session/selection.js"
+import { accountMachineNames, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
+import { PairingRun, dropInvitation, takeInvitation, type PairStart, type PairState } from "./pair.js"
+import { PairPanel, type PairRequest } from "./PairPanel.js"
 import { readThroughRelay } from "./install.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
@@ -39,11 +47,14 @@ import "./cloud.css"
  * states and, once there is a line, lets a person pick the machine the console
  * then reads (`relay-reader.ts`).
  *
- * What the Swift console does at the same points and this does not, yet —
- * pairing a browser, recovering a device slot — is said on the screen where it
- * would have happened rather than left as a dead end. Acting on the machine —
- * sending, answering, starting, ending — goes through the same seam as reading
- * it (`relay-writer.ts`).
+ * Pairing a machine with this browser happens here too, where a machine this
+ * browser cannot read is met: on its row, on a Devices card, on the door of a
+ * browser that holds no key yet, and from a machine's own pairing link
+ * (`pair.ts`, `PairPanel.tsx`). What the Swift console does at the same points
+ * and this does not, yet — recovering a device slot — is said on the screen
+ * where it would have happened rather than left as a dead end. Acting on the
+ * machine — sending, answering, starting, ending — goes through the same seam
+ * as reading it (`relay-writer.ts`).
  */
 
 export type Declared =
@@ -92,6 +103,18 @@ type Screen =
 
 /** The machine a tab chose, so a reload reads the same one. Per account, per tab. */
 const CHOSEN = "clawdline.cloud.machine:"
+
+/** The screens on which this browser is signed in with a device key, so a pairing can start. */
+const SIGNED_IN = new Set<Screen["at"]>(["machines", "console", "pairing"])
+
+/** The copied presentation of a machine the account names (`selection.js`), so it reads like any other row. */
+function present(id: string, name: string, platform: string) {
+  const shown = (machinePresentation as (value: unknown, copy: unknown) => { name: string; label: string; kind: string })(
+    { id, machineName: name, machinePlatform: platform },
+    L.strings,
+  )
+  return { name: shown.name, label: shown.label, kind: shown.kind }
+}
 
 /**
  * The receive failures that mean this browser cannot read what arrived, as
@@ -155,6 +178,15 @@ export function CloudGate({ declared }: { declared: string }) {
   const [naming, setNaming] = useState<CloudMachine | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [renamed, setRenamed] = useState<{ machine: string; outcome: RenameOutcome } | null>(null)
+  // Pairing (`pair.ts`): what was asked, how far it got, and the account's
+  // names for the machines this browser cannot name itself.
+  const [pairRequest, setPairRequest] = useState<PairRequest | null>(null)
+  const [pairState, setPairState] = useState<PairState>({ phase: "idle" })
+  const [names, setNames] = useState<ReadonlyMap<string, AccountName>>(new Map())
+  const run = useRef<PairingRun | null>(null)
+  const invitation = useRef<PairingInvitation | null>(null)
+  const namesRef = useRef(names)
+  namesRef.current = names
 
   const session = useRef<CloudSession | null>(null)
   const line = useRef<CloudConnection | null>(null)
@@ -329,6 +361,104 @@ export function CloudGate({ declared }: { declared: string }) {
     [transport, renaming],
   )
 
+  /**
+   * Start one pairing. It is only ever called from a press — a row, a card,
+   * the door's button, a link's confirm — never from a render, because a
+   * machine's link accepts one answer and a render can happen twice.
+   */
+  const pair = useCallback((request: PairRequest, start: PairStart) => {
+    run.current?.stop()
+    setAsking(null)
+    setNaming(null)
+    setPairRequest(request)
+    const next = new PairingRun(start, (state) => {
+      if (run.current === next) setPairState(state)
+    })
+    run.current = next
+    setPairState(next.state)
+    void next.begin().then(() => {
+      // A machine's link is good for one answer, whatever the answer was.
+      if (request.mode === "invitation") dropInvitation(sessionStorage)
+    })
+  }, [])
+
+  /** Show this browser's code for `machine`, or for whichever machine runs it. */
+  const pairOffer = useCallback(
+    (machine: { id: string; name: string } | null) => {
+      const current = session.current
+      if (!current) return
+      pair({ mode: "offer", machine }, (hooks) => pairViewer(current, hooks))
+    },
+    [pair],
+  )
+
+  /** Answer the machine's link this page was opened with, once the person has said so. */
+  const pairInvitation = useCallback(() => {
+    const current = session.current
+    const link = invitation.current
+    if (!current || !link) return
+    pair({ mode: "invitation", ok: true, code: "" }, (hooks) => pairViewerFromInvitation(current, link, hooks))
+  }, [pair])
+
+  /** Put the card away. A run still waiting stops waiting; see `PairingRun.stop`. */
+  const closePairing = useCallback(() => {
+    run.current?.stop()
+    run.current = null
+    if (pairRequest?.mode === "invitation") dropInvitation(sessionStorage)
+    invitation.current = null
+    setPairRequest(null)
+    setPairState({ phase: "idle" })
+  }, [pairRequest])
+
+  /**
+   * A machine's pairing link, when this page was opened from one — at boot,
+   * or in place once a standalone window keeps the link (`same-page-links.ts`).
+   * It is read, taken out of the address, and waits for a press.
+   */
+  const readInvitation = useCallback(() => {
+    const raw = takeInvitation(window)
+    if (!raw) return
+    run.current?.stop()
+    run.current = null
+    setPairState({ phase: "idle" })
+    try {
+      invitation.current = decodePairingInvitation(raw, Date.now())
+      setPairRequest({ mode: "invitation", ok: true, code: "" })
+    } catch (error) {
+      invitation.current = null
+      dropInvitation(sessionStorage)
+      const code = error && typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : "bad_invitation"
+      setPairRequest({ mode: "invitation", ok: false, code })
+    }
+  }, [])
+
+  useEffect(() => {
+    readInvitation()
+    window.addEventListener("hashchange", readInvitation)
+    return () => {
+      window.removeEventListener("hashchange", readInvitation)
+      run.current?.stop()
+    }
+  }, [readInvitation])
+
+  // The Devices page's Pair button opens this card for its machine. A gate
+  // that is gone leaves nothing behind for a card to press.
+  const machinesRef = useRef(machines)
+  machinesRef.current = machines
+  useEffect(() => {
+    setMachinePairing((id) => {
+      const known = machinesRef.current?.find((m) => m.id === id)
+      const named = known ? withAccountNames([known], namesRef.current, described, present)[0] : null
+      pairOffer({ id, name: named ? named.name || named.label || id : id })
+    })
+    return () => setMachinePairing(null)
+  }, [pairOffer])
+
+  /** Whether this browser has read `machine`'s own snapshot, and so has its own word for its name. */
+  function described(machine: string): boolean {
+    return !!client.current?.machineDescriptor?.(machine)
+  }
+
   const onUpdate = useCallback(
     (update: CloudUpdate) => {
       switch (update.state) {
@@ -347,10 +477,18 @@ export function CloudGate({ declared }: { declared: string }) {
             const current = client.current
             if (!current) return { machines: [], syncing: true, retryAfterMs: 1000 }
             const answer = await current.machines()
+            // The same two corrections the gate's list makes: the account's
+            // name where this browser has none of its own, and no session
+            // count where it could not read the sessions to count them.
+            const named = withAccountNames(answer.machines, namesRef.current, described, present)
             return {
-              machines: answer.machines.map((m) =>
-                gone.current.includes(m.id) ? { ...m, selectable: false, autoSelectable: false } : { ...m },
-              ),
+              machines: named.map((m) => {
+                const row: Record<string, unknown> = gone.current.includes(m.id)
+                  ? { ...m, selectable: false, autoSelectable: false }
+                  : { ...m }
+                if (typeof sessionsFact(m) === "string") delete row.sessions
+                return row
+              }),
               syncing: answer.syncing,
               retryAfterMs: answer.retryAfterMs,
             }
@@ -372,6 +510,9 @@ export function CloudGate({ declared }: { declared: string }) {
           }
           listMachines()
           setScreen({ at: "machines" })
+          if (transport.kind === "cloud") {
+            void accountMachineNames(transport.config.apiOrigin).then(setNames)
+          }
           return
         }
         case "sign_in":
@@ -403,7 +544,7 @@ export function CloudGate({ declared }: { declared: string }) {
           return
       }
     },
-    [listMachines],
+    [listMachines, transport],
   )
 
   const start = useCallback(() => {
@@ -470,17 +611,47 @@ export function CloudGate({ declared }: { declared: string }) {
       {chosen.name || chosen.label || chosen.id}
     </button>
   )
+  // A pairing is drawn over whatever is on screen, the console included, but
+  // only once this browser is signed in with a device key: a link opened
+  // before signing in waits in this tab's storage for the round trip.
+  const pairing =
+    pairRequest && SIGNED_IN.has(screen.at)
+      ? {
+          request: pairRequest,
+          state: pairState,
+          nameOf: (id: string) => {
+            const known = machines?.find((m) => m.id === id)
+            const named = known ? withAccountNames([known], names, described, present)[0] : null
+            return named ? named.name || named.label || id : id
+          },
+          onBegin: pairInvitation,
+          onStop: () => run.current?.stop(),
+          onAgain: () => pairOffer(pairRequest.mode === "offer" ? pairRequest.machine : null),
+          onClose: closePairing,
+          // Everything this browser had been told about the machine was told
+          // before it held the key; a fresh page reads it all again, and the
+          // relay replays what the machine last published.
+          onReload: () => location.reload(),
+        }
+      : null
+  const shown = useMemo(
+    () => (machines ? withAccountNames(machines, names, described, present) : null),
+    // `described` reads the client, which changes only with a new line and
+    // then with a new list.
+    [machines, names],
+  )
+
   // Once drawn, the console stays: the copied modules bind to the document
   // once, so a refusal after that (a revoked device, a line that gave up) is
   // drawn over it, as the door is over a local console (`door/Door.tsx`).
   return (
     <>
       {chosen && <App aside={aside} />}
-      {words && screen.at !== "console" && (
+      {words && (screen.at !== "console" || pairing) && (
         <GateCard
           screen={screen}
           who={who}
-          machines={machines}
+          machines={shown}
           syncing={syncing}
           problem={problem}
           onChoose={choose}
@@ -498,6 +669,8 @@ export function CloudGate({ declared }: { declared: string }) {
           renamed={renamed}
           onName={setNaming}
           onRename={rename}
+          pairing={pairing}
+          onPair={pairOffer}
         />
       )}
     </>
@@ -525,10 +698,12 @@ function GateCard(props: {
   renamed: { machine: string; outcome: RenameOutcome } | null
   onName: (machine: CloudMachine | null) => void
   onRename: (machine: CloudMachine, name: string) => void
+  pairing: Parameters<typeof PairPanel>[0] | null
+  onPair: (machine: { id: string; name: string } | null) => void
 }) {
   const { screen, who, machines, syncing, problem, onChoose, onRetry } = props
   const { asking, forgetting, forgotten, told, reading, onAsk, onForget, onLeave } = props
-  const { naming, renaming, renamed, onName, onRename } = props
+  const { naming, renaming, renamed, onName, onRename, pairing, onPair } = props
   const mark = useRef<HTMLCanvasElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
   const go = useRef<HTMLButtonElement>(null)
@@ -558,9 +733,9 @@ function GateCard(props: {
   // The question belongs to the list it was asked from. A line that drops
   // while it is open puts its own screen back, rather than leaving an
   // irreversible button over a card that is now saying something else.
-  const question = asking && screen.at === "machines" ? asking : null
-  const nameQuestion = !question && naming && screen.at === "machines" ? naming : null
-  const open = question ? "forget" : nameQuestion ? "rename" : screen.at
+  const question = !pairing && asking && screen.at === "machines" ? asking : null
+  const nameQuestion = !pairing && !question && naming && screen.at === "machines" ? naming : null
+  const open = pairing ? "pair" : question ? "forget" : nameQuestion ? "rename" : screen.at
   return (
     <div className="door" data-step="cloud" data-cloud-screen={open}>
       <div
@@ -576,7 +751,15 @@ function GateCard(props: {
           <b>clawdline</b>
         </div>
         <section data-step="cloud">
-          {question ? forgetQuestion(question) : nameQuestion ? renameQuestion(nameQuestion) : body()}
+          {pairing ? (
+            <PairPanel {...pairing} />
+          ) : question ? (
+            forgetQuestion(question)
+          ) : nameQuestion ? (
+            renameQuestion(nameQuestion)
+          ) : (
+            body()
+          )}
         </section>
       </div>
     </div>
@@ -836,6 +1019,9 @@ function GateCard(props: {
           <>
             <p className="lede">{nextWord("cloudPairingLede")}</p>
             <p className="fine">{nextWord("cloudPairingFine", { account: screen.account })}</p>
+            <button className="go" type="button" id="cloud-pair-start" onClick={() => onPair(null)}>
+              {nextWord("cloudPairStart")}
+            </button>
           </>
         )
       case "device_limit":
@@ -868,6 +1054,8 @@ function GateCard(props: {
               <ul className="cloud-machines" id="cloud-machines">
                 {machines.map((m) => {
                   const gone = forgotten.includes(m.id)
+                  const count = sessionsFact(m)
+                  const name = m.name || m.label || m.id
                   return (
                     <li key={m.id} data-forgotten={gone ? "true" : undefined}>
                       <button
@@ -878,7 +1066,11 @@ function GateCard(props: {
                       >
                         <span className="cloud-machine-name">{m.label || m.id}</span>
                         <span className="cloud-machine-facts">
-                          {nextWord("cloudMachineSessions", { count: m.sessions })}
+                          {typeof count === "object"
+                            ? nextWord("cloudMachineSessions", { count: count.count })
+                            : count === "unread"
+                              ? nextWord("cloudMachineSessionsUnread")
+                              : nextWord("cloudMachineSessionsUnknown")}
                           {" · "}
                           {gone
                             ? nextWord("cloudForgottenRow")
@@ -897,6 +1089,21 @@ function GateCard(props: {
                           glyph is not a word and is not translated; what a
                           screen reader says is the label, which names the
                           machine. */}
+                      {/* The next step for a row that cannot be pressed, on the
+                          row itself: the one place a person meets a machine
+                          this browser cannot read. */}
+                      {!gone && m.pairing === "not_paired" && (
+                        <button
+                          className="cloud-pair"
+                          type="button"
+                          data-pair={m.id}
+                          disabled={forgetting || renaming}
+                          aria-label={nextWord("cloudPairOne", { machine: name })}
+                          onClick={() => onPair({ id: m.id, name })}
+                        >
+                          {nextWord("cloudPair")}
+                        </button>
+                      )}
                       {!gone && (
                         <button
                           className="cloud-rename"
