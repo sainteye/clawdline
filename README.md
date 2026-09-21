@@ -26,6 +26,22 @@ the product and changes what it stands on:
 Execution never leaves your machine. Clawdline Cloud is an optional, encrypted way to reach it from
 a phone or another machine. It is off until you turn it on.
 
+<!--
+  These five images are the Swift app's, the generation this one replaced. They show the same
+  product doing the same things, and the React console does not look exactly like them. Kept
+  deliberately on 2026-09-21 — a README with no picture of the thing is worse — and to be retaken
+  against the current console.
+-->
+
+| | |
+|---|---|
+| **See which session wants you**<br><br>Live work, finished runs and questions waiting for an answer, in one list. Children a session dispatched stay grouped under it. | <img src="docs/assets/sessions-live.gif" width="380" alt="The session list updating as one session waits for an answer, another finishes, and the selection moves through the list."> |
+| **Read the conversation back**<br><br>The recorded messages with their real headings, tables and code, and tool runs collapsed — not a picture of a terminal. | <img src="docs/assets/transcript.png" width="380" alt="A transcript with a heading, a formatted table, code, and a collapsed tool run."> |
+| **Carry the same list to your phone**<br><br>See what is working or waiting, read a transcript, and answer from a paired device.<br><br>[Remote access and pairing →](docs/remote.md) | <img src="docs/assets/fleet-phone.png" width="300" alt="The session list on a phone, with Claude Code and Codex children grouped under the sessions that dispatched them."> |
+| **Talk instead of typing**<br><br>Dictation lands in the composer as you speak; a local Whisper pass can go over the technical words and mixed-language sentences afterwards. | <img src="docs/assets/voice.gif" width="380" alt="Speech being transcribed into the composer and refined by a local Whisper pass."> |
+
+<img src="docs/assets/island.gif" width="760" alt="The mascot in the MacBook notch showing active work, a session waiting for attention, and a long job finishing.">
+
 ## Where it stands
 
 Pre-1.0. The binary reports itself as `0.0.1-p0`. Everything below can be checked against a
