@@ -16,11 +16,11 @@ point of this page.
   on screen. Every B below is a call site that went around it. The fix is not to
   translate the daemon; it is to route the call site through the formatter.
 
-**The guard sees none of B.** `refusals/scan.ts` catches a refusal that lost its
-name, not a refusal whose English became the sentence, so all six pass green.
-U6's acceptance — no English sentence in the DOM under a zh interface — needs a
-rule that `.detail` and `.message` may not go straight into `setX`,
-`textContent` or JSX.
+**The original TypeScript AST pass sees none of B.** It catches a refusal that
+lost its name, not a refusal whose English became the sentence. The
+cross-language pass now coordinated by `refusals/scan.ts` accounts for all
+eighteen rows below and treats `.detail`, `.message`, and daemon-produced error
+prose reaching a screen without `failureSentence` as `producer_prose`.
 
 ## In the order a new person meets them
 
