@@ -2,15 +2,19 @@
 
 Measured on 2026-09-20 on a headless Ubuntu 24.04 server (amd64, 2 vCPU, 4 GiB, tmux 3.4, no
 desktop) in `ap-east-2`, reached only over SSM, with no inbound port opened, no security group
-touched and no new AWS resource created. `docs/linux.md` is the same class of machine and says what
+touched and no new AWS resource created; §3.3 continues it on 2026-09-21, after the account
+approval that §2 was still waiting for. `docs/linux.md` is the same class of machine and says what
 a *local* Linux daemon does; this file is the next question — **what it takes for a phone to reach
 that machine through `app.clawdline.com`, and what is still missing.**
 
-**In one sentence: everything up to the account is built and works — the daemon runs, the console
-is served, a Codex session is live, a task dispatched on that machine runs to `success` — and the
-join itself stops where it is designed to stop, at a one-time code somebody has to approve; past
-that, one square on the phone's path is missing by name, `dispatch`, and a one-shot schedule is the
-door that is open in its place.**
+**In one sentence, as of 2026-09-21: the machine is joined, connected and publishing, and a phone
+still cannot open a session on it — because no browser has paired with *this machine*, and the
+console's chooser draws an unpaired machine as a row that cannot be pressed, so nothing is ever
+sent (§3.3).** Past that, one square on the phone's path is missing by name, `dispatch`, and a
+one-shot schedule is the door that is open in its place.
+
+**What §2 says about the join is kept as it was measured on 2026-09-20**, when the one-time code
+had expired unapproved; it has been approved since.
 
 ## 1. Getting this build onto the machine
 
@@ -148,7 +152,7 @@ Stated as the path is walked: account, line, pairing, permission, then the act.
 | The machine publishes sessions, an inventory and its dispatched work | `internal/transport/cloud/publish.go` sends `s/<machine>/<id>`, `s/<machine>/<inventory>` and `orch/<machine>`; `tasklist.go` is the `tasks` array the hosted console groups children by |
 | The hosted console has a machine chooser | `web/console/src/cloud/CloudGate.tsx` — a `machines` screen, `choose()`, `machine.selectable`, `machine_pairing_required` |
 | A session exists on the machine to receive work | a Codex session listed as `%0`, `backend: tmux`, right `cwd` |
-| A viewer can start a session | `POST /v1/places/<place>/start/codex` → `{"ok":true,"id":"%1","backend":"tmux"}`, a second pane appeared |
+| A viewer can start a session | `POST /v1/places/<place>/start/codex` → `{"ok":true,"id":"%1","backend":"tmux"}`, a second pane appeared — **from this machine's own local device credential, on the machine**; see §3.3 for what that does not prove |
 | A viewer can type into one | `POST /v1/sessions/%1/send` → `{"action":"typed"}`; Codex answered; **the Enter landed** — `docs/linux.md` §4.2's second defect did not reproduce on this build |
 | A viewer can press a waiting card | `POST /v1/sessions/%0/key {"key":"1"}` answered Codex's trust dialog |
 | The broker dispatches and collects a Codex child on this machine | task `state: success`, the file it was asked to write contained what it was asked to write, `result.json` collected |
@@ -243,6 +247,89 @@ and still a round trip that costs a child two failures before it finds the path 
 `systemd --user` unit plus `loginctl enable-linger`, or an ordinary system unit, is still the manual
 answer.
 
+### 3.3 Where the path actually stops, measured 2026-09-21
+
+`docs/linux-cloud.md` was written the day before this machine was approved. It has been approved
+since: the line is up, the switch and the command switch are both on, and the machine publishes.
+The question this section answers is the next one — **a person on a phone, at the hosted console,
+tries to open a session on this machine and nothing arrives here.** Every fact below was read on
+the machine, read-only, over SSM.
+
+**The machine is ready, and by its own count no viewer has ever asked it for anything.**
+
+| Read | Answer |
+|---|---|
+| `GET /v1/cloud/status` | `enabled: true`, `commands: true`, `state: "connected"`, `roster_readable: true`, `pinned_readable: true` |
+| its `commandset` | 27 words, `start` among them |
+| `GET /v1/places` | three places, both assistants installed |
+| `GET /v1/sessions` | three live `tmux` sessions |
+| `inbound_total` / `answered` / `refused` | `0` / `0` / `0` |
+| `place.start` in the whole daemon log | one, and its caller is this machine's own local device |
+| `cloud ack … fanout=` | `0` 519 times, `1` 92 times, `2` 142 times |
+
+So a viewer **is** connected and **is** receiving this machine's envelopes — `fanout` is not always
+zero — and that viewer has never sent this machine a command. It is not a dropped request and not a
+silent refusal: a bridge refusal would have moved `refused`, and a queue refusal logs its own line.
+Nothing was ever addressed to this machine.
+
+**Why, in one sentence: the browser holds no pairing for this machine, so it cannot open what this
+machine publishes, so the console's machine chooser draws it as a row that cannot be pressed.**
+
+The evidence that no browser is paired *with this machine* is three-fold and agrees with itself:
+there is no `paired-devices-v1.json` in the key directory; every device the account roster lists
+answers `pinned: false`; and the daemon log holds no `cloud: pairing invitation` and no
+`cloud: paired viewer` line at all. The account roster is a different thing and it is healthy —
+the devices on it carry `send_prompt`, which is what `link.go`'s `WriteGateAllows` asks for.
+
+The browser half is decided in the copied client, which is the code app.clawdline.com runs:
+
+- an envelope from a machine this browser holds no pairing for, from a sender it holds no key for,
+  is recorded by `_noteUnpairedMachine` rather than treated as a decrypt failure
+  (`cloud-client.js`, `_openEnvelopeFrame`);
+- `_machineRows()` then reports that machine `pairing: "not_paired"`, and
+  `selectable: pairing !== "not_paired"` — so `selectable: false`;
+- `CloudGate.choose()` opens `if (!current || reader.current || !machine.selectable) return`, and
+  the row is drawn `disabled`, with `webDeviceNotPaired` under its name;
+- and a command addressed to such a machine never leaves: `_outboundMachinePairing` throws
+  `machine_pairing_required` before anything is sealed.
+
+Driven against the copied client itself, with a machine put in each state:
+
+```
+{"id":"machine-paired",  "pairing":"paired",     "selectable":true}
+{"id":"machine-unpaired","pairing":"not_paired", "selectable":false}
+CloudGate would open machine-paired : true
+CloudGate would open machine-unpaired : false
+outbound refused: machine_pairing_required | This browser is not paired with the selected machine.…
+```
+
+A machine whose `orch/` snapshot cannot be opened also has no descriptor to be named by, so the row
+carries the generic `webStartMachine · <short id>` label rather than the name the machine publishes.
+On a phone that is a row with an unfamiliar name, greyed out, that says it is not paired.
+
+**What is missing is not a route and not a screen — it is step 3 of §4, which nobody has done for
+this machine.** `clawdline cloud pair` exists on this build (`clawdline cloud` lists it) and prints
+a one-time link whose fragment carries the secret; that link has to reach the browser. Until it
+does, the hosted console cannot be pointed at this machine, and so
+`POST /v1/places/<place>/start/<assistant>` is never sent.
+
+**Two things the console could say better, and neither is the cause.**
+
+1. The gate's machine list names the state and offers no next step: a disabled row and
+   `webDeviceNotPaired`. The Devices page does carry the sentence — `webDevicePairHelp`, *"Start
+   Pair a Browser on this machine to let this browser read its Sessions."* — but that names a
+   control this platform does not have; here the pairing link comes out of the CLI.
+2. `deviceViewModel` puts a **New session** button on a Devices card when `canStart`, and
+   `devices-bridge.ts` hands the press to a callback that ignores the machine id and returns to the
+   session list of whichever machine the gate already chose. It is not drawn for an unpaired
+   machine, so it is not on this path — but on a paired second machine it would be an affordance
+   that does not do what it says.
+
+Neither swallows a refusal. `web/console/src/refusals/scan.ts` reports `0 unanswered` over 119
+files and 29 refusal ladders, and it is right to: a row nobody can press produces no refusal for a
+guard to find. That is the shape worth remembering — **the silence here is upstream of every
+refusal path, which is exactly why every refusal path is clean.**
+
 ## 4. What the person has to do
 
 In order, and only the person can do 1 and 3:
@@ -280,8 +367,17 @@ times the hours.
 
 ## 6. Not run
 
-The approval itself, and therefore everything behind it: the device token, the relay handshake, the
-first publish, the machine appearing in the phone's chooser, the pairing handover, and whether the
-plan has a slot. Reboot survival. The hosted console against this machine. Claude Code — it is
-installed on this machine and **not signed in** (`Not logged in · Please run /login`), so Codex was
-the only assistant available and every dispatch measurement here is a Codex one.
+**On 2026-09-20**, when §1–§5 were measured: the approval itself, and therefore everything behind it —
+the device token, the relay handshake, the first publish, the machine appearing in the phone's
+chooser, the pairing handover, and whether the plan has a slot. Reboot survival. The hosted console
+against this machine. Claude Code — it is installed on this machine and **not signed in**
+(`Not logged in · Please run /login`), so Codex was the only assistant available and every dispatch
+measurement here is a Codex one.
+
+**Since (§3.3, 2026-09-21):** the approval, the device token, the relay handshake and the publishes
+have all happened and are measured. This machine got a slot. Still not run, and each for the same
+reason — nobody has opened a pairing link for this machine on a browser: the pairing handover, the
+machine becoming selectable in the chooser, and any Cloud command reaching this machine at all,
+`start` included. Reboot survival is still not run. Claude Code is now installed *and* offered by
+`GET /v1/places`, which reports availability as `unknown` and does not read whether it is signed
+in, so that row says nothing about whether a Claude session would open.
