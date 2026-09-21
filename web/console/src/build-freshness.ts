@@ -16,13 +16,36 @@
  *
  * The build is named by its files: the index lists the entry modules and their
  * styles, each with a hash of its contents in the name. So the page asks the
- * index what it names now and compares that with what it loaded. A different
- * set is a different build.
+ * index what it names now and looks for each of those among the files it
+ * loaded. **One the page has not got is a build the page is not running.**
+ *
+ * The question is deliberately one-directional, and the first version of this
+ * file got that wrong: it asked whether the two sets were equal, which made
+ * every hosted console say it was out of date, every time, from its first
+ * minute. `main.tsx` reaches the Cloud gate through a dynamic `import()`, so
+ * `CloudGate-*.js` and its stylesheet are named in no index and are in the
+ * page's own tags the moment the gate loads. Measured on 2026-09-21: the index
+ * names six assets, the bundle holds twelve, and a page at the gate carries
+ * eight — so "the same number of files" was never once true in production.
+ * A page loading more than the index names is the normal shape of code
+ * splitting, not evidence of anything.
+ *
+ * That leaves the opposite worry — a rebuild the looser question misses,
+ * because the index still names files the page happens to hold. It does not
+ * happen, and the reason is mechanical: a chunk's file name is a literal
+ * string inside whichever module imports it, so a chunk's hash moving moves
+ * its importer's hash too, up to the entry the index names. Measured with two
+ * real builds on the same day: one string changed inside `CloudGate.tsx` alone
+ * renamed `CloudGate-C87cOfFs.js` to `CloudGate-SlWRtfMJ.js` **and**
+ * `main-CBCqbkb3.js` to `main-BOMcW7yy.js`, which the index names.
  *
  * **It never guesses in the direction of alarm.** An index it cannot read
  * anything out of, or a page whose own assets it cannot see, is "no answer",
  * not "out of date": an offer to reload that appears for no reason teaches
  * people to ignore it, and the one that matters would be ignored with it.
+ * This is also why the question is not asked the other way round: "the page
+ * holds a file the index does not name" is true of every code-split page and
+ * would be exactly such an alarm.
  *
  * Nothing is imported at run time, so `node --test` loads this file as it is.
  */
@@ -46,14 +69,18 @@ export function assetsLoaded(urls: readonly string[]): string[] {
 }
 
 /**
- * Whether the index at `served` names a different build from `running`.
+ * Whether the index at `served` names a build this page is not running.
+ *
+ * True when the index names an asset the page has not loaded. Assets the page
+ * loaded and the index does not name are the dynamic chunks it reached on its
+ * way here, and say nothing — see the note above.
  *
  * False whenever there is nothing to compare — see the note above about never
  * guessing towards alarm.
  */
 export function isDifferentBuild(served: string, running: readonly string[]): boolean {
   const there = assetsNamed(served)
-  const here = assetsLoaded(running)
-  if (there.length === 0 || here.length === 0) return false
-  return there.length !== here.length || there.some((path, i) => path !== here[i])
+  const here = new Set(assetsLoaded(running))
+  if (there.length === 0 || here.size === 0) return false
+  return there.some((path) => !here.has(path))
 }
