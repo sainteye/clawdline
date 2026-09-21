@@ -11,11 +11,7 @@ import assert from "node:assert/strict"
 import { ACTION_WIDTH, offsetFor, revealFor, settleOpen, Swipes, type RevealWords } from "./swipe.ts"
 
 const WORDS: RevealWords = {
-  end: "關閉 session",
-  blocked: "還有 1 項未了結",
-  needsAttestation: "等這個 session 自己確認",
-  unknown: "無法判斷能否關閉",
-  mover: "由另一個 session 推進",
+  end: "關閉 Session",
 }
 
 test("a row only moves the way there is something to uncover", () => {
@@ -109,45 +105,40 @@ test("a tap that moves nothing is left alone, so a row still opens on a press", 
 
 test("a session that is provably safe to close is offered the close", () => {
   const reveal = revealFor({ state: "safe", reasons: [] }, WORDS)
-  assert.deepEqual(reveal, { state: "safe", word: WORDS.end, why: "", proven: true })
+  assert.deepEqual(reveal, { state: "safe", word: WORDS.end })
 })
 
-test("a session with an obligation says what is standing, not that it can be closed", () => {
+test("a session with an obligation still uncovers the close action", () => {
   const reveal = revealFor(
     { state: "blocked", reasons: [{ kind: "obligation", code: "terminal_working" }] },
     WORDS,
   )
   assert.equal(reveal.state, "blocked")
-  assert.equal(reveal.word, WORDS.blocked)
-  assert.equal(reveal.why, WORDS.mover, "and who moves it")
-  assert.equal(reveal.proven, false)
+  assert.equal(reveal.word, WORDS.end)
 })
 
-test("a session nobody could read says that, rather than being drawn as closeable", () => {
+test("a session nobody could read still uncovers the close action", () => {
   const reveal = revealFor(
     { state: "unknown", reasons: [{ kind: "evidence", code: "session_identity_ambiguous" }] },
     WORDS,
   )
   assert.equal(reveal.state, "unknown")
-  assert.equal(reveal.word, WORDS.unknown)
-  assert.equal(reveal.proven, false)
-  assert.notEqual(reveal.word, WORDS.end, "an absence of proof is never the close button")
+  assert.equal(reveal.word, WORDS.end)
 })
 
-test("a reading that has not been attested says so in its own words", () => {
+test("a reading that has not been attested still uncovers the close action", () => {
   const reveal = revealFor(
     { state: "needs_attestation", reasons: [{ kind: "attestation", code: "not_attested" }] },
     WORDS,
   )
   assert.equal(reveal.state, "needs_attestation")
-  assert.equal(reveal.word, WORDS.needsAttestation)
-  assert.equal(reveal.proven, false)
+  assert.equal(reveal.word, WORDS.end)
 })
 
-test("a state nothing knows falls to unknown rather than to the close", () => {
+test("an unrecognised state keeps an unknown status behind the same close action", () => {
   const reveal = revealFor({ state: "", reasons: [] }, WORDS)
   assert.equal(reveal.state, "unknown")
-  assert.equal(reveal.proven, false)
+  assert.equal(reveal.word, WORDS.end)
 })
 
 test("a row that goes away takes its open action with it", () => {
