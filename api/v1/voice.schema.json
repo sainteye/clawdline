@@ -24,6 +24,21 @@
         "text": { "type": "string" }
       }
     },
+    "VoiceLanguage": {
+      "description": "GET /v1/voice/language: what the next recording will be read as, and who said so. `auto` follows Clawdline's own language (the `language` setting), then this machine's languages, then the catalog this daemon ships; the settings window says the answer back, so a Simplified transcript is never a surprise nobody could have seen coming.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["setting", "code", "script", "source", "tag", "script_source", "script_tag"],
+      "properties": {
+        "setting": { "description": "`voice_language` as the settings file has it: `auto`, or a tag.", "type": "string" },
+        "code": { "description": "What whisper is given as `-l`: `zh`, another two-letter code, or `auto` for whisper's own detection.", "type": "string" },
+        "script": { "description": "How Chinese in the answer is written: `Hant`, `Hans`, or empty when nothing said, which is whisper's own habit and Simplified.", "type": "string" },
+        "source": { "description": "Who decided `code`: `voice_language`, `language`, `AppleLanguages`, `AppleLocale`, `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`, `Windows`, `catalog`, or empty when nobody did.", "type": "string" },
+        "tag": { "description": "The tag that source gave, as it spelled it.", "type": "string" },
+        "script_source": { "description": "Who decided `script`, in the same words as `source`; empty when nobody did.", "type": "string" },
+        "script_tag": { "description": "The tag that decided `script`.", "type": "string" }
+      }
+    },
     "VoiceRefusal": {
       "description": "A refusal from this route. It is the ordinary refusal shape with one field added, because `no_whisper` covers two different afternoons: `brew install whisper-cpp` leaves a machine with the binary and no model, and a page told only \"no whisper\" sends somebody to check the thing they already did.",
       "type": "object",

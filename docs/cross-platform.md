@@ -385,6 +385,22 @@ counts (localhost is an exception), but **`http://192.168.x.x:7727`, reached ove
 the microphone. This is not Linux-specific, but "opening a browser on another machine and connecting over" is a common way to use Linux, so
 when `#mic` is disabled it has to give the real reason.
 
+**Which language whisper is given** — `implemented`. Whisper can detect a language and cannot choose a Chinese script: left to
+`-l auto` it writes Mandarin in Simplified, whatever the person reads. So `voice_language: auto` (the default, and what the voice
+tab calls 跟著 Clawdline) asks, and stops at the first answer: Clawdline's own `language` setting; then this machine; then the
+catalog this daemon ships (`zh-Hant`, the language every page it serves is in when nothing narrows it). Only a Chinese answer
+decides `-l`; anything else leaves detection to whisper, and the script for Chinese is taken from the first Chinese entry on
+the same list — so Simplified is written only when something asked for it. The decision is the daemon's, made where whisper
+runs, so a recording from the hosted console and one from the page this daemon serves are read the same way.
+`GET /v1/voice/language` says what the next run will be given and who decided; `internal/adapters/whisper/locale.go` is the
+whole of it.
+
+| | What "this machine" means, in order | Note |
+|---|---|---|
+| **macOS** | `AppleLanguages` (Language & Region's list), `AppleLocale`, then `LC_ALL`, `LC_MESSAGES`, `LANG` | `LANG` last because on a Mac it is as often a terminal's encoding (`en_US.UTF-8`) as a language, and a daemon started from the desktop has none |
+| **Linux** | `LANGUAGE` (only while a locale is set, as gettext reads it), `LC_ALL`, `LC_MESSAGES`, `LANG` | `C`, `POSIX` and `C.UTF-8` say nothing and are skipped — the ordinary state of a server, which then gets the catalog |
+| **Windows** | `LC_ALL`, `LC_MESSAGES`, `LANG` when set, then `GetUserDefaultLocaleName` | Not yet run on a Windows machine; cross-compiled only |
+
 **Summary-table correction**: none.
 
 <!-- /section:whisper -->

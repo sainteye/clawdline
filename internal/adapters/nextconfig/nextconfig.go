@@ -423,6 +423,10 @@ var Settables = []Settable{
 	{Name: "output_newest_first", Kind: "bool"},
 	{Name: "voice_engine", Kind: "string", Choices: []string{"auto", "apple", "whisper"},
 		Refusal: "invalid_voice_engine", Because: "auto, apple or whisper"},
+	// Open rather than a closed list: whisper reads more languages than the
+	// window offers, and a hand-written `zh_TW` is a tag this file keeps.
+	{Name: "voice_language", Kind: "string", Check: ValidLanguageTag, Refusal: "invalid_voice_language",
+		Because: "auto, or a language tag such as zh-Hant, zh-Hans or en"},
 	{Name: "voice_settle_seconds", Kind: "number", Min: 0, Max: 30},
 	{Name: "voice_stop_seconds", Kind: "number", Min: 0, Max: 300},
 	{Name: "remote", Kind: "bool"},
@@ -459,6 +463,25 @@ func SettableByName(name string) (Settable, bool) {
 // the key is still written so that a build with more reads it.
 var Languages = []string{"auto", "en", "zh-Hant", "zh-Hans", "ja", "ko", "es", "pt", "fr", "de",
 	"ru", "it", "hi", "id", "tr"}
+
+// ValidLanguageTag reports whether s is `auto` or could be a language tag:
+// letters first, then letters, digits, dashes and underscores, as BCP 47 and
+// POSIX locales both spell them. What language it names is whisper's to know.
+func ValidLanguageTag(s string) bool {
+	if s == "" || len(s) > 35 {
+		return false
+	}
+	for i, r := range s {
+		letter := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		if i == 0 && !letter {
+			return false
+		}
+		if !letter && !(r >= '0' && r <= '9') && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return true
+}
 
 // ValidName reports whether s is a plain identifier — a mascot pack's name.
 // Anything that could be a path, a control character or a surprise is refused:

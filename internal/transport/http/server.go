@@ -396,6 +396,7 @@ func (s *Server) Handler() http.Handler {
 	// a send: this machine transcribes and answers with the text, and what
 	// happens to it afterwards is the composer's business.
 	mux.HandleFunc("/v1/voice", s.voiceRoute)
+	mux.HandleFunc("/v1/voice/language", s.voiceLanguageRoute)
 	// Web Push: the key, the subscription, the test and the way back out
 	// (push.go). Read-level, as in the Swift app.
 	mux.HandleFunc("/v1/push/", s.pushRoute)

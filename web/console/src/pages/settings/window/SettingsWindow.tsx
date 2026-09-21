@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { SettingsSnapshot, TunnelStatus } from "@clawdline/contract"
+import type { SettingsSnapshot, TunnelStatus, VoiceLanguage } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import { readSettings, writeSettings } from "../api.js"
-import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyTrouble, seconds } from "./copy.js"
+import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyTrouble, seconds, voiceLanguageSaid } from "./copy.js"
 import {
   beginCloudPairing,
   cancelCloudPairing,
@@ -14,6 +14,7 @@ import {
 } from "../cloud.js"
 import { DEFAULTS, reading, type SettingKey } from "./defaults.js"
 import { readTunnelStatus } from "../tunnel.js"
+import { readVoiceLanguage } from "../voice.js"
 import {
   APP_EVENT,
   HOTKEY_EVENT,
@@ -80,6 +81,9 @@ export function SettingsWindow() {
   const [cloud, setCloud] = useState<CloudStatus | null | undefined>(undefined)
   // The tunnel's own reading, the same three ways: not asked, refused, an answer.
   const [tunnel, setTunnel] = useState<TunnelStatus | null | undefined>(undefined)
+  // Where the voice language landed, asked of the daemon while the voice tab is
+  // open and again after every write — the General tab's language moves it too.
+  const [voiceLanguage, setVoiceLanguage] = useState<VoiceLanguage | null>(null)
   // The pairing card's own state. `pairingSaid` is whatever went wrong with the
   // last button press, which is separate from the line's `last_error`: one is
   // about this person's click and the other about the socket.
@@ -114,6 +118,17 @@ export function SettingsWindow() {
     read()
     ask({ kind: "state" })
   }, [read])
+
+  useEffect(() => {
+    if (tab !== 2) return
+    let live = true
+    void readVoiceLanguage().then((answer) => {
+      if (live) setVoiceLanguage(answer)
+    })
+    return () => {
+      live = false
+    }
+  }, [tab, snapshot])
 
   // The Cloud line, while the Remote ("遠端") tab is open. A line that is
   // reconnecting changes on its own, so this card is the one thing in this
@@ -582,6 +597,15 @@ export function SettingsWindow() {
               onPick={pick("voice_engine")}
             />
           </Row>
+          <Row label={W.settingsVoiceLanguage} hint={W.settingsVoiceLanguageHint}>
+            <PopUp
+              label={W.settingsVoiceLanguage}
+              value={String(now("voice_language"))}
+              options={VOICE_LANGUAGES}
+              onPick={pick("voice_language")}
+            />
+          </Row>
+          {voiceLanguage ? <p className="sw-said">{voiceLanguageSaid(voiceLanguage)}</p> : null}
           <Row label={W.settingsSettle}>
             <Slider
               label={W.settingsSettle}
@@ -1291,6 +1315,26 @@ const LANGUAGES = [
       name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
     } catch {
       /* a runtime without the table shows the tag, which is still a thing you can pick */
+    }
+    return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
+  }),
+]
+
+/**
+ * What whisper can be told to read a recording as: Chinese by script, because
+ * the script is the half whisper cannot choose, and the languages it has a
+ * punctuated seed sentence for (`whisper.Seeds`). Named in their own language,
+ * as the General tab's are. A hand-written tag outside the list still shows —
+ * `PopUp` keeps a value it does not hold.
+ */
+const VOICE_LANGUAGES = [
+  { label: W.settingsVoiceLanguageFollow, value: "auto" },
+  ...["zh-Hant", "zh-Hans", "en", "ja", "ko", "es", "pt", "fr", "de", "it", "ru"].map((tag) => {
+    let name = tag
+    try {
+      name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
+    } catch {
+      /* the tag itself, as above */
     }
     return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
   }),

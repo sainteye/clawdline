@@ -5065,6 +5065,9 @@ type SettingsRequest struct {
 	// `auto`, `apple` or `whisper`.
 	VoiceEngine *string `json:"voice_engine"`
 
+	// `auto`, or a language tag: letters, digits and dashes.
+	VoiceLanguage *string `json:"voice_language"`
+
 	// 0 to 30.
 	VoiceSettleSeconds *float64 `json:"voice_settle_seconds"`
 
@@ -5194,6 +5197,11 @@ type SettingsSnapshot struct {
 
 	// `auto`, `apple` or `whisper`.
 	VoiceEngine *string `json:"voice_engine"`
+
+	// What whisper reads a recording as: `auto`, which follows `language`, then this
+	// machine's languages, then the shipped catalog — or a tag such as `zh-Hant`,
+	// `zh-Hans` or `en`.
+	VoiceLanguage *string `json:"voice_language"`
 
 	// How long a pause ends a sentence. 0 is off.
 	VoiceSettleSeconds *float64 `json:"voice_settle_seconds"`
@@ -6003,6 +6011,38 @@ type VerificationLedger struct {
 
 type VerificationLedgerEnvelope struct {
 	VerificationLedger VerificationLedger `json:"verificationLedger"`
+}
+
+// GET /v1/voice/language: what the next recording will be read as, and who said
+// so. `auto` follows Clawdline's own language (the `language` setting), then
+// this machine's languages, then the catalog this daemon ships; the settings
+// window says the answer back, so a Simplified transcript is never a surprise
+// nobody could have seen coming.
+type VoiceLanguage struct {
+	// What whisper is given as `-l`: `zh`, another two-letter code, or `auto` for
+	// whisper's own detection.
+	Code string `json:"code"`
+
+	// How Chinese in the answer is written: `Hant`, `Hans`, or empty when nothing
+	// said, which is whisper's own habit and Simplified.
+	Script string `json:"script"`
+
+	// Who decided `script`, in the same words as `source`; empty when nobody did.
+	ScriptSource string `json:"script_source"`
+
+	// The tag that decided `script`.
+	ScriptTag string `json:"script_tag"`
+
+	// `voice_language` as the settings file has it: `auto`, or a tag.
+	Setting string `json:"setting"`
+
+	// Who decided `code`: `voice_language`, `language`, `AppleLanguages`,
+	// `AppleLocale`, `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`, `Windows`,
+	// `catalog`, or empty when nobody did.
+	Source string `json:"source"`
+
+	// The tag that source gave, as it spelled it.
+	Tag string `json:"tag"`
 }
 
 // A refusal from this route. It is the ordinary refusal shape with one field

@@ -6102,6 +6102,11 @@ export interface SettingsRequest {
   voice_engine: string | null
 
   /**
+   * `auto`, or a language tag: letters, digits and dashes.
+   */
+  voice_language: string | null
+
+  /**
    * 0 to 30.
    */
   voice_settle_seconds: number | null
@@ -6308,6 +6313,13 @@ export interface SettingsSnapshot {
    * `auto`, `apple` or `whisper`.
    */
   voice_engine: string | null
+
+  /**
+   * What whisper reads a recording as: `auto`, which follows `language`, then this
+   * machine's languages, then the shipped catalog — or a tag such as `zh-Hant`,
+   * `zh-Hans` or `en`.
+   */
+  voice_language: string | null
 
   /**
    * How long a pause ends a sentence. 0 is off.
@@ -7272,6 +7284,54 @@ export interface VerificationLedger {
 
 export interface VerificationLedgerEnvelope {
   verificationLedger: VerificationLedger
+}
+
+/**
+ * GET /v1/voice/language: what the next recording will be read as, and who said so.
+ * `auto` follows Clawdline's own language (the `language` setting), then this
+ * machine's languages, then the catalog this daemon ships; the settings window says
+ * the answer back, so a Simplified transcript is never a surprise nobody could have
+ * seen coming.
+ */
+export interface VoiceLanguage {
+  /**
+   * What whisper is given as `-l`: `zh`, another two-letter code, or `auto` for
+   * whisper's own detection.
+   */
+  code: string
+
+  /**
+   * How Chinese in the answer is written: `Hant`, `Hans`, or empty when nothing
+   * said, which is whisper's own habit and Simplified.
+   */
+  script: string
+
+  /**
+   * Who decided `script`, in the same words as `source`; empty when nobody did.
+   */
+  script_source: string
+
+  /**
+   * The tag that decided `script`.
+   */
+  script_tag: string
+
+  /**
+   * `voice_language` as the settings file has it: `auto`, or a tag.
+   */
+  setting: string
+
+  /**
+   * Who decided `code`: `voice_language`, `language`, `AppleLanguages`,
+   * `AppleLocale`, `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`, `Windows`,
+   * `catalog`, or empty when nobody did.
+   */
+  source: string
+
+  /**
+   * The tag that source gave, as it spelled it.
+   */
+  tag: string
 }
 
 /**
