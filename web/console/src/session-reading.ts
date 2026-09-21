@@ -11,6 +11,11 @@ function ageWords(seconds: number, chinese: boolean): string {
   return chinese ? `${s} 秒` : `${s}s`
 }
 
+// The list normally reads again every ten seconds (`Sessions.tsx`). One missed
+// pass is ordinary repaint timing, not a warning worth adding to every row.
+// Three missed passes are the first point where the age becomes useful context.
+const retainedAgeNoteAfterSeconds = 30
+
 /** The locale choice used by the session shell, without adding catalog keys. */
 export function sessionReadingChinese(): boolean {
   const lang =
@@ -20,24 +25,26 @@ export function sessionReadingChinese(): boolean {
   return lang.toLowerCase().startsWith("zh")
 }
 
-/** A retained row is an earlier fact, said with its age every time. */
+/** An older retained row is an earlier fact, said quietly with its age. */
 export function retainedStateWords(
   row: Pick<SessionRow, "source" | "state">,
   nowSeconds = Date.now() / 1000,
   chinese = sessionReadingChinese(),
 ): string | null {
   if (row.source?.freshness !== "unverified") return null
-  const age = ageWords(Math.max(0, nowSeconds - row.source.observed_at), chinese)
+  const ageSeconds = Math.max(0, nowSeconds - row.source.observed_at)
+  if (ageSeconds < retainedAgeNoteAfterSeconds) return null
+  const age = ageWords(ageSeconds, chinese)
   if (chinese) {
     if (row.state === "working") return `${age}前在跑`
     if (row.state === "waiting") return `${age}前在等你回答`
-    if (row.state === "idle") return `${age}前很安靜`
-    return `${age}前的狀態未知`
+    if (row.state === "idle") return `${age}前沒有新輸出`
+    return `${age}前讀到`
   }
   if (row.state === "working") return `working ${age} ago`
   if (row.state === "waiting") return `waiting for you ${age} ago`
-  if (row.state === "idle") return `quiet ${age} ago`
-  return `state unknown ${age} ago`
+  if (row.state === "idle") return `no new output ${age} ago`
+  return `read ${age} ago`
 }
 
 /** One batch failure belongs above the list, not repeated as six row failures. */

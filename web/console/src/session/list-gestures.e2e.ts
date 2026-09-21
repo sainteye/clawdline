@@ -29,7 +29,7 @@ import { dirname, extname, join, normalize, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const here = dirname(fileURLToPath(import.meta.url))
-const dist = resolve(here, "../../dist")
+const dist = resolve(process.env.CLAWDLINE_DIST || resolve(here, "../../dist"))
 const shots = process.env.CLAWDLINE_SHOTS || ""
 const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
@@ -43,6 +43,10 @@ const BLOCKED = pane(702)
 const UNKNOWN = pane(703)
 const SPARE = pane(704)
 const NEEDS_ATTESTATION = pane(705)
+const RETAINED = pane(706)
+
+type ReadingScenario = "normal" | "five" | "ninety" | "expired" | "worst"
+let readingScenario: ReadingScenario = "normal"
 
 type Row = Record<string, unknown>
 
@@ -128,6 +132,42 @@ const MOVED = { safe: 300, needsAttestation: 250, unknown: 200, spare: 100, spar
 let spareMoved = MOVED.spare
 
 function rows(): Row[] {
+  if (readingScenario === "expired") return []
+  if (readingScenario === "worst") {
+    return [
+      row(RETAINED, "A very long Clawdfather session title that must stay inside its card", {
+        ...blockedCloseability(),
+        reasons: [
+          { code: "pending_landing", kind: "obligation", mover: { kind: "broker" } },
+          { code: "pending_task", kind: "obligation", mover: { kind: "broker" } },
+        ],
+      }, 500, {
+        tty: "ttys008-with-a-long-terminal-name",
+        state: "working",
+        work_state: "working",
+        line: "Gitifying every package in the repository (1m 53s · downloading dependencies)",
+        agents_reading: { state: "complete" },
+        agents: [
+          { id: "agent-1", at: 1, depth: 1, type: "Explore", what: "one", state: "running" },
+          { id: "agent-2", at: 1, depth: 1, type: "Explore", what: "two", state: "running" },
+          { id: "agent-3", at: 1, depth: 1, type: "Explore", what: "three", state: "running" },
+        ],
+        coordinator: { label: "Clawdfather", status: "online", commands: [] },
+      }),
+    ]
+  }
+  if (readingScenario === "five" || readingScenario === "ninety") {
+    const age = readingScenario === "five" ? 5 : 90
+    return [
+      row(RETAINED, "Earlier terminal reading", safeCloseability(), 500, {
+        source: {
+          freshness: "unverified",
+          observed_at: Date.now() / 1000 - age,
+          provenance: "iterm",
+        },
+      }),
+    ]
+  }
   return [
     row(SAFE, "Alpha is finished", safeCloseability(), MOVED.safe),
     row(BLOCKED, "Bravo is still working", blockedCloseability(), 400, {
@@ -156,6 +196,12 @@ const streams = new Set<ServerResponse>()
 
 function snapshot() {
   generation++
+  const age = readingScenario === "five" ? 5 : readingScenario === "ninety" ? 90 : 0
+  const source = readingScenario === "normal" || readingScenario === "worst"
+    ? { freshness: "current", observed_at: Date.now() / 1000, provenance: "fixture" }
+    : readingScenario === "expired"
+      ? { freshness: "missing", observed_at: Date.now() / 1000 - 121, provenance: "iterm" }
+      : { freshness: "unverified", observed_at: Date.now() / 1000 - age, provenance: "iterm" }
   return {
     at: Date.now(),
     scan: {
@@ -165,6 +211,7 @@ function snapshot() {
       epoch: 1,
       generation,
       provenance: "fixture",
+      source,
     },
     // The daemon's own answer moves; the page's order is the page's business.
     sessions: rows(),
@@ -211,7 +258,20 @@ function daemon(): Server {
       return json(res, 200, snapshot())
     }
     if (path === "/v1/health") return json(res, 200, { ok: true })
-    if (path === "/v1/orchestrator/tasks") return json(res, 200, { at: Date.now(), tasks: [] })
+    if (path === "/v1/orchestrator/tasks") {
+      const tasks = readingScenario === "worst"
+        ? [{
+            id: "task-fixture",
+            task_id: "task-fixture",
+            title: "A child task with a title too long for the phone row",
+            state: "briefed",
+            created: 1,
+            root: { terminalId: pane(700), sessionId: "root-fixture" },
+            child: { terminalId: RETAINED },
+          }]
+        : []
+      return json(res, 200, { at: Date.now(), tasks })
+    }
     if (path === "/v1/events") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
       res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n")
@@ -343,6 +403,8 @@ const PROBE = `(() => {
     action: swiped ? (swiped.querySelector(".swipe-end")?.textContent ?? null) : null,
     actionKind: swiped ? (swiped.querySelector(".swipe-end")?.dataset.closeability ?? null) : null,
     rowState: swiped ? (swiped.querySelector(".state")?.textContent ?? null) : null,
+    readingBanner: document.querySelector(".session-reading")?.textContent ?? null,
+    retainedText: document.querySelector(".retained-reading")?.textContent ?? null,
     ptrHeight: ptr ? ptr.style.height : "",
     ptrWord: label ? label.textContent : "",
     scrollTop: document.getElementById("list-scroll")?.scrollTop ?? -1,
@@ -360,6 +422,8 @@ interface Seen {
   action: string | null
   actionKind: string | null
   rowState: string | null
+  readingBanner: string | null
+  retainedText: string | null
   ptrHeight: string
   ptrWord: string
   scrollTop: number
@@ -745,4 +809,112 @@ test("a diagonal drag belongs to one gesture: the pad and the row never move tog
     assert.equal(swiping.swipeState, "dragging")
     assert.equal(parseFloat(swiping.ptrHeight || "0"), 0, "and the pad did not come with it")
     await tab.lift()
+  }))
+
+// ---- retained-reading age and phone layout
+
+test("the densest phone row gives each segment a boundary and never widens the list", () =>
+  inTab(async (tab) => {
+    readingScenario = "worst"
+    try {
+      await tab.go("/")
+      await tab.until("the worst-case row arrives", (s) => s.order.join() === RETAINED)
+      const measured = await tab.run(`(() => {
+        const scroller = document.querySelector(".list-scroll")
+        const row = document.querySelector("#rows > li.row")
+        const meta = row.querySelector(".meta")
+        const state = row.querySelector(".state")
+        const line = row.querySelector(".line")
+        const shown = (selector) => getComputedStyle(row.querySelector(selector)).display !== "none"
+        const box = row.getBoundingClientRect()
+        const rail = scroller.getBoundingClientRect()
+        return {
+          viewport: [innerWidth, innerHeight],
+          list: [scroller.clientWidth, scroller.scrollWidth],
+          row: [row.clientWidth, row.scrollWidth, box.left, box.right, rail.left, rail.right],
+          meta: [meta.clientWidth, meta.scrollWidth],
+          state: [state.clientWidth, state.scrollWidth],
+          line: [line.clientWidth, line.scrollWidth, getComputedStyle(line).textOverflow],
+          path: shown(".path"),
+          coordinator: shown(".coordinator-chip"),
+          agents: shown(".agents-chip"),
+          task: shown(".task-chip"),
+        }
+      })()`)
+      assert.deepEqual(measured.viewport, [390, 844])
+      assert.equal(measured.list[1], measured.list[0], "the list has no horizontal overflow")
+      assert.ok(measured.row[3] <= measured.row[5], "the card ends inside the list rail: " + JSON.stringify(measured.row))
+      assert.ok(measured.meta[1] <= measured.meta[0], "the metadata segments converge inside their line")
+      assert.ok(measured.state[1] <= measured.state[0], "the state segments converge inside their line")
+      assert.ok(measured.line[0] >= 70, "the live sentence keeps enough room to attach its ellipsis")
+      assert.equal(measured.line[2], "ellipsis")
+      assert.equal(measured.path, false, "the repeated path is first to leave the phone row")
+      assert.equal(measured.coordinator, false, "the crown keeps the role when its duplicate word leaves")
+      assert.equal(measured.agents, true)
+      assert.equal(measured.task, true)
+      await tab.shot("list-overflow-after")
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("a five-second retained reading has no row-level age note at 390x844", () =>
+  inTab(async (tab) => {
+    readingScenario = "five"
+    try {
+      await tab.go("/")
+      const seen = await tab.until("the retained row arrives without an age note", (s) => s.order.join() === RETAINED)
+      assert.equal(seen.retainedText, null)
+      await tab.shot("reading-5-seconds")
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("a ninety-second retained reading is a quiet, one-line annotation at 390x844", () =>
+  inTab(async (tab) => {
+    readingScenario = "ninety"
+    try {
+      await tab.go("/")
+      const seen = await tab.until("the older retained row arrives with its age note", (s) => s.retainedText !== null)
+      assert.equal(seen.retainedText, "1 分鐘前沒有新輸出")
+      const measured = await tab.run(`(() => {
+        const note = document.querySelector(".retained-reading")
+        if (!note) throw new Error("no retained note")
+        const style = getComputedStyle(note)
+        const box = note.getBoundingClientRect()
+        return {
+          fontSize: style.fontSize,
+          lineHeight: style.lineHeight,
+          whiteSpace: style.whiteSpace,
+          width: box.width,
+          height: box.height,
+          clientWidth: note.clientWidth,
+          scrollWidth: note.scrollWidth,
+        }
+      })()`)
+      assert.equal(measured.fontSize, "11.5px")
+      assert.equal(measured.whiteSpace, "nowrap")
+      assert.ok(measured.scrollWidth <= measured.clientWidth, "the whole note fits instead of clipping: " + JSON.stringify(measured))
+      assert.ok(measured.height <= 16, "the note occupies one text line: " + JSON.stringify(measured))
+      await tab.shot("reading-90-seconds")
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("a reading beyond the retention window removes the row and says the source is missing", () =>
+  inTab(async (tab) => {
+    readingScenario = "expired"
+    try {
+      await tab.go("/")
+      const seen = await tab.until("the expired row is gone and the batch says missing", (s) =>
+        s.order.length === 0 && (s.readingBanner ?? "").includes("沒有仍可採用的上次讀數"),
+      )
+      assert.deepEqual(seen.order, [])
+      assert.match(seen.readingBanner ?? "", /沒有仍可採用的上次讀數/)
+      await tab.shot("reading-expired")
+    } finally {
+      readingScenario = "normal"
+    }
   }))

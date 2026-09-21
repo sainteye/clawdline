@@ -1,0 +1,83 @@
+/*
+ * The copied list stylesheet describes the original row, before the row also
+ * carried an agent count, a coordinator role, a task relationship and a
+ * retained-reading note. This small layer states the density policy for those
+ * additions without changing the byte-for-byte legacy copy.
+ *
+ * A row is never wider than its list. Within it, each sentence owns its own
+ * ellipsis; clipping the row is only the final containment guard, not the
+ * truncation strategy.
+ */
+.row {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.row > .title,
+.row > .meta,
+.row > .state {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.row .meta {
+  overflow: hidden;
+}
+
+.row .meta .tty,
+.row .meta .task-chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row .meta .tty {
+  flex: 1 8 6ch;
+}
+
+.row .meta .task-chip {
+  flex: 0 6 auto;
+  max-width: 42%;
+}
+
+.row .state .line {
+  flex: 1 1 12ch;
+  min-width: 8ch;
+}
+
+.row .state .session-closeability,
+.row .state .session-work-owed,
+.row .state .session-work-copy,
+.row .state .coordination-wait,
+.row .state .shells {
+  max-width: 46%;
+}
+
+/*
+ * At phone width the project path goes first: the title already names the
+ * session and the machine/tty still say where it is. Coordinator copy goes
+ * next because the crown on the project mark carries the same role. The agent
+ * count and task relationship remain; they are the facts that explain why the
+ * row is active and where it belongs.
+ */
+@media (max-width: 480px) {
+  .row .meta .path,
+  .row .meta .coordinator-chip {
+    display: none;
+  }
+
+  .row .meta .machine {
+    flex: 1 4 auto;
+    max-width: 34%;
+  }
+
+  .row .meta .agents-chip {
+    flex: 0 0 auto;
+  }
+
+  .row .state .retained-reading {
+    max-width: 42%;
+  }
+}
