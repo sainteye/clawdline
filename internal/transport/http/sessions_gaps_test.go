@@ -22,6 +22,7 @@ func oneBlindWindow() session.Inventory {
 		ObservedAt: time.Now(),
 		Complete:   false,
 		Sources:    map[string]bool{"ps": true, "tmux": true, "iterm": false},
+		Notes:      []string{"iTerm2 apple event failed: exit status 1"},
 		Gaps: []session.Gap{{Source: "iterm", Scope: "window", ID: "27898",
 			Detail: "iTerm2 window 27898 would not list its tabs (tabs() answered null)"}},
 		Sessions: []session.Session{
@@ -103,6 +104,14 @@ func TestTheSnapshotSaysWhichWindowWouldNotOpen(t *testing.T) {
 	}
 	if !seen {
 		t.Fatal("no iterm source on the snapshot")
+	}
+}
+
+func TestTheSnapshotCarriesAWholeSourceFailureReason(t *testing.T) {
+	s := gapServer(t)
+	snap := s.sessionsPayloadFrom(context.Background(), oneBlindWindow())
+	if len(snap.Scan.Notes) != 1 || !strings.Contains(snap.Scan.Notes[0], "apple event failed") {
+		t.Fatalf("scan notes = %v", snap.Scan.Notes)
 	}
 }
 

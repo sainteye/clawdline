@@ -1,4 +1,4 @@
-import type { BearingsSource, SessionRow } from "@clawdline/contract"
+import type { BearingsSource, ScanSource, SessionRow } from "@clawdline/contract"
 
 function ageWords(seconds: number, chinese: boolean): string {
   const s = Math.max(0, Math.floor(seconds))
@@ -63,6 +63,55 @@ export function batchReadingWords(
   return chinese
     ? "這次沒有讀完整；至少一個來源沒有仍可採用的上次讀數。"
     : "This pass did not finish; at least one source has no recent earlier reading to show."
+}
+
+/**
+ * The concrete reason a terminal source did not finish, translated at the UI
+ * boundary. Adapter diagnostics still cross the wire for evidence, but their
+ * English subprocess text is never used as the sentence on a Chinese screen.
+ */
+export function scanFailureWords(
+  notes: readonly string[] | undefined,
+  sources: readonly ScanSource[] | undefined,
+  chinese = sessionReadingChinese(),
+): string | null {
+  for (const note of notes ?? []) {
+    if (note.startsWith("iTerm2 apple event failed:")) {
+      return chinese
+        ? "Clawdline 讀不到 iTerm2。請到「系統設定 → 隱私權與安全性 → 自動化」，允許 Clawdline 控制 iTerm2。"
+        : "Clawdline could not read iTerm2. In System Settings → Privacy & Security → Automation, allow Clawdline to control iTerm2."
+    }
+    if (note.startsWith("iTerm2 answer was unreadable:")) {
+      return chinese
+        ? "iTerm2 回傳的 session 清單無法讀取；請重新整理，若仍然發生，再重新啟動 iTerm2。"
+        : "iTerm2 returned an unreadable session list. Refresh it, and restart iTerm2 if it continues."
+    }
+    const outside = /^tmux is at (.+), which is not on this daemon's PATH/.exec(note)
+    if (outside) {
+      return chinese
+        ? `Clawdline 在 ${outside[1]} 找到 tmux，但 daemon 的 PATH 沒有它；這次無法確認 tmux 的 session 清單。`
+        : `Clawdline found tmux at ${outside[1]}, but it is not on the daemon's PATH, so this pass could not verify the tmux session list.`
+    }
+    if (note.startsWith("tmux list-panes failed:")) {
+      return chinese
+        ? "tmux 沒有完成 session 清單讀取；請在這台機器執行 `tmux list-panes -a` 查看它拒絕的原因。"
+        : "tmux did not finish reading its session list. Run `tmux list-panes -a` on this machine to see why it refused."
+    }
+  }
+
+  const openGap = (sources ?? []).flatMap((source) => source.gaps ?? []).find((gap) => !gap.sealed)
+  if (openGap) {
+    return chinese
+      ? "iTerm2 有一個視窗或分頁沒有回報 session；請打開 iTerm2，檢查沒有內容或正在等待回應的視窗。"
+      : "An iTerm2 window or tab did not report its sessions. Open iTerm2 and check for a blank or unresponsive window."
+  }
+  const incomplete = (sources ?? []).find((source) => !source.complete)
+  if (incomplete) {
+    return chinese
+      ? `${incomplete.source} 沒有完成 session 清單讀取；空白不代表沒有 session。`
+      : `${incomplete.source} did not finish reading its session list; a blank list does not mean there are no sessions.`
+  }
+  return null
 }
 
 /** The header's first number is always the list's total, never one state. */

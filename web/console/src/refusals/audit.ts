@@ -139,7 +139,7 @@ const RULES: Rule[] = [
     probes: [
       { file: "internal/adapters/terminal/tmux.go", all: ["inv.Notes = append(inv.Notes", "tmux list-panes failed:"] },
       { file: "internal/adapters/terminal/iterm_darwin.go", all: ["inv.Notes = append(inv.Notes", "iTerm2 apple event failed:"] },
-      { file: "internal/transport/http/sessions.go", all: ["Scan: contract.Scan{", "Sources: scanSources(inv.Sources, inv.Gaps)" ] },
+      { file: "internal/transport/http/sessions.go", all: ["Complete:   inv.Complete,\n\t\t\tProvenance: inv.Provenance", "Sources: scanSources(inv.Sources, inv.Gaps)" ] },
       { file: "internal/contract/zz_generated.go", all: ["type Scan struct {", "Sources []ScanSource" ] },
     ],
   },
@@ -324,7 +324,7 @@ const RULES: Rule[] = [
 ]
 
 const EXPECTED_RULES = 37
-const EXPECTED_OPEN = 28
+const EXPECTED_OPEN = 24
 const EXPECTED_LOCKED = 2
 
 export function dispositionFor(file: string): AuditDisposition {

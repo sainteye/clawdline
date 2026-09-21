@@ -241,6 +241,27 @@ func TestAnEmptyListingIsStillComplete(t *testing.T) {
 	}
 }
 
+// A daemon opened from Finder inherits launchd's small PATH. Homebrew's tmux
+// may still have a live server, so finding the binary outside that PATH proves
+// the opposite of an authoritative empty list: this source was not read.
+func TestATmuxOutsideTheDaemonPATHIsAnIncompleteInventory(t *testing.T) {
+	found := stubTmux(t, "%1\x01/dev/ttys001\x01claude\x01s\x01title\x01/tmp\n")
+	t.Setenv("PATH", t.TempDir())
+	tmux := &Tmux{Binary: "tmux", fallbacks: []string{found}}
+
+	inv, err := tmux.Inventory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.Complete || len(inv.Sessions) != 0 {
+		t.Fatalf("tmux outside PATH read as an authoritative listing: %+v", inv)
+	}
+	if len(inv.Notes) != 1 || !strings.Contains(inv.Notes[0], found) ||
+		!strings.Contains(inv.Notes[0], "not on this daemon's PATH") {
+		t.Fatalf("the reading did not say where tmux was: %v", inv.Notes)
+	}
+}
+
 // stubTmux writes an executable that prints out and exits 0, whatever it is
 // asked. It stands in for a tmux whose version this machine does not have.
 func stubTmux(t *testing.T, out string) string {

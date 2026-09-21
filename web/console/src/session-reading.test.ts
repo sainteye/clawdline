@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node's strip-types runner.
-import { batchReadingWords, retainedStateWords, totalSessionWords } from "./session-reading.ts"
+import { batchReadingWords, retainedStateWords, scanFailureWords, totalSessionWords } from "./session-reading.ts"
 
 const source = { observed_at: 1_000, provenance: "iterm", freshness: "unverified" as const }
 
@@ -28,6 +28,21 @@ test("the batch owns the failure sentence", () => {
   assert.equal(
     batchReadingWords({ observed_at: 0, provenance: "iterm", freshness: "missing" }, 1_120, true),
     "這次沒有讀完整；至少一個來源沒有仍可採用的上次讀數。",
+  )
+})
+
+test("a whole terminal-source failure says the next action instead of waiting forever", () => {
+  assert.equal(
+    scanFailureWords(["iTerm2 apple event failed: exit status 1"], [{ source: "iterm", complete: false }], true),
+    "Clawdline 讀不到 iTerm2。請到「系統設定 → 隱私權與安全性 → 自動化」，允許 Clawdline 控制 iTerm2。",
+  )
+  assert.equal(
+    scanFailureWords(
+      ["tmux is at /opt/homebrew/bin/tmux, which is not on this daemon's PATH, and the tmux backend runs `tmux` from the PATH"],
+      [{ source: "tmux", complete: false }],
+      true,
+    ),
+    "Clawdline 在 /opt/homebrew/bin/tmux 找到 tmux，但 daemon 的 PATH 沒有它；這次無法確認 tmux 的 session 清單。",
   )
 })
 

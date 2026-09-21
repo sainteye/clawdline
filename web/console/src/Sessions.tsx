@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
-import type { BearingsSource, SessionRow, TaskRow } from "@clawdline/contract"
+import type { BearingsSource, ScanSource, SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { paintSwipe, Row } from "./session/List.js"
@@ -11,7 +11,7 @@ import { swipes } from "./session/swipe.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 import { ScheduleSection } from "./pages/schedules.js"
 import { nextWord } from "./next-strings.js"
-import { batchReadingWords } from "./session-reading.js"
+import { batchReadingWords, scanFailureWords } from "./session-reading.js"
 
 /**
  * The session list page: the list, and the conversation beside it.
@@ -27,6 +27,8 @@ export function SessionsPage({
   live,
   emptyAuthoritative,
   readingSource,
+  scanNotes,
+  scanSources,
   shown: onScreen,
   view,
   paneOpen,
@@ -48,6 +50,9 @@ export function SessionsPage({
   emptyAuthoritative: boolean
   /** The whole batch's freshness; rows carry the source they came from. */
   readingSource?: BearingsSource
+  /** Why a terminal source did not finish, plus its named unread regions. */
+  scanNotes?: string[]
+  scanSources?: ScanSource[]
   /** This is the page on screen. Another page hides it; nothing takes it down. */
   shown: boolean
   /** The phone's one screen at a time: `main#app[data-view]`. */
@@ -82,7 +87,8 @@ export function SessionsPage({
   // row does not close it.
   const open = rows.find((r) => r.id === openId) ?? null
   const T = L.strings
-  const readingSaid = batchReadingWords(readingSource)
+  const sourceFailure = scanFailureWords(scanNotes, scanSources)
+  const readingSaid = sourceFailure ?? batchReadingWords(readingSource)
 
   // `thawOrder` redraws the list through the session UI seam once the order it
   // held is let go, and this page is that list.
@@ -157,7 +163,9 @@ export function SessionsPage({
         ? [T.webEmptyWaitTitle, T.webEmptyWaitHint]
         : emptyAuthoritative
           ? [T.noSession, T.webEmptyNoneHint]
-          : [nextWord("sessionsListWaitTitle"), nextWord("sessionsListWaitHint")]
+          : sourceFailure
+            ? [nextWord("sessionsListIncompleteTitle"), sourceFailure]
+            : [nextWord("sessionsListWaitTitle"), nextWord("sessionsListWaitHint")]
   }
   const emptyClass = skeleton ? "skel" : "empty" + (homeEmpty ? " home-hero-list" : "")
 

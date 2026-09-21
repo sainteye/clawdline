@@ -2,7 +2,6 @@ package terminal
 
 import (
 	"context"
-	"os/exec"
 	"runtime"
 	"strings"
 
@@ -48,18 +47,16 @@ func (l Launcher) reaches(ctx context.Context) []backendReach {
 // two disagree: a child's tab would open and the briefing typed into it would
 // fail. That is named rather than reported as either answer.
 func (l Launcher) tmuxReach() backendReach {
-	binary := "tmux"
-	if l.Tmux != nil && l.Tmux.Binary != "" {
-		binary = l.Tmux.Binary
+	if l.Tmux == nil {
+		return backendReach{name: "tmux", state: ports.CapabilityUnavailable, reason: "tmux is not installed"}
 	}
-	if _, err := exec.LookPath(binary); err == nil {
+	found, onPath := l.Tmux.binary()
+	if onPath {
 		return backendReach{name: "tmux", state: ports.CapabilityAvailable}
 	}
-	if l.Tmux != nil {
-		if found := l.binary(); found != "" {
-			return backendReach{name: "tmux", state: ports.CapabilityUnavailable,
-				reason: "tmux is at " + found + ", which is not on this daemon's PATH, and the tmux backend runs `tmux` from the PATH"}
-		}
+	if found != "" {
+		return backendReach{name: "tmux", state: ports.CapabilityUnavailable,
+			reason: tmuxOutsidePATHReason(found)}
 	}
 	return backendReach{name: "tmux", state: ports.CapabilityUnavailable, reason: "tmux is not installed"}
 }
