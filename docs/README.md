@@ -8,6 +8,8 @@ Every document in this directory, and what kind it is.
   measurements of the old app, porting inventories, wave plans and review logs. They are kept
   because the code and the design notes cite them. Parts of them describe a state that has since
   changed, and where one disagrees with a design note, the design note wins.
+- **Work list**: an inventory of what is still wrong, written to be dispatched. Each item says how to
+  make it fail, and the list goes stale as items land.
 
 Six pages are in English: the two that introduce the project, and the four design notes an
 outside reader judges it by. The rest are written in Traditional Chinese.
@@ -51,3 +53,9 @@ outside reader judges it by. The rest are written in Traditional Chinese.
 | [broker-design-challenge.md](broker-design-challenge.md) | Internal migration record | Chinese | A deliberate challenge to that analysis: which ports were only history |
 | [board-design.md](board-design.md) | Internal migration record | Chinese | The analysis of the old board. Still the reference for the read-only view of its cards |
 | [timeline-design.md](timeline-design.md) | Internal migration record | Chinese | The analysis of the old project timeline, which this generation has not ported |
+
+## What is still owed
+
+| Document | Kind | Language | What it is |
+| --- | --- | --- | --- |
+| [first-run-audit.md](first-run-audit.md) | Work list | Chinese | What somebody who is not the author hits the first time, from `git clone` to a phone: 91 findings with file and line, grouped into ten causes to dispatch as ten pieces of work (2026-09-21) |
