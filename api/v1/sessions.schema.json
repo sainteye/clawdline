@@ -303,7 +303,11 @@
           "description": "What the one git read behind `links` found. Present whenever the session has a working directory, including when it produced no row: `could not read` and `there is none` are different sentences.",
           "$ref": "links.schema.json#/$defs/ProjectRepository"
         },
-        "repositoryUnreadable": { "$ref": "links.schema.json#/$defs/ProjectGitFailure" }
+        "repositoryUnreadable": { "$ref": "links.schema.json#/$defs/ProjectGitFailure" },
+        "deployQuiet": {
+          "description": "Why a repository that *is* on GitHub still has no deploy row here. `repository: github` says a workflow run could have been named; this says what was found under that name and, where the file gave one, the producer's own reason for having nothing to show. Without it a project with a wedged poller and a project between runs are one blank cell.",
+          "$ref": "links.schema.json#/$defs/ProjectDeployQuiet"
+        }
       }
     },
     "SessionInfoReply": {

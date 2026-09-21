@@ -139,13 +139,150 @@ func TestAStateNobodyKnowsDrawsNothing(t *testing.T) {
 	}
 }
 
-// TestADeployWithNowhereToGoIsNotARow: a workflow run without its page is a
-// chip that does nothing.
-func TestADeployWithNowhereToGoIsNotARow(t *testing.T) {
+// TestAStateNobodyKnowsStillSaysSomething is the other half of the rule above,
+// and the one that was missing.
+//
+// The dot stays off — that decision is right and is not what this changes.
+// What it changes is that the file's own words come out with it. The measured
+// case: `{"state":"none","why":"stale-fail"}` sat in a real cache directory
+// with a reason its producer wrote down on purpose, and this package read
+// `state`, found it unknown, returned nil, and the screen showed a blank cell
+// for days.
+func TestAStateNobodyKnowsStillSaysSomething(t *testing.T) {
 	r, dir := reader(t, remote{url: fixtureRemote}, 1000)
-	write(t, dir, "ghrun-"+fixtureRepo+".json", map[string]any{"state": "ok"})
-	if rows := r.Read(context.Background(), "/projects/widgets").Links; len(rows) != 0 {
-		t.Fatalf("a deploy with no url is not a row: %+v", rows)
+	write(t, dir, "ghrun-"+fixtureRepo+".json",
+		map[string]any{"state": "none", "why": "stale-fail", "updated_at": 940.0})
+	got := r.Read(context.Background(), "/projects/widgets")
+	if len(got.Links) != 0 {
+		t.Fatalf("a state nobody knows still draws no dot: %+v", got.Links)
+	}
+	quiet := got.DeployQuiet
+	if quiet == nil {
+		t.Fatal("no dot is not no sentence: the file said why and nothing carried it")
+	}
+	if quiet.Kind != DeployQuietStateNotDrawn {
+		t.Fatalf("kind = %q, want %q", quiet.Kind, DeployQuietStateNotDrawn)
+	}
+	if quiet.State != "none" || quiet.Why != "stale-fail" {
+		t.Fatalf("the producer's own words, verbatim: %+v", quiet)
+	}
+	if quiet.UpdatedAt != 940 {
+		t.Fatalf("a reason written three days ago is a poller that stopped: %+v", quiet)
+	}
+}
+
+// TestAWhyThisReaderDoesNotKnowIsCarriedAnyway. The vocabulary belongs to the
+// producer and is not closed: `gh-run-status.py` writes six words today and
+// this package maps none of them, on purpose. A reader that kept only the ones
+// it recognised would fall silent again on the first new one — which is the
+// shape being fixed, not a smaller version of it.
+func TestAWhyThisReaderDoesNotKnowIsCarriedAnyway(t *testing.T) {
+	for _, why := range []string{"no-gh", "no-branch", "gh-failed", "no-runs",
+		"workflow-disabled", "stale-fail", "a word nobody has written yet"} {
+		r, dir := reader(t, remote{url: fixtureRemote}, 1000)
+		write(t, dir, "ghrun-"+fixtureRepo+".json",
+			map[string]any{"state": "none", "why": why})
+		quiet := r.Read(context.Background(), "/projects/widgets").DeployQuiet
+		if quiet == nil || quiet.Why != why {
+			t.Fatalf("why %q was not carried: %+v", why, quiet)
+		}
+	}
+}
+
+// TestFourKindsOfNoDeployRow: the reason `nil` was not enough. Every one of
+// these ends in the same empty cell and needs a different thing done about it.
+func TestFourKindsOfNoDeployRow(t *testing.T) {
+	name := "ghrun-" + fixtureRepo + ".json"
+
+	t.Run("nobody has written one", func(t *testing.T) {
+		r, _ := reader(t, remote{url: fixtureRemote}, 1000)
+		quiet := r.Read(context.Background(), "/projects/widgets").DeployQuiet
+		if quiet == nil || quiet.Kind != DeployQuietNoFile {
+			t.Fatalf("an absent file is nobody looking, not no run: %+v", quiet)
+		}
+		if quiet.State != "" || quiet.Why != "" {
+			t.Fatalf("nothing was read, so nothing is quoted: %+v", quiet)
+		}
+	})
+
+	t.Run("there and not one small object", func(t *testing.T) {
+		r, dir := reader(t, remote{url: fixtureRemote}, 1000)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("not json at all"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		quiet := r.Read(context.Background(), "/projects/widgets").DeployQuiet
+		if quiet == nil || quiet.Kind != DeployQuietUnreadable {
+			t.Fatalf("written and unreadable is not the same as never written: %+v", quiet)
+		}
+	})
+
+	t.Run("a state this reader does not draw", func(t *testing.T) {
+		r, dir := reader(t, remote{url: fixtureRemote}, 1000)
+		write(t, dir, name, map[string]any{"state": "cancel", "url": "https://example.invalid/runs/1"})
+		quiet := r.Read(context.Background(), "/projects/widgets").DeployQuiet
+		if quiet == nil || quiet.Kind != DeployQuietStateNotDrawn || quiet.State != "cancel" {
+			t.Fatalf("the producer's own state word survives being undrawable: %+v", quiet)
+		}
+		if quiet.Why != "" {
+			t.Fatalf("it said no why, and an invented one would be worse: %+v", quiet)
+		}
+	})
+
+	t.Run("a run with nowhere to go", func(t *testing.T) {
+		r, dir := reader(t, remote{url: fixtureRemote}, 1000)
+		write(t, dir, name, map[string]any{"state": "ok"})
+		got := r.Read(context.Background(), "/projects/widgets")
+		if len(got.Links) != 0 {
+			t.Fatalf("a deploy with no url is not a row: %+v", got.Links)
+		}
+		if got.DeployQuiet == nil || got.DeployQuiet.Kind != DeployQuietNoAddress {
+			t.Fatalf("and it is not nothing either: %+v", got.DeployQuiet)
+		}
+		if got.DeployQuiet.State != "ok" {
+			t.Fatalf("it reported a verdict and no page: %+v", got.DeployQuiet)
+		}
+	})
+
+	t.Run("a drawn row is not quiet", func(t *testing.T) {
+		r, dir := reader(t, remote{url: fixtureRemote}, 1000)
+		write(t, dir, name, map[string]any{"state": "ok", "url": "https://example.invalid/runs/1"})
+		got := r.Read(context.Background(), "/projects/widgets")
+		if find(got.Links, "deploy") == nil {
+			t.Fatalf("a row was expected: %+v", got.Links)
+		}
+		if got.DeployQuiet != nil {
+			t.Fatalf("the row and the reason there is none are never both present: %+v", got.DeployQuiet)
+		}
+	})
+}
+
+// TestNothingLooksForAWorkflowFileWithoutARemoteToNameIt: the quiet answers
+// what was found under the repository's name, so where there is no name there
+// is nothing to be quiet about — `Repo` already says which kind of nothing
+// that was, and a second sentence saying it again would be noise.
+func TestNothingLooksForAWorkflowFileWithoutARemoteToNameIt(t *testing.T) {
+	for _, g := range []remote{
+		{err: git.ErrNoRemote}, {err: git.ErrNotRepository},
+		{url: "git@example.invalid:team/widgets.git"}, {err: git.ErrUnavailable},
+	} {
+		r, _ := reader(t, g, 1000)
+		if quiet := r.Read(context.Background(), "/projects/widgets").DeployQuiet; quiet != nil {
+			t.Fatalf("nothing named a workflow file, so nothing was looked for: %+v", quiet)
+		}
+	}
+}
+
+// TestADeployRowCarriesItsOwnWhy. The file's `why` is not only for the beat
+// that draws nothing: a producer that explains a `fail` gets that sentence
+// under the row, in the field the health rows already use.
+func TestADeployRowCarriesItsOwnWhy(t *testing.T) {
+	r, dir := reader(t, remote{url: fixtureRemote}, 1000)
+	write(t, dir, "ghrun-"+fixtureRepo+".json", map[string]any{
+		"state": "fail", "url": "https://example.invalid/runs/1", "why": "the build step died",
+	})
+	row := find(r.Read(context.Background(), "/projects/widgets").Links, "deploy")
+	if row == nil || row.Why != "the build step died" {
+		t.Fatalf("the producer's sentence belongs under its row: %+v", row)
 	}
 }
 

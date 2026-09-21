@@ -92,6 +92,13 @@ type Reading struct {
 	Repo Repo
 	// Unreadable is set only when Repo is RepoUnreadable.
 	Unreadable Unreadable
+	// DeployQuiet is the *other* half of the repository question, and the
+	// half that was missing. Repo says whether a workflow run could be named
+	// at all; this says what was found under that name when no deploy row
+	// came out of it — including the producer's own reason, which until now
+	// this package read past. Set only with RepoGitHub, and only when there
+	// is no deploy row.
+	DeployQuiet *DeployQuiet
 	// Truncated says rows were left out of Links.
 	Truncated bool
 }
@@ -232,9 +239,11 @@ func (r *Reader) Read(ctx context.Context, cwd string) Reading {
 		out.Links = append(out.Links, row)
 	}
 	// The deploy, behind its URL: a workflow run without its Actions page is a
-	// chip that does nothing.
-	if d := status.Deploy; d != nil && d.URL != "" {
-		row := Link{Label: d.Label, URL: d.URL, Kind: "deploy", State: d.State}
+	// chip that does nothing, which parseDeploy answers as a quiet rather than
+	// as a row nobody can follow.
+	out.DeployQuiet = status.DeployQuiet
+	if d := status.Deploy; d != nil {
+		row := Link{Label: d.Label, URL: d.URL, Kind: "deploy", State: d.State, Why: d.Why}
 		if d.State == "running" {
 			row.StartedAt, row.TypicalSeconds = d.StartedAt, d.TypicalSeconds
 		}

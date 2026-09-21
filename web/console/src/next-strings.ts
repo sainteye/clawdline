@@ -144,6 +144,34 @@ const words = {
     linksGitTimeout: "it did not answer in time",
     linksGitFailed: "it refused",
     linksGitTooLarge: "it said more than this reads",
+    // The fifth kind of nothing, and the one that had no sentence at all: the
+    // repository *is* on GitHub, git answered, and the tool that polls the
+    // workflow runs still produced no row. That tool writes down why; until
+    // now nothing read the key, so a person was shown a blank cell beside a
+    // file that had been explaining itself for days.
+    linksDeployNoRun:
+      "The status line's tool has no workflow run to show for this repository (it wrote `{state}`). {reason}",
+    linksDeployNoPage:
+      "The status line's tool says this repository's newest workflow run is `{state}` and gave no page to open it on, so it is not a row here. {reason}",
+    linksDeployNoFile:
+      "This repository is on GitHub and nothing has written a workflow reading for it on this machine — so there is no deploy row because nobody is looking, not because there is no run. It is the status line's command that writes these, not this app.",
+    linksDeployUnreadable:
+      "There is a workflow file for this repository on this machine and it could not be read as one small JSON object, so whether there is a deploy is unknown — which is not the same as no.",
+    linksDeployBecause: "Its reason: {reason}.",
+    linksDeployNoWhy: "It did not say why.",
+    // That tool's own words for having nothing to show (`gh-run-status.py`).
+    // The list is its to grow, so an unknown one is said as it was written
+    // rather than swallowed — the whole shape this section exists to end.
+    linksDeployWhyNoGh: "there is no `gh` command on this machine to ask GitHub with",
+    linksDeployWhyNoBranch: "it could not get a branch name here, so there was nothing to look up",
+    linksDeployWhyGhFailed: "`gh` did not answer — not signed in, timed out, or refused",
+    linksDeployWhyNoRuns: "this branch has no workflow run at all",
+    linksDeployWhyWorkflowDisabled:
+      "that workflow is disabled, so its last failure will never be replaced and is not news",
+    linksDeployWhyStaleFail:
+      "the last run failed long enough ago that it stopped counting as the current state",
+    linksDeployWhyUnknown: "That tool gave a reason this app does not know: `{why}`.",
+    linksDeployWhen: "That tool last wrote this down: {when}.",
     linksTruncated: "More addresses were found than this list carries; the rest are not shown.",
     // The swipe. A confirmation reached from the list has to name what it
     // would act on: "this session" is enough beside the conversation and
@@ -254,6 +282,26 @@ const words = {
     linksGitTimeout: "它沒有在時限內回答",
     linksGitFailed: "它拒絕了",
     linksGitTooLarge: "它回的東西超過這裡讀得下的量",
+    linksDeployNoRun:
+      "狀態列的工具沒有可以報的 workflow 執行紀錄（它寫下的是「{state}」）。{reason}",
+    linksDeployNoPage:
+      "狀態列的工具說這個 repository 最新的 workflow 執行是「{state}」，但沒有給可以打開的頁面，所以這份清單上沒有這一列。{reason}",
+    linksDeployNoFile:
+      "這個 repository 在 GitHub 上，而這台機器上還沒有人替它寫下 workflow 的讀數——所以沒有 deploy 這一列是因為沒有人在看，不是因為沒有執行紀錄。寫這些檔案的是狀態列的指令，不是這個 app。",
+    linksDeployUnreadable:
+      "這台機器上有這個 repository 的 workflow 檔案，但它讀不成一個小小的 JSON 物件，所以有沒有 deploy 是不知道，不是沒有。",
+    linksDeployBecause: "它給的理由是：{reason}。",
+    linksDeployNoWhy: "它沒有說為什麼。",
+    linksDeployWhyNoGh: "這台機器上沒有 `gh` 指令可以去問 GitHub",
+    linksDeployWhyNoBranch: "它在這裡取不到分支名稱，所以沒有東西可以查",
+    linksDeployWhyGhFailed: "`gh` 沒有回答——沒登入、逾時，或是被拒絕",
+    linksDeployWhyNoRuns: "這個分支上一次 workflow 都還沒有跑過",
+    linksDeployWhyWorkflowDisabled:
+      "那個 workflow 已經停用，所以最後一次失敗永遠不會被取代，也就不算現況",
+    linksDeployWhyStaleFail:
+      "上一次執行是失敗的，而那已經久到不再算是現在的狀態",
+    linksDeployWhyUnknown: "這個工具說了一個我不認得的理由：「{why}」。",
+    linksDeployWhen: "那個工具最後一次寫下這件事：{when}。",
     linksTruncated: "找到的位址比這份清單裝得下的多，其餘沒有列出。",
     endNamedTitle: "要關閉 {session} 嗎？",
     swipeEndLabel: "關閉 {session}",

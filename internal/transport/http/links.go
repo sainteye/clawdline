@@ -66,11 +66,12 @@ func (s *Server) sessionLinksRoute(w http.ResponseWriter, r *http.Request, id st
 	}
 	reading, at := s.projectLinks(ctx, item.CWD)
 	reply := contract.ProjectLinksReply{
-		Links:      wireLinks(reading.Links),
-		ObservedAt: seconds(at),
-		Repository: contract.ProjectRepository(reading.Repo),
-		Unreadable: contract.ProjectGitFailure(reading.Unreadable),
-		Truncated:  reading.Truncated,
+		Links:       wireLinks(reading.Links),
+		ObservedAt:  seconds(at),
+		Repository:  contract.ProjectRepository(reading.Repo),
+		Unreadable:  contract.ProjectGitFailure(reading.Unreadable),
+		DeployQuiet: wireDeployQuiet(reading.DeployQuiet),
+		Truncated:   reading.Truncated,
 	}
 	writeJSON(w, reply)
 }
@@ -101,6 +102,22 @@ func wireLinks(rows []projectlinks.Link) []contract.ProjectLink {
 		})
 	}
 	return out
+}
+
+// wireDeployQuiet carries the reason a repository on GitHub still has no
+// deploy row. Nothing is translated on the way: `state` and `why` are the
+// producer's own words and the screen owns the sentence, which is what keeps a
+// word that tool learns tomorrow from arriving as another blank cell.
+func wireDeployQuiet(quiet *projectlinks.DeployQuiet) *contract.ProjectDeployQuiet {
+	if quiet == nil {
+		return nil
+	}
+	return &contract.ProjectDeployQuiet{
+		Kind:      contract.ProjectDeployQuietKind(quiet.Kind),
+		State:     quiet.State,
+		Why:       quiet.Why,
+		UpdatedAt: quiet.UpdatedAt,
+	}
 }
 
 // deployRows is the Swift app's `/info` filter: the `links` rows a status line

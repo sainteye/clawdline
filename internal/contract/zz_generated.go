@@ -3809,6 +3809,58 @@ type ProjectCatalogAnswer struct {
 	Catalog ProjectCatalog `json:"catalog"`
 }
 
+// What the workflow file said on a beat it drew no row. `repository: github`
+// answers that a run *could* be named; this answers what was found under that
+// name, so that no deploy row stops being one silence and becomes the sentence
+// the file already contains. Present only with `repository: github`, and absent
+// whenever a deploy row was drawn.
+type ProjectDeployQuiet struct {
+	Kind ProjectDeployQuietKind `json:"kind"`
+
+	// The producer's own state word, verbatim and untranslated — `none` where it had
+	// nothing to say, and whatever else it writes. Absent with `no_file` and
+	// `unreadable`, where nothing was read.
+	State string `json:"state,omitempty"`
+
+	// The file's own `updated_at`, in seconds since 1970, which is a different moment
+	// from `observedAt`: this is when that tool last decided, `observedAt` is when
+	// this walk read what it decided. A reason written three days ago is a poller that
+	// stopped, not a project that has nothing to show, and nothing else on this wire
+	// can tell those apart. Absent where the file carried no `updated_at` or none was
+	// read.
+	UpdatedAt float64 `json:"updatedAt,omitempty"`
+
+	// The producer's own reason, verbatim and untranslated, from the file's `why`.
+	// **This vocabulary is not this daemon's and is not closed**: the tool that writes
+	// `~/.claude/statusline-cache/` chooses these words, and a reader that carried
+	// only the ones it already knew would go silent again the first time that tool
+	// learned a new one — which is the whole shape this field exists to end. A
+	// reader turns the ones it knows into a sentence and says the rest as the words
+	// they are. Absent when the file carried none.
+	Why string `json:"why,omitempty"`
+}
+
+// Which kind of silence a workflow file kept. `no_file`: nothing has written
+// one for this repository, so there is no deploy row because nobody looked and
+// not because there is no run. `unreadable`: a file is there and could not be
+// read as one small JSON object. `state_not_drawn`: it was read and says a
+// state no reader here draws — `none` is what a producer with nothing to say
+// writes, and a dot drawn for it would be the always-wrong mark. `no_address`:
+// it names a run and no page to open it on, and a row with nowhere to go is not
+// a row. Four words because what to do about each is different: start the
+// poller, look at the file, read `why`, look at the producer.
+type ProjectDeployQuietKind string
+
+const (
+	ProjectDeployQuietKindNoFile        ProjectDeployQuietKind = "no_file"
+	ProjectDeployQuietKindUnreadable    ProjectDeployQuietKind = "unreadable"
+	ProjectDeployQuietKindStateNotDrawn ProjectDeployQuietKind = "state_not_drawn"
+	ProjectDeployQuietKindNoAddress     ProjectDeployQuietKind = "no_address"
+)
+
+// ProjectDeployQuietKindValues is every value the contract allows, in contract order.
+var ProjectDeployQuietKindValues = []ProjectDeployQuietKind{ProjectDeployQuietKindNoFile, ProjectDeployQuietKindUnreadable, ProjectDeployQuietKindStateNotDrawn, ProjectDeployQuietKindNoAddress}
+
 // Which way the git read failed, present only with `unreadable`. Four words
 // because what to do about each is different: install git, wait, look at the
 // repository.
@@ -3888,7 +3940,8 @@ type ProjectLink struct {
 // and never on the event stream — the walk costs a subprocess, and paying for
 // it per session per beat is what the Swift app's route comment refuses.
 type ProjectLinksReply struct {
-	Links []ProjectLink `json:"links"`
+	DeployQuiet *ProjectDeployQuiet `json:"deployQuiet,omitempty"`
+	Links       []ProjectLink       `json:"links"`
 
 	// When this walk was taken, in seconds since 1970. It travels with the rows so a
 	// reader can say how old they are; nothing here decides that for it.
@@ -4554,8 +4607,15 @@ type SessionInfo struct {
 	// The `links` rows whose kind is `deploy`, `ci` or `run`, unchanged, so a state
 	// means there what it means there. It is the smaller field the Swift app kept for
 	// older clients, and the one the status line's chip is drawn from.
-	Deploy []ProjectLink  `json:"deploy,omitempty"`
-	Limits *SessionLimits `json:"limits,omitempty"`
+	Deploy []ProjectLink `json:"deploy,omitempty"`
+
+	// Why a repository that *is* on GitHub still has no deploy row here. `repository:
+	// github` says a workflow run could have been named; this says what was found
+	// under that name and, where the file gave one, the producer's own reason for
+	// having nothing to show. Without it a project with a wedged poller and a project
+	// between runs are one blank cell.
+	DeployQuiet *ProjectDeployQuiet `json:"deployQuiet,omitempty"`
+	Limits      *SessionLimits      `json:"limits,omitempty"`
 
 	// Where this project can be opened, the same rows GET /v1/sessions/{id}/links
 	// answers with (links.schema.json). Served from the same maintained projection, so
