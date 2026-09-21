@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -142,7 +143,11 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	// side of it by the label this list gives them.
 	labels := make(map[string]string, len(items))
 	for i, item := range items {
-		labels[item.ID] = rowLabel(item, swift.TitleOf(lives[i], item.CustomTitle, lives))
+		project := s.icons.Label(item.CWD)
+		if project == "" && item.CWD != "" {
+			project = filepath.Base(item.CWD)
+		}
+		labels[item.ID] = rowLabel(item, swift.TitleOf(lives[i], item.CustomTitle, lives), project)
 	}
 	labelOf := func(id string) string { return labels[id] }
 
@@ -324,13 +329,23 @@ func identityMatchCounts(items []session.Session) map[string]int {
 
 // rowLabel chooses a name by the Swift app's rungs, with the two it keeps in
 // its store filled from there. A Claude conversation's automatic name is its
-// thread rung.
-func rowLabel(item session.Session, titles swiftstore.Titles) string {
+// thread rung. A project is the last human name before the terminal
+// coordinate: `Codex · project` distinguishes two conversations, while
+// `Codex · ttys020` distinguishes only two terminal devices.
+func rowLabel(item session.Session, titles swiftstore.Titles, project string) string {
 	rungs := item.Rungs
 	rungs.Manual = titles.Manual
 	rungs.Orchestrator = titles.Orchestrator
 	if rungs.Thread == "" {
 		rungs.Thread = titles.Automatic
+	}
+	if rungs.Manual == "" && rungs.Orchestrator == "" && rungs.Conversation == "" &&
+		rungs.Thread == "" && rungs.Handle == "" && project != "" {
+		assistant := session.Coordinate(session.Session{Assistant: item.Assistant})
+		if assistant != "" {
+			return assistant + " · " + project
+		}
+		return project
 	}
 	if label := session.PreferredLabel(rungs); label != "" {
 		return label

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -43,6 +44,22 @@ func TestAFreshCodexIsOnTheWireWithBothAPlaceAndAReason(t *testing.T) {
 	fresh.Binding = ""
 	if _, ok := wire(t, s.sessionRow(rowInput{item: fresh}).SessionRow)["identity"]; ok {
 		t.Fatal("identity is present on a row no source answered for")
+	}
+}
+
+// A project is a name somebody can recognise; a tty is only where the
+// terminal happens to be. It is the fallback immediately above the coordinate
+// and never replaces a name the person, broker or conversation supplied.
+func TestProjectNamesANewSessionBeforeItsTerminalCoordinate(t *testing.T) {
+	item := session.Session{
+		Assistant: session.AssistantCodex,
+		Rungs:     session.LabelRungs{Coordinate: "Codex · ttys020"},
+	}
+	if got := rowLabel(item, swiftstore.Titles{}, "my-app"); got != "Codex · my-app" {
+		t.Fatalf("label = %q", got)
+	}
+	if got := rowLabel(item, swiftstore.Titles{Manual: "Release helper"}, "my-app"); got != "Release helper" {
+		t.Fatalf("manual label was replaced by %q", got)
 	}
 }
 

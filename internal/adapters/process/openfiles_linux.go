@@ -16,14 +16,19 @@ import (
 // failure: it holds nothing open because it is gone. A directory that exists
 // and cannot be entered is a failure, because that is this machine refusing to
 // answer rather than the process having nothing to say.
-func systemOpenFiles(ctx context.Context, pids []int) (map[int][]string, bool) {
+func systemOpenFiles(ctx context.Context, pids []int) (map[int][]string, map[int]string, bool) {
 	files := map[int][]string{}
+	cwds := map[int]string{}
 	read := true
 	for _, pid := range pids {
 		if err := ctx.Err(); err != nil {
-			return files, false
+			return files, cwds, false
 		}
-		dir := filepath.Join("/proc", strconv.Itoa(pid), "fd")
+		proc := filepath.Join("/proc", strconv.Itoa(pid))
+		if cwd, err := os.Readlink(filepath.Join(proc, "cwd")); err == nil && filepath.IsAbs(cwd) {
+			cwds[pid] = cwd
+		}
+		dir := filepath.Join(proc, "fd")
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			if !os.IsNotExist(err) {
@@ -39,5 +44,5 @@ func systemOpenFiles(ctx context.Context, pids []int) (map[int][]string, bool) {
 			files[pid] = append(files[pid], target)
 		}
 	}
-	return files, read
+	return files, cwds, read
 }

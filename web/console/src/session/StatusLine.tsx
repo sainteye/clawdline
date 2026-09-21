@@ -3,6 +3,8 @@ import type { ProjectLink, SessionInfo, SessionInfoContext, SessionLimitWindow, 
 import { contextCell } from "./context.js"
 import * as L from "../legacy/bridge.js"
 import { SessionFacts, requestInfo } from "../overlays/index.js"
+import { nextWord } from "../next-strings.js"
+import { conversationNotStarted } from "./readiness.js"
 
 /**
  * The status line under the open conversation — the original's `footer#status-line`.
@@ -80,6 +82,14 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
               {typeof info.usage?.costUsd === "number" ? (
                 <span className="item cost">{dollars(info.usage.costUsd)}</span>
               ) : null}
+            </>
+          ) : conversationNotStarted(row) ? (
+            <>
+              <span
+                className="item model"
+                dangerouslySetInnerHTML={{ __html: modelHTML(row.assistant, L.assistantDisplayName(row.assistant)) }}
+              />
+              <span className="item empty">{nextWord("sessionNotStartedShort")}</span>
             </>
           ) : (
             <>

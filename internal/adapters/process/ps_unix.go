@@ -123,38 +123,39 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 // any of them and the binary held every one — so asking the wrong one of the
 // two would have turned every session into a false `no_record`.
 //
-// The same heads say where the session is, so the row carries its working
-// directory out of this too (codexConversation). It is the only place a
-// running Codex says so: `~/.codex/session_index.jsonl` carries a thread's
-// name and nothing about a directory, and the Claude registry these rows were
-// sharing a cell with has no entry for a Codex pid at all — which is why a
-// Codex row used to reach the console with the directory column empty and no
-// project icon beside it.
+// The same read also asks the process for its cwd. Once a rollout exists its
+// own head remains the stronger answer; before the first message there is no
+// head, and the process cwd is the only evidence available. It lets that first
+// screen carry the same project name and mark it will have after the message.
 //
-// A session resumed from the command line is named without any head being
-// read, and so still arrives here with no directory. That is left as it is
-// rather than reading a head for it: it would be the one extra open per row
-// this whole path was built to avoid, and it is written up rather than done
-// quietly.
+// A session resumed from the command line is already named, so no rollout
+// head is read for it. When its directory is missing it still joins this one
+// batched kernel read; the identity stays untouched and only cwd is filled.
 //
 // It runs as one call for every row that needs it, after the table is built,
 // so a machine with no unnamed Codex on it pays nothing.
 func (p *PS) bindCodex(ctx context.Context, rows []session.Session) []session.Session {
 	var pids []int
 	for _, s := range rows {
-		if s.Assistant == session.AssistantCodex && s.ConversationID == "" && s.PID != 0 {
+		if s.Assistant == session.AssistantCodex && s.PID != 0 && (s.ConversationID == "" || s.CWD == "") {
 			pids = append(pids, s.PID)
 		}
 	}
 	if len(pids) == 0 {
 		return rows
 	}
-	files, read := map[int][]string{}, false
+	files, cwds, read := map[int][]string{}, map[int]string{}, false
 	if p.Open != nil {
-		files, read = p.Open(ctx, pids)
+		files, cwds, read = p.Open(ctx, pids)
 	}
 	for i, s := range rows {
-		if s.Assistant != session.AssistantCodex || s.ConversationID != "" || s.PID == 0 {
+		if s.Assistant != session.AssistantCodex || s.PID == 0 {
+			continue
+		}
+		if rows[i].CWD == "" {
+			rows[i].CWD = cwds[s.PID]
+		}
+		if s.ConversationID != "" {
 			continue
 		}
 		id, binding, detail, cwd := codexConversation(files[s.PID], read, p.Head)
