@@ -107,6 +107,9 @@ function daemon(os: string | null) {
   const asked: string[] = []
   const read = ((url: string) => {
     asked.push(url)
+    if (url === "/v1/health") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response)
+    }
     if (os === null) return Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({}) } as Response)
     return Promise.resolve({
       ok: true,
@@ -177,7 +180,7 @@ test("a Linux daemon's own machine is not called a Mac", async () => {
   const { asked, read } = daemon("linux")
   const answer = await localMachines(nextWord("devicesThisMachine"), read)
 
-  assert.deepEqual(asked, ["/v1/diagnostics"])
+  assert.deepEqual(asked, ["/v1/diagnostics", "/v1/health"])
   assert.equal(answer.machines.length, 1)
   const machine = answer.machines[0] as Record<string, unknown>
   assert.equal(machine.platform, "linux")
@@ -191,7 +194,8 @@ test("a Mac is still called one, and the daemon is asked once", async () => {
   const first = await localMachines(nextWord("devicesThisMachine"), read)
   const again = await localMachines(nextWord("devicesThisMachine"), read)
 
-  assert.equal(asked.length, 1, "the platform is read once per page, not once per draw")
+  assert.deepEqual(asked, ["/v1/diagnostics", "/v1/health", "/v1/health"],
+    "the platform is cached, but reachability is measured on every draw")
   assert.equal((first.machines[0] as Record<string, unknown>).label, "Mac · This Mac")
   assert.equal((again.machines[0] as Record<string, unknown>).kind, "mac")
 })
@@ -204,6 +208,38 @@ test("a daemon that will not say what it is running on is not guessed at", async
   assert.equal(machine.platform, null)
   assert.equal(machine.kind, "unknown")
   assert.equal(machine.label, nextWord("devicesThisMachine"), "no platform word in front of it")
+})
+
+test("a local card stops saying online and paired after its daemon stops", async () => {
+  let running = true
+  const read = ((url: string) => {
+    if (url === "/v1/health") {
+      if (!running) return Promise.reject(new TypeError("the daemon is not answering"))
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) } as Response)
+    }
+    return Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ platform: { os: "darwin", arch: "arm64", capabilities: [] } }),
+    } as Response)
+  }) as unknown as typeof fetch
+
+  setAccountMachines(() => localMachines(nextWord("devicesThisMachine"), read))
+  const doc = new Doc()
+  const { page } = bound(doc)
+  page.enter()
+  await page.load()
+  const before = doc.node("devices-rows").all("device-card")[0]!
+  assert.equal(before.dataset.connection, "current")
+  assert.equal(before.dataset.pairing, "local")
+  const beforeFacts = before.all("device-facts")[0]!.children.map((node) => node.textContent)
+
+  running = false
+  await page.load()
+  const after = doc.node("devices-rows").all("device-card")[0]!
+  assert.equal(after.dataset.connection, "unknown", "the card says it cannot measure the stopped daemon")
+  assert.equal(after.dataset.pairing, "unknown", "pairing means this browser can read it now")
+  assert.notDeepEqual(after.all("device-facts")[0]!.children.map((node) => node.textContent), beforeFacts,
+    "the words on the card change when health stops answering")
 })
 
 test("the platform words are the ones `machinePresentation` uses", () => {

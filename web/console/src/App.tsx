@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { Icon, SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client } from "./client.js"
+import { connectionLightState } from "./connection-state.js"
 import { useFleet, usePoll } from "./useFleet.js"
 import { SessionsPage } from "./Sessions.js"
 import { toggleOrder } from "./session/Transcript.js"
@@ -927,7 +928,10 @@ function Conn({ live, onRetry }: { live: boolean; onRetry: () => void }) {
   const read = useMemo(() => () => client.health(), [])
   const { data, error: healthError } = usePoll(read, 15000)
   const T = L.strings
-  const state = healthError ? "offline" : live ? "live" : data ? "retrying" : "connecting"
+  // The stream says the browser's line is open; health says the selected host
+  // answered. In Cloud those are different subjects, so the relay opening
+  // must not paint "connected" before the chosen machine's health arrives.
+  const state = connectionLightState(live, data !== null, healthError !== null)
   const label =
     state === "offline" ? T.webConnOffline : state === "live" ? T.webConnLive : T.webConnConnecting
   const version = (data as unknown as { version?: unknown } | null)?.version

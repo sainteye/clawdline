@@ -38,6 +38,15 @@ import { machinesByCapability } from "./machine-access.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
+import {
+  machineAccessProblem,
+  machineListAnswer,
+  machineListRefusal,
+  retryReason,
+  type AccessProblem,
+  type MachineListState,
+  type RetryReason,
+} from "./state.js"
 import "./cloud.css"
 
 /**
@@ -98,7 +107,7 @@ type Screen =
   | { at: "sign_in"; url: string }
   | { at: "pairing"; account: string }
   | { at: "device_limit"; tier: string; limit: number | null }
-  | { at: "retrying"; code: string; seconds: number }
+  | { at: "retrying"; reason: RetryReason; seconds: number }
   | { at: "failed"; code: string }
   | { at: "revoked"; url: string }
   | { at: "machines" }
@@ -155,18 +164,6 @@ function seenWord(at: number | null): string {
 }
 
 /**
- * The receive failures that mean this browser cannot read what arrived, as
- * opposed to a line that dropped: `cloudSessionAccessProblem` in the Swift
- * console's `input/cloud-pairing.js`, the same codes. A dropped socket also
- * reports an error, and saying "cannot be read" for it would be false.
- */
-const ACCESS_PROBLEMS = new Set([
-  "forbidden", "unauthorized", "revoked", "missing_capability", "capability_denied",
-  "unknown_key", "unknown_sender", "extractable_key", "unreadable_envelope",
-  "machine_pairing_required",
-])
-
-/**
  * The build's own catalog for this browser (`cloud/strings.ts`).
  *
  * It used to return `{}` for a browser whose language matched no declared
@@ -194,9 +191,9 @@ export function CloudGate({ declared }: { declared: string }) {
         : { at: "checking" },
   )
   const [who, setWho] = useState<{ account: string; device: string } | null>(null)
-  const [machines, setMachines] = useState<CloudMachine[] | null>(null)
-  const [syncing, setSyncing] = useState(true)
-  const [problem, setProblem] = useState<string | null>(null)
+  const [machineList, setMachineList] = useState<MachineListState>({ phase: "loading" })
+  const machines = machineList.phase === "ready" ? machineList.machines : null
+  const [problem, setProblem] = useState<AccessProblem | null>(null)
   const [chosen, setChosen] = useState<CloudMachine | null>(null)
   // Forgetting a machine (`forget.ts`): which one is being asked about, which
   // ones this tab has forgotten, and what the account answered about the last
@@ -276,15 +273,13 @@ export function CloudGate({ declared }: { declared: string }) {
     if (recheck.current) clearTimeout(recheck.current)
     machinesByCapability(current).then(
       (answer) => {
-        setMachines(answer.machines)
-        setSyncing(answer.syncing)
+        setMachineList(machineListAnswer(answer))
         // Inside the window after connecting, machines are still arriving
         // channel by channel; look again when it closes.
         if (answer.syncing) recheck.current = setTimeout(listMachines, Math.max(1000, answer.retryAfterMs))
       },
-      () => {
-        setMachines([])
-        setSyncing(false)
+      (error) => {
+        setMachineList(machineListRefusal(error))
       },
     )
   }, [])
@@ -576,10 +571,20 @@ export function CloudGate({ declared }: { declared: string }) {
           unlisten.current = next.events((event) => {
             // The list is for choosing; once a machine is on screen nobody is looking at it.
             if (!reader.current && (event.type === "orchestrator" || event.type === "sessions")) listMachines()
-            // A decryptable inventory lowers it, as it lowers the Swift console's door.
-            if (event.type === "sessions") setProblem(null)
-            const code = event.type === "error" ? (event as { error?: { code?: unknown } }).error?.code : null
-            if (typeof code === "string" && ACCESS_PROBLEMS.has(code)) setProblem(code)
+            // A decryptable inventory clears only the problem attributed to
+            // that machine. One machine answering is not evidence that a
+            // different machine's key problem went away.
+            if (event.type === "sessions") {
+              const machine = event.machine ?? event.identity?.machine
+              setProblem((held) => !held || !machine || held.machine === machine ? null : held)
+            }
+            const listed = machinesRef.current
+            const access = machineAccessProblem(
+              event,
+              next.viewerEvents,
+              listed?.length === 1 ? listed[0]!.id : null,
+            )
+            if (access) setProblem(access)
           })
           recoverPairing()
           if (reader.current) {
@@ -611,7 +616,11 @@ export function CloudGate({ declared }: { declared: string }) {
         case "retrying":
           reader.current?.lost()
           if (!reader.current) {
-            setScreen({ at: "retrying", code: update.error?.code ?? "offline", seconds: Math.max(1, Math.ceil(update.afterMs / 1000)) })
+            setScreen({
+              at: "retrying",
+              reason: retryReason(update.error, navigator.onLine !== false),
+              seconds: Math.max(1, Math.ceil(update.afterMs / 1000)),
+            })
           }
           return
         case "terminal_error":
@@ -727,11 +736,13 @@ export function CloudGate({ declared }: { declared: string }) {
           onReload: () => location.reload(),
         }
       : null
-  const shown = useMemo(
-    () => (machines ? withAccountNames(machines, names, described, present) : null),
+  const shown = useMemo<MachineListState>(
+    () => machineList.phase === "ready"
+      ? { ...machineList, machines: withAccountNames(machineList.machines, names, described, present) }
+      : machineList,
     // `described` reads the client, which changes only with a new line and
     // then with a new list.
-    [machines, names],
+    [machineList, names],
   )
 
   // Once drawn, the console stays: the copied modules bind to the document
@@ -744,8 +755,7 @@ export function CloudGate({ declared }: { declared: string }) {
         <GateCard
           screen={screen}
           who={who}
-          machines={shown}
-          syncing={syncing}
+          machineList={shown}
           problem={problem}
           onChoose={choose}
           onRetry={start}
@@ -773,9 +783,8 @@ export function CloudGate({ declared }: { declared: string }) {
 function GateCard(props: {
   screen: Screen
   who: { account: string; device: string } | null
-  machines: CloudMachine[] | null
-  syncing: boolean
-  problem: string | null
+  machineList: MachineListState
+  problem: AccessProblem | null
   onChoose: (machine: CloudMachine) => void
   onRetry: () => void
   asking: CloudMachine | null
@@ -794,7 +803,7 @@ function GateCard(props: {
   pairing: Parameters<typeof PairPanel>[0] | null
   onPair: (machine: { id: string; name: string } | null) => void
 }) {
-  const { screen, who, machines, syncing, problem, onChoose, onRetry } = props
+  const { screen, who, machineList, problem, onChoose, onRetry } = props
   const { asking, forgetting, forgotten, told, reading, onAsk, onForget, onLeave } = props
   const { naming, renaming, renamed, onName, onRename, pairing, onPair } = props
   const mark = useRef<HTMLCanvasElement>(null)
@@ -1124,7 +1133,15 @@ function GateCard(props: {
           </p>
         )
       case "retrying":
-        return <p className="say calm">{nextWord("cloudRetrying", { code: screen.code, seconds: screen.seconds })}</p>
+        return (
+          <p className="say calm">
+            {screen.reason.kind === "named"
+              ? nextWord("cloudRetrying", { code: screen.reason.code, seconds: screen.seconds })
+              : screen.reason.kind === "browser_offline"
+                ? nextWord("cloudRetryingBrowserOffline", { seconds: screen.seconds })
+                : nextWord("cloudRetryingUnknown", { seconds: screen.seconds })}
+          </p>
+        )
       case "failed":
         return (
           <>
@@ -1139,11 +1156,12 @@ function GateCard(props: {
       case "misdeclared":
         return <p className="say">{nextWord("cloudMisdeclared", { reason: screen.reason })}</p>
       case "machines":
+        const machines = machineList.phase === "ready" ? machineList.machines : null
         return (
           <>
             <p className="lede">{nextWord("cloudMachinesLede")}</p>
             {who && <p className="fine">{nextWord("cloudMachinesFine", { account: who.account, device: who.device })}</p>}
-            {machines && machines.length > 0 ? (
+            {machines ? (
               <ul className="cloud-machines" id="cloud-machines">
                 {machines.map((m) => {
                   const gone = forgotten.includes(m.id)
@@ -1238,7 +1256,22 @@ function GateCard(props: {
                 })}
               </ul>
             ) : (
-              <p className="say calm">{syncing || machines === null ? nextWord("cloudMachinesWaiting") : nextWord("cloudMachinesNone")}</p>
+              <p className="say calm" data-machine-list-state={machineList.phase}>
+                {machineList.phase === "loading"
+                  ? nextWord("cloudMachinesWaiting")
+                  : machineList.phase === "empty_authoritative"
+                    ? nextWord("cloudMachinesNone")
+                    : machineList.phase === "refused"
+                      ? nextWord(
+                          machineList.next === "sign_in"
+                            ? "cloudMachinesRefusedSignIn"
+                            : machineList.next === "pair"
+                              ? "cloudMachinesRefusedPair"
+                              : "cloudMachinesRefusedRetry",
+                          { code: machineList.code },
+                        )
+                      : null}
+              </p>
             )}
             {forgetOutcome()}
             {renameOutcome()}
@@ -1250,7 +1283,11 @@ function GateCard(props: {
                 {nextWord("cloudSwitch")}
               </button>
             )}
-            {problem && <p className="say">{nextWord("cloudAccessProblem", { code: problem })}</p>}
+            {problem && (
+              <p className="say">
+                {nextWord("cloudAccessProblem", { machine: problem.machine, code: problem.code })}
+              </p>
+            )}
           </>
         )
       case "console":

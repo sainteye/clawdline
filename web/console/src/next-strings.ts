@@ -39,6 +39,9 @@ const words = {
       "Clawdline Cloud lists the machines paired with this browser and their sessions, and carries what you send them.",
     cloudConnecting: "Connecting to Clawdline Cloud…",
     cloudRetrying: "Clawdline Cloud did not answer ({code}). Trying again in {seconds} s.",
+    cloudRetryingBrowserOffline: "This browser is offline. Trying again in {seconds} s.",
+    cloudRetryingUnknown:
+      "The connection between this browser and Clawdline Cloud was interrupted, but its cause could not be measured. Trying again in {seconds} s.",
     cloudFailed: "Could not reach Clawdline Cloud ({code}).",
     cloudRetry: "Try again",
     cloudRevoked: "This browser's device was revoked. Sign in again to read your machines.",
@@ -124,6 +127,11 @@ const words = {
     cloudMachinesFine: "Account {account} · this browser {device}",
     cloudMachinesWaiting: "Waiting for the machines on this account to report in…",
     cloudMachinesNone: "No machine on this account has reported in yet.",
+    cloudMachinesRefusedSignIn: "Clawdline Cloud refused the machine list ({code}). Sign in again.",
+    cloudMachinesRefusedPair:
+      "This browser could not read the machine data in the list ({code}). Pair the machine with this browser again.",
+    cloudMachinesRefusedRetry:
+      "The machine list did not answer ({code}). Check this browser's connection and try again.",
     // Two different things had one sentence between them. The copied catalog's
     // `webEmptyWaitTitle` ("Waiting for the app") is the honest one for a page
     // with no line to anything; it was also being said to a page whose line is
@@ -133,7 +141,8 @@ const words = {
     sessionsListWaitHint: "The line is up. This machine has not said yet which sessions it has.",
     sessionsListIncompleteTitle: "This machine's list is incomplete",
     cloudMachineSessions: "{count} sessions",
-    cloudAccessProblem: "A machine's data could not be read here ({code}).",
+    cloudAccessProblem:
+      "Machine {machine}'s data could not be read in this browser ({code}). Pair that machine with this browser again; if it still cannot be read, sign in again.",
     cloudSwitch: "Other machines",
     cloudForget: "Forget",
     cloudForgetOne: "Forget {machine}",
@@ -288,6 +297,8 @@ const words = {
     cloudSignInFine: "Clawdline Cloud 會列出和這個瀏覽器配對過的機器與它們的 session，也會把你從這裡送出的東西帶過去。",
     cloudConnecting: "正在連上 Clawdline Cloud…",
     cloudRetrying: "Clawdline Cloud 沒有回應（{code}），{seconds} 秒後再試。",
+    cloudRetryingBrowserOffline: "這個瀏覽器目前沒有網路連線，{seconds} 秒後再試。",
+    cloudRetryingUnknown: "這個瀏覽器與 Clawdline Cloud 的連線中斷，但目前量不到原因，{seconds} 秒後再試。",
     cloudFailed: "連不上 Clawdline Cloud（{code}）。",
     cloudRetry: "再試一次",
     cloudRevoked: "這個瀏覽器的裝置已被撤銷，請重新登入。",
@@ -361,11 +372,14 @@ const words = {
     cloudMachinesFine: "帳號 {account} · 這個瀏覽器 {device}",
     cloudMachinesWaiting: "正在等這個帳號的機器回報…",
     cloudMachinesNone: "這個帳號還沒有任何機器回報。",
+    cloudMachinesRefusedSignIn: "Clawdline Cloud 拒絕讀取機器清單（{code}）。請重新登入。",
+    cloudMachinesRefusedPair: "這個瀏覽器解不開清單裡的機器資料（{code}）。請把那台機器和這個瀏覽器重新配對。",
+    cloudMachinesRefusedRetry: "機器清單這次沒有回應（{code}）。請檢查這個瀏覽器的網路，再試一次。",
     sessionsListWaitTitle: "在等這台機器的清單",
     sessionsListWaitHint: "線已經通了。這台機器還沒說它現在有哪些 session。",
     sessionsListIncompleteTitle: "這台機器的清單沒有讀完整",
     cloudMachineSessions: "{count} 個 session",
-    cloudAccessProblem: "有一台機器的資料在這裡讀不出來（{code}）。",
+    cloudAccessProblem: "機器 {machine} 的資料在這個瀏覽器讀不出來（{code}）。請重新配對這台機器；若仍然讀不到，請重新登入。",
     cloudSwitch: "換一台機器",
     cloudForget: "忘記",
     cloudForgetOne: "忘記 {machine}",

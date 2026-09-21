@@ -12,6 +12,9 @@ import { RelayReader, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type C
 class FakeClient implements CloudReadClient {
   ready = true
   sessionInventoryByMachine = new Map<string, unknown>()
+  machineRows: { id: string; freshness: "current" | "stale" | "unknown" }[] = [
+    { id: "mac-a", freshness: "current" },
+  ]
   rows: CloudRow[] = []
   recovering: string[] = []
   asks = 0
@@ -20,6 +23,9 @@ class FakeClient implements CloudReadClient {
   events(listener: (event: CloudEvent) => void) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+  async machines() {
+    return { machines: this.machineRows, syncing: false, retryAfterMs: 0 }
   }
   emit(event: CloudEvent) {
     for (const fn of this.listeners) fn(event)
@@ -168,6 +174,30 @@ test("with the line down, reads reject as unanswered instead of refusing", async
   const r = reader(client, { t: 0 })
   await assert.rejects(r.fetch("/v1/health"), TypeError)
   await assert.rejects(r.fetch("/v1/sessions"), TypeError)
+})
+
+test("health belongs to the chosen machine, not merely the relay socket", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 12_000 })
+
+  const current = await r.fetch("/v1/health")
+  assert.equal(current.status, 200)
+  assert.equal((await body<{ ok: boolean }>(current)).ok, true)
+
+  client.machineRows = [{ id: "mac-a", freshness: "stale" }]
+  const stale = await r.fetch("/v1/health")
+  assert.equal(stale.status, 503)
+  assert.equal((await body<{ error: string }>(stale)).error, "machine_stale")
+
+  client.machineRows = [{ id: "mac-a", freshness: "unknown" }]
+  const unknown = await r.fetch("/v1/health")
+  assert.equal(unknown.status, 503)
+  assert.equal((await body<{ error: string }>(unknown)).error, "machine_freshness_unknown")
+
+  client.machineRows = []
+  const absent = await r.fetch("/v1/health")
+  assert.equal(absent.status, 503)
+  assert.equal((await body<{ error: string }>(absent)).error, "machine_not_reported")
 })
 
 test("a transcript is asked again only when its row could say it changed", async () => {

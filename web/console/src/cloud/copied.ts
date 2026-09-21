@@ -52,6 +52,12 @@ export interface CloudMachine {
 export interface CloudClientHandle extends CloudReadClient {
   account: string | null
   deviceID: string | null
+  /** The bounded receive log; an error receipt points to the row that names its machine. */
+  readonly viewerEvents?: {
+    snapshot(): {
+      rows?: { n?: number; data?: { machine?: unknown; routed_machine?: unknown } }[]
+    }
+  }
   /**
    * Machines for which this client has verified and decrypted an authenticated
    * envelope. The copied client keeps this proof across its token renewals.

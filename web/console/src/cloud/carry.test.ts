@@ -51,6 +51,13 @@ class FakeMac implements CloudWriteClient {
   events() {
     return () => undefined
   }
+  machines() {
+    return Promise.resolve({
+      machines: [{ id: "mac-a", freshness: "current" as const }],
+      syncing: false,
+      retryAfterMs: 0,
+    })
+  }
   sessions(): Promise<CloudSessions> {
     return Promise.resolve({ sessions: this.rows, at: 1, scan: {} })
   }

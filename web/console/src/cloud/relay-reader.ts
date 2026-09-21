@@ -115,6 +115,7 @@ export interface CloudEvent {
   state?: string
   machine?: string
   identity?: Partial<CloudIdentity>
+  error?: unknown
 }
 
 /**
@@ -126,6 +127,12 @@ export interface CloudReadClient {
   /** machine → the last inventory marker it published; present once one arrived. */
   readonly sessionInventoryByMachine?: Map<string, unknown>
   events(listener: (event: CloudEvent) => void): () => void
+  /** The current account rows, used here only to answer health for the chosen machine. */
+  machines?(): Promise<{
+    machines: { id: string; freshness: "current" | "stale" | "unknown" }[]
+    syncing: boolean
+    retryAfterMs: number
+  }>
   sessions(): Promise<CloudSessions>
   /**
    * The dispatched work every machine on this account published, out of the
@@ -590,11 +597,36 @@ export class RelayReader {
           return json(200, page)
         }
         case "/v1/health": {
-          // The console's light asks this every fifteen seconds. Across the
-          // relay the honest answer is whether the line is up: a line that is
-          // down rejects, which the light draws as offline.
-          this.connected()
-          const health: Health = { at: Math.floor(this.now() / 1000), authed: true, ok: true, password: false, served_by: "cloud-relay" }
+          // The console's light asks this every fifteen seconds. The relay
+          // socket and the chosen machine are two subjects: a live socket can
+          // hold only a stale retained row for a machine that is gone. Health
+          // is therefore successful only when the account list currently
+          // measures this machine as current. A non-current row is a typed
+          // refusal, so the header cannot call the relay's own line "live" on
+          // behalf of a machine whose Session list is still waiting.
+          const client = this.connected()
+          if (typeof client.machines !== "function") {
+            return this.refuse(method, path, 503, "machine_freshness_unavailable",
+              "This console cannot measure whether the chosen machine is current.")
+          }
+          const answer = await client.machines()
+          const machine = answer.machines.find((row) => row.id === this.machine)
+          if (!machine) {
+            return this.refuse(method, path, 503, "machine_not_reported",
+              "The chosen machine has not reported to this account.")
+          }
+          if (machine.freshness !== "current") {
+            const code = machine.freshness === "stale" ? "machine_stale" : "machine_freshness_unknown"
+            return this.refuse(method, path, 503, code,
+              "The chosen machine is not currently reporting through Clawdline Cloud.")
+          }
+          const health: Health = {
+            at: Math.floor(this.now() / 1000),
+            authed: true,
+            ok: true,
+            password: false,
+            served_by: "cloud-machine-via-relay",
+          }
           this.note(method, path, "local")
           return json(200, health)
         }

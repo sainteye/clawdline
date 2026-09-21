@@ -149,6 +149,22 @@ export function forgetLocalPlatform(): void {
 }
 
 /**
+ * Whether this browser can read the daemon serving this page right now.
+ * Unlike the platform, this is never cached: a stopped daemon is the exact
+ * change the Devices page is meant to report on its next load.
+ */
+export async function localReachability(read: typeof fetch = fetch): Promise<"current" | "unknown"> {
+  try {
+    const res = await read("/v1/health", { credentials: "same-origin", cache: "no-store" })
+    if (!res.ok) return "unknown"
+    const body = (await res.json()) as { ok?: unknown }
+    return typeof body?.ok === "boolean" ? "current" : "unknown"
+  } catch {
+    return "unknown"
+  }
+}
+
+/**
  * The kind word this page puts in front of the machine's name.
  *
  * It is `machinePresentation`'s mapping (`js/session/selection.js`) for the
@@ -173,10 +189,11 @@ export function localMachineKind(os: string | null): "mac" | "linux" | "unknown"
  */
 export async function localMachines(thisMachine: string, read: typeof fetch = fetch): Promise<MachineAnswer> {
   const copy = T as Record<string, string>
-  const os = await localPlatform(read)
+  const [os, freshness] = await Promise.all([localPlatform(read), localReachability(read)])
   const kind = localMachineKind(os)
   const name = kind === "mac" ? copy.webMachineThisMac : thisMachine
   const prefix = kind === "mac" ? copy.webMachineMac : kind === "linux" ? copy.webMachineLinux : ""
+  const readable = freshness === "current"
   return {
     machines: [
       {
@@ -186,11 +203,11 @@ export async function localMachines(thisMachine: string, read: typeof fetch = fe
         provider: null,
         kind,
         label: prefix ? prefix + " · " + name : name,
-        observedAt: Date.now(),
-        freshness: "current",
-        pairing: "local",
-        selectable: true,
-        autoSelectable: true,
+        observedAt: readable ? Date.now() : null,
+        freshness,
+        pairing: readable ? "local" : "unknown",
+        selectable: readable,
+        autoSelectable: readable,
       },
     ],
   }
