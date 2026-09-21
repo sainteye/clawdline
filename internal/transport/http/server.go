@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -411,7 +412,10 @@ func (s *Server) Handler() http.Handler {
 			mux.Handle("/", s.withPWA(&fallback{page: newPage(root), miss: s.notImplemented}))
 			return gate.wrap(s.withDocuments(boundBodies(mux)))
 		}
-		mux.Handle("/", http.HandlerFunc(s.notImplemented))
+		// No web root is not a route this daemon has yet to write: `/` is its
+		// own, and it was not told where the files are. The page says that by
+		// name (no_web_root); an unowned /v1 route still says not_implemented.
+		mux.Handle("/", &fallback{page: newPage(""), miss: s.notImplemented})
 		return gate.wrap(s.withDocuments(boundBodies(mux)))
 	}
 	mux.Handle("/", s.proxy)
@@ -463,6 +467,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		OK:        (broker == nil || !broker.Beat.Stalled) && capacityOK,
 		Broker:    broker,
 		Capacity:  capacity,
+		Console:   consoleReading(WebRoot()),
 		Platform:  s.platformDiagnostics(r.Context()),
 		Proposals: s.proposalDiagnostics(r.Context()),
 		Scheduler: s.schedulerPulse(),
@@ -587,8 +592,22 @@ func (s *Server) notImplemented(w http.ResponseWriter, r *http.Request) {
 		"this daemon does not own that route yet", contract.Refusal{Route: r.URL.Path})
 }
 
-func (s *Server) ListenAndServe() error {
-	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
+// Listen binds the daemon's address, and is the first thing `serve` does.
+//
+// Binding used to be the last. Everything before it had already run: the
+// broker's beat, the cloud line, the tunnel's Reclaim — which stops whatever
+// cloudflared the state directory's pid file names, the running daemon's own
+// included — and a `listening` line in the shared log from a daemon that was
+// about to fail to listen. On 2026-09-21 that line was written at 10:52:13 by a
+// daemon that never held the port. A daemon that cannot have the port now
+// finds out before it has done anything else.
+func Listen(cfg config.Config) (net.Listener, error) {
+	return net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
+}
+
+// Serve answers on a listener Listen bound.
+func (s *Server) Serve(ln net.Listener) error {
+	addr := ln.Addr().String()
 	if s.cfg.Host != "127.0.0.1" && s.cfg.Host != "localhost" {
 		// Said out loud, once, in the log a person reads when something is
 		// wrong: this daemon is reachable from outside this machine.
@@ -599,11 +618,14 @@ func (s *Server) ListenAndServe() error {
 			addr, port, config.UpstreamPortEnv)
 	} else {
 		log.Printf("clawdline-go listening on http://%s (nothing behind it: an unowned route answers 501 not_implemented and names itself)", addr)
+		// Directly under `listening`, because that is the line somebody reads
+		// after a restart, and whether this address shows a page is the thing
+		// they restarted it for. A forwarding daemon's `/` is the upstream's.
+		log.Print(consoleLogLine(consoleReading(WebRoot())))
 	}
 	srv := &http.Server{
-		Addr:              addr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	return srv.ListenAndServe()
+	return srv.Serve(ln)
 }

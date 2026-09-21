@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/sainteye/clawdline-go/internal/contract"
 )
 
 // page serves the console itself: the document and every asset under it.
@@ -30,10 +32,50 @@ func WebRoot() string {
 	return ""
 }
 
+// consoleReading is what `/` would answer now, without asking it.
+//
+// It exists because the question "is the console back" was answered with
+// /v1/health on 2026-09-21, twice, and health was right both times: the daemon
+// was alive. It had been started without CLAWDLINE_NEXT_WEB, `/` answered 501
+// to everybody, and nothing on the startup path said so.
+func consoleReading(root string) contract.ConsoleDiagnostics {
+	if root == "" {
+		return contract.ConsoleDiagnostics{
+			State:  contract.ConsoleStateNone,
+			Detail: "CLAWDLINE_NEXT_WEB is not set, so / answers 501 no_web_root and this address shows no page",
+		}
+	}
+	index := filepath.Join(root, "index.html")
+	if _, err := os.Stat(index); err != nil {
+		// A bundle being rebuilt underneath a running daemon is one way here:
+		// tools/package-macos.sh removes the app before it copies the console.
+		return contract.ConsoleDiagnostics{
+			State:  contract.ConsoleStateBroken,
+			Root:   root,
+			Detail: "CLAWDLINE_NEXT_WEB has no index.html, so / answers 500 no_document: " + err.Error(),
+		}
+	}
+	return contract.ConsoleDiagnostics{State: contract.ConsoleStateServed, Root: root, Detail: "served from " + root}
+}
+
+// consoleLogLine is the startup line beside `listening`, which is the one line
+// of this daemon's log that somebody reads after a restart.
+func consoleLogLine(c contract.ConsoleDiagnostics) string {
+	switch c.State {
+	case contract.ConsoleStateServed:
+		return "console: " + c.Detail
+	case contract.ConsoleStateNone:
+		return "console: NONE — this daemon was not told where the console is: " + c.Detail +
+			". The API, the broker and the cloud line run without it; a browser here gets a refusal, not a page."
+	default:
+		return "console: BROKEN — " + c.Detail
+	}
+}
+
 func (p *page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p.root == "" {
 		writeRefusal(w, http.StatusNotImplemented, "no_web_root",
-			"this daemon was not told where the console is; set CLAWDLINE_NEXT_WEB")
+			"this daemon was not told where the console is; start it with CLAWDLINE_NEXT_WEB set to the console's built files")
 		return
 	}
 	// A URL path is a slash path whatever this machine spells its own paths

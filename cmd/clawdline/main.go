@@ -99,20 +99,27 @@ func serve() {
 	cfg.Port = port
 	// The log goes where it is bounded before anything else is said.
 	daemonLog(cfg)
+	// The port before anything else is done. Everything below writes: the
+	// stable binary, the store, the broker's beat, the cloud line, the tunnel's
+	// Reclaim — which stops the cloudflared this state directory's pid file
+	// names, whoever started it. A daemon that loses the port to another one
+	// over the same directory must not have done any of that first.
+	ln, err := httptransport.Listen(cfg)
+	if err != nil {
+		refuseHeldPort(cfg.Host, cfg.Port, err)
+	}
 	// The copy of this binary the skill stub runs (skillfile.ProjectBinary).
 	// Off the startup path, and never fatal: without it a session cannot read
 	// the guide, which is worth a log line, not a daemon that will not start.
 	go projectBinary(cfg.Dir)
 	srv, err := httptransport.New(cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline:", err)
-		os.Exit(1)
+		refuseToServe(1, err.Error())
 	}
 	// A device file that cannot be read stops the daemon here, rather than
 	// letting it listen and refuse everybody.
 	if err := srv.AuthReady(); err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline:", err)
-		os.Exit(1)
+		refuseToServe(1, err.Error())
 	}
 	srv.StartScheduler(context.Background())
 	// The broker's beat: collect what children wrote, run the two clocks, and
@@ -129,9 +136,8 @@ func serve() {
 	// paired: a cloudflared an earlier run left behind is stopped first.
 	srv.StartTunnel()
 	stopTunnelOnSignal(srv)
-	if err := srv.ListenAndServe(); err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline:", err)
-		os.Exit(1)
+	if err := srv.Serve(ln); err != nil {
+		refuseToServe(1, err.Error())
 	}
 }
 

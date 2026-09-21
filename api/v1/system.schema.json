@@ -36,11 +36,12 @@
       "description": "GET /v1/diagnostics, this machine's own token only (a paired device is 403): what health used to carry about the process — its state directory, its ports, the clock's last pass and the broker's own account of itself.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "capacity", "dir", "ok", "platform", "port", "scheduler", "served_by", "upstream"],
+      "required": ["at", "capacity", "console", "dir", "ok", "platform", "port", "scheduler", "served_by", "upstream"],
       "properties": {
         "at": { "type": "integer" },
         "broker": { "$ref": "orchestrator.schema.json#/$defs/BrokerDiagnostics" },
         "capacity": { "$ref": "#/$defs/CapacityDiagnostics" },
+        "console": { "$ref": "#/$defs/ConsoleDiagnostics" },
         "platform": { "$ref": "#/$defs/PlatformDiagnostics" },
         "proposals": { "$ref": "#/$defs/ProposalDiagnostics" },
         "dir": { "type": "string" },
@@ -50,6 +51,22 @@
         "served_by": { "type": "string" },
         "upstream": { "type": "integer" }
       }
+    },
+    "ConsoleDiagnostics": {
+      "description": "/v1/diagnostics.console: whether this daemon can show its console, which is what `/` would answer now. It is here and not in /v1/health on purpose. Health answers whether this daemon is alive and doing its work, for everyone who reads it — a paired phone included, through the relay, and the phone's console is app.clawdline.com's, not this address's. A missing page here stops nothing the phone uses, so it does not turn health red; it is this machine's own question, read with this machine's own token. On 2026-09-21 a restart was checked with health, twice, and health was green: the daemon was alive and `/` answered 501 to everybody. A restart that is meant to bring the console back is checked here, or with `/` itself. `ok` does not include it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "detail"],
+      "properties": {
+        "state": { "$ref": "#/$defs/ConsoleState" },
+        "root": { "description": "CLAWDLINE_NEXT_WEB as this daemon read it. Absent when it is not set.", "type": "string" },
+        "detail": { "description": "The same sentence the startup log writes under `listening`.", "type": "string" }
+      }
+    },
+    "ConsoleState": {
+      "description": "`served`: `/` answers the console's document. `none`: CLAWDLINE_NEXT_WEB is not set and `/` answers 501 no_web_root. `broken`: it is set and has no index.html, and `/` answers 500 no_document.",
+      "type": "string",
+      "enum": ["served", "none", "broken"]
     },
     "PlatformDiagnostics": {
       "description": "/v1/diagnostics.platform (broker-design #43, cross-platform §5): every platform capability of this machine by name — what it can do, what it cannot and why — each answered from facts that cost nothing to read, without trying any of it. `open_child`, `read_screen` and `send_keys` are what a dispatch needs: one that is `unavailable` refuses a dispatch 409 `no_child_capability` before anything is recorded, naming it, and the refusal carries these same rows. `unknown` is a probe that could not be read, and refuses nothing. Read at the moment of the request, like a dispatch reads it.",

@@ -2542,6 +2542,39 @@ type CompletionRow struct {
 	Title         string       `json:"title"`
 }
 
+// /v1/diagnostics.console: whether this daemon can show its console, which is
+// what `/` would answer now. It is here and not in /v1/health on purpose.
+// Health answers whether this daemon is alive and doing its work, for everyone
+// who reads it — a paired phone included, through the relay, and the phone's
+// console is app.clawdline.com's, not this address's. A missing page here stops
+// nothing the phone uses, so it does not turn health red; it is this machine's
+// own question, read with this machine's own token. On 2026-09-21 a restart was
+// checked with health, twice, and health was green: the daemon was alive and
+// `/` answered 501 to everybody. A restart that is meant to bring the console
+// back is checked here, or with `/` itself. `ok` does not include it.
+type ConsoleDiagnostics struct {
+	// The same sentence the startup log writes under `listening`.
+	Detail string `json:"detail"`
+
+	// CLAWDLINE_NEXT_WEB as this daemon read it. Absent when it is not set.
+	Root  string       `json:"root,omitempty"`
+	State ConsoleState `json:"state"`
+}
+
+// `served`: `/` answers the console's document. `none`: CLAWDLINE_NEXT_WEB is
+// not set and `/` answers 501 no_web_root. `broken`: it is set and has no
+// index.html, and `/` answers 500 no_document.
+type ConsoleState string
+
+const (
+	ConsoleStateServed ConsoleState = "served"
+	ConsoleStateNone   ConsoleState = "none"
+	ConsoleStateBroken ConsoleState = "broken"
+)
+
+// ConsoleStateValues is every value the contract allows, in contract order.
+var ConsoleStateValues = []ConsoleState{ConsoleStateServed, ConsoleStateNone, ConsoleStateBroken}
+
 // One file-ownership wait between sessions, from the Swift store's
 // `coordination_waits`, as Orchestrator.coordination(forTerminal:) shapes it.
 // On the waiting side it carries `reason` and `waiterCreatedAt`; on the owner's
@@ -2841,6 +2874,7 @@ type Diagnostics struct {
 	At        int64                `json:"at"`
 	Broker    *BrokerDiagnostics   `json:"broker,omitempty"`
 	Capacity  CapacityDiagnostics  `json:"capacity"`
+	Console   ConsoleDiagnostics   `json:"console"`
 	Dir       string               `json:"dir"`
 	OK        bool                 `json:"ok"`
 	Platform  PlatformDiagnostics  `json:"platform"`

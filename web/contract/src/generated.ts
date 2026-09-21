@@ -3018,6 +3018,43 @@ export interface CompletionRow {
 }
 
 /**
+ * /v1/diagnostics.console: whether this daemon can show its console, which is what
+ * `/` would answer now. It is here and not in /v1/health on purpose. Health answers
+ * whether this daemon is alive and doing its work, for everyone who reads it — a
+ * paired phone included, through the relay, and the phone's console is
+ * app.clawdline.com's, not this address's. A missing page here stops nothing the
+ * phone uses, so it does not turn health red; it is this machine's own question,
+ * read with this machine's own token. On 2026-09-21 a restart was checked with
+ * health, twice, and health was green: the daemon was alive and `/` answered 501 to
+ * everybody. A restart that is meant to bring the console back is checked here, or
+ * with `/` itself. `ok` does not include it.
+ */
+export interface ConsoleDiagnostics {
+  /**
+   * The same sentence the startup log writes under `listening`.
+   */
+  detail: string
+
+  /**
+   * CLAWDLINE_NEXT_WEB as this daemon read it. Absent when it is not set.
+   */
+  root?: string
+  state: ConsoleState
+}
+
+/**
+ * `served`: `/` answers the console's document. `none`: CLAWDLINE_NEXT_WEB is not
+ * set and `/` answers 501 no_web_root. `broken`: it is set and has no index.html,
+ * and `/` answers 500 no_document.
+ */
+export type ConsoleState =
+    "served"
+  | "none"
+  | "broken"
+
+export const ConsoleStateValues: readonly ConsoleState[] = ["served", "none", "broken"] as const
+
+/**
  * One file-ownership wait between sessions, from the Swift store's
  * `coordination_waits`, as Orchestrator.coordination(forTerminal:) shapes it. On
  * the waiting side it carries `reason` and `waiterCreatedAt`; on the owner's side
@@ -3345,6 +3382,7 @@ export interface Diagnostics {
   at: number
   broker?: BrokerDiagnostics
   capacity: CapacityDiagnostics
+  console: ConsoleDiagnostics
   dir: string
   ok: boolean
   platform: PlatformDiagnostics
