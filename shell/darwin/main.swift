@@ -174,7 +174,11 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     var window: ConsoleWindow!
     var web: WKWebView!
     var statusItem: NSStatusItem!
-    var daemon: Process?
+    /// The daemon this shell started, if it started one. Daemon.swift.
+    let daemon = BundledDaemon()
+    /// SIGTERM, turned into an ordinary quit so that the daemon is stopped on
+    /// the way out rather than left behind.
+    private var termination: DispatchSourceSignal?
 
     /// The bar across the top. Browser.swift.
     var bar: BrowserBar!
@@ -280,6 +284,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         }
         applyConfiguredHotKey(alertOnFailure: true)
 
+        termination = quitOnSIGTERM { NSApp.terminate(nil) }
         startBundledDaemon()
         // Somebody, somewhere, is asking to pair. The code is shown here and
         // nowhere else — it is never in the reply the asker got — so finishing
@@ -365,12 +370,14 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         false
     }
 
-    // The daemon this shell started is this shell's to stop. Leaving it behind
-    // would put a second writer over the same state the next time somebody
-    // opens the app.
+    // The daemon this shell started is this shell's to stop, and it is waited
+    // for. A quit that returns first races the next launch: `quit` and then
+    // `open` start a new daemon while the old one is still taking its tunnel
+    // down, and the new one finds the port held. Only that one daemon, by its
+    // pid — Daemon.swift says why none other.
     func applicationWillTerminate(_ note: Notification) {
         pairing.stop()
-        daemon?.terminate()
+        shellLog("quit: daemon \(daemon.stop())")
     }
 
     /// Start the daemon that ships inside this bundle.
@@ -379,30 +386,27 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// a different build than it was made with is a bug nobody can reproduce.
     /// If something already holds the port, the bundled one fails to bind and
     /// exits, and the one already there is what the window shows — a second
-    /// daemon over the same state directory would be two writers.
+    /// daemon over the same state directory would be two writers. It binds
+    /// before it does anything else, names the holder in daemon.log, and exits
+    /// with `BundledDaemon.exitPortHeld`.
     func startBundledDaemon() {
         guard let dir = Bundle.main.executableURL?.deletingLastPathComponent() else { return }
         let binary = dir.appendingPathComponent("clawdline")
         guard FileManager.default.isExecutableFile(atPath: binary.path) else { return }
 
-        let task = Process()
-        task.executableURL = binary
-        task.arguments = ["serve"]
         var env = ProcessInfo.processInfo.environment
         if let web = Bundle.main.resourceURL?.appendingPathComponent("web"),
            FileManager.default.fileExists(atPath: web.path) {
             env["CLAWDLINE_NEXT_WEB"] = web.path
             env["CLAWDLINE_NEXT_STANDALONE"] = "1"
             env["CLAWDLINE_NEXT_OWN_SESSIONS"] = "1"
+        } else {
+            // tools/package-macos.sh removes the bundle before it copies the
+            // console in, so a launch in that window finds no console. The
+            // daemon says so beside `listening` in daemon.log as well.
+            shellLog("daemon: this bundle carries no console; / will answer 501 no_web_root")
         }
-        task.environment = env
-        do {
-            try task.run()
-            daemon = task
-            shellLog("daemon: started from the bundle")
-        } catch {
-            shellLog("daemon: could not start: \(error.localizedDescription)")
-        }
+        daemon.start(binary: binary, environment: env)
     }
 
     // MARK: - The window
