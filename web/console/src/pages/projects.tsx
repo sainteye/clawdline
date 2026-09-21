@@ -1,8 +1,9 @@
 import { useLayoutEffect, useRef } from "react"
 import type { PageModule } from "./types.js"
-import { bindProjects, paintProjectsStatic, type ProjectsPage } from "../legacy/projects-bridge.js"
+import { bindProjects, type ProjectsPage } from "../legacy/projects-bridge.js"
 import { ActionConfirm, Info, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./projects/section.html?raw"
+import { nextWord, type NextWord } from "../next-strings.js"
 
 /**
  * The Projects page: `section#projects` in the Swift app's `index.html`,
@@ -16,8 +17,8 @@ import sectionMarkup from "./projects/section.html?raw"
  *
  * What the original's `main.js` does for this page is done here: bind once,
  * `enter` on arrival (the list, every time), `leave` on departure, the
- * keyboard lands on the heading (`focus: "projects-title"`), and `static.js`'s
- * three words are painted.
+ * keyboard lands on the heading (`focus: "projects-title"`), and the app's
+ * static words are painted for the chosen language.
  *
  * Escape: in the original, `input/keys.js` gives this page its turn after the
  * drawer and the keyboard card, and a Project open inside the page is given
@@ -41,15 +42,15 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       page.current?.leave()
       return
     }
-    // The words arrive in App's effect, which runs after this one on a cold
+    // The language arrives in App's effect, which runs after this one on a cold
     // start at `#page=projects`; the page is still covered (`booting`) until
     // then, so arrival waits for them as the original's does.
     const arrive = () => {
       if (!was.current) return
-      // `static.js` paints once, at load; the Board answer may rewrite the lede after.
+      // Static copy is painted once; the Board answer may rewrite the lede after.
       if (!painted.current) {
         painted.current = true
-        paintProjectsStatic(document)
+        paintNextWords(document.getElementById("projects"))
       }
       void page.current?.enter()
       document.getElementById("projects-title")?.focus({ preventScroll: true })
@@ -103,3 +104,13 @@ function navigate(name: string): void {
 }
 
 export const page: PageModule = { id: "projects", Component: ProjectsPageView }
+
+function paintNextWords(root: ParentNode | null): void {
+  if (!root) return
+  for (const node of root.querySelectorAll<HTMLElement>("[data-next-word]")) {
+    const key = node.dataset.nextWord as NextWord | undefined
+    if (!key) continue
+    const value = nextWord(key)
+    if (node.textContent !== value) node.textContent = value
+  }
+}

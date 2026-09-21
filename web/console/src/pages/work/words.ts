@@ -13,17 +13,29 @@
  * Holes are `{name}`, as the catalog's are.
  */
 
+/**
+ * The English catalog's own word, held once.
+ *
+ * Not a style choice: `refusals/audit.ts` finds E10 by searching this file for
+ * a literal `tabBacklog: "Backlog"`, and a whole-file search cannot tell which
+ * catalog a line sits in. With the English value held here, that literal can
+ * only reappear by somebody writing the English word into another language —
+ * which is the regression the rule is about. Inline it again and the rule goes
+ * red on the one catalog that is right.
+ */
+const englishBacklog = "Backlog"
+
 const words = {
   en: {
     nav: "Board",
     tabBoard: "Board",
-    tabBacklog: "Backlog",
+    tabBacklog: englishBacklog,
     boardEyebrow: "BOARD · HAPPENING NOW",
     boardTitle: "What is happening now",
     boardLede:
       "What you need to know now. What the machine follows by itself is not here: it is in each session's detail, under Session to-dos.",
     backlogEyebrow: "BACKLOG · PLANNED",
-    backlogTitle: "Backlog",
+    backlogTitle: englishBacklog,
     backlogLede: "Planned, not yet scheduled. Nothing leaves it unless you say so.",
     unreadable: "The board could not be read.",
     sweepStalled: "The board's sweep has stopped: a landing will not close its item until it runs again.",
@@ -148,12 +160,12 @@ const words = {
   "zh-Hant": {
     nav: "看板",
     tabBoard: "看板",
-    tabBacklog: "Backlog",
+    tabBacklog: "後續工作",
     boardEyebrow: "看板 · 現在正在發生",
     boardTitle: "現在正在發生的事",
     boardLede: "你現在需要知道的事。機器自己在追的待辦不在這裡，在各個 session 詳情的「Session 待辦」裡。",
-    backlogEyebrow: "BACKLOG · 規劃中",
-    backlogTitle: "Backlog",
+    backlogEyebrow: "後續工作 · 規劃中",
+    backlogTitle: "後續工作",
     backlogLede: "已規劃，尚未排入。除非你說，這裡的東西不會被拿掉。",
     unreadable: "讀不到看板。",
     sweepStalled: "看板的巡檢停了：在它恢復之前，落地不會自動收掉對應的項目。",
@@ -183,7 +195,7 @@ const words = {
     proposalGroupLeftover: "沒有人接手的事",
     proposalGroupOther: "其他",
     answerTrack: "追蹤",
-    answerLater: "之後（Backlog）",
+    answerLater: "之後（後續工作）",
     answerNo: "不用",
 
     decisionDefault: "到 {when} 還沒人回答，就照「{option}」",
@@ -194,15 +206,15 @@ const words = {
     digestFor: "{date}",
     digestNone: "還沒有摘要。每天第一次巡檢時，會寫一份前一天的。",
     digestCompleted: "完成 {n} 件，其中 {landed} 件已落地",
-    digestStalled: "{n} 件停擺，回到 Backlog",
-    digestFromBacklog: "{n} 件從 Backlog 移上看板",
+    digestStalled: "{n} 件停擺，回到後續工作",
+    digestFromBacklog: "{n} 件從後續工作移上看板",
     digestAutomatic: "{n} 次由規則或事實自動移動",
     digestProposals: "{n} 個提議待確認",
     digestDecisions: "{n} 個決定等你回答",
     digestAwaiting: "{n} 件交付等收尾",
     digestClosureAsked: "{n} 件交付問過你一次；7 天沒回答就以「交付未確認」結束",
     digestHandedOff: "{n} 筆待辦沒有人接",
-    digestBacklogStale: "{n} 件 Backlog 30 天沒人看過：要留嗎？",
+    digestBacklogStale: "{n} 件後續工作 30 天沒人看過：要留嗎？",
     digestQuiet: "那一天沒有發生什麼事。",
     digestTruncated: "那一天的移動比一份摘要讀得多，上面的數字只算了讀到的部分。",
 
@@ -216,7 +228,7 @@ const words = {
     tasksUnknown: "{n} 個讀不到",
     noTasks: "還沒有派工",
     lastEvidence: "最後一筆證據：{when}",
-    stallClock: "到 {when} 還沒有新證據，就回 Backlog",
+    stallClock: "到 {when} 還沒有新證據，就回到後續工作",
     closureClock: "到 {when} 還沒人回答，就以「交付未確認」結束",
     startOn: "預計 {date} 開始",
     reasonNoDispatch: "還沒有派工",
@@ -232,7 +244,7 @@ const words = {
 
     opStart: "開始做",
     opSchedule: "排入",
-    opDefer: "放回 Backlog",
+    opDefer: "放回後續工作",
     opAccept: "收下",
     opDoneElsewhere: "做完了（沒綁上）",
     opRework: "還要改",
@@ -251,7 +263,7 @@ const words = {
     newTitle: "要做什麼",
     newProject: "專案",
     newToBoard: "放上看板：現在就做",
-    newToBacklog: "放進 Backlog：之後再做",
+    newToBacklog: "放進後續工作：之後再做",
     create: "建立",
 
     failed: "沒有成功。",

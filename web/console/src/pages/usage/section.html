@@ -9,7 +9,8 @@
             <button id="usage-overview" type="button" role="tab" aria-selected="true"
                     aria-controls="usage-overview-panel" tabindex="0">Portfolio</button>
             <button id="usage-agent-work" type="button" role="tab" aria-selected="false"
-                    aria-controls="usage-agent-work-panel" tabindex="-1">Recent agent work</button>
+                    aria-controls="usage-agent-work-panel" tabindex="-1"
+                    data-next-word="usageRecentAgentWork"></button>
         </div>
         <form class="usage-controls" id="usage-controls">
             <fieldset id="usage-range"><legend class="sr-only">Inclusive local date range</legend>
@@ -23,7 +24,7 @@
         <p class="usage-warning-banner" id="usage-availability" role="alert" hidden></p>
         <p class="usage-status" id="usage-status" role="status" aria-live="polite"></p>
 
-        <!-- Usage Portfolio: begin -->
+        <!-- Portfolio overview: begin -->
         <section id="usage-overview-panel" role="tabpanel" aria-labelledby="usage-overview" tabindex="0">
             <p class="usage-score-note">Generated output is an operational signal, not a productivity score.</p>
             <div class="usage-kpis" aria-label="Portfolio range summary">
@@ -47,12 +48,12 @@
                     <section class="usage-detail-block" aria-labelledby="usage-project-trend-title"><h3 id="usage-project-trend-title">Output trend</h3><div class="usage-mini-chart" id="usage-project-trend"></div></section>
                     <section class="usage-detail-block" aria-labelledby="usage-project-mix-title"><h3 id="usage-project-mix-title">Assistant &amp; work mix</h3><div id="usage-project-mix"></div></section>
                     <section class="usage-detail-block" aria-labelledby="usage-project-lineage-title"><h3 id="usage-project-lineage-title">Root / child work</h3><div id="usage-project-lineage"></div></section>
-                    <section class="usage-detail-block" aria-labelledby="usage-project-recent-title"><h3 id="usage-project-recent-title">Recent agent work</h3><ol class="usage-recent-list" id="usage-project-recent"></ol></section>
+                    <section class="usage-detail-block" aria-labelledby="usage-project-recent-title"><h3 id="usage-project-recent-title" data-next-word="usageRecentAgentWork"></h3><ol class="usage-recent-list" id="usage-project-recent"></ol></section>
                 </aside>
             </div>
 
             <section class="usage-panel usage-insight-panel" aria-labelledby="usage-insights-title">
-                <div class="usage-section-head"><div><p class="usage-eyebrow">Operational clues</p><h2 id="usage-insights-title">Worth a closer look</h2></div></div>
+                <div class="usage-section-head"><div><p class="usage-eyebrow">Operational clues</p><h2 id="usage-insights-title" data-next-word="usageWorthCloserLook"></h2></div></div>
                 <div class="usage-insights" id="usage-insights"></div>
             </section>
 
@@ -77,11 +78,11 @@
                 </section>
             </div>
         </section>
-        <!-- Usage Portfolio: end -->
+        <!-- Portfolio overview: end -->
 
         <section id="usage-agent-work-panel" role="tabpanel" aria-labelledby="usage-agent-work" tabindex="0" hidden>
             <section class="usage-panel">
-                <div class="usage-section-head"><div><p class="usage-eyebrow">Newest first</p><h2>Recent agent work</h2></div></div>
+                <div class="usage-section-head"><div><p class="usage-eyebrow">Newest first</p><h2 data-next-word="usageRecentAgentWork"></h2></div></div>
                 <p class="usage-summary" id="usage-agent-summary">Open one item for its accounting facts. Prompts, session ids, and paths are never returned.</p>
                 <ol class="usage-agent-list" id="usage-agent-list"></ol>
                 <button class="usage-more" id="usage-more" type="button" hidden>Load more</button>
