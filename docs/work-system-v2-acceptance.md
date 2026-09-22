@@ -327,7 +327,16 @@ state wins second, and missing owner wins third; an unassigned in-progress item 
 phase badge. Every card shows the Project icon. Project filtering changes membership without
 changing stored state.
 
-### WS2-U04 — One authoritative Board
+### WS2-U04 — Edit and Delete are deliberate person actions
+
+Every current card exposes Edit and Delete. Edit opens with the current title and description,
+refuses blanks and stale versions, and keeps the modal open with its typed failure. Delete opens a
+confirmation that names the item and explains that its execution audit remains. Confirming it
+removes the card and its Session responsibility together by recording a person-owned cancellation;
+an Agent or machine credential cannot invoke either person route. Escape, the close control, and a
+backdrop press dismiss both dialogs without mutation, including at phone width.
+
+### WS2-U05 — One authoritative Board
 
 Navigation exposes one Board. Project links open it with a Project filter. The retired Project
 Board is absent from navigation and no current card/count is read from its source. The Now page may
