@@ -14,10 +14,11 @@ package cloud
 //     fetches a new one a minute before that.
 //
 // **This machine registers as a new machine.** It does not read, copy or reuse
-// the Swift app's identity or keys, and it must not: that app is running on
-// this same Mac right now, and two producers sharing one `sender` would share
-// one sequence space, so each would make the other's envelopes look like
-// replays to every viewer. The key material comes from
+// the Swift app's identity or keys, and it must not: envelopes the retired app
+// sent before 2026-09-19 remain in that sender's sequence history. Reusing its
+// identity would make new envelopes collide with that history, and reopening
+// an old build would create two producers in one sequence space. The key
+// material comes from
 // `internal/adapters/cloudkeys`, under this app's own directory.
 
 import (
