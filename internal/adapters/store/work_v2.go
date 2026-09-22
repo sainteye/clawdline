@@ -215,6 +215,9 @@ func (t *WorkV2Tx) CompleteReceipt(k ReceiptKey, a ReceiptAnswer) error {
 const workV2Columns = `id, project_id, project_path, kind, title, description, phase, condition,
   deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version`
 
+const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description, i.phase, i.condition,
+  i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle, i.version`
+
 func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	var i work.ItemV2
 	var created, updated int64
@@ -375,6 +378,28 @@ func (s *Store) WorkV2Items(ctx context.Context, project, owner string, includeT
 		return items[:limit], true, err
 	}
 	return items, false, err
+}
+
+// CompletedWorkV2ForSession keeps a Session's completed responsibility
+// visible after completion releases owner_session. The assignment ledger is
+// the durable relationship; looking only at the current item would make a
+// successful item disappear at the exact moment its final green check became
+// true.
+func (s *Store) CompletedWorkV2ForSession(ctx context.Context, session string, limit int) ([]work.ItemV2, bool, error) {
+	if err := reading(); err != nil {
+		return nil, false, err
+	}
+	if session == "" || limit <= 0 {
+		return nil, false, fmt.Errorf("session and work v2 limit are required")
+	}
+	rows, err := queryWorkV2(ctx, s.db, `SELECT `+workV2ItemColumns+` FROM work_v2_items i
+    WHERE i.phase='done' AND EXISTS (
+      SELECT 1 FROM work_v2_assignments a WHERE a.work_id=i.id AND a.session_id=?
+    ) ORDER BY i.closed_at DESC, i.id DESC LIMIT ?`, session, limit+1)
+	if len(rows) > limit {
+		return rows[:limit], true, err
+	}
+	return rows, false, err
 }
 
 func scanAssignmentV2(sc scanner) (work.AssignmentV2, error) {

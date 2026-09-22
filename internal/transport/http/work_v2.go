@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	gitadapter "github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
@@ -122,6 +123,72 @@ type workV2EventWire struct {
 	NextVersion     int64           `json:"next_version"`
 	Payload         json.RawMessage `json:"payload"`
 	At              int64           `json:"at"`
+}
+
+type workV2LandingRequest struct {
+	Commit string `json:"commit"`
+	Target string `json:"target"`
+	Remote string `json:"remote"`
+}
+
+type workV2GitReader interface {
+	ValidBranchName(context.Context, string) bool
+	ResolveCommit(context.Context, string, string) (string, error)
+	IsAncestor(context.Context, string, string, string) (bool, error)
+}
+
+func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.WorkV2View,
+	session string, ask *workV2LandingRequest) (*app.VerifiedLandingV2, *app.WorkError) {
+	if ask == nil {
+		return nil, nil
+	}
+	ownedDirectly := false
+	for _, a := range item.Assignments {
+		if a.State == "active" && a.Mode == "existing_session" && a.SessionID == session {
+			ownedDirectly = true
+			break
+		}
+	}
+	if !ownedDirectly {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "direct_landing_not_applicable",
+			Message: "Direct landing evidence belongs to an active existing-Session assignment."}
+	}
+	commit, target, remote := strings.TrimSpace(ask.Commit), strings.TrimSpace(ask.Target), strings.TrimSpace(ask.Remote)
+	if commit == "" || !g.ValidBranchName(ctx, target) || remote == "" || strings.Contains(remote, "/") ||
+		!g.ValidBranchName(ctx, remote) {
+		return nil, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_landing_evidence",
+			Message: "Landing evidence needs a commit, a valid local target branch, and one remote name."}
+	}
+	repo := item.Item.ProjectPath
+	resolved, err := g.ResolveCommit(ctx, repo, commit)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_commit_unresolved",
+			Message: "The landing commit does not resolve in the item's Project."}
+	}
+	localRef := "refs/heads/" + target
+	localHead, err := g.ResolveCommit(ctx, repo, localRef)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_target_unresolved",
+			Message: "The local target branch does not resolve in the item's Project."}
+	}
+	onLocal, err := g.IsAncestor(ctx, repo, resolved, localHead)
+	if err != nil || !onLocal {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_not_on_target",
+			Message: "The landing commit is not contained by the local target branch."}
+	}
+	remoteRef := "refs/remotes/" + remote + "/" + target
+	remoteHead, err := g.ResolveCommit(ctx, repo, remoteRef)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_remote_unresolved",
+			Message: "The remote-tracking target does not resolve; fetch or push it before recording landing."}
+	}
+	onRemote, err := g.IsAncestor(ctx, repo, resolved, remoteHead)
+	if err != nil || !onRemote {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_not_published",
+			Message: "The landing commit is not contained by the remote-tracking target."}
+	}
+	return &app.VerifiedLandingV2{Commit: resolved, Target: target, TargetCommit: localHead,
+		Remote: remote, RemoteCommit: remoteHead}, nil
 }
 
 func (s *Server) workV2Project(ctx context.Context, id string) (workV2ProjectWire, bool) {
@@ -829,6 +896,11 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			s.writeWorkV2Error(w, err)
 			return
 		}
+		recent, recentTruncated, err := s.workV2().RecentlyCompleted(r.Context(), conversation)
+		if err != nil {
+			s.writeWorkV2Error(w, err)
+			return
+		}
 		todos := make([]directTodoV2Wire, 0, len(rows))
 		for _, td := range rows {
 			images, imageErr := s.workV2().DirectTodoImages(r.Context(), td.ID)
@@ -842,8 +914,12 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		for _, item := range items {
 			assigned = append(assigned, s.workV2ItemOf(r.Context(), item))
 		}
-		writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "direct_todos": todos,
-			"truncated": truncated || itemTruncated})
+		completed := make([]workV2ItemWire, 0, len(recent))
+		for _, item := range recent {
+			completed = append(completed, s.workV2ItemOf(r.Context(), item))
+		}
+		writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
+			"direct_todos": todos, "truncated": truncated || itemTruncated || recentTruncated})
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodPost {
@@ -1059,12 +1135,13 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "phase" && r.Method == http.MethodPost {
 		var body struct {
-			ExpectedVersion    int64  `json:"expected_version"`
-			SessionID          string `json:"session_id"`
-			Next               string `json:"next"`
-			Verification       string `json:"verification"`
-			Deployment         string `json:"deployment"`
-			NoDeploymentReason string `json:"no_deployment_reason"`
+			ExpectedVersion    int64                 `json:"expected_version"`
+			SessionID          string                `json:"session_id"`
+			Next               string                `json:"next"`
+			Verification       string                `json:"verification"`
+			Landing            *workV2LandingRequest `json:"landing"`
+			Deployment         string                `json:"deployment"`
+			NoDeploymentReason string                `json:"no_deployment_reason"`
 		}
 		raw, ok := readWorkV2Body(w, r, &body)
 		if !ok {
@@ -1074,10 +1151,22 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		if !ok {
 			return
 		}
+		item, err := s.workV2().Item(r.Context(), parts[1])
+		if err != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, err)
+			return
+		}
+		landing, landingErr := verifyWorkV2DirectLanding(r.Context(), gitadapter.New(), item, body.SessionID, body.Landing)
+		if landingErr != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, landingErr)
+			return
+		}
 		var answer []byte
-		_, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
+		_, err = s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
 			SessionID: body.SessionID, Next: work.Phase(body.Next), Verification: body.Verification,
-			Deployment: body.Deployment, NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID},
+			Landing: landing, Deployment: body.Deployment, NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID},
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 				answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
