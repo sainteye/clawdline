@@ -16,6 +16,7 @@ import { nowWord } from "./pages/now/words.js"
 import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
 import { NewBuild } from "./NewBuild.js"
+import { SidebarIcon, type SidebarIconName } from "./SidebarIcon.js"
 import { sessionCountState, sessionReadingChinese, totalSessionWords } from "./session-reading.js"
 import {
   ActionConfirm,
@@ -55,12 +56,12 @@ type Asked = "none" | "waiting" | "opened" | "gone"
 //
 // The Timeline is in neither drawer: it is one work item's Project history,
 // reached from that item on the work page.
-const PAGES: { id: Page; nav: string; key?: string; text?: string; ready: boolean }[] = [
-  { id: "sessions", nav: "nav-sessions", key: "webSessions", ready: true },
-  { id: "devices", nav: "nav-devices", key: "webDevices", ready: false },
-  { id: "projects", nav: "nav-projects", key: "webProjects", ready: false },
-  { id: "plan", nav: "nav-plan", key: "webPlan", ready: false },
-  { id: "settings", nav: "nav-settings", key: "webSettings", ready: false },
+const PAGES: { id: Page; nav: string; icon: SidebarIconName; key?: string; text?: string; ready: boolean }[] = [
+  { id: "sessions", nav: "nav-sessions", icon: "sessions", key: "webSessions", ready: true },
+  { id: "devices", nav: "nav-devices", icon: "devices", key: "webDevices", ready: false },
+  { id: "projects", nav: "nav-projects", icon: "projects", key: "webProjects", ready: false },
+  { id: "plan", nav: "nav-plan", icon: "plan", key: "webPlan", ready: false },
+  { id: "settings", nav: "nav-settings", icon: "settings", key: "webSettings", ready: false },
 ]
 
 // The wordmark's mark, `main.js`'s literal: the project's own creature, drawn
@@ -734,6 +735,7 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
               disabled={!ready(p.id)}
               onClick={() => go(p.id)}
             >
+              <SidebarIcon name={p.icon} />
               {p.key ? T[p.key] : p.text}
             </button>
           ))}
@@ -748,6 +750,7 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
             disabled={!ready("work")}
             onClick={() => go("work")}
           >
+            <SidebarIcon name="work" />
             {workWord("nav")}
           </button>
           {/* "Where things stand" (work-system-review §5.2, W4): the one page
@@ -763,6 +766,7 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
             disabled={!ready("now")}
             onClick={() => go("now")}
           >
+            <SidebarIcon name="now" />
             {nowWord("nav")}
           </button>
         </div>
