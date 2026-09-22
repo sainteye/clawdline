@@ -10,7 +10,9 @@ import {
   assignWorkV2,
   addWorkV2Image,
   createWorkV2,
+  deleteWorkV2,
   deleteWorkV2Image,
+  editWorkV2,
   readProjectPlaces,
   readSessionsForWorkV2,
   readWorkV2,
@@ -83,12 +85,14 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
             <button className="chip danger" disabled={!!busy} onClick={() => void run(p.id, () => resolveWorkV2Proposal(p.id, "reject"))}>拒絕</button></div>
         </article>)}</div>
       </details>}
-      <BoardRegion title="規劃區" items={planning} sessions={sessions} busy={busy} run={run} />
-      <BoardRegion title="待指派" items={unassigned} sessions={sessions} busy={busy} run={run} />
+      <BoardRegion title="規劃區" items={planning} sessions={sessions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
+      <BoardRegion title="待指派" items={unassigned} sessions={sessions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
       {PHASES.map((phase) => <BoardRegion key={phase} title={phaseName(phase)}
-        items={items.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} busy={busy} run={run} />)}
+        items={items.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} busy={busy}
+        failure={failure} clearFailure={() => setFailure("")} run={run} />)}
       {done.length > 0 && <details className="work-section work-done"><summary><div className="work-section-head"><h2>已關閉</h2><span className="work-count">{done.length}</span></div></summary>
-        <div className="work-cards">{done.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy} run={run} />)}</div>
+        <div className="work-cards">{done.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy}
+          failure={failure} clearFailure={() => setFailure("")} run={run} />)}</div>
       </details>}
     </div>
     {creating && <NewWorkModal places={places} initialProject={project} busy={!!busy} failure={failure} onClose={() => setCreating(false)} onCreate={(body, files) => {
@@ -111,20 +115,45 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   </section>
 }
 
-function BoardRegion({ title, items, sessions, busy, run }: { title: string; items: WorkV2Item[]; sessions: SessionRow[]; busy: string; run: (key: string, task: () => Promise<unknown>) => Promise<boolean> }) {
+function BoardRegion({ title, items, sessions, busy, failure, clearFailure, run }: {
+  title: string
+  items: WorkV2Item[]
+  sessions: SessionRow[]
+  busy: string
+  failure: string
+  clearFailure: () => void
+  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+}) {
   if (!items.length) return null
   return <section className="work-section"><div className="work-section-head"><h2>{title}</h2><span className="work-count">{items.length}</span></div>
-    <div className="work-cards">{items.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy} run={run} />)}</div>
+    <div className="work-cards">{items.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy}
+      failure={failure} clearFailure={clearFailure} run={run} />)}</div>
   </section>
 }
 
-function WorkCard({ item, sessions, busy, run }: { item: WorkV2Item; sessions: SessionRow[]; busy: string; run: (key: string, task: () => Promise<unknown>) => Promise<boolean> }) {
+function WorkCard({ item, sessions, busy, failure, clearFailure, run }: {
+  item: WorkV2Item
+  sessions: SessionRow[]
+  busy: string
+  failure: string
+  clearFailure: () => void
+  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+}) {
   const [terminal, setTerminal] = useState("")
+  const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const imagePicker = useRef<HTMLInputElement>(null)
   const eligible = useMemo(() => sessions.filter((s) => s.cwd === item.project.path && s.sessionId), [sessions, item.project.path])
   const assignable = item.area !== "planning" && !item.closed_at
   return <article className="work-card work-v2-card" data-work-id={item.id} data-phase={item.phase}>
-    <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span>{item.project.label}</span></div>
+    <div className="work-card-toolbar">
+      <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span>{item.project.label}</span></div>
+      <div className="work-card-controls" aria-label="項目操作">
+        <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><span aria-hidden="true">✎</span> 編輯</button>
+        {!item.closed_at && <button className="danger" type="button" disabled={!!busy}
+          onClick={() => { clearFailure(); setDeleting(true) }}><span aria-hidden="true">⌫</span> 刪除</button>}
+      </div>
+    </div>
     <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>
     <h3>{item.title}</h3>
     <p>{item.description}</p>
@@ -160,7 +189,67 @@ function WorkCard({ item, sessions, busy, run }: { item: WorkV2Item; sessions: S
       <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => void run(item.id, () => assignWorkV2(item, terminal))}>指派</button>
       <button className="chip" type="button" disabled={!!busy} onClick={() => void run(item.id, () => assignNewWorkV2(item))}>開新 Session</button>
     </div>}
+    {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description) => {
+      void run(`edit-${item.id}`, () => editWorkV2(item, title, description)).then((ok) => { if (ok) setEditing(false) })
+    }} />}
+    {deleting && <DeleteWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setDeleting(false)} onDelete={() => {
+      void run(`delete-${item.id}`, () => deleteWorkV2(item)).then((ok) => { if (ok) setDeleting(false) })
+    }} />}
   </article>
+}
+
+function EditWorkModal({ item, busy, failure, onClose, onSave }: {
+  item: WorkV2Item
+  busy: boolean
+  failure: string
+  onClose: () => void
+  onSave: (title: string, description: string) => void
+}) {
+  const [title, setTitle] = useState(item.title)
+  const [description, setDescription] = useState(item.description)
+  const ready = !!title.trim() && !!description.trim()
+  useModalDismiss(busy, onClose)
+  return <div className="session-todo-modal work-edit-modal" role="dialog" aria-modal="true" aria-labelledby={`work-edit-title-${item.id}`}
+    onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
+    <form onSubmit={(event) => { event.preventDefault(); if (ready) onSave(title.trim(), description.trim()) }}>
+      <div className="work-modal-head"><div><p className="board-eyebrow">EDIT WORK ITEM</p><h2 id={`work-edit-title-${item.id}`}>編輯看板項目</h2></div>
+        <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
+      <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(event) => setTitle(event.target.value)} /></label>
+      <label>描述<textarea value={description} maxLength={65536} onChange={(event) => setDescription(event.target.value)} /></label>
+      {failure && <p className="work-note" role="alert">{failure}</p>}
+      <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "儲存中…" : "儲存變更"}</button>
+        <button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
+    </form>
+  </div>
+}
+
+function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
+  item: WorkV2Item
+  busy: boolean
+  failure: string
+  onClose: () => void
+  onDelete: () => void
+}) {
+  useModalDismiss(busy, onClose)
+  return <div className="session-todo-modal work-delete-modal" role="dialog" aria-modal="true" aria-labelledby={`work-delete-title-${item.id}`}
+    onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
+    <form onSubmit={(event) => { event.preventDefault(); onDelete() }}>
+      <div className="work-modal-head"><div><p className="board-eyebrow">DELETE WORK ITEM</p><h2 id={`work-delete-title-${item.id}`}>刪除看板項目？</h2></div>
+        <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
+      <p><strong>{item.title}</strong> 會從看板與負責 Session 的待辦移除。執行紀錄仍會保留，避免工作憑空消失。</p>
+      {failure && <p className="work-note" role="alert">{failure}</p>}
+      <div className="work-actions"><button className="chip danger" type="submit" disabled={busy}>{busy ? "刪除中…" : "確認刪除"}</button>
+        <button className="chip" type="button" disabled={busy} onClick={onClose}>保留項目</button></div>
+    </form>
+  </div>
+}
+
+function useModalDismiss(busy: boolean, onClose: () => void) {
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) onClose() }
+    document.addEventListener("keydown", close)
+    return () => document.removeEventListener("keydown", close)
+  }, [busy, onClose])
 }
 
 function WorkReferenceImage({ item, image, busy, run }: {
@@ -249,11 +338,7 @@ function NewWorkModal({ places, initialProject, busy, failure, onClose, onCreate
   const [images, setImages] = useState<File[]>([])
   const imagePicker = useRef<HTMLInputElement>(null)
   const ready = !!projectID && !!title.trim() && !!description.trim()
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) onClose() }
-    document.addEventListener("keydown", close)
-    return () => document.removeEventListener("keydown", close)
-  }, [busy, onClose])
+  useModalDismiss(busy, onClose)
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready) return

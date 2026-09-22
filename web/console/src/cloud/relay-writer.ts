@@ -226,7 +226,9 @@ export type WriteRoute =
   | { op: "snippet-order"; word: Carried<"snippet-order"> }
   | { op: "worktree-refresh"; word: Carried<"project-worktree-lifecycle-refresh">; project: string }
   | { op: "work-v2-create"; word: Carried<"work.v2.create"> }
+  | { op: "work-v2-edit"; word: Carried<"work.v2.edit">; id: string }
   | { op: "work-v2-assign"; word: Carried<"work.v2.assign">; id: string }
+  | { op: "work-v2-cancel"; word: Carried<"work.v2.cancel">; id: string }
   | { op: "work-v2-image-create"; word: Carried<"work.v2.image-create">; id: string }
   | { op: "work-v2-image-delete"; word: Carried<"work.v2.image-delete">; id: string; image: string }
   | { op: "work-v2-proposal-resolve"; word: Carried<"work.v2.proposal-resolve">; id: string; decision: "accept" | "reject" }
@@ -378,11 +380,17 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "work" && a === "v2" && b === "items" && c && d === "images" && segments[5] && segments.length === 6 && method === "DELETE") {
     return { op: "work-v2-image-delete", word: "work.v2.image-delete", id: c, image: segments[5] }
   }
+  if (head === "work" && a === "v2" && b === "items" && c && segments.length === 4 && method === "PATCH") {
+    return { op: "work-v2-edit", word: "work.v2.edit", id: c }
+  }
   if (method !== "POST") return null
   if (head === "work" && a === "v2") {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
     if (b === "items" && c && d === "assign" && segments.length === 5) {
       return { op: "work-v2-assign", word: "work.v2.assign", id: c }
+    }
+    if (b === "items" && c && d === "cancel" && segments.length === 5) {
+      return { op: "work-v2-cancel", word: "work.v2.cancel", id: c }
     }
     if (b === "items" && c && d === "images" && segments.length === 5) {
       return { op: "work-v2-image-create", word: "work.v2.image-create", id: c }
@@ -516,7 +524,9 @@ function spellingOf(route: WriteRoute): Spelling {
     case "worktree-refresh":
       return "flat"
     case "work-v2-create":
+    case "work-v2-edit":
     case "work-v2-assign":
+    case "work-v2-cancel":
     case "work-v2-image-create":
     case "work-v2-image-delete":
     case "work-v2-proposal-resolve":
@@ -833,7 +843,13 @@ export class RelayWriter {
         }
         return this.machineWorkV2(client, route.word, { item: { ...item, project_id: place.id } }, headerOf(init, "idempotency-key"))
       }
+      case "work-v2-edit": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
       case "work-v2-assign": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-cancel": {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-image-create": {

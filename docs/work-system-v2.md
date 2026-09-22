@@ -36,7 +36,7 @@ and projects an assigned item into its owner's Session to-do panel.
 
 1. **Only a person creates a work item.** Device-authenticated UI/API actions are the only creation
    path. The machine/orchestrator credential and task secrets cannot create one.
-2. **Only a person assigns, reassigns, unassigns, cancels, or reopens an item.** An Agent may not
+2. **Only a person assigns, reassigns, unassigns, deletes/cancels, or reopens an item.** An Agent may not
    appoint itself or another Session.
 3. **An Agent may propose, never promote.** A proposal is a previewable draft. It becomes a work
    item only after a person accepts it, possibly after editing it.
@@ -219,7 +219,7 @@ that decision exists. A person may change the policy; the Agent may not.
 | Operation | Person/device | Owning Agent | Other Agent | Broker/rule |
 | --- | ---: | ---: | ---: | ---: |
 | Create item | yes | no | no | no |
-| Assign/reassign/unassign/cancel/reopen | yes | no | no | no |
+| Assign/reassign/unassign/delete (cancel)/reopen | yes | no | no | no |
 | Change Project/kind/deployment policy | yes | no | no | no |
 | Edit title/description | yes | yes | no | no |
 | Add/edit documents and steps | yes | yes | no | no |
@@ -386,6 +386,9 @@ The Board provides:
   show the registered Project icon;
 - an explicit icon-and-description list for Feature, Issue, Epic, Refactor, and Plan instead of a
   native kind dropdown;
+- visible Edit and Delete controls on each current card; Edit changes title and description in a
+  dismissible modal, while Delete asks for confirmation, removes the card and Session projection,
+  and retains the cancellation audit instead of erasing why assigned work disappeared;
 - Planning, Unassigned, Assigned, Implementing, Verifying, Merging, Deploying, and Recently Done
   areas;
 - Feature/Issue cards with Project icon on every card;

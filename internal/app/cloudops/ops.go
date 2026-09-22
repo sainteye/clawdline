@@ -1005,10 +1005,24 @@ func init() {
 				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items", Body: p.document, Header: asDevice()}
 			}},
 
+		op{name: "work.v2.edit",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "PATCH", Path: "/v1/work/v2/items/" + segment(p.id),
+					Body: p.document, Header: asDevice()}
+			}},
+
 		op{name: "work.v2.assign",
 			decode: decodeWorkV2NamedDocument("id", "item"),
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/assign",
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "work.v2.cancel",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/cancel",
 					Body: p.document, Header: asDevice()}
 			}},
 
