@@ -49,6 +49,7 @@ const SECTION_WORD: Record<Section, WorkWord> = {
  */
 export function BoardView({
   data,
+  scoped,
   busy,
   run,
   onCommand,
@@ -58,6 +59,8 @@ export function BoardView({
   onAnswerDecision,
 }: {
   data: BoardData
+  /** A daily digest is global and must not be drawn as one Project's digest. */
+  scoped: boolean
   busy: boolean
   run: Run
   onCommand: (it: Item, c: Command) => Promise<unknown>
@@ -81,7 +84,7 @@ export function BoardView({
           {said}
         </p>
       ))}
-      <DigestFold digest={data.digest} read={data.digestRead} />
+      {!scoped && <DigestFold digest={data.digest} read={data.digestRead} />}
       <ProposalsFold proposals={data.proposals} total={data.proposalsTotal} busy={busy} run={run}
         onAnswer={onAnswerProposal} onResolve={onResolveProposal} />
       {data.board.phase === "loading" && (

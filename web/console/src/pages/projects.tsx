@@ -5,9 +5,16 @@ import {
   registerRetiredBoardProjectFallback,
   type RetiredBoardProject,
 } from "../legacy/board-bridge.js"
-import { ActionConfirm, Info, shown as overlayShown } from "../overlays/index.js"
+import { ActionConfirm, Info, requestPage, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./projects/section.html?raw"
 import { nextWord, type NextWord } from "../next-strings.js"
+import { workPageHash } from "../page-route.js"
+
+type ProjectTarget = RetiredBoardProject & { id?: string; label?: string; path?: string }
+type BoundProjects = ProjectsPage & {
+  state: ProjectsPage["state"] & { places?: ProjectTarget[] | null }
+  openProject(project: RetiredBoardProject): Promise<void>
+}
 
 /**
  * The Projects page: `section#projects` in the Swift app's `index.html`,
@@ -31,25 +38,51 @@ import { nextWord, type NextWord } from "../next-strings.js"
  * close first is open.
  */
 function ProjectsPageView({ shown }: { shown: boolean }) {
-  const page = useRef<(ProjectsPage & { openProject(project: RetiredBoardProject): Promise<void> }) | null>(null)
+  const page = useRef<BoundProjects | null>(null)
   const was = useRef(false)
   const painted = useRef(false)
 
   useLayoutEffect(() => {
     // The copied Projects view still calls its old `openBoard(place)` seam for
-    // rows joined to the frozen catalog. Keep the copy byte-for-byte, but open
-    // that same repository in Projects' own detail after discarding the old
-    // association. Nothing on this path reads an old card.
-    const bound =
-      page.current ??
-      (bindProjects(document, navigate) as ProjectsPage & {
-        openProject(project: RetiredBoardProject): Promise<void>
-      })
+    // rows joined to the frozen catalog. Keep the copy byte-for-byte, but send
+    // that repository to its scoped work page. Nothing here reads an old card.
+    const bound = page.current ?? (bindProjects(document, navigate) as BoundProjects)
     page.current = bound
-    return registerRetiredBoardProjectFallback((old) => {
-      const { boardProjectId: _retired, ...project } = old
-      void bound.openProject(project)
-    })
+    const openWork = (project: ProjectTarget) => {
+      const path = typeof project.path === "string" ? project.path.trim() : ""
+      if (!path) {
+        const { boardProjectId: _retired, ...ordinary } = project
+        void bound.openProject(ordinary)
+        return
+      }
+      const address = workPageHash(path, "projects")
+      try {
+        history.replaceState(history.state, "", address)
+      } catch {
+        location.hash = address
+      }
+      requestPage({ page: "work", hash: false })
+    }
+    const unregister = registerRetiredBoardProjectFallback(openWork)
+    // The copied renderer owns its click listener and cannot be changed. Its
+    // rows do expose their place id, and the bound page retains the exact
+    // place answer, so capture the ordinary (non-retired-Board) rows here and
+    // give every Project the same route into its work.
+    const rows = document.getElementById("projects-rows")
+    const onProject = (ev: Event) => {
+      const button = (ev.target as Element | null)?.closest<HTMLButtonElement>("button.project-row[data-place-id]")
+      if (!button || !rows?.contains(button)) return
+      const project = bound.state.places?.find((place) => place.id === button.dataset.placeId)
+      if (!project?.path) return
+      ev.preventDefault()
+      ev.stopImmediatePropagation()
+      openWork(project)
+    }
+    rows?.addEventListener("click", onProject, true)
+    return () => {
+      rows?.removeEventListener("click", onProject, true)
+      unregister()
+    }
   }, [])
 
   useLayoutEffect(() => {
