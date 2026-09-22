@@ -1,12 +1,21 @@
 # Work system v2
 
-Status: **approved target design; not implemented**. The owner approved the defaults in this
-document on 2026-09-22. The current implementation is still described by
-[`work-system.md`](work-system.md) until the v2 cutover is complete.
+Status: **implemented locally; release verification and live-data cutover pending**. The owner
+approved the defaults in this document on 2026-09-22. The v2 store, authority boundaries,
+lifecycle API, Board Console, Session projection, direct to-dos, proposals, and guarded v1 reset
+are present on the implementation branch. The person's running daemon has not been changed and
+its v1 rows have not been deleted.
 
 This page is normative for the replacement. Where the earlier board design, work-system design,
 or broker projection disagrees with it, this page wins for v2. The acceptance contract is
 [`work-system-v2-acceptance.md`](work-system-v2-acceptance.md).
+
+The implementation surface is `/v1/work/v2/`. Person writes require a send-capable device;
+Agent writes are isolated under `/v1/work/v2/agent/`. The old background Board sweep is not
+started, so a reset store remains empty instead of being repopulated by inferred digests or
+proposals. `GET /v1/work/v2/reset` is a local-only dry run. Its count-bound confirmation is
+required by the local-only POST that irreversibly clears v1 work tables while preserving broker,
+landing, Session, settings, Git, and v2 records.
 
 ## 1. Purpose
 

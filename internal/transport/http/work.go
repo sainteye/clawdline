@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,37 +71,16 @@ func (s *Server) work() *app.WorkBoard {
 	return got.(*app.WorkBoard)
 }
 
-// StartWork runs the board's sweep: a pass at once, then one per tick
-// (CLAWDLINE_NEXT_WORK_TICK, 15 seconds by default). It is started by the
-// daemon, because a landing nobody reads the board for has still landed.
+// StartWork remains as the daemon wiring boundary. Work-system v2 is advanced
+// explicitly by its owning Agent and by broker evidence at that command; the
+// retired v1 sweep must not manufacture digests or proposals after cutover.
 func (s *Server) StartWork(ctx context.Context) {
-	tick := 15 * time.Second
-	if v := os.Getenv("CLAWDLINE_NEXT_WORK_TICK"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			tick = d
-		}
-	}
-	// The board's settings move out of their old document here, once (D37),
-	// rather than on the first read of them.
-	if err := s.carryBoardSettings(ctx); err != nil {
-		log.Printf("board settings: the old document was not carried over: %v", err)
-	}
-	go s.work().Run(ctx, tick)
-	log.Printf("board sweep ticking every %s", tick)
-	// A session standing on a question is watched on the same clock. It needs
-	// the broker: its push is one of the broker's outbox effects.
-	if s.broker != nil {
-		go s.watchWaiting(ctx, tick)
-	}
+	_ = ctx
 }
 
-// workHealth turns /v1/health red when the sweep has stopped (DG-1): the
-// board is then not following its facts, and a landing would not close it.
+// V2 has no background sweep whose pulse can stall.
 func (s *Server) workHealth(h *contract.Health) {
-	if h.OK && s.work().Stalled() {
-		h.OK = false
-		h.Reason = contract.HealthReasonWorkSweepStalled
-	}
+	_ = h
 }
 
 // ——— Wire ———
@@ -257,6 +234,10 @@ type workOneWire struct {
 // workRoute is everything under /v1/work/.
 func (s *Server) workRoute(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(routePath(r), "/v1/work/")
+	if strings.HasPrefix(rest, "v2/") {
+		s.workV2Route(w, r)
+		return
+	}
 	parts := strings.Split(rest, "/")
 	switch {
 	case rest == "board":

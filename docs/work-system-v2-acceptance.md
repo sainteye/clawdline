@@ -1,6 +1,9 @@
 # Work system v2 acceptance contract
 
-Status: **approved test specification; implementation pending**.
+Status: **approved release gate; implementation in progress**. Domain, store, app, capacity, and
+Console build tests cover the initial implementation. The full failure-injection and browser
+matrix below remains the release gate; the live v1 reset must not run before it is complete and
+the owner has reviewed the exact dry-run counts.
 
 This document is the release gate for [`work-system-v2.md`](work-system-v2.md). It describes tests
 before choosing package or component boundaries. Each scenario must become an automated Go,

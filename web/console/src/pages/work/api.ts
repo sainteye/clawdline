@@ -1,4 +1,5 @@
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
+import type { SessionsSnapshot } from "@clawdline/contract"
 
 /**
  * The board's routes as this page reads them (internal/transport/http/work.go,
@@ -195,6 +196,7 @@ export interface ProjectPlace {
   id: string
   label: string
   path: string
+  icon?: unknown
 }
 
 export interface ProjectPlacePage {
@@ -280,6 +282,119 @@ async function decide<T>(path: string, body: unknown): Promise<T> {
     }
   }
 }
+
+async function mutate<T>(path: string, body: unknown, method = "POST"): Promise<T> {
+  const key = mintKey()
+  return call<T>(path, {
+    method,
+    headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+    body: JSON.stringify(body),
+  })
+}
+
+export type WorkV2Kind = "feature" | "issue" | "epic" | "refactor" | "plan"
+export type WorkV2Phase = "created" | "assigning" | "assigned" | "implementing" | "verifying" | "merging" | "deploying" | "done" | "cancelled"
+
+export interface WorkV2Project {
+  id: string
+  label: string
+  path: string
+  icon: unknown
+  available: boolean
+}
+
+export interface WorkV2Item {
+  id: string
+  project: WorkV2Project
+  kind: WorkV2Kind
+  title: string
+  description: string
+  phase: WorkV2Phase
+  condition: string | null
+  area: "execution" | "planning"
+  deployment_policy: "required" | "not_required" | "agent_decides"
+  owner_session: string | null
+  created_at: number
+  updated_at: number
+  closed_at: number | null
+  cycle: number
+  version: number
+}
+
+export interface DirectTodoV2 {
+  id: string
+  text: string
+  created_at: number
+  sent_at: number | null
+  read_at: number | null
+  completed_at: number | null
+  completed_by?: string
+  version: number
+}
+
+export interface SessionWorkV2 {
+  ok: boolean
+  assigned_items: WorkV2Item[]
+  direct_todos: DirectTodoV2[]
+  truncated: boolean
+}
+
+export interface WorkV2Proposal {
+  id: string
+  project_id: string
+  kind: WorkV2Kind
+  title: string
+  description: string
+  reason: string
+  suggested_acceptance: string
+  session_id: string
+  state: string
+  created_at: number
+}
+
+export const readWorkV2 = (projectID?: string) =>
+  call<{ ok: boolean; rows: WorkV2Item[]; counts: Record<string, number>; truncated: boolean }>(
+    "/v1/work/v2/items" + query({ project: projectID }),
+  )
+export const readWorkV2Proposals = () => call<{ rows: WorkV2Proposal[]; truncated: boolean }>("/v1/work/v2/proposals?state=pending")
+export const resolveWorkV2Proposal = (id: string, decision: "accept" | "reject") =>
+  mutate<unknown>(`/v1/work/v2/proposals/${id}/${decision}`, {})
+
+export const createWorkV2 = (body: {
+  project_id: string
+  kind: WorkV2Kind
+  title: string
+  description: string
+  deployment_policy: "required" | "not_required" | "agent_decides"
+}) => mutate<{ item: WorkV2Item }>("/v1/work/v2/items", body)
+
+export const assignWorkV2 = (item: WorkV2Item, terminalID: string) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/assign`, {
+    expected_version: item.version,
+    mode: "existing_session",
+    terminal_id: terminalID,
+  })
+
+export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude" = "codex") =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/assign`, {
+    expected_version: item.version,
+    mode: "new_session",
+    assistant,
+    model: "default",
+  })
+
+export const readSessionWorkV2 = (terminalID: string) =>
+  call<SessionWorkV2>(`/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}`)
+export const readSessionsForWorkV2 = () => call<SessionsSnapshot>("/v1/sessions")
+
+export const createDirectTodoV2 = (terminalID: string, text: string) =>
+  mutate<{ todo: DirectTodoV2 }>(`/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}`, { text })
+
+export const directTodoActionV2 = (terminalID: string, todoID: string, action: "send" | "complete" | "delete") =>
+  mutate<{ todo?: DirectTodoV2; deleted?: string }>(
+    `/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}/${todoID}/${action}`,
+    {},
+  )
 
 export type Op =
   | "start"

@@ -302,7 +302,38 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			if err != nil {
 				return capacity.Unmeasured(err.Error())
 			}
-			return capacity.Reading{Known: true, Used: n}
+			v2, err := s.store.WorkV2CapacityCounts(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: n + v2["open"]}
+		},
+		capacity.WorkPlanning: func() capacity.Reading {
+			return s.workV2CapacityReading("planning")
+		},
+		capacity.WorkAssignments: func() capacity.Reading {
+			return s.workV2CapacityReading("assignments")
+		},
+		capacity.WorkDocumentsPerItem: func() capacity.Reading {
+			return s.workV2CapacityReading("documents_per_item")
+		},
+		capacity.WorkStepsPerItem: func() capacity.Reading {
+			return s.workV2CapacityReading("steps_per_item")
+		},
+		capacity.SessionDirectTodos: func() capacity.Reading {
+			return s.workV2CapacityReading("direct_todos")
+		},
+		capacity.WorkItemTitleBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write guard; no retained buffer"}
+		},
+		capacity.WorkItemDescriptionBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write guard; no retained buffer"}
+		},
+		capacity.SessionDirectTodoBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write guard; no retained buffer"}
+		},
+		capacity.WorkRequestBodyBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},
 		// T4's three rows (proposals.go).
 		capacity.ProposalsOpen: func() capacity.Reading {
@@ -310,7 +341,11 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			if err != nil {
 				return capacity.Unmeasured(err.Error())
 			}
-			return capacity.Reading{Known: true, Used: c.Pending, OldestAt: c.Oldest}
+			v2, err := s.store.WorkV2CapacityCounts(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: c.Pending + v2["proposals"], OldestAt: c.Oldest}
 		},
 		capacity.DecisionsOpen: func() capacity.Reading {
 			counts, err := s.store.DecisionCounts(context.Background())
@@ -438,6 +473,14 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: int64(n)}
 		},
 	}
+}
+
+func (s *Server) workV2CapacityReading(name string) capacity.Reading {
+	counts, err := s.store.WorkV2CapacityCounts(context.Background())
+	if err != nil {
+		return capacity.Unmeasured(err.Error())
+	}
+	return capacity.Reading{Known: true, Used: counts[name]}
 }
 
 // spoolReadings are the Cloud spool's two rows. A line that is off, or was
