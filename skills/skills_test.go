@@ -186,3 +186,38 @@ func TestEveryGuideExplainsCloudPairing(t *testing.T) {
 		}
 	}
 }
+
+// Scheduled work is a daemon capability an assistant cannot safely infer from
+// route names alone. Both compiled guides must teach the one-time door, the
+// run-backed repeating door, and the proof/refusal vocabulary that keeps a
+// machine credential from silently becoming cron authority.
+func TestEveryGuideExplainsScheduledWork(t *testing.T) {
+	wants := []string{
+		"GET /v1/orchestrator/schedules",
+		"GET /v1/orchestrator/schedules/<id>",
+		"GET /v1/orchestrator/sessions/<conversation>/run",
+		"POST /v1/orchestrator/schedules",
+		"PATCH /v1/orchestrator/schedules/<id>",
+		"DELETE /v1/orchestrator/schedules/<id>",
+		"GET /v1/places",
+		"Idempotency-Key",
+		`"session_id"`,
+		`"via"`,
+		`"run"`,
+		"run_unknown",
+		"run_expired",
+		"run_other_session",
+		"invalid_user_authorization",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain scheduled work with %q", topic, want)
+			}
+		}
+	}
+}

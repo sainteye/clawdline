@@ -22,13 +22,40 @@
 | 路由 | 誰可以 |
 |---|---|
 | `GET /v1/orchestrator/schedules`、`GET …/schedules/:id` | 已配對裝置（唯讀即可）、本機 orchestrator token |
-| `POST …/schedules`、`PATCH …/:id`、`DELETE …/:id` | 可以 send 的裝置＋`Idempotency-Key`；或本機 orchestrator token，但**只能動「只跑一次」（`when.on`）的排程**（`MachineRefusal`，舊版原句） |
+| `POST …/schedules`、`PATCH …/:id`、`DELETE …/:id` | 可以 send 的裝置＋`Idempotency-Key`；本機 orchestrator token 可直接動「只跑一次」（`when.on`）的排程；a Session carrying `session_id` + `via.run` from the person's latest message to that conversation may relay that explicit instruction to create, change or delete a repeating schedule |
 | `POST …/:id/run` | 可以 send 的裝置＋key；或 orchestrator token（不用 key） |
 | `POST /v1/orchestrator/schedule-webhooks/bind` | 只有 orchestrator token（Cloud `schedule-webhook-bind-v1` 指令的本機那半） |
 | `POST /v1/orchestrator/schedule-imports` | 只有 orchestrator token，**而且 `config.json` 要有 `"schedule_imports_enabled": true`**（預設關；本 daemon 新增，遷移用） |
 | `GET /v1/orchestrator/schedule-exports` | 只有 orchestrator token（本 daemon 新增，遷移用） |
 
 `gate.go` 只多一行：`/v1/orchestrator/schedules/…` 的寫入跟清單一樣走「兩扇門」，不再一律要 orchestrator token。
+
+### A Session relays a person's recurring instruction
+
+A repeating schedule cannot be created with the machine-wide orchestrator token alone. Otherwise
+any local automation could quietly give itself a permanent wake-up. When a person explicitly asks
+a Session in Clawdline to arrange recurring work, the daemon has issued a run for that message. The
+Session first reads `GET /v1/orchestrator/sessions/<conversation id>/run`, then sends these two
+fields with the ordinary schedule form body:
+
+```json
+{
+  "session_id": "<conversation id>",
+  "via": { "run": "<run id>" }
+}
+```
+
+The run must still be inside its 24-hour window and must belong to the conversation named by
+`session_id`; otherwise the route returns `run_unknown`, `run_expired`, or `run_other_session`.
+A missing field, wrong type, or extra key under `via` returns `invalid_user_authorization`. After
+verification the proof is removed from the schedule body and retained in the schedule audit as
+`actor=user_via_session:<run>` and `session=<conversation>`. The raw request bytes remain the
+`Idempotency-Key` receipt digest, so the same key cannot be reused with different evidence.
+This is an auditable relay of the person's instruction, not a session-scoped credential: the
+orchestrator token remains machine-wide.
+
+The orchestrator token may also read `GET /v1/places` to obtain the form's `place_id`. This opens
+only the list, not Session-starting routes such as `/v1/places/:id/start`.
 
 ## 時鐘：一分鐘一跳，只問最近那一次
 

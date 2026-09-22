@@ -17,6 +17,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/icon"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
@@ -34,6 +35,7 @@ import (
 type standIn struct {
 	bridge  cloudops.Bridge
 	handler http.Handler
+	server  *Server
 	machine string
 	place   string
 }
@@ -84,6 +86,7 @@ func cloudStandIn(t *testing.T) *standIn {
 			Router:        cloud.Router{Handler: handler, Authorize: cloud.LocalAuthorizer(local, machineToken)},
 			AllowCommands: func() bool { return true }},
 		handler: handler,
+		server:  s,
 		machine: machineToken,
 		place:   place,
 	}
@@ -267,19 +270,95 @@ func TestACloudViewerArrangesARepeatingSchedule(t *testing.T) {
 // device.
 func (s *standIn) orchestratorCreate(t *testing.T, schedule map[string]any) *httptest.ResponseRecorder {
 	t.Helper()
-	raw, err := json.Marshal(schedule)
+	return s.orchestratorWrite(t, http.MethodPost, "/v1/orchestrator/schedules", "cron-1", schedule)
+}
+
+func (s *standIn) orchestratorWrite(t *testing.T, method, path, key string, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:7757/v1/orchestrator/schedules",
+	req := httptest.NewRequest(method, "http://127.0.0.1:7757"+path,
 		strings.NewReader(string(raw)))
 	req.Host = "127.0.0.1:7757"
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Idempotency-Key", "cron-1")
+	if key != "" {
+		req.Header.Set("Idempotency-Key", key)
+	}
 	req.Header.Set(machineHeader, s.machine)
 	rec := httptest.NewRecorder()
 	s.handler.ServeHTTP(rec, req)
 	return rec
+}
+
+// A repeating schedule is a standing instruction, so the machine-wide
+// orchestrator token alone still cannot make one. A session can carry the
+// person's explicit instruction under the run issued when that person sent
+// the session a message through Clawdline. The run must belong to the same
+// conversation, and neither proof field becomes part of the stored schedule.
+func TestASessionCanArrangeARepeatingScheduleOnAPersonsRun(t *testing.T) {
+	s := cloudStandIn(t)
+	const conversation = "c6000003-0000-4000-8000-000000000003"
+	run, err := s.server.runs().Issue(context.Background(), session.Session{
+		ID: "terminal-3", ConversationID: conversation,
+	}, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := dailySchedule(s.place, "morning sweep", "09:00")
+	body["session_id"] = conversation
+	body["via"] = map[string]any{"run": run.ID}
+
+	rec := s.orchestratorWrite(t, http.MethodPost, "/v1/orchestrator/schedules", "session-cron-1", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the person's instruction was refused: %d %s", rec.Code, rec.Body)
+	}
+	var made struct {
+		Schedule struct {
+			ID string `json:"id"`
+		} `json:"schedule"`
+	}
+	if json.Unmarshal(rec.Body.Bytes(), &made) != nil || made.Schedule.ID == "" {
+		t.Fatalf("the answer names no schedule: %s", rec.Body)
+	}
+	detail := call{method: http.MethodGet, path: "/v1/orchestrator/schedules/" + made.Schedule.ID,
+		headers: map[string]string{machineHeader: s.machine}}.do(s.handler)
+	if detail.Code != http.StatusOK || strings.Contains(detail.Body.String(), "session_id") ||
+		strings.Contains(detail.Body.String(), `"via"`) {
+		t.Fatalf("authorization leaked into the schedule: %d %s", detail.Code, detail.Body)
+	}
+
+	wrong := dailySchedule(s.place, "wrong conversation", "10:00")
+	wrong["session_id"] = "c6000004-0000-4000-8000-000000000004"
+	wrong["via"] = map[string]any{"run": run.ID}
+	refused := s.orchestratorWrite(t, http.MethodPost, "/v1/orchestrator/schedules", "session-cron-2", wrong)
+	if refused.Code != http.StatusForbidden || !strings.Contains(refused.Body.String(), "run_other_session") {
+		t.Fatalf("another conversation used the run: %d %s", refused.Code, refused.Body)
+	}
+
+	malformed := dailySchedule(s.place, "missing proof", "10:00")
+	malformed["session_id"] = conversation
+	refused = s.orchestratorWrite(t, http.MethodPost, "/v1/orchestrator/schedules", "session-cron-3", malformed)
+	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "invalid_user_authorization") {
+		t.Fatalf("partial proof was accepted or misreported: %d %s", refused.Code, refused.Body)
+	}
+
+	changed := dailySchedule(s.place, "later sweep", "10:30")
+	changed["session_id"] = conversation
+	changed["via"] = map[string]any{"run": run.ID}
+	updated := s.orchestratorWrite(t, http.MethodPatch,
+		"/v1/orchestrator/schedules/"+made.Schedule.ID, "session-cron-4", changed)
+	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), `"title":"later sweep"`) {
+		t.Fatalf("the person's change was refused: %d %s", updated.Code, updated.Body)
+	}
+
+	proof := map[string]any{"session_id": conversation, "via": map[string]any{"run": run.ID}}
+	deleted := s.orchestratorWrite(t, http.MethodDelete,
+		"/v1/orchestrator/schedules/"+made.Schedule.ID, "session-cron-5", proof)
+	if deleted.Code != http.StatusOK || !strings.Contains(deleted.Body.String(), made.Schedule.ID) {
+		t.Fatalf("the person's removal was refused: %d %s", deleted.Code, deleted.Body)
+	}
 }
 
 // TestTheActorHeaderOnlyEverTakesAuthorityAway is why the gate may honour a

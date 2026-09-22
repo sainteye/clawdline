@@ -26,6 +26,28 @@ import (
 // has already shown it.
 type SchedulePlace struct{ ID, Label, Path string }
 
+// ScheduleAuthority says which of the schedule route's two doors a write
+// used. Machine is the daemon-wide orchestrator credential. A non-empty Run
+// is a person's recent message to Session, validated by the HTTP owner before
+// it is handed here; it lets that session carry the person's standing
+// instruction without granting the machine credential blanket cron authority.
+// Run and Session bind the act to an auditable message and conversation; they
+// do not identify the HTTP caller, because the orchestrator credential remains
+// machine-wide. They are audit evidence, never schedule-file fields.
+type ScheduleAuthority struct {
+	Machine bool
+	Run     string
+	Session string
+}
+
+func (a ScheduleAuthority) audit(fields map[string]string) map[string]string {
+	if a.Run != "" {
+		fields["actor"] = "user_via_session:" + a.Run
+		fields["session"] = a.Session
+	}
+	return fields
+}
+
 // ScheduleReply is one answer, in the envelope every route here uses: a body on
 // success, a status, a code and a sentence otherwise.
 type ScheduleReply struct {
@@ -551,8 +573,8 @@ func rateLimited() ScheduleReply {
 }
 
 // Create is `createSchedule`.
-func (b *ScheduleBook) Create(ctx context.Context, body map[string]any, machine bool) ScheduleReply {
-	if machine {
+func (b *ScheduleBook) Create(ctx context.Context, body map[string]any, authority ScheduleAuthority) ScheduleReply {
+	if authority.Machine {
 		if r := b.MachineRefusal(ctx, "POST", "", body); r != nil {
 			return *r
 		}
@@ -586,7 +608,7 @@ func (b *ScheduleBook) Create(ctx context.Context, body map[string]any, machine 
 	if placeID, _ := body["place_id"].(string); placeID != "" {
 		fields["place"] = placeID
 	}
-	b.audit("orchestrator.schedule.created", fields)
+	b.audit("orchestrator.schedule.created", authority.audit(fields))
 	return answered(map[string]any{"ok": true, "schedule": b.summary(made, now),
 		"dispatch_enabled": b.dispatchEnabled()})
 }
@@ -609,8 +631,8 @@ func (b *ScheduleBook) readBack(ctx context.Context, id string) (schedule.Schedu
 // Update is `updateSchedule`: a save rewrites the whole file from the body a
 // create takes, carrying `created_at`, the fields no form can show, and — only
 // when the firing times did not move — `when_changed_at` and `fired_at`.
-func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]any, machine bool) ScheduleReply {
-	if machine {
+func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]any, authority ScheduleAuthority) ScheduleReply {
+	if authority.Machine {
 		if r := b.MachineRefusal(ctx, "PATCH", id, body); r != nil {
 			return *r
 		}
@@ -674,15 +696,15 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 		return refusedSchedule(500, "write_failed",
 			"The change was written and could not be read back, so the schedule you already had has been put back.")
 	}
-	b.audit("orchestrator.schedule.updated", map[string]string{"schedule": id, "ok": "1"})
+	b.audit("orchestrator.schedule.updated", authority.audit(map[string]string{"schedule": id, "ok": "1"}))
 	return answered(map[string]any{"ok": true, "schedule": b.summary(saved, now)})
 }
 
 // Delete is `deleteSchedule`. Content is not read: a row nobody can parse is
 // the one somebody most wants gone. Removing a schedule is not cancelling its
 // task.
-func (b *ScheduleBook) Delete(ctx context.Context, id string, machine bool) ScheduleReply {
-	if machine {
+func (b *ScheduleBook) Delete(ctx context.Context, id string, authority ScheduleAuthority) ScheduleReply {
+	if authority.Machine {
 		if r := b.MachineRefusal(ctx, "DELETE", id, nil); r != nil {
 			return *r
 		}
@@ -705,7 +727,7 @@ func (b *ScheduleBook) Delete(ctx context.Context, id string, machine bool) Sche
 	b.invalidMu.Lock()
 	delete(b.invalidSeen, id+".json")
 	b.invalidMu.Unlock()
-	b.audit("orchestrator.schedule.deleted", map[string]string{"schedule": id, "ok": "1"})
+	b.audit("orchestrator.schedule.deleted", authority.audit(map[string]string{"schedule": id, "ok": "1"}))
 	return answered(map[string]any{"ok": true, "deleted": id})
 }
 

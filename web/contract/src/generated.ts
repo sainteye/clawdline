@@ -5187,7 +5187,10 @@ export interface ScheduleRecord {
  * schedule_id, created_at, when_changed_at, fired_at and project_dir are the
  * machine's and are refused as unknown fields. Writes need an Idempotency-Key and
  * either a device that may send or, for a schedule that runs once, this machine's
- * orchestrator token.
+ * orchestrator token. A session carrying a person's recent instruction may write a
+ * repeating schedule by sending both `session_id` and `via.run`; the run must have
+ * been issued for a message to that conversation. Those proof fields are audit
+ * evidence and are not stored in the schedule.
  */
 export interface ScheduleRequest {
   assistant: string
@@ -5205,8 +5208,15 @@ export interface ScheduleRequest {
   notify_on_failure?: boolean
   on?: string
   place_id: string
+
+  /**
+   * The conversation the person's message was sent to. Required with via for a
+   * session-authorized repeating write.
+   */
+  session_id?: string
   timeout_minutes?: number
   title: string
+  via?: ScheduleUserAuthorization
 }
 
 /**
@@ -5310,6 +5320,14 @@ export interface ScheduleTask {
   serialize?: string[]
   timeout_minutes?: number
   title?: string
+}
+
+/**
+ * The recent run issued when the person sent this session the instruction. Required
+ * with session_id for a session-authorized repeating write.
+ */
+export interface ScheduleUserAuthorization {
+  run: string
 }
 
 /**

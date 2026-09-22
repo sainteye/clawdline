@@ -97,7 +97,7 @@ roster 與本機信任狀態；配對後要唯讀複查，也用這條。
 
 | 憑證 | 在哪裡 | 怎麼送 | 開得了什麼 |
 |---|---|---|---|
-| Orchestrator token | `<state dir>/orchestrator-token` | header `X-Clawdline-Orchestrator` | `/v1/orchestrator/`、`/v1/work/`、`/v1/board` 底下的全部路由，以及 `POST /v1/artifacts/images` |
+| Orchestrator token | `<state dir>/orchestrator-token` | header `X-Clawdline-Orchestrator` | `/v1/orchestrator/`、`/v1/work/`、`/v1/board` 底下的全部路由，以及 `GET /v1/places`、`POST /v1/artifacts/images` |
 | Task secret | root 派工時自己選 | header `X-Clawdline-Task-Secret` | child 自己在 `/v1/orchestrator/tasks/<id>/` 底下的路由，以及 `POST /v1/orchestrator/proposals` |
 | Device token | `<state dir>/local-token`，或配對過的裝置自己的 token | `Authorization: Bearer` | console 的路由（`/v1/sessions/…`）。session 用不到 |
 
@@ -321,6 +321,36 @@ child、detached task 或 handoff 假裝成 root assignment。
 `{"session_id": null, "poll_only": true}`，否則會被 `detached_task_required` 拒絕。不會通知任何人；
 自己 poll `GET /v1/orchestrator/tasks/<id>`，再讀 `result.json`。它永遠不是 Root，也不是功能的 owner。
 
+### 安排未來工作
+
+排程工作由 Clawdline Next 自己負責。不要使用退役 app、`cron` 或一串 detached task 代替。
+用 `GET /v1/orchestrator/schedules` 讀清單；用 `GET /v1/orchestrator/schedules/<id>` 讀完整內容。
+寫入需要的 `place_id` 由 `GET /v1/places` 取得。
+
+只跑一次的排程（`on`）可直接使用 orchestrator token 建立。重複排程（`days`）是一份長期指示，必須帶著
+使用者在這個 Session 裡明確給的指示：
+
+1. 讀 `GET /v1/orchestrator/sessions/<conversation>/run`。它是使用者透過 Clawdline 把訊息送給這個
+   Session 時簽發的近期 run。
+2. 帶 `Idempotency-Key` 呼叫 `POST /v1/orchestrator/schedules`；一般 schedule body 之外，再加上該
+   conversation 與 run：
+
+```json
+{"title":"早晨巡檢","at":"09:00","days":"daily","place_id":"<place id>",
+ "assistant":"codex","instructions":"檢查昨夜錯誤，回報可執行的發現。",
+ "session_id":"<conversation id>","via":{"run":"<run id>"}}
+```
+
+使用者明確要求變更時，同一份證據也能授權 `PATCH /v1/orchestrator/schedules/<id>`（送完整 schedule
+body）與 `DELETE /v1/orchestrator/schedules/<id>`（以 JSON body 送出兩個證據欄位）。
+`POST /v1/orchestrator/schedules/<id>/run` 會立即執行一次。回報成功前，要把建立或修改後的排程讀回來。
+
+沒有 `via` 時，orchestrator token 仍只能操作一次性的 `on` 排程。捏造、過期或屬於其他 Session 的 run
+分別回 `run_unknown`、`run_expired`、`run_other_session`；授權格式錯誤回
+`invalid_user_authorization`。使用者若直接在 terminal 打字，就沒有 run：請他透過 Clawdline 送出這項
+指示。絕對不要把一次 run 當成使用者沒有要求之工作的概括授權。這份證據讓代轉行為可以稽核；它不會把
+整台機器共用的 orchestrator token 變成某個 Session 專屬的憑證。
+
 ## 7. 回報你自己完成的 turn
 
 這一輪真的做完了——工作做完、驗證過、該 commit 的也 commit 了——就在最後回答之前，把這一步當成最後一個
@@ -427,10 +457,11 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 二到四個選項；`default` 必須是其中之一，也就是沒人回答時會採用的選項（7 天後，除非 `due_in_minutes`
 指定 60–10080）。只有 `blocking` 的 decision 會推播。用 `GET /v1/orchestrator/decisions/<id>` 讀答案。
 
-**回答的是使用者，不是 session。** proposal、decision 和看板項目都在 `/v1/work/…` 底下回答。session
-要寫進去，必須指名帶著使用者那句話的 run：`"via": {"run": "<id>"}`，沒帶就被拒絕
-（`403 session_cannot_decide`）。**這個 daemon 目前沒有任何路由會發 run id**——它原本來自已經退役的
-workflow 信封——而且只檢查格式。所以不要代轉：請使用者自己在 console 回答，在那裡他是以本人身分寫入。
+**回答的是使用者；Session 只能代轉他說的話。** proposal、decision 和看板項目都在 `/v1/work/…`
+底下回答。Session 要寫進去，必須指名帶著使用者那句話的 run：`"via": {"run": "<id>"}`，沒帶就被
+拒絕（`403 session_cannot_decide`）。用 `GET /v1/orchestrator/sessions/<conversation>/run` 讀最新的 run；
+捏造、過期、屬於其他 Session 或早於問題的 run 都會具名拒絕。使用者直接在 terminal 打的字沒有 run，
+請他透過 Clawdline 回答，或由他自己在 console 操作。
 
 **你的待辦清單。** `GET /v1/orchestrator/sessions/<conversation id>/todos`——用 conversation id 指名，
 不是 terminal id（否則回 `409 session_id_is_terminal`）。這些項目由 broker 根據 task 的事實開啟和關閉；
