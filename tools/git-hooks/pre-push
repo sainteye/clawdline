@@ -1,8 +1,60 @@
 #!/bin/sh
-cat >&2 <<'EOF'
-Push blocked: this checkout contains unfiltered development history.
-The public repository has rewritten history; pushing this checkout could publish private material.
-Publish only from a clean clone after the documented filter-repo and privacy checks.
-See docs/publishing.md.
-EOF
-exit 1
+# What may be published is what has already been through the scrub.
+#
+# This used to refuse every push, because the checkout's history was the
+# unfiltered development one and the public repository's was a filter-repo
+# rewrite of it. On 2026-09-22 `main` was rebased onto the published history,
+# so the two are one line and `main` can be pushed directly. The other refs
+# were not: 174 `clawdline/task/*` branches and `backup-before-unify` still
+# carry the unfiltered history, and pushing one would publish what the rewrite
+# removed. So this refuses by ref rather than refusing everything, and it
+# verifies rather than trusting the name.
+#
+# Three answers, like the other guards here: 0 allowed, 1 refused, 2 could not
+# check. Could-not-check is not a pass.
+set -u
+root=$(git rev-parse --show-toplevel) || exit 2
+cd "$root" || exit 2
+
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "${local_ref:-}" ] && continue
+  case "$local_sha" in 0000000000000000000000000000000000000000) continue ;; esac
+
+  if [ "$remote_ref" != "refs/heads/main" ] && [ "$remote_ref" != "refs/heads/swift" ]; then
+    echo "pre-push: refused $remote_ref." >&2
+    echo "  Only main carries the scrubbed history. Every other ref here still has the" >&2
+    echo "  development one, and publishing it would undo the rewrite. docs/publishing.md." >&2
+    status=1
+    continue
+  fi
+  [ "$remote_ref" = "refs/heads/swift" ] && continue
+
+  if ! out=$(tools/check-private.sh 2>&1); then
+    echo "pre-push: the working tree is not clean of private material." >&2
+    echo "$out" >&2
+    status=1
+    continue
+  fi
+
+  range="$local_sha"
+  case "$remote_sha" in
+    ""|0000000000000000000000000000000000000000) ;;
+    *) git cat-file -e "$remote_sha" 2>/dev/null && range="$remote_sha..$local_sha" ;;
+  esac
+
+  out=$(tools/check-private.sh -history -new -revs="$range" 2>&1)
+  case $? in
+    0) ;;
+    1) echo "pre-push: this push adds history the scrub has not seen." >&2
+       echo "$out" >&2
+       echo "  Read docs/publishing.md before widening the replacement rules: a rule that" >&2
+       echo "  matches an already-published commit rewrites it and stops the fast-forward." >&2
+       status=1 ;;
+    *) echo "pre-push: could not check the history being pushed; that is not a pass." >&2
+       echo "$out" >&2
+       status=2 ;;
+  esac
+done
+
+exit "$status"
