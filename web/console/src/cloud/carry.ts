@@ -73,8 +73,10 @@ export const CARRIED = {
   resume: "POST /v1/places/{id}/resume[/{assistant}]/{past}",
   "schedule-create": "POST /v1/orchestrator/schedules",
   "schedule-delete": "DELETE /v1/orchestrator/schedules/{id}",
+  "schedule-webhook-bind-v1": "POST /v1/orchestrator/schedule-webhooks/bind",
   "schedule-run": "POST /v1/orchestrator/schedules/{id}/run",
   "schedule-update": "PATCH /v1/orchestrator/schedules/{id}",
+  schedule: "GET /v1/orchestrator/schedules/{id}",
   schedules: "GET /v1/orchestrator/schedules",
   send: "POST /v1/sessions/{id}/send",
   "snippet-create": "POST /v1/snippets",
@@ -157,16 +159,6 @@ export const NO_MACHINE_ROUTE = {
   "diagnostics.events": "This machine does not take a page's diagnostic events over Clawdline Cloud.",
   "diagnostics.report": "This machine does not take a diagnostic report over Clawdline Cloud.",
   dispatch: "Dispatching a task over Clawdline Cloud has no pinned wire shape on this machine: dispatch it on the machine.",
-  // `schedule` is the one schedule word that stays here, and it is not a
-  // console decision: this machine's catalog lists it with no route behind it
-  // (`op{name: "schedule", read: true}` in internal/app/cloudops/ops.go has a
-  // `decode` and no `route`), so `Implemented()` leaves it out and the bridge
-  // answers it `unknown_command`. The local route it would reach exists —
-  // `GET /v1/orchestrator/schedules/:id` — and the list carried below already
-  // brings down `project_dir`, which is the only field the rows themselves
-  // needed it for. What still needs it is the pair of sheets that read one
-  // schedule in full: the run history and the form behind Edit.
-  schedule: "This machine does not answer one schedule in full over Clawdline Cloud: the list is read here, and a schedule's runs and its form are opened on the machine.",
   shell: "A session's shell is not read over Clawdline Cloud: read it on the machine.",
   skills: "A session's skills are not listed over Clawdline Cloud: read them on the machine.",
 } as const
@@ -249,12 +241,9 @@ export function uncarriedWordOf(method: string, path: string): string {
   // item write, which this daemon refuses by name at the route, so it is not a
   // word this table has to name either.
   if (head === "diagnostics" && a === "report") return "diagnostics.report"
-  // The list and the four writes are carried, so they are parsed once, by the
-  // reader's own case and by `writeRoute`, and are deliberately not spelled a
-  // second time here. What is left under this prefix is the single read.
-  if (head === "orchestrator" && a === "schedules" && b && segments.length === 3 && method === "GET") {
-    return "schedule"
-  }
+  // The schedule list, single read and writes are carried, so they are parsed
+  // once by the reader's own cases and `writeRoute`, and are deliberately not
+  // spelled a second time here.
   if (head === "sessions" && a && b) {
     switch (b) {
       case "screen":

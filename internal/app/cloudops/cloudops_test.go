@@ -22,6 +22,8 @@ const taskID = "7a000000-0000-4000-8000-000000000001"
 // task's: the two travel on neighbouring words and a test that used one
 // constant for both would pass while they disagreed.
 const scheduleID = "5c000000-0000-4000-8000-000000000002"
+const scheduleWebhookRequestID = "5c000000-0000-4000-8000-000000000003"
+const scheduleWebhookHook = "swh_00000000000000000000000000"
 
 // snippetID is one stored snippet's own id, as `orchestrator.NewUUID` mints
 // one. It is a made-up id and there is nothing of anybody's in it — which is
@@ -402,6 +404,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/orchestrator/schedules/" + scheduleID + "/run",
 		body2: `{}`,
 	}, {
+		word: "schedule-webhook-bind-v1",
+		body: map[string]any{"type": "schedule-webhook-bind-v1",
+			"request_id": scheduleWebhookRequestID, "hook_id": scheduleWebhookHook,
+			"schedule_id": scheduleID, "replace_hook_id": nil},
+		session: machine, name: "action:" + scheduleWebhookRequestID,
+		method: "POST", path: "/v1/orchestrator/schedule-webhooks/bind",
+		body2: `{"hook_id":"` + scheduleWebhookHook + `","replace_hook_id":null,` +
+			`"request_id":"` + scheduleWebhookRequestID + `","schedule_id":"` + scheduleID + `"}`,
+	}, {
 		// The four snippet writes, in the producer's own key sets. Nothing of
 		// the person's is in these: the fields are invented here and the machine
 		// is what decides whether they are a snippet.
@@ -483,8 +494,9 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "schedule",
 		body: map[string]any{"type": "schedule", "session": machine, "request": "req-schedule",
-			"id": "sch_1"},
-		session: machine, name: "read:req-schedule", code: "unknown_command", status: 400,
+			"id": scheduleID},
+		session: machine, name: "read:req-schedule",
+		method: "GET", path: "/v1/orchestrator/schedules/" + scheduleID,
 	}, {
 		word: "diagnostics.report",
 		body: map[string]any{"type": "diagnostics.report", "session": machine,
@@ -611,6 +623,7 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 	closed := Bridge{MachineID: "mac-01", Router: r}
 	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
 		"schedule-create", "schedule-update", "schedule-delete", "schedule-run",
+		"schedule-webhook-bind-v1",
 		"snippet-create", "snippet-update", "snippet-delete", "snippet-order", "dispatch"} {
 		body := map[string]any{"type": word, "session": pane, "request": "req-" + word}
 		switch word {
@@ -651,6 +664,9 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 		case "schedule-delete", "schedule-run":
 			body["session"] = MachineReplySession
 			body["id"] = scheduleID
+		case "schedule-webhook-bind-v1":
+			body = map[string]any{"type": word, "request_id": scheduleWebhookRequestID,
+				"hook_id": scheduleWebhookHook, "schedule_id": scheduleID, "replace_hook_id": nil}
 		case "dispatch":
 			body["session"] = MachineReplySession
 			body["task"] = map[string]any{}
@@ -1116,15 +1132,15 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 	}
 	// The daemon's published list must not promise what it refuses.
 	for _, word := range []string{"shell", "skills",
-		"schedule", "diagnostics.report", "diagnostics.events", "dispatch"} {
+		"diagnostics.report", "diagnostics.events", "dispatch"} {
 		if implemented[word] {
 			t.Fatalf("%s is advertised and has no local capability", word)
 		}
 	}
 	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "agent",
 		"transcript", "info", "git", "screen", "image", "documents", "document", "places",
-		"past-sessions", "schedules", "schedule-create", "schedule-update", "schedule-delete",
-		"schedule-run", "snippets", "snippet-create", "snippet-update", "snippet-delete",
+		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
+		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items", "timeline", "projects", "project-worktrees",
 		"project-worktree-lifecycle", "verification-ledger", "landings",
@@ -1135,10 +1151,10 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 	}
 }
 
-// TestAScheduleWriteIsJudgedAsTheDeviceThatSentIt is the one rule these four
-// words have that the other commands do not.
+// TestAScheduleWriteIsJudgedAsTheDeviceThatSentIt is the one rule these
+// schedule-mutating words have that the other commands do not.
 //
-// A schedule write reaches `/v1/orchestrator/schedules`, and the credential
+// A schedule write reaches a route under `/v1/orchestrator/`, and the credential
 // this daemon stamps on its own in-process requests covers every path under
 // `/v1/orchestrator/` — so without a word from the request itself, a person
 // changing a daily schedule from their phone would be judged as this
@@ -1155,6 +1171,9 @@ func TestAScheduleWriteIsJudgedAsTheDeviceThatSentIt(t *testing.T) {
 			"request": "req", "id": scheduleID},
 		"schedule-run": {"type": "schedule-run", "session": MachineReplySession,
 			"request": "req", "id": scheduleID},
+		"schedule-webhook-bind-v1": {"type": "schedule-webhook-bind-v1",
+			"request_id": scheduleWebhookRequestID, "hook_id": scheduleWebhookHook,
+			"schedule_id": scheduleID, "replace_hook_id": nil},
 	}
 	for word, body := range writes {
 		t.Run(word, func(t *testing.T) {
@@ -1167,8 +1186,12 @@ func TestAScheduleWriteIsJudgedAsTheDeviceThatSentIt(t *testing.T) {
 			}
 			// And the key is still the viewer's own request id: a retried
 			// save is not a second schedule.
-			if got := r.last().Header["Idempotency-Key"]; got != "req" {
-				t.Fatalf("%s carried the key %q, wanted the request id", word, got)
+			wantKey := "req"
+			if word == "schedule-webhook-bind-v1" {
+				wantKey = scheduleWebhookRequestID
+			}
+			if got := r.last().Header["Idempotency-Key"]; got != wantKey {
+				t.Fatalf("%s carried the key %q, wanted %q", word, got, wantKey)
 			}
 		})
 	}

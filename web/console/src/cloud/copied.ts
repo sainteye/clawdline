@@ -73,6 +73,13 @@ export interface CloudClientHandle extends CloudReadClient {
    * paired with (`cloud-client.js`).
    */
   machineDescriptor?(machine: string): { machine?: { name?: string; platform?: string } } | null
+  /** Low-level encrypted command seam used by the original webhook binder. */
+  _publishCommand(
+    machine: string,
+    type: string,
+    body: Record<string, unknown>,
+    envelopeClass: "ctl",
+  ): Promise<unknown>
 }
 
 /** A typed failure from the copied modules (`cloud-failure.js`, `bootError`). */

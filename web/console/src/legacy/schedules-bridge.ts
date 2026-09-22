@@ -49,12 +49,16 @@ import {
   scheduleRunMessage as scheduleRunMessageOriginal,
 } from "./js/input/schedule-run.js"
 import {
+  ScheduleWebhookClient as ScheduleWebhookClientOriginal,
+  generateAndBindScheduleWebhook as generateAndBindScheduleWebhookOriginal,
   scheduleWebhookCanGenerate as scheduleWebhookCanGenerateOriginal,
   scheduleWebhookCopy as scheduleWebhookCopyOriginal,
   scheduleWebhookCurlExample as scheduleWebhookCurlExampleOriginal,
   scheduleWebhookHelpHTML as scheduleWebhookHelpHTMLOriginal,
+  scheduleWebhookReceiptHeads as scheduleWebhookReceiptHeadsOriginal,
   scheduleWebhookManagementWarning as scheduleWebhookManagementWarningOriginal,
   scheduleWebhookTimelineHTML as scheduleWebhookTimelineHTMLOriginal,
+  shouldObserveScheduleWebhook as shouldObserveScheduleWebhookOriginal,
 } from "./js/net/schedule-webhooks.js"
 
 /* ---- the wire: the Swift app's shapes, which this daemon answers in ---------
@@ -323,3 +327,45 @@ export const scheduleWebhookTimelineHTML = scheduleWebhookTimelineHTMLOriginal a
   observed: Record<string, unknown>,
   language: string,
 ) => string
+
+export interface ScheduleWebhookHook {
+  hook_id: string
+  state: string
+  revision: number
+  availability?: string
+}
+export interface ScheduleWebhookSecretResult {
+  hook: ScheduleWebhookHook | null
+  publicURL: string | null
+  secretAvailable: boolean
+  duplicate: boolean
+}
+export interface ScheduleWebhookClientAPI {
+  read(hookID: string): Promise<{ hook?: ScheduleWebhookHook } | ScheduleWebhookHook>
+  deliveries(hookID: string): Promise<{ deliveries?: unknown[] }>
+  entitlements(): Promise<string | null>
+  create(machineID: string): Promise<ScheduleWebhookSecretResult>
+  rotate(hookID: string, revision: number): Promise<ScheduleWebhookSecretResult>
+  disable(hookID: string, revision: number): Promise<{ hook?: ScheduleWebhookHook } | ScheduleWebhookHook>
+  observe(hookID: string, deliveryID: string, receiptVersion: number): Promise<Record<string, unknown>>
+}
+export const ScheduleWebhookClient = ScheduleWebhookClientOriginal as unknown as new (options: {
+  origin: string
+  fetch?: typeof globalThis.fetch
+  idempotencyKey?: () => string
+}) => ScheduleWebhookClientAPI
+export const scheduleWebhookReceiptHeads = scheduleWebhookReceiptHeadsOriginal as (
+  deliveries: unknown[],
+) => { deliveryID: string; receiptVersion: number }[]
+export const shouldObserveScheduleWebhook = shouldObserveScheduleWebhookOriginal as (context: {
+  open: boolean
+  visibilityState: string
+  renderedVersion: number
+}) => boolean
+export const generateAndBindScheduleWebhook = generateAndBindScheduleWebhookOriginal as (
+  client: ScheduleWebhookClientAPI,
+  bind: (scheduleID: string, hookID: string, replaceHookID: string | null) => Promise<ScheduleWebhookHook>,
+  machineID: string,
+  scheduleID: string,
+  currentHook: ScheduleWebhookHook | null,
+) => Promise<ScheduleWebhookSecretResult>

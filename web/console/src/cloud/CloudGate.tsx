@@ -39,6 +39,7 @@ import { machinesByCapability } from "./machine-access.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
+import { installScheduleWebhookManagement } from "./schedule-webhooks.js"
 import {
   machineAccessProblem,
   machineListAnswer,
@@ -221,6 +222,7 @@ export function CloudGate({ declared }: { declared: string }) {
   const reader = useRef<RelayReader | null>(null)
   const unlisten = useRef<(() => void) | null>(null)
   const recheck = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const uninstallScheduleWebhooks = useRef<(() => void) | null>(null)
   // What this tab has forgotten, where the machine source installed once can
   // read it. The source outlives every render that changes the list.
   const gone = useRef<readonly string[]>([])
@@ -229,6 +231,10 @@ export function CloudGate({ declared }: { declared: string }) {
   // The Devices page's list belongs to this gate's line. A gate that is gone
   // leaves no source behind for a page to read an account through.
   useEffect(() => () => setAccountMachines(null), [])
+  useEffect(() => () => {
+    uninstallScheduleWebhooks.current?.()
+    uninstallScheduleWebhooks.current = null
+  }, [])
 
   useEffect(() => {
     if (transport.kind === "misdeclared") {
@@ -294,6 +300,18 @@ export function CloudGate({ declared }: { declared: string }) {
     next.attach(current)
     reader.current = next
     readThroughRelay(next)
+    uninstallScheduleWebhooks.current?.()
+    if (config) {
+      uninstallScheduleWebhooks.current = installScheduleWebhookManagement({
+        apiOrigin: config.apiOrigin,
+        machineID: machine.id,
+        connected: () => {
+          const active = client.current
+          if (!active) throw Object.assign(new Error("the cloud connection is not ready"), { code: "offline" })
+          return active
+        },
+      })
+    }
     // What the seam answered and how, for whoever is looking at this page's
     // behaviour from devtools; nothing reads it back.
     ;(globalThis as { __clawdlineCloudSeam?: RelayReader }).__clawdlineCloudSeam = next

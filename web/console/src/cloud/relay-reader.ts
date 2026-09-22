@@ -486,6 +486,11 @@ export class RelayReader {
         this.only(url, path)
         return await this.machineRead(method, path, "project-worktree-lifecycle", { project })
       }
+      const schedule = scheduleDetailID(path)
+      if (schedule) {
+        this.only(url, path)
+        return await this.machineRead(method, path, "schedule", { id: schedule })
+      }
       const agent = sessionAgent(path)
       if (agent) {
         const q = this.only(url, path, "limit")
@@ -1075,6 +1080,17 @@ function sessionAgent(path: string): { session: string; agent: string } | null {
     return session && agent ? { session, agent } : null
   } catch {
     return null
+  }
+}
+
+/** The id in `GET /v1/orchestrator/schedules/{id}`, decoded after splitting. */
+function scheduleDetailID(path: string): string {
+  const parts = path.split("/")
+  if (parts.length !== 5 || parts[1] !== "v1" || parts[2] !== "orchestrator" || parts[3] !== "schedules") return ""
+  try {
+    return decodeURIComponent(parts[4])
+  } catch {
+    return ""
   }
 }
 
