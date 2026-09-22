@@ -37,24 +37,46 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     continue
   fi
 
-  range="$local_sha"
+  # Judge by comparison, not by memory.
+  #
+  # `-new` was tried first and is wrong here: it records what it reports, so a
+  # refused push passed on the second attempt. `-checkpoint -` keeps nothing,
+  # but it also forces a full read and ignores -revs, so a range cannot be
+  # asked about on its own. What is left is a control group: read what the
+  # remote already publishes, read what this push would make it, and refuse
+  # when the second carries more than the first. Measured 2026-09-22: 529
+  # against 606 for a merge that would have published 77 further findings.
+  count_findings() {
+    # Plain text, not an escape: `\u2014` is a Python spelling of the em dash
+    # and grep reads it literally, so an earlier version of this line counted
+    # zero on both sides and waved a dangerous push through. Watched failing.
+    tools/check-private.sh -history -revs="$1" -checkpoint - 2>&1 |
+      grep -c 'history only' || true
+  }
+
+  after=$(count_findings "$local_sha")
   case "$remote_sha" in
-    ""|0000000000000000000000000000000000000000) ;;
-    *) git cat-file -e "$remote_sha" 2>/dev/null && range="$remote_sha..$local_sha" ;;
+    ""|0000000000000000000000000000000000000000) before=0 ;;
+    *) if git cat-file -e "$remote_sha" 2>/dev/null; then before=$(count_findings "$remote_sha"); else
+         echo "pre-push: the published commit $remote_sha is not here to compare against." >&2
+         echo "  Run git fetch first; a push cannot be judged without it." >&2
+         status=2; continue
+       fi ;;
   esac
 
-  out=$(tools/check-private.sh -history -new -revs="$range" 2>&1)
-  case $? in
-    0) ;;
-    1) echo "pre-push: this push adds history the scrub has not seen." >&2
-       echo "$out" >&2
-       echo "  Read docs/publishing.md before widening the replacement rules: a rule that" >&2
-       echo "  matches an already-published commit rewrites it and stops the fast-forward." >&2
-       status=1 ;;
-    *) echo "pre-push: could not check the history being pushed; that is not a pass." >&2
-       echo "$out" >&2
-       status=2 ;;
-  esac
+  if [ -z "$after" ] || [ -z "$before" ]; then
+    echo "pre-push: could not count the history on one side; that is not a pass." >&2
+    status=2; continue
+  fi
+
+  if [ "$after" -gt "$before" ]; then
+    echo "pre-push: this push would publish $((after - before)) finding(s) the remote does not carry." >&2
+    echo "  published=$before  after this push=$after" >&2
+    echo "  Read docs/publishing.md. A branch cut before main was rebased onto the" >&2
+    echo "  published history brings the unfiltered line with it; cherry-pick its" >&2
+    echo "  content instead of merging it." >&2
+    status=1
+  fi
 done
 
 exit "$status"
