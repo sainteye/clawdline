@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
+import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
+import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
 import "../pages/work/work.css"
@@ -81,7 +82,7 @@ export function Todos({ row, agentCount, agentPanel }: {
                 <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
                 <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · {phaseName(item.phase)}
                   {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small>
-                  <WorkMilestones item={item} />
+                  <WorkMilestones phase={item.phase} />
                 </div>
               </article>
             )) : page ? <p>目前沒有負責中的項目。</p> : null}
@@ -90,7 +91,7 @@ export function Todos({ row, agentCount, agentPanel }: {
             <p>最近完成的看板項目</p>
             {page.recent_items.map((item) => <article className="session-owned-item completed" key={item.id} data-phase={item.phase}>
               <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
-              <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · 已完成</small><WorkMilestones item={item} /></div>
+              <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · 已完成</small><WorkMilestones phase={item.phase} /></div>
             </article>)}
           </section>}
           <section className="session-todos-list" aria-label="直接待辦">
@@ -127,23 +128,6 @@ export function Todos({ row, agentCount, agentPanel }: {
       </div>}
     </>
   )
-}
-
-const WORK_MILESTONES = ["實作", "驗證", "Commit / Merge", "部署", "完成"] as const
-
-function WorkMilestones({ item }: { item: WorkV2Item }) {
-  const completed = ({ created: 0, assigning: 0, assigned: 0, implementing: 0, verifying: 1,
-    merging: 2, deploying: 3, done: 5, cancelled: 0 } as Record<string, number>)[item.phase] ?? 0
-  const current = ({ created: 0, assigning: 0, assigned: 0, implementing: 0, verifying: 1,
-    merging: 2, deploying: 3 } as Record<string, number>)[item.phase]
-  return <ol className="session-work-milestones" aria-label="項目進度">
-    {WORK_MILESTONES.map((label, index) => {
-      const state = index < completed ? "done" : index === current ? "current" : "pending"
-      return <li key={label} data-state={state} aria-label={`${label}：${state === "done" ? "已完成" : state === "current" ? "進行中" : "尚未完成"}`}>
-        <span aria-hidden="true">{state === "done" ? "✓" : state === "current" ? "•" : "○"}</span>{label}
-      </li>
-    })}
-  </ol>
 }
 
 function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {

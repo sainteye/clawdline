@@ -173,18 +173,18 @@
 .session-owned-item b, .session-direct-todo b { display: block; color: var(--ink); overflow-wrap: anywhere; }
 .session-owned-item small, .session-direct-todo small { display: block; margin-top: 3px; color: var(--faint); font: 10px/1.5 var(--mono); }
 .session-work-condition { color: var(--accent); }
-.session-work-milestones {
+.work-milestones {
     display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0 1px; padding: 0; list-style: none;
 }
-.session-work-milestones li {
+.work-milestones li {
     display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 2px 7px;
     border: 1px solid var(--line); border-radius: 999px; color: var(--faint); font: 10px/1.25 var(--mono);
 }
-.session-work-milestones li > span { width: 11px; text-align: center; font-weight: 800; }
-.session-work-milestones li[data-state="done"] {
+.work-milestones li > span { width: 11px; text-align: center; font-weight: 800; }
+.work-milestones li[data-state="done"] {
     border-color: color-mix(in srgb, var(--ok) 42%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok);
 }
-.session-work-milestones li[data-state="current"] {
+.work-milestones li[data-state="current"] {
     border-color: color-mix(in srgb, var(--accent) 48%, transparent); background: var(--accent-in); color: var(--accent);
 }
 .session-owned-item.completed { opacity: .84; }

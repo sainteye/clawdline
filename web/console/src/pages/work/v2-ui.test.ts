@@ -45,6 +45,15 @@ test("unassigned executable work is visible and assignable", () => {
   assert.doesNotMatch(source, /item\.area === "execution"/)
 })
 
+test("Board cards show the same lifecycle milestones as their owning Session", () => {
+  const milestones = readFileSync(new URL("./WorkMilestones.tsx", import.meta.url), "utf8")
+  assert.match(source, /<WorkMilestones phase=\{item\.phase\} \/>/)
+  assert.match(milestones, /className="work-milestones"/)
+  assert.match(milestones, /aria-label="項目進度"/)
+  assert.match(styles, /\.work-milestones li\[data-state="done"\]/)
+  assert.match(styles, /\.work-milestones li\[data-state="current"\]/)
+})
+
 test("the create modal accepts reference pictures before creating the item", () => {
   assert.match(source, /＋ 加入參考圖片/)
   assert.match(source, /建立項目後上傳/)

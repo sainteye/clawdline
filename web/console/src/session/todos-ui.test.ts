@@ -26,12 +26,12 @@ test("direct Session todos upload and render durable images", () => {
 
 test("owned Board work shows explicit release milestones and recent completion", () => {
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
-  assert.match(source, /const WORK_MILESTONES = \["實作", "驗證", "Commit \/ Merge", "部署", "完成"\]/)
-  assert.match(source, /function WorkMilestones/)
-  assert.match(source, /state === "done" \? "✓"/)
+  const milestones = readFileSync(new URL("../pages/work/WorkMilestones.tsx", import.meta.url), "utf8")
+  assert.match(source, /<WorkMilestones phase=\{item\.phase\} \/>/)
+  assert.match(milestones, /state === "done" \? "✓"/)
   assert.match(source, /page\.recent_items\.map/)
   assert.match(source, /最近完成的看板項目/)
-  assert.match(styles, /\.session-work-milestones li\[data-state="done"\]/)
+  assert.match(styles, /\.work-milestones li\[data-state="done"\]/)
   assert.match(styles, /var\(--ok\)/)
 })
 
