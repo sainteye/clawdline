@@ -2154,10 +2154,11 @@ export const CapacityStateValues: readonly CapacityState[] = ["ok", "warn", "cri
 
 export type CapacityUnit =
     "bytes"
+  | "characters"
   | "rows"
   | "seconds"
 
-export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "rows", "seconds"] as const
+export const CapacityUnitValues: readonly CapacityUnit[] = ["bytes", "characters", "rows", "seconds"] as const
 
 /**
  * POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other
@@ -5234,6 +5235,40 @@ export type SessionState =
   | "unknown"
 
 export const SessionStateValues: readonly SessionState[] = ["working", "waiting", "idle", "unknown"] as const
+
+/**
+ * The durable local result of naming a session. This daemon keeps the display name
+ * in its own config and does not mutate the assistant's conversation metadata.
+ */
+export interface SessionTitleReply {
+  /**
+   * The label the session list and Session Info show after this write, including
+   * the fallback revealed by clearing a local title.
+   */
+  display_title: string
+
+  /**
+   * local_only in this daemon; retained as a string because older machines may
+   * report a downstream assistant sync state.
+   */
+  downstream: string
+  downstream_synced: boolean
+  local_applied: boolean
+  ok: boolean
+
+  /**
+   * The normalized local title, or empty when it was cleared.
+   */
+  title: string
+}
+
+/**
+ * POST /v1/sessions/{id}/title. A visible one-line name; an empty or
+ * whitespace-only string clears the name this Clawdline installation keeps.
+ */
+export interface SessionTitleRequest {
+  title: string
+}
 
 export interface SessionsSnapshot {
   at: number

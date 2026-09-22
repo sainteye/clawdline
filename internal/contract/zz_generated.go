@@ -1861,13 +1861,14 @@ var CapacityStateValues = []CapacityState{CapacityStateOK, CapacityStateWarn, Ca
 type CapacityUnit string
 
 const (
-	CapacityUnitBytes   CapacityUnit = "bytes"
-	CapacityUnitRows    CapacityUnit = "rows"
-	CapacityUnitSeconds CapacityUnit = "seconds"
+	CapacityUnitBytes      CapacityUnit = "bytes"
+	CapacityUnitCharacters CapacityUnit = "characters"
+	CapacityUnitRows       CapacityUnit = "rows"
+	CapacityUnitSeconds    CapacityUnit = "seconds"
 )
 
 // CapacityUnitValues is every value the contract allows, in contract order.
-var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitRows, CapacityUnitSeconds}
+var CapacityUnitValues = []CapacityUnit{CapacityUnitBytes, CapacityUnitCharacters, CapacityUnitRows, CapacityUnitSeconds}
 
 // POST /v1/auth/devices/{id}/caps. read is always kept; send is the only other
 // grant. Local token only.
@@ -4451,6 +4452,31 @@ const (
 
 // SessionStateValues is every value the contract allows, in contract order.
 var SessionStateValues = []SessionState{SessionStateWorking, SessionStateWaiting, SessionStateIdle, SessionStateUnknown}
+
+// The durable local result of naming a session. This daemon keeps the display
+// name in its own config and does not mutate the assistant's conversation
+// metadata.
+type SessionTitleReply struct {
+	// The label the session list and Session Info show after this write, including the
+	// fallback revealed by clearing a local title.
+	DisplayTitle string `json:"display_title"`
+
+	// local_only in this daemon; retained as a string because older machines may
+	// report a downstream assistant sync state.
+	Downstream       string `json:"downstream"`
+	DownstreamSynced bool   `json:"downstream_synced"`
+	LocalApplied     bool   `json:"local_applied"`
+	OK               bool   `json:"ok"`
+
+	// The normalized local title, or empty when it was cleared.
+	Title string `json:"title"`
+}
+
+// POST /v1/sessions/{id}/title. A visible one-line name; an empty or
+// whitespace-only string clears the name this Clawdline installation keeps.
+type SessionTitleRequest struct {
+	Title string `json:"title"`
+}
 
 type SessionsSnapshot struct {
 	At       int64        `json:"at"`

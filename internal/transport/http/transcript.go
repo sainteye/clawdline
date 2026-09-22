@@ -318,7 +318,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 	info := contract.SessionInfo{
 		Session: contract.SessionInfoSession{
 			ID:        item.ID,
-			Title:     item.Label,
+			Title:     s.sessionDisplayLabel(ctx, item),
 			Assistant: contract.Assistant(item.Assistant),
 			SessionID: item.ConversationID,
 			CWD:       item.CWD,

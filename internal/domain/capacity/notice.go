@@ -109,10 +109,15 @@ func consequence(e Entry) string {
 	return "目前滿了也不會拒絕或淘汰任何東西"
 }
 
-// amountOf is a reading in the row's unit: bytes in binary units, rows as a
-// count.
+// amountOf is a reading in the row's unit: bytes in binary units, the others
+// as the count their register row names.
 func amountOf(u Unit, n int64) string {
-	if u != Bytes {
+	switch u {
+	case Characters:
+		return strconv.FormatInt(n, 10) + " 字"
+	case Seconds:
+		return strconv.FormatInt(n, 10) + " 秒"
+	case Rows:
 		return strconv.FormatInt(n, 10) + " 筆"
 	}
 	const k = 1 << 10

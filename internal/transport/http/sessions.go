@@ -138,6 +138,11 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	// missing for every row, as an unreadable Swift store is.
 	own, ownErr := s.ownOverlay(records, lives)
 	swift = swift.With(own)
+	now := time.Now()
+	// Names chosen in this daemon live in its own config.json and outrank the
+	// retired app's read-only rows. They are laid onto the same projection so
+	// the title ladder itself still has one implementation.
+	swift = s.withOwnSessionTitles(swift, now)
 
 	// Names first, because a coordination wait names the sessions on either
 	// side of it by the label this list gives them.
@@ -154,7 +159,6 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	// One generation for the whole snapshot, taken before the rows are built,
 	// so every row's closeability names the same reading it arrived with.
 	gen := generation.Add(1)
-	now := time.Now()
 	rows := make([]sessionRowWire, 0, len(items))
 	for i, item := range items {
 		rows = append(rows, s.sessionRow(rowInput{

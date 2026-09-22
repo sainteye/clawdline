@@ -224,7 +224,7 @@
     },
     "CapacityUnit": {
       "type": "string",
-      "enum": ["bytes", "rows", "seconds"]
+      "enum": ["bytes", "characters", "rows", "seconds"]
     },
     "CapacityLastPush": {
       "description": "One capacity notice's push: recorded with the `capacity.notify` event in one transaction, sent after it commits, and finished with how it ended (design-decisions C4). Its budget is its own — one per row a day — and counts against nothing the agents' notifications spend.",

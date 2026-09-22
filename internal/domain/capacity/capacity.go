@@ -105,8 +105,9 @@ func KnownClass(c Class) bool { _, ok := allowed[c]; return ok }
 type Unit string
 
 const (
-	Bytes Unit = "bytes"
-	Rows  Unit = "rows"
+	Bytes      Unit = "bytes"
+	Characters Unit = "characters"
+	Rows       Unit = "rows"
 	// Seconds is the age of an observation whose honesty depends on a time
 	// horizon. It is a capacity in the literal sense: once filled, the held
 	// observation expires and the reader must say it does not know.
@@ -183,6 +184,10 @@ const (
 	WorkImageRequestBodyBytes = "work.image_request_body_bytes"
 	WorkStepsPerItem          = "work.steps_per_item"
 	SessionDirectTodos        = "session.direct_todos"
+	SessionTitleRequestBytes  = "session.title_request_bytes"
+	SessionTitleCharacters    = "session.title_characters"
+	SessionTitleRows          = "session.title_rows"
+	SessionTitleAge           = "session.title_age"
 	WorkItemTitleBytes        = "work.item_title_bytes"
 	WorkItemDescriptionBytes  = "work.item_description_bytes"
 	SessionDirectTodoBytes    = "session.direct_todo_bytes"
@@ -882,6 +887,38 @@ func Register() []Entry {
 			// is a cache and not evidence.
 			Name: CacheSessionLinks, Class: Cache, Unit: Rows,
 			Limit: 64, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+		},
+		{
+			// One title write. The body holds one short string; anything larger
+			// is refused before it is decoded or copied into the settings file.
+			Name: SessionTitleRequestBytes, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+		},
+		{
+			// A session title is one visible line. Control characters and runs of
+			// whitespace are normalized before this character count is applied.
+			Name: SessionTitleCharacters, Class: Buffer, Unit: Characters,
+			Limit: 200, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+		},
+		{
+			// Manual session names are user input. The oldest row gives way only
+			// after the newer write is admitted, as the retired app did.
+			Name: SessionTitleRows, Class: UserInput, Unit: Rows,
+			Limit: 200, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Notice},
+			EvictedBy: Daemon,
+		},
+		{
+			// A terminal can outlive many conversations. A manual title not seen
+			// for ninety days gives way so it cannot name a later occupant.
+			Name: SessionTitleAge, Class: UserInput, Unit: Seconds,
+			Limit: 90 * 24 * 60 * 60, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
 		},
