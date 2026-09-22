@@ -122,3 +122,17 @@ test("pairing is one action in the row's action group, and opens the two-path gu
   assert.match(panel, /copy\(agentPrompt\)/)
   assert.doesNotMatch(css, /\.cloud-machines \.cloud-pair \{\s*display: block; width: 100%/)
 })
+
+test("the header switches machines in place and leaves account actions on the full machine screen", () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const gate = readFileSync(resolve(here, "CloudGate.tsx"), "utf8")
+  const css = readFileSync(resolve(here, "cloud.css"), "utf8")
+
+  assert.match(gate, /aria-controls="cloud-quick-machines"/)
+  assert.match(gate, /className="cloud-switch-menu"/)
+  assert.match(gate, /quickMachines\.map/)
+  assert.match(gate, /onClick=\{\(\) => switchMachine\(machine\)\}/)
+  assert.match(gate, /className="cloud-switch-manage"/)
+  assert.match(css, /\.cloud-switch-menu \{/)
+  assert.match(css, /\.cloud-switch-option\[data-current="true"\]/)
+})

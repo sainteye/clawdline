@@ -188,6 +188,8 @@ const words = {
     cloudAccessProblem:
       "Machine {machine}'s data could not be read in this browser ({code}). Pair that machine with this browser again; if it still cannot be read, sign in again.",
     cloudSwitch: "Other machines",
+    cloudCurrentMachine: "Current machine",
+    cloudManageMachines: "Manage machines",
     cloudForget: "Forget",
     cloudForgetOne: "Forget {machine}",
     cloudForgetTitle: "Forget {machine}?",
@@ -463,6 +465,8 @@ const words = {
     cloudMachineSessions: "{count} 個 session",
     cloudAccessProblem: "機器 {machine} 的資料在這個瀏覽器讀不出來（{code}）。請重新配對這台機器；若仍然讀不到，請重新登入。",
     cloudSwitch: "換一台機器",
+    cloudCurrentMachine: "目前機器",
+    cloudManageMachines: "管理機器",
     cloudForget: "忘記",
     cloudForgetOne: "忘記 {machine}",
     cloudForgetTitle: "要忘記 {machine} 嗎？",
