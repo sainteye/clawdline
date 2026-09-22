@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
-import { createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2 } from "../pages/work/api.js"
+import { isPicture, prepareReferencePicture } from "../legacy/shots-bridge.js"
+import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
@@ -16,6 +17,7 @@ export function Todos({ row, agentCount, agentPanel }: {
   const [open, setOpen] = useState(false)
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState("")
+  const [images, setImages] = useState<File[]>([])
   const [page, setPage] = useState<SessionWorkV2 | null>(null)
   const [failure, setFailure] = useState("")
   const [busy, setBusy] = useState("")
@@ -38,7 +40,7 @@ export function Todos({ row, agentCount, agentPanel }: {
     // same Session. Key the answer to its stable id: otherwise every refresh
     // clears a good answer, flashes "loading", and asks the work API again.
     ticket.current += 1
-    setOpen(false); setAdding(false); setPage(null); setFailure("")
+    setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setFailure("")
     if (rowID) void load()
   }, [rowID, load])
 
@@ -77,10 +79,20 @@ export function Todos({ row, agentCount, agentPanel }: {
             {page?.assigned_items.length ? page.assigned_items.map((item) => (
               <article className="session-owned-item" key={item.id} data-phase={item.phase}>
                 <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
-                <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · {phaseName(item.phase)}{item.condition ? ` · ${item.condition}` : ""}</small></div>
+                <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · {phaseName(item.phase)}
+                  {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small>
+                  <WorkMilestones item={item} />
+                </div>
               </article>
             )) : page ? <p>目前沒有負責中的項目。</p> : null}
           </section>
+          {!!page?.recent_items.length && <section className="session-todos-list session-recent-work" aria-label="最近完成的項目">
+            <p>最近完成的看板項目</p>
+            {page.recent_items.map((item) => <article className="session-owned-item completed" key={item.id} data-phase={item.phase}>
+              <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
+              <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · 已完成</small><WorkMilestones item={item} /></div>
+            </article>)}
+          </section>}
           <section className="session-todos-list" aria-label="直接待辦">
             <p>直接交給這個 Session 的待辦</p>
             {page?.direct_todos.length ? page.direct_todos.map((todo) => (
@@ -93,14 +105,23 @@ export function Todos({ row, agentCount, agentPanel }: {
       {adding && <div className="session-todo-modal" role="dialog" aria-modal="true" aria-labelledby="session-todo-modal-title">
         <form onSubmit={(ev) => {
           ev.preventDefault(); const value = text.trim(); if (!value) return
-          void run("new", () => createDirectTodoV2(rowID, value)).then((ok) => { if (ok) { setText(""); setAdding(false); setOpen(true) } })
+          void run("new", async () => {
+            const pictures = await Promise.all(images.map((file) => prepareReferencePicture(file)))
+            const answer = await createDirectTodoV2(rowID, value)
+            let version = answer.todo.version
+            for (let index = 0; index < pictures.length; index++) {
+              const uploaded = await addDirectTodoV2Image(rowID, answer.todo.id, version, pictures[index], index)
+              version = uploaded.todo.version
+            }
+          }).then((ok) => { if (ok) { setText(""); setImages([]); setAdding(false); setOpen(true) } })
         }}>
           <h2 id="session-todo-modal-title">新增 Session 待辦</h2>
           <p>輸入你希望這個 Session 接下來完成的事情。</p>
           <textarea value={text} autoFocus maxLength={8192} onChange={(ev) => setText(ev.target.value)} />
+          <TodoImagePicker images={images} busy={busy === "new"} onChange={setImages} />
           <div className="work-actions">
             <button className="chip on" type="submit" disabled={busy === "new" || !text.trim()}>新增</button>
-            <button className="chip" type="button" onClick={() => setAdding(false)}>取消</button>
+            <button className="chip" type="button" onClick={() => { setAdding(false); setImages([]) }}>取消</button>
           </div>
         </form>
       </div>}
@@ -108,11 +129,31 @@ export function Todos({ row, agentCount, agentPanel }: {
   )
 }
 
+const WORK_MILESTONES = ["實作", "驗證", "Commit / Merge", "部署", "完成"] as const
+
+function WorkMilestones({ item }: { item: WorkV2Item }) {
+  const completed = ({ created: 0, assigning: 0, assigned: 0, implementing: 0, verifying: 1,
+    merging: 2, deploying: 3, done: 5, cancelled: 0 } as Record<string, number>)[item.phase] ?? 0
+  const current = ({ created: 0, assigning: 0, assigned: 0, implementing: 0, verifying: 1,
+    merging: 2, deploying: 3 } as Record<string, number>)[item.phase]
+  return <ol className="session-work-milestones" aria-label="項目進度">
+    {WORK_MILESTONES.map((label, index) => {
+      const state = index < completed ? "done" : index === current ? "current" : "pending"
+      return <li key={label} data-state={state} aria-label={`${label}：${state === "done" ? "已完成" : state === "current" ? "進行中" : "尚未完成"}`}>
+        <span aria-hidden="true">{state === "done" ? "✓" : state === "current" ? "•" : "○"}</span>{label}
+      </li>
+    })}
+  </ol>
+}
+
 function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
   const receipt = todo.read_at ? "✓✓" : todo.sent_at ? "✓" : ""
   return <article className="session-direct-todo">
     <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}>○</button>
     <div><b>{todo.text}</b><small>{when(todo.created_at)} {receipt && <span className="session-todo-receipt" aria-label={todo.read_at ? "已讀" : "已傳送"}>{receipt}</span>}</small></div>
+    {!!todo.images?.length && <div className="work-reference-images session-todo-images" role="group" aria-label="待辦參考圖片">
+      {todo.images.map((image) => <TodoReferenceImage key={image.id} image={image} />)}
+    </div>}
     <div className="work-actions">
       {!todo.sent_at && !todo.read_at && <button className="chip" type="button" disabled={busy} onClick={() => onAction("send")}>Send</button>}
       <button className="chip danger" type="button" disabled={busy} onClick={() => onAction("delete")}>Delete</button>
@@ -120,6 +161,57 @@ function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolea
   </article>
 }
 
+function TodoImagePicker({ images, busy, onChange }: { images: File[]; busy: boolean; onChange: (images: File[]) => void }) {
+  const picker = useRef<HTMLInputElement>(null)
+  return <div className="work-modal-images">
+    <span>參考圖片</span>
+    <input ref={picker} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(event) => {
+      const selected = Array.from(event.currentTarget.files ?? []).filter(isPicture)
+      event.currentTarget.value = ""
+      onChange([...images, ...selected].slice(0, 6))
+    }} />
+    <div className="work-modal-image-tools">
+      <button className="chip" type="button" disabled={busy || images.length >= 6} onClick={() => picker.current?.click()}>＋ 加入參考圖片</button>
+      <small>{images.length} / 6 · 建立待辦後上傳</small>
+    </div>
+    {!!images.length && <ul className="work-modal-image-list">{images.map((file, index) => <li key={`${file.name}-${file.lastModified}-${index}`}>
+      <span title={file.name}>{file.name}</span><button type="button" disabled={busy} aria-label={`移除 ${file.name}`}
+        onClick={() => onChange(images.filter((_, at) => at !== index))}>×</button>
+    </li>)}</ul>}
+  </div>
+}
+
+function TodoReferenceImage({ image }: { image: WorkV2Image }) {
+  const [source, setSource] = useState("")
+  const [failed, setFailed] = useState("")
+  useEffect(() => {
+    let active = true
+    let objectURL = ""
+    void fetch(`/v1/work/v2/images/${image.id}`, { credentials: "same-origin" }).then(async (response) => {
+      if (!response.ok) throw new Error(`reference image answered ${response.status}`)
+      objectURL = URL.createObjectURL(await response.blob())
+      if (active) setSource(objectURL)
+      else URL.revokeObjectURL(objectURL)
+    }).catch((error: unknown) => { if (active) setFailed(failureWords(error)) })
+    return () => {
+      active = false
+      if (objectURL) URL.revokeObjectURL(objectURL)
+    }
+  }, [image.id])
+  return <figure className="work-reference-image">
+    {source ? <a href={source} target="_blank" rel="noreferrer" aria-label={`開啟待辦參考圖片 ${image.title}`}>
+      <img src={source} alt={image.title} width={image.width} height={image.height} />
+    </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || "載入圖片…"}</div>}
+    <figcaption title={image.title}>{image.title}</figcaption>
+  </figure>
+}
+
 function phaseName(phase: string): string {
   return ({ created: "建立", assigning: "認領中", assigned: "已認領", implementing: "實作", verifying: "驗證", merging: "Merge", deploying: "部署", done: "完成", cancelled: "取消" } as Record<string, string>)[phase] ?? phase
+}
+
+function conditionName(condition: string): string {
+  return ({ waiting_user: "等待你的決定", blocked: "遇到阻礙", evidence_unknown: "缺少可驗證證據",
+    owner_required: "等待負責人", owner_offline: "負責 Session 離線", assignment_failed: "指派失敗",
+    assigned_unnotified: "已指派，尚未通知" } as Record<string, string>)[condition] ?? condition
 }

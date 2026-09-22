@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	gitadapter "github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
@@ -121,6 +123,72 @@ type workV2EventWire struct {
 	NextVersion     int64           `json:"next_version"`
 	Payload         json.RawMessage `json:"payload"`
 	At              int64           `json:"at"`
+}
+
+type workV2LandingRequest struct {
+	Commit string `json:"commit"`
+	Target string `json:"target"`
+	Remote string `json:"remote"`
+}
+
+type workV2GitReader interface {
+	ValidBranchName(context.Context, string) bool
+	ResolveCommit(context.Context, string, string) (string, error)
+	IsAncestor(context.Context, string, string, string) (bool, error)
+}
+
+func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.WorkV2View,
+	session string, ask *workV2LandingRequest) (*app.VerifiedLandingV2, *app.WorkError) {
+	if ask == nil {
+		return nil, nil
+	}
+	ownedDirectly := false
+	for _, a := range item.Assignments {
+		if a.State == "active" && a.Mode == "existing_session" && a.SessionID == session {
+			ownedDirectly = true
+			break
+		}
+	}
+	if !ownedDirectly {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "direct_landing_not_applicable",
+			Message: "Direct landing evidence belongs to an active existing-Session assignment."}
+	}
+	commit, target, remote := strings.TrimSpace(ask.Commit), strings.TrimSpace(ask.Target), strings.TrimSpace(ask.Remote)
+	if commit == "" || !g.ValidBranchName(ctx, target) || remote == "" || strings.Contains(remote, "/") ||
+		!g.ValidBranchName(ctx, remote) {
+		return nil, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_landing_evidence",
+			Message: "Landing evidence needs a commit, a valid local target branch, and one remote name."}
+	}
+	repo := item.Item.ProjectPath
+	resolved, err := g.ResolveCommit(ctx, repo, commit)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_commit_unresolved",
+			Message: "The landing commit does not resolve in the item's Project."}
+	}
+	localRef := "refs/heads/" + target
+	localHead, err := g.ResolveCommit(ctx, repo, localRef)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_target_unresolved",
+			Message: "The local target branch does not resolve in the item's Project."}
+	}
+	onLocal, err := g.IsAncestor(ctx, repo, resolved, localHead)
+	if err != nil || !onLocal {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_not_on_target",
+			Message: "The landing commit is not contained by the local target branch."}
+	}
+	remoteRef := "refs/remotes/" + remote + "/" + target
+	remoteHead, err := g.ResolveCommit(ctx, repo, remoteRef)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_remote_unresolved",
+			Message: "The remote-tracking target does not resolve; fetch or push it before recording landing."}
+	}
+	onRemote, err := g.IsAncestor(ctx, repo, resolved, remoteHead)
+	if err != nil || !onRemote {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_not_published",
+			Message: "The landing commit is not contained by the remote-tracking target."}
+	}
+	return &app.VerifiedLandingV2{Commit: resolved, Target: target, TargetCommit: localHead,
+		Remote: remote, RemoteCommit: remoteHead}, nil
 }
 
 func (s *Server) workV2Project(ctx context.Context, id string) (workV2ProjectWire, bool) {
@@ -785,23 +853,30 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 }
 
 type directTodoV2Wire struct {
-	ID          string `json:"id"`
-	Text        string `json:"text"`
-	CreatedAt   int64  `json:"created_at"`
-	SentAt      *int64 `json:"sent_at"`
-	ReadAt      *int64 `json:"read_at"`
-	CompletedAt *int64 `json:"completed_at"`
-	CompletedBy string `json:"completed_by,omitempty"`
-	Version     int64  `json:"version"`
+	ID          string            `json:"id"`
+	Text        string            `json:"text"`
+	CreatedAt   int64             `json:"created_at"`
+	SentAt      *int64            `json:"sent_at"`
+	ReadAt      *int64            `json:"read_at"`
+	CompletedAt *int64            `json:"completed_at"`
+	CompletedBy string            `json:"completed_by,omitempty"`
+	Version     int64             `json:"version"`
+	Images      []workV2ImageWire `json:"images,omitempty"`
 }
 
-func directTodoWire(td work.DirectTodoV2) directTodoV2Wire {
-	return directTodoV2Wire{ID: td.ID, Text: td.Text, CreatedAt: td.CreatedAt.Unix(), SentAt: optionalUnix(td.SentAt),
+func directTodoWire(td work.DirectTodoV2, images []work.DirectTodoImageV2) directTodoV2Wire {
+	out := directTodoV2Wire{ID: td.ID, Text: td.Text, CreatedAt: td.CreatedAt.Unix(), SentAt: optionalUnix(td.SentAt),
 		ReadAt: optionalUnix(td.ReadAt), CompletedAt: optionalUnix(td.CompletedAt), CompletedBy: td.CompletedBy, Version: td.Version}
+	for _, image := range images {
+		out.Images = append(out.Images, workV2ImageWire{ID: image.ID, Title: image.Title, MediaType: image.MediaType,
+			ByteCount: image.ByteCount, Width: image.Width, Height: image.Height, Position: image.Position,
+			CreatedBy: image.CreatedBy, CreatedAt: image.CreatedAt.Unix()})
+	}
+	return out
 }
 
-func directTodoAnswer(td work.DirectTodoV2) []byte {
-	b, _ := json.Marshal(map[string]any{"ok": true, "todo": directTodoWire(td)})
+func directTodoAnswer(td work.DirectTodoV2, images []work.DirectTodoImageV2) []byte {
+	b, _ := json.Marshal(map[string]any{"ok": true, "todo": directTodoWire(td, images)})
 	return b
 }
 
@@ -828,16 +903,30 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			s.writeWorkV2Error(w, err)
 			return
 		}
+		recent, recentTruncated, err := s.workV2().RecentlyCompleted(r.Context(), conversation)
+		if err != nil {
+			s.writeWorkV2Error(w, err)
+			return
+		}
 		todos := make([]directTodoV2Wire, 0, len(rows))
 		for _, td := range rows {
-			todos = append(todos, directTodoWire(td))
+			images, imageErr := s.workV2().DirectTodoImages(r.Context(), td.ID)
+			if imageErr != nil {
+				s.writeWorkV2Error(w, imageErr)
+				return
+			}
+			todos = append(todos, directTodoWire(td, images))
 		}
 		assigned := make([]workV2ItemWire, 0, len(items))
 		for _, item := range items {
 			assigned = append(assigned, s.workV2ItemOf(r.Context(), item))
 		}
-		writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "direct_todos": todos,
-			"truncated": truncated || itemTruncated})
+		completed := make([]workV2ItemWire, 0, len(recent))
+		for _, item := range recent {
+			completed = append(completed, s.workV2ItemOf(r.Context(), item))
+		}
+		writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
+			"direct_todos": todos, "truncated": truncated || itemTruncated || recentTruncated})
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodPost {
@@ -855,9 +944,64 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		var answer []byte
 		_, err := s.workV2().CreateDirectTodo(r.Context(), app.NewDirectTodoV2{SessionID: conversation, Text: body.Text, Actor: actor},
 			func(td work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-				answer = directTodoAnswer(td)
+				answer = directTodoAnswer(td, nil)
 				return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
 			})
+		if err != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write(answer)
+		return
+	}
+	if len(parts) == 3 && parts[2] == "images" {
+		if r.Method != http.MethodPost {
+			writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A Session to-do reference image is added with POST.")
+			return
+		}
+		var body struct {
+			ExpectedVersion int64  `json:"expected_version"`
+			Title           string `json:"title"`
+			DataURL         string `json:"data_url"`
+			Position        int64  `json:"position"`
+		}
+		raw, ok := readWorkV2BodyAtMost(w, r, &body, workV2ImageBodyLimit, "A reference-image request is at most 18 MiB.")
+		if !ok {
+			return
+		}
+		bytes, ok := artifacts.DecodeDataURL(body.DataURL)
+		if !ok {
+			writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_image", "Choose a supported raster image.")
+			return
+		}
+		policy := artifacts.ProductionPolicy
+		policy.MaxEncodedBytes = workV2ImageByteLimit
+		normalized, normalizeErr := artifacts.Normalize(r.Context(), bytes, policy)
+		if normalizeErr != nil {
+			var refusal artifacts.Refusal
+			if errors.As(normalizeErr, &refusal) {
+				writeRefusal(w, refusal.Status, refusal.Code, refusal.Message)
+			} else {
+				writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_image", "Choose a supported raster image.")
+			}
+			return
+		}
+		k, ok := s.beginWorkV2Write(w, r, actor, raw)
+		if !ok {
+			return
+		}
+		var answer []byte
+		_, _, err := s.workV2().AddDirectTodoImage(r.Context(), parts[1], app.AddDirectTodoImageV2{
+			ExpectedVersion: body.ExpectedVersion, SessionID: conversation, Title: body.Title,
+			Data: normalized.PNG, Width: normalized.Width, Height: normalized.Height,
+			Position: body.Position, Actor: actor,
+		}, func(td work.DirectTodoV2, image work.DirectTodoImageV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			answer = directTodoAnswer(td, []work.DirectTodoImageV2{image})
+			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
+		})
 		if err != nil {
 			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
 			s.writeWorkV2Error(w, err)
@@ -901,20 +1045,29 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			err = &app.WorkError{Status: http.StatusNotFound, Code: "todo_not_found", Message: "No such direct to-do belongs to this Session."}
 			break
 		}
-		if _, sendErr := s.actions().Send(r.Context(), terminalID, found.Text); sendErr != nil {
+		pictures, pictureErr := s.store.DirectTodoV2ImagePayloads(r.Context(), found.ID)
+		if pictureErr != nil {
+			err = &app.WorkError{Status: http.StatusServiceUnavailable, Code: "store_unavailable", Message: pictureErr.Error()}
+			break
+		}
+		dataURLs := make([]string, 0, len(pictures))
+		for _, picture := range pictures {
+			dataURLs = append(dataURLs, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(picture.Data))
+		}
+		if _, sendErr := s.actions().SendWithPictures(r.Context(), terminalID, found.Text, dataURLs); sendErr != nil {
 			err = &app.WorkError{Status: http.StatusBadGateway, Code: "send_failed", Message: sendErr.Error()}
 			break
 		}
 		var td work.DirectTodoV2
 		td, err = s.workV2().MarkDirectTodoSent(r.Context(), id, conversation, time.Now())
 		if err == nil {
-			answer = directTodoAnswer(td)
+			answer = directTodoAnswer(td, nil)
 			_ = s.store.CompleteReceipt(r.Context(), k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer})
 		}
 	case "complete":
 		_, err = s.workV2().CompleteDirectTodo(r.Context(), id, conversation, actor, true,
 			func(td work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-				answer = directTodoAnswer(td)
+				answer = directTodoAnswer(td, nil)
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 			})
 	case "delete":
@@ -989,12 +1142,13 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "phase" && r.Method == http.MethodPost {
 		var body struct {
-			ExpectedVersion    int64  `json:"expected_version"`
-			SessionID          string `json:"session_id"`
-			Next               string `json:"next"`
-			Verification       string `json:"verification"`
-			Deployment         string `json:"deployment"`
-			NoDeploymentReason string `json:"no_deployment_reason"`
+			ExpectedVersion    int64                 `json:"expected_version"`
+			SessionID          string                `json:"session_id"`
+			Next               string                `json:"next"`
+			Verification       string                `json:"verification"`
+			Landing            *workV2LandingRequest `json:"landing"`
+			Deployment         string                `json:"deployment"`
+			NoDeploymentReason string                `json:"no_deployment_reason"`
 		}
 		raw, ok := readWorkV2Body(w, r, &body)
 		if !ok {
@@ -1004,10 +1158,22 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		if !ok {
 			return
 		}
+		item, err := s.workV2().Item(r.Context(), parts[1])
+		if err != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, err)
+			return
+		}
+		landing, landingErr := verifyWorkV2DirectLanding(r.Context(), gitadapter.New(), item, body.SessionID, body.Landing)
+		if landingErr != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, landingErr)
+			return
+		}
 		var answer []byte
-		_, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
+		_, err = s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
 			SessionID: body.SessionID, Next: work.Phase(body.Next), Verification: body.Verification,
-			Deployment: body.Deployment, NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID},
+			Landing: landing, Deployment: body.Deployment, NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID},
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 				answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
@@ -1103,7 +1269,12 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			}
 			out := make([]directTodoV2Wire, 0, len(rows))
 			for _, td := range rows {
-				out = append(out, directTodoWire(td))
+				images, imageErr := s.workV2().DirectTodoImages(r.Context(), td.ID)
+				if imageErr != nil {
+					s.writeWorkV2Error(w, imageErr)
+					return
+				}
+				out = append(out, directTodoWire(td, images))
 			}
 			items, itemTruncated, err := s.workV2().List(r.Context(), "", sessionID, false)
 			if err != nil {
@@ -1131,7 +1302,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			var answer []byte
 			_, err := s.workV2().CompleteDirectTodo(r.Context(), parts[2], sessionID, sessionID, false,
 				func(td work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-					answer = directTodoAnswer(td)
+					answer = directTodoAnswer(td, nil)
 					return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 				})
 			if err != nil {

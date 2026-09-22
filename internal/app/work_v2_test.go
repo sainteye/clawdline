@@ -3,12 +3,59 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+func TestDirectSessionLandingClosesAndRemainsInRecentHistory(t *testing.T) {
+	w := newWorkV2Test(t)
+	v := createWorkV2Test(t, w, work.KindIssue)
+	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	advance := func(next work.Phase, verification string, landing *VerifiedLandingV2, deployment string) {
+		t.Helper()
+		owned, err = w.Advance(context.Background(), v.Item.ID, AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+			SessionID: "session-a", Next: next, Verification: verification, Landing: landing,
+			Deployment: deployment, Actor: "session-a"}, nil)
+		if err != nil {
+			t.Fatalf("advance to %s: %v", next, err)
+		}
+	}
+	advance(work.PhaseImplementing, "", nil, "")
+	advance(work.PhaseVerifying, "", nil, "")
+	advance(work.PhaseMerging, "tests passed", nil, "")
+	landing := &VerifiedLandingV2{Commit: strings.Repeat("a", 40), Target: "main",
+		TargetCommit: strings.Repeat("b", 40), Remote: "origin", RemoteCommit: strings.Repeat("c", 40)}
+	advance(work.PhaseDeploying, "", landing, "")
+	advance(work.PhaseDone, "", nil, "production deployment receipt")
+	if owned.Item.OwnerSession != "" || !owned.Item.Phase.Terminal() {
+		t.Fatalf("completion did not release ownership: %+v", owned.Item)
+	}
+	recent, truncated, err := w.RecentlyCompleted(context.Background(), "session-a")
+	if err != nil || truncated || len(recent) != 1 || recent[0].Item.ID != v.Item.ID {
+		t.Fatalf("recent completion: %+v %v %v", recent, truncated, err)
+	}
+	full, err := w.Item(context.Background(), v.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, event := range full.Events {
+		if event.Kind == "item.phase_changed" && strings.Contains(event.Payload, `"landing":{"commit":"`+landing.Commit) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("verified landing was not retained: %+v", full.Events)
+	}
+}
 
 func newWorkV2Test(t *testing.T) *WorkSystemV2 {
 	t.Helper()
@@ -105,5 +152,34 @@ func TestPersonCommandsVersionReferenceImages(t *testing.T) {
 	full, _ = w.Item(context.Background(), v.Item.ID)
 	if len(full.Images) != 0 {
 		t.Fatalf("deleted image remains: %+v", full.Images)
+	}
+}
+
+func TestPersonAddsImagesOnlyBeforeDirectTodoDelivery(t *testing.T) {
+	w := newWorkV2Test(t)
+	todo, err := w.CreateDirectTodo(context.Background(), NewDirectTodoV2{
+		SessionID: "session-a", Text: "Use this screenshot", Actor: "local",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	added, image, err := w.AddDirectTodoImage(context.Background(), todo.ID, AddDirectTodoImageV2{
+		ExpectedVersion: todo.Version, SessionID: todo.SessionID, Title: "screen.png",
+		Data: []byte("png"), Width: 3, Height: 2, Actor: "local",
+	}, nil)
+	if err != nil || added.Version != todo.Version+1 || image.TodoID != todo.ID {
+		t.Fatalf("add: %+v %+v %v", added, image, err)
+	}
+	images, err := w.DirectTodoImages(context.Background(), todo.ID)
+	if err != nil || len(images) != 1 || images[0].Title != "screen.png" {
+		t.Fatalf("read: %+v %v", images, err)
+	}
+	if _, err := w.MarkDirectTodoSent(context.Background(), todo.ID, todo.SessionID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := w.AddDirectTodoImage(context.Background(), todo.ID, AddDirectTodoImageV2{
+		ExpectedVersion: added.Version + 1, SessionID: todo.SessionID, Data: []byte("png"), Width: 1, Height: 1,
+	}, nil); err == nil {
+		t.Fatal("a delivered to-do accepted another image")
 	}
 }

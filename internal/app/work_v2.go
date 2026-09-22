@@ -65,6 +65,10 @@ func mapWorkV2Error(err error) error {
 		return workV2Error(http.StatusInsufficientStorage, "work_full", "The work-system capacity is full; nothing was evicted.")
 	case errors.Is(err, store.ErrDirectTodoFull):
 		return workV2Error(http.StatusInsufficientStorage, "direct_todos_full", "This Session holds as many direct to-dos as it keeps.")
+	case errors.Is(err, store.ErrDirectTodoImagesFull):
+		return workV2Error(http.StatusInsufficientStorage, "images_full", "This Session to-do already has six reference images.")
+	case errors.Is(err, store.ErrDirectTodoImageBytesFull):
+		return workV2Error(http.StatusInsufficientStorage, "image_bytes_full", "Session-to-do reference-image storage is full; nothing was evicted.")
 	case errors.Is(err, store.ErrWorkV2DocsFull):
 		return workV2Error(http.StatusInsufficientStorage, "documents_full", "This item holds as many documents as it keeps.")
 	case errors.Is(err, store.ErrWorkV2ImagesFull):
@@ -169,6 +173,22 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 
 func (w *WorkSystemV2) List(ctx context.Context, project, owner string, terminal bool) ([]WorkV2View, bool, error) {
 	items, truncated, err := w.Store.WorkV2Items(ctx, project, owner, terminal, WorkV2PageSize)
+	if err != nil {
+		return nil, false, mapWorkV2Error(err)
+	}
+	out := make([]WorkV2View, 0, len(items))
+	for _, i := range items {
+		images, imageErr := w.Store.WorkV2Images(ctx, i.ID)
+		if imageErr != nil {
+			return nil, false, mapWorkV2Error(imageErr)
+		}
+		out = append(out, WorkV2View{Item: i, Images: images})
+	}
+	return out, truncated, nil
+}
+
+func (w *WorkSystemV2) RecentlyCompleted(ctx context.Context, session string) ([]WorkV2View, bool, error) {
+	items, truncated, err := w.Store.CompletedWorkV2ForSession(ctx, session, WorkV2PageSize)
 	if err != nil {
 		return nil, false, mapWorkV2Error(err)
 	}
@@ -540,9 +560,27 @@ type AdvanceWorkV2 struct {
 	SessionID          string
 	Next               work.Phase
 	Verification       string
+	Landing            *VerifiedLandingV2
 	Deployment         string
 	NoDeploymentReason string
 	Actor              string
+}
+
+// VerifiedLandingV2 is a Git reading made by the HTTP adapter, never the
+// owning Agent's unverified spelling. Direct Session ownership has no broker
+// task, so this is its equivalent durable receipt: one resolved commit is on
+// both the local target and the repository's remote-tracking target.
+type VerifiedLandingV2 struct {
+	Commit       string `json:"commit"`
+	Target       string `json:"target"`
+	TargetCommit string `json:"target_commit"`
+	Remote       string `json:"remote"`
+	RemoteCommit string `json:"remote_commit"`
+}
+
+func (l *VerifiedLandingV2) complete() bool {
+	return l != nil && l.Commit != "" && l.Target != "" && l.TargetCommit != "" &&
+		l.Remote != "" && l.RemoteCommit != ""
 }
 
 func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, file WorkV2Filer) (WorkV2View, error) {
@@ -566,7 +604,7 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 		if unknown > 0 {
 			return work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
 		}
-		hasLanding := false
+		hasLanding := c.Landing.complete()
 		for _, f := range facts {
 			if work.OutcomeOf(f) == work.OutcomeLanded {
 				hasLanding = true
@@ -595,7 +633,7 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 		}
 		if err := tx.PutItem(prev, next, "item.phase_changed", c.Actor, payload(map[string]any{
 			"from": prev.Phase, "to": c.Next, "verification": c.Verification,
-			"deployment": c.Deployment, "no_deployment_reason": c.NoDeploymentReason})); err != nil {
+			"landing": c.Landing, "deployment": c.Deployment, "no_deployment_reason": c.NoDeploymentReason})); err != nil {
 			return err
 		}
 		next.Version++
@@ -872,6 +910,73 @@ func (w *WorkSystemV2) CreateDirectTodo(ctx context.Context, n NewDirectTodoV2, 
 func (w *WorkSystemV2) DirectTodos(ctx context.Context, session string, includeCompleted, markRead bool) ([]work.DirectTodoV2, bool, error) {
 	rows, truncated, err := w.Store.DirectTodosV2(ctx, session, includeCompleted, markRead, WorkV2PageSize)
 	return rows, truncated, mapWorkV2Error(err)
+}
+
+type AddDirectTodoImageV2 struct {
+	ExpectedVersion int64
+	SessionID       string
+	Title           string
+	Data            []byte
+	Width           int
+	Height          int
+	Position        int64
+	Actor           string
+}
+
+type TodoImageV2Filer func(work.DirectTodoV2, work.DirectTodoImageV2) (store.ReceiptKey, store.ReceiptAnswer, bool)
+
+func (w *WorkSystemV2) AddDirectTodoImage(ctx context.Context, id string, c AddDirectTodoImageV2,
+	file TodoImageV2Filer) (work.DirectTodoV2, work.DirectTodoImageV2, error) {
+	var out work.DirectTodoV2
+	var image work.DirectTodoImageV2
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.DirectTodo(id)
+		if err != nil {
+			return err
+		}
+		if prev.SessionID != c.SessionID {
+			return work.RefuseV2("todo_session_mismatch", "That to-do belongs to another Session.")
+		}
+		if prev.Version != c.ExpectedVersion {
+			return store.ErrConflict
+		}
+		if !prev.Open() || !prev.SentAt.IsZero() {
+			return work.RefuseV2("todo_already_delivered", "Reference images can be added only before a to-do is sent or completed.")
+		}
+		c.Title = strings.TrimSpace(c.Title)
+		if c.Title == "" {
+			c.Title = "reference image"
+		}
+		if len(c.Title) > workV2TitleLimit {
+			return work.RefuseV2("image_title_too_large", "A reference-image title is at most 240 bytes.")
+		}
+		if len(c.Data) == 0 || c.Width <= 0 || c.Height <= 0 {
+			return work.RefuseV2("invalid_image", "A reference image needs decoded PNG pixels.")
+		}
+		image = work.DirectTodoImageV2{ID: newWorkID(), TodoID: id, Title: c.Title, MediaType: "image/png",
+			ByteCount: int64(len(c.Data)), Width: c.Width, Height: c.Height, Position: c.Position,
+			CreatedBy: c.Actor, CreatedAt: w.now()}
+		if err := tx.AddDirectTodoImage(image, c.Data); err != nil {
+			return err
+		}
+		if err := tx.PutDirectTodo(prev, prev); err != nil {
+			return err
+		}
+		out = prev
+		out.Version++
+		if file != nil {
+			if k, a, ok := file(out, image); ok {
+				return tx.CompleteReceipt(k, a)
+			}
+		}
+		return nil
+	})
+	return out, image, mapWorkV2Error(err)
+}
+
+func (w *WorkSystemV2) DirectTodoImages(ctx context.Context, id string) ([]work.DirectTodoImageV2, error) {
+	images, err := w.Store.DirectTodoV2Images(ctx, id)
+	return images, mapWorkV2Error(err)
 }
 
 func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session string, at time.Time) (work.DirectTodoV2, error) {

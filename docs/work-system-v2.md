@@ -179,13 +179,29 @@ Session assignment normally moves from `created` to `assigned` in one transactio
 | `implementing` | owning Agent | owner identity matches; item is not terminal |
 | `verifying` | owning Agent | verification plan or references recorded |
 | `merging` | owning Agent | successful verification evidence recorded |
-| `deploying` | owning Agent | merge/landing evidence validates against the Project and target |
+| `deploying` | owning Agent | broker landing, or a direct-Session receipt whose exact commit is contained by both the Project's local target and its remote-tracking target |
 | `done` | owning Agent | deployment evidence is valid, or deployment is explicitly not required |
 | `cancelled` | person | cancellation reason; assignment released |
 
 The `done` transition records the completing owner, releases the active assignment, and removes
-the Session projection in the same transaction. Its assignment history and completion evidence
-remain on the item. A cancellation does the same release under the person's authority.
+the item from the Session's open-responsibility projection in the same transaction. Its assignment
+history and completion evidence remain on the item and in that Session's recent-completion
+projection. A cancellation does the same release under the person's authority but is not presented
+as successful completion.
+
+An item assigned directly to an existing Session has no broker child task and therefore no child
+landing record. Its owning Agent may name an exact commit, local target branch, and remote. The
+daemon resolves all three through Git and records a landing receipt only when the commit is on both
+the local target and `refs/remotes/<remote>/<target>`. Caller text, a successful build by itself, or
+an unpushed local commit never earns the landing check.
+
+The owning-Agent phase request carries the claim as structured input, not prose:
+
+```json
+{"next":"deploying","landing":{"commit":"<full commit>","target":"main","remote":"origin"}}
+```
+
+The stored event replaces `<full commit>` and both target spellings with Git's resolved object ids.
 
 ### 6.1 Rework and failure
 
@@ -343,17 +359,24 @@ owned work.
 
 ### 11.2 Direct to-dos
 
-The `+` control opens a modal and creates a quick to-do for the open Session. A row has text,
-creation order, state, and three independent receipts:
+The `+` control opens a modal and creates a quick to-do for the open Session. The person may attach
+up to six raster reference images before creating it. Each image is normalized to PNG, stored as a
+bounded child of the to-do, and returned as metadata; its bytes use the same opaque on-demand image
+route as Board references. A row has text, reference-image metadata, creation order, state, and
+three independent receipts:
 
 - `sent_at`: the person pressed Send and terminal delivery succeeded (`✓`);
 - `read_at`: the Session read its to-do API (`✓✓`, which supersedes the single mark);
 - `completed_at`: the person or Session checked it complete.
 
 A Session may read an unsent row, in which case it moves directly from no mark to `✓✓`; Send is
-then disabled to avoid duplicate delivery. Send and Delete are person-only. Delete removes the
-row from the active store as explicitly requested; its security/operation audit contains metadata,
-not the deleted text. Agent access may only read and complete its own row.
+then disabled to avoid duplicate delivery. Send and Delete are person-only. Send hands the durable
+PNG bytes to the existing terminal picture-delivery path, so Claude Code receives pasted images
+and other assistants receive readable drop paths under the same fallback rules as the composer.
+Images cannot be appended after an explicit Send or completion; an Agent pull that races the short
+upload sequence sees the complete set on its next read. Delete removes the row and cascades its image bytes from
+the active store as explicitly requested; its security/operation audit contains metadata, not the
+deleted text or images. Agent access may only read and complete its own row.
 
 The Console draws `✓✓` as an overlapping double-check and exposes localized accessible text for
 unsent, sent, and read; color alone never carries the receipt state.
@@ -391,10 +414,14 @@ The Board provides:
 - Planning, Unassigned, Assigned, Implementing, Verifying, Merging, Deploying, and Recently Done
   areas;
 - Feature/Issue cards with Project icon on every card;
+- each Session responsibility shows explicit Implementation, Verification, Commit/Merge,
+  Deployment, and Done milestones; completed milestones use a labelled green check, the current
+  milestone is visually distinct, and recently completed responsibilities remain visible after
+  their active assignment is released;
 - an item detail view for description, documents, steps, execution, evidence, assignments, and
   immutable event history;
-- card thumbnails for durable reference images, with full-size viewing and person-only add/remove
-  controls on nonterminal items;
+- card and direct-to-do thumbnails for durable reference images, with full-size viewing and
+  person-only upload controls before the subject becomes terminal or delivered;
 - an assignment dialog for new or existing Sessions;
 - a separate proposal preview queue.
 
@@ -416,7 +443,7 @@ to the authoritative Board already filtered to that Project.
 Every new bound is registered in `internal/domain/capacity` before implementation. At minimum the
 design needs limits for open items, planning items, pending proposals, active assignments, item
 steps, item documents, reference-image count and bytes, direct Session to-dos, and page sizes.
-Reference images are limited to six per item, 5 MiB normalized per image, 15 MiB per item, and
+Reference images are limited to six per item or direct to-do, 5 MiB normalized per image, 15 MiB per subject, and
 512 MiB across the store; an upload request is at most 18 MiB so its encrypted Cloud envelope also
 fits the wire bound. Hitting a limit refuses the new row;
 it does not evict a person's work.

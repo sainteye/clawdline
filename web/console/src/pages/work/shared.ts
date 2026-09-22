@@ -74,7 +74,7 @@ export function taskWords(it: Item): string {
 export function failureWords(e: unknown): string {
   if (e instanceof RefusalError) {
     if (e.code === "version_conflict") return workWord("failedConflict")
-    if (e.code === "images_full") return "每個項目最多可放 6 張參考圖片。"
+    if (e.code === "images_full") return "每個項目或 Session 待辦最多可放 6 張參考圖片。"
     if (e.code === "image_too_large" || e.code === "body_too_large") return "圖片太大，請縮小後再試。"
     if (e.code === "unsupported_image") return "這個檔案不是可讀取的圖片。"
     // `detail` is the daemon's English. The catalog has a sentence per code

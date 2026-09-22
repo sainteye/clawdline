@@ -108,6 +108,7 @@ export const CARRIED = {
   "work.v2.session-todos": "GET /v1/work/v2/session-todos/{terminal}",
   "work.v2.todo-action": "POST /v1/work/v2/session-todos/{terminal}/{id}/{action}",
   "work.v2.todo-create": "POST /v1/work/v2/session-todos/{terminal}",
+  "work.v2.todo-image-create": "POST /v1/work/v2/session-todos/{terminal}/{id}/images",
 } as const
 
 /**

@@ -83,3 +83,31 @@ func TestWorkV2ReferenceImageWritesStayPersonOnlyAndDecodeRasterData(t *testing.
 		t.Fatalf("remote URL: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestWorkV2ImageRouteAlsoReadsDirectTodoReferences(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	at := time.Unix(1_790_000_000, 0)
+	todo := work.DirectTodoV2{ID: "todo-with-image", SessionID: "session-a", Text: "inspect",
+		CreatedBy: "local", CreatedAt: at, Version: 1}
+	imageID := "32000000-0000-4000-8000-000000000010"
+	data := []byte("todo png bytes")
+	if err := st.WriteWorkV2(context.Background(), func(tx *store.WorkV2Tx) error {
+		if err := tx.CreateDirectTodo(todo); err != nil {
+			return err
+		}
+		return tx.AddDirectTodoImage(work.DirectTodoImageV2{ID: imageID, TodoID: todo.ID,
+			Title: "todo.png", MediaType: "image/png", Width: 2, Height: 1, CreatedBy: "local", CreatedAt: at}, data)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: st}
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, httptest.NewRequest(http.MethodGet, "/v1/work/v2/images/"+imageID, nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != string(data) {
+		t.Fatalf("todo image: %d %q", rec.Code, rec.Body.String())
+	}
+}
