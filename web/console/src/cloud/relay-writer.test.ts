@@ -121,12 +121,21 @@ class FakeClient implements CloudWriteClient {
   _scheduleBody(schedule: unknown) {
     return { machine: "mac-a", schedule: schedule as Record<string, unknown> }
   }
+  _place(value: unknown) {
+    if (value === "cloud-p1") return { machine: "mac-a", id: "p1", path: "/repo" }
+    throw refusal("not_found", { status: 404, layer: "browser" })
+  }
   _machineRequest(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number) {
     const args: unknown[] = [machine, word, body, kind]
     if (timeoutMs !== undefined) args.push(timeoutMs)
     return this.act("_machineRequest", args,
       word === "schedule-run" ? { ok: true, task_id: "t-1" } :
-        word === "work.v2.image" ? { id: body.id, media_type: "image/png", data: "iVBORw==" } : { ok: true })
+      word === "work.v2.image" ? { id: body.id, media_type: "image/png", data: "iVBORw==" } : { ok: true })
+  }
+  _machineRequestAs(request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number) {
+    const args: unknown[] = [request, machine, word, body, kind]
+    if (timeoutMs !== undefined) args.push(timeoutMs)
+    return this.act("_machineRequestAs", args, { ok: true })
   }
   updateSchedule(id: string, schedule: unknown) {
     return this.act("updateSchedule", [id, schedule], { ok: true, schedule: { id, title: "a schedule" } })
@@ -491,7 +500,7 @@ test("Work v2 person actions keep their exact route subject and body across Clou
   const client = new FakeClient()
   const { reader } = seam(client)
   const cases: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
-    ["/v1/work/v2/items", { project_id: "p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides" },
+    ["/v1/work/v2/items", { project_id: "cloud-p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides" },
       "work.v2.create", { item: { project_id: "p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides" } }],
     ["/v1/work/v2/items/w1/assign", { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" },
       "work.v2.assign", { id: "w1", item: { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" } }],
@@ -512,6 +521,34 @@ test("Work v2 person actions keep their exact route subject and body across Clou
   assert.equal(removed.status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.image-delete",
     { id: "w1", image: "img1", item: { expected_version: 3 } }, "action"])
+})
+
+test("a Work v2 create resolves the Cloud Project id and keeps the press id through the machine", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const response = await reader.fetch("/v1/work/v2/items", post({
+    project_id: "cloud-p1", kind: "issue", title: "A", description: "B", deployment_policy: "agent_decides",
+  }, { "Idempotency-Key": "press-create-1" }))
+  assert.equal(response.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "press-create-1", "mac-a", "work.v2.create", {
+    item: { project_id: "p1", kind: "issue", title: "A", description: "B", deployment_policy: "agent_decides" },
+  }, "action"])
+})
+
+test("a refused Work v2 create settles as the route's flat refusal", async () => {
+  const client = new FakeClient()
+  client.fail._machineRequestAs = failureFromMac({
+    code: "project_not_found", layer: "mac_route", message: "Choose a current Project.",
+  }, 422, REF)
+  const { reader } = seam(client)
+  const response = await reader.fetch("/v1/work/v2/items", post({
+    project_id: "cloud-p1", kind: "issue", title: "A", description: "B", deployment_policy: "agent_decides",
+  }, { "Idempotency-Key": "press-create-2" }))
+  assert.equal(response.status, 422)
+  assert.deepEqual(await json(response), {
+    error: "project_not_found", detail: "Choose a current Project.", route: "/v1/work/v2/items",
+    layer: "mac_route", ref: "abcdef12·12", retryable: false, word: "work.v2.create",
+  })
 })
 
 test("a Board reference picture is read as machine-scoped bytes", async () => {

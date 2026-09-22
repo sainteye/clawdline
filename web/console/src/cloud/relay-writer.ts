@@ -125,6 +125,15 @@ export interface CloudWriteClient extends CloudReadClient {
    */
   createSchedule?(schedule: unknown): Promise<unknown>
   _scheduleBody?(schedule: unknown): { machine: string; schedule: Record<string, unknown> }
+  /** The generic machine request under the UI press's durable idempotency key. */
+  _machineRequestAs?(
+    request: string,
+    machine: string,
+    word: string,
+    body: Record<string, unknown>,
+    kind: "read" | "action",
+    timeoutMs?: number,
+  ): Promise<unknown>
   /**
    * The four snippet writes. Each names the machine whose settings change
    * through a session identity — only its `machine` is read
@@ -809,32 +818,43 @@ export class RelayWriter {
         )
       }
       case "work-v2-create": {
-        return this.machineWorkV2(client, route.word, { item: await bodyOf(init) })
+        const item = await bodyOf(init)
+        if (typeof client._place !== "function") {
+          throw failure("cloud_not_carried", "the Cloud client cannot resolve this Project", 501)
+        }
+        const place = client._place(item.project_id)
+        if (place.machine !== this.host.machine) {
+          throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
+        }
+        return this.machineWorkV2(client, route.word, { item: { ...item, project_id: place.id } }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-assign": {
-        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-image-create": {
-        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-image-delete": {
-        return this.machineWorkV2(client, route.word, { id: route.id, image: route.image, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { id: route.id, image: route.image, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-proposal-resolve": {
-        return this.machineWorkV2(client, route.word, { id: route.id, decision: route.decision, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { id: route.id, decision: route.decision, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-todo-create": {
-        return this.machineWorkV2(client, route.word, { terminal: route.terminal, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { terminal: route.terminal, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-todo-action": {
-        return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, action: route.action, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, action: route.action, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "uncarried":
         throw failure("cloud_not_carried", route.word, 501)
     }
   }
 
-  private machineWorkV2(client: CloudWriteClient, word: CarriedWord, body: Record<string, unknown>): Promise<unknown> {
+  private machineWorkV2(client: CloudWriteClient, word: CarriedWord, body: Record<string, unknown>, request: string): Promise<unknown> {
+    if (request && typeof client._machineRequestAs === "function") {
+      return client._machineRequestAs(request, this.host.machine, word, body, "action")
+    }
     if (typeof client._machineRequest !== "function") {
       return Promise.reject(failure("cloud_not_carried", word, 501))
     }

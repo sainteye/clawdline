@@ -72,6 +72,10 @@ class FakeClient implements CloudReadClient {
     this.reads.push({ machine, word, body: reqBody })
     return this.readAnswer(word)
   }
+  _place(value: unknown) {
+    if (value === "cloud-p1") return { machine: "mac-a", id: "p1", path: "/repo" }
+    throw Object.assign(new Error("Project not found"), { code: "not_found", status: 404 })
+  }
 }
 
 /** A snippet row as the copied client tags it, with nothing of anybody's in it. */
@@ -603,7 +607,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/decisions", "work.decisions", {}],
   ["/v1/work/digests?kind=daily", "work.digests", { kind: "daily" }],
   ["/v1/work/v2/items", "work.v2.items", { project: "" }],
-  ["/v1/work/v2/items?project=p1", "work.v2.items", { project: "p1" }],
+  ["/v1/work/v2/items?project=cloud-p1", "work.v2.items", { project: "p1" }],
   ["/v1/work/v2/proposals?state=pending", "work.v2.proposals", { state: "pending" }],
   ["/v1/work/v2/session-todos/%251", "work.v2.session-todos", { terminal: "%1" }],
   ["/v1/projects", "projects", {}],
