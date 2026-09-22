@@ -311,7 +311,7 @@ export interface WorkV2Item {
   description: string
   phase: WorkV2Phase
   condition: string | null
-  area: "execution" | "planning"
+  area: "planning" | "unassigned" | WorkV2Phase
   deployment_policy: "required" | "not_required" | "agent_decides"
   owner_session: string | null
   created_at: number

@@ -20,23 +20,27 @@ export function Todos({ row, agentCount, agentPanel }: {
   const [failure, setFailure] = useState("")
   const [busy, setBusy] = useState("")
   const ticket = useRef(0)
+  const rowID = row?.id ?? ""
 
   const load = useCallback(async () => {
-    if (!row) return
+    if (!rowID) return
     const mine = ++ticket.current
     try {
-      const next = await readSessionWorkV2(row.id)
+      const next = await readSessionWorkV2(rowID)
       if (mine === ticket.current) { setPage(next); setFailure("") }
     } catch (e) {
       if (mine === ticket.current) setFailure(failureWords(e))
     }
-  }, [row])
+  }, [rowID])
 
   useEffect(() => {
+    // Fleet refreshes replace SessionRow objects even when this is still the
+    // same Session. Key the answer to its stable id: otherwise every refresh
+    // clears a good answer, flashes "loading", and asks the work API again.
+    ticket.current += 1
     setOpen(false); setAdding(false); setPage(null); setFailure("")
-    void load()
-  }, [row?.id, load])
-  useEffect(() => { if (open) void load() }, [open, load])
+    if (rowID) void load()
+  }, [rowID, load])
 
   if (!row) return null
   const count = (page?.assigned_items.length ?? 0) + (page?.direct_todos.length ?? 0)
@@ -49,7 +53,13 @@ export function Todos({ row, agentCount, agentPanel }: {
   return (
     <>
       <details className="session-todos" id="session-todos" open={open}
-        onToggle={(ev) => setOpen((ev.currentTarget as HTMLDetailsElement).open)}>
+        onToggle={(ev) => {
+          const next = (ev.currentTarget as HTMLDetailsElement).open
+          setOpen(next)
+          // The first answer is already in flight when a Session opens. Once
+          // there is an answer, opening the fold is an explicit freshness ask.
+          if (next && page !== null) void load()
+        }}>
         <summary>
           <b>{workWord("todosTitle")}</b>
           <button className="session-todos-add" type="button" aria-label="新增 Session 待辦"
@@ -75,7 +85,7 @@ export function Todos({ row, agentCount, agentPanel }: {
             <p>直接交給這個 Session 的待辦</p>
             {page?.direct_todos.length ? page.direct_todos.map((todo) => (
               <DirectTodo key={todo.id} todo={todo} busy={busy === todo.id}
-                onAction={(action) => { void run(todo.id, () => directTodoActionV2(row.id, todo.id, action)) }} />
+                onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />
             )) : page ? <p>目前沒有直接待辦。</p> : null}
           </section>
         </div>
@@ -83,7 +93,7 @@ export function Todos({ row, agentCount, agentPanel }: {
       {adding && <div className="session-todo-modal" role="dialog" aria-modal="true" aria-labelledby="session-todo-modal-title">
         <form onSubmit={(ev) => {
           ev.preventDefault(); const value = text.trim(); if (!value) return
-          void run("new", () => createDirectTodoV2(row.id, value)).then((ok) => { if (ok) { setText(""); setAdding(false); setOpen(true) } })
+          void run("new", () => createDirectTodoV2(rowID, value)).then((ok) => { if (ok) { setText(""); setAdding(false); setOpen(true) } })
         }}>
           <h2 id="session-todo-modal-title">新增 Session 待辦</h2>
           <p>輸入你希望這個 Session 接下來完成的事情。</p>

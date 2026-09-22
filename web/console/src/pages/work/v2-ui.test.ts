@@ -37,3 +37,24 @@ test("work cards add, show, open, and remove durable reference images", () => {
   assert.match(source, /deleteWorkV2Image/)
   assert.match(styles, /\.work-reference-images/)
 })
+
+test("unassigned executable work is visible and assignable", () => {
+  assert.match(source, /const unassigned = items\.filter\(\(item\) => item\.area === "unassigned"/)
+  assert.match(source, /<BoardRegion title="待指派" items=\{unassigned\}/)
+  assert.match(source, /const assignable = item\.area !== "planning"/)
+  assert.doesNotMatch(source, /item\.area === "execution"/)
+})
+
+test("the create modal accepts reference pictures before creating the item", () => {
+  assert.match(source, /＋ 加入參考圖片/)
+  assert.match(source, /建立項目後上傳/)
+  assert.match(source, /deployment_policy: "agent_decides" }, images\)/)
+  assert.match(source, /addWorkV2Image\(answer\.item\.id/)
+})
+
+test("reference pictures use fetch-backed object URLs so Cloud can render their bytes", () => {
+  assert.match(source, /function WorkReferenceImage/)
+  assert.match(source, /fetch\(`\/v1\/work\/v2\/images\/\$\{image\.id\}`/)
+  assert.match(source, /URL\.createObjectURL/)
+  assert.match(source, /URL\.revokeObjectURL/)
+})
