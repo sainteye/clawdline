@@ -432,6 +432,11 @@ const PROBE = `(() => {
     rowState: swiped ? (swiped.querySelector(".state")?.textContent ?? null) : null,
     readingBanner: document.querySelector(".session-reading")?.textContent ?? null,
     retainedText: document.querySelector(".retained-reading")?.textContent ?? null,
+    moving: rows.some((n) => getComputedStyle(n).transform !== "none"),
+    taskVisible: rows.some((n) => {
+      const task = n.querySelector(".task-chip")
+      return task && getComputedStyle(task).display !== "none"
+    }),
     ptrHeight: ptr ? ptr.style.height : "",
     ptrWord: label ? label.textContent : "",
     scrollTop: document.getElementById("list-scroll")?.scrollTop ?? -1,
@@ -451,6 +456,8 @@ interface Seen {
   rowState: string | null
   readingBanner: string | null
   retainedText: string | null
+  moving: boolean
+  taskVisible: boolean
   ptrHeight: string
   ptrWord: string
   scrollTop: number
@@ -705,6 +712,19 @@ test("the order is held: a finger on the list stops it re-sorting under itself",
     )
   }))
 
+test("rows travel to a changed sorted position instead of snapping there", () =>
+  inTab(async (tab) => {
+    await list(tab)
+    spareMoved = MOVED.spareAfter
+    pushSessions()
+    const moving = await tab.until(
+      "the changed order is visible while its rows are moving",
+      (s) => s.order.join() === ORDER_ONCE_SPARE_MOVED.join() && s.moving,
+    )
+    assert.equal(moving.moving, true)
+    await tab.until("the rows reach their new resting positions", (s) => !s.moving)
+  }))
+
 // ---- the swipe
 
 /** A left swipe on one row, finished. */
@@ -845,7 +865,10 @@ test("the densest phone row gives each segment a boundary and never widens the l
     readingScenario = "worst"
     try {
       await tab.go("/")
-      await tab.until("the worst-case row arrives", (s) => s.order.join() === RETAINED)
+      await tab.until(
+        "the worst-case row and its task arrive",
+        (s) => s.order.join() === RETAINED && s.taskVisible,
+      )
       const measured = await tab.run(`(() => {
         const scroller = document.querySelector(".list-scroll")
         const row = document.querySelector("#rows > li.row")
@@ -862,6 +885,7 @@ test("the densest phone row gives each segment a boundary and never widens the l
           meta: [meta.clientWidth, meta.scrollWidth],
           state: [state.clientWidth, state.scrollWidth],
           line: [line.clientWidth, line.scrollWidth, getComputedStyle(line).textOverflow],
+          machine: !!row.querySelector(".machine"),
           path: shown(".path"),
           coordinator: shown(".coordinator-chip"),
           agents: shown(".agents-chip"),
@@ -875,6 +899,7 @@ test("the densest phone row gives each segment a boundary and never widens the l
       assert.ok(measured.state[1] <= measured.state[0], "the state segments converge inside their line")
       assert.ok(measured.line[0] >= 70, "the live sentence keeps enough room to attach its ellipsis")
       assert.equal(measured.line[2], "ellipsis")
+      assert.equal(measured.machine, false, "a single-machine list does not repeat its machine on every row")
       assert.equal(measured.path, false, "the repeated path is first to leave the phone row")
       assert.equal(measured.coordinator, false, "the crown keeps the role when its duplicate word leaves")
       assert.equal(measured.agents, true)

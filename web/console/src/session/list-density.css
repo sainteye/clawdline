@@ -105,7 +105,7 @@
 
 /*
  * At phone width the project path goes first: the title already names the
- * session and the machine/tty still say where it is. Coordinator copy goes
+ * session and the tty still identifies its terminal. Coordinator copy goes
  * next because the crown on the project mark carries the same role. The agent
  * count and task relationship remain; they are the facts that explain why the
  * row is active and where it belongs.
@@ -114,11 +114,6 @@
   .row .meta .path,
   .row .meta .coordinator-chip {
     display: none;
-  }
-
-  .row .meta .machine {
-    flex: 1 4 auto;
-    max-width: 34%;
   }
 
   .row .meta .agents-chip {

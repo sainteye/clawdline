@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import type { BearingsSource, ScanSource, SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
@@ -134,6 +134,7 @@ export function SessionsPage({
   useEffect(() => {
     L.registerSpinners([...(listRef.current?.querySelectorAll<HTMLCanvasElement>("canvas.spin") ?? [])])
   })
+  useListReorderAnimation(listRef)
 
   // The empty state, `renderList`'s tail. Four cases told apart: nothing
   // matches what was typed, there are genuinely no sessions, nothing has
@@ -267,7 +268,7 @@ export function SessionsPage({
               {!skeleton && arriving && <StartingRow place={arriving} />}
               {drawn.map((r) => (
                 <Row
-                  key={r.id}
+                  key={L.selectionKey(r)}
                   row={r}
                   selected={r.id === selected}
                   open={r.id === openId}
@@ -421,6 +422,63 @@ function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>): void {
       scroller.removeEventListener("touchend", touchEnd)
     }
   }, [scrollRef])
+}
+
+/**
+ * The original list keeps each row node and uses FLIP when its sorted position
+ * changes (`Resources/web/app/js/view/list.js`). React already keeps the keyed
+ * nodes; this is the half the port lost: remember their layout positions after
+ * each commit, then start the next order at those positions and let it travel
+ * to the new ones.
+ *
+ * `offsetTop` is the untransformed layout answer. Reading a transformed client
+ * rect here would feed a still-running animation back into the next render and
+ * make a live-line update restart or shorten the movement. An unchanged order
+ * records its current layout but leaves the animation alone.
+ */
+function useListReorderAnimation(listRef: RefObject<HTMLUListElement | null>): void {
+  const previous = useRef<{ order: string[]; tops: Map<string, number> } | null>(null)
+  const animations = useRef(new Map<string, Animation>())
+
+  useLayoutEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const nodes = [...list.querySelectorAll<HTMLElement>(":scope > li.row[data-selection-key]")]
+    const order = nodes.map((node) => node.dataset.selectionKey ?? "")
+    const tops = new Map(nodes.map((node) => [node.dataset.selectionKey ?? "", node.offsetTop]))
+    const before = previous.current
+    previous.current = { order, tops }
+
+    const sameOrder =
+      before?.order.length === order.length && before.order.every((key, index) => key === order[index])
+    if (!before || sameOrder || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return
+
+    for (const node of nodes) {
+      const key = node.dataset.selectionKey ?? ""
+      const from = before.tops.get(key)
+      if (from === undefined) continue
+      const delta = from - node.offsetTop
+      if (Math.abs(delta) < 1) continue
+
+      animations.current.get(key)?.cancel()
+      const animation = node.animate(
+        [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
+        { duration: 240, easing: "cubic-bezier(.2, .7, .2, 1)" },
+      )
+      animations.current.set(key, animation)
+      animation.onfinish = animation.oncancel = () => {
+        if (animations.current.get(key) === animation) animations.current.delete(key)
+      }
+    }
+  })
+
+  useEffect(
+    () => () => {
+      for (const animation of animations.current.values()) animation.cancel()
+      animations.current.clear()
+    },
+    [],
+  )
 }
 
 /**

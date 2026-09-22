@@ -254,9 +254,6 @@ export function Row({
   swiped: boolean
   onOpen: (id: string) => void
 }) {
-  // From the decorated copy the copied modules hold, so the machine identity
-  // the original supplies client-side is the one this reads.
-  const machine = L.machineFor(row)
   const who = L.whoHTML(row.assistant)
   const coordinator = L.coordinatorRowModel(row)
   const place = taskPlace(row)
@@ -340,9 +337,6 @@ export function Row({
         <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} />
       </div>
       <div className="meta">
-        <span className="machine" title={machine.id} data-kind={machine.kind}>
-          {machine.label}
-        </span>
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.tty || row.backend || ""}</span>
         {activity ? <span className="session-activity">{activity}</span> : null}
