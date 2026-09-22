@@ -4,6 +4,8 @@ Every document in this directory, and what kind it is.
 
 - **Public design note**: how this codebase works, or why it is built the way it is. It stays true
   after the Swift app is retired, and a contributor should read it.
+- **Public acceptance contract**: the observable scenarios that a replacement must automate and
+  pass before it can be called implemented or replace the current product behavior.
 - **Internal migration record**: written while the Go rewrite replaced the Swift app. That covers
   measurements of the old app, porting inventories, wave plans and review logs. They are kept
   because the code and the design notes cite them. Parts of them describe a state that has since
@@ -11,7 +13,7 @@ Every document in this directory, and what kind it is.
 - **Work list**: an inventory of what is still wrong, written to be dispatched. Each item says how to
   make it fail, and the list goes stale as items land.
 
-Seven pages are in English: the two that introduce the project, the four design notes an
+Nine pages are in English: the two that introduce the project, the six design/acceptance pages an
 outside reader judges it by, and the publishing operations guide. The rest are written in
 Traditional Chinese.
 
@@ -29,6 +31,8 @@ Traditional Chinese.
 | [design-guidelines.md](design-guidelines.md) | Public design note | English | Ten design rules, each paid for by a failure: a loop that stops says so, everything that accumulates has a limit, unknown is not absent |
 | [design-decisions.md](design-decisions.md) | Public design note | Chinese | The decision register the implementation follows. Where an analysis below disagrees, this wins. It also records decisions about the old app's data |
 | [work-system.md](work-system.md) | Public design note | Chinese | The work system on one page: board items, session to-dos, the Backlog and GitHub Issues, each with its lifecycle, what is built and what is only designed, and how the page itself is changed |
+| [work-system-v2.md](work-system-v2.md) | Public design note | English | The approved replacement: person-created Project work, human assignment, Agent-driven lifecycle, broker evidence, proposals and direct Session to-dos |
+| [work-system-v2-acceptance.md](work-system-v2-acceptance.md) | Public acceptance contract | English | Positive, negative and failure-injection scenarios that must pass before work system v2 can replace the current implementation |
 | [limits.md](limits.md) | Public design note | Chinese | Every bounded thing: its limit, what happens when it is full, and who finds out |
 | [coordination.md](coordination.md) | Public design note | Chinese | The coordinator role redesigned around one `Obligation` model for waits, landings, handoffs and dead letters |
 | [broker.md](broker.md) | Public design note | Chinese | The broker's routes and credentials, and where it differs from the Swift app on purpose. Written at its first wave; later waves added handoffs, leases and reclaim |

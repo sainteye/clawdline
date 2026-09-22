@@ -27,6 +27,7 @@ import { readAnswer, readFailure, readValue } from "../read-state.js"
 import { requestPage } from "../overlays/index.js"
 import { workPageHash, workRouteFromHash } from "../page-route.js"
 import "./work/work.css"
+import { WorkV2Page } from "./work/WorkV2.js"
 
 /**
  * The new board (design-decisions T6, D30, D35; board-redesign §3.3): what is
@@ -506,4 +507,4 @@ function NewItem({
   )
 }
 
-export const page: PageModule = { id: "work", Component: WorkPageView }
+export const page: PageModule = { id: "work", Component: WorkV2Page }

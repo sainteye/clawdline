@@ -1,171 +1,115 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { SessionRow } from "@clawdline/contract"
-import { RefusalError } from "@clawdline/core"
 import * as L from "../legacy/bridge.js"
-import { readTodos, type TodoPage } from "../pages/work/api.js"
-import { when } from "../pages/work/shared.js"
-import { workWord, type WorkWord } from "../pages/work/words.js"
+import { createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2 } from "../pages/work/api.js"
+import { failureWords, when } from "../pages/work/shared.js"
+import { workWord } from "../pages/work/words.js"
+import { Mark } from "./List.js"
 import "../pages/work/work.css"
 
-/**
- * A session's to-dos (board-redesign §3.3, §5.2; design-decisions T6, D35):
- * what the machine is keeping for this session so that it does not forget.
- *
- * **Folded, and on the session's page only.** Their reader is the session;
- * a person looks when they want to see what the machine keeps for itself, and
- * never has to tend it — every row is made and closed by a broker fact (§3.4:
- * "a person never needs to edit a to-do"). So there are no buttons here, the
- * strip is folded until opened, and nothing of it is on the board: #5 is "not
- * on the same page", not "collapsed on it".
- *
- * The count on the fold is read when the session is opened, and the list when
- * the fold is. A session whose conversation is not known yet, or a list that
- * could not be read, says that — neither is shown as "owes nothing" (DG-7).
- */
-export function Todos({
-  row,
-  agentCount,
-  agentPanel,
-}: {
+/** The authoritative projection of unfinished assigned items plus direct user to-dos. */
+export function Todos({ row, agentCount, agentPanel }: {
   row: SessionRow | null
-  /** undefined is a known empty reading; null is an unreadable count. */
   agentCount?: number | null
   agentPanel?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
-  const [closed, setClosed] = useState(false)
-  const [page, setPage] = useState<TodoPage | null>(null)
-  const [failure, setFailure] = useState<"unknown" | string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [text, setText] = useState("")
+  const [page, setPage] = useState<SessionWorkV2 | null>(null)
+  const [failure, setFailure] = useState("")
+  const [busy, setBusy] = useState("")
   const ticket = useRef(0)
 
-  // A different session is a different list: fold it, and forget the last one.
-  useEffect(() => {
-    setOpen(false)
-    setClosed(false)
-    setPage(null)
-  }, [row?.id])
-
-  // Read on arrival and again each time the fold is opened; the last answer
-  // stays on screen until the next one replaces it.
-  useEffect(() => {
-    const mine = ++ticket.current
-    setFailure(null)
+  const load = useCallback(async () => {
     if (!row) return
-    readTodos(row.id, open && closed ? "all" : "outstanding").then(
-      (p) => {
-        if (mine === ticket.current) setPage(p)
-      },
-      (e: unknown) => {
-        if (mine !== ticket.current) return
-        // "unreadable" used to be every refusal but one: a `forbidden`, a
-        // `rate_limited`, a daemon that was not there and a store that could
-        // not be opened all said "讀不到這個 session 的待辦。" and nothing else.
-        // The one code with better words here keeps them; the rest are named
-        // and tagged by the catalog every other refusal in this console uses.
-        setFailure(
-          e instanceof RefusalError && e.code === "conversation_unknown"
-            ? "unknown"
-            : L.failureSentence(e, workWord("todosUnreadable")),
-        )
-      },
-    )
-  }, [row?.id, open, closed])
+    const mine = ++ticket.current
+    try {
+      const next = await readSessionWorkV2(row.id)
+      if (mine === ticket.current) { setPage(next); setFailure("") }
+    } catch (e) {
+      if (mine === ticket.current) setFailure(failureWords(e))
+    }
+  }, [row])
+
+  useEffect(() => {
+    setOpen(false); setAdding(false); setPage(null); setFailure("")
+    void load()
+  }, [row?.id, load])
+  useEffect(() => { if (open) void load() }, [open, load])
 
   if (!row) return null
-  const owed = page ? (page.counts.open ?? 0) + (page.counts.handed_off ?? 0) : null
+  const count = (page?.assigned_items.length ?? 0) + (page?.direct_todos.length ?? 0)
+  const run = async (key: string, task: () => Promise<unknown>) => {
+    if (busy) return false
+    setBusy(key); setFailure("")
+    try { await task(); await load(); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
+  }
+
   return (
-    <details
-      className="session-todos"
-      id="session-todos"
-      open={open}
-      onToggle={(ev) => setOpen((ev.currentTarget as HTMLDetailsElement).open)}
-    >
-      <summary>
-        <b>{workWord("todosTitle")}</b>
-        <span id="session-todos-count">
-          {failure ? "?" : owed === null ? L.strings.webLoading : workWord("todosOpen", { n: owed })}
-        </span>
-        {agentCount !== undefined ? (
-          <span className="session-todos-agent-count">
+    <>
+      <details className="session-todos" id="session-todos" open={open}
+        onToggle={(ev) => setOpen((ev.currentTarget as HTMLDetailsElement).open)}>
+        <summary>
+          <b>{workWord("todosTitle")}</b>
+          <button className="session-todos-add" type="button" aria-label="新增 Session 待辦"
+            onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}>+</button>
+          <span id="session-todos-count">{page ? count : L.strings.webLoading}</span>
+          {agentCount !== undefined ? <span className="session-todos-agent-count">
             {L.strings.webAgents} {agentCount === null ? "?" : agentCount}
-          </span>
-        ) : null}
-      </summary>
-      <div className="session-todos-body">
-        {agentPanel}
-        <section className="session-todos-list" aria-label={workWord("todosTitle")}>
-          <p>{workWord("todosLede")}</p>
-          {failure === "unknown" ? (
-            <p>{workWord("todosUnknown")}</p>
-          ) : failure ? (
-            <p>{failure}</p>
-          ) : page && page.todos.length === 0 ? (
-            <p>{workWord("todosNone")}</p>
-          ) : (
-            page?.todos.map((t) => (
-              <div
-                key={t.id}
-                className="session-todo"
-                data-todo-id={t.id}
-                data-state={t.state}
-                data-escalated={t.escalation.length ? "" : undefined}
-              >
-                <b>{t.title || t.task_id}</b>
-                <span className="session-todo-state">
-                  {t.escalation.length && t.state === "open" ? workWord("todoEscalated") : stateWords(t.state)}
-                </span>
-                <small>
-                  {t.origin === "dispatch" ? workWord("todoDispatch") : t.origin} · {t.task_id.slice(0, 8)} ·{" "}
-                  {when(t.closed_at ?? t.updated_at)}
-                  {t.state !== "open" ? ` · ${reasonWords(t.reason, t.landing_state)}` : ""}
-                </small>
-              </div>
-            ))
-          )}
-          {page?.next_cursor && (
-            <p>{workWord("more", { n: Math.max(0, shownTotal(page, open && closed) - page.todos.length) })}</p>
-          )}
-          {page && (
-            <button className="chip" type="button" style={{ marginTop: 8 }} onClick={() => setClosed((c) => !c)}>
-              {workWord(closed ? "todosHideClosed" : "todosShowClosed")}
-            </button>
-          )}
-        </section>
-      </div>
-    </details>
+          </span> : null}
+        </summary>
+        <div className="session-todos-body">
+          {agentPanel}
+          {failure && <p className="work-note" role="alert">{failure}</p>}
+          <section className="session-todos-list" aria-label="負責項目">
+            <p>這個 Session 尚未關閉的負責項目</p>
+            {page?.assigned_items.length ? page.assigned_items.map((item) => (
+              <article className="session-owned-item" key={item.id} data-phase={item.phase}>
+                <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
+                <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · {phaseName(item.phase)}{item.condition ? ` · ${item.condition}` : ""}</small></div>
+              </article>
+            )) : page ? <p>目前沒有負責中的項目。</p> : null}
+          </section>
+          <section className="session-todos-list" aria-label="直接待辦">
+            <p>直接交給這個 Session 的待辦</p>
+            {page?.direct_todos.length ? page.direct_todos.map((todo) => (
+              <DirectTodo key={todo.id} todo={todo} busy={busy === todo.id}
+                onAction={(action) => { void run(todo.id, () => directTodoActionV2(row.id, todo.id, action)) }} />
+            )) : page ? <p>目前沒有直接待辦。</p> : null}
+          </section>
+        </div>
+      </details>
+      {adding && <div className="session-todo-modal" role="dialog" aria-modal="true" aria-labelledby="session-todo-modal-title">
+        <form onSubmit={(ev) => {
+          ev.preventDefault(); const value = text.trim(); if (!value) return
+          void run("new", () => createDirectTodoV2(row.id, value)).then((ok) => { if (ok) { setText(""); setAdding(false); setOpen(true) } })
+        }}>
+          <h2 id="session-todo-modal-title">新增 Session 待辦</h2>
+          <p>輸入你希望這個 Session 接下來完成的事情。</p>
+          <textarea value={text} autoFocus maxLength={8192} onChange={(ev) => setText(ev.target.value)} />
+          <div className="work-actions">
+            <button className="chip on" type="submit" disabled={busy === "new" || !text.trim()}>新增</button>
+            <button className="chip" type="button" onClick={() => setAdding(false)}>取消</button>
+          </div>
+        </form>
+      </div>}
+    </>
   )
 }
 
-/** How many to-dos the page read would hold if it were all one page: the owed ones, or every one. */
-function shownTotal(page: TodoPage, all: boolean): number {
-  const c = page.counts
-  const owed = (c.open ?? 0) + (c.handed_off ?? 0)
-  return all ? owed + (c.done ?? 0) + (c.dropped ?? 0) : owed
+function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
+  const receipt = todo.read_at ? "✓✓" : todo.sent_at ? "✓" : ""
+  return <article className="session-direct-todo">
+    <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}>○</button>
+    <div><b>{todo.text}</b><small>{when(todo.created_at)} {receipt && <span className="session-todo-receipt" aria-label={todo.read_at ? "已讀" : "已傳送"}>{receipt}</span>}</small></div>
+    <div className="work-actions">
+      {!todo.sent_at && !todo.read_at && <button className="chip" type="button" disabled={busy} onClick={() => onAction("send")}>Send</button>}
+      <button className="chip danger" type="button" disabled={busy} onClick={() => onAction("delete")}>Delete</button>
+    </div>
+  </article>
 }
 
-const STATE_WORD: Record<string, WorkWord> = {
-  open: "todoOpen",
-  handed_off: "todoHandedOff",
-  dropped: "todoDropped",
-}
-
-/** Why a to-do closed, in the catalog's words where it has them (the Projects page's landing words). */
-function reasonWords(reason: string, landing: string | null): string {
-  const T = L.strings
-  if (landing === "incorporated") return workWord("todoIncorporated")
-  switch (reason) {
-    case "landed":
-      return T.webProjectLanded
-    case "nothing_to_land":
-      return T.webProjectNothingToLand
-    case "abandoned":
-      return T.webProjectAbandoned
-  }
-  return reason
-}
-
-/** A to-do's state in words: the catalog's "完成" for done, the wire's own word for one this page does not know. */
-function stateWords(state: string): string {
-  if (state === "done") return L.strings.webTaskDone
-  return STATE_WORD[state] ? workWord(STATE_WORD[state]) : state
+function phaseName(phase: string): string {
+  return ({ created: "建立", assigning: "認領中", assigned: "已認領", implementing: "實作", verifying: "驗證", merging: "Merge", deploying: "部署", done: "完成", cancelled: "取消" } as Record<string, string>)[phase] ?? phase
 }

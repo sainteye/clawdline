@@ -172,7 +172,16 @@ const (
 	CoordinatorAliases = "coordinator.aliases"
 	WaitsOpen          = "waits.open"
 	// T3: the board and the Backlog.
-	WorkOpen = "work.open"
+	WorkOpen                 = "work.open"
+	WorkPlanning             = "work.planning"
+	WorkAssignments          = "work.assignments"
+	WorkDocumentsPerItem     = "work.documents_per_item"
+	WorkStepsPerItem         = "work.steps_per_item"
+	SessionDirectTodos       = "session.direct_todos"
+	WorkItemTitleBytes       = "work.item_title_bytes"
+	WorkItemDescriptionBytes = "work.item_description_bytes"
+	SessionDirectTodoBytes   = "session.direct_todo_bytes"
+	WorkRequestBodyBytes     = "work.request_body_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
 	DecisionsOpen = "decisions.open"
@@ -479,7 +488,67 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice, Health},
 			EvictedBy: Person,
 			Projects:  true,
-			Sources:   []string{"internal/adapters/store.WorkOpenLimit"},
+			Sources:   []string{"internal/adapters/store.WorkOpenLimit", "internal/adapters/store.WorkV2OpenLimit"},
+		},
+		{
+			Name: WorkPlanning, Class: Evidence, Unit: Rows,
+			Limit: 1_000, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/store.WorkV2PlanningLimit"},
+		},
+		{
+			Name: WorkAssignments, Class: Evidence, Unit: Rows,
+			Limit: 4_000, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/store.WorkV2AssignmentLimit"},
+		},
+		{
+			Name: WorkDocumentsPerItem, Class: Evidence, Unit: Rows,
+			Limit: 32, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/store.WorkV2DocumentLimit"},
+		},
+		{
+			Name: WorkStepsPerItem, Class: Evidence, Unit: Rows,
+			Limit: 128, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/store.WorkV2StepLimit"},
+		},
+		{
+			Name: SessionDirectTodos, Class: Evidence, Unit: Rows,
+			Limit: 500, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/store.DirectTodoV2Limit"},
+		},
+		{
+			Name: WorkItemTitleBytes, Class: Evidence, Unit: Bytes,
+			Limit: 240, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Projects: true,
+			Sources: []string{"internal/app.workV2TitleLimit"},
+		},
+		{
+			Name: WorkItemDescriptionBytes, Class: Evidence, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Projects: true,
+			Sources: []string{"internal/app.workV2DescriptionLimit"},
+		},
+		{
+			Name: SessionDirectTodoBytes, Class: Evidence, Unit: Bytes,
+			Limit: 8 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person,
+			Sources: []string{"internal/app.directTodoTextLimit"},
+		},
+		{
+			Name: WorkRequestBodyBytes, Class: Buffer, Unit: Bytes,
+			Limit: 96 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.workV2BodyLimit"},
 		},
 		{
 			// Proposals waiting for a person's answer — the "to confirm"
@@ -494,7 +563,7 @@ func Register() []Entry {
 			Limit: 500, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Sender},
 			EvictedBy: Daemon,
-			Sources:   []string{"internal/adapters/store.ProposalOpenLimit"},
+			Sources:   []string{"internal/adapters/store.ProposalOpenLimit", "internal/adapters/store.WorkV2ProposalLimit"},
 		},
 		{
 			// Decisions a session asked and nobody has answered (T4). At the
