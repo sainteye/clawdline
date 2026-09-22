@@ -41,8 +41,8 @@ import { toast } from "./toast.js"
  * - `files`, `permission` and `fastMode` are not on this wire, so their
  *   sections are absent;
  * - `session.seconds` is absent, so the running-for part of the meta line is;
- * - there is no title route, so the title is the original's read-only button
- *   (disabled, no pencil), which is how it looks where editing is off;
+ * - the title route keeps a manual name in this daemon's own config, so the
+ *   original editor and its pencil are available on writable connections;
  * - no suggested reply is on the wire, so its button never appears and its
  *   press is not handled here.
  */
@@ -74,6 +74,8 @@ let ticket = 0 // the answer that is still wanted, so a stale one can be dropped
 let drawn = false // the sections have risen once; a redraw should not make them rise again
 let pending: string | null = null // the word sent after `/model`, until the record names that model
 let busy = false // a model command on its way
+let editingTitle = false
+let titleDraft = ""
 let stateSeen = "" // work and closeability shape at the last draw
 let conversationSeen = "" // the provider id the row knew at the last read
 let confirming: number | undefined // the timer reading back after a sent `/model`
@@ -101,7 +103,8 @@ function why(e: unknown): string {
   const err = e as { code?: string; layer?: string } | null
   const code = err && err.code
   return failureSentence(e, {
-    sentence: code === "busy" ? T.webInfoBusy : code === "unsupported" && err?.layer === "browser" ? T.webInfoTitleCloud : "",
+    sentence: code === "busy" ? T.webInfoBusy
+      : (code === "unsupported" || code === "cloud_not_carried") && err?.layer === "browser" ? T.webInfoTitleCloud : "",
     fallback: T.webInfoFailed,
   })
 }
@@ -195,12 +198,17 @@ function hero(s: Facts["session"], u: Facts["usage"]): string {
   if (typeof s.seconds === "number") {
     meta.push('<span title="' + esc(T.webInfoRunningFor) + '">' + esc(span(s.seconds)) + "</span>")
   }
-  // The original's read-only title: `disabled` whenever editing is not
-  // possible, and this daemon has no route to write a title with.
-  const headline =
-    '<div class="title-row"><button type="button" class="session-title" data-title-edit="1" title="' +
-    esc(T.webInfoEditTitle) + '" disabled><span>' + esc(title) + '</span><i aria-hidden="true">✎</i></button>' +
-    (s.title ? copyTitle(s.title) : "") + "</div>"
+  const headline = editingTitle
+    ? '<form class="title-editor" data-title-form="1"><input name="title" type="text" maxlength="200"' +
+      ' value="' + esc(titleDraft) + '" aria-label="' + esc(T.webInfoEditTitle) + '"' +
+      (busy || !host.writable() ? " disabled" : "") + '><span class="title-actions">' +
+      '<button type="submit" class="chip"' + (busy || !host.writable() ? " disabled" : "") + ">" +
+      esc(T.webScheduleSave) + '</button><button type="button" class="chip quiet" data-title-cancel="1"' +
+      (busy ? " disabled" : "") + ">" + esc(T.webCancel) + "</button></span></form>"
+    : '<div class="title-row"><button type="button" class="session-title" data-title-edit="1" title="' +
+      esc(T.webInfoEditTitle) + '"' + (!host.writable() || busy ? " disabled" : "") + '><span>' +
+      esc(title) + '</span><i aria-hidden="true">✎</i></button>' +
+      (s.title ? copyTitle(s.title) : "") + "</div>"
   return (
     '<div class="hero">' +
     '<div class="who">' + L.assistantLogoHTML(s.assistant) + '<span class="assistant-name">' +
@@ -431,6 +439,10 @@ function draw(): void {
   let typed = box.querySelector<HTMLInputElement>(".other input")
   const kept = typed ? typed.value : ""
   const focused = !!typed && document.activeElement === typed
+  let titleBox = box.querySelector<HTMLInputElement>(".title-editor input")
+  const keptTitle = titleBox ? titleBox.value : null
+  const titleFocused = !!titleBox && document.activeElement === titleBox
+  const titleCaret = titleFocused ? titleBox?.selectionStart ?? null : null
   const again = drawn
   box.classList.toggle("again", again)
   box.innerHTML = data ? html(data) : ""
@@ -440,6 +452,15 @@ function draw(): void {
   typed = box.querySelector<HTMLInputElement>(".other input")
   if (typed && kept) typed.value = kept
   if (typed && focused && !typed.disabled) typed.focus({ preventScroll: true })
+  titleBox = box.querySelector<HTMLInputElement>(".title-editor input")
+  if (titleBox && keptTitle !== null) {
+    titleBox.value = keptTitle
+    titleDraft = keptTitle
+  }
+  if (titleBox && titleFocused && !titleBox.disabled) {
+    titleBox.focus({ preventScroll: true })
+    if (titleCaret !== null) titleBox.setSelectionRange(titleCaret, titleCaret)
+  }
 }
 
 function load(id: string, force: boolean): void {
@@ -502,6 +523,8 @@ export const Info = {
     drawn = false
     pending = null
     busy = false
+    editingTitle = false
+    titleDraft = ""
     window.clearTimeout(confirming)
     said("")
     overlay.hidden = false
@@ -529,6 +552,8 @@ export const Info = {
     forId = null
     pending = null
     busy = false
+    editingTitle = false
+    titleDraft = ""
     conversationSeen = ""
     window.clearTimeout(confirming)
   },
@@ -592,6 +617,58 @@ export const Info = {
     )
   },
 
+  editTitle(): void {
+    if (!host.writable() || busy || !data?.session) return
+    editingTitle = true
+    titleDraft = data.session.title || ""
+    said("")
+    draw()
+    const input = node("info-body")?.querySelector<HTMLInputElement>(".title-editor input")
+    if (input) {
+      input.focus({ preventScroll: true })
+      input.select()
+    }
+  },
+
+  cancelTitle(): void {
+    if (busy) return
+    editingTitle = false
+    titleDraft = ""
+    draw()
+  },
+
+  saveTitle(value: string): void {
+    const id = forId
+    if (!id || !host.writable() || busy) return
+    titleDraft = String(value || "")
+    busy = true
+    said("")
+    draw()
+    client.title(id, titleDraft).then(
+      (answer) => {
+        if (forId !== id) return
+        busy = false
+        editingTitle = false
+        titleDraft = ""
+        if (data?.session && typeof answer.display_title === "string") {
+          data.session.title = answer.display_title
+        }
+        SessionFacts.drop(id)
+        if (answer.local_applied === false) said(T.webInfoTitleNotDurable, true)
+        else if (answer.downstream === "queued") said(T.webInfoTitleQueued, true)
+        else if (["busy", "unavailable", "failed"].includes(answer.downstream)) said(T.webInfoTitleLocal, true)
+        else said(T.webInfoTitleSaved, true)
+        draw()
+      },
+      (e) => {
+        if (forId !== id) return
+        busy = false
+        said(why(e), false)
+        draw()
+      },
+    )
+  },
+
   /** One clipboard path for the session id and the session's name, told apart by what the toast says. */
   copy(text: string | undefined, saidText: string | undefined): void {
     if (!text || !navigator.clipboard) return
@@ -627,14 +704,35 @@ export function bindInfo(): () => void {
       Info.copy(copy.dataset.copy, copy.dataset.copySaid)
       return
     }
+    const editTitle = t.closest<HTMLButtonElement>("button[data-title-edit]")
+    if (editTitle) {
+      if (!editTitle.disabled) Info.editTitle()
+      return
+    }
     if (t.closest("button[data-status-review]")) Info.close()
+    const cancelTitle = t.closest<HTMLButtonElement>("button[data-title-cancel]")
+    if (cancelTitle) Info.cancelTitle()
   }
   const onSubmit = (ev: SubmitEvent) => {
     const form = ev.target as HTMLFormElement | null
+    if (form?.dataset?.titleForm) {
+      ev.preventDefault()
+      const title = form.querySelector<HTMLInputElement>('input[name="title"]')
+      Info.saveTitle(title ? title.value : "")
+      return
+    }
     if (!form || !form.dataset || !form.dataset.other) return
     ev.preventDefault()
     const input = form.querySelector("input")
     Info.switchTo(input ? input.value : "", "")
+  }
+  const onKeyDown = (ev: KeyboardEvent) => {
+    const target = ev.target as Element | null
+    if (ev.key === "Escape" && target?.closest(".title-editor")) {
+      ev.preventDefault()
+      ev.stopPropagation()
+      Info.cancelTitle()
+    }
   }
   overlay.addEventListener("click", onOverlay)
   sheet.addEventListener("click", onSheet)
@@ -642,6 +740,7 @@ export function bindInfo(): () => void {
   refresh.addEventListener("click", onRefresh)
   body.addEventListener("click", onBody)
   body.addEventListener("submit", onSubmit)
+  body.addEventListener("keydown", onKeyDown)
   return () => {
     overlay.removeEventListener("click", onOverlay)
     sheet.removeEventListener("click", onSheet)
@@ -649,5 +748,6 @@ export function bindInfo(): () => void {
     refresh.removeEventListener("click", onRefresh)
     body.removeEventListener("click", onBody)
     body.removeEventListener("submit", onSubmit)
+    body.removeEventListener("keydown", onKeyDown)
   }
 }

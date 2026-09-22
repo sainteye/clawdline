@@ -12,6 +12,7 @@ import type {
   ScheduleRequest,
   ScheduleSaved,
   SessionsSnapshot,
+  SessionTitleReply,
   SettleResult,
   TranscriptPage,
 } from "@clawdline/contract"
@@ -94,6 +95,11 @@ export class ClawdlineClient {
 
   interrupt(id: string): Promise<ActionResult> {
     return this.post(sessionRoutes.interrupt(id), {})
+  }
+
+  /** Gives a session a durable local display name; an empty string clears it. */
+  title(id: string, title: string): Promise<SessionTitleReply> {
+    return this.post(sessionRoutes.title(id), { title })
   }
 
   /**

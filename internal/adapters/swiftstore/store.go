@@ -47,6 +47,7 @@ type SessionTitle struct {
 	StartedAt          *Seconds `json:"started_at"`
 	SeenCustomTitle    *string  `json:"seen_custom_title"`
 	SeenTranscriptPath *string  `json:"seen_transcript_path"`
+	UpdatedAt          *Seconds `json:"updated_at"`
 }
 
 // Dir is where the Swift app keeps its store. It is fixed in that app

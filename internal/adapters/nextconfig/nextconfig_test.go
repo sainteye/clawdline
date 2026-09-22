@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -73,6 +75,46 @@ func TestASetKeepsEveryOtherKeyAndIsPrivate(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Fatalf("directory holds %v", names)
+	}
+}
+
+// A collection-valued setting is read and changed under one lock. Two callers
+// that both append retain both rows; a read followed by Set in each caller
+// would let the later write silently replace the earlier one.
+func TestAChangeIsOneReadModifyWrite(t *testing.T) {
+	f := Open(t.TempDir())
+	start := make(chan struct{})
+	done := make(chan error, 2)
+	for _, title := range []string{"one", "two"} {
+		title := title
+		go func() {
+			<-start
+			_, err := f.Change(func(v Values) (map[string]any, error) {
+				var rows []string
+				_ = json.Unmarshal(v.Raw["session_titles"], &rows)
+				rows = append(rows, title)
+				return map[string]any{"session_titles": rows}, nil
+			})
+			done <- err
+		}()
+	}
+	close(start)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, err := f.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []string
+	if err := json.Unmarshal(v.Raw["session_titles"], &rows); err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(rows)
+	if !reflect.DeepEqual(rows, []string{"one", "two"}) {
+		t.Fatalf("session_titles = %v", rows)
 	}
 }
 

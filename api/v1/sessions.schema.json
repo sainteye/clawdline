@@ -371,6 +371,29 @@
         "info": { "$ref": "#/$defs/SessionInfo" }
       }
     },
+    "SessionTitleRequest": {
+      "description": "POST /v1/sessions/{id}/title. A visible one-line name; an empty or whitespace-only string clears the name this Clawdline installation keeps.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string" }
+      }
+    },
+    "SessionTitleReply": {
+      "description": "The durable local result of naming a session. This daemon keeps the display name in its own config and does not mutate the assistant's conversation metadata.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display_title", "downstream", "downstream_synced", "local_applied", "ok", "title"],
+      "properties": {
+        "display_title": { "description": "The label the session list and Session Info show after this write, including the fallback revealed by clearing a local title.", "type": "string" },
+        "downstream": { "description": "local_only in this daemon; retained as a string because older machines may report a downstream assistant sync state.", "type": "string" },
+        "downstream_synced": { "type": "boolean" },
+        "local_applied": { "type": "boolean" },
+        "ok": { "type": "boolean" },
+        "title": { "description": "The normalized local title, or empty when it was cleared.", "type": "string" }
+      }
+    },
     "ScanCompleted": {
       "type": "object",
       "additionalProperties": false,
