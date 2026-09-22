@@ -191,6 +191,16 @@ export interface TodoPage {
   next_cursor: string | null
 }
 
+export interface ProjectPlace {
+  id: string
+  label: string
+  path: string
+}
+
+export interface ProjectPlacePage {
+  places: ProjectPlace[]
+}
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 15_000)
@@ -230,6 +240,8 @@ export const readBacklog = (project?: string, cursor?: string) =>
 export const readProposals = (project?: string) => call<ProposalPage>("/v1/work/proposals" + query({ project }))
 export const readDecisions = () => call<DecisionPage>("/v1/work/decisions")
 export const readDigests = () => call<{ rows: Digest[] }>("/v1/work/digests?kind=daily")
+/** The machine's real project directory: existing places it recognizes, newest first (at most forty). */
+export const readProjectPlaces = () => call<ProjectPlacePage>("/v1/places")
 export const readTodos = (sessionRowId: string, state?: "outstanding" | "closed" | "all") =>
   call<TodoPage>(`/v1/sessions/${encodeURIComponent(sessionRowId)}/todos` + query({ state }))
 
