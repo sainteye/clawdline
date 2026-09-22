@@ -203,7 +203,9 @@ func noticeSizedLine() string {
 
 // A notice-sized line reaches the program as one line: submitted once, whole.
 // With `send-keys -l` and an immediate Enter it was submitted as its last 23
-// bytes, and the rest never reached the message at all.
+// bytes, and the rest never reached the message at all. Send may nudge a
+// framed composer whose screen has not caught up with the first Enter; after
+// the stub has submitted the line, those bounded follow-up Enters are empty.
 func TestTmuxSendSubmitsANoticeSizedLineWhole(t *testing.T) {
 	pane, logPath := privateTmux(t, "")
 	text := noticeSizedLine()
@@ -235,11 +237,18 @@ func TestTmuxSendSubmitsANoticeSizedLineWhole(t *testing.T) {
 			submitted = append(submitted, *e.Submit)
 		}
 	}
-	if len(submitted) != 1 || submitted[0] != text {
+	valid := len(submitted) >= 1 && len(submitted) <= 1+len(nudgePauses)
+	for i, s := range submitted {
+		if (i == 0 && s != text) || (i > 0 && s != "") {
+			valid = false
+		}
+	}
+	if !valid {
 		for i, s := range submitted {
 			t.Logf("submitted[%d] (%d bytes): …%q", i, len(s), s[max(0, len(s)-40):])
 		}
-		t.Fatalf("want the %d-byte line submitted once and whole, got %d submission(s)", len(text), len(submitted))
+		t.Fatalf("want the %d-byte line once and whole, followed only by at most %d empty nudges; got %d submission(s)",
+			len(text), len(nudgePauses), len(submitted))
 	}
 }
 
