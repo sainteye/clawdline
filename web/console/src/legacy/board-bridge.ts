@@ -6,6 +6,7 @@
 // that carry an old board Project id. The latter is redirected to the Projects
 // page's own repository detail; it never opens or reads an old card.
 import { T } from "./js/core/i18n.js"
+import { makeJSONFetch } from "@clawdline/core/refusal"
 
 /** The part of a board answer the Settings block reads. */
 export interface BoardMode {
@@ -15,40 +16,10 @@ export interface BoardMode {
   viewer?: { canManage?: boolean; canWrite?: boolean; narrativeProvider?: string } | null
 }
 
-type Coded = Error & { code?: string; retryable?: boolean }
-
-/** Read this daemon's flat or nested refusal shape. */
-async function jsonFetch(path: string, options?: RequestInit): Promise<Record<string, unknown>> {
-  let res: Response
-  try {
-    res = await fetch(path, options)
-  } catch {
-    const dead: Coded = new Error(T.webOffline)
-    dead.code = "offline"
-    throw dead
-  }
-  const body = await res.text()
-  let data: Record<string, unknown> | null = null
-  try {
-    data = body ? JSON.parse(body) : null
-  } catch {
-    /* handled below */
-  }
-  if (!res.ok) {
-    const raw = data?.error
-    const err =
-      typeof raw === "string"
-        ? { code: raw, message: typeof data?.detail === "string" ? data.detail : raw }
-        : raw && typeof raw === "object"
-          ? (raw as { code?: string; message?: string })
-          : { code: "http_" + res.status, message: res.statusText || T.webRequestFailed }
-    const failed: Coded = new Error(err.message || err.code || "")
-    failed.code = err.code
-    throw failed
-  }
-  if (!data) throw new Error(T.webNotJSON)
-  return data
-}
+/** Read this daemon's flat or nested refusal shape through the shared transport. */
+const jsonFetch = makeJSONFetch({
+  words: { offline: T.webOffline, requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
+})
 
 const post = (body: unknown): RequestInit => ({
   method: "POST",

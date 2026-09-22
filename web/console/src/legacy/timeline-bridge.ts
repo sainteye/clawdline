@@ -17,6 +17,7 @@
 //     `jsonFetch` reads as well as the original's shape.
 import { T } from "./js/core/i18n.js"
 import { bindTimelinePage } from "./js/view/timeline.js"
+import { makeJSONFetch } from "@clawdline/core/refusal"
 
 /** What `bindTimelinePage` hands back. */
 export interface TimelinePage {
@@ -49,38 +50,10 @@ export const TIMELINE_ELEMENT_IDS = [
 
 type Coded = Error & { code?: string; retryable?: boolean }
 
-/** `net/fetch.js`'s `jsonFetch`, reading this daemon's refusal shape as well as the original's. */
-async function jsonFetch(path: string): Promise<Record<string, unknown>> {
-  let res: Response
-  try {
-    res = await fetch(path)
-  } catch {
-    const dead: Coded = new Error(T.webOffline)
-    dead.code = "offline"
-    throw dead
-  }
-  const body = await res.text()
-  let data: Record<string, unknown> | null = null
-  try {
-    data = body ? JSON.parse(body) : null
-  } catch {
-    /* below */
-  }
-  if (!res.ok) {
-    const raw = data?.error
-    const err =
-      typeof raw === "string"
-        ? { code: raw, message: typeof data?.detail === "string" ? data.detail : raw }
-        : raw && typeof raw === "object"
-          ? (raw as { code?: string; message?: string })
-          : { code: "http_" + res.status, message: res.statusText || T.webRequestFailed }
-    const failed: Coded = new Error(err.message || err.code || "")
-    failed.code = err.code
-    throw failed
-  }
-  if (!data) throw new Error(T.webNotJSON)
-  return data
-}
+/** `net/fetch.js`'s `jsonFetch`, now supplied by the shared refusal-aware transport. */
+const jsonFetch = makeJSONFetch({
+  words: { offline: T.webOffline, requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
+})
 
 /** `net/live.js`'s `timeline`, with this route's closed parameter set. */
 function read(

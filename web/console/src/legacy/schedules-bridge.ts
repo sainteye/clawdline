@@ -28,6 +28,7 @@
 // `updateSchedule`, `deleteSchedule`, `runSchedule` and `places`, spelled
 // against this daemon, which answers them in the Swift app's shapes.
 import { T, fill as fillOriginal } from "./js/core/i18n.js"
+import { makeJSONFetch } from "@clawdline/core/refusal"
 import { esc as escOriginal } from "./js/core/esc.js"
 import { drawIcon as drawIconOriginal } from "./js/core/pixels.js"
 import { shortPath as shortPathOriginal, tint as tintOriginal, uuid as uuidOriginal } from "./js/core/util.js"
@@ -185,40 +186,19 @@ export interface SchedulePlaces {
 /** A refusal as `net/fetch.js` hands it on: the code, and `app` or `reason` when there is one. */
 export type ScheduleFailure = Error & { code?: string; app?: string; reason?: string }
 
-/** `net/fetch.js`'s `jsonFetch`: the Swift app's refusal envelope, and this daemon's older one. */
-async function jsonFetch<A>(path: string, options?: RequestInit): Promise<A> {
-  let res: Response
-  try {
-    res = await fetch(path, { credentials: "same-origin", ...(options || {}) })
-  } catch {
-    const dead: ScheduleFailure = new Error((T as Record<string, string>).webOffline)
-    dead.code = "offline"
-    throw dead
-  }
-  const body = await res.text()
-  let data: Record<string, unknown> | null = null
-  try {
-    data = body ? JSON.parse(body) : null
-  } catch {
-    /* below */
-  }
-  if (!res.ok) {
-    const raw = data?.error
-    const err: { code?: string; message?: string; app?: unknown; reason?: unknown } =
-      typeof raw === "string"
-        ? { code: raw, message: typeof data?.detail === "string" ? data.detail : raw }
-        : raw && typeof raw === "object"
-          ? (raw as Record<string, unknown>)
-          : { code: "http_" + res.status, message: res.statusText || (T as Record<string, string>).webRequestFailed }
-    const e2: ScheduleFailure = new Error(err.message || err.code)
-    e2.code = err.code
-    if (typeof err.app === "string") e2.app = err.app
-    if (typeof err.reason === "string") e2.reason = err.reason
-    throw e2
-  }
-  if (!data) throw new Error((T as Record<string, string>).webNotJSON)
-  return data as A
-}
+/** `net/fetch.js`'s `jsonFetch`, with credentials and refusal metadata retained. */
+const jsonFetch = makeJSONFetch({
+  words: {
+    offline: (T as Record<string, string>).webOffline,
+    requestFailed: (T as Record<string, string>).webRequestFailed,
+    notJSON: (T as Record<string, string>).webNotJSON,
+  },
+  defaults: { credentials: "same-origin" },
+  refusalFields: [
+    { source: "app", target: "app", type: "string" },
+    { source: "reason", target: "reason", type: "string" },
+  ],
+})
 
 /** `net/fetch.js`'s `post`. */
 function post(body: unknown, extra: Record<string, string>): RequestInit {
