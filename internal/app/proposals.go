@@ -204,6 +204,10 @@ type ProposalRequest struct {
 	// so TaskID is provenance here — which delivery said so — and never a
 	// dispatch of the work being proposed.
 	Leftover string
+	// NeedsUser is the concrete dependency that makes a leftover a question:
+	// what only the person can do, and what that action unblocks. With no
+	// complete dependency, the leftover is filed in the Backlog instead.
+	NeedsUser work.UserNeed
 	// FromChild says the caller authenticated with a child's task secret;
 	// ChildTask is that task. ByRule says the rules made it (RuleProposals).
 	FromChild bool
@@ -243,6 +247,8 @@ func mergeRows(rows []store.BrokerRow, more []store.BrokerRow) []store.BrokerRow
 func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file ProposalFiler) (ProposalView, error) {
 	req.Title, req.Project = strings.TrimSpace(req.Title), strings.TrimSpace(req.Project)
 	req.Leftover = strings.TrimSpace(req.Leftover)
+	need, needsUser, needErr := work.ParseUserNeed(req.NeedsUser)
+	req.NeedsUser = need
 	// A leftover takes its title, and its project, from the delivery that
 	// named it: what is proposed is what the child wrote, not a sentence the
 	// proposing session made up about it.
@@ -250,6 +256,14 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 	switch {
 	case checkSession(req.Session) != nil:
 		return ProposalView{}, checkSession(req.Session)
+	case needErr != nil:
+		return ProposalView{}, participationRefusal(needErr)
+	case needsUser && !leftover:
+		return ProposalView{}, workRefusal(400, "invalid_user_need",
+			"needs_user belongs to a leftover; an ordinary line of work uses a decision when it cannot proceed without a person.")
+	case needsUser && req.FromChild:
+		return ProposalView{}, workRefusal(400, "user_need_requires_root",
+			"Only the root that will ask the person supplies needs_user. A child's leftover without it is filed in the root's Backlog.")
 	case leftover && req.TaskID == "":
 		return ProposalView{}, workRefusal(400, "subject_required",
 			"A leftover is proposed with the task_id of the delivery whose result.json named it.")
@@ -304,6 +318,7 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 		var signals []work.Signal
 		var ignored []work.Ignored
 		var prior []work.Proposal
+		leftoverAcceptance := ""
 		subjectStatus := work.SubjectUnknown
 		if leftover {
 			sub, err := leftoverSubject(tx, req)
@@ -313,7 +328,11 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 			// A line of its own, named now. Nothing is dispatched on it yet,
 			// and the task that raised it stays on its own line: it is where
 			// this came from, not work done towards it.
-			workID, title, question = newWorkID(), sub.leftover.Title, work.LeftoverQuestion(sub.leftover, req.TaskID)
+			workID, title = newWorkID(), sub.leftover.Title
+			if needsUser {
+				question = work.UserNeedQuestion(sub.leftover, req.TaskID, req.NeedsUser)
+			}
+			leftoverAcceptance = sub.leftover.Acceptance
 			project, signals, prior = sub.project, []work.Signal{work.SignalLeftover}, sub.prior
 			if req.Project != "" {
 				project = req.Project
@@ -425,10 +444,37 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 		case prop.Ask:
 			prop.Question = work.Question(prop.Title, signals, effects)
 		}
-		if err := tx.PutProposal(prop, nil, limitOr(p.ProposalLimit, store.ProposalOpenLimit)); err != nil {
+		proposalLimit := limitOr(p.ProposalLimit, store.ProposalOpenLimit)
+		if leftover && !needsUser {
+			// A named unfinished thing needs no bookkeeping decision. Keep the
+			// proposal as the durable provenance and duplicate guard, but close
+			// it immediately with the Backlog default and make the item in this
+			// same transaction. Zero skips the pending-proposal register: this
+			// row never waits for a person and must not be refused because that
+			// register is full.
+			prop.Ask, prop.Channel, prop.Question = false, work.ChannelToConfirm, ""
+			prop.State, prop.Answer = work.ProposalAnswered, work.AnswerLater
+			prop.AnsweredBy, prop.AnsweredAt = work.ActorBroker, now
+			proposalLimit = 0
+		}
+		if err := tx.PutProposal(prop, nil, proposalLimit); err != nil {
 			return err
 		}
 		out = ProposalView{Proposal: prop, Ignored: ignored}
+		if leftover && !needsUser {
+			item, change, ok := work.Placing(prop, nil, now)
+			if !ok {
+				return errors.New("the Backlog default did not place its leftover")
+			}
+			item.Acceptance = leftoverAcceptance
+			change.Trigger = "leftover_backlog"
+			change.Evidence["default"] = "backlog"
+			if err := tx.Create(item, store.MoveOf(item.ID, change, now), p.Board.openLimit()); err != nil {
+				return err
+			}
+			v := p.Board.view(item, nil, 0)
+			out.Item = &v
+		}
 		if file != nil {
 			if k, a, ok := file(out); ok {
 				return tx.CompleteReceipt(k, a)
@@ -654,12 +700,15 @@ func (p *Participation) Answer(ctx context.Context, id string, answer work.Answe
 	return out, participationRefusal(err)
 }
 
-// ResolveProposal closes a pending proposal after somebody inspected its
-// subject and recorded both the conclusion and its source. A person may do
-// that directly; a root may do it for a proposal belonging to that root,
-// because the claim is made reviewable by evidence rather than made true by
-// a person's authority. session is empty for the person and the owning root's
-// conversation id for a root.
+// ResolveProposal closes a pending proposal, or a leftover the broker filed
+// in the Backlog, after somebody inspected its subject and recorded both the
+// conclusion and its source. Resolving the latter also closes its item as
+// done elsewhere, in the same transaction, so the Backlog does not retain a
+// condition the evidence says is over. A person may do that directly; a root
+// may do it for a proposal belonging to that root, because the claim is made
+// reviewable by evidence rather than made true by a person's authority.
+// session is empty for the person and the owning root's conversation id for
+// a root.
 func (p *Participation) ResolveProposal(ctx context.Context, id, resolution, evidence, actor, session string,
 	file ProposalFiler) (ProposalView, error) {
 	now := p.now()
@@ -672,11 +721,41 @@ func (p *Participation) ResolveProposal(ctx context.Context, id, resolution, evi
 		if session != "" && prev.Session != session {
 			return workRefusal(409, "not_your_proposal", "That proposal belongs to another session.")
 		}
+		autoFiled := prev.AutoFiledLeftover()
 		next, err := work.ResolveProposal(prev, resolution, evidence, actor, now)
 		if err != nil {
 			return err
 		}
 		out = ProposalView{Proposal: next}
+		if autoFiled {
+			item, err := tx.Item(prev.WorkID)
+			if err != nil {
+				return err
+			}
+			rows, err := tx.Tasks(prev.WorkID)
+			if err != nil {
+				return err
+			}
+			facts, unknown := Facts(rows)
+			if unknown > 0 {
+				return workRefusal(409, "facts_unknown",
+					"A task bound to this item could not be read, so what it is now is unknown; nothing was done.")
+			}
+			change, err := work.Decide(item, facts, work.Command{Op: work.OpDoneElsewhere, Actor: actor,
+				Reason: strings.TrimSpace(resolution)}, p.Board.Policy, now)
+			if err != nil {
+				return err
+			}
+			change.Evidence["proposal"] = prev.ID
+			change.Evidence["resolution_evidence"] = strings.TrimSpace(evidence)
+			closed := change.Apply(item, now)
+			if err := tx.Put(item, closed, store.MoveOf(item.ID, change, now)); err != nil {
+				return err
+			}
+			closed.Version = item.Version + 1
+			v := p.Board.view(closed, facts, 0)
+			out.Item = &v
+		}
 		if err := tx.PutProposal(next, &prev, 0); err != nil {
 			return err
 		}

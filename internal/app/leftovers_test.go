@@ -41,8 +41,11 @@ func raise(p *Participation, task, title string) (ProposalView, error) {
 	return p.Propose(context.Background(), ProposalRequest{Session: theRoot, TaskID: task, Leftover: title}, nil)
 }
 
-// The whole path, and the four places it stops.
-func TestLeftoverBecomesABacklogRowOnlyWhenSomebodyAnswers(t *testing.T) {
+// A leftover is work, not a bookkeeping question. With no concrete
+// dependency on the person it goes straight to the Backlog. Only a root that
+// names what it needs from the person and what that action unblocks gets a
+// pending question.
+func TestLeftoverDefaultsToBacklogUnlessItNeedsThePerson(t *testing.T) {
 	ctx := context.Background()
 	p, board, st, clock := newParticipation(t)
 	// Every binding the participation asks the broker for. A leftover must
@@ -59,15 +62,17 @@ func TestLeftoverBecomesABacklogRowOnlyWhenSomebodyAnswers(t *testing.T) {
 			Acceptance: "each one has a failing test"},
 		work.Leftover{Title: "the half-done feature", Why: "its other half is another task's claim"})
 
-	// The root sees them as candidates, and raising one records a proposal
-	// that asks nobody: a child's delivery is not a person being present.
+	// With no needs_user, the proposal is filed as later by the broker and the
+	// response carries the Backlog item. Nothing waits for a person.
 	v, err := raise(p, taskID(1), "the four daemon defects")
 	if err != nil {
 		t.Fatalf("raising a leftover: %v", err)
 	}
 	switch {
-	case v.Proposal.State != work.ProposalPending:
+	case v.Proposal.State != work.ProposalAnswered:
 		t.Fatalf("state %q", v.Proposal.State)
+	case v.Proposal.Answer != work.AnswerLater || v.Proposal.AnsweredBy != work.ActorBroker:
+		t.Fatalf("automatic answer: %q by %q", v.Proposal.Answer, v.Proposal.AnsweredBy)
 	case !v.Proposal.Leftover():
 		t.Fatalf("signals %v do not say leftover", v.Proposal.Signals)
 	case v.Proposal.Title != "the four daemon defects":
@@ -76,36 +81,31 @@ func TestLeftoverBecomesABacklogRowOnlyWhenSomebodyAnswers(t *testing.T) {
 		t.Fatalf("task %q: the proposal must carry the delivery that raised it", v.Proposal.TaskID)
 	case v.Proposal.WorkID == taskID(1):
 		t.Fatalf("the leftover took the delivery's own line of work")
-	case v.Proposal.Channel != work.ChannelToConfirm:
-		t.Fatalf("channel %q", v.Proposal.Channel)
-	case !strings.Contains(v.Proposal.Question, "out of time after the third"):
-		t.Fatalf("the question does not carry the why: %q", v.Proposal.Question)
-	case v.Item != nil:
-		t.Fatalf("proposing made a work item; only an answer may")
+	case v.Proposal.Ask || v.Proposal.Question != "":
+		t.Fatalf("an ordinary leftover asks a person: ask=%v question=%q", v.Proposal.Ask, v.Proposal.Question)
+	case v.Item == nil:
+		t.Fatal("an ordinary leftover made no Backlog item")
 	}
 
-	// Nothing on the board or in the Backlog until a person answers.
-	if _, err := board.Item(ctx, v.Proposal.WorkID); codeOf(err) != "work_not_found" {
-		t.Fatalf("an unanswered leftover left an item: %v", err)
-	}
-
-	// One answer, one row — in the Backlog, with no owner and no commitment,
-	// and a first move that names the delivery it came out of.
-	answered, err := p.Answer(ctx, v.Proposal.ID, work.AnswerLater, "user", "local", nil, nil)
-	if err != nil {
-		t.Fatalf("answering later: %v", err)
-	}
-	if answered.Item == nil {
-		t.Fatal("later made no item")
-	}
-	it := answered.Item.Item
+	// One call, one row — in the Backlog, with no owner and no commitment,
+	// its suggested acceptance, and a first move that names the delivery it
+	// came out of.
+	it := v.Item.Item
 	switch {
 	case it.Place != work.PlaceBacklog || it.State != work.ItemPlanned:
 		t.Fatalf("item is %s/%s", it.Place, it.State)
 	case it.Title != "the four daemon defects":
 		t.Fatalf("row title %q", it.Title)
+	case it.Acceptance != "each one has a failing test":
+		t.Fatalf("acceptance %q", it.Acceptance)
 	case it.Owner != "" || it.Commitment != "":
 		t.Fatalf("a Backlog row has no owner and no commitment: %q %q", it.Owner, it.Commitment)
+	}
+	if got, err := board.Item(ctx, v.Proposal.WorkID); err != nil || got.Item.Place != work.PlaceBacklog {
+		t.Fatalf("reading the filed leftover: %+v %v", got.Item, err)
+	}
+	if n := pendingCount(t, p); n != 0 {
+		t.Fatalf("the filed leftover left %d question(s) waiting", n)
 	}
 	moves, _, err := board.Moves(ctx, it.ID, 0)
 	if err != nil || len(moves) == 0 {
@@ -118,6 +118,21 @@ func TestLeftoverBecomesABacklogRowOnlyWhenSomebodyAnswers(t *testing.T) {
 	if evidence["leftover_of_task"] != taskID(1) {
 		t.Fatalf("the row does not say which delivery raised it: %v", evidence)
 	}
+	resolved, err := p.ResolveProposal(ctx, v.Proposal.ID, "the four defects were fixed in the parent delivery",
+		"daemon response: all four checks pass", "root:"+theRoot, theRoot, nil)
+	if err != nil {
+		t.Fatalf("resolving the filed leftover: %v", err)
+	}
+	if resolved.Proposal.State != work.ProposalResolved || resolved.Item == nil ||
+		resolved.Item.Item.State != work.ItemDone || resolved.Item.Item.ClosedReason != work.ClosedDoneElsewhere {
+		t.Fatalf("resolved filed leftover: %+v %+v", resolved.Proposal, resolved.Item)
+	}
+	if got, err := board.Item(ctx, v.Proposal.WorkID); err != nil || got.Item.State != work.ItemDone {
+		t.Fatalf("the resolved item is not findable: %+v %v", got.Item, err)
+	}
+	if _, err := raise(p, taskID(1), "the four daemon defects"); codeOf(err) != work.RefuseResolved {
+		t.Fatalf("a resolved leftover was proposed again: %v", err)
+	}
 
 	// The delivery itself is never asked to join the new line. It reported
 	// that this work was *not* done; binding it would say the opposite, and
@@ -126,20 +141,34 @@ func TestLeftoverBecomesABacklogRowOnlyWhenSomebodyAnswers(t *testing.T) {
 		t.Fatalf("the delivery was bound onto the leftover's line: %v", bound)
 	}
 
-	// A second leftover of the same delivery is a second subject, not a
-	// duplicate of the first: this is what one task id shared by several
-	// proposals would otherwise cost.
-	second, err := raise(p, taskID(1), "the half-done feature")
+	// A second leftover can become a question only when the proposing root
+	// supplies the closed kind, the action it needs, and what that action
+	// unblocks. Mark the person present so this is the inline-ask control.
+	p.Heard.Mark(clock.at, theRoot, "term")
+	second, err := p.Propose(ctx, ProposalRequest{Session: theRoot, TaskID: taskID(1),
+		Leftover: "the half-done feature", NeedsUser: work.UserNeed{
+			Kind: work.UserNeedDecision, Action: "choose which half owns the shared file",
+			Unblocks: "the root can dispatch the remaining implementation"}}, nil)
 	if err != nil {
 		t.Fatalf("the delivery's second leftover: %v", err)
 	}
 	if second.Proposal.WorkID == v.Proposal.WorkID {
 		t.Fatal("two leftovers of one delivery share a line of work")
 	}
+	if second.Proposal.State != work.ProposalPending || !second.Proposal.Ask ||
+		!strings.Contains(second.Proposal.Question, "choose which half owns the shared file") ||
+		!strings.Contains(second.Proposal.Question, "the root can dispatch the remaining implementation") {
+		t.Fatalf("the real blocker is not the question: %+v", second.Proposal)
+	}
+	if second.Item != nil {
+		t.Fatalf("a blocked leftover was filed before the person answered: %+v", second.Item)
+	}
 
 	// The same leftover twice is a duplicate, and writes nothing.
 	before := pendingCount(t, p)
-	if _, err := raise(p, taskID(1), "the half-done feature"); codeOf(err) != work.RefuseDuplicate {
+	if _, err := p.Propose(ctx, ProposalRequest{Session: theRoot, TaskID: taskID(1),
+		Leftover: "the half-done feature", NeedsUser: work.UserNeed{Kind: work.UserNeedDecision,
+			Action: "choose which half owns the shared file", Unblocks: "the root can continue"}}, nil); codeOf(err) != work.RefuseDuplicate {
 		t.Fatalf("raising one leftover twice: %v", err)
 	}
 	if n := pendingCount(t, p); n != before {
@@ -158,13 +187,15 @@ func TestLeftoverBecomesABacklogRowOnlyWhenSomebodyAnswers(t *testing.T) {
 	}
 }
 
-// Nobody answers: the safe default stands and the Backlog is untouched. This
-// is the clause the whole design rests on — a candidate is not a row.
-func TestUnansweredLeftoverExpiresAndMakesNothing(t *testing.T) {
+// A genuine dependency can still go unanswered: its existing safe default
+// stands and it does not silently become a Backlog item after asking.
+func TestUnansweredBlockedLeftoverExpiresAndMakesNothing(t *testing.T) {
 	ctx := context.Background()
 	p, board, st, clock := newParticipation(t)
 	delivered(t, st, taskID(2), theRoot, clock.at, work.Leftover{Title: "the flaky test", Why: "not mine to fix"})
-	v, err := raise(p, taskID(2), "the flaky test")
+	v, err := p.Propose(ctx, ProposalRequest{Session: theRoot, TaskID: taskID(2), Leftover: "the flaky test",
+		NeedsUser: work.UserNeed{Kind: work.UserNeedDevice, Action: "run it once on your phone",
+			Unblocks: "the root can distinguish a device defect from the test harness"}}, nil)
 	if err != nil {
 		t.Fatalf("raising: %v", err)
 	}
@@ -188,6 +219,34 @@ func TestUnansweredLeftoverExpiresAndMakesNothing(t *testing.T) {
 	}
 	if len(page.Rows) != 0 {
 		t.Fatalf("the Backlog holds %d rows nobody asked for", len(page.Rows))
+	}
+}
+
+func TestAnInvalidUserNeedCannotBecomeAQuestion(t *testing.T) {
+	p, _, st, clock := newParticipation(t)
+	delivered(t, st, taskID(7), theRoot, clock.at, work.Leftover{Title: "the device-only check"})
+	p.Heard.Mark(clock.at, theRoot, "term")
+
+	bad := []work.UserNeed{
+		{Kind: work.UserNeedDevice, Action: "run it on your phone"},
+		{Kind: work.UserNeedKind("important"), Action: "approve this important work", Unblocks: "the root continues"},
+	}
+	for _, need := range bad {
+		_, err := p.Propose(context.Background(), ProposalRequest{Session: theRoot, TaskID: taskID(7),
+			Leftover: "the device-only check", NeedsUser: need}, nil)
+		if codeOf(err) != "invalid_user_need" {
+			t.Fatalf("invalid needs_user became a question (%+v): %v", need, err)
+		}
+	}
+	_, err := p.Propose(context.Background(), ProposalRequest{Session: theRoot, TaskID: taskID(7),
+		Leftover: "the device-only check", FromChild: true, ChildTask: taskID(7),
+		NeedsUser: work.UserNeed{Kind: work.UserNeedDevice, Action: "run it on your phone",
+			Unblocks: "the root can continue"}}, nil)
+	if codeOf(err) != "user_need_requires_root" {
+		t.Fatalf("a child supplied the root's question: %v", err)
+	}
+	if n := pendingCount(t, p); n != 0 {
+		t.Fatalf("an invalid needs_user wrote %d question(s)", n)
 	}
 }
 

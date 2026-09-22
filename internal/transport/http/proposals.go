@@ -23,15 +23,16 @@ import (
 // A session's side, behind the orchestrator credential:
 //
 //	POST /v1/orchestrator/proposals                 propose a line of work; the answer says whether to ask
-//	POST /v1/orchestrator/proposals {"task_id":…,"leftover":"<title>"}
-//	                                                propose one thing a delivery said it did not do
+//	POST /v1/orchestrator/proposals {"task_id":…,"leftover":"<title>","needs_user":…}
+//	                                                file one leftover, or ask when it names a real dependency
 //	GET  /v1/orchestrator/proposals/{id}            one proposal
 //	POST /v1/orchestrator/proposals/{id}/asked      "I asked it in the conversation"
 //	POST /v1/orchestrator/decisions                 ask a person something
 //	GET  /v1/orchestrator/decisions/{id}            its answer, or its default
 //
-// A child may knock on the first with its own task secret; its proposal is
-// recorded in its root's "to confirm" area and it asks nobody.
+// A child may knock on the first with its own task secret; its leftover is
+// filed in its root's Backlog. Only the root that can ask the person supplies
+// needs_user and turns one into a question. The child asks nobody.
 //
 // A person's side, beside the board (a session relays a person's words here
 // under their run, as on the board's own routes):
@@ -192,6 +193,8 @@ const (
 		resolveInstructions
 	holdInstructions = "Do not ask about this in the conversation. It is in the person's \"to confirm\" area and their daily digest; " +
 		"if nobody answers by expires_at it stays with its to-dos. " + resolveInstructions
+	filedInstructions = "Do not ask about this. Because no needs_user dependency was supplied, the leftover was filed in the Backlog " +
+		"as `item`; continue it by that work_id. " + resolveInstructions
 	resolveInstructions = "If you inspect the subject and verify that it was already completed or its premise no longer exists, " +
 		"POST /v1/orchestrator/proposals/{id}/resolve with session_id, a one-sentence resolution, and evidence naming " +
 		"the source (file:line, command output, or daemon response). This is not the person's `no`."
@@ -212,9 +215,14 @@ func proposalAnswerOf(v app.ProposalView, withInstructions bool) proposalOneWire
 		out.Item = &item
 	}
 	if withInstructions {
-		out.Instructions = holdInstructions
-		if v.Proposal.Ask {
+		switch {
+		case v.Proposal.State == work.ProposalAnswered && v.Proposal.Answer == work.AnswerLater &&
+			v.Proposal.AnsweredBy == work.ActorBroker && v.Item != nil:
+			out.Instructions = filedInstructions
+		case v.Proposal.Ask:
 			out.Instructions = askInstructions
+		default:
+			out.Instructions = holdInstructions
 		}
 		out.Instructions = strings.ReplaceAll(out.Instructions, "{id}", v.Proposal.ID)
 	}
@@ -348,10 +356,14 @@ type proposeWire struct {
 	// that delivery said it did not do. With it, task_id is where the
 	// candidate came from rather than the line of work being proposed, and
 	// the title and project are the delivery's own.
-	Leftover string   `json:"leftover"`
-	Title    string   `json:"title"`
-	Project  string   `json:"project"`
-	Effects  []string `json:"effects"`
+	Leftover string `json:"leftover"`
+	// NeedsUser is omitted for the ordinary path, which files the leftover in
+	// the Backlog. A complete object makes it a question: kind is device,
+	// account, credential, or decision; action and unblocks supply the words.
+	NeedsUser work.UserNeed `json:"needs_user"`
+	Title     string        `json:"title"`
+	Project   string        `json:"project"`
+	Effects   []string      `json:"effects"`
 }
 
 type askedWire struct {
@@ -461,7 +473,7 @@ func (s *Server) propose(w http.ResponseWriter, r *http.Request) {
 	}
 	req := app.ProposalRequest{Session: strings.TrimSpace(body.SessionID), WorkID: strings.TrimSpace(body.WorkID),
 		TaskID: strings.TrimSpace(body.TaskID), Leftover: body.Leftover, Title: body.Title, Project: body.Project,
-		Effects: body.Effects}
+		Effects: body.Effects, NeedsUser: body.NeedsUser}
 	principal := "machine"
 	// seenTask is the task whose completion notice this proposal proves its root
 	// read (orchestrator.NoticeSeen). A leftover is a row of a delivery's

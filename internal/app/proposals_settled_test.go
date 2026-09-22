@@ -70,7 +70,9 @@ func TestPendingProposalsSayWhetherTheirSubjectCanBeReassessed(t *testing.T) {
 
 	delivered(t, st, taskID(2), theRoot, clock.at,
 		work.Leftover{Title: "a result nobody picked up", Why: "the task ended first"})
-	if _, err := raise(p, taskID(2), "a result nobody picked up"); err != nil {
+	if _, err := p.Propose(ctx, ProposalRequest{Session: theRoot, TaskID: taskID(2),
+		Leftover: "a result nobody picked up", NeedsUser: work.UserNeed{Kind: work.UserNeedAccount,
+			Action: "open the account-only report", Unblocks: "the root can verify whether the result still applies"}}, nil); err != nil {
 		t.Fatal(err)
 	}
 
