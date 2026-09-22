@@ -1,9 +1,10 @@
-import type { ProjectLink, SessionInfo, SessionModel } from "@clawdline/contract"
+import type { ProjectLink, SessionInfo, SessionLimits, SessionModel } from "@clawdline/contract"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { repositoryNote } from "./links-note.js"
 import { SessionFacts } from "./facts.js"
+import { conversationBecameKnown, factsMissConversation } from "../session/info-freshness.js"
 import {
   byId,
   closeabilityBadgeHTML,
@@ -34,11 +35,11 @@ import { toast } from "./toast.js"
  * - hero, status, model switch and token use are the original's sections;
  * - `links` is on this wire now, so the original's Links section is drawn from
  *   it, with the original's classes and its own words;
- * - `limits`, `files`, `permission` and `fastMode` are not on this wire, so
- *   their sections are absent — not drawn with the original's empty-state
- *   sentences, each of which ("this is not a git repo", "Claude only records a
- *   window once spent") states a fact about the session that this daemon never
- *   read;
+ * - `limits` is the account-level 5h/7d reading behind the status line; when
+ *   the provider did not report a window, the section says it is unknown
+ *   rather than silently disappearing;
+ * - `files`, `permission` and `fastMode` are not on this wire, so their
+ *   sections are absent;
  * - `session.seconds` is absent, so the running-for part of the meta line is;
  * - there is no title route, so the title is the original's read-only button
  *   (disabled, no pencil), which is how it looks where editing is off;
@@ -74,6 +75,7 @@ let drawn = false // the sections have risen once; a redraw should not make them
 let pending: string | null = null // the word sent after `/model`, until the record names that model
 let busy = false // a model command on its way
 let stateSeen = "" // work and closeability shape at the last draw
+let conversationSeen = "" // the provider id the row knew at the last read
 let confirming: number | undefined // the timer reading back after a sent `/model`
 
 function hidden(): boolean {
@@ -313,6 +315,26 @@ function usageHTML(u: Facts["usage"]): string {
   )
 }
 
+function limitsHTML(limits: SessionLimits): string {
+  if (!limits.windows.length) return note(T.webInfoUnknown)
+  return limits.windows
+    .map((window) => {
+      const pct = Math.max(0, Math.min(100, Math.round(window.usedPercent)))
+      const level = pct >= 85 ? "bad" : pct >= 60 ? "warn" : "ok"
+      const reset = window.resetsAt
+        ? '<span class="when">' + esc(fill(T.webInfoResets, { when: L.clock(window.resetsAt) })) + "</span>"
+        : ""
+      const value = window.hit ? T.webInfoLimitHit : pct + "%"
+      return (
+        '<div class="win" data-level="' + level + '">' +
+        '<span class="wn">' + esc(window.name) + "</span>" +
+        '<span class="bar" aria-hidden="true"><i style="--w:' + pct + '%"></i></span>' +
+        '<span class="pct">' + esc(value) + "</span>" + reset + "</div>"
+      )
+    })
+    .join("")
+}
+
 /**
  * `STATES` in `input/info.js`: the four dots that have a word. A state outside
  * it — including the empty one a server row carries when nothing measured it —
@@ -382,6 +404,10 @@ function html(d: Facts): string {
   // Read-only pairings get no buttons rather than dead ones.
   if (models.length && host.writable()) out += sec(++i, T.webInfoSwitchModel, "", modelsHTML(models, current))
   out += sec(++i, T.webInfoUsage, "", usageHTML(u))
+  if (d.limits) {
+    const when = d.limits.at ? esc(fill(T.webInfoAsOf, { when: L.clock(d.limits.at) })) : ""
+    out += sec(++i, T.webInfoLimits, when, limitsHTML(d.limits))
+  }
   // Where this project can be opened. The section is drawn only when the
   // daemon read the directory at all: a session with no working directory has
   // not got an empty project, it has not been placed.
@@ -470,13 +496,16 @@ export const Info = {
     if (!open || !overlay) return
     forId = open
     data = SessionFacts.peek(forId) as Facts | null
+    const row = session()
+    conversationSeen = String(row?.sessionId || "")
+    const force = factsMissConversation(conversationSeen, data)
     drawn = false
     pending = null
     busy = false
     window.clearTimeout(confirming)
     said("")
     overlay.hidden = false
-    load(forId, false)
+    load(forId, force)
     ;(node("info-close") as HTMLButtonElement | null)?.focus({ preventScroll: true })
   },
 
@@ -500,6 +529,7 @@ export const Info = {
     forId = null
     pending = null
     busy = false
+    conversationSeen = ""
     window.clearTimeout(confirming)
   },
 
@@ -515,6 +545,14 @@ export const Info = {
       Info.close()
       return
     }
+    const s = session()
+    const conversation = String(s?.sessionId || "")
+    const refresh = conversationBecameKnown(conversationSeen, conversation)
+    conversationSeen = conversation
+    if (refresh) {
+      load(forId, true)
+      return
+    }
     // The status line reads the same answer on its own clock; a card open
     // beside it should not be the last to know.
     const shared = SessionFacts.peek(forId) as Facts | null
@@ -523,7 +561,6 @@ export const Info = {
       draw()
       return
     }
-    const s = session()
     if (data && s && statusShape(s) !== stateSeen) draw()
   },
 
