@@ -1,351 +1,131 @@
 # Clawdline
 
-**A local control plane for Claude Code and Codex: every live session in one list, work handed
-from one session to another with its claims checked first, and a record of what was delivered
-that outlives the chat it happened in.**
+**A local control plane for Claude Code and Codex. See every session, know which one needs you,
+and let agents hand work to each other without losing the delivery record.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](go.mod)
 
-[Where it stands](#where-it-stands) · [Install](#install-and-run) ·
-[From a browser or a phone](#from-a-browser-or-a-phone) · [Free and Cloud](#free-and-cloud) ·
-[Architecture](docs/architecture.md) · [Getting started](docs/getting-started.md) ·
-[All documents](docs/README.md)
+Clawdline is a Go daemon with a React console. Your agents and code keep running on your machine;
+the optional Cloud connection is only an encrypted path to that machine from another device.
 
-This is the second generation of Clawdline. The first was a macOS-only Swift app. This one keeps
-the product and changes what it stands on:
+## Why Clawdline?
 
-- **The core is one Go binary**, which is both the daemon and its command line. It reads the
-  sessions, runs the broker, keeps one SQLite store and serves one HTTP + SSE API.
-- **The interface is a React web console**, served by that daemon. The same page is the window on
-  the Mac and the page in a browser.
-- **A thin native shell per platform** does only what a web page cannot: a window, a menu bar
-  item, a global hotkey, the notch. Today there is a macOS shell. On Linux you run the daemon
-  and use a browser. Windows is not supported yet.
+One coding agent is easy to follow. Several agents across several repositories quickly become a
+wall of terminal tabs: you forget which project a session belongs to, miss a permission question,
+and lose track of whether delegated work was merely finished or actually landed.
 
-Execution never leaves your machine. Clawdline Cloud is an optional, encrypted way to reach it from
-a phone or another machine. It is off until you turn it on.
+Clawdline turns those independent terminals into one observable, controllable system.
 
-<!--
-  These five images are the Swift app's, the generation this one replaced. They show the same
-  product doing the same things, and the React console does not look exactly like them. Kept
-  deliberately on 2026-09-21 — a README with no picture of the thing is worse — and to be retaken
-  against the current console.
--->
+### Project-based sessions
 
-| | |
-|---|---|
-| **See which session wants you**<br><br>Live work, finished runs and questions waiting for an answer, in one list. Children a session dispatched stay grouped under it. | <img src="docs/assets/sessions-live.gif" width="380" alt="The session list updating as one session waits for an answer, another finishes, and the selection moves through the list."> |
-| **Read the conversation back**<br><br>The recorded messages with their real headings, tables and code, and tool runs collapsed — not a picture of a terminal. | <img src="docs/assets/transcript.png" width="380" alt="A transcript with a heading, a formatted table, code, and a collapsed tool run."> |
-| **Carry the same list to your phone**<br><br>See what is working or waiting, read a transcript, and answer from a paired device.<br><br>[Remote access and pairing →](docs/remote.md) | <img src="docs/assets/fleet-phone.png" width="300" alt="The session list on a phone, with Claude Code and Codex children grouped under the sessions that dispatched them."> |
-| **Talk instead of typing**<br><br>Dictation lands in the composer as you speak; a local Whisper pass can go over the technical words and mixed-language sentences afterwards. | <img src="docs/assets/voice.gif" width="380" alt="Speech being transcribed into the composer and refined by a local Whisper pass."> |
+Every Claude Code or Codex session is shown with its project, terminal, assistant, and current
+work. Sessions started by hand in tmux are included too; Clawdline does not require a wrapper or
+install hooks into either agent.
 
-<img src="docs/assets/island.gif" width="760" alt="The mascot in the MacBook notch showing active work, a session waiting for attention, and a long job finishing.">
+### Session status and attention management
 
-## Where it stands
+See which sessions are working, waiting for you, idle, finished, or unreadable. Open a session to
+read its real transcript, answer a question, send another instruction, interrupt it, or close it.
+Unknown evidence stays `unknown` instead of being reported as idle.
 
-Pre-1.0. The binary reports itself as `0.0.1-p0`. Everything below can be checked against a
-checkout, and the last column says how.
+<p align="center">
+  <img src="docs/assets/sessions-live.gif" width="760" alt="Clawdline updating the state of several Claude Code and Codex sessions.">
+</p>
 
-| | State | How to check |
-| --- | --- | --- |
-| Daemon and console on macOS | Works | `curl -s http://127.0.0.1:7727/v1/health` |
-| Sessions in tmux and iTerm2 on macOS | Works | start `claude` or `codex` inside tmux; it appears in the list |
-| Linux | The daemon has run in a Linux container and answered `/v1/health`. Sessions go through tmux on the same code path as macOS, but have not been exercised on Linux | `clawdline doctor` prints the resolved state directory |
-| The macOS app | Works when built from source. Apple silicon, macOS 13+, signed ad hoc | `tools/package-macos.sh` |
-| Handing work to another session (the broker) | Works. A Codex task may name `reasoning_effort`; `serialize` and `attach_session` are refused by name, not ignored | `POST /v1/orchestrator/tasks` with one of those two returns `bad_task` |
-| Board, backlog and a session's own to-do list | Works. A new install starts empty | `GET /v1/work/board` |
-| A browser on the same machine | Works | `clawdline open` |
-| A phone, without an account | **Works, over a tunnel you run.** The pairing page, the gate and a launcher for your own `cloudflared` are all in. A clean browser was driven through it end to end; no public tunnel has been raised from this repository | [below](#from-a-browser-or-a-phone) |
-| A phone, through Clawdline Cloud | **Preview.** The machine side is written and was driven end to end against a local copy of the service, not yet against the production service | [Free and Cloud](#free-and-cloud) |
-| Windows | The daemon cross-compiles and has not been run on Windows. It could not list or drive sessions there yet: no tmux, no ConPTY backend, no process inventory | `internal/adapters/process/ps_windows.go` |
-| Interface language | The console ships one catalog, Traditional Chinese. The command line is English | `web/console/public/strings/` |
+### Use Codex and Claude Code from your phone
 
-**It answers for itself.** It was built to run next to the Swift app it replaces, so it has its
-own port (7727), its own state directory (`clawdline-next`) and its own credentials, and nothing
-in `~/.config/clawdline` is written. Until 2026-09-19 it also handed any route it did not own to
-that app on 7717; that app has been stopped, so it no longer does — a route it has not taken over
-answers `501 not_implemented` and names itself. Forwarding is still there for anyone who wants it,
-behind `CLAWDLINE_NEXT_UPSTREAM_PORT`.
+The same console works in a browser. With the optional Clawdline Cloud connection, you can check
+progress, read transcripts, receive attention notices, and reply from your phone while execution
+stays on your own machine. Reading and sending are separate permissions.
 
-## What it does
+<p align="center">
+  <img src="docs/assets/fleet-phone.png" width="390" alt="Clawdline on a phone, showing working, waiting, and child sessions across several projects.">
+</p>
 
-### Every session, in one list
+### Scheduled tasks, executed by an agent
 
-Every Claude Code and Codex session running in tmux, and in iTerm2 on a Mac, is a row: which
-assistant it is, which project, and whether it is working, waiting for an answer, or idle. A
-state that could not be read is reported as `unknown`, never as idle. Guessing "idle" would be a
-confident wrong answer about somebody's work.
+Save a task for Claude Code or Codex and run it once or on a local schedule. Scheduled work uses
+the same broker, isolation, timeout, status, and result records as interactive delegation. If the
+daemon was offline, it can catch up the latest eligible occurrence without replaying every missed
+run.
 
-Open a row and the transcript is read from the assistant's own record under `~/.claude` or
-`~/.codex`, not scraped from the screen. From the same page you can send text, answer the question
-a session is stuck on, interrupt it, close it, start a new session in a directory this machine has
-already worked in, or resume an earlier conversation.
+### Webhooks for complex work
 
-**Nothing is installed into Claude Code or Codex.** No hooks, no MCP server, no wrapper around the
-`claude` or `codex` command, no edits to their settings. Those directories are only read, which is
-why a session you started by hand an hour ago is in the list too.
+Bind a Cloud webhook to a saved agent task. An incoming event can start a full agent session on
+your machine instead of a fixed shell command, while durable claims and receipts prevent the same
+delivery from silently opening duplicate work.
 
-### Handing work to another session
+### Clawdfather coordinates other sessions
 
-A session can hand a bounded piece of work to a new session, of either assistant. It writes the
-task down as `task.json` and posts `POST /v1/orchestrator/tasks`. The daemon opens a terminal for
-the child, adds its briefing (`CHILD.md`), types one first line carrying a secret only that task
-holds, and collects the answer from the `result.json` the child writes. The session that asked is
-told when the child finishes.
+Designate one live session as **Clawdfather**, the machine-wide coordinator. It can inspect the
+session fleet, hand bounded work to Claude Code or Codex children, wait for results, move a line of
+work to another session, and keep delivery separate from review and landing.
 
-- **Declared write paths are checked before anything opens.** A task lists the paths it will
-  write in `claims`. If a live task under a *different* root has claimed an overlapping path, the
-  dispatch is refused with `workspace_busy`. The refusal names the task holding the path, its
-  title, and every conflicting path. Two tasks under the same root only get a `claims_overlap`
-  warning, because that root drew the plan.
-- **A child's work can be isolated.** `"isolation": "worktree"` gives it its own git worktree and
-  branch, so its delivery is a branch head rather than edits in a shared tree.
-- **Delivered is not landed.** A task that returned `success` has delivered an answer. Whether
-  that answer reached the target branch is a separate landing record, proved from git ancestry.
-- **Every task has a clock.** `timeout_minutes` is 1 to 240. A root may have
-  `orchestrator_max_children` children out at once (default 5), and the whole machine four times
-  that.
-- **Side effects happen once.** Typing into a terminal, opening a tab and making a checkout are
-  recorded as intent in the same transaction as the fact that owes them, and run after it commits.
-  If the daemon dies in the middle of typing, it records the effect as `unknown` and does not
-  type it twice.
+## How it compares
 
-The same broker also carries messages between sessions, handoffs of a whole line of work to a new
-session, a machine-wide coordinator role with leases, and waits. [Architecture →](docs/architecture.md#the-broker)
+[Claude Squad](https://github.com/smtg-ai/claude-squad) is a strong choice when you want a
+terminal-first launcher for parallel agents in isolated git worktrees. Clawdline also observes
+sessions you started yourself and adds browser/phone control, scheduled and webhook-triggered
+work, and durable coordination records.
 
-### Board, backlog, and a session's own to-do list
+[Agent Deck](https://github.com/rkunnamp/agent-deck) supports a wider range of terminal agents and
+is a good fit when you want one TUI for many tools. Clawdline deliberately goes deeper on Claude
+Code and Codex: their transcripts, attention states, cross-session dispatch, landing evidence,
+and remote operation.
 
-Three structures, kept apart on purpose, because they have different readers:
+[Crystal](https://github.com/stravu/crystal) focuses on desktop workflows where each task gets a
+git worktree and changes are reviewed and merged. Clawdline is a daemon and control plane: it can
+manage existing sessions, expose them to a web console, and coordinate work that is not limited
+to a single desktop review flow.
 
-| | For | Who creates an item | Who closes it |
-| --- | --- | --- | --- |
-| **Board** | A person: what is happening, and what is waiting on me | a person, or a proposal a person accepted | evidence (the work landed), or a person |
-| **Backlog** | Planning: work that is committed to but not started | a person | only a person, or by moving it to the board |
-| **Session to-do** | A session: what it still owes | the broker, from facts it already records. Today that is each dispatch: the root owes collecting and landing the result | the broker, when the matching fact arrives |
+Clawdline is not an IDE and it does not replace Claude Code or Codex. Choose it when the difficult
+part is no longer starting an agent, but operating several of them reliably over time.
 
-The session to-do list does not appear on the board. It is on the session's own panel, and a
-session can read it through the API. Nobody has to tend it: nothing depends on an assistant
-remembering to call a route.
+## Install
 
-### Schedules
-
-Task templates that dispatch on local wall-clock time. An occurrence missed while the daemon was
-down runs once when it comes back, not once per missed occurrence. A schedule's interval counts
-from its last run or from when this daemon first saw it, whichever is later, so a schedule restored
-from a backup does not fire the moment the clock ticks.
-[docs/schedules.md](docs/schedules.md) (Traditional Chinese).
-
-### Also
-
-- **Pictures**: attach, paste or drop an image into a session. On a Mac it reaches the assistant
-  as a pasted image; elsewhere as a file path.
-- **Dictation** from the console, read back by `whisper-cli` on your own machine, if you have it
-  and a model file installed. Without them, the refusal says which one is missing.
-- **Web Push** to a paired browser (VAPID, RFC 8291): a child's `notify`, a completion notice that
-  could not be delivered, a failed schedule, and a board proposal. A push when a session starts
-  waiting is not wired yet.
-- **The macOS app**: a window onto the console, a menu bar item, an input bar on a global hotkey
-  you choose, launch at login, and a mascot in the notch.
-
-## Coming from the Swift app
-
-This repository used to hold the Swift app. What changes for you:
-
-- **Installing this one never disturbed that one.** It has its own bundle id, state directory,
-  port and credentials, and nothing in `~/.config/clawdline` is written — which is what made it
-  safe to run both while the move was happening, and is why the old app's files are still there to
-  read afterwards.
-- **Nothing is migrated for you.** New tasks, board items and settings start in this app's own
-  store. The old task records and board cards are not converted. Schedules are the exception you
-  can carry over yourself: `POST /v1/orchestrator/schedule-imports` takes the Swift app's schedule
-  files byte for byte. It is off until you set `schedule_imports_enabled` in the config, because
-  an import can name any project directory.
-- **This daemon reads a few of the Swift app's files, read-only,** so that its screens match:
-  session titles, old task records and board cards, saved pictures, and the
-  dispatch policy. Those files stopped changing when the app did, so what they hold is history
-  this daemon fills gaps with, not a second live source. It never reads the Swift app's secrets,
-  tokens or keys. That read lives in one adapter, `internal/adapters/swiftstore`, so it can be
-  removed in one piece, and `CLAWDLINE_NEXT_LEGACY_STORE=off` stops it without a rebuild.
-- **Not in this generation yet:** a bundled tunnel binary (you install `cloudflared` yourself),
-  Claude Code hook installation, snippets, the skills menu, the dev-server list, the project
-  timeline, and interface languages other than Traditional Chinese.
-
-## Install and run
-
-There is no release download yet. You build it from source. The full walk-through, including
-what to do when something does not come up, is [docs/getting-started.md](docs/getting-started.md).
-
-You need Go 1.25 or newer, Node.js with npm, tmux, and Claude Code or Codex.
+Clawdline is pre-1.0 and does not have a release download yet. Build it from source on macOS or
+Linux. You need Go 1.25 or newer, Node.js with npm, tmux, and Claude Code or Codex. Windows builds,
+but session discovery and control are not supported there yet.
 
 ```sh
 git clone https://github.com/sainteye/clawdline.git
 cd clawdline
 
-(cd web && npm install && npm run build)        # the console, into web/console/dist
-go build -o bin/clawdline ./cmd/clawdline       # the daemon and CLI
-
-CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" \
-  ./bin/clawdline serve                         # listens on 127.0.0.1:7727
+(cd web && npm install && npm run build)
+go build -o bin/clawdline ./cmd/clawdline
 ```
 
-In a second terminal:
+Start the daemon:
 
 ```sh
-./bin/clawdline doctor      # version, port and state directory as this binary resolves them
-./bin/clawdline open        # opens the console in your browser, signed in
+CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
 ```
 
-`WEB` tells it where the console's files are; it is the only one you need. An unported route
-answers `501 not_implemented` and names itself, and `/v1/sessions` is answered here.
-
-Older notes set `CLAWDLINE_NEXT_STANDALONE=1` and `CLAWDLINE_NEXT_OWN_SESSIONS=1` as well. Those
-were how you opted out of handing unowned routes to the Swift app on 7717 while that was the
-default; since that app was stopped on 2026-09-19 it is the default, and the two variables are
-read, still mean what they meant, and change nothing. To forward on purpose — this daemon in front
-of another that answers — set `CLAWDLINE_NEXT_UPSTREAM_PORT` to its port.
-
-**On a Mac**, `tools/package-macos.sh` builds `dist/Clawdline Next.app` (add `--dmg` for a disk
-image). It needs Xcode's command line tools for `swiftc`, as well as Go and npm. The app starts the
-daemon bundled inside it, pointed at the console in its own bundle, and signs its own window in.
-
-## From a browser or a phone
-
-**A browser on this machine.** `clawdline open` creates a device for that browser and opens the
-console signed in. That device can read. `clawdline open --send` also lets it type into sessions.
-
-**A phone, without an account.** Start a tunnel with `clawdline tunnel`, which runs the
-`cloudflared` you installed and always passes its own `--config`, so it can never pick up another
-tunnel's configuration. It refuses to start while no device has been paired, or while remote is
-off. Open the address it prints on the phone and you meet the door: ask to pair, and
-`clawdline pair --watch` prints six digits on this machine only. Type them and the console opens.
-A newly paired phone can read; typing is a second permission.
-
-**A phone, through Clawdline Cloud.** The other way, with an account and no tunnel of your own:
-the next section.
-
-What stands in front of every request, in the order it meets them:
-
-- **Loopback only by default.** The daemon binds `127.0.0.1`. `CLAWDLINE_NEXT_HOST` changes that,
-  and the daemon logs a warning when it does.
-- **The `Host` header is checked first.** Only `127.0.0.1`, `localhost`, `::1`, your configured
-  `remote_hostname` and `*.trycloudflare.com` are answered. DNS rebinding cannot change `Host`.
-- **Cross-site requests are refused.** A change must be JSON from this page's own origin. A
-  change carried by the cookie must also have `Origin` and `Sec-Fetch-Site: same-origin`.
-- **Every route needs a credential, including from loopback.** The exceptions are the console's
-  static files, `/v1/health`, `/v1/strings` and the sign-in routes. Once a tunnel exists, a request
-  from the other side of the world also arrives from `127.0.0.1`.
-- **Tokens are stored as SHA-256 hashes** and compared in constant time.
-- **Reading and typing are separate permissions.** A newly paired device can only read. Typing
-  into a session is code execution, because the assistant runs a shell.
-- **Pairing needs your screen.** The six-digit code is shown on this machine and never sent back
-  to the device that asked. It expires after two minutes. Five wrong guesses in 24 hours, or three
-  pairing requests in ten minutes, and it stops accepting until the window passes.
-
-## Free and Cloud
-
-| | Free (this repository) | Clawdline Cloud |
-| --- | --- | --- |
-| What it is | Everything on one machine: daemon, console, native shell, broker, board, schedules | An optional hosted service at [clawdline.com](https://clawdline.com/) that relays between your machine and your other devices |
-| Account | None | A Clawdline account |
-| Reach | This machine's browser | A phone or another computer, through app.clawdline.com |
-| Machines | One | Several, under one account |
-| Where the work runs | Your machine | Your machine. Cloud never runs anything |
-| What a service can read | There is no service | Signed ciphertext only (AES-256-GCM, Ed25519). The content key stays on hardware you own |
-
-The machine's half of the Cloud protocol is in this repository, under the same license. The hosted
-service, meaning the relay, the account API and the hosted console, is not.
-
-Cloud has two switches, both off by default. `clawdline cloud on` lets the machine connect.
-`clawdline cloud commands on` lets a paired viewer act on it, not just read, and each request
-re-reads that switch. A viewer also needs the matching capability on its own device record. A
-broken Cloud setting never stops the daemon. `/v1/cloud/status` says why the line is down.
-
-Where Cloud stands: the machine side of pairing, the encrypted line and most commands are done,
-and have been exercised against a local copy of the service. The commands
-`agent`, `shell`, `skills`, `timeline`, `snippets` and `schedule` answer `unknown_command`, and
-`dispatch` is refused. More than one machine on one account has not been tested with this daemon.
-Turning it on is in [docs/getting-started.md](docs/getting-started.md#turn-on-clawdline-cloud-optional).
-
-## Platforms
-
-| | macOS | Linux | Windows |
-| --- | --- | --- | --- |
-| Daemon and console | Yes | Run in a container | Builds; not run yet |
-| Sessions you started yourself | tmux, iTerm2 | tmux (not exercised yet) | Not yet |
-| Sessions the daemon opens | tmux, iTerm2 | tmux (not exercised yet) | Not yet |
-| Native shell | Yes | No: use a browser | Not written (WebView2 planned) |
-
-The binary is pure Go (`CGO_ENABLED=0`), so the macOS, Linux and Windows builds for amd64 and
-arm64 all come from one machine.
-
-On Linux, run your assistants in tmux. The daemon does not push keys into a terminal it cannot
-drive through tmux: it does not use `TIOCSTI`, and it does not read `/dev/input` for a hotkey.
-Either would give it the power to read or type anything you do.
-[docs/cross-platform.md](docs/cross-platform.md) (Traditional Chinese) has every feature,
-platform by platform.
-
-## Documentation
-
-[docs/README.md](docs/README.md) lists every document and says which are public design notes and
-which are internal records of the move from the Swift app. Start with:
-
-- [docs/getting-started.md](docs/getting-started.md): from clone to a running console, a browser,
-  and Cloud
-- [docs/architecture.md](docs/architecture.md): the whole system on one page
-
-The rules, the work structures and the cross-platform survey are in English; the remaining design
-notes are written in Traditional Chinese, and the English pages point into them.
-
-## Contributing
+Then, in another terminal:
 
 ```sh
-go test ./...                        # the Go tests
-(cd web && npm run check)            # TypeScript, no emit
-go run ./tools/contract-gen -check   # the generated Go and TypeScript match api/v1
-tools/check-legacy-css.sh            # the copied files still match the manifest they were pinned to
-tools/check-private.sh               # nothing personal is about to be published
-tools/check-private.sh -history      # nor in any commit behind it
+./bin/clawdline doctor
+./bin/clawdline open
 ```
 
-Two of those need a word of explanation.
+Run Claude Code or Codex inside tmux and the session will appear in the console:
 
-`check-legacy-css.sh` holds the files under `web/console/src/legacy/` to the SHA-256 each was
-pinned to in `MANIFEST.json` when it was copied. It needs nothing but this repository, so it gives
-the same answer on a fresh clone as it does on the machine the files came from. Where the original
-Swift app is also present it says which of its files have changed since the copy was taken — that
-is a fact about the other tree, not a failure of this one, and it does not fail the check.
+```sh
+tmux new -s work
+cd /path/to/your/project
+claude  # or: codex
+```
 
-`check-private.sh` looks for what belongs to whoever ran this rather than to the project: a real
-home directory, a real task or session id, a credential, an email address. It also reads a word
-list from `.git/info/private-words`, one word per line, which git never commits — put the names
-of your own projects and machines there. Without that list it answers **undetermined** (exit 3),
-not clean, because the rule that needs it could not run. The rules, and what each one lets
-through, are in `tools/check-private.sh -rules`.
+On macOS, you can also build the native shell:
 
-`-history` runs the same rules over the commits rather than the files on disk: a word committed
-and taken out again is gone from the working tree and still in what `git push` sends. It names
-the commit, the file and the line, says whether the working tree still carries the same thing,
-and never prints the text it matched. [docs/privacy-guard.md](docs/privacy-guard.md) is the whole
-of it.
+```sh
+tools/package-macos.sh          # dist/Clawdline Next.app
+tools/package-macos.sh --dmg    # also create a disk image
+```
 
-There is no CI yet. The API is defined in `api/v1/*.schema.json`. Change the schema, then run
-`go run ./tools/contract-gen`. Do not edit the generated files by hand. Commit messages and code
-comments are in English.
+For pairing, Cloud setup, diagnostics, and troubleshooting, continue with the
+[getting-started guide](docs/getting-started.md).
 
-## Credits
-
-The mascot is fan art of the pixel character that appears in Claude Code, known in the community as
-**Clawd**. This project is not affiliated with, endorsed by, or connected to Anthropic. Claude and
-Claude Code are trademarks of Anthropic.
-
-Putting live agent activity in the MacBook's camera housing is
-[CLI Island](https://github.com/bistin/cc-island) by [bistin](https://github.com/bistin), which got
-there first; the implementation here is its own and works differently, but the idea is borrowed with
-thanks. The shape of the notch itself comes from
-[DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) by way of
-[boring.notch](https://github.com/TheBoredTeam/boring.notch).
-
-## License
-
-[MIT](LICENSE)
+[Architecture](docs/architecture.md) · [Remote access](docs/remote.md) ·
+[All documentation](docs/README.md) · [MIT License](LICENSE)
