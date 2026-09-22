@@ -11,7 +11,11 @@ footer.status-line .files[hidden] {
 
 /* A file row is now a disclosure. Keep the copied three-column layout on its
    button and let the patch occupy the full row beneath it. */
-.git-file {
+/* Two classes are intentional. Vite places this component sheet before the
+   copied detail sheet in the production bundle, so the copied `.git-file`
+   rule appears later. Higher specificity keeps the disclosure layout from
+   collapsing its whole button into that rule's 28px first grid column. */
+.git-files .git-file {
   display: block;
   padding: 0;
 }
