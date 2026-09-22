@@ -18,6 +18,23 @@ func gitPath(r *http.Request) (string, bool) {
 	return sessionVerbIs(r, "git", http.MethodGet)
 }
 
+// gitDiffPath recognises the one nested read below /git. Split first and
+// decode only the session id, under the same gate as the two-segment route.
+func gitDiffPath(r *http.Request) (string, bool) {
+	if r.Method != http.MethodGet {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(routePath(r), "/v1/sessions/")
+	if !ok {
+		return "", false
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) != 3 || parts[0] == "" || parts[1] != "git" || parts[2] != "diff" {
+		return "", false
+	}
+	return decodeSegment(parts[0]), true
+}
+
 // sessionGitRoute answers the Git panel: the branch line and the changed files
 // of the repository the open session is sitting in.
 //
@@ -56,6 +73,51 @@ func (s *Server) sessionGitRoute(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 	writeJSON(w, contract.GitReply{Git: wireGitSnapshot(snapshot)})
+}
+
+// sessionGitDiffRoute answers only for a path in a fresh status reading. That
+// makes a read-only paired device able to inspect a change without turning the
+// route into a general file reader.
+func (s *Server) sessionGitDiffRoute(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.ownsSessions() {
+		s.forwardUpstream(w, r)
+		return
+	}
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "A Git diff needs a changed path")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	item, err := s.actions().Find(ctx, id)
+	if err != nil {
+		writeActionRefusal(w, err)
+		return
+	}
+	if strings.TrimSpace(item.CWD) == "" {
+		writeRefusal(w, http.StatusNotFound, "not_found", "No session named that")
+		return
+	}
+	diff, err := git.New().FileDiff(ctx, item.CWD, path)
+	if err != nil {
+		if errors.Is(err, git.ErrFileNotChanged) {
+			writeRefusal(w, http.StatusNotFound, "git_file_not_changed", "That path is not a changed file in this repository")
+			return
+		}
+		writeGitRefusal(w, err)
+		return
+	}
+	patches := make([]contract.GitPatch, 0, len(diff.Patches))
+	for _, patch := range diff.Patches {
+		patches = append(patches, contract.GitPatch{
+			Scope:       contract.GitPatchScope(patch.Scope),
+			UnifiedDiff: patch.UnifiedDiff,
+		})
+	}
+	writeJSON(w, contract.GitDiffReply{Diff: contract.GitFileDiff{
+		Path: diff.Path, Kind: contract.GitFileKind(diff.Kind), Patches: patches,
+	}})
 }
 
 // writeGitRefusal gives each way the read can end its own status and sentence,

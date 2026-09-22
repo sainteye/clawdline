@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { ProjectLink, SessionInfo, SessionInfoContext, SessionLimitWindow, SessionLimits, SessionRow } from "@clawdline/contract"
+import type { GitSnapshot, ProjectLink, SessionInfo, SessionInfoContext, SessionLimitWindow, SessionLimits, SessionRow } from "@clawdline/contract"
 import { contextCell } from "./context.js"
 import * as L from "../legacy/bridge.js"
 import { SessionFacts, requestInfo } from "../overlays/index.js"
 import { nextWord } from "../next-strings.js"
 import { conversationNotStarted } from "./readiness.js"
+import { readGit } from "../legacy/git-bridge.js"
 
 /**
  * The status line under the open conversation — the original's `footer#status-line`.
@@ -33,7 +34,8 @@ import { conversationNotStarted } from "./readiness.js"
  *   answer is `SessionFacts` (`overlays/facts.ts`), shared with the Session
  *   info card, which a press on the button opens; it is disabled while no
  *   session is open.
- * - `.files` stays hidden: the working tree is not part of this daemon's read.
+ * - `.files` carries the branch and changed-file marks from the lock-free Git
+ *   read. It opens the same panel as the Tools menu, including on a phone.
  * - `.deploy` carries whatever is running, from the same `/info` answer's
  *   `deploy` rows — the project-link walk, served from a projection per
  *   working directory (`links.go`), so the chip costs the page nothing beyond
@@ -44,7 +46,15 @@ import { conversationNotStarted } from "./readiness.js"
  *   answer is still loading the held one is drawn, as the original's
  *   `SessionFacts` does (`machineLimits`).
  */
-export function StatusLine({ row, listPending = false }: { row: SessionRow | null; listPending?: boolean }) {
+export function StatusLine({
+  row,
+  listPending = false,
+  onOpenGit,
+}: {
+  row: SessionRow | null
+  listPending?: boolean
+  onOpenGit?: () => void
+}) {
   const T = L.strings
   // The original draws only when the open session changes, so a page that has
   // never had one open shows the markup as written: a bare button, no title.
@@ -54,6 +64,7 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
   const windows = row ? (info ? overlayMachineLimits(info) : machineLimits(row.assistant))?.windows ?? [] : []
   const deploy = runningDeploy(info)
   const progress = useDeployProgress(deploy)
+  const git = useGitStatus(row)
 
   let open
   if (!drawn.current) {
@@ -110,7 +121,17 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
   return (
     <footer className="status-line" id="status-line">
       {open}
-      <button className="files" id="status-line-files" type="button" hidden></button>
+      <button
+        className="files"
+        id="status-line-files"
+        type="button"
+        hidden={!git}
+        title={T.webGitTitle}
+        aria-label={T.webGitTitle}
+        onClick={onOpenGit}
+      >
+        {git ? gitStatus(git) : null}
+      </button>
       {deployChip(deploy, progress, drawn.current)}
       <div
         className="limits"
@@ -119,6 +140,74 @@ export function StatusLine({ row, listPending = false }: { row: SessionRow | nul
       ></div>
     </footer>
   )
+}
+
+function gitStatus(git: GitSnapshot) {
+  const branch = git.branch || String(git.head || "").slice(0, 8)
+  const staged = git.files.filter((file) => file.staged).length
+  const unstaged = git.files.filter((file) => file.unstaged && file.kind !== "untracked" && file.kind !== "conflict").length
+  const untracked = git.files.filter((file) => file.kind === "untracked").length
+  const conflicts = git.files.filter((file) => file.kind === "conflict").length
+  return (
+    <>
+      <span className="branch">⎇ {branch}{git.ahead ? ` ↑${git.ahead}` : ""}{git.behind ? ` ↓${git.behind}` : ""}</span>
+      {git.clean ? <span className="mark" data-k="clean">✓</span> : null}
+      {staged ? <span className="mark" data-k="staged">+{staged}</span> : null}
+      {unstaged ? <span className="mark" data-k="unstaged">*{unstaged}</span> : null}
+      {untracked ? <span className="mark" data-k="untracked">?{untracked}</span> : null}
+      {conflicts ? <span className="mark" data-k="conflict">!{conflicts}</span> : null}
+    </>
+  )
+}
+
+/** The working tree follows the same visible-minute and turn-end cadence as info. */
+function useGitStatus(row: SessionRow | null): GitSnapshot | null {
+  const id = row?.id ?? null
+  const state = row?.state ?? ""
+  const [answer, setAnswer] = useState<{ id: string; git: GitSnapshot } | null>(null)
+  const ticket = useRef(0)
+  const stateSeen = useRef(state)
+
+  const load = useCallback(() => {
+    if (!id || document.hidden) return
+    const mine = ++ticket.current
+    readGit(id).then(
+      (data) => {
+        if (mine === ticket.current && data.git) setAnswer({ id, git: data.git })
+      },
+      () => {
+        if (mine === ticket.current) setAnswer(null)
+      },
+    )
+  }, [id])
+
+  useEffect(() => {
+    ticket.current += 1
+    stateSeen.current = state
+    setAnswer(null)
+    load()
+  }, [id, load])
+
+  useEffect(() => {
+    const ended = stateSeen.current === "working" && state !== "working"
+    stateSeen.current = state
+    if (ended) load()
+  }, [state, load])
+
+  useEffect(() => {
+    if (!id) return
+    const timer = window.setInterval(load, FRESH_MS)
+    const visible = () => {
+      if (!document.hidden) load()
+    }
+    document.addEventListener("visibilitychange", visible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener("visibilitychange", visible)
+    }
+  }, [id, load])
+
+  return answer?.id === id ? answer.git : null
 }
 
 /**

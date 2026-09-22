@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import type { GitSnapshot, SessionRow } from "@clawdline/contract"
+import type { GitFileDiff, GitSnapshot, SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
-import { bodyHTML, gitSentence, readGit } from "../legacy/git-bridge.js"
+import { bodyHTML, gitSentence, readGit, readGitDiff } from "../legacy/git-bridge.js"
 
 /**
  * `section#git-panel`: a read-only view of the open session's repository,
@@ -20,7 +20,7 @@ import { bodyHTML, gitSentence, readGit } from "../legacy/git-bridge.js"
 export function GitPanel({ row, open, onClose }: { row: SessionRow | null; open: boolean; onClose: (restore: boolean) => void }) {
   const T = L.strings
   const body = useRef<HTMLDivElement>(null)
-  const [state, setState] = useState<Panel>({ loading: false, error: null, snapshot: null })
+  const [state, setState] = useState<Panel>(emptyPanel())
   // `ticket`: a reading is the current one only while nobody has asked again
   // and the panel is still open on the same session.
   const ticket = useRef(0)
@@ -28,11 +28,11 @@ export function GitPanel({ row, open, onClose }: { row: SessionRow | null; open:
 
   const load = (id: string) => {
     const mine = ++ticket.current
-    setState({ loading: true, error: null, snapshot: null })
+    setState({ ...emptyPanel(), loading: true })
     readGit(id).then(
       (data) => {
         if (mine !== ticket.current) return
-        setState({ loading: false, error: null, snapshot: data.git || { branch: "", head: "", ahead: 0, behind: 0, clean: true, files: [] } })
+        setState({ ...emptyPanel(), snapshot: data.git || { branch: "", head: "", ahead: 0, behind: 0, clean: true, files: [] } })
       },
       (e: unknown) => {
         if (mine !== ticket.current) return
@@ -40,7 +40,7 @@ export function GitPanel({ row, open, onClose }: { row: SessionRow | null; open:
         // flattened into one (`gitSentence`): "無法讀取 Git 變更" was every
         // refusal this panel had, including the one that was this console
         // refusing its own request.
-        setState({ loading: false, error: gitSentence(e, T.webGitFailed), snapshot: null })
+        setState({ ...emptyPanel(), error: gitSentence(e, T.webGitFailed) })
       },
     )
   }
@@ -51,7 +51,7 @@ export function GitPanel({ row, open, onClose }: { row: SessionRow | null; open:
     if (open && row) load(row.id)
     else {
       ticket.current += 1
-      setState({ loading: false, error: null, snapshot: null })
+      setState(emptyPanel())
     }
     // The id is the subject; `load` reads everything else through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,7 +104,33 @@ export function GitPanel({ row, open, onClose }: { row: SessionRow | null; open:
           {T.webGitClose}
         </button>
       </div>
-      <div className="scroller panel-view-body" id="git-body" aria-live="polite" ref={body}></div>
+      <div
+        className="scroller panel-view-body"
+        id="git-body"
+        aria-live="polite"
+        ref={body}
+        onClick={(event) => {
+          const target = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-git-path]")
+          const path = target?.dataset.gitPath
+          if (!path || !row) return
+          if (state.openPath === path) {
+            setState((at) => ({ ...at, openPath: null, diffLoading: false, diffError: null, diff: null }))
+            return
+          }
+          const mine = ++ticket.current
+          setState((at) => ({ ...at, openPath: path, diffLoading: true, diffError: null, diff: null }))
+          readGitDiff(row.id, path).then(
+            (data) => {
+              if (mine !== ticket.current) return
+              setState((at) => ({ ...at, diffLoading: false, diff: data.diff }))
+            },
+            (error: unknown) => {
+              if (mine !== ticket.current) return
+              setState((at) => ({ ...at, diffLoading: false, diffError: gitSentence(error, T.webGitFailed) }))
+            },
+          )
+        }}
+      ></div>
     </section>
   )
 }
@@ -113,4 +139,12 @@ interface Panel {
   loading: boolean
   error: string | null
   snapshot: GitSnapshot | null
+  openPath: string | null
+  diffLoading: boolean
+  diffError: string | null
+  diff: GitFileDiff | null
+}
+
+function emptyPanel(): Panel {
+  return { loading: false, error: null, snapshot: null, openPath: null, diffLoading: false, diffError: null, diff: null }
 }

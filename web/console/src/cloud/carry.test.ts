@@ -157,6 +157,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/sessions/s1/focus"],
     ["GET", "/v1/sessions/s1/info"],
     ["GET", "/v1/sessions/s1/git"],
+    ["GET", "/v1/sessions/s1/git/diff"],
     ["POST", "/v1/places/p1/start"],
     ["POST", "/v1/places/p1/resume/claude/abc"],
     ["POST", "/v1/voice"],
@@ -187,11 +188,11 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("schedules" in CARRIED)
   assert.ok("snippets" in CARRIED)
   assert.ok("timeline" in CARRIED)
-  // 43, counted on this tree — the prior 41 plus the single-schedule read and
-  // the versioned webhook-binding write. Keep the count beside the catalog so
+  // 44, counted on this tree — including the single-schedule read, the
+  // versioned webhook-binding write and Git's per-file diff. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 43)
+  assert.equal(Object.keys(CARRIED).length, 44)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

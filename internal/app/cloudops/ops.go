@@ -599,6 +599,31 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.target) + "/git"}
 			}},
 
+		op{name: "git-diff", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "path") {
+					return plan{}, false
+				}
+				p, ok := sessionPlan(b, "")
+				if !ok {
+					return plan{}, false
+				}
+				request, ok := requestName(b["request"])
+				if !ok {
+					return plan{}, false
+				}
+				path, ok := b.nonEmpty("path")
+				if !ok || !printable(path) {
+					return plan{}, false
+				}
+				p.request, p.name, p.path = request, "read:"+request, path
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.target) + "/git/diff",
+					Query: map[string]string{"path": p.path}}
+			}},
+
 		op{name: "screen", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session") {

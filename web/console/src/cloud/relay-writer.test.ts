@@ -345,6 +345,23 @@ test("a waiting card's press is answered by the machine itself, never by the rel
   assert.ok(!client.calls.some((c) => c[0] === "answer"), "the copied `answer`, which settles on the relay, is never used")
 })
 
+test("a Git file diff carries its exact changed path and waits for the machine's answer", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/sessions/s1/git/diff?path=web%2Fconsole%2Fsrc%2Fsession%2FDetail.tsx")
+  assert.equal(res.status, 200)
+  assert.deepEqual(client.calls.pop(), [
+    "_read",
+    { machine: "mac-a", session: "s1" },
+    "git-diff",
+    { request: "req-1", path: "web/console/src/session/Detail.tsx" },
+    "read:req-1",
+    undefined,
+    undefined,
+  ])
+})
+
 test("a close carries force and the close gates last read", async () => {
   const client = new FakeClient()
   client.rows = [row("s1", { closeability: { version: "cv-7" } })]

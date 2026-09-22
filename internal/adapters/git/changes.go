@@ -72,7 +72,25 @@ var (
 	// porcelain answer is not a smaller reading of the repository, it is a
 	// reading that stops mid-line, so it is refused rather than parsed.
 	ErrTooLarge = errors.New("that repository answered with more than this read takes")
+	// ErrFileNotChanged keeps the diff route from becoming an arbitrary file
+	// reader: it serves only a path in the status snapshot taken immediately
+	// before the patch is read.
+	ErrFileNotChanged = errors.New("that path is not a changed file in this repository")
 )
+
+// Patch is one side of a file's current change. A partly staged file has two
+// patches so the index and worktree are not collapsed into one view.
+type Patch struct {
+	Scope       string
+	UnifiedDiff string
+}
+
+// Diff is the patches for one path already named by Changes.
+type Diff struct {
+	Path    string
+	Kind    Kind
+	Patches []Patch
+}
 
 // changesTimeout is the whole read's budget, and no single command may take
 // more than commandTimeout of it. The Swift route uses the same two numbers.
@@ -128,8 +146,68 @@ func (g *Git) Changes(ctx context.Context, cwd string) (Status, error) {
 	return Assemble(status, unstaged, staged), nil
 }
 
+// FileDiff reads the patch for one path in the repository's current status.
+// The status lookup is also the authorization boundary: callers cannot use a
+// read-level route to name an unchanged or arbitrary file under the session's
+// working directory.
+func (g *Git) FileDiff(ctx context.Context, cwd, path string) (Diff, error) {
+	ctx, cancel := context.WithTimeout(ctx, changesTimeout)
+	defer cancel()
+
+	status, err := g.Changes(ctx, cwd)
+	if err != nil {
+		return Diff{}, err
+	}
+	var file *File
+	for i := range status.Files {
+		if status.Files[i].Path == path {
+			file = &status.Files[i]
+			break
+		}
+	}
+	if file == nil {
+		return Diff{}, ErrFileNotChanged
+	}
+
+	out := Diff{Path: file.Path, Kind: file.Kind, Patches: []Patch{}}
+	read := func(scope string, allowDifference bool, args ...string) error {
+		patch, err := g.readOnlyWithDifference(ctx, cwd, allowDifference, args...)
+		if err != nil {
+			return err
+		}
+		if patch != "" {
+			out.Patches = append(out.Patches, Patch{Scope: scope, UnifiedDiff: patch})
+		}
+		return nil
+	}
+	if file.Kind == KindUntracked {
+		if err := read("untracked", true, "diff", "--no-index", "--", "/dev/null", file.Path); err != nil {
+			return Diff{}, err
+		}
+		return out, nil
+	}
+	if file.Staged {
+		if err := read("staged", false, "diff", "--cached", "--", file.Path); err != nil {
+			return Diff{}, err
+		}
+	}
+	if file.Unstaged || file.Kind == KindConflict {
+		if err := read("unstaged", false, "diff", "--", file.Path); err != nil {
+			return Diff{}, err
+		}
+	}
+	return out, nil
+}
+
 // readOnly runs one bounded git command and returns its stdout.
 func (g *Git) readOnly(ctx context.Context, cwd string, args ...string) (string, error) {
+	return g.readOnlyWithDifference(ctx, cwd, false, args...)
+}
+
+// readOnlyWithDifference allows git diff --no-index's documented exit 1:
+// unlike every other command here, one means that it successfully found the
+// difference it was asked to print.
+func (g *Git) readOnlyWithDifference(ctx context.Context, cwd string, allowDifference bool, args ...string) (string, error) {
 	if ctx.Err() != nil {
 		return "", ErrTimedOut
 	}
@@ -188,6 +266,12 @@ func (g *Git) readOnly(ctx context.Context, cwd string, args ...string) (string,
 		// Nothing ran, so nothing was learned about this directory.
 		if errors.Is(err, exec.ErrNotFound) {
 			return "", ErrUnavailable
+		}
+		if allowDifference {
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				return out.String(), nil
+			}
 		}
 		return "", ErrFailed
 	}

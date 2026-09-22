@@ -183,6 +183,7 @@ export type WriteRoute =
   | { op: "send"; word: Carried<"send">; session: string }
   | { op: "info"; word: Carried<"info">; session: string }
   | { op: "git"; word: Carried<"git">; session: string }
+  | { op: "git-diff"; word: Carried<"git-diff">; session: string }
   | { op: "answer"; word: Carried<"answer">; session: string }
   | { op: "end"; word: Carried<"end">; session: string }
   | { op: "focus"; word: Carried<"focus">; session: string }
@@ -324,6 +325,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "sessions" && a && b === "git" && segments.length === 3) {
       return { op: "git", word: "git", session: a }
     }
+    if (head === "sessions" && a && b === "git" && c === "diff" && segments.length === 4) {
+      return { op: "git-diff", word: "git-diff", session: a }
+    }
     return null
   }
   // The three schedule writes that are not a POST. They are parsed before the
@@ -421,6 +425,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "focus":
     case "info":
     case "git":
+    case "git-diff":
     case "uncarried":
       return "flat"
     case "push-subscribe":
@@ -573,6 +578,19 @@ export class RelayWriter {
         // branches on — because `git-bridge.ts` reads the code and not the
         // sentence (`session/GitPanel.tsx`).
         return client.git(await this.identity(client, route.session))
+      case "git-diff": {
+        const path = url.searchParams.get("path") ?? ""
+        if (!path || typeof client._read !== "function") {
+          throw failure("malformed_read", "a Git diff is read with its changed path", 400)
+        }
+        const request = this.requestID()
+        return client._read(
+          await this.identity(client, route.session),
+          "git-diff",
+          { request, path },
+          "read:" + request,
+        )
+      }
       case "places":
         return client.places(this.host.machine)
       case "past":

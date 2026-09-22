@@ -3575,6 +3575,13 @@ export interface FocusResult {
 }
 
 /**
+ * GET /v1/sessions/{id}/git/diff?path=...
+ */
+export interface GitDiffReply {
+  diff: GitFileDiff
+}
+
+/**
  * One row of `git status --porcelain=v2`, with the two diff counts joined onto it.
  * `staged` and `unstaged` are the two halves of the XY code and are not exclusive:
  * a file edited after being added is both.
@@ -3605,6 +3612,16 @@ export interface GitFile {
 }
 
 /**
+ * The current patch for one path that the same repository's status read named as
+ * changed.
+ */
+export interface GitFileDiff {
+  kind: GitFileKind
+  patches: GitPatch[]
+  path: string
+}
+
+/**
  * What happened to one file. `conflict` outranks the rest — an unmerged path is
  * the one row a reader must not mistake for an ordinary edit — and a rename is
  * named before an add or a delete because Git reports it as both.
@@ -3618,6 +3635,25 @@ export type GitFileKind =
   | "conflict"
 
 export const GitFileKindValues: readonly GitFileKind[] = ["modified", "added", "deleted", "renamed", "untracked", "conflict"] as const
+
+/**
+ * One unified diff for one side of a changed file.
+ */
+export interface GitPatch {
+  scope: GitPatchScope
+  unifiedDiff: string
+}
+
+/**
+ * Which view of the working tree produced this patch. A partly staged file has two
+ * patches so the index and worktree are never flattened into one misleading diff.
+ */
+export type GitPatchScope =
+    "staged"
+  | "unstaged"
+  | "untracked"
+
+export const GitPatchScopeValues: readonly GitPatchScope[] = ["staged", "unstaged", "untracked"] as const
 
 /**
  * The reply body. One key, because the Swift route wraps the snapshot and the page

@@ -276,6 +276,12 @@ func (s *Server) Handler() http.Handler {
 			s.sessionScreenRoute(w, r, id)
 			return
 		}
+		// A file patch is the nested Git read and must be recognised before the
+		// repository summary beside it.
+		if id, ok := gitDiffPath(r); ok {
+			s.sessionGitDiffRoute(w, r, id)
+			return
+		}
 		// A read as well (git.go): what the session's repository has changed,
 		// asked for when its panel opens.
 		if id, ok := gitPath(r); ok {

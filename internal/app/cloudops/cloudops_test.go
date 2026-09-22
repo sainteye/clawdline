@@ -159,6 +159,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: pane, name: "git",
 		method: "GET", path: "/v1/sessions/%2519/git",
 	}, {
+		word: "git-diff",
+		body: map[string]any{"type": "git-diff", "session": pane,
+			"request": "req-diff", "path": "web/console/src/session/Detail.tsx"},
+		session: pane, name: "read:req-diff",
+		method: "GET", path: "/v1/sessions/%2519/git/diff",
+		query: map[string]string{"path": "web/console/src/session/Detail.tsx"},
+	}, {
 		word:    "screen",
 		body:    map[string]any{"type": "screen", "session": pane},
 		session: pane, name: "screen",
@@ -1138,7 +1145,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		}
 	}
 	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "agent",
-		"transcript", "info", "git", "screen", "image", "documents", "document", "places",
+		"transcript", "info", "git", "git-diff", "screen", "image", "documents", "document", "places",
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",

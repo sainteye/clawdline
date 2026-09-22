@@ -9,7 +9,7 @@
 // same catalog words, and `session/GitPanel.tsx` owns the state and the
 // clicks. If `input/git-panel.js` is ever copied, these go and its exports are
 // used instead.
-import type { GitFile, GitSnapshot } from "@clawdline/contract"
+import type { GitDiffReply, GitFile, GitFileDiff, GitSnapshot } from "@clawdline/contract"
 import { T } from "./js/core/i18n.js"
 import { esc } from "./js/core/esc.js"
 import { phone } from "./js/core/env.js"
@@ -51,7 +51,13 @@ export function mark(file: GitFile): { text: string; label: string } {
  * neither diff has no measurement, and an empty `stats` span is what the
  * original leaves in its place so the row keeps its columns.
  */
-export function row(file: GitFile): string {
+export function row(
+  file: GitFile,
+  expanded = false,
+  diffLoading = false,
+  diffError: string | null = null,
+  diff: GitFileDiff | null = null,
+): string {
   const state = mark(file)
   const title = file.from ? String(file.from) + " → " + String(file.path) : String(file.path)
   const hasStats = typeof file.additions === "number" && typeof file.deletions === "number"
@@ -62,6 +68,8 @@ export function row(file: GitFile): string {
     '<li class="git-file" data-kind="' +
     e(file.kind || "modified") +
     '">' +
+    '<button class="git-file-toggle" type="button" data-git-path="' + e(file.path) +
+    '" aria-expanded="' + (expanded ? "true" : "false") + '">' +
     '<span class="mark" aria-label="' +
     e(state.label) +
     '" title="' +
@@ -75,12 +83,39 @@ export function row(file: GitFile): string {
     e(shortened(file.path)) +
     "</span>" +
     stats +
+    "</button>" +
+    (expanded ? diffHTML(diffLoading, diffError, diff) : "") +
     "</li>"
   )
 }
 
+function diffHTML(loading: boolean, error: string | null, diff: GitFileDiff | null): string {
+  if (loading) return '<div class="git-diff-note" role="status">' + e(S.webLoading) + "</div>"
+  if (error) return '<div class="git-diff-note err" role="alert">' + e(error) + "</div>"
+  if (!diff || !diff.patches.length) return '<div class="git-diff-note">' + e(S.webGitClean) + "</div>"
+  return '<div class="git-diff">' + diff.patches.map((patch) => {
+    const label = patch.scope === "staged" ? S.webGitStaged
+      : patch.scope === "untracked" ? S.webGitUntracked : S.webGitUnstaged
+    const lines = String(patch.unifiedDiff || "").replace(/\n$/, "").split("\n")
+    return '<section class="git-patch"><h3>' + e(label) + '</h3><pre>' + lines.map((line) => {
+      const kind = line.startsWith("+") && !line.startsWith("+++") ? "add"
+        : line.startsWith("-") && !line.startsWith("---") ? "del"
+          : line.startsWith("@@") ? "hunk" : "ctx"
+      return '<code data-kind="' + kind + '">' + e(line || " ") + "</code>"
+    }).join("\n") + "</pre></section>"
+  }).join("") + "</div>"
+}
+
 /** `render`, whichever of its three states the panel is in. */
-export function bodyHTML(state: { loading: boolean; error: string | null; snapshot: GitSnapshot | null }): string {
+export function bodyHTML(state: {
+  loading: boolean
+  error: string | null
+  snapshot: GitSnapshot | null
+  openPath?: string | null
+  diffLoading?: boolean
+  diffError?: string | null
+  diff?: GitFileDiff | null
+}): string {
   if (state.loading) {
     return '<div class="git-note" role="status">' + e(S.webLoading) + "</div>"
   }
@@ -96,7 +131,13 @@ export function bodyHTML(state: { loading: boolean; error: string | null; snapsh
     "</div>" +
     (git.clean || !files.length
       ? '<div class="git-note">' + e(S.webGitClean) + "</div>"
-      : '<ul class="git-files">' + files.map(row).join("") + "</ul>")
+      : '<ul class="git-files">' + files.map((file) => row(
+        file,
+        state.openPath === file.path,
+        !!state.diffLoading,
+        state.diffError || null,
+        state.diff || null,
+      )).join("") + "</ul>")
   )
 }
 
@@ -173,4 +214,36 @@ export async function readGit(id: string): Promise<{ git?: GitSnapshot }> {
   }
   if (!data) throw new Error(S.webNotJSON)
   return data as { git?: GitSnapshot }
+}
+
+/** The patch for one status row. The daemon rechecks that the path is changed. */
+export async function readGitDiff(id: string, path: string): Promise<GitDiffReply> {
+  let res: Response
+  try {
+    res = await fetch("/v1/sessions/" + encodeURIComponent(id) + "/git/diff?path=" + encodeURIComponent(path))
+  } catch {
+    const dead: GitFailure = new Error(S.webOffline)
+    dead.code = "offline"
+    throw dead
+  }
+  const text = await res.text()
+  let data: Record<string, unknown> | null = null
+  try {
+    data = text ? JSON.parse(text) : null
+  } catch {
+    /* below */
+  }
+  if (!res.ok) {
+    const raw = data?.error
+    const err = typeof raw === "string"
+      ? { code: raw, message: typeof data?.detail === "string" ? data.detail : raw }
+      : raw && typeof raw === "object"
+        ? raw as { code?: string; message?: string }
+        : { code: "http_" + res.status, message: res.statusText || S.webRequestFailed }
+    const failure: GitFailure = new Error(err.message || err.code)
+    failure.code = err.code
+    throw failure
+  }
+  if (!data) throw new Error(S.webNotJSON)
+  return data as unknown as GitDiffReply
 }

@@ -27,6 +27,7 @@ import { conversationNotStarted } from "./readiness.js"
 import { agentDisplayName, runningAgentCount, workTree } from "./work-tree.js"
 import { nextWord } from "../next-strings.js"
 import "./work-tree.css"
+import "./git-status.css"
 
 /**
  * Whether this transport can read a project's snippets — `snippetControls(api).read`
@@ -253,7 +254,7 @@ export function Detail({
       </div>
 
       {selectedAgent ? null : <Composer row={row} onDid={onDid} />}
-      {selectedAgent ? null : <StatusLine row={row} />}
+      {selectedAgent ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens
           it is this component's. */}

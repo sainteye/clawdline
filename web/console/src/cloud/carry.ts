@@ -58,6 +58,7 @@ export const CARRIED = {
   end: "POST /v1/sessions/{id}/close",
   focus: "POST /v1/sessions/{id}/focus",
   git: "GET /v1/sessions/{id}/git",
+  "git-diff": "GET /v1/sessions/{id}/git/diff?path=",
   image: "GET /v1/artifacts/images/{id}?session={id}",
   info: "GET /v1/sessions/{id}/info[?parts=summary]",
   landings: "GET /v1/orchestrator/landings",

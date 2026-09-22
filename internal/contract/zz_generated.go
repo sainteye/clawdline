@@ -3044,6 +3044,11 @@ type FocusResult struct {
 	OK bool   `json:"ok"`
 }
 
+// GET /v1/sessions/{id}/git/diff?path=...
+type GitDiffReply struct {
+	Diff GitFileDiff `json:"diff"`
+}
+
 // One row of `git status --porcelain=v2`, with the two diff counts joined onto
 // it. `staged` and `unstaged` are the two halves of the XY code and are not
 // exclusive: a file edited after being added is both.
@@ -3066,6 +3071,14 @@ type GitFile struct {
 	Unstaged bool        `json:"unstaged"`
 }
 
+// The current patch for one path that the same repository's status read named
+// as changed.
+type GitFileDiff struct {
+	Kind    GitFileKind `json:"kind"`
+	Patches []GitPatch  `json:"patches"`
+	Path    string      `json:"path"`
+}
+
 // What happened to one file. `conflict` outranks the rest — an unmerged path
 // is the one row a reader must not mistake for an ordinary edit — and a
 // rename is named before an add or a delete because Git reports it as both.
@@ -3082,6 +3095,26 @@ const (
 
 // GitFileKindValues is every value the contract allows, in contract order.
 var GitFileKindValues = []GitFileKind{GitFileKindModified, GitFileKindAdded, GitFileKindDeleted, GitFileKindRenamed, GitFileKindUntracked, GitFileKindConflict}
+
+// One unified diff for one side of a changed file.
+type GitPatch struct {
+	Scope       GitPatchScope `json:"scope"`
+	UnifiedDiff string        `json:"unifiedDiff"`
+}
+
+// Which view of the working tree produced this patch. A partly staged file has
+// two patches so the index and worktree are never flattened into one misleading
+// diff.
+type GitPatchScope string
+
+const (
+	GitPatchScopeStaged    GitPatchScope = "staged"
+	GitPatchScopeUnstaged  GitPatchScope = "unstaged"
+	GitPatchScopeUntracked GitPatchScope = "untracked"
+)
+
+// GitPatchScopeValues is every value the contract allows, in contract order.
+var GitPatchScopeValues = []GitPatchScope{GitPatchScopeStaged, GitPatchScopeUnstaged, GitPatchScopeUntracked}
 
 // The reply body. One key, because the Swift route wraps the snapshot and the
 // page reads `data.git`.

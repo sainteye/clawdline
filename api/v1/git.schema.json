@@ -107,6 +107,69 @@
           "$ref": "#/$defs/GitSnapshot"
         }
       }
+    },
+    "GitPatchScope": {
+      "description": "Which view of the working tree produced this patch. A partly staged file has two patches so the index and worktree are never flattened into one misleading diff.",
+      "type": "string",
+      "enum": [
+        "staged",
+        "unstaged",
+        "untracked"
+      ]
+    },
+    "GitPatch": {
+      "description": "One unified diff for one side of a changed file.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "unifiedDiff"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/GitPatchScope"
+        },
+        "unifiedDiff": {
+          "type": "string"
+        }
+      }
+    },
+    "GitFileDiff": {
+      "description": "The current patch for one path that the same repository's status read named as changed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "kind",
+        "patches"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/GitFileKind"
+        },
+        "patches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GitPatch"
+          }
+        }
+      }
+    },
+    "GitDiffReply": {
+      "description": "GET /v1/sessions/{id}/git/diff?path=...",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diff"
+      ],
+      "properties": {
+        "diff": {
+          "$ref": "#/$defs/GitFileDiff"
+        }
+      }
     }
   }
 }

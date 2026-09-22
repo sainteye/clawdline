@@ -234,6 +234,54 @@ func TestChangesReadsARepositoryItMade(t *testing.T) {
 	}
 }
 
+func TestFileDiffReadsOnlyAChangedStatusPath(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on PATH")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(dir, "nonexistent-gitconfig"),
+			"GIT_CONFIG_SYSTEM="+filepath.Join(dir, "nonexistent-gitconfig"),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.invalid",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.invalid")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	run("init", "-q", "-b", "trunk")
+	write("kept.txt", "one\n")
+	write("private.txt", "never exposed\n")
+	run("add", "kept.txt", "private.txt")
+	run("commit", "-qm", "first")
+	write("kept.txt", "one\ntwo\n")
+
+	got, err := New().FileDiff(context.Background(), dir, "kept.txt")
+	if err != nil {
+		t.Fatalf("FileDiff: %v", err)
+	}
+	if len(got.Patches) != 1 || got.Patches[0].Scope != "unstaged" ||
+		!strings.Contains(got.Patches[0].UnifiedDiff, "+two") {
+		t.Fatalf("patches = %#v", got.Patches)
+	}
+	if _, err := New().FileDiff(context.Background(), dir, "private.txt"); !errors.Is(err, ErrFileNotChanged) {
+		t.Fatalf("unchanged path err = %v, want ErrFileNotChanged", err)
+	}
+	if _, err := New().FileDiff(context.Background(), dir, "../outside.txt"); !errors.Is(err, ErrFileNotChanged) {
+		t.Fatalf("outside path err = %v, want ErrFileNotChanged", err)
+	}
+}
+
 func TestChangesRefusesADirectoryWithNoRepository(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git on PATH")
