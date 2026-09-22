@@ -42,6 +42,18 @@ git worktree add -f <scratch>/<name> HEAD
 A root integrates by **merging the child's branch**, not by applying its patch: the merge commit
 carries the branch, which is what makes the landing provable. Record it as soon as it lands.
 
+After recording a landing, run `tools/check-worktrees.sh`. It is a dry run and has four answers:
+0 means nothing is owed, 1 means it found proved landed-and-clean residue, 2 means it could not
+check, and 3 means at least one checkout is unknown. Inspect the report before running
+`tools/check-worktrees.sh --apply`; apply removes only broker-owned, landed, clean checkouts and
+never deletes their branches. Dirty, live, unlanded and unknown checkouts stay.
+
+For a root's own deployment snapshot, comparison tree or other read-only throwaway checkout, use
+`tools/check-worktrees.sh --ephemeral -- <command>` instead of a bare `git worktree add`. The
+wrapper creates a detached checkout in a temporary directory and pairs its creation with removal.
+If the command changes it or moves it off `main`, the wrapper keeps it and prints its path. See
+`docs/worktrees.md` for the evidence and recovery rules.
+
 A dispatched child gets its own worktree from the broker; **read its path from the task record**
 (`GET /v1/orchestrator/tasks/<id>` → `.task.worktree.path`) rather than composing it, because two
 brokers have two roots. `cd "$W" || exit 1` — a failed `cd` runs everything else somewhere else.
