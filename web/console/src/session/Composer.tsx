@@ -27,6 +27,7 @@ import { toast } from "../overlays/toast.js"
 import { writeIsOff } from "./outcome.js"
 import { deliverUntilSeen, pendingSends } from "./send.js"
 import { Waiting } from "./Waiting.js"
+import { ImageMarkup } from "./ImageMarkup.js"
 
 /**
  * The composer, as the original's `form#composer` is built.
@@ -83,6 +84,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
   const inFlight = useRef(false)
   const [write, setWrite] = useState(true)
   const [failure, setFailure] = useState("")
+  const [editingShot, setEditingShot] = useState<ReturnType<typeof Shots.shot>>(null)
   const sendWidth = useRef({ word: "", px: 0 })
   const pick = useRef<HTMLInputElement>(null)
   // `renderComposer` reads the pictures on every draw; a change to them is a draw.
@@ -118,6 +120,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
   const openId = row?.id ?? null
   useEffect(() => {
     Shots.clear()
+    setEditingShot(null)
     // The menu was about the session that was open; `session/open.js` closes it.
     setSkills({ shown: false, matches: [], selected: 0 })
   }, [openId])
@@ -445,8 +448,14 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
         className="shots"
         id="shots"
         onClick={(ev) => {
-          const handle = (ev.target as Element).closest?.("[data-shot]")
-          if (handle) Shots.remove(handle.getAttribute("data-shot") ?? "")
+          const target = ev.target as Element
+          const drop = target.closest?.("[data-shot]")
+          if (drop) {
+            Shots.remove(drop.getAttribute("data-shot") ?? "")
+            return
+          }
+          const preview = target.closest?.("[data-preview-shot]")
+          if (preview) setEditingShot(Shots.shot(preview.getAttribute("data-preview-shot") ?? ""))
         }}
         dangerouslySetInnerHTML={{ __html: shotsHTML() }}
       ></div>
@@ -612,6 +621,13 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
       <div className="why" id="why" {...(whyHTML !== null ? { dangerouslySetInnerHTML: { __html: whyHTML } } : {})}>
         {whyHTML === null ? why : null}
       </div>
+      {editingShot ? (
+        <ImageMarkup
+          shot={editingShot}
+          onCancel={() => setEditingShot(null)}
+          onSave={(canvas) => Shots.replace(String(editingShot.id), canvas, (words, bad) => toast(words, bad))}
+        />
+      ) : null}
     </form>
   )
 }
@@ -674,4 +690,3 @@ const PLAINTEXT_ONLY = (() => {
   }
   return probe.contentEditable === "plaintext-only"
 })()
-

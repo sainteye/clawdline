@@ -41,6 +41,13 @@ const words = {
     proposalResolveSummary: "What was completed, or which premise no longer applies?",
     proposalResolveEvidence: "Source: file:line, command output, or daemon response",
     proposalResolveSubmit: "Record as resolved",
+    imageMarkupTitle: "Mark what to change",
+    imageMarkupHint: "Draw directly on the picture with the red pen.",
+    imageMarkupCanvas: "Picture marking canvas",
+    imageMarkupRedPen: "Red pen",
+    imageMarkupUndo: "Undo",
+    imageMarkupCancel: "Cancel",
+    imageMarkupDone: "Done",
     sessionStateUnrecognizedDetail:
       "Clawdline read the screen but could not identify its state. Inspect the conversation below before deciding what to do.",
     sessionCountNotStarted: "{n} not started yet",
@@ -560,6 +567,13 @@ const words = {
     proposalResolveSummary: "哪件事已完成，或哪個前提已不存在？",
     proposalResolveEvidence: "出處：檔案:行號、指令輸出或 daemon 回應",
     proposalResolveSubmit: "記成已解決",
+    imageMarkupTitle: "標記要修改的地方",
+    imageMarkupHint: "直接用紅筆在圖片上圈選。",
+    imageMarkupCanvas: "圖片標記畫布",
+    imageMarkupRedPen: "紅筆",
+    imageMarkupUndo: "復原",
+    imageMarkupCancel: "取消",
+    imageMarkupDone: "完成",
   },
 } as const
 

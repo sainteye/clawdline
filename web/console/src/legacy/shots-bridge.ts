@@ -33,7 +33,7 @@ const MAX_COUNT = 6
 const MAX_EACH = 5 << 20
 const MAX_TOTAL = 15 << 20
 
-interface Shot {
+export interface Shot {
   id: number
   url: string
   name: string
@@ -127,11 +127,15 @@ export function shotsHTML(): string {
   return list
     .map(
       (shot) =>
-        '<div class="shot"><img src="' +
+        '<div class="shot"><button type="button" class="preview" data-preview-shot="' +
+        shot.id +
+        '" aria-label="' +
+        esc(T.webImagePreview) +
+        '"><img src="' +
         esc(shot.url) +
         '" alt="' +
         esc(shot.name) +
-        '">' +
+        '"></button>' +
         '<button type="button" class="drop" data-shot="' +
         shot.id +
         '" aria-label="' +
@@ -147,6 +151,9 @@ export const Shots = {
   count: (): number => list.length,
   busy: (): boolean => busy > 0,
   urls: (): string[] => list.map((shot) => shot.url),
+  shot(id: string): Shot | null {
+    return list.find((shot) => String(shot.id) === id) ?? null
+  },
   clear(): void {
     if (!list.length) return
     list = []
@@ -156,6 +163,31 @@ export const Shots = {
   remove(id: string): void {
     list = list.filter((shot) => String(shot.id) !== id)
     draw()
+  },
+
+  /**
+   * Burn a composer's red marks into this picture. PNG keeps screenshots
+   * crisp; a photograph whose PNG crosses the wire limit falls back to the
+   * same JPEG quality `shrink` uses. The old bytes stay until the replacement
+   * has passed both limits, so a failed save loses nothing.
+   */
+  replace(id: string, canvas: HTMLCanvasElement, toast: Say): boolean {
+    const at = list.findIndex((shot) => String(shot.id) === id)
+    if (at < 0) return false
+    const without = total() - list[at].url.length
+    let url = canvas.toDataURL("image/png")
+    if (url.length > MAX_EACH || without + url.length > MAX_TOTAL) url = canvas.toDataURL("image/jpeg", QUALITY)
+    if (url.length > MAX_EACH) {
+      toast(T.webShotTooBig, true)
+      return false
+    }
+    if (without + url.length > MAX_TOTAL) {
+      toast(T.webShotsTooBig, true)
+      return false
+    }
+    list = list.map((shot, i) => (i === at ? { ...shot, url } : shot))
+    draw()
+    return true
   },
 
   add(files: ArrayLike<File> | null | undefined, toast: Say): void {
