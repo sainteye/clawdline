@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
-import { accountMachineNames, machineIdentityFacts, sessionsFact, withAccountNames } from "./unpaired-rows.ts"
+import { accountMachineNames, accountMachineRoster, machineIdentityFacts, sessionsFact, withAccountNames } from "./unpaired-rows.ts"
 
 const API = "https://api.example.test"
 
@@ -41,6 +41,14 @@ test("the account's names are read with this browser's own cookie, revoked and b
     ["mac_1", { name: "Studio", platform: "darwin" }],
     ["mac_51463f04", { name: "build-box", platform: "linux" }],
   ])
+})
+
+test("the account roster keeps revoked ids so a retained relay snapshot cannot draw them again", async () => {
+  const { get } = account({ status: 200, body: LISTED })
+  const roster = await accountMachineRoster(API, get)
+  assert.ok(roster)
+  assert.deepEqual([...roster.revoked], ["mac_old"])
+  assert.equal(roster.names.has("mac_old"), false)
 })
 
 test("an account that will not say leaves no names, and no error for the list to trip on", async () => {
