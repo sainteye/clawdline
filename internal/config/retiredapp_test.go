@@ -73,16 +73,6 @@ var deliberate = map[string]string{
 
 	// The `owns` and the old app are in different sentences.
 	"internal/adapters/board/board.go": "`This daemon owns its own board file` is about this daemon; the Swift app is the next sentence",
-
-	// PENDING. These two give "the old app is writing right now" as the
-	// reason for behaviour that is still correct for a different reason: the
-	// files stopped changing on 2026-09-19, so they are readable rather than
-	// racy, and the separate Cloud identity is owed to the envelopes already
-	// sent under the old one. The code is right; the reason has expired.
-	// Left alone here because internal/adapters was outside the write set of
-	// the delivery that added this guard; its report lists them as not applied.
-	"internal/adapters/swiftstore/file.go": "PENDING: says the Swift app is the only writer and is running while this reads; rewrite as a dated fact",
-	"internal/adapters/cloud/account.go":   "PENDING: says that app is running on this same Mac right now; rewrite as why the identities must stay apart",
 }
 
 var scanned = map[string]bool{

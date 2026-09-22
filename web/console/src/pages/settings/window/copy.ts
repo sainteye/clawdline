@@ -1,10 +1,12 @@
 /**
  * The native settings window's words.
  *
- * Every line below is a property of `TraditionalChinese` in the Swift app's
- * `Sources/Copy+Chinese.swift`, copied across under the same name. Nothing here
- * is written fresh: a word the original does not have is a word this window
- * does not show.
+ * Most unmarked entries below are properties of `TraditionalChinese` in the
+ * Swift app's `Sources/Copy+Chinese.swift`, copied across under the same name.
+ * This cross-platform app's own words are marked below and live bilingually in
+ * `ownWords`; this file selects the page's language for the ones the settings
+ * window uses. The distinction is explicit rather than pretending this whole
+ * file is a byte-for-byte copy that no guard checks.
  *
  * **They live on this side rather than in the shell.** The five the console's
  * settings page already needed were handed over by shell/darwin (`Copy.swift`,
@@ -17,6 +19,79 @@
  * The console's own catalog (`public/strings/zh-Hant.json`, 778 keys) has none
  * of these: in the Swift app this window was never a web page.
  */
+const ownWords = {
+  en: {
+    settingsRemoteHint:
+      "When this is off, nothing outside this machine can reach it. When it is on, the session list is available on 127.0.0.1 — to a browser here, a phone connected through a tunnel, or a script. What it exposes is repository names, branches, and work titles, so it stays off until you turn it on.",
+    settingsTunnel: "Connect to this machine from anywhere",
+    settingsTunnelHint:
+      "cloudflared connects outward from this machine — no port forwarding, and nothing listens on your network. It starts only after a device has been paired, because behind the tunnel are every repository name and work title on this machine.",
+    settingsRemoteWriteHint:
+      "When this is off, paired devices can only read. When it is on, they can send text into a session and open new sessions — which runs code on this machine, because that is what Claude Code does. That is separate from the setting above, so it has its own switch.",
+    settingsOrchestratorMaxHint:
+      "The default is five. The limit is per session, not per machine. Each child is a terminal tab with an assistant doing work in it.",
+    settingsHotkeyHint:
+      "The default is ⌥Space. If another app (such as Alfred) uses the same combination, both may respond and Clawdline cannot detect that; choose another combination, or narrow “Where it works” below to terminals only.",
+    settingsHotkeySystem:
+      "{combo} is reserved by the operating system, so it was not registered. The ✳ in Clawdline's menu still opens the input box; press the button above to choose another combination.",
+    settingsHotkeyRefused:
+      "{combo} could not be registered (the operating system returned {status}). The ✳ in Clawdline's menu still opens the input box; press the button above to choose another combination.",
+    webCloudStatusReadFailed: "Could not read this machine's status.",
+    webCloudStatusToken: "Machine credential expires: {at}",
+    webCloudStatusKey: "Machine key: {key}",
+    webCloudStatusMachine: "Machine {machine}",
+    webCloudStatusDropped: "Machine commands dropped since {at}: {list}",
+    webCloudStatusNoDrops: "This machine has dropped no commands since {at}.",
+    webCloudPairNone: "No browser has been paired with this machine yet.",
+    webCloudPairMachineKey:
+      "This machine's key is {key}; the browser will show the same value when pairing finishes.",
+    webCloudPairPinned: "Paired by this machine",
+    webCloudPairRevoked: "Revoked on this machine",
+    webCloudPairPinnedFailed:
+      "Could not read this machine's paired-browser list, so no browser is accepted now: {why}",
+    webFailMachineWritesOff: "This machine does not currently accept commands from Cloud.",
+  },
+  "zh-Hant": {
+    settingsRemoteHint:
+      "關著的時候，這台機器以外的東西什麼都碰不到。打開之後，session 清單就在 127.0.0.1 上讀得到——給這裡的瀏覽器、隔著通道連進來的手機，或一支腳本。交出去的是儲存庫名稱、分支和工作標題，所以在你開口之前，它一直是關著的。",
+    settingsTunnel: "從任何地方連到這台機器",
+    settingsTunnelHint:
+      "透過 cloudflared 從這台機器往外連出去——不必開通訊埠轉發，你的網路上也沒有東西在聽。要先配對過一台裝置它才會啟動，因為通道後面就是這台機器上每一個儲存庫名稱、每一個工作標題。",
+    settingsRemoteWriteHint:
+      "關著的時候，配對過的裝置只能讀。打開之後，它可以把文字送進 session，也可以開新的 session——那就是在這台機器上執行程式碼，因為 Claude Code 做的就是這件事。這跟上面那一題是兩回事，所以它是另一個開關。",
+    settingsOrchestratorMaxHint:
+      "預設五個，一個 session 算一份，不是整台機器算一份。每一個都是一個終端機分頁，裡面有一個 assistant 在做事。",
+    settingsHotkeyHint:
+      "沒設定過就是 ⌥Space。別的 app（例如 Alfred）也用同一組時，作業系統可能讓兩邊都觸發，這裡看不出來；遇到就換一組，或把下面「在哪裡生效」縮到只剩終端機。",
+    settingsHotkeySystem:
+      "{combo} 是作業系統保留的快速鍵，所以沒有註冊。Clawdline 選單裡的 ✳ 一樣打得開輸入框；要換一組就按上面的按鈕。",
+    settingsHotkeyRefused:
+      "{combo} 註冊不起來（作業系統回 {status}）。Clawdline 選單裡的 ✳ 一樣打得開輸入框；要換一組就按上面的按鈕。",
+    webCloudStatusReadFailed: "讀不到這台機器的狀態。",
+    webCloudStatusToken: "機器憑證到期：{at}",
+    webCloudStatusKey: "機器金鑰：{key}",
+    webCloudStatusMachine: "機器 {machine}",
+    webCloudStatusDropped: "自 {at} 起這台機器丟棄：{list}",
+    webCloudStatusNoDrops: "自 {at} 起這台機器沒有丟棄任何指令。",
+    webCloudPairNone: "還沒有任何瀏覽器配對到這台機器。",
+    webCloudPairMachineKey: "這台機器的金鑰是 {key}，配對完成時瀏覽器會顯示同一組。",
+    webCloudPairPinned: "由這台機器配對",
+    webCloudPairRevoked: "已在這台機器撤銷",
+    webCloudPairPinnedFailed: "讀不到這台機器的已配對清單，所以現在不接受任何瀏覽器：{why}",
+    webFailMachineWritesOff: "這台機器目前不接受來自 Cloud 的指令。",
+  },
+} as const
+
+type OwnWord = keyof (typeof ownWords)["en"]
+
+function ownWord(key: OwnWord): string {
+  const lang =
+    (typeof document !== "undefined" && document.documentElement.lang) ||
+    (typeof navigator !== "undefined" && navigator.language) ||
+    "en"
+  return ownWords[lang.toLowerCase().startsWith("zh") ? "zh-Hant" : "en"][key]
+}
+
 export const W = {
   settingsTitle: "Clawdline 設定",
   settingsGeneral: "一般",
@@ -70,14 +145,14 @@ export const W = {
   settingsStateHookHint: "只要有 session 開始跑、跑完、或是要問你話，Clawdline 就會執行這個：你自己的程式，細節放在它的環境變數裡。它寫在設定檔而不是這裡，因為那是一串 argv、不是一行命令列——路徑裡有空格，它也還是一整個路徑。",
   settingsRemote: "遠端",
   settingsRemoteServe: "讓瀏覽器或你的手機看得到你的 session",
-  settingsRemoteHint: "關著的時候，這台 Mac 以外的東西什麼都碰不到。打開之後，session 清單就在 127.0.0.1 上讀得到——給這裡的瀏覽器，給隔著通道連進來的手機，給一支腳本。交出去的是儲存庫名稱、分支和工作標題，所以在你開口之前，它一直是關著的。",
-  settingsTunnel: "從任何地方連到這台 Mac",
+  settingsRemoteHint: ownWord("settingsRemoteHint"),
+  settingsTunnel: ownWord("settingsTunnel"),
   settingsTunnelQuick: "自動產生的網址",
   settingsTunnelNamed: "我自己的網域",
   settingsTunnelHostname: "主機名稱",
-  settingsTunnelHint: "透過 cloudflared 從這台 Mac 往外連出去——不必開通訊埠轉發，你的網路上也沒有東西在聽。要先配對過一台裝置它才會啟動，因為通道後面就是這台 Mac 上每一個儲存庫名稱、每一個工作標題。",
+  settingsTunnelHint: ownWord("settingsTunnelHint"),
   settingsRemoteWrite: "讓配對過的裝置寫進 session",
-  settingsRemoteWriteHint: "關著的時候，配對過的裝置只能讀。打開之後，它可以把文字送進 session，也可以開新的 session——那就是在這台 Mac 上執行程式碼，因為 Claude Code 做的就是這件事。這跟上面那一題是兩回事，所以它是另一個開關。",
+  settingsRemoteWriteHint: ownWord("settingsRemoteWriteHint"),
   settingsPushDelivery: "session 回報交件時通知我",
   settingsPushDeliveryHint: "一次回報通知一次，同一份重複回報不會再響。",
   settingsPushFanout: "一批派出去的任務全部結束時通知我",
@@ -92,7 +167,7 @@ export const W = {
   settingsOrchestratorEnabled: "讓一個 session 把工作派給另一個",
   settingsOrchestratorEnabledHint: "帶著 clawdline skill 的 session 可以開一個新分頁、把指示打進去，做完再回頭跟它說一聲。關著的時候，每一次派工都會被擋下來——已經在跑的不會被停掉。",
   settingsOrchestratorMax: "同時最多幾個子 session",
-  settingsOrchestratorMaxHint: "預設五個，一個 session 算一份，不是整台 Mac 算一份。每一個都是一個終端機分頁，裡面有一個 assistant 在做事。",
+  settingsOrchestratorMaxHint: ownWord("settingsOrchestratorMaxHint"),
   settingsOrchestratorPermission: "child 可以自己走多遠",
   settingsOrchestratorPermissionHint: "child 的分頁沒有人在看，停下來等核准的 session 會一路停到逾時——而派出去的 session 整份工作就是跑指令和寫檔案，所以只要不是最後一格，它就會停在某個地方。任務可以要求比這裡保守，但不能超過。",
   settingsOrchestratorPermissionAsk: "每一步都先問",
@@ -114,10 +189,9 @@ export const W = {
   // are this build's own words, kept here so nothing on screen is spelled twice.
   // A failure is one sentence and the way round it — the menu bar mark, which
   // is the Swift app's own answer in `hotkeyFailedBody` — and never a path.
-  settingsHotkeyHint:
-    "沒設定過就是 ⌥Space。別的 app（例如 Alfred）也用同一組時，macOS 兩邊都會觸發，這裡看不出來；遇到就換一組，或把下面「在哪裡生效」縮到只剩終端機。",
-  settingsHotkeySystem: "{combo} 是 macOS 自己的快速鍵，所以沒有註冊。選單列的 ✳ 一樣打得開輸入框；要換一組就按上面的按鈕。",
-  settingsHotkeyRefused: "{combo} 註冊不起來（macOS 回 {status}）。選單列的 ✳ 一樣打得開輸入框；要換一組就按上面的按鈕。",
+  settingsHotkeyHint: ownWord("settingsHotkeyHint"),
+  settingsHotkeySystem: ownWord("settingsHotkeySystem"),
+  settingsHotkeyRefused: ownWord("settingsHotkeyRefused"),
   settingsHotkeyUnreadable: "設定檔裡的 hotkey「{spec}」讀不懂，所以沒有註冊。選單列的 ✳ 一樣打得開輸入框；按上面的按鈕重錄一組。",
   settingsHotkeyLegacy: "舊版 Clawdline 也開著、也用 {combo}，按一下會打開兩個輸入框。結束舊版就好；它若是開機自動啟動，在它的選單取消「開機時啟動」。",
   settingsHooksNone: "這個版本不裝 hook——session 的狀態從 Claude Code 自己的狀態檔讀",
@@ -140,16 +214,16 @@ export const W = {
   // rather than an invented settings vocabulary, because this card answers the
   // same questions about the same line and the original has no second spelling.
   webCloudStatus: "Cloud 狀態",
-  webCloudStatusReadFailed: "讀不到這台 Mac 的狀態。",
+  webCloudStatusReadFailed: ownWord("webCloudStatusReadFailed"),
   webCloudStatusConnection: "連線：{state}",
   webCloudStatusClosed: "上次關閉：{code}",
-  webCloudStatusToken: "Mac 憑證到期：{at}",
-  webCloudStatusKey: "Mac 金鑰：{key}",
-  webCloudStatusMac: "Mac {machine}",
-  webCloudStatusDropped: "自 {at} 起 Mac 丟棄：{list}",
-  webCloudStatusNoDrops: "自 {at} 起 Mac 沒有丟棄任何指令。",
+  webCloudStatusToken: ownWord("webCloudStatusToken"),
+  webCloudStatusKey: ownWord("webCloudStatusKey"),
+  webCloudStatusMac: ownWord("webCloudStatusMachine"),
+  webCloudStatusDropped: ownWord("webCloudStatusDropped"),
+  webCloudStatusNoDrops: ownWord("webCloudStatusNoDrops"),
 
-  // Pairing a browser with this Mac. These are this build's own words rather
+  // Pairing a browser with this machine. These are this build's own words rather
   // than the hosted console's, except `pairingScanTitle`, which is the Swift
   // app's own title over its pairing QR. The QR is drawn in this window now
   // (PairingQr.tsx), so the words lead with the code and keep the link for a
@@ -158,7 +232,7 @@ export const W = {
   // name is quoted in that console's own words, which are English.
   pairingScanTitle: "用手機掃這張 QR code",
   webCloudPair: "配對瀏覽器",
-  webCloudPairNone: "還沒有任何瀏覽器配對到這台 Mac。",
+  webCloudPairNone: ownWord("webCloudPairNone"),
   webCloudPairStart: "產生配對 QR",
   webCloudPairAgain: "換一張",
   webCloudPairCancel: "停止等待",
@@ -183,7 +257,7 @@ export const W = {
   webCloudPairOrderWhy:
     "不要用相機 app 或 Safari 直接掃：主畫面 app 的儲存跟 Safari 是分開的，金鑰又不能匯出，在 Safari 配好的，裝成 app 之後就不見了。",
   webCloudPairOrderOther: "Android 或電腦：用相機掃、或直接打開連結，登入同一個帳號就好。",
-  webCloudPairMachineKey: "這台 Mac 的金鑰是 {key}，配對完成時瀏覽器會顯示同一組。",
+  webCloudPairMachineKey: ownWord("webCloudPairMachineKey"),
   webCloudPairWaiting: "等待瀏覽器回應⋯⋯",
   webCloudPairSealing: "收到瀏覽器的配對資料，正在交接金鑰⋯⋯",
   webCloudPairDone: "已配對 {device}（{key}）。",
@@ -193,12 +267,12 @@ export const W = {
   webCloudPairCodeHint:
     "沒有鏡頭的電腦瀏覽器走這條：在那個瀏覽器打開 app.clawdline.com 並登入，把它顯示的「Pairing code」整串貼到這裡。配對碼 10 分鐘內有效，比 QR 寬鬆，走的是同一套加密。",
   webCloudPairCodeSend: "用這串配對碼配對",
-  webCloudPairPinned: "由這台 Mac 配對",
+  webCloudPairPinned: ownWord("webCloudPairPinned"),
   webCloudPairRoster: "只在帳號清單上",
-  webCloudPairRevoked: "已在這台 Mac 撤銷",
+  webCloudPairRevoked: ownWord("webCloudPairRevoked"),
   webCloudPairRevoke: "撤銷",
-  webCloudPairPinnedFailed: "讀不到這台 Mac 的已配對清單，所以現在不接受任何瀏覽器：{why}",
-  webFailMacWritesOff: "Mac 目前不接受來自 Cloud 的指令。",
+  webCloudPairPinnedFailed: ownWord("webCloudPairPinnedFailed"),
+  webFailMacWritesOff: ownWord("webFailMachineWritesOff"),
 
   // **Not from the Swift app.** Its voice tab had no language row — the key was
   // only ever hand-edited, and `auto` meant whisper's own habit, which writes

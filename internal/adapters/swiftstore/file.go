@@ -6,21 +6,24 @@
 // session is Clawdfather, which task opened a tab, who is parked on whom, what
 // a session delivered — are recorded only there.
 //
-// Reading somebody else's live files has three rules, and every function in
-// this package keeps them:
+// Reading somebody else's historical store has three rules, and every
+// function in this package keeps them:
 //
 //   - Nothing is ever written, renamed, created or locked. Files are opened
 //     O_RDONLY and nothing else; a `.lock` beside a file is not looked at. The
-//     Swift app is the only writer and it is running while this reads.
+//     The Swift app was the only application writer until it was retired on
+//     2026-09-19; this daemon remains a reader even if the files are restored,
+//     edited by hand, or an old build is deliberately opened again.
 //   - Secrets are never read into memory. The token files and `secrets/` are
 //     not opened, and the decoded records declare only the fields the session
 //     list needs, so a task's `secret_hash` is skipped by the decoder rather
 //     than carried and filtered.
-//   - An unreadable store is "unknown", never "empty". The Swift app rewrites
-//     these files while this reads them, so a half-written file is ordinary:
-//     it is read again, and if it is still not whole the last good reading is
-//     carried and marked stale. With no good reading at all the answer says it
-//     does not know, and the caller must not draw that as "nothing is owed".
+//   - An unreadable store is "unknown", never "empty". A restore, manual edit,
+//     or deliberately reopened old build can replace these files while this
+//     reads them, so a half-written file is handled defensively: it is read
+//     again, and if it is still not whole the last good reading is carried and
+//     marked stale. With no good reading at all the answer says it does not
+//     know, and the caller must not draw that as "nothing is owed".
 package swiftstore
 
 import (
@@ -102,7 +105,7 @@ func (f *file[T]) read() Reading[T] {
 		st, err := statFile(f.path)
 		if errors.Is(err, os.ErrNotExist) {
 			// A file that is not there has no older reading worth carrying: the
-			// Swift app removed it, or never wrote it.
+			// It was removed from the old store, or was never written there.
 			f.tried = true
 			f.have = stamp{}
 			f.good = Reading[T]{Known: true, Missing: true}
