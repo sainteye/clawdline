@@ -216,6 +216,8 @@ const (
 	CacheSessionActivity  = "cache.session_activity"
 	// Where each project can be opened, one reading per working directory.
 	CacheSessionLinks = "cache.session_links"
+	// Directories a person explicitly keeps in the session-start list.
+	PlacesRegistered = "places.registered"
 	// Provider-native work under a session: how many rows the fleet carries,
 	// and the immutable metadata/changing-tail cursors held to make a one-second
 	// reading cheap.
@@ -808,6 +810,17 @@ func Register() []Entry {
 			Limit: 64, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
+		},
+		{
+			// CLAWDLINE_NEXT_DIR/places.json: explicit project directories. Each
+			// row is a person's choice, so the daemon never evicts one; a full
+			// registry refuses a new path and `clawdline project remove` is its
+			// deliberate exit.
+			Name: PlacesRegistered, Class: Evidence, Unit: Rows,
+			Limit: 512, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Projects:  true,
 		},
 		{
 			// Where each project can be opened: one reading per working

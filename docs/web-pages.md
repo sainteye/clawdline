@@ -265,8 +265,10 @@ mechanism that a suite driving a stand-in document will tell you is fine.
 `Resources/web/app/js/view/projects.js`, styled in `app/css/projects.css`, drawn from
 `Tests/web-projects.mjs`. It answers two questions and the second one is why it exists.
 
-The first is **where a session could be started** — `/v1/places`, directories an assistant has
-actually been run in and that are still on the disk. That is the list.
+The first is **where a session could be started** — `/v1/places`, directories explicitly kept with
+`clawdline project add`, or where an assistant has actually been run, and that are still on the
+disk. Explicit registration lives in this daemon's `places.json`; it does not fabricate a provider
+transcript or make an assistant call. That is the list.
 
 The second is asked standing in front of one of them: **which of this Project's worktrees finished
 a Feature, and did that delivery reach the branch.**
