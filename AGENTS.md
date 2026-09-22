@@ -35,6 +35,17 @@ until 2026-09-22; a worktree or a landing that still names `master` is one writt
 that and is wrong now. Work lands through a **disposable worktree**, never in the shared
 checkout:
 
+
+**A task branch cut before 2026-09-22 cannot be landed, only cherry-picked.** `main` was rebased
+onto the published, scrubbed history that day. A delivery branch cut from the old line carries
+that line with it, so merging one makes an unfiltered history an ancestor of what gets published —
+measured once at 77 findings beyond the baseline, and the pre-push hook refused it. Cherry-pick
+the delivery's commits instead. The cost is that the broker cannot verify the landing: `landed`
+asks for the delivery branch to be an ancestor and it never will be, so the task stays without a
+truthful record and the reason belongs in the turn's report. `262c8861` is the one this was
+learned on, and its record names a commit that is no longer on `main`. Branches cut after that
+day have no such problem.
+
 ```sh
 git worktree add -f <scratch>/<name> HEAD
 ```
