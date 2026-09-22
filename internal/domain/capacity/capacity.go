@@ -172,16 +172,21 @@ const (
 	CoordinatorAliases = "coordinator.aliases"
 	WaitsOpen          = "waits.open"
 	// T3: the board and the Backlog.
-	WorkOpen                 = "work.open"
-	WorkPlanning             = "work.planning"
-	WorkAssignments          = "work.assignments"
-	WorkDocumentsPerItem     = "work.documents_per_item"
-	WorkStepsPerItem         = "work.steps_per_item"
-	SessionDirectTodos       = "session.direct_todos"
-	WorkItemTitleBytes       = "work.item_title_bytes"
-	WorkItemDescriptionBytes = "work.item_description_bytes"
-	SessionDirectTodoBytes   = "session.direct_todo_bytes"
-	WorkRequestBodyBytes     = "work.request_body_bytes"
+	WorkOpen                  = "work.open"
+	WorkPlanning              = "work.planning"
+	WorkAssignments           = "work.assignments"
+	WorkDocumentsPerItem      = "work.documents_per_item"
+	WorkImagesPerItem         = "work.images_per_item"
+	WorkImageBytes            = "work.image_bytes"
+	WorkImageBytesPerItem     = "work.image_bytes_per_item"
+	WorkImageBytesTotal       = "work.image_bytes_total"
+	WorkImageRequestBodyBytes = "work.image_request_body_bytes"
+	WorkStepsPerItem          = "work.steps_per_item"
+	SessionDirectTodos        = "session.direct_todos"
+	WorkItemTitleBytes        = "work.item_title_bytes"
+	WorkItemDescriptionBytes  = "work.item_description_bytes"
+	SessionDirectTodoBytes    = "session.direct_todo_bytes"
+	WorkRequestBodyBytes      = "work.request_body_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
 	DecisionsOpen = "decisions.open"
@@ -511,6 +516,45 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/store.WorkV2DocumentLimit"},
+		},
+		{
+			Name: WorkImagesPerItem, Class: Evidence, Unit: Rows,
+			Limit: 6, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/store.WorkV2ImageLimit"},
+		},
+		{
+			Name: WorkImageBytes, Class: Evidence, Unit: Bytes,
+			Limit: 5 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/transport/http.workV2ImageByteLimit"},
+		},
+		{
+			Name: WorkImageBytesPerItem, Class: Evidence, Unit: Bytes,
+			Limit: 15 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/store.WorkV2ImageItemLimit"},
+		},
+		{
+			Name: WorkImageBytesTotal, Class: Evidence, Unit: Bytes,
+			Limit: 512 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/store.WorkV2ImageTotalLimit"},
+		},
+		{
+			Name: WorkImageRequestBodyBytes, Class: Buffer, Unit: Bytes,
+			Limit: 18 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Projects:  true,
+			Sources:   []string{"internal/transport/http.workV2ImageBodyLimit", "internal/app/cloudops.workV2CloudImageBodyLimit"},
 		},
 		{
 			Name: WorkStepsPerItem, Class: Evidence, Unit: Rows,

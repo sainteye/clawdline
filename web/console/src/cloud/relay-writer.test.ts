@@ -120,7 +120,8 @@ class FakeClient implements CloudWriteClient {
   }
   _machineRequest(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action") {
     return this.act("_machineRequest", [machine, word, body, kind],
-      word === "schedule-run" ? { ok: true, task_id: "t-1" } : { ok: true })
+      word === "schedule-run" ? { ok: true, task_id: "t-1" } :
+        word === "work.v2.image" ? { id: body.id, media_type: "image/png", data: "iVBORw==" } : { ok: true })
   }
   updateSchedule(id: string, schedule: unknown) {
     return this.act("updateSchedule", [id, schedule], { ok: true, schedule: { id, title: "a schedule" } })
@@ -233,6 +234,9 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     op: "resume", word: "resume", place: "p1", assistant: "claude", past: "abc",
   })
   assert.equal(writeRoute("POST", "/v1/sessions/s1/interrupt")?.op, "uncarried")
+  assert.equal(writeRoute("GET", "/v1/work/v2/images/img-1")?.word, "work.v2.image")
+  assert.equal(writeRoute("POST", "/v1/work/v2/items/w1/images")?.word, "work.v2.image-create")
+  assert.equal(writeRoute("DELETE", "/v1/work/v2/items/w1/images/img-1")?.word, "work.v2.image-delete")
 })
 
 test("a send goes as the machine's `send` under the row's own identity, and answers as the local route does", async () => {
@@ -475,6 +479,8 @@ test("Work v2 person actions keep their exact route subject and body across Clou
       "work.v2.create", { item: { project_id: "p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides" } }],
     ["/v1/work/v2/items/w1/assign", { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" },
       "work.v2.assign", { id: "w1", item: { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" } }],
+    ["/v1/work/v2/items/w1/images", { expected_version: 2, title: "state.png", data_url: "data:image/png;base64,cG5n" },
+      "work.v2.image-create", { id: "w1", item: { expected_version: 2, title: "state.png", data_url: "data:image/png;base64,cG5n" } }],
     ["/v1/work/v2/proposals/pr1/accept", {}, "work.v2.proposal-resolve", { id: "pr1", decision: "accept", item: {} }],
     ["/v1/work/v2/session-todos/%251", { text: "Ship it" }, "work.v2.todo-create", { terminal: "%1", item: { text: "Ship it" } }],
     ["/v1/work/v2/session-todos/%251/t1/send", {}, "work.v2.todo-action", { terminal: "%1", id: "t1", action: "send", item: {} }],
@@ -484,6 +490,22 @@ test("Work v2 person actions keep their exact route subject and body across Clou
     assert.equal(response.status, 200, path)
     assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", word, body, "action"], path)
   }
+  const removed = await reader.fetch("/v1/work/v2/items/w1/images/img1", {
+    ...post({ expected_version: 3 }), method: "DELETE",
+  })
+  assert.equal(removed.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.image-delete",
+    { id: "w1", image: "img1", item: { expected_version: 3 } }, "action"])
+})
+
+test("a Board reference picture is read as machine-scoped bytes", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/work/v2/images/img-1")
+  assert.equal(res.status, 200)
+  assert.equal(res.headers.get("content-type"), "image/png")
+  assert.deepEqual([...new Uint8Array(await res.arrayBuffer())], [137, 80, 78, 71])
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.image", { id: "img-1" }, "read"])
 })
 
 test("a transcript's picture is read as bytes through the machine's `image`", async () => {

@@ -320,6 +320,12 @@ O39 task 目錄刪除沒有 audit——**這些都是對的行為**，缺的是�
 transcript tail、完成通知 cursor，每張最多 256。穩定的一次掃描仍會 `stat` 近期 Claude agent 以判斷是否有變，但快取命中不再開 transcript；Codex 則用已知的 thread id
 命中快取，不在每次 beat 重走 rollout 目錄。讀不到來源時讀數是 `unknown`，不把它畫成 0。
 
+Work v2 的參考圖片是使用者輸入但在項目存續期間不可自動淘汰，因此以 evidence 列登記並在滿載時拒絕：
+`work.images_per_item` 6 張、`work.image_bytes` 每張正規化 PNG 5 MiB、
+`work.image_bytes_per_item` 15 MiB、`work.image_bytes_total` 512 MiB；另有 buffer 列
+`work.image_request_body_bytes` 18 MiB（保留加密 Cloud envelope 的膨脹空間），同時約束本機 HTTP 與 Cloud 子文件。Diagnostics 分別量
+最滿項目的張數／位元組、最大單張及全庫位元組；不會為新圖片刪除既有參考資料。
+
 ### 4.2 資料分類：什麼絕不能丟、什麼可以摘要後丟、什麼可以直接丟
 
 | 類別 | 例子 | 可以丟嗎 | 到頂時 |

@@ -191,6 +191,7 @@ export type WriteRoute =
   | { op: "places"; word: Carried<"places"> }
   | { op: "past"; word: Carried<"past-sessions">; place: string; assistant: string }
   | { op: "image"; word: Carried<"image">; artifact: string }
+  | { op: "work-v2-image"; word: Carried<"work.v2.image">; artifact: string }
   | { op: "push-subscribe"; word: Carried<"push-subscribe"> }
   | { op: "push-unsubscribe"; word: Carried<"push-unsubscribe"> }
   | { op: "push-test"; word: Carried<"push-test"> }
@@ -209,6 +210,8 @@ export type WriteRoute =
   | { op: "worktree-refresh"; word: Carried<"project-worktree-lifecycle-refresh">; project: string }
   | { op: "work-v2-create"; word: Carried<"work.v2.create"> }
   | { op: "work-v2-assign"; word: Carried<"work.v2.assign">; id: string }
+  | { op: "work-v2-image-create"; word: Carried<"work.v2.image-create">; id: string }
+  | { op: "work-v2-image-delete"; word: Carried<"work.v2.image-delete">; id: string; image: string }
   | { op: "work-v2-proposal-resolve"; word: Carried<"work.v2.proposal-resolve">; id: string; decision: "accept" | "reject" }
   | { op: "work-v2-todo-create"; word: Carried<"work.v2.todo-create">; terminal: string }
   | { op: "work-v2-todo-action"; word: Carried<"work.v2.todo-action">; terminal: string; id: string; action: "send" | "complete" | "delete" }
@@ -309,6 +312,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   const [head, a, b, c, d] = segments
   if (method === "GET") {
+    if (head === "work" && a === "v2" && b === "images" && c && segments.length === 4) {
+      return { op: "work-v2-image", word: "work.v2.image", artifact: c }
+    }
     if (head === "places" && segments.length === 1) return { op: "places", word: "places" }
     if (head === "places" && a && b === "sessions" && segments.length <= 4) {
       return { op: "past", word: "past-sessions", place: a, assistant: c ?? "" }
@@ -351,11 +357,17 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (method === "PATCH" || method === "PUT") return { op: "snippet-update", word: "snippet-update", snippet: a }
     if (method === "DELETE") return { op: "snippet-delete", word: "snippet-delete", snippet: a }
   }
+  if (head === "work" && a === "v2" && b === "items" && c && d === "images" && segments[5] && segments.length === 6 && method === "DELETE") {
+    return { op: "work-v2-image-delete", word: "work.v2.image-delete", id: c, image: segments[5] }
+  }
   if (method !== "POST") return null
   if (head === "work" && a === "v2") {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
     if (b === "items" && c && d === "assign" && segments.length === 5) {
       return { op: "work-v2-assign", word: "work.v2.assign", id: c }
+    }
+    if (b === "items" && c && d === "images" && segments.length === 5) {
+      return { op: "work-v2-image-create", word: "work.v2.image-create", id: c }
     }
     if (b === "proposals" && c && (d === "accept" || d === "reject") && segments.length === 5) {
       return { op: "work-v2-proposal-resolve", word: "work.v2.proposal-resolve", id: c, decision: d }
@@ -483,6 +495,8 @@ function spellingOf(route: WriteRoute): Spelling {
       return "flat"
     case "work-v2-create":
     case "work-v2-assign":
+    case "work-v2-image-create":
+    case "work-v2-image-delete":
     case "work-v2-proposal-resolve":
     case "work-v2-todo-create":
     case "work-v2-todo-action":
@@ -531,7 +545,7 @@ export class RelayWriter {
     try {
       const body = await this.carry(client, route, url, init)
       const ms = this.now() - started
-      if (route.op === "image") {
+      if (route.op === "image" || route.op === "work-v2-image") {
         this.host.note({ method, path, answer: "relay", word: route.word, ms })
         const picture = body as { media_type: string; bytes: Uint8Array }
         return new Response(picture.bytes as BodyInit, { status: 200, headers: { "content-type": picture.media_type } })
@@ -646,6 +660,19 @@ export class RelayWriter {
           throw failure("malformed_read", "a picture is read with the session it belongs to", 400)
         }
         return client.image(await this.identity(client, session), route.artifact)
+      }
+      case "work-v2-image": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", route.word, 501)
+        }
+        const answer = await client._machineRequest(this.host.machine, route.word, { id: route.artifact }, "read") as {
+          media_type?: unknown; data?: unknown
+        }
+        if (typeof answer.media_type !== "string" || typeof answer.data !== "string") {
+          throw failure("malformed_answer", "the reference image answer had no bytes", 502)
+        }
+        const raw = atob(answer.data)
+        return { media_type: answer.media_type, bytes: Uint8Array.from(raw, (c) => c.charCodeAt(0)) }
       }
       case "push-subscribe": {
         // The browser's own subscription object, whole. `push/api.ts` posts
@@ -769,6 +796,12 @@ export class RelayWriter {
       }
       case "work-v2-assign": {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) })
+      }
+      case "work-v2-image-create": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) })
+      }
+      case "work-v2-image-delete": {
+        return this.machineWorkV2(client, route.word, { id: route.id, image: route.image, item: await bodyOf(init) })
       }
       case "work-v2-proposal-resolve": {
         return this.machineWorkV2(client, route.word, { id: route.id, decision: route.decision, item: await bodyOf(init) })

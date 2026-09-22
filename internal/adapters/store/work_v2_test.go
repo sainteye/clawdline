@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -92,6 +93,81 @@ func TestDirectTodoReadMarksOnlyItsSessionAndDeleteRemovesText(t *testing.T) {
 	got, _, _ = s.DirectTodosV2(ctx, "session-a", true, false, 20)
 	if len(got) != 0 {
 		t.Fatalf("deleted text remained: %+v", got)
+	}
+}
+
+func TestWorkV2ReferenceImagesKeepMetadataAndBytesTogether(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	item := v2Item("30000000-0000-4000-8000-000000000001", at)
+	image := work.ImageV2{ID: "30000000-0000-4000-8000-000000000002", WorkID: item.ID, Title: "checkout.png",
+		MediaType: "image/png", Width: 80, Height: 40, Position: 2, CreatedBy: "local", CreatedAt: at}
+	data := []byte("normalized png bytes")
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		if err := tx.CreateItem(item, "local", `{}`); err != nil {
+			return err
+		}
+		return tx.AddImage(image, data)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	images, err := s.WorkV2Images(ctx, item.ID)
+	if err != nil || len(images) != 1 || images[0].Title != image.Title || images[0].ByteCount != int64(len(data)) {
+		t.Fatalf("metadata: %+v, %v", images, err)
+	}
+	got, ok, err := s.WorkV2ImageBytes(ctx, image.ID)
+	if err != nil || !ok || string(got) != string(data) {
+		t.Fatalf("bytes: %q %v %v", got, ok, err)
+	}
+	counts, err := s.WorkV2CapacityCounts(ctx)
+	if err != nil || counts["images_per_item"] != 1 || counts["image_bytes_total"] != int64(len(data)) {
+		t.Fatalf("capacity: %+v, %v", counts, err)
+	}
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.DeleteImage(image.ID) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.WorkV2ImageBytes(ctx, image.ID); err != nil || ok {
+		t.Fatalf("deleted image still readable: %v %v", ok, err)
+	}
+}
+
+func TestWorkV2ReferenceImageCountRefusesWithoutEvicting(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	item := v2Item("31000000-0000-4000-8000-000000000001", at)
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.CreateItem(item, "local", `{}`) }); err != nil {
+		t.Fatal(err)
+	}
+	for n := 0; n < WorkV2ImageLimit; n++ {
+		id := fmt.Sprintf("31000000-0000-4000-8000-%012d", n+2)
+		err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+			return tx.AddImage(work.ImageV2{ID: id, WorkID: item.ID, Title: id, MediaType: "image/png",
+				Width: 1, Height: 1, CreatedBy: "local", CreatedAt: at}, []byte{byte(n)})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	err = s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		return tx.AddImage(work.ImageV2{ID: "31000000-0000-4000-8000-000000000099", WorkID: item.ID,
+			Title: "too many", MediaType: "image/png", Width: 1, Height: 1, CreatedBy: "local", CreatedAt: at}, []byte{9})
+	})
+	if !errors.Is(err, ErrWorkV2ImagesFull) {
+		t.Fatalf("seventh image answered %v", err)
+	}
+	images, _ := s.WorkV2Images(ctx, item.ID)
+	if len(images) != WorkV2ImageLimit {
+		t.Fatalf("limit evicted an existing image: %d", len(images))
 	}
 }
 

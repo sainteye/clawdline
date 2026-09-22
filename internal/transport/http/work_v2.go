@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
@@ -60,8 +61,21 @@ type workV2ItemWire struct {
 	Version          int64                  `json:"version"`
 	Assignments      []workV2AssignmentWire `json:"assignments,omitempty"`
 	Documents        []workV2DocumentWire   `json:"documents,omitempty"`
+	Images           []workV2ImageWire      `json:"images,omitempty"`
 	Steps            []workV2StepWire       `json:"steps,omitempty"`
 	Events           []workV2EventWire      `json:"events,omitempty"`
+}
+
+type workV2ImageWire struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	MediaType string `json:"media_type"`
+	ByteCount int64  `json:"byte_count"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	Position  int64  `json:"position"`
+	CreatedBy string `json:"created_by"`
+	CreatedAt int64  `json:"created_at"`
 }
 
 type workV2AssignmentWire struct {
@@ -148,6 +162,11 @@ func (s *Server) workV2ItemOf(ctx context.Context, v app.WorkV2View) workV2ItemW
 		out.Documents = append(out.Documents, workV2DocumentWire{ID: d.ID, Role: d.Role, Title: d.Title, Body: d.Body,
 			Reference: d.Reference, Position: d.Position, Version: d.Version})
 	}
+	for _, image := range v.Images {
+		out.Images = append(out.Images, workV2ImageWire{ID: image.ID, Title: image.Title, MediaType: image.MediaType,
+			ByteCount: image.ByteCount, Width: image.Width, Height: image.Height, Position: image.Position,
+			CreatedBy: image.CreatedBy, CreatedAt: image.CreatedAt.Unix()})
+	}
 	for _, st := range v.Steps {
 		out.Steps = append(out.Steps, workV2StepWire{ID: st.ID, Title: st.Title, Done: st.Done, Position: st.Position,
 			CreatedBy: st.CreatedBy, CompletedBy: st.CompletedBy, CompletedAt: optionalUnix(st.CompletedAt), Version: st.Version})
@@ -194,6 +213,8 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Items are read with GET and created with POST.")
 		}
+	case len(parts) == 2 && parts[0] == "images" && workID(parts[1]):
+		s.workV2ReferenceImage(w, r, parts[1])
 	case len(parts) == 2 && parts[0] == "items" && workID(parts[1]):
 		if r.Method == http.MethodGet {
 			s.workV2Item(w, r, parts[1])
@@ -203,7 +224,13 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 			writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "An item is read with GET and edited with PATCH.")
 		}
 	case len(parts) == 3 && parts[0] == "items" && workID(parts[1]):
-		s.workV2PersonAction(w, r, parts[1], parts[2])
+		if parts[2] == "images" {
+			s.workV2AddImage(w, r, parts[1])
+		} else {
+			s.workV2PersonAction(w, r, parts[1], parts[2])
+		}
+	case len(parts) == 4 && parts[0] == "items" && workID(parts[1]) && parts[2] == "images" && workID(parts[3]):
+		s.workV2DeleteImage(w, r, parts[1], parts[3])
 	case len(parts) >= 2 && parts[0] == "session-todos":
 		s.workV2SessionTodos(w, r, parts[1:])
 	case len(parts) >= 2 && parts[0] == "agent":
@@ -216,6 +243,28 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 		s.workV2Reset(w, r)
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such work-system v2 route.")
+	}
+}
+
+func (s *Server) workV2ReferenceImage(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A reference image is read with GET.")
+		return
+	}
+	data, ok, err := s.store.WorkV2ImageBytes(r.Context(), id)
+	if err != nil {
+		writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "The reference image could not be read.")
+		return
+	}
+	if !ok {
+		writeRefusal(w, http.StatusNotFound, "image_not_found", "No reference image has that id.")
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(data)
 	}
 }
 
@@ -322,12 +371,20 @@ func (s *Server) workV2Item(w http.ResponseWriter, r *http.Request, id string) {
 	writeJSON(w, map[string]any{"ok": true, "item": s.workV2ItemOf(r.Context(), v)})
 }
 
-const workV2BodyLimit = 96 << 10
+const (
+	workV2BodyLimit      = 96 << 10
+	workV2ImageBodyLimit = 18 << 20
+	workV2ImageByteLimit = 5 << 20
+)
 
 func readWorkV2Body(w http.ResponseWriter, r *http.Request, into any) ([]byte, bool) {
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, workV2BodyLimit))
+	return readWorkV2BodyAtMost(w, r, into, workV2BodyLimit, "A work-system request is at most 96 KiB.")
+}
+
+func readWorkV2BodyAtMost(w http.ResponseWriter, r *http.Request, into any, limit int64, message string) ([]byte, bool) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
-		writeRefusal(w, http.StatusRequestEntityTooLarge, "body_too_large", "A work-system request is at most 96 KiB.")
+		writeRefusal(w, http.StatusRequestEntityTooLarge, "body_too_large", message)
 		return nil, false
 	}
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
@@ -337,6 +394,98 @@ func readWorkV2Body(w http.ResponseWriter, r *http.Request, into any) ([]byte, b
 		return nil, false
 	}
 	return raw, true
+}
+
+func (s *Server) workV2AddImage(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A reference image is added with POST.")
+		return
+	}
+	actor, ok := requirePersonWorkV2(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		ExpectedVersion int64  `json:"expected_version"`
+		Title           string `json:"title"`
+		DataURL         string `json:"data_url"`
+		Position        int64  `json:"position"`
+	}
+	raw, ok := readWorkV2BodyAtMost(w, r, &body, workV2ImageBodyLimit, "A reference-image request is at most 18 MiB.")
+	if !ok {
+		return
+	}
+	bytes, ok := artifacts.DecodeDataURL(body.DataURL)
+	if !ok {
+		writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_image", "Choose a supported raster image.")
+		return
+	}
+	policy := artifacts.ProductionPolicy
+	policy.MaxEncodedBytes = workV2ImageByteLimit
+	normalized, err := artifacts.Normalize(r.Context(), bytes, policy)
+	if err != nil {
+		var refusal artifacts.Refusal
+		if errors.As(err, &refusal) {
+			writeRefusal(w, refusal.Status, refusal.Code, refusal.Message)
+		} else {
+			writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_image", "Choose a supported raster image.")
+		}
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, actor, raw)
+	if !ok {
+		return
+	}
+	var answer []byte
+	_, err = s.workV2().AddImage(r.Context(), id, app.AddImageV2{ExpectedVersion: body.ExpectedVersion,
+		Title: body.Title, Data: normalized.PNG, Width: normalized.Width, Height: normalized.Height,
+		Position: body.Position, Actor: actor}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+		answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+		return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
+	})
+	if err != nil {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write(answer)
+}
+
+func (s *Server) workV2DeleteImage(w http.ResponseWriter, r *http.Request, id, imageID string) {
+	if r.Method != http.MethodDelete {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A reference image is removed with DELETE.")
+		return
+	}
+	actor, ok := requirePersonWorkV2(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		ExpectedVersion int64 `json:"expected_version"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, actor, raw)
+	if !ok {
+		return
+	}
+	var answer []byte
+	_, err := s.workV2().DeleteImage(r.Context(), id, imageID, body.ExpectedVersion, actor,
+		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+		})
+	if err != nil {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
 }
 
 func writeReceiptReplay(w http.ResponseWriter, a *store.ReceiptAnswer) {
@@ -542,7 +691,7 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		if err != nil {
 			return app.WorkV2View{}, err
 		}
-		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items.", id, item.Item.Title)
+		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items.", id, item.Item.Title)
 		if _, sendErr := s.actions().Send(ctx, sess.ID, brief); sendErr != nil {
 			condition := work.ConditionAssignedUnnotified
 			if changed, editErr := s.workV2().Edit(ctx, id, app.EditWorkV2{ExpectedVersion: assigned.Item.Version,

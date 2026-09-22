@@ -122,6 +122,16 @@ function shrink(file: File): Promise<{ url: string; w: number; h: number }> {
     )
 }
 
+/** Prepare one durable Board reference without touching the composer's list. */
+export async function prepareReferencePicture(file: File): Promise<{ url: string; w: number; h: number; name: string }> {
+  if (!isPicture(file)) throw new RefusalError(415, { error: "unsupported_image", detail: "Choose a supported raster image." })
+  const picture = await shrink(file)
+  if (picture.url.length > MAX_EACH) {
+    throw new RefusalError(413, { error: "image_too_large", detail: "One reference image is larger than 5 MiB." })
+  }
+  return { ...picture, name: file.name || "reference image" }
+}
+
 /** The markup `draw()` writes into `#shots`. */
 export function shotsHTML(): string {
   return list
