@@ -1,4 +1,7 @@
-> **看板項目、Session 待辦、Backlog、GitHub Issue 整套怎麼運作、哪些已經做到，一份講完在 [`docs/work-system.md`](work-system.md)；實作決定仍以本文為準。**
+> **The approved replacement work system is specified in [`work-system-v2.md`](work-system-v2.md),
+> with its release gate in [`work-system-v2-acceptance.md`](work-system-v2-acceptance.md). The
+> currently implemented v1 system remains described in [`work-system.md`](work-system.md) until
+> cutover. The decision register remains authoritative where analysis documents disagree.**
 
 # 設計決定：唯一的實作依據
 
@@ -182,7 +185,24 @@
 | D55 | **A drawing may retain the last complete reading for one failed terminal source for at most 120 seconds, and it must label every retained row with its age.** Retention is per source, so an iTerm2 failure does not age a current tmux row. `Fresh` decision callers never receive retained rows; a retained row cannot trigger waiting notifications or identify a task. At expiry the source becomes `missing`, not empty or current. The 120-second cache is registered as `cache.session_inventory` and may only be configured downward. | One iTerm2 listing already has a 10-second deadline, so the bound spans twelve consecutive deadlines and matches the existing screen-backoff ceiling. The 45-second closeability stale guard is shorter, so retained display state cannot authorise a close. Raising the Apple Event timeout is not justified by the available evidence: the production log records failure categories but not successful latency or contemporaneous load. | — | `internal/app/inventory_reading.go` previously replaced its held inventory after every incomplete pass; the console then rendered each process placeholder as a new unknown row. The header also counted only classified state buckets, so its first number could disagree with the number of rows shown. | This change |
 | D56 | **A terminal tab or tmux pane is the sole existence authority for a Session.** Task records, identities, transcripts, Cloud rows and caches may enrich a row but may neither create one nor keep one alive. A complete enumeration by the row's owning terminal source removes an absent row. A source that did not answer makes no new existence decision, so the last complete row may be retained only under D55. A successful close is itself a positive terminal-backend answer: the daemon removes that row from its held readings immediately, and a Cloud viewer applies the successful `end` answer before any older retained row. Only a later current terminal enumeration may show that id again. The daemon decides all three facts; the console only applies their typed freshness and outcome. | This is the boundary that makes “do not forget on no answer” and “do forget on authoritative absence” compatible. At 12:57 on 2026-09-21, the close succeeded, an incomplete iTerm reading kept one unseen row for about ten seconds, and the next complete inventory moved from 11 ids to 10. The old row remained drawable during that interval even though the terminal backend had already answered the stronger fact. | — | The Cloud inventory was already a deletion barrier, but it only moved on the next publisher pass. A successful Cloud mutation also left no command line in `daemon.log`; state-changing Cloud answers now record operation, session, status, code, sender and sequence without body content. | This change |
 
-### 3.6 沒有被推翻、照原文件執行的部分
+### 3.6 Work system v2 (approved 2026-09-22)
+
+The rows below supersede D30–D39 for the replacement. Those rows continue to describe the running
+v1 implementation until cutover; they do not constrain v2.
+
+| ID | Decision | Reason | Supersedes | Implementation status |
+|---|---|---|---|---|
+| D57 | **Only a person creates a work item.** Feature and Issue are executable; Epic, Refactor and Plan remain unassignable in Planning for v2.0. Agents and broker rules may create only previewable proposals. | The owner requires every Board item to have known human provenance; no more unknown automatically filed work. | D30, D31, D36 automatic placement/proposal paths | Approved, not implemented |
+| D58 | **Assignment is a human action and the sole source of work ownership.** One item has at most one owning Session; one Session may own several items. Offline owners remain assigned until a person acts. | “Claimed” means the person deliberately gave the item to a new or existing Session, not that a dispatch or clock inferred responsibility. | D30 commitment rules and automatic handoff/drop | Approved, not implemented |
+| D59 | **The owning Agent drives `assigned → implementing → verifying → merging → deploying → done`; the broker validates evidence without moving the phase on its own.** Blocked/waiting/offline/unknown are conditions, not phases. | The Agent performs implementation, verification, integration and deployment; the broker is the durable evidence and effect boundary. | D31/D33 derived automatic lifecycle and closure | Approved, not implemented |
+| D60 | **The owning Agent may edit title/description, documents and item-local steps, and may drive the execution phase through `done`, but cannot change Project, kind, owner, deployment policy, cancellation, or reopening.** All writes are versioned and append an immutable event. | Agents need a local progress aid without acquiring human Board authority or overwriting concurrent edits. | D31's person-only content model | Approved, not implemented |
+| D61 | **Session to-dos have two human-readable subjects:** one projected row per assigned nonterminal item, plus direct quick to-dos created with `+`. Direct to-do Send/Delete are person-only; owner Agent/person may complete; `sent_at` draws `✓`, Agent API read sets `read_at` and draws `✓✓`. Broker task obligations are nested execution detail. | Dispatch rows are not the same as human work, and a lightweight direct request must not silently become a Board item. | D30/D36 dispatch-derived top-level to-dos | Approved, not implemented |
+| D62 | **An unsent direct to-do is pull-only.** No beat or idle detector may type it. Only a person's Send action creates immediate terminal-delivery intent; root guides ask Sessions to poll at turn boundaries. | An idle assistant has no autonomous turn, and background delivery would violate “Send only by the user.” | Any future automatic reminder interpretation | Approved, not implemented |
+| D63 | **The broker remains execution/evidence infrastructure and loses Board authorship.** `work_id` links a task to an existing item; tasks, landings, leftovers and clocks create no item, assignment, proposal, placement or closure. | One source owns each fact: the person owns work/assignment, the Agent owns progress requests, and broker facts validate effects. | D30–D36 rule-created/moved work | Approved, not implemented |
+| D64 | **Old Board content is permanently deleted at cutover, without content migration or backup.** The operation is explicit, local-only, dry-run/confirmation bound, deletes only proven Board targets, retains transcripts/tasks/landings/Git/worktrees/settings/credentials/Project icons, and proves old facts cannot regrow v1 rows. | The owner stated the old content has no value. Automatic destructive schema migration remains unsafe. | D32, D50 and U1/U9 only for Board content; broker-history retention remains | Approved, not implemented |
+| D65 | **There is one authoritative Board.** Every card carries its Project icon from the current Project catalog; Project pages filter the same Board. The retired Project Board is removed from navigation and is not a live source. | Two Board surfaces and a legacy catalog source make an empty replacement indistinguishable from stale old work. | D32, D34, D39 legacy Board presentation | Approved, not implemented |
+
+### 3.7 沒有被推翻、照原文件執行的部分
 
 裁決只動上面那些列。以下照原文件做，**不必再裁決**：
 
@@ -202,8 +222,10 @@
 
 | 項目 | 使用者的決定 | 影響 |
 |---|---|---|
-| **U1** 787 張舊卡要不要遷成三結構 | **不遷移。** 原話：「不遷移」 | **T5 取消**，不做批次提議畫面；新的三結構從空的開始長，舊卡維持唯讀檢視直到舊 app 退役；退役時舊卡隨舊資料一起凍結（U9） |
+| **U1** 787 張舊卡要不要遷成三結構 | **不遷移。** 原話：「不遷移」 | **T5 取消**，不做批次提議畫面。原本的唯讀凍結安排已由 U15 取代：切換時永久刪除舊看板內容 |
 | **資料歸屬（B 組）**、**Cloud 正式連線（D 組）** | 照 root 的規劃做。原話：「2. 3. 照你規劃的做」 | B1「新 daemon 不再需要讀 ~/.config/clawdline」與正式環境連線依序進行；動到使用者帳號的那一步仍然先問 |
+| **U14** 工作系統 v2 的預設 | **核准。** 原話：「這些預設若沒有問題……沒有問題，請做」 | D57–D63、D65 成為替代設計；先寫正式規格與驗收契約，不在本次改程式 |
+| **U15** 舊看板內容 | **全部刪除，不遷移。** 原話：「舊的看板內容沒有意義，可以全部刪除」 | D64；切換時只刪已證明屬於舊看板的內容，不備份內容，broker／Git／Session 等非看板證據保留 |
 
 ## 4. 需要你拍板的（都已選安全的預設，你不決定就照預設走）
 

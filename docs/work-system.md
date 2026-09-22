@@ -1,5 +1,9 @@
 # 工作系統：看板項目、Session 待辦、Backlog、GitHub Issue
 
+> **這一頁描述目前已落地的 v1。2026-09-22 已核准、但尚未實作的替代設計在
+> [`work-system-v2.md`](work-system-v2.md)，其上線驗收契約在
+> [`work-system-v2-acceptance.md`](work-system-v2-acceptance.md)。完成切換以前，現有程式行為仍以本頁為準。**
+
 > 這一份講完整套工作系統：四個物件各在什麼情況下用、怎麼開始、怎麼推進、怎麼結束、達成什麼，
 > 以及哪些已經在跑、哪些只是設計。依據是本 repo `13d08ea` 的程式，加上 2026-09-19 對執行中的 daemon
 > 做的唯讀查詢（§8）。實作決定的依據仍是 [`design-decisions.md`](design-decisions.md)（D30–D39、U1–U6），
