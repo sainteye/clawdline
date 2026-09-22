@@ -16,16 +16,16 @@ import { toast, toastFailure } from "./toast.js"
  *
  * Differences from the original, each forced by the daemon:
  *
- * - The close is `POST /v1/sessions/{id}/close`. The original sends
- *   `accept_loss` when the sheet listed live children and
- *   `expected_closeability_version` when the page drew `safe`; this route
- *   takes only `force`, and **this never sends it**. The original's own gate
- *   says why: confirming is consent to a loss somebody was shown, and it is
- *   never an answer to "the broker cannot prove this session is safe to end".
+ * - The close is `POST /v1/sessions/{id}/close`. The first confirmation never
+ *   sends `force`: a stale page must still let the daemon disclose a newly
+ *   pending landing. When the daemon answers `close_blocked`, the sheet opens
+ *   again with its authoritative reasons; only that second, explicitly named
+ *   "still close" decision sends `force`.
  * - A refusal that says what is still owed (`close_blocked`, carrying the
  *   same reasons the list shows) brings the sheet back with those reasons as
  *   the closeability lines — the original's `reopenEndWithLost` answer to a
- *   refusal that carries a list. Pressing again asks again, unforced.
+ *   refusal that carries a list. Pressing "still close" overrides that known
+ *   obligation and asks again under a fresh decision id.
  * - A command other than "end" is sent as one line with `/send` and
  *   acknowledged with a toast; the original also draws it into the transcript
  *   optimistically, which this console's transcript does not support.
@@ -47,6 +47,8 @@ interface Pending {
   why: string[]
   closeability: string | null
   help: Help | null
+  /** True only after the daemon disclosed the obligations this decision overrides. */
+  force: boolean
   /** The decision's own id, which is the close's `Idempotency-Key`. */
   request: string
 }
@@ -172,7 +174,7 @@ export const ActionConfirm = {
     const help = closeabilityHelpModel(closeable)
     this.pending = {
       id, kind, action, opener: returnFocus, ask: ask || null, lost, why,
-      closeability: closeable && closeable.state, help, request: mintRequest(),
+      closeability: closeable && closeable.state, help, force: false, request: mintRequest(),
     }
     this.busy = false
     sheet.dataset.kind = kind
@@ -267,6 +269,7 @@ export const ActionConfirm = {
     pending.why = closeabilityLines(refused)
     pending.closeability = projected.state
     pending.help = closeabilityHelpModel(projected)
+    pending.force = true
     this.renderSay(this.endSay(pending.lost, pending.why, pending.closeability, pending.help), pending.help, pending.why)
     this.sync()
   },
@@ -300,7 +303,7 @@ export const ActionConfirm = {
       // refusal to start leaves nothing to release them, so the sheet lets go.
       this.busy = true
       this.sync()
-      if (!end(pending.id, pending.request)) {
+      if (!end(pending.id, pending.request, pending.force)) {
         this.busy = false
         this.sync()
         this.close(false)
@@ -328,7 +331,11 @@ export const ActionConfirm = {
       if (word) word.textContent = T.webClosing
       setConfirmSpin(go.querySelector("canvas"))
     } else {
-      go.textContent = help ? help.confirmLabel : T.webConfirm
+      go.textContent = help
+        ? help.confirmLabel
+        : this.pending?.force
+          ? T.webConfirmEndAnyway
+          : T.webConfirm
     }
   },
 
@@ -382,7 +389,7 @@ function mintRequest(): string {
 }
 
 /** `false` is the only answer that tells the sheet nothing is coming back. */
-function end(id: string, request: string): boolean {
+function end(id: string, request: string, force: boolean): boolean {
   if (!id || !host.writable() || getClosingId()) return false
   const ticket = ++endTicket
   setClosingId(id)
@@ -390,7 +397,7 @@ function end(id: string, request: string): boolean {
   settlingEnd = false
   endWait.start()
   ActionConfirm.sync()
-  client.close(id, false, request).then(
+  client.close(id, force, request).then(
     () => finishEnd(id, ticket, true),
     (e) => finishEnd(id, ticket, false, e),
   )

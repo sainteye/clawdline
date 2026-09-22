@@ -322,6 +322,13 @@ function daemon(): Server {
           key: String(req.headers["idempotency-key"] ?? ""),
           force,
         })
+        if (decodeURIComponent(closing[1]) === BLOCKED && force !== true) {
+          return json(res, 409, {
+            error: "close_blocked",
+            detail: "still owed: landing",
+            reasons: blockedCloseability().reasons,
+          })
+        }
         json(res, 200, { ok: true })
       })
       return
@@ -442,6 +449,7 @@ const PROBE = `(() => {
     scrollTop: document.getElementById("list-scroll")?.scrollTop ?? -1,
     sheet: sheet && !sheet.hidden ? (document.getElementById("action-confirm-title")?.textContent ?? "") : null,
     sheetSay: sheet && !sheet.hidden ? (document.getElementById("action-confirm-say")?.textContent ?? "") : null,
+    confirmAction: sheet && !sheet.hidden ? (document.getElementById("action-confirm-go")?.textContent ?? "") : null,
     focused: document.activeElement ? document.activeElement.id : "",
   }
 })()`
@@ -463,6 +471,7 @@ interface Seen {
   scrollTop: number
   sheet: string | null
   sheetSay: string | null
+  confirmAction: string | null
   focused: string
 }
 
@@ -769,7 +778,7 @@ test("the second press is what closes it, once, under a key a retry can be answe
     await tab.until("the close has been asked for", () => closes.length > 0)
     assert.equal(closes.length, 1, "one press, one close")
     assert.equal(closes[0].id, SAFE)
-    assert.equal(closes[0].force, false, "and never forced: this console does not send that")
+    assert.equal(closes[0].force, false, "the first decision is not forced")
     assert.ok(closes[0].key.length > 0, "under an Idempotency-Key, so a lost answer is not a second close")
   }))
 
@@ -787,6 +796,25 @@ test("a row with something still owed still uncovers the close action", () =>
     assert.match(asked.sheetSay ?? "", /broker 無法證明這個 session 可以安全關閉。/, "it says closing is not proven safe")
     assert.match(asked.sheetSay ?? "", /terminal_working · 由另一個 session 推進/, "it says what blocks closing and who moves it")
     await tab.shot("swipe-blocked")
+  }))
+
+test("a refused close explains what is owed, then still close overrides that disclosed obligation", () =>
+  inTab(async (tab) => {
+    await list(tab)
+    await swipeOpen(tab, BLOCKED)
+    await tab.press("li.row[data-swipe='open'] > .swipe-end")
+    await tab.until("the first confirmation is up", (s) => s.sheet !== null)
+    await tab.press("#action-confirm-go")
+    await tab.until("the daemon's refusal is shown", (s) => s.sheet !== null && s.confirmAction === "仍要關閉")
+    assert.equal(closes.length, 1)
+    assert.equal(closes[0].force, false, "the close gate gets the first decision")
+    const said = await tab.seen()
+    assert.match(said.sheetSay ?? "", /terminal_working/, "the reminder carries the daemon's reason")
+
+    await tab.press("#action-confirm-go")
+    await tab.until("the override reaches the daemon", () => closes.length === 2)
+    assert.equal(closes[1].force, true, "only the explicit still-close decision overrides the gate")
+    assert.notEqual(closes[1].key, closes[0].key, "the override is a new decision, not a retry")
   }))
 
 test("an unknown row keeps saying unknown while its swipe remains an action", () =>

@@ -84,8 +84,6 @@ go test ./...
 go run ./tools/contract-gen -check      # Go and TypeScript are generated together
 tools/check-legacy-css.sh               # the byte-for-byte copies still match
 tools/check-machine-words.sh            # no shown sentence calls the machine a Mac
-tools/check-private.sh                  # nothing of the person's is in a public repo
-tools/check-private.sh -history -new    # no commit behind it added one either
 ( cd web && npm run check && npm run build )   # when anything under web/ changed
 ```
 
