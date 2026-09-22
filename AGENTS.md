@@ -125,6 +125,37 @@ The subject is a sentence about what changed for a person, not a category:
 measured, what the machine said that contradicted the first guess, and what was deliberately left
 undone. Numbers come from a run, not from memory.
 
+## How every delivery report ends
+
+The final response for every task ends with exactly two unbulleted status lines, in this order,
+with no text, heading, code fence or other content after them. Choose the GitHub line and the
+Build/Cloud line independently from the evidence for the current delivery.
+
+Use exactly one of these GitHub lines:
+
+```text
+✅ 已經 commit, push 更新到 github
+🕰️ 還未 commit, push
+```
+
+The GitHub line is complete only when the delivery is committed and that commit is reachable from
+the current `origin/main`. A local commit, an unpushed merge or a pending/rejected push uses the
+pending line.
+
+Use exactly one of these Build/Cloud lines:
+
+```text
+✅ 已經更新 build & Cloud 到最新版本
+🕰️ 還未更新 build & Cloud 到最新版本
+```
+
+The Build/Cloud line is complete only when production `BUILD.json` names the delivered commit and
+the served main bundle passes the `CloudGate` check from `docs/hosted-console.md`. A queued build,
+a preview deployment, a stale production stamp or a skipped verification uses the pending line.
+
+Any required review-residue statement, including `Fixed but not yet released (awaiting review)`,
+goes before these two lines so the status pair always remains the final two lines of the response.
+
 ## What a child does not do
 
 - Does not `git add -A` in a shared tree, and never stages a file it was not assigned.
