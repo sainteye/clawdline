@@ -178,10 +178,13 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/snippets/order"],
     ["POST", "/v1/projects/%2Frepo/worktrees/refresh"],
     ["POST", "/v1/work/v2/items"],
+    ["PATCH", "/v1/work/v2/items/w1"],
+    ["POST", "/v1/work/v2/items/w1/cancel"],
     ["POST", "/v1/work/v2/items/w1/assign"],
     ["GET", "/v1/work/v2/images/img1"],
     ["POST", "/v1/work/v2/items/w1/images"],
     ["DELETE", "/v1/work/v2/items/w1/images/img1"],
+    ["POST", "/v1/work/v2/session-todos/%251/t1/images"],
     ["POST", "/v1/work/v2/proposals/pr1/accept"],
     ["POST", "/v1/work/v2/session-todos/%251"],
     ["POST", "/v1/work/v2/session-todos/%251/t1/send"],
@@ -198,11 +201,11 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("schedules" in CARRIED)
   assert.ok("snippets" in CARRIED)
   assert.ok("timeline" in CARRIED)
-  // 55, counted on this tree — including the spoken-intent planner, Work v2 reads and person actions,
+  // 58, counted on this tree — including the spoken-intent planner, Work v2 reads and person actions,
   // the single-schedule read, the versioned webhook-binding write and Git's per-file diff. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 55)
+  assert.equal(Object.keys(CARRIED).length, 58)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

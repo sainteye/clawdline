@@ -200,6 +200,22 @@ type DirectTodoV2 struct {
 
 func (t DirectTodoV2) Open() bool { return t.CompletedAt.IsZero() }
 
+// DirectTodoImageV2 is one durable visual reference attached to a direct
+// Session to-do. Its normalized PNG body stays in the store and travels to the
+// Session only when the person presses Send.
+type DirectTodoImageV2 struct {
+	ID        string
+	TodoID    string
+	Title     string
+	MediaType string
+	ByteCount int64
+	Width     int
+	Height    int
+	Position  int64
+	CreatedBy string
+	CreatedAt time.Time
+}
+
 type ProposalV2 struct {
 	ID                  string
 	ProjectID           string

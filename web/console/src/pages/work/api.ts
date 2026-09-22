@@ -343,6 +343,7 @@ export interface DirectTodoV2 {
   completed_at: number | null
   completed_by?: string
   version: number
+  images?: WorkV2Image[]
 }
 
 export interface SessionWorkV2 {
@@ -433,6 +434,14 @@ export const readSessionsForWorkV2 = () => call<SessionsSnapshot>("/v1/sessions"
 
 export const createDirectTodoV2 = (terminalID: string, text: string) =>
   mutate<{ todo: DirectTodoV2 }>(`/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}`, { text })
+
+export const addDirectTodoV2Image = (terminalID: string, todoID: string, expectedVersion: number, picture: {
+  url: string
+  name: string
+}, position: number) => mutate<{ todo: DirectTodoV2 }>(
+  `/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}/${todoID}/images`,
+  { expected_version: expectedVersion, title: picture.name, data_url: picture.url, position },
+)
 
 export const directTodoActionV2 = (terminalID: string, todoID: string, action: "send" | "complete" | "delete") =>
   mutate<{ todo?: DirectTodoV2; deleted?: string }>(

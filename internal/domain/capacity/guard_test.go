@@ -231,7 +231,7 @@ func TestRegisterRowsAnswerTheFourQuestions(t *testing.T) {
 		if !KnownClass(e.Class) {
 			t.Errorf("%s: class %q is not a class", e.Name, e.Class)
 		}
-		if e.Unit != Bytes && e.Unit != Rows && e.Unit != Seconds {
+		if e.Unit != Bytes && e.Unit != Characters && e.Unit != Rows && e.Unit != Seconds {
 			t.Errorf("%s: unit %q", e.Name, e.Unit)
 		}
 		// The limit.

@@ -144,6 +144,33 @@ func (f *File) Set(changes map[string]any) (Values, error) {
 	if err != nil {
 		return Values{}, err
 	}
+	return f.set(current, changes)
+}
+
+// Change reads the file and chooses changes while holding the same lock that
+// writes them. It is for a key whose value is itself a collection: two session
+// titles saved together must each be added to the newest array, rather than
+// both reading an older array and the second write replacing the first.
+func (f *File) Change(change func(Values) (map[string]any, error)) (Values, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.checkDir(); err != nil {
+		return Values{}, err
+	}
+	current, err := f.read()
+	if err != nil {
+		return Values{}, err
+	}
+	changes, err := change(current)
+	if err != nil {
+		return Values{}, err
+	}
+	return f.set(current, changes)
+}
+
+// set merges changes onto a reading taken under f.mu and writes the result.
+func (f *File) set(current Values, changes map[string]any) (Values, error) {
 	next := make(map[string]json.RawMessage, len(current.Raw)+len(changes))
 	for k, v := range current.Raw {
 		next[k] = v
