@@ -336,7 +336,14 @@ TD-9 寫得很清楚：落地紀錄說 `landed`／`nothing_to_land`／`abandoned
 
 **原來的觀測把「被拒絕」讀成「空的」。** 當時用了錯誤的 `project_id=`，daemon 回的是
 `400 Unknown board query field`；正確的 `?project=` 回 88 筆。D34「舊看板不再投資」是踩在這個錯誤觀測上的裁決。
-後來的移除不以「它是空的」為理由；理由是**它是沒有寫入者的凍結資料，畫成活看板會誤導人**。
+後來的移除不以「它是空的」為理由；理由是**它是凍結三天沒有被寫過的資料，畫成活看板會誤導人**。
+
+**2026-09-22 更正一句話。** 移除那顆的 commit 訊息寫了「that app is gone」——那是錯的。
+Swift app 裝在 `~/Applications/Clawdline.app`（建於 2026-09-21），我當時只查了 `/Applications`
+就下了結論。它此刻沒有在跑，而那個 JSON 最後被寫入是 2026-09-19 14:52，所以
+「凍結」這個事實成立，也是移除的真正理由；但「那個 app 不存在了」不成立，不該被當成證據。
+同一天還量到：那個 repo 有 **5 個 session 正在工作**，`swift-final` 標籤之後有 **48 顆未發佈的 commit**，
+其中 2026-09-22 09:39 還加了一整個 Git 狀態與 diff 的功能。**它不是一個退役的 repo。**
 
 **而全 console 沒有任何一個畫面讀落地帳。** 我在 `web/console/src` 底下搜過
 `orchestrator/inventory`、`orchestrator/coordinator`、`landing`——**0 次命中**。
