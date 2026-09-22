@@ -107,7 +107,7 @@ person separately asked for that change.
 
 | Credential | Where | Sent as | Opens |
 |---|---|---|---|
-| Orchestrator token | `<state dir>/orchestrator-token` | header `X-Clawdline-Orchestrator` | Everything under `/v1/orchestrator/`, `/v1/work/`, `/v1/board`, `POST /v1/artifacts/images` |
+| Orchestrator token | `<state dir>/orchestrator-token` | header `X-Clawdline-Orchestrator` | Everything under `/v1/orchestrator/`, `/v1/work/`, `/v1/board`, `GET /v1/places`, `POST /v1/artifacts/images` |
 | Task secret | chosen by the root at dispatch | header `X-Clawdline-Task-Secret` | A child's own routes under `/v1/orchestrator/tasks/<id>/`, and `POST /v1/orchestrator/proposals` |
 | Device token | `<state dir>/local-token`, or a paired device's | `Authorization: Bearer` | The console's routes (`/v1/sessions/…`). A session does not need it |
 
@@ -341,6 +341,39 @@ finishes, because it answers to nobody. Refusals: `bad_root_assignment`, `idempo
 notified; poll `GET /v1/orchestrator/tasks/<id>` and read `result.json`. It is never a Root or a
 feature owner.
 
+### Schedule future work
+
+Clawdline Next owns scheduled work itself. Do not use the retired app, `cron`, or a chain of
+detached tasks. Read `GET /v1/orchestrator/schedules`; read one in full at
+`GET /v1/orchestrator/schedules/<id>`. `GET /v1/places` supplies the `place_id` a write names.
+
+A one-time schedule (`on`) may be made directly with the orchestrator token. A repeating schedule
+(`days`) is a standing instruction and needs the person's explicit instruction from this session:
+
+1. Read `GET /v1/orchestrator/sessions/<conversation>/run`. It is the recent run issued when the
+   person sent this session their message through Clawdline.
+2. `POST /v1/orchestrator/schedules` with an `Idempotency-Key` and the ordinary schedule body plus
+   that conversation and run:
+
+```json
+{"title":"Morning sweep","at":"09:00","days":"daily","place_id":"<place id>",
+ "assistant":"codex","instructions":"Inspect the overnight failures and report actionable findings.",
+ "session_id":"<conversation id>","via":{"run":"<run id>"}}
+```
+
+The same proof authorizes `PATCH /v1/orchestrator/schedules/<id>` (send the whole schedule body)
+and `DELETE /v1/orchestrator/schedules/<id>` (send the two proof fields as its JSON body) when the
+person explicitly asked for that change.
+`POST /v1/orchestrator/schedules/<id>/run` runs one now. Read the created or changed schedule back
+before reporting success.
+
+Without `via`, the orchestrator token remains limited to a one-time `on` schedule. An invented,
+expired, or other-session run is refused as `run_unknown`, `run_expired`, or `run_other_session`;
+malformed proof is `invalid_user_authorization`. If the person typed straight into a terminal,
+there is no run: ask them to send the instruction through Clawdline. Never reuse a run as blanket
+permission for work the person's message did not request. This proof makes the relay auditable; it
+does not turn the machine-wide orchestrator token into a session-specific credential.
+
 ## 7. Report your own finished turn
 
 When your turn is genuinely finished — the work done, verified and committed where that applies —
@@ -454,12 +487,13 @@ Two to four options; `default` must be one of them and is what happens when nobo
 7 days unless `due_in_minutes` says 60–10080). Only a `blocking` decision is pushed. Read the answer
 with `GET /v1/orchestrator/decisions/<id>`.
 
-**The person answers; a session does not.** Proposals, decisions and board items are answered
-under `/v1/work/…`. A session writing there must name the run that carried the person's words,
-`"via": {"run": "<id>"}`, and is refused without it (`403 session_cannot_decide`). **No route in
-this daemon issues run ids yet** — they came from the retired workflow envelope — and only the
-shape is checked. So do not relay: ask the person to answer in the console, where they write as
-themselves.
+**The person answers; a session only relays what they said.** Proposals, decisions and board items
+are answered under `/v1/work/…`. A session writing there must name the run that carried the
+person's words, `"via": {"run": "<id>"}`, and is refused without it (`403
+session_cannot_decide`). Read the latest run at
+`GET /v1/orchestrator/sessions/<conversation>/run`; an invented, expired, other-session, or
+pre-question run is refused by name. A person typing straight into a terminal has no run, so ask
+them to answer through Clawdline or in the console.
 
 **Your to-do list.** `GET /v1/orchestrator/sessions/<conversation id>/todos` — named by
 conversation id, not terminal (`409 session_id_is_terminal` otherwise). The broker opens and closes

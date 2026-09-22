@@ -4385,7 +4385,11 @@ type ScheduleRecord struct {
 // and `on`; `days` is not defaulted. schedule_id, created_at, when_changed_at,
 // fired_at and project_dir are the machine's and are refused as unknown fields.
 // Writes need an Idempotency-Key and either a device that may send or, for a
-// schedule that runs once, this machine's orchestrator token.
+// schedule that runs once, this machine's orchestrator token. A session
+// carrying a person's recent instruction may write a repeating schedule by
+// sending both `session_id` and `via.run`; the run must have been issued for a
+// message to that conversation. Those proof fields are audit evidence and are
+// not stored in the schedule.
 type ScheduleRequest struct {
 	Assistant    string   `json:"assistant"`
 	At           string   `json:"at"`
@@ -4400,8 +4404,13 @@ type ScheduleRequest struct {
 	NotifyOnFailure bool   `json:"notify_on_failure,omitempty"`
 	On              string `json:"on,omitempty"`
 	PlaceID         string `json:"place_id"`
-	TimeoutMinutes  int64  `json:"timeout_minutes,omitempty"`
-	Title           string `json:"title"`
+
+	// The conversation the person's message was sent to. Required with via for a
+	// session-authorized repeating write.
+	SessionID      string                     `json:"session_id,omitempty"`
+	TimeoutMinutes int64                      `json:"timeout_minutes,omitempty"`
+	Title          string                     `json:"title"`
+	Via            *ScheduleUserAuthorization `json:"via,omitempty"`
 }
 
 // One row of the list, in one of two shapes. A valid schedule carries id, title
@@ -4487,6 +4496,12 @@ type ScheduleTask struct {
 	Serialize       []string `json:"serialize,omitempty"`
 	TimeoutMinutes  int64    `json:"timeout_minutes,omitempty"`
 	Title           string   `json:"title,omitempty"`
+}
+
+// The recent run issued when the person sent this session the instruction.
+// Required with session_id for a session-authorized repeating write.
+type ScheduleUserAuthorization struct {
+	Run string `json:"run"`
 }
 
 // `when` in the file's own spelling: `at` (HH:MM, local time) and exactly one

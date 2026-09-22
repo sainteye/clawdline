@@ -58,6 +58,7 @@ var sessionFields = map[string]string{
 
 	"orchestrator#BrokerRoot.session_id":    conversation,
 	"projects#PlaceResumed.session":         conversation,
+	"schedules#ScheduleRequest.session_id":  conversation,
 	"sessions#SessionRow.sessionId":         conversation,
 	"sessions#SessionInfoSession.sessionId": conversation,
 	"sessions#SessionInfo.session":          object,

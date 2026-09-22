@@ -339,7 +339,8 @@ func openPath(p string) bool {
 }
 
 // machineScoped is where the orchestrator credential is accepted in place of a
-// device: the orchestrator's own routes, the board, and the worktree reads.
+// device: the orchestrator's own routes, the board, the project-place list a
+// schedule write names, and the worktree reads.
 // `/v1/next/coordinator` is the one `/v1/next/` name left that the
 // orchestrator's credential opens; the shadows of the board and the schedules
 // are gone (D07).
@@ -353,7 +354,7 @@ func machineScoped(p string) bool {
 		return true
 	}
 	switch p {
-	case "/v1/board", "/v1/next/coordinator":
+	case "/v1/board", "/v1/next/coordinator", "/v1/places":
 		return true
 	case "/v1/artifacts/images":
 		// Storing a session's pictures is the orchestrator's (images.go); the

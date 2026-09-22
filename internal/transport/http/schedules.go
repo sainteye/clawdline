@@ -38,7 +38,10 @@ import (
 //
 // Writes have two doors, as there: a device that may send, with an
 // Idempotency-Key, or this machine's orchestrator token — which makes, changes
-// and removes only a schedule that runs once (`MachineRefusal`).
+// and removes only a schedule that runs once (`MachineRefusal`). A session may
+// carry a person's recent instruction through the second door with the run
+// issued for that message; that verified run is treated as the person's act,
+// and is retained as audit evidence rather than schedule-file content.
 
 // scheduleBooks holds one book per state directory, shared by the routes and
 // the clock, so the lane a manual run takes is the lane the timer takes.
@@ -168,8 +171,8 @@ func (s *Server) schedules(w http.ResponseWriter, r *http.Request) {
 		// Not cancelled with the request: a phone that drops between the write
 		// and its read-back must not leave a schedule the answer says was removed.
 		ctx := context.WithoutCancel(r.Context())
-		s.scheduleWriting(w, r, true, func(machine bool, body map[string]any) app.ScheduleReply {
-			return s.scheduleBook().Create(ctx, body, machine)
+		s.scheduleWriting(w, r, true, func(authority app.ScheduleAuthority, body map[string]any) app.ScheduleReply {
+			return s.scheduleBook().Create(ctx, body, authority)
 		})
 	default:
 		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request", "No such route")
@@ -188,7 +191,7 @@ func (s *Server) scheduleRoute(w http.ResponseWriter, r *http.Request) {
 		// A manual run through this machine's token needs no key, as there;
 		// a device's does.
 		s.scheduleWriting(w, r, !machineAuthed(r),
-			func(bool, map[string]any) app.ScheduleReply { return book.Run(ctx, id) })
+			func(app.ScheduleAuthority, map[string]any) app.ScheduleReply { return book.Run(ctx, id) })
 	case run:
 		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No such route")
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
@@ -203,12 +206,12 @@ func (s *Server) scheduleRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, map[string]any{"schedule": record})
 	case r.Method == http.MethodPatch:
-		s.scheduleWriting(w, r, true, func(machine bool, body map[string]any) app.ScheduleReply {
-			return book.Update(ctx, id, body, machine)
+		s.scheduleWriting(w, r, true, func(authority app.ScheduleAuthority, body map[string]any) app.ScheduleReply {
+			return book.Update(ctx, id, body, authority)
 		})
 	case r.Method == http.MethodDelete:
-		s.scheduleWriting(w, r, true, func(machine bool, _ map[string]any) app.ScheduleReply {
-			return book.Delete(ctx, id, machine)
+		s.scheduleWriting(w, r, true, func(authority app.ScheduleAuthority, _ map[string]any) app.ScheduleReply {
+			return book.Delete(ctx, id, authority)
 		})
 	default:
 		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request", "No such route")
@@ -240,14 +243,22 @@ func scheduleWriteFiled(status int) bool {
 // body is refused. It is the spelling a session's writes already have
 // (actions.go), which is the point: one idempotency, not three.
 func (s *Server) scheduleWriting(w http.ResponseWriter, r *http.Request, needKey bool,
-	answer func(machine bool, body map[string]any) app.ScheduleReply) {
+	answer func(authority app.ScheduleAuthority, body map[string]any) app.ScheduleReply) {
 	machine := machineAuthed(r)
 	if !machine && !maySend(r) {
 		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "This device may read, and not send.")
 		return
 	}
 	raw := scheduleRaw(r)
-	run := func(w http.ResponseWriter) { writeScheduleReply(w, answer(machine, scheduleBody(raw))) }
+	run := func(w http.ResponseWriter) {
+		body := scheduleBody(raw)
+		authority, refusal := s.scheduleAuthority(r.Context(), machine, body)
+		if refusal != nil {
+			writeScheduleReply(w, *refusal)
+			return
+		}
+		writeScheduleReply(w, answer(authority, body))
+	}
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if key == "" || s.store == nil {
 		if needKey {
@@ -264,6 +275,52 @@ func (s *Server) scheduleWriting(w http.ResponseWriter, r *http.Request, needKey
 	k := store.ReceiptKey{Scope: scopeSchedules, Actor: who, Key: key}
 	s.receipted(w, r, k, requestDigest([]byte(r.Method), []byte(routePath(r)), raw),
 		scheduleWriteFiled, run)
+}
+
+// scheduleAuthority turns a person's recent message into the same authority
+// their paired device has for this one schedule write. The run is issued only
+// after Clawdline typed that person's message into the named conversation;
+// checking both ids binds the write to the conversation that received it.
+// This is an auditable relay, not caller authentication: the orchestrator
+// credential remains machine-wide. Without these two fields the existing
+// machine-only rule is unchanged, including its once-only allowance.
+func (s *Server) scheduleAuthority(ctx context.Context, machine bool, body map[string]any) (app.ScheduleAuthority, *app.ScheduleReply) {
+	authority := app.ScheduleAuthority{Machine: machine}
+	if !machine {
+		return authority, nil
+	}
+	viaRaw, hasVia := body["via"]
+	sessionRaw, hasSession := body["session_id"]
+	if !hasVia && !hasSession {
+		return authority, nil
+	}
+	via, viaOK := viaRaw.(map[string]any)
+	runID, runOK := via["run"].(string)
+	sessionID, sessionOK := sessionRaw.(string)
+	if !hasVia || !hasSession || !viaOK || len(via) != 1 || !runOK || strings.TrimSpace(runID) == "" ||
+		!sessionOK || strings.TrimSpace(sessionID) == "" {
+		r := app.ScheduleReply{Status: http.StatusBadRequest, Code: "invalid_user_authorization",
+			Message: `A session carries the person's instruction as {"session_id":"<conversation>","via":{"run":"<run>"}}.`}
+		return authority, &r
+	}
+	run, err := s.relayRun(ctx, runID)
+	if err != nil {
+		if refusal, ok := err.(*app.WorkError); ok {
+			r := app.ScheduleReply{Status: refusal.Status, Code: refusal.Code, Message: refusal.Message}
+			return authority, &r
+		}
+		r := app.ScheduleReply{Status: http.StatusServiceUnavailable, Code: "store_unavailable",
+			Message: "The run could not be read; nothing was done. Retry."}
+		return authority, &r
+	}
+	if run == nil || run.Session != sessionID {
+		r := app.ScheduleReply{Status: http.StatusForbidden, Code: "run_other_session",
+			Message: "That run and session_id do not name the same conversation; the schedule write was not authorized."}
+		return authority, &r
+	}
+	delete(body, "via")
+	delete(body, "session_id")
+	return app.ScheduleAuthority{Run: run.ID, Session: sessionID}, nil
 }
 
 // scheduleWebhookBindRoute is the local half of the Cloud's

@@ -354,6 +354,8 @@ func TestGateReadsAPathOneWay(t *testing.T) {
 			map[string]string{"Authorization": "Bearer " + f.read}, 200},
 		{"a place, a token", "/v1/places/470885724e5330e1/sessions",
 			map[string]string{"Authorization": "Bearer " + f.read}, 200},
+		{"the place list a schedule names, the orchestrator's token", "/v1/places",
+			map[string]string{machineHeader: f.machine}, 200},
 		{"documents, a token", "/v1/sessions/%2579/documents/project/notes.md",
 			map[string]string{"Authorization": "Bearer " + f.read}, 200},
 		{"the open page", "/v1/health", nil, 200},
