@@ -344,6 +344,16 @@ const Schedules = (() => {
 /* ---- input/schedule.js: making, changing and removing a schedule ------------ */
 
 type ScheduleFailureLike = ScheduleFailure | null | undefined
+export interface SpokenScheduleDraft {
+  title?: string
+  at?: string
+  days?: string[] | string
+  confidence?: number
+  place_id?: string | null
+  assistant?: string
+  model?: string
+  question?: string
+}
 
 const Schedule = (() => {
   const DAY_CODES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
@@ -732,6 +742,32 @@ const Schedule = (() => {
     })
   }
 
+  /** A spoken schedule is always a filled form, never an automatic create. */
+  function openFrom(draft: SpokenScheduleDraft, instructions: string): void {
+    reset()
+    el("schedule-form").hidden = false
+    el<HTMLInputElement>("schedule-title").value = draft.title || ""
+    el<HTMLInputElement>("schedule-at").value = draft.at || ""
+    const heard = Array.isArray(draft.days) ? DAY_CODES.filter((code) => draft.days?.includes(code)) : []
+    // A low-confidence daily/empty answer is only the form's valid fallback,
+    // not a choice the person made; leave its chip dark until they touch it.
+    daysGuessed = !(Number(draft.confidence) >= 0.5) && !heard.length
+    days = heard.length ? heard : "daily"
+    chosenPlace = draft.place_id || null
+    el<HTMLTextAreaElement>("schedule-instructions").value = instructions || ""
+    drawDays()
+    drawPlaces()
+    said(draft.question || hint())
+    el("schedule-title").focus({ preventScroll: true })
+    ensurePlaces().then(() => {
+      defaultAssistant(draft.assistant)
+      chosenModel = chosenAssistant === "claude" && MODELS.includes(draft.model || "") ? draft.model || "" : ""
+      drawWith()
+      drawModel()
+      drawPlaces()
+    })
+  }
+
   function placeIdForPath(path: string | undefined): string | null {
     const match = (places || []).filter((p) => p.path === path)[0]
     return match ? match.id : null
@@ -934,6 +970,7 @@ const Schedule = (() => {
 
   return {
     open,
+    openFrom,
     openEdit,
     close,
     create,
@@ -944,6 +981,11 @@ const Schedule = (() => {
     confirmDelete,
   }
 })()
+
+/** The command sheet's hand-off into the schedule form. */
+export function openScheduleFrom(draft: SpokenScheduleDraft, instructions: string): void {
+  Schedule.openFrom(draft, instructions)
+}
 
 /* ---- input/schedule-history.js: one schedule as work that happened ----------- */
 

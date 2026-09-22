@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intents.schema.json",
+  "title": "One spoken sentence, made into a draft",
+  "description": "POST /v1/intents. The machine uses an installed Claude Code or Codex CLI to turn one sentence into an editable session or schedule draft. This route starts nothing.",
+  "$defs": {
+    "IntentRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "description": "What the person said, at most 4096 UTF-8 bytes.", "type": "string" }
+      }
+    },
+    "IntentDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "model", "instructions", "title", "confidence", "question", "kind", "at", "days"],
+      "properties": {
+        "place_id": { "description": "An id from GET /v1/places, or null when no listed project fit.", "type": "string", "nullable": true },
+        "assistant": { "type": "string", "enum": ["claude", "codex"] },
+        "model": { "description": "haiku, sonnet or opus for Claude; empty when no size was chosen and always empty for Codex.", "type": "string", "enum": ["", "haiku", "sonnet", "opus"] },
+        "instructions": { "description": "The editable first message. Empty deliberately means to open the session without typing anything.", "type": "string" },
+        "title": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "question": { "description": "The clarification to show below 0.5 confidence; empty at or above it.", "type": "string" },
+        "kind": { "type": "string", "enum": ["session", "schedule"] },
+        "at": { "description": "HH:MM, or empty when no valid time was given.", "type": "string" },
+        "days": {
+          "description": "[daily], named weekdays in week order, or an empty array when no days were said.",
+          "type": "array",
+          "items": { "type": "string", "enum": ["daily", "sun", "mon", "tue", "wed", "thu", "fri", "sat"] }
+        }
+      }
+    },
+    "IntentResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["draft", "ms"],
+      "properties": {
+        "draft": { "$ref": "#/$defs/IntentDraft" },
+        "ms": { "type": "integer" }
+      }
+    }
+  }
+}

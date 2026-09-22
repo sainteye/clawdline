@@ -162,6 +162,10 @@ func documentPath(value any) (string, bool) {
 // documentsMaximumDepth is internal/adapters/documents' MaximumDepth.
 const documentsMaximumDepth = 6
 
+// The Cloud command refuses before forwarding at the same sentence boundary
+// as the local /v1/intents route.
+const intentTextLimit = 4 << 10
+
 func extensionOf(name string) string {
 	dot := strings.LastIndexByte(name, '.')
 	if dot < 0 {
@@ -1443,6 +1447,27 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "POST", Path: "/v1/voice",
 					Body: jsonBody(map[string]any{"audio": p.audio, "rate": p.rate})}
+			}},
+
+		op{name: "intents",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "text") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				text, ok := b.str("text")
+				if !ok || len([]byte(text)) > intentTextLimit {
+					return plan{}, false
+				}
+				p.text = text
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/intents",
+					Body: jsonBody(map[string]any{"text": p.text})}
 			}},
 
 		op{name: "schedule-create",

@@ -33,6 +33,11 @@
 import type { CarriedWord } from "./carry.js"
 import type { CloudIdentity, CloudReadClient, CloudRow, SeamRow } from "./relay-reader.js"
 
+// One admitted request may wait behind one turn, and each turn may try two
+// 30-second CLIs. Ten seconds leaves the relay enough room to deliver either
+// the draft or its typed refusal after that worst-case 120-second path.
+const INTENT_TIMEOUT_MS = 130_000
+
 /** A typed failure as the copied modules raise it (`cloud-failure.js`). */
 interface CloudFailureLike {
   code?: unknown
@@ -73,6 +78,8 @@ export interface CloudWriteClient extends CloudReadClient {
   startPlace(place: string, assistant: string, model: string): Promise<unknown>
   resumePlace(place: string, past: string, assistant: string, requestId?: string): Promise<unknown>
   voice(audio: string, rate: number): Promise<unknown>
+  /** The planner follows dictation to the same explicitly chosen voice host. */
+  voiceHost?(): Promise<{ machine: string }>
   /**
    * The status line's read, and the Session info card's. The copied client has
    * had both since the Swift console; nothing here asked for them, so every
@@ -188,6 +195,7 @@ export type WriteRoute =
   | { op: "start"; word: Carried<"start">; place: string; assistant: string; model: string }
   | { op: "resume"; word: Carried<"resume">; place: string; assistant: string; past: string }
   | { op: "voice"; word: Carried<"voice"> }
+  | { op: "intents"; word: Carried<"intents"> }
   | { op: "places"; word: Carried<"places"> }
   | { op: "past"; word: Carried<"past-sessions">; place: string; assistant: string }
   | { op: "image"; word: Carried<"image">; artifact: string }
@@ -421,6 +429,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return null
   }
   if (head === "voice" && segments.length === 1) return { op: "voice", word: "voice" }
+  if (head === "intents" && segments.length === 1) return { op: "intents", word: "intents" }
   // The three requests that change something about notifications. `key` is
   // not among them: it is a read, and `relay-reader.ts` answers it.
   if (head === "push" && segments.length === 2) {
@@ -653,6 +662,14 @@ export class RelayWriter {
       case "voice": {
         const body = await bodyOf(init)
         return this.dictate(client, String(body.audio ?? ""), Number(body.rate))
+      }
+      case "intents": {
+        const body = await bodyOf(init)
+        if (typeof client.voiceHost !== "function" || typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", "intents", 501)
+        }
+        const host = await client.voiceHost()
+        return client._machineRequest(host.machine, "intents", { text: String(body.text ?? "") }, "action", INTENT_TIMEOUT_MS)
       }
       case "image": {
         const session = url.searchParams.get("session") ?? ""

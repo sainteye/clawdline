@@ -211,7 +211,7 @@ export interface CloudReadClient {
    * Optional for the reason `pushKey` is: a client without it is refused by
    * name rather than throwing where nobody is catching.
    */
-  _machineRequest?(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action"): Promise<unknown>
+  _machineRequest?(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number): Promise<unknown>
 }
 
 /**

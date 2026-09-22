@@ -228,6 +228,12 @@ const (
 	// reading cheap.
 	SessionsAgentRows     = "sessions.agent_rows"
 	CacheBackgroundAgents = "cache.background_agents"
+	// The sentence-to-draft planner: admitted bytes, queued turns and the
+	// longest one turn may hold its queue slot.
+	IntentRequestBytes     = "intent.request_bytes"
+	IntentPlannerQueue     = "intent.planner_queue"
+	IntentPlannerSeconds   = "intent.planner_seconds"
+	IntentCloudWaitSeconds = "intent.cloud_wait_seconds"
 )
 
 // Entry is one row of the register.
@@ -878,6 +884,44 @@ func Register() []Entry {
 			Limit: 64, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
+		},
+		{
+			// One spoken sentence admitted by /v1/intents. A larger body is
+			// refused before a model is asked to read it.
+			Name: IntentRequestBytes, Class: Buffer, Unit: Bytes,
+			Limit: 4 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.intentLimit",
+				"internal/app/cloudops.intentTextLimit"},
+		},
+		{
+			// One planner turn running and one waiting. A third is refused
+			// with 429 busy and can try again after the line moves.
+			Name: IntentPlannerQueue, Class: Buffer, Unit: Rows,
+			Limit: 2, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.intentQueueLimit"},
+		},
+		{
+			// A CLI turn past this deadline is stopped and gives its queue
+			// slot back. The sender receives plan_failed.
+			Name: IntentPlannerSeconds, Class: Buffer, Unit: Seconds,
+			Limit: 30, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.intentTimeLimit"},
+		},
+		{
+			// The hosted console may be the one admitted waiter: 60 seconds
+			// behind the active turn, then 60 for its own two CLI attempts,
+			// with ten seconds for relay delivery and refusal handling.
+			Name: IntentCloudWaitSeconds, Class: Buffer, Unit: Seconds,
+			Limit: 130, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.intentCloudWaitLimit"},
 		},
 	}
 }
