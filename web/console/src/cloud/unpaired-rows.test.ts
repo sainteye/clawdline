@@ -110,5 +110,7 @@ test("pairing is one action in the row's action group, and opens the two-path gu
   assert.match(panel, /className="cloud-pair-ways"/)
   assert.match(panel, /cloudPairFromMachineTitle/)
   assert.match(panel, /cloudPairFromBrowserTitle/)
+  assert.match(panel, /nextWord\("cloudPairAgentPrompt", \{ machine: target, command: line \}\)/)
+  assert.match(panel, /copy\(agentPrompt\)/)
   assert.doesNotMatch(css, /\.cloud-machines \.cloud-pair \{\s*display: block; width: 100%/)
 })

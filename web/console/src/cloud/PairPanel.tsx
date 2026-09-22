@@ -171,6 +171,8 @@ export function PairPanel(props: {
         )
       case "waiting": {
         const line = pairingCommand(state.fragment)
+        const target = asked ? `${JSON.stringify(asked.name)} (machine ID ${asked.id})` : nextWord("cloudPairTargetAny")
+        const agentPrompt = nextWord("cloudPairAgentPrompt", { machine: target, command: line })
         return (
           <>
             {offer && (
@@ -184,15 +186,15 @@ export function PairPanel(props: {
                   id="cloud-pair-command"
                   ref={field}
                   readOnly
-                  rows={4}
+                  rows={10}
                   spellCheck={false}
                   autoCapitalize="off"
                   autoCorrect="off"
-                  value={line}
+                  value={agentPrompt}
                   onFocus={(event) => event.currentTarget.select()}
                 />
                 <div className="cloud-pair-copy">
-                  <button className="chip" type="button" id="cloud-pair-copy" ref={first} onClick={() => copy(line)}>
+                  <button className="chip" type="button" id="cloud-pair-copy" ref={first} onClick={() => copy(agentPrompt)}>
                     {nextWord("cloudPairCopy")}
                   </button>
                   {copied && (
