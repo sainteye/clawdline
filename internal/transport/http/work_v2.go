@@ -691,12 +691,19 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		if err != nil {
 			return app.WorkV2View{}, err
 		}
+		// The assignment itself is the durable delivery: it appears in the
+		// Session's assigned-item projection immediately. Typing is only a
+		// courtesy when a fresh reading still says idle. Working, waiting and
+		// unknown rows pull their to-do list after their present turn.
 		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items.", id, item.Item.Title)
-		if _, sendErr := s.actions().Send(ctx, sess.ID, brief); sendErr != nil {
-			condition := work.ConditionAssignedUnnotified
-			if changed, editErr := s.workV2().Edit(ctx, id, app.EditWorkV2{ExpectedVersion: assigned.Item.Version,
-				Condition: &condition, Actor: actor, Person: true}, nil); editErr == nil {
-				assigned = changed
+		if _, sendErr := s.actions().SendIfIdle(ctx, sess.ID, brief); sendErr != nil {
+			refusal, deferred := sendErr.(app.Refusal)
+			if !deferred || refusal.Code != "session_not_idle" {
+				condition := work.ConditionAssignedUnnotified
+				if changed, editErr := s.workV2().Edit(ctx, id, app.EditWorkV2{ExpectedVersion: assigned.Item.Version,
+					Condition: &condition, Actor: actor, Person: true}, nil); editErr == nil {
+					assigned = changed
+				}
 			}
 		}
 		if file != nil {
@@ -1098,7 +1105,17 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			for _, td := range rows {
 				out = append(out, directTodoWire(td))
 			}
-			writeJSON(w, map[string]any{"ok": true, "direct_todos": out, "truncated": truncated})
+			items, itemTruncated, err := s.workV2().List(r.Context(), "", sessionID, false)
+			if err != nil {
+				s.writeWorkV2Error(w, err)
+				return
+			}
+			assigned := make([]workV2ItemWire, 0, len(items))
+			for _, item := range items {
+				assigned = append(assigned, s.workV2ItemOf(r.Context(), item))
+			}
+			writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "direct_todos": out,
+				"truncated": truncated || itemTruncated})
 			return
 		}
 		if len(parts) == 4 && parts[3] == "complete" && r.Method == http.MethodPost {

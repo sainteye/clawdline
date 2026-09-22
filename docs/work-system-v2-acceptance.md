@@ -87,7 +87,7 @@ description, documents, steps, and reference images all have this control.
 
 Given an executable item and one live assistant Session resolved to the same Project, a person
 assigns it. The item becomes `assigned`, exactly one active assignment is recorded, the Session's
-assigned-item projection contains one row immediately, and one durable briefing effect is owed.
+assigned-item projection contains one row immediately, and the Agent to-do read returns that row.
 
 Negative controls:
 
@@ -97,12 +97,13 @@ Negative controls:
 - item already has an active owner;
 - target disappears between selection and the transaction.
 
-### WS2-S02 — Existing-Session briefing is exactly once
+### WS2-S02 — Existing-Session assignment does not interrupt work
 
-Inject a daemon stop after assignment commit but before typing. After restart, the outbox types the
-brief once. Inject a stop after typing begins but before settlement: outcome is unknown and the
-daemon does not type again. A retry of the original assignment returns its receipt and creates no
-second assignment/effect.
+Assign separately to Sessions observed `working`, `waiting`, and `unknown`. Each receives zero
+terminal input while its assigned-item projection appears immediately. A Session positively
+observed `idle` receives one courtesy brief; a failed courtesy send leaves
+`assigned_unnotified` without rolling back ownership. A retry of the original assignment returns
+its receipt and creates no second assignment.
 
 ### WS2-S03 — Assign a new Session
 
@@ -280,11 +281,12 @@ Pressing Send records durable intent and types the row once. Successful delivery
 shows `✓`. A retry replays the receipt. Machine/Agent calls to Send are refused. Busy, gone,
 ambiguous, and unreadable targets each have typed outcomes and do not falsely set `sent_at`.
 
-### WS2-T03 — Agent read produces the double mark
+### WS2-T03 — Agent read returns all next work and produces the double mark
 
-The owning Session's Agent read returns its open direct to-dos and atomically sets `read_at` once;
-the UI shows `✓✓`. Reading an unsent row moves directly from no mark to `✓✓` and disables Send.
-A person viewing the panel does not mark it read; another Session cannot read or mark it.
+The owning Session's Agent read returns its assigned items and open direct to-dos, and atomically
+sets each direct row's `read_at` once; the UI shows `✓✓`. Reading an unsent row moves directly from
+no mark to `✓✓` and disables Send. A person viewing the panel does not mark it read; another
+Session cannot read or mark it.
 
 The two checks are visually overlapping and have localized accessible text for “read”. Unsent,
 sent, and read remain distinguishable without color.

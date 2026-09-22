@@ -499,6 +499,13 @@ them to answer through Clawdline or in the console.
 conversation id, not terminal (`409 session_id_is_terminal` otherwise). The broker opens and closes
 these from task facts; there is nothing to write.
 
+At every turn boundary, before declaring yourself idle, also read
+`GET /v1/work/v2/agent/session-todos/<conversation id>`. Its `assigned_items` are Board items the
+person has given this Session; its `direct_todos` are quick requests. This pull is how an assignment
+made while you were working waits without interrupting the current turn. Finish the current turn,
+then take the assigned item as your next owned work and read its complete record at
+`GET /v1/work/v2/items/<id>`.
+
 `/v1/board` is the Swift app's old cards, read-only. Landing is a broker fact: an item is never
 marked landed by hand (`422 landing_is_broker_fact`).
 
