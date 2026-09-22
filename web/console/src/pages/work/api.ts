@@ -396,6 +396,22 @@ export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude" 
     model: "default",
   })
 
+export const editWorkV2 = (item: WorkV2Item, title: string, description: string) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}`, {
+    expected_version: item.version,
+    title,
+    description,
+  }, "PATCH")
+
+// The lifecycle calls this cancellation rather than erasing its audit trail.
+// To the person it is Delete: the item leaves the Board and its Session to-do
+// immediately, while Clawdline retains why an assigned item disappeared.
+export const deleteWorkV2 = (item: WorkV2Item) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/cancel`, {
+    expected_version: item.version,
+    reason: "Deleted by the person from the Board.",
+  })
+
 export const addWorkV2Image = (itemID: string, expectedVersion: number, picture: {
   url: string
   name: string
