@@ -324,6 +324,13 @@ type Proposal struct {
 // server had said not to: the briefing was not followed.
 func (p Proposal) Unprompted() bool { return !p.AskedInlineAt.IsZero() && !p.Ask }
 
+// AutoFiledLeftover is a leftover the broker put in the Backlog because no
+// dependency on the person was supplied. It is answered so it never appears
+// among questions, but remains resolvable with an evidence-backed conclusion.
+func (p Proposal) AutoFiledLeftover() bool {
+	return p.Leftover() && p.State == ProposalAnswered && p.Answer == AnswerLater && p.AnsweredBy == ActorBroker
+}
+
 // ProposalPolicy is the clocks and budgets of §4.3–§4.4 and §10 #4, all of
 // them settings.
 type ProposalPolicy struct {
@@ -395,6 +402,69 @@ type ProposalFacts struct {
 	// machine's asks since the day began.
 	AskedThisTurn int
 	AskedToday    int
+}
+
+// UserNeed is the only reason a leftover becomes a question instead of a
+// Backlog item. The proposing root names both the concrete action only the
+// person can take and what that action lets the root do next. Kind is closed
+// deliberately: "important" is not a dependency, while a device, account,
+// credential, or decision really can be unavailable to the root.
+type UserNeed struct {
+	Kind     UserNeedKind `json:"kind"`
+	Action   string       `json:"action"`
+	Unblocks string       `json:"unblocks"`
+}
+
+type UserNeedKind string
+
+const (
+	UserNeedDevice     UserNeedKind = "device"
+	UserNeedAccount    UserNeedKind = "account"
+	UserNeedCredential UserNeedKind = "credential"
+	UserNeedDecision   UserNeedKind = "decision"
+)
+
+var userNeedKinds = []UserNeedKind{UserNeedDevice, UserNeedAccount, UserNeedCredential, UserNeedDecision}
+
+// ParseUserNeed normalizes the optional needs_user object and says whether it
+// names a complete dependency. An absent object means "file this leftover";
+// a partial or invented dependency is refused rather than turned into a
+// vague question.
+func ParseUserNeed(in UserNeed) (UserNeed, bool, error) {
+	in.Action, in.Unblocks = oneLine(in.Action), oneLine(in.Unblocks)
+	if in.Kind == "" && in.Action == "" && in.Unblocks == "" {
+		return UserNeed{}, false, nil
+	}
+	known := false
+	for _, kind := range userNeedKinds {
+		if in.Kind == kind {
+			known = true
+			break
+		}
+	}
+	switch {
+	case !known:
+		return UserNeed{}, false, refuse(400, "invalid_user_need",
+			"needs_user.kind is device, account, credential, or decision; importance is not a dependency.")
+	case in.Action == "" || utf8.RuneCountInString(in.Action) > LeftoverWhyLimit:
+		return UserNeed{}, false, refuse(400, "invalid_user_need",
+			"needs_user.action says what only the person can do, in 1 to %d characters.", LeftoverWhyLimit)
+	case in.Unblocks == "" || utf8.RuneCountInString(in.Unblocks) > LeftoverAcceptanceLimit:
+		return UserNeed{}, false, refuse(400, "invalid_user_need",
+			"needs_user.unblocks says what happens after that action, in 1 to %d characters.", LeftoverAcceptanceLimit)
+	}
+	return in, true, nil
+}
+
+// UserNeedQuestion asks the real question represented by a blocked leftover.
+// It never asks whether to register work: without this complete dependency,
+// the application files the work in the Backlog instead.
+func UserNeedQuestion(lo Leftover, task string, need UserNeed) string {
+	q := "child 交回的任務" + shortTask(task) + "留下「" + lo.Title + "」"
+	if lo.Why != "" {
+		q += "（" + lo.Why + "）"
+	}
+	return q + "。這件事卡在需要你：" + need.Action + "。完成後，" + need.Unblocks + "。"
 }
 
 // Verdict is the gate's answer to a proposal it records.
@@ -566,9 +636,17 @@ func ResolveProposal(p Proposal, resolution, evidence, actor string, now time.Ti
 		p.State, p.Resolution, p.ResolutionEvidence = ProposalResolved, resolution, evidence
 		p.ResolvedBy, p.ResolvedAt = actor, now
 		return p, nil
+	case ProposalAnswered:
+		if p.AutoFiledLeftover() {
+			p.State, p.Answer, p.AnsweredBy, p.AnsweredAt = ProposalResolved, "", "", time.Time{}
+			p.Resolution, p.ResolutionEvidence = resolution, evidence
+			p.ResolvedBy, p.ResolvedAt = actor, now
+			return p, nil
+		}
+		fallthrough
 	default:
 		return Proposal{}, refuse(409, "proposal_not_pending",
-			"Only a pending proposal can be resolved; this one is %s.", p.State)
+			"Only a pending proposal or a broker-filed leftover can be resolved; this one is %s.", p.State)
 	}
 }
 

@@ -343,8 +343,13 @@ func TestALeftoverProposalFromTheRootEndsTheResend(t *testing.T) {
 		}
 		return out
 	}
-	propose := func(key, session, id string, as access) *httptest.ResponseRecorder {
+	propose := func(key, session, id string, as access, needsUser bool) *httptest.ResponseRecorder {
 		body := `{"session_id":"` + session + `","task_id":"` + id + `","leftover":"the retry ladder has no ceiling"}`
+		if needsUser {
+			body = `{"session_id":"` + session + `","task_id":"` + id +
+				`","leftover":"the retry ladder has no ceiling","needs_user":{"kind":"device",` +
+				`"action":"run the relay once on your phone","unblocks":"the root can finish the real-device verification"}}`
+		}
 		req := httptest.NewRequest(http.MethodPost, "/v1/orchestrator/proposals", strings.NewReader(body))
 		req.Header.Set("Idempotency-Key", key)
 		if !as.machine {
@@ -364,7 +369,10 @@ func TestALeftoverProposalFromTheRootEndsTheResend(t *testing.T) {
 	}
 
 	mine := settled("7a5c0000-0000-4000-8000-000000000011")
-	if rec := propose("q1", "root-conv", mine.ID, machine); rec.Code != 201 {
+	if rec := propose("q1", "root-conv", mine.ID, machine, false); rec.Code != 201 ||
+		!strings.Contains(rec.Body.String(), `"state":"answered"`) ||
+		!strings.Contains(rec.Body.String(), `"answer":"later"`) ||
+		!strings.Contains(rec.Body.String(), `"item":`) {
 		t.Fatalf("the root's own proposal: %d %s", rec.Code, rec.Body)
 	}
 	if got := state(mine.ID); got != orchestrator.NoticeAcknowledged {
@@ -375,10 +383,22 @@ func TestALeftoverProposalFromTheRootEndsTheResend(t *testing.T) {
 	// with the task secret, and is recorded as its root's line of work — but the
 	// root has still been told nothing, so the notice stands.
 	childs := settled("7a5c0000-0000-4000-8000-000000000012")
-	if rec := propose("q2", "", childs.ID, access{}); rec.Code != 201 {
+	if rec := propose("q2", "", childs.ID, access{}, false); rec.Code != 201 {
 		t.Fatalf("the child's own proposal: %d %s", rec.Code, rec.Body)
 	}
 	if got := state(childs.ID); got == orchestrator.NoticeAcknowledged {
 		t.Fatal("a child's proposal closed the notice its root had not read")
+	}
+
+	// The wire can ask only by carrying the structured dependency. The
+	// recorded sentence is the real action and what it unblocks, not whether
+	// the work should be registered.
+	blocked := settled("7a5c0000-0000-4000-8000-000000000013")
+	if rec := propose("q3", "root-conv", blocked.ID, machine, true); rec.Code != 201 ||
+		!strings.Contains(rec.Body.String(), `"state":"pending"`) ||
+		!strings.Contains(rec.Body.String(), "run the relay once on your phone") ||
+		!strings.Contains(rec.Body.String(), "the root can finish the real-device verification") ||
+		strings.Contains(rec.Body.String(), "要不要登記") {
+		t.Fatalf("the blocked proposal: %d %s", rec.Code, rec.Body)
 	}
 }
