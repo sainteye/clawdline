@@ -167,8 +167,8 @@ HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST
 | N14 | push 訂閱 | 無數量上限（`push/store.go:225-237`）；檔案讀取上限 1 MiB | 超過 1 MiB → `ErrUnreadable`，**所有推播都失敗** | log；notify 回 502 | — | c |
 | N15 | 圖片 | 照搬舊版 policy（`artifacts/artifact.go:59-70`） | 淘汰最舊，**不記 log**（`store.go:365-372`）；讀者拿到 410 `artifact_expired` | 讀的人事後才知道 | 是 | b |
 | N16 | Drops | 40（`drops.go:33-34`） | 淘汰，有 log | log | 是 | b |
-| N17 | transcript | 8 MiB 尾端、150 KiB 回應（`transcript/turns.go:36-39`、`usage.go:178`） | 同舊版；React `Transcript.tsx` 不讀 `truncation` | 沒人 | 否 | b |
-| N18 | 記憶體快取（transcript ledger、titles、analytics collector） | **無淘汰**（`transcript/cache.go:20-30`、`analytics/rows.go:114-116`） | 記憶體只增不減 | — | — | c |
+| N17 | transcript | 8 MiB 尾端、150 KiB 回應（`transcript/turns.go:36-39`、`http/transcript.go`） | 同舊版；React `Transcript.tsx` 不讀 `truncation` | 沒人 | 否 | b |
+| N18 | 記憶體快取（transcript titles） | 256 筆 LRU（`transcript/claude.go`、`transcript/lru.go`） | 淘汰最久未使用的讀數並計數 | diagnostics、notice | 是 | ✓ |
 | N19 | SSE（自己供應時） | 訂閱者數**無上限**；screen bus 每訂閱 chan 16，**滿了走 `default` 直接丟、沒有計數**（`http/screen.go:189-197`）；沒有 Last-Event-ID | 丟 | 沒人 | 下次變動才補回 | b（訂閱者無上限那一半是 c） |
 | N20 | Cloud 入站佇列 | 64（`cloud/relay.go:42`） | **丟最舊的請求**，記 log | `/v1/cloud/status.queue_dropped`；UI 有型別（`cloud.ts:77`）**但沒畫** | 是 | b |
 | N21 | Cloud replay window | 照搬（`cloud/replay.go:11-17`） | 拒絕新 sender | `inbound_dropped{reason}`，設定頁有警示點（`SettingsWindow.tsx:632-640`） | 是 | a |
@@ -259,7 +259,6 @@ HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST
 | O31 推播訂閱 | N14 | 新版：超過 1 MiB 時**所有推播都失敗** |
 | O38 worktree 508 MB | N10、N11 | 磁碟；新版沒有任何清掃 |
 | — | N13 裝置清單 | **超過 4 MiB 時 auth 在啟動時整個失敗**——一個沒有上限的東西，最後撞上的是另一個東西的上限 |
-| — | N18 記憶體快取 | 記憶體 |
 | — | N9、N27 | 單一請求的大小 |
 
 **原則：**「沒有上限」本身不是缺陷——**證據就不該有筆數上限**。缺陷是**沒有人知道它在長**。所以每一個沒有上限的東西，
@@ -334,7 +333,7 @@ transcript tail、完成通知 cursor，每張最多 256。穩定的一次掃描
 | **觀察** `observation` | executor `observed_at`、SSE 影格、git 歷史匯入、看板機器對帳 | 可以，**可重算** | 最好不落盤（broker-design §6.2）；落盤的淘汰最舊，但**被引用的釘住** |
 | **營運紀錄** `journal` | `orchestrator.*` 生命週期、`worktree.kept`、`completion.attempt` | 可以 | 只記**狀態轉換**，不記重複；broker 的生命週期本來就在 store 的 `events` 裡，不再重寫一份到 audit |
 | **工作區** `work` | task 目錄、worktree、build 產物 | 擁有者確認不在、內容已保存後 | 時間＋擁有者檢查，**未知就保留**（F3、F5）；保留的數量與位元組進 diagnostics |
-| **快取** `cache` | transcript ledger、titles、analytics collector、usage 副本 | 可以 | LRU |
+| **快取** `cache` | transcript titles、project readings | 可以 | LRU |
 | **診斷 log** `diagnostic_log` | daemon log | 可以 | 按大小輪替（10 MiB × 5），0600 |
 | **即時緩衝** `buffer` | SSE 每訂閱者緩衝、Cloud 入站佇列、終端機 lane | **丟了就要讓對方知道** | 最新值 channel `coalesce`；指令佇列 `refuse`（告訴送的人）；慢消費者 `disconnect` 後重拿快照（照 O26）。**絕不默默丟中間的一段** |
 

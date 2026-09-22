@@ -44,7 +44,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "sessions" | "devices" | "projects" | "usage" | "ledger" | "timeline" | "plan" | "settings" | "work" | "now"
+type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "now"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -53,26 +53,12 @@ type Asked = "none" | "waiting" | "opened" | "gone"
 // whose backend this daemon does not own stay on screen and
 // disabled rather than missing, so what is not here can be seen.
 //
-// `usage-open` and `nav-ledger` are hidden in the markup and shown by that same
-// `apply` on a board answer that carries `enabled: false` — Board mode off,
-// which is the mode this daemon is always in: it has no Board switch, and its
-// `/v1/board` carries no `enabled` at all. So the two rows are shown here, as
-// the original shows them in the mode this console is in, and the drawer holds
-// the seven pages the original's holds.
-//
-// `nav-ledger` keeps the markup's English over there — `core/dom.js` has no
-// such id in its element table, so `static.js`'s paint of `T.webLedger` writes
-// to nothing — and does not here, because this drawer is React's and reads the
-// catalog like every other row.
-//
 // The Timeline is in neither drawer: it is one work item's Project history,
 // reached from that item on the work page.
 const PAGES: { id: Page; nav: string; key?: string; text?: string; ready: boolean }[] = [
   { id: "sessions", nav: "nav-sessions", key: "webSessions", ready: true },
   { id: "devices", nav: "nav-devices", key: "webDevices", ready: false },
   { id: "projects", nav: "nav-projects", key: "webProjects", ready: false },
-  { id: "usage", nav: "usage-open", key: "webUsage", ready: false },
-  { id: "ledger", nav: "nav-ledger", key: "webLedger", ready: false },
   { id: "plan", nav: "nav-plan", key: "webPlan", ready: false },
   { id: "settings", nav: "nav-settings", key: "webSettings", ready: false },
 ]

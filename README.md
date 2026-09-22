@@ -138,7 +138,6 @@ from a backup does not fire the moment the clock ticks.
 
 ### Also
 
-- **Usage** by model, assistant, project and day, computed from the transcripts.
 - **Pictures**: attach, paste or drop an image into a session. On a Mac it reaches the assistant
   as a pasted image; elsewhere as a file path.
 - **Dictation** from the console, read back by `whisper-cli` on your own machine, if you have it
@@ -163,7 +162,7 @@ This repository used to hold the Swift app. What changes for you:
   files byte for byte. It is off until you set `schedule_imports_enabled` in the config, because
   an import can name any project directory.
 - **This daemon reads a few of the Swift app's files, read-only,** so that its screens match:
-  session titles, old task records and board cards, the usage ledger, saved pictures, and the
+  session titles, old task records and board cards, saved pictures, and the
   dispatch policy. Those files stopped changing when the app did, so what they hold is history
   this daemon fills gaps with, not a second live source. It never reads the Swift app's secrets,
   tokens or keys. That read lives in one adapter, `internal/adapters/swiftstore`, so it can be

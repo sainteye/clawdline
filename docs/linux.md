@@ -68,7 +68,6 @@ Nothing installs a login item on Linux yet — `launch_at_login` says so by name
 | Dispatch, whole round trip | `POST /v1/orchestrator/tasks` | task dir + 23 KB `CHILD.md`, detached tmux session `clawdline-task-<id>` at 80x24, briefing typed, child ran, `result.json` collected, **`state: success`**, notice typed into the root |
 | Console | served by the daemon, opened in a real browser | document `200` (53 KB), all six assets `200`, session list drew, SSE opened `text/event-stream` and pushed `event: sessions` at once |
 | `clawdline assistants` | read | codex `availability: ok`, quota window read off this machine |
-| Usage | `/v1/orchestrator/usage` | falls back to transcripts (`evidence: "transcript"`) with real token counts |
 | Web Push key | `/v1/push/key` | a VAPID key generated on Linux |
 
 ## 3. Refused by name, not crashed

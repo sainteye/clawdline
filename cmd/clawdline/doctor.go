@@ -106,18 +106,6 @@ var drills = map[string]drill{
 			return store.Add(sub)
 		}, store.Reading, nil
 	}},
-	capacity.CacheTranscriptUsage: {action: "evicted", limit: "20", open: func(dir string, limit int64) (func(int) error, func() capacity.Reading, error) {
-		l := transcript.NewLedger()
-		l.SetLimit(limit)
-		return func(n int) error {
-			path, err := drillTranscript(dir, n)
-			if err != nil {
-				return err
-			}
-			_, err = l.Claude(path)
-			return err
-		}, l.Reading, nil
-	}},
 	// C3 (limits N15, N16): the picture stores warn as they fill and count
 	// what they let go. Each drill writes through the store's own path.
 	capacity.ArtifactsImages: {action: "evicted", limit: "20", open: func(dir string, limit int64) (func(int) error, func() capacity.Reading, error) {

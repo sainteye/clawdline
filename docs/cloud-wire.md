@@ -678,7 +678,7 @@ relay 的 `delivered` 只證明 fan-out 送出去了，不證明機器執行或�
 `diagnostics.report`、`diagnostics.events`、`dispatch`。
 
 唯讀類（:3828-4090）：`transcript`、`info`、`agent`、`shell`、`skills`、`git`、`screen`、`image`、
-`documents`、`document`、`board`、`board.items`、`timeline`、`places`、`project-worktrees`、
+`documents`、`document`、`board`、`board.items`、`timeline`、`places`、
 `project-worktree-lifecycle`(-refresh)、`past-sessions`、`schedules`、`snippets`、`schedule`、
 `push-key`。
 

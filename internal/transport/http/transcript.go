@@ -39,72 +39,6 @@ func recordPath(item session.Session) string {
 	return ""
 }
 
-// usageRoute reports what each live session has spent.
-//
-// It is about what is running now rather than about history, because that is
-// the question a fleet screen is asked: a ledger of everything that ever ran is
-// a different feature with a different shape, and pretending this is that one
-// would be the worse mistake.
-func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-	defer cancel()
-
-	inv := s.reading(ctx)
-	rows := make([]contract.UsageRow, 0, len(inv.Sessions))
-	var total int64
-	for _, item := range inv.Sessions {
-		if !item.IsAssistant() {
-			continue
-		}
-		row := s.usageRow(item)
-		total += row.TotalTokens
-		rows = append(rows, row)
-	}
-	writeJSON(w, contract.UsageReport{
-		Sessions:    rows,
-		TotalTokens: total,
-		At:          time.Now().Unix(),
-	})
-}
-
-// usageRow is one live assistant session's spend.
-func (s *Server) usageRow(item session.Session) contract.UsageRow {
-	row := contract.UsageRow{
-		ID:        item.ID,
-		Label:     item.Label,
-		Assistant: contract.Assistant(item.Assistant),
-		Models:    []contract.ModelUsage{},
-	}
-	path := recordPath(item)
-	if path == "" {
-		row.Evidence = contract.EvidenceNone
-		row.Note = unlocatedNote(item)
-		return row
-	}
-	u, err := s.readUsage(item, path)
-	if err != nil {
-		row.Evidence = contract.EvidenceNone
-		row.Note = recordNote(err)
-		return row
-	}
-	// The assistant's own file, so the reading is as good as the assistant's
-	// own account and is labelled as exactly that.
-	row.Evidence = contract.EvidenceTranscript
-	for _, m := range u.Models {
-		row.Models = append(row.Models, contract.ModelUsage{
-			Model:            m.Model,
-			InputTokens:      m.InputTokens,
-			OutputTokens:     m.OutputTokens,
-			ThinkingTokens:   m.ThinkingTok,
-			CacheReadTokens:  m.CacheReadTok,
-			CacheWriteTokens: m.CacheWriteTok,
-		})
-	}
-	row.TotalTokens = u.Total()
-	row.Messages = u.Messages
-	return row
-}
-
 // unlocatedNote is what a person reads when the session has no record to read
 // because nothing named the conversation.
 //
@@ -122,9 +56,9 @@ func unlocatedNote(item session.Session) string {
 }
 
 // recordNote is what a person reads when a session's record could not be
-// read: what went wrong, and never where. Both the transcript page and the
-// usage row reach paired devices over Cloud, and the operating system's own
-// error names the file under the person's home directory, so an error the
+// read: what went wrong, and never where. The transcript page reaches paired
+// devices over Cloud, and the operating system's own error names the file
+// under the person's home directory, so an error the
 // transcript readers did not type is not passed on in its own words.
 func recordNote(err error) string {
 	var unreadable *transcript.UnreadableError
@@ -137,13 +71,6 @@ func recordNote(err error) string {
 		return transcript.ErrNotFound.Error()
 	}
 	return "this session's record could not be read"
-}
-
-func (s *Server) readUsage(item session.Session, path string) (transcript.Usage, error) {
-	if item.Assistant == session.AssistantCodex {
-		return s.ledger.Codex(path)
-	}
-	return s.ledger.Claude(path)
 }
 
 // transcriptRoute returns the newest entries of one session, in the shape the

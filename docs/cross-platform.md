@@ -165,8 +165,7 @@ The "Today" column is clawdline-go on macOS (master `d40545e`).
 | Six-digit pairing | Printed by the CLI | ✅ | ✅ | ✅ | Platforms without a shell use the CLI anyway (`remote.md` §5 says so) | — |
 | tunnel | cloudflared, brought by the user | ❌ not done | ✅ official binaries exist | ✅ official binaries exist | — | M |
 | Cloud bridge | PROTOCOL.md | ❌ not done | ✅ pure network | ✅ pure network | — | L |
-| Reading the old Swift app's store | `~/.config/clawdline` | ✅ `swiftstore/` | Empty by nature (that machine has no old app) | Empty by nature | The usage page falls back to transcripts (implemented); the crown and the delivery check are simply absent | — |
-| Usage ledger | `~/Library/.../usage.sqlite3` | ✅ | ❌ `ObservabilityDir()` returns a value only on darwin | ❌ same | Already right: falls back to computing from transcripts | — |
+| Reading the old Swift app's store | `~/.config/clawdline` | ✅ `swiftstore/` | Empty by nature (that machine has no old app) | Empty by nature | The crown and the delivery check are simply absent | — |
 | Reading transcripts / plan quotas | `~/.claude`, `~/.codex` | ✅ | ✅ same paths | ✅ `%USERPROFILE%` | — | — |
 | Schedules | Pure Go | ✅ | ✅ | ✅ | — | — |
 
@@ -782,10 +781,9 @@ already comes close). Go's `os` adds `\\?\` to absolute paths automatically, but
 `implemented`
 
 `internal/adapters/swiftstore` reads the old app's `~/.config/clawdline`, read-only (who Clawdfather is, the task list,
-delivery records, session titles, images, the usage ledger). **On Linux and Windows the old app does not exist, so this whole area
+delivery records, session titles and images). **On Linux and Windows the old app does not exist, so this whole area
 is empty by nature**, and the code already handles that correctly:
 
-- `ObservabilityDirIn()` returns `""` off darwin → the usage page falls back to computing from transcripts (implemented).
 - `ProcessStart()` returns the zero time off darwin → it never matches any recorded identity (the comment in `procstart_other.go`
   already explains this).
 - Any other read that finds no file → by the rules, "unknown", not "empty".
@@ -953,7 +951,6 @@ For each item: **call the matching API and see that it returns a named error; op
 | Process inventory | Complete | `Complete:false` + a note |
 | supervisor | Normal | `supervisor_unsupported` (until the Job Object is in place) |
 | The old app's store | The crown and the delivery check are simply absent, and no empty slot is left | Same |
-| Usage page | Falls back to transcripts, and the page explains that the numbers come from a different source | Same |
 | Global hotkey | Wayland: the settings page shows the compositor-shortcut explanation, not a box that cannot record | When `RegisterHotKey` is taken, it says so by name |
 | Secret storage | The settings page says "keyring" or "files" | Says "DPAPI" or "files" |
 | Notifications | Each of the three outlets lists its own state | Same, and the Toast can really be seen (the AUMID pit) |
@@ -1022,7 +1019,7 @@ This section is the honest boundary. Every item below affects the recommendation
 | Secrets | `internal/adapters/cloudkeys/`, `internal/adapters/devices/`, `nofollow_*.go` |
 | Paths and the state directory | `internal/config/config.go` |
 | The documents route's boundary | `internal/adapters/documents/documents.go` |
-| The old app's store | `internal/adapters/swiftstore/` (`ObservabilityDirIn` in `usagedb.go`, `procstart_*.go`) |
+| The old app's store | `internal/adapters/swiftstore/` (`procstart_*.go`) |
 | Opening a browser | `openURL` in `cmd/clawdline/auth.go` |
 | macOS native shell | `shell/darwin/` (`HotKey.swift`, `SMAppService` in `main.swift`, `Browser.swift`) |
 | The old Swift app (read-only reference) | `~/code/clawdline/Sources/`: `LiveScreen.swift`, `WebPush.swift`, `NotchIsland.swift`, `Whisper.swift`, `CloudKeys.swift`, `Targets.swift` |

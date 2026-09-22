@@ -212,7 +212,6 @@ React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`�
 - `~/.config/clawdline/orchestrator.json`、`coordinator.json`：上面那些事實。
 - `~/.config/clawdline/config.json`：只解 `session_titles`，以及方案額度要的 `status_dir`、`codex_home`、
   `assistant_quota_low_threshold` 三個鍵（`QuotaConfig`）。
-- `~/.config/clawdline/schedules/*.json`：只解 `schedule_id` 與 `title`，給用量頁的排程名稱（`ScheduleTitles`）。
 - **圖片** `~/Library/Caches/com.tsunamiworks.clawdline/session-images/`（`CLAWDLINE_SESSION_IMAGE_DIR` 可改）：
   舊 app 存過的圖片與它們的 metadata（`SessionImageMarker`／`SessionImageArtifact`）。舊 app 在跑的那段時間寫進
   `~/.claude`／`~/.codex` 的對話裡有 `<clawdline-image id="…">` 標記，本專案沒有第二份來源；不讀，那些訊息就只剩一行
@@ -225,13 +224,6 @@ React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`�
   **不回空看板**。這一條放在 `internal/adapters/board` 而不是 `swiftstore`，因為它是那個 task 的認領範圍；
   整條拿掉的方式相同。新版自己的看板設定寫在 `CLAWDLINE_NEXT_DIR/project-board.json`（0600），只有 board 級的
   `enabled`／`narrativeConsent`；項目寫入等 `docs/board-design.md` 的 C1／C2 決定。
-- **用量帳本** `~/Library/Application Support/Clawdline/Observability/usage.sqlite3`
-  （`CLAWDLINE_OBSERVABILITY_DIR` 可改；2026-09-17 使用者決定）：用量頁的列（`UsageLedger`，`usagedb.go`）。
-  它是 WAL 模式的 SQLite，舊 app 隨時在寫，所以**從不開原檔**——`mode=ro` 仍會對 `-shm` 加鎖、也可能建立它。
-  做法是以 `O_RDONLY` 把主檔與 `-wal`（不含 `-shm`）複製到本 app 自己的 `$TMPDIR/clawdline-next/`
-  （目錄 0700、檔案 0600），複製前後比對兩個檔的 size、mtime、inode，變了就重來；只開副本，讀完即刪。
-  依 stamp 快取，最多每 5 秒複製一次。重試仍失敗就沿用上次讀數（stale），沒有就回「未知」，不回空。
-  沒有這個檔（Linux、Windows、沒跑過舊 app 的 Mac）時用量頁退回 transcript 計算。
 - **家規** `~/.config/clawdline/dispatch-policy.md` 與 `dispatch-policy.local.md`（broker，2026-09-18 補登，
   `docs/design-decisions.md` D23 ②）：每次派工時各讀一次，貼進 child 的 CHILD.md；`/v1/diagnostics` 的
   `broker.policy` 也讀同兩個檔算字數。放在 `internal/transport/http/orchestrator_wiring.go` 的 `dispatchPolicy`，

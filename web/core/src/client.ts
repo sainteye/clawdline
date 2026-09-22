@@ -14,7 +14,6 @@ import type {
   SessionsSnapshot,
   SettleResult,
   TranscriptPage,
-  UsageReport,
 } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "./refusal.js"
 import { routes, sessionRoutes } from "./routes.js"
@@ -70,10 +69,6 @@ export class ClawdlineClient {
   coordinator(): Promise<CoordinatorSnapshot> {
     return this.get(routes.coordinator)
   }
-  usage(): Promise<UsageReport> {
-    return this.get(routes.usage)
-  }
-
   transcript(id: string, limit = 40): Promise<TranscriptPage> {
     return this.get(`${routes.transcript}?session=${encodeURIComponent(id)}&limit=${limit}`)
   }

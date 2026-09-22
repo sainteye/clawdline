@@ -47,9 +47,6 @@ type Server struct {
 	inventory app.Inventory
 	store     *store.Store
 	terminals []ports.TerminalHost
-	// ledger remembers what has already been counted, so a transcript is read
-	// once rather than once per request.
-	ledger *transcript.Ledger
 	// facts holds the model and spend read out of each record, keyed on the
 	// file's size and time, so the status line's minute-by-minute read of an
 	// unchanged session opens nothing.
@@ -146,7 +143,6 @@ func New(cfg config.Config) (*Server, error) {
 		cfg:       cfg,
 		proxy:     proxy,
 		terminals: terminal.Hosts(),
-		ledger:    transcript.NewLedger(),
 		facts:     transcript.NewRecordFacts(),
 		icons:     icon.NewRegistry(),
 		swift:     swiftstore.Open(swiftstore.Dir()),
@@ -174,7 +170,6 @@ func New(cfg config.Config) (*Server, error) {
 	srv.inventory.Held.SetLimits(CapacityLimit(capacity.ScreensCaptureSlots),
 		CapacityLimit(capacity.CacheTerminalScreens))
 	// The transcript caches and the skills cache hold their register rows' limits.
-	srv.ledger.SetLimit(CapacityLimit(capacity.CacheTranscriptUsage))
 	srv.skillMenu.SetLimit(CapacityLimit(capacity.CacheSessionSkills))
 	srv.links.SetLimit(CapacityLimit(capacity.CacheSessionLinks))
 	srv.agents.SetLimit(CapacityLimit(capacity.CacheBackgroundAgents))
@@ -399,14 +394,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/places/", s.placeRoute)
 	mux.HandleFunc("/v1/projects", s.projectCatalogRoute)
 	mux.HandleFunc("/v1/projects/", s.projectsRoute)
-	mux.HandleFunc("/v1/orchestrator/usage", s.usageRoute)
-	mux.HandleFunc("/v1/orchestrator/usage/analytics", s.usageAnalyticsRoute)
-	mux.HandleFunc("/v1/orchestrator/usage/analytics.csv", s.usageAnalyticsRoute)
-	mux.HandleFunc("/v1/orchestrator/usage/analytics.json", s.usageAnalyticsRoute)
-	mux.HandleFunc("/v1/orchestrator/usage/project-worktrees", s.usageWorktreesRoute)
-	// The two pages that read this daemon's own history and store nothing
-	// (ledger.go, timeline.go). Both are GET only.
-	mux.HandleFunc("/v1/orchestrator/usage/verification-ledger", s.ledgerRoute)
+	// The Project Timeline reads this daemon's own history and stores nothing.
 	mux.HandleFunc("/v1/timeline", s.timelineRoute)
 	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
 	// Pictures: stored by a session (machine token), read by id (images.go).

@@ -122,6 +122,31 @@ func (s *Server) timelineRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, contract.TimelineEnvelope{Timeline: snapshot})
 }
 
+// timelineReading reports the fullest single Project now. The Timeline is a
+// projection rather than a store, so this is what its registered capacity row
+// would make the next read walk.
+func (s *Server) timelineReading() (entries int64, err error) {
+	if s.broker == nil {
+		return 0, nil
+	}
+	records, _, err := s.broker.Records(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	perProject := map[string]int64{}
+	for _, rec := range records {
+		if _, ok := timelineEntry(rec); ok {
+			perProject[valueOr(rec.Repository, rec.ProjectDir)]++
+		}
+	}
+	for _, n := range perProject {
+		if n > entries {
+			entries = n
+		}
+	}
+	return entries, nil
+}
+
 type timelineQuery struct {
 	project     string
 	entry       string

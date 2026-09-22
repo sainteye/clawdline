@@ -192,8 +192,8 @@ export interface CloudReadClient {
    * One read of one machine, by the word the machine lists.
    *
    * The copied client has a method per word of the Swift console's vocabulary
-   * and none for a word that console never had — the whole work system, and
-   * this daemon's Project catalog and verification ledger are four such words
+   * and none for a word that console never had — the whole work system and
+   * this daemon's Project catalog are such words
    * — and the copy is held to its source byte for byte
    * (`tools/check-legacy-css.sh`), so a method cannot be added to it here.
    * This is the generic underneath all of them (`_machineRequest`), and the
@@ -204,9 +204,9 @@ export interface CloudReadClient {
    *
    * It is called for every word this file carries, including the four the
    * copied client does name, because those four pick their own machine —
-   * `board` asks the account for one, `projectWorktrees` looks one up in the
-   * places it has read — and this seam is reading one machine that was chosen
-   * before the console was drawn. One path, one gate, one machine.
+   * `board` asks the account for one — and this seam is reading one machine
+   * that was chosen before the console was drawn. One path, one gate, one
+   * machine.
    *
    * Optional for the reason `pushKey` is: a client without it is refused by
    * name rather than throwing where nobody is catching.
@@ -713,20 +713,12 @@ export class RelayReader {
           this.only(url, path)
           return await this.machineRead(method, path, "projects", {})
         }
-        case "/v1/orchestrator/usage/project-worktrees": {
-          const q = this.only(url, path, "project")
-          return await this.machineRead(method, path, "project-worktrees", { project: q.project ?? "" })
-        }
         case "/v1/orchestrator/landings": {
           // No parameters: the landing ledger is machine-wide, and the one
           // page that reads it asks what this machine owes, not what one
           // repository does.
           this.only(url, path)
           return await this.machineRead(method, path, "landings", {})
-        }
-        case "/v1/orchestrator/usage/verification-ledger": {
-          const q = this.only(url, path, "graph")
-          return await this.machineRead(method, path, "verification-ledger", { graph: q.graph ?? "" })
         }
         case "/v1/timeline": {
           // `upcoming` is a filter with two meanings and the page sends it

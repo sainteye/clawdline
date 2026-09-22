@@ -98,7 +98,7 @@ from its own directory and let it keep the stable copy fresh.
 | `clawdline skill install` / `uninstall` | both | stub written to `%USERPROFILE%\.claude\skills\clawdline\SKILL.md`, recorded, and put back exactly |
 | `clawdline guide zh-TW` | raw stdout bytes | 29 068 bytes, 4 094 CJK code points, **0 replacement characters** — the bytes are right; §4.5 is the screen |
 | `clawdline landings`, `tunnel --json`, `cloud status`, `board tracks` | read | all answered, Windows paths spelled with backslashes throughout |
-| `/v1/settings`, `/v1/places`, `/v1/projects`, `/v1/board`, `/v1/orchestrator/usage` | read | `200`, empty and honest about it |
+| `/v1/settings`, `/v1/places`, `/v1/projects`, `/v1/board` | read | `200`, empty and honest about it |
 
 ## 3. Refused by name, not crashed
 

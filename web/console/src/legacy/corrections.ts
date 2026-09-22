@@ -13,7 +13,6 @@ export interface LegacyCorrection {
     | "device-session-count-unknown"
     | "session-activity-not-drawn"
     | "forgotten-machine-not-marked"
-    | "ledger-reader-busy"
     | "timeline-board-pills-unmapped"
   sources: readonly {
     file: string
@@ -82,19 +81,6 @@ export const LEGACY_CORRECTIONS: readonly LegacyCorrection[] = [
     copiedBehaviour: "Drops the New session action from an unselectable machine card without saying this tab has forgotten the machine.",
     whyWrong: "After a successful forget, the retained relay row is deliberately unselectable; silence makes that deliberate state look like a broken control.",
     consoleBehaviour: "Adds a visible forgotten fact to that retained, deliberately unselectable account row.",
-  },
-  {
-    id: "ledger-reader-busy",
-    sources: [
-      {
-        file: "web/console/src/legacy/js/view/ledger.js",
-        line: 386,
-        contains: 'sentence: code === "graph_not_found" ? T.webLedgerNotFound : ""',
-      },
-    ],
-    copiedBehaviour: "Explains graph_not_found but sends usage_analytics_busy to the generic ledger failure sentence.",
-    whyWrong: "A busy reader is available but occupied; the sessions and their records are not broken.",
-    consoleBehaviour: "Keeps the usage_analytics_busy code and says the reader is busy and to try again shortly.",
   },
   {
     id: "timeline-board-pills-unmapped",

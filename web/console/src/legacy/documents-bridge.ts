@@ -261,8 +261,8 @@ const jsonFetch = makeJSONFetch({
  * This daemon writes `{"error": "not_found", "detail": "…"}` — a **string**
  * `error` beside a separate `detail` (`internal/transport/http/write.go`) —
  * and the Swift app wrote `{"error": {"code", "message"}}`. Every other bridge
- * here reads both (`git-bridge.ts`, `ledger-bridge.ts`, `board-bridge.ts`,
- * `projects-bridge.ts`, `schedules-bridge.ts`, `start-bridge.ts`,
+ * here reads both (`git-bridge.ts`, `board-bridge.ts`, `projects-bridge.ts`,
+ * `schedules-bridge.ts`, `start-bridge.ts`,
  * `timeline-bridge.ts`, `voice-bridge.ts`). This one read only the object, so
  * `error.code` on a string was `undefined` and every refusal the Documents page
  * ever showed arrived as `http_404`/`http_403`/`http_503` — none of which

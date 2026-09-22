@@ -144,20 +144,6 @@ const RULES: Rule[] = [
     ],
   },
   {
-    id: "U13",
-    family: U,
-    title: "Unmeasured Feature attribution becomes zero rows",
-    cause: "literal_zero",
-    probes: [{ file: "internal/adapters/analytics/worktrees.go", all: ["\"featureRows\": 0", "\"worktrees\":    []any{}"] }],
-  },
-  {
-    id: "U14",
-    family: U,
-    title: "An unconfigured review classifier claims a complete zero-row read",
-    cause: "literal_complete",
-    probes: [{ file: "internal/adapters/analytics/query.go", all: ["\"classifier\":           obj{\"configured\": false}", "\"reviewReceipts\": obj{\"status\": \"complete\", \"read\": 0"] }],
-  },
-  {
     id: "U15",
     family: U,
     title: "An unclassified Cloud retry is labelled as server offline",
@@ -184,13 +170,6 @@ const RULES: Rule[] = [
     title: "The schedule summary writes three English labels",
     cause: "raw_ui_english",
     probes: [{ file: "web/console/src/pages/schedules.tsx", all: ["<span>Schedules</span>", "title=\"New schedule\"", "aria-label=\"Scheduled tasks\""] }],
-  },
-  {
-    id: "E05",
-    family: E,
-    title: "The reachable Usage page is an English HTML fragment",
-    cause: "raw_html_english",
-    probes: [{ file: "web/console/src/pages/usage/section.html", all: ["Usage Portfolio", "Recent agent work", "Worth a closer look"] }],
   },
   {
     id: "E06",
@@ -280,16 +259,6 @@ const RULES: Rule[] = [
     ],
   },
   {
-    id: "L01",
-    family: U,
-    title: "The byte-locked ledger cannot yet explain usage_analytics_busy",
-    cause: "locked_copy",
-    probes: [
-      { file: "web/console/src/legacy/js/view/ledger.js", all: ["code === \"graph_not_found\"", "fallback: T.webLedgerFailed"] },
-      { file: "web/console/src/legacy/ledger-bridge.ts", all: ["return bindLedgerPage(elements, {"] },
-    ],
-  },
-  {
     id: "L02",
     family: U,
     title: "The byte-locked device view still draws an unknown list as zero",
@@ -301,7 +270,7 @@ const RULES: Rule[] = [
   },
 ]
 
-const EXPECTED_RULES = 33
+const EXPECTED_RULES = 29
 const EXPECTED_OPEN = 0
 const EXPECTED_LOCKED = 0
 

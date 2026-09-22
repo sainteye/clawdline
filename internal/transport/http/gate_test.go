@@ -210,7 +210,6 @@ func TestGateCoversEveryChange(t *testing.T) {
 		"/v1/orchestrator/schedules",
 		"/v1/next/coordinator",
 		"/v1/orchestrator/tasks", "/v1/orchestrator/tasks/t1/respawn",
-		"/v1/orchestrator/usage",
 		"/v1/sessions/%25x/send", "/v1/sessions/%25x/interrupt", "/v1/sessions/%25x/close",
 		"/v1/settings",
 		"/v1/projects/p/worktrees/refresh",

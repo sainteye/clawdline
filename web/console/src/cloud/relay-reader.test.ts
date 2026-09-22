@@ -591,10 +591,8 @@ test("a snippet list with no session named is refused, and an older client by na
 /* ---- the work system, the Projects page and what they carry ---------------
    Before this, every one of these was the `default:` case — 501
    `cloud_not_carried` — so a phone showed the Mac's work board, its Backlog,
-   its proposals, its decisions, its digests, its Project catalog, its Project
-   worktrees, its timeline and its verification ledger as nine screens that
-   could not be read. The Mac had answered four of them the whole time and had
-   a route for a fifth; the other five had no word at all. */
+   its proposals, its decisions, its digests, its Project catalog, its
+   worktree lifecycle and its timeline as screens that could not be read. */
 
 /** Every read carried by word, the URL the console asks it with, and the body that must reach the machine. */
 const CARRIED_READS: [string, string, Record<string, unknown>][] = [
@@ -605,10 +603,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/decisions", "work.decisions", {}],
   ["/v1/work/digests?kind=daily", "work.digests", { kind: "daily" }],
   ["/v1/projects", "projects", {}],
-  ["/v1/orchestrator/usage/project-worktrees?project=%2Fp", "project-worktrees", { project: "/p" }],
   ["/v1/projects/%2Fp/worktrees", "project-worktree-lifecycle", { project: "/p" }],
-  ["/v1/orchestrator/usage/verification-ledger", "verification-ledger", { graph: "" }],
-  ["/v1/orchestrator/usage/verification-ledger?graph=g1", "verification-ledger", { graph: "g1" }],
   ["/v1/board?project=p1", "board", { project: "p1", item: "" }],
   ["/v1/board?project=p1&item=i1", "board", { project: "p1", item: "i1" }],
   [

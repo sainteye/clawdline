@@ -319,7 +319,7 @@ The protocol catalog is closed and is the source of `CloudAppBridge.readTypes`:
 | `image` | replicated blob | content-addressed transcript attachment |
 | `agent`, `shell`, `skills`, `git`, `screen` | live query | bounded Session-local observation |
 | `documents`, `document` | live query | scoped local document inventory/content |
-| `board`, `timeline`, `places`, `project-worktrees`, `past-sessions` | live query | bounded machine-local query |
+| `board`, `timeline`, `places`, `past-sessions` | live query | bounded machine-local query |
 | `schedules`, `snippets`, `schedule`, `push-key` | live query | effect-free machine-local read |
 | `project-worktree-lifecycle` | live query | reads an already cached lifecycle snapshot and never runs Git |
 | `project-worktree-lifecycle-refresh` | command | performs a local observation, runs processes, and mutates the lifecycle cache |
