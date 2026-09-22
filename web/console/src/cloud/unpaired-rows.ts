@@ -39,6 +39,12 @@ export interface AccountName {
   platform: string
 }
 
+/** The account's authoritative machine roster, including registrations it revoked. */
+export interface AccountMachineRoster {
+  names: Map<string, AccountName>
+  revoked: Set<string>
+}
+
 /** Facts every machine row can use to distinguish one registration from another. */
 export interface MachineIdentityFacts {
   shortID: string
@@ -49,24 +55,33 @@ export interface MachineIdentityFacts {
 type Get = (url: string, init?: RequestInit) => Promise<{ status: number; json(): Promise<unknown> }>
 
 /** The account's names for its machines, by id; empty when it would not say. */
-export async function accountMachineNames(apiOrigin: string, get: Get = fetch): Promise<Map<string, AccountName>> {
+export async function accountMachineRoster(apiOrigin: string, get: Get = fetch): Promise<AccountMachineRoster | null> {
   const names = new Map<string, AccountName>()
+  const revoked = new Set<string>()
   try {
     const res = await get(apiOrigin + "/v1/machines", { credentials: "include" })
-    if (res.status !== 200) return names
+    if (res.status !== 200) return null
     const body = (await res.json()) as { machines?: unknown }
-    if (!body || !Array.isArray(body.machines)) return names
+    if (!body || !Array.isArray(body.machines)) return null
     for (const row of body.machines as Array<Record<string, unknown>>) {
       if (!row || typeof row.id !== "string" || !row.id) continue
-      if (row.revoked_at) continue
+      if (row.revoked_at) {
+        revoked.add(row.id)
+        continue
+      }
       const name = typeof row.name === "string" ? row.name.trim() : ""
       if (!name) continue
       names.set(row.id, { name, platform: typeof row.platform === "string" ? row.platform : "" })
     }
   } catch {
-    /* no names; the rows keep what they had */
+    return null
   }
-  return names
+  return { names, revoked }
+}
+
+/** Compatibility for callers that only need labels and can tolerate no account answer. */
+export async function accountMachineNames(apiOrigin: string, get: Get = fetch): Promise<Map<string, AccountName>> {
+  return (await accountMachineRoster(apiOrigin, get))?.names ?? new Map()
 }
 
 /** A row that can be relabelled: the fields the presentation writes. */
