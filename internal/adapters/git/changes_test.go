@@ -195,6 +195,10 @@ func TestChangesReadsARepositoryItMade(t *testing.T) {
 	run("commit", "-qm", "first")
 	write("kept.txt", "one\ntwo\nthree\n")
 	write("fresh.txt", "new\n")
+	if err := os.Mkdir(filepath.Join(dir, "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write("nested/fresh.txt", "nested new\n")
 
 	got, err := New().Changes(context.Background(), dir)
 	if err != nil {
@@ -226,6 +230,9 @@ func TestChangesReadsARepositoryItMade(t *testing.T) {
 	}
 	if fresh.Kind != KindUntracked || fresh.Additions != nil {
 		t.Errorf("fresh.txt = %+v", fresh)
+	}
+	if nested, ok := byPath["nested/fresh.txt"]; !ok || nested.Kind != KindUntracked {
+		t.Errorf("nested/fresh.txt = %+v, found %v", nested, ok)
 	}
 	// No index.lock left behind: this route is opened by somebody pressing a
 	// menu item in a checkout another process may be building in.

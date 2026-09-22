@@ -128,7 +128,11 @@ func (g *Git) Changes(ctx context.Context, cwd string) (Status, error) {
 	// being answered: `git status` outside a work tree is the refusal, not a
 	// failure. From the two diffs it is a failure, because by then this is a
 	// repository and git still would not answer.
-	status, err := g.readOnly(ctx, cwd, "status", "--porcelain=v2", "--branch")
+	// Name every untracked file. Git's default collapses an untracked directory
+	// to one row ending in '/', but that row has no file patch for the panel to
+	// open. The status line promises file diffs, so its authorization snapshot
+	// must carry the actual leaf paths too.
+	status, err := g.readOnly(ctx, cwd, "status", "--porcelain=v2", "--branch", "--untracked-files=all")
 	if err != nil {
 		if errors.Is(err, ErrTimedOut) || errors.Is(err, ErrUnavailable) || errors.Is(err, ErrTooLarge) {
 			return Status{}, err
