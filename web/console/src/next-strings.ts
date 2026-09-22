@@ -305,6 +305,11 @@ const words = {
     // would act on: "this session" is enough beside the conversation and
     // nothing at all beside thirteen rows.
     endNamedTitle: "Close {session}?",
+    endWorkChecking: "Checking this Session's unfinished Board items…",
+    endWorkOpen: "Unfinished Board items ({count}):",
+    endWorkItem: "{title} · {project}",
+    endWorkTruncated: "More unfinished Board items exist than this reminder could list.",
+    endWorkUnreadable: "Clawdline could not read this Session's unfinished Board items. Review its Session to-dos before closing it.",
     swipeCloseAction: "Close Session",
     swipeEndLabel: "Close {session}",
     brokerWork: "Dispatched by Clawdline",
@@ -544,6 +549,11 @@ const words = {
     linksDeployWhen: "那個工具最後一次寫下這件事：{when}。",
     linksTruncated: "找到的位址比這份清單裝得下的多，其餘沒有列出。",
     endNamedTitle: "要關閉 {session} 嗎？",
+    endWorkChecking: "正在確認這個 Session 尚未完成的看板項目…",
+    endWorkOpen: "尚未完成的看板項目（{count}）：",
+    endWorkItem: "{title} · {project}",
+    endWorkTruncated: "尚有其他未完成的看板項目未列在這份提醒中。",
+    endWorkUnreadable: "Clawdline 無法讀取這個 Session 尚未完成的看板項目；關閉前請先查看 Session 待辦。",
     swipeCloseAction: "關閉 Session",
     swipeEndLabel: "關閉 {session}",
     brokerWork: "由 Clawdline 派出",

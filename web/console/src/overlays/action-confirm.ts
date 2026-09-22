@@ -5,6 +5,7 @@ import * as L from "../legacy/bridge.js"
 import { getClosingId, setClosingId } from "./events.js"
 import { byId, closeabilityLines, closeabilityOf, lostIfClosed, setConfirmSpin, type Closeable } from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { readSessionWorkV2, type WorkV2Item } from "../pages/work/api.js"
 import { toast, toastFailure } from "./toast.js"
 
 /**
@@ -47,6 +48,9 @@ interface Pending {
   why: string[]
   closeability: string | null
   help: Help | null
+  work: WorkV2Item[]
+  workState: "loading" | "ready" | "unreadable"
+  workTruncated: boolean
   /** True only after the daemon disclosed the obligations this decision overrides. */
   force: boolean
   /** The decision's own id, which is the close's `Idempotency-Key`. */
@@ -174,7 +178,9 @@ export const ActionConfirm = {
     const help = closeabilityHelpModel(closeable)
     this.pending = {
       id, kind, action, opener: returnFocus, ask: ask || null, lost, why,
-      closeability: closeable && closeable.state, help, force: false, request: mintRequest(),
+      closeability: closeable && closeable.state, help, work: [],
+      workState: kind === "end" ? "loading" : "ready", workTruncated: false,
+      force: false, request: mintRequest(),
     }
     this.busy = false
     sheet.dataset.kind = kind
@@ -186,7 +192,7 @@ export const ActionConfirm = {
           : T.webConfirmEndTitle
         : L.fillString(T.webConfirmActionTitle, { action })
     if (ask && ask.say) this.renderSay(ask.say, null, [])
-    else if (kind === "end") this.renderSay(this.endSay(lost, why, this.pending.closeability, help), help, why)
+    else if (kind === "end") this.renderEnd(this.pending)
     else this.renderSay(L.fillString(T.webConfirmActionSay, { action }), null, [])
     overlay.hidden = false
     this.sync()
@@ -194,23 +200,54 @@ export const ActionConfirm = {
     // the list: the same rule, and for the same reason, as the question that
     // forgets a machine (`cloud/CloudGate.tsx`).
     const cancel = node<HTMLButtonElement>("action-confirm-cancel")
-    const first = asked && asked.focus === "cancel" && cancel ? cancel : go
+    const first = ((asked && asked.focus === "cancel") || this.pending.workState === "loading") && cancel ? cancel : go
     first.focus({ preventScroll: true })
+    if (kind === "end") void this.loadOpenWork(this.pending)
   },
 
-  endSay(lost: string[], why: string[], closeability: string | null, help: Help | null): string {
+  async loadOpenWork(pending: Pending): Promise<void> {
+    try {
+      const page = await readSessionWorkV2(pending.id)
+      if (this.pending !== pending || !this.isOpen()) return
+      pending.work = page.assigned_items
+      pending.workTruncated = page.truncated
+      pending.workState = "ready"
+    } catch {
+      if (this.pending !== pending || !this.isOpen()) return
+      pending.workState = "unreadable"
+    }
+    this.renderEnd(pending)
+    this.sync()
+  },
+
+  renderEnd(pending: Pending): void {
+    this.renderSay(this.endSay(pending), pending.help, pending.why)
+  },
+
+  endSay(pending: Pending): string {
+    const { lost, why, closeability, help, work, workState, workTruncated } = pending
     let said = T.webConfirmEndSay
     if (lost && lost.length) {
       said += "\n" + T.webConfirmEndLoses + "\n" + lost.map((item) => "· " + item).join("\n")
     }
-    if (help) return said + "\n" + help.explanation
+    if (help) said += "\n" + help.explanation
     // Whenever the projection is not `safe`, including `unknown`: an absence of
     // proof is what the reader most needs to see before ending somebody's work.
-    if (closeability && closeability !== "safe") {
+    else if (closeability && closeability !== "safe") {
       said += "\n" + T.closeabilityNotProven
       if (why && why.length) {
         said += "\n" + T.closeabilityWhy + ":\n" + why.map((item) => "· " + item).join("\n")
       }
+    }
+    if (workState === "loading") said += "\n" + nextWord("endWorkChecking")
+    else if (workState === "unreadable") said += "\n" + nextWord("endWorkUnreadable")
+    else if (work.length) {
+      said += "\n" + nextWord("endWorkOpen", { count: work.length }) + "\n"
+      said += work.map((item) => "· " + nextWord("endWorkItem", {
+        title: item.title,
+        project: item.project.label || item.project.path,
+      })).join("\n")
+      if (workTruncated) said += "\n" + nextWord("endWorkTruncated")
     }
     return said
   },
@@ -270,7 +307,7 @@ export const ActionConfirm = {
     pending.closeability = projected.state
     pending.help = closeabilityHelpModel(projected)
     pending.force = true
-    this.renderSay(this.endSay(pending.lost, pending.why, pending.closeability, pending.help), pending.help, pending.why)
+    this.renderEnd(pending)
     this.sync()
   },
 
@@ -287,7 +324,7 @@ export const ActionConfirm = {
 
   run(): void {
     const pending = this.pending
-    if (!pending || this.busy) return
+    if (!pending || this.busy || pending.workState === "loading") return
     if (pending.ask && pending.ask.go) {
       this.busy = true
       this.sync()
@@ -320,9 +357,10 @@ export const ActionConfirm = {
     const go = node<HTMLButtonElement>("action-confirm-go")
     if (!sheet || !cancel || !go) return
     setConfirmSpin(null)
-    sheet.setAttribute("aria-busy", this.busy ? "true" : "false")
+    const checkingWork = this.pending?.workState === "loading"
+    sheet.setAttribute("aria-busy", this.busy || checkingWork ? "true" : "false")
     cancel.disabled = this.busy
-    go.disabled = this.busy
+    go.disabled = this.busy || checkingWork
     const help = this.pending && this.pending.help
     cancel.textContent = help ? help.cancelLabel : T.webCancel
     if (this.busy && endWait.visible) {

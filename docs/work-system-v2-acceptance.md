@@ -337,10 +337,12 @@ graph has crossed its evidence gate; the current milestone and a pending milesto
 checked. Conditions use person-readable labels. Completing an item removes it from open
 responsibility and places it in the same Session's recent-completion group with all five checks.
 
-For an existing-Session assignment with no broker task, submit direct landing evidence naming an
-exact commit, target branch, and remote. The transition is refused if the commit does not resolve,
-is absent from the local target, or is absent from the remote-tracking target. A passed receipt
-stores Git's resolved commit and both resolved target heads on the phase event.
+For an existing-Session assignment with no broker task, or a new-Session assignment carrying its
+resolved Root Assignment id, submit direct landing evidence naming an exact commit, target branch,
+and remote. A new-Session assignment without that id is refused. The transition is also refused if
+the commit does not resolve, is absent from the local target, or is absent from the remote-tracking
+target. A passed receipt stores Git's resolved commit and both resolved target heads on the phase
+event.
 
 ### WS2-U05 — Edit and Delete are deliberate person actions
 

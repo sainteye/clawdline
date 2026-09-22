@@ -144,14 +144,17 @@ func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.
 	}
 	ownedDirectly := false
 	for _, a := range item.Assignments {
-		if a.State == "active" && a.Mode == "existing_session" && a.SessionID == session {
+		ownsSession := a.State == "active" && a.SessionID == session
+		directSession := a.Mode == "existing_session"
+		resolvedRoot := a.Mode == "new_session" && strings.TrimSpace(a.RootAssignment) != ""
+		if ownsSession && (directSession || resolvedRoot) {
 			ownedDirectly = true
 			break
 		}
 	}
 	if !ownedDirectly {
 		return nil, &app.WorkError{Status: http.StatusConflict, Code: "direct_landing_not_applicable",
-			Message: "Direct landing evidence belongs to an active existing-Session assignment."}
+			Message: "Direct landing evidence belongs to an active existing-Session assignment or a resolved Root Assignment."}
 	}
 	commit, target, remote := strings.TrimSpace(ask.Commit), strings.TrimSpace(ask.Target), strings.TrimSpace(ask.Remote)
 	if commit == "" || !g.ValidBranchName(ctx, target) || remote == "" || strings.Contains(remote, "/") ||

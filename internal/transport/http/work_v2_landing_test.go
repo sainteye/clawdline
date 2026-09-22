@@ -34,6 +34,12 @@ func directLandingItem() app.WorkV2View {
 		OwnerSession: "session-a"}, Assignments: []work.AssignmentV2{{Mode: "existing_session", SessionID: "session-a", State: "active"}}}
 }
 
+func rootAssignmentLandingItem(rootAssignment string) app.WorkV2View {
+	return app.WorkV2View{Item: work.ItemV2{ID: "10000000-0000-4000-8000-000000000001", ProjectPath: "/project",
+		OwnerSession: "session-a"}, Assignments: []work.AssignmentV2{{Mode: "new_session", SessionID: "session-a",
+		RootAssignment: rootAssignment, State: "active"}}}
+}
+
 func TestDirectLandingResolvesLocalAndPublishedTargets(t *testing.T) {
 	g := landingGit{resolved: map[string]string{
 		"delivery": "commit-a", "refs/heads/main": "local-head", "refs/remotes/origin/main": "remote-head",
@@ -42,6 +48,24 @@ func TestDirectLandingResolvesLocalAndPublishedTargets(t *testing.T) {
 		&workV2LandingRequest{Commit: "delivery", Target: "main", Remote: "origin"})
 	if refusal != nil || got == nil || got.Commit != "commit-a" || got.TargetCommit != "local-head" || got.RemoteCommit != "remote-head" {
 		t.Fatalf("verified landing: %+v %v", got, refusal)
+	}
+}
+
+func TestDirectLandingAcceptsResolvedRootAssignmentOwner(t *testing.T) {
+	g := landingGit{resolved: map[string]string{
+		"delivery": "commit-a", "refs/heads/main": "local-head", "refs/remotes/origin/main": "remote-head",
+	}, on: map[string]bool{"commit-a..local-head": true, "commit-a..remote-head": true}}
+	got, refusal := verifyWorkV2DirectLanding(context.Background(), g, rootAssignmentLandingItem("root-a"), "session-a",
+		&workV2LandingRequest{Commit: "delivery", Target: "main", Remote: "origin"})
+	if refusal != nil || got == nil || got.Commit != "commit-a" {
+		t.Fatalf("Root Assignment landing: %+v %v", got, refusal)
+	}
+}
+
+func TestDirectLandingRefusesUnresolvedNewSessionAssignment(t *testing.T) {
+	if _, refusal := verifyWorkV2DirectLanding(context.Background(), landingGit{}, rootAssignmentLandingItem(""), "session-a",
+		&workV2LandingRequest{Commit: "delivery", Target: "main", Remote: "origin"}); refusal == nil || refusal.Code != "direct_landing_not_applicable" {
+		t.Fatalf("new Session without Root Assignment: %v", refusal)
 	}
 }
 

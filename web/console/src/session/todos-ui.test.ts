@@ -34,3 +34,12 @@ test("owned Board work shows explicit release milestones and recent completion",
   assert.match(styles, /\.session-work-milestones li\[data-state="done"\]/)
   assert.match(styles, /var\(--ok\)/)
 })
+
+test("closing a Session reads and names unfinished Board items before it can continue", () => {
+  const confirmation = readFileSync(new URL("../overlays/action-confirm.ts", import.meta.url), "utf8")
+  assert.match(confirmation, /readSessionWorkV2\(pending\.id\)/)
+  assert.match(confirmation, /assigned_items/)
+  assert.match(confirmation, /workState === "loading"/)
+  assert.match(confirmation, /endWorkOpen/)
+  assert.match(confirmation, /endWorkUnreadable/)
+})
