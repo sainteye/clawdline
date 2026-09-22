@@ -285,6 +285,30 @@ function daemon(): Server {
       return json(res, 200, snapshot())
     }
     if (path === "/v1/health") return json(res, 200, { ok: true })
+    const sessionWork = /^\/v1\/work\/v2\/session-todos\/(.+)$/.exec(path)
+    if (sessionWork && req.method === "GET") {
+      const sessionID = decodeURIComponent(sessionWork[1])
+      const assigned = sessionID === SAFE
+        ? [{
+            id: "work-fixture",
+            project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
+            kind: "feature",
+            title: "Finish the release receipt",
+            description: "",
+            phase: "merging",
+            condition: null,
+            area: "merging",
+            deployment_policy: "agent_decides",
+            owner_session: SAFE,
+            created_at: 1,
+            updated_at: 1,
+            closed_at: null,
+            cycle: 1,
+            version: 1,
+          }]
+        : []
+      return json(res, 200, { ok: true, assigned_items: assigned, recent_items: [], direct_todos: [], truncated: false })
+    }
     if (path === "/v1/orchestrator/tasks") {
       const tasks = readingScenario === "worst"
         ? [{
@@ -450,6 +474,7 @@ const PROBE = `(() => {
     sheet: sheet && !sheet.hidden ? (document.getElementById("action-confirm-title")?.textContent ?? "") : null,
     sheetSay: sheet && !sheet.hidden ? (document.getElementById("action-confirm-say")?.textContent ?? "") : null,
     confirmAction: sheet && !sheet.hidden ? (document.getElementById("action-confirm-go")?.textContent ?? "") : null,
+    confirmDisabled: sheet && !sheet.hidden ? !!document.getElementById("action-confirm-go")?.hasAttribute("disabled") : null,
     focused: document.activeElement ? document.activeElement.id : "",
   }
 })()`
@@ -472,6 +497,7 @@ interface Seen {
   sheet: string | null
   sheetSay: string | null
   confirmAction: string | null
+  confirmDisabled: boolean | null
   focused: string
 }
 
@@ -764,6 +790,10 @@ test("pressing the uncovered close asks first, naming the row, with Cancel under
     const asked = await tab.until("the confirmation is up", (s) => s.sheet !== null)
     assert.equal(asked.sheet, "要關閉 Alpha is finished 嗎？", "it names the row it would act on")
     assert.equal(asked.focused, "action-confirm-cancel", "and opens on the answer that changes nothing")
+    const work = await tab.until("the unfinished Board item is named", (s) =>
+      s.confirmDisabled === false && (s.sheetSay ?? "").includes("Finish the release receipt"))
+    assert.match(work.sheetSay ?? "", /尚未完成的看板項目/)
+    assert.match(work.sheetSay ?? "", /Finish the release receipt · Clawdline/)
     await tab.shot("swipe-confirm")
     assert.deepEqual(closes, [], "still nothing closed while the question stands")
   }))
@@ -773,7 +803,7 @@ test("the second press is what closes it, once, under a key a retry can be answe
     await list(tab)
     await swipeOpen(tab, SAFE)
     await tab.press("li.row[data-swipe='open'] > .swipe-end")
-    await tab.until("the confirmation is up", (s) => s.sheet !== null)
+    await tab.until("the confirmation has checked Board work", (s) => s.sheet !== null && s.confirmDisabled === false)
     await tab.press("#action-confirm-go")
     await tab.until("the close has been asked for", () => closes.length > 0)
     assert.equal(closes.length, 1, "one press, one close")
@@ -803,9 +833,9 @@ test("a refused close explains what is owed, then still close overrides that dis
     await list(tab)
     await swipeOpen(tab, BLOCKED)
     await tab.press("li.row[data-swipe='open'] > .swipe-end")
-    await tab.until("the first confirmation is up", (s) => s.sheet !== null)
+    await tab.until("the first confirmation has checked Board work", (s) => s.sheet !== null && s.confirmDisabled === false)
     await tab.press("#action-confirm-go")
-    await tab.until("the daemon's refusal is shown", (s) => s.sheet !== null && s.confirmAction === "仍要關閉")
+    await tab.until("the daemon's refusal is shown", (s) => s.sheet !== null && s.confirmAction === "仍要關閉" && s.confirmDisabled === false)
     assert.equal(closes.length, 1)
     assert.equal(closes[0].force, false, "the close gate gets the first decision")
     const said = await tab.seen()

@@ -190,10 +190,12 @@ projection. A cancellation does the same release under the person's authority bu
 as successful completion.
 
 An item assigned directly to an existing Session has no broker child task and therefore no child
-landing record. Its owning Agent may name an exact commit, local target branch, and remote. The
-daemon resolves all three through Git and records a landing receipt only when the commit is on both
-the local target and `refs/remotes/<remote>/<target>`. Caller text, a successful build by itself, or
-an unpushed local commit never earns the landing check.
+landing record. A new Session opened as a Root Assignment likewise has no child landing record,
+but its active assignment carries the resolved Root Assignment id. In either case, its owning Agent
+may name an exact commit, local target branch, and remote. The daemon resolves all three through Git
+and records a landing receipt only when the commit is on both the local target and
+`refs/remotes/<remote>/<target>`. A new-Session assignment without its resolved Root Assignment id,
+caller text, a successful build by itself, or an unpushed local commit never earns the landing check.
 
 The owning-Agent phase request carries the claim as structured input, not prose:
 
