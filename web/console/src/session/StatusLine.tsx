@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { GitSnapshot, ProjectLink, SessionInfo, SessionInfoContext, SessionLimitWindow, SessionLimits, SessionRow } from "@clawdline/contract"
 import { contextCell } from "./context.js"
+import { conversationBecameKnown } from "./info-freshness.js"
 import * as L from "../legacy/bridge.js"
 import { SessionFacts, requestInfo } from "../overlays/index.js"
 import { nextWord } from "../next-strings.js"
@@ -395,6 +396,7 @@ function dollars(x: number): string {
 function useSessionInfo(row: SessionRow | null): SessionInfo | null {
   const id = row?.id ?? null
   const state = row?.state ?? ""
+  const conversation = row?.sessionId ?? ""
   // Held with the id it answers for, so the first paint after a switch cannot
   // show the previous session's model under the new one's name.
   const [answer, setAnswer] = useState<{ id: string; info: SessionInfo } | null>(null)
@@ -402,6 +404,7 @@ function useSessionInfo(row: SessionRow | null): SessionInfo | null {
   const ticket = useRef(0)
   const nextAt = useRef(0)
   const stateSeen = useRef("")
+  const conversationSeen = useRef("")
   const owed = useRef<"" | "due" | "force">("")
 
   const load = useCallback((force: boolean) => {
@@ -429,6 +432,7 @@ function useSessionInfo(row: SessionRow | null): SessionInfo | null {
 
   useEffect(() => {
     current.current = id
+    conversationSeen.current = conversation
     ticket.current += 1
     stateSeen.current = state
     nextAt.current = 0
@@ -441,6 +445,18 @@ function useSessionInfo(row: SessionRow | null): SessionInfo | null {
     // Only a change of session starts this; `state` is read here as the
     // starting point and followed by the effect below.
   }, [id, load])
+
+  // Codex writes its rollout only after the first message. The terminal row
+  // therefore commonly learns `sessionId` after the first `/info` answer has
+  // already been cached. That answer honestly had no usage then, but it must
+  // not remain on screen for the rest of the minute after the record appears.
+  useEffect(() => {
+    const refresh = conversationBecameKnown(conversationSeen.current, conversation)
+    conversationSeen.current = conversation
+    if (!id || !refresh) return
+    if (document.hidden) owed.current = "force"
+    else load(true)
+  }, [id, conversation, load])
 
   useEffect(() => {
     if (!id) return
