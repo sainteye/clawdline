@@ -187,17 +187,11 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("schedules" in CARRIED)
   assert.ok("snippets" in CARRIED)
   assert.ok("timeline" in CARRIED)
-  // 41, counted on this tree — `node -e` over this file's own `CARRIED` at
-  // f001f9b, not carried over from the line before. The tree this branch was
-  // cut from measured 39, which was itself 38 plus `git`, and 38 was 21 plus
-  // the snippet list and its four writes plus the twelve reads of the work
-  // system, re-measured where those two lines met. The one this branch adds
-  // is `agent`: one word, one read, and the difference is checked by
-  // subtraction rather than by trust, because Git does not mark a conflict
-  // when two sides write the same number and a count copied across a change
-  // is the one nobody checks.
+  // 43, counted on this tree — the prior 41 plus the single-schedule read and
+  // the versioned webhook-binding write. Keep the count beside the catalog so
+  // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 41)
+  assert.equal(Object.keys(CARRIED).length, 43)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -251,12 +245,11 @@ test("a route this console does not carry is refused by the word it stands for",
   assert.equal(uncarriedWordOf("GET", "/v1/work/board"), "", "the work board is carried")
   assert.equal(uncarriedWordOf("GET", "/v1/timeline?project=p"), "", "a Project's timeline is carried")
   assert.equal(uncarried("work.board"), "", "a carried word has no refusal sentence")
-  // One schedule in full is the one schedule word this machine has no route for
-  // (`op{name: "schedule"}` in cloudops/ops.go carries no `route`), so the
-  // sheets behind a schedule row say that and not "not read yet", while the
-  // list beside it is carried and says nothing at all.
-  assert.equal(uncarriedWordOf("GET", "/v1/orchestrator/schedules/sch-1"), "schedule")
-  assert.equal(notCarriedDetail("GET", "/v1/orchestrator/schedules/sch-1"), NO_MACHINE_ROUTE.schedule)
+  // Both a schedule in full and the schedule list are carried. The detail
+  // sheet therefore reaches the selected machine instead of manufacturing a
+  // Cloud refusal before it can show webhook state.
+  assert.equal(uncarriedWordOf("GET", "/v1/orchestrator/schedules/sch-1"), "")
+  assert.equal(uncarried("schedule"), "", "a carried single-schedule read has no refusal sentence")
   assert.equal(uncarriedWordOf("GET", "/v1/orchestrator/schedules"), "", "the list is carried, so it stands for nothing here")
   assert.equal(uncarried("schedules"), "", "a carried word has no refusal sentence")
   // And a route that is no Cloud word at all still says where to go.

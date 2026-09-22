@@ -11,6 +11,7 @@ import {
   esc,
   failureSentence,
   fill,
+  generateAndBindScheduleWebhook,
   loadScheduleProjects,
   scheduleApi,
   scheduleRunConfirmation,
@@ -23,7 +24,9 @@ import {
   scheduleWebhookCurlExample,
   scheduleWebhookHelpHTML,
   scheduleWebhookManagementWarning,
+  scheduleWebhookReceiptHeads,
   scheduleWebhookTimelineHTML,
+  shouldObserveScheduleWebhook,
   shortPath,
   strings,
   tint,
@@ -37,6 +40,7 @@ import {
   type ScheduleRecord,
   type ScheduleRun,
 } from "../legacy/schedules-bridge.js"
+import { scheduleWebhookManagement } from "../cloud/schedule-webhooks.js"
 import overlaysMarkup from "./schedules/overlays.html?raw"
 
 /**
@@ -68,12 +72,11 @@ import overlaysMarkup from "./schedules/overlays.html?raw"
  *
  * - **`write` is assumed until refused** (`S.write`), as `session/Start.tsx`
  *   assumes it: this daemon's health carries no `write` flag.
- * - **The webhook panel stays hidden.** Its client exists in the original only
- *   on the Cloud path (`main.js`'s `scheduleWebhookManagement`); on the local
- *   page it is null and the panel is hidden, with its toggle and help still
- *   inserted by the first draw — which is what happens here. The Cloud actions
- *   behind its buttons are unreachable while that client is null and are not
- *   carried.
+ * - **The webhook panel is Cloud-only.** The hosted gate installs the same
+ *   account-authenticated management client and encrypted Mac binding command
+ *   as the original. The daemon-served page installs nothing, so the panel
+ *   remains hidden there rather than pretending a local browser has a Cloud
+ *   account session.
  * - **A resumed run opens its session when it arrives** rather than through
  *   `Start.began`'s "starting" band, which `session/Start.tsx` does not export.
  * - **Escape and the list keys.** `input/keys.js` closes the form from its own
@@ -944,12 +947,7 @@ const Schedule = (() => {
 
 /* ---- input/schedule-history.js: one schedule as work that happened ----------- */
 
-type WebhookHook = { hook_id?: string; state?: string; revision?: number } | null
-
-/** `main.js`'s `scheduleWebhookManagement`: made only on the Cloud path, so null on this page. */
-function managementClient(): { copy?: (text: string) => unknown } | null {
-  return null
-}
+type WebhookHook = { hook_id: string; state: string; revision: number; availability?: string } | null
 
 const ScheduleHistory = (() => {
   let scheduleId: string | null = null
@@ -962,12 +960,13 @@ const ScheduleHistory = (() => {
   // The Cloud management client. Null on this transport, as on the original's
   // local page, and so is everything it would have read; they are `let`, as
   // there, so each reads as the value it holds rather than as a constant null.
-  let webhook = managementClient()
+  let webhook = scheduleWebhookManagement()
   let hook: WebhookHook = null
   const deliveries: unknown[] = []
   let ephemeralURL: string | null = null
   let effectiveTier: string | null = null
   const observedReceipts: Record<string, unknown> = {}
+  const observingReceipts: Record<string, boolean> = {}
   let helpOpen = false
   let webhookOpen = false
   let runningNow = false
@@ -1099,18 +1098,87 @@ const ScheduleHistory = (() => {
       effectiveTier === null || effectiveTier === "free"
     webhookNode("schedule-webhook-disable")!.hidden = !current || current.state === "disabled"
     webhookNode("schedule-webhook-timeline")!.innerHTML = scheduleWebhookTimelineHTML(deliveries, observedReceipts, lang())
-    // `observeVisibleTimeline` returns at once without a management client.
+    observeVisibleTimeline()
   }
 
-  /** `loadWebhook`: with no management client it draws the panel, hidden, and asks nothing. */
+  function observeVisibleTimeline(): void {
+    if (!webhook || !hook || !deliveries.length) return
+    for (const latest of scheduleWebhookReceiptHeads(deliveries)) {
+      const key = latest.deliveryID + ":" + latest.receiptVersion
+      if (observedReceipts[key] || observingReceipts[key]) continue
+      if (!shouldObserveScheduleWebhook({
+        open: !el("schedule-history").hidden && webhookOpen,
+        visibilityState: document.visibilityState,
+        renderedVersion: latest.receiptVersion,
+      })) continue
+      observingReceipts[key] = true
+      webhook.client.observe(hook.hook_id, latest.deliveryID, latest.receiptVersion).then(
+        (answer) => {
+          observedReceipts[key] = answer.last_observed_at || answer.observed_at || new Date().toISOString()
+          delete observingReceipts[key]
+          drawWebhook()
+        },
+        () => { delete observingReceipts[key] },
+      )
+    }
+  }
+
   function loadWebhook(): Promise<void> {
-    drawWebhook()
-    return Promise.resolve()
+    if (!webhook || !record) {
+      drawWebhook()
+      return Promise.resolve()
+    }
+    const hookID = record.webhook_hook_id
+    const hookRead = hookID ? webhook.client.read(hookID) : Promise.resolve(null)
+    const deliveryRead = hookID ? webhook.client.deliveries(hookID) : Promise.resolve({ deliveries: [] })
+    const entitlementRead = webhook.client.entitlements().catch(() => null)
+    return Promise.all([hookRead, deliveryRead, entitlementRead]).then(
+      (answers) => {
+        const read = answers[0]
+        hook = read && "hook" in read && read.hook ? read.hook : (read as WebhookHook)
+        deliveries.splice(0, deliveries.length, ...((answers[1] && answers[1].deliveries) || []))
+        effectiveTier = answers[2]
+        drawWebhook()
+      },
+      webhookFailed,
+    )
   }
 
-  /** `webhookAction`: every action needs the management client, which this transport does not have. */
-  function webhookAction(_action: string): Promise<void> {
+  function webhookAction(action: string): Promise<void> {
     if (!webhook || !record) return Promise.resolve()
+    webhookNode("schedule-webhook-status")!.textContent = ""
+    if (action === "copy" && ephemeralURL) return webhook.copy(ephemeralURL)
+    if (action === "generate") {
+      return generateAndBindScheduleWebhook(
+        webhook.client,
+        webhook.bind,
+        webhook.machine(scheduleId),
+        scheduleId!,
+        hook,
+      ).then((made) => {
+        hook = made.hook
+        ephemeralURL = made.publicURL
+        record!.webhook_hook_id = hook!.hook_id
+        record!.webhook_binding_availability = "active"
+        deliveries.length = 0
+        drawWebhook()
+      }).catch(webhookFailed)
+    }
+    if (!hook) return Promise.resolve()
+    if (action === "rotate") {
+      return webhook.client.rotate(hook.hook_id, hook.revision).then((made) => {
+        hook = made.hook
+        ephemeralURL = made.publicURL
+        drawWebhook()
+      }).catch(webhookFailed)
+    }
+    if (action === "disable") {
+      return webhook.client.disable(hook.hook_id, hook.revision).then((answer) => {
+        hook = "hook_id" in answer ? answer : answer.hook || null
+        ephemeralURL = null
+        drawWebhook()
+      }).catch(webhookFailed)
+    }
     return Promise.resolve()
   }
 
@@ -1208,6 +1276,7 @@ const ScheduleHistory = (() => {
 
   function open(id: string | undefined): void {
     if (!id || !el("schedule-history").hidden) return
+    webhook = scheduleWebhookManagement()
     scheduleId = id
     record = null
     places = []
@@ -1259,6 +1328,7 @@ const ScheduleHistory = (() => {
     ephemeralURL = null
     effectiveTier = null
     for (const key of Object.keys(observedReceipts)) delete observedReceipts[key]
+    for (const key of Object.keys(observingReceipts)) delete observingReceipts[key]
     helpOpen = false
     webhookOpen = false
     el("schedule-history").hidden = true

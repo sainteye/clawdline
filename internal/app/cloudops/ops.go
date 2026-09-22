@@ -443,6 +443,17 @@ func refusalReply(b body, word string, class Class) (string, string, bool) {
 	if class != ClassCtl {
 		return "", "", false
 	}
+	// The webhook binder preserves the old console's versioned wire shape: its
+	// correlation field is request_id and it is always answered on the machine
+	// channel. Keep that answer available even when the write gate refuses the
+	// command before its full body is decoded.
+	if word == "schedule-webhook-bind-v1" {
+		request, ok := requestName(b["request_id"])
+		if !ok {
+			return "", "", false
+		}
+		return MachineReplySession, "action:" + request, true
+	}
 	request, hasRequest := requestName(b["request"])
 	session, hasSession := sessionName(b["session"])
 	if !hasSession {
@@ -1120,6 +1131,9 @@ func init() {
 				}
 				p.id = id
 				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/schedules/" + segment(p.id)}
 			}},
 
 		// MARK: commands with a local capability
@@ -1321,6 +1335,17 @@ func init() {
 					Path:   "/v1/orchestrator/schedules/" + segment(p.id) + "/run",
 					Body:   []byte("{}"),
 					Header: asDevice()}
+			}},
+
+		// The old hosted console's two-phase webhook creation flow. Cloud creates
+		// the capability under the browser session, then this encrypted command
+		// makes the selected Mac persist the schedule binding and activate it with
+		// its machine credential. The trigger URL is deliberately absent here.
+		op{name: "schedule-webhook-bind-v1",
+			decode: decodeScheduleWebhookBind,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/orchestrator/schedule-webhooks/bind",
+					Body: p.document, Header: asDevice()}
 			}},
 
 		// The four snippet writes. The key sets are the producer's, word for
@@ -1705,6 +1730,48 @@ func decodeNamedSchedule(b body) (plan, bool) {
 	}
 	p.id = id
 	return p, true
+}
+
+func scheduleWebhookHookID(value string) bool {
+	if len(value) != 30 || !strings.HasPrefix(value, "swh_") {
+		return false
+	}
+	for _, r := range value[4:] {
+		if !strings.ContainsRune("0123456789abcdefghjkmnpqrstvwxyz", r) {
+			return false
+		}
+	}
+	return true
+}
+
+// decodeScheduleWebhookBind keeps the original console's exact wire body.
+// `request_id` is also the local receipt key; replace is explicitly null for
+// a first binding and a hook id only when replacing a disabled hook.
+func decodeScheduleWebhookBind(b body) (plan, bool) {
+	if !b.has("type", "request_id", "hook_id", "schedule_id", "replace_hook_id") {
+		return plan{}, false
+	}
+	requestID, requestOK := b.nonEmpty("request_id")
+	hookID, hookOK := b.nonEmpty("hook_id")
+	scheduleID, scheduleOK := b.nonEmpty("schedule_id")
+	if !requestOK || !hookOK || !scheduleOK || !isTaskID(requestID) ||
+		!scheduleWebhookHookID(hookID) || !isTaskID(scheduleID) {
+		return plan{}, false
+	}
+	var replace any
+	if raw := b["replace_hook_id"]; raw != nil {
+		value, ok := raw.(string)
+		if !ok || !scheduleWebhookHookID(value) {
+			return plan{}, false
+		}
+		replace = value
+	}
+	document := jsonBody(map[string]any{
+		"request_id": requestID, "hook_id": hookID,
+		"schedule_id": scheduleID, "replace_hook_id": replace,
+	})
+	return plan{session: MachineReplySession, name: "action:" + requestID,
+		request: requestID, document: document}, true
 }
 
 // decodeAnswer is the one case behind two words. The field's name follows the

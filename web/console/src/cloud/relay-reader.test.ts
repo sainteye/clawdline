@@ -445,6 +445,25 @@ test("the schedule list is asked of this machine, and is this machine's rows", a
   assert.equal(last.word, "schedules")
 })
 
+test("one schedule is asked of the chosen machine so its history and webhook panel can open", async () => {
+  const client = new FakeClient()
+  client.readAnswer = async (word) => word === "schedule"
+    ? { schedule: { id: "schedule 9", webhook_binding_availability: "unbound" } }
+    : { read: word }
+  const r = reader(client, { t: 1000 })
+
+  const res = await r.fetch("/v1/orchestrator/schedules/schedule%209")
+  assert.equal(res.status, 200)
+  assert.deepEqual(await res.json(), {
+    schedule: { id: "schedule 9", webhook_binding_availability: "unbound" },
+  })
+  assert.deepEqual(client.reads, [{
+    machine: "mac-a",
+    word: "schedule",
+    body: { id: "schedule 9" },
+  }])
+})
+
 // The distinction this whole read is drawn around: "this machine has none" and
 // "nobody answered" are opposite facts, and `pages/schedules.tsx` draws the
 // section for one and leaves it alone for the other. An empty answer is an
