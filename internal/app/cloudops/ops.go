@@ -920,6 +920,98 @@ func init() {
 					Query: someOf(map[string]string{"kind": p.kind})}
 			}},
 
+		// Work-system v2 is the console's current Board. These are separate
+		// words because a machine descriptor must be able to say exactly which
+		// reads and person-only writes it implements. Every write is stamped as
+		// a paired device: a Cloud viewer is a person using this machine, not an
+		// Agent or the machine's orchestrator.
+		op{name: "work.v2.items", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "project") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				project, projectOK := b.str("project")
+				if !ok || !projectOK || len(project) > 256 {
+					return plan{}, false
+				}
+				p.project = project
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/items",
+					Query: someOf(map[string]string{"project": p.project})}
+			}},
+
+		op{name: "work.v2.proposals", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "state") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				state, stateOK := b.str("state")
+				if !ok || !stateOK || len(state) > 32 {
+					return plan{}, false
+				}
+				p.kind = state
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/proposals",
+					Query: someOf(map[string]string{"state": p.kind})}
+			}},
+
+		op{name: "work.v2.session-todos", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "terminal") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				terminal, terminalOK := b.nonEmpty("terminal")
+				if !ok || !terminalOK || len(terminal) > 256 {
+					return plan{}, false
+				}
+				p.target = terminal
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/session-todos/" + segment(p.target)}
+			}},
+
+		op{name: "work.v2.create",
+			decode: decodeWorkV2Document("item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items", Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "work.v2.assign",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/assign",
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "work.v2.proposal-resolve",
+			decode: decodeWorkV2Action("decision", "accept", "reject"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/proposals/" + segment(p.id) + "/" + segment(p.kind),
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "work.v2.todo-create",
+			decode: decodeWorkV2TerminalDocument,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/session-todos/" + segment(p.target),
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "work.v2.todo-action",
+			decode: decodeWorkV2TodoAction,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/session-todos/" + segment(p.target) + "/" +
+					segment(p.id) + "/" + segment(p.kind), Body: p.document, Header: asDevice()}
+			}},
+
 		// The Projects page's catalog and worktree lifecycle. `places` above is
 		// carried separately.
 		op{name: "projects", read: true,
@@ -1626,6 +1718,11 @@ const snippetMaximumBytes = 64 << 10
 // side will read.
 const pushBodyMaximumBytes = 64 << 10
 
+// workV2CloudBodyLimit matches the one body the local work-system route will
+// read. The Cloud bridge carries the person's JSON object without interpreting
+// it and refuses a larger envelope before routing it.
+const workV2CloudBodyLimit = 96 << 10
+
 // The header a Cloud write puts on its own local request, and the reason the
 // schedule words carry it.
 //
@@ -1658,6 +1755,92 @@ const (
 // asDevice is that header, fresh per request: LocalRequest.Header is written
 // to by the router (the idempotency key), so two routes must not share a map.
 func asDevice() map[string]string { return map[string]string{actorHeader: actorDevice} }
+
+func decodeWorkV2Document(field string) func(body) (plan, bool) {
+	return func(b body) (plan, bool) {
+		if !b.has("type", "session", "request", field) {
+			return plan{}, false
+		}
+		p, ok := actionPlan(b, false)
+		document, documentOK := b.object(field, workV2CloudBodyLimit)
+		if !ok || p.request == "" || !documentOK {
+			return plan{}, false
+		}
+		p.document = document
+		return p, true
+	}
+}
+
+func decodeWorkV2NamedDocument(idField, documentField string) func(body) (plan, bool) {
+	return func(b body) (plan, bool) {
+		if !b.has("type", "session", "request", idField, documentField) {
+			return plan{}, false
+		}
+		p, ok := actionPlan(b, false)
+		id, idOK := b.nonEmpty(idField)
+		document, documentOK := b.object(documentField, workV2CloudBodyLimit)
+		if !ok || p.request == "" || !idOK || len(id) > 256 || !documentOK {
+			return plan{}, false
+		}
+		p.id, p.document = id, document
+		return p, true
+	}
+}
+
+func decodeWorkV2Action(field string, allowed ...string) func(body) (plan, bool) {
+	return func(b body) (plan, bool) {
+		if !b.has("type", "session", "request", "id", field, "item") {
+			return plan{}, false
+		}
+		p, ok := actionPlan(b, false)
+		id, idOK := b.nonEmpty("id")
+		action, actionOK := b.nonEmpty(field)
+		document, documentOK := b.object("item", workV2CloudBodyLimit)
+		if !ok || p.request == "" || !idOK || len(id) > 256 || !actionOK || !documentOK {
+			return plan{}, false
+		}
+		known := false
+		for _, candidate := range allowed {
+			known = known || action == candidate
+		}
+		if !known {
+			return plan{}, false
+		}
+		p.id, p.kind, p.document = id, action, document
+		return p, true
+	}
+}
+
+func decodeWorkV2TerminalDocument(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "terminal", "item") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	terminal, terminalOK := b.nonEmpty("terminal")
+	document, documentOK := b.object("item", workV2CloudBodyLimit)
+	if !ok || p.request == "" || !terminalOK || len(terminal) > 256 || !documentOK {
+		return plan{}, false
+	}
+	p.target, p.document = terminal, document
+	return p, true
+}
+
+func decodeWorkV2TodoAction(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "terminal", "id", "action", "item") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	terminal, terminalOK := b.nonEmpty("terminal")
+	id, idOK := b.nonEmpty("id")
+	action, actionOK := b.nonEmpty("action")
+	document, documentOK := b.object("item", workV2CloudBodyLimit)
+	if !ok || p.request == "" || !terminalOK || len(terminal) > 256 || !idOK || len(id) > 256 ||
+		!actionOK || !documentOK || (action != "send" && action != "complete" && action != "delete") {
+		return plan{}, false
+	}
+	p.target, p.id, p.kind, p.document = terminal, id, action, document
+	return p, true
+}
 
 // decodeScheduleWrite is `schedule-create` and `schedule-update`, which differ
 // by one key: the id of the schedule being saved.

@@ -360,7 +360,10 @@ is not used as a second live source.
 The Board provides:
 
 - all-Projects and Project-scoped views;
-- a Project-icon picker for creation;
+- a Project-icon picker for creation and filtering; both the closed trigger and every Project row
+  show the registered Project icon;
+- an explicit icon-and-description list for Feature, Issue, Epic, Refactor, and Plan instead of a
+  native kind dropdown;
 - Planning, Unassigned, Assigned, Implementing, Verifying, Merging, Deploying, and Recently Done
   areas;
 - Feature/Issue cards with Project icon on every card;
@@ -368,6 +371,11 @@ The Board provides:
   immutable event history;
 - an assignment dialog for new or existing Sessions;
 - a separate proposal preview queue.
+
+Creation stays in its modal while validation or transport fails, and the failure is shown inside
+that modal rather than behind its backdrop. Escape, the close control, and a pointer press on the
+backdrop close the modal; a press inside it does not. Buttons, Project rows, kind rows, cards, and
+other clickable controls use the pointer cursor, while disabled controls retain a disabled cursor.
 
 Presentation area is deterministic: planning kinds go to Planning; terminal items go to Recently
 Done; an executable nonterminal item without an owner goes to Unassigned (while retaining a badge

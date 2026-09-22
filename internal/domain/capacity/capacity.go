@@ -548,7 +548,7 @@ func Register() []Entry {
 			Name: WorkRequestBodyBytes, Class: Buffer, Unit: Bytes,
 			Limit: 96 << 10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/transport/http.workV2BodyLimit"},
+			Sources: []string{"internal/transport/http.workV2BodyLimit", "internal/app/cloudops.workV2CloudBodyLimit"},
 		},
 		{
 			// Proposals waiting for a person's answer — the "to confirm"

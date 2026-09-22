@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../../legacy/bridge.js"
 import { Mark } from "../../session/List.js"
@@ -20,6 +20,13 @@ import {
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
 const PHASES = ["created", "assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
+const KIND_META: Record<WorkV2Kind, { icon: string; label: string; description: string }> = {
+  feature: { icon: "✦", label: "Feature", description: "加入一項使用者可以感受到的新能力" },
+  issue: { icon: "!", label: "Issue", description: "修正錯誤、異常或不符合預期的行為" },
+  epic: { icon: "◆", label: "Epic", description: "先放在規劃區的大型工作主題" },
+  refactor: { icon: "↻", label: "Refactor", description: "先放在規劃區的內部結構改善" },
+  plan: { icon: "≡", label: "Plan", description: "先放在規劃區的研究或實作計畫" },
+}
 
 export function WorkV2Page({ shown }: { shown: boolean }) {
   const [items, setItems] = useState<WorkV2Item[]>([])
@@ -62,10 +69,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     </header>
     <div className="work-wrap">
       <p className="work-lede">所有項目由你建立與指派；Session 負責推進實作、驗證、Merge 與部署。</p>
-      <select className="work-input" value={project} aria-label="Project" onChange={(e) => setProject(e.target.value)}>
-        <option value="">所有 Project</option>
-        {places.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-      </select>
+      <ProjectPicker places={places} value={project} onChange={setProject} allowAll />
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {proposals.length > 0 && <details className="work-fold" open><summary><strong>Agent 提案</strong><span className="work-count">{proposals.length}</span></summary>
         <div className="work-fold-body work-cards">{proposals.map((p) => <article className="work-card" key={p.id}>
@@ -81,7 +85,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
         <div className="work-cards">{done.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy} run={run} />)}</div>
       </details>}
     </div>
-    {creating && <NewWorkModal places={places} initialProject={project} busy={!!busy} onClose={() => setCreating(false)} onCreate={(body) => {
+    {creating && <NewWorkModal places={places} initialProject={project} busy={!!busy} failure={failure} onClose={() => setCreating(false)} onCreate={(body) => {
       void run("create", () => createWorkV2(body)).then((ok) => { if (ok) setCreating(false) })
     }} />}
   </section>
@@ -114,22 +118,79 @@ function WorkCard({ item, sessions, busy, run }: { item: WorkV2Item; sessions: S
   </article>
 }
 
-function NewWorkModal({ places, initialProject, busy, onClose, onCreate }: { places: ProjectPlace[]; initialProject: string; busy: boolean; onClose: () => void; onCreate: (body: Parameters<typeof createWorkV2>[0]) => void }) {
+function ProjectPicker({ places, value, onChange, allowAll = false }: {
+  places: ProjectPlace[]
+  value: string
+  onChange: (id: string) => void
+  allowAll?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  const selected = places.find((place) => place.id === value)
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("pointerdown", closeOutside)
+    document.addEventListener("keydown", closeOnEscape)
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside)
+      document.removeEventListener("keydown", closeOnEscape)
+    }
+  }, [open])
+  const choose = (id: string) => { onChange(id); setOpen(false) }
+  return <div className="work-project-picker" ref={root}>
+    <button className="work-project-trigger" type="button" aria-label="Project" aria-haspopup="listbox"
+      aria-expanded={open} onClick={() => setOpen((shown) => !shown)}>
+      {selected ? <Mark icon={selected.icon as SessionRow["icon"]} cellPx={3} /> : <span className="work-project-placeholder" aria-hidden="true">▦</span>}
+      <span>{selected?.label || (allowAll ? "所有 Project" : "選擇 Project")}</span>
+      <span className="work-project-chevron" aria-hidden="true">⌄</span>
+    </button>
+    {open && <div className="work-project-menu" role="listbox" aria-label="Project">
+      {allowAll && <button type="button" role="option" aria-selected={!value} className="work-project-option"
+        onClick={() => choose("")}><span className="work-project-placeholder" aria-hidden="true">▦</span><span>所有 Project</span></button>}
+      {places.map((place) => <button type="button" role="option" aria-selected={place.id === value}
+        className="work-project-option" key={place.id} onClick={() => choose(place.id)}>
+        <Mark icon={place.icon as SessionRow["icon"]} cellPx={3} /><span>{place.label}</span>
+        {place.id === value && <span className="work-project-check" aria-hidden="true">✓</span>}
+      </button>)}
+      {!places.length && <p className="work-project-empty">目前沒有可用的 Project。</p>}
+    </div>}
+  </div>
+}
+
+function NewWorkModal({ places, initialProject, busy, failure, onClose, onCreate }: { places: ProjectPlace[]; initialProject: string; busy: boolean; failure: string; onClose: () => void; onCreate: (body: Parameters<typeof createWorkV2>[0]) => void }) {
   const [projectID, setProjectID] = useState(initialProject)
   const [kind, setKind] = useState<WorkV2Kind>("feature")
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const ready = !!projectID && !!title.trim() && !!description.trim()
-  return <div className="session-todo-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"><form onSubmit={(e) => {
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) onClose() }
+    document.addEventListener("keydown", close)
+    return () => document.removeEventListener("keydown", close)
+  }, [busy, onClose])
+  return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
+    onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready) return
     onCreate({ project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" })
   }}>
-    <h2 id="work-new-v2-title">建立看板項目</h2>
-    <label>Project<select className="work-input" value={projectID} onChange={(e) => setProjectID(e.target.value)}><option value="">選擇 Project</option>{places.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
-    <label>類型<select className="work-input" value={kind} onChange={(e) => setKind(e.target.value as WorkV2Kind)}>{KINDS.map((k) => <option key={k} value={k}>{k}</option>)}</select></label>
+    <div className="work-modal-head"><div><p className="board-eyebrow">NEW WORK ITEM</p><h2 id="work-new-v2-title">建立看板項目</h2></div>
+      <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="work-modal-field"><span>Project</span><ProjectPicker places={places} value={projectID} onChange={setProjectID} /></div>
+    <fieldset className="work-kind-field"><legend>類型</legend><div className="work-kind-list">
+      {KINDS.map((value) => { const meta = KIND_META[value]; return <button key={value} type="button" className="work-kind-option"
+        aria-pressed={kind === value} onClick={() => setKind(value)}><span className="work-kind-icon" aria-hidden="true">{meta.icon}</span>
+        <span><b>{meta.label}</b><small>{meta.description}</small></span><span className="work-kind-radio" aria-hidden="true">{kind === value ? "●" : "○"}</span></button> })}
+    </div></fieldset>
     <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(e) => setTitle(e.target.value)} /></label>
     <label>描述<textarea value={description} onChange={(e) => setDescription(e.target.value)} /></label>
-    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>建立</button><button className="chip" type="button" onClick={onClose}>取消</button></div>
+    {failure && <p className="work-note" role="alert">{failure}</p>}
+    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "建立中…" : "建立"}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
   </form></div>
 }
 

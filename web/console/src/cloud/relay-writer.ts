@@ -207,6 +207,11 @@ export type WriteRoute =
   | { op: "snippet-delete"; word: Carried<"snippet-delete">; snippet: string }
   | { op: "snippet-order"; word: Carried<"snippet-order"> }
   | { op: "worktree-refresh"; word: Carried<"project-worktree-lifecycle-refresh">; project: string }
+  | { op: "work-v2-create"; word: Carried<"work.v2.create"> }
+  | { op: "work-v2-assign"; word: Carried<"work.v2.assign">; id: string }
+  | { op: "work-v2-proposal-resolve"; word: Carried<"work.v2.proposal-resolve">; id: string; decision: "accept" | "reject" }
+  | { op: "work-v2-todo-create"; word: Carried<"work.v2.todo-create">; terminal: string }
+  | { op: "work-v2-todo-action"; word: Carried<"work.v2.todo-action">; terminal: string; id: string; action: "send" | "complete" | "delete" }
   // `interrupt` and `title` are not Cloud words at all — not here and not in
   // the Swift app's vocabulary — so this one is a plain string.
   | { op: "uncarried"; word: string; session?: string }
@@ -347,6 +352,24 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (method === "DELETE") return { op: "snippet-delete", word: "snippet-delete", snippet: a }
   }
   if (method !== "POST") return null
+  if (head === "work" && a === "v2") {
+    if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
+    if (b === "items" && c && d === "assign" && segments.length === 5) {
+      return { op: "work-v2-assign", word: "work.v2.assign", id: c }
+    }
+    if (b === "proposals" && c && (d === "accept" || d === "reject") && segments.length === 5) {
+      return { op: "work-v2-proposal-resolve", word: "work.v2.proposal-resolve", id: c, decision: d }
+    }
+    if (b === "session-todos" && c && segments.length === 4) {
+      return { op: "work-v2-todo-create", word: "work.v2.todo-create", terminal: c }
+    }
+    const todoID = segments[4]
+    const action = segments[5]
+    if (b === "session-todos" && c && todoID && (action === "send" || action === "complete" || action === "delete") && segments.length === 6) {
+      return { op: "work-v2-todo-action", word: "work.v2.todo-action", terminal: c, id: todoID, action }
+    }
+    return null
+  }
   if (head === "projects" && a && b === "worktrees" && c === "refresh" && segments.length === 4) {
     return { op: "worktree-refresh", word: "project-worktree-lifecycle-refresh", project: a }
   }
@@ -457,6 +480,12 @@ function spellingOf(route: WriteRoute): Spelling {
     case "snippet-order":
       return "flat"
     case "worktree-refresh":
+      return "flat"
+    case "work-v2-create":
+    case "work-v2-assign":
+    case "work-v2-proposal-resolve":
+    case "work-v2-todo-create":
+    case "work-v2-todo-action":
       return "flat"
     default:
       return "nested"
@@ -735,9 +764,31 @@ export class RelayWriter {
           "action",
         )
       }
+      case "work-v2-create": {
+        return this.machineWorkV2(client, route.word, { item: await bodyOf(init) })
+      }
+      case "work-v2-assign": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) })
+      }
+      case "work-v2-proposal-resolve": {
+        return this.machineWorkV2(client, route.word, { id: route.id, decision: route.decision, item: await bodyOf(init) })
+      }
+      case "work-v2-todo-create": {
+        return this.machineWorkV2(client, route.word, { terminal: route.terminal, item: await bodyOf(init) })
+      }
+      case "work-v2-todo-action": {
+        return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, action: route.action, item: await bodyOf(init) })
+      }
       case "uncarried":
         throw failure("cloud_not_carried", route.word, 501)
     }
+  }
+
+  private machineWorkV2(client: CloudWriteClient, word: CarriedWord, body: Record<string, unknown>): Promise<unknown> {
+    if (typeof client._machineRequest !== "function") {
+      return Promise.reject(failure("cloud_not_carried", word, 501))
+    }
+    return client._machineRequest(this.host.machine, word, body, "action")
   }
 
   /**
