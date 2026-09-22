@@ -96,6 +96,54 @@ func TestDirectTodoReadMarksOnlyItsSessionAndDeleteRemovesText(t *testing.T) {
 	}
 }
 
+func TestDirectTodoImagesStayWithTheTodoAndShareTheWorkImageBudget(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	todo := work.DirectTodoV2{ID: "todo-images", SessionID: "session-a", Text: "inspect this",
+		CreatedBy: "local", CreatedAt: at, Version: 1}
+	image := work.DirectTodoImageV2{ID: "31000000-0000-4000-8000-000000000001", TodoID: todo.ID,
+		Title: "failure.png", MediaType: "image/png", Width: 80, Height: 40, Position: 0,
+		CreatedBy: "local", CreatedAt: at}
+	data := []byte("normalized todo png")
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		if err := tx.CreateDirectTodo(todo); err != nil {
+			return err
+		}
+		return tx.AddDirectTodoImage(image, data)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	images, err := s.DirectTodoV2Images(ctx, todo.ID)
+	if err != nil || len(images) != 1 || images[0].Title != image.Title || images[0].ByteCount != int64(len(data)) {
+		t.Fatalf("metadata: %+v, %v", images, err)
+	}
+	got, ok, err := s.WorkV2ImageBytes(ctx, image.ID)
+	if err != nil || !ok || string(got) != string(data) {
+		t.Fatalf("bytes: %q %v %v", got, ok, err)
+	}
+	counts, err := s.WorkV2CapacityCounts(ctx)
+	if err != nil || counts["images_per_item"] != 1 || counts["image_bytes_total"] != int64(len(data)) {
+		t.Fatalf("capacity: %+v, %v", counts, err)
+	}
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		deleted, err := tx.DeleteDirectTodo(todo.ID, todo.SessionID)
+		if !deleted && err == nil {
+			t.Fatal("todo was not deleted")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.WorkV2ImageBytes(ctx, image.ID); err != nil || ok {
+		t.Fatalf("deleted todo left image bytes: %v %v", ok, err)
+	}
+}
+
 func TestWorkV2ReferenceImagesKeepMetadataAndBytesTogether(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

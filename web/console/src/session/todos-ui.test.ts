@@ -14,3 +14,12 @@ test("fleet refreshes do not clear and reload the same Session todos", () => {
 test("opening an answered todo fold explicitly refreshes it once", () => {
   assert.match(source, /if \(next && page !== null\) void load\(\)/)
 })
+
+test("direct Session todos upload and render durable images", () => {
+  const source = readFileSync(new URL("./Todos.tsx", import.meta.url), "utf8")
+  const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
+  assert.match(source, /prepareReferencePicture/)
+  assert.match(source, /addDirectTodoV2Image/)
+  assert.match(source, /todo\.images/)
+  assert.match(api, /session-todos\/\$\{encodeURIComponent\(terminalID\)\}\/\$\{todoID\}\/images/)
+})

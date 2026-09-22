@@ -164,6 +164,7 @@
 }
 .session-owned-item b, .session-direct-todo b { display: block; color: var(--ink); overflow-wrap: anywhere; }
 .session-owned-item small, .session-direct-todo small { display: block; margin-top: 3px; color: var(--faint); font: 10px/1.5 var(--mono); }
+.session-direct-todo .session-todo-images { grid-column: 1 / -1; width: 100%; box-sizing: border-box; }
 .session-todo-check { border: 0; background: transparent; color: var(--dim); font-size: 18px; cursor: pointer; }
 .session-todo-receipt { color: var(--accent); letter-spacing: -4px; padding-right: 4px; }
 .session-todo-modal {

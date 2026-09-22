@@ -338,6 +338,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-work-v2-todo-create", method: "POST", path: "/v1/work/v2/session-todos/%2519",
 		body2: `{"text":"Ship it"}`,
 	}, {
+		word: "work.v2.todo-image-create",
+		body: map[string]any{"type": "work.v2.todo-image-create", "session": machine,
+			"request": "req-work-v2-todo-image-create", "terminal": pane, "id": "td1",
+			"item": map[string]any{"expected_version": 1, "title": "screen.png", "data_url": "data:image/png;base64,cG5n"}},
+		session: machine, name: "action:req-work-v2-todo-image-create", method: "POST",
+		path:  "/v1/work/v2/session-todos/%2519/td1/images",
+		body2: `{"data_url":"data:image/png;base64,cG5n","expected_version":1,"title":"screen.png"}`,
+	}, {
 		word: "work.v2.todo-action",
 		body: map[string]any{"type": "work.v2.todo-action", "session": machine, "request": "req-work-v2-todo-action",
 			"terminal": pane, "id": "td1", "action": "send", "item": map[string]any{}},
@@ -1223,7 +1231,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.items", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
-		"work.v2.todo-create", "work.v2.todo-action"} {
+		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}
@@ -1244,6 +1252,9 @@ func workV2Writes() map[string]map[string]any {
 			"request": "req", "id": "pr1", "decision": "accept", "item": map[string]any{}},
 		"work.v2.todo-create": {"type": "work.v2.todo-create", "session": MachineReplySession,
 			"request": "req", "terminal": pane, "item": map[string]any{"text": "Ship it"}},
+		"work.v2.todo-image-create": {"type": "work.v2.todo-image-create", "session": MachineReplySession,
+			"request": "req", "terminal": pane, "id": "td1",
+			"item": map[string]any{"expected_version": 1, "data_url": "data:image/png;base64,cG5n"}},
 		"work.v2.todo-action": {"type": "work.v2.todo-action", "session": MachineReplySession,
 			"request": "req", "terminal": pane, "id": "td1", "action": "send", "item": map[string]any{}},
 	}
