@@ -294,6 +294,11 @@ export interface SeenWords {
   seen(at: number | null): string
 }
 
+/** The fact added to a retained account row after this tab forgets it. */
+export interface ForgottenWords {
+  forgotten(): string
+}
+
 /** The two honest alternatives to a session count. */
 export interface SessionKnowledgeWords {
   unread(): string
@@ -386,6 +391,7 @@ export function offerForgetting(
 export function offerLastSeen(list: Drawn | null, words: SeenWords): number {
   if (!list || !account) return 0
   offerSessionKnowledge(list)
+  offerForgotten(list)
   let changed = 0
   for (const card of Array.from(list.children)) {
     const heading = childWith(card, "device-card-heading")
@@ -401,6 +407,39 @@ export function offerLastSeen(list: Drawn | null, words: SeenWords): number {
     fact.className = "device-last-seen"
     fact.textContent = words.seen(at)
     facts.appendChild(fact)
+    changed += 1
+  }
+  return changed
+}
+
+/**
+ * Mark the account row this tab deliberately kept after forgetting it.
+ *
+ * `CloudGate` keeps the relay's last row on screen, but makes that row
+ * unselectable after the account accepts the forget. An ordinarily unpaired
+ * row is also unselectable, so the pairing state is the other half of this
+ * boundary: only a row that was not unpaired and was then suppressed is the
+ * retained forgotten row. The copied card cannot draw this fact itself.
+ */
+export function offerForgotten(
+  list: Drawn | null,
+  words: ForgottenWords = { forgotten: () => nextWord("cloudForgottenRow") },
+): number {
+  if (!list || !account) return 0
+  let changed = 0
+  for (const card of Array.from(list.children)) {
+    const heading = childWith(card, "device-card-heading")
+    const labelled = heading ? Array.from(heading.children) : []
+    const id = labelled.find((node) => node.title)?.title ?? ""
+    const row = id ? accountMachineRow(id) : null
+    const facts = childWith(card, "device-facts")
+    if (!row || row.selectable !== false || row.pairing === "not_paired" || !facts || !card.ownerDocument) continue
+    if (childWith(facts, "device-forgotten")) continue
+    const fact = card.ownerDocument.createElement("span")
+    fact.className = "device-forgotten"
+    fact.textContent = words.forgotten()
+    facts.appendChild(fact)
+    card.dataset.forgotten = "true"
     changed += 1
   }
   return changed

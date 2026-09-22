@@ -26,6 +26,7 @@
 }
 
 .row .meta .tty,
+.row .meta .session-activity,
 .row .meta .task-chip {
   min-width: 0;
   overflow: hidden;
@@ -35,6 +36,11 @@
 
 .row .meta .tty {
   flex: 1 8 6ch;
+}
+
+.row .meta .session-activity {
+  flex: 0 3 auto;
+  color: var(--faint);
 }
 
 .row .meta .task-chip {
@@ -117,6 +123,10 @@
 
   .row .meta .agents-chip {
     flex: 0 0 auto;
+  }
+
+  .row .meta .session-activity {
+    max-width: 34%;
   }
 
   .row .state .retained-reading {

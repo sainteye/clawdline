@@ -11,6 +11,8 @@ export interface LegacyCorrection {
   id:
     | "session-state-unrecognized"
     | "device-session-count-unknown"
+    | "session-activity-not-drawn"
+    | "forgotten-machine-not-marked"
     | "ledger-reader-busy"
     | "timeline-board-pills-unmapped"
   sources: readonly {
@@ -54,6 +56,32 @@ export const LEGACY_CORRECTIONS: readonly LegacyCorrection[] = [
     copiedBehaviour: "Draws every supplied safe integer as a session count, and omits a non-integer.",
     whyWrong: "The copied Cloud client supplied 0 when this browser had no key with which to read the machine's sessions.",
     consoleBehaviour: "Supplies no integer without a readable count and adds whether the count is unreadable here or not known yet.",
+  },
+  {
+    id: "session-activity-not-drawn",
+    sources: [
+      {
+        file: "web/console/src/legacy/list.css",
+        line: 68,
+        contains: ".row .meta {",
+      },
+    ],
+    copiedBehaviour: "Leaves the session row's last activity out of the metadata line.",
+    whyWrong: "The daemon supplies that timestamp and the list already orders by it, so hiding it leaves the visible order unexplained.",
+    consoleBehaviour: "Shows a known activity timestamp as relative time and draws nothing when the timestamp is absent or unknown.",
+  },
+  {
+    id: "forgotten-machine-not-marked",
+    sources: [
+      {
+        file: "web/console/src/legacy/js/view/devices.js",
+        line: 127,
+        contains: "[row.connection, row.pairing, row.sessions]",
+      },
+    ],
+    copiedBehaviour: "Drops the New session action from an unselectable machine card without saying this tab has forgotten the machine.",
+    whyWrong: "After a successful forget, the retained relay row is deliberately unselectable; silence makes that deliberate state look like a broken control.",
+    consoleBehaviour: "Adds a visible forgotten fact to that retained, deliberately unselectable account row.",
   },
   {
     id: "ledger-reader-busy",

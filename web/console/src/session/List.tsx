@@ -209,6 +209,32 @@ function agentCount(row: SessionRow): string {
   return provider ? String(provider) : ""
 }
 
+/** A known movement as a relative sentence; an unknown reading owns no cell. */
+export function sessionActivityWord(
+  row: Pick<SessionRow, "activity">,
+  now = Date.now(),
+  locale = typeof document === "undefined" ? undefined : document.documentElement.lang || undefined,
+): string {
+  const activity = row.activity
+  const at = activity?.at
+  if (!activity?.known || typeof at !== "number" || !Number.isFinite(at) || at <= 0) return ""
+  // A producer clock a little ahead of this browser still means "now", not
+  // that the session's last movement lies in the future.
+  const seconds = Math.min(0, at - now / 1000)
+  const absolute = Math.abs(seconds)
+  const unit: Intl.RelativeTimeFormatUnit = absolute < 90 * 60 ? "minute" : absolute < 36 * 3600 ? "hour" : "day"
+  const size = unit === "minute" ? 60 : unit === "hour" ? 3600 : 86400
+  const value = Math.round(seconds / size)
+  let relative: string
+  try {
+    relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(value, unit)
+  } catch {
+    // refusal-ok: a browser refusing a locale is not a session-reading refusal.
+    relative = new Date(at * 1000).toLocaleString()
+  }
+  return nextWord("sessionLastActivity", { time: relative })
+}
+
 /**
  * One row. The highlight and the open session are two things: arrows move
  * `.selected` without opening anything, and a session can stay open while the
@@ -258,6 +284,7 @@ export function Row({
   }, [swiped])
   const reveal = swipeReveal(row)
   const name = row.label || row.tty || row.id
+  const activity = sessionActivityWord(row)
   // A gesture that moved the row, and the press that put an uncovered action
   // away, are not presses on the row (`swipe.ts`, `tookThePress`).
   const onPress = () => {
@@ -318,6 +345,7 @@ export function Row({
         </span>
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.tty || row.backend || ""}</span>
+        {activity ? <span className="session-activity">{activity}</span> : null}
         <span className="agents-chip" hidden={!agentCount(row)} title={L.strings.webAgents}>
           <span className="dot" />
           <span className="n">{agentCount(row)}</span>
