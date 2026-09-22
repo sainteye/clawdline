@@ -1,5 +1,5 @@
-// What this shell answers for the console's page: the microphone, and where a
-// link that opens a new window goes.
+// What this shell answers for the console's page: the microphone, the image
+// picker, and where a link that opens a new window goes.
 //
 // A WKWebView refuses `getUserMedia` unless its `WKUIDelegate` says otherwise,
 // and it refuses it silently from the page's point of view — the promise
@@ -20,9 +20,46 @@
 // that key is killed rather than prompted, which is why the two changes belong
 // to the same piece of work.
 import AppKit
+import UniformTypeIdentifiers
 import WebKit
 
 extension Shell: WKUIDelegate {
+    /// The file input behind the composer's `+` button.
+    ///
+    /// Safari supplies this panel itself. A macOS WKWebView does not: when its
+    /// UI delegate leaves this method unimplemented, clicking `<input
+    /// type="file">` reaches WebKit and then opens nothing. That made the same
+    /// attachment control work in the Cloud browser and look dead in the app.
+    ///
+    /// It is a sheet on the console window rather than a modal run, so the web
+    /// view that is waiting for the completion handler keeps its run loop. The
+    /// page declares `accept="image/*"`; the native boundary repeats that
+    /// constraint instead of allowing an arbitrary file to enter the page.
+    func webView(_ webView: WKWebView,
+                 runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        guard frame.isMainFrame, isOurs(frame.securityOrigin),
+              let window = webView.window else {
+            shellLog("image-picker: refused a file panel outside the console's main frame")
+            completionHandler(nil)
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.allowedContentTypes = [.image]
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK else {
+                completionHandler(nil)
+                return
+            }
+            completionHandler(panel.urls)
+        }
+    }
+
     @available(macOS 12.0, *)
     func webView(_ webView: WKWebView,
                  requestMediaCapturePermissionFor origin: WKSecurityOrigin,
