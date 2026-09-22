@@ -30,7 +30,10 @@ whole file `retired-app-record` with a date.
 
 ## Where work happens
 
-The branch is `master`. Work lands through a **disposable worktree**, never in the shared checkout:
+The branch is `main`, and it is the same name the public repository uses. It was `master`
+until 2026-09-22; a worktree or a landing that still names `master` is one written before
+that and is wrong now. Work lands through a **disposable worktree**, never in the shared
+checkout:
 
 ```sh
 git worktree add -f <scratch>/<name> HEAD
