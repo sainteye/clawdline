@@ -687,6 +687,14 @@ Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一�
 出來的，2026-09-20 量到詞彙 37 個字、接上 28 個、其餘回具名的拒絕（8 個 `unknown_command`、
 `dispatch` 回 `cloud_dispatch_unpinned`），`Divergences()` 5 筆。
 
+As of 2026-09-22, the hosted Work v2 console also carries eight explicit words. The read words are
+`work.v2.items`, `work.v2.proposals`, and `work.v2.session-todos`; the person-only mutation words are
+`work.v2.create`, `work.v2.assign`, `work.v2.proposal-resolve`, `work.v2.todo-create`, and
+`work.v2.todo-action`. Each mutation is routed with the paired-device actor marker and the viewer's
+request id as its idempotency key. The bridge therefore cannot accidentally exercise an Agent-only
+or machine-only authority merely because Cloud execution happens through the daemon's in-process
+router. The console's carried-word list and the daemon vocabulary are checked together by tests.
+
 ### 10.4 派工就是 task.json
 
 遠端派工的加密載荷帶的就是本機 orchestrator 已經在講的 wire format：**task.json 就是協定**。

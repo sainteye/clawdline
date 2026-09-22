@@ -467,6 +467,25 @@ test("a worktree refresh reaches the selected machine and returns its new observ
   ])
 })
 
+test("Work v2 person actions keep their exact route subject and body across Cloud", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const cases: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
+    ["/v1/work/v2/items", { project_id: "p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides" },
+      "work.v2.create", { item: { project_id: "p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides" } }],
+    ["/v1/work/v2/items/w1/assign", { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" },
+      "work.v2.assign", { id: "w1", item: { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" } }],
+    ["/v1/work/v2/proposals/pr1/accept", {}, "work.v2.proposal-resolve", { id: "pr1", decision: "accept", item: {} }],
+    ["/v1/work/v2/session-todos/%251", { text: "Ship it" }, "work.v2.todo-create", { terminal: "%1", item: { text: "Ship it" } }],
+    ["/v1/work/v2/session-todos/%251/t1/send", {}, "work.v2.todo-action", { terminal: "%1", id: "t1", action: "send", item: {} }],
+  ]
+  for (const [path, sent, word, body] of cases) {
+    const response = await reader.fetch(path, post(sent))
+    assert.equal(response.status, 200, path)
+    assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", word, body, "action"], path)
+  }
+})
+
 test("a transcript's picture is read as bytes through the machine's `image`", async () => {
   const client = new FakeClient()
   client.rows = [row("s1")]

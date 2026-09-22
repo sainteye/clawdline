@@ -500,6 +500,11 @@ export class RelayReader {
           limit: clampedWhole(q.limit, 200, 1, 1000),
         })
       }
+      const workTerminal = workV2SessionTodosTerminal(path)
+      if (workTerminal) {
+        this.only(url, path)
+        return await this.machineRead(method, path, "work.v2.session-todos", { terminal: workTerminal })
+      }
       switch (path) {
         case "/v1/sessions":
           this.note(method, path, "local")
@@ -705,6 +710,14 @@ export class RelayReader {
         case "/v1/work/digests": {
           const q = this.only(url, path, "kind")
           return await this.machineRead(method, path, "work.digests", { kind: q.kind ?? "" })
+        }
+        case "/v1/work/v2/items": {
+          const q = this.only(url, path, "project")
+          return await this.machineRead(method, path, "work.v2.items", { project: q.project ?? "" })
+        }
+        case "/v1/work/v2/proposals": {
+          const q = this.only(url, path, "state")
+          return await this.machineRead(method, path, "work.v2.proposals", { state: q.state ?? "" })
         }
         case "/v1/projects": {
           // This daemon's Project catalog, which the Projects page reads as
@@ -1096,6 +1109,17 @@ function worktreeLifecycleProject(path: string): string {
   if (parts.length !== 5 || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== "worktrees") return ""
   try {
     return decodeURIComponent(parts[3])
+  } catch {
+    return ""
+  }
+}
+
+/** The terminal in the exact Work v2 Session to-do list route. */
+function workV2SessionTodosTerminal(path: string): string {
+  const parts = path.split("/")
+  if (parts.length !== 6 || parts[1] !== "v1" || parts[2] !== "work" || parts[3] !== "v2" || parts[4] !== "session-todos") return ""
+  try {
+    return decodeURIComponent(parts[5])
   } catch {
     return ""
   }

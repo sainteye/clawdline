@@ -94,6 +94,14 @@ export const CARRIED = {
   "work.decisions": "GET /v1/work/decisions",
   "work.digests": "GET /v1/work/digests?kind=",
   "work.proposals": "GET /v1/work/proposals[?project=]",
+  "work.v2.assign": "POST /v1/work/v2/items/{id}/assign",
+  "work.v2.create": "POST /v1/work/v2/items",
+  "work.v2.items": "GET /v1/work/v2/items[?project=]",
+  "work.v2.proposal-resolve": "POST /v1/work/v2/proposals/{id}/{accept|reject}",
+  "work.v2.proposals": "GET /v1/work/v2/proposals?state=",
+  "work.v2.session-todos": "GET /v1/work/v2/session-todos/{terminal}",
+  "work.v2.todo-action": "POST /v1/work/v2/session-todos/{terminal}/{id}/{action}",
+  "work.v2.todo-create": "POST /v1/work/v2/session-todos/{terminal}",
 } as const
 
 /**

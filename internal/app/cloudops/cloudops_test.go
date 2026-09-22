@@ -278,6 +278,52 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/work/digests",
 		query: map[string]string{"kind": "daily"},
 	}, {
+		word: "work.v2.items",
+		body: map[string]any{"type": "work.v2.items", "session": machine,
+			"request": "req-work-v2-items", "project": "p1"},
+		session: machine, name: "read:req-work-v2-items",
+		method: "GET", path: "/v1/work/v2/items", query: map[string]string{"project": "p1"},
+	}, {
+		word: "work.v2.proposals",
+		body: map[string]any{"type": "work.v2.proposals", "session": machine,
+			"request": "req-work-v2-proposals", "state": "pending"},
+		session: machine, name: "read:req-work-v2-proposals",
+		method: "GET", path: "/v1/work/v2/proposals", query: map[string]string{"state": "pending"},
+	}, {
+		word: "work.v2.session-todos",
+		body: map[string]any{"type": "work.v2.session-todos", "session": machine,
+			"request": "req-work-v2-todos", "terminal": pane},
+		session: machine, name: "read:req-work-v2-todos",
+		method: "GET", path: "/v1/work/v2/session-todos/%2519",
+	}, {
+		word: "work.v2.create",
+		body: map[string]any{"type": "work.v2.create", "session": machine, "request": "req-work-v2-create",
+			"item": map[string]any{"project_id": "p1", "kind": "feature", "title": "A", "description": "B", "deployment_policy": "agent_decides"}},
+		session: machine, name: "action:req-work-v2-create", method: "POST", path: "/v1/work/v2/items",
+		body2: `{"deployment_policy":"agent_decides","description":"B","kind":"feature","project_id":"p1","title":"A"}`,
+	}, {
+		word: "work.v2.assign",
+		body: map[string]any{"type": "work.v2.assign", "session": machine, "request": "req-work-v2-assign", "id": "w1",
+			"item": map[string]any{"expected_version": 1, "mode": "new_session", "assistant": "codex", "model": "default"}},
+		session: machine, name: "action:req-work-v2-assign", method: "POST", path: "/v1/work/v2/items/w1/assign",
+		body2: `{"assistant":"codex","expected_version":1,"mode":"new_session","model":"default"}`,
+	}, {
+		word: "work.v2.proposal-resolve",
+		body: map[string]any{"type": "work.v2.proposal-resolve", "session": machine, "request": "req-work-v2-resolve",
+			"id": "pr1", "decision": "accept", "item": map[string]any{}},
+		session: machine, name: "action:req-work-v2-resolve", method: "POST", path: "/v1/work/v2/proposals/pr1/accept", body2: `{}`,
+	}, {
+		word: "work.v2.todo-create",
+		body: map[string]any{"type": "work.v2.todo-create", "session": machine, "request": "req-work-v2-todo-create",
+			"terminal": pane, "item": map[string]any{"text": "Ship it"}},
+		session: machine, name: "action:req-work-v2-todo-create", method: "POST", path: "/v1/work/v2/session-todos/%2519",
+		body2: `{"text":"Ship it"}`,
+	}, {
+		word: "work.v2.todo-action",
+		body: map[string]any{"type": "work.v2.todo-action", "session": machine, "request": "req-work-v2-todo-action",
+			"terminal": pane, "id": "td1", "action": "send", "item": map[string]any{}},
+		session: machine, name: "action:req-work-v2-todo-action", method: "POST", path: "/v1/work/v2/session-todos/%2519/td1/send", body2: `{}`,
+	}, {
 		word:    "projects",
 		body:    map[string]any{"type": "projects", "session": machine, "request": "req-projects"},
 		session: machine, name: "read:req-projects",
@@ -1145,10 +1191,64 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "landings",
-		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests"} {
+		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
+		"work.v2.items", "work.v2.proposals", "work.v2.session-todos", "work.v2.create",
+		"work.v2.assign", "work.v2.proposal-resolve", "work.v2.todo-create", "work.v2.todo-action"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}
+	}
+}
+
+func workV2Writes() map[string]map[string]any {
+	return map[string]map[string]any{
+		"work.v2.create": {"type": "work.v2.create", "session": MachineReplySession,
+			"request": "req", "item": map[string]any{"project_id": "p1", "kind": "feature", "title": "A"}},
+		"work.v2.assign": {"type": "work.v2.assign", "session": MachineReplySession,
+			"request": "req", "id": "w1", "item": map[string]any{"mode": "existing", "terminal": pane}},
+		"work.v2.proposal-resolve": {"type": "work.v2.proposal-resolve", "session": MachineReplySession,
+			"request": "req", "id": "pr1", "decision": "accept", "item": map[string]any{}},
+		"work.v2.todo-create": {"type": "work.v2.todo-create", "session": MachineReplySession,
+			"request": "req", "terminal": pane, "item": map[string]any{"text": "Ship it"}},
+		"work.v2.todo-action": {"type": "work.v2.todo-action", "session": MachineReplySession,
+			"request": "req", "terminal": pane, "id": "td1", "action": "send", "item": map[string]any{}},
+	}
+}
+
+// TestWorkV2WritesArePersonActions is the authority boundary for the hosted
+// Board. The viewer may create and assign an item or operate a direct to-do,
+// but must not inherit the machine/orchestrator identity that the in-process
+// router uses for transport. The device header takes that identity away.
+func TestWorkV2WritesArePersonActions(t *testing.T) {
+	for word, body := range workV2Writes() {
+		t.Run(word, func(t *testing.T) {
+			r := &router{}
+			if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); !answer.OK() {
+				t.Fatalf("%s was refused: %+v", word, answer)
+			}
+			if got := r.last().Header[actorHeader]; got != actorDevice {
+				t.Fatalf("%s carried %s=%q, wanted %q", word, actorHeader, got, actorDevice)
+			}
+			if got := r.last().Header["Idempotency-Key"]; got != "req" {
+				t.Fatalf("%s carried the key %q, wanted the viewer request id", word, got)
+			}
+		})
+	}
+}
+
+func TestWorkV2WritesRespectTheCloudWriteSwitch(t *testing.T) {
+	for word, body := range workV2Writes() {
+		t.Run(word, func(t *testing.T) {
+			r := &router{}
+			answer := (Bridge{MachineID: "mac-01", Router: r}).Handle(
+				context.Background(), request(t, ClassCtl, body))
+			if answer.Code != "cloud_commands_disabled" {
+				t.Fatalf("%s with the switch off answered %q", word, answer.Code)
+			}
+			if len(r.seen) != 0 {
+				t.Fatalf("%s reached the machine with the switch off", word)
+			}
+		})
 	}
 }
 
