@@ -33,12 +33,19 @@ what keeps the publication path below usable.
 compiles and tests Darwin-only paths on a macOS runner. The Linux job also
 cross-builds and vets Windows.
 
-Two local checks cannot produce their strongest answer in GitHub Actions:
+The copied-console check is complete in GitHub Actions. `check-legacy-css.sh`
+hashes every copy and compares it with the checksum pinned in
+`web/console/src/legacy/MANIFEST.json`; the retired application's repository is
+not required. When `CLAWDLINE_WEB_SOURCE_TREE` names an available tree (or the
+old default path still exists), the check also reports files that changed there
+after the copy. Those source changes are evidence, not a new baseline: the
+pinned checksum remains authoritative and source-only movement does not make a
+clean copy fail. A missing source is likewise named rather than silently
+skipped. The old `--allow-missing-source` spelling remains accepted so older CI
+invocations run the same pinned check; it no longer weakens or skips anything.
 
-- `check-legacy-css.sh` compares copied files with the retired application's
-  source tree, which is not part of this repository. CI invokes the explicit
-  `--allow-missing-source` mode and prints a named skip. A local run without
-  that flag remains strict and exits 2 when the source is absent.
+One local check still cannot produce its strongest answer in GitHub Actions:
+
 - `check-private.sh` reads a private word list that must not be committed.
   `check-private-ci.sh` still runs the fixed privacy rules over the tree. Exit
   3 becomes a GitHub warning saying the private-word rules are undetermined.

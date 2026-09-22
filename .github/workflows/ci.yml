@@ -80,8 +80,8 @@ jobs:
       - name: Check explicit CI modes
         run: tools/test-ci-check-modes.sh
 
-      - name: Report the unavailable retired-app comparison
-        run: tools/check-legacy-css.sh --allow-missing-source
+      - name: Check the copied files against their pinned manifest
+        run: tools/check-legacy-css.sh
 
       - name: Run privacy rules and report the unavailable private-word rules
         env:

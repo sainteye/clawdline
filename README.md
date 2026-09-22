@@ -304,16 +304,18 @@ notes are written in Traditional Chinese, and the English pages point into them.
 go test ./...                        # the Go tests
 (cd web && npm run check)            # TypeScript, no emit
 go run ./tools/contract-gen -check   # the generated Go and TypeScript match api/v1
-tools/check-legacy-css.sh            # the copied files still match what they were copied from
+tools/check-legacy-css.sh            # the copied files still match the manifest they were pinned to
 tools/check-private.sh               # nothing personal is about to be published
 tools/check-private.sh -history      # nor in any commit behind it
 ```
 
 Two of those need a word of explanation.
 
-`check-legacy-css.sh` compares the files under `web/console/src/legacy/` with the Swift app they
-were copied from, byte for byte, and answers one of three ways: they match, they have drifted, or
-it cannot tell because the original is not on this machine. The third answer is not a pass.
+`check-legacy-css.sh` holds the files under `web/console/src/legacy/` to the SHA-256 each was
+pinned to in `MANIFEST.json` when it was copied. It needs nothing but this repository, so it gives
+the same answer on a fresh clone as it does on the machine the files came from. Where the original
+Swift app is also present it says which of its files have changed since the copy was taken — that
+is a fact about the other tree, not a failure of this one, and it does not fail the check.
 
 `check-private.sh` looks for what belongs to whoever ran this rather than to the project: a real
 home directory, a real task or session id, a credential, an email address. It also reads a word
