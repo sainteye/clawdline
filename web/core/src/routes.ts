@@ -30,6 +30,7 @@ export const sessionRoutes = {
   send: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/send`,
   interrupt: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/interrupt`,
   close: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/close`,
+  title: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/title`,
   agent: (id: string, agent: string) =>
     "/v1/sessions/" + encodeURIComponent(id) + "/agents/" + encodeURIComponent(agent),
 } as const

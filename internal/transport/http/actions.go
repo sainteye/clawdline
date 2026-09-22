@@ -13,6 +13,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/task"
 )
 
@@ -130,6 +131,37 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			return "That is larger than one key. A key is \"1\"…\"9\", \"tab\", \"shift+tab\" or \"submit\"."
 		}, func(w http.ResponseWriter, raw []byte) {
 			s.sessionKey(ctx, w, id, raw)
+		})
+	case "title":
+		s.sessionWrite(w, r, CapacityLimit(capacity.SessionTitleRequestBytes), func(size string, limit int64) string {
+			return fmt.Sprintf("That title request was %s bytes and the limit is %d.", size, limit)
+		}, func(w http.ResponseWriter, raw []byte) {
+			var body contract.SessionTitleRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "title must be a string")
+				return
+			}
+			title := normalizedSessionTitle(body.Title)
+			if !titleWithinLimit(title) {
+				writeRefusal(w, http.StatusBadRequest, "bad_request",
+					fmt.Sprintf("title must be at most %d characters", CapacityLimit(capacity.SessionTitleCharacters)))
+				return
+			}
+			item, err := s.actions().Find(ctx, id)
+			if err != nil {
+				writeActionRefusal(w, err)
+				return
+			}
+			title, err = s.saveSessionTitle(item, body.Title, time.Now())
+			if err != nil {
+				writeRefusal(w, http.StatusInternalServerError, "title_not_saved", "the session title could not be saved")
+				return
+			}
+			writeJSON(w, contract.SessionTitleReply{
+				OK: true, Title: title, DisplayTitle: s.sessionDisplayLabel(ctx, item),
+				LocalApplied: true, Downstream: "local_only",
+				DownstreamSynced: false,
+			})
 		})
 	case "close":
 		s.sessionWrite(w, r, closeBodyLimit, func(size string, limit int64) string {

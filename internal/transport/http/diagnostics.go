@@ -275,6 +275,33 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		// hundred rows.
 		capacity.SnippetsTotal: func() capacity.Reading { return s.snippetsReading(false) },
 		capacity.SnippetsScope: func() capacity.Reading { return s.snippetsReading(true) },
+		capacity.SessionTitleRequestBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
+		capacity.SessionTitleCharacters: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write guard; no retained buffer"}
+		},
+		capacity.SessionTitleRows: func() capacity.Reading {
+			v, err := s.settingsFile().Read()
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: int64(len(ownSessionTitles(v, time.Now())))}
+		},
+		capacity.SessionTitleAge: func() capacity.Reading {
+			v, err := s.settingsFile().Read()
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			now := time.Now()
+			rows := ownSessionTitles(v, now)
+			reading := capacity.Reading{Known: true}
+			if len(rows) > 0 {
+				reading.Used = max(0, int64(now.Sub(rows[0].UpdatedAt.Time()).Seconds()))
+				reading.OldestAt = rows[0].UpdatedAt.Time()
+			}
+			return reading
+		},
 		capacity.AuditSecurity: func() capacity.Reading {
 			g := s.gate()
 			if g.files == nil {
