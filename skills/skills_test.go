@@ -221,3 +221,23 @@ func TestEveryGuideExplainsScheduledWork(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryGuideExplainsDeferredBoardAssignments(t *testing.T) {
+	wants := []string{
+		"GET /v1/work/v2/agent/session-todos/<conversation id>",
+		"GET /v1/work/v2/items/<id>",
+		"assigned_items",
+		"direct_todos",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain deferred Board assignments with %q", topic, want)
+			}
+		}
+	}
+}

@@ -467,6 +467,12 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 不是 terminal id（否則回 `409 session_id_is_terminal`）。這些項目由 broker 根據 task 的事實開啟和關閉；
 你不需要寫任何東西。
 
+每個 turn 的邊界、宣告自己閒置之前，也要讀
+`GET /v1/work/v2/agent/session-todos/<conversation id>`。其中的 `assigned_items` 是使用者交給這個
+Session 的看板項目，`direct_todos` 是快速交辦。這條 pull 路徑讓工作中收到的分派先等著，不會打斷目前的
+turn。完成目前的 turn 之後，把 assigned item 當成下一件自己負責的工作，並從
+`GET /v1/work/v2/items/<id>` 讀取完整內容。
+
 `/v1/board` 是 Swift app 的舊卡片，唯讀。landing 是 broker 的事實：項目永遠不會被人手動標成已 landing
 （`422 landing_is_broker_fact`）。
 

@@ -18,6 +18,17 @@ type failingHost struct {
 
 func (h *failingHost) Send(context.Context, session.Session, string) error { return h.fail }
 
+type stateHost struct {
+	*overlapHost
+	state session.State
+}
+
+func (h *stateHost) Inventory(context.Context) (session.Inventory, error) {
+	return session.Inventory{Complete: true, Provenance: "tmux", Sessions: []session.Session{{
+		ID: "%1", TTY: "tty1", Backend: session.BackendTmux, Assistant: session.AssistantClaude, State: h.state,
+	}}}, nil
+}
+
 // A caller that types — the broker's briefing — decides whether to type the
 // same line again on one question: did anything reach the terminal? Send knows
 // which of its refusals came before the first byte, and says so as
@@ -52,5 +63,33 @@ func TestSendSaysWhichOfItsRefusalsSentNothing(t *testing.T) {
 	var failure terminal.Failure
 	if !errors.As(err, &failure) {
 		t.Fatalf("the terminal's own failure was dropped from %v", err)
+	}
+}
+
+func TestAssignmentCourtesySendRequiresAFreshIdleReading(t *testing.T) {
+	for _, state := range []session.State{session.StateWorking, session.StateWaiting, session.StateUnknown} {
+		t.Run(string(state), func(t *testing.T) {
+			host := &stateHost{overlapHost: newOverlapHost("%1"), state: state}
+			a := Actions{Inventory: Inventory{Terminals: []ports.TerminalHost{host}},
+				Terminals: []ports.TerminalHost{host}}
+			_, err := a.SendIfIdle(context.Background(), "%1", "next Board item")
+			var unsent terminal.Unsent
+			if !errors.As(err, &unsent) {
+				t.Fatalf("%s: %v does not say that nothing was sent", state, err)
+			}
+			if host.total.Load() != 0 {
+				t.Fatalf("%s: typed %d times", state, host.total.Load())
+			}
+		})
+	}
+
+	host := &stateHost{overlapHost: newOverlapHost("%1"), state: session.StateIdle}
+	a := Actions{Inventory: Inventory{Terminals: []ports.TerminalHost{host}},
+		Terminals: []ports.TerminalHost{host}}
+	if _, err := a.SendIfIdle(context.Background(), "%1", "next Board item"); err != nil {
+		t.Fatal(err)
+	}
+	if host.total.Load() != 1 {
+		t.Fatalf("idle: typed %d times", host.total.Load())
 	}
 }

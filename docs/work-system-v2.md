@@ -117,7 +117,6 @@ An append-only assignment history records:
 - terminal id, assistant, and model as observations;
 - `assigning`, `active`, `released`, or `failed` state;
 - human actor and timestamps;
-- delivery/read facts for the assignment brief;
 - failure/refusal evidence.
 
 The current owner is the one active assignment. A failed attempt is history, not an owner.
@@ -268,9 +267,12 @@ The person chooses from current assistant Sessions resolved to the same Project.
 assistant, label, current work count, and identity-read freshness. An unknown or cross-Project
 Session is refused; string similarity is not identity.
 
-The assignment and its outbox intent are committed together. The structured assignment message is
-then typed exactly once. A busy/unreadable target leaves a durable `assigned_unnotified` condition;
-it does not roll back ownership or lose the message.
+The assignment and the Session's assigned-item projection are committed together. A Session
+positively observed `idle` may receive a courtesy briefing after that commit. A `working`,
+`waiting`, or `unknown` Session receives no terminal input: it pulls the projection from its Agent
+to-do API at the next turn boundary. This is an expected queued assignment, not an
+`assigned_unnotified` failure. A failed courtesy send to an idle Session leaves the durable
+`assigned_unnotified` condition without rolling back ownership.
 
 ### 8.2 New Session
 
@@ -294,8 +296,9 @@ assignment remains in history and no owner is projected.
 ### 8.3 Reassignment and unassignment
 
 Reassignment to an existing Session changes the active owner and the Session projections in one
-transaction, then owes the new owner one briefing effect. The prior owner is refused on its next
-write even if its Console or turn still has stale state.
+transaction. Only a positively idle new owner receives a courtesy briefing; every other state
+pulls the new row at its next turn boundary. The prior owner is refused on its next write even if
+its Console or turn still has stale state.
 
 Reassignment to a new Session keeps the current owner and lifecycle phase while the replacement is
 opening. Only successful identity resolution atomically releases the former assignment and
@@ -349,7 +352,10 @@ The panel has three explicitly labelled groups.
 
 One row per non-terminal item owned by the Session, with Project icon, kind, title, phase,
 condition, item-step count, and a link to the item. It appears immediately after assignment and
-remains until completion, cancellation, or reassignment.
+remains until completion, cancellation, or reassignment. The Agent to-do read returns these rows
+as `assigned_items` as well as the direct to-dos; root guides require that read at turn boundaries,
+so an assignment made during a working turn waits without terminal input and becomes the next
+owned work.
 
 ### 11.2 Direct to-dos
 

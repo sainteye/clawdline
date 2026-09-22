@@ -190,6 +190,29 @@ func (a Actions) Send(ctx context.Context, id, text string) (session.Session, er
 	if err != nil {
 		return session.Session{}, beforeTheFirstByte(err)
 	}
+	return a.send(ctx, s, text)
+}
+
+// SendIfIdle types only when the fresh session reading positively says idle.
+// It is the Board-assignment courtesy path: waiting, working and unknown all
+// leave the durable assigned-item projection for the Session to pull later.
+func (a Actions) SendIfIdle(ctx context.Context, id, text string) (session.Session, error) {
+	if text == "" {
+		return session.Session{}, Refusal{Code: "empty_text", Detail: "there is nothing to type",
+			Cause: terminal.Unsent{Why: "there is nothing to type"}}
+	}
+	s, err := a.Find(ctx, id)
+	if err != nil {
+		return session.Session{}, beforeTheFirstByte(err)
+	}
+	if s.State != session.StateIdle {
+		return s, Refusal{Code: "session_not_idle", Detail: "the Session is not positively observed idle",
+			Cause: terminal.Unsent{Why: "the Session is not positively observed idle"}}
+	}
+	return a.send(ctx, s, text)
+}
+
+func (a Actions) send(ctx context.Context, s session.Session, text string) (session.Session, error) {
 	h, err := a.host(s)
 	if err != nil {
 		return session.Session{}, beforeTheFirstByte(err)
