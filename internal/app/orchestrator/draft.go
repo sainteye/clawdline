@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // Reading the brief a caller wrote, and refusing it by name.
@@ -30,7 +31,7 @@ const (
 	instructionsLimit = 16 * 1024
 	claimsMax         = 32
 	claimLength       = 1024
-	titleLimit        = 200
+	titleLimit        = work.OutcomeTitleLimit
 	kindLimit         = 40
 	rootLabelLimit    = 120
 	timeoutMin        = 1
@@ -255,9 +256,9 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	if kind == "" {
 		kind = "custom"
 	}
-	title := truncate(strings.TrimSpace(d.Title), titleLimit)
-	if title == "" {
-		title = "task"
+	title := strings.TrimSpace(d.Title)
+	if reason := work.OutcomeTitleRefusal(title); reason != "" {
+		return bad("title: " + reason)
 	}
 
 	return Record{

@@ -84,6 +84,19 @@ func propose(p *Participation, workID, taskID string, effects ...string) (Propos
 		Title: "ship the thing", Project: "/p", Effects: effects}, nil)
 }
 
+func TestTheBoardAndProposalDoorsShareTheOutcomeTitleGate(t *testing.T) {
+	p, board, _, _ := newParticipation(t)
+	bad := "修正 session 列表顯示問題"
+	if _, err := board.Create(context.Background(), NewWork{Title: bad, Project: "/p", Place: work.PlaceBacklog,
+		Actor: "user", Principal: "local"}, nil); codeOf(err) != "invalid_title" {
+		t.Fatalf("board item: %v", err)
+	}
+	if _, err := p.Propose(context.Background(), ProposalRequest{Session: theRoot, WorkID: newWorkID(),
+		Title: bad, Project: "/p"}, nil); codeOf(err) != "invalid_title" {
+		t.Fatalf("proposal: %v", err)
+	}
+}
+
 // proposal_below_threshold: nothing a person would want to follow — only a
 // review and a scheduled run — and nothing is written. The control: a child
 // the root sent for it is I1, and the same door records it.

@@ -158,7 +158,7 @@ HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST
 | N5 | progress notes | 300 字；讀最新 5（`broker.go:100-107`） | HTTP 400；但**從 `progress.json` 來的超長筆記直接丟、不記 log**（`watch.go:103-105`） | 檔案那條沒人 | 部分 | b |
 | N6 | notify | 5／task、30／小時（`broker.go:103-109`） | 429 | 呼叫端 | 否 | ✓ |
 | N7 | 完成通知重送 | 8 次（`record.go:151-175`） | 轉 dead letter，寫 event `task.completion.dead_letter` | **console 沒畫、health 沒有**；`KindDeadLetter` obligation 有定義（`domain/task/obligation.go:23`）但從未建立 | 是 | ✓? |
-| N8 | summary／title／kind／label | 2,000／200／40／120（`dispatch.go:584-590`、`draft.go:165-171`） | **靜默截斷** | 沒人 | 是 | b |
+| N8 | summary／title／kind／label | 2,000／60／40／120（`taskdir/finish.go`、`domain/work/proposals.go`、`orchestrator/draft.go`） | summary／kind／label 仍依各入口處理；title 超長或符合已量到的壞形狀會帶教學訊息拒絕，不再截斷 | 寫入者 | 否 | ✓ |
 | N9 | `result.json` | **無大小上限**（`taskdir/broker.go:162-176` 直接 `os.ReadFile`） | — | — | — | c |
 | N10 | task 目錄 `<Dir>/tasks/<id>` | **無清掃**（`taskdir.go:21`） | 只增不減 | — | — | c |
 | N11 | worktree `<Dir>/worktrees/…` | **無**；`RemoveWorktree`（`git/worktree.go:56-60`）沒有任何呼叫端 | 只增不減 | — | — | c |

@@ -53,7 +53,7 @@ type Leftover struct {
 // own (app.workTitleLimit), because that is what the row becomes.
 const (
 	LeftoversLimit          = 8
-	LeftoverTitleLimit      = 200
+	LeftoverTitleLimit      = OutcomeTitleLimit
 	LeftoverWhyLimit        = 500
 	LeftoverAcceptanceLimit = 500
 )
@@ -108,6 +108,9 @@ func ParseLeftovers(in []Leftover) ([]Leftover, error) {
 		case lo.Title == "" || utf8.RuneCountInString(lo.Title) > LeftoverTitleLimit:
 			return nil, refuse(400, "invalid_leftover",
 				"Each leftover has a title of 1 to %d characters.", LeftoverTitleLimit)
+		case OutcomeTitleRefusal(lo.Title) != "":
+			return nil, refuse(400, "invalid_leftover",
+				"A leftover title must name its completed result. %s", OutcomeTitleRefusal(lo.Title))
 		case utf8.RuneCountInString(lo.Why) > LeftoverWhyLimit:
 			return nil, refuse(400, "invalid_leftover",
 				"A leftover's why is at most %d characters.", LeftoverWhyLimit)

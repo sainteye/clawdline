@@ -76,7 +76,8 @@ func TestTheBriefingAsksForLeftoversWithoutRequiringThem(t *testing.T) {
 		Root: &RootRef{SessionID: "conv", Assistant: "claude"}}
 	brief := b.ChildBrief(r, "/p")
 	for _, want := range []string{`"leftovers"`, "suggested_acceptance", "It is optional",
-		"not a new obligation", "Leave it out when you finished everything you were asked."} {
+		"not a new obligation", "Leave it out when you finished everything you were asked.",
+		"what will be different when it is done", "Do not use the person", "60 characters"} {
 		if !strings.Contains(brief, want) {
 			t.Errorf("CHILD.md does not say %q", want)
 		}

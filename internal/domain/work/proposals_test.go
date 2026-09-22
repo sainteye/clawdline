@@ -2,6 +2,7 @@ package work
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -121,6 +122,38 @@ func TestTheSignalsNeverCountStepsOrRunsNobodyOwns(t *testing.T) {
 	signals, _ = SignalsOf(tasks, old, []Effect{EffectPublish}, gateNow)
 	if len(signals) != 3 {
 		t.Fatalf("control: %v", signals)
+	}
+}
+
+// A title is the promised result, not the first observation its author made.
+// These are the four titles measured from the board on 2026-09-22, plus the
+// tempting near-solution that is tidy but still says nothing a reader can
+// verify changed.
+func TestAnOutcomeTitleRefusesObservedAndGenericShapes(t *testing.T) {
+	bad := map[string]string{
+		"使用者問了三次『現在到底是什麼狀況』，而沒有一頁在答這個問題": "使用者",
+		"還在照舊 app 的規則走的地方，要改成照現在的":       "的地方",
+		"`activity` 只影響排序，沒有畫在列上":        "`activity`",
+		"剛開的 Codex 認不出來：沒有 resume 就沒有身分": "冒號",
+		"修正 session 列表顯示問題":              "完成後",
+	}
+	for title, teaching := range bad {
+		if said := OutcomeTitleRefusal(title); !strings.Contains(said, teaching) {
+			t.Errorf("%q was refused as %q; want teaching about %q", title, said, teaching)
+		}
+	}
+	for _, title := range []string{
+		"狀態頁會直接回答目前進度與下一步",
+		"退役 app 的規則不再決定新 daemon 的行為",
+		"Session 列會顯示最後活動時間",
+		"新開的 Codex 會在沒有 resume 時取得身分",
+	} {
+		if said := OutcomeTitleRefusal(title); said != "" {
+			t.Errorf("%q was refused: %s", title, said)
+		}
+	}
+	if said := OutcomeTitleRefusal(strings.Repeat("字", OutcomeTitleLimit+1)); !strings.Contains(said, "at most") {
+		t.Errorf("a title past the bound was refused as %q", said)
 	}
 }
 

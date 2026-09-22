@@ -53,12 +53,6 @@ const words = {
       "Questions still open. One leaves on its own when its subject settles — landed, or tracked another way — and " +
       "after 7 days unanswered the work stays with its session's to-dos.",
     toConfirmNone: "Nothing to confirm.",
-    proposalWhy: "Proposed because {why}",
-    signalCrossSession: "it sent out another session",
-    signalLongLived: "its to-do has been open for more than 24 hours",
-    signalExternalEffect: "it has an effect outside this machine",
-    signalLeftover: "a delivery said it did not do this",
-    proposalKindLine: "A line of work this session is on",
     proposalKindLeftover: "Raised by delivery {task} — its own work is not what is being asked about",
     proposalLeaves: "Leaves on its own in {n} d",
     proposalLeavesToday: "Leaves on its own today",
@@ -181,12 +175,6 @@ const words = {
     toConfirm: "待確認",
     toConfirmLede: "還成立的問題。主體落地或被別的方式追蹤了，它會自己退場；7 天沒有回答，這件事就只留在 session 的待辦裡。",
     toConfirmNone: "沒有要確認的。",
-    proposalWhy: "提議的理由：{why}",
-    signalCrossSession: "它派出了另一個 session",
-    signalLongLived: "它的待辦已經開了超過 24 小時",
-    signalExternalEffect: "它有外部效果",
-    signalLeftover: "有一份交付說它沒做這件事",
-    proposalKindLine: "這個 session 正在做的一條工作線",
     proposalKindLeftover: "由交付 {task} 提出——被問的不是那個任務本身",
     proposalLeaves: "沒人回答的話，{n} 天後自己退場",
     proposalLeavesToday: "沒人回答的話，今天就自己退場",
@@ -288,6 +276,12 @@ const words = {
 } as const
 
 export type WorkWord = keyof (typeof words)["en"]
+
+/** The card needs a project name; an absolute machine path adds no identity. */
+export function workProjectName(project: string): string {
+  const parts = project.split(/[\\/]+/).filter(Boolean)
+  return parts.at(-1) ?? project
+}
 
 /** The page's language as the copied catalog set it, or the browser's (next-strings.ts). */
 function language(): "en" | "zh-Hant" {

@@ -23,6 +23,8 @@ func TestParseLeftovers(t *testing.T) {
 		{"more than the bound", make([]Leftover, LeftoversLimit+1), "too_many_leftovers"},
 		{"an empty title", []Leftover{{Title: "  "}}, "invalid_leftover"},
 		{"a title past its bound", []Leftover{{Title: long}}, "invalid_leftover"},
+		{"an observation instead of an outcome", []Leftover{{Title: "`activity` 只影響排序，沒有畫在列上"}}, "invalid_leftover"},
+		{"a safe but meaningless title", []Leftover{{Title: "修正 session 列表顯示問題"}}, "invalid_leftover"},
 		{"a why past its bound", []Leftover{{Title: "a", Why: strings.Repeat("y", LeftoverWhyLimit+1)}}, "invalid_leftover"},
 		{"two of one title", []Leftover{{Title: "a"}, {Title: " a "}}, "invalid_leftover"},
 	} {

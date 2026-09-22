@@ -263,8 +263,10 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 		return ProposalView{}, workRefusal(400, "invalid_leftover",
 			"leftover is the title of one row of that task's leftovers, at most "+
 				strconv.Itoa(work.LeftoverTitleLimit)+" characters.")
-	case !leftover && (req.Title == "" || utf8.RuneCountInString(req.Title) > workTitleLimit):
-		return ProposalView{}, workRefusal(400, "invalid_title", "title is 1 to "+strconv.Itoa(workTitleLimit)+" characters.")
+	case leftover && work.OutcomeTitleRefusal(req.Leftover) != "":
+		return ProposalView{}, workRefusal(400, "invalid_leftover", work.OutcomeTitleRefusal(req.Leftover))
+	case !leftover && work.OutcomeTitleRefusal(req.Title) != "":
+		return ProposalView{}, workRefusal(400, "invalid_title", work.OutcomeTitleRefusal(req.Title))
 	case !leftover && (req.Project == "" || utf8.RuneCountInString(req.Project) > workProjectLimit):
 		return ProposalView{}, workRefusal(400, "project_required", "project names the work's project.")
 	case utf8.RuneCountInString(req.Project) > workProjectLimit:

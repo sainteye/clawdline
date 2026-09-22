@@ -72,7 +72,7 @@ const (
 	// workScanLimit is the most board rows one read derives: the open items
 	// are at most OpenLimit, and the recently closed ride on top.
 	workScanLimit     = 5_000
-	workTitleLimit    = 200
+	workTitleLimit    = work.OutcomeTitleLimit
 	workProjectLimit  = 1_024
 	workAcceptLimit   = 2_000
 	workOwnerLimit    = 256
@@ -447,8 +447,8 @@ func (w *WorkBoard) Create(ctx context.Context, n NewWork, file Filer) (WorkView
 	switch {
 	case checkRelay(n.Actor, n.Via) != nil:
 		return WorkView{}, checkRelay(n.Actor, n.Via)
-	case n.Title == "" || utf8.RuneCountInString(n.Title) > workTitleLimit:
-		return WorkView{}, workRefusal(400, "invalid_title", "title is 1 to "+strconv.Itoa(workTitleLimit)+" characters.")
+	case work.OutcomeTitleRefusal(n.Title) != "":
+		return WorkView{}, workRefusal(400, "invalid_title", work.OutcomeTitleRefusal(n.Title))
 	case n.Project == "" || utf8.RuneCountInString(n.Project) > workProjectLimit:
 		// The work's project is said, never taken from a session's directory
 		// (board-redesign §1.7-2, §10 #9).
