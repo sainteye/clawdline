@@ -77,10 +77,18 @@ question it answers is the only one a commit can act on: *did what I am about to
 something else in?* Without a checkpoint it believes nothing is standing, so everything is new
 and it is red — the first run of the day on a fresh clone is the full answer, not a free pass.
 
-**Before publishing: `-history -full -revs=--all`, and read all of it.** Every ref, every commit,
-nothing skipped, no notion of standing. What comes back is the list of what a `git push` to a
-public remote would put in front of everybody, and every line of it is a decision somebody has to
-take before the push and not after.
+**Before an initial publication or a history rewrite: `-history -full -revs=--all`, and read all
+of it.** Every ref, every commit, nothing skipped, no notion of standing. What comes back is the
+list of everything the repository could publish, and every line is a decision somebody has to
+take before replacing public history and not after.
+
+**Before a routine push: do not run that full scan.** The tracked pre-push hook reads the history
+at the remote commit and at the proposed local commit, then refuses the push if the latter carries
+more findings. That comparison asks the routine question directly — whether this push adds a
+finding — without printing and rereading every standing finding in every local ref. Measured on
+2026-09-22 after old refs had accumulated: `-history -full -revs=--all` read 2,254 commits,
+13,809 objects and 923.1 MB in 602.1 seconds. Requiring it for every push added ten minutes while
+the range comparison in `tools/git-hooks/pre-push` already guarded the actual ref update.
 
 ## What a finding says, and what it never says
 

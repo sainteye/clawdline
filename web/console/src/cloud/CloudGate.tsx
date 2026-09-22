@@ -24,7 +24,7 @@ import { afterForget, forgetMachine, honestyIsOurs, type ForgetOutcome } from ".
 import { NAME_MAX, renameMachine, type RenameOutcome } from "./rename.js"
 import { setAccountMachines, setMachineForgetting, setMachinePairing } from "../legacy/devices-bridge.js"
 import { machinePresentation } from "../legacy/js/session/selection.js"
-import { accountMachineNames, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
+import { accountMachineRoster, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
 import { machineSeenWord } from "./machine-seen.js"
 import { PairingRun, dropInvitation, watchInvitations, type PairStart, type PairState } from "./pair.js"
 import {
@@ -179,11 +179,9 @@ export function CloudGate({ declared }: { declared: string }) {
   const [problem, setProblem] = useState<AccessProblem | null>(null)
   const [chosen, setChosen] = useState<CloudMachine | null>(null)
   // Forgetting a machine (`forget.ts`): which one is being asked about, which
-  // ones this tab has forgotten, and what the account answered about the last
-  // one. The list itself is the relay's, not the control plane's, so a
-  // forgotten machine stays on it and is marked rather than disappearing —
-  // "I revoked it" is visible, as it is on the Mac's own device list
-  // (`internal/transport/cloud/link.go`).
+  // ones this tab or the account says are forgotten, and what the account
+  // answered about the last one. The relay can retain an old snapshot after
+  // revocation, so the account roster keeps those rows off the picker.
   const [asking, setAsking] = useState<CloudMachine | null>(null)
   const [forgetting, setForgetting] = useState(false)
   const [forgotten, setForgotten] = useState<readonly string[]>([])
@@ -206,6 +204,15 @@ export function CloudGate({ declared }: { declared: string }) {
   const [names, setNames] = useState<ReadonlyMap<string, AccountName>>(new Map())
   const [connectionVersion, setConnectionVersion] = useState(0)
   const pairingStore = useMemo(() => browserPendingPairings(), [])
+
+  /** Apply the account's durable answer, not only the relay's retained snapshots. */
+  const readAccountRoster = useCallback((apiOrigin: string) => {
+    void accountMachineRoster(apiOrigin).then((roster) => {
+      if (!roster) return
+      setNames(roster.names)
+      setForgotten((was) => [...new Set([...was, ...roster.revoked])])
+    })
+  }, [])
   // An opened handover is the first cryptographic proof for a browser that has
   // never decrypted this machine. Keep it until the reconnect below has read
   // the machine's retained envelopes and `viewerVerified` can take over.
@@ -281,7 +288,7 @@ export function CloudGate({ declared }: { declared: string }) {
 
   const choose = useCallback((machine: CloudMachine) => {
     const current = client.current
-    if (!current || reader.current || !machine.selectable) return
+    if (!current || !machine.selectable) return
     // A machine this tab has forgotten still has decrypted snapshots behind it
     // and would open a console reading a line the account has stopped routing.
     if (forgotten.includes(machine.id)) return
@@ -289,6 +296,18 @@ export function CloudGate({ declared }: { declared: string }) {
       sessionStorage.setItem(CHOSEN + (current.account ?? ""), machine.id)
     } catch {
       /* a tab that cannot remember asks again after a reload */
+    }
+    // The console's fetch and event seams are installed once for one machine.
+    // Picking the machine already underneath this chooser merely closes it;
+    // picking another records the destination first, then remounts those seams
+    // in this same tab rather than taking the person through an empty picker.
+    if (reader.current) {
+      if (reader.current.machine === machine.id) {
+        setScreen({ at: "console" })
+      } else {
+        location.reload()
+      }
+      return
     }
     const config = transport.kind === "cloud" ? transport.config : null
     const next = new RelayReader(machine.id, {
@@ -632,7 +651,7 @@ export function CloudGate({ declared }: { declared: string }) {
           listMachines()
           setScreen({ at: "machines" })
           if (transport.kind === "cloud") {
-            void accountMachineNames(transport.config.apiOrigin).then(setNames)
+            readAccountRoster(transport.config.apiOrigin)
           }
           return
         }
@@ -642,7 +661,7 @@ export function CloudGate({ declared }: { declared: string }) {
         case "pairing_required":
           setScreen({ at: "pairing", account: update.accountID })
           if (transport.kind === "cloud") {
-            void accountMachineNames(transport.config.apiOrigin).then(setNames)
+            readAccountRoster(transport.config.apiOrigin)
           }
           recoverPairing()
           return
@@ -673,7 +692,7 @@ export function CloudGate({ declared }: { declared: string }) {
           return
       }
     },
-    [listMachines, transport, recoverPairing],
+    [listMachines, transport, recoverPairing, readAccountRoster],
   )
 
   const start = useCallback(() => {
@@ -723,9 +742,19 @@ export function CloudGate({ declared }: { declared: string }) {
     } catch {
       /* nothing remembered */
     }
-    // Another machine is another page, for the same reason.
-    location.reload()
+    setScreen({ at: "machines" })
   }, [who])
+
+  /** Put away the in-place picker without changing the machine underneath it. */
+  const closeMachinePicker = useCallback(() => {
+    if (!chosen) return
+    try {
+      sessionStorage.setItem(CHOSEN + (who?.account ?? ""), chosen.id)
+    } catch {
+      /* the console still stays on the machine already attached */
+    }
+    setScreen({ at: "console" })
+  }, [chosen, who])
 
   // Which machine this is, in the header beside the connection light, and the
   // way back to the list.
@@ -773,12 +802,15 @@ export function CloudGate({ declared }: { declared: string }) {
         }
       : null
   const shown = useMemo<MachineListState>(
-    () => machineList.phase === "ready"
-      ? { ...machineList, machines: withAccountNames(machineList.machines, names, described, present) }
-      : machineList,
+    () => {
+      if (machineList.phase !== "ready") return machineList
+      const visible = withAccountNames(machineList.machines, names, described, present)
+        .filter((machine) => !forgotten.includes(machine.id))
+      return visible.length ? { ...machineList, machines: visible } : { phase: "empty_authoritative" }
+    },
     // `described` reads the client, which changes only with a new line and
     // then with a new list.
-    [machineList, names],
+    [machineList, names, forgotten],
   )
 
   // Once drawn, the console stays: the copied modules bind to the document
@@ -803,6 +835,7 @@ export function CloudGate({ declared }: { declared: string }) {
           onAsk={askForget}
           onForget={forget}
           onLeave={leave}
+          onCloseMachinePicker={closeMachinePicker}
           naming={naming}
           renaming={renaming}
           renamed={renamed}
@@ -831,6 +864,7 @@ function GateCard(props: {
   onAsk: (machine: CloudMachine | null) => void
   onForget: (machine: CloudMachine) => void
   onLeave: () => void
+  onCloseMachinePicker: () => void
   naming: CloudMachine | null
   renaming: boolean
   renamed: { machine: string; outcome: RenameOutcome } | null
@@ -840,7 +874,7 @@ function GateCard(props: {
   onPair: (machine: { id: string; name: string } | null) => void
 }) {
   const { screen, who, machineList, problem, onChoose, onRetry } = props
-  const { asking, forgetting, forgotten, told, reading, onAsk, onForget, onLeave } = props
+  const { asking, forgetting, forgotten, told, reading, onAsk, onForget, onLeave, onCloseMachinePicker } = props
   const { naming, renaming, renamed, onName, onRename, pairing, onPair } = props
   const mark = useRef<HTMLCanvasElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
@@ -1311,6 +1345,11 @@ function GateCard(props: {
             )}
             {forgetOutcome()}
             {renameOutcome()}
+            {reading && !forgotten.includes(reading) && (
+              <button className="go" type="button" id="cloud-switch-cancel" onClick={onCloseMachinePicker}>
+                {T.webCancel}
+              </button>
+            )}
             {/* The console behind this card is reading a machine that has just
                 been forgotten: choosing another one is a new page, which is
                 what the header's own switch does. */}

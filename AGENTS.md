@@ -111,9 +111,10 @@ on it. A history finding names the commit, the file and the line, and never the 
 This history is already red and stays red: three lines at `ef067d70` are in it for good unless
 somebody rewrites it, which is a decision about the whole repository and not a patch. So the
 pre-commit check is `-history -new`, which prints every standing finding and is red only for one
-today added. **Before this repository is made public, or pushed anywhere public,** run the whole
-thing — `tools/check-private.sh -history -full -revs=--all` — and read all of it.
-`docs/privacy-guard.md` is the whole of it.
+today added. A routine push does **not** run the whole history again: the tracked pre-push hook
+compares the finding count at the published commit with the count after this push and refuses an
+increase. The full `-history -full -revs=--all` audit is reserved for an initial publication or an
+intentional history rewrite. `docs/privacy-guard.md` is the whole of it.
 
 Commit messages, comments and documentation are in **English**; the conversation with the person
 is in Traditional Chinese.
