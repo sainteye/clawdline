@@ -327,7 +327,20 @@ state wins second, and missing owner wins third; an unassigned in-progress item 
 phase badge. Every card shows the Project icon. Project filtering changes membership without
 changing stored state.
 
-### WS2-U04 — Edit and Delete are deliberate person actions
+### WS2-U04 — Session responsibilities show evidence, not one opaque phase
+
+At desktop and phone widths, every assigned-item row shows Implementation, Verification,
+Commit/Merge, Deployment, and Done. A milestone becomes a green checked item only after the phase
+graph has crossed its evidence gate; the current milestone and a pending milestone cannot look
+checked. Conditions use person-readable labels. Completing an item removes it from open
+responsibility and places it in the same Session's recent-completion group with all five checks.
+
+For an existing-Session assignment with no broker task, submit direct landing evidence naming an
+exact commit, target branch, and remote. The transition is refused if the commit does not resolve,
+is absent from the local target, or is absent from the remote-tracking target. A passed receipt
+stores Git's resolved commit and both resolved target heads on the phase event.
+
+### WS2-U05 — Edit and Delete are deliberate person actions
 
 Every current card exposes Edit and Delete. Edit opens with the current title and description,
 refuses blanks and stale versions, and keeps the modal open with its typed failure. Delete opens a
@@ -336,7 +349,7 @@ removes the card and its Session responsibility together by recording a person-o
 an Agent or machine credential cannot invoke either person route. Escape, the close control, and a
 backdrop press dismiss both dialogs without mutation, including at phone width.
 
-### WS2-U05 — One authoritative Board
+### WS2-U06 — One authoritative Board
 
 Navigation exposes one Board. Project links open it with a Project filter. The retired Project
 Board is absent from navigation and no current card/count is read from its source. The Now page may
