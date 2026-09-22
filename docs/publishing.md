@@ -1,10 +1,9 @@
 # CI, the public remote, and publishing rewritten history
 
-The public repository and the development repository intentionally do not have
-the same history. The public history has been rewritten to remove private
-names, home-directory paths, and network addresses. A normal push from the
-development checkout can therefore disclose material that does not exist in
-the public repository.
+The public `main` and this repository's `main` now share the rewritten history
+that removed private names, home-directory paths, and network addresses. Older
+local task and backup refs still carry the unfiltered history. Pushing one of
+those refs can disclose material that does not exist in the public repository.
 
 ## Give a development checkout a readable remote
 
@@ -15,14 +14,16 @@ tools/configure-public-remote.sh
 ```
 
 It adds `origin` with the public fetch URL and sets this checkout's
-`core.hooksPath` to `tools/git-hooks`. The tracked `pre-push` hook rejects an
-ordinary push and explains why. `tools/test-public-remote-guard.sh` proves the
-rejection against a disposable local bare repository and also proves that no
-remote ref was created.
+`core.hooksPath` to `tools/git-hooks`. The tracked `pre-push` hook permits only
+the public `main` and `swift` branches, and checks `main` for private material
+that is not already in the published history. `tools/test-public-remote-guard.sh`
+proves that another branch is rejected against a disposable local bare
+repository and that no remote ref was created.
 
-The hook prevents an accidental ordinary push; Git's deliberate
-`--no-verify` option can bypass any pre-push hook. Do not use that option from
-the development checkout. Fetching is unaffected.
+The hook prevents an accidental push of an unsafe ref or newly detected
+private history; Git's deliberate `--no-verify` option can bypass any pre-push
+hook. Do not use that option from the development checkout. Fetching is
+unaffected.
 
 The setting is local Git configuration. A clone does not inherit it, which is
 what keeps the publication path below usable.

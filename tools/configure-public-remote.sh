@@ -34,4 +34,4 @@ else
 fi
 
 echo "origin fetches from $url"
-echo "pushes from this checkout are blocked by tools/git-hooks/pre-push"
+echo "pushes from this checkout are guarded by tools/git-hooks/pre-push"
