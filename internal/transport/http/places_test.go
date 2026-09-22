@@ -5,7 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/icon"
@@ -30,6 +32,25 @@ func placesHome(t *testing.T) string {
 	home := filepath.Join(base, "home")
 	t.Setenv("HOME", home)
 	return home
+}
+
+func TestExplicitPlaceIsListedWithoutAssistantHistory(t *testing.T) {
+	home := placesHome(t)
+	state := filepath.Join(home, ".config", "clawdline-next")
+	dir := filepath.Join(home, "projects", "unopened")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	registry := projects.OpenPlaceRegistry(state)
+	if _, err := registry.Add([]string{dir}, time.Unix(1_790_000_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{cfg: config.Config{Dir: state}, broker: &orchestrator.Broker{Dir: state}, icons: &icon.Registry{}}
+	list := s.projectReaders().places.List(nil, 40)
+	if len(list) != 1 || list[0].Path != dir {
+		t.Fatalf("places = %#v, want the explicitly registered directory", list)
+	}
 }
 
 // recordPlace makes dir and a Claude Code transcript folder that names it, the

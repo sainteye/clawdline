@@ -31,6 +31,10 @@ type Labeler func(path string) string
 // one instance is meant to live as long as the daemon.
 type Places struct {
 	Label Labeler
+	// Registered reads the durable directories a person explicitly added.
+	// It is separate from Fixture: production registration is a source beside
+	// provider history, while a fixture replaces every production source.
+	Registered func() ([]RegisteredPlace, error)
 	// Managed is ManagedWorktreeRoots: where a Clawdline broker makes its
 	// children's checkouts. Nothing at or below one of them is offered as a
 	// place, however it became known — a transcript folder, or a session
@@ -109,6 +113,14 @@ func (p *Places) List(live []string, limit int) []Place {
 	}
 	all := p.recorded(60, 240)
 	all = append(all, p.codexRecorded(60, 40)...)
+	if p.Registered != nil {
+		if rows, err := p.Registered(); err == nil {
+			for _, row := range rows {
+				all = append(all, Place{ID: PlaceID(row.Path), Path: row.Path,
+					Label: p.label(row.Path), At: time.Unix(row.AddedAt, 0)})
+			}
+		}
+	}
 	for _, cwd := range live {
 		if cwd == "" {
 			continue

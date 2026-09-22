@@ -4777,9 +4777,9 @@ type StartPlace struct {
 	Path  string `json:"path"`
 }
 
-// GET /v1/places: recorded Claude Code folders, Codex rollouts and live
-// sessions' directories, deduplicated, still on disk, newest first, at most
-// forty.
+// GET /v1/places: explicitly registered directories, recorded Claude Code
+// folders, Codex rollouts and live sessions' directories, deduplicated, still
+// on disk, newest first, at most forty.
 type StartPlaceList struct {
 	Assistants []StartAssistant `json:"assistants"`
 	At         int64            `json:"at"`

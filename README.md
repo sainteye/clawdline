@@ -117,6 +117,13 @@ cd /path/to/your/project
 claude  # 或：codex
 ```
 
+也可以在尚未啟動 Agent 前，明確把既有目錄加入「開一個 Session」清單；這個動作不會呼叫模型：
+
+```sh
+./bin/clawdline project add /path/to/project /path/to/another-project
+./bin/clawdline project list
+```
+
 在 macOS 上也可以建置原生外殼：
 
 ```sh
