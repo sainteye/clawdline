@@ -1,0 +1,200 @@
+> **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
+
+# Clawdline messages
+
+This is the inventory of content Clawdline types into assistant sessions and the transcript role
+each shape receives. It exists because a terminal has no sender-metadata channel: without an exact
+envelope, Claude Code and Codex both persist injected text as a `user` turn and the App and Web
+therefore attribute it to the person.
+
+## The roles are not interchangeable
+
+| Transcript role | Who spoke | Transport | Presentation |
+|---|---|---|---|
+| `user` | The person or a paired device acting for them | `POST /v1/sessions/:id/send`, composer, terminal | Ordinary user bubble |
+| `assistant` | The session whose transcript is open | Assistant transcript, including any `<clawdline-image …>` markers it wrote | Ordinary answer, with a thumbnail under it for each marker |
+| `peer` | Another Claude session through Claude Code's native peer protocol | `<cross-session-message …>` | Indigo peer card |
+| `message` | Another live Claude or Codex session, relayed by Clawdline | `POST /v1/orchestrator/messages`, `<clawdline-message>…` | `Clawdline ↔` card naming the source session and assistant |
+| `notice` | Clawdline reporting an orchestrator fact | `<clawdline-notice>…` | Inert state card chosen from typed fields |
+| `tool` | A tool call or its result | Assistant transcript | Tool row/run |
+
+The distinction answers two different questions. `message` says *another session said these
+words*. `notice` says *the broker observed this state*. A status report from `clawdline-fa` to
+Clawdfather is a `message`; task `aaaaaaaa` reaching `success` is a `notice`.
+
+Task briefings, handoff packages and ordinary remote prompts are intentionally not inferred from
+their prose. Unless they use one of the exact envelopes below, they remain `user`. In particular,
+prefixes such as `[a0939bac clawdline-fa]` and headings made from `===` have no protocol meaning.
+
+## Session message
+
+`POST /v1/orchestrator/messages` is the machine-token-only session-to-session route. Its closed
+request body is:
+
+```json
+{
+  "from_session": "c6000001-0000-4000-8000-000000000001",
+  "to_session": "c6000002-0000-4000-8000-000000000002",
+  "text": "The correction is in the same round.\n\n## Status\n\nThe task is still running.",
+  "images": [{"path":"/Users/you/Desktop/current-state.png"}]
+}
+```
+
+`images` is optional and contains 1…6 closed objects with exactly one `path`. A path must be a
+normalized absolute local path; URL strings, relative or dot-segment paths, extra fields,
+directories, unreadable files and unsupported bytes are refused. Clawdline does not fetch remote
+content and does not trust a filename extension or claimed MIME type. It bounds each source and
+decoded raster, decodes it, re-encodes it as PNG, and copies it into the Clawdline-owned artifact
+store before terminal delivery. `text` may be empty only when `images` is non-empty.
+
+`from_session` may be the source's exact terminal-neutral id or its current process-bound
+conversation id. `to_session` is the exact terminal-neutral id. Clawdline resolves both against
+live assistant sessions, rejects aliases, title/prefix matches, ambiguity and self-send, and
+refuses a target showing a menu. The route requires the orchestrator token and an
+`Idempotency-Key`; a paired device cannot claim an assistant identity.
+
+The source is a live identity resolved under machine authority, not proof that the HTTP caller is
+running inside that source process; possession of the orchestrator token is the trust boundary.
+An `ok` response proves one terminal typing attempt was accepted, not that the target transcript
+observed or acknowledged it.
+
+Text-only messages keep the literal version-1 wire already stored in transcripts. The target
+receives one physical terminal line:
+
+```text
+<clawdline-message>{"body":"…","kind":"session_message","protocol":"clawdline.message","source":{"assistant":"claude","id":"A093…","label":"clawdline-fa"},"version":1}</clawdline-message>
+```
+
+The JSON string may contain escaped newlines while the wrapper itself contains no LF or CR. App
+and Web discard the wrapper after strict decoding, restore the body's Markdown and paragraphs, and
+show the source as `Clawdline ↔ clawdline-fa · Claude`. The source id is protocol evidence, not a
+UI action or link.
+
+Version 1 has one kind, `session_message`, and exactly the fields shown above. Unknown versions,
+unknown or missing fields, partial wrappers, prose around a wrapper, and quoted lookalikes are not
+partly interpreted. Their bytes stay visible under the role they originally had.
+
+An image message uses version 2 and adds exactly one top-level field, `artifacts`, containing 1…6
+closed references:
+
+```json
+{"id":"c6000003-0000-4000-8000-000000000003","media_type":"image/png",
+ "byte_count":18422,"width":1280,"height":720,"expires_at":1787983200}
+```
+
+No reference contains image bytes, a source path, filename, URL, HTML or presentation fields.
+`expires_at` is absolute Unix seconds. The same array reaches `Transcript.Entry` and
+`GET /v1/sessions/:id/transcript` as `artifacts`; attribution remains all-or-nothing because a
+malformed or extra field invalidates the entire v2 envelope. Authenticated clients derive the
+relative same-origin route `/v1/artifacts/images/:artifactId` from the opaque id; that retrieval
+URL is presentation state, never a stored public URL or part of the message. A live PNG is `200`, a known expired or pruned id
+is typed `410 artifact_expired`, and an id the store never owned is typed
+`404 artifact_not_found`.
+
+App and Web render a live reference as a bounded thumbnail with an enlarged in-app preview. A
+past `expires_at`, native missing/expired lookup, or Web retrieval failure stays in the transcript
+as an explicit localized expired tile rather than a broken image or an omission. A future hosted
+store may back the same opaque relative route; callers and transcripts do not learn or persist its
+storage URL.
+
+The store defaults to 24-hour TTL, 64 live artifacts and 64 MiB total, with a 12 MiB source and
+normalized-image cap, 12,000-pixel edge cap and 40-megapixel decoded cap. Tombstones are bounded
+and retained long enough to distinguish deletion from an unknown id. Pruning removes only files
+whose opaque ids and metadata belong to this store; its directory is mode `0700` and its files are
+`0600`. `CLAWDLINE_SESSION_IMAGE_DIR` moves the whole deleting store, including for isolated tests.
+
+## The marker a session writes in its own reply
+
+The route above cannot show a picture to the session that is speaking. It delivers by typing into
+the target terminal, and injected text is a `user` turn — so a session sending itself an envelope
+would be handing itself a new instruction, and `POST /v1/orchestrator/messages` refuses
+`same_session`. That refusal is correct and is not going anywhere.
+
+What replaces it keeps Clawdline reading transcripts and writing none. `POST /v1/artifacts/images`
+stores the bytes through the same owned store and answers with the same reference plus a ready-made
+`marker`; the session pastes that marker into the reply it was already writing, its own CLI records
+that turn, and the transcript reader resolves the marker when it reads that turn back.
+
+The spelling is exactly one, and it carries an id and nothing else:
+
+```text
+<clawdline-image id="c6000003-0000-4000-8000-000000000003">
+```
+
+No path, no bytes, no dimensions, no closing tag — the metadata is resolved from the store exactly
+as a version-2 envelope's is. **Recognition is all-or-nothing**, for the same reason the envelopes'
+is: a marker that half-worked and vanished is indistinguishable from one that worked. Everything
+below stays visible as ordinary text, byte for byte, and none of it is partly interpreted:
+
+- an id that is not a lower-case opaque artifact id, including the documented `ARTIFACT_ID`
+- a different quote character, a different tag case, a missing `>`
+- a marker inside a line-anchored ``` or ~~~ fence, so that a reply *about* this format is not a
+  reply *using* it. Only that shape: a four-space indented code block and a fence inside a
+  blockquote are read as ordinary lines, and an inline backtick span is deliberately not parsed.
+  Every one of those escapes still needs a real opaque artifact id, and the id written in prose
+  about this format is `ARTIFACT_ID`, which is refused above.
+- every marker after the sixth in one turn, which is the same per-message image bound
+
+An honoured marker is removed from the entry's `text` — with its whole line, when it was alone on
+one, so a picture on its own line leaves no gap — and the resolved reference is appended to that
+entry's `artifacts`. That is the same field, the same closed shape and the same renderers the
+`message` role already uses; `GET /v1/sessions/:id/transcript` needed no new field. Both transcript
+readers honour markers only in an **assistant** turn: a person quoting the tag is quoting it.
+
+A reference the store cannot resolve resolves to a row that carries the id, `expires_at` in the
+past, zeroed `width`, `height` and `byte_count`, and one extra field naming which of two things
+happened:
+
+| `state` | what the store said | what the reader is shown |
+|---|---|---|
+| `"expired"` | it held this image and no longer does — past its TTL, pruned, or its bytes are gone | **Image expired** |
+| `"unknown"` | it has no record of this id at all: never stored here, or stored so long ago that even its tombstone was reaped | **Unknown image** |
+
+The field is present only on those rows, so a version-2 envelope's artifact object still has
+exactly its six keys, and a client that has never heard of `state` reads `expires_at` alone and
+draws the expired tile it has always drawn. Standing in is deliberate: an entry that shows a
+picture today and prints raw wire text next week is worse than one that says the picture is gone.
+Saying which absence it is, is the other half — telling somebody an image they never had has
+expired is the app inventing a memory for them, and the two cases are distinguishable for the whole
+window that matters, since a genuinely stored image reads `expired` from its 24-hour TTL until its
+7-day tombstone is reaped.
+
+The store's byte budget is global and shared with the pictures sessions send each other
+(`maxCount: 64`, `maxTotalBytes: 64 MiB`, oldest evicted first), so a busy machine can evict an
+image that is still on somebody's screen; it becomes an `expired` tile there. That is a known
+limitation rather than a guarantee of how long a picture lives.
+
+## Orchestrator notices
+
+Notice writers use protocol `clawdline.notice`, wrapper `<clawdline-notice>`, and current writer
+version 2. Version 1 remains readable for stored transcripts. Version 2 has exactly five kinds:
+
+| `kind` | Audience | Meaning | Important typed fields |
+|---|---|---|---|
+| `task_finished` | `root` or `parent` | One dispatched task reached a terminal state | `task`, `state`, `result_path`, `outstanding`, `claims_released`, `child_may_still_write` |
+| `workspace_overlap` | `root` or `parent` | A new task's claims overlap another task | `task`, non-empty `overlaps` |
+| `file_wait_request` | `owner` | A session is waiting for exact repository paths | `wait_id`, `repository`, `paths`, `waiter_session_id`, `reason`, `release_condition` |
+| `file_wait_release` | `waiter` | The owner released those paths | `wait_id`, `repository`, `paths`, optional `commit`, optional `note` |
+| `handoff_receipt` | `source` | A new root received the first line, or did not | `handoff_id`, optional `title`, `assistant`, `project_dir`, `state` |
+
+`task_finished.state` is `success`, `failure`, `timeout`, `cancelled` or `spawn_failed`.
+`handoff_receipt.state` is `picked_up` or `first_line_failed`.
+
+Notice payloads cannot supply Markdown, HTML, CSS, actions, URLs or translated copy. App and Web
+choose their own wording and styling from the validated kind/state and escape every displayed
+field. The envelope's `body` is only the model-readable and legacy-client fallback.
+
+## Adding or changing a type
+
+A message-type change is complete only when all of these move together:
+
+1. The closed encoder/decoder schema and version policy.
+2. Claude and Codex transcript normalization.
+3. App and Web presentation, including visible fallback for failed recognition.
+4. `/v1/sessions/:id/transcript` serialization.
+5. Red-before-green tests for wire safety, strict fallback, both transcript readers and rendering.
+6. This inventory, the route reference in `api.md`, and the protocol overview in
+   `clawdline-protocol.html`.
+
+Do not add a prose prefix and teach a renderer to guess it. If identity or state matters to the
+display, it belongs in a closed envelope.

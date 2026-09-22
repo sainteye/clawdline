@@ -1,0 +1,518 @@
+> **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
+
+# Scheduled tasks
+
+A schedule is a task template Clawdline turns into an orchestrator dispatch at a local wall-clock
+time. It opens a real Claude Code or Codex session and leaves a task receipt. Runs that will close
+their tab are bounded children; `close_tab: never` opens an independently owned Root Session.
+
+Put one JSON file per schedule at:
+
+```text
+~/.config/clawdline/schedules/<schedule-id>.json
+```
+
+The filename and `schedule_id` must be the same lower-case UUID. Files are the source of truth.
+Clawdline rereads them, rejects unknown fields, exposes each bad file as an `invalid` row, audits
+and notifies once per invalid content revision, and continues loading the valid neighbors.
+
+Three routes write one, and between them a schedule now has a whole life outside a text editor:
+[`POST /v1/orchestrator/schedules`](#making-one-without-a-text-editor) creates a file,
+[`PATCH /v1/orchestrator/schedules/:id`](#changing-one-and-taking-one-away) rewrites one, and
+[`DELETE /v1/orchestrator/schedules/:id`](#changing-one-and-taking-one-away) removes it. All three
+sit behind the write gate a paired device passes, which is the plain statement worth reading
+twice: **a paired phone can now change and remove work that runs later, unattended.** Until they
+existed a wrong time could only be fixed at this Mac, in this file, by hand — so every mistaken
+creation had to be cleaned up back at the desk. All three have a second door as well, and it opens
+only onto [a schedule that runs once](#a-schedule-that-runs-once): this Mac's orchestrator token,
+the credential every other orchestrator write already takes.
+
+Files are still the source of truth and hand-editing is still a first-class way to work. What the
+routes do not do is guess: an edit replaces the whole file from the same fields a create takes,
+`schedule_id` and `created_at` are carried across from the file being replaced rather than taken
+from the request, and the task-template fields no form can show are carried too rather than
+dropped. A save that moves the firing times also records when it moved them, so an edit cannot
+fire an occurrence that did not exist until the edit.
+
+The Settings app owns one convenience edit: its switch changes only the top-level `enabled`
+boolean in place. Every other byte and every other field is always yours; edit those in the JSON
+file itself, through `PATCH`, or through whatever Settings offers. If an unusual but valid JSON
+representation cannot be edited in place, Clawdline falls back to a full JSON rewrite and records
+that fallback in the audit log.
+
+## The file
+
+```json
+{
+  "clawdline_schedule": 1,
+  "schedule_id": "c6000017-0000-4000-8000-000000000017",
+  "title": "Publish the next post",
+  "when": { "at": "09:30", "days": ["mon", "wed", "fri"] },
+  "task": {
+    "assistant": "codex",
+    "model": "gpt-5.6-sol",
+    "project_dir": "/Users/me/code/blog",
+    "title": "Publish the next post",
+    "instructions": "Read the publishing checklist, publish the next ready post, and report it.",
+    "claims": ["posts", "public"],
+    "serialize": ["deploy"],
+    "permission_mode": "full",
+    "timeout_minutes": 45,
+    "deliverables": ["the published URL"]
+  },
+  "enabled": true,
+  "close_tab": "on_success",
+  "catch_up_hours": 6,
+  "notify_on_failure": true
+}
+```
+
+- `clawdline_schedule` is exactly `1`.
+- `schedule_id` is a lower-case UUID and matches the filename.
+- `title` (at most 120 characters) names the schedule in the API, root label and push notification.
+  Audit rows identify the stable `schedule_id` instead.
+- `when.at` is `HH:MM` in the Mac's current local time zone. It is not UTC.
+- `when` carries `at` and **exactly one** of `days` or `on` — how often, said once.
+- `when.days` is `"daily"` or a non-empty, duplicate-free array drawn from `sun`, `mon`, `tue`,
+  `wed`, `thu`, `fri`, `sat`. This is a schedule that repeats.
+- `when.on` is a single calendar date spelled `YYYY-MM-DD`, and it is a schedule that runs
+  **once** — see [A schedule that runs once](#a-schedule-that-runs-once). The date is Gregorian
+  and the time of day is still local; `2026-02-30` is refused rather than rolled forward.
+- `task` contains the task-template fields `assistant`, optional `model`, optional
+  `reasoning_effort`, `project_dir`, optional `title`, `instructions`, `claims`, `serialize`,
+  `isolation`, `isolation_base`,
+  `permission_mode`, `timeout_minutes`, `deliverables`, `kind`, and `plan`. Their validation is the
+  same as `task.json`.
+  Clawdline generates `task_id`, the task secret, and `root`; templates cannot set them.
+- `enabled` is a required boolean. A disabled schedule is listed but never fires.
+- `close_tab` is `on_success` (the default), `always`, or `never`. `on_success` closes immediately
+  after success but leaves failures, timeouts and spawn failures for takeover. `always` closes any
+  terminal outcome, including cancellation. These two explicit per-schedule choices take priority
+  over the global child-linger preference, including across an app restart. `never` never closes
+  the tab and therefore launches the task in an independently owned Root Session. A conditional
+  child retained after failure or timeout is promoted to Root ownership when it finalizes.
+- Every Session created by a schedule is named with one `[Task] ` prefix. The schedule title and
+  task record keep their original text; the marker is Session presentation only and survives a
+  later resume.
+- `catch_up_hours` is an integer from `0` through `168`, default `6`.
+- `notify_on_failure` is a boolean, default `true`. It covers missed catch-up windows, dispatch
+  refusals, failures, timeouts and spawn failures.
+- `created_at` is a Unix timestamp in seconds, written by `POST /v1/orchestrator/schedules` and
+  never named by the request. It exists so that an occurrence from before the schedule was made
+  is neither run nor counted as missed: without it, making a `09:00` schedule at one in the
+  afternoon opened a session within the minute, and making one in the evening pushed a
+  notification about a run that was never owed. **A file without it is not wrong** — a schedule
+  written by hand has always meant "as far back as anyone knows", and it still does.
+- `when_changed_at` is the same kind of stamp one question further along, written by
+  `PATCH /v1/orchestrator/schedules/:id` and by the Mac's Edit button, never named by a request.
+  `created_at` answers *did this schedule exist yet*; this answers *did this occurrence exist
+  yet*. Moving a `21:00` schedule to `09:00` at two in the afternoon invents an occurrence six
+  hours old — inside the default catch-up window — and without a second stamp the timer cannot
+  tell it from a morning the Mac slept through: measured, it opened a session within the minute
+  while the save's own answer said the next run was tomorrow, and past the window it pushed that
+  a run had been missed. Only a save that really moves `when.at` or `when.days` writes it; a save
+  that changes a title carries the old value across untouched, so a nine o'clock that genuinely
+  was missed is still missed after somebody fixes a typo at eleven. A file without it is a
+  schedule whose firing times have never been edited through the app, and it behaves exactly as
+  every schedule always has — including one retimed by hand in this file, which is the one path
+  no stamp can cover.
+- `fired_at` is a Unix timestamp in seconds, written by Clawdline when a schedule that runs once
+  really opened its session, and never named by a request. It is refused outright on a schedule
+  with `when.days`: it says *the* run happened, and a schedule with more occurrences coming has
+  no such run to name.
+
+## A schedule that runs once
+
+`"when": { "at": "01:30", "on": "2026-09-06" }` is a maintenance window: half past one on the
+sixth, and then nothing. Before it existed a schedule was necessarily recurring, so the way to
+arrange a single run was to make a weekly one and remember to come back afterwards and set
+`enabled: false` — a chore nothing in this app reminds anybody about, and one it has watched a
+session be told to do in prose.
+
+It is the same schedule in every other respect, and deliberately so.
+
+- **The clock treats it identically.** `catch_up_hours` means what it means: if the Mac was asleep
+  through 01:30 and wakes inside the window, the run happens late, and outside the window it is
+  the ordinary audited and notified `missed`. `created_at` and `when_changed_at` gate it the same
+  way too — an occurrence from before the file existed, or from before the save that moved it, is
+  not one anybody missed.
+- **It retires itself, and the file says so.** When the session really opens, Clawdline writes
+  `fired_at` into the file. After that the schedule cannot fire again: the minute timer says so,
+  `POST …/run` refuses with `409 schedule_spent`, and so does a save that would move its date. The stamp is on disk rather than in memory
+  because the timer's record of which occurrences it has handled does not survive a restart, and
+  a Mac that relaunches while the fire is still inside its catch-up window would otherwise open a
+  second session for a run that already happened.
+- **A spent row and a paused row are not the same row — in the payload.** `GET` gives a schedule
+  that runs once `once: true`, and a spent one `fired_at` as well, while `next_fire` is simply
+  absent. Turning a schedule off by hand used to be the only way to retire one, so *finished* and
+  *somebody paused this* were the same `enabled: false` and nothing said which you were looking at.
+  **Neither screen draws the difference yet.** The Mac's schedule list and the browser's both build
+  their row from `enabled`, `next_fire` and the last run, and neither reads `once` or `fired_at`,
+  so a spent one-shot is an enabled row with no next run — the same picture as one that is waiting
+  for a date it will never reach. Drawing it needs a label in every language this app ships and a
+  change in both lists, and until that lands this bullet is about the API and nothing else.
+- **A dispatch this Mac refused does not spend it.** `fired_at` is Clawdline's statement that the
+  work ran. A refusal consumes the occurrence in memory exactly as it does for a recurring
+  schedule and writes no stamp, so the row goes on saying the run has not happened.
+- **A one-shot that was never run leaves no stamp either**, because none happened. Its row has
+  `once: true`, no `next_fire` and no `fired_at`, which is the honest description: it was due, and
+  it did not run.
+
+A file that has no `on` is untouched by all of this. Every schedule written before this existed
+carries `days`, is refused nothing it was accepted for, and means exactly what it always meant.
+
+A scheduled task may also use the task-secret `/notify` route to push that day's **successful
+content** to the user — a daily forecast is the canonical shape. Say so in `task.instructions`;
+`notify_on_failure` is only Clawdline's separate state/failure notification policy. This explicit
+content delivery can be turned off by the user in Settings → Remote. While it is off, `/notify`
+returns the named `409 agent_notify_disabled` refusal; the content stays in `result.json` and the
+scheduled task itself still runs normally.
+
+## Making one without a text editor
+
+`POST /v1/orchestrator/schedules` is the only route that writes a schedule file. It takes the
+fields a person filled in, generates the id, assembles the object above, and hands it to the same
+parser every source file goes through — then reads the file back off disk through that parser
+before answering. A schedule this app cannot itself parse must not survive the request that made
+it: it would come back as an `invalid` row, audit itself and send a push, and nobody would be able
+to say which request left it there.
+
+```sh
+curl -s -X POST "http://127.0.0.1:$port/v1/orchestrator/schedules" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"title":"Publish the next post","at":"09:30","days":["mon","wed","fri"],
+       "place_id":"3f2a91c47e0b5d68","assistant":"codex",
+       "instructions":"Read the publishing checklist and publish the next ready post."}'
+{"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,
+                       "next_fire":1787880600}}
+```
+
+**Two doors, and the second one only opens onto a schedule that runs once.** A paired device
+passes the three gates `POST /v1/voice` and `POST /v1/intents` already sit behind: the write
+switch in Settings → Remote, the `send` capability on the device, and an `Idempotency-Key`. That
+is what this route was built for.
+
+This Mac's own orchestrator token opens the other door, with the same `Idempotency-Key` and — like
+every other orchestrator route — **neither the device gate nor the write switch**. That is worth
+saying plainly rather than leaving to be inferred: turning Settings → Remote → writes off stops a
+*phone* creating, changing and removing schedules, and does not stop a session on this Mac doing
+it. What the second door reaches is a schedule with `when.on` and no other. A schedule that runs
+**once** is one dispatch at a named time, and the same token already opens a session immediately
+with `POST /v1/orchestrator/tasks` and already runs any schedule on the spot with `POST …/run`.
+Refusing it *at half past one* while allowing *now* protects nothing.
+
+**And refusing it a repeating schedule does not protect against recurrence either, which is what
+the first version of this page claimed.** The claim was: an assistant session can read this token
+off the disk it runs on, so a session able to mint a repeating schedule could arrange to be woken
+every night forever. The sentence is true and it is not what the refusal stops. A session can post
+a one-shot for tomorrow, and the session *that one opens* can post the next — nothing bounds how
+many one-shots exist, every fired session holds the same token, and ten writes in ten minutes is
+no brake at one write a day. Nor did the refusal bound it before this door existed: the session
+that hit it wrote the schedule file by hand instead, and a hand-written file may carry `when.days`.
+**The gate only ever decided which artifact the capability produced.**
+
+What the refusal does buy is two things, and they are why it stays:
+
+- **A person's repeating rows are not an agent's to edit or delete.** `PATCH` and `DELETE` read
+  the kind of the file being changed, so the nightly schedule somebody arranged in Settings cannot
+  be retimed, disabled or removed out from under them by a session on this Mac.
+- **An agent's deferred work is validated, stamped, read back and audited.** The hand-written file
+  on the record was mode 0644, with no `created_at`, unvalidated, never read back, and in no audit
+  line. This route does all five of those things, at `0600`.
+
+So a repeating schedule stays a person's to arrange, and the refusal says so and says where to go:
+
+```text
+403 forbidden — This Mac's orchestrator token may make, change and remove a schedule that runs
+once — a when with an on date. A repeating schedule is arranged by a person: in Settings, from a
+paired device that may send, or by writing the file yourself at
+~/.config/clawdline/schedules/<schedule-id>.json. GET /v1/orchestrator/schedules/:id reads back
+what you wrote, through the same parser this route would have used.
+```
+
+**A `place_id`, never a path.** The body has nowhere to write a directory. `place_id` is an id
+from `GET /v1/places` and is resolved against that list on the Mac, which
+is the argument `POST /v1/places/:id/start` makes and is worth making twice: a device can only
+name a project this Mac has already shown it. An id that is not on the list is a `400`, never a
+guess, and `project_dir`, `claims`, `permission_mode` and every other task-template field are not
+fields a request may carry at all.
+
+**They are not fields a request may set, and on a save they are fields a request keeps.** Those
+are different statements and only the first one used to be worth making. Since a save stopped
+dropping the fields no form can show, a paired phone can rewrite the title, the times and the
+**first message** of a schedule that runs with `"permission_mode": "full"` and a list of `claims`
+— it cannot name those fields, it cannot add them to a schedule that has none, and it cannot
+raise the permission of one it is editing, but the instructions it does rewrite are the ones that
+run under them. That is the sharpest thing on this page: the alternative was a save that silently
+took somebody's `permission_mode` away, which is worse, but the trade is real and belongs in
+writing rather than in a commit message.
+
+Then the part that is genuinely new, because burying it would be the only dishonest way to write
+this page: **a paired phone can now arrange work that runs later, in a session nobody is watching,
+in a project that was on the list when the phone last looked.** Everything before this needed
+somebody at the Mac — either at a terminal with the orchestrator token, or in a text editor. What
+bounds it is what bounds the rest: the switch that can be turned off, a device that can be
+revoked, the same capacity and claims checks every dispatch meets when the schedule finally fires,
+and a written record of every one of them. A schedule created while task dispatch is switched off
+is listed and never fires.
+
+The fields are the ones in [The file](#the-file), flattened, plus the `place_id` that replaces
+`project_dir`:
+
+- required: `title`, `at`, `place_id`, `assistant`, `instructions`, and exactly one of `days` or
+  `on` — a body carrying both is refused with the parser's own sentence rather than having one of
+  them chosen for it.
+- optional: `enabled` (default `true`), `close_tab`, `catch_up_hours`, `notify_on_failure`,
+  `timeout_minutes`, `model`. An empty `model` is left out of the file rather than written into
+  it as an empty string.
+- written by the Mac, not by the request: `schedule_id`, the filename it must match, `created_at`,
+  and — on a save that moves the firing times — `when_changed_at`.
+- `days` is **not** defaulted. A request that does not say which days is refused, because
+  choosing `daily` on somebody's behalf is choosing how often their work runs. `enabled` is the
+  opposite: a schedule somebody has just asked for is on.
+- Every refusal carries the parser's own sentence — `when.at must be HH:MM in local time` and the
+  rest. They were written for a person to read and there is no second wording of them worth
+  inventing.
+
+Ten of these in ten minutes is the brake, answered as `429 busy`. It is aimed at a client
+retrying in a loop with a fresh key each time rather than at anybody filling in a form, and it is
+deliberately not the dispatch brake: making a schedule is not a dispatch, and spending a tree's
+tickets on it would have a form on a phone quietly stopping a root session from opening children.
+
+New files are `0600`, and the schedules directory is created `0700` when it is not already there —
+the same as task files, because a schedule carries the same first message and the same absolute
+path. An existing directory's mode is left exactly as it is.
+
+## Changing one, and taking one away
+
+```sh
+curl -s -X PATCH "http://127.0.0.1:$port/v1/orchestrator/schedules/4d2f54ce-…" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"title":"Publish the next post","at":"07:05","days":"daily",
+       "place_id":"3f2a91c47e0b5d68","assistant":"codex",
+       "instructions":"Read the publishing checklist and publish the next ready post."}'
+{"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,
+                       "next_fire":1787905500}}
+
+curl -s -X DELETE "http://127.0.0.1:$port/v1/orchestrator/schedules/4d2f54ce-…" \
+  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuidgen)"
+{"ok":true,"deleted":"4d2f54ce-…"}
+```
+
+`PATCH` takes the body `POST` takes, every field of it, and **rewrites the whole file** — it is a
+save, not a patch of individual keys. A field the body may name and leaves out goes back to the
+parser's default rather than staying as it was, so read the current schedule with
+`GET /v1/orchestrator/schedules/:id` and send it back with
+the changes in it. The exceptions are the fields no form has a control for — `claims`,
+`permission_mode`, `serialize`, `isolation`, `isolation_base`, `deliverables`, `kind`, `plan` and
+`model` — which are read off the file being replaced and carried across, because a save that
+dropped them would be an edit changing something it never put on screen. `model` is the one of
+those a body may still name, and the two spellings mean different things: **no `model` key leaves
+the model alone, `"model": ""` takes it off.** Both routes are behind the same two doors as the
+create route: a paired device's three gates, or this Mac's orchestrator token for a schedule that
+runs once.
+
+**A save may change when a schedule runs, and not whether it repeats.** A `PATCH` of a one-shot
+must carry `on`, and a `PATCH` of a repeating schedule must carry `days`; the other way round is a
+`400` naming which kind this schedule is. That is the same rule the carried fields above are, one
+level up: neither the Mac's schedule sheet nor the phone's has a control for a one-shot's date, so
+a save from either would send `days` and convert it silently, having never shown the field it was
+replacing. Removing it and making a new one is the honest way to say this is different work.
+
+**A save may not move a one-shot that has already run.** `fired_at` is the record that a schedule
+which runs once has run — it answers for the schedule, not for one occurrence of it, because a
+one-shot only ever has one. A save that leaves `when` alone carries the stamp across and leaves the
+schedule spent; a save that moves the date is asking a row that has run for a second run, and is
+refused `409 schedule_spent` — the same code `POST …/run` gives, for the same reason. Renaming a
+spent schedule, or rewriting what its session is told to do, is an ordinary save and still works.
+
+The stamp used to come off with the old day instead, which made this a re-arm primitive rather than
+a schedule: the session a one-shot opened could `PATCH` it to tomorrow, be woken, and do it again —
+a nightly wake-up that both lists draw as one run on a date that keeps moving. Retiming a spent
+one-shot **by hand** still works, because the file is still yours; what changed is that the route
+will not do it for a caller.
+
+**`schedule_id`, `created_at` and `when_changed_at` are the Mac's and are not fields a request may
+carry** — naming any of them is refused as an unknown field, alongside `project_dir`. The last two
+are not bookkeeping.
+
+`created_at` is what keeps a schedule from running for an occurrence that predates it, so a save
+that restamped it would make editing a `09:00` schedule at lunchtime open a session for this
+morning: the same bug that field was added to stop, handed back through a different door. A
+hand-written file that never had a `created_at` does not get one from being edited either — it
+goes on meaning *as far back as anyone knows*.
+
+`when_changed_at` closes the half of that bug carrying `created_at` across leaves open. A schedule
+made last week is a week old however its times move, so its own age cannot say whether *this
+morning's nine o'clock* is a run the Mac slept through or one this save invented sixty seconds
+ago. Moving `21:00` to `09:00` at two in the afternoon used to dispatch today's nine within the
+minute — while this route's own answer said tomorrow — and past the catch-up window it pushed that
+a run had been missed. So a save that moves `when.at` or `when.days` stamps this instant, the
+timer ignores every occurrence older than it, and **a save that moves neither carries the old
+value across untouched**: a nine o'clock that really was missed is still missed after somebody
+fixes the title at eleven. Unlike `created_at`, a hand-written file *does* get one the first time
+a save retimes it, because the two claim different things — one would be a guess about a past this
+app was not there for, the other is a fact it is watching happen. Retiming this file by hand
+writes nothing and is the one path no stamp covers; it behaves as it always has.
+
+Everything the create route refuses, an edit refuses, because both assemble the same object and
+hand it to the same parser: the refusal carries that parser's own sentence, and an edit is not a
+way to write a file a create would not write. The written file is then read back off disk through
+the parser before the request is answered — and where a failed create deletes what it wrote, a
+failed edit **puts the previous file back**. The schedule somebody already had is not a failed
+save's to lose.
+
+`PATCH` is a save and spends the same ten-in-ten-minutes ticket a create does, since a client
+retrying a save in a loop writes a file per attempt. `DELETE` is deliberately not braked: it
+leaves nothing behind to sweep up, and it is what somebody reaches for when they want work to
+stop.
+
+**Two different failures, and a caller can tell them apart.** `404 not_found` is *there was no
+such schedule*, and it is also the answer for an id that is not an id — the file is addressed as
+`<id>.json` and nothing else, which is the whole of the path handling. `500 delete_failed` is
+*the file would not go*, which is a fact about this Mac that somebody has to go and look at, and
+reporting it as a `404` would say the schedule is gone while it is still on disk and still firing.
+
+`DELETE` does not read the file it removes. A file named after a UUID whose contents this app
+cannot parse is exactly the file somebody most wants gone, and needing to understand it first
+would be a rule with no purpose. `PATCH` is the other way round and refuses one with `404`: an
+edit replaces the whole file, an invalid one has no `created_at` worth carrying, and the list does
+not give an invalid row an id to address in the first place — so removing it and making a new one
+is the repair. A file whose *name* is not a UUID, like `broken.json`, has no id at all and still
+goes from the Finder.
+
+**Neither route is blocked by a task that is running right now**, which is the one place they part
+company with [`POST …/run`](#inspect-and-verify) and its `409 schedule_active`. That refusal is
+about stacking a second session on top of a first. An edit changes a file nothing in flight will
+read again — a task is materialised from the template when it is dispatched — so the occurrence a
+save lands in the middle of keeps the terms it was dispatched under and the next one uses the new
+file. And refusing to remove a schedule while its work is running would be refusing precisely when
+somebody most wants it gone.
+
+**Removing one is not cancelling its task.** The task keeps its own id, its own tab and its own
+record; `POST /v1/orchestrator/tasks/:id/cancel` is
+what stops it. What removal does reach is an occurrence the minute timer has already chosen and
+handed to the serial queue: that dispatch looks the file up again before it opens anything, so a
+schedule deleted in the second between the decision and the session opens nothing and is audited
+as `orchestrator.schedule.skipped` with `why=removed`.
+
+The audit lines are `orchestrator.schedule.updated` and `orchestrator.schedule.deleted`, written
+whichever way each goes.
+
+## Runs are conversations too
+
+`GET /v1/orchestrator/schedules/:id` carries the retained tasks created from that schedule under
+`runs`, newest first. A run names its state, timestamps, assistant, project and optional summary.
+While its terminal is still present, the Web interface opens that existing Session instead of
+starting a second process. After the tab has gone, a terminal run is resumable only when its
+assistant transcript or rollout still exists and Clawdline has proved that conversation belongs to
+that exact task; only then does the detail response include `session_id`.
+
+Scheduled children remain absent from the ordinary project-history picker — they are still broker
+plumbing there. The existing place resume route accepts this narrow second source only when the
+retained task is terminal and its schedule marker, project, assistant, child conversation and
+transcript ownership all agree. Resuming starts an ordinary interactive Session in the schedule's
+original project. It does not create a new scheduled run and does not affect the schedule's active
+occurrence arbitration.
+
+The task registry is machine-wide and keeps its newest 200 records. When that boundary has been
+reached, the detail response says `runs_may_be_truncated: true`; the Web sheet says older runs may
+not be listed rather than presenting the retained tail as complete history.
+
+## The minute that actually fires
+
+Clawdline checks once a minute. The first check after wake naturally sees the most recent scheduled
+time: within `catch_up_hours` it runs that occurrence once; outside the window it audits `missed`
+and, when enabled, sends a push. If any task from the same schedule is still non-terminal, the new
+occurrence is skipped and audited instead of stacking another session on it; that occurrence is
+not tried again later that day. A manual run at or after an occurrence also records it as handled,
+while a manual validation before the scheduled time does not consume the upcoming occurrence.
+
+Timing is calculated away from HTTP work, but the complete dispatch transaction returns to the
+same single serial queue as external dispatches before it checks capacity, spends rate budget or
+opens a tab. Scheduled tasks intentionally share the anonymous `orchestrator_max_children` bucket
+(default 5) with each other and with external dispatches that provide no root identity; the
+machine-wide descendant ceiling is shared too. An `over_capacity` refusal does not consume the
+occurrence: the next minute retries while it remains inside the catch-up window, and only expiry
+becomes the ordinary audited and notified `missed` outcome. Other dispatch refusals consume it.
+
+A schedule that runs once takes exactly the same minute. Its one occurrence runs inside
+`catch_up_hours` and is `missed` outside it, the difference being what is left afterwards: the run
+writes `fired_at` into the file, and from then on every beat sees a schedule that has spent
+itself and does nothing — including the first beat after a restart, which is the case the stamp
+exists for.
+
+**The occurrence is checked again when the work reaches the queue, not only when the timer chose
+it.** The terminal channel can be busy for minutes, and a save can land in that gap. So the file is
+re-read at the front of the dispatch, and an occurrence that is no longer the file's — one already
+spent, or one older than a `when_changed_at` that arrived while it waited — is dropped and audited
+as `skipped … why=retimed`. Without that, a one-shot due at 09:00 and retimed to tomorrow at 21:00
+while its work was queued would open a session for a nine o'clock nobody was scheduled for, and
+stamp `fired_at` with the old day, spending tomorrow's run before it happened.
+
+The honest boundary is the app process: **if Clawdline is not open, nothing fires.** Opening it
+later can catch up only while the most recent occurrence remains inside its window. This is not a
+launch daemon and does not wake a powered-off Mac.
+
+## Inspect and verify
+
+The examples use the orchestrator token, which is the trusted on-Mac door. A paired device with
+read access may also use both `GET`s. A manual run has a second door: a paired token with `send`,
+the Remote write switch on, and an `Idempotency-Key`. The hosted viewer sends the same intent as an
+authenticated encrypted `schedule-run` command; it never receives the machine token. The three
+routes that write a file use their own rules — see
+[Making one without a text editor](#making-one-without-a-text-editor) and
+[Changing one, and taking one away](#changing-one-and-taking-one-away):
+
+```sh
+port=$(jq -r '.remote_port // 7717' ~/.config/clawdline/config.json 2>/dev/null || echo 7717)
+token=$(cat ~/.config/clawdline/orchestrator-token)
+
+curl -s "http://127.0.0.1:$port/v1/orchestrator/schedules" \
+  -H "X-Clawdline-Orchestrator: $token"
+
+curl -s "http://127.0.0.1:$port/v1/orchestrator/schedules/c6000017-0000-4000-8000-000000000017" \
+  -H "X-Clawdline-Orchestrator: $token"
+
+curl -s -X POST \
+  "http://127.0.0.1:$port/v1/orchestrator/schedules/c6000017-0000-4000-8000-000000000017/run" \
+  -H "X-Clawdline-Orchestrator: $token"
+```
+
+`GET` returns `id`, `title`, `enabled`, the next local fire as `next_fire`, an optional
+`last_missed_at` for the most recent occurrence that expired outside its catch-up window, and an
+optional `last_run` with `task_id`, `state`, and `at`. `last_run` can disappear after the task registry's
+200-record retention limit removes the task. A bad source file appears in the same `schedules`
+array with `state: "invalid"`, `file`, an `error` summary, and `error_kind`; a temporarily missing
+`project_dir` uses `error_kind: "project_unavailable"` so it is distinguishable from schema errors.
+No task-template field is exposed.
+
+`GET /v1/orchestrator/schedules/:id` is the one place that does expose it. The list is a list — it
+says what exists, when it next fires and how the last run went — which is the right amount for a
+row and the wrong amount for the only screen where somebody can check what they just made. It adds
+`file`, `when` in the file's own spelling, `close_tab`, `catch_up_hours`, `notify_on_failure`, and
+the whole `task` template including `project_dir` and `instructions`. An unknown or invalid id is
+`404`; a `read` device may ask, like it may ask for the list.
+
+Manual run ignores `enabled` and the clock but refuses while any task from that schedule is
+active; a successful answer has the same task and warning payload as ordinary dispatch. It also
+refuses a schedule that runs once and already has, with `409 schedule_spent` — running once is the
+whole of what that schedule promised, and a button that fired a spent one again would make the
+promise a suggestion.
+
+`GET` gives a schedule that runs once `once: true`, and one that has run `fired_at` as well; the
+detail route spells `when` the way the file does, so a one-shot comes back as `{"at": …, "on": …}`.
+
+A paired device (read-only is sufficient) sees the schedule list and any single schedule through
+these same GET routes. Running one needs either the machine's orchestrator token, or a paired
+device's `send` capability, enabled Remote write switch, and non-empty idempotency key. For the
+paired door, the same key joins concurrent calls and replays `200`/stable `409`; `429` and `5xx`
+remain retryable and are not cached. Making, changing and removing a schedule needs either `send`
+and the write switch, or — for a schedule that runs once — that same orchestrator token.
+`GET /v1/orchestrator/schedules/:id` is the read half of both, and is where a caller checks what it
+wrote.
+
+The local scheduler is the on-Mac form of the cloud blueprint's Phase 6: the trigger and worker
+may move to another machine later, while the task protocol and lifecycle stay the same.
