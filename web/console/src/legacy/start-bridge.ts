@@ -21,6 +21,7 @@
 //   original does not draw the row at all (`clawdfatherChoiceSupported`), which
 //   is its answer for a feature that is missing rather than refused.
 import { T } from "./js/core/i18n.js"
+import { makeJSONFetch } from "@clawdline/core/refusal"
 import { bindFailureLine as bindFailureLineOriginal } from "./js/core/failure-text.js"
 import {
   bandSpin as bandSpinOriginal,
@@ -72,40 +73,18 @@ export interface StartAnswer {
 /** A refusal as `net/fetch.js` hands it on: the code, and `app` when there is one. */
 export type StartFailure = Error & { code?: string; app?: string; reason?: string }
 
-/** `net/fetch.js`'s `jsonFetch`, reading this daemon's two refusal shapes. */
-async function jsonFetch<A>(path: string, options?: RequestInit): Promise<A> {
-  let res: Response
-  try {
-    res = await fetch(path, options)
-  } catch {
-    const dead: StartFailure = new Error((T as Record<string, string>).webOffline)
-    dead.code = "offline"
-    throw dead
-  }
-  const body = await res.text()
-  let data: Record<string, unknown> | null = null
-  try {
-    data = body ? JSON.parse(body) : null
-  } catch {
-    /* below */
-  }
-  if (!res.ok) {
-    const raw = data?.error
-    const err: { code?: string; message?: string; app?: unknown; reason?: unknown } =
-      typeof raw === "string"
-        ? { code: raw, message: typeof data?.detail === "string" ? data.detail : raw }
-        : raw && typeof raw === "object"
-          ? (raw as Record<string, unknown>)
-          : { code: "http_" + res.status, message: res.statusText || (T as Record<string, string>).webRequestFailed }
-    const e2: StartFailure = new Error(err.message || err.code)
-    e2.code = err.code
-    if (typeof err.app === "string") e2.app = err.app
-    if (typeof err.reason === "string") e2.reason = err.reason
-    throw e2
-  }
-  if (!data) throw new Error((T as Record<string, string>).webNotJSON)
-  return data as A
-}
+/** `net/fetch.js`'s `jsonFetch`, with this page's refusal metadata retained. */
+const jsonFetch = makeJSONFetch({
+  words: {
+    offline: (T as Record<string, string>).webOffline,
+    requestFailed: (T as Record<string, string>).webRequestFailed,
+    notJSON: (T as Record<string, string>).webNotJSON,
+  },
+  refusalFields: [
+    { source: "app", target: "app", type: "string" },
+    { source: "reason", target: "reason", type: "string" },
+  ],
+})
 
 function post(key: string): RequestInit {
   return {

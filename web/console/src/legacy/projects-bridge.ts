@@ -23,6 +23,7 @@
 import { T } from "./js/core/i18n.js"
 import { drawIcon } from "./js/core/pixels.js"
 import { tint } from "./js/core/util.js"
+import { makeJSONFetch } from "@clawdline/core/refusal"
 import { bindProjectsPage as bindProjectsPageOriginal, readProjectPlaces } from "./js/view/projects.js"
 import { openBoard } from "./board-bridge.js"
 import { projectFeatureMeasurementWords } from "../pages/projects/measurement.js"
@@ -68,40 +69,10 @@ export const PROJECTS_ELEMENT_IDS = [
   "project-worktree-refresh",
 ] as const
 
-type Coded = Error & { code?: string }
-
-/** `net/fetch.js`'s `jsonFetch`, reading this daemon's refusal shape as well as the original's. */
-async function jsonFetch(path: string, options?: RequestInit): Promise<Record<string, unknown>> {
-  let res: Response
-  try {
-    res = await fetch(path, options)
-  } catch {
-    const dead: Coded = new Error(T.webOffline)
-    dead.code = "offline"
-    throw dead
-  }
-  const body = await res.text()
-  let data: Record<string, unknown> | null = null
-  try {
-    data = body ? JSON.parse(body) : null
-  } catch {
-    /* below */
-  }
-  if (!res.ok) {
-    const raw = data?.error
-    const err =
-      typeof raw === "string"
-        ? { code: raw, message: typeof data?.detail === "string" ? data.detail : raw }
-        : raw && typeof raw === "object"
-          ? (raw as { code?: string; message?: string })
-          : { code: "http_" + res.status, message: res.statusText || T.webRequestFailed }
-    const e2: Coded = new Error(err.message || err.code)
-    e2.code = err.code
-    throw e2
-  }
-  if (!data) throw new Error(T.webNotJSON)
-  return data
-}
+/** `net/fetch.js`'s `jsonFetch`, now supplied by the shared refusal-aware transport. */
+const jsonFetch = makeJSONFetch({
+  words: { offline: T.webOffline, requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
+})
 
 type Place = { id: string; boardProjectId?: string; path?: string; machine?: string }
 

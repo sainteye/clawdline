@@ -30,6 +30,7 @@
 // duplicate id it refuses rather than picking.
 import { T } from "./js/core/i18n.js"
 import { S } from "./js/core/state.js"
+import { makeJSONFetch } from "@clawdline/core/refusal"
 import { LOCAL_SESSION_MACHINE } from "./js/session/selection.js"
 import {
   documentBytesAnswer,
@@ -165,7 +166,13 @@ async function list(value: unknown): Promise<{ documents: DocumentLocator[] }> {
   if (identity.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
   sayCut(null)
   const headers: Headers[] = []
-  const body = await jsonFetch("/v1/sessions/" + encodeURIComponent(identity.session) + "/documents", headers)
+  const body = await jsonFetch(
+    "/v1/sessions/" + encodeURIComponent(identity.session) + "/documents",
+    undefined,
+    (response) => {
+      headers.push(response.headers)
+    },
+  )
   const listing = (localDocumentListing as (b: unknown, i: DocumentIdentity) => { documents: DocumentLocator[] })(
     body,
     identity,
@@ -236,29 +243,17 @@ async function read(value: unknown): Promise<unknown> {
   }
 }
 
-/** `jsonFetch` (`net/live.js`), reduced to the one shape this page asks for. */
-async function jsonFetch(path: string, headers?: Headers[]): Promise<unknown> {
-  let response: Response
-  try {
-    response = await fetch(path, { cache: "no-store" })
-  } catch {
-    throw typed(words().webOffline, "offline")
-  }
-  headers?.push(response.headers)
-  const text = await response.text()
-  let body: unknown = null
-  try {
-    body = text ? JSON.parse(text) : null
-  } catch {
-    /* handled below: a body that will not parse is not an answer */
-  }
-  if (!response.ok) {
-    const said = refusalOf(body as Record<string, unknown> | null, response)
-    throw typed(said.message, said.code)
-  }
-  if (body === null) throw typed(words().webRequestFailed, "bad_payload")
-  return body
-}
+/** `jsonFetch` (`net/live.js`), with this page's no-cache and bad-payload spelling. */
+const jsonFetch = makeJSONFetch({
+  words: {
+    offline: words().webOffline,
+    requestFailed: words().webRequestFailed,
+    notJSON: words().webRequestFailed,
+  },
+  defaults: { cache: "no-store" },
+  invalidJSONCode: "bad_payload",
+  allowFalsyJSON: true,
+})
 
 /**
  * The refusal's own name, out of whichever envelope this refusal came in.
