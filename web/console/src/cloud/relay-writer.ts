@@ -101,11 +101,11 @@ export interface CloudWriteClient extends CloudReadClient {
   pushUnsubscribe?(id: string): Promise<unknown>
   pushTest?(session: string): Promise<unknown>
   /**
-   * The four schedule writes. Each routes itself to the machine that owns the
-   * schedule — `createSchedule` by the Project the body names, the other three
-   * by which machine published the id (`_scheduleMachine`) — so none of them
-   * takes a machine, and none of them may be sent before the list has been
-   * read fresh at least once (`CloudReadClient.schedules`).
+   * Schedule creation routes itself by the Project in the body. The other
+   * three writes go to this page's already authenticated machine through
+   * `_machineRequest`: a detail read also goes straight there, so saving an
+   * open schedule must not look its id up again in a retained inventory that
+   * a later descriptor may have replaced.
    *
    * They mint their own request id per call, which is what becomes the machine's
    * `Idempotency-Key` (`cloudops.route`). That is not a divergence from the
@@ -117,9 +117,7 @@ export interface CloudWriteClient extends CloudReadClient {
    * them is refused by name rather than throwing where nobody is catching.
    */
   createSchedule?(schedule: unknown): Promise<unknown>
-  updateSchedule?(id: string, schedule: unknown): Promise<unknown>
-  deleteSchedule?(id: string): Promise<unknown>
-  runSchedule?(id: string): Promise<unknown>
+  _scheduleBody?(schedule: unknown): { machine: string; schedule: Record<string, unknown> }
   /**
    * The four snippet writes. Each names the machine whose settings change
    * through a session identity — only its `machine` is read
@@ -656,22 +654,27 @@ export class RelayWriter {
       }
       case "schedule-update": {
         const schedule = await bodyOf(init)
-        if (typeof client.updateSchedule !== "function") {
+        if (typeof client._scheduleBody !== "function" || typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", "schedule-update", 501)
         }
-        return client.updateSchedule(route.schedule, schedule)
+        const routed = client._scheduleBody(schedule)
+        if (routed.machine !== this.host.machine) {
+          throw failure("cloud_schedule_machine_mismatch", "a schedule cannot be moved to a Project on another machine", 409)
+        }
+        return client._machineRequest(this.host.machine, "schedule-update",
+          { id: route.schedule, schedule: routed.schedule }, "action")
       }
       case "schedule-delete": {
-        if (typeof client.deleteSchedule !== "function") {
+        if (typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", "schedule-delete", 501)
         }
-        return client.deleteSchedule(route.schedule)
+        return client._machineRequest(this.host.machine, "schedule-delete", { id: route.schedule }, "action")
       }
       case "schedule-run": {
-        if (typeof client.runSchedule !== "function") {
+        if (typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", "schedule-run", 501)
         }
-        return client.runSchedule(route.schedule)
+        return client._machineRequest(this.host.machine, "schedule-run", { id: route.schedule }, "action")
       }
       case "snippet-create": {
         // The sheet's own body, whole: `view/snippets-data.js`'s

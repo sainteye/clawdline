@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	ClaimSchema   = "clawdline.schedule_webhook.claim.v1"
-	ReceiptSchema = "clawdline.schedule_webhook.receipt.v1"
+	ProtocolSchema = "clawdline.schedule_webhook.v1"
+	ClaimSchema    = "clawdline.schedule_webhook.claim.v1"
+	ReceiptSchema  = "clawdline.schedule_webhook.receipt.v1"
 )
 
 var (
@@ -90,7 +91,7 @@ func (c Claim) Validate(identity Identity, now time.Time) error {
 		return errors.New("invalid schedule webhook claim")
 	}
 	canonical, _ := json.Marshal(map[string]any{
-		"schema": ClaimSchema, "delivery_id": c.DeliveryID, "hook_id": c.HookID,
+		"schema": ProtocolSchema, "delivery_id": c.DeliveryID, "hook_id": c.HookID,
 		"hook_generation": c.HookGeneration, "account_id": identity.AccountID,
 		"machine_id": identity.MachineID, "accepted_at": c.AcceptedAt, "expires_at": c.ExpiresAt,
 	})

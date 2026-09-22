@@ -36,7 +36,7 @@ func webhookClaim(identity schedulewebhook.Identity, now time.Time, hook string)
 		Lease: schedulewebhook.Lease{Token: "swhl_" + strings.Repeat("a", 43), Revision: 1,
 			ExpiresAt: now.Add(time.Minute).UTC().Format(time.RFC3339Nano)}}
 	canonical, _ := json.Marshal(map[string]any{
-		"schema": schedulewebhook.ClaimSchema, "delivery_id": c.DeliveryID, "hook_id": c.HookID,
+		"schema": schedulewebhook.ProtocolSchema, "delivery_id": c.DeliveryID, "hook_id": c.HookID,
 		"hook_generation": c.HookGeneration, "account_id": identity.AccountID,
 		"machine_id": identity.MachineID, "accepted_at": c.AcceptedAt, "expires_at": c.ExpiresAt,
 	})

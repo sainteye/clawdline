@@ -115,6 +115,13 @@ class FakeClient implements CloudWriteClient {
   createSchedule(schedule: unknown) {
     return this.act("createSchedule", [schedule], { ok: true, schedule: { id: "sch-9", title: "a schedule" }, dispatch_enabled: true })
   }
+  _scheduleBody(schedule: unknown) {
+    return { machine: "mac-a", schedule: schedule as Record<string, unknown> }
+  }
+  _machineRequest(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action") {
+    return this.act("_machineRequest", [machine, word, body, kind],
+      word === "schedule-run" ? { ok: true, task_id: "t-1" } : { ok: true })
+  }
   updateSchedule(id: string, schedule: unknown) {
     return this.act("updateSchedule", [id, schedule], { ok: true, schedule: { id, title: "a schedule" } })
   }
@@ -701,13 +708,33 @@ test("the schedule form's four writes reach the machine as its own four words", 
     // The form's body whole: the copied client reads `place_id` out of it to
     // find the machine, so nothing may be reshaped on the way past.
     ["createSchedule", form],
-    ["updateSchedule", "sch 9", form],
-    ["deleteSchedule", "sch-9"],
-    ["runSchedule", "sch-9"],
+    ["_machineRequest", "mac-a", "schedule-update", { id: "sch 9", schedule: form }, "action"],
+    ["_machineRequest", "mac-a", "schedule-delete", { id: "sch-9" }, "action"],
+    ["_machineRequest", "mac-a", "schedule-run", { id: "sch-9" }, "action"],
   ])
   assert.deepEqual(reader.log.map((x: { word?: string; answer: string }) => [x.word, x.answer]), [
     ["schedule-create", "relay"], ["schedule-update", "relay"],
     ["schedule-delete", "relay"], ["schedule-run", "relay"],
+  ])
+})
+
+// Reading one schedule goes directly to the selected machine, so it can still
+// open after a retained inventory has been replaced by a snapshot that does
+// not carry schedules. Saving must use that same selected machine instead of
+// looking the id up in the now-empty inventory a second time.
+test("saving an open schedule does not depend on a retained schedule inventory", async () => {
+  const client = new FakeClient()
+  client.fail.updateSchedule = Object.assign(new Error("this schedule is not in the Cloud inventory"), {
+    code: "not_found",
+  })
+  const { reader } = seam(client)
+  const form = { title: "a schedule", place_id: "mac-a\u0000p1" }
+  const saved = await reader.fetch("/v1/orchestrator/schedules/sch-9", {
+    ...post(form), method: "PATCH",
+  })
+  assert.equal(saved.status, 200)
+  assert.deepEqual(client.calls, [
+    ["_machineRequest", "mac-a", "schedule-update", { id: "sch-9", schedule: form }, "action"],
   ])
 })
 
@@ -717,7 +744,7 @@ test("the schedule form's four writes reach the machine as its own four words", 
 // refusal's extra fields out of that same object.
 test("a refused schedule write comes back in the spelling its own route answers", async () => {
   const client = new FakeClient()
-  client.fail.runSchedule = failureFromMac(
+  client.fail._machineRequest = failureFromMac(
     { code: "task_already_running", layer: "mac_route", message: "that schedule is already running" },
     409, REF,
   )
@@ -736,7 +763,7 @@ test("a refused schedule write comes back in the spelling its own route answers"
 test("a client that cannot write schedules is refused by name", async () => {
   const client = new FakeClient()
   const older = client as unknown as Record<string, unknown>
-  for (const name of ["createSchedule", "updateSchedule", "deleteSchedule", "runSchedule"]) older[name] = undefined
+  for (const name of ["createSchedule", "_scheduleBody", "_machineRequest"]) older[name] = undefined
   const { reader } = seam(client)
   for (const [method, path] of [
     ["POST", "/v1/orchestrator/schedules"],

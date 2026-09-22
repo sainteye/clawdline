@@ -59,7 +59,7 @@ func (c ScheduleWebhookClient) Claim(ctx context.Context, waitSeconds int) (sche
 		PollAfter  int                    `json:"poll_after_ms"`
 	}
 	if err := c.Client.post(ctx, "/v1/schedule-webhook-deliveries/claim", c.Credential,
-		map[string]any{"protocol": "clawdline.schedule_webhook.v1", "wait_seconds": waitSeconds}, &out); err != nil {
+		map[string]any{"protocol": schedulewebhook.ProtocolSchema, "wait_seconds": waitSeconds}, &out); err != nil {
 		return schedulewebhook.ClaimResult{}, err
 	}
 	if out.Schema != schedulewebhook.ClaimSchema || out.ServerTime == "" || out.PollAfter < 0 || out.PollAfter > 300000 {
