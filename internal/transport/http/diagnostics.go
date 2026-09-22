@@ -335,6 +335,20 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkRequestBodyBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},
+		capacity.IntentRequestBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
+		capacity.IntentPlannerQueue: func() capacity.Reading {
+			s.intentMu.Lock()
+			defer s.intentMu.Unlock()
+			return capacity.Reading{Known: true, Used: int64(s.intentQueued)}
+		},
+		capacity.IntentPlannerSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-turn deadline; no retained buffer"}
+		},
+		capacity.IntentCloudWaitSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "hosted-console request deadline; no retained buffer"}
+		},
 		// T4's three rows (proposals.go).
 		capacity.ProposalsOpen: func() capacity.Reading {
 			c, err := s.participation().Counts(context.Background())

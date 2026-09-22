@@ -20,9 +20,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/adapters/process"
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
 	"github.com/sainteye/clawdline/internal/adapters/skillmenu"
@@ -102,6 +104,13 @@ type Server struct {
 	// retired counts the calls the retired workflow route still gets
 	// (workflow.go), for /v1/diagnostics.
 	retired retiredWorkflow
+	// planIntent is the paid model seam behind /v1/intents. Tests replace it
+	// with a deterministic draft and never spend an account's quota.
+	planIntent    func(context.Context, string, []planner.Place, []string) (contract.IntentDraft, error)
+	intentContext func(context.Context) ([]planner.Place, []string)
+	intentMu      sync.Mutex
+	intentRun     sync.Mutex
+	intentQueued  int
 }
 
 // servedBy names which implementation answered. It is how a reader tells this
@@ -164,6 +173,9 @@ func New(cfg config.Config) (*Server, error) {
 			Activity: app.NewActivityReads(),
 		},
 	}
+	localPlanner := planner.New()
+	localPlanner.Timeout = time.Duration(CapacityLimit(capacity.IntentPlannerSeconds)) * time.Second
+	srv.planIntent = localPlanner.Draft
 	// One producer in front of it, so three loops are one scan.
 	srv.readings = app.NewInventoryReading(srv.inventory.Read, 0)
 	srv.readings.SetRetentionAge(CapacityLimit(capacity.CacheSessionInventory))
@@ -405,6 +417,9 @@ func (s *Server) Handler() http.Handler {
 	// happens to it afterwards is the composer's business.
 	mux.HandleFunc("/v1/voice", s.voiceRoute)
 	mux.HandleFunc("/v1/voice/language", s.voiceLanguageRoute)
+	// One transcribed sentence becomes an editable draft. This spends one
+	// local CLI model turn but starts no session (intent.go).
+	mux.HandleFunc("/v1/intents", s.intentRoute)
 	// Web Push: the key, the subscription, the test and the way back out
 	// (push.go). Read-level, as in the Swift app.
 	mux.HandleFunc("/v1/push/", s.pushRoute)

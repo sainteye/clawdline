@@ -25,6 +25,7 @@ import (
 const (
 	scopePlaces = "places"
 	scopeVoice  = "voice"
+	scopeIntent = "intent"
 )
 
 // receiptWait is how long a request whose twin is still being answered waits

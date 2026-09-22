@@ -99,6 +99,9 @@ class FakeClient implements CloudWriteClient {
   voice(audio: string, rate: number) {
     return this.act("voice", [audio, rate], { text: "hello there", ms: 900 })
   }
+  voiceHost() {
+    return this.act("voiceHost", [], { machine: "mac-a" }) as Promise<{ machine: string }>
+  }
   setVoiceHost(machine: string) {
     this.fail.voice = undefined
     return this.act("setVoiceHost", [machine], {})
@@ -118,8 +121,10 @@ class FakeClient implements CloudWriteClient {
   _scheduleBody(schedule: unknown) {
     return { machine: "mac-a", schedule: schedule as Record<string, unknown> }
   }
-  _machineRequest(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action") {
-    return this.act("_machineRequest", [machine, word, body, kind],
+  _machineRequest(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number) {
+    const args: unknown[] = [machine, word, body, kind]
+    if (timeoutMs !== undefined) args.push(timeoutMs)
+    return this.act("_machineRequest", args,
       word === "schedule-run" ? { ok: true, task_id: "t-1" } : { ok: true })
   }
   updateSchedule(id: string, schedule: unknown) {
@@ -440,6 +445,17 @@ test("dictation picks the machine this page reads when the voice machine is ambi
   assert.deepEqual(await json(res), { text: "hello there", ms: 900 })
   assert.deepEqual(client.calls.map((c) => c[0]), ["voice", "setVoiceHost", "voice"])
   assert.equal(client.calls[1][1], "mac-a")
+})
+
+test("a spoken intent follows dictation to the chosen voice machine", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/intents", post({ text: "start the review" }))
+  assert.equal(res.status, 200)
+  assert.deepEqual(client.calls, [
+    ["voiceHost"],
+    ["_machineRequest", "mac-a", "intents", { text: "start the review" }, "action", 130_000],
+  ])
 })
 
 test("a route with no Cloud word is refused by name before anything is sealed", async () => {

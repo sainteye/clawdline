@@ -2777,6 +2777,43 @@ type ImageStoreResult struct {
 	OK        bool          `json:"ok"`
 }
 
+type IntentDraft struct {
+	Assistant string `json:"assistant"`
+
+	// HH:MM, or empty when no valid time was given.
+	At         string  `json:"at"`
+	Confidence float64 `json:"confidence"`
+
+	// [daily], named weekdays in week order, or an empty array when no days were said.
+	Days []string `json:"days"`
+
+	// The editable first message. Empty deliberately means to open the session without
+	// typing anything.
+	Instructions string `json:"instructions"`
+	Kind         string `json:"kind"`
+
+	// haiku, sonnet or opus for Claude; empty when no size was chosen and always empty
+	// for Codex.
+	Model string `json:"model"`
+
+	// An id from GET /v1/places, or null when no listed project fit.
+	PlaceID *string `json:"place_id"`
+
+	// The clarification to show below 0.5 confidence; empty at or above it.
+	Question string `json:"question"`
+	Title    string `json:"title"`
+}
+
+type IntentRequest struct {
+	// What the person said, at most 4096 UTF-8 bytes.
+	Text string `json:"text"`
+}
+
+type IntentResult struct {
+	Draft IntentDraft `json:"draft"`
+	Ms    int64       `json:"ms"`
+}
+
 type Inventory struct {
 	At       int64              `json:"at"`
 	Scan     InventoryScan      `json:"scan"`

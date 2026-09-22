@@ -61,6 +61,7 @@ export const CARRIED = {
   "git-diff": "GET /v1/sessions/{id}/git/diff?path=",
   image: "GET /v1/artifacts/images/{id}?session={id}",
   info: "GET /v1/sessions/{id}/info[?parts=summary]",
+  intents: "POST /v1/intents",
   landings: "GET /v1/orchestrator/landings",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
   places: "GET /v1/places",

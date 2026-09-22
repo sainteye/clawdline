@@ -417,6 +417,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/voice",
 		body2: `{"audio":"AAAAAA==","rate":16000}`,
 	}, {
+		word: "intents",
+		body: map[string]any{"type": "intents", "session": machine, "request": "req-intent",
+			"text": "start the review"},
+		session: machine, name: "action:req-intent",
+		method: "POST", path: "/v1/intents",
+		body2: `{"text":"start the review"}`,
+	}, {
 		// The schedule the form sends, handed to the route whole: this bridge
 		// knows what a request looks like, not what a schedule looks like.
 		word: "schedule-create",
@@ -668,7 +675,7 @@ func TestEveryChangeCarriesAnIdempotencyKey(t *testing.T) {
 func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 	r := &router{}
 	closed := Bridge{MachineID: "mac-01", Router: r}
-	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
+	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "intents",
 		"schedule-create", "schedule-update", "schedule-delete", "schedule-run",
 		"schedule-webhook-bind-v1",
 		"snippet-create", "snippet-update", "snippet-delete", "snippet-order", "dispatch"} {
@@ -689,6 +696,9 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 		case "voice":
 			body["session"] = MachineReplySession
 			body["audio"], body["rate"] = "AAAA", 16000
+		case "intents":
+			body["session"] = MachineReplySession
+			body["text"] = "start the review"
 		case "snippet-create":
 			body["session"] = MachineReplySession
 			body["snippet"] = map[string]any{"title": "a title", "body": "a body", "scope": "global"}
@@ -1184,7 +1194,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 			t.Fatalf("%s is advertised and has no local capability", word)
 		}
 	}
-	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "agent",
+	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "intents", "agent",
 		"transcript", "info", "git", "git-diff", "screen", "image", "documents", "document", "places",
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
