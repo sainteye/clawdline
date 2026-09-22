@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -40,6 +41,76 @@ const SignalExternalEffect Signal = "external_effect"
 // decision on a tracked item, or a proposal through I1–I3, not a reason of
 // its own.
 var ProposalSignals = []Signal{SignalCrossSession, SignalLongLived, SignalExternalEffect}
+
+// OutcomeTitleLimit is the largest title accepted anywhere work is first
+// named: a task brief, a proposal, a board item, or a child's leftover.
+//
+// The four titles measured on the board on 2026-09-22 were 23–30 runes. None
+// needed more room to carry useful detail; their problem was shape, not size.
+// Sixty leaves twice the measured maximum for a concrete result while making
+// a writer choose the sentence that belongs on a card rather than paste the
+// observation that led to it.
+const OutcomeTitleLimit = 60
+
+// OutcomeTitleGuide is shown where task and proposal authors write. The gate
+// below is deliberately the same rule in executable form: a refusal without
+// advance instruction is a trap, while instruction without a refusal rots.
+const OutcomeTitleGuide = "Write a title of at most 60 characters that says what will be different when it is done. " +
+	"Do not use the person (for example, `the user` or `使用者`), an unnamed place such as `的地方`, " +
+	"a code-formatted identifier as the subject, or a colon joining an observation to jargon. Name the reader-visible result, not `fix/improve/update … problem`."
+
+// OutcomeTitleRefusal is empty for a usable title, otherwise one teaching
+// sentence about the first mechanical bad shape in it. It cannot prove prose
+// is meaningful; it blocks the shapes measured in the failing cards and the
+// generic near-solution that merely replaces them with safer-looking noise.
+func OutcomeTitleRefusal(title string) string {
+	title = strings.TrimSpace(title)
+	switch {
+	case title == "":
+		return "A title is required; say what will be different when the work is done."
+	case utf8.RuneCountInString(title) > OutcomeTitleLimit:
+		return fmt.Sprintf("A title is at most %d characters; keep the result and remove the story that led to it.", OutcomeTitleLimit)
+	case strings.ContainsAny(title, "\r\n"):
+		return "A title is one line; say the completed result in that line."
+	case strings.Contains(title, "使用者") || strings.Contains(strings.ToLower(title), "the user"):
+		return "Do not make 使用者 / the user the subject; name the capability or state the person will get."
+	case strings.Contains(title, "的地方") || strings.Contains(strings.ToLower(title), "places where"):
+		return "`的地方` / `places where` leaves the subject unnamed; name the component whose behavior will change."
+	case strings.HasPrefix(title, "`"):
+		return "Do not make a code-formatted identifier such as `activity` the card's subject; name what a reader will see or be able to do."
+	case strings.ContainsAny(title, ":："):
+		return "Do not join an observation to an explanation with a colon / 冒號; write the one resulting state instead."
+	case genericProblemTitle(title):
+		return "`fix/improve/update … problem` does not say what completion changes; replace it with the concrete state visible when done / 完成後可驗收的狀態。"
+	}
+	return ""
+}
+
+func hasTitleWord(title, want string) bool {
+	for _, word := range strings.FieldsFunc(strings.ToLower(title), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	}) {
+		if word == want {
+			return true
+		}
+	}
+	return false
+}
+
+func genericProblemTitle(title string) bool {
+	lower := strings.ToLower(strings.TrimSpace(title))
+	startsGeneric := false
+	for _, prefix := range []string{"修正", "改善", "處理", "fix ", "improve ", "update ", "resolve "} {
+		if strings.HasPrefix(lower, prefix) {
+			startsGeneric = true
+			break
+		}
+	}
+	if !startsGeneric {
+		return false
+	}
+	return strings.Contains(lower, "問題") || hasTitleWord(lower, "problem") || hasTitleWord(lower, "issue")
+}
 
 // Effect is one word of I3's closed vocabulary.
 type Effect string

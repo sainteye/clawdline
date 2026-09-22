@@ -133,7 +133,8 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	}
 	asked := read(rec)
 	if !asked.Proposal.Ask || asked.Proposal.Question == "" || asked.Proposal.SubjectStatus != string(work.SubjectUnknown) ||
-		!strings.Contains(asked.Instructions, asked.Proposal.ID+"/asked") {
+		!strings.Contains(asked.Instructions, asked.Proposal.ID+"/asked") ||
+		!strings.Contains(asked.Instructions, "what will be different when it is done") {
 		t.Fatalf("asked: %s", rec.Body)
 	}
 	if again := do(machine, http.MethodPost, "/v1/orchestrator/proposals", "p1", propose(lines[0])); again.Body.String() != rec.Body.String() ||

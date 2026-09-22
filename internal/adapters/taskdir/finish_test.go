@@ -218,6 +218,7 @@ func TestLeftoversArePublishedWhenReadableAndRefusedWhenNot(t *testing.T) {
 		{"no title", `, "leftovers": [{"why": "no reason"}]`, "needs a title"},
 		{"an empty title", `, "leftovers": [{"title": "   "}]`, "needs a title"},
 		{"a title past its bound", `, "leftovers": [{"title": "` + long + `"}]`, "needs a title"},
+		{"a generic non-outcome title", `, "leftovers": [{"title": "修正 session 列表顯示問題"}]`, "完成後"},
 		{"a why that is not a string", `, "leftovers": [{"title": "x", "why": 3}]`, "why and suggested_acceptance"},
 		{"two of one title", `, "leftovers": [{"title": "x"}, {"title": " x "}]`, "the same title"},
 	} {

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { nowWord } from "../now/words.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { workWord } from "./words.ts"
+import { workProjectName, workWord } from "./words.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { proposalFoldShouldOpen } from "./fold.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
@@ -31,6 +32,18 @@ test("pending proposals open their controls on arrival without defeating a manua
   assert.equal(proposalFoldShouldOpen(0, 25), true)
   assert.equal(proposalFoldShouldOpen(25, 25), false)
   assert.equal(proposalFoldShouldOpen(25, 24), true)
+})
+
+test("proposal cards name a project instead of printing its machine path", () => {
+  assert.equal(workProjectName("/srv/work/clawdline-go"), "clawdline-go")
+  assert.equal(workProjectName("C:\\work\\clawdline-go\\"), "clawdline-go")
+  assert.equal(workProjectName("clawdline-go"), "clawdline-go")
+})
+
+test("proposal reasons are section headings instead of the same sentence on every card", () => {
+  const source = readFileSync(new URL("./Board.tsx", import.meta.url), "utf8")
+  assert.doesNotMatch(source, /proposalWhy|SIGNAL_WORD/)
+  assert.match(source, /<p className="work-note">\{workWord\(g\.word\)\}<\/p>/)
 })
 
 test("declining for now and recording an evidence-backed resolution are visibly different", () => {

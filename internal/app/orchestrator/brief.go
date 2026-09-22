@@ -277,6 +277,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("most %d. It is optional and it is not a new obligation: a result with no `leftovers` is a", work.LeftoversLimit)
 	w("complete delivery, and writing one does not make anything happen by itself. Your root reads")
 	w("them when it integrates and may put one to the person, who answers whether to register it.")
+	w("For each leftover title: %s", work.OutcomeTitleGuide)
 	w("Leave it out when you finished everything you were asked.")
 	w("")
 	w("**Write the tmp file with your file-writing tool, not with a shell command.** A shell line")

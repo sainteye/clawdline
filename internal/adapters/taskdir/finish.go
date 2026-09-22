@@ -297,6 +297,9 @@ func validateLeftovers(value any) string {
 		if !nonEmpty(row["title"], work.LeftoverTitleLimit) {
 			return fmt.Sprintf("each leftover needs a title of 1 to %d characters", work.LeftoverTitleLimit)
 		}
+		if reason := work.OutcomeTitleRefusal(title); reason != "" {
+			return "each leftover title must say what completion changes: " + reason
+		}
 		if !absentOrBounded(row["why"], work.LeftoverWhyLimit) ||
 			!absentOrBounded(row["suggested_acceptance"], work.LeftoverAcceptanceLimit) {
 			return fmt.Sprintf("a leftover's why and suggested_acceptance are strings of at most %d characters",

@@ -186,12 +186,14 @@ func proposalOf(p work.Proposal) proposalWire {
 // the whole of the briefing about asking (§4.4): ask only on ask:true, in the
 // server's words.
 const (
-	askInstructions = "Ask the person at the end of this turn, in the words of `question`, without waiting for the answer. " +
+	askInstructions = work.OutcomeTitleGuide + " " +
+		"Ask the person at the end of this turn, in the words of `question`, without waiting for the answer. " +
 		"Then POST /v1/orchestrator/proposals/{id}/asked. Relay their answer to POST /v1/work/proposals/{id} " +
 		"with {\"answer\":\"track\"|\"later\"|\"no\",\"via\":{\"run\":\"<the run that carried it>\"}}, " +
 		"the run read from GET /v1/orchestrator/sessions/<your conversation id>/run after their reply arrives. " +
 		resolveInstructions
-	holdInstructions = "Do not ask about this in the conversation. It is in the person's \"to confirm\" area and their daily digest; " +
+	holdInstructions = work.OutcomeTitleGuide + " " +
+		"Do not ask about this in the conversation. It is in the person's \"to confirm\" area and their daily digest; " +
 		"if nobody answers by expires_at it stays with its to-dos. " + resolveInstructions
 	filedInstructions = "Do not ask about this. Because no needs_user dependency was supplied, the leftover was filed in the Backlog " +
 		"as `item`; continue it by that work_id. " + resolveInstructions

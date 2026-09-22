@@ -14,7 +14,7 @@ import { openTimeline } from "../../legacy/timeline-bridge.js"
 import { requestPage } from "../../overlays/index.js"
 import { proposalFoldShouldOpen } from "./fold.js"
 import { ownerWords, reasonWords, taskWords, when } from "./shared.js"
-import { workWord, type WorkWord } from "./words.js"
+import { workProjectName, workWord, type WorkWord } from "./words.js"
 import { nextWord } from "../../next-strings.js"
 import { readAnswered, type ReadState } from "../../read-state.js"
 
@@ -363,13 +363,6 @@ function DecisionCard({
   )
 }
 
-const SIGNAL_WORD: Record<string, WorkWord> = {
-  cross_session: "signalCrossSession",
-  long_lived: "signalLongLived",
-  external_effect: "signalExternalEffect",
-  leftover: "signalLeftover",
-}
-
 /**
  * The "to confirm" area: proposals nobody has answered (board-redesign §4.3).
  *
@@ -466,24 +459,20 @@ function ProposalsFold({
         ) : (
           groups.map((g) => (
             <div key={g.word} className="work-group" data-proposal-group={g.word}>
-              {groups.length > 1 && <p className="work-note">{workWord(g.word)}</p>}
+              <p className="work-note">{workWord(g.word)}</p>
               <ul className="work-lines">
                 {g.rows.map((p) => {
                   const left = daysLeft(p, now)
                   return (
                     <li key={p.id} data-proposal-id={p.id}>
                       <b>{p.title}</b>
+                      {p.signals.includes("leftover") && (
+                        <span className="work-sub">
+                          {workWord("proposalKindLeftover", { task: (p.task_id ?? "").slice(0, 8) })}
+                        </span>
+                      )}
                       <span className="work-sub">
-                        {p.signals.includes("leftover")
-                          ? workWord("proposalKindLeftover", { task: (p.task_id ?? "").slice(0, 8) })
-                          : workWord("proposalKindLine")}
-                      </span>
-                      <span className="work-sub">
-                        {p.project} ·{" "}
-                        {workWord("proposalWhy", {
-                          why: p.signals.map((s) => (SIGNAL_WORD[s] ? workWord(SIGNAL_WORD[s]) : s)).join("、"),
-                        })}
-                        {" · "}
+                        {workProjectName(p.project)} ·{" "}
                         {left > 0 ? workWord("proposalLeaves", { n: left }) : workWord("proposalLeavesToday")}
                       </span>
                       {p.subject_status === "unknown" && (
