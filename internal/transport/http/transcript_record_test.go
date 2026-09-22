@@ -55,7 +55,7 @@ func pathFree(t *testing.T, what, note, path, home string) {
 // signature — and not an error with the operating system's words in it.
 func TestANewSessionsTranscriptIsEmptyNotAnError(t *testing.T) {
 	item, path, home := recordSession(t)
-	s := &Server{ledger: transcript.NewLedger()}
+	s := &Server{}
 
 	page := s.transcriptPage(item.ID, item, 200)
 	if page.Evidence == contract.EvidenceNone || page.Note != "" {
@@ -66,11 +66,6 @@ func TestANewSessionsTranscriptIsEmptyNotAnError(t *testing.T) {
 	}
 	pathFree(t, "the transcript note", page.Note, path, home)
 
-	row := s.usageRow(item)
-	if row.Evidence != contract.EvidenceNone || row.TotalTokens != 0 {
-		t.Errorf("a record not written yet has usage: %+v", row)
-	}
-	pathFree(t, "the usage note", row.Note, path, home)
 }
 
 // A record that is there and cannot be read is a failure, and says so — in
@@ -78,7 +73,7 @@ func TestANewSessionsTranscriptIsEmptyNotAnError(t *testing.T) {
 func TestAnUnreadableTranscriptFailsWithoutNamingItsPath(t *testing.T) {
 	item, path, home := recordSession(t)
 	unreadableRecord(t, path)
-	s := &Server{ledger: transcript.NewLedger()}
+	s := &Server{}
 
 	page := s.transcriptPage(item.ID, item, 200)
 	if page.Evidence != contract.EvidenceNone || page.Note == "" {
@@ -86,9 +81,4 @@ func TestAnUnreadableTranscriptFailsWithoutNamingItsPath(t *testing.T) {
 	}
 	pathFree(t, "the transcript note", page.Note, path, home)
 
-	row := s.usageRow(item)
-	if row.Evidence != contract.EvidenceNone || row.Note == "" {
-		t.Errorf("an unreadable record is not a failure in usage: %+v", row)
-	}
-	pathFree(t, "the usage note", row.Note, path, home)
 }

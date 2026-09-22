@@ -1,14 +1,11 @@
 package swiftstore
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
-
-const fixtureSchedule = "0f0e0d0c-0b0a-4908-8706-050403020100"
 
 // writeLegacyFixture is a Swift store with something in every file this
 // package reads, so a reader that opened any of them would find it.
@@ -18,7 +15,6 @@ func writeLegacyFixture(t *testing.T, dir string) {
 		"orchestrator.json": `{"version":1,"tasks":[{"id":"swift-task","state":"briefed","title":"From the Swift app","child_terminal":"%1"}]}`,
 		"coordinator.json":  `{"version":1,"id":"c","label":"Clawdfather","sessionID":"%1","assistant":"claude","tty":"ttys001"}`,
 		"config.json":       `{"session_titles":[{"title":"typed","terminal_id":"%1"}],"status_dir":"/somewhere"}`,
-		filepath.Join("schedules", fixtureSchedule+".json"): `{"clawdline_schedule":1,"schedule_id":"` + fixtureSchedule + `","title":"Nightly"}`,
 	}
 	for name, body := range files {
 		path := filepath.Join(dir, name)
@@ -28,9 +24,6 @@ func writeLegacyFixture(t *testing.T, dir string) {
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, "usage.sqlite3"), []byte("a ledger"), 0o600); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -48,14 +41,8 @@ func TestTheLegacySwitchOpensNothing(t *testing.T) {
 		snap.Coordinator == nil || !snap.TitlesKnown {
 		t.Fatalf("control: the fixture was not read with the switch on: %+v", snap)
 	}
-	if titles := on.ScheduleTitles(); titles[fixtureSchedule] != "Nightly" {
-		t.Fatalf("control: schedule titles %v", titles)
-	}
 	if q := OpenQuotaConfig(dir).Read(); q.StatusDir != "/somewhere" {
 		t.Fatalf("control: quota settings %+v", q)
-	}
-	if r := OpenUsageLedger(dir).Read(context.Background()); r.Missing || r.Disabled {
-		t.Fatalf("control: the ledger read as missing: %+v", r)
 	}
 
 	t.Setenv(EnvLegacyStore, "off")
@@ -68,16 +55,9 @@ func TestTheLegacySwitchOpensNothing(t *testing.T) {
 	if !snap.Usable() {
 		t.Fatal("a store switched off is known to hold nothing, and must be usable")
 	}
-	if titles := off.ScheduleTitles(); len(titles) != 0 {
-		t.Fatalf("switched off, schedule titles were read: %v", titles)
-	}
 	if q := OpenQuotaConfig(dir).Read(); q != (QuotaSettings{}) {
 		t.Fatalf("switched off, quota settings were read: %+v", q)
 	}
-	if r := OpenUsageLedger(dir).Read(context.Background()); !r.Missing || !r.Disabled || r.Err != nil {
-		t.Fatalf("switched off, the ledger reading is %+v", r)
-	}
-
 	// A word that is not on or off leaves the stores on: a misspelt switch
 	// must not look like one that worked.
 	t.Setenv(EnvLegacyStore, "of")

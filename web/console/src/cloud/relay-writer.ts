@@ -206,6 +206,7 @@ export type WriteRoute =
   | { op: "snippet-update"; word: Carried<"snippet-update">; snippet: string }
   | { op: "snippet-delete"; word: Carried<"snippet-delete">; snippet: string }
   | { op: "snippet-order"; word: Carried<"snippet-order"> }
+  | { op: "worktree-refresh"; word: Carried<"project-worktree-lifecycle-refresh">; project: string }
   // `interrupt` and `title` are not Cloud words at all — not here and not in
   // the Swift app's vocabulary — so this one is a plain string.
   | { op: "uncarried"; word: string; session?: string }
@@ -346,6 +347,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (method === "DELETE") return { op: "snippet-delete", word: "snippet-delete", snippet: a }
   }
   if (method !== "POST") return null
+  if (head === "projects" && a && b === "worktrees" && c === "refresh" && segments.length === 4) {
+    return { op: "worktree-refresh", word: "project-worktree-lifecycle-refresh", project: a }
+  }
   if (head === "snippets") {
     // `GET /v1/snippets` is the reader's, and falls out above.
     if (segments.length === 1) return { op: "snippet-create", word: "snippet-create" }
@@ -451,6 +455,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "snippet-update":
     case "snippet-delete":
     case "snippet-order":
+      return "flat"
+    case "worktree-refresh":
       return "flat"
     default:
       return "nested"
@@ -716,6 +722,17 @@ export class RelayWriter {
           typeof body.project === "string" ? body.project : "",
           order,
           this.snippetIdentity(url),
+        )
+      }
+      case "worktree-refresh": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", "project-worktree-lifecycle-refresh", 501)
+        }
+        return client._machineRequest(
+          this.host.machine,
+          "project-worktree-lifecycle-refresh",
+          { project: route.project },
+          "action",
         )
       }
       case "uncarried":

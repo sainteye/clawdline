@@ -76,7 +76,7 @@ var sessionFields = map[string]string{
 	"sessions#CloseMover.session_id":                 "either: a pending landing's mover is the root's terminal while it is live and its conversation id once it is not (orchestrator owed.go landingMovers, pinned by W4's TestAPendingLandingNamesWhoMustMove); retire by matching closeability on conversation ids",
 	"sessions#CoordinationWaitRow.ownerSessionId":    "terminal: the Swift app's coordination waits, read from its store (swiftstore); retires with cutover B1",
 	"sessions#CoordinationWaitRow.waiterSessionId":   "terminal: as above",
-	"usage#TranscriptNotice.waiter_session_id":       "either: echoes a file-wait notice as it was written — a terminal id from the Swift app, a conversation id from this daemon (W5)",
+	"transcript#TranscriptNotice.waiter_session_id":  "either: echoes a file-wait notice as it was written — a terminal id from the Swift app, a conversation id from this daemon (W5)",
 	"tasks#TaskRow.attachSession":                    "swift: the Swift app's attach_session, read-only from its store; retires with cutover B1",
 	"tasks#TaskRow.session_root":                     "swift: the Swift app's task field, read-only from its store; retires with cutover B1",
 	"projects#WorktreeOwner.sessionId":               "swift: the Swift worktree lifecycle's owner, read-only; namespace not verified; retires with cutover B1",

@@ -12,8 +12,6 @@ import { fileURLToPath } from "node:url"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { LEGACY_CORRECTIONS } from "../legacy/corrections.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { correctLedgerBusyText } from "../legacy/ledger-bridge.ts"
-// @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { sessionsFact } from "../cloud/unpaired-rows.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { KNOWN_NEGATIVE, KNOWN_POSITIVE, scanConsole, scanSource, selfCheck } from "./scan.ts"
@@ -32,13 +30,6 @@ test("every deliberate correction still points at the byte-locked source it corr
       )
     }
   }
-})
-
-test("the ledger busy correction changes the sentence without changing its code", () => {
-  const copied = "The verification ledger could not be read. (usage_analytics_busy)"
-  const corrected = correctLedgerBusyText(copied)
-  assert.equal(corrected, "The ledger reader is busy. Sessions are unaffected — try again shortly. (usage_analytics_busy)")
-  assert.equal(correctLedgerBusyText("The verification ledger could not be read. (other_error)"), "The verification ledger could not be read. (other_error)")
 })
 
 test("a missing machine session count stays unread or unknown instead of becoming zero", () => {

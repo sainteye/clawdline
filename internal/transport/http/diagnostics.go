@@ -201,12 +201,6 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return store.Reading()
 		},
-		capacity.CacheTranscriptUsage: func() capacity.Reading {
-			if s.ledger == nil {
-				return capacity.Unmeasured("this server keeps no usage ledger")
-			}
-			return s.ledger.Reading()
-		},
 		capacity.CacheTranscriptTitles: func() capacity.Reading {
 			h, ok := s.inventory.Identity.(*transcript.Host)
 			if !ok {
@@ -333,25 +327,10 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: n}
 		},
 		capacity.BoardReceipts: func() capacity.Reading { return s.boardReceiptReading() },
-		// The two pages that read this daemon's own history (ledger.go,
-		// timeline.go). They store nothing, so what is measured is what the
-		// next read would walk.
-		capacity.LedgerScan: func() capacity.Reading {
-			tasks, _, _, err := s.historyReadings()
-			if err != nil {
-				return capacity.Unmeasured(err.Error())
-			}
-			return capacity.Reading{Known: true, Used: tasks}
-		},
-		capacity.LedgerFeatures: func() capacity.Reading {
-			_, features, _, err := s.historyReadings()
-			if err != nil {
-				return capacity.Unmeasured(err.Error())
-			}
-			return capacity.Reading{Known: true, Used: features}
-		},
+		// The Timeline stores nothing, so what is measured is what the next
+		// read would walk.
 		capacity.TimelineEntries: func() capacity.Reading {
-			_, _, entries, err := s.historyReadings()
+			entries, err := s.timelineReading()
 			if err != nil {
 				return capacity.Unmeasured(err.Error())
 			}

@@ -15,9 +15,9 @@ import (
 // task chips, the waits, the delivery ticks and the titles from its own store
 // first (the broker's tables, W1–W6) and treats the Swift store as history
 // that fills in what its own store never held. With the switch off, that
-// history is not read either: no file under the Swift app's directory, its
-// usage ledger or its board is opened, and every answer that would have drawn
-// on them says `disabled` rather than `unknown` — the store was not read
+// history is not read either: no file under the Swift app's directory or its
+// board is opened, and every answer that would have drawn on them says
+// `disabled` rather than `unknown` — the store was not read
 // because a person said not to, which is known, not a failure (DG-7).
 //
 // The pictures the Swift app cached for old conversations are not state and
@@ -65,7 +65,7 @@ func Disabled() bool {
 	switch v {
 	case "off":
 		announceOff.Do(func() {
-			log.Printf("legacy store: %s=off; the Swift app's store, usage ledger and board are not opened, "+
+			log.Printf("legacy store: %s=off; the Swift app's store and board are not opened, "+
 				"and every answer that would have read them says disabled", EnvLegacyStore)
 		})
 		return true

@@ -196,6 +196,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["PATCH", "/v1/orchestrator/schedules/sch-1", "schedule-update"],
     ["DELETE", "/v1/orchestrator/schedules/sch-1", "schedule-delete"],
     ["POST", "/v1/orchestrator/schedules/sch-1/run", "schedule-run"],
+    ["POST", "/v1/projects/%2Frepo/worktrees/refresh", "project-worktree-lifecycle-refresh"],
     // The list is a read and is answered by `relay-reader.ts`, not here, and
     // so is one schedule in full — which this machine has no route for at all.
     ["GET", "/v1/orchestrator/schedules", null],
@@ -450,6 +451,20 @@ test("a route with no Cloud word is refused by name before anything is sealed", 
   assert.equal(body.error, "cloud_not_carried")
   assert.equal(body.word, "interrupt")
   assert.deepEqual(client.calls, [])
+})
+
+test("a worktree refresh reaches the selected machine and returns its new observation", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/projects/%2Frepo/worktrees/refresh", post({}))
+  assert.equal(res.status, 200)
+  assert.deepEqual(client.calls.pop(), [
+    "_machineRequest",
+    "mac-a",
+    "project-worktree-lifecycle-refresh",
+    { project: "/repo" },
+    "action",
+  ])
 })
 
 test("a transcript's picture is read as bytes through the machine's `image`", async () => {

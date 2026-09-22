@@ -698,8 +698,8 @@ func wireCloseMover(m task.Mover, subject string) contract.CloseMover {
 	return contract.CloseMover{Kind: "session", SessionID: m.ID}
 }
 
-// The plan-window reader lives beside the Server rather than in it, for the
-// same reason the usage collector does: this adds no field to server.go.
+// The plan-window reader lives beside the Server rather than in it so this
+// process-wide, short-lived cache adds no field to server.go.
 var (
 	limitsOnce   sync.Once
 	limitsReader *limits.Reader

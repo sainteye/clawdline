@@ -215,10 +215,8 @@ type plan struct {
 	expect                         string
 	project, item, audience, entry string
 	environment, category, cursor  string
-	// kind is a digest's daily-or-weekly, and graph the one Feature a
-	// verification-ledger read asks for. Both are the whole parameter of
-	// their word, so they are named rather than folded into `id`.
-	kind, graph                     string
+	// kind is a digest's daily-or-weekly, named rather than folded into `id`.
+	kind                            string
 	images                          []string
 	upcoming, acceptLoss            bool
 	closeability                    string
@@ -302,17 +300,34 @@ func decodeWorkPage(word string) func(b body) (plan, bool) {
 	}
 }
 
-// decodeProject is the body of the two Project worktree reads: one bounded,
-// non-empty Project. Non-empty because one of the two spells it into the path
-// (`/v1/projects/{project}/worktrees`), where an empty segment is a different
-// route, and because the other refuses an empty one anyway — so the refusal
-// is made here, where it names the word, rather than as a 400 about a query
-// field.
+// decodeProject is the body of the Project worktree lifecycle read: one
+// bounded, non-empty Project. It is spelled into the path, where an empty
+// segment is a different route, so malformed input is refused here before the
+// local router is reached.
 func decodeProject(b body) (plan, bool) {
 	if !b.has("type", "session", "request", "project") {
 		return plan{}, false
 	}
 	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, false
+	}
+	project, ok := b.nonEmpty("project")
+	if !ok || len(project) > 200 {
+		return plan{}, false
+	}
+	p.project = project
+	return p, true
+}
+
+// decodeProjectRefresh is the command-shaped sibling of decodeProject. A
+// refresh changes the machine's cached observation, so it uses an action reply
+// and is subject to the remote-write gate.
+func decodeProjectRefresh(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "project") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
 	if !ok {
 		return plan{}, false
 	}
@@ -905,9 +920,8 @@ func init() {
 					Query: someOf(map[string]string{"kind": p.kind})}
 			}},
 
-		// The Projects page's three reads. `places` above is its fourth and
-		// was already carried; these are the ones that left a phone saying it
-		// could not read a project's worktrees.
+		// The Projects page's catalog and worktree lifecycle. `places` above is
+		// carried separately.
 		op{name: "projects", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request") {
@@ -919,21 +933,19 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/projects"}
 			}},
 
-		op{name: "project-worktrees", read: true,
-			decode: decodeProject,
-			route: func(p plan) LocalRequest {
-				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/usage/project-worktrees",
-					Query: map[string]string{"project": p.project}}
-			}},
-
-		// The lifecycle read only. `project-worktree-lifecycle-refresh` runs
-		// processes and rewrites this machine's cache, which is a command and
-		// not this round's.
 		op{name: "project-worktree-lifecycle", read: true,
 			decode: decodeProject,
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET",
 					Path: "/v1/projects/" + segment(p.project) + "/worktrees"}
+			}},
+
+		op{name: "project-worktree-lifecycle-refresh",
+			decode: decodeProjectRefresh,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST",
+					Path: "/v1/projects/" + segment(p.project) + "/worktrees/refresh",
+					Body: []byte("{}")}
 			}},
 
 		op{name: "timeline", read: true,
@@ -994,27 +1006,6 @@ func init() {
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/landings"}
-			}},
-
-		op{name: "verification-ledger", read: true,
-			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "graph") {
-					return plan{}, false
-				}
-				p, ok := machinePlan(b)
-				if !ok {
-					return plan{}, false
-				}
-				graph, graphOK := b.str("graph")
-				if !graphOK || len(graph) > 200 {
-					return plan{}, false
-				}
-				p.graph = graph
-				return p, true
-			},
-			route: func(p plan) LocalRequest {
-				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/usage/verification-ledger",
-					Query: someOf(map[string]string{"graph": p.graph})}
 			}},
 
 		op{name: "agent", read: true,

@@ -283,13 +283,6 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-projects",
 		method: "GET", path: "/v1/projects",
 	}, {
-		word: "project-worktrees",
-		body: map[string]any{"type": "project-worktrees", "session": machine,
-			"request": "req-worktrees", "project": "/Users/sean/code/clawdline-go"},
-		session: machine, name: "read:req-worktrees",
-		method: "GET", path: "/v1/orchestrator/usage/project-worktrees",
-		query: map[string]string{"project": "/Users/sean/code/clawdline-go"},
-	}, {
 		// The Project id is a path segment here, so the escaping is the
 		// answer to a different question than the query above's.
 		word: "project-worktree-lifecycle",
@@ -297,6 +290,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 			"request": "req-lifecycle", "project": "/Users/sean/code/clawdline-go"},
 		session: machine, name: "read:req-lifecycle",
 		method: "GET", path: "/v1/projects/%2FUsers%2Fsean%2Fcode%2Fclawdline-go/worktrees",
+	}, {
+		word: "project-worktree-lifecycle-refresh",
+		body: map[string]any{"type": "project-worktree-lifecycle-refresh", "session": machine,
+			"request": "req-lifecycle-refresh", "project": "/workspace/example"},
+		session: machine, name: "action:req-lifecycle-refresh",
+		method: "POST", path: "/v1/projects/%2Fworkspace%2Fexample/worktrees/refresh",
+		body2: `{}`,
 	}, {
 		// `upcoming` travels on every read because both of its values mean
 		// something; the empty filters do not travel at all, because this
@@ -308,12 +308,6 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-timeline",
 		method: "GET", path: "/v1/timeline",
 		query: map[string]string{"project": "clawdline-go", "upcoming": "false"},
-	}, {
-		word: "verification-ledger",
-		body: map[string]any{"type": "verification-ledger", "session": machine,
-			"request": "req-ledger", "graph": ""},
-		session: machine, name: "read:req-ledger",
-		method: "GET", path: "/v1/orchestrator/usage/verification-ledger",
 	}, {
 		// Machine-wide and so parameterless: the landing ledger is not one
 		// repository's debt, and a word that took a project would let a page
@@ -1149,8 +1143,8 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
-		"board", "board.items", "timeline", "projects", "project-worktrees",
-		"project-worktree-lifecycle", "verification-ledger", "landings",
+		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
+		"project-worktree-lifecycle-refresh", "landings",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)

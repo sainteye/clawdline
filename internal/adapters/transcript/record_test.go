@@ -13,12 +13,6 @@ import (
 var recordReaders = map[string]func(path string) error{
 	"ReadClaude": func(p string) error { _, err := ReadClaude(p, 10); return err },
 	"ReadCodex":  func(p string) error { _, err := ReadCodex(p, 10); return err },
-	"ReadClaudeUsage": func(p string) error {
-		_, err := ReadClaudeUsage(p)
-		return err
-	},
-	"ReadCodexUsage": func(p string) error { _, err := ReadCodexUsage(p); return err },
-	"Ledger.Claude":  func(p string) error { _, err := NewLedger().Claude(p); return err },
 	"RecordFacts.Read": func(p string) error {
 		_, err := NewRecordFacts().Read(p, "claude")
 		return err

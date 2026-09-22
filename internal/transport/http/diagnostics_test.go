@@ -31,14 +31,14 @@ func capacityServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	// What `clawdline serve` builds that the register measures: the log moved
-	// into the directory, and the inventory's and usage route's caches.
+	// into the directory and the inventory's caches.
 	w, err := logs.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = w.Close(); daemonLogs.Delete(dir) })
 	SetDaemonLog(dir, w)
-	return &Server{cfg: config.Config{Dir: dir}, store: st, ledger: transcript.NewLedger(), agents: subagents.New(t.TempDir()),
+	return &Server{cfg: config.Config{Dir: dir}, store: st, agents: subagents.New(t.TempDir()),
 		inventory: app.Inventory{Identity: transcript.NewHost()},
 		screenBus: newScreenBus(),
 		pictures:  pictures{store: artifacts.NewStore(dir), drops: artifacts.NewDrops(dir)}}

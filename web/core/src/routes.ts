@@ -15,7 +15,6 @@ export const routes = {
   schedules: "/v1/orchestrator/schedules",
   coordinator: "/v1/next/coordinator",
   strings: "/v1/strings",
-  usage: "/v1/orchestrator/usage",
   transcript: "/v1/transcript",
 } as const
 

@@ -161,7 +161,6 @@ const (
 	LogDaemon             = "log.daemon"
 	DevicesList           = "devices.list"
 	PushSubscriptions     = "push.subscriptions"
-	CacheTranscriptUsage  = "cache.transcript_usage"
 	CacheTranscriptTitles = "cache.transcript_titles"
 	// C3: the quiet failures made loud (limits §3.2, §7.2 wave 3).
 	SSEScreenPending   = "sse.screen_pending"
@@ -199,11 +198,8 @@ const (
 	ScreensCaptureSlots   = "screens.capture_slots"
 	CacheTerminalScreens  = "cache.terminal_screens"
 	CacheSessionInventory = "cache.session_inventory"
-	// The two pages that read this daemon's own history: the verification
-	// ledger and the Project Timeline. Both are projections that store
-	// nothing, so what is bounded is the read (limits §3.3).
-	LedgerScan      = "ledger.scan"
-	LedgerFeatures  = "ledger.features"
+	// The Project Timeline is a projection that stores nothing, so what is
+	// bounded is the read (limits §3.3).
 	TimelineEntries = "timeline.entries"
 	// When each session last moved: how many records one reading of the
 	// machine may read, and what the last reading of each one found.
@@ -361,15 +357,6 @@ func Register() []Entry {
 			EvictedBy: Person,
 			Projects:  true,
 			Sources:   []string{"internal/adapters/push.subscriptionsLimit"},
-		},
-		{
-			// What each live session's transcript has been counted to, so
-			// the usage route reads only what is new (limits N18). A miss
-			// reads the transcript again from its start.
-			Name: CacheTranscriptUsage, Class: Cache, Unit: Rows,
-			Limit: 256, AtLimit: EvictOldest,
-			Told:      []Channel{Diagnostics, Notice},
-			EvictedBy: Daemon,
 		},
 		{
 			// Each conversation's title as last read, keyed on the file's size
@@ -704,32 +691,6 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app.ScreenHeldLimit"},
-		},
-		{
-			// The task records one verification-ledger read counts, newest
-			// first. The tasks grow with every dispatch and store.db bounds
-			// only their bytes, so the read over them is bounded here — the
-			// case limits §3.3 names, and the same reason the device list's
-			// and the subscriptions' read bounds are rows. Past it the oldest
-			// tasks are left out of the figures and the answer says so
-			// (`read.truncated`); they are still in the store, and a narrower
-			// read reaches them, so nothing is lost by leaving them out.
-			Name: LedgerScan, Class: Observation, Unit: Rows,
-			Limit: 4_000, AtLimit: EvictOldest,
-			Told:      []Channel{Diagnostics},
-			EvictedBy: Daemon,
-			Sources:   []string{"internal/transport/http.ledgerTaskLimit"},
-		},
-		{
-			// The Features one ledger answer lists. How many were found is
-			// sent beside how many were listed, because a Mac past the cap
-			// that is shown only one of the two reads the larger number over
-			// the smaller list — this page's own subject, printed by the page.
-			Name: LedgerFeatures, Class: Observation, Unit: Rows,
-			Limit: 200, AtLimit: EvictOldest,
-			Told:      []Channel{Diagnostics},
-			EvictedBy: Daemon,
-			Sources:   []string{"internal/transport/http.ledgerFeatureLimit"},
 		},
 		{
 			// One Project's Timeline entries. The Swift app's equivalent
