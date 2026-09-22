@@ -211,7 +211,9 @@ export interface CloudReadClient {
    * Optional for the reason `pushKey` is: a client without it is refused by
    * name rather than throwing where nobody is catching.
    */
-  _machineRequest?(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action"): Promise<unknown>
+  _machineRequest?(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number): Promise<unknown>
+  /** Resolve a Cloud-safe Project picker id to the machine-local Project id it names. */
+  _place?(value: unknown): { machine: string; id: string; path: string }
 }
 
 /**
@@ -713,7 +715,23 @@ export class RelayReader {
         }
         case "/v1/work/v2/items": {
           const q = this.only(url, path, "project")
-          return await this.machineRead(method, path, "work.v2.items", { project: q.project ?? "" })
+          let project = q.project ?? ""
+          if (project) {
+            const client = this.connected()
+            if (typeof client._place !== "function") {
+              throw Object.assign(new Error("the Cloud client cannot resolve this Project"), {
+                code: "cloud_not_carried", status: 501,
+              })
+            }
+            const place = client._place(project)
+            if (place.machine !== this.machine) {
+              throw Object.assign(new Error("this Project belongs to another machine"), {
+                code: "cloud_project_machine_mismatch", status: 409,
+              })
+            }
+            project = place.id
+          }
+          return await this.machineRead(method, path, "work.v2.items", { project })
         }
         case "/v1/work/v2/proposals": {
           const q = this.only(url, path, "state")

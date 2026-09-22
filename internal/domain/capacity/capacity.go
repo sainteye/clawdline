@@ -172,16 +172,21 @@ const (
 	CoordinatorAliases = "coordinator.aliases"
 	WaitsOpen          = "waits.open"
 	// T3: the board and the Backlog.
-	WorkOpen                 = "work.open"
-	WorkPlanning             = "work.planning"
-	WorkAssignments          = "work.assignments"
-	WorkDocumentsPerItem     = "work.documents_per_item"
-	WorkStepsPerItem         = "work.steps_per_item"
-	SessionDirectTodos       = "session.direct_todos"
-	WorkItemTitleBytes       = "work.item_title_bytes"
-	WorkItemDescriptionBytes = "work.item_description_bytes"
-	SessionDirectTodoBytes   = "session.direct_todo_bytes"
-	WorkRequestBodyBytes     = "work.request_body_bytes"
+	WorkOpen                  = "work.open"
+	WorkPlanning              = "work.planning"
+	WorkAssignments           = "work.assignments"
+	WorkDocumentsPerItem      = "work.documents_per_item"
+	WorkImagesPerItem         = "work.images_per_item"
+	WorkImageBytes            = "work.image_bytes"
+	WorkImageBytesPerItem     = "work.image_bytes_per_item"
+	WorkImageBytesTotal       = "work.image_bytes_total"
+	WorkImageRequestBodyBytes = "work.image_request_body_bytes"
+	WorkStepsPerItem          = "work.steps_per_item"
+	SessionDirectTodos        = "session.direct_todos"
+	WorkItemTitleBytes        = "work.item_title_bytes"
+	WorkItemDescriptionBytes  = "work.item_description_bytes"
+	SessionDirectTodoBytes    = "session.direct_todo_bytes"
+	WorkRequestBodyBytes      = "work.request_body_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
 	DecisionsOpen = "decisions.open"
@@ -216,11 +221,19 @@ const (
 	CacheSessionActivity  = "cache.session_activity"
 	// Where each project can be opened, one reading per working directory.
 	CacheSessionLinks = "cache.session_links"
+	// Directories a person explicitly keeps in the session-start list.
+	PlacesRegistered = "places.registered"
 	// Provider-native work under a session: how many rows the fleet carries,
 	// and the immutable metadata/changing-tail cursors held to make a one-second
 	// reading cheap.
 	SessionsAgentRows     = "sessions.agent_rows"
 	CacheBackgroundAgents = "cache.background_agents"
+	// The sentence-to-draft planner: admitted bytes, queued turns and the
+	// longest one turn may hold its queue slot.
+	IntentRequestBytes     = "intent.request_bytes"
+	IntentPlannerQueue     = "intent.planner_queue"
+	IntentPlannerSeconds   = "intent.planner_seconds"
+	IntentCloudWaitSeconds = "intent.cloud_wait_seconds"
 )
 
 // Entry is one row of the register.
@@ -511,6 +524,45 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/store.WorkV2DocumentLimit"},
+		},
+		{
+			Name: WorkImagesPerItem, Class: Evidence, Unit: Rows,
+			Limit: 6, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/store.WorkV2ImageLimit"},
+		},
+		{
+			Name: WorkImageBytes, Class: Evidence, Unit: Bytes,
+			Limit: 5 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/transport/http.workV2ImageByteLimit"},
+		},
+		{
+			Name: WorkImageBytesPerItem, Class: Evidence, Unit: Bytes,
+			Limit: 15 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Projects:  true,
+			Sources:   []string{"internal/adapters/store.WorkV2ImageItemLimit"},
+		},
+		{
+			Name: WorkImageBytesTotal, Class: Evidence, Unit: Bytes,
+			Limit: 512 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/store.WorkV2ImageTotalLimit"},
+		},
+		{
+			Name: WorkImageRequestBodyBytes, Class: Buffer, Unit: Bytes,
+			Limit: 18 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Projects:  true,
+			Sources:   []string{"internal/transport/http.workV2ImageBodyLimit", "internal/app/cloudops.workV2CloudImageBodyLimit"},
 		},
 		{
 			Name: WorkStepsPerItem, Class: Evidence, Unit: Rows,
@@ -810,6 +862,17 @@ func Register() []Entry {
 			EvictedBy: Daemon,
 		},
 		{
+			// CLAWDLINE_NEXT_DIR/places.json: explicit project directories. Each
+			// row is a person's choice, so the daemon never evicts one; a full
+			// registry refuses a new path and `clawdline project remove` is its
+			// deliberate exit.
+			Name: PlacesRegistered, Class: Evidence, Unit: Rows,
+			Limit: 512, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Notice, Health},
+			EvictedBy: Person,
+			Projects:  true,
+		},
+		{
 			// Where each project can be opened: one reading per working
 			// directory, held as the Swift app's SessionLinksCache holds it.
 			// A reading costs a `git remote` and a handful of file reads, and
@@ -821,6 +884,44 @@ func Register() []Entry {
 			Limit: 64, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
+		},
+		{
+			// One spoken sentence admitted by /v1/intents. A larger body is
+			// refused before a model is asked to read it.
+			Name: IntentRequestBytes, Class: Buffer, Unit: Bytes,
+			Limit: 4 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.intentLimit",
+				"internal/app/cloudops.intentTextLimit"},
+		},
+		{
+			// One planner turn running and one waiting. A third is refused
+			// with 429 busy and can try again after the line moves.
+			Name: IntentPlannerQueue, Class: Buffer, Unit: Rows,
+			Limit: 2, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.intentQueueLimit"},
+		},
+		{
+			// A CLI turn past this deadline is stopped and gives its queue
+			// slot back. The sender receives plan_failed.
+			Name: IntentPlannerSeconds, Class: Buffer, Unit: Seconds,
+			Limit: 30, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.intentTimeLimit"},
+		},
+		{
+			// The hosted console may be the one admitted waiter: 60 seconds
+			// behind the active turn, then 60 for its own two CLI attempts,
+			// with ten seconds for relay delivery and refusal handling.
+			Name: IntentCloudWaitSeconds, Class: Buffer, Unit: Seconds,
+			Limit: 130, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.intentCloudWaitLimit"},
 		},
 	}
 }

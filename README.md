@@ -1,5 +1,7 @@
 # Clawdline
 
+[繁體中文](README.zh-TW.md)
+
 **A local control plane for Claude Code and Codex. See every session, know which one needs you,
 and let agents hand work to each other without losing the delivery record.**
 
@@ -64,23 +66,27 @@ work to another session, and keep delivery separate from review and landing.
 
 ## How it compares
 
-[Claude Squad](https://github.com/smtg-ai/claude-squad) is a strong choice when you want a
-terminal-first launcher for parallel agents in isolated git worktrees. Clawdline also observes
-sessions you started yourself and adds browser/phone control, scheduled and webhook-triggered
-work, and durable coordination records.
+[T3 Code](https://github.com/pingdotgg/t3code) is a full control surface for running agents, with
+web, desktop, and mobile apps, support for more agents than Clawdline, and native version-control
+workflows. Choose T3 Code when you want a feature-rich, cross-device workspace that feels closer
+to a complete development environment. Clawdline focuses on the Claude Code and Codex sessions
+you already started in tmux or iTerm2, along with their state, schedules, and durable coordination
+records.
 
-[Agent Deck](https://github.com/rkunnamp/agent-deck) supports a wider range of terminal agents and
-is a good fit when you want one TUI for many tools. Clawdline deliberately goes deeper on Claude
-Code and Codex: their transcripts, attention states, cross-session dispatch, landing evidence,
-and remote operation.
+[Herdr](https://github.com/herdrdev/herdr) is an agent harness and multiplexer built around real
+terminal panes. It detects many coding agents, rolls up workspace state, and jumps quickly to the
+pane that needs attention. Choose Herdr for a terminal-first multi-agent workspace with broad
+agent support. Clawdline emphasizes web and phone control, brokered dispatch, landing evidence,
+scheduled tasks, webhooks, and Clawdfather coordination.
 
-[Crystal](https://github.com/stravu/crystal) focuses on desktop workflows where each task gets a
-git worktree and changes are reviewed and merged. Clawdline is a daemon and control plane: it can
-manage existing sessions, expose them to a web console, and coordinate work that is not limited
-to a single desktop review flow.
+[Orca](https://github.com/stablyai/orca) is a full Agent Development Environment with isolated git
+worktrees, a built-in terminal, editor, diff review, browser, GitHub and Linear integrations, and
+a mobile companion. Choose Orca when you want to create, compare, and merge several agents' work
+inside one application. Clawdline is not an IDE: it is a control plane around existing sessions,
+with long-running schedules, webhooks, and agent-to-agent coordination at its core.
 
-Clawdline is not an IDE and it does not replace Claude Code or Codex. Choose it when the difficult
-part is no longer starting an agent, but operating several of them reliably over time.
+Clawdline does not replace your IDE, Claude Code, or Codex. Choose it when the difficult part is no
+longer starting an agent, but operating several of them reliably over time.
 
 ## Install
 
@@ -115,6 +121,14 @@ Run Claude Code or Codex inside tmux and the session will appear in the console:
 tmux new -s work
 cd /path/to/your/project
 claude  # or: codex
+```
+
+Before starting an agent, you can also add existing directories explicitly to the “Open a
+session” list. This does not invoke a model:
+
+```sh
+./bin/clawdline project add /path/to/project /path/to/another-project
+./bin/clawdline project list
 ```
 
 On macOS, you can also build the native shell:

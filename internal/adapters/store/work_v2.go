@@ -65,6 +65,20 @@ CREATE TABLE IF NOT EXISTS work_v2_documents (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS work_v2_documents_item ON work_v2_documents(work_id, position, id);
+CREATE TABLE IF NOT EXISTS work_v2_images (
+  id         TEXT PRIMARY KEY,
+  work_id    TEXT NOT NULL REFERENCES work_v2_items(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  media_type TEXT NOT NULL CHECK (media_type = 'image/png'),
+  data       BLOB NOT NULL,
+  byte_count INTEGER NOT NULL,
+  width      INTEGER NOT NULL,
+  height     INTEGER NOT NULL,
+  position   INTEGER NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS work_v2_images_item ON work_v2_images(work_id, position, id);
 CREATE TABLE IF NOT EXISTS work_v2_steps (
   id           TEXT PRIMARY KEY,
   work_id      TEXT NOT NULL REFERENCES work_v2_items(id) ON DELETE CASCADE,
@@ -132,19 +146,24 @@ const (
 	WorkV2PlanningLimit   = 1_000
 	WorkV2AssignmentLimit = 4_000
 	WorkV2DocumentLimit   = 32
+	WorkV2ImageLimit      = 6
+	WorkV2ImageItemLimit  = 15 << 20
+	WorkV2ImageTotalLimit = 512 << 20
 	WorkV2StepLimit       = 128
 	DirectTodoV2Limit     = 500
 	WorkV2ProposalLimit   = 500
 )
 
 var (
-	ErrNoWorkV2            = errors.New("no such v2 work item")
-	ErrWorkV2Full          = errors.New("v2 work items full")
-	ErrPlanningV2Full      = errors.New("v2 planning items full")
-	ErrDirectTodoFull      = errors.New("direct session todos full")
-	ErrWorkV2DocsFull      = errors.New("v2 work documents full")
-	ErrWorkV2StepsFull     = errors.New("v2 work steps full")
-	ErrWorkV2ProposalsFull = errors.New("v2 work proposals full")
+	ErrNoWorkV2             = errors.New("no such v2 work item")
+	ErrWorkV2Full           = errors.New("v2 work items full")
+	ErrPlanningV2Full       = errors.New("v2 planning items full")
+	ErrDirectTodoFull       = errors.New("direct session todos full")
+	ErrWorkV2DocsFull       = errors.New("v2 work documents full")
+	ErrWorkV2ImagesFull     = errors.New("v2 work images full")
+	ErrWorkV2ImageBytesFull = errors.New("v2 work image bytes full")
+	ErrWorkV2StepsFull      = errors.New("v2 work steps full")
+	ErrWorkV2ProposalsFull  = errors.New("v2 work proposals full")
 )
 
 func openWorkV2(db *sql.DB) error {
@@ -492,6 +511,98 @@ func (s *Store) WorkV2Documents(ctx context.Context, workID string) ([]work.Docu
 	return out, rows.Err()
 }
 
+func (t *WorkV2Tx) AddImage(i work.ImageV2, data []byte) error {
+	var count, itemBytes, totalBytes int64
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*),COALESCE(SUM(byte_count),0)
+    FROM work_v2_images WHERE work_id=?`, i.WorkID).Scan(&count, &itemBytes); err != nil {
+		return err
+	}
+	if count >= WorkV2ImageLimit {
+		return ErrWorkV2ImagesFull
+	}
+	if int64(len(data)) > WorkV2ImageItemLimit-itemBytes {
+		return ErrWorkV2ImageBytesFull
+	}
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(SUM(byte_count),0) FROM work_v2_images`).Scan(&totalBytes); err != nil {
+		return err
+	}
+	if int64(len(data)) > WorkV2ImageTotalLimit-totalBytes {
+		return ErrWorkV2ImageBytesFull
+	}
+	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_images
+    (id,work_id,title,media_type,data,byte_count,width,height,position,created_by,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`, i.ID, i.WorkID, i.Title, i.MediaType, data, len(data), i.Width,
+		i.Height, i.Position, i.CreatedBy, i.CreatedAt.Unix())
+	if err == nil {
+		t.wrote++
+	}
+	return err
+}
+
+func scanWorkV2Image(sc scanner) (work.ImageV2, error) {
+	var i work.ImageV2
+	var created int64
+	err := sc.Scan(&i.ID, &i.WorkID, &i.Title, &i.MediaType, &i.ByteCount, &i.Width, &i.Height,
+		&i.Position, &i.CreatedBy, &created)
+	if err != nil {
+		return i, err
+	}
+	i.CreatedAt = time.Unix(created, 0)
+	return i, nil
+}
+
+const workV2ImageColumns = `id,work_id,title,media_type,byte_count,width,height,position,created_by,created_at`
+
+func (t *WorkV2Tx) Image(id string) (work.ImageV2, error) {
+	return scanWorkV2Image(t.tx.QueryRowContext(t.ctx, `SELECT `+workV2ImageColumns+` FROM work_v2_images WHERE id=?`, id))
+}
+
+func (t *WorkV2Tx) DeleteImage(id string) error {
+	res, err := t.tx.ExecContext(t.ctx, `DELETE FROM work_v2_images WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n != 1 {
+		return sql.ErrNoRows
+	}
+	t.wrote++
+	return nil
+}
+
+func (s *Store) WorkV2Images(ctx context.Context, workID string) ([]work.ImageV2, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+workV2ImageColumns+`
+    FROM work_v2_images WHERE work_id=? ORDER BY position,id`, workID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []work.ImageV2{}
+	for rows.Next() {
+		i, err := scanWorkV2Image(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, i)
+	}
+	return out, rows.Err()
+}
+
+// WorkV2ImageBytes returns a durable Board reference image without exposing
+// the database or its BLOB column to the HTTP layer.
+func (s *Store) WorkV2ImageBytes(ctx context.Context, id string) ([]byte, bool, error) {
+	if err := reading(); err != nil {
+		return nil, false, err
+	}
+	var data []byte
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM work_v2_images WHERE id=?`, id).Scan(&data)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	return data, err == nil, err
+}
+
 func (t *WorkV2Tx) AddStep(s work.StepV2) error {
 	var n int64
 	if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM work_v2_steps WHERE work_id=?`, s.WorkID).Scan(&n); err != nil {
@@ -700,6 +811,7 @@ func (s *Store) WorkV2Counts(ctx context.Context) (map[string]int64, error) {
 	for name, q := range map[string]string{
 		"items": `SELECT COUNT(*) FROM work_v2_items`, "assignments": `SELECT COUNT(*) FROM work_v2_assignments`,
 		"documents": `SELECT COUNT(*) FROM work_v2_documents`, "steps": `SELECT COUNT(*) FROM work_v2_steps`,
+		"images": `SELECT COUNT(*) FROM work_v2_images`,
 		"events": `SELECT COUNT(*) FROM work_v2_events`, "direct_todos": `SELECT COUNT(*) FROM session_direct_todos`,
 		"proposals": `SELECT COUNT(*) FROM work_v2_proposals`,
 	} {
@@ -806,13 +918,17 @@ func (s *Store) WorkV2Proposals(ctx context.Context, state string, limit int) ([
 func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, error) {
 	out := map[string]int64{}
 	queries := map[string]string{
-		"open":               `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
-		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind IN ('epic','refactor','plan') AND closed_at IS NULL`,
-		"assignments":        `SELECT COUNT(*) FROM work_v2_assignments`,
-		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents GROUP BY work_id)`,
-		"steps_per_item":     `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_steps GROUP BY work_id)`,
-		"direct_todos":       `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM session_direct_todos WHERE completed_at IS NULL GROUP BY session_id)`,
-		"proposals":          `SELECT COUNT(*) FROM work_v2_proposals WHERE state='pending'`,
+		"open":                 `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
+		"planning":             `SELECT COUNT(*) FROM work_v2_items WHERE kind IN ('epic','refactor','plan') AND closed_at IS NULL`,
+		"assignments":          `SELECT COUNT(*) FROM work_v2_assignments`,
+		"documents_per_item":   `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents GROUP BY work_id)`,
+		"images_per_item":      `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_images GROUP BY work_id)`,
+		"image_bytes_max":      `SELECT COALESCE(MAX(byte_count),0) FROM work_v2_images`,
+		"image_bytes_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT SUM(byte_count) n FROM work_v2_images GROUP BY work_id)`,
+		"image_bytes_total":    `SELECT COALESCE(SUM(byte_count),0) FROM work_v2_images`,
+		"steps_per_item":       `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_steps GROUP BY work_id)`,
+		"direct_todos":         `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM session_direct_todos WHERE completed_at IS NULL GROUP BY session_id)`,
+		"proposals":            `SELECT COUNT(*) FROM work_v2_proposals WHERE state='pending'`,
 	}
 	for name, query := range queries {
 		var n int64

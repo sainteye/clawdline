@@ -102,6 +102,9 @@ export interface VoiceJob {
   sink: (said: string) => void
   /** This job's own reason to give up early — the composer gone, a sheet shut. */
   guard: () => boolean
+  /** A non-composer microphone can own its own icon and messages. */
+  changed?: (state: VoiceState) => void
+  say?: (text: string, bad?: boolean) => void
 }
 
 /** What this module needs from the page it is drawn on. */
@@ -271,19 +274,27 @@ export function press(job?: VoiceJob): void {
   // Mid-transcription the button is not the way out — the row's Cancel is,
   // and it says so.
   if (state !== "off") return
+  activeJob = want
   if (whisperless) {
     const said = whisperless
     whisperless = null
-    host.say(said, true)
+    speak(said, true)
     return
   }
   const no = why()
   if (no) {
-    host.say(no, true)
+    speak(no, true)
     return
   }
-  activeJob = want
   open()
+}
+
+function speak(text: string, bad?: boolean): void {
+  ;(activeJob?.say ?? host.say)(text, bad)
+}
+
+function changed(): void {
+  ;(activeJob?.changed ?? host.changed)(state)
 }
 
 /**
@@ -313,7 +324,7 @@ function open(): void {
       if (mine !== token) return
       state = "off"
       show()
-      host.say(refused(e), true)
+      speak(refused(e), true)
     },
   )
 }
@@ -341,7 +352,7 @@ function begin(got: MediaStream, mine: number): void {
     state = "off"
     show()
     // refusal-ok: a MediaRecorder the browser will not build throws a DOMException, which has no daemon code to name
-    host.say(S.webVoiceUnsupported, true)
+    speak(S.webVoiceUnsupported, true)
     return
   }
   // Before the row is drawn, and still in the turn the recording started in.
@@ -370,7 +381,7 @@ function beat(mine: number): void {
     return
   }
   if (state === "recording" && elapsed() >= MAX_SECONDS) {
-    host.say(fillWords(S.webVoiceLimit, { n: Math.round(MAX_SECONDS / 60) }))
+    speak(fillWords(S.webVoiceLimit, { n: Math.round(MAX_SECONDS / 60) }))
     stop()
     return
   }
@@ -438,7 +449,7 @@ function landed(mine: number): void {
       // page reporting a fault that did not occur.
       const said = String(answer.text || "").trim()
       if (!said) {
-        host.say(S.webVoiceEmpty)
+        speak(S.webVoiceEmpty)
         return
       }
       job?.sink(said)
@@ -447,7 +458,7 @@ function landed(mine: number): void {
       if (mine !== token) return
       quit()
       if (e && e.code === "no_whisper") whisperless = complain(e)
-      host.say(complain(e), !e || e.code !== "too_short")
+      speak(complain(e), !e || e.code !== "too_short")
     })
 }
 
@@ -856,7 +867,7 @@ export async function postVoice(audio: string, rate: number): Promise<{ text?: s
 function show(): void {
   const job = activeJob
   if (!job) {
-    host.changed(state)
+    changed()
     return
   }
   // **Only the composer's own microphone reads this.** `composer.css` keys the
@@ -879,7 +890,7 @@ function show(): void {
       box.removeAttribute("data-near")
       box.removeAttribute("data-slow")
     }
-    host.changed(state)
+    changed()
     return
   }
   if (drawn !== state) {
@@ -961,7 +972,7 @@ function show(): void {
     box.hidden = false
   }
   say()
-  host.changed(state)
+  changed()
 }
 
 /// One of them. The `mousedown` is the one Send and the attachment carry for

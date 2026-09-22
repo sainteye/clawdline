@@ -3192,6 +3192,58 @@ export interface ImageStoreResult {
   ok: boolean
 }
 
+export interface IntentDraft {
+  assistant: string
+
+  /**
+   * HH:MM, or empty when no valid time was given.
+   */
+  at: string
+  confidence: number
+
+  /**
+   * [daily], named weekdays in week order, or an empty array when no days were
+   * said.
+   */
+  days: string[]
+
+  /**
+   * The editable first message. Empty deliberately means to open the session
+   * without typing anything.
+   */
+  instructions: string
+  kind: string
+
+  /**
+   * haiku, sonnet or opus for Claude; empty when no size was chosen and always
+   * empty for Codex.
+   */
+  model: string
+
+  /**
+   * An id from GET /v1/places, or null when no listed project fit.
+   */
+  place_id: string | null
+
+  /**
+   * The clarification to show below 0.5 confidence; empty at or above it.
+   */
+  question: string
+  title: string
+}
+
+export interface IntentRequest {
+  /**
+   * What the person said, at most 4096 UTF-8 bytes.
+   */
+  text: string
+}
+
+export interface IntentResult {
+  draft: IntentDraft
+  ms: number
+}
+
 export interface Inventory {
   at: number
   scan: InventoryScan
@@ -5709,8 +5761,9 @@ export interface StartPlace {
 }
 
 /**
- * GET /v1/places: recorded Claude Code folders, Codex rollouts and live sessions'
- * directories, deduplicated, still on disk, newest first, at most forty.
+ * GET /v1/places: explicitly registered directories, recorded Claude Code folders,
+ * Codex rollouts and live sessions' directories, deduplicated, still on disk,
+ * newest first, at most forty.
  */
 export interface StartPlaceList {
   assistants: StartAssistant[]

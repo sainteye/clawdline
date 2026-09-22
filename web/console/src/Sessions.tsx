@@ -5,6 +5,7 @@ import * as L from "./legacy/bridge.js"
 import { paintSwipe, Row } from "./session/List.js"
 import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
+import { Command, CommandSheet } from "./session/Command.js"
 import { Starting } from "./session/Starting.js"
 import { taskReads } from "./session/task-read.js"
 import { swipes } from "./session/swipe.js"
@@ -108,6 +109,10 @@ export function SessionsPage({
     Start.host({
       open: (id) => onOpenRef.current(id),
       openId: () => openIdRef.current,
+      refresh: () => onDidRef.current(),
+    })
+    Command.host({
+      open: (id) => onOpenRef.current(id),
       refresh: () => onDidRef.current(),
     })
   }, [])
@@ -218,9 +223,8 @@ export function SessionsPage({
               onChange={(e) => onFilter(e.target.value)}
             />
             <span className="slash">/</span>
-            {/* Saying what to start leads to the command sheet, with its
-                dictation and draft, which this page does not have, so it is
-                disabled. Picking where to start opens the start sheet. */}
+            {/* Saying what to start opens the voice-to-draft command sheet;
+                picking where to start opens the ordinary start sheet. */}
             <button
               className="start"
               id="voice-go"
@@ -228,7 +232,7 @@ export function SessionsPage({
               title={T.webCommand}
               aria-label={T.webCommandLabel}
               aria-pressed="false"
-              disabled
+              onClick={() => Command.openAndListen()}
             >
               <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect>
@@ -295,6 +299,7 @@ export function SessionsPage({
         <Detail row={open} tasks={tasks} onOpenSession={onOpen} onBack={onBack} onDid={onDid} listUnknown={listUnknown} />
       </main>
       <StartSheet />
+      <CommandSheet />
     </>
   )
 }

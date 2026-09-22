@@ -183,6 +183,7 @@ HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST
 | N30 | scheduler | `MinInterval = 1m`（`schedule.go:54-60`） | 400；錯過的 tick 合併 | `/v1/diagnostics.scheduler` | 否 | ✓ |
 | N31 | health／diagnostics | — | `GET /v1/health` 只有 `at, ok, served_by`；`GET /v1/diagnostics` 是 `at, dir, ok, port, served_by, upstream, scheduler{…}`（實測 7727）。**沒有任何填充度、容量或丟棄數**；唯一的丟棄計數在 `/v1/cloud/status` | — | — | — |
 | N32 | Session inventory cache | **120 seconds**, registered as `cache.session_inventory`; overrides may only lower it | The last complete rows for one failed terminal source expire and that source becomes `missing`. A terminal-confirmed close suppresses any older in-flight or retained copy inside the same window and leaves sooner when a complete terminal enumeration takes authority back. Action and decision callers bypass retained observations entirely. | `/v1/diagnostics.capacity` reports age and expiry count; the session list labels retained rows and the batch once | No; this is a reproducible observation cache | ✓ |
+| N33 | Spoken-intent planner | **4 KiB** per sentence, **2** queued turns, **30 seconds per CLI attempt**, and **130 seconds** for a hosted-console request, registered as `intent.request_bytes`, `intent.planner_queue`, `intent.planner_seconds`, and `intent.cloud_wait_seconds` | An oversized sentence is refused before a model reads it; a third queued request receives 429 `busy`; a timed-out or unusable turn receives 502 `plan_failed`. Claude and the Codex fallback each get one bounded attempt. The Cloud deadline covers one 60-second turn ahead, one 60-second turn of its own, and 10 seconds of relay overhead. | The sender receives a typed refusal; all four rows are present in `/v1/diagnostics.capacity`; audit logs contain timing and outcome but never the sentence. | No; the route creates only an editable draft and starts nothing. | ✓ |
 
 另外兩件跟「誰會知道」直接相關的：`plan.md` §3.2 與 `cross-platform.md` 還寫 `scheduler` 在 `/v1/health`，實際已經在
 `/v1/diagnostics`；`git/changes.go:80-82` 的註解說「every file read goes through an `io.LimitReader`」，至少 6 處不是
@@ -319,6 +320,16 @@ O39 task 目錄刪除沒有 audit——**這些都是對的行為**，缺的是�
 `agents_reading.truncated` 明說省略數；`cache.background_agents` 有三張可重建的 LRU：immutable metadata（Claude sidecar 與 Codex rollout head 共用）、
 transcript tail、完成通知 cursor，每張最多 256。穩定的一次掃描仍會 `stat` 近期 Claude agent 以判斷是否有變，但快取命中不再開 transcript；Codex 則用已知的 thread id
 命中快取，不在每次 beat 重走 rollout 目錄。讀不到來源時讀數是 `unknown`，不把它畫成 0。
+
+`places.registered` 是 `CLAWDLINE_NEXT_DIR/places.json` 中由人明確保留的 Project 目錄，限制 512 筆。
+它是人的選擇（`evidence`），所以滿了拒絕新增，不自動淘汰；只有 `clawdline project remove` 會移除。
+diagnostics 每次直接數這個最多 512 列的檔案，壞掉或讀不到回 `unknown`，不把既有 Project 說成零個。
+
+Work v2 的參考圖片是使用者輸入但在項目存續期間不可自動淘汰，因此以 evidence 列登記並在滿載時拒絕：
+`work.images_per_item` 6 張、`work.image_bytes` 每張正規化 PNG 5 MiB、
+`work.image_bytes_per_item` 15 MiB、`work.image_bytes_total` 512 MiB；另有 buffer 列
+`work.image_request_body_bytes` 18 MiB（保留加密 Cloud envelope 的膨脹空間），同時約束本機 HTTP 與 Cloud 子文件。Diagnostics 分別量
+最滿項目的張數／位元組、最大單張及全庫位元組；不會為新圖片刪除既有參考資料。
 
 ### 4.2 資料分類：什麼絕不能丟、什麼可以摘要後丟、什麼可以直接丟
 

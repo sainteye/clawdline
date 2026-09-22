@@ -82,3 +82,28 @@ func TestPlanningNeverBecomesExecutableAndProposalNeedsOwnedEvidence(t *testing.
 		t.Fatalf("foreign proposal: %v", err)
 	}
 }
+
+func TestPersonCommandsVersionReferenceImages(t *testing.T) {
+	w := newWorkV2Test(t)
+	v := createWorkV2Test(t, w, work.KindFeature)
+	added, err := w.AddImage(context.Background(), v.Item.ID, AddImageV2{ExpectedVersion: v.Item.Version,
+		Title: "state.png", Data: []byte("png"), Width: 3, Height: 2, Actor: "local"}, nil)
+	if err != nil || added.Item.Version != v.Item.Version+1 || len(added.Images) != 1 {
+		t.Fatalf("add: %+v %v", added, err)
+	}
+	full, err := w.Item(context.Background(), v.Item.ID)
+	if err != nil || len(full.Images) != 1 || full.Images[0].Title != "state.png" {
+		t.Fatalf("read: %+v %v", full, err)
+	}
+	if _, err := w.DeleteImage(context.Background(), v.Item.ID, full.Images[0].ID, v.Item.Version, "local", nil); err == nil {
+		t.Fatal("a stale version deleted a reference image")
+	}
+	deleted, err := w.DeleteImage(context.Background(), v.Item.ID, full.Images[0].ID, added.Item.Version, "local", nil)
+	if err != nil || deleted.Item.Version != added.Item.Version+1 {
+		t.Fatalf("delete: %+v %v", deleted, err)
+	}
+	full, _ = w.Item(context.Background(), v.Item.ID)
+	if len(full.Images) != 0 {
+		t.Fatalf("deleted image remains: %+v", full.Images)
+	}
+}

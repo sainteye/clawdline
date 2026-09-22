@@ -236,6 +236,13 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		},
 		capacity.CacheSessionSkills: func() capacity.Reading { return s.skillsReading() },
 		capacity.CacheSessionLinks:  func() capacity.Reading { return s.linksReading() },
+		capacity.PlacesRegistered: func() capacity.Reading {
+			rows, err := s.projectReaders().registry.List()
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: int64(len(rows))}
+		},
 		// The screens the session list holds, and the captures it has in
 		// flight (internal/app/screen_held.go).
 		// An inventory with no held screens is a known zero, not an
@@ -317,6 +324,21 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkDocumentsPerItem: func() capacity.Reading {
 			return s.workV2CapacityReading("documents_per_item")
 		},
+		capacity.WorkImagesPerItem: func() capacity.Reading {
+			return s.workV2CapacityReading("images_per_item")
+		},
+		capacity.WorkImageBytes: func() capacity.Reading {
+			return s.workV2CapacityReading("image_bytes_max")
+		},
+		capacity.WorkImageBytesPerItem: func() capacity.Reading {
+			return s.workV2CapacityReading("image_bytes_per_item")
+		},
+		capacity.WorkImageBytesTotal: func() capacity.Reading {
+			return s.workV2CapacityReading("image_bytes_total")
+		},
+		capacity.WorkImageRequestBodyBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
 		capacity.WorkStepsPerItem: func() capacity.Reading {
 			return s.workV2CapacityReading("steps_per_item")
 		},
@@ -334,6 +356,20 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		},
 		capacity.WorkRequestBodyBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
+		capacity.IntentRequestBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
+		capacity.IntentPlannerQueue: func() capacity.Reading {
+			s.intentMu.Lock()
+			defer s.intentMu.Unlock()
+			return capacity.Reading{Known: true, Used: int64(s.intentQueued)}
+		},
+		capacity.IntentPlannerSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-turn deadline; no retained buffer"}
+		},
+		capacity.IntentCloudWaitSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "hosted-console request deadline; no retained buffer"}
 		},
 		// T4's three rows (proposals.go).
 		capacity.ProposalsOpen: func() capacity.Reading {

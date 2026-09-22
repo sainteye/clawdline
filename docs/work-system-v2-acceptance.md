@@ -79,7 +79,7 @@ permission.
 
 Given a person and owner Agent both read version N, when one writes N+1, the other's N write is
 refused with the current version. After reread it may deliberately apply its change. Title,
-description, documents, and steps all have this control.
+description, documents, steps, and reference images all have this control.
 
 ## 4. Assignment
 
@@ -201,6 +201,23 @@ The owner can add, reorder, complete, and reopen steps. Completing every step do
 item; advancing the item does not silently complete steps. Steps never appear as Board cards or
 Session assignments.
 
+### WS2-D04 — Reference images are durable person-owned input
+
+A send-capable person can add PNG, JPEG, GIF, or a platform-decodable raster source to a
+nonterminal item. The stored bytes decode as normalized PNG; item/list responses contain only
+metadata; the opaque image route returns those bytes for GET and none for HEAD. The same image is
+readable from the hosted Console without borrowing a Session identity.
+
+Adding and deleting each increment the item version and append `image.added` or `image.deleted`.
+The same idempotency key replays one outcome, a stale version changes nothing, deleting an image
+from another item is refused, and closing the item makes both mutations refuse until reopen.
+Machine/orchestrator and Agent credentials cannot add or delete reference images even when they
+own the item. They can read image metadata and bytes as item context.
+
+The seventh image, a normalized image over 5 MiB, an item over 15 MiB, a store over 512 MiB, and a
+request over 18 MiB are each refused without evicting or changing existing images. Corrupt,
+non-raster, path, and remote-URL inputs are refused without fetching anything.
+
 ## 7. Broker boundary
 
 ### WS2-B01 — Dispatch never creates human work
@@ -321,7 +338,7 @@ summarize the same v2 ids/versions but cannot write a duplicate state.
 ### WS2-K01 — Every new bound is registered
 
 The capacity guard fails before registration for open items, planning items, proposals,
-assignments, documents, steps, direct to-dos, and page sizes; it passes after all rows name their
+assignments, documents, reference-image count/bytes/request size, steps, direct to-dos, and page sizes; it passes after all rows name their
 limit, behavior at full, diagnostics reading, and notification class.
 
 ### WS2-K02 — Full means refuse, not evict

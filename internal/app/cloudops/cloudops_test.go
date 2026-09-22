@@ -296,6 +296,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-work-v2-todos",
 		method: "GET", path: "/v1/work/v2/session-todos/%2519",
 	}, {
+		word: "work.v2.image",
+		body: map[string]any{"type": "work.v2.image", "session": machine,
+			"request": "req-work-v2-image", "id": "img1"},
+		session: machine, name: "read:req-work-v2-image",
+		method: "GET", path: "/v1/work/v2/images/img1",
+		answers: &router{body: "png", media: "image/png"},
+	}, {
 		word: "work.v2.create",
 		body: map[string]any{"type": "work.v2.create", "session": machine, "request": "req-work-v2-create",
 			"item": map[string]any{"project_id": "p1", "kind": "feature", "title": "A", "description": "B", "deployment_policy": "agent_decides"}},
@@ -307,6 +314,18 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 			"item": map[string]any{"expected_version": 1, "mode": "new_session", "assistant": "codex", "model": "default"}},
 		session: machine, name: "action:req-work-v2-assign", method: "POST", path: "/v1/work/v2/items/w1/assign",
 		body2: `{"assistant":"codex","expected_version":1,"mode":"new_session","model":"default"}`,
+	}, {
+		word: "work.v2.image-create",
+		body: map[string]any{"type": "work.v2.image-create", "session": machine, "request": "req-work-v2-image-create", "id": "w1",
+			"item": map[string]any{"expected_version": 2, "title": "state.png", "data_url": "data:image/png;base64,cG5n"}},
+		session: machine, name: "action:req-work-v2-image-create", method: "POST", path: "/v1/work/v2/items/w1/images",
+		body2: `{"data_url":"data:image/png;base64,cG5n","expected_version":2,"title":"state.png"}`,
+	}, {
+		word: "work.v2.image-delete",
+		body: map[string]any{"type": "work.v2.image-delete", "session": machine, "request": "req-work-v2-image-delete",
+			"id": "w1", "image": "img1", "item": map[string]any{"expected_version": 3}},
+		session: machine, name: "action:req-work-v2-image-delete", method: "DELETE", path: "/v1/work/v2/items/w1/images/img1",
+		body2: `{"expected_version":3}`,
 	}, {
 		word: "work.v2.proposal-resolve",
 		body: map[string]any{"type": "work.v2.proposal-resolve", "session": machine, "request": "req-work-v2-resolve",
@@ -416,6 +435,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-voice",
 		method: "POST", path: "/v1/voice",
 		body2: `{"audio":"AAAAAA==","rate":16000}`,
+	}, {
+		word: "intents",
+		body: map[string]any{"type": "intents", "session": machine, "request": "req-intent",
+			"text": "start the review"},
+		session: machine, name: "action:req-intent",
+		method: "POST", path: "/v1/intents",
+		body2: `{"text":"start the review"}`,
 	}, {
 		// The schedule the form sends, handed to the route whole: this bridge
 		// knows what a request looks like, not what a schedule looks like.
@@ -668,7 +694,7 @@ func TestEveryChangeCarriesAnIdempotencyKey(t *testing.T) {
 func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 	r := &router{}
 	closed := Bridge{MachineID: "mac-01", Router: r}
-	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice",
+	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "intents",
 		"schedule-create", "schedule-update", "schedule-delete", "schedule-run",
 		"schedule-webhook-bind-v1",
 		"snippet-create", "snippet-update", "snippet-delete", "snippet-order", "dispatch"} {
@@ -689,6 +715,9 @@ func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 		case "voice":
 			body["session"] = MachineReplySession
 			body["audio"], body["rate"] = "AAAA", 16000
+		case "intents":
+			body["session"] = MachineReplySession
+			body["text"] = "start the review"
 		case "snippet-create":
 			body["session"] = MachineReplySession
 			body["snippet"] = map[string]any{"title": "a title", "body": "a body", "scope": "global"}
@@ -1184,7 +1213,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 			t.Fatalf("%s is advertised and has no local capability", word)
 		}
 	}
-	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "agent",
+	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "intents", "agent",
 		"transcript", "info", "git", "git-diff", "screen", "image", "documents", "document", "places",
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
@@ -1192,8 +1221,9 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "landings",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
-		"work.v2.items", "work.v2.proposals", "work.v2.session-todos", "work.v2.create",
-		"work.v2.assign", "work.v2.proposal-resolve", "work.v2.todo-create", "work.v2.todo-action"} {
+		"work.v2.items", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
+		"work.v2.assign", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
+		"work.v2.todo-create", "work.v2.todo-action"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}
@@ -1206,6 +1236,10 @@ func workV2Writes() map[string]map[string]any {
 			"request": "req", "item": map[string]any{"project_id": "p1", "kind": "feature", "title": "A"}},
 		"work.v2.assign": {"type": "work.v2.assign", "session": MachineReplySession,
 			"request": "req", "id": "w1", "item": map[string]any{"mode": "existing", "terminal": pane}},
+		"work.v2.image-create": {"type": "work.v2.image-create", "session": MachineReplySession,
+			"request": "req", "id": "w1", "item": map[string]any{"expected_version": 1, "data_url": "data:image/png;base64,cG5n"}},
+		"work.v2.image-delete": {"type": "work.v2.image-delete", "session": MachineReplySession,
+			"request": "req", "id": "w1", "image": "img1", "item": map[string]any{"expected_version": 2}},
 		"work.v2.proposal-resolve": {"type": "work.v2.proposal-resolve", "session": MachineReplySession,
 			"request": "req", "id": "pr1", "decision": "accept", "item": map[string]any{}},
 		"work.v2.todo-create": {"type": "work.v2.todo-create", "session": MachineReplySession,

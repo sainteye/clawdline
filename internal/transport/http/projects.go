@@ -17,6 +17,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // The Projects page's routes: the start places, the Board store's Project
@@ -30,6 +31,7 @@ import (
 // the observation a refresh made.
 type projectReaders struct {
 	places    *projects.Places
+	registry  *projects.PlaceRegistry
 	catalog   *projects.Catalog
 	lifecycle *projects.Lifecycle
 	// busy bounds queued plus running lifecycle work, ProjectWorktreeHTTP.depth.
@@ -55,10 +57,15 @@ func (s *Server) projectReaders() *projectReaders {
 		own = s.broker.WorktreeRoot()
 	}
 	managed := projects.ManagedWorktreeRoots(own)
+	registry := projects.OpenPlaceRegistry(s.cfg.Dir, swiftDirs()...)
+	registry.SetLimit(CapacityLimit(capacity.PlacesRegistered))
+	places := projects.NewPlaces(s.icons.Label, managed)
+	places.Registered = registry.List
 	r := &projectReaders{
-		places:  projects.NewPlaces(s.icons.Label, managed),
-		catalog: projects.NewCatalog(),
-		busy:    make(chan struct{}, 4),
+		places:   places,
+		registry: registry,
+		catalog:  projects.NewCatalog(),
+		busy:     make(chan struct{}, 4),
 	}
 	r.lifecycle = projects.NewLifecycle(projects.Ports{
 		ManagedWorktreeRoots: managed,

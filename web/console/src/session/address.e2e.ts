@@ -83,6 +83,8 @@ const ROWS = [
 // ---- the stand-in daemon
 
 let generation = 0
+let intentRequests = 0
+let placeRequests = 0
 function snapshot() {
   generation++
   return {
@@ -130,6 +132,32 @@ function daemon(): Server {
     const path = url.pathname
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path === "/v1/places") {
+      placeRequests++
+      return json(res, 200, {
+        at: Date.now(),
+        assistants: [{ id: "claude", label: "Claude Code", availability: "unknown" }],
+        places: [{ id: "fixture-place", label: "Example project", path: "/tmp/fixture", at: Date.now(), icon: null }],
+      })
+    }
+    if (path === "/v1/intents" && req.method === "POST") {
+      intentRequests++
+      return json(res, 200, {
+        draft: {
+          place_id: null,
+          assistant: "claude",
+          model: "sonnet",
+          instructions: "Read the failing test and explain the cause.",
+          title: "Explain failing test",
+          confidence: 0.3,
+          question: "Which project should this run in?",
+          kind: "session",
+          at: "",
+          days: [],
+        },
+        ms: 7,
+      })
+    }
     if (path === "/v1/events") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
       res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n")
@@ -470,4 +498,49 @@ test("phone: a session that is no longer there leaves the list and says so", () 
     const s = await tab.until("the page says the session is gone", (s) => s.rows === ROWS.length && !!s.toast)
     assert.equal(s.view, "list")
     assert.equal(s.hash, "")
+  }))
+
+test("phone: the home microphone opens an editable draft before anything starts", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    const opened = await tab.run(`(() => {
+      document.getElementById("voice-go").click()
+      const sheet = document.getElementById("command")
+      const text = document.getElementById("command-text")
+      text.value = "Please explain the failing test"
+      text.dispatchEvent(new Event("input", { bubbles: true }))
+      return { visible: !sheet.hidden, disabled: document.getElementById("command-go").disabled, text: text.value }
+    })()`)
+    assert.deepEqual(opened, { visible: true, disabled: false, text: "Please explain the failing test" },
+      "the microphone opens an editable command sheet")
+    await tab.run(`document.getElementById("command-go").click()`)
+    const draft = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const box = document.getElementById("command-draft")
+        if (box && !box.hidden) return resolve({
+          instructions: document.getElementById("command-instructions").value,
+          places: document.querySelectorAll("#command-list .place").length,
+          status: document.getElementById("command-said").textContent,
+          disabled: document.getElementById("command-go").disabled,
+        })
+        if (Date.now() >= deadline) return reject(new Error("the editable draft did not appear"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.equal(intentRequests, 1, "the reviewed sentence is planned once")
+    assert.equal(placeRequests, 1, "the draft reads the project choices once")
+    assert.deepEqual(draft, {
+      instructions: "Read the failing test and explain the cause.",
+      places: 1,
+      status: "Which project should this run in?",
+      disabled: true,
+    })
+    const ready = await tab.run(`(() => {
+      document.querySelector("#command-list .place").click()
+      return !document.getElementById("command-go").disabled
+    })()`)
+    assert.equal(ready, true, "choosing a project makes the reviewed draft startable")
   }))

@@ -399,6 +399,19 @@ disabled too. [snippets.md](snippets.md) is the whole feature; the routes are in
 
 ## Talk instead of type
 
+The microphone beside the **session-list filter** is the other use of dictation: say what work to
+start, instead of first choosing a project. Stopping the recording only puts the transcript in an
+editable box. The first **Start** press then asks an installed Claude Code CLI, with Codex as its
+fallback, to draft the project, assistant, model and first message; both run without tools. The
+project answer is a number from the list the daemon supplied, never a path the model invented.
+
+A confident draft that names a listed project is revealed and then opened; a doubtful one leaves
+the project unselected and asks the person to pick before pressing **Start** again. A repeating
+request is handed to the schedule form and is never saved automatically. Opening the sheet,
+recording, transcribing and editing do not spend a planner turn—the first **Start** press is the
+one point that does. On the hosted console, both transcription and this following planner request
+go to the voice-input machine chosen under **Devices**.
+
 <kbd>⌘</kbd><kbd>L</kbd>, or the microphone at the right of the box, turns your voice into text in
 it.
 

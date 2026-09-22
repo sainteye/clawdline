@@ -33,6 +33,11 @@
 import type { CarriedWord } from "./carry.js"
 import type { CloudIdentity, CloudReadClient, CloudRow, SeamRow } from "./relay-reader.js"
 
+// One admitted request may wait behind one turn, and each turn may try two
+// 30-second CLIs. Ten seconds leaves the relay enough room to deliver either
+// the draft or its typed refusal after that worst-case 120-second path.
+const INTENT_TIMEOUT_MS = 130_000
+
 /** A typed failure as the copied modules raise it (`cloud-failure.js`). */
 interface CloudFailureLike {
   code?: unknown
@@ -73,6 +78,8 @@ export interface CloudWriteClient extends CloudReadClient {
   startPlace(place: string, assistant: string, model: string): Promise<unknown>
   resumePlace(place: string, past: string, assistant: string, requestId?: string): Promise<unknown>
   voice(audio: string, rate: number): Promise<unknown>
+  /** The planner follows dictation to the same explicitly chosen voice host. */
+  voiceHost?(): Promise<{ machine: string }>
   /**
    * The status line's read, and the Session info card's. The copied client has
    * had both since the Swift console; nothing here asked for them, so every
@@ -118,6 +125,15 @@ export interface CloudWriteClient extends CloudReadClient {
    */
   createSchedule?(schedule: unknown): Promise<unknown>
   _scheduleBody?(schedule: unknown): { machine: string; schedule: Record<string, unknown> }
+  /** The generic machine request under the UI press's durable idempotency key. */
+  _machineRequestAs?(
+    request: string,
+    machine: string,
+    word: string,
+    body: Record<string, unknown>,
+    kind: "read" | "action",
+    timeoutMs?: number,
+  ): Promise<unknown>
   /**
    * The four snippet writes. Each names the machine whose settings change
    * through a session identity — only its `machine` is read
@@ -188,9 +204,11 @@ export type WriteRoute =
   | { op: "start"; word: Carried<"start">; place: string; assistant: string; model: string }
   | { op: "resume"; word: Carried<"resume">; place: string; assistant: string; past: string }
   | { op: "voice"; word: Carried<"voice"> }
+  | { op: "intents"; word: Carried<"intents"> }
   | { op: "places"; word: Carried<"places"> }
   | { op: "past"; word: Carried<"past-sessions">; place: string; assistant: string }
   | { op: "image"; word: Carried<"image">; artifact: string }
+  | { op: "work-v2-image"; word: Carried<"work.v2.image">; artifact: string }
   | { op: "push-subscribe"; word: Carried<"push-subscribe"> }
   | { op: "push-unsubscribe"; word: Carried<"push-unsubscribe"> }
   | { op: "push-test"; word: Carried<"push-test"> }
@@ -209,6 +227,8 @@ export type WriteRoute =
   | { op: "worktree-refresh"; word: Carried<"project-worktree-lifecycle-refresh">; project: string }
   | { op: "work-v2-create"; word: Carried<"work.v2.create"> }
   | { op: "work-v2-assign"; word: Carried<"work.v2.assign">; id: string }
+  | { op: "work-v2-image-create"; word: Carried<"work.v2.image-create">; id: string }
+  | { op: "work-v2-image-delete"; word: Carried<"work.v2.image-delete">; id: string; image: string }
   | { op: "work-v2-proposal-resolve"; word: Carried<"work.v2.proposal-resolve">; id: string; decision: "accept" | "reject" }
   | { op: "work-v2-todo-create"; word: Carried<"work.v2.todo-create">; terminal: string }
   | { op: "work-v2-todo-action"; word: Carried<"work.v2.todo-action">; terminal: string; id: string; action: "send" | "complete" | "delete" }
@@ -309,6 +329,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   }
   const [head, a, b, c, d] = segments
   if (method === "GET") {
+    if (head === "work" && a === "v2" && b === "images" && c && segments.length === 4) {
+      return { op: "work-v2-image", word: "work.v2.image", artifact: c }
+    }
     if (head === "places" && segments.length === 1) return { op: "places", word: "places" }
     if (head === "places" && a && b === "sessions" && segments.length <= 4) {
       return { op: "past", word: "past-sessions", place: a, assistant: c ?? "" }
@@ -351,11 +374,17 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (method === "PATCH" || method === "PUT") return { op: "snippet-update", word: "snippet-update", snippet: a }
     if (method === "DELETE") return { op: "snippet-delete", word: "snippet-delete", snippet: a }
   }
+  if (head === "work" && a === "v2" && b === "items" && c && d === "images" && segments[5] && segments.length === 6 && method === "DELETE") {
+    return { op: "work-v2-image-delete", word: "work.v2.image-delete", id: c, image: segments[5] }
+  }
   if (method !== "POST") return null
   if (head === "work" && a === "v2") {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
     if (b === "items" && c && d === "assign" && segments.length === 5) {
       return { op: "work-v2-assign", word: "work.v2.assign", id: c }
+    }
+    if (b === "items" && c && d === "images" && segments.length === 5) {
+      return { op: "work-v2-image-create", word: "work.v2.image-create", id: c }
     }
     if (b === "proposals" && c && (d === "accept" || d === "reject") && segments.length === 5) {
       return { op: "work-v2-proposal-resolve", word: "work.v2.proposal-resolve", id: c, decision: d }
@@ -409,6 +438,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return null
   }
   if (head === "voice" && segments.length === 1) return { op: "voice", word: "voice" }
+  if (head === "intents" && segments.length === 1) return { op: "intents", word: "intents" }
   // The three requests that change something about notifications. `key` is
   // not among them: it is a read, and `relay-reader.ts` answers it.
   if (head === "push" && segments.length === 2) {
@@ -483,6 +513,8 @@ function spellingOf(route: WriteRoute): Spelling {
       return "flat"
     case "work-v2-create":
     case "work-v2-assign":
+    case "work-v2-image-create":
+    case "work-v2-image-delete":
     case "work-v2-proposal-resolve":
     case "work-v2-todo-create":
     case "work-v2-todo-action":
@@ -531,7 +563,7 @@ export class RelayWriter {
     try {
       const body = await this.carry(client, route, url, init)
       const ms = this.now() - started
-      if (route.op === "image") {
+      if (route.op === "image" || route.op === "work-v2-image") {
         this.host.note({ method, path, answer: "relay", word: route.word, ms })
         const picture = body as { media_type: string; bytes: Uint8Array }
         return new Response(picture.bytes as BodyInit, { status: 200, headers: { "content-type": picture.media_type } })
@@ -640,12 +672,33 @@ export class RelayWriter {
         const body = await bodyOf(init)
         return this.dictate(client, String(body.audio ?? ""), Number(body.rate))
       }
+      case "intents": {
+        const body = await bodyOf(init)
+        if (typeof client.voiceHost !== "function" || typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", "intents", 501)
+        }
+        const host = await client.voiceHost()
+        return client._machineRequest(host.machine, "intents", { text: String(body.text ?? "") }, "action", INTENT_TIMEOUT_MS)
+      }
       case "image": {
         const session = url.searchParams.get("session") ?? ""
         if (!session || typeof client.image !== "function") {
           throw failure("malformed_read", "a picture is read with the session it belongs to", 400)
         }
         return client.image(await this.identity(client, session), route.artifact)
+      }
+      case "work-v2-image": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", route.word, 501)
+        }
+        const answer = await client._machineRequest(this.host.machine, route.word, { id: route.artifact }, "read") as {
+          media_type?: unknown; data?: unknown
+        }
+        if (typeof answer.media_type !== "string" || typeof answer.data !== "string") {
+          throw failure("malformed_answer", "the reference image answer had no bytes", 502)
+        }
+        const raw = atob(answer.data)
+        return { media_type: answer.media_type, bytes: Uint8Array.from(raw, (c) => c.charCodeAt(0)) }
       }
       case "push-subscribe": {
         // The browser's own subscription object, whole. `push/api.ts` posts
@@ -765,26 +818,43 @@ export class RelayWriter {
         )
       }
       case "work-v2-create": {
-        return this.machineWorkV2(client, route.word, { item: await bodyOf(init) })
+        const item = await bodyOf(init)
+        if (typeof client._place !== "function") {
+          throw failure("cloud_not_carried", "the Cloud client cannot resolve this Project", 501)
+        }
+        const place = client._place(item.project_id)
+        if (place.machine !== this.host.machine) {
+          throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
+        }
+        return this.machineWorkV2(client, route.word, { item: { ...item, project_id: place.id } }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-assign": {
-        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-image-create": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-image-delete": {
+        return this.machineWorkV2(client, route.word, { id: route.id, image: route.image, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-proposal-resolve": {
-        return this.machineWorkV2(client, route.word, { id: route.id, decision: route.decision, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { id: route.id, decision: route.decision, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-todo-create": {
-        return this.machineWorkV2(client, route.word, { terminal: route.terminal, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { terminal: route.terminal, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-todo-action": {
-        return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, action: route.action, item: await bodyOf(init) })
+        return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, action: route.action, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "uncarried":
         throw failure("cloud_not_carried", route.word, 501)
     }
   }
 
-  private machineWorkV2(client: CloudWriteClient, word: CarriedWord, body: Record<string, unknown>): Promise<unknown> {
+  private machineWorkV2(client: CloudWriteClient, word: CarriedWord, body: Record<string, unknown>, request: string): Promise<unknown> {
+    if (request && typeof client._machineRequestAs === "function") {
+      return client._machineRequestAs(request, this.host.machine, word, body, "action")
+    }
     if (typeof client._machineRequest !== "function") {
       return Promise.reject(failure("cloud_not_carried", word, 501))
     }
