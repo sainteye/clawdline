@@ -38,6 +38,7 @@ type WorkV2View struct {
 	Item        work.ItemV2
 	Assignments []work.AssignmentV2
 	Documents   []work.DocumentV2
+	Images      []work.ImageV2
 	Steps       []work.StepV2
 	Events      []work.EventV2
 }
@@ -66,6 +67,10 @@ func mapWorkV2Error(err error) error {
 		return workV2Error(http.StatusInsufficientStorage, "direct_todos_full", "This Session holds as many direct to-dos as it keeps.")
 	case errors.Is(err, store.ErrWorkV2DocsFull):
 		return workV2Error(http.StatusInsufficientStorage, "documents_full", "This item holds as many documents as it keeps.")
+	case errors.Is(err, store.ErrWorkV2ImagesFull):
+		return workV2Error(http.StatusInsufficientStorage, "images_full", "This item already has six reference images.")
+	case errors.Is(err, store.ErrWorkV2ImageBytesFull):
+		return workV2Error(http.StatusInsufficientStorage, "image_bytes_full", "Reference-image storage is full; nothing was evicted.")
 	case errors.Is(err, store.ErrWorkV2StepsFull):
 		return workV2Error(http.StatusInsufficientStorage, "steps_full", "This item holds as many subtasks as it keeps.")
 	case errors.Is(err, store.ErrWorkV2ProposalsFull):
@@ -118,7 +123,7 @@ func (w *WorkSystemV2) Create(ctx context.Context, n NewWorkV2, file WorkV2Filer
 	if err := work.ValidateNewV2(i); err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
-	v := WorkV2View{Item: i, Assignments: []work.AssignmentV2{}, Documents: []work.DocumentV2{},
+	v := WorkV2View{Item: i, Assignments: []work.AssignmentV2{}, Documents: []work.DocumentV2{}, Images: []work.ImageV2{},
 		Steps: []work.StepV2{}, Events: []work.EventV2{}}
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
 		if err := tx.CreateItem(i, n.Actor, payload(map[string]any{"project_id": i.ProjectID, "kind": i.Kind})); err != nil {
@@ -147,6 +152,10 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 	if err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
+	images, err := w.Store.WorkV2Images(ctx, id)
+	if err != nil {
+		return WorkV2View{}, mapWorkV2Error(err)
+	}
 	steps, err := w.Store.WorkV2Steps(ctx, id)
 	if err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
@@ -155,7 +164,7 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 	if err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
-	return WorkV2View{Item: i, Assignments: a, Documents: d, Steps: steps, Events: events}, nil
+	return WorkV2View{Item: i, Assignments: a, Documents: d, Images: images, Steps: steps, Events: events}, nil
 }
 
 func (w *WorkSystemV2) List(ctx context.Context, project, owner string, terminal bool) ([]WorkV2View, bool, error) {
@@ -165,9 +174,111 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner string, terminal
 	}
 	out := make([]WorkV2View, 0, len(items))
 	for _, i := range items {
-		out = append(out, WorkV2View{Item: i})
+		images, imageErr := w.Store.WorkV2Images(ctx, i.ID)
+		if imageErr != nil {
+			return nil, false, mapWorkV2Error(imageErr)
+		}
+		out = append(out, WorkV2View{Item: i, Images: images})
 	}
 	return out, truncated, nil
+}
+
+type AddImageV2 struct {
+	ExpectedVersion int64
+	Title           string
+	Data            []byte
+	Width           int
+	Height          int
+	Position        int64
+	Actor           string
+}
+
+// AddImage stores a person-supplied reference. Sessions can read references
+// with the item, but only a person route can call this command.
+func (w *WorkSystemV2) AddImage(ctx context.Context, id string, c AddImageV2, file WorkV2Filer) (WorkV2View, error) {
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		if prev.Version != c.ExpectedVersion {
+			return store.ErrConflict
+		}
+		if prev.Phase.Terminal() {
+			return work.RefuseV2("item_terminal", "Reopen terminal work before changing its reference images.")
+		}
+		c.Title = strings.TrimSpace(c.Title)
+		if c.Title == "" {
+			c.Title = "reference image"
+		}
+		if len(c.Title) > workV2TitleLimit {
+			return work.RefuseV2("image_title_too_large", "A reference-image title is at most 240 bytes.")
+		}
+		if len(c.Data) == 0 || c.Width <= 0 || c.Height <= 0 {
+			return work.RefuseV2("invalid_image", "A reference image needs decoded PNG pixels.")
+		}
+		now := w.now()
+		image := work.ImageV2{ID: newWorkID(), WorkID: id, Title: c.Title, MediaType: "image/png",
+			ByteCount: int64(len(c.Data)), Width: c.Width, Height: c.Height, Position: c.Position,
+			CreatedBy: c.Actor, CreatedAt: now}
+		if err := tx.AddImage(image, c.Data); err != nil {
+			return err
+		}
+		next := prev
+		next.UpdatedAt = now
+		if err := tx.PutItem(prev, next, "image.added", c.Actor, payload(map[string]any{
+			"image_id": image.ID, "title": image.Title, "byte_count": image.ByteCount,
+			"width": image.Width, "height": image.Height})); err != nil {
+			return err
+		}
+		next.Version++
+		out = WorkV2View{Item: next, Images: []work.ImageV2{image}}
+		if file != nil {
+			if k, a, ok := file(out); ok {
+				return tx.CompleteReceipt(k, a)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
+func (w *WorkSystemV2) DeleteImage(ctx context.Context, id, imageID string, expected int64, actor string, file WorkV2Filer) (WorkV2View, error) {
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		if prev.Version != expected {
+			return store.ErrConflict
+		}
+		if prev.Phase.Terminal() {
+			return work.RefuseV2("item_terminal", "Reopen terminal work before changing its reference images.")
+		}
+		image, err := tx.Image(imageID)
+		if err != nil || image.WorkID != id {
+			return work.RefuseV2("image_not_found", "No such reference image belongs to this item.")
+		}
+		if err := tx.DeleteImage(imageID); err != nil {
+			return err
+		}
+		next := prev
+		next.UpdatedAt = w.now()
+		if err := tx.PutItem(prev, next, "image.deleted", actor, payload(map[string]string{"image_id": imageID})); err != nil {
+			return err
+		}
+		next.Version++
+		out = WorkV2View{Item: next}
+		if file != nil {
+			if k, a, ok := file(out); ok {
+				return tx.CompleteReceipt(k, a)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
 }
 
 type EditWorkV2 struct {

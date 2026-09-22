@@ -140,7 +140,21 @@ Item-local steps are a lightweight Agent aid:
 They do not create Board items, do not assign Sessions, and do not automatically advance the
 item's lifecycle. A completed item may retain its steps as history.
 
-### 5.4 Events
+### 5.4 Reference images
+
+A person may attach up to six raster reference images to a nonterminal item. The daemon decodes
+and normalizes each accepted source to PNG before storage; a filename, dimensions, byte count,
+position, actor, and timestamp remain as metadata. Board list reads carry only that metadata. Image
+bytes are fetched on demand through an opaque item-image id, including through a dedicated
+machine-scoped Cloud read, so an unassigned or Planning item does not need a Session identity to
+show its references.
+
+Reference images are person-owned input. Agents may read them with the item briefing and item
+view, but cannot add, replace, order, or delete them. Adding or deleting one is an optimistic,
+idempotent item mutation that increments the item version and appends an immutable event. A
+terminal item must be reopened before its references change.
+
+### 5.5 Events
 
 Every accepted mutation appends one typed event naming actor, subject, previous version, next
 version, evidence, and time. Events are immutable. Display state is read from the durable item and
@@ -209,6 +223,7 @@ that decision exists. A person may change the policy; the Agent may not.
 | Change Project/kind/deployment policy | yes | no | no | no |
 | Edit title/description | yes | yes | no | no |
 | Add/edit documents and steps | yes | yes | no | no |
+| Add/delete reference images | yes | no | no | no |
 | Advance/rewind execution phase | no | yes | no | validates only |
 | Create proposal | no | yes | yes, attributed to its root | no |
 | Accept/reject/edit proposal | yes | no | no | no |
@@ -253,8 +268,8 @@ Root-Assignment mechanics below the API boundary:
 5. resolve the conversation id;
 6. activate the assignment or record a visible failure.
 
-The briefing names the item, Project, objective, description, documents, steps, lifecycle commands,
-and ownership rules. It does not create a child relationship or give the Agent permission to
+The briefing names the item, Project, objective, description, reference images, documents, steps,
+lifecycle commands, and ownership rules. It does not create a child relationship or give the Agent permission to
 create another Board item.
 
 For a first assignment, failure returns the item to `created` with `assignment_failed`; the failed
@@ -369,6 +384,8 @@ The Board provides:
 - Feature/Issue cards with Project icon on every card;
 - an item detail view for description, documents, steps, execution, evidence, assignments, and
   immutable event history;
+- card thumbnails for durable reference images, with full-size viewing and person-only add/remove
+  controls on nonterminal items;
 - an assignment dialog for new or existing Sessions;
 - a separate proposal preview queue.
 
@@ -389,7 +406,10 @@ to the authoritative Board already filtered to that Project.
 
 Every new bound is registered in `internal/domain/capacity` before implementation. At minimum the
 design needs limits for open items, planning items, pending proposals, active assignments, item
-steps, item documents, direct Session to-dos, and page sizes. Hitting a limit refuses the new row;
+steps, item documents, reference-image count and bytes, direct Session to-dos, and page sizes.
+Reference images are limited to six per item, 5 MiB normalized per image, 15 MiB per item, and
+512 MiB across the store; an upload request is at most 18 MiB so its encrypted Cloud envelope also
+fits the wire bound. Hitting a limit refuses the new row;
 it does not evict a person's work.
 
 Writes use the common receipt mechanism and optimistic item versions. A transaction reads the

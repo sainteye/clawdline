@@ -28,3 +28,12 @@ test("interactive work controls announce the pointer and disabled state", () => 
   assert.match(styles, /\.work-page button[^}]*cursor: pointer/)
   assert.match(styles, /button:disabled[^}]*cursor: not-allowed/)
 })
+
+test("work cards add, show, open, and remove durable reference images", () => {
+  assert.match(source, /＋ 參考圖片/)
+  assert.match(source, /accept="image\/\*,\.heic,\.heif"/)
+  assert.match(source, /prepareReferencePicture/)
+  assert.match(source, /\/v1\/work\/v2\/images\/\$\{image\.id\}/)
+  assert.match(source, /deleteWorkV2Image/)
+  assert.match(styles, /\.work-reference-images/)
+})

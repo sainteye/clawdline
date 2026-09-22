@@ -324,6 +324,21 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkDocumentsPerItem: func() capacity.Reading {
 			return s.workV2CapacityReading("documents_per_item")
 		},
+		capacity.WorkImagesPerItem: func() capacity.Reading {
+			return s.workV2CapacityReading("images_per_item")
+		},
+		capacity.WorkImageBytes: func() capacity.Reading {
+			return s.workV2CapacityReading("image_bytes_max")
+		},
+		capacity.WorkImageBytesPerItem: func() capacity.Reading {
+			return s.workV2CapacityReading("image_bytes_per_item")
+		},
+		capacity.WorkImageBytesTotal: func() capacity.Reading {
+			return s.workV2CapacityReading("image_bytes_total")
+		},
+		capacity.WorkImageRequestBodyBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
 		capacity.WorkStepsPerItem: func() capacity.Reading {
 			return s.workV2CapacityReading("steps_per_item")
 		},

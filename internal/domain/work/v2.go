@@ -145,6 +145,22 @@ type DocumentV2 struct {
 	UpdatedAt time.Time
 }
 
+// ImageV2 is the durable metadata for one person-added visual reference. The
+// normalized PNG bytes stay in the store and are read through the shared image
+// route only when a viewer needs them; Board reads never carry image bodies.
+type ImageV2 struct {
+	ID        string
+	WorkID    string
+	Title     string
+	MediaType string
+	ByteCount int64
+	Width     int
+	Height    int
+	Position  int64
+	CreatedBy string
+	CreatedAt time.Time
+}
+
 type StepV2 struct {
 	ID          string
 	WorkID      string

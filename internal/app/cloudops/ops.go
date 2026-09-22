@@ -978,6 +978,23 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/work/v2/session-todos/" + segment(p.target)}
 			}},
 
+		op{name: "work.v2.image", read: true, shape: shapeImage,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				id, idOK := b.nonEmpty("id")
+				if !ok || !idOK || len(id) > 256 {
+					return plan{}, false
+				}
+				p.id = id
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/images/" + segment(p.id)}
+			}},
+
 		op{name: "work.v2.create",
 			decode: decodeWorkV2Document("item"),
 			route: func(p plan) LocalRequest {
@@ -988,6 +1005,20 @@ func init() {
 			decode: decodeWorkV2NamedDocument("id", "item"),
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/assign",
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "work.v2.image-create",
+			decode: decodeWorkV2NamedImageDocument,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/images",
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "work.v2.image-delete",
+			decode: decodeWorkV2ImageDelete,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "DELETE", Path: "/v1/work/v2/items/" + segment(p.id) + "/images/" + segment(p.item),
 					Body: p.document, Header: asDevice()}
 			}},
 
@@ -1721,7 +1752,10 @@ const pushBodyMaximumBytes = 64 << 10
 // workV2CloudBodyLimit matches the one body the local work-system route will
 // read. The Cloud bridge carries the person's JSON object without interpreting
 // it and refuses a larger envelope before routing it.
-const workV2CloudBodyLimit = 96 << 10
+const (
+	workV2CloudBodyLimit      = 96 << 10
+	workV2CloudImageBodyLimit = 18 << 20
+)
 
 // The header a Cloud write puts on its own local request, and the reason the
 // schedule words carry it.
@@ -1785,6 +1819,35 @@ func decodeWorkV2NamedDocument(idField, documentField string) func(body) (plan, 
 		p.id, p.document = id, document
 		return p, true
 	}
+}
+
+func decodeWorkV2NamedImageDocument(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "id", "item") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	id, idOK := b.nonEmpty("id")
+	document, documentOK := b.object("item", workV2CloudImageBodyLimit)
+	if !ok || p.request == "" || !idOK || len(id) > 256 || !documentOK {
+		return plan{}, false
+	}
+	p.id, p.document = id, document
+	return p, true
+}
+
+func decodeWorkV2ImageDelete(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "id", "image", "item") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	id, idOK := b.nonEmpty("id")
+	image, imageOK := b.nonEmpty("image")
+	document, documentOK := b.object("item", workV2CloudBodyLimit)
+	if !ok || p.request == "" || !idOK || len(id) > 256 || !imageOK || len(image) > 256 || !documentOK {
+		return plan{}, false
+	}
+	p.id, p.item, p.document = id, image, document
+	return p, true
 }
 
 func decodeWorkV2Action(field string, allowed ...string) func(body) (plan, bool) {

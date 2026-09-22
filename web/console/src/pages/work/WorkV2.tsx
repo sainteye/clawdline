@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
+import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
+import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js"
 import { Mark } from "../../session/List.js"
 import { failureWords, when } from "./shared.js"
 import {
   assignNewWorkV2,
   assignWorkV2,
+  addWorkV2Image,
   createWorkV2,
+  deleteWorkV2Image,
   readProjectPlaces,
   readSessionsForWorkV2,
   readWorkV2,
@@ -100,6 +104,7 @@ function BoardRegion({ title, items, sessions, busy, run }: { title: string; ite
 
 function WorkCard({ item, sessions, busy, run }: { item: WorkV2Item; sessions: SessionRow[]; busy: string; run: (key: string, task: () => Promise<unknown>) => Promise<boolean> }) {
   const [terminal, setTerminal] = useState("")
+  const imagePicker = useRef<HTMLInputElement>(null)
   const eligible = useMemo(() => sessions.filter((s) => s.cwd === item.project.path && s.sessionId), [sessions, item.project.path])
   const assignable = item.area === "execution" && !item.closed_at
   return <article className="work-card work-v2-card" data-work-id={item.id} data-phase={item.phase}>
@@ -107,6 +112,37 @@ function WorkCard({ item, sessions, busy, run }: { item: WorkV2Item; sessions: S
     <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>
     <h3>{item.title}</h3>
     <p>{item.description}</p>
+    {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
+      {item.images.map((image) => <figure key={image.id} className="work-reference-image">
+        <a href={`/v1/work/v2/images/${image.id}`} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`}>
+          <img src={`/v1/work/v2/images/${image.id}`} alt={image.title} width={image.width} height={image.height} loading="lazy" />
+        </a>
+        <figcaption title={image.title}>{image.title}</figcaption>
+        {!item.closed_at && <button type="button" aria-label={`移除參考圖片 ${image.title}`} disabled={!!busy}
+          onClick={() => void run(`image-delete-${image.id}`, () => deleteWorkV2Image(item, image.id))}>×</button>}
+      </figure>)}
+    </div>}
+    {!item.closed_at && <div className="work-reference-tools">
+      <input ref={imagePicker} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(event) => {
+        const files = Array.from(event.currentTarget.files ?? []).filter(isPicture)
+        event.currentTarget.value = ""
+        if (!files.length) return
+        void run(`image-add-${item.id}`, async () => {
+          if ((item.images?.length ?? 0) + files.length > 6) {
+            throw new RefusalError(507, { error: "images_full", detail: "Each item keeps at most six reference images." })
+          }
+          let version = item.version
+          for (let index = 0; index < files.length; index++) {
+            const picture = await prepareReferencePicture(files[index])
+            const answer = await addWorkV2Image(item.id, version, picture, (item.images?.length ?? 0) + index)
+            version = answer.item.version
+          }
+        })
+      }} />
+      <button className="chip" type="button" disabled={!!busy || (item.images?.length ?? 0) >= 6}
+        onClick={() => imagePicker.current?.click()}>＋ 參考圖片</button>
+      <small>{item.images?.length ?? 0} / 6</small>
+    </div>}
     <div className="work-meta"><span>{item.project.available ? (item.condition || "正常") : "project_unavailable"}</span><span>更新 {when(item.updated_at)}</span>{item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}</div>
     {assignable && <div className="work-assignment">
       <select className="work-input" value={terminal} onChange={(e) => setTerminal(e.target.value)} aria-label="指派既有 Session">

@@ -319,6 +319,19 @@ export interface WorkV2Item {
   closed_at: number | null
   cycle: number
   version: number
+  images?: WorkV2Image[]
+}
+
+export interface WorkV2Image {
+  id: string
+  title: string
+  media_type: "image/png"
+  byte_count: number
+  width: number
+  height: number
+  position: number
+  created_by: string
+  created_at: number
 }
 
 export interface DirectTodoV2 {
@@ -382,6 +395,21 @@ export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude" 
     assistant,
     model: "default",
   })
+
+export const addWorkV2Image = (itemID: string, expectedVersion: number, picture: {
+  url: string
+  name: string
+}, position: number) => mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${itemID}/images`, {
+  expected_version: expectedVersion,
+  title: picture.name,
+  data_url: picture.url,
+  position,
+})
+
+export const deleteWorkV2Image = (item: WorkV2Item, imageID: string) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/images/${imageID}`, {
+    expected_version: item.version,
+  }, "DELETE")
 
 export const readSessionWorkV2 = (terminalID: string) =>
   call<SessionWorkV2>(`/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}`)
