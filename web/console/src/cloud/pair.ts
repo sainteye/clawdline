@@ -231,6 +231,15 @@ interface InvitationScope {
   sessionStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void }
 }
 
+interface InvitationEventTarget {
+  addEventListener(name: string, listener: () => void): void
+  removeEventListener(name: string, listener: () => void): void
+}
+
+interface InvitationWatchScope extends InvitationScope, InvitationEventTarget {
+  document: InvitationEventTarget
+}
+
 /**
  * The machine's link this page was opened with, or the one it was opened with
  * before signing in sent it away and back.
@@ -261,6 +270,36 @@ export function takeInvitation(scope: InvitationScope): string | null {
     raw = null
   }
   return raw || null
+}
+
+/**
+ * Read a machine invitation now and whenever an already-open app can receive
+ * another address.
+ *
+ * iOS can bring an installed Home Screen app back for an external link
+ * without mounting it again or delivering `hashchange`. Depending on how the
+ * suspended window resumes, WebKit exposes the new address through focus,
+ * pageshow, or visibilitychange instead. Read on all of those lifecycle
+ * signals as well as browser navigation, and de-duplicate the one-use secret:
+ * one resume commonly emits several signals, but must not restart the pairing
+ * run several times.
+ */
+export function watchInvitations(scope: InvitationWatchScope, receive: (raw: string) => void): () => void {
+  let last = ""
+  const read = () => {
+    const raw = takeInvitation(scope)
+    if (!raw || raw === last) return
+    last = raw
+    receive(raw)
+  }
+  const windowEvents = ["hashchange", "popstate", "pageshow", "focus"]
+  for (const name of windowEvents) scope.addEventListener(name, read)
+  scope.document.addEventListener("visibilitychange", read)
+  read()
+  return () => {
+    for (const name of windowEvents) scope.removeEventListener(name, read)
+    scope.document.removeEventListener("visibilitychange", read)
+  }
 }
 
 /** Forget a link once it has been answered, refused or given up on: it is good for one answer. */

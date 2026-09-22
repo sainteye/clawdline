@@ -10,7 +10,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts. It sits on one line because the directive answers for the line the path is on.
-import { INVITATION_KEY, PairingRun, dropInvitation, invitationInHash, pairingCommand, pairingEnding, takeInvitation, type OpenedPairing, type PairState, type PairStart, type PendingOffer } from "./pair.ts"
+import { INVITATION_KEY, PairingRun, dropInvitation, invitationInHash, pairingCommand, pairingEnding, takeInvitation, watchInvitations, type OpenedPairing, type PairState, type PairStart, type PendingOffer } from "./pair.ts"
 
 const OFFER: PendingOffer = {
   pairingID: "pair_1",
@@ -200,6 +200,42 @@ test("only #pair= with something after it is a machine's link", () => {
   assert.equal(invitationInHash("#page=devices"), null)
   assert.equal(invitationInHash(""), null)
   assert.equal(invitationInHash("#pair=abc"), "abc")
+})
+
+test("an already-open Home Screen app reads a pairing link when iOS brings it forward", () => {
+  const opened = tab("")
+  const windowListeners = new Map<string, () => void>()
+  const documentListeners = new Map<string, () => void>()
+  const scope = {
+    ...opened,
+    addEventListener: (name: string, listener: () => void) => void windowListeners.set(name, listener),
+    removeEventListener: (name: string) => void windowListeners.delete(name),
+    document: {
+      addEventListener: (name: string, listener: () => void) => void documentListeners.set(name, listener),
+      removeEventListener: (name: string) => void documentListeners.delete(name),
+    },
+  }
+  const invitations: string[] = []
+  const stop = watchInvitations(scope, (raw) => invitations.push(raw))
+
+  scope.location.hash = "#pair=first"
+  windowListeners.get("focus")?.()
+  assert.deepEqual(invitations, ["first"])
+  assert.deepEqual(opened.replaced, ["/"])
+
+  // WebKit may send more than one resume signal. The one-use invitation is
+  // shown once rather than restarting the pairing run for every signal.
+  windowListeners.get("pageshow")?.()
+  documentListeners.get("visibilitychange")?.()
+  assert.deepEqual(invitations, ["first"])
+
+  scope.location.hash = "#pair=second"
+  windowListeners.get("hashchange")?.()
+  assert.deepEqual(invitations, ["first", "second"])
+
+  stop()
+  assert.equal(windowListeners.size, 0)
+  assert.equal(documentListeners.size, 0)
 })
 
 test("the wait between claims calls the timer as a browser requires: with no receiver", async () => {

@@ -26,7 +26,7 @@ import { setAccountMachines, setMachineForgetting, setMachinePairing } from "../
 import { machinePresentation } from "../legacy/js/session/selection.js"
 import { accountMachineNames, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
 import { machineSeenWord } from "./machine-seen.js"
-import { PairingRun, dropInvitation, takeInvitation, type PairStart, type PairState } from "./pair.js"
+import { PairingRun, dropInvitation, watchInvitations, type PairStart, type PairState } from "./pair.js"
 import {
   browserPendingPairings,
   durablePairViewer,
@@ -503,12 +503,11 @@ export function CloudGate({ declared }: { declared: string }) {
 
   /**
    * A machine's pairing link, when this page was opened from one — at boot,
-   * or in place once a standalone window keeps the link (`same-page-links.ts`).
-   * It is read, taken out of the address, and waits for a press.
+   * in place once a standalone window keeps the link (`same-page-links.ts`),
+   * or when iOS brings an already-open Home Screen app back to the front. It
+   * is read, taken out of the address, and waits for a press.
    */
-  const readInvitation = useCallback(() => {
-    const raw = takeInvitation(window)
-    if (!raw) return
+  const readInvitation = useCallback((raw: string) => {
     run.current?.stop()
     run.current = null
     setPairState({ phase: "idle" })
@@ -524,10 +523,9 @@ export function CloudGate({ declared }: { declared: string }) {
   }, [])
 
   useEffect(() => {
-    readInvitation()
-    window.addEventListener("hashchange", readInvitation)
+    const stopWatching = watchInvitations(window, readInvitation)
     return () => {
-      window.removeEventListener("hashchange", readInvitation)
+      stopWatching()
       run.current?.stop()
     }
   }, [readInvitation])
