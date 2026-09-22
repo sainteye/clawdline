@@ -107,3 +107,32 @@ func TestPersonCommandsVersionReferenceImages(t *testing.T) {
 		t.Fatalf("deleted image remains: %+v", full.Images)
 	}
 }
+
+func TestPersonAddsImagesOnlyBeforeDirectTodoDelivery(t *testing.T) {
+	w := newWorkV2Test(t)
+	todo, err := w.CreateDirectTodo(context.Background(), NewDirectTodoV2{
+		SessionID: "session-a", Text: "Use this screenshot", Actor: "local",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	added, image, err := w.AddDirectTodoImage(context.Background(), todo.ID, AddDirectTodoImageV2{
+		ExpectedVersion: todo.Version, SessionID: todo.SessionID, Title: "screen.png",
+		Data: []byte("png"), Width: 3, Height: 2, Actor: "local",
+	}, nil)
+	if err != nil || added.Version != todo.Version+1 || image.TodoID != todo.ID {
+		t.Fatalf("add: %+v %+v %v", added, image, err)
+	}
+	images, err := w.DirectTodoImages(context.Background(), todo.ID)
+	if err != nil || len(images) != 1 || images[0].Title != "screen.png" {
+		t.Fatalf("read: %+v %v", images, err)
+	}
+	if _, err := w.MarkDirectTodoSent(context.Background(), todo.ID, todo.SessionID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := w.AddDirectTodoImage(context.Background(), todo.ID, AddDirectTodoImageV2{
+		ExpectedVersion: added.Version + 1, SessionID: todo.SessionID, Data: []byte("png"), Width: 1, Height: 1,
+	}, nil); err == nil {
+		t.Fatal("a delivered to-do accepted another image")
+	}
+}

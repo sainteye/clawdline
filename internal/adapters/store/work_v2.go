@@ -120,6 +120,20 @@ CREATE TABLE IF NOT EXISTS session_direct_todos (
   version      INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS session_direct_todos_owner ON session_direct_todos(session_id, completed_at, created_at, id);
+CREATE TABLE IF NOT EXISTS session_direct_todo_images (
+  id         TEXT PRIMARY KEY,
+  todo_id    TEXT NOT NULL REFERENCES session_direct_todos(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  media_type TEXT NOT NULL CHECK (media_type = 'image/png'),
+  data       BLOB NOT NULL,
+  byte_count INTEGER NOT NULL,
+  width      INTEGER NOT NULL,
+  height     INTEGER NOT NULL,
+  position   INTEGER NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS session_direct_todo_images_todo ON session_direct_todo_images(todo_id, position, id);
 CREATE TABLE IF NOT EXISTS work_v2_proposals (
   id                   TEXT PRIMARY KEY,
   project_id           TEXT NOT NULL,
@@ -155,15 +169,17 @@ const (
 )
 
 var (
-	ErrNoWorkV2             = errors.New("no such v2 work item")
-	ErrWorkV2Full           = errors.New("v2 work items full")
-	ErrPlanningV2Full       = errors.New("v2 planning items full")
-	ErrDirectTodoFull       = errors.New("direct session todos full")
-	ErrWorkV2DocsFull       = errors.New("v2 work documents full")
-	ErrWorkV2ImagesFull     = errors.New("v2 work images full")
-	ErrWorkV2ImageBytesFull = errors.New("v2 work image bytes full")
-	ErrWorkV2StepsFull      = errors.New("v2 work steps full")
-	ErrWorkV2ProposalsFull  = errors.New("v2 work proposals full")
+	ErrNoWorkV2                 = errors.New("no such v2 work item")
+	ErrWorkV2Full               = errors.New("v2 work items full")
+	ErrPlanningV2Full           = errors.New("v2 planning items full")
+	ErrDirectTodoFull           = errors.New("direct session todos full")
+	ErrDirectTodoImagesFull     = errors.New("direct session todo images full")
+	ErrDirectTodoImageBytesFull = errors.New("direct session todo image bytes full")
+	ErrWorkV2DocsFull           = errors.New("v2 work documents full")
+	ErrWorkV2ImagesFull         = errors.New("v2 work images full")
+	ErrWorkV2ImageBytesFull     = errors.New("v2 work image bytes full")
+	ErrWorkV2StepsFull          = errors.New("v2 work steps full")
+	ErrWorkV2ProposalsFull      = errors.New("v2 work proposals full")
 )
 
 func openWorkV2(db *sql.DB) error {
@@ -523,7 +539,9 @@ func (t *WorkV2Tx) AddImage(i work.ImageV2, data []byte) error {
 	if int64(len(data)) > WorkV2ImageItemLimit-itemBytes {
 		return ErrWorkV2ImageBytesFull
 	}
-	if err := t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(SUM(byte_count),0) FROM work_v2_images`).Scan(&totalBytes); err != nil {
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT
+    COALESCE((SELECT SUM(byte_count) FROM work_v2_images),0) +
+    COALESCE((SELECT SUM(byte_count) FROM session_direct_todo_images),0)`).Scan(&totalBytes); err != nil {
 		return err
 	}
 	if int64(len(data)) > WorkV2ImageTotalLimit-totalBytes {
@@ -589,14 +607,15 @@ func (s *Store) WorkV2Images(ctx context.Context, workID string) ([]work.ImageV2
 	return out, rows.Err()
 }
 
-// WorkV2ImageBytes returns a durable Board reference image without exposing
-// the database or its BLOB column to the HTTP layer.
+// WorkV2ImageBytes returns a durable Board or Session-to-do reference image
+// without exposing the database or either BLOB column to the HTTP layer.
 func (s *Store) WorkV2ImageBytes(ctx context.Context, id string) ([]byte, bool, error) {
 	if err := reading(); err != nil {
 		return nil, false, err
 	}
 	var data []byte
-	err := s.db.QueryRowContext(ctx, `SELECT data FROM work_v2_images WHERE id=?`, id).Scan(&data)
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM work_v2_images WHERE id=?
+    UNION ALL SELECT data FROM session_direct_todo_images WHERE id=? LIMIT 1`, id, id).Scan(&data)
 	if err == sql.ErrNoRows {
 		return nil, false, nil
 	}
@@ -723,6 +742,94 @@ func (t *WorkV2Tx) CreateDirectTodo(td work.DirectTodoV2) error {
 	return err
 }
 
+func (t *WorkV2Tx) AddDirectTodoImage(i work.DirectTodoImageV2, data []byte) error {
+	var count, todoBytes, totalBytes int64
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*),COALESCE(SUM(byte_count),0)
+    FROM session_direct_todo_images WHERE todo_id=?`, i.TodoID).Scan(&count, &todoBytes); err != nil {
+		return err
+	}
+	if count >= WorkV2ImageLimit {
+		return ErrDirectTodoImagesFull
+	}
+	if int64(len(data)) > WorkV2ImageItemLimit-todoBytes {
+		return ErrDirectTodoImageBytesFull
+	}
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT
+    COALESCE((SELECT SUM(byte_count) FROM work_v2_images),0) +
+    COALESCE((SELECT SUM(byte_count) FROM session_direct_todo_images),0)`).Scan(&totalBytes); err != nil {
+		return err
+	}
+	if int64(len(data)) > WorkV2ImageTotalLimit-totalBytes {
+		return ErrDirectTodoImageBytesFull
+	}
+	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO session_direct_todo_images
+    (id,todo_id,title,media_type,data,byte_count,width,height,position,created_by,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`, i.ID, i.TodoID, i.Title, i.MediaType, data, len(data), i.Width,
+		i.Height, i.Position, i.CreatedBy, i.CreatedAt.Unix())
+	if err == nil {
+		t.wrote++
+	}
+	return err
+}
+
+func scanDirectTodoImageV2(sc scanner) (work.DirectTodoImageV2, error) {
+	var i work.DirectTodoImageV2
+	var created int64
+	err := sc.Scan(&i.ID, &i.TodoID, &i.Title, &i.MediaType, &i.ByteCount, &i.Width, &i.Height,
+		&i.Position, &i.CreatedBy, &created)
+	if err != nil {
+		return i, err
+	}
+	i.CreatedAt = time.Unix(created, 0)
+	return i, nil
+}
+
+const directTodoImageV2Columns = `id,todo_id,title,media_type,byte_count,width,height,position,created_by,created_at`
+
+func (s *Store) DirectTodoV2Images(ctx context.Context, todoID string) ([]work.DirectTodoImageV2, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+directTodoImageV2Columns+`
+    FROM session_direct_todo_images WHERE todo_id=? ORDER BY position,id`, todoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []work.DirectTodoImageV2{}
+	for rows.Next() {
+		i, err := scanDirectTodoImageV2(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, i)
+	}
+	return out, rows.Err()
+}
+
+type DirectTodoImagePayload struct {
+	Image work.DirectTodoImageV2
+	Data  []byte
+}
+
+func (s *Store) DirectTodoV2ImagePayloads(ctx context.Context, todoID string) ([]DirectTodoImagePayload, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+directTodoImageV2Columns+`,data
+    FROM session_direct_todo_images WHERE todo_id=? ORDER BY position,id`, todoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []DirectTodoImagePayload{}
+	for rows.Next() {
+		var p DirectTodoImagePayload
+		var created int64
+		if err := rows.Scan(&p.Image.ID, &p.Image.TodoID, &p.Image.Title, &p.Image.MediaType, &p.Image.ByteCount,
+			&p.Image.Width, &p.Image.Height, &p.Image.Position, &p.Image.CreatedBy, &created, &p.Data); err != nil {
+			return nil, err
+		}
+		p.Image.CreatedAt = time.Unix(created, 0)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (t *WorkV2Tx) DirectTodo(id string) (work.DirectTodoV2, error) {
 	return scanDirectTodoV2(t.tx.QueryRowContext(t.ctx, `SELECT `+directTodoV2Columns+`
     FROM session_direct_todos WHERE id=?`, id))
@@ -811,7 +918,7 @@ func (s *Store) WorkV2Counts(ctx context.Context) (map[string]int64, error) {
 	for name, q := range map[string]string{
 		"items": `SELECT COUNT(*) FROM work_v2_items`, "assignments": `SELECT COUNT(*) FROM work_v2_assignments`,
 		"documents": `SELECT COUNT(*) FROM work_v2_documents`, "steps": `SELECT COUNT(*) FROM work_v2_steps`,
-		"images": `SELECT COUNT(*) FROM work_v2_images`,
+		"images": `SELECT COUNT(*) FROM work_v2_images`, "todo_images": `SELECT COUNT(*) FROM session_direct_todo_images`,
 		"events": `SELECT COUNT(*) FROM work_v2_events`, "direct_todos": `SELECT COUNT(*) FROM session_direct_todos`,
 		"proposals": `SELECT COUNT(*) FROM work_v2_proposals`,
 	} {
@@ -918,17 +1025,23 @@ func (s *Store) WorkV2Proposals(ctx context.Context, state string, limit int) ([
 func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, error) {
 	out := map[string]int64{}
 	queries := map[string]string{
-		"open":                 `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
-		"planning":             `SELECT COUNT(*) FROM work_v2_items WHERE kind IN ('epic','refactor','plan') AND closed_at IS NULL`,
-		"assignments":          `SELECT COUNT(*) FROM work_v2_assignments`,
-		"documents_per_item":   `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents GROUP BY work_id)`,
-		"images_per_item":      `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_images GROUP BY work_id)`,
-		"image_bytes_max":      `SELECT COALESCE(MAX(byte_count),0) FROM work_v2_images`,
-		"image_bytes_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT SUM(byte_count) n FROM work_v2_images GROUP BY work_id)`,
-		"image_bytes_total":    `SELECT COALESCE(SUM(byte_count),0) FROM work_v2_images`,
-		"steps_per_item":       `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_steps GROUP BY work_id)`,
-		"direct_todos":         `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM session_direct_todos WHERE completed_at IS NULL GROUP BY session_id)`,
-		"proposals":            `SELECT COUNT(*) FROM work_v2_proposals WHERE state='pending'`,
+		"open":               `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
+		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind IN ('epic','refactor','plan') AND closed_at IS NULL`,
+		"assignments":        `SELECT COUNT(*) FROM work_v2_assignments`,
+		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents GROUP BY work_id)`,
+		"images_per_item": `SELECT COALESCE(MAX(n),0) FROM (
+      SELECT COUNT(*) n FROM work_v2_images GROUP BY work_id
+      UNION ALL SELECT COUNT(*) n FROM session_direct_todo_images GROUP BY todo_id)`,
+		"image_bytes_max": `SELECT COALESCE(MAX(byte_count),0) FROM (
+      SELECT byte_count FROM work_v2_images UNION ALL SELECT byte_count FROM session_direct_todo_images)`,
+		"image_bytes_per_item": `SELECT COALESCE(MAX(n),0) FROM (
+      SELECT SUM(byte_count) n FROM work_v2_images GROUP BY work_id
+      UNION ALL SELECT SUM(byte_count) n FROM session_direct_todo_images GROUP BY todo_id)`,
+		"image_bytes_total": `SELECT COALESCE(SUM(byte_count),0) FROM (
+      SELECT byte_count FROM work_v2_images UNION ALL SELECT byte_count FROM session_direct_todo_images)`,
+		"steps_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_steps GROUP BY work_id)`,
+		"direct_todos":   `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM session_direct_todos WHERE completed_at IS NULL GROUP BY session_id)`,
+		"proposals":      `SELECT COUNT(*) FROM work_v2_proposals WHERE state='pending'`,
 	}
 	for name, query := range queries {
 		var n int64

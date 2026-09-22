@@ -233,6 +233,7 @@ export type WriteRoute =
   | { op: "work-v2-image-delete"; word: Carried<"work.v2.image-delete">; id: string; image: string }
   | { op: "work-v2-proposal-resolve"; word: Carried<"work.v2.proposal-resolve">; id: string; decision: "accept" | "reject" }
   | { op: "work-v2-todo-create"; word: Carried<"work.v2.todo-create">; terminal: string }
+  | { op: "work-v2-todo-image-create"; word: Carried<"work.v2.todo-image-create">; terminal: string; id: string }
   | { op: "work-v2-todo-action"; word: Carried<"work.v2.todo-action">; terminal: string; id: string; action: "send" | "complete" | "delete" }
   // `interrupt` and `title` are not Cloud words at all — not here and not in
   // the Swift app's vocabulary — so this one is a plain string.
@@ -402,6 +403,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     const todoID = segments[4]
     const action = segments[5]
+    if (b === "session-todos" && c && todoID && action === "images" && segments.length === 6) {
+      return { op: "work-v2-todo-image-create", word: "work.v2.todo-image-create", terminal: c, id: todoID }
+    }
     if (b === "session-todos" && c && todoID && (action === "send" || action === "complete" || action === "delete") && segments.length === 6) {
       return { op: "work-v2-todo-action", word: "work.v2.todo-action", terminal: c, id: todoID, action }
     }
@@ -527,6 +531,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "work-v2-image-delete":
     case "work-v2-proposal-resolve":
     case "work-v2-todo-create":
+    case "work-v2-todo-image-create":
     case "work-v2-todo-action":
       return "flat"
     default:
@@ -858,6 +863,9 @@ export class RelayWriter {
       }
       case "work-v2-todo-create": {
         return this.machineWorkV2(client, route.word, { terminal: route.terminal, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-todo-image-create": {
+        return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-todo-action": {
         return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, action: route.action, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))

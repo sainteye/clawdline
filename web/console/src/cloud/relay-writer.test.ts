@@ -251,6 +251,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
   assert.equal(writeRoute("GET", "/v1/work/v2/images/img-1")?.word, "work.v2.image")
   assert.equal(writeRoute("POST", "/v1/work/v2/items/w1/images")?.word, "work.v2.image-create")
   assert.equal(writeRoute("DELETE", "/v1/work/v2/items/w1/images/img-1")?.word, "work.v2.image-delete")
+  assert.equal(writeRoute("POST", "/v1/work/v2/session-todos/%251/t1/images")?.word, "work.v2.todo-image-create")
 })
 
 test("a send goes as the machine's `send` under the row's own identity, and answers as the local route does", async () => {
@@ -508,6 +509,8 @@ test("Work v2 person actions keep their exact route subject and body across Clou
       "work.v2.image-create", { id: "w1", item: { expected_version: 2, title: "state.png", data_url: "data:image/png;base64,cG5n" } }],
     ["/v1/work/v2/proposals/pr1/accept", {}, "work.v2.proposal-resolve", { id: "pr1", decision: "accept", item: {} }],
     ["/v1/work/v2/session-todos/%251", { text: "Ship it" }, "work.v2.todo-create", { terminal: "%1", item: { text: "Ship it" } }],
+    ["/v1/work/v2/session-todos/%251/t1/images", { expected_version: 1, title: "screen.png", data_url: "data:image/png;base64,cG5n" },
+      "work.v2.todo-image-create", { terminal: "%1", id: "t1", item: { expected_version: 1, title: "screen.png", data_url: "data:image/png;base64,cG5n" } }],
     ["/v1/work/v2/session-todos/%251/t1/send", {}, "work.v2.todo-action", { terminal: "%1", id: "t1", action: "send", item: {} }],
   ]
   for (const [path, sent, word, body] of cases) {

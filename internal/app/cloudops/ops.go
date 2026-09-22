@@ -1054,6 +1054,13 @@ func init() {
 					Body: p.document, Header: asDevice()}
 			}},
 
+		op{name: "work.v2.todo-image-create",
+			decode: decodeWorkV2TodoImageDocument,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/session-todos/" + segment(p.target) + "/" +
+					segment(p.id) + "/images", Body: p.document, Header: asDevice()}
+			}},
+
 		op{name: "work.v2.todo-action",
 			decode: decodeWorkV2TodoAction,
 			route: func(p plan) LocalRequest {
@@ -1924,6 +1931,21 @@ func decodeWorkV2TerminalDocument(b body) (plan, bool) {
 		return plan{}, false
 	}
 	p.target, p.document = terminal, document
+	return p, true
+}
+
+func decodeWorkV2TodoImageDocument(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "terminal", "id", "item") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	terminal, terminalOK := b.nonEmpty("terminal")
+	id, idOK := b.nonEmpty("id")
+	document, documentOK := b.object("item", workV2CloudImageBodyLimit)
+	if !ok || p.request == "" || !terminalOK || len(terminal) > 256 || !idOK || len(id) > 256 || !documentOK {
+		return plan{}, false
+	}
+	p.target, p.id, p.document = terminal, id, document
 	return p, true
 }
 

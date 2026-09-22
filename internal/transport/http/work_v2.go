@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -778,23 +779,30 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 }
 
 type directTodoV2Wire struct {
-	ID          string `json:"id"`
-	Text        string `json:"text"`
-	CreatedAt   int64  `json:"created_at"`
-	SentAt      *int64 `json:"sent_at"`
-	ReadAt      *int64 `json:"read_at"`
-	CompletedAt *int64 `json:"completed_at"`
-	CompletedBy string `json:"completed_by,omitempty"`
-	Version     int64  `json:"version"`
+	ID          string            `json:"id"`
+	Text        string            `json:"text"`
+	CreatedAt   int64             `json:"created_at"`
+	SentAt      *int64            `json:"sent_at"`
+	ReadAt      *int64            `json:"read_at"`
+	CompletedAt *int64            `json:"completed_at"`
+	CompletedBy string            `json:"completed_by,omitempty"`
+	Version     int64             `json:"version"`
+	Images      []workV2ImageWire `json:"images,omitempty"`
 }
 
-func directTodoWire(td work.DirectTodoV2) directTodoV2Wire {
-	return directTodoV2Wire{ID: td.ID, Text: td.Text, CreatedAt: td.CreatedAt.Unix(), SentAt: optionalUnix(td.SentAt),
+func directTodoWire(td work.DirectTodoV2, images []work.DirectTodoImageV2) directTodoV2Wire {
+	out := directTodoV2Wire{ID: td.ID, Text: td.Text, CreatedAt: td.CreatedAt.Unix(), SentAt: optionalUnix(td.SentAt),
 		ReadAt: optionalUnix(td.ReadAt), CompletedAt: optionalUnix(td.CompletedAt), CompletedBy: td.CompletedBy, Version: td.Version}
+	for _, image := range images {
+		out.Images = append(out.Images, workV2ImageWire{ID: image.ID, Title: image.Title, MediaType: image.MediaType,
+			ByteCount: image.ByteCount, Width: image.Width, Height: image.Height, Position: image.Position,
+			CreatedBy: image.CreatedBy, CreatedAt: image.CreatedAt.Unix()})
+	}
+	return out
 }
 
-func directTodoAnswer(td work.DirectTodoV2) []byte {
-	b, _ := json.Marshal(map[string]any{"ok": true, "todo": directTodoWire(td)})
+func directTodoAnswer(td work.DirectTodoV2, images []work.DirectTodoImageV2) []byte {
+	b, _ := json.Marshal(map[string]any{"ok": true, "todo": directTodoWire(td, images)})
 	return b
 }
 
@@ -823,7 +831,12 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		}
 		todos := make([]directTodoV2Wire, 0, len(rows))
 		for _, td := range rows {
-			todos = append(todos, directTodoWire(td))
+			images, imageErr := s.workV2().DirectTodoImages(r.Context(), td.ID)
+			if imageErr != nil {
+				s.writeWorkV2Error(w, imageErr)
+				return
+			}
+			todos = append(todos, directTodoWire(td, images))
 		}
 		assigned := make([]workV2ItemWire, 0, len(items))
 		for _, item := range items {
@@ -848,9 +861,64 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		var answer []byte
 		_, err := s.workV2().CreateDirectTodo(r.Context(), app.NewDirectTodoV2{SessionID: conversation, Text: body.Text, Actor: actor},
 			func(td work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-				answer = directTodoAnswer(td)
+				answer = directTodoAnswer(td, nil)
 				return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
 			})
+		if err != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write(answer)
+		return
+	}
+	if len(parts) == 3 && parts[2] == "images" {
+		if r.Method != http.MethodPost {
+			writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A Session to-do reference image is added with POST.")
+			return
+		}
+		var body struct {
+			ExpectedVersion int64  `json:"expected_version"`
+			Title           string `json:"title"`
+			DataURL         string `json:"data_url"`
+			Position        int64  `json:"position"`
+		}
+		raw, ok := readWorkV2BodyAtMost(w, r, &body, workV2ImageBodyLimit, "A reference-image request is at most 18 MiB.")
+		if !ok {
+			return
+		}
+		bytes, ok := artifacts.DecodeDataURL(body.DataURL)
+		if !ok {
+			writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_image", "Choose a supported raster image.")
+			return
+		}
+		policy := artifacts.ProductionPolicy
+		policy.MaxEncodedBytes = workV2ImageByteLimit
+		normalized, normalizeErr := artifacts.Normalize(r.Context(), bytes, policy)
+		if normalizeErr != nil {
+			var refusal artifacts.Refusal
+			if errors.As(normalizeErr, &refusal) {
+				writeRefusal(w, refusal.Status, refusal.Code, refusal.Message)
+			} else {
+				writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_image", "Choose a supported raster image.")
+			}
+			return
+		}
+		k, ok := s.beginWorkV2Write(w, r, actor, raw)
+		if !ok {
+			return
+		}
+		var answer []byte
+		_, _, err := s.workV2().AddDirectTodoImage(r.Context(), parts[1], app.AddDirectTodoImageV2{
+			ExpectedVersion: body.ExpectedVersion, SessionID: conversation, Title: body.Title,
+			Data: normalized.PNG, Width: normalized.Width, Height: normalized.Height,
+			Position: body.Position, Actor: actor,
+		}, func(td work.DirectTodoV2, image work.DirectTodoImageV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			answer = directTodoAnswer(td, []work.DirectTodoImageV2{image})
+			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
+		})
 		if err != nil {
 			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
 			s.writeWorkV2Error(w, err)
@@ -894,20 +962,29 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			err = &app.WorkError{Status: http.StatusNotFound, Code: "todo_not_found", Message: "No such direct to-do belongs to this Session."}
 			break
 		}
-		if _, sendErr := s.actions().Send(r.Context(), terminalID, found.Text); sendErr != nil {
+		pictures, pictureErr := s.store.DirectTodoV2ImagePayloads(r.Context(), found.ID)
+		if pictureErr != nil {
+			err = &app.WorkError{Status: http.StatusServiceUnavailable, Code: "store_unavailable", Message: pictureErr.Error()}
+			break
+		}
+		dataURLs := make([]string, 0, len(pictures))
+		for _, picture := range pictures {
+			dataURLs = append(dataURLs, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(picture.Data))
+		}
+		if _, sendErr := s.actions().SendWithPictures(r.Context(), terminalID, found.Text, dataURLs); sendErr != nil {
 			err = &app.WorkError{Status: http.StatusBadGateway, Code: "send_failed", Message: sendErr.Error()}
 			break
 		}
 		var td work.DirectTodoV2
 		td, err = s.workV2().MarkDirectTodoSent(r.Context(), id, conversation, time.Now())
 		if err == nil {
-			answer = directTodoAnswer(td)
+			answer = directTodoAnswer(td, nil)
 			_ = s.store.CompleteReceipt(r.Context(), k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer})
 		}
 	case "complete":
 		_, err = s.workV2().CompleteDirectTodo(r.Context(), id, conversation, actor, true,
 			func(td work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-				answer = directTodoAnswer(td)
+				answer = directTodoAnswer(td, nil)
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 			})
 	case "delete":
@@ -1096,7 +1173,12 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			}
 			out := make([]directTodoV2Wire, 0, len(rows))
 			for _, td := range rows {
-				out = append(out, directTodoWire(td))
+				images, imageErr := s.workV2().DirectTodoImages(r.Context(), td.ID)
+				if imageErr != nil {
+					s.writeWorkV2Error(w, imageErr)
+					return
+				}
+				out = append(out, directTodoWire(td, images))
 			}
 			writeJSON(w, map[string]any{"ok": true, "direct_todos": out, "truncated": truncated})
 			return
@@ -1114,7 +1196,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			var answer []byte
 			_, err := s.workV2().CompleteDirectTodo(r.Context(), parts[2], sessionID, sessionID, false,
 				func(td work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-					answer = directTodoAnswer(td)
+					answer = directTodoAnswer(td, nil)
 					return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 				})
 			if err != nil {
