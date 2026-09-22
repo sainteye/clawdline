@@ -349,6 +349,7 @@ export interface DirectTodoV2 {
 export interface SessionWorkV2 {
   ok: boolean
   assigned_items: WorkV2Item[]
+  recent_items: WorkV2Item[]
   direct_todos: DirectTodoV2[]
   truncated: boolean
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image } from "../pages/work/api.js"
+import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
@@ -79,10 +79,20 @@ export function Todos({ row, agentCount, agentPanel }: {
             {page?.assigned_items.length ? page.assigned_items.map((item) => (
               <article className="session-owned-item" key={item.id} data-phase={item.phase}>
                 <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
-                <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · {phaseName(item.phase)}{item.condition ? ` · ${item.condition}` : ""}</small></div>
+                <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · {phaseName(item.phase)}
+                  {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small>
+                  <WorkMilestones item={item} />
+                </div>
               </article>
             )) : page ? <p>目前沒有負責中的項目。</p> : null}
           </section>
+          {!!page?.recent_items.length && <section className="session-todos-list session-recent-work" aria-label="最近完成的項目">
+            <p>最近完成的看板項目</p>
+            {page.recent_items.map((item) => <article className="session-owned-item completed" key={item.id} data-phase={item.phase}>
+              <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
+              <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · 已完成</small><WorkMilestones item={item} /></div>
+            </article>)}
+          </section>}
           <section className="session-todos-list" aria-label="直接待辦">
             <p>直接交給這個 Session 的待辦</p>
             {page?.direct_todos.length ? page.direct_todos.map((todo) => (
@@ -117,6 +127,23 @@ export function Todos({ row, agentCount, agentPanel }: {
       </div>}
     </>
   )
+}
+
+const WORK_MILESTONES = ["實作", "驗證", "Commit / Merge", "部署", "完成"] as const
+
+function WorkMilestones({ item }: { item: WorkV2Item }) {
+  const completed = ({ created: 0, assigning: 0, assigned: 0, implementing: 0, verifying: 1,
+    merging: 2, deploying: 3, done: 5, cancelled: 0 } as Record<string, number>)[item.phase] ?? 0
+  const current = ({ created: 0, assigning: 0, assigned: 0, implementing: 0, verifying: 1,
+    merging: 2, deploying: 3 } as Record<string, number>)[item.phase]
+  return <ol className="session-work-milestones" aria-label="項目進度">
+    {WORK_MILESTONES.map((label, index) => {
+      const state = index < completed ? "done" : index === current ? "current" : "pending"
+      return <li key={label} data-state={state} aria-label={`${label}：${state === "done" ? "已完成" : state === "current" ? "進行中" : "尚未完成"}`}>
+        <span aria-hidden="true">{state === "done" ? "✓" : state === "current" ? "•" : "○"}</span>{label}
+      </li>
+    })}
+  </ol>
 }
 
 function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
@@ -181,4 +208,10 @@ function TodoReferenceImage({ image }: { image: WorkV2Image }) {
 
 function phaseName(phase: string): string {
   return ({ created: "建立", assigning: "認領中", assigned: "已認領", implementing: "實作", verifying: "驗證", merging: "Merge", deploying: "部署", done: "完成", cancelled: "取消" } as Record<string, string>)[phase] ?? phase
+}
+
+function conditionName(condition: string): string {
+  return ({ waiting_user: "等待你的決定", blocked: "遇到阻礙", evidence_unknown: "缺少可驗證證據",
+    owner_required: "等待負責人", owner_offline: "負責 Session 離線", assignment_failed: "指派失敗",
+    assigned_unnotified: "已指派，尚未通知" } as Record<string, string>)[condition] ?? condition
 }

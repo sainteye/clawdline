@@ -180,13 +180,29 @@ Session assignment normally moves from `created` to `assigned` in one transactio
 | `implementing` | owning Agent | owner identity matches; item is not terminal |
 | `verifying` | owning Agent | verification plan or references recorded |
 | `merging` | owning Agent | successful verification evidence recorded |
-| `deploying` | owning Agent | merge/landing evidence validates against the Project and target |
+| `deploying` | owning Agent | broker landing, or a direct-Session receipt whose exact commit is contained by both the Project's local target and its remote-tracking target |
 | `done` | owning Agent | deployment evidence is valid, or deployment is explicitly not required |
 | `cancelled` | person | cancellation reason; assignment released |
 
 The `done` transition records the completing owner, releases the active assignment, and removes
-the Session projection in the same transaction. Its assignment history and completion evidence
-remain on the item. A cancellation does the same release under the person's authority.
+the item from the Session's open-responsibility projection in the same transaction. Its assignment
+history and completion evidence remain on the item and in that Session's recent-completion
+projection. A cancellation does the same release under the person's authority but is not presented
+as successful completion.
+
+An item assigned directly to an existing Session has no broker child task and therefore no child
+landing record. Its owning Agent may name an exact commit, local target branch, and remote. The
+daemon resolves all three through Git and records a landing receipt only when the commit is on both
+the local target and `refs/remotes/<remote>/<target>`. Caller text, a successful build by itself, or
+an unpushed local commit never earns the landing check.
+
+The owning-Agent phase request carries the claim as structured input, not prose:
+
+```json
+{"next":"deploying","landing":{"commit":"<full commit>","target":"main","remote":"origin"}}
+```
+
+The stored event replaces `<full commit>` and both target spellings with Git's resolved object ids.
 
 ### 6.1 Rework and failure
 
@@ -392,6 +408,10 @@ The Board provides:
 - Planning, Unassigned, Assigned, Implementing, Verifying, Merging, Deploying, and Recently Done
   areas;
 - Feature/Issue cards with Project icon on every card;
+- each Session responsibility shows explicit Implementation, Verification, Commit/Merge,
+  Deployment, and Done milestones; completed milestones use a labelled green check, the current
+  milestone is visually distinct, and recently completed responsibilities remain visible after
+  their active assignment is released;
 - an item detail view for description, documents, steps, execution, evidence, assignments, and
   immutable event history;
 - card and direct-to-do thumbnails for durable reference images, with full-size viewing and
