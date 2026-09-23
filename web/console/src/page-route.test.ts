@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { pageFromHash, workPageHash, workRouteFromHash } from "./page-route.ts"
+import { pageFromHash, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
 
 const knows = (name: string): name is "sessions" | "devices" => name === "sessions" || name === "devices"
 
@@ -43,4 +43,15 @@ test("one malformed work field does not stop the page from being routed", () => 
     project: "%E0%A4%A",
     fromProjects: true,
   })
+})
+
+test("a Project-page path selects that Project's durable Board scope", () => {
+  const projects = [
+    { id: "project-a", path: "/workspace/a" },
+    { id: "project-b", path: "/workspace/b" },
+  ]
+
+  assert.equal(workProjectID("/workspace/b", projects), "project-b")
+  assert.equal(workProjectID("project-a", projects), "project-a")
+  assert.equal(workProjectID("/workspace/missing", projects), "")
 })
