@@ -38,6 +38,22 @@ import type { CloudIdentity, CloudReadClient, CloudRow, SeamRow } from "./relay-
 // the draft or its typed refusal after that worst-case 120-second path.
 const INTENT_TIMEOUT_MS = 130_000
 
+/**
+ * The copied Cloud client gives every machine-local Project id an account-safe
+ * id before `/v1/places` reaches the page. An intent is planned on one machine,
+ * so its answer still carries that machine's local id; cross the same boundary
+ * here before the draft is compared with the Project picker.
+ *
+ * This is the `cloudPlaceID` spelling in the copied client. It lives here too
+ * because this seam deliberately has no runtime imports from the legacy copy.
+ */
+function cloudProjectID(machine: string, project: string): string {
+  const bytes = new TextEncoder().encode(JSON.stringify([machine, project]))
+  let raw = ""
+  for (const byte of bytes) raw += String.fromCharCode(byte)
+  return "cloud." + btoa(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
 /** A typed failure as the copied modules raise it (`cloud-failure.js`). */
 interface CloudFailureLike {
   code?: unknown
@@ -696,7 +712,13 @@ export class RelayWriter {
           throw failure("cloud_not_carried", "intents", 501)
         }
         const host = await client.voiceHost()
-        return client._machineRequest(host.machine, "intents", { text: String(body.text ?? "") }, "action", INTENT_TIMEOUT_MS)
+        const answer = await client._machineRequest(host.machine, "intents", { text: String(body.text ?? "") }, "action", INTENT_TIMEOUT_MS)
+        if (!answer || typeof answer !== "object") return answer
+        const draft = (answer as { draft?: unknown }).draft
+        if (!draft || typeof draft !== "object") return answer
+        const place = (draft as { place_id?: unknown }).place_id
+        if (typeof place !== "string" || !place) return answer
+        return { ...answer, draft: { ...draft, place_id: cloudProjectID(host.machine, place) } }
       }
       case "image": {
         const session = url.searchParams.get("session") ?? ""

@@ -35,13 +35,18 @@ type Past struct {
 const BriefingOpening = "You are a Clawdline CHILD agent for task"
 
 // PastTitles is the name ladder's sources that live outside this package: the
-// Swift store's typed and automatic names, and the transcript's own titles.
+// Swift store's typed and automatic names, this daemon's Root Assignments,
+// and the transcript's own titles.
 type PastTitles struct {
 	// Recorded is the transcript's title and its current `/rename`.
 	Recorded func(path string) (title, custom string)
 	// Manual is a name somebody typed for this conversation, given the
 	// transcript's current `/rename` (a rename since retires it).
 	Manual func(conversationID, custom string) string
+	// Orchestrator is the title of the Root Assignment that opened the
+	// conversation. It sits below a person's manual name and above everything
+	// the assistant inferred from the briefing it received.
+	Orchestrator func(conversationID string) string
 	// Automatic is the model-chosen fallback name.
 	Automatic func(conversationID string) string
 }
@@ -124,7 +129,8 @@ func ClaudePast(place Place, open map[string]bool, titles PastTitles, limit, sca
 }
 
 // displayedTitle is StartPoints.displayedTitle(ofTranscript:…): a typed name,
-// the transcript's own, the automatic fallback, then the opening line.
+// the Root Assignment that opened it, the transcript's own title, the
+// automatic fallback, then the opening line.
 //
 // A weak recorded title — `Image review` over an opening that was only pasted
 // images — steps aside for the fallback, as TargetSession
@@ -134,9 +140,12 @@ func displayedTitle(path, id string, fr front, titles PastTitles) string {
 	if titles.Recorded != nil {
 		recorded, custom = titles.Recorded(path)
 	}
-	manual, fallback := "", ""
+	manual, orchestrator, fallback := "", "", ""
 	if titles.Manual != nil {
 		manual = titles.Manual(id, custom)
+	}
+	if titles.Orchestrator != nil {
+		orchestrator = titles.Orchestrator(id)
 	}
 	if titles.Automatic != nil {
 		fallback = titles.Automatic(id)
@@ -145,7 +154,7 @@ func displayedTitle(path, id string, fr front, titles PastTitles) string {
 	if strings.TrimSpace(fallback) != "" && titleIsWeak(recorded, custom, fr.said, fr.opening != "") {
 		conversation = ""
 	}
-	for _, candidate := range []string{manual, conversation, fallback, fr.opening} {
+	for _, candidate := range []string{manual, orchestrator, conversation, fallback, fr.opening} {
 		if c := strings.TrimSpace(candidate); c != "" {
 			return c
 		}
@@ -312,7 +321,7 @@ var codexServers = make(chan struct{}, 2)
 // CodexPast is StartPoints.past(in:assistant: .codex): Codex's own thread
 // index for this directory, through `codex app-server`, which owns it.
 // `open` is every Codex conversation id something is writing to now.
-func CodexPast(ctx context.Context, place Place, open map[string]bool, limit int) ([]Past, error) {
+func CodexPast(ctx context.Context, place Place, open map[string]bool, titles PastTitles, limit int) ([]Past, error) {
 	exe := codexExecutable()
 	if exe == "" {
 		return nil, ErrCodexUnavailable
@@ -331,7 +340,7 @@ func CodexPast(ctx context.Context, place Place, open map[string]bool, limit int
 	if err != nil {
 		return nil, err
 	}
-	rows := codexListed(response, place.Path, open)
+	rows := codexListed(response, place.Path, open, titles)
 	if len(rows) > limit {
 		rows = rows[:limit]
 	}
@@ -339,7 +348,7 @@ func CodexPast(ctx context.Context, place Place, open map[string]bool, limit int
 }
 
 // codexListed is CodexNaming.listedThreads(in:cwd:open:).
-func codexListed(response []byte, cwd string, open map[string]bool) []Past {
+func codexListed(response []byte, cwd string, open map[string]bool, titles PastTitles) []Past {
 	var answer struct {
 		Result struct {
 			Data []struct {
@@ -370,7 +379,13 @@ func codexListed(response []byte, cwd string, open map[string]bool) []Past {
 		if strings.HasPrefix(row.Preview, BriefingOpening) {
 			continue
 		}
-		named := ""
+		manual, orchestrator, named := "", "", ""
+		if titles.Manual != nil {
+			manual = strings.TrimSpace(titles.Manual(id, ""))
+		}
+		if titles.Orchestrator != nil {
+			orchestrator = strings.TrimSpace(titles.Orchestrator(id))
+		}
 		if row.Name != nil {
 			named = strings.TrimSpace(*row.Name)
 		}
@@ -379,9 +394,12 @@ func codexListed(response []byte, cwd string, open map[string]bool) []Past {
 			opening = opening[:i]
 		}
 		opening = strings.TrimSpace(opening)
-		title := named
-		if title == "" {
-			title = opening
+		title := ""
+		for _, candidate := range []string{manual, orchestrator, named, opening} {
+			if candidate != "" {
+				title = candidate
+				break
+			}
 		}
 		if title == "" {
 			continue

@@ -152,6 +152,7 @@ function daemon(): Server {
     const path = url.pathname
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path === "/__project_request_count") return json(res, 200, { count: placeRequests })
     if (path === "/v1/places") {
       placeRequests++
       if (placeRequests === failPlacesOnRequest) {
@@ -678,6 +679,53 @@ test("phone: a spoken Board item is prefilled but not created until confirmation
     assert.equal((createdWork as Record<string, unknown> | null)?.title, "Voice-created Board draft")
     assert.equal((createdWork as Record<string, unknown> | null)?.description, "Confirm the generated Project, title, and description before creating this item.")
     assert.equal((createdWorkBody as Record<string, unknown> | null)?.project_id, "fixture-place")
+  }))
+
+test("phone: reopening an empty Project picker reads the Projects again", () =>
+  inTab(PHONE, async (tab) => {
+    const before = placeRequests
+    failPlacesOnRequest = before + 1
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    await tab.run(`document.getElementById("work-create-go").click()`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const modal = document.querySelector(".work-new-modal")
+        const alert = modal?.querySelector('[role="alert"]')
+        if (modal && alert) return resolve(true)
+        if (Date.now() >= deadline) return reject(new Error("the first Project read did not fail visibly"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    const recovered = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      document.querySelector(".work-new-modal .work-project-trigger").click()
+      const read = () => {
+        const option = document.querySelector(".work-new-modal .work-project-option")
+        if (option) return resolve(option.textContent)
+        if (Date.now() >= deadline) return reject(new Error("opening the empty Project picker did not read again"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.match(String(recovered), /Example project/)
+    await tab.run(`document.querySelector(".work-new-modal .work-project-trigger").click()`)
+    await tab.run(`document.querySelector(".work-new-modal .work-project-trigger").click()`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        fetch("/__project_request_count").then((response) => response.json()).then((body) => {
+          if (body.count >= ${before} + 3) resolve(true)
+          else if (Date.now() >= deadline) reject(new Error("reopening the Project picker did not refresh again"))
+          else setTimeout(read, 25)
+        }, reject)
+      }
+      read()
+    })`)
+    assert.equal(placeRequests, before + 3, "initial load and both picker openings each read Projects")
+    await tab.run(`document.querySelector('.work-new-modal [aria-label="關閉"]').click()`)
   }))
 
 test("phone: the Board shortcut keeps a new item open for assignment", () =>

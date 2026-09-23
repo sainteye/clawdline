@@ -233,8 +233,40 @@ func (s *Server) starter(reading startReading) app.Starter {
 // past is StartPoints.past(in:assistant:limit:). A Codex index that cannot be
 // asked is an empty list, as it is in the Swift app.
 func (s *Server) past(ctx context.Context, place projects.Place, assistant string, reading startReading, limit int) []projects.Past {
+	rootTitles := map[string]string{}
+	queriedRootTitle := map[string]bool{}
+	loggedRootTitleError := false
+	orchestratorTitle := func(id string) string {
+		if queriedRootTitle[id] {
+			return rootTitles[id]
+		}
+		queriedRootTitle[id] = true
+		rootAssignment, err := s.store.WorkV2RootAssignmentForSession(ctx, place.Path, assistant, id)
+		if err != nil {
+			if !loggedRootTitleError {
+				log.Printf("places: Root Assignment titles for %s: %v", place.ID, err)
+				loggedRootTitleError = true
+			}
+			return ""
+		}
+		if rootAssignment == "" || s.broker == nil {
+			return ""
+		}
+		assignment, err := s.broker.RootAssignmentByID(ctx, rootAssignment)
+		if err != nil {
+			if !loggedRootTitleError {
+				log.Printf("places: Root Assignment titles for %s: %v", place.ID, err)
+				loggedRootTitleError = true
+			}
+			return ""
+		}
+		title := assignment.Label
+		rootTitles[id] = title
+		return title
+	}
 	if assistant == projects.AssistantCodex {
-		rows, err := projects.CodexPast(ctx, place, reading.openCodex, limit)
+		rows, err := projects.CodexPast(ctx, place, reading.openCodex,
+			projects.PastTitles{Orchestrator: orchestratorTitle}, limit)
 		if err != nil {
 			log.Printf("places: codex history for %s: %v", place.ID, err)
 			return []projects.Past{}
@@ -243,7 +275,8 @@ func (s *Server) past(ctx context.Context, place projects.Place, assistant strin
 	}
 	snap := s.swift.Read()
 	titles := projects.PastTitles{
-		Recorded: pastTitles.Read,
+		Recorded:     pastTitles.Read,
+		Orchestrator: orchestratorTitle,
 		Manual: func(id, custom string) string {
 			if !snap.TitlesKnown {
 				return ""

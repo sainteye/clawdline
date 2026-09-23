@@ -130,6 +130,7 @@ class FakeClient implements CloudWriteClient {
     if (timeoutMs !== undefined) args.push(timeoutMs)
     return this.act("_machineRequest", args,
       word === "schedule-run" ? { ok: true, task_id: "t-1" } :
+      word === "intents" ? { draft: { place_id: "p1", kind: "work", title: "Voice draft" }, ms: 7 } :
       word === "work.v2.image" ? { id: body.id, media_type: "image/png", data: "iVBORw==" } : { ok: true })
   }
   _machineRequestAs(request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number) {
@@ -470,6 +471,8 @@ test("a spoken intent follows dictation to the chosen voice machine", async () =
     ["voiceHost"],
     ["_machineRequest", "mac-a", "intents", { text: "start the review" }, "action", 130_000],
   ])
+  assert.equal((await json<{ draft: { place_id: string } }>(res)).draft.place_id, "cloud.WyJtYWMtYSIsInAxIl0",
+    "the machine-local Project id uses the same Cloud id as the Project picker")
 })
 
 test("a route with no Cloud word is refused by name before anything is sealed", async () => {

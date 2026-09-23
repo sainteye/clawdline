@@ -618,6 +618,13 @@ const PROBE = `(() => {
     scrollTop: document.getElementById("list-scroll")?.scrollTop ?? -1,
     sheet: sheet && !sheet.hidden ? (document.getElementById("action-confirm-title")?.textContent ?? "") : null,
     sheetSay: sheet && !sheet.hidden ? (document.getElementById("action-confirm-say")?.textContent ?? "") : null,
+    completedSummary: sheet && !sheet.hidden ? (document.querySelector(".end-work-completed")?.textContent ?? null) : null,
+    completedMarkColor: sheet && !sheet.hidden ? (() => {
+      const mark = document.querySelector(".end-work-completed-mark")
+      return mark ? getComputedStyle(mark).color : null
+    })() : null,
+    technicalText: sheet && !sheet.hidden ? (document.getElementById("action-confirm-technical")?.textContent ?? null) : null,
+    technicalOpen: sheet && !sheet.hidden ? !!document.getElementById("action-confirm-technical")?.hasAttribute("open") : null,
     confirmAction: sheet && !sheet.hidden ? (document.getElementById("action-confirm-go")?.textContent ?? "") : null,
     confirmDisabled: sheet && !sheet.hidden ? !!document.getElementById("action-confirm-go")?.hasAttribute("disabled") : null,
     focused: document.activeElement ? document.activeElement.id : "",
@@ -641,6 +648,10 @@ interface Seen {
   scrollTop: number
   sheet: string | null
   sheetSay: string | null
+  completedSummary: string | null
+  completedMarkColor: string | null
+  technicalText: string | null
+  technicalOpen: boolean | null
   confirmAction: string | null
   confirmDisabled: boolean | null
   focused: string
@@ -1080,8 +1091,9 @@ test("pressing the uncovered close asks first, naming the row, with Cancel under
     assert.equal(asked.focused, "action-confirm-cancel", "and opens on the answer that changes nothing")
     const work = await tab.until("the unfinished Board item is named", (s) =>
       s.confirmDisabled === false && (s.sheetSay ?? "").includes("Finish the release receipt"))
-    assert.match(work.sheetSay ?? "", /尚未完成的看板項目/)
-    assert.match(work.sheetSay ?? "", /Finish the release receipt · Clawdline/)
+    assert.match(work.sheetSay ?? "", /還有未完成項目/)
+    assert.match(work.sheetSay ?? "", /看板\s*Finish the release receipt/)
+    assert.doesNotMatch(work.sheetSay ?? "", /Clawdline 還不能確認/)
     await tab.shot("swipe-confirm")
     assert.deepEqual(closes, [], "still nothing closed while the question stands")
   }))
@@ -1108,11 +1120,19 @@ test("a row with something still owed still uncovers the close action", () =>
     assert.equal(open.action, "關閉 Session", "the cell says what pressing it does, not why the close is blocked")
     assert.match(open.rowState ?? "", /還有 1 項未了結/, "the row itself keeps the live closeability status")
     await tab.press("li.row[data-swipe='open'] > .swipe-end")
-    const asked = await tab.until("the blocked confirmation is up", (s) => s.sheet !== null)
-    assert.equal(asked.sheet, "要關閉 Bravo is still working 嗎？")
+    const opened = await tab.until("the blocked confirmation is up", (s) => s.sheet !== null)
+    const asked = await tab.until("the blocked confirmation has checked Session work", (s) =>
+      s.confirmDisabled === false && (s.sheetSay ?? "").includes("已完成 1 個看板項目、0 個 TODO"))
+    assert.equal(opened.sheet, "要關閉 Bravo is still working 嗎？")
     assert.match(asked.sheetSay ?? "", /Agent 會先結束，接著關閉它的終端機分頁。/, "it says what closing does")
-    assert.match(asked.sheetSay ?? "", /broker 無法證明這個 session 可以安全關閉。/, "it says closing is not proven safe")
-    assert.match(asked.sheetSay ?? "", /terminal_working · 由另一個 session 推進/, "it says what blocks closing and who moves it")
+    assert.match(asked.sheetSay ?? "", /已完成 1 個看板項目、0 個 TODO/, "it summarizes completed work without dumping titles")
+    assert.match(asked.sheetSay ?? "", /還有未完成項目/)
+    assert.match(asked.sheetSay ?? "", /看板\s*Coordinate the live deployment/)
+    assert.match(asked.sheetSay ?? "", /TODO\s*Review the release note/)
+    assert.match(asked.sheetSay ?? "", /Agent 還在這個 session 工作；等這一輪結束。/)
+    assert.doesNotMatch(asked.sheetSay ?? "", /Repair the previous release|terminal_working/)
+    assert.match(asked.technicalText ?? "", /terminal_working/, "searchable broker details stay available behind disclosure")
+    assert.equal(asked.technicalOpen, false, "technical details do not compete with the decision")
     await tab.shot("swipe-blocked")
   }))
 
@@ -1127,7 +1147,8 @@ test("a refused close explains what is owed, then still close overrides that dis
     assert.equal(closes.length, 1)
     assert.equal(closes[0].force, false, "the close gate gets the first decision")
     const said = await tab.seen()
-    assert.match(said.sheetSay ?? "", /terminal_working/, "the reminder carries the daemon's reason")
+    assert.doesNotMatch(said.sheetSay ?? "", /terminal_working/, "the main reminder never falls back to broker vocabulary")
+    assert.match(said.technicalText ?? "", /terminal_working/, "the daemon's reason remains in technical details")
 
     await tab.press("#action-confirm-go")
     await tab.until("the override reaches the daemon", () => closes.length === 2)
@@ -1143,11 +1164,14 @@ test("an unknown row keeps saying unknown while its swipe remains an action", ()
     assert.equal(open.action, "關閉 Session")
     assert.match(open.rowState ?? "", /無法判斷能否關閉/, "unknown remains distinct from blocked on the row")
     await tab.press("li.row[data-swipe='open'] > .swipe-end")
-    const asked = await tab.until("the unknown confirmation is up", (s) => s.sheet !== null)
-    assert.equal(asked.sheet, "要關閉 Charlie cannot be read 嗎？")
+    const opened = await tab.until("the unknown confirmation is up", (s) => s.sheet !== null)
+    const asked = await tab.until("the unknown confirmation has checked Session work", (s) =>
+      s.confirmDisabled === false && (s.sheetSay ?? "").includes("Clawdline 暫時無法確認最新的 session 資料"))
+    assert.equal(opened.sheet, "要關閉 Charlie cannot be read 嗎？")
     assert.match(asked.sheetSay ?? "", /Agent 會先結束，接著關閉它的終端機分頁。/)
-    assert.match(asked.sheetSay ?? "", /broker 無法證明這個 session 可以安全關閉。/)
-    assert.match(asked.sheetSay ?? "", /session_identity_ambiguous · 重新讀一次才知道/)
+    assert.match(asked.sheetSay ?? "", /Clawdline 暫時無法確認最新的 session 資料/)
+    assert.doesNotMatch(asked.sheetSay ?? "", /session_identity_ambiguous/)
+    assert.match(asked.technicalText ?? "", /session_identity_ambiguous/)
     await tab.shot("swipe-unknown")
   }))
 
@@ -1163,11 +1187,11 @@ test("a session awaiting attestation explains that inside its named confirmation
     assert.equal(asked.sheet, "要關閉 Echo has not checked in 嗎？")
     assert.match(asked.sheetSay ?? "", /Agent 會先結束，接著關閉它的終端機分頁。/)
     const ready = await tab.until("the completed work and safe-close reminder are shown", (s) =>
-      s.confirmDisabled === false && (s.sheetSay ?? "").includes("Repair the previous release"))
-    assert.match(ready.sheetSay ?? "", /這個 Session 已完成：/)
-    assert.match(ready.sheetSay ?? "", /✓ Repair the previous release · Clawdline/)
-    assert.match(ready.sheetSay ?? "", /✓ Verify the hosted console/)
-    assert.match(ready.sheetSay ?? "", /看板項目與直接待辦都已完成。/)
+      s.confirmDisabled === false && (s.sheetSay ?? "").includes("已完成 1 個看板項目、1 個 TODO"))
+    assert.equal(ready.completedSummary?.trim(), "✓已完成 1 個看板項目、1 個 TODO")
+    assert.equal(ready.completedMarkColor, "rgb(95, 158, 115)", "the completed mark uses the success colour")
+    assert.doesNotMatch(ready.sheetSay ?? "", /Repair the previous release|Verify the hosted console/)
+    assert.match(ready.sheetSay ?? "", /沒有未完成的看板項目或 TODO。/)
     assert.match(ready.sheetSay ?? "", /現在可以安全關閉這個 Session。/)
     assert.equal(ready.confirmAction, "安全關閉")
     await tab.shot("swipe-ready-to-close")

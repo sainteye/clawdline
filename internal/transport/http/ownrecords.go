@@ -87,12 +87,12 @@ func (s *Server) ownOverlay(ctx context.Context, lives []swiftstore.Live) (swift
 	if handoffs, err := s.broker.Handoffs(ctx); err != nil {
 		failed = true
 	} else {
-		own.Handoffs, own.HandoffLabels = ownHandoffs(handoffs)
+		own.Handoffs, own.HandoffLabels = ownHandoffs(handoffs, byTerminal)
 	}
 	if assignments, err := s.broker.RootAssignments(ctx); err != nil {
 		failed = true
 	} else {
-		own.RootAssignments = ownAssignments(assignments)
+		own.RootAssignments = ownAssignments(assignments, byTerminal)
 	}
 	if failed {
 		return own, errOwnRecords
@@ -308,15 +308,16 @@ func (s *Server) ownDeliveries(ctx context.Context, lives []swiftstore.Live) ([]
 
 // ownHandoffs converts the handoffs, and the label each names the session it
 // opened with — by the terminal the broker opened for it.
-func ownHandoffs(handoffs []orchestrator.Handoff) ([]swiftstore.Handoff, []swiftstore.HandoffLabel) {
+func ownHandoffs(handoffs []orchestrator.Handoff, byTerminal map[string]swiftstore.Live) ([]swiftstore.Handoff, []swiftstore.HandoffLabel) {
 	out := make([]swiftstore.Handoff, 0, len(handoffs))
 	labels := []swiftstore.HandoffLabel{}
 	for _, h := range handoffs {
 		out = append(out, swiftstore.Handoff{ID: h.ID, State: h.State, FromSession: stringPtr(h.FromSession),
 			Created: swiftstore.Seconds(h.CreatedAt)})
 		if h.Opened != nil && h.Opened.TerminalID != "" && h.Title != "" {
-			labels = append(labels, swiftstore.HandoffLabel{HandoffID: h.ID, Label: h.Title,
-				Identity: swiftstore.RootAssignmentIdentity{TerminalID: h.Opened.TerminalID, Assistant: h.Assistant}})
+			if identity := ownOpenedIdentity(h.Opened.TerminalID, h.Assistant, h.Opened.OpenedAt, h.DeliveredAt, byTerminal); identity != nil {
+				labels = append(labels, swiftstore.HandoffLabel{HandoffID: h.ID, Label: h.Title, Identity: *identity})
+			}
 		}
 	}
 	return out, labels
@@ -324,16 +325,37 @@ func ownHandoffs(handoffs []orchestrator.Handoff) ([]swiftstore.Handoff, []swift
 
 // ownAssignments converts the Feature Roots that have a terminal: the one the
 // broker opened for the executor.
-func ownAssignments(assignments []orchestrator.RootAssignment) []swiftstore.RootAssignment {
+func ownAssignments(assignments []orchestrator.RootAssignment, byTerminal map[string]swiftstore.Live) []swiftstore.RootAssignment {
 	out := make([]swiftstore.RootAssignment, 0, len(assignments))
 	for _, a := range assignments {
 		ra := swiftstore.RootAssignment{ID: a.ID, Label: a.Label, State: a.State}
 		if a.Executor != nil && a.Executor.TerminalID != "" {
-			ra.Identity = &swiftstore.RootAssignmentIdentity{TerminalID: a.Executor.TerminalID, Assistant: a.Assistant}
+			ra.Identity = ownOpenedIdentity(a.Executor.TerminalID, a.Assistant, a.Executor.OpenedAt, a.BriefedAt, byTerminal)
 		}
 		out = append(out, ra)
 	}
 	return out
+}
+
+// ownOpenedIdentity restricts a launch label to a process that already existed
+// when its briefing was delivered. In particular, Linux tmux restarts reuse %0;
+// a terminal id alone cannot carry a previous server's assignment forward.
+// Existing launch records have no process identity, so use their closed launch
+// interval with the same clock tolerance as ownChild. Missing evidence keeps
+// the conversation's own title rather than lending it an unrelated task name.
+func ownOpenedIdentity(terminal, assistant string, opened, briefed int64, byTerminal map[string]swiftstore.Live) *swiftstore.RootAssignmentIdentity {
+	live, ok := byTerminal[terminal]
+	if !ok || opened <= 0 || briefed < opened || live.Assistant != assistant || assistant == "" ||
+		live.PID == 0 || live.ProcessStart.IsZero() {
+		return nil
+	}
+	if live.ProcessStart.Before(time.Unix(opened, 0).Add(-ownStartTolerance)) ||
+		live.ProcessStart.After(time.Unix(briefed, 0).Add(ownStartTolerance)) {
+		return nil
+	}
+	start := secondsOf(live.ProcessStart)
+	return &swiftstore.RootAssignmentIdentity{TerminalID: terminal, Assistant: assistant,
+		PID: &live.PID, ProcessStart: &start, ConversationID: stringPtr(live.ConversationID)}
 }
 
 // ownTaskLinks puts a task this daemon dispatched where the console looks for

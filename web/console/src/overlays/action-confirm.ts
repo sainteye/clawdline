@@ -1,9 +1,18 @@
 import type { CloseReason } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
+import "./action-confirm.css"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { getClosingId, setClosingId } from "./events.js"
-import { byId, closeabilityLines, closeabilityOf, lostIfClosed, setConfirmSpin, type Closeable } from "../legacy/bridge.js"
+import {
+  byId,
+  closeabilityLines,
+  closeabilityOf,
+  closeabilityPlainReasons,
+  lostIfClosed,
+  setConfirmSpin,
+  type Closeable,
+} from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { readSessionWorkV2, type DirectTodoV2, type WorkV2Item } from "../pages/work/api.js"
 import { toast, toastFailure } from "./toast.js"
@@ -46,6 +55,7 @@ interface Pending {
   ask: Ask | null
   lost: string[]
   why: string[]
+  closeNotes: { text: string; count: number }[]
   closeability: string | null
   help: Help | null
   work: WorkV2Item[]
@@ -180,6 +190,7 @@ export const ActionConfirm = {
     const help = closeabilityHelpModel(closeable)
     this.pending = {
       id, kind, action, opener: returnFocus, ask: ask || null, lost, why,
+      closeNotes: kind === "end" ? closeabilityPlainReasons(row) : [],
       closeability: closeable && closeable.state, help, work: [], recentWork: [], directTodos: [],
       workState: kind === "end" ? "loading" : "ready", workTruncated: false,
       force: false, request: mintRequest(),
@@ -225,55 +236,120 @@ export const ActionConfirm = {
   },
 
   renderEnd(pending: Pending): void {
-    this.renderSay(this.endSay(pending), pending.help, pending.why)
-  },
+    const sheet = node("action-confirm-sheet")
+    const say = node("action-confirm-say")
+    if (!sheet || !say) return
+    document.getElementById("action-confirm-technical")?.remove()
+    sheet.setAttribute("aria-describedby", "action-confirm-say")
+    say.replaceChildren()
 
-  endSay(pending: Pending): string {
-    const { lost, why, closeability, help, work, recentWork, directTodos, workState, workTruncated } = pending
+    const {
+      lost, closeability, help, work, recentWork, directTodos, workState, workTruncated, closeNotes,
+    } = pending
     const openDirect = directTodos.filter((todo) => !todo.completed_at)
     const completedDirect = directTodos.filter((todo) => !!todo.completed_at)
     const recordedWorkClear = workState === "ready" && work.length === 0 && openDirect.length === 0
-    let said = T.webConfirmEndSay
+    const lede = document.createElement("p")
+    lede.className = "end-work-lede"
+    lede.textContent = T.webConfirmEndSay
+    say.appendChild(lede)
+
     if (lost && lost.length) {
-      said += "\n" + T.webConfirmEndLoses + "\n" + lost.map((item) => "· " + item).join("\n")
+      const section = document.createElement("section")
+      section.className = "end-work-open end-work-lost"
+      const heading = document.createElement("h3")
+      heading.textContent = T.webConfirmEndLoses
+      const list = document.createElement("ul")
+      for (const text of lost) {
+        const item = document.createElement("li")
+        item.textContent = text
+        list.appendChild(item)
+      }
+      section.append(heading, list)
+      say.appendChild(section)
     }
-    if (help && recordedWorkClear) said += "\n" + nextWord("endWorkReadyToClose")
-    else if (help) said += "\n" + help.explanation
-    // Whenever the projection is not `safe`, including `unknown`: an absence of
-    // proof is what the reader most needs to see before ending somebody's work.
-    else if (closeability && closeability !== "safe") {
-      said += "\n" + T.closeabilityNotProven
-      if (why && why.length) {
-        said += "\n" + T.closeabilityWhy + ":\n" + why.map((item) => "· " + item).join("\n")
-      }
+
+    if (workState === "loading" || workState === "unreadable") {
+      const status = document.createElement("p")
+      status.className = "end-work-status" + (workState === "unreadable" ? " is-warning" : "")
+      status.textContent = nextWord(workState === "loading" ? "endWorkChecking" : "endWorkUnreadable")
+      say.appendChild(status)
+      this.renderTechnical(pending.why, pending.help?.detailsLabel)
+      return
     }
-    if (workState === "loading") said += "\n" + nextWord("endWorkChecking")
-    else if (workState === "unreadable") said += "\n" + nextWord("endWorkUnreadable")
-    else {
-      if (recentWork.length || completedDirect.length) {
-        said += "\n" + nextWord("endWorkFinished") + "\n"
-        said += recentWork.map((item) => "✓ " + nextWord("endWorkItem", {
-          title: item.title,
-          project: item.project.label || item.project.path,
-        })).concat(completedDirect.map((todo) => "✓ " + todo.text)).join("\n")
-      }
-      if (work.length) {
-        said += "\n" + nextWord("endWorkOpen", { count: work.length }) + "\n"
-        said += work.map((item) => "· " + nextWord("endWorkItem", {
-          title: item.title,
-          project: item.project.label || item.project.path,
-        })).join("\n")
-      }
-      if (openDirect.length) {
-        said += "\n" + nextWord("endDirectOpen", { count: openDirect.length }) + "\n"
-        said += openDirect.map((todo) => "· " + todo.text).join("\n")
-      }
-      if (closeability === "safe" && recordedWorkClear) {
-        said += "\n" + nextWord("endWorkSafeToClose")
-      }
-      if (workTruncated) said += "\n" + nextWord("endWorkTruncated")
+
+    const completed = document.createElement("section")
+    completed.className = "end-work-completed"
+    const completedMark = document.createElement("span")
+    completedMark.className = "end-work-completed-mark"
+    completedMark.setAttribute("aria-hidden", "true")
+    completedMark.textContent = "✓"
+    const completedCopy = document.createElement("span")
+    completedCopy.textContent = nextWord("endWorkCompletedSummary", {
+      work: recentWork.length,
+      todos: completedDirect.length,
+    })
+    completed.append(completedMark, completedCopy)
+    say.appendChild(completed)
+
+    if (work.length || openDirect.length) {
+      const section = document.createElement("section")
+      section.className = "end-work-open"
+      const heading = document.createElement("h3")
+      heading.textContent = nextWord("endWorkOpenHeading")
+      const list = document.createElement("ul")
+      for (const item of work) list.appendChild(this.endWorkRow(nextWord("endWorkBoardLabel"), item.title))
+      for (const todo of openDirect) list.appendChild(this.endWorkRow(nextWord("endWorkTodoLabel"), todo.text))
+      section.append(heading, list)
+      say.appendChild(section)
+    } else {
+      const clear = document.createElement("p")
+      clear.className = "end-work-none"
+      clear.textContent = nextWord("endWorkNoOpen")
+      say.appendChild(clear)
     }
-    return said
+
+    let statusCopy = ""
+    let statusClass = ""
+    if (closeability === "safe" && recordedWorkClear) {
+      statusClass = "is-ready"
+      statusCopy = nextWord("endWorkSafeToClose")
+    } else if (help && recordedWorkClear) {
+      statusClass = "is-ready"
+      statusCopy = nextWord("endWorkReadyToClose")
+    } else if (closeNotes.length) {
+      statusClass = "is-warning"
+      const notes = closeNotes.map((note) => note.count > 1 ? `${note.text} (${note.count})` : note.text)
+      statusCopy = notes.join(" ")
+    } else if (recordedWorkClear) {
+      statusClass = "is-warning"
+      statusCopy = help ? help.explanation : nextWord("endWorkCloseUnknown")
+    }
+    if (statusCopy) {
+      const status = document.createElement("p")
+      status.className = "end-work-status " + statusClass
+      status.textContent = statusCopy
+      say.appendChild(status)
+    }
+    if (workTruncated) {
+      const truncated = document.createElement("p")
+      truncated.className = "end-work-more"
+      truncated.textContent = nextWord("endWorkTruncated")
+      say.appendChild(truncated)
+    }
+    this.renderTechnical(pending.why, pending.help?.detailsLabel)
+  },
+
+  endWorkRow(kind: string, text: string): HTMLLIElement {
+    const row = document.createElement("li")
+    const badge = document.createElement("span")
+    badge.className = "end-work-kind"
+    badge.textContent = kind
+    const copy = document.createElement("span")
+    copy.className = "end-work-title"
+    copy.textContent = text
+    row.append(badge, copy)
+    return row
   },
 
   /** Plain meaning first; the broker vocabulary one deliberate disclosure away. */
@@ -285,6 +361,13 @@ export const ActionConfirm = {
     sheet.setAttribute("aria-describedby", "action-confirm-say")
     say.textContent = said
     if (!help) return
+    this.renderTechnical(why, help.detailsLabel)
+  },
+
+  renderTechnical(why: string[], label = T.closeabilityTechnicalDetails): void {
+    const sheet = node("action-confirm-sheet")
+    const say = node("action-confirm-say")
+    if (!sheet || !say || !why.length) return
 
     const technical = document.createElement("details")
     technical.id = "action-confirm-technical"
@@ -294,7 +377,7 @@ export const ActionConfirm = {
     mark.className = "help-mark"
     mark.setAttribute("aria-hidden", "true")
     mark.textContent = "?"
-    summary.append(mark, document.createTextNode(help.detailsLabel))
+    summary.append(mark, document.createTextNode(label))
     technical.appendChild(summary)
     const body = document.createElement("div")
     body.className = "technical-copy"
@@ -328,6 +411,7 @@ export const ActionConfirm = {
     const refused = { ...(row || { id }), closeability: { ...base, state: "blocked", reasons: [...reasons] } }
     const projected = closeabilityOf(refused)
     pending.why = closeabilityLines(refused)
+    pending.closeNotes = closeabilityPlainReasons(refused)
     pending.closeability = projected.state
     pending.help = closeabilityHelpModel(projected)
     pending.force = true
@@ -399,7 +483,9 @@ export const ActionConfirm = {
         ? recordedWorkClear ? nextWord("endWorkConfirmClose") : help.confirmLabel
         : this.pending?.force
           ? T.webConfirmEndAnyway
-          : T.webConfirm
+          : this.pending?.kind === "end"
+            ? nextWord("endWorkClose")
+            : T.webConfirm
     }
   },
 
