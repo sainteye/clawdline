@@ -469,9 +469,23 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 
 每個 turn 的邊界、宣告自己閒置之前，也要讀
 `GET /v1/work/v2/agent/session-todos/<conversation id>`。其中的 `assigned_items` 是使用者交給這個
-Session 的看板項目，`direct_todos` 是快速交辦。這條 pull 路徑讓工作中收到的分派先等著，不會打斷目前的
-turn。完成目前的 turn 之後，把 assigned item 當成下一件自己負責的工作，並從
-`GET /v1/work/v2/items/<id>` 讀取完整內容。
+Session 的看板項目，`recent_items` 是這個 Session 最近完成的項目，`direct_todos` 是快速交辦。這條
+pull 路徑讓工作中收到的分派先等著，不會打斷目前的 turn。完成目前的 turn 之後，把 assigned item 當成
+下一件自己負責的工作，並從 `GET /v1/work/v2/items/<id>` 讀取完整內容。
+
+如果使用者的意思很清楚：你剛完成的那個項目其實還沒做完，就由你自己修正看板；不要讓它繼續留在
+「最近完成」、另開替代項目，或要求使用者替你重開。先重讀項目取得目前版本，再呼叫：
+
+```
+POST /v1/work/v2/agent/items/<id>/reopen     (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>",
+ "reason": "仍未完成的具體行為或驗收主張"}
+```
+
+只有在對方明確指向你剛完成的項目時才使用。這條路由只接受最後由同一個 Session 釋放 assignment 的
+`done` 項目；它不能推翻使用者的取消，也不能拿走另一個 Session 的完成項目。成功時會保留先前證據、以
+新 cycle 回到 `implementing`、恢復這個 Session 為 owner，並把原因寫入不可變的項目歷史。原因最多
+8 KiB。語意含糊的追問不構成修改看板的授權。
 
 負責項目的 Agent 要等待使用者動作時，使用 machine-authenticated route：
 

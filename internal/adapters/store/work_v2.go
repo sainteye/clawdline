@@ -390,11 +390,10 @@ func (s *Store) WorkV2Items(ctx context.Context, project, owner string, includeT
 	return items, false, err
 }
 
-// CompletedWorkV2ForSession keeps a Session's completed responsibility
-// visible after completion releases owner_session. The assignment ledger is
-// the durable relationship; looking only at the current item would make a
-// successful item disappear at the exact moment its final green check became
-// true.
+// CompletedWorkV2ForSession keeps a Session's own completed responsibility
+// visible after completion releases owner_session. The assignment released in
+// the same transaction as closed_at identifies the completing Session; an
+// older assignee must not be offered somebody else's completion to retract.
 func (s *Store) CompletedWorkV2ForSession(ctx context.Context, session string, limit int) ([]work.ItemV2, bool, error) {
 	if err := reading(); err != nil {
 		return nil, false, err
@@ -404,7 +403,8 @@ func (s *Store) CompletedWorkV2ForSession(ctx context.Context, session string, l
 	}
 	rows, err := queryWorkV2(ctx, s.db, `SELECT `+workV2ItemColumns+` FROM work_v2_items i
     WHERE i.phase='done' AND EXISTS (
-      SELECT 1 FROM work_v2_assignments a WHERE a.work_id=i.id AND a.session_id=?
+      SELECT 1 FROM work_v2_assignments a
+      WHERE a.work_id=i.id AND a.session_id=? AND a.state='released' AND a.released_at=i.closed_at
     ) ORDER BY i.closed_at DESC, i.id DESC LIMIT ?`, session, limit+1)
 	if len(rows) > limit {
 		return rows[:limit], true, err
@@ -434,6 +434,18 @@ const assignmentV2Columns = `id, work_id, mode, session_id, terminal_id, assista
 func (t *WorkV2Tx) ActiveAssignment(workID string) (work.AssignmentV2, error) {
 	a, err := scanAssignmentV2(t.tx.QueryRowContext(t.ctx, `SELECT `+assignmentV2Columns+`
     FROM work_v2_assignments WHERE work_id=? AND state='active'`, workID))
+	if err == sql.ErrNoRows {
+		return work.AssignmentV2{}, nil
+	}
+	return a, err
+}
+
+// LatestAssignment returns the last assignment fact written for one item.
+// rowid is the insertion order inside this append-only ledger; timestamps have
+// one-second precision and cannot distinguish two assignments made together.
+func (t *WorkV2Tx) LatestAssignment(workID string) (work.AssignmentV2, error) {
+	a, err := scanAssignmentV2(t.tx.QueryRowContext(t.ctx, `SELECT `+assignmentV2Columns+`
+    FROM work_v2_assignments WHERE work_id=? ORDER BY rowid DESC LIMIT 1`, workID))
 	if err == sql.ErrNoRows {
 		return work.AssignmentV2{}, nil
 	}

@@ -227,8 +227,11 @@ func TestEveryGuideExplainsDeferredBoardAssignments(t *testing.T) {
 		"GET /v1/work/v2/agent/session-todos/<conversation id>",
 		"GET /v1/work/v2/items/<id>",
 		"PATCH /v1/work/v2/agent/items/<id>/edit",
+		"POST /v1/work/v2/agent/items/<id>/reopen",
 		"assigned_items",
+		"recent_items",
 		"direct_todos",
+		`"reason"`,
 		"waiting_user",
 		"user_action",
 	}

@@ -218,8 +218,11 @@ The stored event replaces `<full commit>` and both target spellings with Git's r
 - A failed verification returns to `implementing` with the failed check preserved.
 - A merge problem returns to `implementing` or `verifying`; prior landing evidence remains history.
 - A deployment failure stays in `deploying` with a blocker. It does not become done.
-- A completed/cancelled item is reopened only by a person. Reopening starts a new execution cycle
-  and never rewrites the earlier one.
+- A person may reopen a completed or cancelled item. When a person's follow-up clearly says a
+  Session's just-completed result is still unfinished, that same completing Session may retract
+  only its own `done` claim with a concrete reason. The correction restores that Session as owner
+  in `implementing`; it cannot reverse a cancellation or take another Session's completion.
+  Either reopening starts a new execution cycle and never rewrites the earlier one.
 
 ### 6.2 Conditions are not phases
 
@@ -250,7 +253,8 @@ that decision exists. A person may change the policy; the Agent may not.
 | Operation | Person/device | Owning Agent | Other Agent | Broker/rule |
 | --- | ---: | ---: | ---: | ---: |
 | Create item | yes | no | no | no |
-| Assign/reassign/unassign/delete (cancel)/reopen | yes | no | no | no |
+| Assign/reassign/unassign/delete (cancel) | yes | no | no | no |
+| Reopen terminal work | yes | own just-completed `done` only | no | no |
 | Change Project/kind/deployment policy | yes | no | no | no |
 | Edit title/description | yes | yes | no | no |
 | Add/edit documents and steps | yes | yes | no | no |
