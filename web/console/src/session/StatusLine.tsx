@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { GitSnapshot, ProjectLink, SessionInfo, SessionInfoContext, SessionLimitWindow, SessionLimits, SessionRow } from "@clawdline/contract"
+import type { GitSnapshot, ProjectLink, SessionInfo, SessionInfoContext, SessionLimits, SessionRow } from "@clawdline/contract"
 import { contextCell } from "./context.js"
 import { conversationBecameKnown } from "./info-freshness.js"
+import { statusLimitCells } from "./status-limits.js"
 import * as L from "../legacy/bridge.js"
 import { SessionFacts, requestInfo } from "../overlays/index.js"
 import { nextWord } from "../next-strings.js"
@@ -63,6 +64,7 @@ export function StatusLine({
   if (row) drawn.current = true
   const info = useSessionInfo(row)
   const windows = row ? (info ? overlayMachineLimits(info) : machineLimits(row.assistant))?.windows ?? [] : []
+  const limitCells = statusLimitCells(windows, T.webInfoUnknown)
   const deploy = runningDeploy(info)
   const progress = useDeployProgress(deploy)
   const git = useGitStatus(row)
@@ -134,11 +136,13 @@ export function StatusLine({
         {git ? gitStatus(git) : null}
       </button>
       {deployChip(deploy, progress, drawn.current)}
-      <div
-        className="limits"
-        id="status-line-limits"
-        dangerouslySetInnerHTML={{ __html: windows.length ? limitsHTML(windows) : "" }}
-      ></div>
+      <div className="limits" id="status-line-limits">
+        {limitCells.map((window, index) => (
+          <span className="limit" data-level={window.level} key={`${window.name}:${index}`}>
+            {window.name} <b>{window.value}</b>
+          </span>
+        ))}
+      </div>
     </footer>
   )
 }
@@ -335,24 +339,6 @@ function contextItem(at: SessionInfoContext | undefined) {
       ctx <b>{cell.percent}%</b>
     </span>
   )
-}
-
-/**
- * `limitsHTML` in `status-line.js`: one `.limit` per window, its percentage
- * rounded and clamped, coloured by the same two thresholds as the context
- * reading; a window with no percentage says "unknown".
- */
-function limitsHTML(windows: SessionLimitWindow[]): string {
-  return windows
-    .map((w) => {
-      const pct = typeof w.usedPercent === "number" ? Math.max(0, Math.min(100, Math.round(w.usedPercent))) : null
-      const level = pct === null ? "" : pct >= 85 ? "bad" : pct >= 60 ? "warn" : "ok"
-      return (
-        `<span class="limit" data-level="${level}">${L.escapeHTML(w.name)} ` +
-        `<b>${pct === null ? L.escapeHTML(L.strings.webInfoUnknown) : pct + "%"}</b></span>`
-      )
-    })
-    .join("")
 }
 
 /**
