@@ -952,12 +952,17 @@ test("a completed Board item is checked and its report scrolls with a real finge
         if (fold && !fold.open) fold.querySelector('summary')?.click()
         const item = document.querySelector('.session-recent-work .session-owned-summary')
         const check = item?.querySelector('.session-owned-complete')
+        const title = item?.querySelector('b')
+        const activeTitle = document.querySelector('.session-owned-item:not(.completed) b')
         if (item && check && !document.querySelector('.work-item-detail-modal')) item.click()
         const modal = document.querySelector('.work-item-detail-modal')
         const panel = modal?.querySelector('.work-item-detail-panel')
         const box = panel?.getBoundingClientRect()
         if (modal?.textContent.includes('Root cause') && box) return resolve({
           checked: check?.textContent || '',
+          titleColor: title ? getComputedStyle(title).color : '',
+          activeTitleColor: activeTitle ? getComputedStyle(activeTitle).color : '',
+          statusColor: getComputedStyle(check).color,
           parent: modal.parentElement === document.body,
           clientHeight: modal.clientHeight,
           scrollHeight: modal.scrollHeight,
@@ -970,6 +975,8 @@ test("a completed Board item is checked and its report scrolls with a real finge
       read()
     })`)
     assert.equal(shown.checked, "✓")
+    assert.equal(shown.titleColor, shown.activeTitleColor, "completion changed the item title colour")
+    assert.notEqual(shown.titleColor, shown.statusColor, "the title used the completion status colour")
     assert.equal(shown.parent, true, "the modal stayed nested inside the fixed Session pane")
     assert.ok(shown.scrollHeight > shown.clientHeight,
       `detail height ${shown.scrollHeight} did not exceed its ${shown.clientHeight}px viewport`)

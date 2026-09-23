@@ -48,6 +48,12 @@ test("direct todos explain receipts, allow a read row to be sent again, and reta
   assert.match(styles, /var\(--ok\)/)
 })
 
+test("completed todo titles stay neutral while completion status stays green", () => {
+  const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
+  assert.match(styles, /\.session-owned-item\.completed b,\s*\.session-direct-todo\.completed b \{ color: var\(--ink\); \}/)
+  assert.match(styles, /\.session-todo-check\.completed,\s*\.session-direct-todo\.completed \.session-todo-receipt \{ color: var\(--ok\); \}/)
+})
+
 test("empty Session todos use one message and hide empty section furniture", () => {
   assert.match(source, /const empty = page !== null && !hasAssigned && !hasRecent && !hasDirect && !hasCompletedDirect/)
   assert.match(source, /\{page && hasAssigned && <section[\s\S]*?這個 Session 尚未關閉的負責項目/)
