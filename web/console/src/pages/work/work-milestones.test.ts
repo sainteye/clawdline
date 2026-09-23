@@ -4,7 +4,7 @@ import test from "node:test"
 import { WORK_MILESTONES, workMilestoneStates } from "./work-milestones.ts"
 
 test("work phases map to one shared five-stage progress reading", () => {
-  assert.deepEqual(WORK_MILESTONES, ["實作", "驗證", "Commit / Merge", "部署", "完成"])
+  assert.deepEqual(WORK_MILESTONES, ["實作", "驗證", "Commit", "部署", "完成"])
   assert.deepEqual(workMilestoneStates("assigned"), ["current", "pending", "pending", "pending", "pending"])
   assert.deepEqual(workMilestoneStates("verifying"), ["done", "current", "pending", "pending", "pending"])
   assert.deepEqual(workMilestoneStates("merging"), ["done", "done", "current", "pending", "pending"])
