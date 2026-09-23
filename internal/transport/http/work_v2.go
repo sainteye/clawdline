@@ -586,6 +586,23 @@ func workV2Answer(v workV2ItemWire) []byte {
 	return b
 }
 
+func workV2CompletionEffect(v app.WorkV2View, session, language string) store.Effect {
+	terminal := ""
+	for _, assignment := range v.Assignments {
+		if assignment.State == "active" && assignment.SessionID == session {
+			terminal = assignment.TerminalID
+			break
+		}
+	}
+	title, body := "Board item completed", v.Item.Title+" is complete."
+	if strings.HasPrefix(strings.ToLower(language), "zh") {
+		title, body = "看板項目已完成", "「"+v.Item.Title+"」已完成"
+	}
+	payload, _ := json.Marshal(orchestrator.WorkItemCompletedPush{WorkID: v.Item.ID, Terminal: terminal,
+		Title: title, Body: body, Tag: "work-item-" + v.Item.ID})
+	return store.Effect{Kind: orchestrator.EffectWorkItemCompletedPush, Subject: v.Item.ID, Payload: payload}
+}
+
 func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 	actor, ok := requirePersonWorkV2(w, r)
 	if !ok {
@@ -1178,10 +1195,15 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			s.writeWorkV2Error(w, landingErr)
 			return
 		}
+		var effects []store.Effect
+		if work.Phase(body.Next) == work.PhaseDone {
+			effects = []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}
+		}
 		var answer []byte
-		_, err = s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
+		changed, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
 			SessionID: body.SessionID, Next: work.Phase(body.Next), Verification: body.Verification,
-			Landing: landing, Deployment: body.Deployment, NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID},
+			Landing: landing, Deployment: body.Deployment, NoDeploymentReason: body.NoDeploymentReason,
+			Actor: body.SessionID, Effects: effects},
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 				answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
@@ -1191,6 +1213,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			s.writeWorkV2Error(w, err)
 			return
 		}
+		s.broker.RunEffects(r.Context(), changed.EffectIDs)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = w.Write(answer)
 		return

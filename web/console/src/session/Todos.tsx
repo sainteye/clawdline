@@ -150,7 +150,7 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
   return <article className={`session-owned-item${completed ? " completed" : ""}`} data-phase={item.phase}>
     <button className="session-owned-summary" type="button" onClick={onOpen} aria-label={`查看「${item.title}」的項目詳情`}>
       <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
-      <span><b>{item.title}</b><small>{item.project.label} · {item.kind} · {completed ? "已完成" : phaseName(item.phase)}
+      <span><b>{item.title}</b><small>{item.project.label} · {item.kind} · {completed ? `已完成 ${when(item.closed_at)}` : phaseName(item.phase)}
         {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small></span>
       <span className="session-owned-open" aria-hidden="true">→</span>
     </button>
@@ -182,7 +182,8 @@ function WorkItemDetailModal({ item, failure, onClose }: { item: WorkV2Item; fai
         {item.images.map((image) => <ReferenceImage key={image.id} image={image} />)}
       </div>}
       {failure && <p className="work-note" role="alert">最新資料讀取失敗：{failure}</p>}
-      <div className="work-meta"><span>{deploymentPolicyName(item.deployment_policy)}</span><span>更新 {when(item.updated_at)}</span></div>
+      <div className="work-meta"><span>{deploymentPolicyName(item.deployment_policy)}</span>
+        <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span></div>
     </article>
   </div>
 }

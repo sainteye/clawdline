@@ -53,9 +53,14 @@ test("assignment choices show Session activity, unfinished work, and selected de
   assert.match(source, /title="還在做"/)
   assert.match(source, /title="直接待辦"/)
   assert.match(source, /title="最近完成"/)
+	assert.match(source, /`\$\{item\.project\.label\} · 完成 \$\{when\(item\.closed_at\)\}`/)
   assert.match(source, /readSessionWorkV2\(session\.id\)/)
   assert.match(styles, /\.work-session-detail/)
   assert.doesNotMatch(source, /<select className="work-input"[^>]*aria-label="指派既有 Session"/)
+})
+
+test("closed Board cards show their completion time instead of another update time", () => {
+	assert.match(source, /item\.closed_at \? `完成 \$\{when\(item\.closed_at\)\}` : `更新 \$\{when\(item\.updated_at\)\}`/)
 })
 
 test("assigned work links to its current Session instead of offering assignment again", () => {

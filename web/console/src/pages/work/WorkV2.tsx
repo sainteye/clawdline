@@ -229,7 +229,8 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
         onClick={() => imagePicker.current?.click()}>＋ 參考圖片</button>
       <small>{item.images?.length ?? 0} / 6</small>
     </div>}
-    <div className="work-meta"><span>{item.project.available ? (item.condition || "正常") : "project_unavailable"}</span><span>更新 {when(item.updated_at)}</span>
+    <div className="work-meta"><span>{item.project.available ? (item.condition || "正常") : "project_unavailable"}</span>
+      <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
       {owner ? <a className="work-session-link" href={sessionFragment(owner.id)}
         aria-label={`前往正在實作「${item.title}」的 Session`}>前往 Session · {owner.label || owner.id}<span aria-hidden="true">→</span></a>
         : item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}
@@ -357,7 +358,7 @@ function SessionAssignmentDetail({ session, reading }: { session: SessionRow; re
         id: todo.id, title: todo.text, meta: todo.read_at ? "已讀" : todo.sent_at ? "已傳送" : "尚未傳送",
       }))} />
       <SessionWorkList title="最近完成" empty="目前沒有最近完成的看板項目。" rows={(page.recent_items ?? []).map((item) => ({
-        id: item.id, title: item.title, meta: item.project.label,
+        id: item.id, title: item.title, meta: `${item.project.label} · 完成 ${when(item.closed_at)}`,
       }))} />
       {page.truncated && <small className="work-session-truncated">還有更多工作未列出；請進入 Session 查看完整清單。</small>}
     </> : <p>展開 Session 清單後讀取它的工作資訊。</p>}

@@ -42,6 +42,10 @@ type WorkV2View struct {
 	Images      []work.ImageV2
 	Steps       []work.StepV2
 	Events      []work.EventV2
+	// EffectIDs are durable side effects recorded by this write. They are not
+	// part of the work-system response; the transport hands them to the shared
+	// outbox runner after the transaction commits.
+	EffectIDs []int64
 }
 
 type WorkV2Filer func(WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool)
@@ -589,6 +593,7 @@ type AdvanceWorkV2 struct {
 	Deployment         string
 	NoDeploymentReason string
 	Actor              string
+	Effects            []store.Effect
 }
 
 // VerifiedLandingV2 is a Git reading made by the HTTP adapter, never the
@@ -662,7 +667,17 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 			return err
 		}
 		next.Version++
-		out = WorkV2View{Item: next}
+		var effectIDs []int64
+		if c.Next == work.PhaseDone {
+			for _, effect := range c.Effects {
+				id, err := tx.AddEffect(effect)
+				if err != nil {
+					return err
+				}
+				effectIDs = append(effectIDs, id)
+			}
+		}
+		out = WorkV2View{Item: next, EffectIDs: effectIDs}
 		if file != nil {
 			if k, ans, ok := file(out); ok {
 				return tx.CompleteReceipt(k, ans)
