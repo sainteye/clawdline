@@ -94,7 +94,10 @@ footer.status-line .files[hidden] {
   }
 
   footer.status-line .limits {
-    display: none;
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    padding-left: 8px;
   }
 
   .panel-view-body { padding-left: 10px; padding-right: 10px; }
