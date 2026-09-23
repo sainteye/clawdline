@@ -104,9 +104,34 @@ func TestCodexListedDropsChildrenAndOtherDirectories(t *testing.T) {
 		{"id":"cccccccc-cccc-4ccc-8ccc-cccccccccccc","cwd":"/p","updatedAt":40,"preview":"You are a Clawdline CHILD agent for task 9"},
 		{"id":"dddddddd-dddd-4ddd-8ddd-dddddddddddd","cwd":"/q","updatedAt":50,"preview":"elsewhere"}
 	]}}`)
-	got := codexListed(body, "/p", map[string]bool{"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": true})
+	got := codexListed(body, "/p", map[string]bool{"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": true}, PastTitles{})
 	if len(got) != 2 || got[0].Title != "Named" || got[1].Title != "first line" || !got[1].Live {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+// A Board item that opened a Feature Root already gave the session its real
+// name. The assistant's generated name or the briefing's first line must not
+// hide it in the list used to resume earlier conversations.
+func TestPastRootAssignmentTitleWinsBelowAManualTitle(t *testing.T) {
+	titles := PastTitles{
+		Recorded:     func(string) (string, string) { return "Read root assignment", "" },
+		Manual:       func(id, custom string) string { return "" },
+		Orchestrator: func(string) string { return "Fix the Session title" },
+	}
+	if got := displayedTitle("p", "session-a", front{opening: "Read root assignment"}, titles); got != "Fix the Session title" {
+		t.Fatalf("Claude title: %q", got)
+	}
+	body := []byte(`{"id":1,"result":{"data":[
+		{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","cwd":"/p","updatedAt":20,"preview":"Read root assignment","name":"Implement assigned feature"}
+	]}}`)
+	got := codexListed(body, "/p", nil, titles)
+	if len(got) != 1 || got[0].Title != "Fix the Session title" {
+		t.Fatalf("Codex title: %+v", got)
+	}
+	titles.Manual = func(id, custom string) string { return "Person's title" }
+	if got := displayedTitle("p", "session-a", front{opening: "Read root assignment"}, titles); got != "Person's title" {
+		t.Fatalf("manual title: %q", got)
 	}
 }
 
