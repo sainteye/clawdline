@@ -602,3 +602,10 @@ landing 從新版自己的 landing 紀錄推導。**
 | 新 `/v1/health`、`/v1/diagnostics` | `curl :7727`，diagnostics 帶 `~/.config/clawdline-next/local-token` |
 | 新版 daemon 的 log 去向 | `lsof -p <pid>` |
 | 家規字數 | Python `len(str)`（與 Swift 的 `String.count` 在這份以英文為主的檔案上一致） |
+
+### Copied project marks
+
+`icons.saved` retains at most 512 explicitly copied marks without automatic eviction;
+`icons.side` rejects grids above 64 rows or columns; `icons.request_bytes` rejects a copy body
+above 96 KiB. A full registry still permits replacing an existing mark. See
+[project-icons.md](project-icons.md) for resolution, transfer and conflict behavior.

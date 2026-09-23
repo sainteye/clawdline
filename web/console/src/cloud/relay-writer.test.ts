@@ -999,3 +999,15 @@ test("a client that cannot write snippets is refused by name", async () => {
   }
   assert.deepEqual(client.calls, [], "nothing was asked of the machine")
 })
+
+test("project icon copy resolves the receiving place and carries only the mark", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const item = { icon: { accent: "#123456", cells: [["#123456", null]] }, expected: { accent: "#FFFFFF", cells: [[null]] } }
+  const response = await reader.fetch("/v1/projects/cloud-p1/icon", { ...post(item), method: "PUT" })
+  assert.equal(response.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "project-icon-copy", { id: "p1", item }, "action"])
+  client._place = () => ({ machine: "different-machine", id: "p1", path: "/fixture" })
+  const refused = await reader.fetch("/v1/projects/cloud-p1/icon", { ...post(item), method: "PUT" })
+  assert.equal(refused.status, 409)
+})

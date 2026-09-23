@@ -194,6 +194,7 @@ export interface WriteHost {
  * report name.
  */
 export type WriteRoute =
+ | { op: "project-icon-copy"; word: Carried<"project-icon-copy">; id: string }
   | { op: "send"; word: Carried<"send">; session: string }
   | { op: "info"; word: Carried<"info">; session: string }
   | { op: "git"; word: Carried<"git">; session: string }
@@ -383,6 +384,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "work" && a === "v2" && b === "items" && c && segments.length === 4 && method === "PATCH") {
     return { op: "work-v2-edit", word: "work.v2.edit", id: c }
   }
+  if (head === "projects" && a && b === "icon" && segments.length === 3 && method === "PUT") return { op: "project-icon-copy", word: "project-icon-copy", id: a }
   if (method !== "POST") return null
   if (head === "work" && a === "v2") {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
@@ -522,6 +524,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "snippet-order":
       return "flat"
     case "worktree-refresh":
+    case "project-icon-copy":
       return "flat"
     case "work-v2-create":
     case "work-v2-edit":
@@ -831,6 +834,12 @@ export class RelayWriter {
           { project: route.project },
           "action",
         )
+      }
+      case "project-icon-copy": {
+        if (typeof client._place !== "function") throw failure("cloud_not_carried", route.word, 501)
+        const place = client._place(route.id)
+        if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
+        return this.machineWorkV2(client, route.word, { id: place.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-create": {
         const item = await bodyOf(init)

@@ -292,6 +292,10 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 	for i, part := range parts {
 		parts[i] = decodeSegment(part)
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "icon" {
+		s.projectIconRoute(w, r, parts[0])
+		return
+	}
 	if len(parts) < 2 || parts[0] == "" || parts[1] != "worktrees" || len(parts) > 3 ||
 		(len(parts) == 3 && parts[2] != "refresh") {
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such route")

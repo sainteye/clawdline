@@ -6,8 +6,8 @@
 // differently, and "close enough" is the worst outcome: near-identical marks
 // are harder to tell apart than obviously different ones.
 //
-// Everything here is deterministic from the path plus an optional registry
-// file, so both apps reach the same answer without either asking the other.
+// Without a copied mark, resolution remains deterministic from the path and
+// optional compatibility registry. Explicit copies override that fallback.
 package icon
 
 import (
@@ -21,8 +21,8 @@ import (
 
 // Grid is a mark: rows of colours, with nil for transparent.
 type Grid struct {
-	Accent string
-	Cells  [][]*string
+	Accent string      `json:"accent"`
+	Cells  [][]*string `json:"cells"`
 }
 
 // hues are the sixteen the generator picks between, in degrees.
@@ -170,14 +170,16 @@ type art struct {
 
 // Registry is the machine's record of which mark belongs to which project.
 //
-// The file is shared with the Swift app rather than copied, because the marks
-// are a fact about this machine's projects and two copies would drift the first
-// time somebody edited one. Reading it is all this does; it is never written.
+// The original registry remains a read-only compatibility input. Copied marks
+// are persisted separately by this daemon; see overrides.go.
 type Registry struct {
-	mu       sync.Mutex
-	path     string
-	stamp    string
-	projects map[string]entry
+	overrideMu   sync.Mutex
+	overridePath string
+	overrides    map[string]Grid
+	mu           sync.Mutex
+	path         string
+	stamp        string
+	projects     map[string]entry
 }
 
 func NewRegistry() *Registry {
@@ -227,6 +229,16 @@ func (r *Registry) load() map[string]entry {
 // the project is `shop` — and `shop/backend` may have a row of its own,
 // which should win for anything inside it.
 func (r *Registry) For(cwd string) Grid {
+	if cwd == "" {
+		return Grid{Cells: [][]*string{}}
+	}
+	if g, ok := r.override(cwd); ok {
+		return g
+	}
+	return r.legacyFor(cwd)
+}
+
+func (r *Registry) legacyFor(cwd string) Grid {
 	if cwd == "" {
 		return Grid{Cells: [][]*string{}}
 	}
