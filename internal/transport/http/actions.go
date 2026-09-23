@@ -163,6 +163,22 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 				DownstreamSynced: false,
 			})
 		})
+	case "smart-title":
+		if strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
+			writeRefusal(w, http.StatusBadRequest, "bad_request",
+				"smart naming needs an Idempotency-Key so one confirmation can spend at most one model turn")
+			return
+		}
+		s.sessionWrite(w, r, closeBodyLimit, func(size string, limit int64) string {
+			return fmt.Sprintf("That smart-title request was %s bytes and the limit is %d.", size, limit)
+		}, func(w http.ResponseWriter, raw []byte) {
+			var body map[string]any
+			if len(raw) > 0 && (json.Unmarshal(raw, &body) != nil || len(body) != 0) {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "smart naming takes no options")
+				return
+			}
+			s.smartSessionTitle(w, r, id, ctx)
+		})
 	case "close":
 		s.sessionWrite(w, r, closeBodyLimit, func(size string, limit int64) string {
 			return fmt.Sprintf("That was %s bytes and a close's options are at most %d.", size, limit)

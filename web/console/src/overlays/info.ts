@@ -1,6 +1,7 @@
 import type { ProjectLink, SessionInfo, SessionLimits, SessionModel } from "@clawdline/contract"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
+import { smartTitle as requestSmartTitle } from "../legacy/command-bridge.js"
 import { nextWord } from "../next-strings.js"
 import { repositoryNote } from "./links-note.js"
 import { SessionFacts } from "./facts.js"
@@ -22,6 +23,8 @@ import {
   workStateOf,
 } from "../legacy/bridge.js"
 import { toast } from "./toast.js"
+import { ActionConfirm } from "./action-confirm.js"
+import "./info-next.css"
 
 /**
  * The Session info card — `Info` in `input/info.js`, function for function,
@@ -183,6 +186,23 @@ function copyTitle(title: string): string {
   )
 }
 
+function smartTitleButton(disabled: boolean): string {
+  return (
+    '<button type="button" class="title-smart" data-title-smart="1" title="' + esc(nextWord("smartTitleButton")) +
+    '" aria-label="' + esc(nextWord("smartTitleButton")) + '"' + (disabled ? " disabled" : "") + ">" +
+    '<svg viewBox="0 0 18 18" aria-hidden="true" focusable="false">' +
+    '<path d="M9 1.8c.35 2.75 1.7 4.1 4.45 4.45C10.7 6.6 9.35 7.95 9 10.7 8.65 7.95 7.3 6.6 4.55 6.25 7.3 5.9 8.65 4.55 9 1.8Z"></path>' +
+    '<path d="M14.1 10.2c.18 1.45.9 2.17 2.35 2.35-1.45.18-2.17.9-2.35 2.35-.18-1.45-.9-2.17-2.35-2.35 1.45-.18 2.17-.9 2.35-2.35ZM4.15 11.7c.13 1 .62 1.5 1.62 1.63-1 .12-1.5.62-1.62 1.62-.13-1-.63-1.5-1.63-1.62 1-.13 1.5-.63 1.63-1.63Z"></path>' +
+    "</svg></button>"
+  )
+}
+
+function namingAssistantName(assistant: string | undefined): string {
+  if (assistant === "claude") return "Claude Code"
+  if (assistant === "codex") return "Codex"
+  return L.assistantDisplayName(assistant)
+}
+
 function hero(s: Facts["session"], u: Facts["usage"]): string {
   const model = s.model || (u && u.model) || ""
   const title = s.title || model || T.webInfoUnknown
@@ -208,6 +228,7 @@ function hero(s: Facts["session"], u: Facts["usage"]): string {
     : '<div class="title-row"><button type="button" class="session-title" data-title-edit="1" title="' +
       esc(T.webInfoEditTitle) + '"' + (!host.writable() || busy ? " disabled" : "") + '><span>' +
       esc(title) + '</span><i aria-hidden="true">✎</i></button>' +
+      smartTitleButton(!host.writable() || busy) +
       (s.title ? copyTitle(s.title) : "") + "</div>"
   return (
     '<div class="hero">' +
@@ -669,6 +690,44 @@ export const Info = {
     )
   },
 
+  confirmSmartTitle(opener: HTMLElement): void {
+    const id = forId
+    if (!id || !host.writable() || busy || !data?.session) return
+    const assistant = namingAssistantName(data.session.namingAssistant || "codex")
+    ActionConfirm.open(nextWord("smartTitleAction"), id, opener, {
+      title: nextWord("smartTitleConfirmTitle"),
+      say: nextWord("smartTitleConfirmSay", { assistant }),
+      waiting: nextWord("smartTitleWorking"),
+      go: (request) => Info.generateSmartTitle(request),
+    }, { focus: "cancel" })
+  },
+
+  generateSmartTitle(request: string): Promise<void> {
+    const id = forId
+    if (!id || !host.writable() || busy) return Promise.resolve()
+    busy = true
+    said("")
+    draw()
+    return requestSmartTitle(id, request).then(
+      (answer) => {
+        if (forId !== id) return
+        busy = false
+        if (data?.session && typeof answer.display_title === "string") {
+          data.session.title = answer.display_title
+        }
+        SessionFacts.drop(id)
+        said(nextWord("smartTitleSaved"), true)
+        draw()
+      },
+      (error) => {
+        if (forId !== id) return
+        busy = false
+        said(why(error), false)
+        draw()
+      },
+    )
+  },
+
   /** One clipboard path for the session id and the session's name, told apart by what the toast says. */
   copy(text: string | undefined, saidText: string | undefined): void {
     if (!text || !navigator.clipboard) return
@@ -707,6 +766,11 @@ export function bindInfo(): () => void {
     const editTitle = t.closest<HTMLButtonElement>("button[data-title-edit]")
     if (editTitle) {
       if (!editTitle.disabled) Info.editTitle()
+      return
+    }
+    const smartTitle = t.closest<HTMLButtonElement>("button[data-title-smart]")
+    if (smartTitle) {
+      if (!smartTitle.disabled) Info.confirmSmartTitle(smartTitle)
       return
     }
     if (t.closest("button[data-status-review]")) Info.close()

@@ -4892,6 +4892,12 @@ export interface SessionInfoSession {
    * nothing.
    */
   model?: string
+
+  /**
+   * The assistant selected in Settings for one-turn session naming. The
+   * confirmation shows it before spending that assistant's quota.
+   */
+  namingAssistant?: Assistant
   sessionId?: string
 
   /**

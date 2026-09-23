@@ -159,3 +159,46 @@ func TestPlannerFallsBackToToollessCodex(t *testing.T) {
 		t.Fatalf("draft=%#v runs=%d err=%v", draft, runs, err)
 	}
 }
+
+func TestNamerUsesOnlyTheChosenAssistantAndNoTools(t *testing.T) {
+	cases := []string{"claude", "codex"}
+	for _, assistant := range cases {
+		t.Run(assistant, func(t *testing.T) {
+			runs := 0
+			p := Planner{
+				Home:     t.TempDir(),
+				LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+				Run: func(_ context.Context, executable string, args []string, stdin, _ string, _ []string) ([]byte, error) {
+					runs++
+					if executable != "/fake/"+assistant {
+						t.Fatalf("used %q, want chosen assistant %q", executable, assistant)
+					}
+					joined := strings.Join(args, " ")
+					if assistant == "claude" {
+						if !hasEmptyTools(args) || stdin != "ship the helper" {
+							t.Fatalf("claude run = %q stdin=%q", joined, stdin)
+						}
+						return []byte(`{"structured_output":{"title":"Release helper"}}`), nil
+					}
+					if !strings.Contains(joined, "agents.enabled=false") || !strings.Contains(stdin, "<request>\nship the helper\n</request>") {
+						t.Fatalf("codex run = %q stdin=%q", joined, stdin)
+					}
+					for i := 0; i+1 < len(args); i++ {
+						if args[i] == "-o" {
+							if err := os.WriteFile(args[i+1], []byte(`{"title":"Release helper"}`), 0o600); err != nil {
+								t.Fatal(err)
+							}
+							return nil, nil
+						}
+					}
+					t.Fatal("codex run had no output path")
+					return nil, nil
+				},
+			}
+			got, err := p.Name(context.Background(), "ship the helper", assistant)
+			if err != nil || got != "Release helper" || runs != 1 {
+				t.Fatalf("name=%q runs=%d err=%v", got, runs, err)
+			}
+		})
+	}
+}

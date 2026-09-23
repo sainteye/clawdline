@@ -106,11 +106,16 @@ type Server struct {
 	retired retiredWorkflow
 	// planIntent is the paid model seam behind /v1/intents. Tests replace it
 	// with a deterministic draft and never spend an account's quota.
-	planIntent    func(context.Context, string, []planner.Place, []string) (contract.IntentDraft, error)
-	intentContext func(context.Context) ([]planner.Place, []string)
-	intentMu      sync.Mutex
-	intentRun     sync.Mutex
-	intentQueued  int
+	planIntent func(context.Context, string, []planner.Place, []string) (contract.IntentDraft, error)
+	// nameSession is the paid model seam behind /v1/sessions/{id}/smart-title.
+	// firstSessionRequest is the record-reading seam before it. Tests replace
+	// both, so verification never consumes an assistant account's quota.
+	nameSession         func(context.Context, string, string) (string, error)
+	firstSessionRequest func(session.Session) (string, error)
+	intentContext       func(context.Context) ([]planner.Place, []string)
+	intentMu            sync.Mutex
+	intentRun           sync.Mutex
+	intentQueued        int
 }
 
 // servedBy names which implementation answered. It is how a reader tells this
@@ -181,6 +186,7 @@ func New(cfg config.Config) (*Server, error) {
 	localPlanner := planner.New()
 	localPlanner.Timeout = time.Duration(CapacityLimit(capacity.IntentPlannerSeconds)) * time.Second
 	srv.planIntent = localPlanner.Draft
+	srv.nameSession = localPlanner.Name
 	// One producer in front of it, so three loops are one scan.
 	srv.readings = app.NewInventoryReading(srv.inventory.Read, 0)
 	srv.readings.SetRetentionAge(CapacityLimit(capacity.CacheSessionInventory))

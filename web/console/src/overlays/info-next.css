@@ -1,0 +1,38 @@
+/* This daemon's Session Info additions. The legacy sheet remains byte-for-byte. */
+.info-sheet .hero .title-smart {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.info-sheet .hero .title-smart svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.info-sheet .hero .title-smart:hover,
+.info-sheet .hero .title-smart:focus-visible {
+  color: var(--accent);
+}
+
+.info-sheet .hero .title-smart:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.info-sheet .hero .title-smart:disabled {
+  cursor: default;
+  opacity: 0.35;
+}

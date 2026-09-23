@@ -4195,8 +4195,12 @@ type SessionInfoSession struct {
 	// The model the session is on, as its record last named it: the newest assistant
 	// turn's model, or a `/model` switch made after it. Absent when the record says
 	// nothing.
-	Model     string `json:"model,omitempty"`
-	SessionID string `json:"sessionId,omitempty"`
+	Model string `json:"model,omitempty"`
+
+	// The assistant selected in Settings for one-turn session naming. The confirmation
+	// shows it before spending that assistant's quota.
+	NamingAssistant Assistant `json:"namingAssistant,omitempty"`
+	SessionID       string    `json:"sessionId,omitempty"`
 
 	// The same label the session list shows.
 	Title string `json:"title,omitempty"`

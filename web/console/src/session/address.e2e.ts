@@ -86,6 +86,9 @@ const ROWS = [
 let generation = 0
 let intentRequests = 0
 let placeRequests = 0
+let smartTitleRequests = 0
+let smartTitleRequestKey = ""
+let requestedPaths: string[] = []
 let failPlacesOnRequest = 0
 let createdWork: Record<string, unknown> | null = null
 let createdWorkBody: Record<string, unknown> | null = null
@@ -150,7 +153,43 @@ function daemon(): Server {
   return createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
+    requestedPaths.push(`${req.method} ${path}`)
     if (path === "/v1/sessions") return json(res, 200, snapshot())
+    const info = /^\/v1\/sessions\/([^/]+)\/info$/.exec(path)
+    if (info && req.method === "GET") {
+      const id = decodeURIComponent(info[1])
+      const session = ROWS.find((candidate) => candidate.id === id)
+      if (!session) return json(res, 404, { error: { code: "not_found", message: id } })
+      return json(res, 200, {
+        info: {
+          session: {
+            id: session.id,
+            title: session.label,
+            assistant: "claude",
+            namingAssistant: "claude",
+            sessionId: session.sessionId,
+            cwd: session.cwd,
+          },
+          models: [],
+          deploy: [],
+          links: [],
+        },
+      })
+    }
+    const smartTitle = /^\/v1\/sessions\/([^/]+)\/smart-title$/.exec(path)
+    if (smartTitle && req.method === "POST") {
+      smartTitleRequests++
+      smartTitleRequestKey = String(req.headers["idempotency-key"] ?? "")
+      void requestJSON(req).then(() => json(res, 200, {
+        ok: true,
+        title: "Smart release helper",
+        display_title: "Smart release helper",
+        local_applied: true,
+        downstream: "local_only",
+        downstream_synced: false,
+      }), () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
+      return
+    }
     if (path === "/v1/health") return json(res, 200, { ok: true })
     if (path === "/__project_request_count") return json(res, 200, { count: placeRequests })
     if (path === "/v1/places") {
@@ -499,6 +538,79 @@ test("desk: opening a session writes it into the address, and a reload comes bac
     await tab.reload()
     await tab.until("the reload opens the same session", (s) => s.rows === ROWS.length && s.open === TTY)
     assert.equal((await tab.seen()).hash, FRAGMENT[TTY])
+  }))
+
+test("desk: smart naming explains the one model turn before it spends it, then saves the answer", () =>
+  inTab(DESK, async (tab) => {
+    smartTitleRequests = 0
+    smartTitleRequestKey = ""
+    requestedPaths = []
+    await tab.go("/" + FRAGMENT[TTY])
+    await tab.until("the session opens", (s) => s.open === TTY)
+    await tab.run(`document.getElementById("detail-info")?.click()`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const button = document.querySelector("button.title-smart")
+        if (button) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the smart-name button did not appear"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    const button = await tab.run(`(() => {
+      const button = document.querySelector("button.title-smart")
+      const box = button?.getBoundingClientRect()
+      return { label: button?.getAttribute("aria-label"), width: box?.width, height: box?.height }
+    })()`)
+    assert.equal(button.label, "智能命名")
+    assert.ok(button.width >= 36 && button.height >= 36, "the icon remains a comfortable pointer target")
+
+    await tab.run(`document.querySelector("button.title-smart")?.click()`)
+    const asked = await tab.run(`(() => ({
+      shown: document.getElementById("action-confirm")?.hidden === false,
+      title: document.getElementById("action-confirm-title")?.textContent,
+      say: document.getElementById("action-confirm-say")?.textContent,
+      focused: document.activeElement?.id,
+      disabled: document.getElementById("action-confirm-go")?.hasAttribute("disabled"),
+    }))()`)
+    assert.equal(asked.shown, true)
+    assert.equal(asked.title, "要智能命名這個 session 嗎？")
+    assert.match(asked.say, /Claude Code/)
+    assert.match(asked.say, /一次小型模型 turn/)
+    assert.match(asked.say, /額度/)
+    assert.match(asked.say, /取消就不會呼叫模型/)
+    assert.match(asked.say, /手動編輯標題/)
+    assert.equal(asked.focused, "action-confirm-cancel")
+    assert.equal(asked.disabled, false)
+    assert.equal(smartTitleRequests, 0, "opening the confirmation spends no model turn")
+
+    const started = await tab.run(`(() => {
+      document.getElementById("action-confirm-go")?.click()
+      return {
+        busy: document.getElementById("action-confirm-sheet")?.getAttribute("aria-busy"),
+        label: document.getElementById("action-confirm-go")?.textContent,
+      }
+    })()`)
+    assert.deepEqual(started, { busy: "true", label: "命名中…" })
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    assert.equal(smartTitleRequests, 1, "confirming sends exactly one naming request: " + JSON.stringify(requestedPaths))
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const title = document.querySelector(".session-title span")?.textContent
+        const said = document.getElementById("info-said")?.textContent
+        if (title === "Smart release helper" && said === "智能標題已儲存。") return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the generated title was not shown and saved: " + JSON.stringify({
+          title,
+          said,
+          confirm: document.getElementById("action-confirm")?.hidden,
+        })))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.ok(smartTitleRequestKey, "the one mutating request carries an idempotency key")
   }))
 
 for (const id of [TMUX, TTY, ITERM]) {

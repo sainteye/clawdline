@@ -1,7 +1,9 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -73,6 +76,94 @@ func TestASessionTitleIsSavedShownAndCleared(t *testing.T) {
 	v, _ = nextconfig.Open(s.cfg.Dir).Read()
 	if rows := ownSessionTitles(v, time.Now()); len(rows) != 0 {
 		t.Fatalf("clear retained %+v", rows)
+	}
+}
+
+func TestSmartTitleUsesOneReceiptedTurnAndSavesItsAnswer(t *testing.T) {
+	item := session.Session{ID: "%43", Backend: session.BackendTmux, Assistant: session.AssistantClaude,
+		ConversationID: "conversation-43", State: session.StateIdle,
+		Label: "Before", Rungs: session.LabelRungs{Conversation: "Before"}}
+	s := paneServer(t, &pane{s: item})
+	s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
+	s.icons = &icon.Registry{}
+	if _, err := nextconfig.Open(s.cfg.Dir).Set(map[string]any{"auto_name_assistant": "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	s.firstSessionRequest = func(got session.Session) (string, error) {
+		if got.ID != item.ID {
+			t.Fatalf("read first request from %q", got.ID)
+		}
+		return strings.Repeat("界", 2000) + " trailing words", nil
+	}
+	runs := 0
+	s.nameSession = func(_ context.Context, text, assistant string) (string, error) {
+		runs++
+		if assistant != "claude" {
+			t.Fatalf("assistant = %q", assistant)
+		}
+		if len([]byte(text)) > int(capacity.Default(capacity.IntentRequestBytes)) {
+			t.Fatalf("naming input was not capped: %d bytes", len([]byte(text)))
+		}
+		return "  Release\n helper  ", nil
+	}
+	first := act(t, s, "smart-title", item.ID, "smart-1", `{}`)
+	again := act(t, s, "smart-title", item.ID, "smart-1", `{}`)
+	if first.Code != http.StatusOK || again.Code != http.StatusOK {
+		t.Fatalf("answers = %d %s / %d %s", first.Code, first.Body, again.Code, again.Body)
+	}
+	if runs != 1 || again.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("runs=%d replay=%q", runs, again.Header().Get("Idempotent-Replayed"))
+	}
+	var answer contract.SessionTitleReply
+	if err := json.Unmarshal(first.Body.Bytes(), &answer); err != nil || answer.Title != "Release helper" || answer.DisplayTitle != "Release helper" {
+		t.Fatalf("answer = %+v (%v)", answer, err)
+	}
+	values, err := nextconfig.Open(s.cfg.Dir).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := ownSessionTitles(values, time.Now())
+	if len(rows) != 1 || rows[0].Title != "Release helper" {
+		t.Fatalf("stored rows = %+v", rows)
+	}
+}
+
+func TestSmartTitleRefusesBeforeSpendingWithoutAFirstRequestOrReceipt(t *testing.T) {
+	item := session.Session{ID: "%44", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
+		ConversationID: "conversation-44", State: session.StateIdle}
+	s := paneServer(t, &pane{s: item})
+	s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
+	runs := 0
+	s.nameSession = func(context.Context, string, string) (string, error) {
+		runs++
+		return "Should not run", nil
+	}
+	s.firstSessionRequest = func(session.Session) (string, error) { return "", transcript.ErrNotFound }
+	if rec := act(t, s, "smart-title", item.ID, "", `{}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing receipt = %d %s", rec.Code, rec.Body)
+	}
+	if rec := act(t, s, "smart-title", item.ID, "smart-empty", `{}`); rec.Code != http.StatusConflict || codeOf(t, rec) != "conversation_empty" {
+		t.Fatalf("empty conversation = %d %s", rec.Code, rec.Body)
+	}
+	if runs != 0 {
+		t.Fatalf("refused requests spent %d model turns", runs)
+	}
+}
+
+func TestSmartTitleFailureDoesNotReplaceTheExistingName(t *testing.T) {
+	item := session.Session{ID: "%45", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
+		ConversationID: "conversation-45", State: session.StateIdle,
+		Label: "Keep me", Rungs: session.LabelRungs{Conversation: "Keep me"}}
+	s := paneServer(t, &pane{s: item})
+	s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
+	s.firstSessionRequest = func(session.Session) (string, error) { return "name this", nil }
+	s.nameSession = func(context.Context, string, string) (string, error) { return "", errors.New("provider unavailable") }
+	rec := act(t, s, "smart-title", item.ID, "smart-fail", `{}`)
+	if rec.Code != http.StatusBadGateway || codeOf(t, rec) != "naming_failed" {
+		t.Fatalf("failure = %d %s", rec.Code, rec.Body)
+	}
+	if values, err := nextconfig.Open(s.cfg.Dir).Read(); err != nil || values.Exists {
+		t.Fatalf("failed naming changed settings: exists=%v err=%v", values.Exists, err)
 	}
 }
 
