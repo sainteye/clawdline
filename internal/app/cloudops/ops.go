@@ -218,6 +218,7 @@ type plan struct {
 	// expect is a menu answer's question, session.MenuFingerprint's hex.
 	expect                         string
 	project, item, audience, entry string
+	status, query                  string
 	environment, category, cursor  string
 	// kind is a digest's daily-or-weekly, named rather than folded into `id`.
 	kind                            string
@@ -962,6 +963,28 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/work/v2/items",
 					Query: someOf(map[string]string{"project": p.project})}
+			}},
+
+		op{name: "work.v2.search", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "project", "status", "query") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				project, projectOK := b.str("project")
+				status, statusOK := b.str("status")
+				query, queryOK := b.str("query")
+				if !ok || !projectOK || len(project) > 256 || !statusOK ||
+					(status != "open" && status != "done" && status != "all") ||
+					!queryOK || len(query) > 1024 {
+					return plan{}, false
+				}
+				p.project, p.status, p.query = project, status, query
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/items",
+					Query: someOf(map[string]string{"project": p.project, "status": p.status, "q": p.query})}
 			}},
 
 		op{name: "work.v2.proposals", read: true,

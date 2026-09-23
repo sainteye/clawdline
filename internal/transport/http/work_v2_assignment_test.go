@@ -161,6 +161,31 @@ func workV2AssignmentServer(t *testing.T, state session.State) (*Server, *pane, 
 	return s, p, v
 }
 
+func TestWorkV2ListCarriesStatusAndSearchToTheStore(t *testing.T) {
+	s, _, v := workV2AssignmentServer(t, session.StateIdle)
+
+	matching := httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?status=open&q=QUEUED", nil)
+	matched := httptest.NewRecorder()
+	s.workV2Route(matched, matching)
+	if matched.Code != http.StatusOK || !strings.Contains(matched.Body.String(), `"id":"`+v.Item.ID+`"`) {
+		t.Fatalf("matching search: %d %s", matched.Code, matched.Body)
+	}
+
+	missing := httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?status=open&q=absent", nil)
+	notFound := httptest.NewRecorder()
+	s.workV2Route(notFound, missing)
+	if notFound.Code != http.StatusOK || !strings.Contains(notFound.Body.String(), `"rows":[]`) {
+		t.Fatalf("empty search: %d %s", notFound.Code, notFound.Body)
+	}
+
+	invalid := httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?status=closed", nil)
+	refused := httptest.NewRecorder()
+	s.workV2Route(refused, invalid)
+	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), `"error":"invalid_status"`) {
+		t.Fatalf("invalid status: %d %s", refused.Code, refused.Body)
+	}
+}
+
 func TestOnlyAnIdleSessionReceivesAnAssignmentBrief(t *testing.T) {
 	for _, state := range []session.State{session.StateWorking, session.StateWaiting, session.StateUnknown} {
 		t.Run(string(state), func(t *testing.T) {

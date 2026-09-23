@@ -295,6 +295,7 @@ async function mutate<T>(path: string, body: unknown, method = "POST"): Promise<
 
 export type WorkV2Kind = "feature" | "issue" | "epic" | "refactor" | "plan"
 export type WorkV2Phase = "created" | "assigning" | "assigned" | "implementing" | "verifying" | "merging" | "deploying" | "done" | "cancelled"
+export type WorkV2Status = "open" | "done" | "all"
 
 export interface WorkV2Project {
   id: string
@@ -393,9 +394,9 @@ export interface WorkV2Proposal {
   created_at: number
 }
 
-export const readWorkV2 = (projectID?: string) =>
+export const readWorkV2 = (projectID?: string, status: WorkV2Status = "open", search = "") =>
   call<{ ok: boolean; rows: WorkV2Item[]; counts: Record<string, number>; truncated: boolean }>(
-    "/v1/work/v2/items" + query({ project: projectID }),
+    "/v1/work/v2/items" + query({ project: projectID, status, q: search || undefined }),
   )
 export const readWorkV2Item = (id: string) =>
   call<{ ok: boolean; item: WorkV2Item }>(`/v1/work/v2/items/${id}`)

@@ -73,6 +73,15 @@ test("closed Board cards show their completion time instead of another update ti
   assert.match(source, /item\.closed_at \? `完成 \$\{when\(item\.closed_at\)\}` : `更新 \$\{when\(item\.updated_at\)\}`/)
 })
 
+test("the Board can filter lifecycle state and search titles and descriptions", () => {
+  assert.match(source, /aria-label="篩選項目狀態"/)
+  assert.match(source, /搜尋標題與內容/)
+  assert.match(source, /readWorkV2\(selectedProject \|\| undefined, status, search\)/)
+  assert.match(source, /符合項目超過 100 筆/)
+  assert.match(styles, /\.work-filter-bar/)
+  assert.match(styles, /\.work-search/)
+})
+
 test("closed Board cards retain and open Agent completion reports", () => {
   const report = readFileSync(new URL("./WorkCompletionReport.tsx", import.meta.url), "utf8")
   const reportOrder = readFileSync(new URL("./completion-report-order.js", import.meta.url), "utf8")

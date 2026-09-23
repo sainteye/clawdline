@@ -427,7 +427,7 @@ func queryWorkV2(ctx context.Context, q interface {
 	return out, rows.Err()
 }
 
-func (s *Store) WorkV2Items(ctx context.Context, project, owner string, includeTerminal bool, limit int) ([]work.ItemV2, bool, error) {
+func (s *Store) WorkV2Items(ctx context.Context, project, owner, status, search string, limit int) ([]work.ItemV2, bool, error) {
 	if err := reading(); err != nil {
 		return nil, false, err
 	}
@@ -444,8 +444,18 @@ func (s *Store) WorkV2Items(ctx context.Context, project, owner string, includeT
 		stmt += ` AND owner_session = ?`
 		args = append(args, owner)
 	}
-	if !includeTerminal {
+	switch status {
+	case "open":
 		stmt += ` AND phase NOT IN ('done','cancelled')`
+	case "done":
+		stmt += ` AND phase = 'done'`
+	case "all":
+	default:
+		return nil, false, fmt.Errorf("unknown work v2 status %q", status)
+	}
+	if search = strings.TrimSpace(search); search != "" {
+		stmt += ` AND (instr(lower(title), lower(?)) > 0 OR instr(lower(description), lower(?)) > 0)`
+		args = append(args, search, search)
 	}
 	stmt += ` ORDER BY updated_at DESC, id DESC LIMIT ?`
 	args = append(args, limit+1)
