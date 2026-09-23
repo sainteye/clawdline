@@ -957,6 +957,8 @@ test("a completed Board item is checked and its report scrolls with a real finge
         if (item && check && !document.querySelector('.work-item-detail-modal')) item.click()
         const modal = document.querySelector('.work-item-detail-modal')
         const panel = modal?.querySelector('.work-item-detail-panel')
+        const body = modal?.querySelector('.work-completion-report-body')
+        const heading = body?.querySelector('h2, h3, h4')
         const box = panel?.getBoundingClientRect()
         if (modal?.textContent.includes('Root cause') && box) return resolve({
           checked: check?.textContent || '',
@@ -966,6 +968,10 @@ test("a completed Board item is checked and its report scrolls with a real finge
           parent: modal.parentElement === document.body,
           literalBreaks: modal.textContent.includes('\\\\n'),
           paragraphs: modal.querySelectorAll('.work-completion-report-body p').length,
+          bodyColor: body ? getComputedStyle(body).color : '',
+          bodyFontSize: body ? getComputedStyle(body).fontSize : '',
+          headingColor: heading ? getComputedStyle(heading).color : '',
+          headingFontSize: heading ? getComputedStyle(heading).fontSize : '',
           clientHeight: modal.clientHeight,
           scrollHeight: modal.scrollHeight,
           x: Math.round(box.left + box.width / 2),
@@ -982,6 +988,10 @@ test("a completed Board item is checked and its report scrolls with a real finge
     assert.equal(shown.parent, true, "the modal stayed nested inside the fixed Session pane")
     assert.equal(shown.literalBreaks, false, "legacy paragraph separators were shown as literal \\n text")
     assert.ok(shown.paragraphs > 20, `the completion report rendered only ${shown.paragraphs} paragraphs`)
+    assert.equal(shown.bodyColor, "rgb(232, 230, 227)", "completion prose did not use the high-contrast ink colour")
+    assert.equal(shown.bodyFontSize, "15px", "completion prose stayed too small on a phone")
+    assert.equal(shown.headingColor, "rgb(232, 230, 227)", "completion subhead did not use the high-contrast ink colour")
+    assert.equal(shown.headingFontSize, "16px", "completion subhead stayed too small on a phone")
     assert.ok(shown.scrollHeight > shown.clientHeight,
       `detail height ${shown.scrollHeight} did not exceed its ${shown.clientHeight}px viewport`)
     await tab.drag({ x: shown.x, y: shown.y }, { x: 0, y: -260 }, { steps: 12 })
