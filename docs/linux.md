@@ -28,6 +28,41 @@ export CLAWDLINE_NEXT_WEB=/path/to/dist               # required, or the console
 ./clawdline serve
 ```
 
+### Let the Agent deploy later releases
+
+A root-owned system service makes every later release need an administrator even though the daemon
+itself runs as an unprivileged account. A headless installation should instead use the tracked
+`systemd --user` unit. The administrator is needed once to enable linger and move supervision; the
+service account can then build, switch, restart, verify and roll back its own daemon without gaining
+permission to write any root-owned path.
+
+Stage the first release as the service account:
+
+```sh
+tools/deploy-linux-user.sh --stage-only
+```
+
+Then run the one-time migration from an administrator shell, naming that account:
+
+```sh
+sudo tools/bootstrap-linux-user-service.sh clawdline
+```
+
+Every later update is one unprivileged command, suitable for an Agent to run directly:
+
+```sh
+git fetch origin main
+git merge --ff-only origin/main
+tools/deploy-linux-user.sh
+```
+
+The deploy builds from a disposable checkout, leaves the running version alone when a check fails,
+atomically switches `~/.local/share/clawdline-next/current`, restarts only the daemon, checks both
+`GET /` and the authenticated `BUILD.json`, and restores the previous release if either check fails.
+The user unit uses `KillMode=process`, so restarting the daemon does not kill the tmux server or the
+assistants it opened. `loginctl enable-linger` keeps the user manager alive without an interactive
+login; that is why the bootstrap needs root exactly once.
+
 **This section said, when it was written on 2026-09-20, that two more variables were required on
 Linux.** They are not any more, and the same change is why: until 2026-09-19 the daemon forwarded
 every route it had not taken over to port 7717, where the Swift app answered on macOS and nothing
@@ -46,9 +81,9 @@ both. The directory is created `0700` and `local-token`, `orchestrator-token` an
 browser. To reach the console from a workstation, forward the port over your existing remote-access
 path and open that URL against the forwarded port; the gate accepts it.
 
-Nothing installs a login item on Linux yet — `launch_at_login` says so by name. Until
-`clawdline autostart` exists, a `systemd --user` unit running `clawdline serve` plus
-`loginctl enable-linger` is the manual answer, and the capability's own text says exactly that.
+The daemon has no settings switch for launch-at-login yet. The tracked bootstrap above installs the
+`systemd --user` unit and enables linger once; the `launch_at_login` capability names that exact
+path instead of claiming the daemon can toggle it itself.
 
 ## 2. What works, measured
 
