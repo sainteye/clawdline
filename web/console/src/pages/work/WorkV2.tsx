@@ -3,6 +3,7 @@ import type { SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js"
+import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { failureWords, when } from "./shared.js"
 import { WorkMilestones } from "./WorkMilestones.js"
@@ -145,7 +146,8 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run }: {
   const [deleting, setDeleting] = useState(false)
   const imagePicker = useRef<HTMLInputElement>(null)
   const eligible = useMemo(() => sessions.filter((s) => s.cwd === item.project.path && s.sessionId), [sessions, item.project.path])
-  const assignable = item.area !== "planning" && !item.closed_at
+  const owner = item.owner_session ? sessions.find((session) => session.sessionId === item.owner_session) : undefined
+  const assignable = item.area !== "planning" && !item.closed_at && !item.owner_session
   return <article className="work-card work-v2-card" data-work-id={item.id} data-phase={item.phase}>
     <div className="work-card-toolbar">
       <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span>{item.project.label}</span></div>
@@ -183,7 +185,11 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run }: {
         onClick={() => imagePicker.current?.click()}>＋ 參考圖片</button>
       <small>{item.images?.length ?? 0} / 6</small>
     </div>}
-    <div className="work-meta"><span>{item.project.available ? (item.condition || "正常") : "project_unavailable"}</span><span>更新 {when(item.updated_at)}</span>{item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}</div>
+    <div className="work-meta"><span>{item.project.available ? (item.condition || "正常") : "project_unavailable"}</span><span>更新 {when(item.updated_at)}</span>
+      {owner ? <a className="work-session-link" href={sessionFragment(owner.id)}
+        aria-label={`前往正在實作「${item.title}」的 Session`}>前往 Session · {owner.label || owner.id}<span aria-hidden="true">→</span></a>
+        : item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}
+    </div>
     {assignable && <div className="work-assignment">
       <select className="work-input" value={terminal} onChange={(e) => setTerminal(e.target.value)} aria-label="指派既有 Session">
         <option value="">選擇既有 Session</option>{eligible.map((s) => <option key={s.id} value={s.id}>{s.label || s.id}</option>)}

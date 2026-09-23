@@ -41,8 +41,15 @@ test("work cards add, show, open, and remove durable reference images", () => {
 test("unassigned executable work is visible and assignable", () => {
   assert.match(source, /const unassigned = items\.filter\(\(item\) => item\.area === "unassigned"/)
   assert.match(source, /<BoardRegion title="待指派" items=\{unassigned\}/)
-  assert.match(source, /const assignable = item\.area !== "planning"/)
+  assert.match(source, /const assignable = item\.area !== "planning" && !item\.closed_at && !item\.owner_session/)
   assert.doesNotMatch(source, /item\.area === "execution"/)
+})
+
+test("assigned work links to its current Session instead of offering assignment again", () => {
+  assert.match(source, /import \{ sessionFragment \} from "\.\.\/\.\.\/session\/address\.js"/)
+  assert.match(source, /sessions\.find\(\(session\) => session\.sessionId === item\.owner_session\)/)
+  assert.match(source, /className="work-session-link" href=\{sessionFragment\(owner\.id\)\}/)
+  assert.match(source, /aria-label=\{`前往正在實作「\$\{item\.title\}」的 Session`\}/)
 })
 
 test("Board cards show the same lifecycle milestones as their owning Session", () => {
