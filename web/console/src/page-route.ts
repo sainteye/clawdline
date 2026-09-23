@@ -20,6 +20,11 @@ export interface WorkRoute {
   fromProjects: boolean
 }
 
+export interface WorkRouteProject {
+  id: string
+  path: string
+}
+
 /** The durable scope carried by a work-page address. */
 export function workRouteFromHash(hash: string): WorkRoute {
   if (pageInHash(hash) !== "work") return { project: "", fromProjects: false }
@@ -35,6 +40,13 @@ export function workPageHash(project = "", from?: "projects"): string {
   if (project.trim()) hash += "&project=" + encodeURIComponent(project.trim())
   if (from === "projects") hash += "&from=projects"
   return hash
+}
+
+/** Resolve the Project path carried by a Project-page link to the Board's durable id. */
+export function workProjectID(routeProject: string, projects: readonly WorkRouteProject[]): string {
+  const wanted = routeProject.trim()
+  if (!wanted) return ""
+  return projects.find((project) => project.id === wanted || project.path === wanted)?.id ?? ""
 }
 
 /** An absent or retired page address (including Dashboard and Board) lands on Sessions. */

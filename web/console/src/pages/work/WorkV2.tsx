@@ -5,6 +5,7 @@ import * as L from "../../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js"
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
+import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
@@ -46,6 +47,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [proposals, setProposals] = useState<WorkV2Proposal[]>([])
   const [project, setProject] = useState("")
+  const [routeProject, setRouteProject] = useState(() => typeof location === "undefined" ? "" : workRouteFromHash(location.hash).project)
   const [creating, setCreating] = useState(false)
   const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
   const [busy, setBusy] = useState("")
@@ -53,11 +55,21 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
 
   const load = useCallback(async () => {
     try {
-      const [work, projects, live, suggestions] = await Promise.all([readWorkV2(project || undefined), readProjectPlaces(), readSessionsForWorkV2(), readWorkV2Proposals()])
+      const [projects, live, suggestions] = await Promise.all([readProjectPlaces(), readSessionsForWorkV2(), readWorkV2Proposals()])
+      const selectedProject = workProjectID(routeProject, projects.places)
+      const work = await readWorkV2(selectedProject || undefined)
+      setProject(selectedProject)
       setItems(work.rows); setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setFailure("")
       setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
     } catch (e) { setFailure(failureWords(e)) }
-  }, [project])
+  }, [routeProject])
+  useEffect(() => {
+    if (!shown || typeof location === "undefined") return
+    const syncRoute = () => setRouteProject(workRouteFromHash(location.hash).project)
+    syncRoute()
+    window.addEventListener("hashchange", syncRoute)
+    return () => window.removeEventListener("hashchange", syncRoute)
+  }, [shown])
   useEffect(() => {
     if (!shown && !creating && !createdItem) return
     void load()
@@ -98,7 +110,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     </header>
     <div className="work-wrap">
       <p className="work-lede">所有項目由你建立與指派；Session 負責推進實作、驗證、Merge 與部署。</p>
-      <ProjectPicker places={places} value={project} onChange={setProject} allowAll />
+      <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} allowAll />
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {proposals.length > 0 && <details className="work-fold" open><summary><strong>Agent 提案</strong><span className="work-count">{proposals.length}</span></summary>
         <div className="work-fold-body work-cards">{proposals.map((p) => <article className="work-card" key={p.id}>
