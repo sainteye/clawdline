@@ -28,6 +28,8 @@ export function sessionWorkStateName(state: SessionRow["work_state"]): string {
 
 export function sessionWorkCounts(page: SessionWorkV2): SessionWorkCounts {
   const board = page.assigned_items.length
-  const todos = page.direct_todos.length
+  const todos = page.direct_todos.length + page.assigned_items.reduce(
+    (count, item) => count + (item.steps?.filter((step) => !step.done).length ?? 0), 0,
+  )
   return { board, todos, unfinished: board + todos }
 }

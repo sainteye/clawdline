@@ -200,9 +200,13 @@ of storing it. Oversize content or a full item is refused without eviction.
 
 ### WS2-D03 — Steps are item-local aids
 
+On a successful assignment, an executable item with no steps and at least two top-level
+Markdown list rows in its description atomically receives one step per row. A single or nested
+row does not seed, a failed assignment does not seed, and reassignment does not duplicate steps.
 The owner can add, reorder, complete, and reopen steps. Completing every step does not advance the
-item; advancing the item does not silently complete steps. Steps never appear as Board cards or
-Session assignments.
+item, and advancing phases does not silently complete steps; however, `done` is refused with
+`steps_incomplete` until every step has an owner completion receipt. Steps are shown inside the
+parent Board card and Session responsibility and never become Board cards or assignments.
 
 ### WS2-D04 — Reference images are durable person-owned input
 

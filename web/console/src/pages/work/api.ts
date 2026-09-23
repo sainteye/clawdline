@@ -321,6 +321,18 @@ export interface WorkV2Item {
   cycle: number
   version: number
   images?: WorkV2Image[]
+  steps?: WorkV2Step[]
+}
+
+export interface WorkV2Step {
+  id: string
+  title: string
+  done: boolean
+  position: number
+  created_by: string
+  completed_by: string
+  completed_at: number | null
+  version: number
 }
 
 export interface WorkV2Image {

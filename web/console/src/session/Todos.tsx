@@ -5,6 +5,7 @@ import { isPicture, prepareReferencePicture } from "../legacy/shots-bridge.js"
 import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, readWorkV2Item, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
+import { WorkSteps } from "../pages/work/WorkSteps.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
 import "../pages/work/work.css"
@@ -155,6 +156,7 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
       <span className="session-owned-open" aria-hidden="true">→</span>
     </button>
     <WorkMilestones phase={item.phase} />
+    <WorkSteps steps={item.steps} />
   </article>
 }
 

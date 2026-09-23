@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/work"
@@ -187,7 +189,11 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner string, terminal
 		if imageErr != nil {
 			return nil, false, mapWorkV2Error(imageErr)
 		}
-		out = append(out, WorkV2View{Item: i, Images: images})
+		steps, stepErr := w.Store.WorkV2Steps(ctx, i.ID)
+		if stepErr != nil {
+			return nil, false, mapWorkV2Error(stepErr)
+		}
+		out = append(out, WorkV2View{Item: i, Images: images, Steps: steps})
 	}
 	return out, truncated, nil
 }
@@ -203,7 +209,11 @@ func (w *WorkSystemV2) RecentlyCompleted(ctx context.Context, session string) ([
 		if imageErr != nil {
 			return nil, false, mapWorkV2Error(imageErr)
 		}
-		out = append(out, WorkV2View{Item: i, Images: images})
+		steps, stepErr := w.Store.WorkV2Steps(ctx, i.ID)
+		if stepErr != nil {
+			return nil, false, mapWorkV2Error(stepErr)
+		}
+		out = append(out, WorkV2View{Item: i, Images: images, Steps: steps})
 	}
 	return out, truncated, nil
 }
@@ -397,6 +407,64 @@ type AssignWorkV2 struct {
 	AssignmentID    string
 }
 
+func descriptionStepTitles(description string) []string {
+	titles := []string{}
+	for _, line := range strings.Split(strings.ReplaceAll(description, "\r\n", "\n"), "\n") {
+		if line == "" || line[0] == ' ' || line[0] == '\t' {
+			continue
+		}
+		start := -1
+		if len(line) >= 2 && strings.ContainsRune("-*+", rune(line[0])) && (line[1] == ' ' || line[1] == '\t') {
+			start = 2
+		} else {
+			i := 0
+			for i < len(line) && line[i] >= '0' && line[i] <= '9' {
+				i++
+			}
+			if i > 0 && i+1 < len(line) && (line[i] == '.' || line[i] == ')') && (line[i+1] == ' ' || line[i+1] == '\t') {
+				start = i + 2
+			}
+		}
+		if start < 0 {
+			continue
+		}
+		title := strings.TrimSpace(line[start:])
+		if title == "" {
+			continue
+		}
+		if len(title) > workV2TitleLimit {
+			end := workV2TitleLimit - len("…")
+			for end > 0 && !utf8.ValidString(title[:end]) {
+				end--
+			}
+			title = strings.TrimSpace(title[:end]) + "…"
+		}
+		titles = append(titles, title)
+	}
+	if len(titles) < 2 {
+		return nil
+	}
+	return titles
+}
+
+func seedDescriptionSteps(tx *store.WorkV2Tx, item work.ItemV2, session string, at time.Time) ([]work.StepV2, error) {
+	existing, err := tx.Steps(item.ID)
+	if err != nil || len(existing) > 0 {
+		return nil, err
+	}
+	titles := descriptionStepTitles(item.Description)
+	steps := make([]work.StepV2, 0, len(titles))
+	for position, title := range titles {
+		step := work.StepV2{ID: newWorkID(), WorkID: item.ID, Title: title, Position: int64(position),
+			CreatedBy: session, CreatedAt: at, Version: 1}
+		if err := tx.AddStep(step); err != nil {
+			return nil, err
+		}
+		steps = append(steps, step)
+	}
+	return steps, nil
+}
+
 func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pending bool, file WorkV2Filer) (WorkV2View, error) {
 	var out WorkV2View
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
@@ -443,6 +511,13 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		if err := tx.CreateAssignment(a); err != nil {
 			return err
 		}
+		seeded := []work.StepV2{}
+		if !pending {
+			seeded, err = seedDescriptionSteps(tx, prev, a.SessionID, now)
+			if err != nil {
+				return err
+			}
+		}
 		next := prev
 		if pending {
 			if old.ID == "" && prev.Phase == work.PhaseCreated {
@@ -458,11 +533,12 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		}
 		next.UpdatedAt = now
 		if err := tx.PutItem(prev, next, "item.assigned", c.Actor, payload(map[string]any{
-			"assignment_id": a.ID, "mode": a.Mode, "pending": pending, "session_id": a.SessionID})); err != nil {
+			"assignment_id": a.ID, "mode": a.Mode, "pending": pending, "session_id": a.SessionID,
+			"seeded_steps": len(seeded)})); err != nil {
 			return err
 		}
 		next.Version++
-		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{a}}
+		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{a}, Steps: seeded}
 		if file != nil {
 			if k, ans, ok := file(out); ok {
 				return tx.CompleteReceipt(k, ans)
@@ -522,6 +598,13 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 				next.Phase = work.PhaseAssigned
 			}
 		}
+		seeded := []work.StepV2{}
+		if c.Failure == "" {
+			seeded, err = seedDescriptionSteps(tx, prev, c.SessionID, now)
+			if err != nil {
+				return err
+			}
+		}
 		if err := tx.UpdateAssignment(pending); err != nil {
 			return err
 		}
@@ -531,11 +614,12 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 			kind = "assignment.failed"
 		}
 		if err := tx.PutItem(prev, next, kind, c.Actor, payload(map[string]any{
-			"assignment_id": pending.ID, "root_assignment_id": c.RootAssignment, "failure": c.Failure})); err != nil {
+			"assignment_id": pending.ID, "root_assignment_id": c.RootAssignment, "failure": c.Failure,
+			"seeded_steps": len(seeded)})); err != nil {
 			return err
 		}
 		next.Version++
-		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{pending}}
+		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{pending}, Steps: seeded}
 		return nil
 	})
 	return out, mapWorkV2Error(err)
@@ -639,6 +723,21 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 		if err := work.AgentTransition(prev, c.Next, strings.TrimSpace(c.Verification) != "", hasLanding,
 			strings.TrimSpace(c.Deployment) != "", strings.TrimSpace(c.NoDeploymentReason) != ""); err != nil {
 			return err
+		}
+		if c.Next == work.PhaseDone {
+			steps, err := tx.Steps(id)
+			if err != nil {
+				return err
+			}
+			incomplete := 0
+			for _, step := range steps {
+				if !step.Done {
+					incomplete++
+				}
+			}
+			if incomplete > 0 {
+				return work.RefuseV2("steps_incomplete", fmt.Sprintf("Complete all item TODOs before closing this work; %d remain.", incomplete))
+			}
 		}
 		now := w.now()
 		next := prev

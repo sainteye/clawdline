@@ -136,8 +136,16 @@ Item-local steps are a lightweight Agent aid:
 - creator and completion facts;
 - version.
 
-They do not create Board items, do not assign Sessions, and do not automatically advance the
-item's lifecycle. A completed item may retain its steps as history.
+On a successful assignment, an executable item with no existing steps treats two or more
+top-level Markdown list rows in its description as explicit subitems and atomically seeds one step
+per row. A single list row is left as prose, nested rows are not promoted, and reassignment never
+duplicates existing steps. The description remains the authoritative full text; an overlong step
+label is shortened only for the bounded TODO presentation.
+
+Steps do not create Board items, do not assign Sessions, and do not automatically advance the
+item's lifecycle. The owning Agent must explicitly complete every step before `done` is accepted;
+other phase transitions do not silently complete them. A completed item retains its steps as
+history.
 
 ### 5.4 Reference images
 
@@ -180,7 +188,7 @@ Session assignment normally moves from `created` to `assigned` in one transactio
 | `verifying` | owning Agent | verification plan or references recorded |
 | `merging` | owning Agent | successful verification evidence recorded |
 | `deploying` | owning Agent | broker landing, or a direct-Session receipt whose exact commit is contained by both the Project's local target and its remote-tracking target |
-| `done` | owning Agent | deployment evidence is valid, or deployment is explicitly not required |
+| `done` | owning Agent | deployment evidence is valid, or deployment is explicitly not required; every item step is complete |
 | `cancelled` | person | cancellation reason; assignment released |
 
 The `done` transition records the completing owner, releases the active assignment, and removes
@@ -298,6 +306,10 @@ The briefing names the item, Project, objective, description, reference images, 
 lifecycle commands, and ownership rules. It does not create a child relationship or give the Agent permission to
 create another Board item.
 
+Successful activation is also the claim boundary for structured subitems: when the item has no
+steps and its description has at least two top-level Markdown list rows, activation seeds those
+steps in the same transaction as ownership. A failed opening seeds nothing.
+
 For a first assignment, failure returns the item to `created` with `assignment_failed`; the failed
 assignment remains in history and no owner is projected.
 
@@ -359,9 +371,10 @@ The panel has three explicitly labelled groups.
 ### 11.1 Assigned items
 
 One row per non-terminal item owned by the Session, with Project icon, kind, title, phase,
-condition, item-step count, and a control that opens the item's description, requested user action,
-progress, deployment policy, and reference images in a modal. It appears immediately after assignment
-and remains until completion, cancellation, or reassignment. The Agent to-do read returns these rows
+condition, item-step count, and each step's completion receipt. A control opens the item's description,
+requested user action, progress, deployment policy, and reference images in a modal. It appears
+immediately after assignment and remains until completion, cancellation, or reassignment. The Agent
+to-do read returns these rows
 as `assigned_items` as well as the direct to-dos; root guides require that read at turn boundaries,
 so an assignment made during a working turn waits without terminal input and becomes the next
 owned work.

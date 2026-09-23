@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 const source = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
+const workSteps = readFileSync(new URL("./WorkSteps.tsx", import.meta.url), "utf8")
 const styles = readFileSync(new URL("./work.css", import.meta.url), "utf8")
 const sessions = readFileSync(new URL("../../Sessions.tsx", import.meta.url), "utf8")
+const todos = readFileSync(new URL("../../session/Todos.tsx", import.meta.url), "utf8")
 
 test("the Project picker draws each Project mark in its trigger and menu", () => {
   assert.match(source, /function ProjectPicker/)
@@ -58,6 +60,14 @@ test("assignment choices show Session activity, unfinished work, and selected de
   assert.doesNotMatch(source, /<select className="work-input"[^>]*aria-label="指派既有 Session"/)
 })
 
+test("assigned Board items show their generated TODO receipts", () => {
+  assert.match(workSteps, /function WorkSteps/)
+  assert.match(source, /item\.steps/)
+  assert.match(workSteps, /TODO · \{done\} \/ \{steps\.length\}/)
+  assert.match(styles, /\.work-item-steps/)
+  assert.match(todos, /<WorkSteps steps=\{item\.steps\}/)
+})
+
 test("assigned work links to its current Session instead of offering assignment again", () => {
   assert.match(source, /import \{ sessionFragment \} from "\.\.\/\.\.\/session\/address\.js"/)
   assert.match(source, /sessions\.find\(\(session\) => session\.sessionId === item\.owner_session\)/)
@@ -96,6 +106,12 @@ test("the Session list shortcut creates an item and keeps its assignment card in
   assert.match(source, /<CreatedWorkModal item=\{createdItem\}/)
   assert.match(source, /<WorkCard item=\{item\} sessions=\{sessions\}/)
   assert.match(styles, /\.work-created-panel/)
+  assert.match(styles, /\.work-created-modal[^}]*overflow:\s*auto/)
+  assert.match(styles, /\.work-created-panel[^}]*overflow:\s*visible/)
+})
+
+test("the create actions have breathing room above them", () => {
+  assert.match(styles, /\.work-new-modal \.work-actions[^}]*margin-top:/)
 })
 
 test("reference pictures use fetch-backed object URLs so Cloud can render their bytes", () => {

@@ -17,11 +17,11 @@ test("assignment choices explain what an otherwise idle Session needs", () => {
   assert.equal(sessionWorkStateName("milestone_complete" as SessionRow["work_state"]), "待驗收")
 })
 
-test("unfinished counts include open Board items and direct to-dos, not recent completions", () => {
+test("unfinished counts include open Board items, their pending steps, and direct to-dos", () => {
   const page = {
-    assigned_items: [{ id: "board-a" }, { id: "board-b" }],
+    assigned_items: [{ id: "board-a", steps: [{ done: false }, { done: true }] }, { id: "board-b" }],
     direct_todos: [{ id: "todo-a" }],
     recent_items: [{ id: "done-a" }, { id: "done-b" }],
   } as SessionWorkV2
-  assert.deepEqual(sessionWorkCounts(page), { board: 2, todos: 1, unfinished: 3 })
+  assert.deepEqual(sessionWorkCounts(page), { board: 2, todos: 2, unfinished: 4 })
 })

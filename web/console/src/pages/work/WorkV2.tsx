@@ -9,6 +9,7 @@ import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
+import { WorkSteps } from "./WorkSteps.js"
 import {
   assignNewWorkV2,
   assignWorkV2,
@@ -204,6 +205,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
       <strong>需要你做的事</strong><p>{item.user_action}</p>
     </section>}
+    <WorkSteps steps={item.steps} />
     <WorkMilestones phase={item.phase} />
     {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
       {item.images.map((image) => <WorkReferenceImage key={image.id} item={item} image={image} busy={busy} run={run} />)}
