@@ -1,0 +1,28 @@
+/* The dictation field is the main content of this sheet. Its microphone is an
+   action on the sheet, not a second column that takes writing room away. */
+.command-sheet .command-input {
+  display: block;
+}
+
+.command-sheet .command-input textarea {
+  min-height: 120px;
+  margin-bottom: 0;
+}
+
+/* Keep the microphone with the other actions while giving it the left edge of
+   the row. A fixed square and flex centring keep both the microphone and stop
+   marks on the same optical centre. */
+.command-sheet .buttons .command-mic {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  margin-right: auto;
+  padding: 0;
+  align-self: center;
+  line-height: 0;
+}
+
+.command-sheet .buttons .command-mic svg {
+  margin: 0;
+}
