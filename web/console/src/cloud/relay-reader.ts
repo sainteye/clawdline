@@ -508,6 +508,11 @@ export class RelayReader {
         this.only(url, path)
         return await this.machineRead(method, path, "work.v2.session-todos", { terminal: workTerminal })
       }
+      const workItem = workV2ItemID(path)
+      if (workItem) {
+        this.only(url, path)
+        return await this.machineRead(method, path, "work.v2.item", { id: workItem })
+      }
       switch (path) {
         case "/v1/sessions":
           this.note(method, path, "local")
@@ -1137,6 +1142,17 @@ function worktreeLifecycleProject(path: string): string {
 function workV2SessionTodosTerminal(path: string): string {
   const parts = path.split("/")
   if (parts.length !== 6 || parts[1] !== "v1" || parts[2] !== "work" || parts[3] !== "v2" || parts[4] !== "session-todos") return ""
+  try {
+    return decodeURIComponent(parts[5])
+  } catch {
+    return ""
+  }
+}
+
+/** The item id in the exact Work v2 single-item read route. */
+function workV2ItemID(path: string): string {
+  const parts = path.split("/")
+  if (parts.length !== 6 || parts[1] !== "v1" || parts[2] !== "work" || parts[3] !== "v2" || parts[4] !== "items") return ""
   try {
     return decodeURIComponent(parts[5])
   } catch {

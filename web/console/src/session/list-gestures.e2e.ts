@@ -342,7 +342,7 @@ function daemon(): Server {
           id: "report-fixture",
           role: "completion_report",
           title: "Completion report",
-          body: "## Root cause\n\n" + "A verified finding that must remain readable on a phone.\n\n".repeat(24),
+          body: "## Root cause\\n\\n" + "A verified finding that must remain readable on a phone.\\n\\n".repeat(24),
           reference: "",
           position: 0,
           version: 1,
@@ -959,6 +959,8 @@ test("a completed Board item is checked and its report scrolls with a real finge
         if (modal?.textContent.includes('Root cause') && box) return resolve({
           checked: check?.textContent || '',
           parent: modal.parentElement === document.body,
+          literalBreaks: modal.textContent.includes('\\\\n'),
+          paragraphs: modal.querySelectorAll('.work-completion-report-body p').length,
           clientHeight: modal.clientHeight,
           scrollHeight: modal.scrollHeight,
           x: Math.round(box.left + box.width / 2),
@@ -971,6 +973,8 @@ test("a completed Board item is checked and its report scrolls with a real finge
     })`)
     assert.equal(shown.checked, "✓")
     assert.equal(shown.parent, true, "the modal stayed nested inside the fixed Session pane")
+    assert.equal(shown.literalBreaks, false, "legacy paragraph separators were shown as literal \\n text")
+    assert.ok(shown.paragraphs > 20, `the completion report rendered only ${shown.paragraphs} paragraphs`)
     assert.ok(shown.scrollHeight > shown.clientHeight,
       `detail height ${shown.scrollHeight} did not exceed its ${shown.clientHeight}px viewport`)
     await tab.drag({ x: shown.x, y: shown.y }, { x: 0, y: -260 }, { steps: 12 })

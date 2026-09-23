@@ -46,6 +46,12 @@ test("proposal reasons are section headings instead of the same sentence on ever
   assert.match(source, /<p className="work-note">\{workWord\(g\.word\)\}<\/p>/)
 })
 
+test("Work screens translate an uncarried Cloud route instead of printing its internal code", () => {
+  const source = readFileSync(new URL("./shared.ts", import.meta.url), "utf8")
+  assert.match(source, /e\.code === "cloud_not_carried"/)
+  assert.match(source, /nextWord\("cloudNotCarried"\)/)
+})
+
 test("declining for now and recording an evidence-backed resolution are visibly different", () => {
   const prior = Object.getOwnPropertyDescriptor(globalThis, "navigator")
   Object.defineProperty(globalThis, "navigator", {

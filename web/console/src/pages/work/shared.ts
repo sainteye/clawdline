@@ -1,5 +1,6 @@
 import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
+import { nextWord } from "../../next-strings.js"
 import type { Item } from "./api.js"
 import { workWord } from "./words.js"
 
@@ -73,6 +74,7 @@ export function taskWords(it: Item): string {
  */
 export function failureWords(e: unknown): string {
   if (e instanceof RefusalError) {
+    if (e.code === "cloud_not_carried") return nextWord("cloudNotCarried")
     if (e.code === "version_conflict") return workWord("failedConflict")
     if (e.code === "images_full") return "每個項目或 Session 待辦最多可放 6 張參考圖片。"
     if (e.code === "image_too_large" || e.code === "body_too_large") return "圖片太大，請縮小後再試。"

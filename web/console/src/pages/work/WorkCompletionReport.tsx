@@ -1,5 +1,6 @@
 import * as L from "../../legacy/bridge.js"
 import type { WorkV2Document, WorkV2Item } from "./api.js"
+import { completionReportText } from "./completion-report-text.js"
 
 export function completionReports(item: WorkV2Item): WorkV2Document[] {
   return (item.documents ?? []).filter((document) => document.role === "completion_report")
@@ -15,7 +16,7 @@ export function WorkCompletionReports({ item, expanded = false }: { item: WorkV2
         {reports.length > 1 && <small>{index + 1} / {reports.length}</small>}</summary>
       <p className="work-completion-report-authority">Agent 調查結論 · 驗證、Merge 與部署證據另列於項目進度</p>
       <div className="work-completion-report-body"
-        dangerouslySetInnerHTML={{ __html: L.richTextHTML(document.body) }} />
+        dangerouslySetInnerHTML={{ __html: L.richTextHTML(completionReportText(document.body)) }} />
       {document.reference && <p className="work-completion-report-reference">參考：{document.reference}</p>}
     </details>)}
   </section>
