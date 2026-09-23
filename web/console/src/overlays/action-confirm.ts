@@ -328,7 +328,17 @@ export const ActionConfirm = {
     if (statusCopy) {
       const status = document.createElement("p")
       status.className = "end-work-status " + statusClass
-      status.textContent = statusCopy
+      if (statusClass === "is-ready") {
+        const mark = document.createElement("span")
+        mark.className = "end-work-ready-mark"
+        mark.setAttribute("aria-hidden", "true")
+        mark.textContent = "✓"
+        const copy = document.createElement("span")
+        copy.textContent = statusCopy
+        status.append(mark, copy)
+      } else {
+        status.textContent = statusCopy
+      }
       say.appendChild(status)
     }
     if (workTruncated) {
