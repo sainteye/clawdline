@@ -113,7 +113,7 @@ test("Board cards name the action an Agent needs from the person", () => {
 test("the Session list shortcut creates an item and keeps its assignment card in a modal", () => {
   assert.match(sessions, /id="work-create-go"/)
   assert.match(sessions, /aria-label="新增看板項目"/)
-  assert.match(sessions, /onClick=\{openNewWorkItem\}/)
+  assert.match(sessions, /onClick=\{\(\) => openNewWorkItem\(\)\}/)
   assert.match(source, /onOpenNewWorkItem/)
   assert.match(source, /setCreatedItem\(created\)/)
   assert.match(source, /<CreatedWorkModal item=\{createdItem\}/)
@@ -125,6 +125,17 @@ test("the Session list shortcut creates an item and keeps its assignment card in
 
 test("the create actions have breathing room above them", () => {
   assert.match(styles, /\.work-new-modal \.work-actions[^}]*margin-top:/)
+})
+
+test("voice Board drafts are prefilled and still require the create confirmation", () => {
+  const command = readFileSync(new URL("../../session/Command.tsx", import.meta.url), "utf8")
+  const event = readFileSync(new URL("./new-item.ts", import.meta.url), "utf8")
+  assert.match(command, /draft\.kind === "work"/)
+  assert.match(command, /openNewWorkItem\(\{[\s\S]*projectID: draft\.place_id[\s\S]*description: draft\.description/)
+  assert.match(event, /new CustomEvent<NewWorkItemDraft>/)
+  assert.match(source, /initialDraft=\{createDraft\}/)
+  assert.match(source, /語音已填入草稿；按「建立」前不會新增看板項目。/)
+  assert.match(source, /onSubmit=\{\(e\) => \{[\s\S]*onCreate\(/)
 })
 
 test("reference pictures use fetch-backed object URLs so Cloud can render their bytes", () => {

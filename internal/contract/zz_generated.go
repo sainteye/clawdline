@@ -2788,6 +2788,9 @@ type IntentDraft struct {
 	// [daily], named weekdays in week order, or an empty array when no days were said.
 	Days []string `json:"days"`
 
+	// The editable Board-item description; empty for session and schedule drafts.
+	Description string `json:"description"`
+
 	// The editable first message. Empty deliberately means to open the session without
 	// typing anything.
 	Instructions string `json:"instructions"`
@@ -2803,6 +2806,9 @@ type IntentDraft struct {
 	// The clarification to show below 0.5 confidence; empty at or above it.
 	Question string `json:"question"`
 	Title    string `json:"title"`
+
+	// The editable Board-item kind; empty for session and schedule drafts.
+	WorkKind string `json:"work_kind"`
 }
 
 type IntentRequest struct {

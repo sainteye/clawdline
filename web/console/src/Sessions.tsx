@@ -255,7 +255,7 @@ export function SessionsPage({
               type="button"
               title="新增看板項目"
               aria-label="新增看板項目"
-              onClick={openNewWorkItem}
+              onClick={() => openNewWorkItem()}
             >
               <svg className="ico ico-work-add" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <rect x="4" y="5" width="11" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.7"></rect>
