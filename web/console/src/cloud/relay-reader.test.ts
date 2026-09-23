@@ -92,6 +92,10 @@ function row(machine: string, session: string, extra: Record<string, unknown> = 
   return { id: session, machine, session, identity: { machine, session }, state: "idle", work_state: "ready", ...extra }
 }
 
+function inventory(machine: string, ...sessions: string[]) {
+  return { ids: new Set(sessions.map((session) => machine + "\u0000" + session)) }
+}
+
 function reader(client: FakeClient, clock: { t: number }) {
   const r = new RelayReader("mac-a", { now: () => clock.t })
   r.attach(client)
@@ -132,13 +136,58 @@ test("empty is believed only after the machine's inventory, and not while it is 
   const r = reader(client, { t: 1000 })
   const before = await r.snapshot()
   assert.equal(before.scan.emptyAuthoritative, false)
-  client.sessionInventoryByMachine.set("mac-a", { ids: new Set() })
+  client.sessionInventoryByMachine.set("mac-a", inventory("mac-a"))
   assert.equal((await r.snapshot()).scan.emptyAuthoritative, true)
   client.recovering = ["mac-a"]
   const recovering = await r.snapshot()
   assert.equal(recovering.scan.emptyAuthoritative, false)
   assert.ok(recovering.scan.generation > before.scan.generation, "each snapshot is newer than the last")
   assert.equal(recovering.scan.epoch, before.scan.epoch)
+})
+
+test("the first list paints once after every row named by the inventory has arrived", async () => {
+  const client = new FakeClient()
+  client.rows = [row("mac-a", "s1")]
+  const r = reader(client, { t: 1000 })
+  const controller = new AbortController()
+  let answered = false
+  const pending = r.fetch("/v1/sessions", { signal: controller.signal }).then(async (response) => {
+    answered = true
+    return body<SessionsSnapshot>(response)
+  })
+
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  assert.equal(answered, false, "a partial retained row is not the first paint")
+
+  client.sessionInventoryByMachine.set("mac-a", inventory("mac-a", "s1", "s2"))
+  client.emit({ type: "sessions", identity: { machine: "mac-a", session: "__clawdline_inventory_v1__" } })
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  assert.equal(answered, false, "the marker is a receipt for rows, not a substitute for them")
+
+  client.rows = [row("mac-a", "s1"), row("mac-a", "s3")]
+  client.emit({ type: "sessions", identity: { machine: "mac-a", session: "s3" } })
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  assert.equal(answered, false, "the same number of rows is not the marker's exact set")
+
+  client.rows = [row("mac-a", "s1"), row("mac-a", "s2")]
+  client.emit({ type: "sessions", identity: { machine: "mac-a", session: "s2" } })
+  const snapshot = await pending
+  assert.deepEqual(snapshot.sessions.map((session) => session.id), ["s1", "s2"])
+  assert.equal(snapshot.scan.complete, true)
+})
+
+test("the first list falls back to its best partial reading at the existing request deadline", async () => {
+  const client = new FakeClient()
+  client.rows = [row("mac-a", "s1")]
+  const r = reader(client, { t: 1000 })
+  const controller = new AbortController()
+  const pending = r.fetch("/v1/sessions", { signal: controller.signal })
+
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  controller.abort()
+  const snapshot = await body<SessionsSnapshot>(await pending)
+  assert.deepEqual(snapshot.sessions.map((session) => session.id), ["s1"])
+  assert.equal(snapshot.scan.complete, false)
 })
 
 // A viewer that connected after the machine's last change holds no inventory
@@ -160,7 +209,7 @@ test("rows that arrived without the machine's marker are drawn, and are still no
   assert.equal(waiting.scan.emptyAuthoritative, false)
 
   // The marker arriving is what makes it whole; nothing else does.
-  client.sessionInventoryByMachine.set("mac-a", { ids: new Set(["s1", "s3"]) })
+  client.sessionInventoryByMachine.set("mac-a", inventory("mac-a", "s1", "s3"))
   const whole = await r.snapshot()
   assert.equal(whole.scan.complete, true)
   assert.deepEqual(whole.sessions.map((s) => s.id), ["s1", "s3"])
