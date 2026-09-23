@@ -682,6 +682,10 @@ func (t *WorkV2Tx) Step(id string) (work.StepV2, error) {
 	return st, nil
 }
 
+func (t *WorkV2Tx) Steps(workID string) ([]work.StepV2, error) {
+	return queryWorkV2Steps(t.ctx, t.tx, workID)
+}
+
 func (t *WorkV2Tx) PutStep(prev, next work.StepV2) error {
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_steps SET title=?,done=?,position=?,completed_by=?,completed_at=?,version=version+1
     WHERE id=? AND version=?`, next.Title, next.Done, next.Position, next.CompletedBy, zeroOrUnix(next.CompletedAt), prev.ID, prev.Version)
@@ -698,7 +702,13 @@ func (t *WorkV2Tx) PutStep(prev, next work.StepV2) error {
 }
 
 func (s *Store) WorkV2Steps(ctx context.Context, workID string) ([]work.StepV2, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
+	return queryWorkV2Steps(ctx, s.db, workID)
+}
+
+func queryWorkV2Steps(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, workID string) ([]work.StepV2, error) {
+	rows, err := q.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
     FROM work_v2_steps WHERE work_id=? ORDER BY position,id`, workID)
 	if err != nil {
 		return nil, err

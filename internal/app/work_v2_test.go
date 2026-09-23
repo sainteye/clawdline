@@ -102,6 +102,106 @@ func TestWorkV2KeepsHumanAndAgentAuthoritiesSeparate(t *testing.T) {
 	}
 }
 
+func TestAssignmentSeedsDescriptionStepsAndDoneWaitsForTheirReceipts(t *testing.T) {
+	w := newWorkV2Test(t)
+	v, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindFeature,
+		Title: "Ship the grouped change", Description: "Context for the owner.\n\n1. Fix the create spacing\n2. Keep the Session menu visible\n3. Guard completion with the generated TODOs",
+		Actor: "local"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(owned.Steps) != 3 || owned.Steps[0].Title != "Fix the create spacing" || owned.Steps[0].CreatedBy != "session-a" {
+		t.Fatalf("seeded steps: %+v", owned.Steps)
+	}
+	steps := owned.Steps
+	advance := func(next work.Phase, verification string, landing *VerifiedLandingV2, noDeployment string) {
+		t.Helper()
+		owned, err = w.Advance(context.Background(), v.Item.ID, AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+			SessionID: "session-a", Next: next, Verification: verification, Landing: landing,
+			NoDeploymentReason: noDeployment, Actor: "session-a"}, nil)
+		if err != nil {
+			t.Fatalf("advance to %s: %v", next, err)
+		}
+	}
+	advance(work.PhaseImplementing, "", nil, "")
+	advance(work.PhaseVerifying, "", nil, "")
+	advance(work.PhaseMerging, "tests passed", nil, "")
+	advance(work.PhaseDeploying, "", &VerifiedLandingV2{Commit: "a", Target: "main", TargetCommit: "b", Remote: "origin", RemoteCommit: "c"}, "")
+	_, err = w.Advance(context.Background(), v.Item.ID, AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+		SessionID: "session-a", Next: work.PhaseDone, NoDeploymentReason: "No deployment needed", Actor: "session-a"}, nil)
+	var refusal *WorkError
+	if !errors.As(err, &refusal) || refusal.Code != "steps_incomplete" {
+		t.Fatalf("unfinished steps completion: %v", err)
+	}
+	for _, step := range steps {
+		var completed WorkV2View
+		completed, err = w.CompleteStep(context.Background(), v.Item.ID, step.ID, "session-a", owned.Item.Version, nil)
+		if err != nil {
+			t.Fatalf("complete %s: %v", step.Title, err)
+		}
+		owned.Item = completed.Item
+	}
+	advance(work.PhaseDone, "", nil, "No deployment needed")
+}
+
+func TestAssignmentDoesNotInventStepsForOneBulletOrDuplicateExistingSteps(t *testing.T) {
+	w := newWorkV2Test(t)
+	one, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindIssue,
+		Title: "One note", Description: "Context\n- This one bullet is explanatory", Actor: "local"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, err = w.Assign(context.Background(), one.Item.ID, AssignWorkV2{ExpectedVersion: one.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Actor: "local"}, false, nil)
+	if err != nil || len(one.Steps) != 0 {
+		t.Fatalf("single bullet assignment: %+v %v", one.Steps, err)
+	}
+
+	many, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindIssue,
+		Title: "Several notes", Description: "- First task\n- Second task", Actor: "local"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	many, err = w.Assign(context.Background(), many.Item.ID, AssignWorkV2{ExpectedVersion: many.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Actor: "local"}, false, nil)
+	if err != nil || len(many.Steps) != 2 {
+		t.Fatalf("first assignment: %+v %v", many.Steps, err)
+	}
+	reassigned, err := w.Assign(context.Background(), many.Item.ID, AssignWorkV2{ExpectedVersion: many.Item.Version,
+		Mode: "existing_session", SessionID: "session-b", TerminalID: "terminal-b", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, err := w.Item(context.Background(), many.Item.ID)
+	if err != nil || len(full.Steps) != 2 || len(reassigned.Steps) != 0 {
+		t.Fatalf("reassignment duplicated steps: returned=%+v stored=%+v err=%v", reassigned.Steps, full.Steps, err)
+	}
+}
+
+func TestNewSessionSeedsDescriptionStepsOnlyWhenTheAssignmentActivates(t *testing.T) {
+	w := newWorkV2Test(t)
+	v, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindFeature,
+		Title: "Open a Root", Description: "1. Implement the change\n2. Verify the behavior", Actor: "local"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "new_session", AssignmentID: "assignment-a", Actor: "local"}, true, nil)
+	if err != nil || len(pending.Steps) != 0 || pending.Item.Phase != work.PhaseAssigning {
+		t.Fatalf("pending assignment: %+v %v", pending, err)
+	}
+	active, err := w.FinishAssignment(context.Background(), v.Item.ID, FinishAssignmentV2{AssignmentID: "assignment-a",
+		SessionID: "session-a", TerminalID: "terminal-a", RootAssignment: "root-a", Actor: "local"})
+	if err != nil || len(active.Steps) != 2 || active.Steps[0].CreatedBy != "session-a" || active.Item.Phase != work.PhaseAssigned {
+		t.Fatalf("active assignment: %+v %v", active, err)
+	}
+}
+
 func TestPlanningNeverBecomesExecutableAndProposalNeedsOwnedEvidence(t *testing.T) {
 	w := newWorkV2Test(t)
 	planning := createWorkV2Test(t, w, work.KindEpic)

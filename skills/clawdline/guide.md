@@ -506,6 +506,14 @@ made while you were working waits without interrupting the current turn. Finish 
 then take the assigned item as your next owned work and read its complete record at
 `GET /v1/work/v2/items/<id>`.
 
+An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
+Markdown list rows in the description. Each step is an item-local TODO, not another Board item.
+Complete a verified step with an idempotent machine-authenticated request to
+`POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete`, body
+`{"expected_version": <item version>, "session_id": "<your conversation id>"}`. Reread after a
+version conflict. A transition to `done` is refused with `steps_incomplete` while any step remains
+open; Clawdline never checks one merely because the parent phase advanced.
+
 `/v1/board` is the Swift app's old cards, read-only. Landing is a broker fact: an item is never
 marked landed by hand (`422 landing_is_broker_fact`).
 

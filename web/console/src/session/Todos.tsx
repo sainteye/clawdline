@@ -5,6 +5,7 @@ import { isPicture, prepareReferencePicture } from "../legacy/shots-bridge.js"
 import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
+import { WorkSteps } from "../pages/work/WorkSteps.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
 import "../pages/work/work.css"
@@ -94,6 +95,7 @@ export function Todos({ row, agentCount, agentPanel }: {
                 <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · {phaseName(item.phase)}
                   {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small>
                   <WorkMilestones phase={item.phase} />
+                  <WorkSteps steps={item.steps} />
                 </div>
               </article>
             ))}

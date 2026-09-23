@@ -8,6 +8,7 @@ import { Mark } from "../../session/List.js"
 import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
+import { WorkSteps } from "./WorkSteps.js"
 import {
   assignNewWorkV2,
   assignWorkV2,
@@ -189,6 +190,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>
     <h3>{item.title}</h3>
     <p>{item.description}</p>
+    <WorkSteps steps={item.steps} />
     <WorkMilestones phase={item.phase} />
     {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
       {item.images.map((image) => <WorkReferenceImage key={image.id} item={item} image={image} busy={busy} run={run} />)}
