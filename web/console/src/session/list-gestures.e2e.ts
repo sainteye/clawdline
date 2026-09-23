@@ -378,6 +378,10 @@ function daemon(): Server {
         }],
       },
     })
+    if (path === "/v1/work/v2/images/todo-image-fixture" && req.method === "GET") {
+      res.writeHead(200, { "content-type": "image/png" })
+      return res.end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"))
+    }
     const sessionWork = /^\/v1\/work\/v2\/session-todos\/(.+)$/.exec(path)
     if (sessionWork && req.method === "GET") {
       const sessionID = decodeURIComponent(sessionWork[1])
@@ -420,7 +424,9 @@ function daemon(): Server {
             }]
         : []
       const direct = sessionID === BLOCKED
-        ? [{ id: "todo-fixture", text: "Review the release note", created_at: 1, sent_at: 2, read_at: 3, completed_at: null, version: 3 }]
+        ? [{ id: "todo-fixture", text: "Review the release note", created_at: 1, sent_at: 2, read_at: 3, completed_at: null, version: 3,
+            images: [{ id: "todo-image-fixture", title: "release-evidence.png", media_type: "image/png", byte_count: 68,
+              width: 1, height: 1, position: 0, created_by: "fixture", created_at: 1 }] }]
         : sessionID === NEEDS_ATTESTATION
           ? [{ id: "done-todo-fixture", text: "Verify the hosted console", created_at: 1, sent_at: 2, read_at: 3, completed_at: 4, version: 4 }]
           : []
@@ -998,6 +1004,39 @@ test("a completed Board item is checked and its report scrolls with a real finge
     const scrollTop = await tab.run(`document.querySelector('.work-item-detail-modal')?.scrollTop || 0`)
     assert.ok(scrollTop > 0, `a real finger drag left the completion report at ${scrollTop}`)
     await tab.shot("session-completed-board-report")
+  }))
+
+test("a direct todo attachment is a compact clickable filename on a phone", () =>
+  inTab(async (tab) => {
+    await tab.go("/#session=" + encodeURIComponent(BLOCKED))
+    const attachment = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const fold = document.querySelector('.session-todos')
+        if (fold && !fold.open) fold.querySelector('summary')?.click()
+        const link = document.querySelector('.session-todo-image-link')
+        const box = link?.getBoundingClientRect()
+        if (link?.getAttribute('href')?.startsWith('blob:') && box) return resolve({
+          tag: link.tagName,
+          text: link.textContent || '',
+          target: link.getAttribute('target'),
+          imageCount: link.querySelectorAll('img').length,
+          width: box.width,
+          height: box.height,
+        })
+        if (Date.now() >= deadline) return reject(new Error('the compact todo attachment did not arrive'))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.equal(attachment.tag, "A")
+    assert.match(attachment.text, /release-evidence\.png/)
+    assert.equal(attachment.target, "_blank")
+    assert.equal(attachment.imageCount, 0, "the compact attachment still rendered a thumbnail")
+    assert.ok(attachment.width > attachment.height * 4,
+      `attachment ${attachment.width}x${attachment.height} was not a horizontal row`)
+    assert.ok(attachment.height <= 52, `attachment row grew to ${attachment.height}px`)
+    await tab.shot("session-todo-compact-attachment")
   }))
 
 test("a Project-page Board address selects and reads that Project", () =>
