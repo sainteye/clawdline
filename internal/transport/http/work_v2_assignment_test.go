@@ -141,3 +141,70 @@ func TestAnAssignedItemIsInTheAgentsTodoRead(t *testing.T) {
 		t.Fatalf("assigned items = %+v; body = %s", body.Assigned, rec.Body)
 	}
 }
+
+func TestAnAgentSeesAndCanRetractItsRecentCompletion(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	owned, err := s.workV2().Assign(context.Background(), v.Item.ID, app.AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: p.s.ConversationID, TerminalID: p.s.ID, Assistant: "codex",
+		Model: "default", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	advance := func(next work.Phase, verification string, landing *app.VerifiedLandingV2, deployment string) {
+		t.Helper()
+		owned, err = s.workV2().Advance(context.Background(), v.Item.ID, app.AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+			SessionID: p.s.ConversationID, Next: next, Verification: verification, Landing: landing,
+			Deployment: deployment, Actor: p.s.ConversationID}, nil)
+		if err != nil {
+			t.Fatalf("advance to %s: %v", next, err)
+		}
+	}
+	advance(work.PhaseImplementing, "", nil, "")
+	advance(work.PhaseVerifying, "", nil, "")
+	advance(work.PhaseMerging, "tests passed", nil, "")
+	advance(work.PhaseDeploying, "", &app.VerifiedLandingV2{Commit: strings.Repeat("a", 40), Target: "main",
+		TargetCommit: strings.Repeat("b", 40), Remote: "origin", RemoteCommit: strings.Repeat("c", 40)}, "")
+	advance(work.PhaseDone, "", nil, "deployed")
+
+	read := httptest.NewRequest(http.MethodGet, "/v1/work/v2/agent/session-todos/"+p.s.ConversationID, nil)
+	read = read.WithContext(context.WithValue(read.Context(), accessKey{}, access{machine: true, verdict: auth.Verdict{Allowed: true}}))
+	readAnswer := httptest.NewRecorder()
+	s.workV2Route(readAnswer, read)
+	if readAnswer.Code != http.StatusOK {
+		t.Fatalf("read: %d %s", readAnswer.Code, readAnswer.Body)
+	}
+	var page struct {
+		Recent []workV2ItemWire `json:"recent_items"`
+	}
+	if err := json.Unmarshal(readAnswer.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Recent) != 1 || page.Recent[0].ID != v.Item.ID {
+		t.Fatalf("recent items = %+v; body = %s", page.Recent, readAnswer.Body)
+	}
+
+	body, err := json.Marshal(map[string]any{"expected_version": owned.Item.Version,
+		"session_id": p.s.ConversationID, "reason": "The user's reported behavior is still broken."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopen := httptest.NewRequest(http.MethodPost, "/v1/work/v2/agent/items/"+v.Item.ID+"/reopen", bytes.NewReader(body))
+	reopen.Header.Set("Content-Type", "application/json")
+	reopen.Header.Set("Idempotency-Key", "agent-retracts-mistaken-completion")
+	reopen = reopen.WithContext(context.WithValue(reopen.Context(), accessKey{}, access{machine: true, verdict: auth.Verdict{Allowed: true}}))
+	reopenAnswer := httptest.NewRecorder()
+	s.workV2Route(reopenAnswer, reopen)
+	if reopenAnswer.Code != http.StatusOK {
+		t.Fatalf("reopen: %d %s", reopenAnswer.Code, reopenAnswer.Body)
+	}
+	var answer struct {
+		Item workV2ItemWire `json:"item"`
+	}
+	if err := json.Unmarshal(reopenAnswer.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.Item.Phase != "implementing" || answer.Item.OwnerSession == nil ||
+		*answer.Item.OwnerSession != p.s.ConversationID || answer.Item.Cycle != 2 {
+		t.Fatalf("reopened item = %+v", answer.Item)
+	}
+}

@@ -57,6 +57,104 @@ func TestDirectSessionLandingClosesAndRemainsInRecentHistory(t *testing.T) {
 	}
 }
 
+func TestTheCompletingAgentCanRetractAMistakenCompletion(t *testing.T) {
+	w := newWorkV2Test(t)
+	v := createWorkV2Test(t, w, work.KindIssue)
+	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Assistant: "codex",
+		Model: "default", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	advance := func(next work.Phase, verification string, landing *VerifiedLandingV2, deployment string) {
+		t.Helper()
+		owned, err = w.Advance(context.Background(), v.Item.ID, AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+			SessionID: "session-a", Next: next, Verification: verification, Landing: landing,
+			Deployment: deployment, Actor: "session-a"}, nil)
+		if err != nil {
+			t.Fatalf("advance to %s: %v", next, err)
+		}
+	}
+	advance(work.PhaseImplementing, "", nil, "")
+	advance(work.PhaseVerifying, "", nil, "")
+	advance(work.PhaseMerging, "tests passed", nil, "")
+	advance(work.PhaseDeploying, "", &VerifiedLandingV2{Commit: strings.Repeat("a", 40), Target: "main",
+		TargetCommit: strings.Repeat("b", 40), Remote: "origin", RemoteCommit: strings.Repeat("c", 40)}, "")
+	advance(work.PhaseDone, "", nil, "production deployment receipt")
+
+	if _, err := w.ReopenIncomplete(context.Background(), v.Item.ID, AgentReopenWorkV2{
+		ExpectedVersion: owned.Item.Version, SessionID: "session-a", Reason: " ",
+	}, nil); err == nil || !strings.Contains(err.Error(), "reason_required") {
+		t.Fatalf("reasonless completion correction = %v", err)
+	}
+	if _, err := w.ReopenIncomplete(context.Background(), v.Item.ID, AgentReopenWorkV2{
+		ExpectedVersion: owned.Item.Version, SessionID: "session-a",
+		Reason: strings.Repeat("x", workV2CompletionReasonLimit+1),
+	}, nil); err == nil || !strings.Contains(err.Error(), "reason_too_large") {
+		t.Fatalf("oversize completion correction = %v", err)
+	}
+	if _, err := w.ReopenIncomplete(context.Background(), v.Item.ID, AgentReopenWorkV2{
+		ExpectedVersion: owned.Item.Version, SessionID: "session-b", Reason: "The reported behavior still fails.",
+	}, nil); err == nil || !strings.Contains(err.Error(), "not_completing_session") {
+		t.Fatalf("another Session reopened the completion: %v", err)
+	}
+	reopened, err := w.ReopenIncomplete(context.Background(), v.Item.ID, AgentReopenWorkV2{
+		ExpectedVersion: owned.Item.Version, SessionID: "session-a", Reason: "The reported behavior still fails.",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Item.Phase != work.PhaseImplementing || reopened.Item.OwnerSession != "session-a" ||
+		reopened.Item.Cycle != 2 || !reopened.Item.ClosedAt.IsZero() {
+		t.Fatalf("reopened item = %+v", reopened.Item)
+	}
+	full, err := w.Item(context.Background(), v.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := 0
+	for _, assignment := range full.Assignments {
+		if assignment.State == "active" {
+			active++
+			if assignment.SessionID != "session-a" || assignment.TerminalID != "terminal-a" || assignment.Assistant != "codex" {
+				t.Fatalf("replacement assignment = %+v", assignment)
+			}
+		}
+	}
+	if len(full.Assignments) != 2 || active != 1 {
+		t.Fatalf("assignment history = %+v", full.Assignments)
+	}
+	found := false
+	for _, event := range full.Events {
+		if event.Kind == "item.completion_retracted" && strings.Contains(event.Payload, "reported behavior still fails") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("completion correction event = %+v", full.Events)
+	}
+}
+
+func TestAnAgentCannotReverseThePersonsCancellation(t *testing.T) {
+	w := newWorkV2Test(t)
+	v := createWorkV2Test(t, w, work.KindFeature)
+	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelled, err := w.Cancel(context.Background(), v.Item.ID, owned.Item.Version, "local", "The person stopped the work.", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = w.ReopenIncomplete(context.Background(), v.Item.ID, AgentReopenWorkV2{
+		ExpectedVersion: cancelled.Item.Version, SessionID: "session-a", Reason: "I want to continue.",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "item_not_done") {
+		t.Fatalf("Agent reversed cancellation: %v", err)
+	}
+}
+
 func newWorkV2Test(t *testing.T) *WorkSystemV2 {
 	t.Helper()
 	st, err := store.Open(t.TempDir())

@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	WorkV2PageSize         = 100
-	workV2TitleLimit       = 240
-	workV2DescriptionLimit = 64 << 10
-	workV2UserActionLimit  = 8 << 10
-	directTodoTextLimit    = 8 << 10
+	WorkV2PageSize              = 100
+	workV2TitleLimit            = 240
+	workV2DescriptionLimit      = 64 << 10
+	workV2UserActionLimit       = 8 << 10
+	workV2CompletionReasonLimit = 8 << 10
+	directTodoTextLimit         = 8 << 10
 )
 
 type WorkSystemV2 struct {
@@ -737,6 +738,85 @@ func (w *WorkSystemV2) Reopen(ctx context.Context, id string, expected int64, ac
 		}
 		next.Version++
 		out = WorkV2View{Item: next}
+		if file != nil {
+			if k, ans, ok := file(out); ok {
+				return tx.CompleteReceipt(k, ans)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
+// AgentReopenWorkV2 is the narrow correction path for a Session that has just
+// declared its own item done and then learns from the person that the result is
+// still incomplete. It is deliberately separate from person-owned reopening:
+// an Agent cannot reverse a cancellation or take somebody else's completion.
+type AgentReopenWorkV2 struct {
+	ExpectedVersion int64
+	SessionID       string
+	Reason          string
+}
+
+func (w *WorkSystemV2) ReopenIncomplete(ctx context.Context, id string, c AgentReopenWorkV2,
+	file WorkV2Filer) (WorkV2View, error) {
+	c.SessionID, c.Reason = strings.TrimSpace(c.SessionID), strings.TrimSpace(c.Reason)
+	if c.Reason == "" {
+		return WorkV2View{}, workV2Error(http.StatusBadRequest, "reason_required",
+			"Retracting a completion needs the concrete fact that remains unfinished.")
+	}
+	if len(c.Reason) > workV2CompletionReasonLimit {
+		return WorkV2View{}, workV2Error(http.StatusRequestEntityTooLarge, "reason_too_large",
+			"A completion-correction reason is at most 8 KiB.")
+	}
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		if prev.Version != c.ExpectedVersion {
+			return store.ErrConflict
+		}
+		if prev.Phase != work.PhaseDone {
+			return work.RefuseV2("item_not_done", "Only completed work can have its completion retracted by an Agent.")
+		}
+		completed, err := tx.LatestAssignment(id)
+		if err != nil {
+			return err
+		}
+		if c.SessionID == "" || completed.SessionID != c.SessionID || completed.State != "released" ||
+			completed.ReleasedAt.IsZero() || !completed.ReleasedAt.Equal(prev.ClosedAt) {
+			return work.RefuseV2("not_completing_session",
+				"Only the Session that recorded this completion may retract it after user feedback.")
+		}
+		active, err := tx.ActiveAssignment(id)
+		if err != nil {
+			return err
+		}
+		if active.ID != "" {
+			return work.RefuseV2("item_already_assigned", "Completed work already has an active assignment.")
+		}
+		now := w.now()
+		assignment := work.AssignmentV2{ID: newWorkID(), WorkID: id, Mode: "existing_session",
+			SessionID: c.SessionID, TerminalID: completed.TerminalID, Assistant: completed.Assistant,
+			Model: completed.Model, State: "active", HumanActor: c.SessionID,
+			RootAssignment: completed.RootAssignment, CreatedAt: now, UpdatedAt: now}
+		if err := tx.CreateAssignment(assignment); err != nil {
+			return err
+		}
+		next := prev
+		next.Phase, next.Condition, next.UserAction = work.PhaseImplementing, "", ""
+		next.OwnerSession, next.ClosedAt, next.UpdatedAt = c.SessionID, time.Time{}, now
+		next.Cycle = prev.Cycle + 1
+		if err := tx.PutItem(prev, next, "item.completion_retracted", c.SessionID, payload(map[string]any{
+			"assignment_id": assignment.ID, "previous_assignment_id": completed.ID,
+			"cycle": next.Cycle, "reason": c.Reason,
+		})); err != nil {
+			return err
+		}
+		next.Version++
+		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{assignment}}
 		if file != nil {
 			if k, ans, ok := file(out); ok {
 				return tx.CompleteReceipt(k, ans)

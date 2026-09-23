@@ -179,18 +179,23 @@ that action and restores the phase presentation. Broker-derived
 
 ### WS2-L06 — Reopen starts another cycle
 
-A device may reopen done/cancelled work; an Agent may not. The new cycle retains all earlier
-events/evidence, has a new cycle id, and is either unassigned or deliberately assigned according to
-the person's request. No earlier task automatically binds to it.
+A device may reopen done/cancelled work. When user feedback clearly says a Session's just-completed
+item remains unfinished, that same Session may retract only its own `done` claim with a nonblank
+reason. The correction starts a new cycle in `implementing`, creates a new active assignment for
+that Session, and retains the released assignment plus all earlier events/evidence. Another Session,
+an Agent attempting to reverse `cancelled`, and a reasonless request are refused without mutation.
+A person-directed reopening is either unassigned or deliberately assigned according to the person's
+request. No earlier task automatically binds to it.
 
 ## 6. Agent-owned content
 
 ### WS2-D01 — Title and description are editable, identity is not
 
 The owning Agent and a person can edit title/description. Agent attempts to change Project, kind,
-owner, creation actor, deployment policy, cancellation, reopening, or deletion are rejected even
-if those fields are included beside a valid edit. The separate lifecycle command may still advance
-a valid item through `done`.
+owner, creation actor, deployment policy, cancellation, general reopening, or deletion are rejected
+even if those fields are included beside a valid edit. The separate lifecycle commands may still
+advance a valid item through `done` or retract that same Session's mistaken completion under
+WS2-L06.
 
 ### WS2-D02 — Documents are bounded references/content
 
