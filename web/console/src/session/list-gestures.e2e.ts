@@ -623,6 +623,14 @@ const PROBE = `(() => {
       const mark = document.querySelector(".end-work-completed-mark")
       return mark ? getComputedStyle(mark).color : null
     })() : null,
+    readyStatusColor: sheet && !sheet.hidden ? (() => {
+      const status = document.querySelector(".end-work-status.is-ready")
+      return status ? getComputedStyle(status).color : null
+    })() : null,
+    readyMarkColor: sheet && !sheet.hidden ? (() => {
+      const mark = document.querySelector(".end-work-ready-mark")
+      return mark ? getComputedStyle(mark).color : null
+    })() : null,
     technicalText: sheet && !sheet.hidden ? (document.getElementById("action-confirm-technical")?.textContent ?? null) : null,
     technicalOpen: sheet && !sheet.hidden ? !!document.getElementById("action-confirm-technical")?.hasAttribute("open") : null,
     confirmAction: sheet && !sheet.hidden ? (document.getElementById("action-confirm-go")?.textContent ?? "") : null,
@@ -650,6 +658,8 @@ interface Seen {
   sheetSay: string | null
   completedSummary: string | null
   completedMarkColor: string | null
+  readyStatusColor: string | null
+  readyMarkColor: string | null
   technicalText: string | null
   technicalOpen: boolean | null
   confirmAction: string | null
@@ -1210,6 +1220,8 @@ test("a session awaiting attestation explains that inside its named confirmation
     assert.doesNotMatch(ready.sheetSay ?? "", /Repair the previous release|Verify the hosted console/)
     assert.match(ready.sheetSay ?? "", /沒有未完成的看板項目或 TODO。/)
     assert.match(ready.sheetSay ?? "", /現在可以安全關閉這個 Session。/)
+    assert.equal(ready.readyStatusColor, "rgb(232, 230, 227)", "the safe-close sentence uses the main text colour")
+    assert.equal(ready.readyMarkColor, "rgb(95, 158, 115)", "only the safe-close mark uses the success colour")
     assert.equal(ready.confirmAction, "安全關閉")
     await tab.shot("swipe-ready-to-close")
   }))

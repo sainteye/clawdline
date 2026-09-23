@@ -121,4 +121,6 @@ test("closing a Session reads and names unfinished Board items before it can con
   assert.match(confirmation, /endWorkUnreadable/)
   assert.match(confirmation, /closeabilityPlainReasons/)
   assert.match(styles, /\.end-work-completed-mark[\s\S]*?color:\s*var\(--ok\)/)
+  assert.match(styles, /\.end-work-status\.is-ready[\s\S]*?color:\s*var\(--ink\)/)
+  assert.match(styles, /\.end-work-ready-mark[\s\S]*?color:\s*var\(--ok\)/)
 })

@@ -101,8 +101,19 @@
 }
 
 .end-work-status.is-ready {
-  border-left-color: var(--ok);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding-left: 0;
+  border-left: 0;
+  color: var(--ink);
+}
+
+.end-work-ready-mark {
+  margin-top: 1px;
   color: var(--ok);
+  font: 800 15px/1.35 var(--mono);
 }
 
 .end-work-status.is-warning {
