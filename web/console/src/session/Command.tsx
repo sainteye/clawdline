@@ -202,9 +202,17 @@ function reveal(draft: IntentDraft, instructions: string): void {
     return
   }
   if (draft.kind === "work") {
+    const matchedProject = draft.place_id ? places?.find((place) => place.id === draft.place_id) : undefined
+    const project = matchedProject ? {
+      id: matchedProject.id,
+      label: matchedProject.label || matchedProject.path || matchedProject.id,
+      path: matchedProject.path || "",
+      icon: matchedProject.icon,
+    } : undefined
     close()
     openNewWorkItem({
       projectID: draft.place_id ?? "",
+      project,
       kind: workKind(draft.work_kind),
       title: draft.title,
       description: draft.description,
@@ -310,6 +318,7 @@ async function sendInstructions(id: string, instructions: string, tries: number,
       window.setTimeout(() => void sendInstructions(id, instructions, tries - 1, mine), SEND_WAIT)
       return
     }
+    // refusal-ok: showing_a_menu is the only actionable refusal here; every other send failure has the same retry path.
     finish((error as Failure | null)?.code === "showing_a_menu" ? T().webWaitingSay : T().sendFailed)
   }
 }

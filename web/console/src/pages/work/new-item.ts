@@ -2,6 +2,12 @@ const OPEN_NEW_WORK_ITEM = "clawdline:open-new-work-item"
 
 export type NewWorkItemDraft = {
   projectID?: string
+  project?: {
+    id: string
+    label: string
+    path: string
+    icon?: unknown
+  }
   kind?: "feature" | "issue" | "epic" | "refactor" | "plan"
   title?: string
   description?: string
