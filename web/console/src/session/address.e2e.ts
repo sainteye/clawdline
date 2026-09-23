@@ -188,21 +188,40 @@ function daemon(): Server {
     if (path === "/v1/work/v2/proposals") return json(res, 200, { rows: [], truncated: false })
     if (path === "/v1/intents" && req.method === "POST") {
       intentRequests++
-      return json(res, 200, {
-        draft: {
-          place_id: null,
-          assistant: "claude",
-          model: "sonnet",
-          instructions: "Read the failing test and explain the cause.",
-          title: "Explain failing test",
-          confidence: 0.3,
-          question: "Which project should this run in?",
-          kind: "session",
-          at: "",
-          days: [],
-        },
-        ms: 7,
-      })
+      void requestJSON(req).then((body) => {
+        const board = String(body.text).includes("Board item")
+        json(res, 200, {
+          draft: board ? {
+            place_id: "fixture-place",
+            assistant: "claude",
+            model: "sonnet",
+            instructions: "",
+            title: "Voice-created Board draft",
+            description: "Confirm the generated Project, title, and description before creating this item.",
+            confidence: 0.94,
+            question: "",
+            kind: "work",
+            work_kind: "feature",
+            at: "",
+            days: [],
+          } : {
+            place_id: null,
+            assistant: "claude",
+            model: "sonnet",
+            instructions: "Read the failing test and explain the cause.",
+            title: "Explain failing test",
+            description: "",
+            confidence: 0.3,
+            question: "Which project should this run in?",
+            kind: "session",
+            work_kind: "",
+            at: "",
+            days: [],
+          },
+          ms: 7,
+        })
+      }, () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
+      return
     }
     if (path === "/v1/events") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
@@ -591,6 +610,63 @@ test("phone: the home microphone opens an editable draft before anything starts"
     assert.equal(ready, true, "choosing a project makes the reviewed draft startable")
   }))
 
+test("phone: a spoken Board item is prefilled but not created until confirmation", () =>
+  inTab(PHONE, async (tab) => {
+    createdWork = null
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    await tab.run(`(() => {
+      document.getElementById("voice-go").click()
+      const text = document.getElementById("command-text")
+      text.value = "Create a Board item for the voice confirmation flow"
+      text.dispatchEvent(new Event("input", { bubbles: true }))
+      document.getElementById("command-go").click()
+    })()`)
+    const draft = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const modal = document.querySelector(".work-new-modal")
+        const project = modal?.querySelector(".work-project-trigger")
+        if (modal && project?.textContent?.includes("Example project")) return resolve({
+          heading: modal.querySelector("h2")?.textContent,
+          note: modal.querySelector(".work-note")?.textContent,
+          project: project.querySelector("span:not(.work-project-chevron)")?.textContent,
+          title: modal.querySelector("input.work-input")?.value,
+          description: modal.querySelector("textarea")?.value,
+          kind: modal.querySelector('.work-kind-option[aria-pressed="true"] b')?.textContent,
+          commandHidden: document.getElementById("command").hidden,
+          submitDisabled: modal.querySelector('button[type="submit"]')?.disabled,
+        })
+        if (Date.now() >= deadline) return reject(new Error("the spoken Board draft did not reach its confirmation"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.equal(createdWork, null, "planning and showing the confirmation do not create the item")
+    assert.deepEqual(draft, {
+      heading: "確認看板項目",
+      note: "語音已填入草稿；按「建立」前不會新增看板項目。",
+      project: "Example project",
+      title: "Voice-created Board draft",
+      description: "Confirm the generated Project, title, and description before creating this item.",
+      kind: "Feature",
+      commandHidden: true,
+      submitDisabled: false,
+    })
+    await tab.run(`document.querySelector(".work-new-modal form").requestSubmit()`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        if (document.querySelector(".work-created-modal .work-v2-card")) return resolve(true)
+        if (Date.now() >= deadline) return reject(new Error("the confirmed Board item was not created"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.equal((createdWork as Record<string, unknown> | null)?.title, "Voice-created Board draft")
+    assert.equal((createdWork as Record<string, unknown> | null)?.description, "Confirm the generated Project, title, and description before creating this item.")
+  }))
+
 test("phone: the Board shortcut keeps a new item open for assignment", () =>
   inTab(PHONE, async (tab) => {
     createdWork = null
@@ -627,8 +703,8 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
         const card = modal?.querySelector(".work-v2-card")
         if (card) return resolve({
           title: card.querySelector("h3")?.textContent,
-          sessions: card.querySelectorAll(".work-assignment select option").length,
-          actions: [...card.querySelectorAll(".work-assignment button")].map((button) => button.textContent),
+          picker: card.querySelector(".work-session-trigger > span:not(.work-session-placeholder):not(.work-project-chevron)")?.textContent,
+          actions: [...card.querySelectorAll(".work-assignment > button")].map((button) => button.textContent),
           focus: document.activeElement?.getAttribute("aria-label"),
           sessionsPage: !document.getElementById("app").hidden,
           boardPage: !document.getElementById("work").hidden,
@@ -640,7 +716,7 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
     })`)
     assert.deepEqual(card, {
       title: "Shortcut-created work",
-      sessions: ROWS.length + 1,
+      picker: "選擇既有 Session",
       actions: ["指派", "開新 Session"],
       focus: "指派既有 Session",
       sessionsPage: true,
