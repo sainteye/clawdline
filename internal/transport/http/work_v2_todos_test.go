@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -98,5 +99,54 @@ func TestPersonCanRemindOnlyAfterThePreviousDeliveryWasRead(t *testing.T) {
 	}
 	if answer.Todo.SentAt == nil || answer.Todo.ReadAt != nil {
 		t.Fatalf("reminder receipt: %+v", answer.Todo)
+	}
+}
+
+func TestSessionTodosDecodeTerminalNamesOnce(t *testing.T) {
+	for _, terminal := range []string{"%4", "%254", "pane-4"} {
+		t.Run(terminal, func(t *testing.T) {
+			s, p, v := workV2AssignmentServer(t, session.StateIdle)
+			p.s.ID = terminal
+			if _, err := s.workV2().Assign(context.Background(), v.Item.ID, app.AssignWorkV2{
+				ExpectedVersion: v.Item.Version, Mode: "existing_session", SessionID: p.s.ConversationID,
+				TerminalID: terminal, Assistant: "codex", Model: "default", Actor: "local",
+			}, false, nil); err != nil {
+				t.Fatal(err)
+			}
+			path := "/v1/work/v2/session-todos/" + url.PathEscape(terminal)
+			rec := httptest.NewRecorder()
+			s.workV2Route(rec, personWorkV2Request(http.MethodGet, path, "", ""))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("read: %d %s", rec.Code, rec.Body)
+			}
+			var page struct {
+				Assigned []workV2ItemWire `json:"assigned_items"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+				t.Fatal(err)
+			}
+			if len(page.Assigned) != 1 || page.Assigned[0].ID != v.Item.ID {
+				t.Fatalf("assigned: %+v", page.Assigned)
+			}
+			rec = httptest.NewRecorder()
+			s.workV2Route(rec, personWorkV2Request(http.MethodPost, path, `{"text":"Check the result"}`, "create-encoded-terminal"))
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("create: %d %s", rec.Code, rec.Body)
+			}
+			var created struct {
+				Todo directTodoV2Wire `json:"todo"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+				t.Fatal(err)
+			}
+			rec = httptest.NewRecorder()
+			s.workV2Route(rec, personWorkV2Request(http.MethodPost, path+"/"+created.Todo.ID+"/send", `{}`, "send-encoded-terminal"))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("send: %d %s", rec.Code, rec.Body)
+			}
+			if effects := p.done(); len(effects) != 1 || effects[0] != "send:Check the result" {
+				t.Fatalf("effects: %v", effects)
+			}
+		})
 	}
 }
