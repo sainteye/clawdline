@@ -35,6 +35,18 @@ test("owned Board work shows explicit release milestones and recent completion",
   assert.match(styles, /var\(--ok\)/)
 })
 
+test("direct todos explain receipts, allow a read row to be sent again, and retain completion", () => {
+  const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
+  assert.match(source, /filter\(\(todo\) => !todo\.completed_at\)/)
+  assert.match(source, /filter\(\(todo\) => !!todo\.completed_at\)/)
+  assert.match(source, /再次 Send/)
+  assert.match(source, /已同步到 Session，尚未完成/)
+  assert.match(source, /最近完成的直接待辦/)
+  assert.match(source, /session-todo-check completed/)
+  assert.match(styles, /\.session-direct-todo\.completed/)
+  assert.match(styles, /var\(--ok\)/)
+})
+
 test("closing a Session reads and names unfinished Board items before it can continue", () => {
   const confirmation = readFileSync(new URL("../overlays/action-confirm.ts", import.meta.url), "utf8")
   assert.match(confirmation, /readSessionWorkV2\(pending\.id\)/)

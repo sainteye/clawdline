@@ -367,24 +367,32 @@ bounded child of the to-do, and returned as metadata; its bytes use the same opa
 route as Board references. A row has text, reference-image metadata, creation order, state, and
 three independent receipts:
 
-- `sent_at`: the person pressed Send and terminal delivery succeeded (`✓`);
-- `read_at`: the Session read its to-do API (`✓✓`, which supersedes the single mark);
+- `sent_at`: the person most recently pressed Send and terminal delivery succeeded (`✓`);
+- `read_at`: the Session read its to-do API after that delivery (`✓✓`, which supersedes the single mark);
 - `completed_at`: the person or Session checked it complete.
 
-A Session may read an unsent row, in which case it moves directly from no mark to `✓✓`; Send is
-then disabled to avoid duplicate delivery. Send and Delete are person-only. Send hands the durable
-PNG bytes to the existing terminal picture-delivery path, so Claude Code receives pasted images
-and other assistants receive readable drop paths under the same fallback rules as the composer.
+A Session may read an unsent row, in which case it moves directly from no mark to `✓✓`. This is a
+queue-synchronization receipt, not a claim that implementation started: a turn-boundary poll can
+observe the row while the Session is still finishing earlier work. If the row remains open, the
+person may press Send again. A successful reminder replaces `sent_at` and clears the earlier
+`read_at`, returning the row to `✓` until the Session reads its queue again. A sent row that has not
+yet been read cannot be doubled. Send and Delete are person-only. Send hands the durable PNG bytes
+to the existing terminal picture-delivery path, so Claude Code receives pasted images and other
+assistants receive readable drop paths under the same fallback rules as the composer.
 Images cannot be appended after an explicit Send or completion; an Agent pull that races the short
 upload sequence sees the complete set on its next read. Delete removes the row and cascades its image bytes from
 the active store as explicitly requested; its security/operation audit contains metadata, not the
 deleted text or images. Agent access may only read and complete its own row.
 
 The Console draws `✓✓` as an overlapping double-check and exposes localized accessible text for
-unsent, sent, and read; color alone never carries the receipt state.
+unsent, sent, synchronized-but-open, and completed; color alone never carries the receipt state.
+Completed rows remain in a recent-completion group with a green check until the person explicitly
+deletes them. The open count excludes those retained confirmations.
 
-Direct to-dos are returned oldest first so an Agent can process them in order. The Agent may use
-children for independent rows, but Clawdline does not automatically schedule or parallelize them.
+Open direct to-dos are returned oldest first so an Agent can process them in order. Person reads
+place all open rows first and then the newest completed rows, so the bounded view cannot hide old
+unfinished work behind completion history. The Agent may use children for independent rows, but
+Clawdline does not automatically schedule or parallelize them.
 
 ### 11.3 Execution detail
 

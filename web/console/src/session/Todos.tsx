@@ -46,7 +46,9 @@ export function Todos({ row, agentCount, agentPanel }: {
   }, [rowID, load])
 
   if (!row) return null
-  const count = (page?.assigned_items.length ?? 0) + (page?.direct_todos.length ?? 0)
+  const openDirect = page?.direct_todos.filter((todo) => !todo.completed_at) ?? []
+  const completedDirect = page?.direct_todos.filter((todo) => !!todo.completed_at) ?? []
+  const count = (page?.assigned_items.length ?? 0) + openDirect.length
   const run = async (key: string, task: () => Promise<unknown>) => {
     if (busy) return false
     setBusy(key); setFailure("")
@@ -95,12 +97,17 @@ export function Todos({ row, agentCount, agentPanel }: {
             </article>)}
           </section>}
           <section className="session-todos-list" aria-label="直接待辦">
-            <p>直接交給這個 Session 的待辦</p>
-            {page?.direct_todos.length ? page.direct_todos.map((todo) => (
+            <p>直接交給這個 Session 的待辦。✓✓ 只表示已同步到 Session，尚未完成；需要時可以再次 Send。</p>
+            {openDirect.length ? openDirect.map((todo) => (
               <DirectTodo key={todo.id} todo={todo} busy={busy === todo.id}
                 onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />
             )) : page ? <p>目前沒有直接待辦。</p> : null}
           </section>
+          {!!completedDirect.length && <section className="session-todos-list session-recent-todos" aria-label="最近完成的直接待辦">
+            <p>最近完成的直接待辦</p>
+            {completedDirect.map((todo) => <DirectTodo key={todo.id} todo={todo} busy={busy === todo.id}
+              onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />)}
+          </section>}
         </div>
       </details>
       {adding && <div className="session-todo-modal" role="dialog" aria-modal="true" aria-labelledby="session-todo-modal-title">
@@ -131,15 +138,23 @@ export function Todos({ row, agentCount, agentPanel }: {
 }
 
 function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
-  const receipt = todo.read_at ? "✓✓" : todo.sent_at ? "✓" : ""
-  return <article className="session-direct-todo">
-    <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}>○</button>
-    <div><b>{todo.text}</b><small>{when(todo.created_at)} {receipt && <span className="session-todo-receipt" aria-label={todo.read_at ? "已讀" : "已傳送"}>{receipt}</span>}</small></div>
+  const completed = !!todo.completed_at
+  const receipt = todo.read_at ? { mark: "✓✓", words: "已同步到 Session，尚未完成", state: "read" }
+    : todo.sent_at ? { mark: "✓", words: "已傳送，等待 Session 同步", state: "sent" }
+      : { mark: "", words: "尚未傳送；Session 會在下一次讀取待辦時看到", state: "unsent" }
+  return <article className={`session-direct-todo${completed ? " completed" : ""}`}>
+    {completed
+      ? <button className="session-todo-check completed" type="button" disabled aria-label="已完成">✓</button>
+      : <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}>○</button>}
+    <div><b>{todo.text}</b><small>{completed ? `完成 ${when(todo.completed_at!)}` : when(todo.created_at)} <span
+      className="session-todo-receipt" data-state={completed ? "completed" : receipt.state}
+      aria-label={completed ? "已完成" : receipt.words}>{completed ? "已完成" : <><span className="session-todo-receipt-mark" aria-hidden="true">{receipt.mark}</span>{receipt.words}</>}</span></small></div>
     {!!todo.images?.length && <div className="work-reference-images session-todo-images" role="group" aria-label="待辦參考圖片">
       {todo.images.map((image) => <TodoReferenceImage key={image.id} image={image} />)}
     </div>}
     <div className="work-actions">
-      {!todo.sent_at && !todo.read_at && <button className="chip" type="button" disabled={busy} onClick={() => onAction("send")}>Send</button>}
+      {!completed && !todo.sent_at && !todo.read_at && <button className="chip" type="button" disabled={busy} onClick={() => onAction("send")}>Send</button>}
+      {!completed && !!todo.read_at && <button className="chip" type="button" disabled={busy} onClick={() => onAction("send")}>再次 Send</button>}
       <button className="chip danger" type="button" disabled={busy} onClick={() => onAction("delete")}>Delete</button>
     </div>
   </article>
