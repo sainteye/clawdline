@@ -205,6 +205,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
     ["GET", "/v1/artifacts/images/img-1", "image"],
     ["POST", "/v1/sessions/s1/interrupt", "interrupt"],
+    ["POST", "/v1/sessions/s1/smart-title", "title"],
     ["POST", "/v1/push/subscribe", "push-subscribe"],
     ["POST", "/v1/push/unsubscribe", "push-unsubscribe"],
     ["POST", "/v1/push/test", "push-test"],
@@ -249,6 +250,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     op: "resume", word: "resume", place: "p1", assistant: "claude", past: "abc",
   })
   assert.equal(writeRoute("POST", "/v1/sessions/s1/interrupt")?.op, "uncarried")
+  assert.equal(writeRoute("POST", "/v1/sessions/s1/smart-title")?.op, "uncarried")
   assert.equal(writeRoute("GET", "/v1/work/v2/images/img-1")?.word, "work.v2.image")
   assert.equal(writeRoute("POST", "/v1/work/v2/items/w1/images")?.word, "work.v2.image-create")
   assert.equal(writeRoute("DELETE", "/v1/work/v2/items/w1/images/img-1")?.word, "work.v2.image-delete")

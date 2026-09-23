@@ -272,6 +272,7 @@ type Carried<K extends CarriedWord> = K
 const NO_CLOUD_WORD: Readonly<Record<string, string>> = {
   interrupt: "interrupt",
   rename: "title",
+  "smart-title": "title",
   title: "title",
 }
 

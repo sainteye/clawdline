@@ -1,7 +1,8 @@
 // The command sheet's transport seam. The original `input/command.js` binds
 // DOM before React has drawn it, so session/Command.tsx follows that module
 // while this file keeps the copied request and spinner vocabulary.
-import type { IntentResult } from "@clawdline/contract"
+import type { IntentResult, SessionTitleReply } from "@clawdline/contract"
+import { sessionRoutes } from "@clawdline/core"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 import { T } from "./js/core/i18n.js"
 import {
@@ -29,6 +30,15 @@ export function planIntent(text: string): Promise<IntentResult> {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": uuid() },
     body: JSON.stringify({ text }),
+  })
+}
+
+/** One confirmed, receipted naming turn. The daemon saves the answer before replying. */
+export function smartTitle(id: string, request: string): Promise<SessionTitleReply> {
+  return jsonFetch<SessionTitleReply>(sessionRoutes.smartTitle(id), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": request },
+    body: "{}",
   })
 }
 

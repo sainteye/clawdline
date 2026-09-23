@@ -53,6 +53,13 @@ const words = {
     imageMarkupUndo: "Undo",
     imageMarkupCancel: "Cancel",
     imageMarkupDone: "Done",
+    smartTitleButton: "Name with AI",
+    smartTitleAction: "name this session with AI",
+    smartTitleConfirmTitle: "Name this session with AI?",
+    smartTitleConfirmSay:
+      "Clawdline will send this session's first request to {assistant} for one small model turn, then save its answer as the session title. This uses that assistant's quota. Cancel to make no model call and edit the title yourself instead.",
+    smartTitleWorking: "Naming…",
+    smartTitleSaved: "Smart title saved.",
     sessionStateUnrecognizedDetail:
       "Clawdline read the screen but could not identify its state. Inspect the conversation below before deciding what to do.",
     sessionCountNotStarted: "{n} not started yet",
@@ -612,6 +619,13 @@ const words = {
     imageMarkupUndo: "復原",
     imageMarkupCancel: "取消",
     imageMarkupDone: "完成",
+    smartTitleButton: "智能命名",
+    smartTitleAction: "智能命名這個 session",
+    smartTitleConfirmTitle: "要智能命名這個 session 嗎？",
+    smartTitleConfirmSay:
+      "Clawdline 會把這個 session 的第一則需求交給 {assistant} 跑一次小型模型 turn，再把答案存成 session 標題；這會使用該助理的額度。取消就不會呼叫模型，也可以改用手動編輯標題。",
+    smartTitleWorking: "命名中…",
+    smartTitleSaved: "智能標題已儲存。",
   },
 } as const
 

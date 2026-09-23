@@ -45,7 +45,8 @@ type Help = { explanation: string; detailsLabel: string; cancelLabel: string; co
 interface Ask {
   title?: string
   say?: string
-  go?: () => unknown
+  waiting?: string
+  go?: (request: string) => unknown
 }
 interface Pending {
   id: string
@@ -446,7 +447,7 @@ export const ActionConfirm = {
     if (pending.ask && pending.ask.go) {
       this.busy = true
       this.sync()
-      Promise.resolve(pending.ask.go()).then(
+      Promise.resolve(pending.ask.go(pending.request)).then(
         () => this.finish(),
         () => this.finish(),
       )
@@ -486,6 +487,8 @@ export const ActionConfirm = {
       const word = go.querySelector(".busy span")
       if (word) word.textContent = T.webClosing
       setConfirmSpin(go.querySelector("canvas"))
+    } else if (this.busy && this.pending?.ask?.waiting) {
+      go.textContent = this.pending.ask.waiting
     } else {
       const recordedWorkClear = this.pending?.workState === "ready" &&
         this.pending.work.length === 0 && !this.pending.directTodos.some((todo) => !todo.completed_at)

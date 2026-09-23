@@ -1,6 +1,7 @@
 package transcript
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -180,6 +181,43 @@ type Page struct {
 	// reached the record's start, or found all it was asked for first. The
 	// Swift app cuts the same window and does not say so (limits N17).
 	Unread int64
+}
+
+// FirstUser returns the first words a person contributed to a conversation.
+// Smart naming follows the same parsed entries as the visible transcript, so a
+// Clawdline notice, peer message or provider bookkeeping row can never become
+// the prompt merely because it appeared first in the file.
+//
+// The read reuses ReadBudget, but from the beginning of the record: naming a
+// session must not turn a very large rollout into an unbounded disk read. A
+// first user turn beyond that budget is ErrNotFound, which is distinct from a
+// record that could not be opened.
+func FirstUser(path, assistant string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", recordError(err)
+	}
+	defer f.Close()
+
+	scan := bufio.NewScanner(io.LimitReader(f, ReadBudget+1))
+	scan.Buffer(make([]byte, chunk), ReadBudget)
+	for scan.Scan() {
+		var entries []Entry
+		if assistant == "codex" {
+			entries = codexEntries(scan.Bytes())
+		} else {
+			entries = claudeEntries(scan.Bytes(), false)
+		}
+		for _, entry := range entries {
+			if entry.Kind == KindUser && strings.TrimSpace(entry.Text) != "" {
+				return strings.TrimSpace(entry.Text), nil
+			}
+		}
+	}
+	if err := scan.Err(); err != nil {
+		return "", recordError(err)
+	}
+	return "", ErrNotFound
 }
 
 // ReadClaude returns the newest `limit` entries of a Claude conversation.
