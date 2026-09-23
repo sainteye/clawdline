@@ -221,7 +221,8 @@ test("health belongs to the chosen machine, not merely the relay socket", async 
 
 test("a transcript is asked again only when its row could say it changed", async () => {
   const client = new FakeClient()
-  client.rows = [row("mac-a", "s1", { line: "Working (1s)" })]
+  const source = { freshness: "current", observed_at: 10, provenance: "tmux" }
+  client.rows = [row("mac-a", "s1", { line: "Working (1s)", source })]
   const clock = { t: 10_000 }
   const r = reader(client, clock)
   const read = async () => body<TranscriptPage>(await r.fetch("/v1/transcript?session=s1&limit=200"))
@@ -233,7 +234,15 @@ test("a transcript is asked again only when its row could say it changed", async
   await read()
   assert.equal(client.asks, 1, "an unchanged row reuses the answer")
 
-  client.rows = [row("mac-a", "s1", { line: "Working (5s)" })]
+  client.rows = [row("mac-a", "s1", {
+    line: "Working (1s)",
+    source: { ...source, observed_at: 14 },
+  })]
+  clock.t += 4_000
+  await read()
+  assert.equal(client.asks, 1, "a newer terminal observation does not make the transcript newer")
+
+  client.rows = [row("mac-a", "s1", { line: "Working (5s)", source: { ...source, observed_at: 18 } })]
   clock.t += 4_000
   await read()
   assert.equal(client.asks, 1, "the status line alone is not worth a read inside the window")
@@ -242,7 +251,9 @@ test("a transcript is asked again only when its row could say it changed", async
   await read()
   assert.equal(client.asks, 2, "past the window the moving line costs one read")
 
-  client.rows = [row("mac-a", "s1", { line: "Working (5s)", state: "waiting", work_state: "waiting_you" })]
+  client.rows = [row("mac-a", "s1", {
+    line: "Working (5s)", state: "waiting", work_state: "waiting_you", source: { ...source, observed_at: 19 },
+  })]
   clock.t += 1_000
   await read()
   assert.equal(client.asks, 3, "any other change is read at once")
@@ -251,7 +262,7 @@ test("a transcript is asked again only when its row could say it changed", async
   await read()
   assert.equal(client.asks, 4, "and nothing is reused past the ceiling")
   assert.deepEqual(r.log.filter((x: { path: string }) => x.path === "/v1/transcript").map((x: { answer: string }) => x.answer), [
-    "relay", "cache", "cache", "relay", "relay", "relay",
+    "relay", "cache", "cache", "cache", "relay", "relay", "relay",
   ])
 })
 

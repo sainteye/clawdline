@@ -172,10 +172,14 @@ type inventoriedRow struct {
 const Heartbeat = 240 * time.Second
 
 // freshnessOnlySessionRowFields are the row paths that move with every reading
-// of this machine whether or not anything a viewer reads moved
+// of this machine whether or not the row's content moved
 // (`CloudAppBridge.swift:1418-1422`). They are removed before a row is
-// compared, and kept in the row that is published.
+// compared, and kept in the row that is published. A viewer uses the top-level
+// source clock as existence evidence after a close, so it still travels on a
+// meaningful publication and the heartbeat; advancing that clock alone is not
+// a content change.
 var freshnessOnlySessionRowFields = [][]string{
+	{"source", "observed_at"},
 	{"closeability", "observed_at"},
 	{"closeability", "session_generation"},
 	{"closeability", "source", "observed_at"},
