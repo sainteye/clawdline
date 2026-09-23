@@ -54,10 +54,12 @@ const screenLines = 12
 // Codex's "›", and Claude Code's "❯" (composerCarets in the orchestrator).
 var inputCarets = []string{">", "›", "❯"}
 
-// pastePlaceholders are what a CLI draws in its input line in place of a long
-// paste: Claude Code's "[Pasted text #3]" and Codex's "[Pasted Content 1045
-// chars]". Both were read off the programs installed on this Mac.
-var pastePlaceholders = []string{"[Pasted text #", "[Pasted Content "}
+// pastePlaceholders are what a CLI draws in its input line after consuming a
+// paste instead of showing its bytes: Claude Code's "[Pasted text #3]",
+// Codex's "[Pasted Content 1045 chars]", and Codex's "[Image #1]" after it
+// recognises a pasted local image path. All three were read off the programs
+// installed on this machine.
+var pastePlaceholders = []string{"[Pasted text #", "[Pasted Content ", "[Image #"}
 
 // submitPauses are the waits between looks at the screen for step 2: short
 // first, because a program that is reading shows a paste in a few
