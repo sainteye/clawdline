@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -93,18 +94,17 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model st
 	if b.Terminal != nil {
 		choice = b.Terminal()
 	}
+	plan := projects.ChoosePlan(choice, itermOpen, reach)
 	var out openedSession
-	switch projects.ChoosePlan(choice, itermOpen, reach) {
+	switch plan {
 	case projects.PlanITerm:
 		out.TerminalID, err = b.Launcher.NewITermTab(ctx, "cd "+projects.ShellQuoted(cwd)+" && "+command)
 		out.Backend = "iterm"
 	case projects.PlanTmux, projects.PlanTmuxDetached:
 		out.TerminalID, err = b.Launcher.NewTmuxSession(ctx, cwd, name, command)
 		out.Backend = "tmux"
-	case projects.PlanNotRunning:
-		err = terminal.Failure{Message: "iTerm2 is not running, and this will not launch it for you."}
 	default:
-		err = terminal.Failure{Message: "tmux is the terminal for new sessions in Settings, and there is no tmux on this machine."}
+		err = terminal.Failure{Message: (childPlan{kind: plan, choice: choice, reach: reach}).failure(runtime.GOOS)}
 	}
 	if err != nil {
 		return openedSession{}, err

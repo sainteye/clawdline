@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"runtime"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
@@ -86,7 +87,8 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	// may by then answer differently.
 	itermOpen, _ := s.Launcher.ITermRunning(ctx)
 	reach := projects.TmuxReach(s.Launcher.TmuxReach(ctx))
-	plan := projects.ChoosePlan(s.Terminal(), itermOpen, reach)
+	choice := s.Terminal()
+	plan := projects.ChoosePlan(choice, itermOpen, reach)
 
 	switch plan {
 	case projects.PlanITerm:
@@ -108,16 +110,33 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		}
 		return Started{ID: id, Backend: "tmux", Attach: projects.TmuxAttachCommand()}, nil
 	case projects.PlanNotRunning:
-		// StartPoints.appName: the name as a person says it. This daemon does
-		// not ask Launch Services for the display name; iTerm2's is its name.
-		return Started{}, StartRefusal{Status: http.StatusConflict, Code: "terminal_closed",
-			Message: "iTerm2 is not running, and this will not launch it for you. Open it on the machine and try again.",
-			App:     "iTerm2"}
+		return Started{}, unavailableTerminal(choice, runtime.GOOS)
 	default:
 		return Started{}, StartRefusal{Status: http.StatusConflict, Code: "terminal_unsupported",
 			Message: "tmux is the terminal for new sessions in Settings, and there is no tmux on this machine. " +
 				"Install tmux, or pick a different terminal in Settings — see docs/remote.md."}
 	}
+}
+
+// unavailableTerminal names the terminal this platform can actually use.
+// PlanNotRunning means iTerm2 is closed on macOS, but off macOS it means auto
+// found no tmux at all (or that an impossible iTerm2 setting was carried here).
+// Turning both into terminal_closed used to tell a Linux user to open iTerm2
+// on a Mac.
+func unavailableTerminal(choice projects.TerminalChoice, goos string) StartRefusal {
+	if goos == "darwin" {
+		// StartPoints.appName: the name as a person says it. This daemon does
+		// not ask Launch Services for the display name; iTerm2's is its name.
+		return StartRefusal{Status: http.StatusConflict, Code: "terminal_closed",
+			Message: "iTerm2 is not running, and this will not launch it for you. Open it on the machine and try again.",
+			App:     "iTerm2"}
+	}
+	if choice == projects.TerminalITerm {
+		return StartRefusal{Status: http.StatusConflict, Code: "terminal_unsupported",
+			Message: "iTerm2 is selected for new sessions, but " + goos + " has no iTerm2. Choose tmux in Settings."}
+	}
+	return StartRefusal{Status: http.StatusConflict, Code: "terminal_unsupported",
+		Message: "tmux is not installed on this machine. Install tmux and try again."}
 }
 
 // Resume is StartPoints.resume(_:sessionID:assistant:): the conversation has to

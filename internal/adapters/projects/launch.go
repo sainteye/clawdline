@@ -282,8 +282,11 @@ func ChoosePlan(choice TerminalChoice, itermOpen bool, tmux TmuxReach) PlanKind 
 	if itermOpen {
 		return PlanITerm
 	}
-	if tmux == TmuxRunning {
+	switch tmux {
+	case TmuxRunning:
 		return PlanTmux
+	case TmuxInstalled:
+		return PlanTmuxDetached
 	}
 	return PlanNotRunning
 }
