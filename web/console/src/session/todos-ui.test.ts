@@ -33,6 +33,15 @@ test("direct todo attachments are compact file links instead of previews", () =>
   assert.match(styles, /\.session-todo-image-link \{[^}]*min-height:\s*42px/)
 })
 
+test("an expanded Session todo fold becomes a glass layer over the conversation", () => {
+  const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
+  assert.match(styles, /\.session-todos::after \{[^}]*backdrop-filter:\s*blur\(/)
+  assert.match(styles, /\.session-todos\[open\] \{[^}]*box-shadow:/)
+  assert.match(styles, /\.session-todos\[open\]::after \{[^}]*opacity:\s*1/)
+  assert.match(styles, /\.session-todos\[open\] \.session-todos-body \{[^}]*animation:/)
+  assert.match(styles, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.session-todos[\s\S]*?animation:\s*none/)
+})
+
 test("owned Board work shows explicit release milestones and recent completion", () => {
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
   const milestones = readFileSync(new URL("../pages/work/WorkMilestones.tsx", import.meta.url), "utf8")
