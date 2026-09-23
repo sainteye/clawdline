@@ -1,6 +1,6 @@
 import type { WorkV2Phase } from "./api.js"
 
-export const WORK_MILESTONES = ["實作", "驗證", "Commit / Merge", "部署", "完成"] as const
+export const WORK_MILESTONES = ["實作", "驗證", "Commit", "部署", "完成"] as const
 
 export type WorkMilestoneState = "done" | "current" | "pending"
 
