@@ -729,6 +729,7 @@ router. The console's carried-word list and the daemon vocabulary are checked to
 | `answer`（與別名 `key`） | command | `POST /v1/sessions/{id}/key` | 400 `bad_request` | 接上 |
 | `end` | command | `POST /v1/sessions/{id}/close` | 409 `session_unknown` | 接上，**CAS 沒有比對**（見下） |
 | `focus` | command | `POST /v1/sessions/{id}/focus` | 409 `session_unknown` | 接上 |
+| `smart-title` | command | `POST /v1/sessions/{id}/smart-title` | 沒實測（會花一次模型呼叫） | 接上（2026-09-23；viewer request id 直接成為本機冪等鍵） |
 | `start` | command | `POST /v1/places/{place}/start[/{assistant}[/{model}]]` | 沒實測（會真的開 session） | 接上，路由由 `start.go` 讀出 |
 | `resume` | command | `POST /v1/places/{place}/resume/[{assistant}/]{past}` | 沒實測（同上） | 接上，路由由 `start.go` 讀出 |
 | `voice` | command | `POST /v1/voice` | 400 `bad_request`（rate） | 接上 |
