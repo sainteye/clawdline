@@ -1148,6 +1148,36 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		s.workV2Edit(w, r, parts[1], false)
 		return
 	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "reopen" && r.Method == http.MethodPost {
+		var body struct {
+			ExpectedVersion int64  `json:"expected_version"`
+			SessionID       string `json:"session_id"`
+			Reason          string `json:"reason"`
+		}
+		raw, ok := readWorkV2Body(w, r, &body)
+		if !ok {
+			return
+		}
+		k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+		if !ok {
+			return
+		}
+		var answer []byte
+		_, err := s.workV2().ReopenIncomplete(r.Context(), parts[1], app.AgentReopenWorkV2{
+			ExpectedVersion: body.ExpectedVersion, SessionID: body.SessionID, Reason: body.Reason,
+		}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+		})
+		if err != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write(answer)
+		return
+	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "phase" && r.Method == http.MethodPost {
 		var body struct {
 			ExpectedVersion    int64                 `json:"expected_version"`
@@ -1293,8 +1323,17 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			for _, item := range items {
 				assigned = append(assigned, s.workV2ItemOf(r.Context(), item))
 			}
-			writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "direct_todos": out,
-				"truncated": truncated || itemTruncated})
+			recent, recentTruncated, err := s.workV2().RecentlyCompleted(r.Context(), sessionID)
+			if err != nil {
+				s.writeWorkV2Error(w, err)
+				return
+			}
+			completed := make([]workV2ItemWire, 0, len(recent))
+			for _, item := range recent {
+				completed = append(completed, s.workV2ItemOf(r.Context(), item))
+			}
+			writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
+				"direct_todos": out, "truncated": truncated || itemTruncated || recentTruncated})
 			return
 		}
 		if len(parts) == 4 && parts[3] == "complete" && r.Method == http.MethodPost {

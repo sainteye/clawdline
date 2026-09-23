@@ -501,10 +501,27 @@ these from task facts; there is nothing to write.
 
 At every turn boundary, before declaring yourself idle, also read
 `GET /v1/work/v2/agent/session-todos/<conversation id>`. Its `assigned_items` are Board items the
-person has given this Session; its `direct_todos` are quick requests. This pull is how an assignment
-made while you were working waits without interrupting the current turn. Finish the current turn,
-then take the assigned item as your next owned work and read its complete record at
-`GET /v1/work/v2/items/<id>`.
+person has given this Session, its `recent_items` are items this Session recently completed, and its
+`direct_todos` are quick requests. This pull is how an assignment made while you were working waits
+without interrupting the current turn. Finish the current turn, then take the assigned item as your
+next owned work and read its complete record at `GET /v1/work/v2/items/<id>`.
+
+If the person's meaning clearly says that the item you just completed is still unfinished, correct
+the Board yourself; do not leave it in Recently Done, create a replacement item, or ask the person
+to reopen it. Reread the item for its current version, then use:
+
+```
+POST /v1/work/v2/agent/items/<id>/reopen     (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>",
+ "reason": "The concrete behavior or acceptance claim that remains unfinished"}
+```
+
+Use this only when the reference to your just-completed item is clear. The route accepts only
+`done` work whose final assignment was released by this same Session; it cannot reverse a person's
+cancellation or take another Session's completion. It preserves the earlier evidence, starts a new
+cycle in `implementing`, restores this Session as owner, and records the reason in immutable item
+history. The reason is at most 8 KiB. An ambiguous follow-up is not authority to change a Board
+item.
 
 When the owning Agent needs an action from the person, use the machine-authenticated route:
 
