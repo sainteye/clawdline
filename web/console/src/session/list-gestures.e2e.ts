@@ -346,6 +346,7 @@ function daemon(): Server {
           reference: "",
           position: 0,
           version: 1,
+          created_at: 100,
         }],
       },
     })
@@ -368,13 +369,23 @@ function daemon(): Server {
         cycle: 1,
         version: 2,
         documents: [{
-          id: "done-report-fixture",
+          id: "older-done-report-fixture",
           role: "completion_report",
-          title: "Completion report",
+          title: "Older completion report",
           body: "## Root cause\n\n" + "A verified finding that must remain readable on a phone.\n\n".repeat(24),
           reference: "",
           position: 0,
           version: 1,
+          created_at: 100,
+        }, {
+          id: "newest-done-report-fixture",
+          role: "completion_report",
+          title: "Newest completion report",
+          body: "## Latest finding\n\nThe latest written conclusion leads the report history.",
+          reference: "",
+          position: 0,
+          version: 1,
+          created_at: 200,
         }],
       },
     })
@@ -455,6 +466,7 @@ function daemon(): Server {
               reference: "",
               position: 0,
               version: 1,
+              created_at: 100,
             }],
           }]
         : []
@@ -975,6 +987,9 @@ test("a completed Board item is checked and its report scrolls with a real finge
         const panel = modal?.querySelector('.work-item-detail-panel')
         const body = modal?.querySelector('.work-completion-report-body')
         const heading = body?.querySelector('h2, h3, h4')
+        const reportTitles = [...(modal?.querySelectorAll('.work-completion-report-title strong') || [])].map((node) => node.textContent)
+        const reportTimes = [...(modal?.querySelectorAll('.work-completion-report-title time') || [])].map((node) => ({
+          text: node.textContent, dateTime: node.getAttribute('datetime') }))
         const box = panel?.getBoundingClientRect()
         if (modal?.textContent.includes('Root cause') && box) return resolve({
           checked: check?.textContent || '',
@@ -988,6 +1003,8 @@ test("a completed Board item is checked and its report scrolls with a real finge
           bodyFontSize: body ? getComputedStyle(body).fontSize : '',
           headingColor: heading ? getComputedStyle(heading).color : '',
           headingFontSize: heading ? getComputedStyle(heading).fontSize : '',
+          reportTitles,
+          reportTimes,
           clientHeight: modal.clientHeight,
           scrollHeight: modal.scrollHeight,
           x: Math.round(box.left + box.width / 2),
@@ -1008,6 +1025,10 @@ test("a completed Board item is checked and its report scrolls with a real finge
     assert.equal(shown.bodyFontSize, "15px", "completion prose stayed too small on a phone")
     assert.equal(shown.headingColor, "rgb(232, 230, 227)", "completion subhead did not use the high-contrast ink colour")
     assert.equal(shown.headingFontSize, "16px", "completion subhead stayed too small on a phone")
+    assert.deepEqual(shown.reportTitles, ["Newest completion report", "Older completion report"],
+      "the report history did not put the latest written report first")
+    assert.equal(shown.reportTimes[0]?.dateTime, new Date(200_000).toISOString(), "the newest report lost its write timestamp")
+    assert.match(shown.reportTimes[0]?.text || "", /^寫於 /, "the report timestamp was not labelled for the reader")
     assert.ok(shown.scrollHeight > shown.clientHeight,
       `detail height ${shown.scrollHeight} did not exceed its ${shown.clientHeight}px viewport`)
     await tab.drag({ x: shown.x, y: shown.y }, { x: 0, y: -260 }, { steps: 12 })

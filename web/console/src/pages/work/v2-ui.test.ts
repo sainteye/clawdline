@@ -75,9 +75,12 @@ test("closed Board cards show their completion time instead of another update ti
 
 test("closed Board cards retain and open Agent completion reports", () => {
   const report = readFileSync(new URL("./WorkCompletionReport.tsx", import.meta.url), "utf8")
+  const reportOrder = readFileSync(new URL("./completion-report-order.js", import.meta.url), "utf8")
   assert.match(source, /<WorkCompletionReports item=\{item\}/)
   assert.match(report, /結案報告/)
-  assert.match(report, /completion_report/)
+  assert.match(report, /completionReportsNewestFirst/)
+  assert.match(reportOrder, /role === "completion_report"/)
+  assert.match(report, /寫於 \{when\(document\.created_at\)\}/)
   assert.match(styles, /\.work-completion-report/)
 })
 

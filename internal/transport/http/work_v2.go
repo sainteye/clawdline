@@ -103,6 +103,7 @@ type workV2DocumentWire struct {
 	Reference string `json:"reference"`
 	Position  int64  `json:"position"`
 	Version   int64  `json:"version"`
+	CreatedAt int64  `json:"created_at"`
 }
 
 type workV2StepWire struct {
@@ -234,7 +235,7 @@ func (s *Server) workV2ItemOf(ctx context.Context, v app.WorkV2View) workV2ItemW
 	}
 	for _, d := range v.Documents {
 		out.Documents = append(out.Documents, workV2DocumentWire{ID: d.ID, Role: d.Role, Title: d.Title, Body: d.Body,
-			Reference: d.Reference, Position: d.Position, Version: d.Version})
+			Reference: d.Reference, Position: d.Position, Version: d.Version, CreatedAt: d.CreatedAt.Unix()})
 	}
 	for _, image := range v.Images {
 		out.Images = append(out.Images, workV2ImageWire{ID: image.ID, Title: image.Title, MediaType: image.MediaType,
