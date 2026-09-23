@@ -103,9 +103,9 @@ export function Overlays() {
           aria-describedby="action-confirm-say"
         >
           <h2 id="action-confirm-title">Run commit?</h2>
-          <p className="say" id="action-confirm-say">
+          <div className="say" id="action-confirm-say">
             This sends commit to the current session.
-          </p>
+          </div>
           <div className="buttons">
             <button className="chip" id="action-confirm-cancel" type="button"></button>
             <button className="chip confirm-go" id="action-confirm-go" type="button"></button>

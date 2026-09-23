@@ -100,13 +100,17 @@ test("folded Session todos expose a nonzero recent completion count", () => {
 
 test("closing a Session reads and names unfinished Board items before it can continue", () => {
   const confirmation = readFileSync(new URL("../overlays/action-confirm.ts", import.meta.url), "utf8")
+  const styles = readFileSync(new URL("../overlays/action-confirm.css", import.meta.url), "utf8")
   assert.match(confirmation, /readSessionWorkV2\(pending\.id\)/)
   assert.match(confirmation, /assigned_items/)
   assert.match(confirmation, /recent_items/)
   assert.match(confirmation, /direct_todos/)
   assert.match(confirmation, /workState === "loading"/)
   assert.match(confirmation, /endWorkOpen/)
-  assert.match(confirmation, /endWorkFinished/)
+  assert.match(confirmation, /endWorkCompletedSummary/)
+  assert.match(confirmation, /endWorkNoOpen/)
   assert.match(confirmation, /endWorkReadyToClose/)
   assert.match(confirmation, /endWorkUnreadable/)
+  assert.match(confirmation, /closeabilityPlainReasons/)
+  assert.match(styles, /\.end-work-completed-mark[\s\S]*?color:\s*var\(--ok\)/)
 })

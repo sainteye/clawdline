@@ -1,0 +1,116 @@
+.confirm-sheet[data-kind="end"] .say {
+  display: grid;
+  gap: 12px;
+  white-space: normal;
+}
+
+.end-work-lede,
+.end-work-status,
+.end-work-none,
+.end-work-more {
+  margin: 0;
+}
+
+.end-work-lede {
+  color: var(--dim);
+}
+
+.end-work-completed {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--ok) 38%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--ok) 8%, var(--card));
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.end-work-completed-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--ok) 52%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+  color: var(--ok);
+  font: 800 13px/1 var(--mono);
+}
+
+.end-work-open {
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--warn) 5%, var(--card));
+}
+
+.end-work-open h3 {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.end-work-open ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.end-work-open li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.end-work-kind {
+  margin-top: 2px;
+  padding: 2px 5px;
+  border: 1px solid var(--line-hi);
+  border-radius: 5px;
+  color: var(--faint);
+  font: 600 9px/1.35 var(--mono);
+  text-transform: uppercase;
+}
+
+.end-work-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dim);
+  line-height: 1.45;
+}
+
+.end-work-lost {
+  background: color-mix(in srgb, var(--danger, #d88472) 6%, var(--card));
+}
+
+.end-work-none {
+  color: var(--dim);
+}
+
+.end-work-status {
+  padding-left: 10px;
+  border-left: 2px solid var(--line-hi);
+  color: var(--dim);
+}
+
+.end-work-status.is-ready {
+  border-left-color: var(--ok);
+  color: var(--ok);
+}
+
+.end-work-status.is-warning {
+  border-left-color: var(--warn);
+  color: var(--dim);
+}
+
+.end-work-more {
+  color: var(--faint);
+  font-size: 11.5px;
+}
