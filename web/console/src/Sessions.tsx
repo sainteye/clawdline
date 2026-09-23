@@ -13,6 +13,7 @@ import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 import { ScheduleSection } from "./pages/schedules.js"
 import { nextWord } from "./next-strings.js"
 import { batchReadingWords, scanFailureWords } from "./session-reading.js"
+import { openNewWorkItem } from "./pages/work/new-item.js"
 
 /**
  * The session list page: the list, and the conversation beside it.
@@ -246,6 +247,19 @@ export function SessionsPage({
               </svg>
               <svg className="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
+              </svg>
+            </button>
+            <button
+              className="start"
+              id="work-create-go"
+              type="button"
+              title="新增看板項目"
+              aria-label="新增看板項目"
+              onClick={openNewWorkItem}
+            >
+              <svg className="ico ico-work-add" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="4" y="5" width="11" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.7"></rect>
+                <path d="M7.5 9h4M7.5 12.5h4M18.5 10.5v7M15 14h7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"></path>
               </svg>
             </button>
             <button

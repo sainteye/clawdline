@@ -278,6 +278,13 @@
    then name the work. Planning-only kinds remain visible but explain where
    they go instead of hiding that rule in a select. */
 .work-new-modal form { width: min(620px, 100%); max-height: min(780px, calc(100vh - 32px)); overflow: auto; }
+.work-created-panel {
+    box-sizing: border-box; width: min(720px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+    padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); color: var(--ink);
+    box-shadow: 0 24px 80px #000a;
+}
+.work-created-panel > .work-modal-head { margin-bottom: 14px; }
+.work-created-panel > .work-v2-card { --work-edge: var(--accent); }
 .work-edit-modal form { width: min(620px, 100%); }
 .work-delete-modal form { width: min(500px, 100%); }
 .work-delete-modal strong { color: var(--ink); }
