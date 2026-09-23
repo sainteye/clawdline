@@ -5,7 +5,7 @@ import * as L from "../legacy/bridge.js"
 import { getClosingId, setClosingId } from "./events.js"
 import { byId, closeabilityLines, closeabilityOf, lostIfClosed, setConfirmSpin, type Closeable } from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
-import { readSessionWorkV2, type WorkV2Item } from "../pages/work/api.js"
+import { readSessionWorkV2, type DirectTodoV2, type WorkV2Item } from "../pages/work/api.js"
 import { toast, toastFailure } from "./toast.js"
 
 /**
@@ -49,6 +49,8 @@ interface Pending {
   closeability: string | null
   help: Help | null
   work: WorkV2Item[]
+  recentWork: WorkV2Item[]
+  directTodos: DirectTodoV2[]
   workState: "loading" | "ready" | "unreadable"
   workTruncated: boolean
   /** True only after the daemon disclosed the obligations this decision overrides. */
@@ -178,7 +180,7 @@ export const ActionConfirm = {
     const help = closeabilityHelpModel(closeable)
     this.pending = {
       id, kind, action, opener: returnFocus, ask: ask || null, lost, why,
-      closeability: closeable && closeable.state, help, work: [],
+      closeability: closeable && closeable.state, help, work: [], recentWork: [], directTodos: [],
       workState: kind === "end" ? "loading" : "ready", workTruncated: false,
       force: false, request: mintRequest(),
     }
@@ -210,6 +212,8 @@ export const ActionConfirm = {
       const page = await readSessionWorkV2(pending.id)
       if (this.pending !== pending || !this.isOpen()) return
       pending.work = page.assigned_items
+      pending.recentWork = page.recent_items
+      pending.directTodos = page.direct_todos
       pending.workTruncated = page.truncated
       pending.workState = "ready"
     } catch {
@@ -225,12 +229,16 @@ export const ActionConfirm = {
   },
 
   endSay(pending: Pending): string {
-    const { lost, why, closeability, help, work, workState, workTruncated } = pending
+    const { lost, why, closeability, help, work, recentWork, directTodos, workState, workTruncated } = pending
+    const openDirect = directTodos.filter((todo) => !todo.completed_at)
+    const completedDirect = directTodos.filter((todo) => !!todo.completed_at)
+    const recordedWorkClear = workState === "ready" && work.length === 0 && openDirect.length === 0
     let said = T.webConfirmEndSay
     if (lost && lost.length) {
       said += "\n" + T.webConfirmEndLoses + "\n" + lost.map((item) => "· " + item).join("\n")
     }
-    if (help) said += "\n" + help.explanation
+    if (help && recordedWorkClear) said += "\n" + nextWord("endWorkReadyToClose")
+    else if (help) said += "\n" + help.explanation
     // Whenever the projection is not `safe`, including `unknown`: an absence of
     // proof is what the reader most needs to see before ending somebody's work.
     else if (closeability && closeability !== "safe") {
@@ -241,12 +249,28 @@ export const ActionConfirm = {
     }
     if (workState === "loading") said += "\n" + nextWord("endWorkChecking")
     else if (workState === "unreadable") said += "\n" + nextWord("endWorkUnreadable")
-    else if (work.length) {
-      said += "\n" + nextWord("endWorkOpen", { count: work.length }) + "\n"
-      said += work.map((item) => "· " + nextWord("endWorkItem", {
-        title: item.title,
-        project: item.project.label || item.project.path,
-      })).join("\n")
+    else {
+      if (recentWork.length || completedDirect.length) {
+        said += "\n" + nextWord("endWorkFinished") + "\n"
+        said += recentWork.map((item) => "✓ " + nextWord("endWorkItem", {
+          title: item.title,
+          project: item.project.label || item.project.path,
+        })).concat(completedDirect.map((todo) => "✓ " + todo.text)).join("\n")
+      }
+      if (work.length) {
+        said += "\n" + nextWord("endWorkOpen", { count: work.length }) + "\n"
+        said += work.map((item) => "· " + nextWord("endWorkItem", {
+          title: item.title,
+          project: item.project.label || item.project.path,
+        })).join("\n")
+      }
+      if (openDirect.length) {
+        said += "\n" + nextWord("endDirectOpen", { count: openDirect.length }) + "\n"
+        said += openDirect.map((todo) => "· " + todo.text).join("\n")
+      }
+      if (closeability === "safe" && recordedWorkClear) {
+        said += "\n" + nextWord("endWorkSafeToClose")
+      }
       if (workTruncated) said += "\n" + nextWord("endWorkTruncated")
     }
     return said
@@ -369,8 +393,10 @@ export const ActionConfirm = {
       if (word) word.textContent = T.webClosing
       setConfirmSpin(go.querySelector("canvas"))
     } else {
+      const recordedWorkClear = this.pending?.workState === "ready" &&
+        this.pending.work.length === 0 && !this.pending.directTodos.some((todo) => !todo.completed_at)
       go.textContent = help
-        ? help.confirmLabel
+        ? recordedWorkClear ? nextWord("endWorkConfirmClose") : help.confirmLabel
         : this.pending?.force
           ? T.webConfirmEndAnyway
           : T.webConfirm
