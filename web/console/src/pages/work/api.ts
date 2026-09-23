@@ -311,6 +311,7 @@ export interface WorkV2Item {
   description: string
   phase: WorkV2Phase
   condition: string | null
+  user_action: string
   area: "planning" | "unassigned" | WorkV2Phase
   deployment_policy: "required" | "not_required" | "agent_decides"
   owner_session: string | null
@@ -371,6 +372,8 @@ export const readWorkV2 = (projectID?: string) =>
   call<{ ok: boolean; rows: WorkV2Item[]; counts: Record<string, number>; truncated: boolean }>(
     "/v1/work/v2/items" + query({ project: projectID }),
   )
+export const readWorkV2Item = (id: string) =>
+  call<{ ok: boolean; item: WorkV2Item }>(`/v1/work/v2/items/${id}`)
 export const readWorkV2Proposals = () => call<{ rows: WorkV2Proposal[]; truncated: boolean }>("/v1/work/v2/proposals?state=pending")
 export const resolveWorkV2Proposal = (id: string, decision: "accept" | "reject") =>
   mutate<unknown>(`/v1/work/v2/proposals/${id}/${decision}`, {})

@@ -62,6 +62,9 @@
 }
 .work-card h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .work-v2-card > p { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.work-user-action { padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--line)); border-radius: 10px; background: var(--accent-in); }
+.work-user-action strong { display: block; margin-bottom: 4px; color: var(--accent); font: 600 11px/1.4 var(--mono); }
+.work-user-action p { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .work-card-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .work-card-controls { display: flex; flex: none; align-items: center; gap: 4px; }
 .work-card-controls button {
@@ -206,9 +209,19 @@
 .session-todo-state { color: var(--faint); font: 11px/1.5 var(--mono); }
 .session-todo[data-escalated] .session-todo-state { color: var(--accent); }
 .session-owned-item, .session-direct-todo {
-    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start;
     padding: 9px 0; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px;
 }
+.session-direct-todo {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start;
+}
+.session-owned-summary {
+    box-sizing: border-box; width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px;
+    align-items: start; padding: 0; border: 0; background: transparent; color: var(--dim); text-align: left;
+}
+.session-owned-summary:hover b, .session-owned-summary:focus-visible b { color: var(--accent); }
+.session-owned-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.session-owned-open { align-self: center; color: var(--faint); font: 13px/1 var(--mono); }
+.session-owned-item > .work-milestones { margin-left: 27px; }
 .session-owned-item b, .session-direct-todo b { display: block; color: var(--ink); overflow-wrap: anywhere; }
 .session-owned-item small, .session-direct-todo small { display: block; margin-top: 3px; color: var(--faint); font: 10px/1.5 var(--mono); }
 .session-work-condition { color: var(--accent); }
@@ -285,6 +298,10 @@
 }
 .work-created-panel > .work-modal-head { margin-bottom: 14px; }
 .work-created-panel > .work-v2-card { --work-edge: var(--accent); }
+.work-item-detail-panel { display: grid; gap: 14px; width: min(720px, 100%); }
+.work-item-detail-panel h2 { margin: 0; }
+.session-work-detail-condition { width: fit-content; margin: 0; padding: 4px 8px; border-radius: 999px; background: var(--accent-in); color: var(--accent); font: 11px/1.4 var(--mono); }
+.session-work-detail-description { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .work-edit-modal form { width: min(620px, 100%); }
 .work-delete-modal form { width: min(500px, 100%); }
 .work-delete-modal strong { color: var(--ink); }

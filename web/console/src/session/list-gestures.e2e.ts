@@ -314,6 +314,27 @@ function daemon(): Server {
     if (path === "/v1/work/v2/proposals" && req.method === "GET") {
       return json(res, 200, { rows: [], truncated: false })
     }
+    if (path === "/v1/work/v2/items/work-fixture" && req.method === "GET") return json(res, 200, {
+      ok: true,
+      item: {
+        id: "work-fixture",
+        project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
+        kind: "feature",
+        title: "Finish the release receipt",
+        description: "Publish the verified receipt after the production check passes.",
+        phase: "merging",
+        condition: "waiting_user",
+        user_action: "Confirm the production release window.",
+        area: "merging",
+        deployment_policy: "agent_decides",
+        owner_session: SAFE,
+        created_at: 1,
+        updated_at: 1,
+        closed_at: null,
+        cycle: 1,
+        version: 2,
+      },
+    })
     const sessionWork = /^\/v1\/work\/v2\/session-todos\/(.+)$/.exec(path)
     if (sessionWork && req.method === "GET") {
       const sessionID = decodeURIComponent(sessionWork[1])
@@ -323,9 +344,10 @@ function daemon(): Server {
             project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
             kind: "feature",
             title: "Finish the release receipt",
-            description: "",
+            description: "Publish the verified receipt after the production check passes.",
             phase: "merging",
-            condition: null,
+            condition: "waiting_user",
+            user_action: "Confirm the production release window.",
             area: "merging",
             deployment_policy: "agent_decides",
             owner_session: SAFE,
@@ -811,6 +833,34 @@ test("the Board assignment picker explains a Session before assignment", () =>
     assert.match(shown.detail, /Review the release note/)
     assert.match(shown.detail, /Repair the previous release/)
     await tab.shot("board-session-assignment")
+  }))
+
+test("an assigned Board item opens its detail and requested action on a phone", () =>
+  inTab(async (tab) => {
+    await tab.go("/#session=" + encodeURIComponent(SAFE))
+    const shown = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const fold = document.querySelector('.session-todos')
+        if (fold && !fold.open) fold.querySelector('summary')?.click()
+        const item = document.querySelector('.session-owned-summary')
+        if (item && !document.querySelector('.work-item-detail-modal')) item.click()
+        const modal = document.querySelector('.work-item-detail-modal')
+        const text = modal?.textContent || ''
+        if (text.includes('Confirm the production release window.')) {
+          const box = modal.querySelector('.work-item-detail-panel')?.getBoundingClientRect()
+          return resolve({ text, width: box?.width || 0, viewport: window.innerWidth })
+        }
+        if (Date.now() >= deadline) return reject(new Error('the Board item detail did not arrive: ' + text))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.match(shown.text, /Finish the release receipt/)
+    assert.match(shown.text, /Publish the verified receipt/)
+    assert.match(shown.text, /需要你做的事/)
+    assert.ok(shown.width <= shown.viewport, `detail width ${shown.width} exceeds viewport ${shown.viewport}`)
+    await tab.shot("session-board-item-detail")
   }))
 
 // ---- the two gestures that were here first

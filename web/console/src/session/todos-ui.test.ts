@@ -45,6 +45,17 @@ test("empty Session todos use one message and hide empty section furniture", () 
   assert.doesNotMatch(source, /目前沒有直接待辦/)
 })
 
+test("assigned Board items open a current detail modal with the requested user action", () => {
+  assert.match(source, /<SessionOwnedItem item=\{item\}/)
+  assert.match(source, /onClick=\{onOpen\}/)
+  assert.match(source, /readWorkV2Item\(item\.id\)/)
+  assert.match(source, /<WorkItemDetailModal item=\{detail\}/)
+  assert.match(source, /需要你做的事/)
+  assert.match(source, /item\.user_action/)
+  assert.match(source, /item\.description/)
+  assert.match(source, /item\.images\.map/)
+})
+
 test("closing a Session reads and names unfinished Board items before it can continue", () => {
   const confirmation = readFileSync(new URL("../overlays/action-confirm.ts", import.meta.url), "utf8")
   assert.match(confirmation, /readSessionWorkV2\(pending\.id\)/)

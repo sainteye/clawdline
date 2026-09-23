@@ -172,7 +172,9 @@ refused.
 ### WS2-L05 — Conditions preserve the phase
 
 At each nonterminal phase, setting `blocked` or `waiting_user` keeps the phase unchanged and makes
-both fields visible. Clearing the condition restores the phase presentation. Broker-derived
+both fields visible. `waiting_user` without a nonblank `user_action` is refused; the named action
+appears on the Board and in the owning Session's item-detail modal. Clearing the condition clears
+that action and restores the phase presentation. Broker-derived
 `owner_offline`/`evidence_unknown` cannot be cleared by cosmetic Agent text.
 
 ### WS2-L06 — Reopen starts another cycle

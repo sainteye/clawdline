@@ -17,6 +17,7 @@ const (
 	WorkV2PageSize         = 100
 	workV2TitleLimit       = 240
 	workV2DescriptionLimit = 64 << 10
+	workV2UserActionLimit  = 8 << 10
 	directTodoTextLimit    = 8 << 10
 )
 
@@ -306,6 +307,7 @@ type EditWorkV2 struct {
 	Title           *string
 	Description     *string
 	Condition       *work.Condition
+	UserAction      *string
 	Actor           string
 	OwnerSession    string
 	Person          bool
@@ -345,10 +347,27 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 				return work.RefuseV2("condition_not_agent_owned", "The Agent may set only blocked or waiting_user.")
 			}
 			next.Condition = *c.Condition
+			if next.Condition != work.ConditionWaitingUser {
+				next.UserAction = ""
+			}
+		}
+		if c.UserAction != nil {
+			next.UserAction = strings.TrimSpace(*c.UserAction)
+			if len(next.UserAction) > workV2UserActionLimit {
+				return work.RefuseV2("user_action_too_large", "The requested user action is at most 8 KiB.")
+			}
+		}
+		if c.Condition != nil || c.UserAction != nil {
+			switch {
+			case next.Condition == work.ConditionWaitingUser && next.UserAction == "":
+				return work.RefuseV2("user_action_required", "Say exactly what the person needs to do while waiting for them.")
+			case next.Condition != work.ConditionWaitingUser && next.UserAction != "":
+				return work.RefuseV2("user_action_requires_waiting_user", "A requested user action belongs to the waiting_user condition.")
+			}
 		}
 		next.UpdatedAt = w.now()
 		if err := tx.PutItem(prev, next, "item.edited", c.Actor, payload(map[string]any{"title": c.Title != nil,
-			"description": c.Description != nil, "condition": c.Condition})); err != nil {
+			"description": c.Description != nil, "condition": c.Condition, "user_action": c.UserAction != nil})); err != nil {
 			return err
 		}
 		next.Version++
@@ -428,6 +447,7 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		} else {
 			next.OwnerSession = a.SessionID
 			next.Condition = ""
+			next.UserAction = ""
 			if prev.Phase == work.PhaseCreated || prev.Phase == work.PhaseAssigning {
 				next.Phase = work.PhaseAssigned
 			}
@@ -476,6 +496,7 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 			pending.State, pending.Failure = "failed", c.Failure
 			if prev.OwnerSession == "" {
 				next.Phase, next.Condition = work.PhaseCreated, work.ConditionAssignmentFailed
+				next.UserAction = ""
 			}
 		} else {
 			if strings.TrimSpace(c.SessionID) == "" {
@@ -492,7 +513,7 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 				}
 			}
 			pending.State, pending.SessionID, pending.TerminalID = "active", c.SessionID, c.TerminalID
-			next.OwnerSession, next.Condition = c.SessionID, ""
+			next.OwnerSession, next.Condition, next.UserAction = c.SessionID, "", ""
 			if prev.Phase == work.PhaseCreated || prev.Phase == work.PhaseAssigning {
 				next.Phase = work.PhaseAssigned
 			}
@@ -539,7 +560,7 @@ func (w *WorkSystemV2) Unassign(ctx context.Context, id string, expected int64, 
 			return err
 		}
 		next := prev
-		next.OwnerSession, next.Condition, next.UpdatedAt = "", work.ConditionOwnerRequired, now
+		next.OwnerSession, next.Condition, next.UserAction, next.UpdatedAt = "", work.ConditionOwnerRequired, "", now
 		if err := tx.PutItem(prev, next, "item.unassigned", actor, payload(map[string]any{"assignment_id": a.ID})); err != nil {
 			return err
 		}
@@ -617,7 +638,7 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 		}
 		now := w.now()
 		next := prev
-		next.Phase, next.Condition, next.UpdatedAt = c.Next, "", now
+		next.Phase, next.Condition, next.UserAction, next.UpdatedAt = c.Next, "", "", now
 		if c.Next == work.PhaseDone {
 			next.ClosedAt, next.OwnerSession = now, ""
 			a, err := tx.ActiveAssignment(id)
@@ -674,7 +695,7 @@ func (w *WorkSystemV2) Cancel(ctx context.Context, id string, expected int64, ac
 			}
 		}
 		next := prev
-		next.Phase, next.OwnerSession, next.Condition = work.PhaseCancelled, "", ""
+		next.Phase, next.OwnerSession, next.Condition, next.UserAction = work.PhaseCancelled, "", "", ""
 		next.ClosedAt, next.UpdatedAt = now, now
 		if err := tx.PutItem(prev, next, "item.cancelled", actor, payload(map[string]string{"reason": reason})); err != nil {
 			return err
@@ -705,7 +726,7 @@ func (w *WorkSystemV2) Reopen(ctx context.Context, id string, expected int64, ac
 			return work.RefuseV2("item_not_terminal", "Only completed or cancelled work is reopened.")
 		}
 		next := prev
-		next.Phase, next.Condition, next.OwnerSession = work.PhaseCreated, work.ConditionOwnerRequired, ""
+		next.Phase, next.Condition, next.UserAction, next.OwnerSession = work.PhaseCreated, work.ConditionOwnerRequired, "", ""
 		next.ClosedAt, next.UpdatedAt, next.Cycle = time.Time{}, w.now(), prev.Cycle+1
 		if err := tx.PutItem(prev, next, "item.reopened", actor, payload(map[string]int64{"cycle": next.Cycle})); err != nil {
 			return err
