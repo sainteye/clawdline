@@ -261,7 +261,8 @@
 .work-completion-report > summary strong { color: var(--ink); font-size: 12px; }
 .work-completion-report > summary small { margin-left: auto; color: var(--faint); font: 10px/1 var(--mono); }
 .work-completion-report-authority, .work-completion-report-reference { margin: 0; padding: 0 12px 10px; color: var(--faint); font: 10px/1.55 var(--mono); overflow-wrap: anywhere; }
-.work-completion-report-body { padding: 1px 12px 12px; color: var(--dim); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.work-completion-report-body { padding: 1px 12px 12px; color: var(--ink); font-size: 15px; line-height: 1.75; overflow-wrap: anywhere; }
+.work-completion-report-body :is(h2, h3, h4) { margin: 18px 0 8px; color: var(--ink); font-size: 16px; line-height: 1.45; font-weight: 700; letter-spacing: .01em; }
 .work-completion-report-body > :first-child { margin-top: 0; }
 .work-completion-report-body > :last-child { margin-bottom: 0; }
 .session-owned-report { display: inline-flex; width: fit-content; margin-top: 5px; padding: 2px 6px; border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 999px; color: var(--ok); font: 600 9px/1.4 var(--mono); font-style: normal; }
