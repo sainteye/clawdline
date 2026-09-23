@@ -6,6 +6,7 @@ import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { failureWords, when } from "./shared.js"
+import { onOpenNewWorkItem } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import {
   assignNewWorkV2,
@@ -43,6 +44,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [proposals, setProposals] = useState<WorkV2Proposal[]>([])
   const [project, setProject] = useState("")
   const [creating, setCreating] = useState(false)
+  const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
   const [busy, setBusy] = useState("")
   const [failure, setFailure] = useState("")
 
@@ -50,29 +52,44 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     try {
       const [work, projects, live, suggestions] = await Promise.all([readWorkV2(project || undefined), readProjectPlaces(), readSessionsForWorkV2(), readWorkV2Proposals()])
       setItems(work.rows); setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setFailure("")
+      setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
     } catch (e) { setFailure(failureWords(e)) }
   }, [project])
   useEffect(() => {
-    if (!shown) return
+    if (!shown && !creating && !createdItem) return
     void load()
     const timer = setInterval(() => { if (document.visibilityState === "visible") void load() }, 30_000)
     return () => clearInterval(timer)
-  }, [shown, load])
+  }, [shown, creating, createdItem?.id, load])
+  useEffect(() => onOpenNewWorkItem(() => {
+    setFailure("")
+    setCreatedItem(null)
+    setCreating(true)
+  }), [])
 
   const run = async (key: string, task: () => Promise<unknown>) => {
     if (busy) return false
     setBusy(key); setFailure("")
-    try { await task(); await load(); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
+    try {
+      const answer = await task()
+      if (answer && typeof answer === "object" && "item" in answer) {
+        const changed = (answer as { item?: WorkV2Item }).item
+        if (changed) setCreatedItem((current) => current?.id === changed.id ? changed : current)
+      }
+      await load()
+      return true
+    } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
   }
   const planning = items.filter((item) => item.area === "planning" && !item.closed_at)
   const unassigned = items.filter((item) => item.area === "unassigned" && !item.closed_at)
   const done = items.filter((item) => item.closed_at)
 
-  return <section id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title">
+  return <>
+  <section id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title">
     <header className="board-head">
       <div><p className="board-eyebrow">WORK SYSTEM V2</p><h1 id="work-v2-title">看板</h1></div>
       <div className="work-head-tools">
-        <button className="board-button" type="button" onClick={() => setCreating(true)}>＋ 建立項目</button>
+        <button className="board-button" type="button" onClick={() => { setFailure(""); setCreatedItem(null); setCreating(true) }}>＋ 建立項目</button>
         <button className="board-button" type="button" disabled={!!busy} onClick={() => void load()}>{L.strings.webInfoRefresh}</button>
       </div>
     </header>
@@ -97,24 +114,32 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
           failure={failure} clearFailure={() => setFailure("")} run={run} />)}</div>
       </details>}
     </div>
+  </section>
     {creating && <NewWorkModal places={places} initialProject={project} busy={!!busy} failure={failure} onClose={() => setCreating(false)} onCreate={(body, files) => {
       void run("create", async () => {
         const answer = await createWorkV2(body)
-        setCreating(false)
+        let created = answer.item
         let version = answer.item.version
         try {
           for (let index = 0; index < files.length; index++) {
             const picture = await prepareReferencePicture(files[index])
             const uploaded = await addWorkV2Image(answer.item.id, version, picture, index)
             version = uploaded.item.version
+            created = uploaded.item
           }
         } catch (error) {
+          setCreating(false)
+          setCreatedItem(created)
           await load()
           throw error
         }
+        setCreating(false)
+        setCreatedItem(created)
       })
     }} />}
-  </section>
+    {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} busy={busy} failure={failure}
+      clearFailure={() => setFailure("")} run={run} onClose={() => setCreatedItem(null)} />}
+  </>
 }
 
 function BoardRegion({ title, items, sessions, busy, failure, clearFailure, run }: {
@@ -133,13 +158,14 @@ function BoardRegion({ title, items, sessions, busy, failure, clearFailure, run 
   </section>
 }
 
-function WorkCard({ item, sessions, busy, failure, clearFailure, run }: {
+function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssignment = false }: {
   item: WorkV2Item
   sessions: SessionRow[]
   busy: string
   failure: string
   clearFailure: () => void
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  focusAssignment?: boolean
 }) {
   const [terminal, setTerminal] = useState("")
   const [editing, setEditing] = useState(false)
@@ -191,7 +217,8 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run }: {
         : item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}
     </div>
     {assignable && <div className="work-assignment">
-      <select className="work-input" value={terminal} onChange={(e) => setTerminal(e.target.value)} aria-label="指派既有 Session">
+      <select className="work-input" value={terminal} onChange={(e) => setTerminal(e.target.value)} aria-label="指派既有 Session"
+        autoFocus={focusAssignment}>
         <option value="">選擇既有 Session</option>{eligible.map((s) => <option key={s.id} value={s.id}>{s.label || s.id}</option>)}
       </select>
       <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => void run(item.id, () => assignWorkV2(item, terminal))}>指派</button>
@@ -204,6 +231,27 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run }: {
       void run(`delete-${item.id}`, () => deleteWorkV2(item)).then((ok) => { if (ok) setDeleting(false) })
     }} />}
   </article>
+}
+
+function CreatedWorkModal({ item, sessions, busy, failure, clearFailure, run, onClose }: {
+  item: WorkV2Item
+  sessions: SessionRow[]
+  busy: string
+  failure: string
+  clearFailure: () => void
+  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  onClose: () => void
+}) {
+  useModalDismiss(!!busy, onClose)
+  return <div className="session-todo-modal work-created-modal" role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id}`}
+    onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
+    <div className="work-created-panel">
+      <div className="work-modal-head"><div><p className="board-eyebrow">WORK ITEM CREATED</p><h2 id={`work-created-title-${item.id}`}>看板項目已建立</h2></div>
+        <button className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}>×</button></div>
+      {failure && <p className="work-note" role="alert">{failure}</p>}
+      <WorkCard item={item} sessions={sessions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} focusAssignment />
+    </div>
+  </div>
 }
 
 function EditWorkModal({ item, busy, failure, onClose, onSave }: {
