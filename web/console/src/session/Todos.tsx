@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../legacy/shots-bridge.js"
@@ -157,7 +158,10 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
       <span><b>{item.title}</b><small>{item.project.label} · {item.kind} · {completed ? `已完成 ${when(item.closed_at)}` : phaseName(item.phase)}
         {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small>
         {hasReport && <em className="session-owned-report">結案報告</em>}</span>
-      <span className="session-owned-open" aria-hidden="true">→</span>
+      <span className="session-owned-state">
+        {completed && <span className="session-owned-complete" role="img" aria-label="已完成">✓</span>}
+        <span className="session-owned-open" aria-hidden="true">→</span>
+      </span>
     </button>
     <WorkMilestones phase={item.phase} />
     <WorkSteps steps={item.steps} />
@@ -170,7 +174,10 @@ function WorkItemDetailModal({ item, failure, onClose }: { item: WorkV2Item; fai
     document.addEventListener("keydown", close)
     return () => document.removeEventListener("keydown", close)
   }, [onClose])
-  return <div className="session-todo-modal work-item-detail-modal" role="dialog" aria-modal="true"
+  // A phone's Session pane is itself fixed to the visual viewport. Keeping a
+  // second fixed scroller inside it leaves iOS with no reliable pan target, so
+  // the dialog lives beside the app root and owns the one scroll surface.
+  return createPortal(<div className="session-todo-modal work-item-detail-modal" role="dialog" aria-modal="true"
     aria-labelledby={`session-work-detail-title-${item.id}`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <article className="work-created-panel work-item-detail-panel">
       <div className="work-modal-head"><div><p className="board-eyebrow">BOARD ITEM</p>
@@ -192,7 +199,7 @@ function WorkItemDetailModal({ item, failure, onClose }: { item: WorkV2Item; fai
       <div className="work-meta"><span>{deploymentPolicyName(item.deployment_policy)}</span>
         <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span></div>
     </article>
-  </div>
+  </div>, document.body)
 }
 
 function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
