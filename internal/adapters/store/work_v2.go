@@ -566,6 +566,28 @@ func (s *Store) WorkV2Assignments(ctx context.Context, workID string) ([]work.As
 	return out, rows.Err()
 }
 
+// WorkV2RootAssignmentForSession returns the Root Assignment that opened one
+// conversation from a Board item. Existing-session assignments do not rename
+// a conversation, and failed openings carry no usable session id.
+func (s *Store) WorkV2RootAssignmentForSession(ctx context.Context, projectPath, assistant, sessionID string) (string, error) {
+	if err := reading(); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(projectPath) == "" || strings.TrimSpace(assistant) == "" || strings.TrimSpace(sessionID) == "" {
+		return "", nil
+	}
+	var rootAssignment string
+	err := s.db.QueryRowContext(ctx, `SELECT a.root_assignment_id
+		FROM work_v2_assignments a JOIN work_v2_items i ON i.id=a.work_id
+		WHERE a.session_id=? AND a.assistant=? AND i.project_path=?
+		  AND a.mode='new_session' AND a.root_assignment_id<>'' AND a.state IN ('active','released')
+		ORDER BY a.updated_at DESC, a.rowid DESC LIMIT 1`, sessionID, assistant, projectPath).Scan(&rootAssignment)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return rootAssignment, err
+}
+
 func (s *Store) WorkV2Events(ctx context.Context, workID string, after int64, limit int) ([]work.EventV2, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT seq, work_id, kind, actor, previous_version, next_version, payload, at
     FROM work_v2_events WHERE work_id=? AND seq>? ORDER BY seq LIMIT ?`, workID, after, limit)

@@ -133,6 +133,35 @@ func TestWorkV2StoresVersionedItemsAndAppendOnlyEvents(t *testing.T) {
 	}
 }
 
+func TestWorkV2RootAssignmentIsFoundByConversation(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	item := v2Item("10000000-0000-4000-8000-000000000099", at)
+	item.Title = "Fix the Session title"
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		if err := tx.CreateItem(item, "local", `{}`); err != nil {
+			return err
+		}
+		return tx.CreateAssignment(work.AssignmentV2{ID: "assignment-a", WorkID: item.ID,
+			Mode: "new_session", SessionID: "session-a", Assistant: "codex", State: "active",
+			HumanActor: "local", RootAssignment: "root-a", CreatedAt: at, UpdatedAt: at})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.WorkV2RootAssignmentForSession(ctx, "/project-a", "codex", "session-a")
+	if err != nil || got != "root-a" {
+		t.Fatalf("Root Assignment %q, %v", got, err)
+	}
+	if got, err := s.WorkV2RootAssignmentForSession(ctx, "/another-project", "codex", "session-a"); err != nil || got != "" {
+		t.Fatalf("other project Root Assignment %q, %v", got, err)
+	}
+}
+
 func TestDirectTodoReadMarksOnlyItsSessionAndDeleteRemovesText(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {
