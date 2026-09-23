@@ -505,6 +505,21 @@ Idempotency-Key 呼叫 `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/c
 只要還有任何 step 未完成，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
 step 勾成完成。
 
+如果 issue 或 incident 必須經過深入調查，才找出 root cause（根因），或必須排除多個看似合理的解法才
+確認真正修正，請在把項目推進 `done` 之前加入一份給使用者閱讀的結案報告。直接觀察就能確認的直觀修正
+不需要報告。使用帶 machine authentication 與 Idempotency-Key 的文件路由：
+
+```
+POST /v1/work/v2/agent/items/<id>/documents     (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>",
+ "role": "completion_report", "title": "結案報告",
+ "body": "發生了什麼、root cause、修改內容、驗證方式，以及仍存在的邊界"}
+```
+
+body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成原始 debug log，也不要放入私密資料。只有
+尚未結案的 active owner 能加入；版本衝突時先重讀。結案報告是具名敘述，不取代驗證、landing 或部署
+證據；有報告時，它會留在已關閉的看板項目，並可從 Session 的「最近完成」列直接打開。
+
 `/v1/board` 是 Swift app 的舊卡片，唯讀。landing 是 broker 的事實：項目永遠不會被人手動標成已 landing
 （`422 landing_is_broker_fact`）。
 

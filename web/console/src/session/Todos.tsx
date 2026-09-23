@@ -6,6 +6,7 @@ import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessi
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { WorkSteps } from "../pages/work/WorkSteps.js"
+import { completionReports, WorkCompletionReports } from "../pages/work/WorkCompletionReport.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
 import "../pages/work/work.css"
@@ -148,11 +149,14 @@ export function Todos({ row, agentCount, agentPanel }: {
 }
 
 function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Item; completed?: boolean; onOpen: () => void }) {
+  const hasReport = completionReports(item).length > 0
   return <article className={`session-owned-item${completed ? " completed" : ""}`} data-phase={item.phase}>
-    <button className="session-owned-summary" type="button" onClick={onOpen} aria-label={`查看「${item.title}」的項目詳情`}>
+    <button className="session-owned-summary" type="button" onClick={onOpen}
+      aria-label={hasReport ? `開啟「${item.title}」的結案報告` : `查看「${item.title}」的項目詳情`}>
       <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
       <span><b>{item.title}</b><small>{item.project.label} · {item.kind} · {completed ? `已完成 ${when(item.closed_at)}` : phaseName(item.phase)}
-        {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small></span>
+        {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small>
+        {hasReport && <em className="session-owned-report">結案報告</em>}</span>
       <span className="session-owned-open" aria-hidden="true">→</span>
     </button>
     <WorkMilestones phase={item.phase} />
@@ -180,6 +184,7 @@ function WorkItemDetailModal({ item, failure, onClose }: { item: WorkV2Item; fai
       </section>}
       <p className="session-work-detail-description">{item.description}</p>
       <WorkMilestones phase={item.phase} />
+      <WorkCompletionReports item={item} expanded />
       {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
         {item.images.map((image) => <ReferenceImage key={image.id} image={image} />)}
       </div>}

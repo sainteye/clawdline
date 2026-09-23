@@ -416,6 +416,52 @@ func TestPersonCommandsVersionReferenceImages(t *testing.T) {
 	}
 }
 
+func TestCompletionReportIsAnOwnedDocumentAndSurvivesCompletionProjections(t *testing.T) {
+	w := newWorkV2Test(t)
+	v := createWorkV2Test(t, w, work.KindIssue)
+	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.AddDocument(context.Background(), v.Item.ID, AddDocumentV2{ExpectedVersion: owned.Item.Version,
+		SessionID: "session-b", Role: "completion_report", Title: "Completion report",
+		Body: "The root cause was an unstable freshness field."}, nil); err == nil {
+		t.Fatal("another Session added a completion report")
+	}
+	reported, err := w.AddDocument(context.Background(), v.Item.ID, AddDocumentV2{ExpectedVersion: owned.Item.Version,
+		SessionID: "session-a", Role: "completion_report", Title: "Completion report",
+		Body: "The root cause was an unstable freshness field."}, nil)
+	if err != nil || len(reported.Documents) != 1 || reported.Documents[0].Role != "completion_report" {
+		t.Fatalf("report: %+v %v", reported, err)
+	}
+	owned.Item = reported.Item
+	advance := func(next work.Phase, verification string, landing *VerifiedLandingV2, deployment string) {
+		t.Helper()
+		owned, err = w.Advance(context.Background(), v.Item.ID, AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+			SessionID: "session-a", Next: next, Verification: verification, Landing: landing,
+			Deployment: deployment, Actor: "session-a"}, nil)
+		if err != nil {
+			t.Fatalf("advance to %s: %v", next, err)
+		}
+	}
+	advance(work.PhaseImplementing, "", nil, "")
+	advance(work.PhaseVerifying, "", nil, "")
+	advance(work.PhaseMerging, "tests passed", nil, "")
+	advance(work.PhaseDeploying, "", &VerifiedLandingV2{Commit: "a", Target: "main", TargetCommit: "b", Remote: "origin", RemoteCommit: "c"}, "")
+	advance(work.PhaseDone, "", nil, "production deployment receipt")
+
+	listed, _, err := w.List(context.Background(), "", "", true)
+	if err != nil || len(listed) != 1 || len(listed[0].Documents) != 1 {
+		t.Fatalf("Board projection: %+v %v", listed, err)
+	}
+	recent, _, err := w.RecentlyCompleted(context.Background(), "session-a")
+	if err != nil || len(recent) != 1 || len(recent[0].Documents) != 1 ||
+		recent[0].Documents[0].Body != "The root cause was an unstable freshness field." {
+		t.Fatalf("Session projection: %+v %v", recent, err)
+	}
+}
+
 func TestPersonAddsImagesOnlyBeforeDirectTodoDelivery(t *testing.T) {
 	w := newWorkV2Test(t)
 	todo, err := w.CreateDirectTodo(context.Background(), NewDirectTodoV2{

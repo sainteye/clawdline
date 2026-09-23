@@ -544,6 +544,24 @@ Complete a verified step with an idempotent machine-authenticated request to
 version conflict. A transition to `done` is refused with `steps_incomplete` while any step remains
 open; Clawdline never checks one merely because the parent phase advanced.
 
+When resolving an issue or incident required substantial investigation to discover the root cause
+or to distinguish the real fix from plausible alternatives, add a user-readable completion report
+before advancing the item to `done`. A straightforward, directly observed correction does not need
+one. Use the machine-authenticated, idempotent document route:
+
+```
+POST /v1/work/v2/agent/items/<id>/documents     (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>",
+ "role": "completion_report", "title": "Completion report",
+ "body": "What happened, the root cause, what changed, how it was verified, and any remaining boundary"}
+```
+
+The body is Markdown, at most 64 KiB. Write for the person who reported the problem, not as a raw
+debug log, and keep private data out of it. The active owner must add it before the item becomes
+terminal; reread after a version conflict. A completion report is attributed narrative and never
+replaces verification, landing, or deployment evidence. When present, it remains on the closed
+Board item and opens directly from the Session's Recently Done row.
+
 `/v1/board` is the Swift app's old cards, read-only. Landing is a broker fact: an item is never
 marked landed by hand (`422 landing_is_broker_fact`).
 

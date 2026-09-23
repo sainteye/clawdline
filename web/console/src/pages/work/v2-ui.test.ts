@@ -73,6 +73,14 @@ test("closed Board cards show their completion time instead of another update ti
   assert.match(source, /item\.closed_at \? `完成 \$\{when\(item\.closed_at\)\}` : `更新 \$\{when\(item\.updated_at\)\}`/)
 })
 
+test("closed Board cards retain and open Agent completion reports", () => {
+  const report = readFileSync(new URL("./WorkCompletionReport.tsx", import.meta.url), "utf8")
+  assert.match(source, /<WorkCompletionReports item=\{item\}/)
+  assert.match(report, /結案報告/)
+  assert.match(report, /completion_report/)
+  assert.match(styles, /\.work-completion-report/)
+})
+
 test("assigned work links to its current Session instead of offering assignment again", () => {
   assert.match(source, /import \{ sessionFragment \} from "\.\.\/\.\.\/session\/address\.js"/)
   assert.match(source, /sessions\.find\(\(session\) => session\.sessionId === item\.owner_session\)/)

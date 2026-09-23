@@ -190,6 +190,10 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner string, terminal
 	}
 	out := make([]WorkV2View, 0, len(items))
 	for _, i := range items {
+		documents, documentErr := w.Store.WorkV2Documents(ctx, i.ID)
+		if documentErr != nil {
+			return nil, false, mapWorkV2Error(documentErr)
+		}
 		images, imageErr := w.Store.WorkV2Images(ctx, i.ID)
 		if imageErr != nil {
 			return nil, false, mapWorkV2Error(imageErr)
@@ -198,7 +202,7 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner string, terminal
 		if stepErr != nil {
 			return nil, false, mapWorkV2Error(stepErr)
 		}
-		out = append(out, WorkV2View{Item: i, Images: images, Steps: steps})
+		out = append(out, WorkV2View{Item: i, Documents: documents, Images: images, Steps: steps})
 	}
 	return out, truncated, nil
 }
@@ -210,6 +214,10 @@ func (w *WorkSystemV2) RecentlyCompleted(ctx context.Context, session string) ([
 	}
 	out := make([]WorkV2View, 0, len(items))
 	for _, i := range items {
+		documents, documentErr := w.Store.WorkV2Documents(ctx, i.ID)
+		if documentErr != nil {
+			return nil, false, mapWorkV2Error(documentErr)
+		}
 		images, imageErr := w.Store.WorkV2Images(ctx, i.ID)
 		if imageErr != nil {
 			return nil, false, mapWorkV2Error(imageErr)
@@ -218,7 +226,7 @@ func (w *WorkSystemV2) RecentlyCompleted(ctx context.Context, session string) ([
 		if stepErr != nil {
 			return nil, false, mapWorkV2Error(stepErr)
 		}
-		out = append(out, WorkV2View{Item: i, Images: images, Steps: steps})
+		out = append(out, WorkV2View{Item: i, Documents: documents, Images: images, Steps: steps})
 	}
 	return out, truncated, nil
 }
@@ -978,7 +986,7 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 			}
 		}
 		switch c.Role {
-		case "spec", "design", "test", "deploy", "other":
+		case "spec", "design", "test", "deploy", "completion_report", "other":
 		default:
 			return work.RefuseV2("invalid_document_role", "That document role is not supported.")
 		}

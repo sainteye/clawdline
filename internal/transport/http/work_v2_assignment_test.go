@@ -26,6 +26,32 @@ func TestCompletingAnAssignedItemRecordsAndSendsItsNotification(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reportBody, err := json.Marshal(map[string]any{"expected_version": owned.Item.Version,
+		"session_id": p.s.ConversationID, "role": "completion_report", "title": "Completion report",
+		"body": "The unstable observation timestamp made an unchanged transcript look new."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := httptest.NewRequest(http.MethodPost, "/v1/work/v2/agent/items/"+v.Item.ID+"/documents", bytes.NewReader(reportBody))
+	report.Header.Set("Content-Type", "application/json")
+	report.Header.Set("Idempotency-Key", "agent-completion-report")
+	report = report.WithContext(context.WithValue(report.Context(), accessKey{}, access{machine: true,
+		verdict: auth.Verdict{Allowed: true}}))
+	reportAnswer := httptest.NewRecorder()
+	s.workV2Route(reportAnswer, report)
+	if reportAnswer.Code != http.StatusCreated {
+		t.Fatalf("report: %d %s", reportAnswer.Code, reportAnswer.Body)
+	}
+	var reported struct {
+		Item workV2ItemWire `json:"item"`
+	}
+	if err := json.Unmarshal(reportAnswer.Body.Bytes(), &reported); err != nil {
+		t.Fatal(err)
+	}
+	if len(reported.Item.Documents) != 1 || reported.Item.Documents[0].Role != "completion_report" {
+		t.Fatalf("report response = %+v", reported.Item.Documents)
+	}
+	owned.Item.Version = reported.Item.Version
 	advance := func(next work.Phase, verification string, landing *app.VerifiedLandingV2, deployment string) {
 		t.Helper()
 		owned, err = s.workV2().Advance(context.Background(), v.Item.ID, app.AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
@@ -157,7 +183,8 @@ func TestOnlyAnIdleSessionReceivesAnAssignmentBrief(t *testing.T) {
 		"existing_session", p.s.ID, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := p.done(); len(got) != 1 || !strings.HasPrefix(got[0], "send:") {
+	if got := p.done(); len(got) != 1 || !strings.HasPrefix(got[0], "send:") ||
+		!strings.Contains(got[0], "completion_report") || !strings.Contains(got[0], "straightforward fix") {
 		t.Fatalf("idle Session brief = %v", got)
 	}
 }
@@ -205,6 +232,13 @@ func TestAnAgentSeesAndCanRetractItsRecentCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	owned, err = s.workV2().AddDocument(context.Background(), v.Item.ID, app.AddDocumentV2{
+		ExpectedVersion: owned.Item.Version, SessionID: p.s.ConversationID, Role: "completion_report",
+		Title: "Completion report", Body: "The unstable observation timestamp made an unchanged transcript look new.",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	advance := func(next work.Phase, verification string, landing *app.VerifiedLandingV2, deployment string) {
 		t.Helper()
 		owned, err = s.workV2().Advance(context.Background(), v.Item.ID, app.AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
@@ -234,7 +268,8 @@ func TestAnAgentSeesAndCanRetractItsRecentCompletion(t *testing.T) {
 	if err := json.Unmarshal(readAnswer.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Recent) != 1 || page.Recent[0].ID != v.Item.ID {
+	if len(page.Recent) != 1 || page.Recent[0].ID != v.Item.ID || len(page.Recent[0].Documents) != 1 ||
+		page.Recent[0].Documents[0].Body != "The unstable observation timestamp made an unchanged transcript look new." {
 		t.Fatalf("recent items = %+v; body = %s", page.Recent, readAnswer.Body)
 	}
 

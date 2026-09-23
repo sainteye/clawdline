@@ -322,8 +322,19 @@ export interface WorkV2Item {
   closed_at: number | null
   cycle: number
   version: number
+  documents?: WorkV2Document[]
   images?: WorkV2Image[]
   steps?: WorkV2Step[]
+}
+
+export interface WorkV2Document {
+  id: string
+  role: "spec" | "design" | "test" | "deploy" | "completion_report" | "other"
+  title: string
+  body: string
+  reference: string
+  position: number
+  version: number
 }
 
 export interface WorkV2Step {
