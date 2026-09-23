@@ -32,7 +32,10 @@ while IFS='=' read -r name _; do
 done < <(env)
 unset VITE_HOSTED_CONSOLE || true
 
-go test ./...
+# Several filesystem tests assert the requested public mode exactly. Keep the
+# private release umask out of their process; the release artifacts below stay
+# owner-only.
+( umask 022; go test ./... )
 go vet ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=true -o "$stage/clawdline" ./cmd/clawdline
 ( cd web && npm ci --ignore-scripts && npm run check && npm run build )
