@@ -201,6 +201,11 @@
     backdrop-filter: blur(7px) saturate(.72);
     transition: opacity 180ms ease;
 }
+.session-todos-backdrop {
+    position: absolute; z-index: -1; top: calc(100% - 1px); left: 0;
+    width: 100%; height: calc(100dvh + 1px); padding: 0; border: 0;
+    appearance: none; background: transparent; pointer-events: none; cursor: pointer;
+}
 .session-todos[open] {
     border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--line));
     background: color-mix(in srgb, var(--card) 88%, transparent);
@@ -209,6 +214,7 @@
     backdrop-filter: blur(18px) saturate(1.16);
 }
 .session-todos[open]::after { opacity: 1; }
+.session-todos[open] > .session-todos-backdrop { pointer-events: auto; }
 .session-todos[hidden] { display: none; }
 .pane-detail[data-panel] > .session-todos { display: none; }
 .session-todos > summary {
