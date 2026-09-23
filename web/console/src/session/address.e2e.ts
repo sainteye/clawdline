@@ -15,7 +15,7 @@
 import { test, before, after } from "node:test"
 import assert from "node:assert/strict"
 import { spawn, type ChildProcess } from "node:child_process"
-import { createServer, type Server, type ServerResponse } from "node:http"
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, extname, join, normalize, resolve } from "node:path"
@@ -47,7 +47,7 @@ const FRAGMENT: Record<string, string> = {
   [LEGACY]: "#session=" + escapedPane(195),
 }
 
-function row(id: string, label: string, backend: string) {
+function row(id: string, label: string, backend: string, sessionId: string) {
   return {
     id,
     label,
@@ -56,6 +56,7 @@ function row(id: string, label: string, backend: string) {
     work_state: "ready",
     evidence: "process",
     isClaude: true,
+    sessionId,
     cwd: "/tmp/fixture",
     closeability: {
       activity_generation: 1,
@@ -74,10 +75,10 @@ function row(id: string, label: string, backend: string) {
 }
 
 const ROWS = [
-  row(TMUX, "Alpha on a tmux pane", "tmux"),
-  row(TTY, "Bravo on a tty", "owned"),
-  row(ITERM, "Charlie in iTerm", "iterm"),
-  row(LEGACY, "Delta from an old link", "tmux"),
+  row(TMUX, "Alpha on a tmux pane", "tmux", "10000000-0000-4000-8000-000000000001"),
+  row(TTY, "Bravo on a tty", "owned", "10000000-0000-4000-8000-000000000002"),
+  row(ITERM, "Charlie in iTerm", "iterm", "10000000-0000-4000-8000-000000000003"),
+  row(LEGACY, "Delta from an old link", "tmux", "10000000-0000-4000-8000-000000000004"),
 ]
 
 // ---- the stand-in daemon
@@ -85,6 +86,11 @@ const ROWS = [
 let generation = 0
 let intentRequests = 0
 let placeRequests = 0
+let createdWork: Record<string, unknown> | null = null
+const PROJECT_ICON = {
+  accent: "#D97757",
+  cells: [["#D97757", "#D97757"], ["#D97757", "#141416"]],
+}
 function snapshot() {
   generation++
   return {
@@ -116,6 +122,18 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body))
 }
 
+function requestJSON(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let raw = ""
+    req.setEncoding("utf8")
+    req.on("data", (chunk) => { raw += chunk })
+    req.on("end", () => {
+      try { resolve(JSON.parse(raw) as Record<string, unknown>) } catch (error) { reject(error) }
+    })
+    req.on("error", reject)
+  })
+}
+
 // The document with its words written in, as `page.go` writes them.
 function document(): string {
   const html = readFileSync(join(dist, "index.html"), "utf8")
@@ -137,9 +155,37 @@ function daemon(): Server {
       return json(res, 200, {
         at: Date.now(),
         assistants: [{ id: "claude", label: "Claude Code", availability: "unknown" }],
-        places: [{ id: "fixture-place", label: "Example project", path: "/tmp/fixture", at: Date.now(), icon: null }],
+        places: [{ id: "fixture-place", label: "Example project", path: "/tmp/fixture", at: Date.now(), icon: PROJECT_ICON }],
       })
     }
+    if (path === "/v1/work/v2/items" && req.method === "GET") {
+      return json(res, 200, { ok: true, rows: createdWork ? [createdWork] : [], counts: {}, truncated: false })
+    }
+    if (path === "/v1/work/v2/items" && req.method === "POST") {
+      void requestJSON(req).then((body) => {
+        createdWork = {
+          id: "20000000-0000-4000-8000-000000000001",
+          project: { id: "fixture-place", label: "Example project", path: "/tmp/fixture", icon: PROJECT_ICON, available: true },
+          kind: body.kind,
+          title: body.title,
+          description: body.description,
+          phase: "created",
+          condition: null,
+          area: "unassigned",
+          deployment_policy: body.deployment_policy,
+          owner_session: null,
+          created_at: 1,
+          updated_at: 1,
+          closed_at: null,
+          cycle: 1,
+          version: 1,
+          images: [],
+        }
+        json(res, 201, { item: createdWork })
+      }, () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
+      return
+    }
+    if (path === "/v1/work/v2/proposals") return json(res, 200, { rows: [], truncated: false })
     if (path === "/v1/intents" && req.method === "POST") {
       intentRequests++
       return json(res, 200, {
@@ -543,4 +589,61 @@ test("phone: the home microphone opens an editable draft before anything starts"
       return !document.getElementById("command-go").disabled
     })()`)
     assert.equal(ready, true, "choosing a project makes the reviewed draft startable")
+  }))
+
+test("phone: the Board shortcut keeps a new item open for assignment", () =>
+  inTab(PHONE, async (tab) => {
+    createdWork = null
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    await tab.run(`document.getElementById("work-create-go").click()`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const choose = () => {
+        const trigger = document.querySelector(".work-new-modal .work-project-trigger")
+        if (trigger) {
+          trigger.click()
+          const option = document.querySelector(".work-new-modal .work-project-option")
+          if (option) { option.click(); return resolve(true) }
+        }
+        if (Date.now() >= deadline) return reject(new Error("the Board item modal did not load its Project"))
+        setTimeout(choose, 25)
+      }
+      choose()
+    })`)
+    await tab.run(`(() => {
+      const title = document.querySelector(".work-new-modal input.work-input")
+      const description = document.querySelector(".work-new-modal textarea")
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(title, "Shortcut-created work")
+      title.dispatchEvent(new Event("input", { bubbles: true }))
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(description, "Keep this item open so it can be assigned.")
+      description.dispatchEvent(new Event("input", { bubbles: true }))
+      document.querySelector(".work-new-modal form").requestSubmit()
+    })()`)
+    const card = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const modal = document.querySelector(".work-created-modal")
+        const card = modal?.querySelector(".work-v2-card")
+        if (card) return resolve({
+          title: card.querySelector("h3")?.textContent,
+          sessions: card.querySelectorAll(".work-assignment select option").length,
+          actions: [...card.querySelectorAll(".work-assignment button")].map((button) => button.textContent),
+          focus: document.activeElement?.getAttribute("aria-label"),
+          sessionsPage: !document.getElementById("app").hidden,
+          boardPage: !document.getElementById("work").hidden,
+        })
+        if (Date.now() >= deadline) return reject(new Error("the created Board item did not stay open"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.deepEqual(card, {
+      title: "Shortcut-created work",
+      sessions: ROWS.length + 1,
+      actions: ["指派", "開新 Session"],
+      focus: "指派既有 Session",
+      sessionsPage: true,
+      boardPage: false,
+    })
   }))

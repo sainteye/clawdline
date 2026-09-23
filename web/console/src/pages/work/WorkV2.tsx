@@ -6,6 +6,7 @@ import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { failureWords, when } from "./shared.js"
+import { onOpenNewWorkItem } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import {
   assignNewWorkV2,
@@ -16,6 +17,7 @@ import {
   deleteWorkV2Image,
   editWorkV2,
   readProjectPlaces,
+  readSessionWorkV2,
   readSessionsForWorkV2,
   readWorkV2,
   readWorkV2Proposals,
@@ -24,7 +26,9 @@ import {
   type WorkV2Item,
   type WorkV2Kind,
   type WorkV2Proposal,
+  type SessionWorkV2,
 } from "./api.js"
+import { sessionActivityName, sessionWorkCounts, sessionWorkStateName } from "./session-assignment.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
 const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
@@ -43,6 +47,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [proposals, setProposals] = useState<WorkV2Proposal[]>([])
   const [project, setProject] = useState("")
   const [creating, setCreating] = useState(false)
+  const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
   const [busy, setBusy] = useState("")
   const [failure, setFailure] = useState("")
 
@@ -50,29 +55,44 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     try {
       const [work, projects, live, suggestions] = await Promise.all([readWorkV2(project || undefined), readProjectPlaces(), readSessionsForWorkV2(), readWorkV2Proposals()])
       setItems(work.rows); setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setFailure("")
+      setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
     } catch (e) { setFailure(failureWords(e)) }
   }, [project])
   useEffect(() => {
-    if (!shown) return
+    if (!shown && !creating && !createdItem) return
     void load()
     const timer = setInterval(() => { if (document.visibilityState === "visible") void load() }, 30_000)
     return () => clearInterval(timer)
-  }, [shown, load])
+  }, [shown, creating, createdItem?.id, load])
+  useEffect(() => onOpenNewWorkItem(() => {
+    setFailure("")
+    setCreatedItem(null)
+    setCreating(true)
+  }), [])
 
   const run = async (key: string, task: () => Promise<unknown>) => {
     if (busy) return false
     setBusy(key); setFailure("")
-    try { await task(); await load(); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
+    try {
+      const answer = await task()
+      if (answer && typeof answer === "object" && "item" in answer) {
+        const changed = (answer as { item?: WorkV2Item }).item
+        if (changed) setCreatedItem((current) => current?.id === changed.id ? changed : current)
+      }
+      await load()
+      return true
+    } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
   }
   const planning = items.filter((item) => item.area === "planning" && !item.closed_at)
   const unassigned = items.filter((item) => item.area === "unassigned" && !item.closed_at)
   const done = items.filter((item) => item.closed_at)
 
-  return <section id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title">
+  return <>
+  <section id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title">
     <header className="board-head">
       <div><p className="board-eyebrow">WORK SYSTEM V2</p><h1 id="work-v2-title">看板</h1></div>
       <div className="work-head-tools">
-        <button className="board-button" type="button" onClick={() => setCreating(true)}>＋ 建立項目</button>
+        <button className="board-button" type="button" onClick={() => { setFailure(""); setCreatedItem(null); setCreating(true) }}>＋ 建立項目</button>
         <button className="board-button" type="button" disabled={!!busy} onClick={() => void load()}>{L.strings.webInfoRefresh}</button>
       </div>
     </header>
@@ -97,24 +117,32 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
           failure={failure} clearFailure={() => setFailure("")} run={run} />)}</div>
       </details>}
     </div>
+  </section>
     {creating && <NewWorkModal places={places} initialProject={project} busy={!!busy} failure={failure} onClose={() => setCreating(false)} onCreate={(body, files) => {
       void run("create", async () => {
         const answer = await createWorkV2(body)
-        setCreating(false)
+        let created = answer.item
         let version = answer.item.version
         try {
           for (let index = 0; index < files.length; index++) {
             const picture = await prepareReferencePicture(files[index])
             const uploaded = await addWorkV2Image(answer.item.id, version, picture, index)
             version = uploaded.item.version
+            created = uploaded.item
           }
         } catch (error) {
+          setCreating(false)
+          setCreatedItem(created)
           await load()
           throw error
         }
+        setCreating(false)
+        setCreatedItem(created)
       })
     }} />}
-  </section>
+    {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} busy={busy} failure={failure}
+      clearFailure={() => setFailure("")} run={run} onClose={() => setCreatedItem(null)} />}
+  </>
 }
 
 function BoardRegion({ title, items, sessions, busy, failure, clearFailure, run }: {
@@ -133,13 +161,14 @@ function BoardRegion({ title, items, sessions, busy, failure, clearFailure, run 
   </section>
 }
 
-function WorkCard({ item, sessions, busy, failure, clearFailure, run }: {
+function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssignment = false }: {
   item: WorkV2Item
   sessions: SessionRow[]
   busy: string
   failure: string
   clearFailure: () => void
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  focusAssignment?: boolean
 }) {
   const [terminal, setTerminal] = useState("")
   const [editing, setEditing] = useState(false)
@@ -191,9 +220,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run }: {
         : item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}
     </div>
     {assignable && <div className="work-assignment">
-      <select className="work-input" value={terminal} onChange={(e) => setTerminal(e.target.value)} aria-label="指派既有 Session">
-        <option value="">選擇既有 Session</option>{eligible.map((s) => <option key={s.id} value={s.id}>{s.label || s.id}</option>)}
-      </select>
+      <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment} />
       <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => void run(item.id, () => assignWorkV2(item, terminal))}>指派</button>
       <button className="chip" type="button" disabled={!!busy} onClick={() => void run(item.id, () => assignNewWorkV2(item))}>開新 Session</button>
     </div>}
@@ -204,6 +231,153 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run }: {
       void run(`delete-${item.id}`, () => deleteWorkV2(item)).then((ok) => { if (ok) setDeleting(false) })
     }} />}
   </article>
+}
+
+interface SessionWorkReading {
+  page?: SessionWorkV2
+  loading?: boolean
+  error?: string
+}
+
+function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false }: {
+  sessions: SessionRow[]
+  value: string
+  onChange: (id: string) => void
+  autoFocus?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [readings, setReadings] = useState<Record<string, SessionWorkReading>>({})
+  const root = useRef<HTMLDivElement>(null)
+  const ticket = useRef(0)
+  const selected = sessions.find((session) => session.id === value)
+  const selectedReading = value ? readings[value] : undefined
+
+  useEffect(() => () => { ticket.current += 1 }, [])
+
+  const load = useCallback(async () => {
+    const mine = ++ticket.current
+    setReadings((current) => {
+      const next = { ...current }
+      for (const session of sessions) next[session.id] = { ...next[session.id], loading: true, error: undefined }
+      return next
+    })
+    await Promise.all(sessions.map(async (session) => {
+      try {
+        const page = await readSessionWorkV2(session.id)
+        if (mine !== ticket.current) return
+        setReadings((current) => ({ ...current, [session.id]: { page } }))
+      } catch (error) {
+        if (mine !== ticket.current) return
+        setReadings((current) => ({ ...current, [session.id]: { error: failureWords(error) } }))
+      }
+    }))
+  }, [sessions])
+
+  useEffect(() => {
+    if (!open) return
+    void load()
+    const closeOutside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("pointerdown", closeOutside)
+    document.addEventListener("keydown", closeOnEscape)
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside)
+      document.removeEventListener("keydown", closeOnEscape)
+    }
+  }, [open, load])
+
+  const choose = (id: string) => { onChange(id); setOpen(false) }
+  return <div className="work-session-picker" ref={root}>
+    <button className="work-session-trigger" type="button" aria-label="指派既有 Session" aria-haspopup="listbox"
+      aria-expanded={open} autoFocus={autoFocus} onClick={() => setOpen((shown) => !shown)}>
+      {selected ? <><SessionStateDot session={selected} /><span><b>{selected.label || selected.id}</b>
+        <small>{sessionActivityName(selected.state)} · {sessionWorkStateName(selected.work_state)}</small></span></>
+        : <><span className="work-session-placeholder" aria-hidden="true">◌</span><span>選擇既有 Session</span></>}
+      <span className="work-project-chevron" aria-hidden="true">⌄</span>
+    </button>
+    {open && <div className="work-session-menu" role="listbox" aria-label="可指派的 Session">
+      {sessions.map((session) => <SessionChoice key={session.id} session={session} reading={readings[session.id]}
+        selected={session.id === value} onChoose={() => choose(session.id)} />)}
+      {!sessions.length && <p className="work-project-empty">這個 Project 目前沒有可用的 Session。</p>}
+    </div>}
+    {selected && <SessionAssignmentDetail session={selected} reading={selectedReading} />}
+  </div>
+}
+
+function SessionChoice({ session, reading, selected, onChoose }: {
+  session: SessionRow
+  reading?: SessionWorkReading
+  selected: boolean
+  onChoose: () => void
+}) {
+  const counts = reading?.page ? sessionWorkCounts(reading.page) : null
+  return <button className="work-session-option" type="button" role="option" aria-selected={selected} onClick={onChoose}>
+    <SessionStateDot session={session} />
+    <span><b>{session.label || session.id}</b><small>{sessionActivityName(session.state)} · {sessionWorkStateName(session.work_state)}</small></span>
+    <span className="work-session-counts">{reading?.loading ? "讀取中…" : reading?.error ? "讀不到工作" : counts
+      ? `${counts.board} 看板 · ${counts.todos} TODO` : "—"}</span>
+  </button>
+}
+
+function SessionStateDot({ session }: { session: SessionRow }) {
+  return <span className="work-session-state-dot" data-state={session.state} aria-hidden="true" />
+}
+
+function SessionAssignmentDetail({ session, reading }: { session: SessionRow; reading?: SessionWorkReading }) {
+  const page = reading?.page
+  const counts = page ? sessionWorkCounts(page) : null
+  return <section className="work-session-detail" aria-label={`${session.label || session.id} 的狀況`} aria-live="polite">
+    <div className="work-session-detail-head"><strong>Session 狀況</strong><span>{sessionActivityName(session.state)} · {sessionWorkStateName(session.work_state)}</span></div>
+    {(session.line || session.work_note) && <p>{session.line || session.work_note}</p>}
+    {reading?.loading && !page ? <p>正在讀取看板與 TODO…</p> : reading?.error ? <p className="work-note" role="alert">工作資訊讀取失敗：{reading.error}</p> : page ? <>
+      <p>尚未完成：{counts?.board ?? 0} 個看板項目 · {counts?.todos ?? 0} 個 TODO</p>
+      <SessionWorkList title="還在做" empty="目前沒有負責中的看板項目。" rows={page.assigned_items.map((item) => ({
+        id: item.id, title: item.title, meta: `${item.project.label} · ${phaseName(item.phase)}${item.condition ? ` · ${item.condition}` : ""}`,
+      }))} />
+      <SessionWorkList title="直接待辦" empty="目前沒有未完成的 TODO。" rows={page.direct_todos.map((todo) => ({
+        id: todo.id, title: todo.text, meta: todo.read_at ? "已讀" : todo.sent_at ? "已傳送" : "尚未傳送",
+      }))} />
+      <SessionWorkList title="最近完成" empty="目前沒有最近完成的看板項目。" rows={(page.recent_items ?? []).map((item) => ({
+        id: item.id, title: item.title, meta: item.project.label,
+      }))} />
+      {page.truncated && <small className="work-session-truncated">還有更多工作未列出；請進入 Session 查看完整清單。</small>}
+    </> : <p>展開 Session 清單後讀取它的工作資訊。</p>}
+  </section>
+}
+
+function SessionWorkList({ title, empty, rows }: {
+  title: string
+  empty: string
+  rows: { id: string; title: string; meta: string }[]
+}) {
+  return <div className="work-session-work-list"><b>{title}</b>{rows.length ? <ul>{rows.map((row) => <li key={row.id}>
+    <span>{row.title}</span><small>{row.meta}</small>
+  </li>)}</ul> : <small>{empty}</small>}</div>
+}
+
+function CreatedWorkModal({ item, sessions, busy, failure, clearFailure, run, onClose }: {
+  item: WorkV2Item
+  sessions: SessionRow[]
+  busy: string
+  failure: string
+  clearFailure: () => void
+  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  onClose: () => void
+}) {
+  useModalDismiss(!!busy, onClose)
+  return <div className="session-todo-modal work-created-modal" role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id}`}
+    onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
+    <div className="work-created-panel">
+      <div className="work-modal-head"><div><p className="board-eyebrow">WORK ITEM CREATED</p><h2 id={`work-created-title-${item.id}`}>看板項目已建立</h2></div>
+        <button className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}>×</button></div>
+      {failure && <p className="work-note" role="alert">{failure}</p>}
+      <WorkCard item={item} sessions={sessions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} focusAssignment />
+    </div>
+  </div>
 }
 
 function EditWorkModal({ item, busy, failure, onClose, onSave }: {

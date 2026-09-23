@@ -4,6 +4,7 @@ import test from "node:test"
 
 const source = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
 const styles = readFileSync(new URL("./work.css", import.meta.url), "utf8")
+const sessions = readFileSync(new URL("../../Sessions.tsx", import.meta.url), "utf8")
 
 test("the Project picker draws each Project mark in its trigger and menu", () => {
   assert.match(source, /function ProjectPicker/)
@@ -45,6 +46,18 @@ test("unassigned executable work is visible and assignable", () => {
   assert.doesNotMatch(source, /item\.area === "execution"/)
 })
 
+test("assignment choices show Session activity, unfinished work, and selected details", () => {
+  assert.match(source, /function SessionAssignmentPicker/)
+  assert.match(source, /sessionActivityName\(session\.state\)/)
+  assert.match(source, /`\$\{counts\.board\} 看板 · \$\{counts\.todos\} TODO`/)
+  assert.match(source, /title="還在做"/)
+  assert.match(source, /title="直接待辦"/)
+  assert.match(source, /title="最近完成"/)
+  assert.match(source, /readSessionWorkV2\(session\.id\)/)
+  assert.match(styles, /\.work-session-detail/)
+  assert.doesNotMatch(source, /<select className="work-input"[^>]*aria-label="指派既有 Session"/)
+})
+
 test("assigned work links to its current Session instead of offering assignment again", () => {
   assert.match(source, /import \{ sessionFragment \} from "\.\.\/\.\.\/session\/address\.js"/)
   assert.match(source, /sessions\.find\(\(session\) => session\.sessionId === item\.owner_session\)/)
@@ -66,6 +79,17 @@ test("the create modal accepts reference pictures before creating the item", () 
   assert.match(source, /建立項目後上傳/)
   assert.match(source, /deployment_policy: "agent_decides" }, images\)/)
   assert.match(source, /addWorkV2Image\(answer\.item\.id/)
+})
+
+test("the Session list shortcut creates an item and keeps its assignment card in a modal", () => {
+  assert.match(sessions, /id="work-create-go"/)
+  assert.match(sessions, /aria-label="新增看板項目"/)
+  assert.match(sessions, /onClick=\{openNewWorkItem\}/)
+  assert.match(source, /onOpenNewWorkItem/)
+  assert.match(source, /setCreatedItem\(created\)/)
+  assert.match(source, /<CreatedWorkModal item=\{createdItem\}/)
+  assert.match(source, /<WorkCard item=\{item\} sessions=\{sessions\}/)
+  assert.match(styles, /\.work-created-panel/)
 })
 
 test("reference pictures use fetch-backed object URLs so Cloud can render their bytes", () => {
