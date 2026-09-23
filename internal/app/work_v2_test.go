@@ -189,6 +189,42 @@ func createWorkV2Test(t *testing.T, w *WorkSystemV2, kind work.Kind) WorkV2View 
 	return v
 }
 
+func TestWorkV2ReusesAnIdenticalPristineCreate(t *testing.T) {
+	w := newWorkV2Test(t)
+	request := NewWorkV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindIssue,
+		Title: "One user decision", Description: "Do not turn an uncertain reply into a second card",
+		DeploymentPolicy: work.DeployAgentDecides, Actor: "device-a"}
+	first, err := w.Create(context.Background(), request, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Actor = "device-b"
+	retried, err := w.Create(context.Background(), request, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried.Item.ID != first.Item.ID {
+		t.Fatalf("an identical pristine retry created %q after %q", retried.Item.ID, first.Item.ID)
+	}
+	items, _, err := w.List(context.Background(), "p", "", true)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+	events, err := w.Store.WorkV2Events(context.Background(), first.Item.ID, 0, 10)
+	if err != nil || len(events) != 1 || events[0].Kind != "item.created" {
+		t.Fatalf("events=%+v err=%v", events, err)
+	}
+
+	request.Description = "A genuinely different decision"
+	different, err := w.Create(context.Background(), request, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if different.Item.ID == first.Item.ID {
+		t.Fatal("different content was folded into the earlier item")
+	}
+}
+
 func TestWorkV2KeepsHumanAndAgentAuthoritiesSeparate(t *testing.T) {
 	w := newWorkV2Test(t)
 	v := createWorkV2Test(t, w, work.KindFeature)

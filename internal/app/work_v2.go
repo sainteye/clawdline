@@ -142,6 +142,17 @@ func (w *WorkSystemV2) Create(ctx context.Context, n NewWorkV2, file WorkV2Filer
 	v := WorkV2View{Item: i, Assignments: []work.AssignmentV2{}, Documents: []work.DocumentV2{}, Images: []work.ImageV2{},
 		Steps: []work.StepV2{}, Events: []work.EventV2{}}
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		if existing, ok, err := tx.PristineEquivalentItem(i); err != nil {
+			return err
+		} else if ok {
+			v.Item = existing
+			if file != nil {
+				if k, a, complete := file(v); complete {
+					return tx.CompleteReceipt(k, a)
+				}
+			}
+			return nil
+		}
 		if err := tx.CreateItem(i, n.Actor, payload(map[string]any{"project_id": i.ProjectID, "kind": i.Kind})); err != nil {
 			return err
 		}

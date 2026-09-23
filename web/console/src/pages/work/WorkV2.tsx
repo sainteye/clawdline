@@ -32,6 +32,7 @@ import {
   type SessionWorkV2,
 } from "./api.js"
 import { sessionActivityName, sessionWorkCounts, sessionWorkStateName } from "./session-assignment.js"
+import { workV2CreateDecision, type WorkV2CreateDecision } from "./create-decision.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
 const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
@@ -145,9 +146,9 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     </div>
   </section>
     {creating && <NewWorkModal places={places} initialProject={project} initialDraft={createDraft} busy={!!busy} failure={failure}
-      onRefreshPlaces={refreshPlaces} onClose={() => setCreating(false)} onCreate={(body, files) => {
+      onRefreshPlaces={refreshPlaces} onClose={() => setCreating(false)} onCreate={(body, files, decisionKey) => {
       void run("create", async () => {
-        const answer = await createWorkV2(body)
+        const answer = await createWorkV2(body, decisionKey)
         let created = answer.item
         let version = answer.item.version
         try {
@@ -554,13 +555,14 @@ function ProjectPicker({ places, value, onChange, onOpen, allowAll = false }: {
   </div>
 }
 
-function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onRefreshPlaces, onClose, onCreate }: { places: ProjectPlace[]; initialProject: string; initialDraft: NewWorkItemDraft; busy: boolean; failure: string; onRefreshPlaces: () => Promise<void>; onClose: () => void; onCreate: (body: Parameters<typeof createWorkV2>[0], images: File[]) => void }) {
+function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onRefreshPlaces, onClose, onCreate }: { places: ProjectPlace[]; initialProject: string; initialDraft: NewWorkItemDraft; busy: boolean; failure: string; onRefreshPlaces: () => Promise<void>; onClose: () => void; onCreate: (body: Parameters<typeof createWorkV2>[0], images: File[], decisionKey: string) => void }) {
   const [projectID, setProjectID] = useState(initialDraft.projectID || initialProject)
   const [kind, setKind] = useState<WorkV2Kind>(initialDraft.kind || "feature")
   const [title, setTitle] = useState(initialDraft.title || "")
   const [description, setDescription] = useState(initialDraft.description || "")
   const [images, setImages] = useState<File[]>([])
   const imagePicker = useRef<HTMLInputElement>(null)
+  const createDecision = useRef<WorkV2CreateDecision | null>(null)
   const projectPlaces = initialDraft.project && !places.some((place) => place.id === initialDraft.project?.id)
     ? [initialDraft.project, ...places]
     : places
@@ -570,7 +572,10 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready) return
-    onCreate({ project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" }, images)
+    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const }
+    const decision = workV2CreateDecision(body, createDecision.current)
+    createDecision.current = decision
+    onCreate(body, images, decision.key)
   }}>
     <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? "REVIEW WORK ITEM" : "NEW WORK ITEM"}</p><h2 id="work-new-v2-title">{reviewingDraft ? "確認看板項目" : "建立看板項目"}</h2></div>
       <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
