@@ -334,6 +334,7 @@ export interface WorkV2Document {
   reference: string
   position: number
   version: number
+  created_at: number
 }
 
 export interface WorkV2Step {

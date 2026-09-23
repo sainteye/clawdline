@@ -48,7 +48,8 @@ func TestCompletingAnAssignedItemRecordsAndSendsItsNotification(t *testing.T) {
 	if err := json.Unmarshal(reportAnswer.Body.Bytes(), &reported); err != nil {
 		t.Fatal(err)
 	}
-	if len(reported.Item.Documents) != 1 || reported.Item.Documents[0].Role != "completion_report" {
+	if len(reported.Item.Documents) != 1 || reported.Item.Documents[0].Role != "completion_report" ||
+		reported.Item.Documents[0].CreatedAt == 0 {
 		t.Fatalf("report response = %+v", reported.Item.Documents)
 	}
 	owned.Item.Version = reported.Item.Version
