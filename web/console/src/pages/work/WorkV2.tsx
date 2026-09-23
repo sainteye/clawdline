@@ -24,6 +24,7 @@ import {
   readSessionsForWorkV2,
   readWorkV2,
   readWorkV2Proposals,
+  remindWorkV2,
   resolveWorkV2Proposal,
   type ProjectPlace,
   type WorkV2Item,
@@ -237,6 +238,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   const [terminal, setTerminal] = useState("")
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [reminded, setReminded] = useState(false)
   const imagePicker = useRef<HTMLInputElement>(null)
   const eligible = useMemo(() => sessions.filter((s) => s.cwd === item.project.path && s.sessionId), [sessions, item.project.path])
   const owner = item.owner_session ? sessions.find((session) => session.sessionId === item.owner_session) : undefined
@@ -245,6 +247,10 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     <div className="work-card-toolbar">
       <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span>{item.project.label}</span></div>
       <div className="work-card-controls" aria-label="項目操作">
+        {!!item.owner_session && !item.closed_at && <button type="button" disabled={!!busy}
+          onClick={() => { clearFailure(); setReminded(false); void run(`remind-${item.id}`, () => remindWorkV2(item)).then(setReminded) }}>
+          <span aria-hidden="true">{reminded ? "✓" : "↗"}</span> {reminded ? "已提醒" : "提醒 Session"}
+        </button>}
         <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><span aria-hidden="true">✎</span> 編輯</button>
         {!item.closed_at && <button className="danger" type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setDeleting(true) }}><span aria-hidden="true">⌫</span> 刪除</button>}

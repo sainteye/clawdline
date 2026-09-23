@@ -328,6 +328,12 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-work-v2-assign", method: "POST", path: "/v1/work/v2/items/w1/assign",
 		body2: `{"assistant":"codex","expected_version":1,"mode":"new_session","model":"default"}`,
 	}, {
+		word: "work.v2.remind",
+		body: map[string]any{"type": "work.v2.remind", "session": machine, "request": "req-work-v2-remind", "id": "w1",
+			"item": map[string]any{"expected_version": 2}},
+		session: machine, name: "action:req-work-v2-remind", method: "POST", path: "/v1/work/v2/items/w1/remind",
+		body2: `{"expected_version":2}`,
+	}, {
 		word: "work.v2.edit",
 		body: map[string]any{"type": "work.v2.edit", "session": machine, "request": "req-work-v2-edit", "id": "w1",
 			"item": map[string]any{"expected_version": 2, "title": "Edited", "description": "Changed"}},
@@ -1259,7 +1265,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"project-worktree-lifecycle-refresh", "landings",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
-		"work.v2.assign", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
+		"work.v2.assign", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
 		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
@@ -1273,6 +1279,8 @@ func workV2Writes() map[string]map[string]any {
 			"request": "req", "item": map[string]any{"project_id": "p1", "kind": "feature", "title": "A"}},
 		"work.v2.assign": {"type": "work.v2.assign", "session": MachineReplySession,
 			"request": "req", "id": "w1", "item": map[string]any{"mode": "existing", "terminal": pane}},
+		"work.v2.remind": {"type": "work.v2.remind", "session": MachineReplySession,
+			"request": "req", "id": "w1", "item": map[string]any{"expected_version": 2}},
 		"work.v2.edit": {"type": "work.v2.edit", "session": MachineReplySession,
 			"request": "req", "id": "w1", "item": map[string]any{"expected_version": 2, "title": "Edited"}},
 		"work.v2.cancel": {"type": "work.v2.cancel", "session": MachineReplySession,

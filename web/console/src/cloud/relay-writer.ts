@@ -245,6 +245,7 @@ export type WriteRoute =
   | { op: "work-v2-create"; word: Carried<"work.v2.create"> }
   | { op: "work-v2-edit"; word: Carried<"work.v2.edit">; id: string }
   | { op: "work-v2-assign"; word: Carried<"work.v2.assign">; id: string }
+  | { op: "work-v2-remind"; word: Carried<"work.v2.remind">; id: string }
   | { op: "work-v2-cancel"; word: Carried<"work.v2.cancel">; id: string }
   | { op: "work-v2-image-create"; word: Carried<"work.v2.image-create">; id: string }
   | { op: "work-v2-image-delete"; word: Carried<"work.v2.image-delete">; id: string; image: string }
@@ -408,6 +409,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (b === "items" && c && d === "assign" && segments.length === 5) {
       return { op: "work-v2-assign", word: "work.v2.assign", id: c }
     }
+    if (b === "items" && c && d === "remind" && segments.length === 5) {
+      return { op: "work-v2-remind", word: "work.v2.remind", id: c }
+    }
     if (b === "items" && c && d === "cancel" && segments.length === 5) {
       return { op: "work-v2-cancel", word: "work.v2.cancel", id: c }
     }
@@ -546,6 +550,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "work-v2-create":
     case "work-v2-edit":
     case "work-v2-assign":
+    case "work-v2-remind":
     case "work-v2-cancel":
     case "work-v2-image-create":
     case "work-v2-image-delete":
@@ -879,6 +884,9 @@ export class RelayWriter {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-assign": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-remind": {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-cancel": {

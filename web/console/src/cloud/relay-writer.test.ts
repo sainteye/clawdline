@@ -510,6 +510,8 @@ test("Work v2 person actions keep their exact route subject and body across Clou
       "work.v2.create", { item: { project_id: "p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides" } }],
     ["/v1/work/v2/items/w1/assign", { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" },
       "work.v2.assign", { id: "w1", item: { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" } }],
+    ["/v1/work/v2/items/w1/remind", { expected_version: 2 },
+      "work.v2.remind", { id: "w1", item: { expected_version: 2 } }],
     ["/v1/work/v2/items/w1/images", { expected_version: 2, title: "state.png", data_url: "data:image/png;base64,cG5n" },
       "work.v2.image-create", { id: "w1", item: { expected_version: 2, title: "state.png", data_url: "data:image/png;base64,cG5n" } }],
     ["/v1/work/v2/proposals/pr1/accept", {}, "work.v2.proposal-resolve", { id: "pr1", decision: "accept", item: {} }],

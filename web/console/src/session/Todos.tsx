@@ -3,7 +3,7 @@ import { createPortal } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, readWorkV2Item, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
+import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, readWorkV2Item, remindWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { WorkSteps } from "../pages/work/WorkSteps.js"
@@ -25,6 +25,8 @@ export function Todos({ row, agentCount, agentPanel }: {
   const [page, setPage] = useState<SessionWorkV2 | null>(null)
   const [detail, setDetail] = useState<WorkV2Item | null>(null)
   const [detailFailure, setDetailFailure] = useState("")
+  const [detailActionFailure, setDetailActionFailure] = useState("")
+  const [detailNotice, setDetailNotice] = useState("")
   const [failure, setFailure] = useState("")
   const [busy, setBusy] = useState("")
   const ticket = useRef(0)
@@ -46,7 +48,7 @@ export function Todos({ row, agentCount, agentPanel }: {
     // same Session. Key the answer to its stable id: otherwise every refresh
     // clears a good answer, flashes "loading", and asks the work API again.
     ticket.current += 1
-    setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setDetail(null); setDetailFailure(""); setFailure("")
+    setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setDetail(null); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice(""); setFailure("")
     if (rowID) void load()
   }, [rowID, load])
 
@@ -66,9 +68,24 @@ export function Todos({ row, agentCount, agentPanel }: {
     try { await task(); await load(); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
   }
   const showDetail = (item: WorkV2Item) => {
-    setDetail(item); setDetailFailure("")
+    setDetail(item); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice("")
     void readWorkV2Item(item.id).then((answer) => setDetail((current) => current?.id === item.id ? answer.item : current))
       .catch((error: unknown) => setDetailFailure(failureWords(error)))
+  }
+  const remindDetail = async (item: WorkV2Item) => {
+    const key = `remind-${item.id}`
+    if (busy) return
+    setBusy(key); setDetailActionFailure(""); setDetailNotice("")
+    try {
+      const answer = await remindWorkV2(item)
+      setDetail((current) => current?.id === item.id ? answer.item : current)
+      setDetailNotice("已再次提醒這個 Session。")
+      await load()
+    } catch (error) {
+      setDetailActionFailure(failureWords(error))
+    } finally {
+      setBusy("")
+    }
   }
 
   return (
@@ -146,7 +163,9 @@ export function Todos({ row, agentCount, agentPanel }: {
           </div>
         </form>
       </div>}
-      {detail && <WorkItemDetailModal item={detail} failure={detailFailure} onClose={() => { setDetail(null); setDetailFailure("") }} />}
+      {detail && <WorkItemDetailModal item={detail} failure={detailFailure} actionFailure={detailActionFailure} notice={detailNotice}
+        reminding={busy === `remind-${detail.id}`} onRemind={() => { void remindDetail(detail) }}
+        onClose={() => { setDetail(null); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice("") }} />}
     </>
   )
 }
@@ -170,7 +189,15 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
   </article>
 }
 
-function WorkItemDetailModal({ item, failure, onClose }: { item: WorkV2Item; failure: string; onClose: () => void }) {
+function WorkItemDetailModal({ item, failure, actionFailure, notice, reminding, onRemind, onClose }: {
+  item: WorkV2Item
+  failure: string
+  actionFailure: string
+  notice: string
+  reminding: boolean
+  onRemind: () => void
+  onClose: () => void
+}) {
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose() }
     document.addEventListener("keydown", close)
@@ -198,6 +225,13 @@ function WorkItemDetailModal({ item, failure, onClose }: { item: WorkV2Item; fai
         {item.images.map((image) => <ReferenceImage key={image.id} image={image} />)}
       </div>}
       {failure && <p className="work-note" role="alert">最新資料讀取失敗：{failure}</p>}
+      {actionFailure && <p className="work-note" role="alert">提醒傳送失敗：{actionFailure}</p>}
+      {notice && <p className="work-note" role="status">{notice}</p>}
+      {!!item.owner_session && !item.closed_at && <div className="work-actions">
+        <button className="chip on" type="button" disabled={reminding} onClick={onRemind}>
+          {reminding ? "提醒中…" : notice ? "✓ 已提醒" : "再次提醒 Session"}
+        </button>
+      </div>}
       <div className="work-meta"><span>{deploymentPolicyName(item.deployment_policy)}</span>
         <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span></div>
     </article>

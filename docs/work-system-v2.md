@@ -294,6 +294,14 @@ to-do API at the next turn boundary. This is an expected queued assignment, not 
 `assigned_unnotified` failure. A failed courtesy send to an idle Session leaves the durable
 `assigned_unnotified` condition without rolling back ownership.
 
+An open assigned item exposes **Remind Session** on both its Board card and its Session detail.
+This is a person-only, idempotent action against the item's current active assignment. It verifies
+that the recorded terminal still belongs to the recorded conversation before typing, then sends a
+fresh reminder even when the Session is working. The reminder points the Agent back to the durable
+item, where the latest description, reference images, documents, and steps live; it does not create
+a second assignment or change the item's version. Gone, unreadable, reused, and busy terminals are
+distinct refusals, and terminal items or unassigned items cannot be reminded.
+
 ### 8.2 New Session
 
 The person chooses assistant and model. The assignment service reuses the existing reliable
