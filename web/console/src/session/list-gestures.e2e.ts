@@ -338,6 +338,15 @@ function daemon(): Server {
         closed_at: null,
         cycle: 1,
         version: 2,
+        documents: [{
+          id: "report-fixture",
+          role: "completion_report",
+          title: "Completion report",
+          body: "## Root cause\n\n" + "A verified finding that must remain readable on a phone.\n\n".repeat(24),
+          reference: "",
+          position: 0,
+          version: 1,
+        }],
       },
     })
     const sessionWork = /^\/v1\/work\/v2\/session-todos\/(.+)$/.exec(path)
@@ -853,8 +862,12 @@ test("an assigned Board item opens its detail and requested action on a phone", 
         const modal = document.querySelector('.work-item-detail-modal')
         const text = modal?.textContent || ''
         if (text.includes('Confirm the production release window.')) {
-          const box = modal.querySelector('.work-item-detail-panel')?.getBoundingClientRect()
-          return resolve({ text, width: box?.width || 0, viewport: window.innerWidth })
+          const panel = modal.querySelector('.work-item-detail-panel')
+          const box = panel?.getBoundingClientRect()
+          if (panel) panel.scrollTop = panel.scrollHeight
+          return resolve({ text, width: box?.width || 0, viewport: window.innerWidth,
+            clientHeight: panel?.clientHeight || 0, scrollHeight: panel?.scrollHeight || 0,
+            scrollTop: panel?.scrollTop || 0 })
         }
         if (Date.now() >= deadline) return reject(new Error('the Board item detail did not arrive: ' + text))
         setTimeout(read, 25)
@@ -865,6 +878,9 @@ test("an assigned Board item opens its detail and requested action on a phone", 
     assert.match(shown.text, /Publish the verified receipt/)
     assert.match(shown.text, /需要你做的事/)
     assert.ok(shown.width <= shown.viewport, `detail width ${shown.width} exceeds viewport ${shown.viewport}`)
+    assert.ok(shown.scrollHeight > shown.clientHeight,
+      `detail height ${shown.scrollHeight} did not exceed its ${shown.clientHeight}px viewport`)
+    assert.ok(shown.scrollTop > 0, "the long report could not scroll inside the modal")
     await tab.shot("session-board-item-detail")
   }))
 

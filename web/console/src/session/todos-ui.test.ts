@@ -81,6 +81,7 @@ test("a recent Board item opens its durable completion report in one click", () 
   assert.match(report, /role === "completion_report"/)
   assert.match(report, /L\.richTextHTML\(document\.body\)/)
   assert.match(styles, /\.work-completion-report/)
+  assert.match(styles, /\.work-item-detail-panel[^}]*max-height:[^}]*100dvh[^}]*overflow:\s*auto/)
 })
 
 test("folded Session todos expose a nonzero recent completion count", () => {
