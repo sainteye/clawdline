@@ -29,6 +29,7 @@ import {
   type WorkV2Item,
   type WorkV2Kind,
   type WorkV2Proposal,
+  type WorkV2Status,
   type SessionWorkV2,
 } from "./api.js"
 import { sessionActivityName, sessionWorkCounts, sessionWorkStateName } from "./session-assignment.js"
@@ -51,22 +52,33 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [proposals, setProposals] = useState<WorkV2Proposal[]>([])
   const [project, setProject] = useState("")
   const [routeProject, setRouteProject] = useState(() => typeof location === "undefined" ? "" : workRouteFromHash(location.hash).project)
+  const [status, setStatus] = useState<WorkV2Status>("open")
+  const [searchInput, setSearchInput] = useState("")
+  const [search, setSearch] = useState("")
+  const [truncated, setTruncated] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createDraft, setCreateDraft] = useState<NewWorkItemDraft>({})
   const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
   const [busy, setBusy] = useState("")
   const [failure, setFailure] = useState("")
+  const loadGeneration = useRef(0)
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current
     try {
       const [projects, live, suggestions] = await Promise.all([readProjectPlaces(), readSessionsForWorkV2(), readWorkV2Proposals()])
       const selectedProject = workProjectID(routeProject, projects.places)
-      const work = await readWorkV2(selectedProject || undefined)
+      const work = await readWorkV2(selectedProject || undefined, status, search)
+      if (generation !== loadGeneration.current) return
       setProject(selectedProject)
-      setItems(work.rows); setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setFailure("")
+      setItems(work.rows); setTruncated(work.truncated); setLoaded(true)
+      setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setFailure("")
       setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
-    } catch (e) { setFailure(failureWords(e)) }
-  }, [routeProject])
+    } catch (e) {
+      if (generation === loadGeneration.current) { setLoaded(true); setFailure(failureWords(e)) }
+    }
+  }, [routeProject, status, search])
   const refreshPlaces = useCallback(async () => {
     try {
       const projects = await readProjectPlaces()
@@ -84,6 +96,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     window.addEventListener("hashchange", syncRoute)
     return () => window.removeEventListener("hashchange", syncRoute)
   }, [shown])
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 220)
+    return () => window.clearTimeout(timer)
+  }, [searchInput])
   useEffect(() => {
     if (!shown && !creating && !createdItem) return
     void load()
@@ -125,8 +141,21 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     </header>
     <div className="work-wrap">
       <p className="work-lede">所有項目由你建立與指派；Session 負責推進實作、驗證、Merge 與部署。</p>
-      <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} onOpen={refreshPlaces} allowAll />
+      <div className="work-filter-bar">
+        <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} onOpen={refreshPlaces} allowAll />
+        <div className="work-status-filter" role="group" aria-label="篩選項目狀態">
+          {([['open', '進行中'], ['done', '已完成'], ['all', '全部']] as [WorkV2Status, string][]).map(([value, label]) =>
+            <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
+        </div>
+        <label className="work-search">
+          <span aria-hidden="true">⌕</span>
+          <input type="search" aria-label="搜尋標題與內容" placeholder="搜尋標題與內容" maxLength={1024} value={searchInput}
+            onChange={(event) => setSearchInput(event.currentTarget.value)} />
+          {searchInput && <button type="button" aria-label="清除搜尋" onClick={() => setSearchInput("")}>×</button>}
+        </label>
+      </div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
+      {truncated && <p className="work-note" role="status">符合項目超過 100 筆，請縮小搜尋或 Project 範圍。</p>}
       {proposals.length > 0 && <details className="work-fold" open><summary><strong>Agent 提案</strong><span className="work-count">{proposals.length}</span></summary>
         <div className="work-fold-body work-cards">{proposals.map((p) => <article className="work-card" key={p.id}>
           <span className="work-state">{p.kind} · {p.session_id.slice(0, 8)}</span><h3>{p.title}</h3><p>{p.description}</p><small>{p.reason}</small>
@@ -139,10 +168,17 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       {PHASES.map((phase) => <BoardRegion key={phase} title={phaseName(phase)}
         items={items.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} busy={busy}
         failure={failure} clearFailure={() => setFailure("")} run={run} />)}
-      {done.length > 0 && <details className="work-section work-done"><summary><div className="work-section-head"><h2>已關閉</h2><span className="work-count">{done.length}</span></div></summary>
+      {done.length > 0 && status === "done" && <BoardRegion title="已完成" items={done} sessions={sessions} busy={busy}
+        failure={failure} clearFailure={() => setFailure("")} run={run} />}
+      {done.length > 0 && status !== "done" && search && <BoardRegion title="已關閉" items={done} sessions={sessions} busy={busy}
+        failure={failure} clearFailure={() => setFailure("")} run={run} />}
+      {done.length > 0 && status !== "done" && !search && <details className="work-section work-done"><summary><div className="work-section-head"><h2>已關閉</h2><span className="work-count">{done.length}</span></div></summary>
         <div className="work-cards">{done.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy}
           failure={failure} clearFailure={() => setFailure("")} run={run} />)}</div>
       </details>}
+      {loaded && !failure && items.length === 0 && <p className="work-empty work-filter-empty" role="status">
+        {search ? `找不到包含「${search}」的項目。` : status === "done" ? "還沒有已完成的項目。" : "這個範圍目前沒有項目。"}
+      </p>}
     </div>
   </section>
     {creating && <NewWorkModal places={places} initialProject={project} initialDraft={createDraft} busy={!!busy} failure={failure}

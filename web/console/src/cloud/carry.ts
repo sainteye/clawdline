@@ -105,6 +105,7 @@ export const CARRIED = {
   "work.v2.image": "GET /v1/work/v2/images/{id}",
   "work.v2.item": "GET /v1/work/v2/items/{id}",
   "work.v2.items": "GET /v1/work/v2/items[?project=]",
+  "work.v2.search": "GET /v1/work/v2/items?project=&status=&q=",
   "work.v2.proposal-resolve": "POST /v1/work/v2/proposals/{id}/{accept|reject}",
   "work.v2.proposals": "GET /v1/work/v2/proposals?state=",
   "work.v2.session-todos": "GET /v1/work/v2/session-todos/{terminal}",

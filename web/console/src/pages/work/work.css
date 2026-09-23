@@ -17,6 +17,28 @@
 .work-tabs { display: inline-flex; gap: 6px; }
 .work-tab[aria-selected="true"] { color: var(--ink); border-color: var(--accent-ed); background: var(--accent-in); }
 .work-head-tools { display: inline-flex; align-items: center; gap: 8px; }
+.work-filter-bar {
+    display: grid; grid-template-columns: minmax(220px, 360px) auto minmax(220px, 1fr);
+    align-items: center; gap: 10px; margin-top: 14px;
+}
+.work-status-filter { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.work-status-filter button {
+    min-height: 30px; padding: 5px 10px; border: 0; border-radius: 7px; background: transparent;
+    color: var(--dim); font: 12px/1 var(--mono); white-space: nowrap;
+}
+.work-status-filter button[aria-pressed="true"] { background: var(--accent-in); color: var(--accent); }
+.work-status-filter button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.work-search {
+    box-sizing: border-box; min-width: 0; min-height: 38px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px;
+    background: var(--bg); color: var(--faint);
+}
+.work-search:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.work-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 13px; line-height: 1.4; }
+.work-search input::-webkit-search-cancel-button { appearance: none; }
+.work-search input::placeholder { color: var(--faint); }
+.work-search button { width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--faint); font-size: 18px; }
+.work-filter-empty { margin-top: 28px; }
 .work-badge {
     display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 8px;
     border-radius: 999px; background: var(--accent); color: var(--bg); font: 600 11px/1 var(--mono);
@@ -182,6 +204,11 @@
     .work-cards { grid-template-columns: minmax(0, 1fr); }
     .work-backlog-row { grid-template-columns: minmax(0, 1fr); }
     .work-backlog-row .work-actions { justify-content: flex-start; }
+}
+@media (max-width: 720px) {
+    .work-filter-bar { grid-template-columns: minmax(0, 1fr); }
+    .work-project-picker { width: 100%; }
+    .work-status-filter { width: fit-content; max-width: 100%; }
 }
 
 /* A session's to-dos: a folded strip under the session's header. Folded by

@@ -413,12 +413,18 @@ func (s *Server) workV2ResolveProposal(w http.ResponseWriter, r *http.Request, i
 }
 
 func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
-	q, ok := workQuery(w, r, "project", "owner", "terminal")
+	q, ok := workQuery(w, r, "project", "owner", "terminal", "status", "q")
 	if !ok {
 		return
 	}
-	terminal := q["terminal"] == "true"
-	rows, truncated, err := s.workV2().List(r.Context(), q["project"], q["owner"], terminal)
+	status := q["status"]
+	if status == "" {
+		status = "open"
+		if q["terminal"] == "true" {
+			status = "all"
+		}
+	}
+	rows, truncated, err := s.workV2().List(r.Context(), q["project"], q["owner"], status, q["q"])
 	if err != nil {
 		s.writeWorkV2Error(w, err)
 		return
@@ -924,7 +930,7 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			s.writeWorkV2Error(w, err)
 			return
 		}
-		items, itemTruncated, err := s.workV2().List(r.Context(), "", conversation, false)
+		items, itemTruncated, err := s.workV2().List(r.Context(), "", conversation, "open", "")
 		if err != nil {
 			s.writeWorkV2Error(w, err)
 			return
@@ -1341,7 +1347,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 				}
 				out = append(out, directTodoWire(td, images))
 			}
-			items, itemTruncated, err := s.workV2().List(r.Context(), "", sessionID, false)
+			items, itemTruncated, err := s.workV2().List(r.Context(), "", sessionID, "open", "")
 			if err != nil {
 				s.writeWorkV2Error(w, err)
 				return

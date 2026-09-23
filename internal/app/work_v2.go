@@ -194,8 +194,11 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 	return WorkV2View{Item: i, Assignments: a, Documents: d, Images: images, Steps: steps, Events: events}, nil
 }
 
-func (w *WorkSystemV2) List(ctx context.Context, project, owner string, terminal bool) ([]WorkV2View, bool, error) {
-	items, truncated, err := w.Store.WorkV2Items(ctx, project, owner, terminal, WorkV2PageSize)
+func (w *WorkSystemV2) List(ctx context.Context, project, owner, status, search string) ([]WorkV2View, bool, error) {
+	if status != "open" && status != "done" && status != "all" {
+		return nil, false, workV2Error(http.StatusBadRequest, "invalid_status", "Status is open, done or all.")
+	}
+	items, truncated, err := w.Store.WorkV2Items(ctx, project, owner, status, search, WorkV2PageSize)
 	if err != nil {
 		return nil, false, mapWorkV2Error(err)
 	}

@@ -206,7 +206,7 @@ func TestWorkV2ReusesAnIdenticalPristineCreate(t *testing.T) {
 	if retried.Item.ID != first.Item.ID {
 		t.Fatalf("an identical pristine retry created %q after %q", retried.Item.ID, first.Item.ID)
 	}
-	items, _, err := w.List(context.Background(), "p", "", true)
+	items, _, err := w.List(context.Background(), "p", "", "all", "")
 	if err != nil || len(items) != 1 {
 		t.Fatalf("items=%+v err=%v", items, err)
 	}
@@ -487,7 +487,7 @@ func TestCompletionReportIsAnOwnedDocumentAndSurvivesCompletionProjections(t *te
 	advance(work.PhaseDeploying, "", &VerifiedLandingV2{Commit: "a", Target: "main", TargetCommit: "b", Remote: "origin", RemoteCommit: "c"}, "")
 	advance(work.PhaseDone, "", nil, "production deployment receipt")
 
-	listed, _, err := w.List(context.Background(), "", "", true)
+	listed, _, err := w.List(context.Background(), "", "", "all", "")
 	if err != nil || len(listed) != 1 || len(listed[0].Documents) != 1 {
 		t.Fatalf("Board projection: %+v %v", listed, err)
 	}

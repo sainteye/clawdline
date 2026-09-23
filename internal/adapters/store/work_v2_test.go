@@ -133,6 +133,42 @@ func TestWorkV2StoresVersionedItemsAndAppendOnlyEvents(t *testing.T) {
 	}
 }
 
+func TestWorkV2ListFiltersLifecycleAndSearchesTitleOrDescription(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	open := v2Item("11000000-0000-4000-8000-000000000001", at)
+	open.Title = "Search the Board"
+	done := v2Item("11000000-0000-4000-8000-000000000002", at.Add(time.Second))
+	done.Title, done.Description, done.Phase = "Finished migration", "The archive needle is here", work.PhaseDone
+	done.ClosedAt = at.Add(2 * time.Second)
+	cancelled := v2Item("11000000-0000-4000-8000-000000000003", at.Add(3*time.Second))
+	cancelled.Title, cancelled.Phase, cancelled.ClosedAt = "Abandoned needle", work.PhaseCancelled, at.Add(4*time.Second)
+	for _, item := range []work.ItemV2{open, done, cancelled} {
+		item := item
+		if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.CreateItem(item, "local", `{}`) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, truncated, err := s.WorkV2Items(ctx, "", "", "done", "NEEDLE", 20)
+	if err != nil || truncated || len(rows) != 1 || rows[0].ID != done.ID {
+		t.Fatalf("completed search: %+v truncated=%v err=%v", rows, truncated, err)
+	}
+	rows, truncated, err = s.WorkV2Items(ctx, "", "", "open", "board", 20)
+	if err != nil || truncated || len(rows) != 1 || rows[0].ID != open.ID {
+		t.Fatalf("open search: %+v truncated=%v err=%v", rows, truncated, err)
+	}
+	rows, truncated, err = s.WorkV2Items(ctx, "", "", "all", "needle", 20)
+	if err != nil || truncated || len(rows) != 2 || rows[0].ID != cancelled.ID || rows[1].ID != done.ID {
+		t.Fatalf("all search: %+v truncated=%v err=%v", rows, truncated, err)
+	}
+}
+
 func TestWorkV2RootAssignmentIsFoundByConversation(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

@@ -720,7 +720,7 @@ export class RelayReader {
           return await this.machineRead(method, path, "work.digests", { kind: q.kind ?? "" })
         }
         case "/v1/work/v2/items": {
-          const q = this.only(url, path, "project")
+          const q = this.only(url, path, "project", "status", "q")
           let project = q.project ?? ""
           if (project) {
             const client = this.connected()
@@ -736,6 +736,11 @@ export class RelayReader {
               })
             }
             project = place.id
+          }
+          if (q.status !== undefined || q.q !== undefined) {
+            return await this.machineRead(method, path, "work.v2.search", {
+              project, status: q.status ?? "open", query: q.q ?? "",
+            })
           }
           return await this.machineRead(method, path, "work.v2.items", { project })
         }

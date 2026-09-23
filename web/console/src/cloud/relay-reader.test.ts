@@ -619,6 +619,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/digests?kind=daily", "work.digests", { kind: "daily" }],
   ["/v1/work/v2/items", "work.v2.items", { project: "" }],
   ["/v1/work/v2/items?project=cloud-p1", "work.v2.items", { project: "p1" }],
+  ["/v1/work/v2/items?project=cloud-p1&status=done&q=needle", "work.v2.search", { project: "p1", status: "done", query: "needle" }],
   ["/v1/work/v2/items/work-1", "work.v2.item", { id: "work-1" }],
   ["/v1/work/v2/proposals?state=pending", "work.v2.proposals", { state: "pending" }],
   ["/v1/work/v2/session-todos/%251", "work.v2.session-todos", { terminal: "%1" }],

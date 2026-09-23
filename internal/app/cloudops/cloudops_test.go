@@ -290,6 +290,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-work-v2-items",
 		method: "GET", path: "/v1/work/v2/items", query: map[string]string{"project": "p1"},
 	}, {
+		word: "work.v2.search",
+		body: map[string]any{"type": "work.v2.search", "session": machine,
+			"request": "req-work-v2-search", "project": "p1", "status": "done", "query": "needle"},
+		session: machine, name: "read:req-work-v2-search",
+		method: "GET", path: "/v1/work/v2/items",
+		query: map[string]string{"project": "p1", "status": "done", "q": "needle"},
+	}, {
 		word: "work.v2.proposals",
 		body: map[string]any{"type": "work.v2.proposals", "session": machine,
 			"request": "req-work-v2-proposals", "state": "pending"},
@@ -1251,7 +1258,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "landings",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
-		"work.v2.item", "work.v2.items", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
+		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
 		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action"} {
 		if !implemented[word] {
