@@ -95,7 +95,7 @@ func (s *Server) planSentence(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		log.Printf("audit intent.plan device=%s ms=%d ok=0 why=failed", device, ms)
-		writeRefusal(w, http.StatusBadGateway, "plan_failed", "The planner did not come back with anything usable. Try saying it again, or start the session by hand.")
+		writeRefusal(w, http.StatusBadGateway, "plan_failed", "The planner did not come back with anything usable. Try saying it again, or fill the draft by hand.")
 		return
 	}
 	place := "none"

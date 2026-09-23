@@ -7,7 +7,7 @@ import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
-import { onOpenNewWorkItem } from "./new-item.js"
+import { onOpenNewWorkItem, type NewWorkItemDraft } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkSteps } from "./WorkSteps.js"
 import {
@@ -50,6 +50,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [project, setProject] = useState("")
   const [routeProject, setRouteProject] = useState(() => typeof location === "undefined" ? "" : workRouteFromHash(location.hash).project)
   const [creating, setCreating] = useState(false)
+  const [createDraft, setCreateDraft] = useState<NewWorkItemDraft>({})
   const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
   const [busy, setBusy] = useState("")
   const [failure, setFailure] = useState("")
@@ -77,9 +78,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     const timer = setInterval(() => { if (document.visibilityState === "visible") void load() }, 30_000)
     return () => clearInterval(timer)
   }, [shown, creating, createdItem?.id, load])
-  useEffect(() => onOpenNewWorkItem(() => {
+  useEffect(() => onOpenNewWorkItem((draft) => {
     setFailure("")
     setCreatedItem(null)
+    setCreateDraft(draft)
     setCreating(true)
   }), [])
 
@@ -105,7 +107,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     <header className="board-head">
       <div><p className="board-eyebrow">WORK SYSTEM V2</p><h1 id="work-v2-title">看板</h1></div>
       <div className="work-head-tools">
-        <button className="board-button" type="button" onClick={() => { setFailure(""); setCreatedItem(null); setCreating(true) }}>＋ 建立項目</button>
+        <button className="board-button" type="button" onClick={() => { setFailure(""); setCreatedItem(null); setCreateDraft({}); setCreating(true) }}>＋ 建立項目</button>
         <button className="board-button" type="button" disabled={!!busy} onClick={() => void load()}>{L.strings.webInfoRefresh}</button>
       </div>
     </header>
@@ -131,7 +133,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       </details>}
     </div>
   </section>
-    {creating && <NewWorkModal places={places} initialProject={project} busy={!!busy} failure={failure} onClose={() => setCreating(false)} onCreate={(body, files) => {
+    {creating && <NewWorkModal places={places} initialProject={project} initialDraft={createDraft} busy={!!busy} failure={failure} onClose={() => setCreating(false)} onCreate={(body, files) => {
       void run("create", async () => {
         const answer = await createWorkV2(body)
         let created = answer.item
@@ -529,22 +531,24 @@ function ProjectPicker({ places, value, onChange, allowAll = false }: {
   </div>
 }
 
-function NewWorkModal({ places, initialProject, busy, failure, onClose, onCreate }: { places: ProjectPlace[]; initialProject: string; busy: boolean; failure: string; onClose: () => void; onCreate: (body: Parameters<typeof createWorkV2>[0], images: File[]) => void }) {
-  const [projectID, setProjectID] = useState(initialProject)
-  const [kind, setKind] = useState<WorkV2Kind>("feature")
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
+function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onClose, onCreate }: { places: ProjectPlace[]; initialProject: string; initialDraft: NewWorkItemDraft; busy: boolean; failure: string; onClose: () => void; onCreate: (body: Parameters<typeof createWorkV2>[0], images: File[]) => void }) {
+  const [projectID, setProjectID] = useState(initialDraft.projectID || initialProject)
+  const [kind, setKind] = useState<WorkV2Kind>(initialDraft.kind || "feature")
+  const [title, setTitle] = useState(initialDraft.title || "")
+  const [description, setDescription] = useState(initialDraft.description || "")
   const [images, setImages] = useState<File[]>([])
   const imagePicker = useRef<HTMLInputElement>(null)
   const ready = !!projectID && !!title.trim() && !!description.trim()
+  const reviewingDraft = !!(initialDraft.projectID || initialDraft.title || initialDraft.description)
   useModalDismiss(busy, onClose)
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready) return
     onCreate({ project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" }, images)
   }}>
-    <div className="work-modal-head"><div><p className="board-eyebrow">NEW WORK ITEM</p><h2 id="work-new-v2-title">建立看板項目</h2></div>
+    <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? "REVIEW WORK ITEM" : "NEW WORK ITEM"}</p><h2 id="work-new-v2-title">{reviewingDraft ? "確認看板項目" : "建立看板項目"}</h2></div>
       <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
+    {reviewingDraft && <p className="work-note">語音已填入草稿；按「建立」前不會新增看板項目。</p>}
     <div className="work-modal-field"><span>Project</span><ProjectPicker places={places} value={projectID} onChange={setProjectID} /></div>
     <fieldset className="work-kind-field"><legend>類型</legend><div className="work-kind-list">
       {KINDS.map((value) => { const meta = KIND_META[value]; return <button key={value} type="button" className="work-kind-option"

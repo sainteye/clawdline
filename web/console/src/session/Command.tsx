@@ -6,6 +6,7 @@ import { planIntent, setCommandSpinner } from "../legacy/command-bridge.js"
 import * as V from "../legacy/voice-bridge.js"
 import { unansweredSentence } from "../legacy/schedules-bridge.js"
 import { openScheduleFrom } from "../pages/schedules.js"
+import { openNewWorkItem, type NewWorkItemDraft } from "../pages/work/new-item.js"
 import { toast } from "../overlays/toast.js"
 import { nextWord } from "../next-strings.js"
 
@@ -39,6 +40,18 @@ let run = 0
 const el = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E
 const T = () => L.strings
 const busy = () => phase === "thinking" || phase === "opening"
+
+function workKind(value: string): NonNullable<NewWorkItemDraft["kind"]> {
+  switch (value) {
+    case "issue":
+    case "epic":
+    case "refactor":
+    case "plan":
+      return value
+    default:
+      return "feature"
+  }
+}
 
 function sayTop(words: string): void {
   el("command-say").textContent = words || ""
@@ -186,6 +199,16 @@ function reveal(draft: IntentDraft, instructions: string): void {
   if (draft.kind === "schedule") {
     close()
     openScheduleFrom(draft, instructions)
+    return
+  }
+  if (draft.kind === "work") {
+    close()
+    openNewWorkItem({
+      projectID: draft.place_id ?? "",
+      kind: workKind(draft.work_kind),
+      title: draft.title,
+      description: draft.description,
+    })
     return
   }
   chosenAssistant = draft.assistant && assistants.some((a) => a.id === draft.assistant)
