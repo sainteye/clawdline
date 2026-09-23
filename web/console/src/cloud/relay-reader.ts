@@ -259,9 +259,10 @@ const UNANSWERED = new Set([
   "cloud_read_settled",
 ])
 
-/** Row paths that move on every reading and that nobody reads (`publish.go`), plus the line. */
+/** Row paths that move on every reading without making the transcript newer (`publish.go`), plus the line. */
 const FRESHNESS_ONLY: readonly (readonly string[])[] = [
   ["line"],
+  ["source", "observed_at"],
   ["closeability", "observed_at"],
   ["closeability", "session_generation"],
   ["closeability", "source", "observed_at"],

@@ -93,6 +93,7 @@ func (c *collector) reset() {
 
 const completeScan = `{"at":17,"scan":{"complete":true},"sessions":[
   {"id":"%19","assistant":"claude","tty":"ttys001",
+   "source":{"freshness":"current","observed_at":4,"provenance":"tmux"},
    "closeability":{"state":"open","observed_at":1,"session_generation":2,"source":{"freshness":"fresh","observed_at":3}}}]}`
 
 func newPublisher(router cloudops.LocalRouter, out *collector) *Publisher {
@@ -206,11 +207,12 @@ func TestAFreshnessOnlyChangeIsNotRepublished(t *testing.T) {
 	publisher.firstPass(context.Background())
 	out.reset()
 
-	// Only the three paths that move with every reading of this machine.
+	// Only the paths that move with every reading of this machine.
 	router.set(strings.NewReplacer(
 		`"observed_at":1`, `"observed_at":99`,
 		`"session_generation":2`, `"session_generation":98`,
 		`"observed_at":3`, `"observed_at":97`,
+		`"observed_at":4`, `"observed_at":96`,
 	).Replace(completeScan))
 	publisher.Pass(context.Background())
 	if names := out.channels(); len(names) != 0 {
