@@ -85,8 +85,7 @@ func TestIconRouteRequiresSendAndBoundsBody(t *testing.T) {
 		{`{"icon":{},"expected":{},"path":"/elsewhere"}`, 400},
 		{`{} {}`, 400},
 	} {
-		req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(test.body))
-		req.Host = "127.0.0.1:7757"
+		req := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:7757"+path, strings.NewReader(test.body))
 		req.Header.Set("Authorization", "Bearer "+local)
 		req.Header.Set("Content-Type", "application/json")
 		out := httptest.NewRecorder()
