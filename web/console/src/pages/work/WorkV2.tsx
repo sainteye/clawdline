@@ -66,6 +66,16 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
     } catch (e) { setFailure(failureWords(e)) }
   }, [routeProject])
+  const refreshPlaces = useCallback(async () => {
+    try {
+      const projects = await readProjectPlaces()
+      setPlaces(projects.places)
+      setFailure("")
+    } catch (e) {
+      setFailure(failureWords(e))
+      throw e
+    }
+  }, [])
   useEffect(() => {
     if (!shown || typeof location === "undefined") return
     const syncRoute = () => setRouteProject(workRouteFromHash(location.hash).project)
@@ -114,7 +124,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     </header>
     <div className="work-wrap">
       <p className="work-lede">所有項目由你建立與指派；Session 負責推進實作、驗證、Merge 與部署。</p>
-      <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} allowAll />
+      <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} onOpen={refreshPlaces} allowAll />
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {proposals.length > 0 && <details className="work-fold" open><summary><strong>Agent 提案</strong><span className="work-count">{proposals.length}</span></summary>
         <div className="work-fold-body work-cards">{proposals.map((p) => <article className="work-card" key={p.id}>
@@ -134,7 +144,8 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       </details>}
     </div>
   </section>
-    {creating && <NewWorkModal places={places} initialProject={project} initialDraft={createDraft} busy={!!busy} failure={failure} onClose={() => setCreating(false)} onCreate={(body, files) => {
+    {creating && <NewWorkModal places={places} initialProject={project} initialDraft={createDraft} busy={!!busy} failure={failure}
+      onRefreshPlaces={refreshPlaces} onClose={() => setCreating(false)} onCreate={(body, files) => {
       void run("create", async () => {
         const answer = await createWorkV2(body)
         let created = answer.item
@@ -489,13 +500,15 @@ function WorkReferenceImage({ item, image, busy, run }: {
   </figure>
 }
 
-function ProjectPicker({ places, value, onChange, allowAll = false }: {
+function ProjectPicker({ places, value, onChange, onOpen, allowAll = false }: {
   places: ProjectPlace[]
   value: string
   onChange: (id: string) => void
+  onOpen?: () => Promise<void>
   allowAll?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const selected = places.find((place) => place.id === value)
   useEffect(() => {
@@ -514,9 +527,16 @@ function ProjectPicker({ places, value, onChange, allowAll = false }: {
     }
   }, [open])
   const choose = (id: string) => { onChange(id); setOpen(false) }
+  const toggle = () => {
+    const opening = !open
+    setOpen(opening)
+    if (!opening || !onOpen) return
+    setRefreshing(true)
+    void onOpen().catch(() => {}).finally(() => setRefreshing(false))
+  }
   return <div className="work-project-picker" ref={root}>
     <button className="work-project-trigger" type="button" aria-label="Project" aria-haspopup="listbox"
-      aria-expanded={open} onClick={() => setOpen((shown) => !shown)}>
+      aria-expanded={open} onClick={toggle}>
       {selected ? <Mark icon={selected.icon as SessionRow["icon"]} cellPx={3} /> : <span className="work-project-placeholder" aria-hidden="true">▦</span>}
       <span>{selected?.label || (allowAll ? "所有 Project" : "選擇 Project")}</span>
       <span className="work-project-chevron" aria-hidden="true">⌄</span>
@@ -529,12 +549,12 @@ function ProjectPicker({ places, value, onChange, allowAll = false }: {
         <Mark icon={place.icon as SessionRow["icon"]} cellPx={3} /><span>{place.label}</span>
         {place.id === value && <span className="work-project-check" aria-hidden="true">✓</span>}
       </button>)}
-      {!places.length && <p className="work-project-empty">目前沒有可用的 Project。</p>}
+      {!places.length && <p className="work-project-empty">{refreshing ? "正在讀取 Project…" : "目前沒有可用的 Project。"}</p>}
     </div>}
   </div>
 }
 
-function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onClose, onCreate }: { places: ProjectPlace[]; initialProject: string; initialDraft: NewWorkItemDraft; busy: boolean; failure: string; onClose: () => void; onCreate: (body: Parameters<typeof createWorkV2>[0], images: File[]) => void }) {
+function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onRefreshPlaces, onClose, onCreate }: { places: ProjectPlace[]; initialProject: string; initialDraft: NewWorkItemDraft; busy: boolean; failure: string; onRefreshPlaces: () => Promise<void>; onClose: () => void; onCreate: (body: Parameters<typeof createWorkV2>[0], images: File[]) => void }) {
   const [projectID, setProjectID] = useState(initialDraft.projectID || initialProject)
   const [kind, setKind] = useState<WorkV2Kind>(initialDraft.kind || "feature")
   const [title, setTitle] = useState(initialDraft.title || "")
@@ -555,7 +575,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onC
     <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? "REVIEW WORK ITEM" : "NEW WORK ITEM"}</p><h2 id="work-new-v2-title">{reviewingDraft ? "確認看板項目" : "建立看板項目"}</h2></div>
       <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
     {reviewingDraft && <p className="work-note">語音已填入草稿；按「建立」前不會新增看板項目。</p>}
-    <div className="work-modal-field"><span>Project</span><ProjectPicker places={projectPlaces} value={projectID} onChange={setProjectID} /></div>
+    <div className="work-modal-field"><span>Project</span><ProjectPicker places={projectPlaces} value={projectID} onChange={setProjectID} onOpen={onRefreshPlaces} /></div>
     <fieldset className="work-kind-field"><legend>類型</legend><div className="work-kind-list">
       {KINDS.map((value) => { const meta = KIND_META[value]; return <button key={value} type="button" className="work-kind-option"
         aria-pressed={kind === value} onClick={() => setKind(value)}><span className="work-kind-icon" aria-hidden="true">{meta.icon}</span>
