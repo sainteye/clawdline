@@ -1,0 +1,22 @@
+[Unit]
+Description=Clawdline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=%h
+Environment=CLAWDLINE_NEXT_WEB=%h/.local/share/clawdline-next/current/dist
+Environment=CLAWDLINE_NEXT_STANDALONE=1
+Environment=CLAWDLINE_NEXT_OWN_SESSIONS=1
+Environment=SHELL=/bin/bash
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=%h/.local/share/clawdline-next/current/clawdline serve
+Restart=on-failure
+RestartSec=3
+# tmux and the assistants it owns remain alive while only the daemon restarts.
+KillMode=process
+UMask=0077
+
+[Install]
+WantedBy=default.target

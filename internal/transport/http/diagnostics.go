@@ -171,6 +171,9 @@ func SetDaemonLog(dir string, w *logs.Writer) { daemonLogs.Store(dir, w) }
 // own and each cheap: a stat, a length, a count kept in memory.
 func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		capacity.DeployHealthSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-deploy health guard; no retained wait"}
+		},
 		"icons.saved": func() capacity.Reading {
 			if s.icons == nil {
 				return capacity.Reading{Known: true, Note: "no icon registry attached"}

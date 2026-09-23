@@ -241,6 +241,9 @@ const (
 	IntentPlannerQueue     = "intent.planner_queue"
 	IntentPlannerSeconds   = "intent.planner_seconds"
 	IntentCloudWaitSeconds = "intent.cloud_wait_seconds"
+	// A release keeps the previous selector until the restarted daemon and
+	// its console prove the new commit. At this deadline it rolls back.
+	DeployHealthSeconds = "deploy.health_seconds"
 )
 
 // Entry is one row of the register.
@@ -989,6 +992,16 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/transport/http.intentCloudWaitLimit"},
+		},
+		{
+			// The unprivileged Linux deploy keeps the previous release selected
+			// until the daemon and its console prove the new commit. A full wait
+			// restores that previous selector and restarts it.
+			Name: DeployHealthSeconds, Class: Buffer, Unit: Seconds,
+			Limit: 30, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/domain/capacity.DeployHealthLimit"},
 		},
 	}
 }

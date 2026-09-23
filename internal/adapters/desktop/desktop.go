@@ -111,7 +111,8 @@ func (h Host) notch() ports.Capability {
 
 // launchAtLogin is the login item. The macOS shell holds it (SMAppService,
 // off until somebody turns it on); elsewhere it is docs/cross-platform.md
-// §4.7, not built, and the manual way is named.
+// §4.7. The daemon has no settings switch for it; the tracked Linux bootstrap
+// installs the user unit and linger once so later releases need no root.
 func (h Host) launchAtLogin() ports.Capability {
 	switch h.GOOS {
 	case "darwin":
@@ -121,6 +122,6 @@ func (h Host) launchAtLogin() ports.Capability {
 			"nothing on windows registers a login item yet; a shortcut to `clawdline serve` in shell:startup does it by hand")
 	}
 	return unavailable(ports.CapLaunchAtLogin,
-		"nothing on "+h.GOOS+" installs a login item yet; a `systemd --user` unit running `clawdline serve`, with "+
-			"`loginctl enable-linger`, does it by hand")
+		"the daemon has no launch-at-login switch on "+h.GOOS+"; `tools/bootstrap-linux-user-service.sh` installs "+
+			"its `systemd --user` unit and runs `loginctl enable-linger` once")
 }
