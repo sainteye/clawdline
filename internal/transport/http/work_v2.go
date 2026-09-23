@@ -907,7 +907,7 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 	if !ok {
 		return
 	}
-	terminalID := parts[0]
+	terminalID := decodeSegment(parts[0])
 	sess, err := s.actions().Find(r.Context(), terminalID)
 	if err != nil || sess.ConversationID == "" {
 		writeRefusal(w, http.StatusConflict, "session_unavailable", "The Session is unavailable or has no conversation id.")
