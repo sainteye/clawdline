@@ -3,6 +3,7 @@ import type { WorkV2Document, WorkV2Item } from "./api.js"
 import { completionReportsNewestFirst } from "./completion-report-order.js"
 import { completionReportText } from "./completion-report-text.js"
 import { when } from "./shared.js"
+import { WorkIcon } from "./WorkIcon.js"
 
 export function completionReports(item: WorkV2Item): WorkV2Document[] {
   return completionReportsNewestFirst(item.documents)
@@ -14,7 +15,7 @@ export function WorkCompletionReports({ item, expanded = false }: { item: WorkV2
   if (!reports.length) return null
   return <section className="work-completion-reports" aria-label="結案報告">
     {reports.map((document, index) => <details className="work-completion-report" key={document.id} open={expanded}>
-      <summary><span aria-hidden="true">✓</span><span className="work-completion-report-title">
+      <summary><WorkIcon name="check" /><span className="work-completion-report-title">
         <strong>{document.title || "結案報告"}</strong>
         <time dateTime={new Date(document.created_at * 1000).toISOString()}>寫於 {when(document.created_at)}</time>
       </span>

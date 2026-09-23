@@ -954,6 +954,73 @@ test("the Board assignment picker explains a Session before assignment", () =>
     await tab.shot("board-session-assignment")
   }))
 
+test("Board action icons are geometrically centered on a phone", () =>
+  inTab(async (tab) => {
+    await tab.go("/#page=work")
+    const board = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const controls = [...document.querySelectorAll('[data-work-id="assignment-fixture"] .work-card-controls button')]
+        if (controls.length !== 2) {
+          if (Date.now() >= deadline) return reject(new Error('the Board action controls did not arrive'))
+          return setTimeout(read, 25)
+        }
+        const inline = controls.map((button) => {
+          const icon = button.querySelector('.work-icon')
+          const buttonBox = button.getBoundingClientRect()
+          const iconBox = icon?.getBoundingClientRect()
+          return { tag: icon?.tagName || '', dy: Math.abs((buttonBox.top + buttonBox.height / 2) - ((iconBox?.top || 0) + (iconBox?.height || 0) / 2)) }
+        })
+        controls[0].click()
+        setTimeout(() => {
+          const button = document.querySelector('.work-edit-modal .work-modal-close')
+          const icon = button?.querySelector('.work-icon')
+          const buttonBox = button?.getBoundingClientRect()
+          const iconBox = icon?.getBoundingClientRect()
+          if (!buttonBox || !iconBox) return reject(new Error('the edit close control did not arrive'))
+          resolve({ inline, close: { tag: icon?.tagName || '',
+            dx: Math.abs((buttonBox.left + buttonBox.width / 2) - (iconBox.left + iconBox.width / 2)),
+            dy: Math.abs((buttonBox.top + buttonBox.height / 2) - (iconBox.top + iconBox.height / 2)) } })
+        }, 50)
+      }
+      read()
+    })`)
+    for (const icon of board.inline) {
+      assert.equal(icon.tag, "svg")
+      assert.ok(icon.dy <= 0.5, `Board action icon was ${icon.dy}px off its vertical center`)
+    }
+    assert.equal(board.close.tag, "svg")
+    assert.ok(board.close.dx <= 0.5 && board.close.dy <= 0.5,
+      `Board close icon was off center by ${JSON.stringify(board.close)}`)
+    await tab.shot("board-icons-centered")
+  }))
+
+test("the Session todo add icon is geometrically centered on a phone", () =>
+  inTab(async (tab) => {
+    await tab.go("/#session=" + encodeURIComponent(SAFE))
+    const session = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const button = document.querySelector('.session-todos-add')
+        const icon = button?.querySelector('.work-icon')
+        const buttonBox = button?.getBoundingClientRect()
+        const iconBox = icon?.getBoundingClientRect()
+        if (!buttonBox || !iconBox) {
+          if (Date.now() >= deadline) return reject(new Error('the Session todo add control did not arrive'))
+          return setTimeout(read, 25)
+        }
+        resolve({ tag: icon?.tagName || '',
+          dx: Math.abs((buttonBox.left + buttonBox.width / 2) - (iconBox.left + iconBox.width / 2)),
+          dy: Math.abs((buttonBox.top + buttonBox.height / 2) - (iconBox.top + iconBox.height / 2)) })
+      }
+      read()
+    })`)
+    assert.equal(session.tag, "svg")
+    assert.ok(session.dx <= 0.5 && session.dy <= 0.5,
+      `Session todo add icon was off center by ${JSON.stringify(session)}`)
+    await tab.shot("session-todo-add-centered")
+  }))
+
 test("an assigned Board item opens its detail and requested action on a phone", () =>
   inTab(async (tab) => {
     workReminders = 0
@@ -1035,7 +1102,7 @@ test("a completed Board item is checked and its report scrolls with a real finge
           text: node.textContent, dateTime: node.getAttribute('datetime') }))
         const box = panel?.getBoundingClientRect()
         if (modal?.textContent.includes('Root cause') && box) return resolve({
-          checked: check?.textContent || '',
+          checked: check?.querySelector('.work-icon')?.tagName || '',
           titleColor: title ? getComputedStyle(title).color : '',
           activeTitleColor: activeTitle ? getComputedStyle(activeTitle).color : '',
           statusColor: getComputedStyle(check).color,
@@ -1058,7 +1125,7 @@ test("a completed Board item is checked and its report scrolls with a real finge
       }
       read()
     })`)
-    assert.equal(shown.checked, "✓")
+    assert.equal(shown.checked, "svg")
     assert.equal(shown.titleColor, shown.activeTitleColor, "completion changed the item title colour")
     assert.notEqual(shown.titleColor, shown.statusColor, "the title used the completion status colour")
     assert.equal(shown.parent, true, "the modal stayed nested inside the fixed Session pane")
