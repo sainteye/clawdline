@@ -86,7 +86,9 @@ const ROWS = [
 let generation = 0
 let intentRequests = 0
 let placeRequests = 0
+let failPlacesOnRequest = 0
 let createdWork: Record<string, unknown> | null = null
+let createdWorkBody: Record<string, unknown> | null = null
 const PROJECT_ICON = {
   accent: "#D97757",
   cells: [["#D97757", "#D97757"], ["#D97757", "#141416"]],
@@ -152,6 +154,10 @@ function daemon(): Server {
     if (path === "/v1/health") return json(res, 200, { ok: true })
     if (path === "/v1/places") {
       placeRequests++
+      if (placeRequests === failPlacesOnRequest) {
+        failPlacesOnRequest = 0
+        return json(res, 503, { error: "fixture_project_refresh_failed", detail: "the second Project read failed" })
+      }
       return json(res, 200, {
         at: Date.now(),
         assistants: [{ id: "claude", label: "Claude Code", availability: "unknown" }],
@@ -163,6 +169,7 @@ function daemon(): Server {
     }
     if (path === "/v1/work/v2/items" && req.method === "POST") {
       void requestJSON(req).then((body) => {
+        createdWorkBody = body
         createdWork = {
           id: "20000000-0000-4000-8000-000000000001",
           project: { id: "fixture-place", label: "Example project", path: "/tmp/fixture", icon: PROJECT_ICON, available: true },
@@ -613,6 +620,11 @@ test("phone: the home microphone opens an editable draft before anything starts"
 test("phone: a spoken Board item is prefilled but not created until confirmation", () =>
   inTab(PHONE, async (tab) => {
     createdWork = null
+    createdWorkBody = null
+    // The command already read the Project row used by the planner. Make the
+    // Board page's immediately following refresh fail, as a slow/offline Cloud
+    // read can, and require the confirmation to retain that selected row.
+    failPlacesOnRequest = placeRequests + 2
     await tab.go("/")
     await tab.until("the list arrives", (s) => s.rows === ROWS.length)
     await tab.run(`(() => {
@@ -665,6 +677,7 @@ test("phone: a spoken Board item is prefilled but not created until confirmation
     })`)
     assert.equal((createdWork as Record<string, unknown> | null)?.title, "Voice-created Board draft")
     assert.equal((createdWork as Record<string, unknown> | null)?.description, "Confirm the generated Project, title, and description before creating this item.")
+    assert.equal((createdWorkBody as Record<string, unknown> | null)?.project_id, "fixture-place")
   }))
 
 test("phone: the Board shortcut keeps a new item open for assignment", () =>
