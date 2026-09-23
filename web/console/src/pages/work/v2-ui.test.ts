@@ -45,6 +45,18 @@ test("unassigned executable work is visible and assignable", () => {
   assert.doesNotMatch(source, /item\.area === "execution"/)
 })
 
+test("assignment choices show Session activity, unfinished work, and selected details", () => {
+  assert.match(source, /function SessionAssignmentPicker/)
+  assert.match(source, /sessionActivityName\(session\.state\)/)
+  assert.match(source, /`\$\{counts\.board\} 看板 · \$\{counts\.todos\} TODO`/)
+  assert.match(source, /title="還在做"/)
+  assert.match(source, /title="直接待辦"/)
+  assert.match(source, /title="最近完成"/)
+  assert.match(source, /readSessionWorkV2\(session\.id\)/)
+  assert.match(styles, /\.work-session-detail/)
+  assert.doesNotMatch(source, /<select className="work-input"[^>]*aria-label="指派既有 Session"/)
+})
+
 test("assigned work links to its current Session instead of offering assignment again", () => {
   assert.match(source, /import \{ sessionFragment \} from "\.\.\/\.\.\/session\/address\.js"/)
   assert.match(source, /sessions\.find\(\(session\) => session\.sessionId === item\.owner_session\)/)

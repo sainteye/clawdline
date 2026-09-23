@@ -121,6 +121,7 @@ function row(id: string, label: string, closeability: Row, movedAt: number, extr
     evidence: "process",
     isClaude: true,
     assistant: "claude",
+    sessionId: "conversation-" + id,
     cwd: "/tmp/fixture",
     activity: { known: true, at: movedAt },
     closeability,
@@ -285,6 +286,34 @@ function daemon(): Server {
       return json(res, 200, snapshot())
     }
     if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path === "/v1/places") return json(res, 200, {
+      places: [{ id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null }],
+    })
+    if (path === "/v1/work/v2/items" && req.method === "GET") return json(res, 200, {
+      ok: true,
+      rows: [{
+        id: "assignment-fixture",
+        project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
+        kind: "feature",
+        title: "Choose an informed owner",
+        description: "See the Session before assigning work.",
+        phase: "created",
+        condition: null,
+        area: "unassigned",
+        deployment_policy: "agent_decides",
+        owner_session: null,
+        created_at: 1,
+        updated_at: 1,
+        closed_at: null,
+        cycle: 1,
+        version: 1,
+      }],
+      counts: { unassigned: 1 },
+      truncated: false,
+    })
+    if (path === "/v1/work/v2/proposals" && req.method === "GET") {
+      return json(res, 200, { rows: [], truncated: false })
+    }
     const sessionWork = /^\/v1\/work\/v2\/session-todos\/(.+)$/.exec(path)
     if (sessionWork && req.method === "GET") {
       const sessionID = decodeURIComponent(sessionWork[1])
@@ -306,8 +335,48 @@ function daemon(): Server {
             cycle: 1,
             version: 1,
           }]
+        : sessionID === BLOCKED
+          ? [{
+              id: "active-work-fixture",
+              project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
+              kind: "feature",
+              title: "Coordinate the live deployment",
+              description: "",
+              phase: "implementing",
+              condition: null,
+              area: "implementing",
+              deployment_policy: "required",
+              owner_session: "conversation-" + BLOCKED,
+              created_at: 1,
+              updated_at: 1,
+              closed_at: null,
+              cycle: 1,
+              version: 1,
+            }]
         : []
-      return json(res, 200, { ok: true, assigned_items: assigned, recent_items: [], direct_todos: [], truncated: false })
+      const direct = sessionID === BLOCKED
+        ? [{ id: "todo-fixture", text: "Review the release note", created_at: 1, sent_at: 2, read_at: 3, completed_at: null, version: 3 }]
+        : []
+      const recent = sessionID === BLOCKED
+        ? [{
+            id: "done-work-fixture",
+            project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
+            kind: "issue",
+            title: "Repair the previous release",
+            description: "",
+            phase: "done",
+            condition: null,
+            area: "done",
+            deployment_policy: "required",
+            owner_session: null,
+            created_at: 1,
+            updated_at: 2,
+            closed_at: 2,
+            cycle: 1,
+            version: 2,
+          }]
+        : []
+      return json(res, 200, { ok: true, assigned_items: assigned, recent_items: recent, direct_todos: direct, truncated: false })
     }
     if (path === "/v1/orchestrator/tasks") {
       const tasks = readingScenario === "worst"
@@ -701,6 +770,48 @@ async function list(tab: Tab): Promise<Seen> {
   await tab.go("/")
   return tab.until("the list arrives in its resting order", (s) => s.order.join() === ORDER_AT_REST.join())
 }
+
+test("the Board assignment picker explains a Session before assignment", () =>
+  inTab(async (tab) => {
+    readingScenario = "normal"
+    await tab.go("/#page=work")
+    const shown = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      let opened = false
+      const read = () => {
+        const trigger = document.querySelector('[data-work-id="assignment-fixture"] .work-session-trigger')
+        if (trigger && !opened) {
+          opened = true
+          trigger.click()
+        }
+        const options = [...document.querySelectorAll('.work-session-option')]
+        const choice = options.find((option) => option.textContent.includes('Bravo is still working'))
+        if (choice && choice.textContent.includes('1 看板 · 1 TODO')) {
+          const menu = choice.textContent
+          choice.click()
+          const finish = () => {
+            const detail = document.querySelector('.work-session-detail')
+            const text = detail?.textContent || ''
+            if (text.includes('Repair the previous release')) return resolve({ menu, detail: text })
+            if (Date.now() >= deadline) return reject(new Error('the selected Session detail did not arrive: ' + text))
+            setTimeout(finish, 25)
+          }
+          return finish()
+        }
+        if (Date.now() >= deadline) return reject(new Error('the informed Session choice did not arrive'))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.match(shown.menu, /Bravo is still working/)
+    assert.match(shown.menu, /Working · 執行中/)
+    assert.match(shown.menu, /1 看板 · 1 TODO/)
+    assert.match(shown.detail, /尚未完成：1 個看板項目 · 1 個 TODO/)
+    assert.match(shown.detail, /Coordinate the live deployment/)
+    assert.match(shown.detail, /Review the release note/)
+    assert.match(shown.detail, /Repair the previous release/)
+    await tab.shot("board-session-assignment")
+  }))
 
 // ---- the two gestures that were here first
 
