@@ -230,6 +230,11 @@
 }
 .session-owned-summary:hover b, .session-owned-summary:focus-visible b { color: var(--accent); }
 .session-owned-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.session-owned-state { align-self: center; display: inline-flex; align-items: center; gap: 7px; }
+.session-owned-complete {
+    display: inline-grid; place-items: center; width: 21px; height: 21px; border: 1px solid color-mix(in srgb, var(--ok) 56%, transparent);
+    border-radius: 999px; background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok); font: 800 12px/1 var(--mono);
+}
 .session-owned-open { align-self: center; color: var(--faint); font: 13px/1 var(--mono); }
 .session-owned-item > .work-milestones { margin-left: 27px; }
 .session-owned-item b, .session-direct-todo b { display: block; color: var(--ink); overflow-wrap: anywhere; }
@@ -326,10 +331,11 @@
 }
 .work-created-panel > .work-modal-head { margin-bottom: 14px; }
 .work-created-panel > .work-v2-card { --work-edge: var(--accent); }
-.work-item-detail-panel {
-    display: grid; gap: 14px; width: min(720px, 100%); max-height: calc(100dvh - 32px); overflow: auto;
-    overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+.work-item-detail-modal {
+    align-items: safe center; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
 }
+.work-item-detail-panel { display: grid; gap: 14px; width: min(720px, 100%); max-height: none; overflow: visible; margin-block: auto; }
 .work-item-detail-panel h2 { margin: 0; }
 .session-work-detail-condition { width: fit-content; margin: 0; padding: 4px 8px; border-radius: 999px; background: var(--accent-in); color: var(--accent); font: 11px/1.4 var(--mono); }
 .session-work-detail-description { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }

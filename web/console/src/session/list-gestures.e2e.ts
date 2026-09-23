@@ -349,6 +349,35 @@ function daemon(): Server {
         }],
       },
     })
+    if (path === "/v1/work/v2/items/done-work-fixture" && req.method === "GET") return json(res, 200, {
+      ok: true,
+      item: {
+        id: "done-work-fixture",
+        project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
+        kind: "issue",
+        title: "Repair the previous release",
+        description: "The completed investigation remains readable after the item closes.",
+        phase: "done",
+        condition: null,
+        area: "done",
+        deployment_policy: "required",
+        owner_session: null,
+        created_at: 1,
+        updated_at: 2,
+        closed_at: 2,
+        cycle: 1,
+        version: 2,
+        documents: [{
+          id: "done-report-fixture",
+          role: "completion_report",
+          title: "Completion report",
+          body: "## Root cause\n\n" + "A verified finding that must remain readable on a phone.\n\n".repeat(24),
+          reference: "",
+          position: 0,
+          version: 1,
+        }],
+      },
+    })
     const sessionWork = /^\/v1\/work\/v2\/session-todos\/(.+)$/.exec(path)
     if (sessionWork && req.method === "GET") {
       const sessionID = decodeURIComponent(sessionWork[1])
@@ -410,6 +439,15 @@ function daemon(): Server {
             closed_at: 2,
             cycle: 1,
             version: 2,
+            documents: [{
+              id: "done-report-fixture",
+              role: "completion_report",
+              title: "Completion report",
+              body: "A durable completion report.",
+              reference: "",
+              position: 0,
+              version: 1,
+            }],
           }]
         : []
       return json(res, 200, { ok: true, assigned_items: assigned, recent_items: recent, direct_todos: direct, truncated: false })
@@ -864,10 +902,10 @@ test("an assigned Board item opens its detail and requested action on a phone", 
         if (text.includes('Confirm the production release window.')) {
           const panel = modal.querySelector('.work-item-detail-panel')
           const box = panel?.getBoundingClientRect()
-          if (panel) panel.scrollTop = panel.scrollHeight
           return resolve({ text, width: box?.width || 0, viewport: window.innerWidth,
-            clientHeight: panel?.clientHeight || 0, scrollHeight: panel?.scrollHeight || 0,
-            scrollTop: panel?.scrollTop || 0 })
+            clientHeight: modal.clientHeight, scrollHeight: modal.scrollHeight,
+            x: Math.round((box?.left || 0) + (box?.width || 0) / 2),
+            y: Math.round(Math.min((box?.bottom || 0) - 80, window.innerHeight - 80)) })
         }
         if (Date.now() >= deadline) return reject(new Error('the Board item detail did not arrive: ' + text))
         setTimeout(read, 25)
@@ -880,8 +918,52 @@ test("an assigned Board item opens its detail and requested action on a phone", 
     assert.ok(shown.width <= shown.viewport, `detail width ${shown.width} exceeds viewport ${shown.viewport}`)
     assert.ok(shown.scrollHeight > shown.clientHeight,
       `detail height ${shown.scrollHeight} did not exceed its ${shown.clientHeight}px viewport`)
-    assert.ok(shown.scrollTop > 0, "the long report could not scroll inside the modal")
+    await tab.drag({ x: shown.x, y: shown.y }, { x: 0, y: -260 }, { steps: 12 })
+    const scrolled = await tab.run(`(() => {
+      const modal = document.querySelector('.work-item-detail-modal')
+      const panel = document.querySelector('.work-item-detail-panel')
+      return { modal: modal?.scrollTop || 0, panel: panel?.scrollTop || 0 }
+    })()`)
+    assert.ok(scrolled.modal > 0 || scrolled.panel > 0,
+      `a real finger drag did not scroll the completion report: ${JSON.stringify(scrolled)}`)
     await tab.shot("session-board-item-detail")
+  }))
+
+test("a completed Board item is checked and its report scrolls with a real finger", () =>
+  inTab(async (tab) => {
+    await tab.go("/#session=" + encodeURIComponent(BLOCKED))
+    const shown = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const fold = document.querySelector('.session-todos')
+        if (fold && !fold.open) fold.querySelector('summary')?.click()
+        const item = document.querySelector('.session-recent-work .session-owned-summary')
+        const check = item?.querySelector('.session-owned-complete')
+        if (item && check && !document.querySelector('.work-item-detail-modal')) item.click()
+        const modal = document.querySelector('.work-item-detail-modal')
+        const panel = modal?.querySelector('.work-item-detail-panel')
+        const box = panel?.getBoundingClientRect()
+        if (modal?.textContent.includes('Root cause') && box) return resolve({
+          checked: check?.textContent || '',
+          parent: modal.parentElement === document.body,
+          clientHeight: modal.clientHeight,
+          scrollHeight: modal.scrollHeight,
+          x: Math.round(box.left + box.width / 2),
+          y: Math.round(Math.min(box.bottom - 80, window.innerHeight - 80)),
+        })
+        if (Date.now() >= deadline) return reject(new Error('the completed Board report did not arrive'))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.equal(shown.checked, "✓")
+    assert.equal(shown.parent, true, "the modal stayed nested inside the fixed Session pane")
+    assert.ok(shown.scrollHeight > shown.clientHeight,
+      `detail height ${shown.scrollHeight} did not exceed its ${shown.clientHeight}px viewport`)
+    await tab.drag({ x: shown.x, y: shown.y }, { x: 0, y: -260 }, { steps: 12 })
+    const scrollTop = await tab.run(`document.querySelector('.work-item-detail-modal')?.scrollTop || 0`)
+    assert.ok(scrollTop > 0, `a real finger drag left the completion report at ${scrollTop}`)
+    await tab.shot("session-completed-board-report")
   }))
 
 test("a Project-page Board address selects and reads that Project", () =>
