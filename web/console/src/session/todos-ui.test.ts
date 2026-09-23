@@ -35,6 +35,16 @@ test("owned Board work shows explicit release milestones and recent completion",
   assert.match(styles, /var\(--ok\)/)
 })
 
+test("empty Session todos use one message and hide empty section furniture", () => {
+  assert.match(source, /const empty = page !== null && !hasAssigned && !hasRecent && !hasDirect/)
+  assert.match(source, /\{page && hasAssigned && <section[\s\S]*?這個 Session 尚未關閉的負責項目/)
+  assert.match(source, /\{page && hasRecent && <section[\s\S]*?最近完成的看板項目/)
+  assert.match(source, /\{page && hasDirect && <section[\s\S]*?直接交給這個 Session 的待辦/)
+  assert.match(source, /\{empty && <p className="session-todos-empty">目前沒有待辦。<\/p>\}/)
+  assert.doesNotMatch(source, /目前沒有負責中的項目/)
+  assert.doesNotMatch(source, /目前沒有直接待辦/)
+})
+
 test("closing a Session reads and names unfinished Board items before it can continue", () => {
   const confirmation = readFileSync(new URL("../overlays/action-confirm.ts", import.meta.url), "utf8")
   assert.match(confirmation, /readSessionWorkV2\(pending\.id\)/)
