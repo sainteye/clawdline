@@ -187,7 +187,28 @@
 /* A session's to-dos: a folded strip under the session's header. Folded by
    default — the reader of these is the session, and a person opens it only
    when they want to see what the machine is keeping for itself. */
-.session-todos { flex: 0 0 auto; border-bottom: 1px solid var(--line); background: #101014; }
+.session-todos {
+    position: relative; z-index: 6; isolation: isolate; flex: 0 0 auto;
+    border-bottom: 1px solid var(--line); background: #101014;
+    box-shadow: 0 0 0 transparent;
+    transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+.session-todos::after {
+    content: ""; position: absolute; z-index: -1; top: calc(100% - 1px); left: 0;
+    width: 100%; height: calc(100dvh + 1px); pointer-events: none; opacity: 0;
+    background: linear-gradient(180deg, rgb(8 8 12 / .62), rgb(8 8 12 / .34));
+    -webkit-backdrop-filter: blur(7px) saturate(.72);
+    backdrop-filter: blur(7px) saturate(.72);
+    transition: opacity 180ms ease;
+}
+.session-todos[open] {
+    border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    box-shadow: 0 18px 44px rgb(0 0 0 / .56), 0 1px 0 rgb(255 255 255 / .035) inset;
+    -webkit-backdrop-filter: blur(18px) saturate(1.16);
+    backdrop-filter: blur(18px) saturate(1.16);
+}
+.session-todos[open]::after { opacity: 1; }
 .session-todos[hidden] { display: none; }
 .pane-detail[data-panel] > .session-todos { display: none; }
 .session-todos > summary {
@@ -208,6 +229,17 @@
     display: inline-flex; align-items: center; gap: 3px; color: var(--ok); font: 600 11px/1 var(--mono);
 }
 .session-todos-body { max-height: 40vh; overflow: auto; padding: 0 18px 10px; }
+.session-todos[open] .session-todos-body {
+    animation: session-todos-body-in 180ms cubic-bezier(.2, .8, .2, 1) both;
+}
+@keyframes session-todos-body-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .session-todos, .session-todos::after, .session-todos > summary::before { transition: none; }
+    .session-todos[open] .session-todos-body { animation: none; }
+}
 .session-todos-body > p { margin: 0 0 6px; color: var(--faint); font-size: 11px; line-height: 1.6; }
 .session-todo {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px;
