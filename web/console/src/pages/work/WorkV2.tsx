@@ -541,6 +541,9 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onC
   const [description, setDescription] = useState(initialDraft.description || "")
   const [images, setImages] = useState<File[]>([])
   const imagePicker = useRef<HTMLInputElement>(null)
+  const projectPlaces = initialDraft.project && !places.some((place) => place.id === initialDraft.project?.id)
+    ? [initialDraft.project, ...places]
+    : places
   const ready = !!projectID && !!title.trim() && !!description.trim()
   const reviewingDraft = !!(initialDraft.projectID || initialDraft.title || initialDraft.description)
   useModalDismiss(busy, onClose)
@@ -552,7 +555,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onC
     <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? "REVIEW WORK ITEM" : "NEW WORK ITEM"}</p><h2 id="work-new-v2-title">{reviewingDraft ? "確認看板項目" : "建立看板項目"}</h2></div>
       <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
     {reviewingDraft && <p className="work-note">語音已填入草稿；按「建立」前不會新增看板項目。</p>}
-    <div className="work-modal-field"><span>Project</span><ProjectPicker places={places} value={projectID} onChange={setProjectID} /></div>
+    <div className="work-modal-field"><span>Project</span><ProjectPicker places={projectPlaces} value={projectID} onChange={setProjectID} /></div>
     <fieldset className="work-kind-field"><legend>類型</legend><div className="work-kind-list">
       {KINDS.map((value) => { const meta = KIND_META[value]; return <button key={value} type="button" className="work-kind-option"
         aria-pressed={kind === value} onClick={() => setKind(value)}><span className="work-kind-icon" aria-hidden="true">{meta.icon}</span>
