@@ -15,6 +15,14 @@ test("opening an answered todo fold explicitly refreshes it once", () => {
   assert.match(source, /if \(next && page !== null\) void load\(\)/)
 })
 
+test("Session todo icon controls use the shared centered vectors", () => {
+  assert.match(source, /<WorkIcon name="add" \/><\/button>/)
+  assert.match(source, /className="work-modal-close"[^>]*><WorkIcon name="close" \/><\/button>/)
+  assert.match(source, /className="session-owned-complete"[\s\S]*?<WorkIcon name="check" \/>/)
+  assert.match(source, /className="session-owned-open"[\s\S]*?<WorkIcon name="open" \/>/)
+  assert.doesNotMatch(source, /className="session-todos-add"[^>]*>\+<\/button>/)
+})
+
 test("direct Session todos upload and render durable images", () => {
   const source = readFileSync(new URL("./Todos.tsx", import.meta.url), "utf8")
   const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
@@ -50,7 +58,7 @@ test("owned Board work shows explicit release milestones and recent completion",
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
   const milestones = readFileSync(new URL("../pages/work/WorkMilestones.tsx", import.meta.url), "utf8")
   assert.match(source, /<WorkMilestones phase=\{item\.phase\} \/>/)
-  assert.match(milestones, /state === "done" \? "✓"/)
+  assert.match(milestones, /state === "done" \? "check"/)
   assert.match(source, /page\.recent_items\.map/)
   assert.match(source, /最近完成的看板項目/)
 	assert.match(source, /`已完成 \$\{when\(item\.closed_at\)\}`/)
@@ -128,7 +136,7 @@ test("folded Session todos expose a nonzero recent completion count", () => {
   assert.match(source, /const completedCount = \(page\?\.recent_items\.length \?\? 0\) \+ completedDirect\.length/)
   assert.match(source, /\{!!completedCount && <span className="session-todos-completed"/)
   assert.match(source, /aria-label=\{`最近完成 \$\{completedCount\} 個項目`\}/)
-  assert.match(source, /<span aria-hidden="true">✓<\/span>\{completedCount\}/)
+  assert.match(source, /<WorkIcon name="check" \/>\{completedCount\}/)
   assert.match(styles, /\.session-todos-completed[\s\S]*?color: var\(--ok\)/)
 })
 

@@ -11,6 +11,7 @@ import { onOpenNewWorkItem, type NewWorkItemDraft } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports } from "./WorkCompletionReport.js"
+import { WorkIcon } from "./WorkIcon.js"
 import {
   assignNewWorkV2,
   assignWorkV2,
@@ -148,10 +149,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
             <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
         </div>
         <label className="work-search">
-          <span aria-hidden="true">⌕</span>
+          <WorkIcon name="search" />
           <input type="search" aria-label="搜尋標題與內容" placeholder="搜尋標題與內容" maxLength={1024} value={searchInput}
             onChange={(event) => setSearchInput(event.currentTarget.value)} />
-          {searchInput && <button type="button" aria-label="清除搜尋" onClick={() => setSearchInput("")}>×</button>}
+          {searchInput && <button type="button" aria-label="清除搜尋" onClick={() => setSearchInput("")}><WorkIcon name="close" /></button>}
         </label>
       </div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
@@ -245,9 +246,9 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     <div className="work-card-toolbar">
       <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span>{item.project.label}</span></div>
       <div className="work-card-controls" aria-label="項目操作">
-        <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><span aria-hidden="true">✎</span> 編輯</button>
+        <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><WorkIcon name="edit" /> 編輯</button>
         {!item.closed_at && <button className="danger" type="button" disabled={!!busy}
-          onClick={() => { clearFailure(); setDeleting(true) }}><span aria-hidden="true">⌫</span> 刪除</button>}
+          onClick={() => { clearFailure(); setDeleting(true) }}><WorkIcon name="delete" /> 刪除</button>}
       </div>
     </div>
     <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>
@@ -286,7 +287,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     <div className="work-meta"><span>{item.project.available ? (item.condition || "正常") : "project_unavailable"}</span>
       <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
       {owner ? <a className="work-session-link" href={sessionFragment(owner.id)}
-        aria-label={`前往正在實作「${item.title}」的 Session`}>前往 Session · {owner.label || owner.id}<span aria-hidden="true">→</span></a>
+        aria-label={`前往正在實作「${item.title}」的 Session`}>前往 Session · {owner.label || owner.id}<WorkIcon name="open" /></a>
         : item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}
     </div>
     {assignable && <div className="work-assignment">
@@ -443,7 +444,7 @@ function CreatedWorkModal({ item, sessions, busy, failure, clearFailure, run, on
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <div className="work-created-panel">
       <div className="work-modal-head"><div><p className="board-eyebrow">WORK ITEM CREATED</p><h2 id={`work-created-title-${item.id}`}>看板項目已建立</h2></div>
-        <button className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}>×</button></div>
+        <button className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <WorkCard item={item} sessions={sessions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} focusAssignment />
     </div>
@@ -465,7 +466,7 @@ function EditWorkModal({ item, busy, failure, onClose, onSave }: {
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <form onSubmit={(event) => { event.preventDefault(); if (ready) onSave(title.trim(), description.trim()) }}>
       <div className="work-modal-head"><div><p className="board-eyebrow">EDIT WORK ITEM</p><h2 id={`work-edit-title-${item.id}`}>編輯看板項目</h2></div>
-        <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
+        <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(event) => setTitle(event.target.value)} /></label>
       <label>描述<textarea value={description} maxLength={65536} onChange={(event) => setDescription(event.target.value)} /></label>
       {failure && <p className="work-note" role="alert">{failure}</p>}
@@ -487,7 +488,7 @@ function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <form onSubmit={(event) => { event.preventDefault(); onDelete() }}>
       <div className="work-modal-head"><div><p className="board-eyebrow">DELETE WORK ITEM</p><h2 id={`work-delete-title-${item.id}`}>刪除看板項目？</h2></div>
-        <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
+        <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       <p><strong>{item.title}</strong> 會從看板與負責 Session 的待辦移除。執行紀錄仍會保留，避免工作憑空消失。</p>
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <div className="work-actions"><button className="chip danger" type="submit" disabled={busy}>{busy ? "刪除中…" : "確認刪除"}</button>
@@ -533,7 +534,7 @@ function WorkReferenceImage({ item, image, busy, run }: {
     </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || "載入圖片…"}</div>}
     <figcaption title={image.title}>{image.title}</figcaption>
     {!item.closed_at && <button type="button" aria-label={`移除參考圖片 ${image.title}`} disabled={!!busy}
-      onClick={() => void run(`image-delete-${image.id}`, () => deleteWorkV2Image(item, image.id))}>×</button>}
+      onClick={() => void run(`image-delete-${image.id}`, () => deleteWorkV2Image(item, image.id))}><WorkIcon name="close" /></button>}
   </figure>
 }
 
@@ -584,7 +585,7 @@ function ProjectPicker({ places, value, onChange, onOpen, allowAll = false }: {
       {places.map((place) => <button type="button" role="option" aria-selected={place.id === value}
         className="work-project-option" key={place.id} onClick={() => choose(place.id)}>
         <Mark icon={place.icon as SessionRow["icon"]} cellPx={3} /><span>{place.label}</span>
-        {place.id === value && <span className="work-project-check" aria-hidden="true">✓</span>}
+        {place.id === value && <span className="work-project-check"><WorkIcon name="check" /></span>}
       </button>)}
       {!places.length && <p className="work-project-empty">{refreshing ? "正在讀取 Project…" : "目前沒有可用的 Project。"}</p>}
     </div>}
@@ -614,13 +615,13 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     onCreate(body, images, decision.key)
   }}>
     <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? "REVIEW WORK ITEM" : "NEW WORK ITEM"}</p><h2 id="work-new-v2-title">{reviewingDraft ? "確認看板項目" : "建立看板項目"}</h2></div>
-      <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}>×</button></div>
+      <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
     {reviewingDraft && <p className="work-note">語音已填入草稿；按「建立」前不會新增看板項目。</p>}
     <div className="work-modal-field"><span>Project</span><ProjectPicker places={projectPlaces} value={projectID} onChange={setProjectID} onOpen={onRefreshPlaces} /></div>
     <fieldset className="work-kind-field"><legend>類型</legend><div className="work-kind-list">
       {KINDS.map((value) => { const meta = KIND_META[value]; return <button key={value} type="button" className="work-kind-option"
         aria-pressed={kind === value} onClick={() => setKind(value)}><span className="work-kind-icon" aria-hidden="true">{meta.icon}</span>
-        <span><b>{meta.label}</b><small>{meta.description}</small></span><span className="work-kind-radio" aria-hidden="true">{kind === value ? "●" : "○"}</span></button> })}
+        <span><b>{meta.label}</b><small>{meta.description}</small></span><span className="work-kind-radio"><WorkIcon name={kind === value ? "radio" : "circle"} /></span></button> })}
     </div></fieldset>
     <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(e) => setTitle(e.target.value)} /></label>
     <label>描述<textarea value={description} onChange={(e) => setDescription(e.target.value)} /></label>
@@ -637,7 +638,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
       </div>
       {!!images.length && <ul className="work-modal-image-list">{images.map((file, index) => <li key={`${file.name}-${file.lastModified}-${index}`}>
         <span title={file.name}>{file.name}</span><button type="button" disabled={busy} aria-label={`移除 ${file.name}`}
-          onClick={() => setImages((current) => current.filter((_, at) => at !== index))}>×</button>
+          onClick={() => setImages((current) => current.filter((_, at) => at !== index))}><WorkIcon name="close" /></button>
       </li>)}</ul>}
     </div>
     {failure && <p className="work-note" role="alert">{failure}</p>}

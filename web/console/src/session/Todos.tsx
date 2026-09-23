@@ -8,6 +8,7 @@ import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { WorkSteps } from "../pages/work/WorkSteps.js"
 import { completionReports, WorkCompletionReports } from "../pages/work/WorkCompletionReport.js"
+import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
 import "../pages/work/work.css"
@@ -84,10 +85,10 @@ export function Todos({ row, agentCount, agentPanel }: {
         <summary>
           <b>{workWord("todosTitle")}</b>
           <button className="session-todos-add" type="button" aria-label="新增 Session 待辦"
-            onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}>+</button>
+            onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}><WorkIcon name="add" /></button>
           <span id="session-todos-count">{page ? count : L.strings.webLoading}</span>
           {!!completedCount && <span className="session-todos-completed" aria-label={`最近完成 ${completedCount} 個項目`}>
-            <span aria-hidden="true">✓</span>{completedCount}
+            <WorkIcon name="check" />{completedCount}
           </span>}
           {agentCount !== undefined ? <span className="session-todos-agent-count">
             {L.strings.webAgents} {agentCount === null ? "?" : agentCount}
@@ -161,8 +162,8 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
         {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small>
         {hasReport && <em className="session-owned-report">結案報告</em>}</span>
       <span className="session-owned-state">
-        {completed && <span className="session-owned-complete" role="img" aria-label="已完成">✓</span>}
-        <span className="session-owned-open" aria-hidden="true">→</span>
+        {completed && <span className="session-owned-complete" role="img" aria-label="已完成"><WorkIcon name="check" /></span>}
+        <span className="session-owned-open"><WorkIcon name="open" /></span>
       </span>
     </button>
     <WorkMilestones phase={item.phase} />
@@ -184,7 +185,7 @@ function WorkItemDetailModal({ item, failure, onClose }: { item: WorkV2Item; fai
     <article className="work-created-panel work-item-detail-panel">
       <div className="work-modal-head"><div><p className="board-eyebrow">BOARD ITEM</p>
         <h2 id={`session-work-detail-title-${item.id}`}>{item.title}</h2></div>
-        <button className="work-modal-close" type="button" aria-label="關閉" autoFocus onClick={onClose}>×</button></div>
+        <button className="work-modal-close" type="button" aria-label="關閉" autoFocus onClick={onClose}><WorkIcon name="close" /></button></div>
       <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} />
         <span>{item.project.label} · {item.kind} · {phaseName(item.phase)}</span></div>
       {item.condition && <p className="session-work-detail-condition">{conditionName(item.condition)}</p>}
@@ -211,8 +212,8 @@ function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolea
       : { mark: "", words: "尚未傳送；Session 會在下一次讀取待辦時看到", state: "unsent" }
   return <article className={`session-direct-todo${completed ? " completed" : ""}`}>
     {completed
-      ? <button className="session-todo-check completed" type="button" disabled aria-label="已完成">✓</button>
-      : <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}>○</button>}
+      ? <button className="session-todo-check completed" type="button" disabled aria-label="已完成"><WorkIcon name="check" /></button>
+      : <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}><WorkIcon name="circle" /></button>}
     <div><b>{todo.text}</b><small>{completed ? `完成 ${when(todo.completed_at!)}` : when(todo.created_at)} <span
       className="session-todo-receipt" data-state={completed ? "completed" : receipt.state}
       aria-label={completed ? "已完成" : receipt.words}>{completed ? "已完成" : <><span className="session-todo-receipt-mark" aria-hidden="true">{receipt.mark}</span>{receipt.words}</>}</span></small></div>
@@ -242,7 +243,7 @@ function TodoImagePicker({ images, busy, onChange }: { images: File[]; busy: boo
     </div>
     {!!images.length && <ul className="work-modal-image-list">{images.map((file, index) => <li key={`${file.name}-${file.lastModified}-${index}`}>
       <span title={file.name}>{file.name}</span><button type="button" disabled={busy} aria-label={`移除 ${file.name}`}
-        onClick={() => onChange(images.filter((_, at) => at !== index))}>×</button>
+        onClick={() => onChange(images.filter((_, at) => at !== index))}><WorkIcon name="close" /></button>
     </li>)}</ul>}
   </div>
 }
