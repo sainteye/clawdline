@@ -217,6 +217,8 @@ const ORDER_ONCE_SPARE_MOVED = [BLOCKED, SPARE, SAFE, NEEDS_ATTESTATION, UNKNOWN
 let generation = 0
 /** Every `/v1/sessions` read, so a refresh is counted rather than guessed at. */
 let listReads = 0
+/** Project filters sent by the Board, including a Project-page deep link. */
+let workProjectReads: string[] = []
 /** `POST /v1/sessions/{id}/close`, with the Idempotency-Key each arrived under. */
 let closes: { id: string; key: string; force: unknown }[] = []
 /** Every stream this daemon is holding open, so a new list can be pushed down one. */
@@ -289,7 +291,9 @@ function daemon(): Server {
     if (path === "/v1/places") return json(res, 200, {
       places: [{ id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null }],
     })
-    if (path === "/v1/work/v2/items" && req.method === "GET") return json(res, 200, {
+    if (path === "/v1/work/v2/items" && req.method === "GET") {
+      workProjectReads.push(url.searchParams.get("project") ?? "")
+      return json(res, 200, {
       ok: true,
       rows: [{
         id: "assignment-fixture",
@@ -310,7 +314,8 @@ function daemon(): Server {
       }],
       counts: { unassigned: 1 },
       truncated: false,
-    })
+      })
+    }
     if (path === "/v1/work/v2/proposals" && req.method === "GET") {
       return json(res, 200, { rows: [], truncated: false })
     }
@@ -861,6 +866,24 @@ test("an assigned Board item opens its detail and requested action on a phone", 
     assert.match(shown.text, /需要你做的事/)
     assert.ok(shown.width <= shown.viewport, `detail width ${shown.width} exceeds viewport ${shown.viewport}`)
     await tab.shot("session-board-item-detail")
+  }))
+
+test("a Project-page Board address selects and reads that Project", () =>
+  inTab(async (tab) => {
+    workProjectReads = []
+    await tab.go("/#page=work&project=%2Ftmp%2Ffixture&from=projects")
+    const selected = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const text = document.querySelector('.work-project-trigger')?.textContent || ''
+        if (text.includes('Clawdline')) return resolve(text)
+        if (Date.now() >= deadline) return reject(new Error('the Project-scoped Board did not arrive: ' + text))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.match(selected, /Clawdline/)
+    assert.ok(workProjectReads.includes("project-fixture"))
   }))
 
 // ---- the two gestures that were here first

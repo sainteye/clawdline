@@ -52,6 +52,10 @@ func workV2Error(status int, code, message string) error {
 }
 
 func mapWorkV2Error(err error) error {
+	var typed *WorkError
+	if errors.As(err, &typed) {
+		return typed
+	}
 	var refusal work.RefusalV2
 	switch {
 	case err == nil:
@@ -1000,6 +1004,22 @@ func (w *WorkSystemV2) DirectTodoImages(ctx context.Context, id string) ([]work.
 	return images, mapWorkV2Error(err)
 }
 
+// CheckDirectTodoSend distinguishes a first delivery from a reminder. A
+// delivery that has not been observed cannot be doubled; once the Session has
+// read its queue, the person may remind it again while the row is still open.
+func CheckDirectTodoSend(td work.DirectTodoV2, session string) error {
+	if td.SessionID != session {
+		return workV2Error(http.StatusConflict, "todo_session_mismatch", "That to-do belongs to another Session.")
+	}
+	if !td.Open() {
+		return workV2Error(http.StatusConflict, "todo_completed", "A completed to-do is not sent again.")
+	}
+	if !td.SentAt.IsZero() && td.ReadAt.IsZero() {
+		return workV2Error(http.StatusConflict, "todo_awaiting_read", "This delivery is still waiting for the Session to read it.")
+	}
+	return nil
+}
+
 func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session string, at time.Time) (work.DirectTodoV2, error) {
 	var out work.DirectTodoV2
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
@@ -1007,21 +1027,11 @@ func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session strin
 		if err != nil {
 			return err
 		}
-		if prev.SessionID != session {
-			return work.RefuseV2("todo_session_mismatch", "That to-do belongs to another Session.")
-		}
-		if !prev.Open() {
-			return work.RefuseV2("todo_completed", "A completed to-do is not sent again.")
-		}
-		if !prev.ReadAt.IsZero() {
-			return work.RefuseV2("todo_already_read", "The Session has already read this to-do.")
-		}
-		if !prev.SentAt.IsZero() {
-			out = prev
-			return nil
+		if err := CheckDirectTodoSend(prev, session); err != nil {
+			return err
 		}
 		next := prev
-		next.SentAt = time.Unix(at.Unix(), 0)
+		next.SentAt, next.ReadAt = time.Unix(at.Unix(), 0), time.Time{}
 		if err := tx.PutDirectTodo(prev, next); err != nil {
 			return err
 		}

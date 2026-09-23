@@ -277,18 +277,22 @@ open rows, and creates no work item/proposal/task.
 Keyboard acceptance: focus enters the modal, Tab is trapped within it, Escape cancels without a
 write, submit returns focus to the `+` control, and the narrow layout keeps all actions reachable.
 
-### WS2-T02 — Send is person-only and exactly once
+### WS2-T02 — Send and reminder delivery are person-only and bounded by observation
 
 Pressing Send records durable intent and types the row once. Successful delivery sets `sent_at` and
 shows `✓`. A retry replays the receipt. Machine/Agent calls to Send are refused. Busy, gone,
-ambiguous, and unreadable targets each have typed outcomes and do not falsely set `sent_at`.
+ambiguous, and unreadable targets each have typed outcomes and do not falsely set `sent_at`. A
+second new request is refused while that delivery remains unread. Once `read_at` is present and the
+row remains open, the person may send a reminder exactly once; success replaces `sent_at`, clears
+the stale `read_at`, and returns the row to `✓`.
 
 ### WS2-T03 — Agent read returns all next work and produces the double mark
 
 The owning Session's Agent read returns its assigned items and open direct to-dos, and atomically
 sets each direct row's `read_at` once; the UI shows `✓✓`. Reading an unsent row moves directly from
-no mark to `✓✓` and disables Send. A person viewing the panel does not mark it read; another
-Session cannot read or mark it.
+no mark to `✓✓`. The UI says this means “synchronized, not completed” and offers `Send again` while
+the row remains open. A person viewing the panel does not mark it read; another Session cannot read
+or mark it.
 
 The two checks are visually overlapping and have localized accessible text for “read”. Unsent,
 sent, and read remain distinguishable without color.
@@ -296,7 +300,9 @@ sent, and read remain distinguishable without color.
 ### WS2-T04 — Completion authority is narrow
 
 The owning Agent and a person can check a row complete. The Agent cannot edit text, Send, Delete,
-or reopen it. Completion is idempotent and retains sent/read timestamps.
+or reopen it. Completion is idempotent and retains sent/read timestamps. The person projection
+retains the completed row in a recent group with a green check, while the open count and Agent read
+exclude it. Explicit Delete remains available after confirmation.
 
 ### WS2-T05 — Delete is person-only and removes content
 

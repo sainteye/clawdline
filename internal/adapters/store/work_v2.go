@@ -905,8 +905,15 @@ func (s *Store) DirectTodosV2(ctx context.Context, session string, includeComple
 		stmt := `SELECT ` + directTodoV2Columns + ` FROM session_direct_todos WHERE session_id=?`
 		if !includeCompleted {
 			stmt += ` AND completed_at IS NULL`
+			stmt += ` ORDER BY created_at,id LIMIT ?`
+		} else {
+			// Open work remains the actionable prefix in creation order. Completed
+			// rows follow newest first so the bounded person view keeps the most
+			// useful confirmations without hiding an old open row.
+			stmt += ` ORDER BY completed_at IS NOT NULL,
+        CASE WHEN completed_at IS NULL THEN created_at END,
+        CASE WHEN completed_at IS NOT NULL THEN completed_at END DESC,id LIMIT ?`
 		}
-		stmt += ` ORDER BY created_at,id LIMIT ?`
 		rows, err := tx.tx.QueryContext(ctx, stmt, session, limit+1)
 		if err != nil {
 			return err

@@ -234,3 +234,32 @@ func TestPersonAddsImagesOnlyBeforeDirectTodoDelivery(t *testing.T) {
 		t.Fatal("a delivered to-do accepted another image")
 	}
 }
+
+func TestDirectTodoCanBeSentAgainOnlyAfterTheSessionReadsIt(t *testing.T) {
+	w := newWorkV2Test(t)
+	todo, err := w.CreateDirectTodo(context.Background(), NewDirectTodoV2{
+		SessionID: "session-a", Text: "Please handle this", Actor: "local",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := time.Unix(1_790_000_001, 0)
+	sent, err := w.MarkDirectTodoSent(context.Background(), todo.ID, todo.SessionID, first)
+	if err != nil || !sent.SentAt.Equal(first) || !sent.ReadAt.IsZero() {
+		t.Fatalf("first send: %+v %v", sent, err)
+	}
+	if _, err := w.MarkDirectTodoSent(context.Background(), todo.ID, todo.SessionID, first.Add(time.Second)); err == nil {
+		t.Fatal("an unread delivery was sent again")
+	} else if e, ok := err.(*WorkError); !ok || e.Code != "todo_awaiting_read" {
+		t.Fatalf("unread resend: %T %v", err, err)
+	}
+	rows, _, err := w.DirectTodos(context.Background(), todo.SessionID, false, true)
+	if err != nil || len(rows) != 1 || rows[0].ReadAt.IsZero() {
+		t.Fatalf("read: %+v %v", rows, err)
+	}
+	second := first.Add(2 * time.Second)
+	resent, err := w.MarkDirectTodoSent(context.Background(), todo.ID, todo.SessionID, second)
+	if err != nil || !resent.SentAt.Equal(second) || !resent.ReadAt.IsZero() {
+		t.Fatalf("resend: %+v %v", resent, err)
+	}
+}
