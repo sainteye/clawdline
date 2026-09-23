@@ -47,6 +47,10 @@ export function Todos({ row, agentCount, agentPanel }: {
 
   if (!row) return null
   const count = (page?.assigned_items.length ?? 0) + (page?.direct_todos.length ?? 0)
+  const hasAssigned = !!page?.assigned_items.length
+  const hasRecent = !!page?.recent_items.length
+  const hasDirect = !!page?.direct_todos.length
+  const empty = page !== null && !hasAssigned && !hasRecent && !hasDirect
   const run = async (key: string, task: () => Promise<unknown>) => {
     if (busy) return false
     setBusy(key); setFailure("")
@@ -75,9 +79,9 @@ export function Todos({ row, agentCount, agentPanel }: {
         <div className="session-todos-body">
           {agentPanel}
           {failure && <p className="work-note" role="alert">{failure}</p>}
-          <section className="session-todos-list" aria-label="負責項目">
+          {page && hasAssigned && <section className="session-todos-list" aria-label="負責項目">
             <p>這個 Session 尚未關閉的負責項目</p>
-            {page?.assigned_items.length ? page.assigned_items.map((item) => (
+            {page.assigned_items.map((item) => (
               <article className="session-owned-item" key={item.id} data-phase={item.phase}>
                 <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
                 <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · {phaseName(item.phase)}
@@ -85,22 +89,23 @@ export function Todos({ row, agentCount, agentPanel }: {
                   <WorkMilestones phase={item.phase} />
                 </div>
               </article>
-            )) : page ? <p>目前沒有負責中的項目。</p> : null}
-          </section>
-          {!!page?.recent_items.length && <section className="session-todos-list session-recent-work" aria-label="最近完成的項目">
+            ))}
+          </section>}
+          {page && hasRecent && <section className="session-todos-list session-recent-work" aria-label="最近完成的項目">
             <p>最近完成的看板項目</p>
             {page.recent_items.map((item) => <article className="session-owned-item completed" key={item.id} data-phase={item.phase}>
               <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
               <div><b>{item.title}</b><small>{item.project.label} · {item.kind} · 已完成</small><WorkMilestones phase={item.phase} /></div>
             </article>)}
           </section>}
-          <section className="session-todos-list" aria-label="直接待辦">
+          {page && hasDirect && <section className="session-todos-list" aria-label="直接待辦">
             <p>直接交給這個 Session 的待辦</p>
-            {page?.direct_todos.length ? page.direct_todos.map((todo) => (
+            {page.direct_todos.map((todo) => (
               <DirectTodo key={todo.id} todo={todo} busy={busy === todo.id}
                 onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />
-            )) : page ? <p>目前沒有直接待辦。</p> : null}
-          </section>
+            ))}
+          </section>}
+          {empty && <p className="session-todos-empty">目前沒有待辦。</p>}
         </div>
       </details>
       {adding && <div className="session-todo-modal" role="dialog" aria-modal="true" aria-labelledby="session-todo-modal-title">
