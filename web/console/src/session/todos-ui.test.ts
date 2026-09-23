@@ -98,6 +98,15 @@ test("assigned Board items open a current detail modal with the requested user a
   assert.match(source, /item\.images\.map/)
 })
 
+test("an open assigned Board item can remind its Session from the detail", () => {
+  const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
+  assert.match(source, /remindWorkV2/)
+  assert.match(source, /再次提醒 Session/)
+  assert.match(source, /已再次提醒這個 Session/)
+  assert.match(source, /!!item\.owner_session && !item\.closed_at/)
+  assert.match(api, /items\/\$\{item\.id\}\/remind/)
+})
+
 test("a recent Board item opens its durable completion report in one click", () => {
   const report = readFileSync(new URL("../pages/work/WorkCompletionReport.tsx", import.meta.url), "utf8")
   const order = readFileSync(new URL("../pages/work/completion-report-order.js", import.meta.url), "utf8")

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -212,6 +213,83 @@ func TestOnlyAnIdleSessionReceivesAnAssignmentBrief(t *testing.T) {
 	if got := p.done(); len(got) != 1 || !strings.HasPrefix(got[0], "send:") ||
 		!strings.Contains(got[0], "completion_report") || !strings.Contains(got[0], "straightforward fix") {
 		t.Fatalf("idle Session brief = %v", got)
+	}
+}
+
+func TestPersonCanRemindTheCurrentOwnerWithoutReassigningTheItem(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	assigned, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.done(); len(got) != 0 {
+		t.Fatalf("working Session received the assignment courtesy brief: %v", got)
+	}
+
+	path := "/v1/work/v2/items/" + v.Item.ID + "/remind"
+	body := fmt.Sprintf(`{"expected_version":%d}`, assigned.Item.Version)
+	request := func(key string) *http.Request {
+		return personWorkV2Request(http.MethodPost, path, body, key)
+	}
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, request("remind-current-owner"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("remind: %d %s", rec.Code, rec.Body)
+	}
+	if got := p.done(); len(got) != 1 || !strings.Contains(got[0], "Clawdline reminder for Board item "+v.Item.ID) ||
+		!strings.Contains(got[0], v.Item.Title) {
+		t.Fatalf("reminder delivery = %v", got)
+	}
+
+	replay := httptest.NewRecorder()
+	s.workV2Route(replay, request("remind-current-owner"))
+	if replay.Code != http.StatusOK || replay.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("replay: %d %s, headers=%v", replay.Code, replay.Body, replay.Header())
+	}
+	if got := p.done(); len(got) != 1 {
+		t.Fatalf("idempotent replay typed a second reminder: %v", got)
+	}
+
+	current, err := s.workV2().Item(context.Background(), v.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := 0
+	for _, assignment := range current.Assignments {
+		if assignment.State == "active" {
+			active++
+		}
+	}
+	if current.Item.Version != assigned.Item.Version || current.Item.OwnerSession != p.s.ConversationID || active != 1 {
+		t.Fatalf("reminder changed assignment state: item=%+v assignments=%+v", current.Item, current.Assignments)
+	}
+}
+
+func TestReminderRefusesAnUnassignedItemAndAReusedTerminal(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	path := "/v1/work/v2/items/" + v.Item.ID + "/remind"
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, personWorkV2Request(http.MethodPost, path,
+		fmt.Sprintf(`{"expected_version":%d}`, v.Item.Version), "remind-unassigned"))
+	if rec.Code != http.StatusConflict || codeOf(t, rec) != "item_unassigned" {
+		t.Fatalf("unassigned reminder: %d %s", rec.Code, rec.Body)
+	}
+
+	assigned, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.s.ConversationID = "20000000-0000-4000-8000-000000000004"
+	reused := httptest.NewRecorder()
+	s.workV2Route(reused, personWorkV2Request(http.MethodPost, path,
+		fmt.Sprintf(`{"expected_version":%d}`, assigned.Item.Version), "remind-reused-terminal"))
+	if reused.Code != http.StatusConflict || codeOf(t, reused) != "assignment_session_changed" {
+		t.Fatalf("reused terminal reminder: %d %s", reused.Code, reused.Body)
+	}
+	if got := p.done(); len(got) != 0 {
+		t.Fatalf("reused terminal received another Session's reminder: %v", got)
 	}
 }
 

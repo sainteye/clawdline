@@ -430,6 +430,11 @@ export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude" 
     model: "default",
   })
 
+export const remindWorkV2 = (item: WorkV2Item) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/remind`, {
+    expected_version: item.version,
+  })
+
 export const editWorkV2 = (item: WorkV2Item, title: string, description: string) =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}`, {
     expected_version: item.version,

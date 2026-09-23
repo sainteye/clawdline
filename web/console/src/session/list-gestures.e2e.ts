@@ -221,6 +221,8 @@ let listReads = 0
 let workProjectReads: string[] = []
 /** `POST /v1/sessions/{id}/close`, with the Idempotency-Key each arrived under. */
 let closes: { id: string; key: string; force: unknown }[] = []
+/** Explicit reminder presses received from an assigned Board item detail. */
+let workReminders = 0
 /** Every stream this daemon is holding open, so a new list can be pushed down one. */
 const streams = new Set<ServerResponse>()
 
@@ -350,6 +352,30 @@ function daemon(): Server {
         }],
       },
     })
+    if (path === "/v1/work/v2/items/work-fixture/remind" && req.method === "POST") {
+      workReminders++
+      return json(res, 200, {
+        ok: true,
+        item: {
+          id: "work-fixture",
+          project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
+          kind: "feature",
+          title: "Finish the release receipt",
+          description: "Publish the verified receipt after the production check passes.",
+          phase: "merging",
+          condition: "waiting_user",
+          user_action: "Confirm the production release window.",
+          area: "merging",
+          deployment_policy: "agent_decides",
+          owner_session: SAFE,
+          created_at: 1,
+          updated_at: 1,
+          closed_at: null,
+          cycle: 1,
+          version: 2,
+        },
+      })
+    }
     if (path === "/v1/work/v2/items/done-work-fixture" && req.method === "GET") return json(res, 200, {
       ok: true,
       item: {
@@ -930,6 +956,7 @@ test("the Board assignment picker explains a Session before assignment", () =>
 
 test("an assigned Board item opens its detail and requested action on a phone", () =>
   inTab(async (tab) => {
+    workReminders = 0
     await tab.go("/#session=" + encodeURIComponent(SAFE))
     const shown = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
@@ -967,6 +994,22 @@ test("an assigned Board item opens its detail and requested action on a phone", 
     })()`)
     assert.ok(scrolled.modal > 0 || scrolled.panel > 0,
       `a real finger drag did not scroll the completion report: ${JSON.stringify(scrolled)}`)
+    const reminded = await tab.run(`new Promise((resolve, reject) => {
+      const button = [...document.querySelectorAll('.work-item-detail-modal button')]
+        .find((node) => node.textContent?.includes('再次提醒 Session'))
+      if (!button) return reject(new Error('the Session reminder button is missing'))
+      button.click()
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const text = document.querySelector('.work-item-detail-modal')?.textContent || ''
+        if (text.includes('已再次提醒這個 Session。')) return resolve(text)
+        if (Date.now() >= deadline) return reject(new Error('the Session reminder did not settle: ' + text))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.match(reminded, /已再次提醒這個 Session/)
+    assert.equal(workReminders, 1)
     await tab.shot("session-board-item-detail")
   }))
 

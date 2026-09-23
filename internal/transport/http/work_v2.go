@@ -751,6 +751,12 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 	switch action {
 	case "assign":
 		out, err = s.assignWorkV2(r.Context(), id, actor, body.ExpectedVersion, body.Mode, body.TerminalID, body.Assistant, body.Model, file)
+	case "remind":
+		out, err = s.remindWorkV2(r.Context(), id, body.ExpectedVersion)
+		if err == nil {
+			answer = workV2Answer(s.workV2ItemOf(r.Context(), out))
+			err = s.store.CompleteReceipt(r.Context(), k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer})
+		}
 	case "unassign":
 		out, err = s.workV2().Unassign(r.Context(), id, body.ExpectedVersion, actor, file)
 	case "cancel":
@@ -768,6 +774,66 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)
+}
+
+// remindWorkV2 retypes one assigned item to its current owning Session. Unlike
+// the assignment courtesy brief, this is an explicit person action, so it may
+// interrupt a working Session. The assignment's terminal and conversation
+// must still agree before any bytes are written: a recycled terminal must not
+// receive work that belonged to the Session that used to occupy it.
+func (s *Server) remindWorkV2(ctx context.Context, id string, expected int64) (app.WorkV2View, error) {
+	item, err := s.workV2().Item(ctx, id)
+	if err != nil {
+		return app.WorkV2View{}, err
+	}
+	if item.Item.Version != expected {
+		return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "version_conflict", Message: "The item changed; reread it before writing."}
+	}
+	if item.Item.Phase.Terminal() {
+		return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "item_terminal", Message: "A completed or cancelled item has no active Session to remind."}
+	}
+	var active *work.AssignmentV2
+	for n := range item.Assignments {
+		assignment := &item.Assignments[n]
+		if assignment.State == "active" && assignment.SessionID == item.Item.OwnerSession {
+			active = assignment
+			break
+		}
+	}
+	if item.Item.OwnerSession == "" || active == nil || active.TerminalID == "" {
+		return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "item_unassigned", Message: "Assign this item to a Session before sending a reminder."}
+	}
+	sess, findErr := s.actions().Find(ctx, active.TerminalID)
+	if findErr != nil {
+		return app.WorkV2View{}, workV2ReminderError(findErr)
+	}
+	if sess.ConversationID != active.SessionID {
+		return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "assignment_session_changed", Message: "The assigned terminal now belongs to another Session; reassign the item before reminding it."}
+	}
+	brief := fmt.Sprintf("Clawdline reminder for Board item %s: %s. This item is still assigned to this Session. Read its latest description, reference images, documents, and steps, then continue it through implementation, verification, Merge, and its deployment policy.", item.Item.ID, item.Item.Title)
+	if _, sendErr := s.actions().Send(ctx, active.TerminalID, brief); sendErr != nil {
+		return app.WorkV2View{}, workV2ReminderError(sendErr)
+	}
+	return item, nil
+}
+
+func workV2ReminderError(err error) error {
+	var refusal app.Refusal
+	if !errors.As(err, &refusal) {
+		return &app.WorkError{Status: http.StatusBadGateway, Code: "reminder_failed", Message: err.Error()}
+	}
+	status := http.StatusBadGateway
+	switch refusal.Code {
+	case "session_not_found":
+		status = http.StatusConflict
+	case "session_unknown":
+		status = http.StatusServiceUnavailable
+	case "busy":
+		status = http.StatusTooManyRequests
+	case "backend_unsupported":
+		status = http.StatusNotImplemented
+	}
+	return &app.WorkError{Status: status, Code: refusal.Code, Message: refusal.Detail}
 }
 
 func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected int64, mode, terminalID, assistant, model string,

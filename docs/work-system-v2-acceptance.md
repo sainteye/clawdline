@@ -105,6 +105,12 @@ observed `idle` receives one courtesy brief; a failed courtesy send leaves
 `assigned_unnotified` without rolling back ownership. A retry of the original assignment returns
 its receipt and creates no second assignment.
 
+After any successful assignment, the person may press Remind Session from the Board card or the
+owning Session's item detail. One request types one reminder even if the Session is working; replaying
+that request types nothing again. The item's version and assignment history remain unchanged. An
+unassigned or terminal item, a stale item version, a gone or unreadable terminal, and a terminal now
+occupied by another conversation are refused without typing.
+
 ### WS2-S03 — Assign a new Session
 
 Given a valid assistant/model and Project, a person requests a new Session. The assignment intent

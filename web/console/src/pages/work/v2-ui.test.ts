@@ -100,6 +100,13 @@ test("assigned work links to its current Session instead of offering assignment 
   assert.match(source, /aria-label=\{`前往正在實作「\$\{item\.title\}」的 Session`\}/)
 })
 
+test("assigned work can remind its current Session from the Board card", () => {
+  assert.match(source, /remindWorkV2\(item\)/)
+  assert.match(source, /提醒 Session/)
+  assert.match(source, /reminded \? "已提醒"/)
+  assert.match(source, /!!item\.owner_session && !item\.closed_at/)
+})
+
 test("Board cards show the same lifecycle milestones as their owning Session", () => {
   const milestones = readFileSync(new URL("./WorkMilestones.tsx", import.meta.url), "utf8")
   assert.match(source, /<WorkMilestones phase=\{item\.phase\} \/>/)
