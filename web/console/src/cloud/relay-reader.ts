@@ -328,6 +328,15 @@ interface OpenStream {
   queued: boolean
 }
 
+/** The live row-channel keys an inventory marker says make up its pass. */
+function inventoryRowKeys(value: unknown): ReadonlySet<string> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const ids = (value as { ids?: unknown }).ids
+  if (ids instanceof Set && [...ids].every((id) => typeof id === "string")) return ids as Set<string>
+  if (Array.isArray(ids) && ids.every((id) => typeof id === "string")) return new Set(ids)
+  return null
+}
+
 export class RelayReader {
   private client: CloudReadClient | null = null
   private readonly now: () => number
@@ -335,6 +344,9 @@ export class RelayReader {
   private readonly epoch: number
   private generation = 0
   private readonly streams = new Set<OpenStream>()
+  /** The first fleet read waits for the inventory receipt before it paints. */
+  private initialSnapshotDelivered = false
+  private initialSnapshotFlight: Promise<SessionsSnapshot> | null = null
   private readonly transcripts = new Map<string, HeldTranscript>()
   /** Successful terminal closes waiting for a newer terminal enumeration. */
   private readonly closedAt = new Map<string, number>()
@@ -516,7 +528,7 @@ export class RelayReader {
       switch (path) {
         case "/v1/sessions":
           this.note(method, path, "local")
-          return json(200, await this.snapshot())
+          return json(200, await this.initialSnapshot(init?.signal))
         case "/v1/orchestrator/tasks": {
           // The list the session list's indent is computed from. Without it
           // `groupUnderRoots` has nothing to group by and returns the rows as
@@ -824,14 +836,116 @@ export class RelayReader {
    * marker; this is where it becomes the console's `emptyAuthoritative`.
    */
   async snapshot(): Promise<SessionsSnapshot> {
+    return (await this.snapshotReading()).snapshot
+  }
+
+  /**
+   * The first list is one level snapshot, not every retained row as it arrives.
+   *
+   * A Cloud machine publishes each Session on its own channel and publishes an
+   * inventory marker after the pass. On a new browser connection the retained
+   * channels arrive separately, so handing every intermediate answer to React
+   * makes an existing fleet appear one row at a time. The marker already says
+   * how many rows make up the pass; wait until all of them are held, then hand
+   * the first answer over once. Later stream frames remain incremental.
+   *
+   * `ClawdlineClient` supplies the request's existing AbortSignal. If an older
+   * machine never publishes a marker, that signal ends the wait at the normal
+   * request deadline and the best partial reading is returned. No second clock
+   * or retry policy is introduced here.
+   */
+  private async initialSnapshot(signal?: AbortSignal | null): Promise<SessionsSnapshot> {
+    if (this.initialSnapshotDelivered || !signal) return this.snapshot()
+    if (!this.initialSnapshotFlight) {
+      this.initialSnapshotFlight = this.waitForInitialSnapshot(signal).finally(() => {
+        this.initialSnapshotDelivered = true
+        this.initialSnapshotFlight = null
+      })
+    }
+    return this.initialSnapshotFlight
+  }
+
+  private waitForInitialSnapshot(signal: AbortSignal): Promise<SessionsSnapshot> {
+    if (signal.aborted) return this.snapshot()
+    return new Promise<SessionsSnapshot>((resolve, reject) => {
+      let latest: SessionsSnapshot | null = null
+      let checking = false
+      let checkAgain = false
+      let finished = false
+      let handle: StreamHandle | null = null
+
+      const clean = () => {
+        signal.removeEventListener("abort", aborted)
+        handle?.close()
+      }
+      const finish = (snapshot: SessionsSnapshot) => {
+        if (finished) return
+        finished = true
+        clean()
+        resolve(snapshot)
+      }
+      const fail = (cause: unknown) => {
+        if (finished) return
+        finished = true
+        clean()
+        reject(cause)
+      }
+      const check = async () => {
+        if (finished) return
+        if (checking) {
+          checkAgain = true
+          return
+        }
+        checking = true
+        try {
+          do {
+            checkAgain = false
+            const reading = await this.snapshotReading()
+            latest = reading.snapshot
+            if (reading.settled) {
+              finish(reading.snapshot)
+              return
+            }
+          } while (checkAgain && !finished)
+        } catch (cause) {
+          fail(cause)
+        } finally {
+          checking = false
+        }
+      }
+      const aborted = () => {
+        if (latest) finish(latest)
+        else void this.snapshot().then(finish, fail)
+      }
+
+      signal.addEventListener("abort", aborted, { once: true })
+      handle = this.stream().open("/v1/events", {
+        onFrame: (event) => {
+          if (event === "sessions" || event === "message") void check()
+        },
+      })
+      void check()
+    })
+  }
+
+  private async snapshotReading(): Promise<{ snapshot: SessionsSnapshot; settled: boolean }> {
     const client = this.connected()
     const all = await client.sessions()
     this.sayDrift()
     const recovering = (all.scan.recovering ?? []).includes(this.machine)
     const failed = (all.scan.failures ?? []).some((f) => f.machine === this.machine)
-    const inventory = client.sessionInventoryByMachine?.has(this.machine) === true
-    const whole = inventory && !recovering && !failed
     const machineRows = all.sessions.filter((row) => row.machine === this.machine)
+    const inventory = client.sessionInventoryByMachine?.get(this.machine)
+    const expected = inventoryRowKeys(inventory)
+    // The marker can arrive before another retained channel. Its id set is the
+    // receipt: a marker alone is not yet the whole list it describes.
+    const hasInventory = inventory !== undefined
+    const heldKeys = new Set(machineRows.map((row) => {
+      const id = typeof row.session === "string" ? row.session : typeof row.id === "string" ? row.id : ""
+      return this.machine + "\u0000" + id
+    }))
+    const hasEveryRow = expected === null || [...expected].every((key) => heldKeys.has(key))
+    const whole = hasInventory && hasEveryRow && !recovering && !failed
     const sessions = machineRows.filter((row) => {
       const id = typeof row.session === "string" ? row.session : typeof row.id === "string" ? row.id : ""
       const closedAt = this.closedAt.get(id)
@@ -854,7 +968,7 @@ export class RelayReader {
       }
     }
     this.generation += 1
-    return {
+    const snapshot: SessionsSnapshot = {
       at: all.at || Math.floor(this.now() / 1000),
       scan: {
         complete: whole,
@@ -866,6 +980,7 @@ export class RelayReader {
       },
       sessions,
     }
+    return { snapshot, settled: whole || failed }
   }
 
   /**
