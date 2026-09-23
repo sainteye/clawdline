@@ -243,6 +243,8 @@ export const readProposals = (project?: string) => call<ProposalPage>("/v1/work/
 export const readDecisions = () => call<DecisionPage>("/v1/work/decisions")
 export const readDigests = () => call<{ rows: Digest[] }>("/v1/work/digests?kind=daily")
 /** The machine's real project directory: existing places it recognizes, newest first (at most forty). */
+export const copyProjectIcon = (id: string, icon: unknown, expected: unknown) =>
+  mutate<{ ok: boolean; icon: unknown }>(`/v1/projects/${encodeURIComponent(id)}/icon`, { icon, expected }, "PUT")
 export const readProjectPlaces = () => call<ProjectPlacePage>("/v1/places")
 export const readTodos = (sessionRowId: string, state?: "outstanding" | "closed" | "all") =>
   call<TodoPage>(`/v1/sessions/${encodeURIComponent(sessionRowId)}/todos` + query({ state }))

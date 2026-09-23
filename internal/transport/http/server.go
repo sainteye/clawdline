@@ -145,6 +145,11 @@ func New(cfg config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open the store at %s: %w", cfg.Dir, err)
 	}
+	icons, err := icon.NewRegistryWithOverrides(cfg.Dir)
+	if err != nil {
+		st.Close()
+		return nil, fmt.Errorf("could not open project icons: %w", err)
+	}
 	home, _ := os.UserHomeDir()
 	agents := subagents.New(home)
 	srv := &Server{
@@ -153,7 +158,7 @@ func New(cfg config.Config) (*Server, error) {
 		proxy:     proxy,
 		terminals: terminal.Hosts(),
 		facts:     transcript.NewRecordFacts(),
-		icons:     icon.NewRegistry(),
+		icons:     icons,
 		swift:     swiftstore.Open(swiftstore.Dir()),
 		pictures:  newPictures(cfg.Dir),
 		skillMenu: skillmenu.NewCache(),

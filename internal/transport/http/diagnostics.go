@@ -171,6 +171,14 @@ func SetDaemonLog(dir string, w *logs.Writer) { daemonLogs.Store(dir, w) }
 // own and each cheap: a stat, a length, a count kept in memory.
 func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"icons.saved": func() capacity.Reading {
+			if s.icons == nil {
+				return capacity.Reading{Known: true, Note: "no icon registry attached"}
+			}
+			return capacity.Reading{Known: true, Used: s.icons.SavedCount()}
+		},
+		"icons.side":          func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-icon dimension guard"} },
+		"icons.request_bytes": func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request byte guard"} },
 		capacity.LogDaemon: func() capacity.Reading {
 			w, ok := daemonLogs.Load(s.cfg.Dir)
 			if !ok {

@@ -66,6 +66,7 @@ export const CARRIED = {
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
   places: "GET /v1/places",
   "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",
+  "project-icon-copy": "PUT /v1/projects/{id}/icon",
   "project-worktree-lifecycle-refresh": "POST /v1/projects/{project}/worktrees/refresh",
   projects: "GET /v1/projects",
   "push-key": "GET /v1/push/key",

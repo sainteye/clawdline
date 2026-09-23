@@ -363,6 +363,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 			"terminal": pane, "id": "td1", "action": "send", "item": map[string]any{}},
 		session: machine, name: "action:req-work-v2-todo-action", method: "POST", path: "/v1/work/v2/session-todos/%2519/td1/send", body2: `{}`,
 	}, {
+		word:    "project-icon-copy",
+		body:    map[string]any{"type": "project-icon-copy", "session": machine, "request": "req-icon", "id": "p1", "item": map[string]any{}},
+		session: machine, name: "action:req-icon", method: "PUT", path: "/v1/projects/p1/icon", body2: `{}`,
+	}, {
 		word:    "projects",
 		body:    map[string]any{"type": "projects", "session": machine, "request": "req-projects"},
 		session: machine, name: "read:req-projects",

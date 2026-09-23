@@ -1070,6 +1070,12 @@ func init() {
 
 		// The Projects page's catalog and worktree lifecycle. `places` above is
 		// carried separately.
+		op{name: "project-icon-copy",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "PUT", Path: "/v1/projects/" + segment(p.id) + "/icon", Body: p.document, Header: asDevice()}
+			},
+		},
 		op{name: "projects", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request") {

@@ -1,4 +1,6 @@
-import { useLayoutEffect, useRef } from "react"
+import { createPortal } from "react-dom"
+import { IconCopy } from "./projects/IconCopy.js"
+import { useLayoutEffect, useRef, useState } from "react"
 import type { PageModule } from "./types.js"
 import { bindProjects, type ProjectsPage } from "../legacy/projects-bridge.js"
 import {
@@ -38,6 +40,8 @@ type BoundProjects = ProjectsPage & {
  * close first is open.
  */
 function ProjectsPageView({ shown }: { shown: boolean }) {
+  const [iconHost, setIconHost] = useState<HTMLElement | null>(null)
+  useLayoutEffect(() => { setIconHost(document.getElementById("project-icon-copy-host")) }, [])
   const page = useRef<BoundProjects | null>(null)
   const was = useRef(false)
   const painted = useRef(false)
@@ -136,6 +140,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
   }, [shown])
 
   return (
+    <>
     <section
       className="page projects"
       id="projects"
@@ -144,6 +149,8 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       hidden={!shown}
       dangerouslySetInnerHTML={{ __html: sectionMarkup }}
     />
+    {iconHost && createPortal(<IconCopy shown={shown} changed={() => { void page.current?.enter() }} />, iconHost)}
+    </>
   )
 }
 

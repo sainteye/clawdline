@@ -878,6 +878,22 @@ func Register() []Entry {
 			Projects:  true,
 		},
 		{
+			Name: "icons.saved", Class: Evidence, Unit: Rows,
+			Limit: 512, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person,
+			Sources: []string{"internal/domain/icon.MaxIconOverrides"},
+		},
+		{
+			Name: "icons.side", Class: Buffer, Unit: Rows,
+			Limit: 64, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/icon.MaxIconSide"},
+		},
+		{
+			Name: "icons.request_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 96 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/icon.MaxIconRequestBytes"},
+		},
+
+		{
 			// Where each project can be opened: one reading per working
 			// directory, held as the Swift app's SessionLinksCache holds it.
 			// A reading costs a `git remote` and a handful of file reads, and
