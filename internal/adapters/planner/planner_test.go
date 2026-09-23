@@ -49,6 +49,35 @@ func TestDraftLeavesUnsafeOrIncompleteChoicesForThePerson(t *testing.T) {
 	}
 }
 
+func TestDraftMakesAnEditableBoardItemWithoutCreatingIt(t *testing.T) {
+	draft := DraftFrom([]byte(`{"project":1,"assistant":"claude","model":"sonnet","instructions":"must be ignored by the Board","title":"Session voice Board item","description":"Let the Session-list microphone draft a Board item for review.","confidence":0.91,"question":"","kind":"work","work_kind":"feature","at":"11:30","days":["daily"]}`),
+		[]Place{{ID: "clawdline", Label: "Clawdline", Path: "/code/clawdline"}})
+	if draft.PlaceID == nil || *draft.PlaceID != "clawdline" {
+		t.Fatalf("place = %#v", draft.PlaceID)
+	}
+	if draft.Kind != "work" || draft.WorkKind != "feature" || draft.Title != "Session voice Board item" {
+		t.Fatalf("Board identity = %#v", draft)
+	}
+	if draft.Description != "Let the Session-list microphone draft a Board item for review." {
+		t.Fatalf("description = %q", draft.Description)
+	}
+	if draft.Instructions != "" {
+		t.Fatalf("Board draft kept session instructions = %q", draft.Instructions)
+	}
+	if draft.At != "" || len(draft.Days) != 0 {
+		t.Fatalf("Board draft kept schedule fields = %#v", draft)
+	}
+}
+
+func TestPromptNamesBoardConfirmationFields(t *testing.T) {
+	prompt := Prompt([]Place{{ID: "one", Label: "One", Path: "/one"}}, []string{"claude"})
+	for _, want := range []string{"kind: work", "work_kind:", "description:", "start and create nothing"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt does not name %q", want)
+		}
+	}
+}
+
 func TestPlannerUsesNoToolsAndFallsBackOnlyWhenNeeded(t *testing.T) {
 	runs := 0
 	p := Planner{

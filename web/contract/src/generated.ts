@@ -3209,6 +3209,11 @@ export interface IntentDraft {
   days: string[]
 
   /**
+   * The editable Board-item description; empty for session and schedule drafts.
+   */
+  description: string
+
+  /**
    * The editable first message. Empty deliberately means to open the session
    * without typing anything.
    */
@@ -3231,6 +3236,11 @@ export interface IntentDraft {
    */
   question: string
   title: string
+
+  /**
+   * The editable Board-item kind; empty for session and schedule drafts.
+   */
+  work_kind: string
 }
 
 export interface IntentRequest {

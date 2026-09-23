@@ -400,13 +400,16 @@ disabled too. [snippets.md](snippets.md) is the whole feature; the routes are in
 ## Talk instead of type
 
 The microphone beside the **session-list filter** is the other use of dictation: say what work to
-start, instead of first choosing a project. Stopping the recording only puts the transcript in an
-editable box. The first **Start** press then asks an installed Claude Code CLI, with Codex as its
-fallback, to draft the project, assistant, model and first message; both run without tools. The
-project answer is a number from the list the daemon supplied, never a path the model invented.
+start or which Board item to add, instead of first choosing a project. Stopping the recording only
+puts the transcript in an editable box. The first **Start** press then asks an installed Claude
+Code CLI, with Codex as its fallback, to draft the action; both run without tools. A session draft
+fills the project, assistant, model and first message. A Board-item draft opens the ordinary
+creation form with its project, kind, title and description filled in, and creates nothing until
+the person reviews that form and presses **Create**. The project answer is a number from the list
+the daemon supplied, never a path the model invented.
 
-A confident draft that names a listed project is revealed and then opened; a doubtful one leaves
-the project unselected and asks the person to pick before pressing **Start** again. A repeating
+A confident session draft that names a listed project is revealed and then opened; a doubtful one
+leaves the project unselected and asks the person to pick before pressing **Start** again. A repeating
 request is handed to the schedule form and is never saved automatically. Opening the sheet,
 recording, transcribing and editing do not spend a planner turn—the first **Start** press is the
 one point that does. On the hosted console, both transcription and this following planner request
