@@ -31,6 +31,7 @@ test("owned Board work shows explicit release milestones and recent completion",
   assert.match(milestones, /state === "done" \? "✓"/)
   assert.match(source, /page\.recent_items\.map/)
   assert.match(source, /最近完成的看板項目/)
+	assert.match(source, /`已完成 \$\{when\(item\.closed_at\)\}`/)
   assert.match(styles, /\.work-milestones li\[data-state="done"\]/)
   assert.match(styles, /var\(--ok\)/)
 })

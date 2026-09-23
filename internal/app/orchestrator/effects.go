@@ -201,10 +201,11 @@ var effectHandlers = map[string]effectHandler{
 	EffectMessage:    {idempotent: false, run: runMessage},
 	// A push cannot be asked afterwards whether it arrived, so a recovery
 	// never sends one a second time.
-	EffectDeadLetterPush: {idempotent: false, run: runDeadLetterPush},
-	EffectWaitDelivery:   {idempotent: false, run: runWaitDelivery},
-	EffectCapacityPush:   {idempotent: false, run: runCapacityPush},
-	EffectWaitingPush:    {idempotent: false, run: runWaitingPush},
+	EffectDeadLetterPush:        {idempotent: false, run: runDeadLetterPush},
+	EffectWaitDelivery:          {idempotent: false, run: runWaitDelivery},
+	EffectCapacityPush:          {idempotent: false, run: runCapacityPush},
+	EffectWaitingPush:           {idempotent: false, run: runWaitingPush},
+	EffectWorkItemCompletedPush: {idempotent: false, run: runWorkItemCompletedPush},
 }
 
 func (b *Broker) fault(point string, e store.Effect) {
