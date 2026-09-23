@@ -58,6 +58,15 @@ test("empty Session todos use one message and hide empty section furniture", () 
   assert.doesNotMatch(source, /目前沒有直接待辦/)
 })
 
+test("folded Session todos expose a nonzero recent completion count", () => {
+  const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
+  assert.match(source, /const completedCount = \(page\?\.recent_items\.length \?\? 0\) \+ completedDirect\.length/)
+  assert.match(source, /\{!!completedCount && <span className="session-todos-completed"/)
+  assert.match(source, /aria-label=\{`最近完成 \$\{completedCount\} 個項目`\}/)
+  assert.match(source, /<span aria-hidden="true">✓<\/span>\{completedCount\}/)
+  assert.match(styles, /\.session-todos-completed[\s\S]*?color: var\(--ok\)/)
+})
+
 test("closing a Session reads and names unfinished Board items before it can continue", () => {
   const confirmation = readFileSync(new URL("../overlays/action-confirm.ts", import.meta.url), "utf8")
   assert.match(confirmation, /readSessionWorkV2\(pending\.id\)/)

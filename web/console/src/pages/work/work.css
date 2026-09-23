@@ -194,6 +194,9 @@
     font: 600 16px/1 var(--mono); cursor: pointer;
 }
 .session-todos-add:hover { border-color: var(--accent); color: var(--accent); }
+.session-todos-completed {
+    display: inline-flex; align-items: center; gap: 3px; color: var(--ok); font: 600 11px/1 var(--mono);
+}
 .session-todos-body { max-height: 40vh; overflow: auto; padding: 0 18px 10px; }
 .session-todos-body > p { margin: 0 0 6px; color: var(--faint); font-size: 11px; line-height: 1.6; }
 .session-todo {

@@ -49,6 +49,7 @@ export function Todos({ row, agentCount, agentPanel }: {
   const openDirect = page?.direct_todos.filter((todo) => !todo.completed_at) ?? []
   const completedDirect = page?.direct_todos.filter((todo) => !!todo.completed_at) ?? []
   const count = (page?.assigned_items.length ?? 0) + openDirect.length
+  const completedCount = (page?.recent_items.length ?? 0) + completedDirect.length
   const hasAssigned = !!page?.assigned_items.length
   const hasRecent = !!page?.recent_items.length
   const hasDirect = !!openDirect.length
@@ -75,6 +76,9 @@ export function Todos({ row, agentCount, agentPanel }: {
           <button className="session-todos-add" type="button" aria-label="新增 Session 待辦"
             onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}>+</button>
           <span id="session-todos-count">{page ? count : L.strings.webLoading}</span>
+          {!!completedCount && <span className="session-todos-completed" aria-label={`最近完成 ${completedCount} 個項目`}>
+            <span aria-hidden="true">✓</span>{completedCount}
+          </span>}
           {agentCount !== undefined ? <span className="session-todos-agent-count">
             {L.strings.webAgents} {agentCount === null ? "?" : agentCount}
           </span> : null}
