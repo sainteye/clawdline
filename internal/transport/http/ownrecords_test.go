@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -68,5 +69,52 @@ func TestOwnWaitsAreNamedByTheirTerminal(t *testing.T) {
 	}
 	if got.Waiters[0].ReleaseDeliveredAt != nil || got.Waiters[2].ReleaseDeliveredAt == nil {
 		t.Fatalf("an open waiter reads released, or a cancelled one waits: %+v", got.Waiters)
+	}
+}
+
+// Linux tmux reuses %0 after its server exits. An old launch record must
+// neither rename the replacement process nor make it a Feature Root.
+func TestReusedTmuxPaneDoesNotInheritOpenedSessionLabels(t *testing.T) {
+	var assignment orchestrator.RootAssignment
+	if err := json.Unmarshal([]byte(`{"id":"root","assistant":"codex","label":"Original task","state":"briefed","executor":{"terminal_id":"%0","backend":"tmux","opened_at":1000},"briefed_at":1010}`), &assignment); err != nil {
+		t.Fatal(err)
+	}
+	var handoff orchestrator.Handoff
+	if err := json.Unmarshal([]byte(`{"handoff_id":"handoff","assistant":"codex","title":"Original handoff","state":"delivered","opened":{"terminal_id":"%0","backend":"tmux","opened_at":1000},"delivered_at":1010}`), &handoff); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		start     int64
+		assistant string
+		want      bool
+	}{
+		{"original process", 1001, "codex", true},
+		{"reused pane", 2000, "codex", false},
+		{"older process", 500, "codex", false},
+		{"another assistant", 1001, "claude", false},
+		{"unread start", 0, "codex", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			live := swiftstore.Live{TerminalID: "%0", Assistant: tc.assistant, PID: 9, ConversationID: "conversation"}
+			if tc.start != 0 {
+				live.ProcessStart = time.Unix(tc.start, 0)
+			}
+			lives := []swiftstore.Live{live}
+			byTerminal := map[string]swiftstore.Live{"%0": live}
+			roots := ownAssignments([]orchestrator.RootAssignment{assignment}, byTerminal)
+			_, labels := ownHandoffs([]orchestrator.Handoff{handoff}, byTerminal)
+			for name, snapshot := range map[string]swiftstore.Snapshot{
+				"root": (swiftstore.Snapshot{}).With(swiftstore.Own{RootAssignments: roots}), "handoff": (swiftstore.Snapshot{}).With(swiftstore.Own{HandoffLabels: labels}),
+			} {
+				title := snapshot.TitleOf(live, "", lives).Orchestrator
+				if (title != "") != tc.want {
+					t.Errorf("%s title=%q, want label=%v", name, title, tc.want)
+				}
+			}
+			if ((swiftstore.Snapshot{}).With(swiftstore.Own{RootAssignments: roots})).RootAssignment(live) != nil && !tc.want {
+				t.Fatal("replacement inherited root ownership")
+			}
+		})
 	}
 }
