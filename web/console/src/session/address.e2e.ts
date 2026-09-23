@@ -618,6 +618,50 @@ test("phone: the home microphone opens an editable draft before anything starts"
     assert.equal(ready, true, "choosing a project makes the reviewed draft startable")
   }))
 
+test("phone: the command textarea keeps the full sheet width and the microphone is a centred footer action", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    const layout = await tab.run(`(() => {
+      document.getElementById("voice-go").click()
+      const field = document.getElementById("command-text").getBoundingClientRect()
+      const block = document.querySelector("#command-sheet .command-input").getBoundingClientRect()
+      const microphone = document.getElementById("command-mic").getBoundingClientRect()
+      const icon = document.querySelector("#command-mic .ico-mic").getBoundingClientRect()
+      const cancel = document.getElementById("command-cancel").getBoundingClientRect()
+      document.getElementById("command-mic").setAttribute("aria-pressed", "true")
+      const stop = document.querySelector("#command-mic .ico-stop").getBoundingClientRect()
+      return {
+        field: { left: field.left, right: field.right, bottom: field.bottom, height: field.height },
+        block: { left: block.left, right: block.right },
+        microphone: {
+          left: microphone.left,
+          top: microphone.top,
+          centreX: microphone.left + microphone.width / 2,
+          centreY: microphone.top + microphone.height / 2,
+        },
+        icon: {
+          centreX: icon.left + icon.width / 2,
+          centreY: icon.top + icon.height / 2,
+        },
+        stop: {
+          centreX: stop.left + stop.width / 2,
+          centreY: stop.top + stop.height / 2,
+        },
+        cancelLeft: cancel.left,
+      }
+    })()`)
+    assert.ok(Math.abs(layout.field.left - layout.block.left) <= 1, "the textarea starts at the input block edge")
+    assert.ok(Math.abs(layout.field.right - layout.block.right) <= 1, "the textarea reaches the input block edge")
+    assert.ok(layout.field.height >= 112, `the textarea is only ${layout.field.height}px tall`)
+    assert.ok(layout.microphone.top >= layout.field.bottom + 8, "the microphone sits below instead of beside the textarea")
+    assert.ok(layout.microphone.left < layout.cancelLeft, "the microphone owns the left side of the footer")
+    assert.ok(Math.abs(layout.microphone.centreX - layout.icon.centreX) <= 0.5, "the microphone icon is horizontally centred")
+    assert.ok(Math.abs(layout.microphone.centreY - layout.icon.centreY) <= 0.5, "the microphone icon is vertically centred")
+    assert.ok(Math.abs(layout.microphone.centreX - layout.stop.centreX) <= 0.5, "the listening stop icon is horizontally centred")
+    assert.ok(Math.abs(layout.microphone.centreY - layout.stop.centreY) <= 0.5, "the listening stop icon is vertically centred")
+  }))
+
 test("phone: a spoken Board item is prefilled but not created until confirmation", () =>
   inTab(PHONE, async (tab) => {
     createdWork = null

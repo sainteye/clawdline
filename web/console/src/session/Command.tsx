@@ -9,6 +9,7 @@ import { openScheduleFrom } from "../pages/schedules.js"
 import { openNewWorkItem, type NewWorkItemDraft } from "../pages/work/new-item.js"
 import { toast } from "../overlays/toast.js"
 import { nextWord } from "../next-strings.js"
+import "./command.css"
 
 type Place = L.StartPlaceRow
 type Assistant = L.StartAssistantRow
@@ -489,12 +490,8 @@ export function CommandSheet() {
         <h2 id="command-title">{words.webCommand}</h2>
         <p className="say" id="command-say" role="status" aria-live="polite">{words.webCommandSay}</p>
         <div className="voice" id="command-voice" role="status" hidden></div>
-        <div className="block">
-          <textarea className="find heard" id="command-text" rows={3} placeholder={words.webCommandHeard} aria-label={words.webCommandHeard} autoComplete="off" autoCapitalize="sentences" spellCheck={false} data-1p-ignore="" data-lpignore="true" data-bwignore="" onInput={() => paint()}></textarea>
-          <button className="chip redo" id="command-mic" type="button" title={words.webCommand} aria-label={words.webCommandLabel} aria-pressed="false">
-            <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect><path d="M5.75 11.75v0.5a6.25 6.25 0 0 0 12.5 0v-0.5M12 18.5V21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"></path></svg>
-            <svg className="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect></svg>
-          </button>
+        <div className="block command-input">
+          <textarea className="find heard" id="command-text" rows={5} placeholder={words.webCommandHeard} aria-label={words.webCommandHeard} autoComplete="off" autoCapitalize="sentences" spellCheck={false} data-1p-ignore="" data-lpignore="true" data-bwignore="" onInput={() => paint()}></textarea>
         </div>
         <div className="block draft" id="command-draft" hidden>
           <div className="row" id="command-with"></div>
@@ -504,6 +501,10 @@ export function CommandSheet() {
         </div>
         <p className="said" id="command-said" role="status" aria-live="polite"></p>
         <div className="buttons">
+          <button className="chip redo command-mic" id="command-mic" type="button" title={words.webCommand} aria-label={words.webCommandLabel} aria-pressed="false">
+            <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect><path d="M5.75 11.75v0.5a6.25 6.25 0 0 0 12.5 0v-0.5M12 18.5V21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"></path></svg>
+            <svg className="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect></svg>
+          </button>
           <button className="chip" id="command-cancel" type="button">{words.webCancel}</button>
           <button className="chip confirm-go" id="command-go" type="button" disabled>{words.webCommandGo}</button>
         </div>
