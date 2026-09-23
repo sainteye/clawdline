@@ -222,6 +222,18 @@ func (t *WorkV2Tx) CompleteReceipt(k ReceiptKey, a ReceiptAnswer) error {
 	return nil
 }
 
+// AddEffect records an external effect in the same transaction as the work
+// change that owes it. The caller runs the returned id only after this write
+// commits; a daemon that stops first leaves the durable row to recovery.
+func (t *WorkV2Tx) AddEffect(e Effect) (int64, error) {
+	id, err := t.s.insertEffect(t.ctx, t.tx, e)
+	if err != nil {
+		return 0, err
+	}
+	t.wrote++
+	return id, nil
+}
+
 const workV2Columns = `id, project_id, project_path, kind, title, description, phase, condition, user_action,
   deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version`
 

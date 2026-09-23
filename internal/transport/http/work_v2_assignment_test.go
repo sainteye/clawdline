@@ -12,11 +12,66 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+func TestCompletingAnAssignedItemRecordsAndSendsItsNotification(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	owned, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	advance := func(next work.Phase, verification string, landing *app.VerifiedLandingV2, deployment string) {
+		t.Helper()
+		owned, err = s.workV2().Advance(context.Background(), v.Item.ID, app.AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+			SessionID: p.s.ConversationID, Next: next, Verification: verification, Landing: landing,
+			Deployment: deployment, Actor: p.s.ConversationID}, nil)
+		if err != nil {
+			t.Fatalf("advance %s: %v", next, err)
+		}
+	}
+	advance(work.PhaseImplementing, "", nil, "")
+	advance(work.PhaseVerifying, "", nil, "")
+	advance(work.PhaseMerging, "verified", nil, "")
+	advance(work.PhaseDeploying, "", &app.VerifiedLandingV2{Commit: strings.Repeat("a", 40), Target: "main",
+		TargetCommit: strings.Repeat("b", 40), Remote: "origin", RemoteCommit: strings.Repeat("c", 40)}, "")
+
+	var pushed orchestrator.WorkItemCompletedPush
+	s.broker.Push = func(_ context.Context, title, body, terminal, tag string) (int, int, error) {
+		pushed = orchestrator.WorkItemCompletedPush{WorkID: v.Item.ID, Terminal: terminal, Title: title, Body: body, Tag: tag}
+		return 1, 0, nil
+	}
+	body, _ := json.Marshal(map[string]any{"expected_version": owned.Item.Version, "session_id": p.s.ConversationID,
+		"next": "done", "deployment": "production receipt"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/work/v2/agent/items/"+v.Item.ID+"/phase", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "complete-and-notify")
+	req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{machine: true, verdict: auth.Verdict{Allowed: true}}))
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("complete: %d %s", rec.Code, rec.Body)
+	}
+	var answer struct {
+		Item workV2ItemWire `json:"item"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.Item.ClosedAt == nil || pushed.Terminal != p.s.ID || pushed.Title != "看板項目已完成" ||
+		pushed.Body != "「Queued assignment」已完成" || pushed.Tag != "work-item-"+v.Item.ID {
+		t.Fatalf("answer/push: %+v %+v", answer.Item, pushed)
+	}
+	effects, err := s.store.Effects(context.Background(), orchestrator.EffectWorkItemCompletedPush, v.Item.ID)
+	if err != nil || len(effects) != 1 || effects[0].State != "done" || effects[0].Outcome != "pushed" {
+		t.Fatalf("effect: %+v %v", effects, err)
+	}
+}
 
 func TestTheOwningAgentNamesTheActionItNeedsFromThePerson(t *testing.T) {
 	s, p, v := workV2AssignmentServer(t, session.StateWorking)

@@ -21,9 +21,14 @@ func TestDirectSessionLandingClosesAndRemainsInRecentHistory(t *testing.T) {
 	}
 	advance := func(next work.Phase, verification string, landing *VerifiedLandingV2, deployment string) {
 		t.Helper()
+		var effects []store.Effect
+		if next == work.PhaseDone {
+			effects = []store.Effect{{Kind: "work.item.completed.push", Subject: v.Item.ID,
+				Payload: []byte(`{"work_id":"` + v.Item.ID + `","title":"Board item completed","body":"Owned work","tag":"work-item-` + v.Item.ID + `"}`)}}
+		}
 		owned, err = w.Advance(context.Background(), v.Item.ID, AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
 			SessionID: "session-a", Next: next, Verification: verification, Landing: landing,
-			Deployment: deployment, Actor: "session-a"}, nil)
+			Deployment: deployment, Actor: "session-a", Effects: effects}, nil)
 		if err != nil {
 			t.Fatalf("advance to %s: %v", next, err)
 		}
@@ -37,6 +42,13 @@ func TestDirectSessionLandingClosesAndRemainsInRecentHistory(t *testing.T) {
 	advance(work.PhaseDone, "", nil, "production deployment receipt")
 	if owned.Item.OwnerSession != "" || !owned.Item.Phase.Terminal() {
 		t.Fatalf("completion did not release ownership: %+v", owned.Item)
+	}
+	if owned.Item.ClosedAt.IsZero() || len(owned.EffectIDs) != 1 {
+		t.Fatalf("completion time/effect: %+v", owned)
+	}
+	effects, err := w.Store.Effects(context.Background(), "work.item.completed.push", v.Item.ID)
+	if err != nil || len(effects) != 1 || effects[0].State != store.EffectPending {
+		t.Fatalf("completion push was not recorded with the item: %+v %v", effects, err)
 	}
 	recent, truncated, err := w.RecentlyCompleted(context.Background(), "session-a")
 	if err != nil || truncated || len(recent) != 1 || recent[0].Item.ID != v.Item.ID {
