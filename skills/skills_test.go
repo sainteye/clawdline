@@ -234,6 +234,8 @@ func TestEveryGuideExplainsDeferredBoardAssignments(t *testing.T) {
 		`"reason"`,
 		"waiting_user",
 		"user_action",
+		"completion_report",
+		"root cause",
 	}
 	for _, topic := range Topics() {
 		guide, err := Guide(topic)

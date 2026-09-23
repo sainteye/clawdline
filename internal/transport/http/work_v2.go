@@ -138,6 +138,8 @@ type workV2GitReader interface {
 	IsAncestor(context.Context, string, string, string) (bool, error)
 }
 
+const workV2CompletionReportInstruction = "When substantial investigation was needed to find a non-obvious cause, add a user-readable completion_report before done; a straightforward fix does not require one."
+
 func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.WorkV2View,
 	session string, ask *workV2LandingRequest) (*app.VerifiedLandingV2, *app.WorkError) {
 	if ask == nil {
@@ -785,7 +787,7 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		// Session's assigned-item projection immediately. Typing is only a
 		// courtesy when a fresh reading still says idle. Working, waiting and
 		// unknown rows pull their to-do list after their present turn.
-		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items.", id, item.Item.Title)
+		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items. %s", id, item.Item.Title, workV2CompletionReportInstruction)
 		if _, sendErr := s.actions().SendIfIdle(ctx, sess.ID, brief); sendErr != nil {
 			refusal, deferred := sendErr.(app.Refusal)
 			if !deferred || refusal.Code != "session_not_idle" {
@@ -829,7 +831,8 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
 			Scope: item.Item.Description, Constraints: "Own only this Board item. Do not create Board items.",
 			RelevantReferences: "Board item: " + item.Item.ID,
-			Acceptance:         "Implement, verify, merge, and deploy according to the item's deployment policy."}})
+			Acceptance: "Implement, verify, merge, and deploy according to the item's deployment policy. " +
+				workV2CompletionReportInstruction}})
 	failure, resolvedTerminal, resolvedSession := "", "", ""
 	if openErr != nil {
 		failure = openErr.Error()

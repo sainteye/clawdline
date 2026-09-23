@@ -41,6 +41,52 @@ func TestOpeningAnOlderWorkStoreAddsTheRequestedUserAction(t *testing.T) {
 	}
 }
 
+func TestOpeningAnOlderWorkStoreAddsCompletionReportsWithoutLosingDocuments(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE work_v2_items (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, project_path TEXT NOT NULL, kind TEXT NOT NULL,
+  title TEXT NOT NULL, description TEXT NOT NULL, phase TEXT NOT NULL, condition TEXT NOT NULL DEFAULT '',
+  user_action TEXT NOT NULL DEFAULT '', deployment_policy TEXT NOT NULL, owner_session TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER,
+  cycle INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE work_v2_documents (
+  id TEXT PRIMARY KEY, work_id TEXT NOT NULL REFERENCES work_v2_items(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('spec','design','test','deploy','other')),
+  title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', reference TEXT NOT NULL DEFAULT '',
+  position INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+INSERT INTO work_v2_items
+  (id,project_id,project_path,kind,title,description,phase,condition,user_action,deployment_policy,
+   owner_session,created_by,created_at,updated_at,closed_at,cycle,version)
+VALUES ('item-a','p','/p','issue','Existing','Existing','created','','','agent_decides','','local',1,1,NULL,1,1);
+INSERT INTO work_v2_documents (id,work_id,role,title,body,reference,position,version,created_at,updated_at)
+VALUES ('doc-a','item-a','test','Existing test','green','',0,1,1,1)`)
+	if closeErr := db.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM work_v2_documents WHERE id='doc-a' AND role='test'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("preserved document: count=%d err=%v", count, err)
+	}
+	_, err = s.db.Exec(`INSERT INTO work_v2_documents
+      (id,work_id,role,title,body,reference,position,version,created_at,updated_at)
+      VALUES ('doc-b','item-a','completion_report','Completion report','root cause','',1,1,2,2)`)
+	if err != nil {
+		t.Fatalf("completion_report after migration: %v", err)
+	}
+}
+
 func v2Item(id string, at time.Time) work.ItemV2 {
 	return work.ItemV2{ID: id, ProjectID: "project-a", ProjectPath: "/project-a", Kind: work.KindFeature,
 		Title: "Visible feature", Description: "What should change", Phase: work.PhaseCreated,

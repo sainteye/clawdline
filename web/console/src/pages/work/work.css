@@ -249,6 +249,17 @@
 .work-milestones li[data-state="current"] {
     border-color: color-mix(in srgb, var(--accent) 48%, transparent); background: var(--accent-in); color: var(--accent);
 }
+.work-completion-reports { display: grid; gap: 8px; }
+.work-completion-report { border: 1px solid color-mix(in srgb, var(--ok) 38%, var(--line)); border-radius: 11px; background: color-mix(in srgb, var(--ok) 7%, var(--card)); }
+.work-completion-report > summary { display: flex; align-items: center; gap: 7px; padding: 10px 12px; color: var(--ok); list-style: none; cursor: pointer; }
+.work-completion-report > summary::-webkit-details-marker { display: none; }
+.work-completion-report > summary strong { color: var(--ink); font-size: 12px; }
+.work-completion-report > summary small { margin-left: auto; color: var(--faint); font: 10px/1 var(--mono); }
+.work-completion-report-authority, .work-completion-report-reference { margin: 0; padding: 0 12px 10px; color: var(--faint); font: 10px/1.55 var(--mono); overflow-wrap: anywhere; }
+.work-completion-report-body { padding: 1px 12px 12px; color: var(--dim); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.work-completion-report-body > :first-child { margin-top: 0; }
+.work-completion-report-body > :last-child { margin-bottom: 0; }
+.session-owned-report { display: inline-flex; width: fit-content; margin-top: 5px; padding: 2px 6px; border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 999px; color: var(--ok); font: 600 9px/1.4 var(--mono); font-style: normal; }
 .session-owned-item.completed { opacity: .84; }
 .session-owned-item.completed b { color: var(--ok); }
 .session-direct-todo.completed { opacity: .84; }

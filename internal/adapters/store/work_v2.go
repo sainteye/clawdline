@@ -56,7 +56,7 @@ CREATE INDEX IF NOT EXISTS work_v2_assignment_session ON work_v2_assignments(ses
 CREATE TABLE IF NOT EXISTS work_v2_documents (
   id         TEXT PRIMARY KEY,
   work_id    TEXT NOT NULL REFERENCES work_v2_items(id) ON DELETE CASCADE,
-  role       TEXT NOT NULL CHECK (role IN ('spec','design','test','deploy','other')),
+  role       TEXT NOT NULL CHECK (role IN ('spec','design','test','deploy','completion_report','other')),
   title      TEXT NOT NULL,
   body       TEXT NOT NULL DEFAULT '',
   reference  TEXT NOT NULL DEFAULT '',
@@ -193,8 +193,45 @@ func openWorkV2(db *sql.DB) error {
 	}
 	if !has {
 		_, err = db.Exec(`ALTER TABLE work_v2_items ADD COLUMN user_action TEXT NOT NULL DEFAULT ''`)
+		if err != nil {
+			return err
+		}
 	}
-	return err
+	return migrateWorkV2DocumentRoles(db)
+}
+
+// migrateWorkV2DocumentRoles widens the CHECK on an existing document table.
+// SQLite cannot alter a CHECK in place, so keep every row while rebuilding the
+// table. The schema call recreates the index after its old copy is dropped.
+func migrateWorkV2DocumentRoles(db *sql.DB) error {
+	var ddl string
+	err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='work_v2_documents'`).Scan(&ddl)
+	if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "completion_report")) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	steps := []string{
+		`ALTER TABLE work_v2_documents RENAME TO work_v2_documents_before_completion_reports`,
+		`DROP INDEX IF EXISTS work_v2_documents_item`,
+		workV2Schema,
+		`INSERT INTO work_v2_documents (id,work_id,role,title,body,reference,position,version,created_at,updated_at)
+		 SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+		 FROM work_v2_documents_before_completion_reports`,
+		`DROP TABLE work_v2_documents_before_completion_reports`,
+	}
+	for _, step := range steps {
+		if _, err := tx.Exec(step); err != nil {
+			return fmt.Errorf("work_v2_documents.role: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 type WorkV2Tx struct {

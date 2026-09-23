@@ -70,6 +70,19 @@ test("assigned Board items open a current detail modal with the requested user a
   assert.match(source, /item\.images\.map/)
 })
 
+test("a recent Board item opens its durable completion report in one click", () => {
+  const report = readFileSync(new URL("../pages/work/WorkCompletionReport.tsx", import.meta.url), "utf8")
+  const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
+  const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
+  assert.match(api, /documents\?: WorkV2Document\[\]/)
+  assert.match(source, /completionReports\(item\)\.length/)
+  assert.match(source, /結案報告/)
+  assert.match(source, /<WorkCompletionReports item=\{item\} expanded/)
+  assert.match(report, /role === "completion_report"/)
+  assert.match(report, /L\.richTextHTML\(document\.body\)/)
+  assert.match(styles, /\.work-completion-report/)
+})
+
 test("folded Session todos expose a nonzero recent completion count", () => {
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
   assert.match(source, /const completedCount = \(page\?\.recent_items\.length \?\? 0\) \+ completedDirect\.length/)

@@ -203,6 +203,12 @@ The owner can add, update, order, and remove item documents inside registered co
 Repository-relative paths cannot escape the Project. A URL/path is never fetched as a side effect
 of storing it. Oversize content or a full item is refused without eviction.
 
+An owner may add a `completion_report` before closing work whose root cause or outcome required
+substantial investigation. The report records the user-readable cause, correction, verification,
+and remaining boundary; a straightforward fix does not require one. It remains attached to the
+closed item, appears on its Board card, and opens from that Session's Recently Done row. The
+narrative never replaces verification, landing, or deployment receipts.
+
 ### WS2-D03 — Steps are item-local aids
 
 On a successful assignment, an executable item with no steps and at least two top-level
