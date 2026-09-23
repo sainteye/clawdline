@@ -126,15 +126,21 @@ than being read as zero.
 **A Session row goes out when something a viewer reads has changed.** Each
 `s/<machine>/<session>` payload is `{"session": <row>, "at": <scan seconds>, "scan": {…}}`, where
 the row is the one `/v1/sessions` serializes. `CloudAppBridge` compares each row with the one it
-last published for that Session with three freshness-only paths removed —
+last published for that Session with four freshness-only paths removed — `source.observed_at`,
 `closeability.observed_at`, `closeability.session_generation` and
-`closeability.source.observed_at` — and skips it when nothing else differs. Those three move on
-every SessionWatch reading; no reader in `Resources/web/app/js` uses them (its closeability gate
-reads `state`, `reasons`, `mover`, `attestation_id`, `version` and `source.freshness`, which still
-count). Measured in this Mac's log on 2026-09-15 from 04:00 to 06:00, with nobody working and before
-this rule: 195 Session publications an hour, every one of them republishing every row, because
-`closeability.observed_at` is the projection's own clock. A row that does differ is still published whole, freshness values
-included. `work_since`, `agents[].at`, `shells[].at` and the coordination `createdAt` clocks are
+`closeability.source.observed_at` — and skips it when nothing else differs. Those four move on
+every SessionWatch reading. The closeability gate reads `state`, `reasons`, `mover`,
+`attestation_id`, `version` and `source.freshness`, which still count. The console reads the
+top-level source clock only as existence evidence after a close; it is carried on every meaningful
+publication and heartbeat, but the clock advancing alone neither republishes the row nor
+invalidates the transcript cache. Measured in this Mac's log on 2026-09-15 from 04:00 to 06:00,
+with nobody working and before the original rule: 195 Session publications an hour, every one of
+them republishing every row, because `closeability.observed_at` is the projection's own clock. A
+second recurrence was measured on 2026-09-23: ten unchanged rows went out every five seconds to
+three viewers because the newer top-level `source.observed_at` clock had not been added to the
+comparison rule — 120 row envelopes and 360 viewer deliveries per minute. A row that does differ
+is still published whole, freshness values included. `work_since`,
+`agents[].at`, `shells[].at` and the coordination `createdAt` clocks are
 evidence instants that move only with what they describe, so they count like any other field.
 **Every three minutes the rows go out again.** Because an idle Mac may now publish nothing, and the
 relay forgets every row whenever its object is evicted, a scan that finds three minutes gone since
