@@ -55,7 +55,7 @@ func TestPlanTable(t *testing.T) {
 	}{
 		{TerminalAuto, true, TmuxRunning, PlanITerm},
 		{TerminalAuto, false, TmuxRunning, PlanTmux},
-		{TerminalAuto, false, TmuxInstalled, PlanNotRunning},
+		{TerminalAuto, false, TmuxInstalled, PlanTmuxDetached},
 		{TerminalITerm, false, TmuxRunning, PlanNotRunning},
 		{TerminalTmux, true, TmuxRunning, PlanTmux},
 		{TerminalTmux, true, TmuxInstalled, PlanTmuxDetached},

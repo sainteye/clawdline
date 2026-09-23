@@ -172,7 +172,9 @@ refused.
 ### WS2-L05 — Conditions preserve the phase
 
 At each nonterminal phase, setting `blocked` or `waiting_user` keeps the phase unchanged and makes
-both fields visible. Clearing the condition restores the phase presentation. Broker-derived
+both fields visible. `waiting_user` without a nonblank `user_action` is refused; the named action
+appears on the Board and in the owning Session's item-detail modal. Clearing the condition clears
+that action and restores the phase presentation. Broker-derived
 `owner_offline`/`evidence_unknown` cannot be cleared by cosmetic Agent text.
 
 ### WS2-L06 — Reopen starts another cycle
@@ -198,9 +200,13 @@ of storing it. Oversize content or a full item is refused without eviction.
 
 ### WS2-D03 — Steps are item-local aids
 
+On a successful assignment, an executable item with no steps and at least two top-level
+Markdown list rows in its description atomically receives one step per row. A single or nested
+row does not seed, a failed assignment does not seed, and reassignment does not duplicate steps.
 The owner can add, reorder, complete, and reopen steps. Completing every step does not advance the
-item; advancing the item does not silently complete steps. Steps never appear as Board cards or
-Session assignments.
+item, and advancing phases does not silently complete steps; however, `done` is refused with
+`steps_incomplete` until every step has an owner completion receipt. Steps are shown inside the
+parent Board card and Session responsibility and never become Board cards or assignments.
 
 ### WS2-D04 — Reference images are durable person-owned input
 
@@ -275,18 +281,22 @@ open rows, and creates no work item/proposal/task.
 Keyboard acceptance: focus enters the modal, Tab is trapped within it, Escape cancels without a
 write, submit returns focus to the `+` control, and the narrow layout keeps all actions reachable.
 
-### WS2-T02 — Send is person-only and exactly once
+### WS2-T02 — Send and reminder delivery are person-only and bounded by observation
 
 Pressing Send records durable intent and types the row once. Successful delivery sets `sent_at` and
 shows `✓`. A retry replays the receipt. Machine/Agent calls to Send are refused. Busy, gone,
-ambiguous, and unreadable targets each have typed outcomes and do not falsely set `sent_at`.
+ambiguous, and unreadable targets each have typed outcomes and do not falsely set `sent_at`. A
+second new request is refused while that delivery remains unread. Once `read_at` is present and the
+row remains open, the person may send a reminder exactly once; success replaces `sent_at`, clears
+the stale `read_at`, and returns the row to `✓`.
 
 ### WS2-T03 — Agent read returns all next work and produces the double mark
 
 The owning Session's Agent read returns its assigned items and open direct to-dos, and atomically
 sets each direct row's `read_at` once; the UI shows `✓✓`. Reading an unsent row moves directly from
-no mark to `✓✓` and disables Send. A person viewing the panel does not mark it read; another
-Session cannot read or mark it.
+no mark to `✓✓`. The UI says this means “synchronized, not completed” and offers `Send again` while
+the row remains open. A person viewing the panel does not mark it read; another Session cannot read
+or mark it.
 
 The two checks are visually overlapping and have localized accessible text for “read”. Unsent,
 sent, and read remain distinguishable without color.
@@ -294,7 +304,9 @@ sent, and read remain distinguishable without color.
 ### WS2-T04 — Completion authority is narrow
 
 The owning Agent and a person can check a row complete. The Agent cannot edit text, Send, Delete,
-or reopen it. Completion is idempotent and retains sent/read timestamps.
+or reopen it. Completion is idempotent and retains sent/read timestamps. The person projection
+retains the completed row in a recent group with a green check, while the open count and Agent read
+exclude it. Explicit Delete remains available after confirmation.
 
 ### WS2-T05 — Delete is person-only and removes content
 

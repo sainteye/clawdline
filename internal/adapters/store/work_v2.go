@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS work_v2_items (
   description       TEXT NOT NULL,
   phase             TEXT NOT NULL CHECK (phase IN ('created','assigning','assigned','implementing','verifying','merging','deploying','done','cancelled')),
   condition         TEXT NOT NULL DEFAULT '' CHECK (condition IN ('','blocked','waiting_user','owner_required','owner_offline','evidence_unknown','assignment_failed','assigned_unnotified')),
+  user_action       TEXT NOT NULL DEFAULT '',
   deployment_policy TEXT NOT NULL CHECK (deployment_policy IN ('required','not_required','agent_decides')),
   owner_session     TEXT NOT NULL DEFAULT '',
   created_by        TEXT NOT NULL,
@@ -183,7 +184,16 @@ var (
 )
 
 func openWorkV2(db *sql.DB) error {
-	_, err := db.Exec(workV2Schema)
+	if _, err := db.Exec(workV2Schema); err != nil {
+		return err
+	}
+	has, err := hasColumn(db, "work_v2_items", "user_action")
+	if err != nil {
+		return err
+	}
+	if !has {
+		_, err = db.Exec(`ALTER TABLE work_v2_items ADD COLUMN user_action TEXT NOT NULL DEFAULT ''`)
+	}
 	return err
 }
 
@@ -212,10 +222,10 @@ func (t *WorkV2Tx) CompleteReceipt(k ReceiptKey, a ReceiptAnswer) error {
 	return nil
 }
 
-const workV2Columns = `id, project_id, project_path, kind, title, description, phase, condition,
+const workV2Columns = `id, project_id, project_path, kind, title, description, phase, condition, user_action,
   deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version`
 
-const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description, i.phase, i.condition,
+const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description, i.phase, i.condition, i.user_action,
   i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle, i.version`
 
 func scanWorkV2(sc scanner) (work.ItemV2, error) {
@@ -223,7 +233,7 @@ func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	var created, updated int64
 	var closed sql.NullInt64
 	err := sc.Scan(&i.ID, &i.ProjectID, &i.ProjectPath, &i.Kind, &i.Title, &i.Description, &i.Phase,
-		&i.Condition, &i.DeploymentPolicy, &i.OwnerSession, &i.CreatedBy, &created, &updated, &closed,
+		&i.Condition, &i.UserAction, &i.DeploymentPolicy, &i.OwnerSession, &i.CreatedBy, &created, &updated, &closed,
 		&i.Cycle, &i.Version)
 	if err == sql.ErrNoRows {
 		return work.ItemV2{}, ErrNoWorkV2
@@ -285,11 +295,11 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 		return full
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_items
-      (id, project_id, project_path, kind, title, description, phase, condition, deployment_policy,
-       owner_session, created_by, created_at, updated_at, closed_at, cycle, version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+      (id, project_id, project_path, kind, title, description, phase, condition, user_action,
+       deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
 		i.ID, i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.Phase, i.Condition,
-		i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle, i.Version)
+		i.UserAction, i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle, i.Version)
 	if err != nil {
 		return err
 	}
@@ -300,10 +310,10 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 
 func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) error {
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_items SET project_id=?, project_path=?, kind=?, title=?,
-      description=?, phase=?, condition=?, deployment_policy=?, owner_session=?, updated_at=?, closed_at=?,
+      description=?, phase=?, condition=?, user_action=?, deployment_policy=?, owner_session=?, updated_at=?, closed_at=?,
       cycle=?, version=version+1 WHERE id=? AND version=?`,
 		next.ProjectID, next.ProjectPath, next.Kind, next.Title, next.Description, next.Phase, next.Condition,
-		next.DeploymentPolicy, next.OwnerSession, next.UpdatedAt.Unix(), zeroOrUnix(next.ClosedAt), next.Cycle,
+		next.UserAction, next.DeploymentPolicy, next.OwnerSession, next.UpdatedAt.Unix(), zeroOrUnix(next.ClosedAt), next.Cycle,
 		prev.ID, prev.Version)
 	if err != nil {
 		return err
@@ -682,6 +692,10 @@ func (t *WorkV2Tx) Step(id string) (work.StepV2, error) {
 	return st, nil
 }
 
+func (t *WorkV2Tx) Steps(workID string) ([]work.StepV2, error) {
+	return queryWorkV2Steps(t.ctx, t.tx, workID)
+}
+
 func (t *WorkV2Tx) PutStep(prev, next work.StepV2) error {
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_steps SET title=?,done=?,position=?,completed_by=?,completed_at=?,version=version+1
     WHERE id=? AND version=?`, next.Title, next.Done, next.Position, next.CompletedBy, zeroOrUnix(next.CompletedAt), prev.ID, prev.Version)
@@ -698,7 +712,13 @@ func (t *WorkV2Tx) PutStep(prev, next work.StepV2) error {
 }
 
 func (s *Store) WorkV2Steps(ctx context.Context, workID string) ([]work.StepV2, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
+	return queryWorkV2Steps(ctx, s.db, workID)
+}
+
+func queryWorkV2Steps(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, workID string) ([]work.StepV2, error) {
+	rows, err := q.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
     FROM work_v2_steps WHERE work_id=? ORDER BY position,id`, workID)
 	if err != nil {
 		return nil, err
@@ -895,8 +915,15 @@ func (s *Store) DirectTodosV2(ctx context.Context, session string, includeComple
 		stmt := `SELECT ` + directTodoV2Columns + ` FROM session_direct_todos WHERE session_id=?`
 		if !includeCompleted {
 			stmt += ` AND completed_at IS NULL`
+			stmt += ` ORDER BY created_at,id LIMIT ?`
+		} else {
+			// Open work remains the actionable prefix in creation order. Completed
+			// rows follow newest first so the bounded person view keeps the most
+			// useful confirmations without hiding an old open row.
+			stmt += ` ORDER BY completed_at IS NOT NULL,
+        CASE WHEN completed_at IS NULL THEN created_at END,
+        CASE WHEN completed_at IS NOT NULL THEN completed_at END DESC,id LIMIT ?`
 		}
-		stmt += ` ORDER BY created_at,id LIMIT ?`
 		rows, err := tx.tx.QueryContext(ctx, stmt, session, limit+1)
 		if err != nil {
 			return err

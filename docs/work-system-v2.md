@@ -136,8 +136,16 @@ Item-local steps are a lightweight Agent aid:
 - creator and completion facts;
 - version.
 
-They do not create Board items, do not assign Sessions, and do not automatically advance the
-item's lifecycle. A completed item may retain its steps as history.
+On a successful assignment, an executable item with no existing steps treats two or more
+top-level Markdown list rows in its description as explicit subitems and atomically seeds one step
+per row. A single list row is left as prose, nested rows are not promoted, and reassignment never
+duplicates existing steps. The description remains the authoritative full text; an overlong step
+label is shortened only for the bounded TODO presentation.
+
+Steps do not create Board items, do not assign Sessions, and do not automatically advance the
+item's lifecycle. The owning Agent must explicitly complete every step before `done` is accepted;
+other phase transitions do not silently complete them. A completed item retains its steps as
+history.
 
 ### 5.4 Reference images
 
@@ -180,7 +188,7 @@ Session assignment normally moves from `created` to `assigned` in one transactio
 | `verifying` | owning Agent | verification plan or references recorded |
 | `merging` | owning Agent | successful verification evidence recorded |
 | `deploying` | owning Agent | broker landing, or a direct-Session receipt whose exact commit is contained by both the Project's local target and its remote-tracking target |
-| `done` | owning Agent | deployment evidence is valid, or deployment is explicitly not required |
+| `done` | owning Agent | deployment evidence is valid, or deployment is explicitly not required; every item step is complete |
 | `cancelled` | person | cancellation reason; assignment released |
 
 The `done` transition records the completing owner, releases the active assignment, and removes
@@ -221,6 +229,12 @@ losing the stage at which it is blocked.
 
 Only the owning Agent may set or clear an Agent condition. The broker derives `owner_offline` and
 `evidence_unknown` from typed readings without moving the main phase.
+
+`waiting_user` always names the requested action in `user_action`; setting the condition without
+that text is refused. The field is owner-written, is capped at 8 KiB, and is cleared atomically
+when the condition clears or the item changes phase, owner, or terminal state. Board cards and the
+assigned-item detail show the request as a first-class callout rather than asking the person to
+infer it from the description.
 
 ### 6.3 Deployment policy
 
@@ -292,6 +306,10 @@ The briefing names the item, Project, objective, description, reference images, 
 lifecycle commands, and ownership rules. It does not create a child relationship or give the Agent permission to
 create another Board item.
 
+Successful activation is also the claim boundary for structured subitems: when the item has no
+steps and its description has at least two top-level Markdown list rows, activation seeds those
+steps in the same transaction as ownership. A failed opening seeds nothing.
+
 For a first assignment, failure returns the item to `created` with `assignment_failed`; the failed
 assignment remains in history and no owner is projected.
 
@@ -353,8 +371,10 @@ The panel has three explicitly labelled groups.
 ### 11.1 Assigned items
 
 One row per non-terminal item owned by the Session, with Project icon, kind, title, phase,
-condition, item-step count, and a link to the item. It appears immediately after assignment and
-remains until completion, cancellation, or reassignment. The Agent to-do read returns these rows
+condition, item-step count, and each step's completion receipt. A control opens the item's description,
+requested user action, progress, deployment policy, and reference images in a modal. It appears
+immediately after assignment and remains until completion, cancellation, or reassignment. The Agent
+to-do read returns these rows
 as `assigned_items` as well as the direct to-dos; root guides require that read at turn boundaries,
 so an assignment made during a working turn waits without terminal input and becomes the next
 owned work.
@@ -367,24 +387,32 @@ bounded child of the to-do, and returned as metadata; its bytes use the same opa
 route as Board references. A row has text, reference-image metadata, creation order, state, and
 three independent receipts:
 
-- `sent_at`: the person pressed Send and terminal delivery succeeded (`✓`);
-- `read_at`: the Session read its to-do API (`✓✓`, which supersedes the single mark);
+- `sent_at`: the person most recently pressed Send and terminal delivery succeeded (`✓`);
+- `read_at`: the Session read its to-do API after that delivery (`✓✓`, which supersedes the single mark);
 - `completed_at`: the person or Session checked it complete.
 
-A Session may read an unsent row, in which case it moves directly from no mark to `✓✓`; Send is
-then disabled to avoid duplicate delivery. Send and Delete are person-only. Send hands the durable
-PNG bytes to the existing terminal picture-delivery path, so Claude Code receives pasted images
-and other assistants receive readable drop paths under the same fallback rules as the composer.
+A Session may read an unsent row, in which case it moves directly from no mark to `✓✓`. This is a
+queue-synchronization receipt, not a claim that implementation started: a turn-boundary poll can
+observe the row while the Session is still finishing earlier work. If the row remains open, the
+person may press Send again. A successful reminder replaces `sent_at` and clears the earlier
+`read_at`, returning the row to `✓` until the Session reads its queue again. A sent row that has not
+yet been read cannot be doubled. Send and Delete are person-only. Send hands the durable PNG bytes
+to the existing terminal picture-delivery path, so Claude Code receives pasted images and other
+assistants receive readable drop paths under the same fallback rules as the composer.
 Images cannot be appended after an explicit Send or completion; an Agent pull that races the short
 upload sequence sees the complete set on its next read. Delete removes the row and cascades its image bytes from
 the active store as explicitly requested; its security/operation audit contains metadata, not the
 deleted text or images. Agent access may only read and complete its own row.
 
 The Console draws `✓✓` as an overlapping double-check and exposes localized accessible text for
-unsent, sent, and read; color alone never carries the receipt state.
+unsent, sent, synchronized-but-open, and completed; color alone never carries the receipt state.
+Completed rows remain in a recent-completion group with a green check until the person explicitly
+deletes them. The open count excludes those retained confirmations.
 
-Direct to-dos are returned oldest first so an Agent can process them in order. The Agent may use
-children for independent rows, but Clawdline does not automatically schedule or parallelize them.
+Open direct to-dos are returned oldest first so an Agent can process them in order. Person reads
+place all open rows first and then the newest completed rows, so the bounded view cannot hide old
+unfinished work behind completion history. The Agent may use children for independent rows, but
+Clawdline does not automatically schedule or parallelize them.
 
 ### 11.3 Execution detail
 

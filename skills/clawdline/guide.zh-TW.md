@@ -473,6 +473,24 @@ Session 的看板項目，`direct_todos` 是快速交辦。這條 pull 路徑讓
 turn。完成目前的 turn 之後，把 assigned item 當成下一件自己負責的工作，並從
 `GET /v1/work/v2/items/<id>` 讀取完整內容。
 
+負責項目的 Agent 要等待使用者動作時，使用 machine-authenticated route：
+
+```
+PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>",
+ "condition": "waiting_user", "user_action": "請使用者完成的單一具體動作"}
+```
+
+`user_action` 最多 8 KiB，而且只屬於 `waiting_user`；缺少具體動作或在其他 condition 寫入都會被具名拒絕。
+不再等待時，用同一路由把 `condition` 設成空字串，daemon 會一起清掉 `user_action`，避免看板留下過期要求。
+
+已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
+steps；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，以 machine authentication 和
+Idempotency-Key 呼叫 `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete`，body 是
+`{"expected_version": <item version>, "session_id": "<你的 conversation id>"}`。版本衝突時先重讀。
+只要還有任何 step 未完成，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
+step 勾成完成。
+
 `/v1/board` 是 Swift app 的舊卡片，唯讀。landing 是 broker 的事實：項目永遠不會被人手動標成已 landing
 （`422 landing_is_broker_fact`）。
 

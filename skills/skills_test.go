@@ -226,8 +226,11 @@ func TestEveryGuideExplainsDeferredBoardAssignments(t *testing.T) {
 	wants := []string{
 		"GET /v1/work/v2/agent/session-todos/<conversation id>",
 		"GET /v1/work/v2/items/<id>",
+		"PATCH /v1/work/v2/agent/items/<id>/edit",
 		"assigned_items",
 		"direct_todos",
+		"waiting_user",
+		"user_action",
 	}
 	for _, topic := range Topics() {
 		guide, err := Guide(topic)

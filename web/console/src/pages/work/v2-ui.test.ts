@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 const source = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
+const workSteps = readFileSync(new URL("./WorkSteps.tsx", import.meta.url), "utf8")
 const styles = readFileSync(new URL("./work.css", import.meta.url), "utf8")
+const sessions = readFileSync(new URL("../../Sessions.tsx", import.meta.url), "utf8")
+const todos = readFileSync(new URL("../../session/Todos.tsx", import.meta.url), "utf8")
 
 test("the Project picker draws each Project mark in its trigger and menu", () => {
   assert.match(source, /function ProjectPicker/)
@@ -41,8 +44,44 @@ test("work cards add, show, open, and remove durable reference images", () => {
 test("unassigned executable work is visible and assignable", () => {
   assert.match(source, /const unassigned = items\.filter\(\(item\) => item\.area === "unassigned"/)
   assert.match(source, /<BoardRegion title="待指派" items=\{unassigned\}/)
-  assert.match(source, /const assignable = item\.area !== "planning"/)
+  assert.match(source, /const assignable = item\.area !== "planning" && !item\.closed_at && !item\.owner_session/)
   assert.doesNotMatch(source, /item\.area === "execution"/)
+})
+
+test("assignment choices show Session activity, unfinished work, and selected details", () => {
+  assert.match(source, /function SessionAssignmentPicker/)
+  assert.match(source, /sessionActivityName\(session\.state\)/)
+  assert.match(source, /`\$\{counts\.board\} 看板 · \$\{counts\.todos\} TODO`/)
+  assert.match(source, /title="還在做"/)
+  assert.match(source, /title="直接待辦"/)
+  assert.match(source, /title="最近完成"/)
+  assert.match(source, /readSessionWorkV2\(session\.id\)/)
+  assert.match(styles, /\.work-session-detail/)
+  assert.doesNotMatch(source, /<select className="work-input"[^>]*aria-label="指派既有 Session"/)
+})
+
+test("assigned Board items show their generated TODO receipts", () => {
+  assert.match(workSteps, /function WorkSteps/)
+  assert.match(source, /item\.steps/)
+  assert.match(workSteps, /TODO · \{done\} \/ \{steps\.length\}/)
+  assert.match(styles, /\.work-item-steps/)
+  assert.match(todos, /<WorkSteps steps=\{item\.steps\}/)
+})
+
+test("assigned work links to its current Session instead of offering assignment again", () => {
+  assert.match(source, /import \{ sessionFragment \} from "\.\.\/\.\.\/session\/address\.js"/)
+  assert.match(source, /sessions\.find\(\(session\) => session\.sessionId === item\.owner_session\)/)
+  assert.match(source, /className="work-session-link" href=\{sessionFragment\(owner\.id\)\}/)
+  assert.match(source, /aria-label=\{`前往正在實作「\$\{item\.title\}」的 Session`\}/)
+})
+
+test("Board cards show the same lifecycle milestones as their owning Session", () => {
+  const milestones = readFileSync(new URL("./WorkMilestones.tsx", import.meta.url), "utf8")
+  assert.match(source, /<WorkMilestones phase=\{item\.phase\} \/>/)
+  assert.match(milestones, /className="work-milestones"/)
+  assert.match(milestones, /aria-label="項目進度"/)
+  assert.match(styles, /\.work-milestones li\[data-state="done"\]/)
+  assert.match(styles, /\.work-milestones li\[data-state="current"\]/)
 })
 
 test("the create modal accepts reference pictures before creating the item", () => {
@@ -50,6 +89,29 @@ test("the create modal accepts reference pictures before creating the item", () 
   assert.match(source, /建立項目後上傳/)
   assert.match(source, /deployment_policy: "agent_decides" }, images\)/)
   assert.match(source, /addWorkV2Image\(answer\.item\.id/)
+})
+
+test("Board cards name the action an Agent needs from the person", () => {
+  assert.match(source, /item\.user_action/)
+  assert.match(source, /需要你做的事/)
+  assert.match(styles, /\.work-user-action/)
+})
+
+test("the Session list shortcut creates an item and keeps its assignment card in a modal", () => {
+  assert.match(sessions, /id="work-create-go"/)
+  assert.match(sessions, /aria-label="新增看板項目"/)
+  assert.match(sessions, /onClick=\{openNewWorkItem\}/)
+  assert.match(source, /onOpenNewWorkItem/)
+  assert.match(source, /setCreatedItem\(created\)/)
+  assert.match(source, /<CreatedWorkModal item=\{createdItem\}/)
+  assert.match(source, /<WorkCard item=\{item\} sessions=\{sessions\}/)
+  assert.match(styles, /\.work-created-panel/)
+  assert.match(styles, /\.work-created-modal[^}]*overflow:\s*auto/)
+  assert.match(styles, /\.work-created-panel[^}]*overflow:\s*visible/)
+})
+
+test("the create actions have breathing room above them", () => {
+  assert.match(styles, /\.work-new-modal \.work-actions[^}]*margin-top:/)
 })
 
 test("reference pictures use fetch-backed object URLs so Cloud can render their bytes", () => {

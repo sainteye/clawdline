@@ -2,13 +2,44 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+func TestOpeningAnOlderWorkStoreAddsTheRequestedUserAction(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE work_v2_items (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, project_path TEXT NOT NULL, kind TEXT NOT NULL,
+      title TEXT NOT NULL, description TEXT NOT NULL, phase TEXT NOT NULL, condition TEXT NOT NULL DEFAULT '',
+      deployment_policy TEXT NOT NULL, owner_session TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER, cycle INTEGER NOT NULL DEFAULT 1,
+      version INTEGER NOT NULL DEFAULT 1)`)
+	if closeErr := db.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	has, err := hasColumn(s.db, "work_v2_items", "user_action")
+	if err != nil || !has {
+		t.Fatalf("user_action migration: has=%v err=%v", has, err)
+	}
+}
 
 func v2Item(id string, at time.Time) work.ItemV2 {
 	return work.ItemV2{ID: id, ProjectID: "project-a", ProjectPath: "/project-a", Kind: work.KindFeature,
@@ -93,6 +124,40 @@ func TestDirectTodoReadMarksOnlyItsSessionAndDeleteRemovesText(t *testing.T) {
 	got, _, _ = s.DirectTodosV2(ctx, "session-a", true, false, 20)
 	if len(got) != 0 {
 		t.Fatalf("deleted text remained: %+v", got)
+	}
+}
+
+func TestPersonTodoReadKeepsCompletedRowsAfterOpenRows(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	completed := work.DirectTodoV2{ID: "done", SessionID: "session-a", Text: "finished",
+		CreatedBy: "local", CreatedAt: at, Version: 1}
+	open := work.DirectTodoV2{ID: "open", SessionID: "session-a", Text: "next",
+		CreatedBy: "local", CreatedAt: at.Add(time.Minute), Version: 1}
+	for _, row := range []work.DirectTodoV2{completed, open} {
+		if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.CreateDirectTodo(row) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		prev, err := tx.DirectTodo(completed.ID)
+		if err != nil {
+			return err
+		}
+		next := prev
+		next.CompletedAt, next.CompletedBy = at.Add(2*time.Minute), "session-a"
+		return tx.PutDirectTodo(prev, next)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, truncated, err := s.DirectTodosV2(ctx, "session-a", true, false, 20)
+	if err != nil || truncated || len(rows) != 2 || rows[0].ID != open.ID || rows[1].ID != completed.ID {
+		t.Fatalf("person read: %+v truncated=%v err=%v", rows, truncated, err)
 	}
 }
 

@@ -105,6 +105,7 @@ type ItemV2 struct {
 	Description      string
 	Phase            Phase
 	Condition        Condition
+	UserAction       string
 	DeploymentPolicy DeploymentPolicy
 	OwnerSession     string
 	CreatedBy        string

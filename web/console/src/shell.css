@@ -32,3 +32,13 @@ html.booting body {
 }
 
 .session-reading[hidden] { display: none; }
+
+/* The drawer's marks share the row's color, including hover and aria-current,
+   while keeping every label on one measured text edge. */
+.sidebar-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-right: 12px;
+  stroke-width: 1.75;
+}

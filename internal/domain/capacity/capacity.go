@@ -190,6 +190,7 @@ const (
 	SessionTitleAge           = "session.title_age"
 	WorkItemTitleBytes        = "work.item_title_bytes"
 	WorkItemDescriptionBytes  = "work.item_description_bytes"
+	WorkItemUserActionBytes   = "work.item_user_action_bytes"
 	SessionDirectTodoBytes    = "session.direct_todo_bytes"
 	WorkRequestBodyBytes      = "work.request_body_bytes"
 	// T4: where a person takes part.
@@ -594,6 +595,12 @@ func Register() []Entry {
 			Limit: 64 << 10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Projects: true,
 			Sources: []string{"internal/app.workV2DescriptionLimit"},
+		},
+		{
+			Name: WorkItemUserActionBytes, Class: Evidence, Unit: Bytes,
+			Limit: 8 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Projects: true,
+			Sources: []string{"internal/app.workV2UserActionLimit"},
 		},
 		{
 			Name: SessionDirectTodoBytes, Class: Evidence, Unit: Bytes,

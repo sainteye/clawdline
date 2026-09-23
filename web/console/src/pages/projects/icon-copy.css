@@ -2,8 +2,8 @@
 .project-icon-copy summary { cursor: pointer; font-weight: 600; }
 .project-icon-copy p { color: var(--dim); line-height: 1.6; }
 .project-icon-copy label { display: grid; gap: 8px; }
-.project-icon-copy select { width: 100%; min-width: 0; padding: 8px; }
+.project-icon-copy select { width: 100%; min-width: 0; padding: 8px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
 .project-icon-preview, .project-icon-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
 .project-icon-preview > span { display: flex; align-items: center; gap: 8px; }
 .project-icon-actions button { padding: 8px 12px; }
-.project-icon-copy [role="alert"] { color: var(--red); }
+.project-icon-copy [role="alert"] { color: var(--bad); }

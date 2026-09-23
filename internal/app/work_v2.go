@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/work"
@@ -17,6 +19,7 @@ const (
 	WorkV2PageSize         = 100
 	workV2TitleLimit       = 240
 	workV2DescriptionLimit = 64 << 10
+	workV2UserActionLimit  = 8 << 10
 	directTodoTextLimit    = 8 << 10
 )
 
@@ -51,6 +54,10 @@ func workV2Error(status int, code, message string) error {
 }
 
 func mapWorkV2Error(err error) error {
+	var typed *WorkError
+	if errors.As(err, &typed) {
+		return typed
+	}
 	var refusal work.RefusalV2
 	switch {
 	case err == nil:
@@ -182,7 +189,11 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner string, terminal
 		if imageErr != nil {
 			return nil, false, mapWorkV2Error(imageErr)
 		}
-		out = append(out, WorkV2View{Item: i, Images: images})
+		steps, stepErr := w.Store.WorkV2Steps(ctx, i.ID)
+		if stepErr != nil {
+			return nil, false, mapWorkV2Error(stepErr)
+		}
+		out = append(out, WorkV2View{Item: i, Images: images, Steps: steps})
 	}
 	return out, truncated, nil
 }
@@ -198,7 +209,11 @@ func (w *WorkSystemV2) RecentlyCompleted(ctx context.Context, session string) ([
 		if imageErr != nil {
 			return nil, false, mapWorkV2Error(imageErr)
 		}
-		out = append(out, WorkV2View{Item: i, Images: images})
+		steps, stepErr := w.Store.WorkV2Steps(ctx, i.ID)
+		if stepErr != nil {
+			return nil, false, mapWorkV2Error(stepErr)
+		}
+		out = append(out, WorkV2View{Item: i, Images: images, Steps: steps})
 	}
 	return out, truncated, nil
 }
@@ -306,6 +321,7 @@ type EditWorkV2 struct {
 	Title           *string
 	Description     *string
 	Condition       *work.Condition
+	UserAction      *string
 	Actor           string
 	OwnerSession    string
 	Person          bool
@@ -345,10 +361,27 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 				return work.RefuseV2("condition_not_agent_owned", "The Agent may set only blocked or waiting_user.")
 			}
 			next.Condition = *c.Condition
+			if next.Condition != work.ConditionWaitingUser {
+				next.UserAction = ""
+			}
+		}
+		if c.UserAction != nil {
+			next.UserAction = strings.TrimSpace(*c.UserAction)
+			if len(next.UserAction) > workV2UserActionLimit {
+				return work.RefuseV2("user_action_too_large", "The requested user action is at most 8 KiB.")
+			}
+		}
+		if c.Condition != nil || c.UserAction != nil {
+			switch {
+			case next.Condition == work.ConditionWaitingUser && next.UserAction == "":
+				return work.RefuseV2("user_action_required", "Say exactly what the person needs to do while waiting for them.")
+			case next.Condition != work.ConditionWaitingUser && next.UserAction != "":
+				return work.RefuseV2("user_action_requires_waiting_user", "A requested user action belongs to the waiting_user condition.")
+			}
 		}
 		next.UpdatedAt = w.now()
 		if err := tx.PutItem(prev, next, "item.edited", c.Actor, payload(map[string]any{"title": c.Title != nil,
-			"description": c.Description != nil, "condition": c.Condition})); err != nil {
+			"description": c.Description != nil, "condition": c.Condition, "user_action": c.UserAction != nil})); err != nil {
 			return err
 		}
 		next.Version++
@@ -372,6 +405,64 @@ type AssignWorkV2 struct {
 	Model           string
 	Actor           string
 	AssignmentID    string
+}
+
+func descriptionStepTitles(description string) []string {
+	titles := []string{}
+	for _, line := range strings.Split(strings.ReplaceAll(description, "\r\n", "\n"), "\n") {
+		if line == "" || line[0] == ' ' || line[0] == '\t' {
+			continue
+		}
+		start := -1
+		if len(line) >= 2 && strings.ContainsRune("-*+", rune(line[0])) && (line[1] == ' ' || line[1] == '\t') {
+			start = 2
+		} else {
+			i := 0
+			for i < len(line) && line[i] >= '0' && line[i] <= '9' {
+				i++
+			}
+			if i > 0 && i+1 < len(line) && (line[i] == '.' || line[i] == ')') && (line[i+1] == ' ' || line[i+1] == '\t') {
+				start = i + 2
+			}
+		}
+		if start < 0 {
+			continue
+		}
+		title := strings.TrimSpace(line[start:])
+		if title == "" {
+			continue
+		}
+		if len(title) > workV2TitleLimit {
+			end := workV2TitleLimit - len("…")
+			for end > 0 && !utf8.ValidString(title[:end]) {
+				end--
+			}
+			title = strings.TrimSpace(title[:end]) + "…"
+		}
+		titles = append(titles, title)
+	}
+	if len(titles) < 2 {
+		return nil
+	}
+	return titles
+}
+
+func seedDescriptionSteps(tx *store.WorkV2Tx, item work.ItemV2, session string, at time.Time) ([]work.StepV2, error) {
+	existing, err := tx.Steps(item.ID)
+	if err != nil || len(existing) > 0 {
+		return nil, err
+	}
+	titles := descriptionStepTitles(item.Description)
+	steps := make([]work.StepV2, 0, len(titles))
+	for position, title := range titles {
+		step := work.StepV2{ID: newWorkID(), WorkID: item.ID, Title: title, Position: int64(position),
+			CreatedBy: session, CreatedAt: at, Version: 1}
+		if err := tx.AddStep(step); err != nil {
+			return nil, err
+		}
+		steps = append(steps, step)
+	}
+	return steps, nil
 }
 
 func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pending bool, file WorkV2Filer) (WorkV2View, error) {
@@ -420,6 +511,13 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		if err := tx.CreateAssignment(a); err != nil {
 			return err
 		}
+		seeded := []work.StepV2{}
+		if !pending {
+			seeded, err = seedDescriptionSteps(tx, prev, a.SessionID, now)
+			if err != nil {
+				return err
+			}
+		}
 		next := prev
 		if pending {
 			if old.ID == "" && prev.Phase == work.PhaseCreated {
@@ -428,17 +526,19 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		} else {
 			next.OwnerSession = a.SessionID
 			next.Condition = ""
+			next.UserAction = ""
 			if prev.Phase == work.PhaseCreated || prev.Phase == work.PhaseAssigning {
 				next.Phase = work.PhaseAssigned
 			}
 		}
 		next.UpdatedAt = now
 		if err := tx.PutItem(prev, next, "item.assigned", c.Actor, payload(map[string]any{
-			"assignment_id": a.ID, "mode": a.Mode, "pending": pending, "session_id": a.SessionID})); err != nil {
+			"assignment_id": a.ID, "mode": a.Mode, "pending": pending, "session_id": a.SessionID,
+			"seeded_steps": len(seeded)})); err != nil {
 			return err
 		}
 		next.Version++
-		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{a}}
+		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{a}, Steps: seeded}
 		if file != nil {
 			if k, ans, ok := file(out); ok {
 				return tx.CompleteReceipt(k, ans)
@@ -476,6 +576,7 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 			pending.State, pending.Failure = "failed", c.Failure
 			if prev.OwnerSession == "" {
 				next.Phase, next.Condition = work.PhaseCreated, work.ConditionAssignmentFailed
+				next.UserAction = ""
 			}
 		} else {
 			if strings.TrimSpace(c.SessionID) == "" {
@@ -492,9 +593,16 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 				}
 			}
 			pending.State, pending.SessionID, pending.TerminalID = "active", c.SessionID, c.TerminalID
-			next.OwnerSession, next.Condition = c.SessionID, ""
+			next.OwnerSession, next.Condition, next.UserAction = c.SessionID, "", ""
 			if prev.Phase == work.PhaseCreated || prev.Phase == work.PhaseAssigning {
 				next.Phase = work.PhaseAssigned
+			}
+		}
+		seeded := []work.StepV2{}
+		if c.Failure == "" {
+			seeded, err = seedDescriptionSteps(tx, prev, c.SessionID, now)
+			if err != nil {
+				return err
 			}
 		}
 		if err := tx.UpdateAssignment(pending); err != nil {
@@ -506,11 +614,12 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 			kind = "assignment.failed"
 		}
 		if err := tx.PutItem(prev, next, kind, c.Actor, payload(map[string]any{
-			"assignment_id": pending.ID, "root_assignment_id": c.RootAssignment, "failure": c.Failure})); err != nil {
+			"assignment_id": pending.ID, "root_assignment_id": c.RootAssignment, "failure": c.Failure,
+			"seeded_steps": len(seeded)})); err != nil {
 			return err
 		}
 		next.Version++
-		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{pending}}
+		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{pending}, Steps: seeded}
 		return nil
 	})
 	return out, mapWorkV2Error(err)
@@ -539,7 +648,7 @@ func (w *WorkSystemV2) Unassign(ctx context.Context, id string, expected int64, 
 			return err
 		}
 		next := prev
-		next.OwnerSession, next.Condition, next.UpdatedAt = "", work.ConditionOwnerRequired, now
+		next.OwnerSession, next.Condition, next.UserAction, next.UpdatedAt = "", work.ConditionOwnerRequired, "", now
 		if err := tx.PutItem(prev, next, "item.unassigned", actor, payload(map[string]any{"assignment_id": a.ID})); err != nil {
 			return err
 		}
@@ -615,9 +724,24 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 			strings.TrimSpace(c.Deployment) != "", strings.TrimSpace(c.NoDeploymentReason) != ""); err != nil {
 			return err
 		}
+		if c.Next == work.PhaseDone {
+			steps, err := tx.Steps(id)
+			if err != nil {
+				return err
+			}
+			incomplete := 0
+			for _, step := range steps {
+				if !step.Done {
+					incomplete++
+				}
+			}
+			if incomplete > 0 {
+				return work.RefuseV2("steps_incomplete", fmt.Sprintf("Complete all item TODOs before closing this work; %d remain.", incomplete))
+			}
+		}
 		now := w.now()
 		next := prev
-		next.Phase, next.Condition, next.UpdatedAt = c.Next, "", now
+		next.Phase, next.Condition, next.UserAction, next.UpdatedAt = c.Next, "", "", now
 		if c.Next == work.PhaseDone {
 			next.ClosedAt, next.OwnerSession = now, ""
 			a, err := tx.ActiveAssignment(id)
@@ -674,7 +798,7 @@ func (w *WorkSystemV2) Cancel(ctx context.Context, id string, expected int64, ac
 			}
 		}
 		next := prev
-		next.Phase, next.OwnerSession, next.Condition = work.PhaseCancelled, "", ""
+		next.Phase, next.OwnerSession, next.Condition, next.UserAction = work.PhaseCancelled, "", "", ""
 		next.ClosedAt, next.UpdatedAt = now, now
 		if err := tx.PutItem(prev, next, "item.cancelled", actor, payload(map[string]string{"reason": reason})); err != nil {
 			return err
@@ -705,7 +829,7 @@ func (w *WorkSystemV2) Reopen(ctx context.Context, id string, expected int64, ac
 			return work.RefuseV2("item_not_terminal", "Only completed or cancelled work is reopened.")
 		}
 		next := prev
-		next.Phase, next.Condition, next.OwnerSession = work.PhaseCreated, work.ConditionOwnerRequired, ""
+		next.Phase, next.Condition, next.UserAction, next.OwnerSession = work.PhaseCreated, work.ConditionOwnerRequired, "", ""
 		next.ClosedAt, next.UpdatedAt, next.Cycle = time.Time{}, w.now(), prev.Cycle+1
 		if err := tx.PutItem(prev, next, "item.reopened", actor, payload(map[string]int64{"cycle": next.Cycle})); err != nil {
 			return err
@@ -979,6 +1103,22 @@ func (w *WorkSystemV2) DirectTodoImages(ctx context.Context, id string) ([]work.
 	return images, mapWorkV2Error(err)
 }
 
+// CheckDirectTodoSend distinguishes a first delivery from a reminder. A
+// delivery that has not been observed cannot be doubled; once the Session has
+// read its queue, the person may remind it again while the row is still open.
+func CheckDirectTodoSend(td work.DirectTodoV2, session string) error {
+	if td.SessionID != session {
+		return workV2Error(http.StatusConflict, "todo_session_mismatch", "That to-do belongs to another Session.")
+	}
+	if !td.Open() {
+		return workV2Error(http.StatusConflict, "todo_completed", "A completed to-do is not sent again.")
+	}
+	if !td.SentAt.IsZero() && td.ReadAt.IsZero() {
+		return workV2Error(http.StatusConflict, "todo_awaiting_read", "This delivery is still waiting for the Session to read it.")
+	}
+	return nil
+}
+
 func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session string, at time.Time) (work.DirectTodoV2, error) {
 	var out work.DirectTodoV2
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
@@ -986,21 +1126,11 @@ func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session strin
 		if err != nil {
 			return err
 		}
-		if prev.SessionID != session {
-			return work.RefuseV2("todo_session_mismatch", "That to-do belongs to another Session.")
-		}
-		if !prev.Open() {
-			return work.RefuseV2("todo_completed", "A completed to-do is not sent again.")
-		}
-		if !prev.ReadAt.IsZero() {
-			return work.RefuseV2("todo_already_read", "The Session has already read this to-do.")
-		}
-		if !prev.SentAt.IsZero() {
-			out = prev
-			return nil
+		if err := CheckDirectTodoSend(prev, session); err != nil {
+			return err
 		}
 		next := prev
-		next.SentAt = time.Unix(at.Unix(), 0)
+		next.SentAt, next.ReadAt = time.Unix(at.Unix(), 0), time.Time{}
 		if err := tx.PutDirectTodo(prev, next); err != nil {
 			return err
 		}

@@ -178,6 +178,9 @@ export function CloudGate({ declared }: { declared: string }) {
   const machines = machineList.phase === "ready" ? machineList.machines : null
   const [problem, setProblem] = useState<AccessProblem | null>(null)
   const [chosen, setChosen] = useState<CloudMachine | null>(null)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const switcherRef = useRef<HTMLDivElement>(null)
+  const switchButtonRef = useRef<HTMLButtonElement>(null)
   // Forgetting a machine (`forget.ts`): which one is being asked about, which
   // ones this tab or the account says are forgotten, and what the account
   // answered about the last one. The relay can retain an old snapshot after
@@ -756,18 +759,104 @@ export function CloudGate({ declared }: { declared: string }) {
     setScreen({ at: "console" })
   }, [chosen, who])
 
-  // Which machine this is, in the header beside the connection light, and the
-  // way back to the list.
+  useEffect(() => {
+    if (!switcherOpen) return
+    const outside = (event: PointerEvent) => {
+      if (!switcherRef.current?.contains(event.target as Node)) setSwitcherOpen(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      event.stopPropagation()
+      setSwitcherOpen(false)
+      switchButtonRef.current?.focus()
+    }
+    document.addEventListener("pointerdown", outside)
+    document.addEventListener("keydown", escape, true)
+    return () => {
+      document.removeEventListener("pointerdown", outside)
+      document.removeEventListener("keydown", escape, true)
+    }
+  }, [switcherOpen])
+
+  const shown = useMemo<MachineListState>(
+    () => {
+      if (machineList.phase !== "ready") return machineList
+      const visible = withAccountNames(machineList.machines, names, described, present)
+        .filter((machine) => !forgotten.includes(machine.id))
+      return visible.length ? { ...machineList, machines: visible } : { phase: "empty_authoritative" }
+    },
+    // `described` reads the client, which changes only with a new line and
+    // then with a new list.
+    [machineList, names, forgotten],
+  )
+  const quickMachines = shown.phase === "ready" ? shown.machines.filter((machine) => machine.selectable) : []
+
+  const switchMachine = (machine: CloudMachine) => {
+    setSwitcherOpen(false)
+    choose(machine)
+  }
+
+  // Which machine this is, beside the connection light. Switching is an
+  // in-place header choice; the full machine screen remains one explicit
+  // step away for pairing, renaming and forgetting.
   const aside = chosen && (
-    <button
-      className="cloud-switch"
-      id="cloud-switch"
-      type="button"
-      title={(chosen.label || chosen.id) + " · " + nextWord("cloudSwitch")}
-      onClick={leave}
-    >
-      {chosen.name || chosen.label || chosen.id}
-    </button>
+    <div className="cloud-switcher" ref={switcherRef}>
+      <button
+        className="cloud-switch"
+        id="cloud-switch"
+        type="button"
+        title={(chosen.label || chosen.id) + " · " + nextWord("cloudSwitch")}
+        aria-haspopup="dialog"
+        aria-expanded={switcherOpen}
+        aria-controls="cloud-quick-machines"
+        ref={switchButtonRef}
+        onClick={() => setSwitcherOpen((open) => !open)}
+      >
+        <span>{chosen.name || chosen.label || chosen.id}</span>
+        <span className="cloud-switch-chevron" aria-hidden="true">⌄</span>
+      </button>
+      {switcherOpen && (
+        <div
+          className="cloud-switch-menu"
+          id="cloud-quick-machines"
+          role="dialog"
+          aria-label={nextWord("cloudSwitch")}
+        >
+          <p className="cloud-switch-title">{nextWord("cloudMachinesLede")}</p>
+          <div className="cloud-switch-options">
+            {quickMachines.map((machine) => {
+              const current = machine.id === chosen.id
+              const identity = machineIdentityFacts(machine)
+              return (
+                <button
+                  type="button"
+                  className="cloud-switch-option"
+                  data-current={current ? "true" : undefined}
+                  data-machine={machine.id}
+                  key={machine.id}
+                  onClick={() => switchMachine(machine)}
+                >
+                  <span className="cloud-switch-option-name">{machine.name || machine.label || machine.id}</span>
+                  <span className="cloud-switch-option-platform">{platformWord(identity.platform)}</span>
+                  {current && <span className="cloud-switch-current">{nextWord("cloudCurrentMachine")}</span>}
+                </button>
+              )
+            })}
+          </div>
+          <button
+            type="button"
+            className="cloud-switch-manage"
+            onClick={() => {
+              setSwitcherOpen(false)
+              leave()
+            }}
+          >
+            {nextWord("cloudManageMachines")}
+          </button>
+        </div>
+      )}
+    </div>
   )
   // A pairing is drawn over whatever is on screen, the console included, but
   // only once this browser is signed in with a device key: a link opened
@@ -801,18 +890,6 @@ export function CloudGate({ declared }: { declared: string }) {
           onPaired: closePairing,
         }
       : null
-  const shown = useMemo<MachineListState>(
-    () => {
-      if (machineList.phase !== "ready") return machineList
-      const visible = withAccountNames(machineList.machines, names, described, present)
-        .filter((machine) => !forgotten.includes(machine.id))
-      return visible.length ? { ...machineList, machines: visible } : { phase: "empty_authoritative" }
-    },
-    // `described` reads the client, which changes only with a new line and
-    // then with a new list.
-    [machineList, names, forgotten],
-  )
-
   // Once drawn, the console stays: the copied modules bind to the document
   // once, so a refusal after that (a revoked device, a line that gave up) is
   // drawn over it, as the door is over a local console (`door/Door.tsx`).
