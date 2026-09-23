@@ -215,7 +215,7 @@ function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolea
       className="session-todo-receipt" data-state={completed ? "completed" : receipt.state}
       aria-label={completed ? "已完成" : receipt.words}>{completed ? "已完成" : <><span className="session-todo-receipt-mark" aria-hidden="true">{receipt.mark}</span>{receipt.words}</>}</span></small></div>
     {!!todo.images?.length && <div className="work-reference-images session-todo-images" role="group" aria-label="待辦參考圖片">
-      {todo.images.map((image) => <ReferenceImage key={image.id} image={image} />)}
+      {todo.images.map((image) => <ReferenceImage key={image.id} image={image} compact />)}
     </div>}
     <div className="work-actions">
       {!completed && !todo.sent_at && !todo.read_at && <button className="chip" type="button" disabled={busy} onClick={() => onAction("send")}>Send</button>}
@@ -245,7 +245,7 @@ function TodoImagePicker({ images, busy, onChange }: { images: File[]; busy: boo
   </div>
 }
 
-function ReferenceImage({ image }: { image: WorkV2Image }) {
+function ReferenceImage({ image, compact = false }: { image: WorkV2Image; compact?: boolean }) {
   const [source, setSource] = useState("")
   const [failed, setFailed] = useState("")
   useEffect(() => {
@@ -262,6 +262,12 @@ function ReferenceImage({ image }: { image: WorkV2Image }) {
       if (objectURL) URL.revokeObjectURL(objectURL)
     }
   }, [image.id])
+  if (compact) return source ? <a className="session-todo-image-link" href={source} target="_blank" rel="noreferrer"
+    aria-label={`開啟參考圖片 ${image.title}`} title={image.title}>
+    <span>{image.title}</span><span aria-hidden="true">↗</span>
+  </a> : <div className="session-todo-image-link" data-state={failed ? "failed" : "loading"} role={failed ? "alert" : undefined}>
+    <span title={image.title}>{image.title}</span><span>{failed || "載入中…"}</span>
+  </div>
   return <figure className="work-reference-image">
     {source ? <a href={source} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`}>
       <img src={source} alt={image.title} width={image.width} height={image.height} />

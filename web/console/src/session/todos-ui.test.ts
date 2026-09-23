@@ -24,6 +24,15 @@ test("direct Session todos upload and render durable images", () => {
   assert.match(api, /session-todos\/\$\{encodeURIComponent\(terminalID\)\}\/\$\{todoID\}\/images/)
 })
 
+test("direct todo attachments are compact file links instead of previews", () => {
+  const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
+  assert.match(source, /<ReferenceImage key=\{image\.id\} image=\{image\} compact \/>/)
+  assert.match(source, /if \(compact\) return source \? <a className="session-todo-image-link"/)
+  assert.match(styles, /\.session-direct-todo \.session-todo-images \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/)
+  assert.match(styles, /\.session-todo-image-link \{[^}]*display:\s*flex/)
+  assert.match(styles, /\.session-todo-image-link \{[^}]*min-height:\s*42px/)
+})
+
 test("owned Board work shows explicit release milestones and recent completion", () => {
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
   const milestones = readFileSync(new URL("../pages/work/WorkMilestones.tsx", import.meta.url), "utf8")
