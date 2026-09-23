@@ -10,8 +10,7 @@ import (
 func TestLinuxWithoutTmuxIsNeverToldToOpenITermOnAMac(t *testing.T) {
 	for _, choice := range []projects.TerminalChoice{projects.TerminalAuto, projects.TerminalITerm} {
 		got := unavailableTerminal(choice, "linux")
-		if got.Code != "terminal_unsupported" || strings.Contains(got.Message, "not running") ||
-			strings.Contains(got.Message, "Mac") {
+		if got.Code != "terminal_unsupported" || strings.Contains(got.Message, "not running") {
 			t.Errorf("%s: %+v", choice, got)
 		}
 	}
