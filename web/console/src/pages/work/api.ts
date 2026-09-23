@@ -265,8 +265,7 @@ function mintKey(): string {
  * says the first attempt is still being carried out — twice at most; a
  * refusal is the answer and is never retried.
  */
-async function decide<T>(path: string, body: unknown): Promise<T> {
-  const key = mintKey()
+async function decide<T>(path: string, body: unknown, key = mintKey()): Promise<T> {
   const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": key },
@@ -403,13 +402,16 @@ export const readWorkV2Proposals = () => call<{ rows: WorkV2Proposal[]; truncate
 export const resolveWorkV2Proposal = (id: string, decision: "accept" | "reject") =>
   mutate<unknown>(`/v1/work/v2/proposals/${id}/${decision}`, {})
 
-export const createWorkV2 = (body: {
+export type CreateWorkV2Body = {
   project_id: string
   kind: WorkV2Kind
   title: string
   description: string
   deployment_policy: "required" | "not_required" | "agent_decides"
-}) => mutate<{ item: WorkV2Item }>("/v1/work/v2/items", body)
+}
+
+export const createWorkV2 = (body: CreateWorkV2Body, key?: string) =>
+  decide<{ item: WorkV2Item }>("/v1/work/v2/items", body, key)
 
 export const assignWorkV2 = (item: WorkV2Item, terminalID: string) =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/assign`, {

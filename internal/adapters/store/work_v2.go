@@ -357,6 +357,23 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 		PreviousVersion: 0, NextVersion: i.Version, Payload: payload, At: i.CreatedAt})
 }
 
+// PristineEquivalentItem finds the item an uncertain create already wrote.
+// A second, independently keyed press must not turn the same user decision
+// into two unassigned cards. Only an untouched item is reusable: once either
+// a person or a Session changes it, an identical create is a new decision.
+func (t *WorkV2Tx) PristineEquivalentItem(i work.ItemV2) (work.ItemV2, bool, error) {
+	found, err := scanWorkV2(t.tx.QueryRowContext(t.ctx, `SELECT `+workV2Columns+` FROM work_v2_items
+      WHERE project_id=? AND project_path=? AND kind=? AND title=? AND description=?
+        AND deployment_policy=? AND phase='created' AND owner_session='' AND closed_at IS NULL
+        AND cycle=1 AND version=1
+      ORDER BY created_at, id LIMIT 1`,
+		i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.DeploymentPolicy))
+	if errors.Is(err, ErrNoWorkV2) {
+		return work.ItemV2{}, false, nil
+	}
+	return found, err == nil, err
+}
+
 func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) error {
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_items SET project_id=?, project_path=?, kind=?, title=?,
       description=?, phase=?, condition=?, user_action=?, deployment_policy=?, owner_session=?, updated_at=?, closed_at=?,
