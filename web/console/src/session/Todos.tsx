@@ -120,6 +120,8 @@ export function Todos({ row, agentCount, agentPanel }: {
           </section>}
           {empty && <p className="session-todos-empty">目前沒有待辦。</p>}
         </div>
+        <button className="session-todos-backdrop" type="button" tabIndex={-1} aria-label="收起 Session 待辦"
+          onClick={() => setOpen(false)} />
       </details>
       {adding && <div className="session-todo-modal" role="dialog" aria-modal="true" aria-labelledby="session-todo-modal-title">
         <form onSubmit={(ev) => {

@@ -1070,7 +1070,7 @@ test("a direct todo attachment is a compact clickable filename on a phone", () =
     await tab.shot("session-todo-compact-attachment")
   }))
 
-test("an expanded Session todo fold blurs and shades the conversation on a phone", () =>
+test("an expanded Session todo fold shades the conversation and a backdrop tap closes it on a phone", () =>
   inTab(async (tab) => {
     await tab.go("/#session=" + encodeURIComponent(BLOCKED))
     const openVisuals = await tab.run(`new Promise((resolve, reject) => {
@@ -1078,8 +1078,9 @@ test("an expanded Session todo fold blurs and shades the conversation on a phone
       const open = () => {
         const fold = document.querySelector('.session-todos')
         const body = fold?.querySelector('.session-todos-body')
+        const backdrop = fold?.querySelector('.session-todos-backdrop')
         const transcript = document.querySelector('.tx-scroll')
-        if (!fold || !body || !transcript) {
+        if (!fold || !body || !backdrop || !transcript) {
           if (Date.now() >= deadline) return reject(new Error('the Session todo fold did not arrive'))
           return setTimeout(open, 25)
         }
@@ -1089,13 +1090,19 @@ test("an expanded Session todo fold blurs and shades the conversation on a phone
           const veil = getComputedStyle(fold, '::after')
           const content = getComputedStyle(body)
           const foldBox = fold.getBoundingClientRect()
+          const veilBox = backdrop.getBoundingClientRect()
           const transcriptBox = transcript.getBoundingClientRect()
+          const veilX = Math.round(veilBox.left + veilBox.width / 2)
+          const veilY = Math.round(Math.min(window.innerHeight - 30, veilBox.top + 60))
           resolve({
             open: fold.open,
             shadow: panel.boxShadow,
             veilOpacity: veil.opacity,
             veilFilter: veil.backdropFilter || veil.webkitBackdropFilter || '',
             veilTop: Number.parseFloat(veil.top),
+            veilX,
+            veilY,
+            hitClass: document.elementFromPoint(veilX, veilY)?.className || '',
             foldHeight: foldBox.height,
             foldBottom: foldBox.bottom,
             transcriptTop: transcriptBox.top,
@@ -1109,6 +1116,7 @@ test("an expanded Session todo fold blurs and shades the conversation on a phone
     assert.notEqual(openVisuals.shadow, "none")
     assert.equal(openVisuals.veilOpacity, "1")
     assert.match(openVisuals.veilFilter, /blur\(7px\)/)
+    assert.match(openVisuals.hitClass, /session-todos-backdrop/)
     assert.match(openVisuals.bodyAnimation, /session-todos-body-in/)
     assert.ok(Math.abs(openVisuals.veilTop - openVisuals.foldHeight) <= 2,
       `veil began at ${openVisuals.veilTop}px instead of the ${openVisuals.foldHeight}px fold edge`)
@@ -1116,9 +1124,9 @@ test("an expanded Session todo fold blurs and shades the conversation on a phone
       `conversation began at ${openVisuals.transcriptTop}px beyond the ${openVisuals.foldBottom}px fold edge`)
     await tab.shot("session-todos-open-glass-layer")
 
+    await tab.tap(openVisuals.veilX, openVisuals.veilY)
     const closed = await tab.run(`new Promise((resolve) => {
       const fold = document.querySelector('.session-todos')
-      fold?.querySelector('summary')?.click()
       setTimeout(() => resolve({
         open: fold?.open,
         veilOpacity: fold ? getComputedStyle(fold, '::after').opacity : '',
