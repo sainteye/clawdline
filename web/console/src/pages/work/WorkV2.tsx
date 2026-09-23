@@ -201,6 +201,9 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>
     <h3>{item.title}</h3>
     <p>{item.description}</p>
+    {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
+      <strong>需要你做的事</strong><p>{item.user_action}</p>
+    </section>}
     <WorkMilestones phase={item.phase} />
     {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
       {item.images.map((image) => <WorkReferenceImage key={image.id} item={item} image={image} busy={busy} run={run} />)}

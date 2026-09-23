@@ -81,6 +81,12 @@ test("the create modal accepts reference pictures before creating the item", () 
   assert.match(source, /addWorkV2Image\(answer\.item\.id/)
 })
 
+test("Board cards name the action an Agent needs from the person", () => {
+  assert.match(source, /item\.user_action/)
+  assert.match(source, /需要你做的事/)
+  assert.match(styles, /\.work-user-action/)
+})
+
 test("the Session list shortcut creates an item and keeps its assignment card in a modal", () => {
   assert.match(sessions, /id="work-create-go"/)
   assert.match(sessions, /aria-label="新增看板項目"/)

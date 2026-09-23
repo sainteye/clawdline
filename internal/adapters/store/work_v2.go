@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS work_v2_items (
   description       TEXT NOT NULL,
   phase             TEXT NOT NULL CHECK (phase IN ('created','assigning','assigned','implementing','verifying','merging','deploying','done','cancelled')),
   condition         TEXT NOT NULL DEFAULT '' CHECK (condition IN ('','blocked','waiting_user','owner_required','owner_offline','evidence_unknown','assignment_failed','assigned_unnotified')),
+  user_action       TEXT NOT NULL DEFAULT '',
   deployment_policy TEXT NOT NULL CHECK (deployment_policy IN ('required','not_required','agent_decides')),
   owner_session     TEXT NOT NULL DEFAULT '',
   created_by        TEXT NOT NULL,
@@ -183,7 +184,16 @@ var (
 )
 
 func openWorkV2(db *sql.DB) error {
-	_, err := db.Exec(workV2Schema)
+	if _, err := db.Exec(workV2Schema); err != nil {
+		return err
+	}
+	has, err := hasColumn(db, "work_v2_items", "user_action")
+	if err != nil {
+		return err
+	}
+	if !has {
+		_, err = db.Exec(`ALTER TABLE work_v2_items ADD COLUMN user_action TEXT NOT NULL DEFAULT ''`)
+	}
 	return err
 }
 
@@ -212,10 +222,10 @@ func (t *WorkV2Tx) CompleteReceipt(k ReceiptKey, a ReceiptAnswer) error {
 	return nil
 }
 
-const workV2Columns = `id, project_id, project_path, kind, title, description, phase, condition,
+const workV2Columns = `id, project_id, project_path, kind, title, description, phase, condition, user_action,
   deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version`
 
-const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description, i.phase, i.condition,
+const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description, i.phase, i.condition, i.user_action,
   i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle, i.version`
 
 func scanWorkV2(sc scanner) (work.ItemV2, error) {
@@ -223,7 +233,7 @@ func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	var created, updated int64
 	var closed sql.NullInt64
 	err := sc.Scan(&i.ID, &i.ProjectID, &i.ProjectPath, &i.Kind, &i.Title, &i.Description, &i.Phase,
-		&i.Condition, &i.DeploymentPolicy, &i.OwnerSession, &i.CreatedBy, &created, &updated, &closed,
+		&i.Condition, &i.UserAction, &i.DeploymentPolicy, &i.OwnerSession, &i.CreatedBy, &created, &updated, &closed,
 		&i.Cycle, &i.Version)
 	if err == sql.ErrNoRows {
 		return work.ItemV2{}, ErrNoWorkV2
@@ -285,11 +295,11 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 		return full
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_items
-      (id, project_id, project_path, kind, title, description, phase, condition, deployment_policy,
-       owner_session, created_by, created_at, updated_at, closed_at, cycle, version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+      (id, project_id, project_path, kind, title, description, phase, condition, user_action,
+       deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
 		i.ID, i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.Phase, i.Condition,
-		i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle, i.Version)
+		i.UserAction, i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle, i.Version)
 	if err != nil {
 		return err
 	}
@@ -300,10 +310,10 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 
 func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) error {
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_items SET project_id=?, project_path=?, kind=?, title=?,
-      description=?, phase=?, condition=?, deployment_policy=?, owner_session=?, updated_at=?, closed_at=?,
+      description=?, phase=?, condition=?, user_action=?, deployment_policy=?, owner_session=?, updated_at=?, closed_at=?,
       cycle=?, version=version+1 WHERE id=? AND version=?`,
 		next.ProjectID, next.ProjectPath, next.Kind, next.Title, next.Description, next.Phase, next.Condition,
-		next.DeploymentPolicy, next.OwnerSession, next.UpdatedAt.Unix(), zeroOrUnix(next.ClosedAt), next.Cycle,
+		next.UserAction, next.DeploymentPolicy, next.OwnerSession, next.UpdatedAt.Unix(), zeroOrUnix(next.ClosedAt), next.Cycle,
 		prev.ID, prev.Version)
 	if err != nil {
 		return err

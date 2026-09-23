@@ -52,6 +52,7 @@ type workV2ItemWire struct {
 	Description      string                 `json:"description"`
 	Phase            string                 `json:"phase"`
 	Condition        *string                `json:"condition"`
+	UserAction       string                 `json:"user_action"`
 	Area             string                 `json:"area"`
 	DeploymentPolicy string                 `json:"deployment_policy"`
 	OwnerSession     *string                `json:"owner_session"`
@@ -220,7 +221,7 @@ func (s *Server) workV2ItemOf(ctx context.Context, v app.WorkV2View) workV2ItemW
 		p = workV2ProjectWire{ID: i.ProjectID, Label: label, Path: i.ProjectPath, Icon: wireIcon(s.icons.For(i.ProjectPath))}
 	}
 	out := workV2ItemWire{ID: i.ID, Project: p, Kind: string(i.Kind), Title: i.Title, Description: i.Description,
-		Phase: string(i.Phase), Condition: optionalString(string(i.Condition)), Area: i.Area(),
+		Phase: string(i.Phase), Condition: optionalString(string(i.Condition)), UserAction: i.UserAction, Area: i.Area(),
 		DeploymentPolicy: string(i.DeploymentPolicy), OwnerSession: optionalString(i.OwnerSession),
 		CreatedBy: i.CreatedBy, CreatedAt: i.CreatedAt.Unix(), UpdatedAt: i.UpdatedAt.Unix(),
 		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, Version: i.Version}
@@ -645,6 +646,7 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		Title           *string `json:"title"`
 		Description     *string `json:"description"`
 		Condition       *string `json:"condition"`
+		UserAction      *string `json:"user_action"`
 		SessionID       string  `json:"session_id"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
@@ -665,7 +667,7 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 	}
 	var answer []byte
 	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: body.ExpectedVersion,
-		Title: body.Title, Description: body.Description, Condition: condition, Actor: actor,
+		Title: body.Title, Description: body.Description, Condition: condition, UserAction: body.UserAction, Actor: actor,
 		OwnerSession: body.SessionID, Person: person}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 		answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
 		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true

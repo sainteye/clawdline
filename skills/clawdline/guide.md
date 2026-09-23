@@ -506,6 +506,19 @@ made while you were working waits without interrupting the current turn. Finish 
 then take the assigned item as your next owned work and read its complete record at
 `GET /v1/work/v2/items/<id>`.
 
+When the owning Agent needs an action from the person, use the machine-authenticated route:
+
+```
+PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>",
+ "condition": "waiting_user", "user_action": "The one concrete action the person must take"}
+```
+
+`user_action` is at most 8 KiB and belongs only to `waiting_user`; omitting the concrete action or
+putting one on another condition is refused by name. When the wait ends, set `condition` to the
+empty string on the same route; the daemon clears `user_action` with it so the Board cannot retain
+a stale request.
+
 `/v1/board` is the Swift app's old cards, read-only. Landing is a broker fact: an item is never
 marked landed by hand (`422 landing_is_broker_fact`).
 

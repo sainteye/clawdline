@@ -102,6 +102,57 @@ func TestWorkV2KeepsHumanAndAgentAuthoritiesSeparate(t *testing.T) {
 	}
 }
 
+func TestWaitingForThePersonNamesAndClearsTheRequiredAction(t *testing.T) {
+	w := newWorkV2Test(t)
+	v := createWorkV2Test(t, w, work.KindFeature)
+	assigned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := work.ConditionWaitingUser
+	if _, err := w.Edit(context.Background(), v.Item.ID, EditWorkV2{ExpectedVersion: assigned.Item.Version,
+		Condition: &waiting, Actor: "session-a", OwnerSession: "session-a"}, nil); err == nil {
+		t.Fatal("waiting_user without a requested action was accepted")
+	}
+	action := "Approve the production rollout in the deployment console."
+	edited, err := w.Edit(context.Background(), v.Item.ID, EditWorkV2{ExpectedVersion: assigned.Item.Version,
+		Condition: &waiting, UserAction: &action, Actor: "session-a", OwnerSession: "session-a"}, nil)
+	if err != nil || edited.Item.Condition != waiting || edited.Item.UserAction != action {
+		t.Fatalf("waiting action: %+v %v", edited.Item, err)
+	}
+	clear := work.Condition("")
+	cleared, err := w.Edit(context.Background(), v.Item.ID, EditWorkV2{ExpectedVersion: edited.Item.Version,
+		Condition: &clear, Actor: "session-a", OwnerSession: "session-a"}, nil)
+	if err != nil || cleared.Item.Condition != "" || cleared.Item.UserAction != "" {
+		t.Fatalf("cleared waiting action: %+v %v", cleared.Item, err)
+	}
+}
+
+func TestARequestedUserActionIsBoundedAndOnlyBelongsToWaitingUser(t *testing.T) {
+	w := newWorkV2Test(t)
+	v := createWorkV2Test(t, w, work.KindIssue)
+	assigned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := "Choose an option"
+	_, err = w.Edit(context.Background(), v.Item.ID, EditWorkV2{ExpectedVersion: assigned.Item.Version,
+		UserAction: &action, Actor: "session-a", OwnerSession: "session-a"}, nil)
+	var refusal *WorkError
+	if !errors.As(err, &refusal) || refusal.Code != "user_action_requires_waiting_user" {
+		t.Fatalf("action without waiting_user = %v", err)
+	}
+	waiting := work.ConditionWaitingUser
+	tooLarge := strings.Repeat("x", workV2UserActionLimit+1)
+	_, err = w.Edit(context.Background(), v.Item.ID, EditWorkV2{ExpectedVersion: assigned.Item.Version,
+		Condition: &waiting, UserAction: &tooLarge, Actor: "session-a", OwnerSession: "session-a"}, nil)
+	if !errors.As(err, &refusal) || refusal.Code != "user_action_too_large" {
+		t.Fatalf("oversize action = %v", err)
+	}
+}
+
 func TestPlanningNeverBecomesExecutableAndProposalNeedsOwnedEvidence(t *testing.T) {
 	w := newWorkV2Test(t)
 	planning := createWorkV2Test(t, w, work.KindEpic)

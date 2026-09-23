@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -16,6 +17,45 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+func TestTheOwningAgentNamesTheActionItNeedsFromThePerson(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	assigned, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := "Confirm the release window."
+	body, err := json.Marshal(map[string]any{
+		"expected_version": assigned.Item.Version,
+		"session_id":       p.s.ConversationID,
+		"condition":        "waiting_user",
+		"user_action":      action,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/v1/work/v2/agent/items/"+v.Item.ID+"/edit", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "agent-needs-release-confirmation")
+	req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{
+		machine: true, verdict: auth.Verdict{Allowed: true},
+	}))
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("edit: %d %s", rec.Code, rec.Body)
+	}
+	var answer struct {
+		Item workV2ItemWire `json:"item"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.Item.Condition == nil || *answer.Item.Condition != "waiting_user" || answer.Item.UserAction != action {
+		t.Fatalf("edited item = %+v", answer.Item)
+	}
+}
 
 func workV2AssignmentServer(t *testing.T, state session.State) (*Server, *pane, app.WorkV2View) {
 	t.Helper()
@@ -69,8 +109,15 @@ func TestOnlyAnIdleSessionReceivesAnAssignmentBrief(t *testing.T) {
 
 func TestAnAssignedItemIsInTheAgentsTodoRead(t *testing.T) {
 	s, p, v := workV2AssignmentServer(t, session.StateWorking)
-	if _, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
-		"existing_session", p.s.ID, "", "", nil); err != nil {
+	assigned, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := work.ConditionWaitingUser
+	action := "Confirm the release window."
+	if _, err := s.workV2().Edit(context.Background(), v.Item.ID, app.EditWorkV2{ExpectedVersion: assigned.Item.Version,
+		Condition: &waiting, UserAction: &action, Actor: p.s.ConversationID, OwnerSession: p.s.ConversationID}, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -90,7 +137,7 @@ func TestAnAssignedItemIsInTheAgentsTodoRead(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Assigned) != 1 || body.Assigned[0].ID != v.Item.ID {
+	if len(body.Assigned) != 1 || body.Assigned[0].ID != v.Item.ID || body.Assigned[0].UserAction != action {
 		t.Fatalf("assigned items = %+v; body = %s", body.Assigned, rec.Body)
 	}
 }

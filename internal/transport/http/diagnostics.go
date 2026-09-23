@@ -378,6 +378,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkItemDescriptionBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-write guard; no retained buffer"}
 		},
+		capacity.WorkItemUserActionBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write guard; no retained buffer"}
+		},
 		capacity.SessionDirectTodoBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-write guard; no retained buffer"}
 		},

@@ -222,6 +222,12 @@ losing the stage at which it is blocked.
 Only the owning Agent may set or clear an Agent condition. The broker derives `owner_offline` and
 `evidence_unknown` from typed readings without moving the main phase.
 
+`waiting_user` always names the requested action in `user_action`; setting the condition without
+that text is refused. The field is owner-written, is capped at 8 KiB, and is cleared atomically
+when the condition clears or the item changes phase, owner, or terminal state. Board cards and the
+assigned-item detail show the request as a first-class callout rather than asking the person to
+infer it from the description.
+
 ### 6.3 Deployment policy
 
 `deployment_policy` is `required`, `not_required`, or `agent_decides`; new executable items default
@@ -353,8 +359,9 @@ The panel has three explicitly labelled groups.
 ### 11.1 Assigned items
 
 One row per non-terminal item owned by the Session, with Project icon, kind, title, phase,
-condition, item-step count, and a link to the item. It appears immediately after assignment and
-remains until completion, cancellation, or reassignment. The Agent to-do read returns these rows
+condition, item-step count, and a control that opens the item's description, requested user action,
+progress, deployment policy, and reference images in a modal. It appears immediately after assignment
+and remains until completion, cancellation, or reassignment. The Agent to-do read returns these rows
 as `assigned_items` as well as the direct to-dos; root guides require that read at turn boundaries,
 so an assignment made during a working turn waits without terminal input and becomes the next
 owned work.

@@ -2,13 +2,44 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+func TestOpeningAnOlderWorkStoreAddsTheRequestedUserAction(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE work_v2_items (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, project_path TEXT NOT NULL, kind TEXT NOT NULL,
+      title TEXT NOT NULL, description TEXT NOT NULL, phase TEXT NOT NULL, condition TEXT NOT NULL DEFAULT '',
+      deployment_policy TEXT NOT NULL, owner_session TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER, cycle INTEGER NOT NULL DEFAULT 1,
+      version INTEGER NOT NULL DEFAULT 1)`)
+	if closeErr := db.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	has, err := hasColumn(s.db, "work_v2_items", "user_action")
+	if err != nil || !has {
+		t.Fatalf("user_action migration: has=%v err=%v", has, err)
+	}
+}
 
 func v2Item(id string, at time.Time) work.ItemV2 {
 	return work.ItemV2{ID: id, ProjectID: "project-a", ProjectPath: "/project-a", Kind: work.KindFeature,
