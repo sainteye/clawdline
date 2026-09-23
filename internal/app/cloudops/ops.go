@@ -929,6 +929,23 @@ func init() {
 		// reads and person-only writes it implements. Every write is stamped as
 		// a paired device: a Cloud viewer is a person using this machine, not an
 		// Agent or the machine's orchestrator.
+		op{name: "work.v2.item", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				id, idOK := b.nonEmpty("id")
+				if !ok || !idOK || len(id) > 256 {
+					return plan{}, false
+				}
+				p.id = id
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/items/" + segment(p.id)}
+			}},
+
 		op{name: "work.v2.items", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request", "project") {
