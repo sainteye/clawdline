@@ -306,15 +306,14 @@ func liveOf(item session.Session) swiftstore.Live {
 }
 
 // identityMatchCounts is SessionClosePolicy.identityMatchCounts: how many rows
-// share each row's conversation. A row whose conversation could not be read
-// counts as one; any unreadable conversation makes every other row of that
-// assistant ambiguous, because it could be any of them.
+// share each row's exact assistant/conversation identity. An unbound peer does
+// not weaken a row whose process supplied one exact conversation: open-file,
+// command-line and registry bindings are direct evidence about that process,
+// not guesses among every anonymous process of the same assistant.
 func identityMatchCounts(items []session.Session) map[string]int {
-	unreadable := map[session.Assistant]bool{}
 	byConversation := map[string]int{}
 	for _, item := range items {
 		if item.ConversationID == "" {
-			unreadable[item.Assistant] = true
 			continue
 		}
 		byConversation[string(item.Assistant)+"\x01"+item.ConversationID]++
@@ -324,8 +323,6 @@ func identityMatchCounts(items []session.Session) map[string]int {
 		switch {
 		case item.ConversationID == "":
 			out[item.ID] = 1
-		case unreadable[item.Assistant]:
-			out[item.ID] = 0
 		default:
 			out[item.ID] = byConversation[string(item.Assistant)+"\x01"+item.ConversationID]
 		}

@@ -421,8 +421,10 @@ function daemon(): Server {
         : []
       const direct = sessionID === BLOCKED
         ? [{ id: "todo-fixture", text: "Review the release note", created_at: 1, sent_at: 2, read_at: 3, completed_at: null, version: 3 }]
-        : []
-      const recent = sessionID === BLOCKED
+        : sessionID === NEEDS_ATTESTATION
+          ? [{ id: "done-todo-fixture", text: "Verify the hosted console", created_at: 1, sent_at: 2, read_at: 3, completed_at: 4, version: 4 }]
+          : []
+      const recent = sessionID === BLOCKED || sessionID === NEEDS_ATTESTATION
         ? [{
             id: "done-work-fixture",
             project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
@@ -1156,8 +1158,15 @@ test("a session awaiting attestation explains that inside its named confirmation
     const asked = await tab.until("the attestation confirmation is up", (s) => s.sheet !== null)
     assert.equal(asked.sheet, "要關閉 Echo has not checked in 嗎？")
     assert.match(asked.sheetSay ?? "", /Agent 會先結束，接著關閉它的終端機分頁。/)
-    assert.match(asked.sheetSay ?? "", /這不是系統發現工作尚未完成。/)
-    assert.match(asked.sheetSay ?? "", /這個 session 還沒確認是否留有本機修改、未交付事項或 Clawdline 以外的工作。/)
+    const ready = await tab.until("the completed work and safe-close reminder are shown", (s) =>
+      s.confirmDisabled === false && (s.sheetSay ?? "").includes("Repair the previous release"))
+    assert.match(ready.sheetSay ?? "", /這個 Session 已完成：/)
+    assert.match(ready.sheetSay ?? "", /✓ Repair the previous release · Clawdline/)
+    assert.match(ready.sheetSay ?? "", /✓ Verify the hosted console/)
+    assert.match(ready.sheetSay ?? "", /看板項目與直接待辦都已完成。/)
+    assert.match(ready.sheetSay ?? "", /現在可以安全關閉這個 Session。/)
+    assert.equal(ready.confirmAction, "安全關閉")
+    await tab.shot("swipe-ready-to-close")
   }))
 
 test("one row is uncovered at a time, and the press that puts one away opens no session", () =>
