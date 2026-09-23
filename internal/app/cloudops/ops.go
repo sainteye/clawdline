@@ -497,7 +497,7 @@ func refusalReply(b body, word string, class Class) (string, string, bool) {
 		return "", "", false
 	}
 	switch word {
-	case "send", "answer", "key", "end", "focus", "shell-kill":
+	case "send", "answer", "key", "end", "focus", "smart-title", "shell-kill":
 		return session, "action:" + request, true
 	}
 	// Every machine command, and any word this machine does not know, is answered
@@ -1438,6 +1438,21 @@ func init() {
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "POST", Path: "/v1/sessions/" + segment(p.target) + "/focus"}
+			}},
+
+		op{name: "smart-title",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, true)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/sessions/" + segment(p.target) + "/smart-title", Body: []byte("{}")}
 			}},
 
 		op{name: "start",

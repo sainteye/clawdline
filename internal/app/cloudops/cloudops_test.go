@@ -458,6 +458,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: pane, name: "action:req-focus",
 		method: "POST", path: "/v1/sessions/%2519/focus",
 	}, {
+		word:    "smart-title",
+		body:    map[string]any{"type": "smart-title", "session": pane, "request": "req-smart-title"},
+		session: pane, name: "action:req-smart-title",
+		method: "POST", path: "/v1/sessions/%2519/smart-title", body2: `{}`,
+	}, {
 		word: "start",
 		body: map[string]any{"type": "start", "session": machine, "request": "req-start",
 			"place": "/Users/sean/code/clawdline-go", "assistant": "claude", "model": "opus"},
@@ -737,7 +742,7 @@ func TestEveryChangeCarriesAnIdempotencyKey(t *testing.T) {
 func TestTheWriteSwitchIsOffUntilSomebodySaysOtherwise(t *testing.T) {
 	r := &router{}
 	closed := Bridge{MachineID: "mac-01", Router: r}
-	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "intents",
+	for _, word := range []string{"send", "answer", "end", "focus", "smart-title", "start", "resume", "voice", "intents",
 		"schedule-create", "schedule-update", "schedule-delete", "schedule-run",
 		"schedule-webhook-bind-v1",
 		"snippet-create", "snippet-update", "snippet-delete", "snippet-order", "dispatch"} {
@@ -1256,7 +1261,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 			t.Fatalf("%s is advertised and has no local capability", word)
 		}
 	}
-	for _, word := range []string{"send", "answer", "end", "focus", "start", "resume", "voice", "intents", "agent",
+	for _, word := range []string{"send", "answer", "end", "focus", "smart-title", "start", "resume", "voice", "intents", "agent",
 		"transcript", "info", "git", "git-diff", "screen", "image", "documents", "document", "places",
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",

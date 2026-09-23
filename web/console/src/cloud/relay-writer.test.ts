@@ -205,7 +205,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
     ["GET", "/v1/artifacts/images/img-1", "image"],
     ["POST", "/v1/sessions/s1/interrupt", "interrupt"],
-    ["POST", "/v1/sessions/s1/smart-title", "title"],
+    ["POST", "/v1/sessions/s1/smart-title", "smart-title"],
     ["POST", "/v1/push/subscribe", "push-subscribe"],
     ["POST", "/v1/push/unsubscribe", "push-unsubscribe"],
     ["POST", "/v1/push/test", "push-test"],
@@ -250,7 +250,9 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     op: "resume", word: "resume", place: "p1", assistant: "claude", past: "abc",
   })
   assert.equal(writeRoute("POST", "/v1/sessions/s1/interrupt")?.op, "uncarried")
-  assert.equal(writeRoute("POST", "/v1/sessions/s1/smart-title")?.op, "uncarried")
+  assert.deepEqual(writeRoute("POST", "/v1/sessions/s1/smart-title"), {
+    op: "smart-title", word: "smart-title", session: "s1",
+  })
   assert.equal(writeRoute("GET", "/v1/work/v2/images/img-1")?.word, "work.v2.image")
   assert.equal(writeRoute("POST", "/v1/work/v2/items/w1/images")?.word, "work.v2.image-create")
   assert.equal(writeRoute("DELETE", "/v1/work/v2/items/w1/images/img-1")?.word, "work.v2.image-delete")
@@ -269,6 +271,33 @@ test("a send goes as the machine's `send` under the row's own identity, and answ
   assert.equal(last.word, "send")
   assert.equal(last.answer, "relay")
   assert.equal(typeof last.ms, "number")
+})
+
+test("smart naming reaches the session once under the confirmation's idempotency key", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+  const res = await reader.fetch(
+    "/v1/sessions/s1/smart-title",
+    post({}, { "Idempotency-Key": "smart-press-1" }),
+  )
+  assert.equal(res.status, 200)
+  assert.deepEqual(await json(res), { ok: true, id: "s1", action: "keyed" })
+  assert.deepEqual(client.calls, [[
+    "_read",
+    { machine: "mac-a", session: "s1" },
+    "smart-title",
+    { request: "smart-press-1" },
+    "action:smart-press-1",
+    undefined,
+    undefined,
+  ]])
+
+  client.calls = []
+  const unkeyed = await reader.fetch("/v1/sessions/s1/smart-title", post({}))
+  assert.equal(unkeyed.status, 400)
+  assert.equal((await json(unkeyed)).error, "bad_request")
+  assert.deepEqual(client.calls, [], "an unreceipted model turn never leaves the browser")
 })
 
 test("a machine's refusal comes back typed, in the flat spelling `ClawdlineClient` recognises", async () => {
