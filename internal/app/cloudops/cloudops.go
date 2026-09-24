@@ -23,7 +23,9 @@
 package cloudops
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 )
 
@@ -185,6 +187,36 @@ type Bridge struct {
 	// clock — which is what the Swift app's default does — and still consults
 	// AllowCommands for the write gate.
 	Authority func(ctx context.Context, sender string, requiresWriteGate bool) Authority
+	// Sessions puts every Session row of this machine back on its own channel,
+	// then its inventory, and answers the ids it stated (`sessions.snapshot`).
+	// Nil answers that word `unknown_command`, which the hosted console
+	// learns from and stops asking this machine.
+	Sessions func(ctx context.Context) (SessionsStated, *Refusal)
+}
+
+// AsksForSessions reports whether this plaintext is a `sessions.snapshot`
+// request, for a transport that answers it off its request loop because it
+// waits for a publication pass. A body too malformed to say is not one; the
+// bridge refuses it like any other.
+func AsksForSessions(plaintext []byte) bool {
+	if !bytes.Contains(plaintext, []byte(sessionsSnapshotWord)) {
+		return false
+	}
+	parsed, err := decodeBody(plaintext)
+	if err != nil {
+		return false
+	}
+	word, _ := parsed.str("type")
+	return word == sessionsSnapshotWord
+}
+
+const sessionsSnapshotWord = "sessions.snapshot"
+
+// SessionsStated is what a `sessions.snapshot` pass said: the ids its
+// inventory named, and whether the reading behind it was the whole set.
+type SessionsStated struct {
+	IDs      []string
+	Complete bool
 }
 
 // Vocabulary is every operation word this bridge knows, sorted. It is what a
@@ -197,7 +229,9 @@ func Vocabulary() []string { return opNames(func(o op) bool { return true }) }
 // A word outside this list is answered `unknown_command`, which is the code
 // the hosted console learns from: it stops asking this machine for that word
 // (`machineLacks` in `net/cloud-client.js`).
-func Implemented() []string { return opNames(func(o op) bool { return o.route != nil }) }
+func Implemented() []string {
+	return opNames(func(o op) bool { return o.route != nil || o.sessions })
+}
 
 // Divergences names every routed word whose answer is not the one the hosted
 // console was written against, and says how each differs. It is not a list of
@@ -264,6 +298,9 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "malformed_read",
 			Message: "This Cloud read is malformed."})
 	}
+	if o.sessions {
+		return b.stateSessions(ctx, cmd, plan)
+	}
 	if o.route == nil {
 		// A word this vocabulary knows and this daemon cannot answer. The body
 		// decoded, so unlike the Swift bridge's unknown-word branch this one
@@ -275,6 +312,31 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 			Message: "This machine does not know that Cloud command."}, nil)
 	}
 	return b.route(ctx, cmd, plan, o)
+}
+
+// stateSessions answers `sessions.snapshot` once the rows it names are on
+// their way. The rows travel on their own `s/` channels, ahead of this answer
+// on the same socket, so a page that reads the ids here and finds a row
+// missing is looking at a row that was lost, not one still to come.
+func (b Bridge) stateSessions(ctx context.Context, cmd Command, p plan) Answer {
+	if b.Sessions == nil {
+		return b.publish(cmd, p, Refusal{Status: 400, Code: "unknown_command",
+			Message: "This machine does not know that Cloud command."}, nil)
+	}
+	stated, refusal := b.Sessions(ctx)
+	if refusal != nil {
+		return b.publish(cmd, p, *refusal, nil)
+	}
+	ids := stated.IDs
+	if ids == nil {
+		ids = []string{}
+	}
+	body, err := json.Marshal(map[string]any{"sessions": ids, "complete": stated.Complete})
+	if err != nil {
+		return b.publish(cmd, p, Refusal{Status: 502, Code: "read_failed",
+			Message: "This read could not be answered.", Layer: layerRoute}, nil)
+	}
+	return b.publish(cmd, p, Refusal{}, body)
 }
 
 // serveCommand answers one of the words that can change something.

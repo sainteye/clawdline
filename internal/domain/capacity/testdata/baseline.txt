@@ -218,6 +218,7 @@ internal/domain/schedule.MaxCatchUpHours # parameter: how far back a schedule ca
 internal/domain/schedule.TitleLimit # admission: a schedule title
 internal/domain/task.MaxAge # parameter: how long a closeability answer stays true
 internal/transport/cloud.InventoryLimit # page: sessions in one Cloud inventory
+internal/transport/cloud.SessionSnapshotWaitersLimit # lane: sessions.snapshot requests waiting for one re-statement pass, 64; past it the sender is answered 429 cloud_read_busy with retry_after, and the pass answers every waiter at once, so nothing fills
 internal/transport/cloud.TaskListLimit # page: task records in one orch/ snapshot, 100; past it the oldest finished are left out first, then the oldest unfinished, and the log says how many when that number changes. Each snapshot is recomputed whole, so nothing fills
 internal/transport/cloud.TaskListBytesLimit # page: those records' encoded bytes, 128 KiB, cut the same way; 100 records at the broker's 200-character title limit are 85,301 bytes, so it binds only on titles this daemon did not admit
 internal/transport/cloud.taskReadLimit # read: the finished tasks one orch/ pass reads, the page the local console's stream reads (50); unfinished tasks are all read, and are bounded by TaskListLimit on the way out
