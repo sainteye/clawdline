@@ -164,3 +164,55 @@ func TestNothingHeldIsNothingLost(t *testing.T) {
 		t.Fatalf("and the next reader walks it again: %d reads", reads.Load())
 	}
 }
+
+// TestAReadingNobodyLookedAtIsNotServed is the Board report "the deploy
+// finished and the bar stayed at 100%". A deploy running at 09:40 was the last
+// thing held for that directory; nobody opened the session again until 11:14,
+// and the first answer then was the 09:40 rows — `running`, which the page
+// draws as elapsed against typical and clamps at 100%. Stale-while-refresh is
+// right for a directory somebody is watching and wrong for one they are only
+// coming back to: past ServeStaleFor the held rows are read again before
+// anything is answered.
+func TestAReadingNobodyLookedAtIsNotServed(t *testing.T) {
+	c, k := testCache(t, 0)
+	var reads atomic.Int64
+
+	c.Get(context.Background(), "/projects/widgets", counted(&reads, "running"))
+	k.advance(94 * time.Minute)
+
+	got, at := c.Get(context.Background(), "/projects/widgets", counted(&reads, "ok"))
+	if got.Links[0].Label != "ok" {
+		t.Fatalf("an hour and a half later the answer is today's, not the held one: %+v", got)
+	}
+	if !at.Equal(k.now()) {
+		t.Fatalf("observedAt is when the new rows were taken: %v, want %v", at, k.now())
+	}
+	c.Settle()
+	if reads.Load() != 2 {
+		t.Fatalf("one read then, one read now, and nothing behind the request: %d", reads.Load())
+	}
+
+	// Inside the window the projection behaves as before: served at once,
+	// refreshed behind.
+	k.advance(ServeStaleFor - time.Second)
+	if again, _ := c.Get(context.Background(), "/projects/widgets", counted(&reads, "later")); again.Links[0].Label != "ok" {
+		t.Fatalf("a reading still inside ServeStaleFor is served: %+v", again)
+	}
+	c.Settle()
+}
+
+// TestALateRefreshDoesNotOverwriteANewerRead: a refresh started behind one
+// request can finish after a synchronous read taken by the next. What it
+// carries is older, and the older rows must not win.
+func TestALateRefreshDoesNotOverwriteANewerRead(t *testing.T) {
+	c, k := testCache(t, 0)
+	c.Get(context.Background(), "/projects/widgets", func(context.Context) Reading {
+		return Reading{Links: []Link{{Label: "old"}}}
+	})
+	newer := k.now().Add(time.Hour)
+	c.store("/projects/widgets", Reading{Links: []Link{{Label: "new"}}}, newer)
+	c.store("/projects/widgets", Reading{Links: []Link{{Label: "late"}}}, newer.Add(-time.Minute))
+	if got, at := c.Get(context.Background(), "/projects/widgets", nil); got.Links[0].Label != "new" || !at.Equal(newer) {
+		t.Fatalf("the newer reading stays: %+v at %v", got, at)
+	}
+}

@@ -18,6 +18,21 @@ import (
 // long enough that opening it ten times in a row costs one subprocess.
 const FreshFor = 30 * time.Second
 
+// ServeStaleFor is how old a held reading may be and still be handed out
+// while a fresh one is taken behind the request.
+//
+// Stale-while-refresh is right for a directory somebody is watching: the
+// console asks `/info` once a minute, so what it is served is never more than
+// a minute and a half old. It is wrong for a directory somebody is **coming
+// back to**. Measured 2026-09-24: a deploy was `running` at 09:40, finished
+// `ok` at 09:45, nobody opened that session again until 11:14 — and the first
+// answer then was the 09:40 rows, a `running` deploy the page drew as elapsed
+// against typical, clamped at 100%. Two minutes covers the watching cadence
+// with room to spare; past it the directory is read again before anything is
+// answered, which is the first-read cost (a few hundred milliseconds) paid
+// once on return.
+const ServeStaleFor = 2 * time.Minute
+
 // refreshTimeout bounds one refresh taken behind a request. Nothing waits for
 // it, so what it must not do is outlive the reason it was started.
 const refreshTimeout = 20 * time.Second
@@ -31,10 +46,15 @@ const refreshTimeout = 20 * time.Second
 // the rows so a reader can say how old they are — nothing here decides that
 // for it.
 //
-// **The only synchronous read is the first one for a directory**, because
-// there is nothing to serve yet. That read is not on the session list's path
-// and not on the event stream: one subprocess per session per beat is what
-// the route it replaces was written to avoid.
+// **Stale is bounded.** Past ServeStaleFor a held reading is no longer an
+// answer about this project but about some earlier hour of it, and it is read
+// again synchronously, as a first read is.
+//
+// **The only synchronous reads are the first one for a directory and the one
+// after it has gone unread past ServeStaleFor**, because in both there is
+// nothing current to serve. Neither is on the session list's path nor on the
+// event stream: one subprocess per session per beat is what the route it
+// replaces was written to avoid.
 type Cache struct {
 	mu          sync.Mutex
 	limit       int
@@ -83,13 +103,13 @@ func (c *Cache) SetLimit(n int64) {
 
 // Get is the held rows for one directory and when they were computed.
 //
-// read is called with the caller's own context only on the first read for a
-// key. A refresh gets a context of its own, because the request that started
+// read is called with the caller's own context on the first read for a key and
+// when what is held is older than ServeStaleFor. A refresh gets a context of its own, because the request that started
 // it has already been answered and its cancellation is not this work's.
 func (c *Cache) Get(ctx context.Context, key string, read func(context.Context) Reading) (Reading, time.Time) {
 	now := c.now()
 	c.mu.Lock()
-	if e, ok := c.items[key]; ok {
+	if e, ok := c.items[key]; ok && now.Sub(e.Value.(*held).at) <= ServeStaleFor {
 		h := e.Value.(*held)
 		h.lastRead = now
 		c.order.MoveToFront(e)
@@ -107,8 +127,9 @@ func (c *Cache) Get(ctx context.Context, key string, read func(context.Context) 
 	}
 	c.mu.Unlock()
 
-	// Nothing held. Read here: a first answer that is late beats a first
-	// answer that is empty.
+	// Nothing held, or nothing held that is still about now. Read here: a
+	// first answer that is late beats a first answer that is empty, and a late
+	// answer beats one from an hour ago.
 	reading := read(ctx)
 	at := c.now()
 	c.store(key, reading, at)
@@ -135,7 +156,14 @@ func (c *Cache) store(key string, reading Reading, at time.Time) {
 	defer c.mu.Unlock()
 	if e, ok := c.items[key]; ok {
 		h := e.Value.(*held)
-		h.reading, h.at, h.refresh = reading, at, false
+		// A refresh started behind one request can land after a synchronous
+		// read taken by a later one. Its rows are older and do not replace
+		// the newer ones; it still clears the flag, because it has finished.
+		h.refresh = false
+		if at.Before(h.at) {
+			return
+		}
+		h.reading, h.at = reading, at
 		if h.lastRead.IsZero() {
 			h.lastRead = at
 		}
