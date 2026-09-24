@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { SessionRow } from "@clawdline/contract"
+import type { Assistant, SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js"
@@ -34,7 +34,15 @@ import {
   type WorkV2Status,
   type SessionWorkV2,
 } from "./api.js"
-import { sessionActivityName, sessionWorkCounts, sessionWorkStateName } from "./session-assignment.js"
+import {
+  assistantName,
+  NEW_SESSION_ASSISTANTS,
+  rememberAssistant,
+  rememberedAssistant,
+  sessionActivityName,
+  sessionWorkCounts,
+  sessionWorkStateName,
+} from "./session-assignment.js"
 import { workV2CreateDecision, type WorkV2CreateDecision } from "./create-decision.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
@@ -237,6 +245,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   focusAssignment?: boolean
 }) {
   const [terminal, setTerminal] = useState("")
+  const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [reminded, setReminded] = useState(false)
@@ -299,7 +308,12 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     {assignable && <div className="work-assignment">
       <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment} />
       <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => void run(item.id, () => assignWorkV2(item, terminal))}>指派</button>
-      <button className="chip" type="button" disabled={!!busy} onClick={() => void run(item.id, () => assignNewWorkV2(item))}>開新 Session</button>
+      <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
+        {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
+          role="radio" aria-checked={choice === assistant} disabled={!!busy}
+          onClick={() => { setAssistant(choice); rememberAssistant(choice) }}>{assistantName(choice)}</button>)}
+      </div>
+      <button className="chip" type="button" disabled={!!busy} onClick={() => void run(item.id, () => assignNewWorkV2(item, assistant))}>開新 {assistantName(assistant)} Session</button>
     </div>}
     {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description) => {
       void run(`edit-${item.id}`, () => editWorkV2(item, title, description)).then((ok) => { if (ok) setEditing(false) })
@@ -372,7 +386,7 @@ function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false 
     <button className="work-session-trigger" type="button" aria-label="指派既有 Session" aria-haspopup="listbox"
       aria-expanded={open} autoFocus={autoFocus} onClick={() => setOpen((shown) => !shown)}>
       {selected ? <><SessionStateDot session={selected} /><span><b>{selected.label || selected.id}</b>
-        <small>{sessionActivityName(selected.state)} · {sessionWorkStateName(selected.work_state)}</small></span></>
+        <small>{assistantName(selected.assistant)} · {sessionActivityName(selected.state)} · {sessionWorkStateName(selected.work_state)}</small></span></>
         : <><span className="work-session-placeholder" aria-hidden="true">◌</span><span>選擇既有 Session</span></>}
       <span className="work-project-chevron" aria-hidden="true">⌄</span>
     </button>
@@ -394,7 +408,7 @@ function SessionChoice({ session, reading, selected, onChoose }: {
   const counts = reading?.page ? sessionWorkCounts(reading.page) : null
   return <button className="work-session-option" type="button" role="option" aria-selected={selected} onClick={onChoose}>
     <SessionStateDot session={session} />
-    <span><b>{session.label || session.id}</b><small>{sessionActivityName(session.state)} · {sessionWorkStateName(session.work_state)}</small></span>
+    <span><b>{session.label || session.id}</b><small>{assistantName(session.assistant)} · {sessionActivityName(session.state)} · {sessionWorkStateName(session.work_state)}</small></span>
     <span className="work-session-counts">{reading?.loading ? "讀取中…" : reading?.error ? "讀不到工作" : counts
       ? `${counts.board} 看板 · ${counts.todos} TODO` : "—"}</span>
   </button>

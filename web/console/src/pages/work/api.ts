@@ -422,7 +422,7 @@ export const assignWorkV2 = (item: WorkV2Item, terminalID: string) =>
     terminal_id: terminalID,
   })
 
-export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude" = "codex") =>
+export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude") =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/assign`, {
     expected_version: item.version,
     mode: "new_session",

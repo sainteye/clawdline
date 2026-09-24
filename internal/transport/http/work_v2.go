@@ -883,6 +883,20 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 	if mode != "new_session" || s.broker == nil {
 		return app.WorkV2View{}, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assignment", Message: "Choose an existing Session or a new Session."}
 	}
+	// The person picks the assistant; an older console that sends none still
+	// gets Codex. The default is applied before the record is written so the
+	// assignment names the assistant that was actually opened.
+	switch assistant {
+	case "":
+		assistant = "codex"
+	case "codex", "claude":
+	default:
+		return app.WorkV2View{}, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assistant",
+			Message: "A new Session is opened with codex or claude."}
+	}
+	if model == "" {
+		model = "default"
+	}
 	item, err := s.workV2().Item(ctx, id)
 	if err != nil {
 		return app.WorkV2View{}, err
@@ -892,12 +906,6 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID}, true, nil)
 	if err != nil {
 		return app.WorkV2View{}, err
-	}
-	if assistant == "" {
-		assistant = "codex"
-	}
-	if model == "" {
-		model = "default"
 	}
 	ra, _, openErr := s.broker.OpenRootAssignment(ctx, requestID, orchestrator.RootAssignmentRequest{
 		RequestID: requestID, Assistant: assistant, Model: model, ProjectDir: item.Item.ProjectPath,
