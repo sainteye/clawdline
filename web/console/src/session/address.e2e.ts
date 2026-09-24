@@ -884,6 +884,45 @@ test("phone: reopening an empty Project picker reads the Projects again", () =>
     await tab.run(`document.querySelector('.work-new-modal [aria-label="關閉"]').click()`)
   }))
 
+test("phone: a new Board item opens without the keyboard and in readable type", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/")
+    await tab.until("the list arrives", (s) => s.rows === ROWS.length)
+    await tab.run(`document.getElementById("work-create-go").click()`)
+    const opened = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const modal = document.querySelector(".work-new-modal")
+        if (modal) {
+          const px = (selector) => parseFloat(getComputedStyle(modal.querySelector(selector)).fontSize)
+          return resolve({
+            focusedTag: document.activeElement?.tagName,
+            focusedInModal: modal.contains(document.activeElement) && document.activeElement?.matches("input, textarea"),
+            field: px(".work-modal-field"),
+            legend: px(".work-kind-field legend"),
+            kindName: px(".work-kind-option b"),
+            kindHint: px(".work-kind-option small"),
+            title: px("input.work-input"),
+            description: px("textarea"),
+            imagesHint: px(".work-modal-image-tools small"),
+          })
+        }
+        if (Date.now() >= deadline) return reject(new Error("the Board item modal did not open"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`) as Record<string, unknown>
+    // A focused text field raises the phone keyboard over the Project and kind
+    // the person has not chosen yet.
+    assert.equal(opened.focusedInModal, false, `opening focused a text field (${opened.focusedTag})`)
+    // Below 16px, iOS zooms the page when the field is tapped.
+    assert.ok((opened.title as number) >= 16, `title field is ${opened.title}px`)
+    assert.ok((opened.description as number) >= 16, `description field is ${opened.description}px`)
+    for (const key of ["field", "legend", "kindName"]) assert.ok((opened[key] as number) >= 14, `${key} is ${opened[key]}px`)
+    for (const key of ["kindHint", "imagesHint"]) assert.ok((opened[key] as number) >= 12, `${key} is ${opened[key]}px`)
+    await tab.run(`document.querySelector('.work-new-modal [aria-label="關閉"]').click()`)
+  }))
+
 test("phone: the Board shortcut keeps a new item open for assignment", () =>
   inTab(PHONE, async (tab) => {
     createdWork = null

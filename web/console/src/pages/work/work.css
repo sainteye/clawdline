@@ -469,7 +469,20 @@
 .work-kind-radio { display: grid; place-items: center; color: var(--accent); }
 .work-kind-radio .work-icon { width: 14px; height: 14px; }
 
+/* The create sheet is mostly read on a phone, so it sets its own type rather
+   than the 10-12px shared with the denser Board rows. */
+.work-new-modal .work-modal-field, .work-new-modal .work-kind-field legend,
+.work-new-modal label, .work-new-modal .work-modal-images > span { font-size: 14px; }
+.work-new-modal .work-project-trigger, .work-new-modal .work-project-option { font-size: 15px; }
+.work-new-modal .work-kind-option b { font-size: 15px; }
+.work-new-modal .work-kind-option small { font-size: 12px; }
+.work-new-modal .work-input, .work-new-modal textarea { font-size: 15px; }
+.work-new-modal .work-modal-image-tools small { font-size: 12px; }
+.work-new-modal .work-modal-image-list li span { font-size: 13px; }
+
 @media (max-width: 560px) {
     .work-kind-list { grid-template-columns: minmax(0, 1fr); }
     .work-new-modal form { padding: 18px; }
+    /* Below 16px iOS zooms the page when a text field is tapped. */
+    .work-new-modal .work-input, .work-new-modal textarea { font-size: 16px; }
 }
