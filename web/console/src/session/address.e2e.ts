@@ -934,7 +934,7 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
     assert.deepEqual(card, {
       title: "Shortcut-created work",
       picker: "選擇既有 Session",
-      actions: ["指派", "開新 Session"],
+      actions: ["指派", "開新 Codex Session"],
       focus: "指派既有 Session",
       sessionsPage: true,
       boardPage: false,

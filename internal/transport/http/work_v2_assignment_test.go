@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -400,5 +401,42 @@ func TestAnAgentSeesAndCanRetractItsRecentCompletion(t *testing.T) {
 	if answer.Item.Phase != "implementing" || answer.Item.OwnerSession == nil ||
 		*answer.Item.OwnerSession != p.s.ConversationID || answer.Item.Cycle != 2 {
 		t.Fatalf("reopened item = %+v", answer.Item)
+	}
+}
+
+// The Board chooses which assistant a new Session runs. The choice reaches the
+// assignment record, a blank one from an older console still means Codex, and
+// an assistant this machine cannot open is refused before anything is written.
+func TestANewSessionAssignmentRecordsTheChosenAssistant(t *testing.T) {
+	for _, tc := range []struct{ sent, recorded string }{{"claude", "claude"}, {"codex", "codex"}, {"", "codex"}} {
+		t.Run("sent="+tc.sent, func(t *testing.T) {
+			s, _, v := workV2AssignmentServer(t, session.StateIdle)
+			// This broker has no terminal to open a Session in, so the
+			// assignment fails after the pending record names its assistant.
+			_, _ = s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+				"new_session", "", tc.sent, "", nil)
+			after, err := s.workV2().Item(context.Background(), v.Item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after.Assignments) != 1 || after.Assignments[0].Assistant != tc.recorded {
+				t.Fatalf("assignments = %+v, want one naming %q", after.Assignments, tc.recorded)
+			}
+		})
+	}
+
+	s, _, v := workV2AssignmentServer(t, session.StateIdle)
+	_, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"new_session", "", "gemini", "", nil)
+	var refusal *app.WorkError
+	if !errors.As(err, &refusal) || refusal.Code != "invalid_assistant" {
+		t.Fatalf("unknown assistant: %v", err)
+	}
+	after, err := s.workV2().Item(context.Background(), v.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Assignments) != 0 || after.Item.Version != v.Item.Version {
+		t.Fatalf("a refused assistant wrote %+v", after)
 	}
 }

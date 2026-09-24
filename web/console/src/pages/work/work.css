@@ -131,6 +131,8 @@
 .work-modal-image-list li button { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--faint); font-size: 15px; }
 .work-v2-project { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 12px; }
 .work-assignment { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; padding-top: 4px; border-top: 1px solid var(--line); }
+.work-new-session { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; }
+.work-new-session .chip { border-color: transparent; }
 .work-session-picker { position: relative; flex: 1 1 100%; min-width: 0; }
 .work-session-trigger, .work-session-option {
     box-sizing: border-box; width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
