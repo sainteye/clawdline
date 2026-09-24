@@ -149,6 +149,15 @@ guard goes red when that tool stops writing, and nothing here can make one:
 `internal/adapters/projectlinks/status.go` says so beside the code that reads them, and the
 console's sentence for each kind is in `web/console/src/overlays/links-note.ts`.
 
+**A `running` row has an age ceiling, and so does the projection that serves it.** On 2026-09-24
+a deploy finished at 09:45 and a phone opening that session at 11:14 was shown a bar at 100%.
+Two things let that happen. The link projection (`projectlinks/cache.go`) served what it held
+however old it was and refreshed behind the request, so the first answer after a quiet hour was
+that hour's `running`; past `ServeStaleFor` (two minutes) it now reads again first. And a
+workflow file left at `running` by a producer that died before its verdict was drawn for as long
+as the file stayed; past 1800 seconds without a rewrite — the ceiling the producers themselves
+use — it is now the quiet `running_stale` instead of a row.
+
 That `why` vocabulary is the producer's and is not closed, so neither Go nor the wire maps it:
 the console turns the words it knows into sentences and says an unknown one as the word it was
 given. A reader that kept only what it recognised would be silent again the first time that tool

@@ -92,6 +92,8 @@ export function deployQuietNote(quiet: ProjectDeployQuiet | undefined, say: Say)
       return say.word("linksDeployNoRun", holes) + when
     case "no_address":
       return say.word("linksDeployNoPage", holes) + when
+    case "running_stale":
+      return say.word("linksDeployRunningStale") + when
   }
   // A kind this build has no word for is still a named kind, and saying it is
   // better than the blank cell this whole file exists to end.

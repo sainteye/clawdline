@@ -3835,17 +3835,21 @@ export interface ProjectDeployQuiet {
  * one small JSON object. `state_not_drawn`: it was read and says a state no reader
  * here draws — `none` is what a producer with nothing to say writes, and a dot
  * drawn for it would be the always-wrong mark. `no_address`: it names a run and no
- * page to open it on, and a row with nowhere to go is not a row. Four words because
+ * page to open it on, and a row with nowhere to go is not a row. `running_stale`:
+ * it says `running` and nobody has rewritten it for 1800 seconds, or it never said
+ * when it was written — a producer that stopped before its verdict, which a bar
+ * drawn from elapsed time would show as a deploy stuck at 100%. Five words because
  * what to do about each is different: start the poller, look at the file, read
- * `why`, look at the producer.
+ * `why`, look at the producer, look at whether the deploy is still alive.
  */
 export type ProjectDeployQuietKind =
     "no_file"
   | "unreadable"
   | "state_not_drawn"
   | "no_address"
+  | "running_stale"
 
-export const ProjectDeployQuietKindValues: readonly ProjectDeployQuietKind[] = ["no_file", "unreadable", "state_not_drawn", "no_address"] as const
+export const ProjectDeployQuietKindValues: readonly ProjectDeployQuietKind[] = ["no_file", "unreadable", "state_not_drawn", "no_address", "running_stale"] as const
 
 /**
  * Which way the git read failed, present only with `unreadable`. Four words because
