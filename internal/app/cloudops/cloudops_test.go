@@ -613,6 +613,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body:    map[string]any{"type": "skills", "session": pane},
 		session: pane, name: "skills", code: "unknown_command", status: 400,
 	}, {
+		// Answered by the Session publisher, not by a route; a bridge with no
+		// publisher behind it says it does not know the word, which is what
+		// stops a page asking (TestSessionsSnapshotAnswersTheIdsThePublisherStated).
+		word: "sessions.snapshot",
+		body: map[string]any{"type": "sessions.snapshot", "session": machine,
+			"request": "req-rows"},
+		session: machine, name: "read:req-rows", code: "unknown_command", status: 400,
+	}, {
 		word: "schedule",
 		body: map[string]any{"type": "schedule", "session": machine, "request": "req-schedule",
 			"id": scheduleID},
@@ -1558,5 +1566,71 @@ func TestBoardItemsRoutesTheWholeQuery(t *testing.T) {
 	}
 	if len(got.Query) != len(want) {
 		t.Fatalf("query carries %v, want exactly %v", got.Query, want)
+	}
+}
+
+// TestSessionsSnapshotAnswersTheIdsThePublisherStated. The page reads
+// `{"sessions":[ids],"complete":bool}` under `read:<request>` on the machine's
+// reply channel (`_askSessionSnapshot` in net/cloud-client.js), and accepts
+// `orchestrator: true` beside the three keys. It is a read: the write switch,
+// off here, does not gate it.
+func TestSessionsSnapshotAnswersTheIdsThePublisherStated(t *testing.T) {
+	asked := 0
+	bridge := Bridge{MachineID: "mac-01", Sessions: func(context.Context) (SessionsStated, *Refusal) {
+		asked++
+		return SessionsStated{IDs: []string{"%19", "GUID-2"}, Complete: true}, nil
+	}}
+	for _, body := range []map[string]any{
+		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1"},
+		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1", "orchestrator": true},
+	} {
+		answer := bridge.Handle(context.Background(), request(t, ClassCtl, body))
+		if answer.Session != MachineReplySession || answer.Name != "read:req-1" || !answer.OK() {
+			t.Fatalf("answered %+v", answer)
+		}
+		payload := answerOf(t, answer)
+		got, _ := json.Marshal(payload["body"])
+		if string(got) != `{"complete":true,"sessions":["%19","GUID-2"]}` {
+			t.Fatalf("the answer said %s", got)
+		}
+	}
+	if asked != 2 {
+		t.Fatalf("the publisher was asked %d times, wanted 2", asked)
+	}
+
+	// A body this word does not have is malformed, and the publisher is not
+	// asked to re-state anything for it.
+	for _, body := range []map[string]any{
+		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1", "orchestrator": false},
+		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1", "extra": 1},
+		{"type": "sessions.snapshot", "session": "%19", "request": "req-1"},
+	} {
+		answer := bridge.Handle(context.Background(), request(t, ClassCtl, body))
+		if answer.Code != "malformed_read" {
+			t.Fatalf("%v answered %q, wanted malformed_read", body, answer.Code)
+		}
+	}
+	if asked != 2 {
+		t.Fatalf("a malformed request asked the publisher (%d)", asked)
+	}
+
+	// The publisher's refusal crosses as itself.
+	busy := Bridge{MachineID: "mac-01", Sessions: func(context.Context) (SessionsStated, *Refusal) {
+		return SessionsStated{}, &Refusal{Status: 429, Code: "cloud_read_busy", Message: "busy",
+			Detail: map[string]any{"limit": 64, "retry_after": 5}}
+	}}
+	answer := busy.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-2"}))
+	if answer.Code != "cloud_read_busy" || answer.Status != 429 || answer.Name != "read:req-2" {
+		t.Fatalf("answered %+v", answer)
+	}
+
+	if !AsksForSessions([]byte(`{"type":"sessions.snapshot","session":"__clawdline_machine__","request":"r"}`)) {
+		t.Fatal("AsksForSessions missed the word")
+	}
+	for _, other := range []string{`{"type":"send","text":"sessions.snapshot"}`, `not json sessions.snapshot`, `{"type":"info"}`} {
+		if AsksForSessions([]byte(other)) {
+			t.Fatalf("AsksForSessions took %s for the word", other)
+		}
 	}
 }

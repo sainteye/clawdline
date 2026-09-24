@@ -1029,7 +1029,7 @@ Node 伺服器把三者收在同一個 origin `https://127.0.0.1:8443`（console
    猜不到的平台**一個字都不送**——不是送了被拒絕，是連請求都不發。所以
    `internal/transport/cloud/publish.go` 直接把 `cloudops.Implemented()` 放進去。
    同理 `features` 是算出來的不是抄的：`sessions.snapshot` 與 `board.items` 這個 daemon 都不會答，
-   所以現在是空的，不發這個 key。
+   所以現在是空的，不發這個 key。（2026-09-25：兩個都答了，`features` 現在列出兩個，見 §16.6。）
 
 ### 16.6 還沒做的（不可以當作通過）
 
@@ -1037,7 +1037,15 @@ Node 伺服器把三者收在同一個 origin `https://127.0.0.1:8443`（console
   secret。實測時是**用 devtools 把已完成配對會寫的那四筆直接種進 IndexedDB**
   （`clawdline.machine-master*` / `-sender` / `-binding`）。因此這一段證明的是傳輸與操作那一層，
   **不是配對那一層**。配對仍是下一波。
-- `sessions.snapshot` 這個字沒有接（發佈器自己每 5 秒掃）。
+- `sessions.snapshot` 這個字沒有接（發佈器自己每 5 秒掃）。**2026-09-25 接上了**：很久沒開的頁面
+  重新整理後 Session 列表不齊，原因是 relay 的 object 被 evict 後不重播任何 row，而沒變的 row 要等
+  240 秒的 heartbeat 才重發；`Publisher.Seen` 只對「這條 socket 上沒聽過的裝置」重發，同一支手機
+  幾小時後回來不算新裝置。copied client 本來就會在每次非接手的連線時問這個字，只是 marker 的
+  `features` 沒列，所以從來沒問過。現在 `Publisher.Snapshot`（`internal/transport/cloud/publish.go`）
+  回答它：清掉略過記憶、依序重發 descriptor、每一列（含來源讀不到而被保留的 id，用最後一次發出的
+  那份 row）、清單標記，之後才回 `{"sessions":[ids],"complete":bool}`。每台機器每 5 秒最多一次，
+  最多 64 個等待者，第 65 個回 `429 cloud_read_busy`；線路斷掉時等待者收到 `cloud_reconnecting`。
+  它不經 service 的序列迴圈等待（`Link.runService`），所以不會讓其他請求排在它後面。
 - `t/` 上沒有主動推播；transcript 的即時更新在舊版是靠 row 上的 `transcript_signature` 變動來觸發，
   這個 daemon 還沒有算那個簽章，所以 console 要靠自己的重讀節奏。
 - 正式環境（`relay.clawdline.com`／`api.clawdline.com`）一個位元組都沒連過。

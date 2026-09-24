@@ -66,9 +66,8 @@ var FeatureWords = []string{"sessions.snapshot", "board.items"}
 // Features is the subset of those this daemon can actually answer.
 //
 // It is **computed, not copied**, which is what keeps it true as the catalog
-// moves: `sessions.snapshot` is not in this daemon's vocabulary at all (this
-// publisher polls instead of being asked) and `board.items` is routed, so
-// today this list is exactly `board.items`. Advertising a word this daemon
+// moves: `sessions.snapshot` is answered by this publisher (Snapshot) and
+// `board.items` is routed, so today this list is both. Advertising a word this daemon
 // refuses would buy a refusal per tap rather than a feature — and worse than a
 // refusal, because a page that has been told a machine implements a word and
 // is then refused records it as a fault rather than as an absence.
@@ -154,7 +153,43 @@ type Publisher struct {
 	// machine published and has now stopped seeing is either gone or merely
 	// unread, and only the source that owns it can tell those apart.
 	inventoried map[string]inventoriedRow
+	// held is the row each still-inventoried id was last published with, so
+	// a re-statement can send the row of an id this pass could not read
+	// rather than name an id whose row a viewer may never have been given.
+	held map[string]heldRow
+	// unsent counts publications the relay refused during the current pass.
+	unsent int
+
+	// asks, stated and wake belong to Snapshot and are guarded by mu. asks is
+	// every `sessions.snapshot` waiting for the next re-statement; wake nudges
+	// Run when one arrives; stated is when the last re-statement went out,
+	// because one machine states its rows at most once per SnapshotInterval
+	// however many viewers ask. running is whether Run is up to answer them.
+	asks    []chan snapshotResult
+	wake    chan struct{}
+	stated  time.Time
+	running bool
 }
+
+// heldRow is one published row: the identity it was compared by and the bytes
+// that went out.
+type heldRow struct {
+	identity []byte
+	body     []byte
+}
+
+// snapshotResult is what one re-statement pass tells everybody who asked for
+// it.
+type snapshotResult struct {
+	stated  cloudops.SessionsStated
+	refusal *cloudops.Refusal
+}
+
+// SessionSnapshotWaitersLimit is how many `sessions.snapshot` requests may
+// wait for one re-statement pass. The Swift bridge's bound
+// (`docs/cloud.md`, *A page that reconnects asks for the rows*): the next
+// one is refused `cloud_read_busy`, which the page retries.
+const SessionSnapshotWaitersLimit = 64
 
 // inventoriedRow is what is remembered about a published id. The tty is kept
 // because identity here degrades: when iTerm2 cannot be read, the process
@@ -205,6 +240,9 @@ func (p *Publisher) Run(ctx context.Context) error {
 	p.published = map[string][32]byte{}
 	p.sent = map[string]time.Time{}
 	p.inventoried = map[string]inventoriedRow{}
+	p.held = map[string]heldRow{}
+	wake := p.open()
+	defer p.close()
 	// A new socket is a new audience. Nothing this publisher said on the last
 	// one was heard on this one — the relay holds each connection's realign
 	// snapshots, not this machine's — so the first pass below states
@@ -213,25 +251,181 @@ func (p *Publisher) Run(ctx context.Context) error {
 	p.forgetAudience()
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
-	p.pass(ctx)
+	// The first pass states everything anyway, so it answers anybody who
+	// asked before it.
+	p.restatePass(ctx)
+	var window *time.Timer
 	for {
 		select {
 		case <-ctx.Done():
+			if window != nil {
+				window.Stop()
+			}
 			return ctx.Err()
 		case <-ticker.C:
+			if p.asked() && p.windowOpen() {
+				p.restatePass(ctx)
+				continue
+			}
 			p.pass(ctx)
+		case <-wake:
+			if !p.asked() {
+				continue
+			}
+			if wait := p.windowLeft(); wait > 0 {
+				// Inside the window the ask waits for the next pass rather
+				// than buying a second one: however many viewers ask, one
+				// machine states its rows at most once per interval.
+				if window != nil {
+					window.Stop()
+				}
+				window = time.AfterFunc(wait, p.nudge)
+				continue
+			}
+			p.restatePass(ctx)
 		}
 	}
 }
 
-// Pass publishes one round. It is exported so that a `sessions.snapshot`
-// request, when this daemon answers one, has something to call.
-func (p *Publisher) Pass(ctx context.Context) { p.pass(ctx) }
+// Snapshot is `sessions.snapshot`: every Session row back on its own channel,
+// then the inventory that names them, and — once those are handed to the
+// relay — the ids that inventory named.
+//
+// **A page that has just connected may be holding nothing.** The relay
+// replays each channel's last envelope from memory, the memory dies when the
+// account's object is evicted, and `changed` re-sends an unchanged row only
+// when its heartbeat comes due. `Seen` covers a device this socket has never
+// heard from, but a phone that was heard from hours ago and comes back after
+// an eviction is not new to it, and before this word it was shown whichever
+// rows happened to change until each heartbeat came round (240 seconds). The
+// page asks this on every connection that did not take over a live socket
+// (`_recoverSessions` in `net/cloud-client.js`) and shows the machine as
+// sending until the rows named here have arrived.
+//
+// Called on the Cloud service's goroutine; the pass itself runs on Run's, so
+// the skip memory keeps a single owner.
+func (p *Publisher) Snapshot(ctx context.Context) (cloudops.SessionsStated, *cloudops.Refusal) {
+	answer := make(chan snapshotResult, 1)
+	p.mu.Lock()
+	if !p.running {
+		p.mu.Unlock()
+		return cloudops.SessionsStated{}, &cloudops.Refusal{Status: 503, Code: "cloud_starting",
+			Message: "This machine has not started publishing its Sessions yet; try again shortly."}
+	}
+	if len(p.asks) >= SessionSnapshotWaitersLimit {
+		p.mu.Unlock()
+		return cloudops.SessionsStated{}, &cloudops.Refusal{Status: 429, Code: "cloud_read_busy",
+			Message: "This machine is already stating its Sessions to many viewers; try again shortly.",
+			Detail:  map[string]any{"limit": SessionSnapshotWaitersLimit, "retry_after": 5}}
+	}
+	p.asks = append(p.asks, answer)
+	p.mu.Unlock()
+	p.nudge()
+	select {
+	case result := <-answer:
+		return result.stated, result.refusal
+	case <-ctx.Done():
+		return cloudops.SessionsStated{}, &cloudops.Refusal{Status: 503, Code: "cloud_reconnecting",
+			Message: "This machine's Cloud line went down before its Sessions were stated."}
+	}
+}
+
+// restatePass forgets what the wire was told, publishes everything again and
+// answers everybody waiting for that.
+func (p *Publisher) restatePass(ctx context.Context) {
+	p.mu.Lock()
+	asks := p.asks
+	p.asks = nil
+	p.stated = p.now()
+	p.mu.Unlock()
+	p.published = map[string][32]byte{}
+	p.sent = map[string]time.Time{}
+	p.unsent = 0
+	inventory, reading, ok := p.pass(ctx)
+	result := snapshotResult{stated: cloudops.SessionsStated{IDs: inventory, Complete: ok && reading.whole()}}
+	if ok && p.unsent > 0 {
+		// A row that did not leave would be named and never arrive; the page
+		// retries a busy answer once, five seconds on.
+		result = snapshotResult{refusal: &cloudops.Refusal{Status: 503, Code: "reading_busy",
+			Message: "This machine could not send every Session row just now; try again shortly."}}
+	} else if !ok {
+		result = snapshotResult{refusal: &cloudops.Refusal{Status: 503, Code: "reading_busy",
+			Message: "This machine could not read its own Session list; try again shortly."}}
+	}
+	for _, answer := range asks {
+		answer <- result
+	}
+}
+
+// open marks Run as up and returns the channel that wakes it.
+func (p *Publisher) open() <-chan struct{} {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.wake = make(chan struct{}, 1)
+	p.running = true
+	p.stated = time.Time{}
+	return p.wake
+}
+
+// close answers everybody still waiting: the line they asked on is gone.
+func (p *Publisher) close() {
+	p.mu.Lock()
+	asks := p.asks
+	p.asks, p.running = nil, false
+	p.mu.Unlock()
+	for _, answer := range asks {
+		answer <- snapshotResult{refusal: &cloudops.Refusal{Status: 503, Code: "cloud_reconnecting",
+			Message: "This machine's Cloud line went down before its Sessions were stated."}}
+	}
+}
+
+// nudge wakes Run without waiting for it.
+func (p *Publisher) nudge() {
+	p.mu.Lock()
+	wake := p.wake
+	p.mu.Unlock()
+	if wake == nil {
+		return
+	}
+	select {
+	case wake <- struct{}{}:
+	default:
+	}
+}
+
+func (p *Publisher) asked() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.asks) > 0
+}
+
+func (p *Publisher) windowOpen() bool { return p.windowLeft() <= 0 }
+
+// windowLeft is how long until the next re-statement may go out.
+func (p *Publisher) windowLeft() time.Duration {
+	every := p.Every
+	if every <= 0 {
+		every = SnapshotInterval
+	}
+	p.mu.Lock()
+	stated := p.stated
+	p.mu.Unlock()
+	if stated.IsZero() {
+		return 0
+	}
+	return every - p.now().Sub(stated)
+}
+
+// Pass publishes one round, for a caller that drives the clock itself.
+func (p *Publisher) Pass(ctx context.Context) { _, _, _ = p.pass(ctx) }
 
 // The sessions are read before the descriptor goes out and published after it:
 // which finished tasks the descriptor's task list carries depends on which
 // sessions a viewer will hold, and the descriptor still has to arrive first.
-func (p *Publisher) pass(ctx context.Context) {
+//
+// It answers the inventory it stated and the reading behind it, or false when
+// this machine's own list could not be read and nothing about Sessions went out.
+func (p *Publisher) pass(ctx context.Context) ([]string, sessionReading, bool) {
 	if p.takeRestate() {
 		// A viewer this machine has not stated its channels to is out there.
 		// What it holds is not this machine's to guess, so the skip's memory
@@ -257,6 +451,7 @@ func (p *Publisher) pass(ctx context.Context) {
 	if ok {
 		p.publishSessions(ctx, reading, inventory)
 	}
+	return inventory, reading, ok
 }
 
 // publishDescriptor puts this machine in the viewer's machine list, with the
@@ -295,7 +490,7 @@ func (p *Publisher) publishDescriptor(ctx context.Context) {
 	if !p.changed(descriptorKey, mustJSON(identity)) {
 		return
 	}
-	p.send(ctx, "orch/"+cloudops.ChannelSegment(p.MachineID), body, "orch")
+	p.send(ctx, descriptorKey, "orch/"+cloudops.ChannelSegment(p.MachineID), body, "orch")
 }
 
 // sessionReading is one reading of this machine's own session list.
@@ -412,16 +607,45 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 		}
 		// The comparison drops the fields that move with every reading of this
 		// machine and that no viewer reads; the row that goes out keeps them.
-		if !p.changed(id, mustJSON(withoutFreshness(session))) {
+		identity := mustJSON(withoutFreshness(session))
+		if p.held == nil {
+			p.held = map[string]heldRow{}
+		}
+		p.held[id] = heldRow{identity: identity, body: row}
+		if !p.changed(id, identity) {
 			continue
 		}
-		p.send(ctx, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+cloudops.ChannelSegment(id), row, "session "+id)
+		p.send(ctx, id, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+cloudops.ChannelSegment(id), row, "session "+id)
+	}
+	// An id the marker carries although this pass could not read it
+	// (inventoryIDs) goes out as the row it was last published with. Without
+	// it a viewer that holds nothing — a relay eviction, a re-statement — is
+	// named a Session and never sent it, and waits on it for as long as that
+	// source stays unreadable.
+	for _, id := range ids {
+		if _, read := reading.rows[id]; read {
+			continue
+		}
+		held, ok := p.held[id]
+		if !ok || !p.changed(id, held.identity) {
+			continue
+		}
+		p.send(ctx, id, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+cloudops.ChannelSegment(id), held.body, "session "+id)
 	}
 	if len(ids) > InventoryLimit {
 		// The bound is the Swift bridge's and is a refusal rather than a
 		// truncation: half an inventory is a list that says sessions were
 		// removed, which is worse than saying nothing this pass.
 		p.logf("cloud: inventory not published: %d sessions is past the %d it may name", len(ids), InventoryLimit)
+		// rememberInventory is skipped, so the held rows are trimmed here to
+		// what could still be named, or they would grow while this lasts.
+		for id := range p.held {
+			_, read := reading.rows[id]
+			_, named := p.inventoried[id]
+			if !read && !named {
+				delete(p.held, id)
+			}
+		}
 		return
 	}
 	// The set about to be stated is what a viewer will hold, so it is what the
@@ -446,7 +670,7 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 	if !p.changed(InventorySessionID, inventory) {
 		return
 	}
-	p.send(ctx, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+InventorySessionID, inventory, "inventory")
+	p.send(ctx, InventorySessionID, "s/"+cloudops.ChannelSegment(p.MachineID)+"/"+InventorySessionID, inventory, "inventory")
 }
 
 // inventoryIDs is the set the marker will name.
@@ -525,6 +749,11 @@ func (p *Publisher) rememberInventory(reading sessionReading, ids []string) {
 		kept[id] = p.inventoried[id]
 	}
 	p.inventoried = kept
+	for id := range p.held {
+		if _, still := kept[id]; !still {
+			delete(p.held, id)
+		}
+	}
 }
 
 // incompleteSources names the sources that could not answer for themselves,
@@ -598,13 +827,20 @@ func mustJSON(value any) []byte {
 	return encoded
 }
 
-func (p *Publisher) send(ctx context.Context, channel string, body []byte, what string) {
+func (p *Publisher) send(ctx context.Context, key, channel string, body []byte, what string) {
 	if p.Publish == nil {
 		return
 	}
 	out := Outbound{Channel: channel, Class: string(domaincloud.ClassStream), Payload: body}
 	if err := p.Publish(ctx, out); err != nil {
 		p.logf("cloud: the %s snapshot was not published: %v", what, err)
+		// `changed` recorded it as sent before it was handed over. Forget
+		// that, so the next pass tries again instead of waiting for the
+		// heartbeat, and so a re-statement does not answer ids whose rows
+		// never left.
+		delete(p.published, key)
+		delete(p.sent, key)
+		p.unsent++
 	}
 }
 

@@ -257,6 +257,10 @@ type op struct {
 	// shape turns an answer that is not JSON — a picture, a document — into
 	// something an envelope can carry.
 	shape func(p plan, res LocalResponse) (json.RawMessage, Refusal)
+	// sessions marks the one read that is answered by this machine's Session
+	// publisher rather than by a local route (Bridge.Sessions): its answer is
+	// the rows it puts back on their own channels, which no route can send.
+	sessions bool
 	// divergence is how this daemon's answer differs from the one the hosted
 	// console was written against, for a word that is routed anyway. It is a
 	// sentence and not a flag because the differences are not alike, and it is
@@ -1269,6 +1273,32 @@ func init() {
 					return plan{}, false
 				}
 				return sessionPlan(b, "skills")
+			}},
+
+		// The rows again, for a page that has just (re)connected.
+		//
+		// The relay replays each channel's last envelope from memory, that
+		// memory dies with the account's object, and this machine re-sends an
+		// unchanged row only on its heartbeat — so a page opened after an
+		// eviction sees whichever rows happened to change, and the list is
+		// short until the heartbeats come round. The copied client asks this
+		// word of every machine that lists it in `features`, once per
+		// connection that did not take over a live socket (`_recoverSessions`
+		// in `net/cloud-client.js`); `orchestrator` is present, and true, only
+		// when that page holds no `orch/` snapshot of this machine. The answer
+		// is `{"sessions":[ids],"complete":bool}` after the rows went out.
+		op{name: sessionsSnapshotWord, read: true, sessions: true,
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf([]string{"type", "session", "request"},
+					[]string{"type", "session", "request", "orchestrator"}) {
+					return plan{}, false
+				}
+				if value, present := b["orchestrator"]; present {
+					if asked, ok := value.(bool); !ok || !asked {
+						return plan{}, false
+					}
+				}
+				return machinePlan(b)
 			}},
 
 		op{name: "board.items", read: true,

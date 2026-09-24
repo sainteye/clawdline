@@ -82,6 +82,11 @@ export const CARRIED = {
   schedule: "GET /v1/orchestrator/schedules/{id}",
   schedules: "GET /v1/orchestrator/schedules",
   send: "POST /v1/sessions/{id}/send",
+  // No console route asks this: the copied client does, on every connection
+  // that did not take over a live socket (`_recoverSessions`), so a list
+  // opened after a relay eviction is sent every row rather than whichever
+  // changed.
+  "sessions.snapshot": "cloud-client.js _recoverSessions (on connect)",
   "smart-title": "POST /v1/sessions/{id}/smart-title",
   "snippet-create": "POST /v1/snippets",
   "snippet-delete": "DELETE /v1/snippets/{id}",

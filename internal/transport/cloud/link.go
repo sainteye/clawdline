@@ -419,6 +419,9 @@ func (l *Link) wire() error {
 	// viewer that arrived after this machine's last change gets the current
 	// state instead of waiting for the heartbeat (`Publisher.Seen`).
 	l.relay.Audience = l.publisher.Seen
+	// `sessions.snapshot` is answered by the publisher, which is the only
+	// thing that can put the rows back on their channels.
+	l.service.Bridge.Sessions = l.publisher.Snapshot
 	return nil
 }
 
@@ -561,15 +564,30 @@ func (l *Link) runService(ctx context.Context) error {
 			if !open {
 				return nil
 			}
-			answer := l.service.Answer(ctx, request)
-			l.mu.Lock()
-			l.answered++
-			if !answer.OK() {
-				l.refused++
+			if cloudops.AsksForSessions(request.Plaintext) {
+				// It waits for the publisher's next re-statement, up to one
+				// SnapshotInterval, and every other request would wait behind
+				// it. The publisher bounds how many may wait
+				// (SessionSnapshotWaitersLimit) and answers the rest at once.
+				// The service is taken here, on this goroutine: a rotation
+				// rewires l.service and must not race a late answer.
+				go l.answer(ctx, l.service, request)
+				continue
 			}
-			l.mu.Unlock()
+			l.answer(ctx, l.service, request)
 		}
 	}
+}
+
+// answer handles one request, counting what it answered.
+func (l *Link) answer(ctx context.Context, service Service, request Inbound) {
+	answer := service.Answer(ctx, request)
+	l.mu.Lock()
+	l.answered++
+	if !answer.OK() {
+		l.refused++
+	}
+	l.mu.Unlock()
 }
 
 // allowCommands reads the write switch from the file, now.
