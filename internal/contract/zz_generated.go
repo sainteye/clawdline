@@ -3325,8 +3325,12 @@ type ProjectDeployQuiet struct {
 // state no reader here draws — `none` is what a producer with nothing to say
 // writes, and a dot drawn for it would be the always-wrong mark. `no_address`:
 // it names a run and no page to open it on, and a row with nowhere to go is not
-// a row. Four words because what to do about each is different: start the
-// poller, look at the file, read `why`, look at the producer.
+// a row. `running_stale`: it says `running` and nobody has rewritten it for
+// 1800 seconds, or it never said when it was written — a producer that
+// stopped before its verdict, which a bar drawn from elapsed time would show as
+// a deploy stuck at 100%. Five words because what to do about each is
+// different: start the poller, look at the file, read `why`, look at the
+// producer, look at whether the deploy is still alive.
 type ProjectDeployQuietKind string
 
 const (
@@ -3334,10 +3338,11 @@ const (
 	ProjectDeployQuietKindUnreadable    ProjectDeployQuietKind = "unreadable"
 	ProjectDeployQuietKindStateNotDrawn ProjectDeployQuietKind = "state_not_drawn"
 	ProjectDeployQuietKindNoAddress     ProjectDeployQuietKind = "no_address"
+	ProjectDeployQuietKindRunningStale  ProjectDeployQuietKind = "running_stale"
 )
 
 // ProjectDeployQuietKindValues is every value the contract allows, in contract order.
-var ProjectDeployQuietKindValues = []ProjectDeployQuietKind{ProjectDeployQuietKindNoFile, ProjectDeployQuietKindUnreadable, ProjectDeployQuietKindStateNotDrawn, ProjectDeployQuietKindNoAddress}
+var ProjectDeployQuietKindValues = []ProjectDeployQuietKind{ProjectDeployQuietKindNoFile, ProjectDeployQuietKindUnreadable, ProjectDeployQuietKindStateNotDrawn, ProjectDeployQuietKindNoAddress, ProjectDeployQuietKindRunningStale}
 
 // Which way the git read failed, present only with `unreadable`. Four words
 // because what to do about each is different: install git, wait, look at the

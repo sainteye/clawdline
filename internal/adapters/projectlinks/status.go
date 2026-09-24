@@ -118,6 +118,16 @@ var (
 // including the ones nobody has written yet.
 const defaultStaleAfter = 900.0
 
+// deployRunningStaleAfter is how long a workflow file may say `running`
+// without being rewritten before it is no longer drawn as running. The same
+// ceiling Run has, for the same reason — this daemon has no poller to retire a
+// producer's `running` — at the number the producers already use:
+// `gh-run-status.py`'s LOCAL_RUNNING_TTL, 1800 seconds, which the local deploy
+// producer that writes these files names as the reader's age ceiling it relies
+// on instead of a trap. Measured 2026-09-24: a `running` row drawn as elapsed
+// against typical sits at 100% for as long as nothing replaces it.
+const deployRunningStaleAfter = 1800.0
+
 // Deploy is a workflow run, from `ghrun-<owner>-<repo>.json`.
 type Deploy struct {
 	Label          string
@@ -159,6 +169,10 @@ const (
 	// DeployQuietNoAddress is a drawable state with nowhere to go, which
 	// links.go refuses as a row.
 	DeployQuietNoAddress DeployQuietKind = "no_address"
+	// DeployQuietRunningStale is `running` in a file nobody has rewritten for
+	// deployRunningStaleAfter, or one that never said when it was written: a
+	// producer that stopped between its start and its verdict.
+	DeployQuietRunningStale DeployQuietKind = "running_stale"
 )
 
 // DeployQuiet is the workflow file on a beat it drew nothing, and the reason
@@ -290,7 +304,7 @@ func ReadStatus(dir, cwd, repo string, now float64) Status {
 	key := DirectoryKey(cwd)
 	if repo != "" {
 		row, there := readJSON(filepath.Join(dir, "ghrun-"+repo+".json"))
-		out.Deploy, out.DeployQuiet = parseDeploy(row, there)
+		out.Deploy, out.DeployQuiet = parseDeploy(row, there, now)
 	}
 	run, _ := readJSON(filepath.Join(dir, "run-"+key+".json"))
 	out.Run = parseRun(run, now)
@@ -359,14 +373,18 @@ func num(row map[string]any, key string) (float64, bool) {
 // The dot is unchanged: a state this reader does not know still draws nothing,
 // because a red mark that is always wrong is worse than no mark. What changed
 // is that **no mark is no longer no sentence**.
-func parseDeploy(row map[string]any, there bool) (*Deploy, *DeployQuiet) {
+//
+// A `running` that has not been rewritten for deployRunningStaleAfter is the
+// fifth answer: the producer stopped before its verdict, and a bar would draw
+// that as a deploy stuck at 100%.
+func parseDeploy(row map[string]any, there bool, now float64) (*Deploy, *DeployQuiet) {
 	if row == nil {
 		if !there {
 			return nil, &DeployQuiet{Kind: DeployQuietNoFile}
 		}
 		return nil, &DeployQuiet{Kind: DeployQuietUnreadable}
 	}
-	updated, _ := num(row, "updated_at")
+	updated, hasUpdated := num(row, "updated_at")
 	// `state` and `why` are another program's words and are carried as they
 	// were written, one line long. Nothing here maps them: the set is that
 	// tool's to grow, and a reader that kept only the members it recognised
@@ -375,6 +393,10 @@ func parseDeploy(row map[string]any, there bool) (*Deploy, *DeployQuiet) {
 	why := oneLine(str(row, "why"))
 	if !deployStates[state] {
 		return nil, &DeployQuiet{Kind: DeployQuietStateNotDrawn,
+			State: state, Why: why, UpdatedAt: updated}
+	}
+	if state == "running" && (!hasUpdated || now-updated > deployRunningStaleAfter) {
+		return nil, &DeployQuiet{Kind: DeployQuietRunningStale,
 			State: state, Why: why, UpdatedAt: updated}
 	}
 	url := address(str(row, "url"))

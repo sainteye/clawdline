@@ -107,7 +107,7 @@ func TestOnlyAGitHubRemoteNamesAWorkflowFile(t *testing.T) {
 	r, dir := reader(t, remote{url: fixtureRemote}, 1000)
 	write(t, dir, "ghrun-"+fixtureRepo+".json", map[string]any{
 		"state": "running", "url": "https://example.invalid/runs/1",
-		"started_at": 900.0, "typical_seconds": 120.0, "label": "deploy",
+		"started_at": 900.0, "typical_seconds": 120.0, "label": "deploy", "updated_at": 990.0,
 	})
 	got := r.Read(context.Background(), "/projects/widgets")
 	row := find(got.Links, "deploy")
@@ -495,5 +495,63 @@ func TestAFileTooLargeIsNothingRatherThanHalfOfSomething(t *testing.T) {
 	}
 	if rows := r.Read(context.Background(), cwd).Links; len(rows) != 0 {
 		t.Fatalf("a file past the read bound is nothing: %+v", rows)
+	}
+}
+
+// TestARunningDeployNobodyRewroteIsNotDrawnAsRunning: the deploy half of the
+// ceiling `parseRun` already has. A producer that dies between `start` and
+// `done` — a killed shell, a `set -e` exit before the last line, a closed
+// terminal — leaves `running` in the file, and a bar drawn from elapsed
+// against typical then sits at 100% for as long as the file does.
+// `deploy-status.py` in the project this was reported from says outright that
+// it has no trap and relies on "the reader's age ceiling" for `running`, and
+// names `gh-run-status.py`'s LOCAL_RUNNING_TTL, 1800 seconds; this reader had
+// none. The file's own words still come out, as the quiet `running_stale`.
+func TestARunningDeployNobodyRewroteIsNotDrawnAsRunning(t *testing.T) {
+	name := "ghrun-" + fixtureRepo + ".json"
+	now := 10000.0
+	for _, c := range []struct {
+		say     string
+		updated any
+		drawn   bool
+	}{
+		{"rewritten inside the ceiling", now - deployRunningStaleAfter + 1, true},
+		{"exactly at the ceiling", now - deployRunningStaleAfter, true},
+		{"past the ceiling", now - deployRunningStaleAfter - 1, false},
+		{"hours past it", now - 5400, false},
+		{"never said when", nil, false},
+	} {
+		t.Run(c.say, func(t *testing.T) {
+			r, dir := reader(t, remote{url: fixtureRemote}, now)
+			row := map[string]any{"state": "running", "label": "deploy·local", "why": "",
+				"url": "https://example.invalid/runs/1", "started_at": now - 6000, "typical_seconds": 833.0}
+			if c.updated != nil {
+				row["updated_at"] = c.updated
+			}
+			write(t, dir, name, row)
+			got := r.Read(context.Background(), "/projects/widgets")
+			drawn := find(got.Links, "deploy") != nil
+			if drawn != c.drawn {
+				t.Fatalf("drawn = %v, want %v: %+v", drawn, c.drawn, got.Links)
+			}
+			if c.drawn {
+				if got.DeployQuiet != nil {
+					t.Fatalf("a drawn row is not quiet: %+v", got.DeployQuiet)
+				}
+				return
+			}
+			q := got.DeployQuiet
+			if q == nil || q.Kind != DeployQuietRunningStale || q.State != "running" {
+				t.Fatalf("not drawn is not nothing: the file said running and stopped: %+v", q)
+			}
+		})
+	}
+
+	// A verdict is never stale: `ok` and `fail` are not claims about something
+	// still moving, and the producer retires them on its own schedule.
+	r, dir := reader(t, remote{url: fixtureRemote}, now)
+	write(t, dir, name, map[string]any{"state": "ok", "url": "https://example.invalid/runs/1", "updated_at": 1.0})
+	if find(r.Read(context.Background(), "/projects/widgets").Links, "deploy") == nil {
+		t.Fatal("an old ok is still drawn")
 	}
 }

@@ -52,8 +52,8 @@ test("a repository on GitHub with no deploy row is not silence any more", () => 
   lang.documentElement.lang = "en"
 })
 
-// The four kinds are four different things to do, which is the whole reason
-// they are four words and not one absent row.
+// The five kinds are five different things to do, which is the whole reason
+// they are five words and not one absent row.
 test("each kind of nothing has its own sentence, and no two are the same", () => {
   inBoth((tongue) => {
     const said = [
@@ -61,6 +61,7 @@ test("each kind of nothing has its own sentence, and no two are the same", () =>
       deployQuietNote({ kind: "unreadable" }, say),
       deployQuietNote({ kind: "state_not_drawn", state: "none", why: "no-runs" }, say),
       deployQuietNote({ kind: "no_address", state: "ok" }, say),
+      deployQuietNote({ kind: "running_stale", state: "running", updatedAt: 1790214000 }, say),
     ]
     for (const line of said) {
       assert.notEqual(line, "", tongue + ": every kind says something")
@@ -123,4 +124,17 @@ test("the four kinds that were already answered still answer the same way", () =
   lang.documentElement.lang = "en"
   assert.match(repositoryNote("unreadable", "git_timeout", quiet, say), /did not answer in time/)
   assert.match(repositoryNote("no_remote", undefined, quiet, say), /no origin remote/)
+})
+
+// A deploy whose producer stopped between `running` and its verdict used to
+// be drawn as a bar at 100% for as long as the file stayed. It is not drawn
+// now, and the sentence says why and since when — not "no run".
+test("a running deploy nobody rewrote says it stopped, with when", () => {
+  inBoth((tongue) => {
+    const said = deployQuietNote({ kind: "running_stale", state: "running", updatedAt: 1790214000 }, say)
+    assert.match(said, /at 1790214000/, tongue + ": when the producer last wrote it")
+    assert.doesNotMatch(said, /\{\w+\}/, tongue + ": no hole is left unfilled")
+    assert.notEqual(said, deployQuietNote({ kind: "state_not_drawn", state: "running" }, say),
+      tongue + ": a stopped producer is not a producer with nothing to show")
+  })
 })

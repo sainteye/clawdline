@@ -294,6 +294,8 @@ const words = {
       "This repository is on GitHub and nothing has written a workflow reading for it on this machine — so there is no deploy row because nobody is looking, not because there is no run. It is the status line's command that writes these, not this app.",
     linksDeployUnreadable:
       "There is a workflow file for this repository on this machine and it could not be read as one small JSON object, so whether there is a deploy is unknown — which is not the same as no.",
+    linksDeployRunningStale:
+      "The status line's tool last said a deploy was running and has not written anything since, for longer than any deploy here is allowed to go quiet — so it is not drawn as running. The deploy most likely finished or was stopped without the tool recording how.",
     linksDeployBecause: "Its reason: {reason}.",
     linksDeployNoWhy: "It did not say why.",
     // That tool's own words for having nothing to show (`gh-run-status.py`).
@@ -554,6 +556,8 @@ const words = {
       "這個 repository 在 GitHub 上，而這台機器上還沒有人替它寫下 workflow 的讀數——所以沒有 deploy 這一列是因為沒有人在看，不是因為沒有執行紀錄。寫這些檔案的是狀態列的指令，不是這個 app。",
     linksDeployUnreadable:
       "這台機器上有這個 repository 的 workflow 檔案，但它讀不成一個小小的 JSON 物件，所以有沒有 deploy 是不知道，不是沒有。",
+    linksDeployRunningStale:
+      "狀態列的工具最後說有一次部署正在跑，之後就再也沒寫過任何東西，而且已經超過這裡允許部署沉默的時間——所以不再畫成進行中。那次部署多半已經結束或被中斷，只是工具沒有記下結果。",
     linksDeployBecause: "它給的理由是：{reason}。",
     linksDeployNoWhy: "它沒有說為什麼。",
     linksDeployWhyNoGh: "這台機器上沒有 `gh` 指令可以去問 GitHub",
