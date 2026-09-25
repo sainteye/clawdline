@@ -313,9 +313,17 @@ and running `clawdline task finish`. You do not call those routes.
 - **You may never see the line, and you still learn of it.** Your own
   `GET /v1/work/v2/agent/session-todos/<conversation id>`, which you read at every turn boundary,
   lists `unacknowledged_completions` — each child of yours that finished and that you have not
-  acknowledged, with `task_id`, `title`, `state`, `result_path`, `notice_id` and `ack_path`, whether
+  acknowledged, with `task_id`, `title`, `state`, `kind`, `result_path`, `notice_id` and `ack_path`, whether
   its notice is still pending or gave up. `clawdline session report` prints them after its receipt.
   For each: read its `result.json`, integrate it, then ACK it; the ACK takes it off both lists.
+- **A child that stops right after its briefing is nudged, then reported.** If a child whose
+  briefing was typed has not signed for it and its screen reads idle — prompt drawn, composer
+  empty, no menu, no working line — for 5 minutes, the daemon types it one line naming its
+  `CHILD.md` (never the secret). Still unsigned and idle 5 minutes later, the task ends
+  `spawn_failed` with a verdict that says it stalled, and you get a notice of `"kind":
+  "task_stalled"` instead of `task_finished`. Respawn it (`POST /v1/orchestrator/tasks/<id>/respawn`)
+  or dispatch again, then ACK it. A child that is working, showing a menu or has signed is never
+  typed at.
 - There is **no cancel route**. A task ends by finishing, failing or timing out.
 - **A finished child is not landed code.** Its work sits in the shared tree or on its branch until
   you integrate it.

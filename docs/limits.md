@@ -626,3 +626,14 @@ skipped, `manifest_full`); `projectsync.project_files` carries at most 64 files 
 Cloud alike; `projectsync.mirrored` keeps at most 512 mirrored repositories without automatic
 eviction; `projectsync.clones` runs at most two clones at once and refuses a third with
 `429 clone_busy`. See [project-sync.md](project-sync.md).
+
+### A child that stalls after its briefing
+
+`stallIdleLimit` (5 minutes) is how long a child whose briefing was typed, and which has not signed
+for it, must read idle — its prompt drawn, its composer empty, no menu, no live working line — on
+every reading before it is typed one nudge naming its `CHILD.md`. `stallReportLimit` (5 minutes)
+is how long it must then stay idle and unsigned before the task ends `spawn_failed` with a
+`stalled` verdict and its root is sent a `task_stalled` notice. Both are `parameter` lines on the
+capacity baseline, not rows: nothing accumulates. At most one nudge per task, recorded on the
+task before it is typed (`task.nudged`). See [broker.md](broker.md), "A child that stalls after
+its briefing".

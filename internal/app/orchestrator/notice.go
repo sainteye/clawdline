@@ -101,6 +101,10 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	if r.State == StateTimeout && len(r.Lease()) > 0 {
 		line += " — claims released; child tab may still be writing"
 	}
+	if r.Stalled() {
+		line += fmt.Sprintf(" — it stalled: briefed, never signed, idle through one nudge; "+
+			"POST /v1/orchestrator/tasks/%s/respawn opens a copy", r.ID)
+	}
 	if r.Landing != nil && r.Landing.State == LandingPending {
 		line += " — " + landingLine(r)
 	}
@@ -202,7 +206,7 @@ func (b *Broker) NoticeWire(ctx context.Context, r Record) (string, error) {
 	body := noticeBody{
 		Protocol:  NoticeProtocol,
 		Version:   NoticeVersion,
-		Kind:      "task_finished",
+		Kind:      NoticeKind(r),
 		Audience:  "root",
 		Task:      noticeTask{ID: r.ID, Title: r.Title},
 		State:     string(r.State),

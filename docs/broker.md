@@ -176,6 +176,51 @@ Silently turning any of those cases into one provider would recreate the missing
 The warning keeps the caller's explicit choice while putting the machine's contrary evidence at
 the decision boundary.
 
+## A child that stalls after its briefing (2026-09-25)
+
+Measured on 2026-09-25: the broker typed a child its first line, the model answered a lone `<br>`
+in one second and ended its turn, and the tab sat at an empty composer for forty minutes. No
+`/accepted` came, so the task stayed `spawning`; the tab was there and quiet, which the spawn clock
+(`spawnVerdict`) deliberately decides nothing about; and nothing told the root, which would have
+learned at the 240-minute timeout. One line typed into the tab got it working at once.
+
+The beat now watches for that shape and only that shape (`internal/app/orchestrator/stall.go`):
+
+- **Who is watched.** A task still `spawning` whose briefing was typed — the tab is recorded and
+  the task is not `unbriefed` — and which has not signed (`/accepted` or `accepted.json`). A
+  signed progress note moves a task to `briefed`, so it is not watched either.
+- **Idle, on positive evidence only.** Each pass reads the child's own screen. Idle means the tab
+  is in the reading, the assistant's prompt is drawn, the composer is empty and nothing on the
+  screen is a menu. A live working line, a dialog, a draft or a screen that could not be read
+  starts the interval again. A child reading files draws a working line, so a slow child is never
+  mistaken for one that stopped. The interval is kept in memory; a restart forgets it and only
+  ever waits longer.
+- **One nudge.** After `stallIdleLimit` (5 minutes) of unbroken idle readings the child is typed
+  one line naming its `CHILD.md` path — never the secret, which is already in its context. It goes
+  through `b.Type`, the same lane every typed line takes. The nudge is recorded on the task
+  (`stall.nudged_at`, event `task.nudged`) **before** it is typed, so a daemon that restarts never
+  types a second one; a typing that fails is recorded (`stall.nudge_error`,
+  `task.nudge.failed`) and not retried.
+- **Then the root is told.** If the child is still unsigned and idle `stallReportLimit`
+  (5 minutes) after the nudge, the task ends `spawn_failed` with a verdict that says it stalled
+  (`stall.reported_at`, events `task.stalled` then `task.spawn_failed`). The settlement opens the
+  ordinary completion notice, typed with `"kind": "task_stalled"` instead of `task_finished`, whose
+  line names `/respawn`. It is listed in `GET /v1/orchestrator/completions` and in the root's
+  `session-todos` `unacknowledged_completions` (with `kind`) until acknowledged. The child's tab
+  is closed as every `spawn_failed` tab is.
+
+**Why it ends the task instead of marking it and leaving it running.** There is no cancel route,
+and `/respawn` only takes a `spawn_failed` task, so a task left `spawning` with a mark on it would
+have given the root nothing to do but wait for the timeout. `spawn_failed` is also the true
+reading: nothing the child did was ever signed. A new task state was not added because every
+reader of the state — the contract, the console, the board and the to-do lines — would have had to
+learn it; the verdict and the notice kind carry the difference instead. The cost is on the other
+side: a child that wakes after it was reported finds its task over (`/accepted` answers
+`not_live`), and its root's respawn is the one that counts.
+
+A child showing a menu is not typed at by this path; the spawn clock already ends a tab holding a
+dialog at four minutes, before the nudge's interval is up.
+
 ## 還沒做（這一波刻意不做，或做不到）
 
 - `detached-tasks`、`handoffs`、`root-assignments`、`respawn`、`landing-queue`、`graphs`、`waits`、`coordinator/*`。

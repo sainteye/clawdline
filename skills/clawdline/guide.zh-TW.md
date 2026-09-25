@@ -288,9 +288,15 @@ child 會簽收 briefing（`/accepted`），計畫改變時可以送一則進度
   閒置時再打一次。
 - **就算你沒看到那一行，也會知道。** 你每個 turn 邊界都會讀的
   `GET /v1/work/v2/agent/session-todos/<conversation id>` 會列出 `unacknowledged_completions`：每一個已經
-  結束、你還沒 ACK 的 child，附 `task_id`、`title`、`state`、`result_path`、`notice_id` 和 `ack_path`，不管它的
+  結束、你還沒 ACK 的 child，附 `task_id`、`title`、`state`、`kind`、`result_path`、`notice_id` 和 `ack_path`，不管它的
   通知還在重送還是已經放棄。`clawdline session report` 在收據之後也會印出來。每一筆都去讀它的
   `result.json`、整合，然後 ACK；ACK 之後兩邊都不會再列。
+- **child 收到 briefing 就停住，會先被推一下，再回報給你。** briefing 已經打進去、child 卻還沒簽收，而且
+  它的畫面連續 5 分鐘都是閒置（提示字元在、輸入框是空的、沒有選單、沒有正在跑的那一行），daemon 會在它的
+  分頁打一行字，指出它的 `CHILD.md`（絕不再打一次 secret）。再過 5 分鐘仍沒簽收、仍閒置，task 就以
+  `spawn_failed` 結束，verdict 寫明它 stalled，你收到的通知 `kind` 是 `task_stalled`，不是 `task_finished`。
+  respawn 它（`POST /v1/orchestrator/tasks/<id>/respawn`）或重新派一次，然後 ACK。正在工作、正在顯示
+  選單、或已經簽收的 child，絕不會被打字。
 - **沒有取消路由**。task 只會以完成、失敗或逾時結束。
 - **child 結束，不等於程式碼已經 landing。** 在你整合之前，它的成果還放在共用的 working tree 或它自己的
   branch 上。

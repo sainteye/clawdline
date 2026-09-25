@@ -184,6 +184,9 @@ type Broker struct {
 	// again. Both are observations — recomputed by the next reading, useless
 	// after a restart — and so neither is ever written (observe.go).
 	observed observations
+	// stalls is since when each briefed, unsigned child has read idle — in
+	// memory, like observed, and forgotten by a restart (stall.go).
+	stalls stallWatch
 	// progress carries each accepted note to whoever is streaming.
 	progress progressBus
 	// reclaim is the sweep's own memory, and lingerStarted when this process

@@ -1528,9 +1528,12 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 // unacknowledgedCompletionWire is one completion notice a root has not
 // acknowledged, on the list that root reads at every turn boundary.
 type unacknowledgedCompletionWire struct {
-	TaskID      string                    `json:"task_id"`
-	Title       string                    `json:"title"`
-	State       string                    `json:"state"`
+	TaskID string `json:"task_id"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	// Kind is the notice's own kind: task_finished, or task_stalled for a
+	// child that sat idle after its briefing and was ended spawn_failed.
+	Kind        string                    `json:"kind"`
 	ResultPath  string                    `json:"result_path"`
 	NoticeID    string                    `json:"notice_id"`
 	NoticeState string                    `json:"notice_state"`
@@ -1561,6 +1564,7 @@ func (s *Server) addUnacknowledgedCompletions(ctx context.Context, answer map[st
 	for _, c := range rows {
 		list = append(list, unacknowledgedCompletionWire{
 			TaskID: c.Record.ID, Title: c.Record.Title, State: string(c.Record.State),
+			Kind:       orchestrator.NoticeKind(c.Record),
 			ResultPath: s.broker.ResultPath(c.Record.ID), NoticeID: c.Notice.ID,
 			NoticeState: string(c.Notice.State), LastError: c.Notice.LastError,
 			AckPath: "/v1/orchestrator/tasks/" + c.Record.ID + "/completion/ack",

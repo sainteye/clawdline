@@ -26,7 +26,8 @@ import (
 //  2. adopt a validated `result.json` its child never renamed;
 //  3. collect `result.json`, which is the completion signal;
 //  4. run the clocks — the four minutes to reach a prompt, and the task's own
-//     timeout — and then pump the notices.
+//     timeout — then look at a briefed child that is sitting idle without
+//     having signed (stall.go), and then pump the notices.
 
 // Pulse is what one pass did, for /v1/diagnostics.
 type Pulse struct {
@@ -55,6 +56,12 @@ type Pulse struct {
 	// Todos is how many session to-dos this pass moved: made or followed on
 	// the first pass, handed off, returned or dropped on a reading (todos.go).
 	Todos int
+	// Nudged is how many children this pass typed their one nudge, for
+	// sitting idle after their briefing without signing (stall.go).
+	Nudged int
+	// Stalled is how many of those this pass ended and reported to their
+	// root, after the nudge did not start them. Each is also in SpawnFail.
+	Stalled int
 	// Landed is how many pending landings this pass recorded as landed because
 	// their delivery branch had been merged into the target (landing_detect.go).
 	Landed int
@@ -152,6 +159,10 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 			continue
 		}
 		if b.runClocks(ctx, rd, r, &p) {
+			continue
+		}
+		// After the clocks: a tab the spawn clock judged is not nudged.
+		if b.tendStall(ctx, rd, r, &p) {
 			continue
 		}
 	}
