@@ -83,7 +83,10 @@ func TestSessionReportAsksWhoamiThenCompletes(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errs.String())
 	}
 	seen := s.requests()
-	if len(seen) != 2 {
+	// The third is the root's own list, asked for completions nobody
+	// acknowledged (TestSessionReportSaysAChildFinishedUnacknowledged).
+	if len(seen) != 3 || seen[2].Method != "GET" ||
+		seen[2].EscapedPath != "/v1/work/v2/agent/session-todos/"+thinConversation {
 		t.Fatalf("asked %d times: %+v", len(seen), seen)
 	}
 	if seen[0].Method != "GET" || seen[0].EscapedPath != "/v1/orchestrator/whoami" ||
@@ -156,6 +159,41 @@ func TestSessionReportSaysNothingOrUnknownAboutToDos(t *testing.T) {
 			}
 			if errs.String() != c.want {
 				t.Fatalf("stderr %q, want %q", errs.String(), c.want)
+			}
+		})
+	}
+}
+
+// A child that finished while this root was busy — its line never typed, or
+// typed and given up on — is said after the receipt, with what to read and the
+// ACK that ends it; unreadable is said as unknown, and the exit is still 0.
+func TestSessionReportSaysAChildFinishedUnacknowledged(t *testing.T) {
+	for _, c := range []struct{ name, todos, want string }{
+		{"one", `{"ok":true,"direct_todos":[],"unacknowledged_completions":[{"task_id":"c6f3-1",` +
+			`"title":"the relay reconnects","state":"success","result_path":"/t/c6f3-1/result.json",` +
+			`"notice_id":"n-1","notice_state":"dead_letter","ack_path":"/v1/orchestrator/tasks/c6f3-1/completion/ack"}]}`,
+			"1 child task of this Session finished and is not acknowledged:\n" +
+				"  c6f3-1  the relay reconnects (success; notice dead_letter)  read /t/c6f3-1/result.json\n" +
+				"    then: clawdline task ack c6f3-1 n-1\n"},
+		{"none", `{"ok":true,"unacknowledged_completions":[]}`, ""},
+		{"unknown", `{"ok":true,"unacknowledged_completions":[],"unacknowledged_completions_unknown":true}`,
+			"Whether a child of this Session finished without being acknowledged could not be read.\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, b := newStandIn(t, func(r *http.Request) (int, string) {
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/whoami"):
+					return 200, `{"terminal_id":"%47"}`
+				case strings.Contains(r.URL.Path, "/session-todos/"):
+					return 200, c.todos
+				}
+				return 200, `{"ok":true,"open_todos":[]}`
+			})
+			var out, errs bytes.Buffer
+			code := reportSession(&out, &errs, b, "Done.", "", "",
+				envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation}))
+			if code != 0 || errs.String() != c.want {
+				t.Fatalf("exit %d, stderr:\n%s\nwant:\n%s", code, errs.String(), c.want)
 			}
 		})
 	}

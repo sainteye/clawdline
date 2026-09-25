@@ -63,15 +63,15 @@ func reportSession(stdout, stderr io.Writer, b *broker, summary, conversation, t
 		fmt.Fprintln(stderr, "clawdline session report: --summary is required: one concrete sentence about what was delivered")
 		return 2
 	}
-	if terminal == "" {
-		if conversation == "" {
-			for _, name := range conversationEnv {
-				if v := strings.TrimSpace(getenv(name)); v != "" {
-					conversation = v
-					break
-				}
+	if conversation == "" {
+		for _, name := range conversationEnv {
+			if v := strings.TrimSpace(getenv(name)); v != "" {
+				conversation = v
+				break
 			}
 		}
+	}
+	if terminal == "" {
 		if conversation == "" {
 			fmt.Fprintf(stderr, "clawdline session report: cannot tell which conversation this is: none of %s is set. "+
 				"Pass --conversation <this assistant's conversation id>. Nothing was reported.\n",
@@ -106,8 +106,54 @@ func reportSession(stdout, stderr io.Writer, b *broker, summary, conversation, t
 	code := report(stdout, stderr, "session report", a)
 	if code == 0 {
 		remindOpenTodos(stderr, a.Body)
+		if conversation != "" {
+			remindUnacknowledgedCompletions(stderr, b, conversation)
+		}
 	}
 	return code
+}
+
+// remindUnacknowledgedCompletions says, after the receipt, which of this
+// root's children finished without the root acknowledging it — the line it
+// was typed may never have reached it (a question on screen, a notice that
+// gave up). It asks the root's own session-todos, the list a turn boundary
+// reads; the receipt stands whatever this finds, and a list that could not be
+// read is said as unknown, never as none. With only --terminal there is no
+// conversation to ask about, and nothing is said.
+func remindUnacknowledgedCompletions(stderr io.Writer, b *broker, conversation string) {
+	unknown := "Whether a child of this Session finished without being acknowledged could not be read."
+	a, err := b.request(http.MethodGet, "/v1/work/v2/agent/session-todos/"+url.PathEscape(conversation), nil, nil, "")
+	if err != nil || !a.ok() {
+		fmt.Fprintln(stderr, unknown)
+		return
+	}
+	var answer struct {
+		Completions []struct {
+			TaskID      string `json:"task_id"`
+			Title       string `json:"title"`
+			State       string `json:"state"`
+			ResultPath  string `json:"result_path"`
+			NoticeID    string `json:"notice_id"`
+			NoticeState string `json:"notice_state"`
+		} `json:"unacknowledged_completions"`
+		Unknown bool `json:"unacknowledged_completions_unknown"`
+	}
+	if json.Unmarshal(a.Body, &answer) != nil || answer.Unknown {
+		fmt.Fprintln(stderr, unknown)
+		return
+	}
+	if len(answer.Completions) == 0 {
+		return
+	}
+	phrase := "child tasks of this Session finished and are not acknowledged:"
+	if len(answer.Completions) == 1 {
+		phrase = "child task of this Session finished and is not acknowledged:"
+	}
+	fmt.Fprintln(stderr, len(answer.Completions), phrase)
+	for _, c := range answer.Completions {
+		fmt.Fprintf(stderr, "  %s  %s (%s; notice %s)  read %s\n", c.TaskID, c.Title, c.State, c.NoticeState, c.ResultPath)
+		fmt.Fprintf(stderr, "    then: clawdline task ack %s %s\n", c.TaskID, c.NoticeID)
+	}
 }
 
 // remindOpenTodos says, after the receipt, which to-dos the person sent to

@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The completion notice's two ladders, its holds, and the evidence that ends it.
@@ -315,5 +317,210 @@ func TestACopyAlreadyWaitingIsNotTypedOverAndAFirstOneStillGoes(t *testing.T) {
 	}
 	if held.Notice.Attempts != 1 {
 		t.Fatalf("holding behind its own copy spent an attempt: %+v", held.Notice)
+	}
+}
+
+// rootAt is a live reading whose one session is the root in the state given,
+// so a test can turn the root idle, working or waiting between passes.
+func rootAt(state *session.State) func(context.Context) []session.Session {
+	return func(context.Context) []session.Session {
+		return []session.Session{{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation,
+			State: *state}}
+	}
+}
+
+// The incident this was written for (2026-09-25). A root showed a question from
+// 19:54 to 22:08 while the person was away; its child finished at 20:07. Every
+// look found the menu and rightly typed nothing — but each ten minutes of
+// holding spent an attempt, so at 21:27 the notice was a dead letter, and when
+// the person answered the root carried on not knowing. A person answering a
+// question is the normal case, not a failure: the menu must not walk a notice
+// to dead letter, and the line goes the moment the menu is gone.
+func TestAMenuHeldPastTheOldLadderStillGetsTheNoticeOnceItIsGone(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	start := time.Date(2026, 9, 25, 20, 7, 0, 0, time.UTC)
+	now := start
+	b.Clock = func() time.Time { return now }
+	typed := 0
+	b.Type = func(context.Context, string, string) error { typed++; return nil }
+	choosing := true
+	b.Choosing = func(context.Context, string) bool { return choosing }
+	r := finished(t, b, ctx, "c6f30000-0000-4000-8000-000000000011")
+
+	// Two hours on the menu: longer than eight ten-minute holds by forty
+	// minutes, which is where the old code gave up.
+	for now.Sub(start) < 2*time.Hour {
+		b.PumpNotices(ctx)
+		now = now.Add(5 * time.Minute)
+	}
+	if typed != 0 {
+		t.Fatalf("the notice was typed into a menu %d times", typed)
+	}
+	held, _, _ := b.Record(ctx, r.ID)
+	if held.Notice.State != NoticePending || held.Notice.Attempts != 0 {
+		t.Fatalf("two hours on a menu spent the notice's budget: %+v", held.Notice)
+	}
+	if held.Notice.LastError == nil || held.Notice.LastError.Code != holdChoosing.Code ||
+		!held.Notice.LastError.At.Equal(start) {
+		t.Fatalf("the hold does not say why, or since when: %+v", held.Notice.LastError)
+	}
+
+	choosing = false
+	b.PumpNotices(ctx)
+	if typed != 1 {
+		t.Fatalf("the menu was answered and the notice was typed %d times", typed)
+	}
+	if after, _, _ := b.Record(ctx, r.ID); after.Notice.State != NoticeDelivered || after.Notice.Attempts != 1 {
+		t.Fatalf("after the menu: %+v", after.Notice)
+	}
+}
+
+// Free is not for ever. A menu nobody answers for longer than the ceiling
+// gives up on the notice in one step — dead letter, with the reason and the
+// ceiling on it, so the push says the root was waiting for an answer and the
+// list says for how long — rather than spending attempts that were never made.
+// And then the root turning idle types it once more.
+func TestAMenuHoldHasACeilingAndSaysSo(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	start := time.Date(2026, 9, 25, 20, 7, 0, 0, time.UTC)
+	now := start
+	b.Clock = func() time.Time { return now }
+	typed := 0
+	b.Type = func(context.Context, string, string) error { typed++; return nil }
+	choosing := true
+	b.Choosing = func(context.Context, string) bool { return choosing }
+	state := session.StateWaiting
+	b.Live = rootAt(&state)
+	var mu sync.Mutex
+	bodies := []string{}
+	done := make(chan struct{}, 4)
+	b.pushed = func() { done <- struct{}{} }
+	b.Push = func(_ context.Context, _, body, _, _ string) (int, int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		bodies = append(bodies, body)
+		return 1, 0, nil
+	}
+	r := finished(t, b, ctx, "c6f30000-0000-4000-8000-000000000012")
+
+	for now.Sub(start) < maxChoosingHold-time.Minute {
+		b.PumpNotices(ctx)
+		now = now.Add(30 * time.Minute)
+	}
+	if before, _, _ := b.Record(ctx, r.ID); before.Notice.State != NoticePending {
+		t.Fatalf("given up before the ceiling: %+v", before.Notice)
+	}
+	now = start.Add(maxChoosingHold)
+	b.PumpNotices(ctx)
+	after, _, _ := b.Record(ctx, r.ID)
+	if after.Notice.State != NoticeDeadLetter || after.Notice.Attempts != 0 || typed != 0 {
+		t.Fatalf("at the ceiling: typed %d, %+v", typed, after.Notice)
+	}
+	if e := after.Notice.LastError; e == nil || e.Code != holdChoosing.Code ||
+		!strings.Contains(e.Message, maxChoosingHold.String()) {
+		t.Fatalf("the dead letter does not say it hit the ceiling: %+v", e)
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the dead letter's push never finished")
+	}
+	mu.Lock()
+	if len(bodies) != 1 || !strings.Contains(bodies[0], heldReason(holdChoosing.Code)) {
+		t.Fatalf("the push does not say the root was waiting on an answer: %+v", bodies)
+	}
+	mu.Unlock()
+
+	// Still on the menu: nothing. Answered and working: nothing. Idle: once.
+	now = now.Add(time.Minute)
+	b.PumpNotices(ctx)
+	choosing, state = false, session.StateWorking
+	now = now.Add(time.Minute)
+	b.PumpNotices(ctx)
+	if typed != 0 {
+		t.Fatalf("a dead letter was typed at a root that was not idle: %d", typed)
+	}
+	state = session.StateIdle
+	now = now.Add(time.Minute)
+	b.PumpNotices(ctx)
+	if typed != 1 {
+		t.Fatalf("the root turned idle and the dead letter was typed %d times", typed)
+	}
+}
+
+// A dead letter for any other reason — here, eight deliveries nobody
+// acknowledged — is typed once more the next time its root reads idle, and
+// that one attempt is on the record. Not twice: a root that saw it and still
+// did not answer is not helped by a tenth copy.
+func TestADeadLetterIsTypedOnceMoreWhenItsRootTurnsIdle(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	now := time.Date(2026, 9, 25, 9, 0, 0, 0, time.UTC)
+	b.Clock = func() time.Time { return now }
+	typed := 0
+	b.Type = func(context.Context, string, string) error { typed++; return nil }
+	state := session.StateWorking
+	b.Live = rootAt(&state)
+	r := finished(t, b, ctx, "c6f30000-0000-4000-8000-000000000013")
+
+	for i := 0; i < AttemptLimit+2; i++ {
+		b.PumpNotices(ctx)
+		now = now.Add(maxAckWait + time.Second)
+	}
+	dead, _, _ := b.Record(ctx, r.ID)
+	if dead.Notice.State != NoticeDeadLetter || typed != AttemptLimit {
+		t.Fatalf("the ladder did not end: typed %d, %+v", typed, dead.Notice)
+	}
+
+	b.PumpNotices(ctx)
+	if typed != AttemptLimit {
+		t.Fatalf("a dead letter was typed at a working root")
+	}
+	state = session.StateIdle
+	now = now.Add(time.Minute)
+	b.PumpNotices(ctx)
+	if typed != AttemptLimit+1 {
+		t.Fatalf("the root read idle and the dead letter was typed %d extra times", typed-AttemptLimit)
+	}
+	again, _, _ := b.Record(ctx, r.ID)
+	if again.Notice.State != NoticeDeadLetter || again.Notice.Attempts != AttemptLimit+1 ||
+		!again.Notice.LastAttemptAt.Equal(now) {
+		t.Fatalf("the extra attempt is not on the record: %+v", again.Notice)
+	}
+	if retyped, err := b.Store.EventCount(ctx, "task.completion.retyped"); err != nil || retyped != 1 {
+		t.Fatalf("%d retyped events: %v", retyped, err)
+	}
+	for i := 0; i < 5; i++ {
+		now = now.Add(time.Hour)
+		b.PumpNotices(ctx)
+	}
+	if typed != AttemptLimit+1 {
+		t.Fatalf("the dead letter was retyped %d times", typed-AttemptLimit)
+	}
+	// Acknowledging it still works, and ends it.
+	if changed, err := b.Acknowledge(ctx, r.ID, again.Notice.ID); err != nil || !changed {
+		t.Fatalf("ack after the retype: %v %v", changed, err)
+	}
+}
+
+// The pull path. A root that never saw the typed line reads its own list at
+// every turn boundary, and a completion nobody acknowledged is on it — pending
+// or dead — until it is acknowledged.
+func TestUnacknowledgedCompletionsAreListedForTheirRoot(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	r := finished(t, b, ctx, "c6f30000-0000-4000-8000-000000000014")
+	other := finished(t, b, ctx, "c6f30000-0000-4000-8000-000000000015")
+	list, err := b.RootCompletions(ctx, rootConversation)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("a root's unacknowledged completions: %v %+v", err, list)
+	}
+	if none, err := b.RootCompletions(ctx, "00000000-0000-4000-8000-00000000dead"); err != nil || len(none) != 0 {
+		t.Fatalf("another root sees %d: %v", len(none), err)
+	}
+	if _, err := b.Acknowledge(ctx, r.ID, r.Notice.ID); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = b.RootCompletions(ctx, rootConversation)
+	if len(list) != 1 || list[0].Record.ID != other.ID {
+		t.Fatalf("after one ack: %+v", list)
 	}
 }

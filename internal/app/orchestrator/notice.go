@@ -396,6 +396,7 @@ func (b *Broker) PumpNotices(ctx context.Context) int {
 			sent++
 		}
 	}
+	b.retypeDeadLetters(ctx, now)
 	return sent
 }
 
@@ -559,15 +560,45 @@ const noticeHoldStep = 20 * time.Second
 // the budget walks toward dead letter as it does for any other reason nothing
 // was typed, and the person is pushed when it gets there. Ten minutes: three
 // rungs of the acknowledgement ladder, and somebody who has not touched a
-// dialog or a half-written line in ten minutes is not about to.
+// half-written line in ten minutes is not about to. A menu is the exception,
+// with a ceiling of its own (maxChoosingHold).
 const maxNoticeHold = 10 * time.Minute
+
+// maxChoosingHold is how long one notice may be held because its root is
+// showing something waiting to be answered.
+//
+// A menu is not like the other holds. A lane is released in seconds and a draft
+// is sent or abandoned in minutes, but a question is answered when its person
+// comes back, and on 2026-09-25 that was two hours and fourteen minutes: a root
+// showed a question from 19:54 to 22:08, its child finished at 20:07, and ten
+// minutes of holding at a time spent all eight attempts by 21:27. The notice
+// was a dead letter when the person answered, and the root carried on not
+// knowing. So a menu holds for free, for hours — nobody is at fault and nothing
+// was tried — and at this ceiling the notice goes to dead letter in one step,
+// saying so, with the push that owes the person. Twelve hours covers a night
+// away from the machine; past it the person is told rather than kept waiting
+// on a machine that is. A dead letter is still typed once more when its root
+// next reads idle (retypeDeadLetters).
+const maxChoosingHold = 12 * time.Hour
 
 // holdNotice defers one notice without spending an attempt, and writes the
 // reason the first time it is held for it. It always answers false: nothing was
 // sent.
 func (b *Broker) holdNotice(ctx context.Context, taskID string, seen Notice, at time.Time, h noticeHold) bool {
 	held := seen.LastError != nil && seen.LastError.Code == h.Code
-	if held && at.Sub(seen.LastError.At) >= maxNoticeHold {
+	if held && h == holdChoosing && at.Sub(seen.LastError.At) >= maxChoosingHold {
+		since := seen.LastError.At
+		b.moveNotice(ctx, taskID, seen, "task.completion.dead_letter", func(n *Notice) {
+			n.State = NoticeDeadLetter
+			n.DeadLetterAt = at
+			n.NextRetryAt = zeroTime
+			n.LastError = &NoticeError{Code: h.Code, At: since,
+				Message: h.Message + " Held since then without spending an attempt, up to its ceiling of " +
+					maxChoosingHold.String() + "; it is typed once more when the root next reads idle."}
+		})
+		return false
+	}
+	if held && h != holdChoosing && at.Sub(seen.LastError.At) >= maxNoticeHold {
 		return b.spendAttempt(ctx, taskID, seen, at, h.Code,
 			h.Message+" Held for "+maxNoticeHold.String()+" for this reason, so this attempt is spent rather than held again.")
 	}
@@ -583,6 +614,127 @@ func (b *Broker) holdNotice(ctx context.Context, taskID string, seen Notice, at 
 	}
 	b.observed.deferNotice(seen.ID, at.Add(noticeHoldStep))
 	return false
+}
+
+// maxRetypeAge is how old a dead letter may be and still be typed once more
+// when its root reads idle. A day: the case this exists for is a root that was
+// busy when its notice gave up and is back within the same working day. Older
+// ones stay listed — on the completions list and the root's own session-todos —
+// and are re-armed only by a person (Rearm), so a root that has been open for a
+// week is not handed last week's notices the first time it goes quiet.
+const maxRetypeAge = 24 * time.Hour
+
+// retypeDeadLetters types each recent dead letter once more, the first time
+// its root reads idle.
+//
+// A dead letter is the end of the ladder, and until now it stayed dead until
+// somebody called reconcile — which nobody did, because the root it was for had
+// never heard of it. An idle root is the one moment typing costs nothing: no
+// menu to answer by accident, no turn to interrupt, an empty composer. So the
+// notice is typed there once, the attempt is recorded (attempts past the limit
+// is the durable mark that it was spent), and the notice stays a dead letter:
+// no second push, still listed, still acknowledged the ordinary way. Anything
+// short of idle — not live, working, a menu, a draft, a lane somebody else
+// holds — waits for a later look without spending it.
+func (b *Broker) retypeDeadLetters(ctx context.Context, now time.Time) {
+	rows, err := b.Store.CompletionNotices(ctx, zeroTime, false, completionsPage)
+	if err != nil {
+		return
+	}
+	var live []session.Session
+	read := false
+	for _, row := range rows {
+		n := noticeOf(row)
+		if n.State != NoticeDeadLetter || n.Attempts > AttemptLimit || now.Sub(n.DeadLetterAt) > maxRetypeAge {
+			continue
+		}
+		if b.observed.deferredUntil(n.ID, now).After(now) {
+			continue
+		}
+		r, _, err := b.Record(ctx, row.TaskID)
+		if err != nil || r.Notice == nil || r.Notice.ID != n.ID || r.Root == nil || r.Root.SessionID == "" {
+			continue
+		}
+		if !read {
+			if b.Live != nil {
+				live = b.Live(ctx)
+			}
+			read = true
+		}
+		if !b.retypeIfIdle(ctx, r, live, now) {
+			b.observed.deferNotice(n.ID, now.Add(noticeHoldStep))
+		}
+	}
+}
+
+// retypeIfIdle types one dead letter at its root if that root reads idle now,
+// answering whether it was typed.
+func (b *Broker) retypeIfIdle(ctx context.Context, r Record, live []session.Session, now time.Time) bool {
+	var target session.Session
+	found := 0
+	for _, s := range live {
+		if s.IsAssistant() && s.ConversationID == r.Root.SessionID &&
+			(r.Root.Assistant == "" || string(s.Assistant) == r.Root.Assistant) {
+			target = s
+			found++
+		}
+	}
+	if found != 1 || target.State != session.StateIdle || b.Type == nil {
+		return false
+	}
+	if b.Choosing != nil && b.Choosing(ctx, target.ID) {
+		return false
+	}
+	if state, _ := b.readComposer(ctx, target.ID, r.Root.Assistant); state != ComposerEmpty {
+		return false
+	}
+	wire, err := b.NoticeWire(ctx, r)
+	if err != nil {
+		return false
+	}
+	seen := *r.Notice
+	typeErr := b.typeNotice(ctx, target.ID, wire, nil)
+	var busy lane.Busy
+	if errors.As(typeErr, &busy) {
+		return false
+	}
+	b.moveNotice(ctx, r.ID, seen, "task.completion.retyped", func(n *Notice) {
+		n.Attempts = max(n.Attempts, AttemptLimit) + 1
+		n.LastAttemptAt = now
+		if typeErr != nil {
+			n.LastError = &NoticeError{Code: "transport_failed", Message: typeErr.Error(), At: now}
+			return
+		}
+		n.Recipient = target.ID
+		if n.DeliveredAt.IsZero() {
+			n.DeliveredAt = now
+		}
+	})
+	return typeErr == nil
+}
+
+// RootCompletions is every completion notice nobody has acknowledged whose
+// root is this conversation — pending, delivered or dead — newest first. It is
+// the pull path: a root reads its own list at every turn boundary, so a line it
+// never saw typed still reaches it at its next one.
+func (b *Broker) RootCompletions(ctx context.Context, conversation string) ([]Completion, error) {
+	all, err := b.Completions(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	out := []Completion{}
+	for _, c := range all {
+		if c.Notice.State == NoticeAcknowledged || c.Record.Root == nil || c.Record.Root.SessionID != conversation {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// ResultPath is where a task's result.json is, as the notice names it.
+func (b *Broker) ResultPath(taskID string) string {
+	return filepath.Join(b.Tasks.Path(taskID), "result.json")
 }
 
 // readComposer asks the root's own screen what is in its composer.
