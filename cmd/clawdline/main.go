@@ -88,6 +88,8 @@ func main() {
 		sessionCommand(os.Args[2:])
 	case "todo":
 		todoCommand(os.Args[2:])
+	case "item":
+		itemCommand(os.Args[2:])
 	case "landings":
 		readCommand("landings", "/v1/orchestrator/landings", os.Args[2:])
 	case "assistants":
@@ -343,11 +345,12 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|todo|send|notify|landings|assistants|type|interrupt|close|open|pair|tunnel|cloud|board|project|task|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|tunnel|cloud|board|project|task|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
 	fmt.Fprintln(os.Stderr, "  todo <add|list|done>          this session's own to-dos, added only when the person asks")
+	fmt.Fprintln(os.Stderr, "  item <add|steps|step-done>    a Board item the person's message asked for, with its --step rows")
 	fmt.Fprintln(os.Stderr, "  send --to <terminal> [text…]  relay a message into another session's composer")
 	fmt.Fprintln(os.Stderr, "  notify --title <t> --body <b>   push a notification to the person")
 	fmt.Fprintln(os.Stderr, "  landings | assistants         every landing still owed; what each assistant's account has left")

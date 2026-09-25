@@ -62,11 +62,11 @@ func personPrincipal(r *http.Request) string {
 // The bytes are already typed, so a run that could not be recorded is
 // logged and the send still succeeds; the session then has no run to relay
 // that message under, which is the refusal side, never the believing one.
-func (s *Server) issueRun(ctx context.Context, r *http.Request, sess session.Session) {
+func (s *Server) issueRun(ctx context.Context, r *http.Request, sess session.Session, text string) {
 	if s.store == nil {
 		return
 	}
-	if _, err := s.runs().Issue(context.WithoutCancel(ctx), sess, personPrincipal(r)); err != nil {
+	if _, err := s.runs().Issue(context.WithoutCancel(ctx), sess, personPrincipal(r), text); err != nil {
 		log.Printf("runs: the run of a message to %s was not recorded: %v", sess.ID, err)
 	}
 }
@@ -80,6 +80,8 @@ type runWire struct {
 	At         int64  `json:"at"`
 	// RelayUntil is when this run stops carrying a relay (work.RelayWindow).
 	RelayUntil int64 `json:"relay_until"`
+	// Excerpt is the start of what the person said; absent on older runs.
+	Excerpt string `json:"excerpt,omitempty"`
 }
 
 type runOneWire struct {
@@ -89,7 +91,7 @@ type runOneWire struct {
 
 func runOf(r work.Run) runWire {
 	return runWire{ID: r.ID, SessionID: r.Session, TerminalID: r.Terminal, Assistant: r.Assistant,
-		Principal: r.Principal, At: r.At.Unix(), RelayUntil: r.At.Add(work.RelayWindow).Unix()}
+		Principal: r.Principal, At: r.At.Unix(), RelayUntil: r.At.Add(work.RelayWindow).Unix(), Excerpt: r.Excerpt}
 }
 
 // sessionRun is GET /v1/orchestrator/sessions/{session}/run: the run a

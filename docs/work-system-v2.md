@@ -34,10 +34,15 @@ and projects an assigned item into its owner's Session to-do panel.
 
 ## 2. Non-negotiable invariants
 
-1. **Only a person creates a work item.** Device-authenticated UI/API actions are the only creation
-   path. The machine/orchestrator credential and task secrets cannot create one.
+1. **A work item is created by a person, or by a Session relaying a person's explicit message
+   through that message's run.** *(Amended 2026-09-25 by the owner; it read "Only a person creates a
+   work item" until then.)* Device-authenticated UI/API actions create items as the person. The
+   one machine-credential path is `POST /v1/work/v2/agent/items`, and it needs the run of a message
+   the person sent that same Session through this daemon (§7.1). Task secrets never create one, and
+   a person typing straight into a terminal leaves no run, so that case stays a proposal (§10).
 2. **Only a person assigns, reassigns, unassigns, deletes/cancels, or reopens an item.** An Agent may not
-   appoint itself or another Session.
+   appoint itself or another Session — except that an item created under §7.1 arrives assigned to
+   the Session that relayed the person's message, because that message is the person's assignment.
 3. **An Agent may propose, never promote.** A proposal is a previewable draft. It becomes a work
    item only after a person accepts it, possibly after editing it.
 4. **One item has at most one owning Session at a time.** One Session may own several items.
@@ -252,7 +257,7 @@ that decision exists. A person may change the policy; the Agent may not.
 
 | Operation | Person/device | Owning Agent | Other Agent | Broker/rule |
 | --- | ---: | ---: | ---: | ---: |
-| Create item | yes | no | no | no |
+| Create item | yes | yes, on the person's explicit message relayed by its run (§7.1); arrives assigned to itself | no | no |
 | Assign/reassign/unassign/delete (cancel) | yes | no | no | no |
 | Reopen terminal work | yes | own just-completed `done` only | no | no |
 | Change Project/kind/deployment policy | yes | no | no | no |
@@ -285,6 +290,51 @@ them only when the person explicitly asked is carried by the guide, not enforced
 the daemon enforces is that the conversation is one lowercase UUID naming exactly one live,
 non-child Session, and it records that conversation id as the row's `created_by`. A Session that
 forges another's conversation id is outside what this boundary claims to stop.
+
+### 7.1 A Session creating an item on the person's message
+
+Decided by the owner on 2026-09-25. When the person tells a Session, in a message sent through
+Clawdline, to create a Board item, the Session creates it directly instead of filing a proposal the
+person must then accept and assign by hand.
+
+The proof is the relay mechanism that already exists (`internal/domain/work/runs.go`): a run is
+issued only when a person sends a Session a message through this daemon, and
+`GET /v1/orchestrator/sessions/<conversation>/run` answers the latest one. The Session names it:
+
+```
+POST /v1/work/v2/agent/items     (machine auth, Idempotency-Key required)
+{"session_id": "<conversation id>", "via": {"run": "<run id>"}, "project_id": "<place id>",
+ "kind": "…", "title": "…", "description": "…", "deployment_policy"?: "…", "steps"?: ["…"]}
+```
+
+Each check refuses by a typed code and writes nothing: the run exists (`run_unknown`, also for no
+run named), is within the one-day relay window (`run_expired`), and was said to this Session
+(`run_other_session`); the conversation is a live, non-child Session (`session_not_found`,
+`child_session`); the Project is in the catalog (`project_not_found`); an executable item is in the
+Project the Session works in (`project_mismatch`); the usual title and description rules; at most
+128 explicit steps (`too_many_steps`), none on a planning kind (`planning_has_no_steps`); and one
+run backs at most five created items, open or closed (`run_items_exhausted`, capacity row
+`run.created_items`).
+
+One transaction writes the item with `created_by = user_via_session:<run>` and an `item.created`
+event carrying `via_run` and `session_id`. For Feature and Issue it also writes an active
+`existing_session` assignment to that Session, moves the item to `assigned`, and writes its steps:
+the explicit `steps` in order, or — when there are none — the description's two or more top-level
+list rows exactly as a person's assignment seeds them. Explicit steps replace that seeding, so no
+step is written twice. Nothing is typed into the Session's terminal: it asked. Epic, Refactor and
+Plan are created unassigned in Planning, as a person's would be.
+
+The run now keeps an excerpt of the message (280 characters, whitespace folded, cut on a character
+boundary with an ellipsis; runs issued earlier have none), and the item keeps its provenance in
+`created_via`: the run, the conversation, when the message was said, and that excerpt. The item
+wire carries it as `created_via` and the Console draws "Created by the Session from your message at
+HH:MM" on the card, quoting the excerpt. A person's own item carries none.
+
+The boundary is the same cooperative one as §7's: the machine credential proves "a Session on this
+machine", and `run_other_session` stops a Session using another Session's run by mistake, not by
+intent. That a Session creates items only when the person's message explicitly asks is carried by
+the guide, like its own to-dos. The proposal path (§10) stays the fallback for everything without a
+run.
 
 ## 8. Assignment
 
@@ -377,6 +427,9 @@ transition guard, but the owning Agent still requests the transition.
 A proposal contains Project, proposed kind, title, description, reason, suggested acceptance,
 proposing Session, optional source item/quick-to-do, and version. Its states are `pending`,
 `accepted`, and `rejected`.
+
+A proposal is also the fallback when a Session has no run to create an item under (§7.1): the
+person typed straight into the terminal, so the Session proposes and tells them to accept it here.
 
 It does not expire into acceptance, does not create a work item through a rule, and is never mixed
 with the Board count. The person can preview and edit it before accepting. Acceptance creates one

@@ -48,6 +48,7 @@ import {
   sessionWorkStateName,
 } from "./session-assignment.js"
 import { workV2CreateDecision, type WorkV2CreateDecision } from "./create-decision.js"
+import { createdViaLine, workWord } from "./words.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
 const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
@@ -284,6 +285,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     </div>
     <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>
     <h3>{item.title}</h3>
+    <CreatedViaNote item={item} />
     <p>{item.description}</p>
     {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
       <strong>需要你做的事</strong><p>{item.user_action}</p>
@@ -342,6 +344,22 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
       void run(`delete-${item.id}`, () => deleteWorkV2(item)).then((ok) => { if (ok) setDeleting(false) })
     }} />}
   </article>
+}
+
+/**
+ * Who asked for this item, when a Session created it on the person's message:
+ * one small line on the card, the excerpt as its tooltip, and the message
+ * quoted when the line is opened. A person's own item shows nothing here.
+ */
+function CreatedViaNote({ item }: { item: WorkV2Item }) {
+  const line = createdViaLine(item.created_via)
+  if (!line) return null
+  const excerpt = item.created_via?.excerpt ?? ""
+  if (!excerpt) return <p className="work-created-via">{line}</p>
+  return <details className="work-created-via">
+    <summary title={excerpt}>{line}</summary>
+    <blockquote aria-label={workWord("createdViaQuote")}>{excerpt}</blockquote>
+  </details>
 }
 
 interface SessionWorkReading {

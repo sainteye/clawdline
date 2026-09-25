@@ -194,6 +194,7 @@ const (
 	WorkCompletionReasonBytes = "work.completion_reason_bytes"
 	SessionDirectTodoBytes    = "session.direct_todo_bytes"
 	SessionTodoBatchRows      = "session.todo_batch_rows"
+	RunCreatedItems           = "run.created_items"
 	WorkRequestBodyBytes      = "work.request_body_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
@@ -626,6 +627,16 @@ func Register() []Entry {
 			Limit: 20, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app.sessionTodoBatchLimit"},
+		},
+		{
+			// The Board items one person's message may back when a Session
+			// creates them on it (work-system-v2 §2, amended 2026-09-25).
+			// Counted over every item that run created, open or closed; the
+			// sixth is refused run_items_exhausted and nothing is written.
+			Name: RunCreatedItems, Class: Buffer, Unit: Rows,
+			Limit: 5, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.runItemLimit"},
 		},
 		{
 			Name: WorkRequestBodyBytes, Class: Buffer, Unit: Bytes,

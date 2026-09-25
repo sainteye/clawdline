@@ -114,6 +114,20 @@ type ItemV2 struct {
 	ClosedAt         time.Time
 	Cycle            int64
 	Version          int64
+	// CreatedVia is the person's message a Session created this item on
+	// (work-system-v2 §2, amended 2026-09-25); nil for an item a person
+	// created as themselves.
+	CreatedVia *CreatedViaV2
+}
+
+// CreatedViaV2 is the provenance of an item a Session created because a
+// person told it to through Clawdline: the run of that message, when it was
+// said, and a bounded excerpt of what was said.
+type CreatedViaV2 struct {
+	Run     string `json:"run"`
+	Session string `json:"session_id"`
+	At      int64  `json:"at"`
+	Excerpt string `json:"excerpt,omitempty"`
 }
 
 type AssignmentV2 struct {

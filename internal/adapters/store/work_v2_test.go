@@ -41,6 +41,53 @@ func TestOpeningAnOlderWorkStoreAddsTheRequestedUserAction(t *testing.T) {
 	}
 }
 
+// A store from before Sessions could create items gains the provenance
+// column, and its items read as created by a person.
+func TestOpeningAnOlderWorkStoreAddsCreatedViaWithoutLosingItems(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE work_v2_items (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, project_path TEXT NOT NULL, kind TEXT NOT NULL,
+  title TEXT NOT NULL, description TEXT NOT NULL, phase TEXT NOT NULL, condition TEXT NOT NULL DEFAULT '',
+  user_action TEXT NOT NULL DEFAULT '', deployment_policy TEXT NOT NULL, owner_session TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER,
+  cycle INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 1);
+INSERT INTO work_v2_items
+  (id,project_id,project_path,kind,title,description,phase,condition,user_action,deployment_policy,
+   owner_session,created_by,created_at,updated_at,closed_at,cycle,version)
+VALUES ('item-a','p','/p','issue','Existing','Existing','created','','','agent_decides','','local',1,1,NULL,1,1)`)
+	if closeErr := db.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, err := s.WorkV2Item(context.Background(), "item-a")
+	if err != nil || got.Title != "Existing" || got.CreatedVia != nil {
+		t.Fatalf("existing item after the migration: %+v %v", got, err)
+	}
+	via := &work.CreatedViaV2{Run: "0f0f0f0f-0000-4000-8000-000000000001", Session: "conv", At: 5, Excerpt: "make it"}
+	item := work.ItemV2{ID: "item-b", ProjectID: "p", ProjectPath: "/p", Kind: work.KindIssue, Title: "New",
+		Description: "New", Phase: work.PhaseCreated, DeploymentPolicy: work.DeployAgentDecides,
+		CreatedBy: work.ActorViaSession + via.Run, CreatedAt: time.Unix(5, 0), UpdatedAt: time.Unix(5, 0),
+		Cycle: 1, Version: 1, CreatedVia: via}
+	if err := s.WriteWorkV2(context.Background(), func(tx *WorkV2Tx) error { return tx.CreateItem(item, item.CreatedBy, `{}`) }); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.WorkV2Item(context.Background(), "item-b")
+	if err != nil || got.CreatedVia == nil || *got.CreatedVia != *via {
+		t.Fatalf("provenance round trip: %+v %v", got.CreatedVia, err)
+	}
+}
+
 func TestOpeningAnOlderWorkStoreAddsCompletionReportsWithoutLosingDocuments(t *testing.T) {
 	dir := t.TempDir()
 	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))

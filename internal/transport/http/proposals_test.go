@@ -190,7 +190,7 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 		code(rec) != "no_run" {
 		t.Fatalf("a session nobody wrote to: %d %s", rec.Code, rec.Body)
 	}
-	other, err := s.runs().Issue(context.Background(), session.Session{ID: "%8", ConversationID: "other-conv"}, "local")
+	other, err := s.runs().Issue(context.Background(), session.Session{ID: "%8", ConversationID: "other-conv"}, "local", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 		code(rec) != "run_other_session" {
 		t.Fatalf("another session's run: %d %s", rec.Code, rec.Body)
 	}
-	mine, err := s.runs().Issue(context.Background(), session.Session{ID: "%4", ConversationID: "root-conv"}, "device:phone")
+	mine, err := s.runs().Issue(context.Background(), session.Session{ID: "%4", ConversationID: "root-conv"}, "device:phone", "")
 	if err != nil {
 		t.Fatal(err)
 	}

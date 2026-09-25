@@ -457,7 +457,54 @@ that it is rare. `--session <terminal>` makes a tap open that session.
 ## 10. The board
 
 The board has three structures — board items, the Backlog, and each session's own to-do list — and
-**a person decides what goes on it**. A session proposes; it never files a card by itself.
+**a person decides what goes on it**. A session creates a Board item only when the person's own
+message, sent through Clawdline, tells it to; otherwise it proposes. It never files a card on its
+own initiative.
+
+**TODO / 待辦 / 土度 said together with a Board item means that item's steps.** Put them on the
+item with `--step`. Do **not** also write them with `clawdline todo add`. `clawdline todo add` is
+only for a list the person asks you to track as this Session's own to-dos with no Board item.
+
+**When the person tells you to create a Board item.** Only when their message — sent through
+Clawdline, so it has a run — explicitly asks for one, create it yourself:
+
+```
+clawdline item add --project <place id> --kind feature|issue|epic|refactor|plan --title "…" \
+  --step "first step" --step "second step" …   [--description-file f | description on stdin]
+```
+
+Worked example. The person writes: *"Make a Board item to clean up the release notes, TODO: draft
+them, check the links, publish."* That is one command and nothing else:
+
+```
+echo "Clean up the release notes before the next release." | \
+  clawdline item add --project <place id> --kind feature --title "Clean up the release notes" \
+  --step "Draft the notes" --step "Check the links" --step "Publish"
+```
+
+- `item add` reads this conversation's latest run (`GET /v1/orchestrator/sessions/<conversation>/run`)
+  unless `--run` names one, prints its Idempotency-Key before asking (`--key` retries the same
+  write), and prints the created item with each step's id. It is
+  `POST /v1/work/v2/agent/items` with `{"session_id", "via": {"run"}, "project_id", "kind",
+  "title", "description", "deployment_policy"?, "steps"?: ["…"]}`.
+- A Feature or Issue arrives **assigned to you**, in `assigned`, with its steps: the `--step` rows
+  in order, or — when you give none — two or more top-level Markdown list rows of the description.
+  Nothing is typed into your terminal; you asked for it. Work the steps in order, complete each
+  one when it is verified (`clawdline item steps <item id>`, `clawdline item step-done <item id>
+  <step id>`), and advance the phases as for any assigned item. An Epic, Refactor or Plan is created
+  unassigned, in Planning, and takes no steps (`planning_has_no_steps`).
+- The person sees the card marked "Created by the Session from your message at HH:MM", with their
+  words quoted.
+- Refusals, each writing nothing: `run_unknown` (no run named, or none issued), `run_expired`
+  (older than a day), `run_other_session` (a message to another Session), `session_not_found`,
+  `child_session` (a child reports through `result.json`), `project_not_found`,
+  `project_mismatch` (an executable item must be in the Project you work in), `too_many_steps`
+  (more than 128), `run_items_exhausted` (one message backs at most five items).
+- **No run** — the person typed straight into the terminal, so `item add` answers `no_run` or
+  `run_unknown`: fall back to a proposal (below) and tell the person to accept it in the Board's
+  Agent proposals.
+
+Never create a Board item on your own initiative, and never several to plan speculative work.
 
 **Propose a Board item.** The Board's **Agent proposals** queue is fed by one route:
 
@@ -539,7 +586,9 @@ child is refused (`child_session`) and keeps reporting through `result.json`.
 Never do this on your own initiative, and never to plan speculative work. Complete each row with
 `clawdline todo done <id>` only once it is verified done. The person sees these rows marked as
 added by the Session, and only the person can send or delete them. They are not Board items and
-never appear on the Board; to put one there, propose it from that to-do (above).
+never appear on the Board. To-dos are a list of chores in the current Session; a Board item is work
+the person wants tracked on the Board — when they ask for that, use `clawdline item add` (above),
+and its list goes in as the item's `--step` rows, never as to-dos as well.
 
 If the person's meaning clearly says that the item you just completed is still unfinished, correct
 the Board yourself; do not leave it in Recently Done, create a replacement item, or ask the person
@@ -572,7 +621,8 @@ empty string on the same route; the daemon clears `user_action` with it so the B
 a stale request.
 
 An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
-Markdown list rows in the description. Each step is an item-local TODO, not another Board item.
+Markdown list rows in the description, and an item you created with `clawdline item add` carries
+its `--step` rows. Each step is an item-local TODO, not another Board item.
 Complete a verified step with an idempotent machine-authenticated request to
 `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete`, body
 `{"expected_version": <item version>, "session_id": "<your conversation id>"}`. Reread after a
