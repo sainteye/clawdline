@@ -525,9 +525,29 @@ func (s Snapshot) TitleOf(l Live, customTitle string, live []Live) Titles {
 		}
 	}
 	// Over whatever records there are: the Swift store's when it was read,
-	// and this daemon's own laid over them (own.go) either way.
+	// and this daemon's own laid over them (own.go) either way. The terminal
+	// rule stays strict; a conversation the Board opened, and that now runs
+	// in a tab nobody recorded, is found by the conversation behind it.
 	out.Orchestrator = s.orchestratorTitle(l.TerminalID, live)
+	if out.Orchestrator == "" {
+		out.Orchestrator = s.boardTitle(l)
+	}
 	return out
+}
+
+// boardTitle is the Board label of the conversation this session runs. A
+// session whose conversation is unknown is lent none.
+func (s Snapshot) boardTitle(l Live) string {
+	if l.ConversationID == "" || l.Assistant == "" {
+		return ""
+	}
+	found := ""
+	for _, b := range s.BoardTitles {
+		if b.ConversationID == l.ConversationID && b.Assistant == l.Assistant {
+			found = b.Label
+		}
+	}
+	return found
 }
 
 // manualTitle is Config.sessionTitle(sessionID:terminalID:...).

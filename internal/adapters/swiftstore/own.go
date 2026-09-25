@@ -25,6 +25,17 @@ type Own struct {
 	Handoffs        []Handoff
 	HandoffLabels   []HandoffLabel
 	RootAssignments []RootAssignment
+	BoardTitles     []BoardTitle
+}
+
+// BoardTitle is the label of the Root Assignment a Board item opened one
+// conversation with. It is keyed by the conversation, not the terminal: a
+// conversation resumed into a new tab after a crash keeps it, and a terminal
+// reused by another conversation does not inherit it.
+type BoardTitle struct {
+	Assistant      string
+	ConversationID string
+	Label          string
 }
 
 // With lays own records over the snapshot and returns the merged one; the
@@ -57,6 +68,7 @@ func (s Snapshot) With(own Own) Snapshot {
 	out.Handoffs = append(append([]Handoff(nil), s.Handoffs...), own.Handoffs...)
 	out.HandoffLabels = append(append([]HandoffLabel(nil), s.HandoffLabels...), own.HandoffLabels...)
 	out.RootAssignments = append(append([]RootAssignment(nil), s.RootAssignments...), own.RootAssignments...)
+	out.BoardTitles = append(append([]BoardTitle(nil), s.BoardTitles...), own.BoardTitles...)
 	return out
 }
 

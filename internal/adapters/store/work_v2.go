@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -593,26 +594,51 @@ func (s *Store) WorkV2Assignments(ctx context.Context, workID string) ([]work.As
 	return out, rows.Err()
 }
 
-// WorkV2RootAssignmentForSession returns the Root Assignment that opened one
-// conversation from a Board item. Existing-session assignments do not rename
-// a conversation, and failed openings carry no usable session id.
-func (s *Store) WorkV2RootAssignmentForSession(ctx context.Context, projectPath, assistant, sessionID string) (string, error) {
+// WorkV2RootAssignmentsForSessions answers, for each of one assistant's
+// conversations, the Root Assignment that opened it from a Board item, in one
+// read. Existing-session assignments do not rename a conversation, and failed
+// openings carry no usable session id. An empty projectPath matches every
+// project: a conversation id already names one conversation, and a live row
+// has no place, only a working directory that is where the process is now.
+func (s *Store) WorkV2RootAssignmentsForSessions(ctx context.Context, projectPath, assistant string, sessionIDs []string) (map[string]string, error) {
 	if err := reading(); err != nil {
-		return "", err
+		return nil, err
 	}
-	if strings.TrimSpace(projectPath) == "" || strings.TrimSpace(assistant) == "" || strings.TrimSpace(sessionID) == "" {
-		return "", nil
+	out := map[string]string{}
+	ids := make([]string, 0, len(sessionIDs))
+	for _, id := range sessionIDs {
+		if strings.TrimSpace(id) != "" {
+			ids = append(ids, id)
+		}
 	}
-	var rootAssignment string
-	err := s.db.QueryRowContext(ctx, `SELECT a.root_assignment_id
+	if strings.TrimSpace(assistant) == "" || len(ids) == 0 {
+		return out, nil
+	}
+	// One JSON parameter, so the number of conversations on screen is not a
+	// number of SQL variables.
+	list, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT a.session_id, a.root_assignment_id
 		FROM work_v2_assignments a JOIN work_v2_items i ON i.id=a.work_id
-		WHERE a.session_id=? AND a.assistant=? AND i.project_path=?
+		WHERE a.session_id IN (SELECT value FROM json_each(?)) AND a.assistant=? AND (?='' OR i.project_path=?)
 		  AND a.mode='new_session' AND a.root_assignment_id<>'' AND a.state IN ('active','released')
-		ORDER BY a.updated_at DESC, a.rowid DESC LIMIT 1`, sessionID, assistant, projectPath).Scan(&rootAssignment)
-	if err == sql.ErrNoRows {
-		return "", nil
+		ORDER BY a.updated_at DESC, a.rowid DESC`, string(list), assistant, projectPath, projectPath)
+	if err != nil {
+		return nil, err
 	}
-	return rootAssignment, err
+	defer rows.Close()
+	for rows.Next() {
+		var session, rootAssignment string
+		if err := rows.Scan(&session, &rootAssignment); err != nil {
+			return nil, err
+		}
+		if _, seen := out[session]; !seen {
+			out[session] = rootAssignment
+		}
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) WorkV2Events(ctx context.Context, workID string, after int64, limit int) ([]work.EventV2, error) {
