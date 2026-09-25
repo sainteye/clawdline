@@ -448,12 +448,12 @@
     box-sizing: border-box; width: 100%; min-height: 140px; margin: 8px 0 14px; padding: 10px;
     border: 1px solid var(--line); border-radius: 8px; resize: vertical; background: var(--card); color: var(--ink); font: inherit;
 }
-.session-todo-modal label { display: grid; gap: 6px; margin: 12px 0; color: var(--dim); font-size: 12px; }
+.session-todo-modal label, .session-todo-modal .work-voice-labelled { display: grid; gap: 6px; margin: 12px 0; color: var(--dim); font-size: 12px; }
 .session-todo-modal label .work-input { width: 100%; box-sizing: border-box; }
 /* Buttons never sit flush against the last field above them. */
 .session-todo-modal form > .work-actions { margin-top: 18px; }
 .work-voice-field { display: grid; gap: 8px; margin: 8px 0 14px; }
-.session-todo-modal label .work-voice-field { margin: 0; }
+.work-voice-labelled .work-voice-field { margin: 0; }
 .work-voice-box { position: relative; }
 .session-todo-modal .work-voice-box textarea { display: block; margin: 0; padding-bottom: 46px; }
 .work-voice-mic {
@@ -562,7 +562,7 @@
 /* The create sheet is mostly read on a phone, so it sets its own type rather
    than the 10-12px shared with the denser Board rows. */
 .work-new-modal .work-modal-field, .work-new-modal .work-kind-field legend,
-.work-new-modal label, .work-new-modal .work-modal-images > span { font-size: 14px; }
+.work-new-modal label, .work-new-modal .work-voice-labelled, .work-new-modal .work-modal-images > span { font-size: 14px; }
 .work-new-modal .work-project-trigger, .work-new-modal .work-project-option { font-size: 15px; }
 .work-new-modal .work-kind-option b { font-size: 15px; }
 .work-new-modal .work-kind-option small { font-size: 12px; }
