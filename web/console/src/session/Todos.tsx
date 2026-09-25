@@ -14,6 +14,7 @@ import { VoiceTextarea } from "../pages/work/VoiceTextarea.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
 import { addedBySession } from "./todo-author.js"
+import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import "../pages/work/work.css"
 
 /** The authoritative projection of unfinished assigned items plus direct user to-dos. */
@@ -59,8 +60,6 @@ export function Todos({ row, agentCount, agentPanel }: {
   if (!row) return null
   const openDirect = page?.direct_todos.filter((todo) => !todo.completed_at) ?? []
   const completedDirect = page?.direct_todos.filter((todo) => !!todo.completed_at) ?? []
-  const count = (page?.assigned_items.length ?? 0) + openDirect.length
-  const completedCount = (page?.recent_items.length ?? 0) + completedDirect.length
   const hasAssigned = !!page?.assigned_items.length
   const hasRecent = !!page?.recent_items.length
   const hasDirect = !!openDirect.length
@@ -106,10 +105,8 @@ export function Todos({ row, agentCount, agentPanel }: {
           <b>{workWord("todosTitle")}</b>
           <button className="session-todos-add" type="button" aria-label="新增 Session 待辦"
             onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}><WorkIcon name="add" /></button>
-          <span id="session-todos-count">{page ? count : L.strings.webLoading}</span>
-          {!!completedCount && <span className="session-todos-completed" aria-label={`最近完成 ${completedCount} 個項目`}>
-            <WorkIcon name="check" />{completedCount}
-          </span>}
+          {page ? <TodoProgressSummary progress={todoProgress(page, row.sessionId)} />
+            : <span id="session-todos-count">{L.strings.webLoading}</span>}
           {agentCount !== undefined ? <span className="session-todos-agent-count">
             {L.strings.webAgents} {agentCount === null ? "?" : agentCount}
           </span> : null}
@@ -311,4 +308,29 @@ function conditionName(condition: string): string {
 
 function deploymentPolicyName(policy: WorkV2Item["deployment_policy"]): string {
   return ({ required: "需要部署", not_required: "不需要部署", agent_decides: "由 Agent 判斷是否部署" } as const)[policy]
+}
+
+/**
+ * The fold's count, as GitHub shows a milestone: one bar split by state, then
+ * each state's count behind its mark. Finished is green, being worked on is
+ * the console's amber, not yet started is the faint ring; a state with none is
+ * left out of the words but the bar still spans all of them.
+ */
+function TodoProgressSummary({ progress }: { progress: TodoProgress }) {
+  const total = progress.done + progress.active + progress.waiting
+  const parts: { key: keyof TodoProgress; icon: "check" | "half" | "circle"; word: string }[] = [
+    { key: "done", icon: "check", word: "完成" },
+    { key: "active", icon: "half", word: "進行中" },
+    { key: "waiting", icon: "circle", word: "未開始" },
+  ]
+  return <span className="session-todos-progress" id="session-todos-count" role="img" aria-label={todoProgressLabel(progress)}
+    title={todoProgressLabel(progress)}>
+    {total > 0 && <span className="session-todos-bar" aria-hidden="true">
+      {parts.map((part) => progress[part.key] > 0 &&
+        <span key={part.key} data-state={part.key} style={{ flexGrow: progress[part.key] }} />)}
+    </span>}
+    {total === 0 ? <span className="session-todos-none" aria-hidden="true">0</span>
+      : parts.map((part) => progress[part.key] > 0 && <span key={part.key} className="session-todos-state" data-state={part.key}
+        aria-hidden="true"><WorkIcon name={part.icon} />{progress[part.key]}<span className="session-todos-word">{part.word}</span></span>)}
+  </span>
 }
