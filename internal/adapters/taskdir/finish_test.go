@@ -145,10 +145,22 @@ func TestAFinishRefusesWhatTheOldValidatorRefused(t *testing.T) {
 			"task_secret must be 64 lowercase hexadecimal characters"},
 		{"status", plainTask("custom"), strings.Replace(resultWith(""), `"success"`, `"done"`, 1), "status must be success or failure"},
 		{"verification with a fraction", plainTask("custom"), resultWith(`, "verification": {"runs": 1.5, "seconds": 0, "last": "pass", "scope": "x"}`),
-			"verification must contain"},
+			"verification.runs must be a non-negative integer"},
+		{"verification with negative seconds", plainTask("custom"), resultWith(`, "verification": {"runs": 1, "seconds": -1, "last": "pass", "scope": "x"}`),
+			"verification.seconds must be a non-negative integer"},
+		{"verification with an unknown last", plainTask("custom"), resultWith(`, "verification": {"runs": 1, "seconds": 0, "last": "ok", "scope": "x"}`),
+			`verification.last must be "pass", "fail" or "skipped"`},
 		{"verification with an empty scope", plainTask("custom"), resultWith(`, "verification": {"runs": 1, "seconds": 0, "last": "pass", "scope": "  "}`),
-			"verification must contain"},
-		{"verification null", plainTask("custom"), resultWith(`, "verification": null`), "verification must contain"},
+			"verification.scope must be a non-empty string"},
+		// The refusal children kept hitting: a long scope was called
+		// "non-empty". It now says the length it read and the limit.
+		{"verification with a scope past the limit", plainTask("custom"),
+			resultWith(`, "verification": {"runs": 1, "seconds": 0, "last": "pass", "scope": "` + strings.Repeat("a", 301) + `"}`),
+			"verification.scope is 301 characters; at most 300 are allowed"},
+		{"verification with a scope counted in UTF-16", plainTask("custom"),
+			resultWith(`, "verification": {"runs": 1, "seconds": 0, "last": "pass", "scope": "` + strings.Repeat("😀", 151) + `"}`),
+			"verification.scope is 302 characters"},
+		{"verification null", plainTask("custom"), resultWith(`, "verification": null`), "verification must be an object"},
 		// Past the old validator: JavaScript's integers, which it let through
 		// and the broker cannot read (it would never settle the task).
 		{"an integer written as 2.0", plainTask("custom"), resultWith(`, "verification": {"runs": 1, "seconds": 2.0, "last": "pass", "scope": "x"}`),

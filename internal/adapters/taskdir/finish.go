@@ -215,10 +215,8 @@ func ValidateResult(task, result map[string]any) string {
 		return "status must be success or failure"
 	}
 	if row, present := result["verification"]; present {
-		v, ok := row.(map[string]any)
-		if !ok || !nonNegativeInteger(v["runs"]) || !nonNegativeInteger(v["seconds"]) ||
-			!oneOf(v["last"], "pass", "fail", "skipped") || !nonEmpty(v["scope"], 300) {
-			return "verification must contain non-negative integer runs/seconds, a valid last value, and a non-empty scope"
+		if reason := validateVerification(row); reason != "" {
+			return reason
 		}
 	}
 	if rows, present := result["leftovers"]; present {
@@ -327,6 +325,40 @@ func onlyKeys(obj map[string]any, keys ...string) bool {
 		}
 	}
 	return true
+}
+
+// VerificationScopeLimit is the longest `verification.scope` a result may
+// carry, in UTF-16 units — the old validator's limit, kept.
+const VerificationScopeLimit = 300
+
+// validateVerification names the one field that is wrong and, for the scope,
+// how long it was. The single sentence it replaced listed every rule at once
+// and called a 410-character scope "non-empty"; four of eight children
+// sampled on 2026-09-25 were refused by it on their first finish, and three of
+// them went reading this file or the binary to learn that the real rule was a
+// length.
+func validateVerification(row any) string {
+	v, ok := row.(map[string]any)
+	if !ok {
+		return "verification must be an object with runs, seconds, last and scope"
+	}
+	if !nonNegativeInteger(v["runs"]) {
+		return "verification.runs must be a non-negative integer"
+	}
+	if !nonNegativeInteger(v["seconds"]) {
+		return "verification.seconds must be a non-negative integer"
+	}
+	if !oneOf(v["last"], "pass", "fail", "skipped") {
+		return `verification.last must be "pass", "fail" or "skipped"`
+	}
+	s, ok := v["scope"].(string)
+	if !ok || strings.TrimSpace(s) == "" {
+		return "verification.scope must be a non-empty string"
+	}
+	if n := jsLength(s); n > VerificationScopeLimit {
+		return fmt.Sprintf("verification.scope is %d characters; at most %d are allowed — shorten it", n, VerificationScopeLimit)
+	}
+	return ""
 }
 
 // absentOrBounded is an optional string field: missing, or a string no longer

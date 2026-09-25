@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -249,11 +250,14 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(` "summary": "<one paragraph: what you did, or why it failed>",`)
 	w(` "symbols": ["<every name your change introduced>", "..."],`)
 	w(` "artifacts": ["artifacts/<file>", "..."],`)
-	w(` "verification": {"runs": 1, "seconds": 0, "last": "pass", "scope": "<what you ran>"},`)
+	w(` "verification": {"runs": 1, "seconds": 0, "last": "pass", "scope": "<what you ran, at most %d characters>"},`, taskdir.VerificationScopeLimit)
 	w(` "leftovers": [{"title": "<one thing you did not do>", "why": "<why you did not>",`)
 	w(`               "suggested_acceptance": "<what would count as done>"}],`)
 	w(` "finished_at": "<ISO8601 UTC>"}`)
 	w("```")
+	w("")
+	w("`last` is `pass`, `fail` or `skipped`. `scope` names what you ran in one line of at most %d", taskdir.VerificationScopeLimit)
+	w("characters; the check refuses a longer one.")
 	w("")
 	w(`Use "status": "failure" when you could not do it. Then run this exact command. It checks the`)
 	w("file, puts it in place as `result.json` and asks the broker to collect it, with nothing but this")
