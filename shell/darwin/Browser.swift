@@ -53,8 +53,6 @@ enum Ink {
     static let accentIn = hex(0xd9_7757, 0.13)   // --accent-in
     static let accentEd = hex(0xd9_7757, 0.34)   // --accent-ed
     static let ok = hex(0x5f_9e73)          // --ok: `.conn[data-state="live"] .dot`
-    static let okIn = hex(0x5f_9e73, 0.13)
-    static let okEd = hex(0x5f_9e73, 0.34)
     static let radius: CGFloat = 11         // --radius
 }
 
@@ -67,11 +65,7 @@ enum Ink {
 /// string is its tooltip and what VoiceOver reads, so a button that stopped
 /// showing its name did not stop having one.
 final class PillButton: NSButton {
-    /// What a selected pill says: `.accent` is "this is the one shown",
-    /// `.ok` is "this is live", in the green the console gives a connection.
-    enum Tone { case accent, ok }
     var isSelected = false { didSet { paint() } }
-    var tone = Tone.accent { didSet { paint() } }
     override var isEnabled: Bool {
         didSet {
             paint()
@@ -81,6 +75,9 @@ final class PillButton: NSButton {
         }
     }
     private let isIcon: Bool
+    /// A status pill: `.conn` rather than a tab. Selected means "live", shown
+    /// by the dot alone; the word, fill and edge stay the plain pill's.
+    private var hasDot = false
 
     init(_ label: String, target: AnyObject?, action: Selector) {
         isIcon = false
@@ -112,19 +109,36 @@ final class PillButton: NSButton {
 
     /// An SF Symbol and a short visible word. The longer label remains the
     /// tooltip and VoiceOver name, so compact chrome does not cost meaning.
-    init(symbol: String, title: String, label: String, symbolSize: CGFloat = 11.5,
-         target: AnyObject?, action: Selector) {
+    init(symbol: String, title: String, label: String, target: AnyObject?, action: Selector) {
         isIcon = false
         super.init(frame: .zero)
         self.target = target
         self.action = action
         self.title = title
         image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: symbolSize, weight: .medium))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11.5, weight: .medium))
         alternateImage = image
         imagePosition = .imageLeading
         imageHugsTitle = true
         toolTip = label
+        setAccessibilityLabel(label)
+        setUp()
+    }
+
+    /// A word led by `.conn`'s 7px dot, green while `isSelected`.
+    ///
+    /// The dot is drawn, not `circle.fill`: a symbol sits on the text's
+    /// baseline, which put its middle 2.25pt below the word's, measured. A
+    /// plain image is centred in the pill, as the word is.
+    init(status label: String, target: AnyObject?, action: Selector) {
+        isIcon = false
+        super.init(frame: .zero)
+        self.target = target
+        self.action = action
+        title = label
+        hasDot = true
+        imagePosition = .imageLeading
+        imageHugsTitle = true
         setAccessibilityLabel(label)
         setUp()
     }
@@ -182,17 +196,34 @@ final class PillButton: NSButton {
     }
 
     private func paint() {
-        let live = tone == .ok
-        let colour = !isEnabled ? Ink.faint : (isSelected ? (live ? Ink.ok : Ink.accent) : Ink.dim)
-        if image != nil { contentTintColor = colour }
+        let selected = isSelected && !hasDot
+        let colour = !isEnabled ? Ink.faint : ((hasDot && isSelected) ? Ink.ink : (selected ? Ink.accent : Ink.dim))
+        if hasDot {
+            image = PillButton.dot(isEnabled && isSelected ? Ink.ok : Ink.faint)
+            alternateImage = image
+        } else if image != nil {
+            contentTintColor = colour
+        }
         if !isIcon {
             attributedTitle = NSAttributedString(string: title, attributes: [
                 .font: font ?? NSFont.systemFont(ofSize: 11.5),
                 .foregroundColor: colour,
             ])
         }
-        layer?.backgroundColor = (isSelected ? (live ? Ink.okIn : Ink.accentIn) : Ink.card).cgColor
-        layer?.borderColor = (isSelected ? (live ? Ink.okEd : Ink.accentEd) : Ink.line).cgColor
+        layer?.backgroundColor = (selected ? Ink.accentIn : Ink.card).cgColor
+        layer?.borderColor = (selected ? Ink.accentEd : Ink.line).cgColor
+    }
+
+    /// Seven points of dot and, after it, `.conn`'s 6px gap to the word:
+    /// `imageHugsTitle` leaves only a sliver of its own.
+    private static func dot(_ colour: NSColor) -> NSImage {
+        let image = NSImage(size: NSSize(width: 11, height: 7), flipped: false) { _ in
+            colour.setFill()
+            NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: 7, height: 7)).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
     }
 }
 
@@ -227,12 +258,10 @@ final class BrowserBar: NSView {
                              target: target, action: #selector(Shell.browserForward))
         refresh = PillButton(symbol: "arrow.clockwise", label: L.t.webInfoRefresh,
                              target: target, action: #selector(Shell.browserRefresh))
-        // The `.conn` pill's dot and green: this machine's console is the one
+        // The `.conn` pill's green dot: this machine's console is the one
         // place that is always here, and it says so while it is answering.
-        consoleTab = PillButton(symbol: "circle.fill", title: L.t.homeLocalTitle,
-                                label: L.t.homeLocalTitle, symbolSize: 6,
-                                target: target, action: #selector(Shell.browserShowConsole))
-        consoleTab.tone = .ok
+        consoleTab = PillButton(status: L.t.homeLocalTitle, target: target,
+                                action: #selector(Shell.browserShowConsole))
         cloudButton = PillButton(symbol: "cloud", title: L.t.browserCloud,
                                  label: L.t.browserOpenCloud, target: target,
                                  action: #selector(Shell.browserOpenCloud))
