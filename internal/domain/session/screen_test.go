@@ -59,3 +59,31 @@ func TestAnEmptyScreenStaysUnknown(t *testing.T) {
 		t.Fatalf("got %v (sure=%v), want unknown", state, sure)
 	}
 }
+
+// Claude Code draws a no-break space after its caret. A composer holding a
+// draft the person has not sent keeps it — "❯ keep going" — and that
+// session read as unknown for as long as the draft sat there (a root on
+// 2026-09-25). The empty composer, "❯ ", was always read as idle because
+// trimming removes the no-break space.
+func TestAComposerHoldingADraftIsIdle(t *testing.T) {
+	rule := strings.Repeat("─", 40)
+	screen := strings.Join([]string{
+		"  ✅ done",
+		"",
+		"✻ Churned for 8m 37s · done 10:44 PM",
+		"",
+		rule,
+		"❯ keep going ",
+		rule,
+		"  ▀▀▀▀▀▀▀▀ project  a root assignment",
+		"  ▀▀▀▀▀▀▀▀ ~/code/project  ⎇ main  Opus · medium",
+		"  ⏵⏵ auto mode on · 1 shell",
+	}, "\n")
+	if st, ok := ReadState(screen, AssistantClaude); st != StateIdle || !ok {
+		t.Fatalf("a composer holding a draft reads %s, want idle", st)
+	}
+	empty := strings.Replace(screen, "❯ keep going ", "❯  ", 1)
+	if st, _ := ReadState(empty, AssistantClaude); st != StateIdle {
+		t.Fatalf("an empty composer reads %s, want idle", st)
+	}
+}

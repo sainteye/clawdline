@@ -51,7 +51,12 @@ func ReadState(screen string, assistant Assistant) (State, bool) {
 			}
 		case AssistantClaude:
 			t := strings.TrimSpace(lines[i])
-			if t == "❯" || strings.HasPrefix(t, "❯ ") {
+			// Claude Code puts a no-break space (U+00A0) after its caret.
+			// An empty composer trims down to the caret alone; one holding a
+			// draft the person has not sent keeps the no-break space, and
+			// matching only an ordinary space read that session as unknown
+			// for as long as the draft sat there (measured 2026-09-25).
+			if t == "❯" || strings.HasPrefix(t, "❯ ") || strings.HasPrefix(t, "❯\u00a0") {
 				return StateIdle, true
 			}
 		}
