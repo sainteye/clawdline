@@ -1486,8 +1486,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			for _, item := range recent {
 				completed = append(completed, s.workV2ItemOf(r.Context(), item))
 			}
-			writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
-				"direct_todos": out, "truncated": truncated || itemTruncated || recentTruncated})
+			answer := map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
+				"direct_todos": out, "truncated": truncated || itemTruncated || recentTruncated}
+			s.addUnacknowledgedCompletions(r.Context(), answer, sessionID)
+			writeJSON(w, answer)
 			return
 		}
 		if len(parts) == 2 && r.Method == http.MethodPost {
@@ -1521,6 +1523,50 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 	}
 	writeRefusal(w, http.StatusNotFound, "not_found", "No such Agent work-system route.")
+}
+
+// unacknowledgedCompletionWire is one completion notice a root has not
+// acknowledged, on the list that root reads at every turn boundary.
+type unacknowledgedCompletionWire struct {
+	TaskID      string                    `json:"task_id"`
+	Title       string                    `json:"title"`
+	State       string                    `json:"state"`
+	ResultPath  string                    `json:"result_path"`
+	NoticeID    string                    `json:"notice_id"`
+	NoticeState string                    `json:"notice_state"`
+	LastError   *orchestrator.NoticeError `json:"last_error,omitempty"`
+	AckPath     string                    `json:"ack_path"`
+}
+
+// addUnacknowledgedCompletions puts on a root's own to-do answer every child
+// completion it has not acknowledged — pending or dead-lettered — so a root
+// that never saw the typed line learns of it at its next turn boundary
+// (orchestrator.RootCompletions). A ledger that cannot be read says so with
+// `unacknowledged_completions_unknown` rather than failing the to-dos, which
+// are the other half of the answer, or answering an empty list, which would
+// read as "nothing of yours finished".
+func (s *Server) addUnacknowledgedCompletions(ctx context.Context, answer map[string]any, conversation string) {
+	list := []unacknowledgedCompletionWire{}
+	if s.broker == nil || s.broker.Store == nil {
+		answer["unacknowledged_completions"] = list
+		answer["unacknowledged_completions_unknown"] = true
+		return
+	}
+	rows, err := s.broker.RootCompletions(ctx, conversation)
+	if err != nil {
+		answer["unacknowledged_completions"] = list
+		answer["unacknowledged_completions_unknown"] = true
+		return
+	}
+	for _, c := range rows {
+		list = append(list, unacknowledgedCompletionWire{
+			TaskID: c.Record.ID, Title: c.Record.Title, State: string(c.Record.State),
+			ResultPath: s.broker.ResultPath(c.Record.ID), NoticeID: c.Notice.ID,
+			NoticeState: string(c.Notice.State), LastError: c.Notice.LastError,
+			AckPath: "/v1/orchestrator/tasks/" + c.Record.ID + "/completion/ack",
+		})
+	}
+	answer["unacknowledged_completions"] = list
 }
 
 // agentAddSessionTodos is POST /v1/work/v2/agent/session-todos/<conversation>:

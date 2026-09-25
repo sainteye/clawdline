@@ -265,14 +265,20 @@ child 會簽收 briefing（`/accepted`），計畫改變時可以送一則進度
   （`?state=`、`?limit=` 最多 500）。
 - **child 結束時，daemon 會在你的輸入框打一行 `<clawdline-notice>`**，內容有狀態、`result.json` 的路徑和
   一個 `notice_id`。它照 5→300 秒的階梯重試，一共八次，直到你 ACK 為止——而且你正在顯示選單時，它絕不
-  打字：
+  打字。選單不會用掉那八次：那一行會等，最多等 12 小時，選單一消失就打進去：
 
   ```
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
   ```
 
   `clawdline task ack <id> <notice_id>` 會送出它，並印一行結果。第二次 ACK 會回 `changed: false`。還沒 ACK 的通知列在 `GET /v1/orchestrator/completions`；
-  `POST /v1/orchestrator/completions/reconcile` 會把它們重新排上。
+  `POST /v1/orchestrator/completions/reconcile` 會把它們重新排上。已經放棄的通知，會在你的 session 下一次
+  閒置時再打一次。
+- **就算你沒看到那一行，也會知道。** 你每個 turn 邊界都會讀的
+  `GET /v1/work/v2/agent/session-todos/<conversation id>` 會列出 `unacknowledged_completions`：每一個已經
+  結束、你還沒 ACK 的 child，附 `task_id`、`title`、`state`、`result_path`、`notice_id` 和 `ack_path`，不管它的
+  通知還在重送還是已經放棄。`clawdline session report` 在收據之後也會印出來。每一筆都去讀它的
+  `result.json`、整合，然後 ACK；ACK 之後兩邊都不會再列。
 - **沒有取消路由**。task 只會以完成、失敗或逾時結束。
 - **child 結束，不等於程式碼已經 landing。** 在你整合之前，它的成果還放在共用的 working tree 或它自己的
   branch 上。
@@ -547,7 +553,7 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 
 每個 turn 的邊界、宣告自己閒置之前，也要讀
 `GET /v1/work/v2/agent/session-todos/<conversation id>`。其中的 `assigned_items` 是使用者交給這個
-Session 的看板項目，`recent_items` 是這個 Session 最近完成的項目，`direct_todos` 是快速交辦。這條
+Session 的看板項目，`recent_items` 是這個 Session 最近完成的項目，`direct_todos` 是快速交辦，`unacknowledged_completions` 是你還沒 ACK 就已經結束的 child（第 5 節）。這條
 pull 路徑讓工作中收到的分派先等著，不會打斷目前的 turn。完成目前的 turn 之後，把 assigned item 當成
 下一件自己負責的工作，並從 `GET /v1/work/v2/items/<id>` 讀取完整內容。
 

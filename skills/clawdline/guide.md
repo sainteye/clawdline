@@ -285,7 +285,8 @@ and running `clawdline task finish`. You do not call those routes.
   them (`?state=`, `?limit=` up to 500).
 - **When it finishes, the daemon types a `<clawdline-notice>` line into your composer** with the
   state, the path of `result.json` and a `notice_id`. It retries on a 5→300-second ladder, eight
-  times, until you acknowledge it — and never types while you are showing a menu:
+  times, until you acknowledge it — and never types while you are showing a menu. A menu does not
+  use up those eight: the line waits, for up to 12 hours, and is typed once the menu is gone:
 
   ```
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
@@ -294,6 +295,13 @@ and running `clawdline task finish`. You do not call those routes.
   `clawdline task ack <id> <notice_id>` sends it and prints one line. A second ACK answers
   `changed: false`. Unacknowledged notices are listed at
   `GET /v1/orchestrator/completions`; `POST /v1/orchestrator/completions/reconcile` re-arms them.
+  A notice that gave up is typed once more the next time your session is idle.
+- **You may never see the line, and you still learn of it.** Your own
+  `GET /v1/work/v2/agent/session-todos/<conversation id>`, which you read at every turn boundary,
+  lists `unacknowledged_completions` — each child of yours that finished and that you have not
+  acknowledged, with `task_id`, `title`, `state`, `result_path`, `notice_id` and `ack_path`, whether
+  its notice is still pending or gave up. `clawdline session report` prints them after its receipt.
+  For each: read its `result.json`, integrate it, then ACK it; the ACK takes it off both lists.
 - There is **no cancel route**. A task ends by finishing, failing or timing out.
 - **A finished child is not landed code.** Its work sits in the shared tree or on its branch until
   you integrate it.
@@ -596,7 +604,8 @@ these from task facts; there is nothing to write.
 At every turn boundary, before declaring yourself idle, also read
 `GET /v1/work/v2/agent/session-todos/<conversation id>`. Its `assigned_items` are Board items the
 person has given this Session, its `recent_items` are items this Session recently completed, and its
-`direct_todos` are quick requests. This pull is how an assignment made while you were working waits
+`direct_todos` are quick requests, and its `unacknowledged_completions` are children of yours that
+finished without your ACK (section 5). This pull is how an assignment made while you were working waits
 without interrupting the current turn. Finish the current turn, then take the assigned item as your
 next owned work and read its complete record at `GET /v1/work/v2/items/<id>`.
 

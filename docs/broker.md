@@ -31,6 +31,28 @@
 task、跟上還沒結束的待辦。不問人、不推播、不進看板；升級訊號（`cross_session`／`long_lived`／`repeated_failure`）只放在
 回應裡給 T4 用。派工的 `task.json` 可帶 `work_id`（小寫 UUID），respawn 會沿用。
 
+**A finished child's notice reaches a root that was busy (`notice.go`, 2026-09-25).** A root showed a question from 19:54
+to 22:08 while the person was away; its child finished at 20:07. The pump rightly typed nothing into the menu
+(`root_choosing`), but every ten minutes of holding spent an attempt, so the notice was a dead letter at 21:27 — eight
+attempts, none of them made — and when the person answered, the root carried on not knowing. It found out two and a half
+hours later by asking. Three things changed:
+
+- **A menu is a hold, not an attempt.** While the root shows something waiting to be answered the notice waits for free,
+  with `root_choosing` and when the hold began in its `last_error`, up to `maxChoosingHold` (12 hours). At that ceiling
+  it goes to dead letter in one step, saying so, and the person is pushed. A busy lane or an occupied composer still
+  spends an attempt after ten minutes (`maxNoticeHold`), and other failures spend one each, as before.
+- **The pull path carries it.** A root's own `GET /v1/work/v2/agent/session-todos/<conversation>` — which the guide
+  has it read at every turn boundary — answers `unacknowledged_completions`: each completion of that root nobody
+  acknowledged, pending, delivered or dead, with task id, title, state, `result_path`, `notice_id`, `notice_state`,
+  `last_error` and `ack_path`. A ledger that cannot be read says `unacknowledged_completions_unknown` rather than an
+  empty list. `clawdline session report` prints them on stderr after the receipt, as it does open to-dos. An ACK
+  (the route, `clawdline task ack`, or a landing the root records) takes it off both.
+- **A dead letter is typed once more when its root reads idle.** Idle is the one moment a line costs nothing: no
+  menu, no turn to interrupt, an empty composer. The beat types it there once (`task.completion.retyped`; the attempt
+  count past the limit is the durable mark it was spent), the notice stays a dead letter — no second push — and it is
+  not typed again. Only dead letters at most `maxRetypeAge` (24 hours) old qualify; older ones wait for a person's
+  `reconcile`.
+
 ## Landing ledger 的字
 
 Landing 是 task 的終止狀態以外、唯一回答「這份交付後來怎麼了」的帳本。它目前有五個字：
