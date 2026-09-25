@@ -273,7 +273,7 @@
 .session-todos > summary::-webkit-details-marker { display: none; }
 .session-todos > summary::before { content: "›"; transition: transform 150ms; }
 .session-todos[open] > summary::before { transform: rotate(90deg); }
-.session-todos > summary b { color: var(--dim); font-weight: 600; }
+.session-todos > summary b { color: var(--dim); font-weight: 600; white-space: nowrap; }
 .session-todos-add {
     display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0;
     border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink);
@@ -281,10 +281,28 @@
 }
 .session-todos-add .work-icon { width: 14px; height: 14px; }
 .session-todos-add:hover { border-color: var(--accent); color: var(--accent); }
-.session-todos-completed {
-    display: inline-flex; align-items: center; gap: 3px; color: var(--ok); font: 600 11px/1 var(--mono);
+/* The count, as GitHub draws a milestone: a bar split by state, then each
+   state's mark and number. Green finished, amber being worked on, a faint
+   ring for not started — the words drop on a narrow pane, the marks stay. */
+.session-todos-progress { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font: 600 11px/1 var(--mono); }
+.session-todos-bar {
+    display: inline-flex; gap: 2px; width: 56px; height: 6px; flex: 0 0 auto;
+    border-radius: 999px; overflow: hidden;
 }
-.session-todos-completed .work-icon { width: 11px; height: 11px; }
+.session-todos-bar > span { min-width: 3px; height: 100%; }
+.session-todos-bar > [data-state="done"] { background: var(--ok); }
+.session-todos-bar > [data-state="active"] { background: var(--warn); }
+.session-todos-bar > [data-state="waiting"] { background: var(--line); box-shadow: inset 0 0 0 1px var(--faint); }
+.session-todos-state { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.session-todos-state .work-icon { width: 11px; height: 11px; }
+.session-todos-state[data-state="done"] { color: var(--ok); }
+.session-todos-state[data-state="active"] { color: var(--warn); }
+.session-todos-state[data-state="waiting"] { color: var(--dim); }
+.session-todos-word { margin-left: 2px; font: 400 11px/1 var(--ui); color: var(--faint); }
+/* The pane, not the window, decides: a Session pane beside the list is narrow
+   on a wide screen. */
+.session-todos > summary { container-type: inline-size; }
+@container (max-width: 440px) { .session-todos-word { display: none; } }
 .session-todos-body { max-height: 40vh; overflow: auto; padding: 0 18px 10px; }
 .session-todos[open] .session-todos-body {
     animation: session-todos-body-in 180ms cubic-bezier(.2, .8, .2, 1) both;

@@ -142,13 +142,16 @@ test("a recent Board item opens its durable completion report in one click", () 
   assert.match(styles, /\.work-item-detail-panel[^}]*overflow:\s*visible/)
 })
 
-test("folded Session todos expose a nonzero recent completion count", () => {
+test("folded Session todos show finished, active and not-started counts", () => {
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
-  assert.match(source, /const completedCount = \(page\?\.recent_items\.length \?\? 0\) \+ completedDirect\.length/)
-  assert.match(source, /\{!!completedCount && <span className="session-todos-completed"/)
-  assert.match(source, /aria-label=\{`最近完成 \$\{completedCount\} 個項目`\}/)
-  assert.match(source, /<WorkIcon name="check" \/>\{completedCount\}/)
-  assert.match(styles, /\.session-todos-completed[\s\S]*?color: var\(--ok\)/)
+  assert.match(source, /<TodoProgressSummary progress=\{todoProgress\(page, row\.sessionId\)\} \/>/)
+  assert.match(source, /aria-label=\{todoProgressLabel\(progress\)\}/)
+  assert.match(source, /\{ key: "done", icon: "check", word: "完成" \}/)
+  assert.match(source, /\{ key: "active", icon: "half", word: "進行中" \}/)
+  assert.match(source, /\{ key: "waiting", icon: "circle", word: "未開始" \}/)
+  assert.doesNotMatch(source, /session-todos-completed/)
+  assert.match(styles, /\.session-todos-state\[data-state="done"\] \{ color: var\(--ok\); \}/)
+  assert.match(styles, /\.session-todos-bar > \[data-state="active"\] \{ background: var\(--warn\); \}/)
 })
 
 test("closing a Session reads and names unfinished Board items before it can continue", () => {
