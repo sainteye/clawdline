@@ -162,7 +162,7 @@ func TestSessionTodosDecodeTerminalNamesOnce(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("send: %d %s", rec.Code, rec.Body)
 			}
-			if effects := p.done(); len(effects) != 1 || effects[0] != "send:Check the result" {
+			if effects := p.done(); len(effects) != 1 || effects[0] != "send:"+app.DirectTodoSendText(created.Todo.ID, "Check the result") {
 				t.Fatalf("effects: %v", effects)
 			}
 		})
