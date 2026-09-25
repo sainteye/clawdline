@@ -134,7 +134,11 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   if (work.state === "waiting_you") {
     html = `<span class="wants">${L.glyphHTML("🙋", T.sessionWaiting)}</span>` + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (work.state === "working") {
-    html = '<canvas class="spin"></canvas><span class="line"></span>' + peerSaid + workSaid + retainedSaid + shellsSaid
+    // The spinner alone. The provider's live line ("Wrangling… (5m 1s · …)")
+    // is drawn under the conversation itself (`WorkingLine` in Transcript.tsx);
+    // in the list it was a second copy of words nobody reads there, and it
+    // crowded out the badges beside it.
+    html = '<canvas class="spin"></canvas>' + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (notStarted) {
     html = `<span class="unread">${L.escapeHTML(nextWord("sessionNotStartedShort"))}</span>` + peerSaid + workSaid + shellsSaid
   } else if (work.state === "unknown" && row.state === "unknown") {
@@ -158,14 +162,6 @@ function StateLine({ row }: { row: SessionRow }) {
   useLayoutEffect(() => {
     L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
   }, [html])
-  // The live line is written separately from the markup, as `list.js` does
-  // with setText. It changes every second while a session works, and putting
-  // it in the markup would rebuild the spinner's canvas each time; kept out,
-  // the markup changes only when the shape of the line does.
-  useLayoutEffect(() => {
-    const line = ref.current?.querySelector<HTMLElement>(".line")
-    if (line && line.textContent !== (row.line ?? "")) line.textContent = row.line ?? ""
-  }, [html, row.line])
   return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
