@@ -163,6 +163,8 @@ const words = {
     todoDropped: "Let go",
     todoEscalated: "Worth asking you about",
     todoIncorporated: "Integrated by another landed task",
+    createdViaSession: "Created by the Session from your message at {time}",
+    createdViaQuote: "Your message",
   },
   "zh-Hant": {
     nav: "看板",
@@ -298,6 +300,8 @@ const words = {
     todoDropped: "已放掉",
     todoEscalated: "值得問你",
     todoIncorporated: "已由另一個落地任務整合",
+    createdViaSession: "Session 依你 {time} 的訊息建立",
+    createdViaQuote: "你的訊息",
   },
 } as const
 
@@ -318,7 +322,35 @@ function language(): "en" | "zh-Hant" {
 
 /** One sentence, its holes filled. */
 export function workWord(key: WorkWord, holes: Record<string, string | number> = {}): string {
-  return words[language()][key].replace(/\{(\w+)\}/g, (all, name: string) =>
+  return workWordIn(language(), key, holes)
+}
+
+/** One sentence in a named language, its holes filled. */
+export function workWordIn(lang: "en" | "zh-Hant", key: WorkWord, holes: Record<string, string | number> = {}): string {
+  return words[lang][key].replace(/\{(\w+)\}/g, (all, name: string) =>
     name in holes ? String(holes[name]) : all,
   )
+}
+
+/** The person's message a Session created an item on, as the item wire carries it. */
+export interface CreatedVia {
+  run: string
+  session_id: string
+  at: number
+  excerpt?: string
+}
+
+/** A Unix time as this browser's local HH:MM. */
+export function clockOf(at: number): string {
+  const d = new Date(at * 1000)
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+}
+
+/**
+ * The line a card created by a Session on the person's message carries, or
+ * null for an item the person created themselves.
+ */
+export function createdViaLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language()): string | null {
+  if (!via || !via.run || !via.at) return null
+  return workWordIn(lang, "createdViaSession", { time: clockOf(via.at) })
 }

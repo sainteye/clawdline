@@ -1,5 +1,6 @@
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import type { SessionsSnapshot } from "@clawdline/contract"
+import type { CreatedVia } from "./words.js"
 
 /**
  * The board's routes as this page reads them (internal/transport/http/work.go,
@@ -317,6 +318,9 @@ export interface WorkV2Item {
   area: "planning" | "unassigned" | WorkV2Phase
   deployment_policy: "required" | "not_required" | "agent_decides"
   owner_session: string | null
+  created_by?: string
+  /** Present when a Session created the item on the person's message through Clawdline. */
+  created_via?: CreatedVia
   created_at: number
   updated_at: number
   closed_at: number | null
