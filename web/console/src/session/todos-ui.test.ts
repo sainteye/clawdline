@@ -219,6 +219,7 @@ test("the Session-added label replaces the sent/read receipt, and the controls s
   assert.match(words, /todoAddedBySession: "Session 建立"/)
   // Delete, Complete and Send are not gated on who wrote the row.
   assert.match(source, /<button className="session-todo-delete" type="button" disabled=\{busy\} aria-label="刪除待辦"[\s\S]*?onClick=\{\(\) => onAction\("delete"\)\}><WorkIcon name="delete" \/><\/button>/)
-  assert.match(source, /className="chip on session-todo-send"[\s\S]*?<WorkIcon name="send" \/>\{send\.label\}/)
+  assert.match(source, /className=\{`chip session-todo-send\$\{send\.kind === "send" \? " on" : ""\}`\}[\s\S]*?<WorkIcon name="send" \/>\{send\.label\}/,
+    "only a first Send takes the accent; 再次 Send is a grey chip")
   assert.doesNotMatch(source, /own && <button|!own && <button/)
 })

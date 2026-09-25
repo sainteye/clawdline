@@ -319,7 +319,7 @@ function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2
       {todo.images.map((image) => <ReferenceImage key={image.id} image={image} compact />)}
     </div>}
     <div className="work-actions session-todo-actions">
-      {send.kind !== "none" && <button className="chip on session-todo-send" type="button" disabled={busy || send.kind === "wait"}
+      {send.kind !== "none" && <button className={`chip session-todo-send${send.kind === "send" ? " on" : ""}`} type="button" disabled={busy || send.kind === "wait"}
         title={send.kind === "wait" ? "剛傳送過；兩分鐘內 Session 沒讀取才能再送" : undefined}
         onClick={() => onAction("send")}><WorkIcon name="send" />{send.label}</button>}
       <button className="session-todo-delete" type="button" disabled={busy} aria-label="刪除待辦" title="刪除待辦"
