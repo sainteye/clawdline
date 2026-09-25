@@ -63,18 +63,32 @@ func boardTitleFixture(t *testing.T, mode string) (*Server, context.Context) {
 	return &Server{cfg: cfg, store: st, broker: &orchestrator.Broker{Store: st, Dir: dir}, icons: &icon.Registry{}}, ctx
 }
 
-func liveRowLabel(t *testing.T, s *Server, ctx context.Context, row session.Session) string {
+// liveRowLabels builds the session list over these rows, all on screen at
+// once, and answers each row's name by terminal id. The info route, which
+// asks for one row alone, must say the same.
+func liveRowLabels(t *testing.T, s *Server, ctx context.Context, rows ...session.Session) map[string]string {
 	t.Helper()
-	s.inventory = app.Inventory{Process: fixedInventory{session.Inventory{Sessions: []session.Session{row},
+	s.inventory = app.Inventory{Process: fixedInventory{session.Inventory{Sessions: rows,
 		Complete: true, Provenance: "ps", Sources: map[string]bool{"ps": true}}}}
 	snap := s.sessionsPayloadFrom(ctx, s.inventory.Read(ctx))
-	if len(snap.Sessions) != 1 {
-		t.Fatalf("the payload carried %d rows", len(snap.Sessions))
+	if len(snap.Sessions) != len(rows) {
+		t.Fatalf("the payload carried %d rows of %d", len(snap.Sessions), len(rows))
 	}
-	if info := s.sessionDisplayLabel(ctx, row); info != snap.Sessions[0].Label {
-		t.Errorf("the info route says %q and the list says %q", info, snap.Sessions[0].Label)
+	out := map[string]string{}
+	for _, row := range snap.Sessions {
+		out[row.ID] = row.Label
 	}
-	return snap.Sessions[0].Label
+	for _, row := range rows {
+		if info := s.sessionDisplayLabel(ctx, row); info != out[row.ID] {
+			t.Errorf("the info route says %q and the list says %q", info, out[row.ID])
+		}
+	}
+	return out
+}
+
+func liveRowLabel(t *testing.T, s *Server, ctx context.Context, row session.Session) string {
+	t.Helper()
+	return liveRowLabels(t, s, ctx, row)[row.ID]
 }
 
 func resumedRow(conversation string) session.Session {
@@ -93,18 +107,25 @@ func TestAResumedBoardSessionKeepsItsTitleInTheLiveList(t *testing.T) {
 	}
 }
 
-// A terminal reused by a different conversation borrows nothing: the
-// conversation it runs is not the one the assignment opened.
+// A terminal reused by a different conversation borrows nothing, even while
+// the conversation the assignment opened is on screen in another tab: the
+// label follows the conversation, not the assistant or the terminal.
 func TestAnotherConversationInTheTerminalDoesNotBorrowTheBoardTitle(t *testing.T) {
 	s, ctx := boardTitleFixture(t, "new_session")
-	row := resumedRow("another-conversation")
-	row.ID = "OLD-TERMINAL"
-	if got := liveRowLabel(t, s, ctx, row); got != "Root assignment 905fbc68" {
-		t.Fatalf("a different conversation in the reused terminal is named %q", got)
+	reused := resumedRow("another-conversation")
+	reused.ID, reused.TTY = "OLD-TERMINAL", "ttys032"
+	unknown := resumedRow("")
+	unknown.ID, unknown.TTY = "THIRD-TERMINAL", "ttys033"
+	got := liveRowLabels(t, s, ctx, resumedRow("resumed-conversation"), reused, unknown)
+	if got["NEW-TERMINAL"] != "Board item title" {
+		t.Errorf("the resumed row is named %q", got["NEW-TERMINAL"])
 	}
-	// And a row whose conversation is unknown is never lent a label.
-	if got := liveRowLabel(t, s, ctx, resumedRow("")); got == "Board item title" {
-		t.Fatalf("a row with no conversation id was named %q", got)
+	if got["OLD-TERMINAL"] != "Root assignment 905fbc68" {
+		t.Errorf("a different conversation in the reused terminal is named %q", got["OLD-TERMINAL"])
+	}
+	// A row whose conversation is unknown is never lent a label.
+	if got["THIRD-TERMINAL"] == "Board item title" {
+		t.Errorf("a row with no conversation id was named %q", got["THIRD-TERMINAL"])
 	}
 }
 
