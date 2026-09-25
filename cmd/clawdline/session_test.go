@@ -264,8 +264,22 @@ func TestTheTokenIsReadOnlyFromThisAppsDirectory(t *testing.T) {
 // The guide prints without a daemon, in either language, and lists itself.
 func TestGuidePrints(t *testing.T) {
 	var out, errs bytes.Buffer
-	if code := printGuide(&out, &errs, nil); code != 0 || !strings.HasPrefix(out.String(), "# Clawdline guide") {
+	if code := printGuide(&out, &errs, nil); code != 0 || !strings.HasPrefix(out.String(), "# Clawdline guide") ||
+		!strings.Contains(out.String(), "`clawdline guide dispatch`") {
 		t.Fatalf("exit %d: %.40q", code, out.String())
+	}
+	core := out.Len()
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"all"}); code != 0 || out.Len() <= core*4 {
+		t.Fatalf("all: exit %d, %d bytes against a core of %d", code, out.Len(), core)
+	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"zh-TW", "board"}); code != 0 || !strings.HasPrefix(out.String(), "## 10.") {
+		t.Fatalf("zh-TW board: exit %d: %.20q", code, out.String())
+	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"-sections"}); code != 0 || !strings.Contains(out.String(), "dispatch\n") {
+		t.Fatalf("sections = %q", out.String())
 	}
 	out.Reset()
 	if code := printGuide(&out, &errs, []string{"-list"}); code != 0 || out.String() != "en\nzh-TW\n" {

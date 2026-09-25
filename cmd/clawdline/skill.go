@@ -27,31 +27,69 @@ func guideCommand(args []string) {
 }
 
 // printGuide is the command, answering its exit status.
+//
+// `clawdline guide [lang]` is the core and a list of the other parts;
+// `clawdline guide [lang] <part>` is one part; `clawdline guide [lang] all`
+// is the whole guide (skills/sections.go says why it is not the default).
 func printGuide(stdout, stderr io.Writer, args []string) int {
+	const usage = "usage: clawdline guide [lang] [part|all] | clawdline guide -list | clawdline guide -sections"
 	switch {
-	case len(args) > 1:
-		fmt.Fprintln(stderr, "usage: clawdline guide [topic] | clawdline guide -list")
+	case len(args) > 2:
+		fmt.Fprintln(stderr, usage)
 		return 2
 	case len(args) == 1 && (args[0] == "-list" || args[0] == "--list"):
 		for _, t := range skills.Topics() {
 			fmt.Fprintln(stdout, t)
 		}
 		return 0
-	case len(args) == 1 && strings.HasPrefix(args[0], "-"):
-		fmt.Fprintln(stderr, "usage: clawdline guide [topic] | clawdline guide -list")
-		return 2
+	case len(args) == 1 && (args[0] == "-sections" || args[0] == "--sections"):
+		for _, name := range skills.SectionNames() {
+			fmt.Fprintln(stdout, name)
+		}
+		return 0
 	}
-	topic := ""
-	if len(args) == 1 {
-		topic = args[0]
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
 	}
-	text, err := skills.Guide(topic)
+	lang, part := "", ""
+	switch len(args) {
+	case 1:
+		if isLanguage(args[0]) {
+			lang = args[0]
+		} else {
+			part = args[0]
+		}
+	case 2:
+		lang, part = args[0], args[1]
+	}
+	var text []byte
+	var err error
+	switch part {
+	case "":
+		text, err = skills.Core(lang)
+	case "all":
+		text, err = skills.Guide(lang)
+	default:
+		text, err = skills.Section(lang, part)
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "clawdline guide:", err)
 		return 1
 	}
 	_, _ = stdout.Write(text)
 	return 0
+}
+
+func isLanguage(v string) bool {
+	for _, t := range skills.Topics() {
+		if t == v {
+			return true
+		}
+	}
+	return false
 }
 
 func skillCommand(args []string) {

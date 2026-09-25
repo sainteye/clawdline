@@ -36,14 +36,18 @@ Find the binary once, in this order, and use the first that exists:
 Call it `BIN` below, and substitute the real path; do not run `BIN` literally.
 
 ```
-BIN guide            # English
-BIN guide zh-TW      # 繁體中文
-BIN guide -list      # what this build carries
+BIN guide              # the core every session needs, and a list of the other parts
+BIN guide dispatch     # one part, when the work in front of you needs it
+BIN guide all          # the whole guide
+BIN guide zh-TW        # the same in Traditional Chinese (zh-TW dispatch, zh-TW all, …)
+BIN guide -sections    # the names of the parts
 ```
 
-Reading the guide is a local read: it needs no running daemon and no network. **Read it before you
-run anything else**, and do not guess routes or fields from memory, from an older guide, or from
-the Swift app's bundle — that app's routes are not this daemon's.
+Reading the guide is a local read: it needs no running daemon and no network. **Read the core
+before you run anything else**, then print a part when you reach work it covers — not the whole
+guide up front: everything you read stays in your context and is re-read on every later call. Do not
+guess routes or fields from memory, from an older guide, or from the Swift app's bundle — that
+app's routes are not this daemon's.
 
 If the path you chose exists and fails, report its exact error and stop. Do not fall through to the
 next path: another binary may be a different build from the daemon that will answer you. If none

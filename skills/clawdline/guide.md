@@ -4,7 +4,9 @@ For an assistant session — Claude Code or Codex — on a machine where **Clawd
 covers what this daemon serves today, and nothing else: every route below is registered by the
 build that printed this guide, and a test fails when one is not. Print it again with
 `clawdline guide` rather than trusting a copy; `clawdline guide zh-TW` is the same guide in
-Traditional Chinese.
+Traditional Chinese. `clawdline guide` prints the core and names the other parts; print a part
+(`clawdline guide dispatch`) when you reach the work it covers, or `clawdline guide all` for
+everything.
 
 ## 0. If you learned Clawdline from the Swift app, read this first
 

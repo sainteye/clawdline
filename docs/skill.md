@@ -17,7 +17,7 @@ Three things replace it, and all three are this binary:
 
 | Piece | What it is | Where |
 | --- | --- | --- |
-| `clawdline guide [topic]` | The guide, compiled into the binary with `go:embed` | `skills/skills.go`, `skills/clawdline/guide*.md` |
+| `clawdline guide [lang] [part\|all]` | The guide, compiled into the binary with `go:embed`, printed as a core plus parts | `skills/skills.go`, `skills/sections.go`, `skills/clawdline/guide*.md` |
 | `<state dir>/bin/clawdline` | A copy of the running binary at a path that does not move | `internal/adapters/skillfile/binary.go` |
 | `clawdline skill install` / `uninstall` | Writes the stub to `~/.claude/skills/clawdline/SKILL.md`, and puts back what was there | `internal/adapters/skillfile/skillfile.go` |
 
@@ -38,6 +38,22 @@ exact build it is, on macOS, Linux and Windows, without a running daemon or a ne
   `mux.Handle`/`mux.HandleFunc` in `internal/transport/http` registers. A route renamed or removed
   there turns it red until the guide follows. `TestBothGuidesNameTheSameRoutes` keeps the
   translation naming the same routes as the English.
+
+## Printed in parts
+
+`clawdline guide` prints the **core** — who the session is, how to reach the daemon, reporting its
+turn, telling the person, what a refusal means — and a list naming every other part with the
+command that prints it: `clawdline guide dispatch`, `clawdline guide board`, … `clawdline guide all`
+is the whole text. Measured on 2026-09-25 by appending each to a system prompt and comparing with and
+without: the whole guide is 15,708 tokens in English and 18,619 in Traditional Chinese, the core
+2,184 and 2,711. Whatever a session reads stays in its context and is re-read on every later call,
+and a week's transcripts showed twenty roots reading the guide 136 times, most of them a section at
+a time with `sed` because that was all they needed.
+
+- `skills/sections.go` names the fifteen parts — every `##` and `###` heading, matched by order.
+- `TestThePartsAreTheWholeGuide` puts the parts back together and compares them with the guide byte
+  for byte, in both languages; `TestBothGuidesHaveTheSameSections` checks each part opens with its
+  own heading. A heading added to one guide only turns both red.
 
 ## The stable path
 

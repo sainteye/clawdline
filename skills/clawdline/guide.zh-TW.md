@@ -5,7 +5,8 @@
 給跑在裝了 **Clawdline Next** 的機器上的助理 session 看，Claude Code 或 Codex 都一樣。這份指南只寫
 這個 daemon 今天有提供的東西，其他一概不寫：下面每一條路由都是印出這份指南的那個 build 註冊的，
 少了一條，就會有測試失敗。要看請重新執行 `clawdline guide zh-TW`（英文版是 `clawdline guide`），
-不要相信手上的副本。
+不要相信手上的副本。`clawdline guide zh-TW` 只印每個 session 都需要的核心，並列出其他部分；做到某一
+部分的工作時再印那一部分（`clawdline guide zh-TW dispatch`），要全文用 `clawdline guide zh-TW all`。
 
 ## 0. 如果你是從 Swift app 學會 Clawdline 的，先讀這段
 
