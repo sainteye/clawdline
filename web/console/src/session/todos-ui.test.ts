@@ -14,7 +14,30 @@ test("fleet refreshes do not clear and reload the same Session todos", () => {
 })
 
 test("opening an answered todo fold explicitly refreshes it once", () => {
-  assert.match(source, /if \(next && page !== null\) void load\(\)/)
+  assert.match(source, /if \(next && page !== null\) void refresh\(\)/)
+})
+
+test("a failed read is shown in the header, not as loading, and tapping it retries without toggling the fold", () => {
+  // Loading only while there is no page and no failure.
+  assert.match(source, /: !readFailure && <span id="session-todos-count">\{L\.strings\.webLoading\}<\/span>/)
+  assert.match(source, /\{readFailure && <ReadFailure state=\{todoHeaderState\(page !== null, true\)\} reason=\{readFailure\.reason\}/)
+  assert.match(source, /retrying=\{reading\} onRetry=\{\(\) => \{ void refresh\(true\) \}\}/)
+  assert.match(source, /className="session-todos-failed"[\s\S]*?title=\{tip\}[\s\S]*?onClick=\{\(ev\) => \{ ev\.preventDefault\(\); ev\.stopPropagation\(\); onRetry\(\) \}\}/)
+  assert.match(source, /nextWord\("todosRetryTip", \{ reason \}\)/)
+  // The failure's words stay in the fold as well, and only a success clears it.
+  assert.match(source, /\{readFailure && <p className="work-note" role="alert">\{readFailure\.words\}<\/p>\}/)
+  assert.match(source, /if \(mine === ticket\.current\) \{ setPage\(next\); setReadFailure\(null\) \}/)
+  // A failed refresh keeps the last good page.
+  assert.doesNotMatch(source, /catch \(e\) \{[^}]*setPage\(null\)/)
+})
+
+test("an open Session page refreshes its to-dos through one read at a time", () => {
+  assert.match(source, /const one = new OneRead\(load\)/)
+  assert.match(source, /const stop = watchTodoRefresh\(\(\) => \{ void one\.ask\(\) \}\)/)
+  assert.match(source, /return \(\) => \{\s*stop\(\)/)
+  // An action's own re-read postdates the action.
+  assert.match(source, /try \{ await task\(\); await refresh\(true\); return true \}/)
+  assert.doesNotMatch(source, /await load\(\)/)
 })
 
 test("Session todo icon controls use the shared centered vectors", () => {

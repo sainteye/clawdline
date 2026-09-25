@@ -1,0 +1,9 @@
+/* A Session's to-do fold, the header's failure mark (session/todo-refresh.ts).
+   It sits in the summary beside the count, so it is as small as the count. */
+.session-todos-failed {
+    display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 0 8px;
+    border: 1px solid var(--warn); border-radius: 999px; background: transparent; color: var(--warn);
+    font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer;
+}
+.session-todos-failed[data-state="stale"] { border-color: var(--line); }
+.session-todos-failed:disabled { opacity: 0.6; cursor: progress; }

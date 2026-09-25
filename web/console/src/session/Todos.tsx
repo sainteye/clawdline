@@ -15,7 +15,10 @@ import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
 import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
+import { OneRead, readFailureReason, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
+import { nextWord } from "../next-strings.js"
 import "../pages/work/work.css"
+import "./todos.css"
 
 /** The authoritative projection of unfinished assigned items plus direct user to-dos. */
 export function Todos({ row, agentCount, agentPanel }: {
@@ -33,18 +36,28 @@ export function Todos({ row, agentCount, agentPanel }: {
   const [detailActionFailure, setDetailActionFailure] = useState("")
   const [detailNotice, setDetailNotice] = useState("")
   const [failure, setFailure] = useState("")
+  // A failed read is its own state, apart from a failed action: the header
+  // shows it, and only a later successful read clears it.
+  const [readFailure, setReadFailure] = useState<{ words: string; reason: string } | null>(null)
+  const [reading, setReading] = useState(false)
   const [busy, setBusy] = useState("")
   const ticket = useRef(0)
+  const reader = useRef<OneRead | null>(null)
   const rowID = row?.id ?? ""
 
   const load = useCallback(async () => {
     if (!rowID) return
     const mine = ++ticket.current
+    setReading(true)
     try {
       const next = await readSessionWorkV2(rowID)
-      if (mine === ticket.current) { setPage(next); setFailure("") }
+      if (mine === ticket.current) { setPage(next); setReadFailure(null) }
     } catch (e) {
-      if (mine === ticket.current) setFailure(failureWords(e))
+      // The last good page stays: a refresh that failed marks it, it does
+      // not blank it.
+      if (mine === ticket.current) setReadFailure({ words: failureWords(e), reason: readFailureReason(e) })
+    } finally {
+      if (mine === ticket.current) setReading(false)
     }
   }, [rowID])
 
@@ -54,8 +67,23 @@ export function Todos({ row, agentCount, agentPanel }: {
     // clears a good answer, flashes "loading", and asks the work API again.
     ticket.current += 1
     setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setDetail(null); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice(""); setFailure("")
-    if (rowID) void load()
+    setReadFailure(null); setReading(false)
+    if (!rowID) return
+    // One read in flight per Session; the page asks again every fifteen
+    // seconds while it is visible, and at once when it comes back, so rows a
+    // Session writes appear without reopening it.
+    const one = new OneRead(load)
+    reader.current = one
+    void one.ask()
+    const stop = watchTodoRefresh(() => { void one.ask() })
+    return () => {
+      stop()
+      if (reader.current === one) reader.current = null
+    }
   }, [rowID, load])
+
+  /** Ask again; `fresh` when the answer must postdate something just done. */
+  const refresh = useCallback((fresh = false) => reader.current?.ask(fresh) ?? Promise.resolve(), [])
 
   if (!row) return null
   const openDirect = page?.direct_todos.filter((todo) => !todo.completed_at) ?? []
@@ -68,7 +96,7 @@ export function Todos({ row, agentCount, agentPanel }: {
   const run = async (key: string, task: () => Promise<unknown>) => {
     if (busy) return false
     setBusy(key); setFailure("")
-    try { await task(); await load(); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
+    try { await task(); await refresh(true); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
   }
   const showDetail = (item: WorkV2Item) => {
     setDetail(item); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice("")
@@ -83,7 +111,7 @@ export function Todos({ row, agentCount, agentPanel }: {
       const answer = await remindWorkV2(item)
       setDetail((current) => current?.id === item.id ? answer.item : current)
       setDetailNotice("已再次提醒這個 Session。")
-      await load()
+      await refresh(true)
     } catch (error) {
       setDetailActionFailure(failureWords(error))
     } finally {
@@ -99,20 +127,23 @@ export function Todos({ row, agentCount, agentPanel }: {
           setOpen(next)
           // The first answer is already in flight when a Session opens. Once
           // there is an answer, opening the fold is an explicit freshness ask.
-          if (next && page !== null) void load()
+          if (next && page !== null) void refresh()
         }}>
         <summary>
           <b>{workWord("todosTitle")}</b>
           <button className="session-todos-add" type="button" aria-label="新增 Session 待辦"
             onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}><WorkIcon name="add" /></button>
           {page ? <TodoProgressSummary progress={todoProgress(page, row.sessionId)} />
-            : <span id="session-todos-count">{L.strings.webLoading}</span>}
+            : !readFailure && <span id="session-todos-count">{L.strings.webLoading}</span>}
+          {readFailure && <ReadFailure state={todoHeaderState(page !== null, true)} reason={readFailure.reason}
+            retrying={reading} onRetry={() => { void refresh(true) }} />}
           {agentCount !== undefined ? <span className="session-todos-agent-count">
             {L.strings.webAgents} {agentCount === null ? "?" : agentCount}
           </span> : null}
         </summary>
         <div className="session-todos-body">
           {agentPanel}
+          {readFailure && <p className="work-note" role="alert">{readFailure.words}</p>}
           {failure && <p className="work-note" role="alert">{failure}</p>}
           {page && hasAssigned && <section className="session-todos-list" aria-label="負責項目">
             <p>這個 Session 尚未關閉的負責項目</p>
@@ -169,6 +200,27 @@ export function Todos({ row, agentCount, agentPanel }: {
         onClose={() => { setDetail(null); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice("") }} />}
     </>
   )
+}
+
+/**
+ * The header's own word that the last read failed: "讀取失敗" with no page,
+ * "更新失敗" beside a page kept from before. It is a button, and tapping it
+ * asks again without opening or closing the fold; the reason is its title and
+ * label, because a phone has no hover and the fold may be closed.
+ */
+function ReadFailure({ state, reason, retrying, onRetry }: {
+  state: "failed" | "stale" | "loading" | "loaded"
+  reason: string
+  retrying: boolean
+  onRetry: () => void
+}) {
+  const tip = nextWord("todosRetryTip", { reason })
+  const words = retrying ? nextWord("todosRetrying") : state === "stale" ? nextWord("todosRefreshFailed") : nextWord("todosReadFailed")
+  return <button className="session-todos-failed" id={state === "failed" ? "session-todos-count" : undefined} type="button"
+    data-state={state} title={tip} aria-label={`${words}. ${tip}`} aria-busy={retrying} disabled={retrying}
+    onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); onRetry() }}>
+    <span aria-hidden="true">↻</span>{words}
+  </button>
 }
 
 function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Item; completed?: boolean; onOpen: () => void }) {
