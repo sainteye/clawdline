@@ -195,6 +195,7 @@ test("the Session-added label replaces the sent/read receipt, and the controls s
   assert.match(words, /todoAddedBySession: "Added by Session"/)
   assert.match(words, /todoAddedBySession: "Session 建立"/)
   // Delete, Complete and Send are not gated on who wrote the row.
-  assert.match(source, /<button className="chip danger" type="button" disabled=\{busy\} onClick=\{\(\) => onAction\("delete"\)\}>Delete<\/button>/)
+  assert.match(source, /<button className="session-todo-delete" type="button" disabled=\{busy\} aria-label="刪除待辦"[\s\S]*?onClick=\{\(\) => onAction\("delete"\)\}><WorkIcon name="delete" \/><\/button>/)
+  assert.match(source, /className="chip on session-todo-send"[\s\S]*?<WorkIcon name="send" \/>\{send\.label\}/)
   assert.doesNotMatch(source, /own && <button|!own && <button/)
 })

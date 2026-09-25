@@ -407,6 +407,18 @@
 .session-todo-check .work-icon { width: 20px; height: 20px; }
 .session-todo-check:not(:disabled):hover { color: var(--accent); }
 .session-todo-check:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Send is the row's action; Delete is a quiet trash can at the far end. */
+.session-todo-actions { justify-content: space-between; }
+.session-todo-send { display: inline-flex; align-items: center; gap: 6px; background: var(--accent-in); font-weight: 600; }
+.session-todo-send .work-icon { width: 14px; height: 14px; }
+.session-todo-delete {
+    display: grid; place-items: center; width: 30px; height: 30px; margin-left: auto; padding: 0;
+    border: 0; border-radius: 7px; background: transparent; color: var(--faint); cursor: pointer;
+}
+.session-todo-delete .work-icon { width: 16px; height: 16px; }
+.session-todo-delete:hover:not(:disabled) { background: var(--card-hi); color: var(--dim); }
+.session-todo-delete:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.session-todo-delete:disabled { opacity: .4; cursor: default; }
 .session-todo-receipt { color: var(--faint); }
 .session-todo-receipt[data-state="read"] { color: var(--accent); }
 .session-todo-author {

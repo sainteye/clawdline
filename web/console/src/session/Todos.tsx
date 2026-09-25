@@ -13,6 +13,7 @@ import { PendingPictures } from "../pages/work/ReferencePictures.js"
 import { VoiceTextarea } from "../pages/work/VoiceTextarea.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
+import { todoSend } from "./todo-send.js"
 import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import "../pages/work/work.css"
@@ -242,6 +243,14 @@ function WorkItemDetailModal({ item, failure, actionFailure, notice, reminding, 
 function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2; conversation?: string; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
   const completed = !!todo.completed_at
   const own = addedBySession(todo, conversation)
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  const send = todoSend(todo, now)
+  // An unread delivery's Send comes back by itself when its window closes.
+  useEffect(() => {
+    if (send.kind !== "wait") return
+    const timer = window.setTimeout(() => setNow(Math.floor(Date.now() / 1000)), Math.max(0, send.until - now) * 1000 + 250)
+    return () => window.clearTimeout(timer)
+  }, [send.kind, send.kind === "wait" ? send.until : 0, now])
   const receipt = todo.read_at ? { mark: "✓✓", words: "已同步到 Session，尚未完成", state: "read" }
     : todo.sent_at ? { mark: "✓", words: "已傳送，等待 Session 同步", state: "sent" }
       : { mark: "", words: "尚未傳送；Session 會在下一次讀取待辦時看到", state: "unsent" }
@@ -257,10 +266,12 @@ function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2
     {!!todo.images?.length && <div className="work-reference-images session-todo-images" role="group" aria-label="待辦參考圖片">
       {todo.images.map((image) => <ReferenceImage key={image.id} image={image} compact />)}
     </div>}
-    <div className="work-actions">
-      {!completed && !todo.sent_at && !todo.read_at && <button className="chip" type="button" disabled={busy} onClick={() => onAction("send")}>Send</button>}
-      {!completed && !!todo.read_at && <button className="chip" type="button" disabled={busy} onClick={() => onAction("send")}>再次 Send</button>}
-      <button className="chip danger" type="button" disabled={busy} onClick={() => onAction("delete")}>Delete</button>
+    <div className="work-actions session-todo-actions">
+      {send.kind !== "none" && <button className="chip on session-todo-send" type="button" disabled={busy || send.kind === "wait"}
+        title={send.kind === "wait" ? "剛傳送過；兩分鐘內 Session 沒讀取才能再送" : undefined}
+        onClick={() => onAction("send")}><WorkIcon name="send" />{send.label}</button>}
+      <button className="session-todo-delete" type="button" disabled={busy} aria-label="刪除待辦" title="刪除待辦"
+        onClick={() => onAction("delete")}><WorkIcon name="delete" /></button>
     </div>
   </article>
 }

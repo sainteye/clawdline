@@ -1155,7 +1155,7 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			err = &app.WorkError{Status: http.StatusNotFound, Code: "todo_not_found", Message: "No such direct to-do belongs to this Session."}
 			break
 		}
-		if err = app.CheckDirectTodoSend(*found, conversation); err != nil {
+		if err = app.CheckDirectTodoSend(*found, conversation, time.Now()); err != nil {
 			break
 		}
 		pictures, pictureErr := s.store.DirectTodoV2ImagePayloads(r.Context(), found.ID)

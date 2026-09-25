@@ -1279,18 +1279,26 @@ func (w *WorkSystemV2) DirectTodoImages(ctx context.Context, id string) ([]work.
 	return images, mapWorkV2Error(err)
 }
 
+// DirectTodoResendAfter is how long an unread delivery is protected from a
+// second one. Inside it a second Send is a double tap, or the same press from
+// a second screen, and would type the words twice. Past it the Session has
+// had its chance: a Session that never reads its queue — one that was busy,
+// or does not follow the guide — used to leave the row unsendable for good.
+const DirectTodoResendAfter = 2 * time.Minute
+
 // CheckDirectTodoSend distinguishes a first delivery from a reminder. A
-// delivery that has not been observed cannot be doubled; once the Session has
-// read its queue, the person may remind it again while the row is still open.
-func CheckDirectTodoSend(td work.DirectTodoV2, session string) error {
+// delivery that has not been observed cannot be doubled until
+// DirectTodoResendAfter has passed; once the Session has read its queue, the
+// person may remind it again while the row is still open.
+func CheckDirectTodoSend(td work.DirectTodoV2, session string, now time.Time) error {
 	if td.SessionID != session {
 		return workV2Error(http.StatusConflict, "todo_session_mismatch", "That to-do belongs to another Session.")
 	}
 	if !td.Open() {
 		return workV2Error(http.StatusConflict, "todo_completed", "A completed to-do is not sent again.")
 	}
-	if !td.SentAt.IsZero() && td.ReadAt.IsZero() {
-		return workV2Error(http.StatusConflict, "todo_awaiting_read", "This delivery is still waiting for the Session to read it.")
+	if !td.SentAt.IsZero() && td.ReadAt.IsZero() && now.Sub(td.SentAt) < DirectTodoResendAfter {
+		return workV2Error(http.StatusConflict, "todo_awaiting_read", "This delivery was sent moments ago and the Session has not read it yet.")
 	}
 	return nil
 }
@@ -1302,7 +1310,7 @@ func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session strin
 		if err != nil {
 			return err
 		}
-		if err := CheckDirectTodoSend(prev, session); err != nil {
+		if err := CheckDirectTodoSend(prev, session, at); err != nil {
 			return err
 		}
 		next := prev

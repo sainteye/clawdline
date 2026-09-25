@@ -527,6 +527,33 @@ func TestPersonAddsImagesOnlyBeforeDirectTodoDelivery(t *testing.T) {
 	}
 }
 
+func TestAnUnreadDeliveryCanBeSentAgainOnceItHasWaited(t *testing.T) {
+	w := newWorkV2Test(t)
+	todo, err := w.CreateDirectTodo(context.Background(), NewDirectTodoV2{
+		SessionID: "session-a", Text: "Please handle this", Actor: "local",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := time.Unix(1_790_000_001, 0)
+	if _, err := w.MarkDirectTodoSent(context.Background(), todo.ID, todo.SessionID, first); err != nil {
+		t.Fatal(err)
+	}
+	early := first.Add(DirectTodoResendAfter - time.Second)
+	if _, err := w.MarkDirectTodoSent(context.Background(), todo.ID, todo.SessionID, early); err == nil {
+		t.Fatal("an unread delivery was sent again inside the double-send window")
+	} else if e, ok := err.(*WorkError); !ok || e.Code != "todo_awaiting_read" {
+		t.Fatalf("early resend: %T %v", err, err)
+	}
+	// The Session never read its queue. Past the window the person is no
+	// longer locked out of the only way to reach it.
+	late := first.Add(DirectTodoResendAfter)
+	resent, err := w.MarkDirectTodoSent(context.Background(), todo.ID, todo.SessionID, late)
+	if err != nil || !resent.SentAt.Equal(late) || !resent.ReadAt.IsZero() {
+		t.Fatalf("late resend: %+v %v", resent, err)
+	}
+}
+
 func TestDirectTodoCanBeSentAgainOnlyAfterTheSessionReadsIt(t *testing.T) {
 	w := newWorkV2Test(t)
 	todo, err := w.CreateDirectTodo(context.Background(), NewDirectTodoV2{
