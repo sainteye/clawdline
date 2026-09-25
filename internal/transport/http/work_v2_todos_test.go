@@ -90,7 +90,7 @@ func TestPersonCanRemindOnlyAfterThePreviousDeliveryWasRead(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("read reminder: %d %s", rec.Code, rec.Body)
 	}
-	if effects := p.done(); len(effects) != 1 || effects[0] != "send:handle this" {
+	if effects := p.done(); len(effects) != 1 || effects[0] != "send:"+app.DirectTodoSendText(id, "handle this") {
 		t.Fatalf("read reminder effects: %v", effects)
 	}
 	var answer struct {
@@ -101,6 +101,22 @@ func TestPersonCanRemindOnlyAfterThePreviousDeliveryWasRead(t *testing.T) {
 	}
 	if answer.Todo.SentAt == nil || answer.Todo.ReadAt != nil {
 		t.Fatalf("reminder receipt: %+v", answer.Todo)
+	}
+}
+
+// The first Send types the person's words and then the line that names the
+// row: without it the Session that does the work cannot tell which to-do it
+// finished (2026-09-25).
+func TestFirstSendTypesTheWordsAndTheRowThatChecksThemOff(t *testing.T) {
+	s, p, id := directTodoServer(t)
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, personWorkV2Request(http.MethodPost, "/v1/work/v2/session-todos/pane-4/"+id+"/send", `{}`, "todo-first-send"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("send: %d %s", rec.Code, rec.Body)
+	}
+	want := "send:handle this\n\n(Clawdline to-do " + id + ". When it is done: clawdline todo done " + id + ")"
+	if effects := p.done(); len(effects) != 1 || effects[0] != want {
+		t.Fatalf("typed %q, want %q", effects, want)
 	}
 }
 

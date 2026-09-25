@@ -1205,7 +1205,8 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		for _, picture := range pictures {
 			dataURLs = append(dataURLs, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(picture.Data))
 		}
-		if _, sendErr := s.actions().SendWithPictures(r.Context(), terminalID, found.Text, dataURLs); sendErr != nil {
+		if _, sendErr := s.actions().SendWithPictures(r.Context(), terminalID,
+			app.DirectTodoSendText(found.ID, found.Text), dataURLs); sendErr != nil {
 			err = &app.WorkError{Status: http.StatusBadGateway, Code: "send_failed", Message: sendErr.Error()}
 			break
 		}

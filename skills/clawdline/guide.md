@@ -394,6 +394,11 @@ conversation.
   (`--conversation` otherwise), asks `GET /v1/orchestrator/whoami` for the terminal, and posts
   `{"summary"}` to `POST /v1/orchestrator/sessions/<terminal>/complete`.
 - The summary is 1–500 characters. Each call is a new receipt; the newest counts.
+- The answer also carries `open_todos`: this Session's direct to-dos that were sent or read and are
+  not completed, oldest first, at most 20 (`open_todos_truncated` when there are more). The command
+  prints them on stderr after the receipt, one id and text per line. Check off each one you
+  finished with `clawdline todo done <id>`. The receipt is recorded either way and the exit status
+  does not change; `open_todos_unknown: true` means they could not be read, not that none are open.
 - Refusals: `conversation_id_malformed` (not a lowercase UUID), `conversation_not_found`,
   `conversation_ambiguous`, `registry_stale`, `session_not_found`, `session_unbound`,
   `child_session`. Report the refusal honestly; a sentence in chat is not a receipt.
@@ -564,6 +569,14 @@ person has given this Session, its `recent_items` are items this Session recentl
 `direct_todos` are quick requests. This pull is how an assignment made while you were working waits
 without interrupting the current turn. Finish the current turn, then take the assigned item as your
 next owned work and read its complete record at `GET /v1/work/v2/items/<id>`.
+
+**A to-do the person sent.** A message whose last line reads
+`(Clawdline to-do <id>. When it is done: clawdline todo done <id>)` is one of this Session's
+`direct_todos` that the person sent from Clawdline; the words above that line are the request. Do
+the work, and once it is verified done run `clawdline todo done <id>` with that id **before** you
+report the turn — otherwise the row stays open on the person's list although the work is finished.
+One that is not finished stays open. `clawdline session report` lists on stderr every to-do that was
+sent to this Session and is still not checked off (§7).
 
 **Your own to-dos, when the person asks.** Only when the person explicitly asks this Session to
 record its work as Clawdline to-dos — or hands it a list of several items and says to track them

@@ -369,12 +369,15 @@ func (b *Broker) LiveRootSession(ctx context.Context, conversationID string) (se
 // result, and letting it use this route would give one piece of work two
 // completion signals with different evidence behind them.
 type SessionDelivery struct {
-	Terminal string    `json:"-"`
-	Summary  string    `json:"title"`
-	Scope    string    `json:"scope"`
-	Evidence string    `json:"evidence"`
-	At       time.Time `json:"-"`
-	Created  bool      `json:"-"`
+	Terminal string `json:"-"`
+	// Conversation is the one the receipt was bound to, which is what names
+	// the Session's direct to-dos.
+	Conversation string    `json:"-"`
+	Summary      string    `json:"title"`
+	Scope        string    `json:"scope"`
+	Evidence     string    `json:"evidence"`
+	At           time.Time `json:"-"`
+	Created      bool      `json:"-"`
 }
 
 // ReportSessionDelivery records that a session's current turn delivered.
@@ -420,12 +423,13 @@ func (b *Broker) ReportSessionDelivery(ctx context.Context, terminalID, summary 
 		return SessionDelivery{}, err
 	}
 	return SessionDelivery{
-		Terminal: terminalID,
-		Summary:  trimmed,
-		Scope:    "session",
-		Evidence: "authenticated_session_delivery",
-		At:       at,
-		Created:  true,
+		Terminal:     terminalID,
+		Conversation: s.ConversationID,
+		Summary:      trimmed,
+		Scope:        "session",
+		Evidence:     "authenticated_session_delivery",
+		At:           at,
+		Created:      true,
 	}, nil
 }
 
