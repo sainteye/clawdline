@@ -89,11 +89,13 @@ func (s *Server) ownOverlay(ctx context.Context, lives []swiftstore.Live) (swift
 	} else {
 		own.Handoffs, own.HandoffLabels = ownHandoffs(handoffs, byTerminal)
 	}
-	if assignments, err := s.broker.RootAssignments(ctx); err != nil {
+	assignments, err := s.broker.RootAssignments(ctx)
+	if err != nil {
 		failed = true
 	} else {
 		own.RootAssignments = ownAssignments(assignments, byTerminal)
 	}
+	own.BoardTitles = s.ownBoardTitles(ctx, lives, assignments)
 	if failed {
 		return own, errOwnRecords
 	}

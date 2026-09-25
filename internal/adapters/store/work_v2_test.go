@@ -189,12 +189,19 @@ func TestWorkV2RootAssignmentIsFoundByConversation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.WorkV2RootAssignmentForSession(ctx, "/project-a", "codex", "session-a")
-	if err != nil || got != "root-a" {
-		t.Fatalf("Root Assignment %q, %v", got, err)
+	got, err := s.WorkV2RootAssignmentsForSessions(ctx, "/project-a", "codex", []string{"session-a", "session-b"})
+	if err != nil || len(got) != 1 || got["session-a"] != "root-a" {
+		t.Fatalf("Root Assignment %v, %v", got, err)
 	}
-	if got, err := s.WorkV2RootAssignmentForSession(ctx, "/another-project", "codex", "session-a"); err != nil || got != "" {
-		t.Fatalf("other project Root Assignment %q, %v", got, err)
+	if got, err := s.WorkV2RootAssignmentsForSessions(ctx, "/another-project", "codex", []string{"session-a"}); err != nil || len(got) != 0 {
+		t.Fatalf("other project Root Assignment %v, %v", got, err)
+	}
+	// No place: the live list asks by conversation alone.
+	if got, err := s.WorkV2RootAssignmentsForSessions(ctx, "", "codex", []string{"session-a"}); err != nil || got["session-a"] != "root-a" {
+		t.Fatalf("placeless Root Assignment %v, %v", got, err)
+	}
+	if got, err := s.WorkV2RootAssignmentsForSessions(ctx, "", "claude", []string{"session-a"}); err != nil || len(got) != 0 {
+		t.Fatalf("another assistant's Root Assignment %v, %v", got, err)
 	}
 }
 

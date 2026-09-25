@@ -107,6 +107,10 @@ type Snapshot struct {
 	// that matches wins, as in Config.swift).
 	Titles      []SessionTitle
 	TitlesKnown bool
+
+	// BoardTitles are this daemon's own: the Board label a conversation was
+	// opened with, by conversation (own.go). The Swift store holds none.
+	BoardTitles []BoardTitle
 }
 
 // Read takes one reading. Each file is decoded only when it changed since the
