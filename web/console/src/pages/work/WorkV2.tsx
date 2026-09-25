@@ -643,7 +643,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
         aria-pressed={kind === value} onClick={() => setKind(value)}><span className="work-kind-icon" aria-hidden="true">{meta.icon}</span>
         <span><b>{meta.label}</b><small>{meta.description}</small></span><span className="work-kind-radio"><WorkIcon name={kind === value ? "radio" : "circle"} /></span></button> })}
     </div></fieldset>
-    <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(e) => setTitle(e.target.value)} /></label>
+    <label>標題<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
     <label>描述<textarea value={description} onChange={(e) => setDescription(e.target.value)} /></label>
     <div className="work-modal-images">
       <span>參考圖片</span>
