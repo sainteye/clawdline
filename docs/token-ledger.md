@@ -117,14 +117,38 @@ the rules above left open:
 - A session is read **incrementally**: the ledger keeps, per transcript, the byte offset it read to,
   the previous call's context size and output, and the segment sizes by category. A new pass reads
   from the offset. A file that shrank or changed identity is read again from the start.
-- Tables: one row per session with its assistant, transcript path, offset, reading state and the
-  per-category totals (tokens by part, and cost when the model has a price). Totals only — no prompt,
-  no tool input, no transcript text is stored.
-- Reading is bounded: a registered limit on bytes read per pass and on sessions per pass; a line that
-  does not decode is counted, not fatal; a transcript that cannot be read leaves that session
-  **unknown**, never zero. The bytes per pass (64 MiB, finishing the line it is in) and the longest
-  line decoded (8 MiB; a longer one is skipped and counted) are `docs/limits.md` N42; the sessions
-  per pass belong to the pass that stores them.
+- **One table, `usage_transcripts`** (`internal/adapters/store/usage.go`), one row per transcript — a
+  session's own or one of its subagents' — keyed by assistant and conversation, not by path, so a
+  transcript whose project directory was renamed goes on from its offset instead of counting twice.
+  A row holds the path, the parent session (subagents), the child task id or Root Assignment id its
+  first message names, the `LedgerState` as JSON, the per-category totals and the measured count
+  with its cost (the reader prices by category; the session's cost is the sum of its categories'),
+  the file's size and modification time as last read, whether that read stopped short, when it was
+  read, and a reason. Totals only — no prompt, no tool input, no transcript text is stored.
+- **The reading loop** (`internal/app/usage.go`, `UsageLedger.Pass`, started with the daemon's other
+  background work by `StartUsage`) runs once a minute. Each pass looks for transcripts written
+  within the look-back window: `~/.claude/projects/*/*.jsonl`, each session's
+  `<session>/subagents/*.jsonl`, and `~/.codex/sessions/YYYY/MM/DD/*.jsonl` for the local dates the
+  window covers. A row read within the window whose file the globs no longer find is stat'ed by its
+  stored path, which is how a Codex rollout still written under an older date keeps being read. A
+  transcript is **due** when it is new, its size, modification time or path changed, its last read
+  stopped short, or it could not be read last time. Each due transcript gets one `Feed` from its
+  stored state and is saved again. The home directory is the daemon's (`os.UserHomeDir`); tests give
+  the ledger a temporary one.
+- **Bounded**: at most `usagePassLimit` (32) transcripts are fed per pass, in round robin after the
+  last one fed, so one that stays due (unreadable, or longer than a pass reads) cannot starve the
+  rest; a pass that meets the limit logs it once, until a pass no longer does. The look-back window
+  is `usageWindowLimit` (7 days); a transcript last written before it keeps its stored totals and is
+  not visited again until it is written. Both are `docs/limits.md` N43. The bytes per `Feed` (64 MiB,
+  finishing the line it is in) and the longest line decoded (8 MiB; a longer one is skipped and
+  counted) are N42.
+- **Failure**: a transcript that cannot be read costs that transcript its turn and nothing else; its
+  row keeps the last reading's totals and says `transcript_unreadable`. A transcript read before and
+  gone since keeps its totals and says `transcript_missing`, and is not asked about again. A session
+  with no reading at all is `not_yet_read`, never an empty total. Each is logged once per transcript
+  and reason, by conversation id, never by path; a transcript that reads fine again is forgotten, so
+  its next failure is said again. What is logged is kept in memory: a restarted daemon may say each
+  failure once more. A restarted daemon reads on from the stored offsets and counts nothing twice.
 
 ## Which session is which
 
@@ -134,6 +158,31 @@ the rules above left open:
 - **A Board item**: its owner Session (`OwnerSession`, and the owners in its history).
 - An item's bill is its owner sessions plus the child tasks those sessions dispatched while they
   owned it. A subagent's bill is inside its parent session's `delegate`.
+
+What the implementation settled (`UsageLedger.ForSession`, `ForTask`, `ForItem`):
+
+- **The first message** is read once per session transcript with `transcript.FirstUser` (bounded by
+  its read budget), after the transcript's first successful read; one with no person's turn yet is
+  looked at again when it grows. Subagent transcripts are not looked at: they are their parent's.
+- **A subagent** is its own row, linked by `parent`. A session's answer adds each subagent's whole
+  measured count, cost included, to `delegate` and to the session's measured total, so the categories
+  still sum to the total. Calls, peak context, compactions and the calls above 200k are the session's
+  own; each subagent's calls are listed with it. A transcript that writes subagent calls inline
+  (`isSidechain` rows) has them in its own `delegate` already; Claude Code writes a subagent to one
+  place or the other, not both.
+- **A child task** is every session transcript whose first message names it. None read yet is
+  `not_yet_read` for the task.
+- **A Board item's owners** are its assignment history (`work_v2_assignments`, each stint from its
+  creation to its release, or to the item's close, or open) plus the current `owner_session` when no
+  active assignment names it. A `new_session` assignment whose session was never written on it is
+  found by the transcript whose first message names its Root Assignment. The tasks counted are those
+  whose record names an owner session as `root.session_id` and that were created inside that owner's
+  stint.
+- **An owner session is counted whole**, once however many stints it had: the ledger is not kept by
+  time, so a session that owned two items is in both bills. That is an upper bound for either item.
+- **Nothing is silently left out**: every answer lists its sessions and tasks, and `gaps` names each
+  session, subagent, task or Root Assignment whose reading is not current, with its reason and whether
+  an earlier reading is in the totals.
 
 ## What a person and a session see
 

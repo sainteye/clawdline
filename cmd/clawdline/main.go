@@ -171,6 +171,9 @@ func serve() {
 	// The board's sweep: a landing closes its item, a delivery waits to be
 	// closed, three quiet days send an item back to the Backlog.
 	srv.StartWork(context.Background())
+	// The token ledger: transcripts read, a bounded pass a minute, into what
+	// each session spent (docs/token-ledger.md).
+	srv.StartUsage(context.Background())
 	startCloudLine(context.Background(), cfg, srv)
 	// The account-free tunnel, if the settings ask for one and something is
 	// paired: a cloudflared an earlier run left behind is stopped first.
