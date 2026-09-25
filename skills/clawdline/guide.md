@@ -181,6 +181,28 @@ person's `dispatch-policy.local.md`); every child receives them in its briefing.
 
 An owned child is a bounded task under you. **You keep synthesis, integration and landing.**
 
+**One command does all four steps below**, with the brief on stdin or in a file:
+
+```sh
+clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
+  [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
+  [--work-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
+```
+
+It makes the id and the secret, reads the inventory for `generation` and `task_root`, writes
+`task.json`, posts the task, and on one `stale_inventory` reads the inventory again and resends
+once. It prints `dispatched <id> <state> [worktree <path>]`, then one line per warning — the
+daemon's, and each live task whose claims overlap yours. `--json` prints the daemon's answer
+instead. A refusal is `refused, <status> <code>: <message>` on stderr and exit 1; the table at the
+end of this section says what each code means. The root is your conversation, from
+`CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, else `--conversation`; the child's assistant is
+yours unless `--assistant` says otherwise; the project is this directory's git top-level unless
+`--project-dir` says otherwise. `--claims ""` declares a child that writes nothing. The secret is
+never in argv, in `task.json` or in what it prints, and the token is read as every thin command
+reads it.
+
+The steps it takes, for a caller without the binary:
+
 **1. Choose an id and a secret.**
 
 ```sh
@@ -269,7 +291,8 @@ and running `clawdline task finish`. You do not call those routes.
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
   ```
 
-  A second ACK answers `changed: false`. Unacknowledged notices are listed at
+  `clawdline task ack <id> <notice_id>` sends it and prints one line. A second ACK answers
+  `changed: false`. Unacknowledged notices are listed at
   `GET /v1/orchestrator/completions`; `POST /v1/orchestrator/completions/reconcile` re-arms them.
 - There is **no cancel route**. A task ends by finishing, failing or timing out.
 - **A finished child is not landed code.** Its work sits in the shared tree or on its branch until
