@@ -78,6 +78,9 @@ type draft struct {
 	Graph           json.RawMessage `json:"graph"`
 	AttachSession   json.RawMessage `json:"attach_session"`
 	ReasoningEffort json.RawMessage `json:"reasoning_effort"`
+	// AutoCompactWindow is raw for the same reason, and because null and
+	// absent mean different things (compact.go admitAutoCompact).
+	AutoCompactWindow json.RawMessage `json:"auto_compact_window"`
 }
 
 // admitReasoningEffort reads `reasoning_effort`: Codex's
@@ -286,6 +289,10 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	if err != nil {
 		return Record{}, err
 	}
+	compact, err := admitAutoCompact(d.AutoCompactWindow, d.Assistant)
+	if err != nil {
+		return Record{}, err
+	}
 	workID, err := admitWorkID(d.WorkID)
 	if err != nil {
 		return Record{}, err
@@ -305,24 +312,25 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	}
 
 	return Record{
-		Protocol:        Protocol,
-		ID:              id,
-		Kind:            kind,
-		Assistant:       d.Assistant,
-		PermissionMode:  permission,
-		Claims:          claims,
-		Isolation:       isolation,
-		ProjectDir:      filepath.Clean(d.ProjectDir),
-		Title:           title,
-		Instructions:    d.Instructions,
-		Deliverables:    d.Deliverables,
-		TimeoutMinutes:  timeout,
-		Root:            root,
-		Model:           model,
-		ReasoningEffort: effort,
-		WorkID:          workID,
-		Graph:           graph,
-		State:           StateQueued,
+		Protocol:             Protocol,
+		ID:                   id,
+		Kind:                 kind,
+		Assistant:            d.Assistant,
+		PermissionMode:       permission,
+		Claims:               claims,
+		Isolation:            isolation,
+		ProjectDir:           filepath.Clean(d.ProjectDir),
+		Title:                title,
+		Instructions:         d.Instructions,
+		Deliverables:         d.Deliverables,
+		TimeoutMinutes:       timeout,
+		Root:                 root,
+		Model:                model,
+		ReasoningEffort:      effort,
+		AutoCompactRequested: compact,
+		WorkID:               workID,
+		Graph:                graph,
+		State:                StateQueued,
 	}, nil
 }
 

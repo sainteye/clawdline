@@ -193,9 +193,11 @@ func newBroker(s *Server) *orchestrator.Broker {
 		Language:      brokerLanguage(s),
 		MaxChildren:   brokerMaxChildren(s),
 		// W6 (handover.go): the finished child's linger, and the sweep.
-		ChildLinger:  func() time.Duration { return brokerChildLinger(s) },
-		ReclaimAuto:  os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",
-		ReclaimGrace: reclaimGrace(),
+		ChildLinger: func() time.Duration { return brokerChildLinger(s) },
+		// Read at every launch, so a change restarts nothing (compact.go).
+		AutoCompactWindow: func() int64 { return brokerAutoCompactWindow(s) },
+		ReclaimAuto:       os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",
+		ReclaimGrace:      reclaimGrace(),
 	}
 }
 
@@ -213,6 +215,22 @@ func brokerChildLinger(s *Server) time.Duration {
 		}
 	}
 	return orchestrator.LingerDefault
+}
+
+// brokerAutoCompactWindow is the `claude_auto_compact_window` setting: the
+// window Claude sessions this daemon opens compact at, 0 for none. Absent,
+// unreadable or not a whole number is none, the setting's default; the broker
+// reads a value out of range as none too.
+func brokerAutoCompactWindow(s *Server) int64 {
+	values, err := nextconfig.Open(s.cfg.Dir).Read()
+	if err != nil {
+		return 0
+	}
+	n, ok := values.Number("claude_auto_compact_window")
+	if !ok || n != float64(int64(n)) {
+		return 0
+	}
+	return int64(n)
 }
 
 // reclaimGrace is CLAWDLINE_NEXT_RECLAIM_GRACE, for a disposable daemon's
