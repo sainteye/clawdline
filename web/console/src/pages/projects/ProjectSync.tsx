@@ -27,6 +27,7 @@ const KEPT_WORDS: Record<string, string> = {
 
 const SKIP_WORDS: Record<string, string> = {
   no_remote: "沒有 origin remote",
+  not_a_repository: "不是 git repo",
   remote_not_portable: "origin 是本機路徑，其他機器無法取得",
   mirrored_here: "這台本身就是鏡像",
   unreadable: "讀不到 git 資訊",

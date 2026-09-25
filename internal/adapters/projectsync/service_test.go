@@ -86,7 +86,11 @@ func TestASourceOffersOnlyWhatGitDoesNotCarry(t *testing.T) {
 	write(t, shop, "CLAUDE.local.md", "notes")
 	write(t, shop, ".claude/settings.local.json", `{"permissions":{}}`)
 	loose := checkout(t, filepath.Join(base, "loose"), "")
-	src := service(t, shop, loose)
+	plain := filepath.Join(base, "plain")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := service(t, shop, loose, plain)
 
 	m := src.Manifest(ctx)
 	if len(m.Projects) != 1 || m.Projects[0].Repo != "github.com/acme/shop" {
@@ -102,8 +106,8 @@ func TestASourceOffersOnlyWhatGitDoesNotCarry(t *testing.T) {
 	if len(paths) != 2 || paths[0] != ".claude/skills/local/SKILL.md" || paths[1] != "CLAUDE.local.md" {
 		t.Fatalf("files %v: want the untracked skill and CLAUDE.local.md, never settings.local.json or a tracked skill", paths)
 	}
-	if len(m.Skipped) != 1 || m.Skipped[0].Reason != domain.SkipNoRemote {
-		t.Fatalf("a project without an origin should be named as skipped: %+v", m.Skipped)
+	if len(m.Skipped) != 2 || m.Skipped[0].Reason != domain.SkipNoRemote || m.Skipped[1].Reason != domain.SkipNotRepository {
+		t.Fatalf("a project without an origin, and a folder that is no repository, should each be named for what they are: %+v", m.Skipped)
 	}
 	e, err := src.Entry(ctx, "github.com/acme/shop")
 	if err != nil || len(e.Files) != 2 || string(e.Files[1].Content) != "notes" {

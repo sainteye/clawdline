@@ -99,12 +99,13 @@ type Manifest struct {
 
 // Skip reasons.
 const (
-	SkipNoRemote     = "no_remote"
-	SkipLocalRemote  = "remote_not_portable"
-	SkipMirrored     = "mirrored_here"
-	SkipUnreadable   = "unreadable"
-	SkipDuplicate    = "duplicate_repository"
-	SkipManifestFull = "manifest_full"
+	SkipNoRemote      = "no_remote"
+	SkipNotRepository = "not_a_repository"
+	SkipLocalRemote   = "remote_not_portable"
+	SkipMirrored      = "mirrored_here"
+	SkipUnreadable    = "unreadable"
+	SkipDuplicate     = "duplicate_repository"
+	SkipManifestFull  = "manifest_full"
 )
 
 // repoShape is host/owner/…/name. No segment starts with a dot or a tilde:
