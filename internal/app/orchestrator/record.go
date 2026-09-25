@@ -422,6 +422,9 @@ type Record struct {
 	// False on a briefing that was typed and errored — those keystrokes may
 	// have landed, and only a receipt can say.
 	Unbriefed bool `json:"unbriefed,omitempty"`
+	// Stall is the nudge and the report for a child that sat idle after its
+	// briefing without signing for it (stall.go). Nil for every other task.
+	Stall *Stall `json:"stall,omitempty"`
 	// RespawnOf is the spawn_failed task this one retried, and
 	// RespawnGeneration how far down that chain it is: 0 for an original.
 	// The limit is counted over the family, not read from this number — see

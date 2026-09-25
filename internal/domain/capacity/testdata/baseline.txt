@@ -194,6 +194,8 @@ internal/app/orchestrator.reclaimForeignLimit # page: foreign checkouts one swee
 internal/app/orchestrator.reclaimSweepLimit # parameter: subjects one reclamation sweep asks git about; the rest are the next sweep's (W6, broker-design #29)
 internal/app/orchestrator.rootLabelLimit # admission: a root label (limits N8's silent cut, C3)
 internal/app/orchestrator.sessionSummaryLimit # admission: a delivery receipt's sentence
+internal/app/orchestrator.stallIdleLimit # parameter: how long a briefed, unsigned child reads idle before its one nudge (limits: A child that stalls after its briefing)
+internal/app/orchestrator.stallReportLimit # parameter: how long it stays idle after the nudge before its root is told it stalled (limits: A child that stalls after its briefing)
 internal/app/orchestrator.summaryLimit # admission: a child summary, cut silently (limits N8: W2 stores it whole, D25)
 internal/app/orchestrator.titleLimit # admission: a dispatch title (limits N8's silent cut, C3)
 internal/app/orchestrator.todoPageLimit # page: one read of a session's to-do list (T2); the rest are a cursor away, and the table is inside store.db's row
