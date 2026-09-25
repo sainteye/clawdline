@@ -206,7 +206,9 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     private var failedLoads = 0
     /// Whether the console has finished loading in the current generation, so
     /// a page can be asked for now or must be asked for once it has.
-    private var pageLoaded = false
+    /// The browser bar reads it too: the local console's pill is green only
+    /// while this is true.
+    private(set) var pageLoaded = false { didSet { refreshBrowserBar() } }
     /// A page to go to once the console has loaded — "Settings…" pressed while
     /// the daemon was still coming up.
     private var pendingPage: String?
