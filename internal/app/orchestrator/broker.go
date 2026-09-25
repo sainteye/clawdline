@@ -98,8 +98,9 @@ type Broker struct {
 	// Terminal is the machine's `terminal` setting.
 	Terminal func() projects.TerminalChoice
 	// Policy is this machine's dispatch policy — the base file and the person's
-	// local one, read at every dispatch — pasted into every child briefing
-	// through ComposePolicy (policy.go).
+	// local one, read at every dispatch. A child briefing carries the local
+	// one whole and names where the base is (childPolicy, policy.go);
+	// ComposePolicy measures the two together for /v1/diagnostics.
 	Policy func() (base, local string)
 	// Port is this daemon's own port, for the curl recipes in a briefing.
 	Port int

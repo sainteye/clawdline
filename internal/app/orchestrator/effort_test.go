@@ -2,6 +2,8 @@ package orchestrator
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -115,5 +117,45 @@ func TestTheLineACodexChildIsTypedCarriesTheEffort(t *testing.T) {
 		`-c 'projects={"/work/app"={trust_level="trusted"}}'`
 	if got != want {
 		t.Fatalf("line\n got %q\nwant %q", got, want)
+	}
+}
+
+// A task.json that was read but did not decode names the field and the type
+// it wanted. It used to say "No readable task.json", the missing-file
+// sentence, and a root with a string where an array belongs went looking for
+// a path problem.
+func TestABriefWithAWrongTypeNamesTheField(t *testing.T) {
+	b, _ := newTestBroker(t)
+	project := t.TempDir()
+	id := "b8000000-0000-4000-8000-000000000004"
+	for _, c := range []struct {
+		brief map[string]any
+		want  string
+	}{
+		{map[string]any{"deliverables": "docs/a.md"}, `task.json field "deliverables" must be an array of strings, not a JSON string`},
+		{map[string]any{"timeout_minutes": "30"}, `task.json field "timeout_minutes" must be an integer, not a JSON string`},
+		{map[string]any{"title": 7}, `task.json field "title" must be a string, not a JSON number`},
+	} {
+		writeBrief(t, b, id, project, c.brief)
+		_, err := b.ReadDraft(id)
+		said := refusalMessage(err)
+		if refusalCode(err) != "bad_task" || !strings.HasPrefix(said, c.want) {
+			t.Errorf("%v refused as %q / %q, want prefix %q", c.brief, refusalCode(err), said, c.want)
+		}
+		if strings.Contains(said, "No readable") {
+			t.Errorf("%v still reads as a missing file: %q", c.brief, said)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(b.Tasks.Path(id), "task.json"), []byte(`{"title": `), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ReadDraft(id); !strings.HasPrefix(refusalMessage(err), "task.json is not valid JSON at byte") {
+		t.Errorf("a truncated task.json refused as %q", refusalMessage(err))
+	}
+	if err := os.Remove(filepath.Join(b.Tasks.Path(id), "task.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ReadDraft(id); !strings.HasPrefix(refusalMessage(err), "No readable task.json") {
+		t.Errorf("a missing task.json refused as %q", refusalMessage(err))
 	}
 }

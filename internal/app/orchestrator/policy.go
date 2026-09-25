@@ -101,14 +101,24 @@ func cutAtParagraph(v string, limit int) string {
 	return strings.TrimSpace(prefix)
 }
 
-// policy is the house rules for a briefing being written now, read from the
-// files at every dispatch so that a person editing them restarts nothing.
-func (b *Broker) policy() string {
+// childPolicy is the part of the house rules a child briefing carries: the
+// person's own local file, whole, read at every dispatch so that a person
+// editing it restarts nothing — and whether a base exists, so the briefing
+// can say where it is.
+//
+// The base is not pasted in any more. It says how work is handed out — whether
+// to dispatch, how big a task is, which shape and assistant, when to arrange
+// an independent review — and a child cannot dispatch. Pasted whole it was
+// 4,977 of the 8,761 tokens a briefing cost, re-read on every one of the
+// child's calls; in twelve child transcripts read on 2026-09-25 not one cited
+// any of its sections. ComposePolicy still measures the two together for
+// /v1/diagnostics, because the limit is about what a person has written.
+func (b *Broker) childPolicy() (local string, hasBase bool) {
 	if b.Policy == nil {
-		return ""
+		return "", false
 	}
-	out, _ := ComposePolicy(b.Policy())
-	return out
+	base, local := b.Policy()
+	return strings.TrimSpace(local), strings.TrimSpace(base) != ""
 }
 
 // PolicyRead is what a briefing written now would carry, for /v1/diagnostics:

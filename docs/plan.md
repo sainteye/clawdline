@@ -225,7 +225,7 @@ React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`�
   整條拿掉的方式相同。新版自己的看板設定寫在 `CLAWDLINE_NEXT_DIR/project-board.json`（0600），只有 board 級的
   `enabled`／`narrativeConsent`；項目寫入等 `docs/board-design.md` 的 C1／C2 決定。
 - **家規** `~/.config/clawdline/dispatch-policy.md` 與 `dispatch-policy.local.md`（broker，2026-09-18 補登，
-  `docs/design-decisions.md` D23 ②）：每次派工時各讀一次，貼進 child 的 CHILD.md；`/v1/diagnostics` 的
+  `docs/design-decisions.md` D23 ②）：每次派工時各讀一次，貼進 child 的 CHILD.md（2026-09-25 起 CHILD.md 只貼 local，base 只指出路徑）；`/v1/diagnostics` 的
   `broker.policy` 也讀同兩個檔算字數。放在 `internal/transport/http/orchestrator_wiring.go` 的 `dispatchPolicy`，
   組合規則在 `internal/app/orchestrator/policy.go`：以**字元**計、上限 16,000，超過時只切 base（段落邊界），
   local 永遠完整。讀不到就當空的（家規是給 child 的建議，缺了不是錯）。退役前改由新 app 自己的 base 投影（D23 ③，W5）。

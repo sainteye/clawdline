@@ -233,6 +233,7 @@ internal/transport/http.voiceBodyLimit # admission: one voice body
 internal/adapters/push.endpointLimit # admission: one push endpoint, refused past 2 KiB; it is what keeps push.subscriptions' limit at its longest under half its read bound
 internal/adapters/taskdir.resultLimit # read: one result.json or result.json.tmp, refused whole past it (limits N9); the child's /complete answers result_unreadable
 internal/adapters/taskdir.noteLimit # read: one progress.json, accepted.json or result.json.ready, refused whole past it (limits N9)
+internal/adapters/taskdir.VerificationScopeLimit # admission: one result.json's verification.scope, in UTF-16 units, refused by the child's own validator (taskdir.ValidateResult), which names the length it read (limits N9)
 internal/transport/http.commandBodyLimit # admission: every owned route's body without a bound of its own, 413 body_too_large past it before the route runs (limits N27)
 internal/transport/http.authBodyLimit # admission: an auth or push body, 413 past it rather than cut and read as {} (limits N27)
 internal/transport/http.scheduleImportBodyLimit # admission: one batch of schedule files moved in (limits N27)

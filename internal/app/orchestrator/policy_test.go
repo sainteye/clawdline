@@ -1,8 +1,11 @@
 package orchestrator
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 )
 
 // paragraphs builds a base of n characters in paragraphs of 100.
@@ -68,5 +71,46 @@ func TestAnOversizedLocalFileIsNeverCut(t *testing.T) {
 	out, reading := ComposePolicy("base rules", local)
 	if out != local || !reading.Cut {
 		t.Fatalf("out %d chars, reading %+v", len([]rune(out)), reading)
+	}
+}
+
+// A child's briefing carries the person's own rules whole and not the shipped
+// base, which is about handing work out — something a child cannot do. It
+// names where the base is instead. Before, the base was pasted whole: 4,977 of
+// a briefing's 8,761 tokens, re-read on every call of every child, and cited
+// by none of the twelve child transcripts read on 2026-09-25.
+func TestAChildBriefingCarriesThePersonsRulesAndPointsAtTheBase(t *testing.T) {
+	dir := t.TempDir()
+	b := &Broker{Tasks: taskdir.New(t.TempDir()), Dir: dir,
+		Policy: func() (string, string) { return string(ShippedPolicy()), "Never touch the billing module." }}
+	r := Record{ID: "a7000000-0000-4000-8000-000000000009", Title: "slim", Kind: "custom",
+		TimeoutMinutes: 30, ProjectDir: "/p", Assistant: "claude",
+		Root: &RootRef{SessionID: "conv", Assistant: "claude"}}
+	brief := b.ChildBrief(r, "/p")
+	if !strings.Contains(brief, "Never touch the billing module.") {
+		t.Error("the person's own rule is not in the briefing")
+	}
+	if !strings.Contains(brief, filepath.Join(dir, PolicyBaseFile)) {
+		t.Error("the briefing does not say where the dispatch policy is")
+	}
+	for _, heading := range []string{"# How work is handed out on this machine", "## Should this be dispatched at all?",
+		"## Pick a shape", "## Check in proportion to risk"} {
+		if strings.Contains(brief, heading) {
+			t.Errorf("the base is still pasted into a child's briefing: %q", heading)
+		}
+	}
+	if strings.Contains(brief, "/inflight") {
+		t.Error("the briefing still sends every child to /inflight before it starts")
+	}
+
+	// With no local file the pointer is still there; with no policy at all
+	// the section is absent.
+	b.Policy = func() (string, string) { return string(ShippedPolicy()), "" }
+	if brief := b.ChildBrief(r, "/p"); !strings.Contains(brief, PolicyBaseFile) || strings.Contains(brief, "House rules the person wrote") {
+		t.Error("a machine with only the base does not point at it, or claims rules the person did not write")
+	}
+	b.Policy = nil
+	if strings.Contains(b.ChildBrief(r, "/p"), "## What this machine says") {
+		t.Error("a broker with no policy still writes the section")
 	}
 }
