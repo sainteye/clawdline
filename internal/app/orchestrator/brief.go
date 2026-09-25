@@ -110,6 +110,8 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("Once you have read task.json, tell the broker you have it. This receipt is the only thing")
 	w("that proves the briefing reached you: typing it into your terminal proved nothing, and your")
 	w("tab starting a turn proves only that something is running. Send it once; a repeat is harmless.")
+	w("It is part of this protocol, not extra work: send it even when task.json says to do nothing")
+	w("but the task.")
 	w("")
 	w("```bash")
 	w("curl --fail-with-body -sS -X POST %s/accepted \\", base)
@@ -169,14 +171,22 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 		w("")
 	}
 
-	if policy := b.policy(); policy != "" {
+	if local, hasBase := b.childPolicy(); local != "" || hasBase {
 		w("## What this machine says")
 		w("")
-		w("House rules from this machine's dispatch policy. They are the person's, not this app's;")
-		w("where they and your own judgement disagree, follow them and say so in your summary.")
-		w("")
-		w("%s", policy)
-		w("")
+		if local != "" {
+			w("House rules the person wrote for this machine. They are the person's, not this app's;")
+			w("where they and your own judgement disagree, follow them and say so in your summary.")
+			w("")
+			w("%s", local)
+			w("")
+		}
+		if hasBase {
+			w("How work is handed out here — whether to dispatch, how big a task is, when to arrange a")
+			w("review — is in %s. It is written for sessions that dispatch, and you", filepath.Join(b.Dir, PolicyBaseFile))
+			w("cannot; read it only if task.json asks you to plan work for others.")
+			w("")
+		}
 	}
 
 	w("## Verification budget")
@@ -221,21 +231,6 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(`{"task_secret": "<the TASK_SECRET value from your first message>",`)
 	w(` "note": "<one sentence, at most 300 characters>"}`)
 	w("```")
-	w("")
-
-	w("## Before you start work you believe is new, look")
-	w("")
-	w("Another session's isolated checkout is invisible from the shared tree: a finished delivery")
-	w("sitting on a branch nobody merged shows up in no `git status` and no file listing. So")
-	w(`"nothing here does that yet" is not evidence. This is:`)
-	w("")
-	w("```bash")
-	w("curl --fail-with-body -sS %s/inflight \\", base)
-	w(`  -H "X-Clawdline-Task-Secret: <TASK_SECRET>"`)
-	w("```")
-	w("")
-	w("**If this one fails you have no answer, which is not the same as an empty board.** On a")
-	w("non-zero exit, say in your result what you checked and what it told you.")
 	w("")
 
 	w("## Reporting — this is the completion signal, do it exactly")
