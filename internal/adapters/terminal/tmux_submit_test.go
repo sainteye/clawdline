@@ -144,6 +144,10 @@ func privateTmux(t *testing.T, mode string) (session.Session, string) {
 	os.Unsetenv("TMUX")
 	os.Unsetenv("TMUX_PANE")
 	t.Setenv("TMUX_TMPDIR", dir)
+	// tmux runs the pane's command through $SHELL. A service account's is
+	// /usr/sbin/nologin, which refuses it, and the stub never ran: measured on
+	// the Linux host's release build, where this test was red on every commit.
+	t.Setenv("SHELL", "/bin/sh")
 	logPath := filepath.Join(dir, "stub.log")
 	self, err := os.Executable()
 	if err != nil {
