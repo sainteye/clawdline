@@ -26,18 +26,33 @@ func Price(model string) (input, output float64, ok bool) {
 	return 0, 0, false
 }
 
-// Cost is `Orchestrator.cost(of:)`: cache reads at a tenth of the input price,
-// cache writes at a quarter more, rounded to a hundredth of a cent.
+// Cost is what a Summary's tokens cost at list price: cache reads at a tenth
+// of the input price, 1-hour cache writes at twice it and 5-minute writes at a
+// quarter more, rounded to a hundredth of a cent. Writes the Summary does not
+// split are priced as 1-hour: every Claude Code cache write measured on
+// 2026-09-25 was one (docs/token-ledger.md "Price"). The Swift app's
+// `Orchestrator.cost(of:)` priced them all at 1.25× and under-reported.
 func Cost(u Summary) (float64, bool) {
-	in, out, ok := Price(u.Model)
+	write1h, write5m := u.CacheWrite1h, u.CacheWrite5m
+	if rest := u.CacheWrite - write1h - write5m; rest > 0 {
+		write1h += rest
+	}
+	dollars, ok := usageCost(u.Model, float64(u.Input), float64(write1h), float64(write5m),
+		float64(u.CacheRead), float64(u.Output))
 	if !ok {
 		return 0, false
 	}
-	dollars := float64(u.Input)*in +
-		float64(u.Output)*out +
-		float64(u.CacheRead)*in*0.1 +
-		float64(u.CacheWrite)*in*1.25
-	return math.Round(dollars/1_000_000*10_000) / 10_000, true
+	return math.Round(dollars*10_000) / 10_000, true
+}
+
+// usageCost is the unrounded price of one set of token counts, and false when
+// the model has no price: unknown, never zero.
+func usageCost(model string, input, write1h, write5m, read, output float64) (float64, bool) {
+	in, out, ok := Price(model)
+	if !ok {
+		return 0, false
+	}
+	return (input*in + output*out + read*in*0.1 + write1h*in*2 + write5m*in*1.25) / 1_000_000, true
 }
 
 func looseFloat(raw json.RawMessage) (float64, bool) {

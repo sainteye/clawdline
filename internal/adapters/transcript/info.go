@@ -21,7 +21,11 @@ type Summary struct {
 	Output     int64
 	CacheRead  int64
 	CacheWrite int64
-	Total      int64
+	// CacheWrite1h and CacheWrite5m split CacheWrite by how long the write is
+	// kept, when the record says; what they leave of CacheWrite is 1-hour.
+	CacheWrite1h int64
+	CacheWrite5m int64
+	Total        int64
 	// Model is the model the last counted turn named, as written — which can
 	// be `<synthetic>` for a turn the provider refused. Empty when none did.
 	Model string
@@ -209,6 +213,10 @@ func claudeSummary(data []byte) *Summary {
 		u.Output += intOrZero(counts, "output_tokens")
 		u.CacheRead += intOrZero(counts, "cache_read_input_tokens")
 		u.CacheWrite += intOrZero(counts, "cache_creation_input_tokens")
+		if split, ok := counts.object("cache_creation"); ok {
+			u.CacheWrite1h += intOrZero(split, "ephemeral_1h_input_tokens")
+			u.CacheWrite5m += intOrZero(split, "ephemeral_5m_input_tokens")
+		}
 		if model, ok := message.str("model"); ok {
 			u.Model = model
 		}

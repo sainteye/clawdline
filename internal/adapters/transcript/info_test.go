@@ -78,9 +78,10 @@ func TestClaudeFactsSumEveryTurnAndPriceThem(t *testing.T) {
 	if u == nil || u.Input != 2000 || u.Output != 2000 || u.CacheRead != 1_000_000 || u.CacheWrite != 100_000 || u.Total != 1_104_000 {
 		t.Fatalf("usage = %+v", u)
 	}
-	// 2000×5 + 2000×25 + 1e6×0.5 + 1e5×6.25 = 1,185,000 per million.
-	if !u.HasCost || u.Cost != 1.185 {
-		t.Fatalf("cost = %v (%v), want 1.185", u.Cost, u.HasCost)
+	// 2000×5 + 2000×25 + 1e6×0.5 + 1e5×10 = 1,560,000 per million: a write
+	// the record does not split is a 1-hour one, at twice the input price.
+	if !u.HasCost || u.Cost != 1.56 {
+		t.Fatalf("cost = %v (%v), want 1.56", u.Cost, u.HasCost)
 	}
 	if facts.Model != "claude-opus-5" {
 		t.Fatalf("model = %q", facts.Model)
