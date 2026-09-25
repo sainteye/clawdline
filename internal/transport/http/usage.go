@@ -108,7 +108,7 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 			usageStoreRefusal(w, err)
 			return
 		}
-		writeJSON(w, usageItem(got))
+		writeJSON(w, usageItem(got, s.usageWindows(ctx)))
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found",
 			"Ask for /v1/usage/sessions/<conversation>, /v1/usage/tasks/<id> or /v1/usage/items/<id>.")
@@ -153,7 +153,7 @@ func (s *Server) usageSession(ctx context.Context, w http.ResponseWriter, u *app
 		usageStoreRefusal(w, err)
 		return
 	}
-	writeJSON(w, usageSession(got))
+	writeJSON(w, usageSession(got, s.usageWindows(ctx)))
 }
 
 // usageTranscriptExists is whether a transcript of this conversation is on
@@ -188,7 +188,7 @@ func (s *Server) usageTask(ctx context.Context, w http.ResponseWriter, u *app.Us
 			return
 		}
 	}
-	writeJSON(w, usageTask(got))
+	writeJSON(w, usageTask(got, s.usageWindows(ctx)))
 }
 
 // ---------- the wire shapes ----------
@@ -242,13 +242,53 @@ func unixOrZero(t time.Time) int64 {
 	return t.Unix()
 }
 
-func usageSession(s app.SessionUsage) contract.UsageSession {
+// windowOf answers the compaction window a session was launched with, from
+// the task or Root Assignment it names, or nil when that is not known.
+type windowOf func(taskID, assignment string) *int64
+
+// usageWindows reads the broker's records for windowOf, each one at most once
+// an answer: an item's bill names the same task in every session of it.
+func (s *Server) usageWindows(ctx context.Context) windowOf {
+	if s.broker == nil {
+		return func(string, string) *int64 { return nil }
+	}
+	tasks := map[string]*int64{}
+	assignments := map[string]*int64{}
+	return func(taskID, assignment string) *int64 {
+		switch {
+		case taskID != "":
+			if w, ok := tasks[taskID]; ok {
+				return w
+			}
+			var w *int64
+			if r, _, err := s.broker.Record(ctx, taskID); err == nil {
+				w = r.AutoCompactWindow
+			}
+			tasks[taskID] = w
+			return w
+		case assignment != "":
+			if w, ok := assignments[assignment]; ok {
+				return w
+			}
+			var w *int64
+			if a, err := s.broker.RootAssignmentByID(ctx, assignment); err == nil && a.Executor != nil {
+				w = a.Executor.AutoCompactWindow
+			}
+			assignments[assignment] = w
+			return w
+		}
+		return nil
+	}
+}
+
+func usageSession(s app.SessionUsage, window windowOf) contract.UsageSession {
 	out := contract.UsageSession{
 		Conversation: s.Conversation, Assistant: s.Assistant, TaskID: s.TaskID, RootAssignment: s.RootAssignment,
 		Reason: contract.UsageReason(s.Reason), ReadAt: unixOrZero(s.ReadAt), More: s.More,
 		Bill: usageBill(s.Totals), Calls: s.Calls, PeakContext: s.PeakContext, Compactions: s.Compactions,
 		CallsAbove: s.CallsAbove, Above: usageTokens(s.Above),
 		Subagents: []contract.UsageSubagent{}, Gaps: usageGaps(s.Gaps),
+		AutoCompactWindow: window(s.TaskID, s.RootAssignment),
 	}
 	if c := s.Composition; c != nil {
 		out.Composition = &contract.UsageComposition{
@@ -275,18 +315,18 @@ func usageNamed(in []transcript.NamedSize) []contract.UsageNamedSize {
 
 // usageSessions is the sessions' wire shapes, their calls added up and their
 // largest peak.
-func usageSessions(in []app.SessionUsage) (out []contract.UsageSession, calls, peak int64) {
+func usageSessions(in []app.SessionUsage, window windowOf) (out []contract.UsageSession, calls, peak int64) {
 	out = make([]contract.UsageSession, 0, len(in))
 	for _, s := range in {
-		out = append(out, usageSession(s))
+		out = append(out, usageSession(s, window))
 		calls += s.Calls
 		peak = max(peak, s.PeakContext)
 	}
 	return out, calls, peak
 }
 
-func usageTask(t app.TaskUsage) contract.UsageTask {
-	sessions, calls, peak := usageSessions(t.Sessions)
+func usageTask(t app.TaskUsage, window windowOf) contract.UsageTask {
+	sessions, calls, peak := usageSessions(t.Sessions, window)
 	out := contract.UsageTask{TaskID: t.TaskID, Bill: usageBill(t.Totals), Calls: calls, PeakContext: peak,
 		Sessions: sessions, Gaps: usageGaps(t.Gaps)}
 	read := false
@@ -299,8 +339,8 @@ func usageTask(t app.TaskUsage) contract.UsageTask {
 	return out
 }
 
-func usageItem(it app.ItemUsage) contract.UsageItem {
-	sessions, calls, peak := usageSessions(it.Sessions)
+func usageItem(it app.ItemUsage, window windowOf) contract.UsageItem {
+	sessions, calls, peak := usageSessions(it.Sessions, window)
 	out := contract.UsageItem{ItemID: it.ItemID, Bill: usageBill(it.Totals), Sessions: sessions,
 		Owners: []contract.UsageItemOwner{}, Tasks: []contract.UsageTask{}, Gaps: usageGaps(it.Gaps)}
 	for _, o := range it.Owners {
@@ -308,7 +348,7 @@ func usageItem(it app.ItemUsage) contract.UsageItem {
 			From: unixOrZero(o.From), To: unixOrZero(o.To), Current: o.Current})
 	}
 	for _, t := range it.Tasks {
-		task := usageTask(t)
+		task := usageTask(t, window)
 		out.Tasks = append(out.Tasks, task)
 		calls += task.Calls
 		peak = max(peak, task.PeakContext)

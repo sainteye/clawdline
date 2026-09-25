@@ -48,6 +48,8 @@ export const DEFAULTS = {
   orchestrator_permission: "full",
   orchestrator_notify_root: true,
   orchestrator_child_linger: 180,
+  /** None: Claude Code compacts near its own window (orchestrator compact.go). */
+  claude_auto_compact_window: 0,
 } as const
 
 export type SettingKey = keyof typeof DEFAULTS

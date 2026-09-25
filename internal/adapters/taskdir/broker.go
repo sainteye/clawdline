@@ -111,6 +111,10 @@ type Brief struct {
 	// child's own validator — a review node owes a closed review receipt —
 	// and for a respawn, which copies this file.
 	Graph json.RawMessage `json:"graph,omitempty"`
+	// AutoCompactWindow is the window the dispatch asked the child to be
+	// launched with — a number, or null for none — kept for a respawn, which
+	// copies this file. Absent when the dispatch left it to the setting.
+	AutoCompactWindow json.RawMessage `json:"auto_compact_window,omitempty"`
 }
 
 // RootRef is who the task is working for. `poll_only` is carried even when

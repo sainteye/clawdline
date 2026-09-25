@@ -17,7 +17,8 @@
       "properties": {
         "terminal_id": { "type": "string" },
         "backend": { "type": "string", "enum": ["tmux", "iterm"] },
-        "opened_at": { "type": "integer" }
+        "opened_at": { "type": "integer" },
+        "auto_compact_window": { "description": "The context size in tokens a Claude session was opened to compact at — the machine's `claude_auto_compact_window` then — and 0 when none was applied. Null for Codex, which is never given one, and on a record from before it was kept.", "nullable": true, "type": "integer" }
       }
     },
     "BrokerHandoffRequest": {

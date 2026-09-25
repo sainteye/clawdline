@@ -224,3 +224,23 @@ The largest lever measured is not a document but a session's age: context above 
 of all input, and cache reads grow with every call. The ledger records, per session, peak context,
 calls, compactions and the cost of the calls made above a threshold, so a later change — handing a
 long root over to a fresh one, or suggesting it — can be judged by what it would have saved.
+
+The first such change is a setting to experiment with, not a default. Claude Code compacts on its own
+only near its 1M window; `CLAUDE_CODE_AUTO_COMPACT_WINDOW=<tokens>` in a session's environment moves
+that point (measured 2026-09-25 against claude 2.1.282: a 60000 window compacted at 67k–83k, three
+times, and the task still finished; the `autoCompactWindow` key passed through `--settings` did not).
+`claude_auto_compact_window` is that number for every Claude session Clawdline itself opens — owned
+children, Root Assignments and a handoff's receiver — and never for Codex or a session the person
+opened. It is empty (0) by default, which changes nothing; the console's settings page and
+`clawdline setting set claude_auto_compact_window <n|off>` change it, within 50000 to 1000000 tokens,
+and it is read at every launch, so changing it restarts nothing. A task.json's `auto_compact_window`
+(a number, or `null` for none) overrides it for that one task, so two runs of one brief can be
+compared.
+
+What it trades is fewer tokens re-read per call against a summary that may lose detail — files read
+again, decisions forgotten — and about ten seconds per compaction. So the window each session was
+launched with is recorded: the task row's `auto_compact_window` (and `auto_compact_requested`, what
+its task.json asked for), a Root Assignment's or handoff's `executor`/`opened`, and every
+`UsageSession` answer, where `null` means Clawdline did not launch that session or cannot say and `0`
+means it applied none. `clawdline usage --task <id>` prints it per session beside peak context and
+compactions, which is what an experiment groups by.

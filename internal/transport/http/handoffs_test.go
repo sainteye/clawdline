@@ -33,7 +33,8 @@ func asJSON(t *testing.T, v any) map[string]any {
 // and nothing is lost on the way: every field set on the broker's side comes
 // out under the same name (DG-5: one spelling, the contract's).
 func TestTheHandOverTypesAreTheContracts(t *testing.T) {
-	opened := &orchestratorOpened{TerminalID: "%1", Backend: "tmux", OpenedAt: 3}
+	window := int64(120000)
+	opened := &orchestratorOpened{TerminalID: "%1", Backend: "tmux", OpenedAt: 3, AutoCompactWindow: &window}
 	h := orchestrator.Handoff{ID: "h", State: "delivered", ProjectDir: "/p", Dir: "/d", Title: "t", FromSession: "s",
 		FromTerm: "%0", Plain: true, Assistant: "claude", Model: "haiku", CreatedAt: 1, TypeAttemptedAt: 2,
 		DeliveredAt: 2, Failure: "f", Receipt: "r"}
@@ -76,6 +77,8 @@ type orchestratorOpened struct {
 	TerminalID string `json:"terminal_id"`
 	Backend    string `json:"backend"`
 	OpenedAt   int64  `json:"opened_at"`
+	// The window a session was opened with (orchestrator compact.go).
+	AutoCompactWindow *int64 `json:"auto_compact_window"`
 }
 
 // Every hand-over route is the orchestrator token's, reads included, and the

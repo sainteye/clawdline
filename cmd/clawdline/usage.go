@@ -90,6 +90,7 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 	var head string
 	var bill contract.UsageBill
 	var gaps []contract.UsageGap
+	var sessions []contract.UsageSession
 	switch kind {
 	case "sessions":
 		var s contract.UsageSession
@@ -103,6 +104,9 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 		if s.Compactions > 0 {
 			head += fmt.Sprintf(", %d compactions", s.Compactions)
 		}
+		if w := usageWindow(s.AutoCompactWindow); w != "" {
+			head += ", " + w
+		}
 		bill, gaps = s.Bill, s.Gaps
 	case "tasks":
 		var t contract.UsageTask
@@ -110,7 +114,7 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 			return unreadableUsage(stderr)
 		}
 		head = usageHead(fmt.Sprintf("task %s (%d sessions)", t.TaskID, len(t.Sessions)), t.Reason, t.Calls, t.PeakContext, t.Bill)
-		bill, gaps = t.Bill, t.Gaps
+		bill, gaps, sessions = t.Bill, t.Gaps, t.Sessions
 	case "items":
 		var it contract.UsageItem
 		if json.Unmarshal(a.Body, &it) != nil {
@@ -118,10 +122,21 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 		}
 		head = usageHead(fmt.Sprintf("item %s (%d sessions, %d tasks)", it.ItemID, len(it.Sessions), len(it.Tasks)),
 			"", it.Calls, it.PeakContext, it.Bill)
-		bill, gaps = it.Bill, it.Gaps
+		bill, gaps, sessions = it.Bill, it.Gaps, it.Sessions
+		for _, t := range it.Tasks {
+			sessions = append(sessions, t.Sessions...)
+		}
 	}
 	fmt.Fprintln(stdout, head)
 	writeUsageLines(stdout, bill)
+	// Each session's compaction window where Clawdline launched it, so an
+	// experiment can be grouped by it; one it did not launch says nothing.
+	for _, s := range sessions {
+		if w := usageWindow(s.AutoCompactWindow); w != "" {
+			fmt.Fprintf(stdout, "session %s: %s, peak context %s, %d compactions\n",
+				s.Conversation, w, usageCount(float64(s.PeakContext)), s.Compactions)
+		}
+	}
 	for _, g := range gaps {
 		counted := "nothing of it counted"
 		if g.Counted {
@@ -197,4 +212,16 @@ func usageCost(t contract.UsageTokens) string {
 		return fmt.Sprintf("$%.2f + unpriced %s tokens", t.Cost, usageCount(t.Unpriced))
 	}
 	return fmt.Sprintf("$%.2f", t.Cost)
+}
+
+// usageWindow is the compaction window a session was launched with, in words,
+// or empty when Clawdline did not launch it or cannot say.
+func usageWindow(w *int64) string {
+	switch {
+	case w == nil:
+		return ""
+	case *w == 0:
+		return "launched with no compaction window"
+	}
+	return "launched to compact at " + usageCount(float64(*w))
 }

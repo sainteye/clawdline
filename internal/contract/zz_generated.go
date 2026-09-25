@@ -926,9 +926,14 @@ type BrokerOpenTodo struct {
 
 // A tab this broker opened for somebody who is not its child.
 type BrokerOpenedSession struct {
-	Backend    string `json:"backend"`
-	OpenedAt   int64  `json:"opened_at"`
-	TerminalID string `json:"terminal_id"`
+	// The context size in tokens a Claude session was opened to compact at — the
+	// machine's `claude_auto_compact_window` then — and 0 when none was applied.
+	// Null for Codex, which is never given one, and on a record from before it was
+	// kept.
+	AutoCompactWindow *int64 `json:"auto_compact_window"`
+	Backend           string `json:"backend"`
+	OpenedAt          int64  `json:"opened_at"`
+	TerminalID        string `json:"terminal_id"`
 }
 
 type BrokerPage struct {
@@ -1402,8 +1407,18 @@ type BrokerTask struct {
 	AcceptedAt     int64                         `json:"accepted_at,omitempty"`
 	Assistant      Assistant                     `json:"assistant"`
 	AssistantQuota *BrokerAssistantQuotaDecision `json:"assistant_quota,omitempty"`
-	Child          *BrokerChild                  `json:"child,omitempty"`
-	Claims         []string                      `json:"claims"`
+
+	// What task.json's `auto_compact_window` asked for: a window, or 0 for its null.
+	// Null when it said nothing and the setting decided.
+	AutoCompactRequested *int64 `json:"auto_compact_requested"`
+
+	// The context size in tokens this child was launched to compact at — task.json's
+	// `auto_compact_window` when it named one, the machine's
+	// `claude_auto_compact_window` otherwise — and 0 when none was applied. Null for
+	// a Codex task, which is never given one, and for a task not launched yet.
+	AutoCompactWindow *int64       `json:"auto_compact_window"`
+	Child             *BrokerChild `json:"child,omitempty"`
+	Claims            []string     `json:"claims"`
 
 	// Whether the dispatch said anything about claims at all. `I declared none` and `I
 	// did not say` are different requests, and only one of them can be arbitrated.
@@ -4533,6 +4548,9 @@ type SettingsRequest struct {
 	// 0 to 1.
 	CardOpacity *float64 `json:"card_opacity"`
 
+	// 0 for none, or 50000 to 1000000 tokens.
+	ClaudeAutoCompactWindow *int64 `json:"claude_auto_compact_window"`
+
 	// Whether a new session is named by an assistant.
 	CodexAutoName *bool `json:"codex_auto_name"`
 
@@ -4646,6 +4664,13 @@ type SettingsSnapshot struct {
 
 	// The bar card's opacity.
 	CardOpacity *float64 `json:"card_opacity"`
+
+	// The context size, in tokens, at which the Claude sessions this daemon opens —
+	// children, Root Assignments, handoffs — compact their history into a summary.
+	// Null or 0 is none, the default: Claude Code then compacts only near its own
+	// window. A task.json's `auto_compact_window` overrides it for one task. Never
+	// given to Codex, or to a session the person opened.
+	ClaudeAutoCompactWindow *int64 `json:"claude_auto_compact_window"`
 
 	// Whether a new session is named by an assistant. The Swift app's spelling, kept
 	// so a line copied between the two files means the same thing.
@@ -5614,19 +5639,25 @@ var UsageReasonValues = []UsageReason{UsageReasonNotYetRead, UsageReasonTranscri
 // Unix seconds, 0 when never read; `more` says the last pass stopped before the
 // transcript's end.
 type UsageSession struct {
-	Above        UsageTokens       `json:"above"`
-	Assistant    string            `json:"assistant,omitempty"`
-	Bill         UsageBill         `json:"bill"`
-	Calls        int64             `json:"calls"`
-	CallsAbove   int64             `json:"calls_above"`
-	Compactions  int64             `json:"compactions"`
-	Composition  *UsageComposition `json:"composition,omitempty"`
-	Conversation string            `json:"conversation"`
-	Gaps         []UsageGap        `json:"gaps"`
-	More         bool              `json:"more"`
-	PeakContext  int64             `json:"peak_context"`
-	ReadAt       int64             `json:"read_at"`
-	Reason       UsageReason       `json:"reason,omitempty"`
+	Above     UsageTokens `json:"above"`
+	Assistant string      `json:"assistant,omitempty"`
+
+	// The context size in tokens Clawdline launched this session to compact at, 0 when
+	// it applied none, from the record of the task or Root Assignment the session
+	// names. Null when that is not known: a session the person opened, a Codex one, or
+	// a record this daemon does not have.
+	AutoCompactWindow *int64            `json:"auto_compact_window"`
+	Bill              UsageBill         `json:"bill"`
+	Calls             int64             `json:"calls"`
+	CallsAbove        int64             `json:"calls_above"`
+	Compactions       int64             `json:"compactions"`
+	Composition       *UsageComposition `json:"composition,omitempty"`
+	Conversation      string            `json:"conversation"`
+	Gaps              []UsageGap        `json:"gaps"`
+	More              bool              `json:"more"`
+	PeakContext       int64             `json:"peak_context"`
+	ReadAt            int64             `json:"read_at"`
+	Reason            UsageReason       `json:"reason,omitempty"`
 
 	// The Root Assignment this session's first message names.
 	RootAssignment string          `json:"root_assignment,omitempty"`

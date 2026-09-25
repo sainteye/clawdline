@@ -117,6 +117,7 @@
         "assistant": { "type": "string" },
         "task_id": { "description": "The child task this session's first message names.", "type": "string" },
         "root_assignment": { "description": "The Root Assignment this session's first message names.", "type": "string" },
+        "auto_compact_window": { "description": "The context size in tokens Clawdline launched this session to compact at, 0 when it applied none, from the record of the task or Root Assignment the session names. Null when that is not known: a session the person opened, a Codex one, or a record this daemon does not have.", "nullable": true, "type": "integer" },
         "reason": { "$ref": "#/$defs/UsageReason" },
         "read_at": { "type": "integer" },
         "more": { "type": "boolean" },

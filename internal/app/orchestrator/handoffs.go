@@ -44,6 +44,10 @@ type openedSession struct {
 	TerminalID string `json:"terminal_id"`
 	Backend    string `json:"backend"`
 	OpenedAt   int64  `json:"opened_at"`
+	// AutoCompactWindow is the window a Claude session was opened with, 0
+	// for none; null for Codex, which is never given one, and on a record
+	// from before it was kept (compact.go).
+	AutoCompactWindow *int64 `json:"auto_compact_window"`
 }
 
 // openSession opens a new session running assistant in cwd, in a tmux session
@@ -69,15 +73,11 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model st
 	// the directory before it draws anything, and a session nobody can type
 	// into is a hand-over nobody receives (trustArgs).
 	args = append(args, trustArgs(launch.Assistant, cwd)...)
-	prefix := ""
-	if keys := projects.InheritedIdentityKeys(launch.Assistant); len(keys) > 0 {
-		parts := make([]string, len(keys))
-		for i, k := range keys {
-			parts[i] = "-u " + k
-		}
-		prefix = "env " + strings.Join(parts, " ") + " "
-	}
-	command := prefix + strings.Join(append([]string{launch.Assistant}, args...), " ")
+	// A session this broker opens is started with the machine's compaction
+	// window, as a child is; nobody's task names one here.
+	window := b.autoCompactFor(launch.Assistant, nil)
+	command := envPrefix(launch.Assistant, autoCompactEnv(window)) +
+		strings.Join(append([]string{launch.Assistant}, args...), " ")
 
 	if b.Lanes != nil {
 		release, err := b.Lanes.Acquire(ctx, "open:"+name)
@@ -95,7 +95,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model st
 		choice = b.Terminal()
 	}
 	plan := projects.ChoosePlan(choice, itermOpen, reach)
-	var out openedSession
+	out := openedSession{AutoCompactWindow: window}
 	switch plan {
 	case projects.PlanITerm:
 		out.TerminalID, err = b.Launcher.NewITermTab(ctx, "cd "+projects.ShellQuoted(cwd)+" && "+command)

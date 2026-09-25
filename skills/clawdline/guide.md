@@ -247,6 +247,7 @@ the request, so the child reads the same bytes that were validated.
 | `timeout_minutes` | 1–240, default 30 |
 | `kind`, `deliverables`, `model` | optional; `model` is `[a-z0-9._-]`, at most 64 characters |
 | `work_id` | optional UUID of the board item this serves |
+| `auto_compact_window` | optional, Claude only: the context size in tokens (50000–1000000) the child compacts at, or `null` for none. Absent follows the machine's `claude_auto_compact_window`, which is off unless the person set it. For comparing runs, not for everyday briefs: a compaction may lose detail |
 | `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "label": "…"}` |
 
 **`root.session_id` is your conversation id, never a terminal id.** Claude Code exports it as

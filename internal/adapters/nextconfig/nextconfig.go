@@ -378,6 +378,8 @@ type Settable struct {
 	Check func(string) bool
 	// Min and Max bound a number or an integer, inclusive.
 	Min, Max float64
+	// Zero lets an integer also be 0, outside Min and Max: the key's "off".
+	Zero bool
 	// Refusal is the code a rejected value answers with.
 	Refusal string
 	// Because is what the refusal says after the code.
@@ -410,6 +412,9 @@ func (k Settable) Allows(v any) bool {
 		return ok && f >= k.Min && f <= k.Max
 	case "int":
 		i, ok := v.(int64)
+		if ok && i == 0 && k.Zero {
+			return true
+		}
 		return ok && float64(i) >= k.Min && float64(i) <= k.Max
 	}
 	return false
@@ -473,6 +478,12 @@ var Settables = []Settable{
 		Refusal: "invalid_permission", Because: "ask, edits or full"},
 	{Name: "orchestrator_notify_root", Kind: "bool"},
 	{Name: "orchestrator_child_linger", Kind: "int", Min: -1, Max: 3600},
+	// The window Claude sessions this daemon opens compact at, in tokens; 0
+	// is none, the default. The range is the broker's (orchestrator
+	// compact.go), and a test holds the two to one another.
+	{Name: "claude_auto_compact_window", Kind: "int", Min: 50_000, Max: 1_000_000, Zero: true,
+		Refusal: "invalid_auto_compact_window",
+		Because: "0 for none, or a whole number of tokens from 50000 to 1000000"},
 }
 
 // SettableByName finds one key, or false for a name this file does not set.
