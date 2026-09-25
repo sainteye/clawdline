@@ -136,4 +136,5 @@ tools/package-macos.sh --dmg    # 同時建立 disk image
 配對、Cloud 設定、診斷與疑難排解，請繼續閱讀[開始使用指南](docs/getting-started.md)。
 
 [系統架構](docs/architecture.md) · [遠端存取](docs/remote.md) ·
+[Token 帳本](docs/token-ledger.md) ·
 [所有文件](docs/README.md) · [MIT License](LICENSE)

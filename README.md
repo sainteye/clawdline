@@ -142,4 +142,5 @@ For pairing, Cloud setup, diagnostics, and troubleshooting, continue with the
 [getting-started guide](docs/getting-started.md).
 
 [Architecture](docs/architecture.md) · [Remote access](docs/remote.md) ·
+[Token ledger](docs/token-ledger.md) ·
 [All documentation](docs/README.md) · [MIT License](LICENSE)
