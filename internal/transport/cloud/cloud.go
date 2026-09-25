@@ -16,6 +16,7 @@ package cloud
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/domain/cloud"
@@ -93,7 +94,16 @@ type Service struct {
 	// the standard logger, because a silent drop here is the failure this
 	// whole shape exists to prevent.
 	Log func(format string, args ...any)
+	// Now is the clock a read's answer is timed by. Nil is time.Now.
+	Now func() time.Time
 }
+
+// slowReadAnswer is how long a read may take, from arrival to its answer
+// being handed to the transport, before it is recorded although it succeeded.
+// It is not a bound: nothing is refused or cut at it. It exists because a read
+// left no trace at all on this machine, so a phone showing "loading" for
+// minutes could not be matched to anything the Mac did (2026-09-25).
+const slowReadAnswer = 5 * time.Second
 
 // AnswerChannel is where an answer to a request about `session` is published.
 //
@@ -169,6 +179,7 @@ func (s Service) Run(ctx context.Context) error {
 // and the refusal is recorded here instead of being published somewhere a
 // different reader would receive it.
 func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
+	started := s.now()
 	answer := s.Bridge.Handle(ctx, cloudops.Command{
 		Channel:   request.Channel,
 		Class:     cloudops.Class(request.Class),
@@ -205,7 +216,8 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 			s.tellChannelFull(ctx, request, answer, c.ChannelByteLimit(), err)
 			return answer
 		}
-		s.logf("cloud: %s was not delivered: %v", answer.Name, err)
+		s.logf("cloud: %s (operation=%s) was not delivered: %v", answer.Name,
+			operationOrUnknown(answer.Operation), err)
 		return answer
 	}
 	// Successful delivery used to leave no trace at all for a Cloud command.
@@ -217,8 +229,25 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 		s.logf("cloud: command answered: operation=%s session=%s status=%d code=%s sender=%s seq=%d",
 			operationOrUnknown(answer.Operation), subjectOrUnknown(answer.Subject), answer.Status,
 			codeOrOK(answer.Code), request.Sender, request.Sequence)
+		return answer
+	}
+	// A read is frequent — transcripts, status, the Session to-dos a page
+	// refreshes — so one that answered 2xx quickly stays silent. One that was
+	// refused or was slow is the line a person reading their phone's
+	// "loading" needs to find on this machine.
+	if elapsed := s.now().Sub(started); !answer.OK() || elapsed > slowReadAnswer {
+		s.logf("cloud: read answered: operation=%s status=%d code=%s ms=%d sender=%s seq=%d",
+			operationOrUnknown(answer.Operation), answer.Status, codeOrOK(answer.Code),
+			elapsed.Milliseconds(), request.Sender, request.Sequence)
 	}
 	return answer
+}
+
+func (s Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
 }
 
 func operationOrUnknown(operation string) string {
@@ -251,13 +280,13 @@ func (s Service) tellChannelFull(ctx context.Context, request Inbound, answer cl
 		Plaintext: request.Plaintext,
 	}, limit)
 	if !refusal.Published() {
-		s.logf("cloud: %s did not fit its channel and its sender could not be told: the request names no waiter (%s): %v",
-			answer.Name, refusal.Code, cause)
+		s.logf("cloud: %s (operation=%s) did not fit its channel and its sender could not be told: the request names no waiter (%s): %v",
+			answer.Name, operationOrUnknown(answer.Operation), refusal.Code, cause)
 		return
 	}
 	channel := AnswerChannel(s.MachineID, refusal.Session)
 	if err := cloud.ProducibleChannel(channel); err != nil {
-		s.logf("cloud: %s did not fit its channel and its sender could not be told: %v", answer.Name, err)
+		s.logf("cloud: %s (operation=%s) did not fit its channel and its sender could not be told: %v", answer.Name, operationOrUnknown(answer.Operation), err)
 		return
 	}
 	out := Outbound{Channel: channel, Class: string(cloud.ClassStream), Payload: refusal.Payload,
@@ -265,12 +294,12 @@ func (s Service) tellChannelFull(ctx context.Context, request Inbound, answer cl
 		Reply: Reply{Sender: request.Sender, Sequence: request.Sequence, Name: refusal.Name,
 			Status: refusal.Status, Code: refusal.Code}}
 	if err := s.Transport.Publish(ctx, out); err != nil {
-		s.logf("cloud: %s did not fit its channel and the refusal did not either: %v (channel: %v)",
-			answer.Name, err, cause)
+		s.logf("cloud: %s (operation=%s) did not fit its channel and the refusal did not either: %v (channel: %v)",
+			answer.Name, operationOrUnknown(answer.Operation), err, cause)
 		return
 	}
-	s.logf("cloud: %s did not fit its channel and its sender was told %s (%d): %v",
-		answer.Name, refusal.Code, refusal.Status, cause)
+	s.logf("cloud: %s (operation=%s) did not fit its channel and its sender was told %s (%d): %v",
+		answer.Name, operationOrUnknown(answer.Operation), refusal.Code, refusal.Status, cause)
 }
 
 // refuse tells every request the transport turned away that it was.

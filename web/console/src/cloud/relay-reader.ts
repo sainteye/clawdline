@@ -499,17 +499,17 @@ export class RelayReader {
       const project = worktreeLifecycleProject(path)
       if (project) {
         this.only(url, path)
-        return await this.machineRead(method, path, "project-worktree-lifecycle", { project })
+        return await this.machineRead(init?.signal, method, path, "project-worktree-lifecycle", { project })
       }
       const schedule = scheduleDetailID(path)
       if (schedule) {
         this.only(url, path)
-        return await this.machineRead(method, path, "schedule", { id: schedule })
+        return await this.machineRead(init?.signal, method, path, "schedule", { id: schedule })
       }
       const agent = sessionAgent(path)
       if (agent) {
         const q = this.only(url, path, "limit")
-        return await this.machineRead(method, path, "agent", {
+        return await this.machineRead(init?.signal, method, path, "agent", {
           session: agent.session,
           agent: agent.agent,
           limit: clampedWhole(q.limit, 200, 1, 1000),
@@ -518,12 +518,12 @@ export class RelayReader {
       const workTerminal = workV2SessionTodosTerminal(path)
       if (workTerminal) {
         this.only(url, path)
-        return await this.machineRead(method, path, "work.v2.session-todos", { terminal: workTerminal })
+        return await this.machineRead(init?.signal, method, path, "work.v2.session-todos", { terminal: workTerminal })
       }
       const workItem = workV2ItemID(path)
       if (workItem) {
         this.only(url, path)
-        return await this.machineRead(method, path, "work.v2.item", { id: workItem })
+        return await this.machineRead(init?.signal, method, path, "work.v2.item", { id: workItem })
       }
       switch (path) {
         case "/v1/sessions":
@@ -690,11 +690,11 @@ export class RelayReader {
           // everything else is the envelope (`legacy/board-bridge.ts`).
           const q = this.only(url, path, "project", "item", "audience", "cursor", "limit")
           if (q.audience === undefined) {
-            return await this.machineRead(method, path, "board", {
+            return await this.machineRead(init?.signal, method, path, "board", {
               project: q.project ?? "", item: q.item ?? "",
             })
           }
-          return await this.machineRead(method, path, "board.items", {
+          return await this.machineRead(init?.signal, method, path, "board.items", {
             project: q.project ?? "", audience: q.audience,
             // Absent is not zero and not the maximum: this route reads a
             // missing `cursor` as 0 and a missing `limit` as its own default
@@ -715,21 +715,21 @@ export class RelayReader {
           // tell this page it has.
           const q = this.only(url, path, "project", "cursor")
           const word: CarriedWord = path === "/v1/work/board" ? "work.board" : "work.backlog"
-          return await this.machineRead(method, path, word, {
+          return await this.machineRead(init?.signal, method, path, word, {
             project: q.project ?? "", cursor: q.cursor ?? "",
           })
         }
         case "/v1/work/proposals": {
           const q = this.only(url, path, "project")
-          return await this.machineRead(method, path, "work.proposals", { project: q.project ?? "" })
+          return await this.machineRead(init?.signal, method, path, "work.proposals", { project: q.project ?? "" })
         }
         case "/v1/work/decisions": {
           this.only(url, path)
-          return await this.machineRead(method, path, "work.decisions", {})
+          return await this.machineRead(init?.signal, method, path, "work.decisions", {})
         }
         case "/v1/work/digests": {
           const q = this.only(url, path, "kind")
-          return await this.machineRead(method, path, "work.digests", { kind: q.kind ?? "" })
+          return await this.machineRead(init?.signal, method, path, "work.digests", { kind: q.kind ?? "" })
         }
         case "/v1/work/v2/items": {
           const q = this.only(url, path, "project", "status", "q")
@@ -750,29 +750,29 @@ export class RelayReader {
             project = place.id
           }
           if (q.status !== undefined || q.q !== undefined) {
-            return await this.machineRead(method, path, "work.v2.search", {
+            return await this.machineRead(init?.signal, method, path, "work.v2.search", {
               project, status: q.status ?? "open", query: q.q ?? "",
             })
           }
-          return await this.machineRead(method, path, "work.v2.items", { project })
+          return await this.machineRead(init?.signal, method, path, "work.v2.items", { project })
         }
         case "/v1/work/v2/proposals": {
           const q = this.only(url, path, "state")
-          return await this.machineRead(method, path, "work.v2.proposals", { state: q.state ?? "" })
+          return await this.machineRead(init?.signal, method, path, "work.v2.proposals", { state: q.state ?? "" })
         }
         case "/v1/projects": {
           // This daemon's Project catalog, which the Projects page reads as
           // its `board` (`legacy/projects-bridge.ts`); the Swift app's
           // `board` is the different, older reading above.
           this.only(url, path)
-          return await this.machineRead(method, path, "projects", {})
+          return await this.machineRead(init?.signal, method, path, "projects", {})
         }
         case "/v1/orchestrator/landings": {
           // No parameters: the landing ledger is machine-wide, and the one
           // page that reads it asks what this machine owes, not what one
           // repository does.
           this.only(url, path)
-          return await this.machineRead(method, path, "landings", {})
+          return await this.machineRead(init?.signal, method, path, "landings", {})
         }
         case "/v1/timeline": {
           // `upcoming` is a filter with two meanings and the page sends it
@@ -780,7 +780,7 @@ export class RelayReader {
           // route reads an absent `environment` as production and an empty one
           // as a refusal (`internal/transport/http/timeline.go`).
           const q = this.only(url, path, "project", "entry", "cursor", "environment", "category", "upcoming")
-          return await this.machineRead(method, path, "timeline", {
+          return await this.machineRead(init?.signal, method, path, "timeline", {
             project: q.project ?? "", entry: q.entry ?? "", cursor: q.cursor ?? "",
             environment: q.environment ?? "", category: q.category ?? "",
             upcoming: q.upcoming !== "false",
@@ -800,6 +800,11 @@ export class RelayReader {
           return this.refuse(method, path, 501, "cloud_not_carried", this.notCarried(method, path))
       }
     } catch (error) {
+      if (error instanceof AbandonedRead) {
+        // A fetch whose signal fired rejects; it does not answer.
+        this.note(method, path, "unanswered", error.code, { word: error.word })
+        throw error
+      }
       const failure = error as { code?: unknown; status?: unknown; message?: unknown }
       const code = typeof failure?.code === "string" ? failure.code : "cloud_failed"
       const message = typeof failure?.message === "string" ? failure.message : String(error)
@@ -1067,7 +1072,13 @@ export class RelayReader {
    * sent, by the `catch` in `fetch` above. Nothing here reads the body, so a
    * page's own shape is never a thing this seam has to keep right.
    */
-  private async machineRead(method: string, path: string, word: CarriedWord, body: Record<string, unknown>): Promise<Response> {
+  private async machineRead(
+    signal: AbortSignal | null | undefined,
+    method: string,
+    path: string,
+    word: CarriedWord,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
     const client = this.connected()
     if (typeof client._machineRequest !== "function") {
       // A copied client older than the generic. Named rather than thrown:
@@ -1075,7 +1086,12 @@ export class RelayReader {
       return this.refuse(method, path, 501, "cloud_not_carried",
         `This console cannot ask this machine for ${word}.`)
     }
-    const answer = await client._machineRequest(this.machine, word, body, "read")
+    // The caller's own deadline holds here as it does on the machine's own
+    // network. This seam used to ignore `init.signal`, so the work pages'
+    // fifteen-second bound (`pages/work/api.ts`) silently became the copied
+    // client's sixty-second read timeout plus its ten-second status probe:
+    // a Session's to-do fold said "loading" for over a minute per try.
+    const answer = await abandonable(client._machineRequest(this.machine, word, body, "read"), signal, word)
     this.note(method, path, "relay", undefined, { word })
     return json(200, answer)
   }
@@ -1187,6 +1203,40 @@ export class RelayReader {
     if (this.rows.length > 400) this.rows.shift()
     this.options.onAnswer?.(row)
   }
+}
+
+/**
+ * A carried read whose caller stopped waiting (its `AbortSignal` fired). Named
+ * `AbortError`, as `fetch` names the same rejection; the machine may still
+ * answer, and that late answer settles nothing on this page.
+ */
+export class AbandonedRead extends Error {
+  readonly code = "cloud_read_abandoned"
+  readonly word: string
+  constructor(word: string) {
+    super(`cloud_read_abandoned: this page stopped waiting for the machine's ${word} answer`)
+    this.name = "AbortError"
+    this.word = word
+  }
+}
+
+function abandonable<T>(asked: Promise<T>, signal: AbortSignal | null | undefined, word: string): Promise<T> {
+  if (!signal) return asked
+  if (signal.aborted) {
+    asked.catch(() => {})
+    return Promise.reject(new AbandonedRead(word))
+  }
+  return new Promise<T>((resolve, reject) => {
+    const aborted = () => {
+      asked.catch(() => {})
+      reject(new AbandonedRead(word))
+    }
+    signal.addEventListener("abort", aborted, { once: true })
+    asked.then(
+      (value) => { signal.removeEventListener("abort", aborted); resolve(value) },
+      (error: unknown) => { signal.removeEventListener("abort", aborted); reject(error) },
+    )
+  })
 }
 
 class NotConnected extends Error {

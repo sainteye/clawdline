@@ -715,6 +715,42 @@ test("the work system, the projects and the timeline reach the machine as their 
   }
 })
 
+test("a carried read stops when its caller's signal fires, instead of waiting out the relay's minute", async () => {
+  const client = new FakeClient()
+  let settle: (value: unknown) => void = () => {}
+  client.readAnswer = () => new Promise((resolve) => { settle = resolve })
+  const r = reader(client, { t: 1000 })
+  const controller = new AbortController()
+  const asked = r.fetch("/v1/work/v2/session-todos/%251", { signal: controller.signal })
+  controller.abort()
+  // Raced, so a seam that ignores the signal is a red test and not a hung one.
+  const outcome = await Promise.race([
+    asked.then(() => "answered", (error: unknown) => error),
+    new Promise((resolve) => setTimeout(() => resolve("still waiting"), 200)),
+  ]) as Error & { code?: string }
+  assert.ok(outcome instanceof Error, `a fired signal left the read ${String(outcome)}`)
+  assert.equal(outcome.name, "AbortError", "a fired signal rejects the way fetch does")
+  assert.equal(outcome.code, "cloud_read_abandoned")
+  assert.match(outcome.message, /work\.v2\.session-todos/)
+  const logged = r.log[r.log.length - 1]
+  assert.equal(logged.answer, "unanswered")
+  assert.equal(logged.code, "cloud_read_abandoned")
+  assert.equal(logged.word, "work.v2.session-todos")
+  // The machine's late answer settles nothing and throws nowhere.
+  settle({ direct_todos: [] })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  // A signal that has already fired is not sent at all past the ask, and one
+  // that never fires changes nothing.
+  const before = new AbortController()
+  before.abort()
+  await assert.rejects(r.fetch("/v1/work/v2/session-todos/%251", { signal: before.signal }), { name: "AbortError" })
+  client.readAnswer = async (word) => ({ read: word })
+  const calm = await r.fetch("/v1/work/v2/session-todos/%251", { signal: new AbortController().signal })
+  assert.equal(calm.status, 200)
+  assert.deepEqual(await body(calm), { read: "work.v2.session-todos" })
+})
+
 test("a query field no word carries is refused by name, never quietly dropped", async () => {
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })

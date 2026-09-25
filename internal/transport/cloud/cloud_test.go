@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 )
@@ -251,5 +252,84 @@ func TestAHandlerThatWroteNothingIsNotARefusal(t *testing.T) {
 		Do(context.Background(), cloudops.LocalRequest{Method: "GET", Path: "/v1/places"})
 	if err != nil || res.Status != 200 || len(res.Body) != 0 {
 		t.Fatalf("answered %+v, %v", res, err)
+	}
+}
+
+// A Cloud read left no line at all on this machine, so a phone that showed
+// "loading" for minutes could not be matched to anything the Mac did. A read
+// that was refused or slow is one line; a fast 2xx read stays silent, because
+// reads are the frequent half of the traffic.
+func TestACloudReadIsRecordedOnlyWhenRefusedOrSlow(t *testing.T) {
+	read := func(status int, took time.Duration) []string {
+		t.Helper()
+		var lines []string
+		clock := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+		bridge := cloudops.Bridge{MachineID: "mac-01", AllowCommands: func() bool { return true },
+			Router: routerFunc(func(context.Context, cloudops.LocalRequest) (cloudops.LocalResponse, error) {
+				clock = clock.Add(took)
+				if status != 200 {
+					return cloudops.LocalResponse{Status: status,
+						Body: []byte(`{"error":"session_not_found","detail":"no such terminal"}`)}, nil
+				}
+				return cloudops.LocalResponse{Status: 200, Body: []byte(`{"direct_todos":[]}`)}, nil
+			})}
+		service := Service{MachineID: "mac-01", Bridge: bridge, Transport: NewFake(4),
+			Now: func() time.Time { return clock },
+			Log: func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }}
+		service.Answer(context.Background(), Inbound{Channel: "ctl/mac-01", Class: "ctl",
+			Sender: "viewer-device-01", Sequence: 520,
+			Plaintext: plaintext(t, map[string]any{"type": "work.v2.session-todos",
+				"session": "__clawdline_machine__", "request": "req-todos", "terminal": "%19"})})
+		return lines
+	}
+
+	if lines := read(200, 40*time.Millisecond); len(lines) != 0 {
+		t.Fatalf("a fast successful read left %d lines: %v", len(lines), lines)
+	}
+	if lines := read(200, slowReadAnswer); len(lines) != 0 {
+		t.Fatalf("a read at exactly the threshold left %d lines: %v", len(lines), lines)
+	}
+	slow := read(200, 6200*time.Millisecond)
+	if len(slow) != 1 {
+		t.Fatalf("a slow read left %d lines: %v", len(slow), slow)
+	}
+	for _, wanted := range []string{"cloud: read answered:", "operation=work.v2.session-todos", "status=200",
+		"code=ok", "ms=6200", "sender=viewer-device-01", "seq=520"} {
+		if !strings.Contains(slow[0], wanted) {
+			t.Errorf("log %q does not contain %q", slow[0], wanted)
+		}
+	}
+	refused := read(404, 10*time.Millisecond)
+	if len(refused) != 1 {
+		t.Fatalf("a refused read left %d lines: %v", len(refused), refused)
+	}
+	for _, wanted := range []string{"operation=work.v2.session-todos", "status=404", "code=session_not_found", "ms=10"} {
+		if !strings.Contains(refused[0], wanted) {
+			t.Errorf("log %q does not contain %q", refused[0], wanted)
+		}
+	}
+	for _, line := range append(slow, refused...) {
+		if strings.Contains(line, "req-todos") || strings.Contains(line, "%19") || strings.Contains(line, "no such terminal") {
+			t.Fatalf("the log contains request or answer body data: %q", line)
+		}
+	}
+}
+
+// A read whose answer did not fit its channel is the other way a phone waits
+// the whole read timeout; the line that says so names which read it was.
+func TestAReadThatDidNotFitNamesItsOperation(t *testing.T) {
+	fake := NewFake(4)
+	fake.Fail = errors.New("the outbound spool is full")
+	fake.FailIsChannelFull = true
+	var lines []string
+	service := Service{MachineID: "mac-01", Bridge: answering(t), Transport: fake,
+		Log: func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }}
+	service.Answer(context.Background(), Inbound{Channel: "ctl/mac-01", Class: "ctl",
+		Sender: "viewer-device-01", Sequence: 521,
+		Plaintext: plaintext(t, map[string]any{"type": "work.v2.session-todos",
+			"session": "__clawdline_machine__", "request": "req-todos", "terminal": "%19"})})
+	if len(lines) != 1 || !strings.Contains(lines[0], "did not fit its channel") ||
+		!strings.Contains(lines[0], "operation=work.v2.session-todos") {
+		t.Fatalf("the channel-full line does not name the read: %v", lines)
 	}
 }

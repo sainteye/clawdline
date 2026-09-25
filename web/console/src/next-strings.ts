@@ -249,6 +249,10 @@ const words = {
     devicesThisMachine: "This machine",
     cloudMisdeclared: "This console's Clawdline Cloud declaration cannot be used: {reason}",
     cloudNotCarried: "This cannot be done over Clawdline Cloud yet. Do it on the machine itself.",
+    todosReadFailed: "Could not load",
+    todosRefreshFailed: "Refresh failed",
+    todosRetrying: "Retrying…",
+    todosRetryTip: "The last read of these to-dos failed: {reason}. Tap to try again.",
     cloudPastUnavailable:
       "This machine cannot list its earlier sessions over Clawdline Cloud yet (it does not answer past-sessions), so none can be picked up from here. Pick it up on the machine, or start a new session here.",
     sendUnknown: "Not known whether this reached the machine ({code}).",
@@ -522,6 +526,10 @@ const words = {
     devicesThisMachine: "這台機器",
     cloudMisdeclared: "這個 console 的 Clawdline Cloud 宣告不能用：{reason}",
     cloudNotCarried: "這件事還不能經由 Clawdline Cloud 做，請直接在那台機器上操作。",
+    todosReadFailed: "讀取失敗",
+    todosRefreshFailed: "更新失敗",
+    todosRetrying: "重試中…",
+    todosRetryTip: "最近一次讀取待辦失敗：{reason}。點一下重試。",
     cloudPastUnavailable:
       "這台機器還不能經由 Clawdline Cloud 列出以前的 session（它不回答 past-sessions），所以這裡沒辦法接續。請到那台機器上接續，或在這裡開一個新的 session。",
     sendUnknown: "不知道有沒有送到那台機器（{code}）。",
