@@ -2,9 +2,12 @@ package orchestrator
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"unicode/utf8"
 
@@ -129,6 +132,46 @@ func (b *Broker) readDraft(id string, scheduled bool) (Record, error) {
 	return b.readDraftAs(id, scheduled, false)
 }
 
+// draftDecodeProblem says what is wrong with a task.json that was read but did
+// not decode. It used to be refused with the same sentence as a missing file,
+// "No readable task.json", so a root whose `deliverables` was a string instead
+// of an array looked for a path problem and spent eight calls reading this
+// package before finding the field.
+func draftDecodeProblem(err error) string {
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) && typeErr.Field != "" {
+		return fmt.Sprintf("task.json field %q must be %s, not a JSON %s", typeErr.Field, jsonKind(typeErr.Type), typeErr.Value)
+	}
+	var syntaxErr *json.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		return fmt.Sprintf("task.json is not valid JSON at byte %d: %s", syntaxErr.Offset, syntaxErr.Error())
+	}
+	return "task.json could not be decoded: " + err.Error()
+}
+
+// jsonKind is a Go type named the way a brief's author writes it.
+func jsonKind(t reflect.Type) string {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.String:
+		return "a string"
+	case reflect.Int, reflect.Int64, reflect.Int32:
+		return "an integer"
+	case reflect.Bool:
+		return "true or false"
+	case reflect.Slice:
+		if t.Elem().Kind() == reflect.String {
+			return "an array of strings"
+		}
+		return "an array"
+	case reflect.Map, reflect.Struct:
+		return "an object"
+	}
+	return "a " + t.String()
+}
+
 // readDraftAs is readDraft for the detached route too: a detached brief is
 // admitted only with `root.session_id: null` and `root.poll_only: true`.
 func (b *Broker) readDraftAs(id string, scheduled, detached bool) (Record, error) {
@@ -141,7 +184,7 @@ func (b *Broker) readDraftAs(id string, scheduled, detached bool) (Record, error
 	var d draft
 	if err := json.Unmarshal(body, &d); err != nil {
 		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task",
-			"No readable task.json under "+b.Tasks.Path(id)+"/.")
+			draftDecodeProblem(err)+" (task.json under "+b.Tasks.Path(id)+"/)")
 	}
 	return b.admit(id, d, scheduled, detached)
 }
