@@ -165,6 +165,25 @@ GET /v1/orchestrator/inventory?project=<absolute repo path>[&claims=a,b]
 
 owned child 是掛在你底下、範圍有限的 task。**彙整、整合和 landing 都還是你的事。**
 
+**下面四個步驟，一個指令就做完**，brief 從 stdin 或檔案讀：
+
+```sh
+clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
+  [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
+  [--work-id uuid] [--label "…"] [--project-dir D] < brief.md     # 或 --instructions-file brief.md
+```
+
+它會產生 id 和 secret、讀 inventory 拿 `generation` 和 `task_root`、寫 `task.json`、送出 task；遇到
+一次 `stale_inventory` 會重讀 inventory、再送一次。輸出是 `dispatched <id> <state> [worktree <path>]`，
+接著每個警告一行——daemon 給的，以及每個 claims 和你重疊的 live task。`--json` 改成印 daemon 的原始
+回答。被拒時在 stderr 印 `refused, <status> <code>: <message>` 並以 1 結束；每個 code 的意思見本節最後
+的表。root 是你的對話，取自 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID`，否則用 `--conversation`；
+child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預設是目前目錄的 git top-level，
+`--project-dir` 可以改。`--claims ""` 表示這個 child 什麼都不寫。secret 不會出現在 argv、`task.json` 或
+輸出裡，token 的讀法跟其他 thin command 一樣。
+
+它做的步驟如下，給沒有這個 binary 的呼叫者照著做：
+
 **1. 選一個 id 和一個 secret。**
 
 ```sh
@@ -252,7 +271,7 @@ child 會簽收 briefing（`/accepted`），計畫改變時可以送一則進度
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
   ```
 
-  第二次 ACK 會回 `changed: false`。還沒 ACK 的通知列在 `GET /v1/orchestrator/completions`；
+  `clawdline task ack <id> <notice_id>` 會送出它，並印一行結果。第二次 ACK 會回 `changed: false`。還沒 ACK 的通知列在 `GET /v1/orchestrator/completions`；
   `POST /v1/orchestrator/completions/reconcile` 會把它們重新排上。
 - **沒有取消路由**。task 只會以完成、失敗或逾時結束。
 - **child 結束，不等於程式碼已經 landing。** 在你整合之前，它的成果還放在共用的 working tree 或它自己的
@@ -269,6 +288,9 @@ POST /v1/orchestrator/tasks/<id>/landing
 
 - 只收這幾個 key，外加 `delivery`（收下但不使用）；其他 key 一律拒絕。`pending` 和 `abandoned` 接受
   task secret 或 orchestrator token；`landed` 和 `nothing_to_land` 只接受 orchestrator token。
+- **合併會自己記帳。** 已結束的 task 分支一旦合併進 target，broker 會在幾分鐘內用同一道 Git 查證
+  自己記成 `landed`，commit 是 target 當下的 head。紀錄上沒有 target 時，只有主 checkout 的 branch
+  是唯一含有這份交付的 branch 才會自己命名。cherry-pick、`incorporated` 與 `nothing_to_land` 仍由你記。
 - `landed` 需要 `target` 和 `commit`，而且 daemon **會去 Git 裡查證**；查不過就回
   `409 unverified_landing` 並附上 `reason`（`target_unresolved`、`commit_unresolved`、
   `not_on_target`、`predates_dispatch`、`nothing_delivered`、`not_the_delivery`、…）。

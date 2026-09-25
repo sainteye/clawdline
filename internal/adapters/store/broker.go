@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS broker_tasks (
 );
 CREATE INDEX IF NOT EXISTS broker_tasks_project ON broker_tasks(repository, created_at);
 CREATE INDEX IF NOT EXISTS broker_tasks_state ON broker_tasks(state);
+CREATE INDEX IF NOT EXISTS broker_tasks_landing ON broker_tasks(json_extract(record, '$.landing.state'))
+  WHERE json_valid(record);
 CREATE TABLE IF NOT EXISTS broker_notes (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id TEXT    NOT NULL,
@@ -347,6 +349,22 @@ func (s *Store) BrokerTasksInState(ctx context.Context, states []string) ([]Brok
 	return s.queryBroker(ctx,
 		`SELECT `+brokerColumns+` FROM broker_tasks WHERE state IN (`+marks+`) ORDER BY created_at ASC, id ASC`,
 		args...)
+}
+
+// BrokerTasksOwingLanding reads the tasks whose landing is still pending,
+// oldest first, without their long prose. It is the landing detector's read:
+// its cost is the number of landings owed, not the length of the history
+// (G33), which the expression index broker_tasks_landing keeps true inside
+// SQLite as well. A row whose record is not valid JSON is not here; the
+// ledger names it where it names every unreadable row.
+func (s *Store) BrokerTasksOwingLanding(ctx context.Context) ([]BrokerRow, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	return s.queryBroker(ctx,
+		`SELECT `+brokerColumns+` FROM broker_tasks
+		 WHERE json_valid(record) AND json_extract(record, '$.landing.state') = 'pending'
+		 ORDER BY created_at ASC, id ASC`)
 }
 
 func (s *Store) queryBroker(ctx context.Context, query string, args ...any) ([]BrokerRow, error) {
