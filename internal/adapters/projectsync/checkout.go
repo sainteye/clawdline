@@ -29,6 +29,10 @@ const CloneTimeout = 10 * time.Minute
 // ErrNoRemote is a checkout without an origin.
 var ErrNoRemote = errors.New("no origin remote")
 
+// ErrNotRepository is a project directory that is not in a git repository at
+// all: a fact about the directory, not a failure to read it.
+var ErrNotRepository = errors.New("not a git repository")
+
 // ErrTracked is a carried path that git tracks in this checkout: the
 // repository owns it, and a mirror never writes over it.
 var ErrTracked = errors.New("tracked by git here")
@@ -41,7 +45,9 @@ func git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	// Literal pathspecs: a carried path with `*` or `[` in it names that file, not a glob.
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_LITERAL_PATHSPECS=1")
+	// C locale: git's messages are read here ("not a git repository"), and a
+	// translated git says it in another language (measured: zh_TW).
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_LITERAL_PATHSPECS=1", "LC_ALL=C", "LANGUAGE=C")
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil {
@@ -64,10 +70,15 @@ func Origin(ctx context.Context, dir string) (string, error) {
 	out, err := git(ctx, dir, "config", "--get", "remote.origin.url")
 	if err != nil {
 		// `config --get` exits 1 for a missing key, and that is the common case.
-		if _, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil {
-			return "", ErrNoRemote
+		// Which of "no origin", "no repository" and "git did not answer" it was
+		// is asked once more rather than guessed.
+		if _, revErr := git(ctx, dir, "rev-parse", "--git-dir"); revErr != nil {
+			if strings.Contains(revErr.Error(), "not a git repository") {
+				return "", ErrNotRepository
+			}
+			return "", err
 		}
-		return "", err
+		return "", ErrNoRemote
 	}
 	url := strings.TrimSpace(string(out))
 	if url == "" {

@@ -175,6 +175,9 @@ func (s *Service) describe(ctx context.Context, c Checkout, withContent bool) (d
 	if errors.Is(err, ErrNoRemote) {
 		return domain.Entry{}, domain.SkipNoRemote
 	}
+	if errors.Is(err, ErrNotRepository) {
+		return domain.Entry{}, domain.SkipNotRepository
+	}
 	if err != nil {
 		return domain.Entry{}, domain.SkipUnreadable
 	}
