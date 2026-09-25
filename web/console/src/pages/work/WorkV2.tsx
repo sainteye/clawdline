@@ -273,7 +273,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   const assignable = item.area !== "planning" && !item.closed_at && !item.owner_session
   return <article className="work-card work-v2-card" data-work-id={item.id} data-phase={item.phase}>
     <div className="work-card-toolbar">
-      <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span>{item.project.label}</span></div>
+      <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></div>
       <div className="work-card-controls" aria-label="項目操作">
         {!!item.owner_session && !item.closed_at && <button type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setReminded(false); void run(`remind-${item.id}`, () => remindWorkV2(item)).then(setReminded) }}>
@@ -291,6 +291,22 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
       <strong>需要你做的事</strong><p>{item.user_action}</p>
     </section>}
+    {/* Choosing who does the work is what an unassigned card is for, so the
+        picker sits under what the work is, above its progress and pictures. */}
+    {assignable && <div className="work-assignment">
+      <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment} />
+      <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => void run(item.id, () => assignWorkV2(item, terminal))}>指派</button>
+      <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
+        {/* The product mark alone: the button beside it already spells out the
+            chosen assistant, so the name is kept for the label and tooltip. */}
+        {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
+          role="radio" aria-checked={choice === assistant} disabled={!!busy}
+          aria-label={assistantName(choice)} title={assistantName(choice)}
+          onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
+          dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
+      </div>
+      <button className="chip" type="button" disabled={!!busy} onClick={() => void run(item.id, () => assignNewWorkV2(item, assistant))}>開新 {assistantName(assistant)} Session</button>
+    </div>}
     <WorkSteps steps={item.steps} />
     <WorkMilestones phase={item.phase} />
     <WorkCompletionReports item={item} />
@@ -324,20 +340,6 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
         aria-label={`前往正在實作「${item.title}」的 Session`}>前往 Session · {owner.label || owner.id}<WorkIcon name="open" /></a>
         : item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}
     </div>
-    {assignable && <div className="work-assignment">
-      <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment} />
-      <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => void run(item.id, () => assignWorkV2(item, terminal))}>指派</button>
-      <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
-        {/* The product mark alone: the button beside it already spells out the
-            chosen assistant, so the name is kept for the label and tooltip. */}
-        {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
-          role="radio" aria-checked={choice === assistant} disabled={!!busy}
-          aria-label={assistantName(choice)} title={assistantName(choice)}
-          onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
-          dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
-      </div>
-      <button className="chip" type="button" disabled={!!busy} onClick={() => void run(item.id, () => assignNewWorkV2(item, assistant))}>開新 {assistantName(assistant)} Session</button>
-    </div>}
     {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description) => {
       void run(`edit-${item.id}`, () => editWorkV2(item, title, description)).then((ok) => { if (ok) setEditing(false) })
     }} />}
@@ -422,6 +424,9 @@ function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false 
 
   const choose = (id: string) => { onChange(id); setOpen(false) }
   return <div className="work-session-picker" ref={root}>
+    {/* The menu hangs from the trigger alone: anchored to the whole picker, it
+        opened under the selected Session's detail instead of under the button. */}
+    <div className="work-session-anchor">
     <button className="work-session-trigger" type="button" aria-label="指派既有 Session" aria-haspopup="listbox"
       aria-expanded={open} autoFocus={autoFocus} onClick={() => setOpen((shown) => !shown)}>
       {selected ? <><SessionStateDot session={selected} /><span><b>{selected.label || selected.id}</b>
@@ -434,6 +439,7 @@ function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false 
         selected={session.id === value} onChoose={() => choose(session.id)} />)}
       {!sessions.length && <p className="work-project-empty">這個 Project 目前沒有可用的 Session。</p>}
     </div>}
+    </div>
     {selected && <SessionAssignmentDetail session={selected} reading={selectedReading} />}
   </div>
 }
