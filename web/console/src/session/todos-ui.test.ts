@@ -164,6 +164,8 @@ test("closing a Session reads and names unfinished Board items before it can con
   assert.match(confirmation, /workState === "loading"/)
   assert.match(confirmation, /endWorkOpen/)
   assert.match(confirmation, /endWorkCompletedSummary/)
+  assert.match(confirmation, /if \(recentWork\.length \|\| completedDirect\.length\) \{\s*(?:\/\/[^\n]*\s*)*const completed = document\.createElement\("section"\)/,
+    "the completed summary is drawn only when something was completed")
   assert.match(confirmation, /endWorkNoOpen/)
   assert.match(confirmation, /endWorkReadyToClose/)
   assert.match(confirmation, /endWorkUnreadable/)

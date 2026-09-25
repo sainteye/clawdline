@@ -1357,6 +1357,8 @@ test("pressing the uncovered close asks first, naming the row, with Cancel under
     assert.match(work.sheetSay ?? "", /還有未完成項目/)
     assert.match(work.sheetSay ?? "", /看板\s*Finish the release receipt/)
     assert.doesNotMatch(work.sheetSay ?? "", /Clawdline 還不能確認/)
+    assert.equal(work.completedSummary, null, "nothing completed draws no green summary")
+    assert.doesNotMatch(work.sheetSay ?? "", /已完成 0 個看板項目/)
     await tab.shot("swipe-confirm")
     assert.deepEqual(closes, [], "still nothing closed while the question stands")
   }))
