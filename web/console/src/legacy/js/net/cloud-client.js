@@ -193,6 +193,13 @@ const RELAY_SUBSCRIPTION_LIMIT = 8;
 const SUBSCRIPTION_IDLE_MS = 2 * 60 * 1000;
 
 /**
+ * How many times one socket asks the relay again, unprompted, for a channel its `subscriptions`
+ * answer left out (`_reconcileSubscriptions`). A relay that keeps losing the channel is not asked
+ * in a loop; past this, only a read that needs the channel sends its own `subscribe` again.
+ */
+const RESUBSCRIBE_LIMIT = 2;
+
+/**
  * How long a read asked of a retired client waits for a hidden page to be shown (`_viaSuccessor`).
  * A service worker's `focus()` follows its `navigate` within a moment; a page that stays hidden is
  * not held longer than this.
@@ -429,6 +436,10 @@ export class CloudClient {
         // whole frame past it, so an unheld channel is let go once it idles or when room is needed.
         this.socketSubscriptions = new Map();
         this.subscriptionHolds = new Map();
+        // The subscribe and unsubscribe frames sent on this socket that the relay has not answered
+        // yet, oldest first, and how often each channel was asked for again (`_reconcileSubscriptions`).
+        this.subscriptionFrames = [];
+        this.resubscribes = new Map();
         this.subscriptionLimit = options.subscriptionLimit || RELAY_SUBSCRIPTION_LIMIT;
         this.subscriptionIdleMs = options.subscriptionIdleMs || SUBSCRIPTION_IDLE_MS;
         // Set by `keepConnected`: where `revalidate` goes, because the socket's lifecycle lives there.
@@ -640,7 +651,7 @@ export class CloudClient {
         this.socket = ws;
         if (this.resumedFrom) this.renewalProbe = this.resumedFrom._probeLiveness();
         this.socketOpenedAt = this.now();
-        this.socketSubscriptions = new Map();
+        this._forgetSocketSubscriptions();
         var self = this;
         ws.onmessage = function (event) {
             self.messageChain = self.messageChain.then(function () {
@@ -659,7 +670,7 @@ export class CloudClient {
             var ours = self.socket === ws;
             if (ours) {
                 self.socket = null;
-                self.socketSubscriptions = new Map();
+                self._forgetSocketSubscriptions();
             }
             self.ready = false;
             // B3: the relay's own word for why, which used to be thrown away with the event. The
@@ -717,7 +728,7 @@ export class CloudClient {
     _shutdown(failure, acknowledgementFailure) {
         var ws = this.socket;
         this.socket = null;
-        this.socketSubscriptions = new Map();
+        this._forgetSocketSubscriptions();
         this.ready = false;
         this.closedFailure = failure;
         this._disarmViewerEvents();
@@ -783,7 +794,12 @@ export class CloudClient {
             this._emit(frame);
             return;
         }
-        if (frame.type === "subscriptions" || frame.type === "pong") {
+        if (frame.type === "subscriptions") {
+            this._reconcileSubscriptions(frame);
+            this._emit(frame);
+            return;
+        }
+        if (frame.type === "pong") {
             this._emit(frame);
             return;
         }
@@ -791,6 +807,9 @@ export class CloudClient {
             var relayCode = isFailureCode(frame.code) ? frame.code : "relay_error";
             this.lastRelayError = { code: relayCode };
             this.trail.relayError(relayCode);
+            // `malformed_envelope` is only ever a publish's; every other refusal on an open socket
+            // answers the oldest subscription frame still waiting, if there is one.
+            if (relayCode !== "malformed_envelope") this._subscriptionRefused(relayCode);
             throw failureFromRelay(relayCode, { message: "the relay refused a frame" });
         }
         throw cloudError("bad_frame", "unknown relay frame type");
@@ -859,7 +878,7 @@ export class CloudClient {
             this.pendingSubscriptions = new Set(channels);
             var at = this.now();
             this.socketSubscriptions = new Map(channels.map(function (channel) { return [channel, at]; }));
-            this._send({ type: "subscribe", channels: channels });
+            this._sendSubscriptionFrame("subscribe", channels);
         }
         // Any connection that did not take over from a live socket — a first one, a return from a
         // quiesced page, a reconnect after a drop — may follow a relay eviction, whose replay holds
@@ -3638,9 +3657,95 @@ export class CloudClient {
             fresh.splice(0, fresh.length - room).forEach((channel) => this.pendingSubscriptions.delete(channel));
         }
         if (!fresh.length) return this;
-        this._send({ type: "subscribe", channels: fresh });
+        this._sendSubscriptionFrame("subscribe", fresh);
         fresh.forEach((channel) => this.socketSubscriptions.set(channel, at));
         return this;
+    }
+
+    /** A subscribe or unsubscribe sent, and remembered as unanswered until the relay's reply. */
+    _sendSubscriptionFrame(type, channels) {
+        this._send({ type: type, channels: channels });
+        this.subscriptionFrames.push({ type: type, channels: channels.slice() });
+    }
+
+    /** A new socket, or none: the relay holds nothing for it and owes it no answer. */
+    _forgetSocketSubscriptions() {
+        this.socketSubscriptions = new Map();
+        this.subscriptionFrames = [];
+        this.resubscribes = new Map();
+    }
+
+    /** The channels still on their way to the relay in a subscribe it has not answered. */
+    _subscribesInFlight() {
+        var coming = new Set();
+        this.subscriptionFrames.forEach(function (sent) {
+            if (sent.type === "subscribe") sent.channels.forEach(function (channel) { coming.add(channel); });
+        });
+        return coming;
+    }
+
+    /**
+     * The relay's `subscriptions` answer is the truth about this socket; `socketSubscriptions` is
+     * only what this page expects it to hold, recorded the moment a `subscribe` leaves. The two
+     * used to be allowed to differ for good: a channel the relay lost was believed held, never sent
+     * again, and every read on it waited out its whole timeout while the machine's answers were
+     * acked `fanout=0` — on the machine reply channel, every Project read.
+     *
+     * **Which answer this is.** The relay applies one socket's frames in order and answers each
+     * subscribe or unsubscribe with exactly one frame: `subscriptions`, the whole list it holds
+     * after it, or `error`, having applied none of it. So this frame answers the oldest entry in
+     * `subscriptionFrames`, and its list reflects every frame up to that one and none after. A
+     * channel in a subscribe still unanswered may be missing from it legitimately — the relay has
+     * not read that frame yet — and is left alone; its own answer will say. Any other channel this
+     * page wants (believed held, or waited on by a read) that the list lacks is lost: it is struck
+     * from `socketSubscriptions` and subscribed again through `subscribe`, under the same ceiling
+     * and trim as any other. That resend is itself in flight until answered, so a second answer
+     * arriving before it never sends it twice; and each channel is asked for again at most
+     * `RESUBSCRIBE_LIMIT` times per socket, so a relay that keeps dropping it is not asked in a
+     * loop. Past that a read on the channel still sends its own `subscribe`, since the channel is
+     * no longer recorded as held. A channel the relay holds and this page does not want is left
+     * as it is: it costs a slot and nothing else, and the next unsubscribe or socket clears it.
+     */
+    _reconcileSubscriptions(frame) {
+        this.subscriptionFrames.shift();
+        if (!Array.isArray(frame.channels)) return;
+        var held = new Set(frame.channels);
+        var coming = this._subscribesInFlight();
+        var wanted = new Set(this.socketSubscriptions.keys());
+        this.subscriptionHolds.forEach(function (_, channel) { wanted.add(channel); });
+        var again = [];
+        wanted.forEach((channel) => {
+            if (held.has(channel) || coming.has(channel)) return;
+            this.socketSubscriptions.delete(channel);
+            var tries = this.resubscribes.get(channel) || 0;
+            if (tries >= RESUBSCRIBE_LIMIT) return;
+            this.resubscribes.set(channel, tries + 1);
+            again.push(channel);
+        });
+        if (again.length && this.ready) this.subscribe(again);
+    }
+
+    /**
+     * The relay refused the oldest subscription frame still unanswered (see
+     * `_reconcileSubscriptions` for why it is that one) and applied none of it. A refused subscribe
+     * holds nothing, so its channels stop being recorded as held — the next read on one sends it
+     * again — and the reads waiting on them fail now with the relay's code instead of sitting out
+     * their timeout for an answer that cannot reach this socket. A channel a later subscribe also
+     * carries is still on its way and keeps its record.
+     */
+    _subscriptionRefused(code) {
+        var refused = this.subscriptionFrames.shift();
+        if (!refused || refused.type !== "subscribe") return;
+        var coming = this._subscribesInFlight();
+        var retracted = refused.channels.filter(function (channel) { return !coming.has(channel); });
+        if (!retracted.length) return;
+        retracted.forEach((channel) => this.socketSubscriptions.delete(channel));
+        var failure = failureFromRelay(code, { message: "the relay refused this subscription" });
+        Array.from(this.readWaiters.entries()).forEach((entry) => {
+            if (entry[1].channel && retracted.indexOf(entry[1].channel) >= 0) {
+                this._settleRead(entry[0], null, failure);
+            }
+        });
     }
 
     /** A read on `channel` settled: one fewer holder, and its idle time counts from now. */
@@ -3693,7 +3798,7 @@ export class CloudClient {
             this.pendingSubscriptions.delete(channel);
         });
         for (var start = 0; start < drop.length; start += this.subscriptionLimit) {
-            this._send({ type: "unsubscribe", channels: drop.slice(start, start + this.subscriptionLimit) });
+            this._sendSubscriptionFrame("unsubscribe", drop.slice(start, start + this.subscriptionLimit));
         }
     }
 
