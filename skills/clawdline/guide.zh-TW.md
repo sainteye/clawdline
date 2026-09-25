@@ -51,12 +51,24 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
 | `clawdline assistants` | 每個助理的帳號還剩多少額度 |
 | `clawdline landings` | 這台機器上所有還欠著的 landing |
+| `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
 
 上面那些 orchestration 指令成功時會印出 daemon 回的 JSON；被拒絕時印出
 `refused, <status> <code>: <message>`，exit code 是 1。Cloud 指令另有自己給人看的成功與錯誤輸出。
 `--port` 可以覆寫 port。
+
+`clawdline usage` 讀的是 token 帳本（repository 裡的 `docs/token-ledger.md`）：每個 token 花在什麼上面——
+`board`、`protocol`、`rules`、`impl`、`delegate`、`harness`、`talk`、`compaction`、`other`。
+不帶旗標時讀你自己的 session，由 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID` 指名。輸出是一行標頭
+（呼叫次數、最大 context、費用），接著每個類別一行、依費用排序——占比、token、費用——最後列出每個缺口；
+`--json` 印出 daemon 的原始回答。`rules` 是上限，輸出也會這樣標：守衛和其他工作寫在同一條 shell
+指令裡時，整條指令都算給它。路由是 `GET /v1/usage/sessions/<conversation>`、
+`GET /v1/usage/tasks/<task id>` 和 `GET /v1/usage/items/<item id>`，用配對過的裝置或 orchestrator
+token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原因：`not_yet_read`、`transcript_missing`
+或 `transcript_unreadable`，絕不回一個空的總數；沒人認得的 id 回 404 `unknown_session`、
+`unknown_task` 或 `unknown_item`。帳本是否還在讀，看 `/v1/diagnostics` 裡的 `usage`。
 
 ### 配對一個 Cloud 瀏覽器
 

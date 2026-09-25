@@ -2815,6 +2815,7 @@ export interface Diagnostics {
   scheduler: SchedulerPulse
   served_by: string
   upstream: number
+  usage?: UsageDiagnostics
 }
 
 export interface DispatchRequest {
@@ -6553,6 +6554,260 @@ export interface TunnelStatus {
    * state is up.
    */
   url?: string
+}
+
+/**
+ * What some sessions spent: every category in the ledger's order, each with its
+ * share, and the measured total they sum to.
+ */
+export interface UsageBill {
+  categories: UsageCategory[]
+  share_of: UsageShareOf
+  total: UsageTokens
+}
+
+/**
+ * One category's part of a bill. `share` is its fraction (0…1) of the bill's
+ * cost, or of its tokens when the cost is not known (`UsageBill.share_of`).
+ * `upper_bound` is set on `rules`: a guard run in the same shell command as other
+ * work takes that whole command, so rules is at most this much
+ * (docs/token-ledger.md "Categories").
+ */
+export interface UsageCategory {
+  name: UsageCategoryName
+  share: number
+  tokens: UsageTokens
+  upper_bound: boolean
+}
+
+/**
+ * What a token was spent on (docs/token-ledger.md "Categories").
+ */
+export type UsageCategoryName =
+    "board"
+  | "protocol"
+  | "rules"
+  | "impl"
+  | "delegate"
+  | "harness"
+  | "talk"
+  | "compaction"
+  | "other"
+
+export const UsageCategoryNameValues: readonly UsageCategoryName[] = ["board", "protocol", "rules", "impl", "delegate", "harness", "talk", "compaction", "other"] as const
+
+/**
+ * What the session's first context was made of, when its transcript recorded the
+ * harness's prompt snapshot. The parts are estimated from their text and scaled to
+ * sum to `measured`, the first call's measured context. Absent when the snapshot
+ * was not recorded, never zero.
+ */
+export interface UsageComposition {
+  instructions: UsageNamedSize[]
+  mcp_instructions: number
+  measured: number
+  other: number
+  skill_listing: number
+  system_prompt: number
+  tools: UsageNamedSize[]
+}
+
+/**
+ * /v1/diagnostics.usage: the token ledger's reading loop. `running` is false when
+ * it was never started (no home directory, or a daemon that does not read). `at` is
+ * when the last pass ended, absent before the first; `due`, `fed`, `missing` and
+ * `unreadable` are what that pass found and did, and `limited` says more were due
+ * than a pass reads. `stalled` says no pass has ended for `stall_after_seconds`,
+ * counted from the last one or from the start. It does not turn `ok` red: an unread
+ * ledger stops no work.
+ */
+export interface UsageDiagnostics {
+  at?: number
+  due: number
+
+  /**
+   * Why the last pass could not finish.
+   */
+  error?: string
+  every_seconds: number
+  fed: number
+  limited: boolean
+  missing: number
+  running: boolean
+  stall_after_seconds: number
+  stalled: boolean
+  started?: number
+  unreadable: number
+}
+
+/**
+ * Something a bill could not count as a current reading: a `session`, `subagent`,
+ * `task` or `root_assignment`, and why. `counted` says an earlier reading of it is
+ * in the totals.
+ */
+export interface UsageGap {
+  counted: boolean
+  id: string
+  kind: string
+  reason: UsageReason
+}
+
+/**
+ * GET /v1/usage/items/{id}: a Board item's bill — its owner sessions, whole, and
+ * the child tasks they dispatched while they owned it. An owner session is counted
+ * whole however many items it owned, so the bill is an upper bound for any one of
+ * them.
+ */
+export interface UsageItem {
+  bill: UsageBill
+
+  /**
+   * Every counted session's own calls, added up.
+   */
+  calls: number
+  gaps: UsageGap[]
+  item_id: string
+  owners: UsageItemOwner[]
+
+  /**
+   * The largest peak of any counted session.
+   */
+  peak_context: number
+  sessions: UsageSession[]
+  tasks: UsageTask[]
+}
+
+/**
+ * One stint of a session owning a Board item. `session` is empty for a Root
+ * Assignment whose session the ledger has not found yet. `to` is 0 while the stint
+ * is open. Unix seconds.
+ */
+export interface UsageItemOwner {
+  current: boolean
+  from: number
+  root_assignment?: string
+  session?: string
+  to: number
+}
+
+export interface UsageNamedSize {
+  name: string
+  tokens: number
+}
+
+/**
+ * Why a reading is not current. `not_yet_read`: the ledger has no reading of it
+ * yet. `transcript_missing`: it was read before and its transcript is gone; the
+ * totals are that reading's. `transcript_unreadable`: its transcript is there and
+ * could not be read; the totals, if any, are from before.
+ */
+export type UsageReason =
+    "not_yet_read"
+  | "transcript_missing"
+  | "transcript_unreadable"
+
+export const UsageReasonValues: readonly UsageReason[] = ["not_yet_read", "transcript_missing", "transcript_unreadable"] as const
+
+/**
+ * GET /v1/usage/sessions/{conversation}: one session's bill, its subagents folded
+ * into `delegate`. A session with `reason` has no current reading: `not_yet_read`
+ * has no totals at all, and the other two carry the last reading's. `calls`,
+ * `peak_context`, `compactions`, `calls_above` and `above` are the session's own
+ * calls; a subagent's calls are on its row. `above` is what the calls made with
+ * more than 200k tokens of context cost. `read_at` is Unix seconds, 0 when never
+ * read; `more` says the last pass stopped before the transcript's end.
+ */
+export interface UsageSession {
+  above: UsageTokens
+  assistant?: string
+  bill: UsageBill
+  calls: number
+  calls_above: number
+  compactions: number
+  composition?: UsageComposition
+  conversation: string
+  gaps: UsageGap[]
+  more: boolean
+  peak_context: number
+  read_at: number
+  reason?: UsageReason
+
+  /**
+   * The Root Assignment this session's first message names.
+   */
+  root_assignment?: string
+  subagents: UsageSubagent[]
+
+  /**
+   * The child task this session's first message names.
+   */
+  task_id?: string
+}
+
+/**
+ * What every category's `share` is a share of: `cost` when the whole cost is known,
+ * `tokens` when some of it is not (a model with no price).
+ */
+export type UsageShareOf =
+    "cost"
+  | "tokens"
+
+export const UsageShareOfValues: readonly UsageShareOf[] = ["cost", "tokens"] as const
+
+/**
+ * One subagent transcript of a session. Its whole measured count is in the
+ * session's `delegate`.
+ */
+export interface UsageSubagent {
+  calls: number
+  conversation: string
+  measured: UsageTokens
+  reason?: UsageReason
+}
+
+/**
+ * GET /v1/usage/tasks/{id}: a child task's bill — every session whose first
+ * message names it. `reason` is `not_yet_read` when the ledger has read none of
+ * them yet.
+ */
+export interface UsageTask {
+  bill: UsageBill
+
+  /**
+   * The sessions' own calls, added up.
+   */
+  calls: number
+  gaps: UsageGap[]
+
+  /**
+   * The largest of the sessions' peaks.
+   */
+  peak_context: number
+  reason?: UsageReason
+  sessions: UsageSession[]
+  task_id: string
+}
+
+/**
+ * Tokens by part, and their cost in US dollars at list price. The numbers are
+ * fractional because a measured count is divided pro rata. `unpriced` counts the
+ * tokens whose model has no price: `cost_known` is false when it is not zero, and
+ * `cost` is then only the priced part's.
+ */
+export interface UsageTokens {
+  cache_read: number
+  cache_write_1h: number
+  cache_write_5m: number
+  cost: number
+  cost_known: boolean
+  input: number
+  output: number
+
+  /**
+   * Every token of every part.
+   */
+  total: number
+  unpriced: number
 }
 
 /**

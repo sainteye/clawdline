@@ -64,6 +64,9 @@ var sessionFields = map[string]string{
 	"sessions#SessionInfo.session":          object,
 	"tasks#TaskRoot.sessionId":              conversation,
 	"tasks#TaskChild.sessionId":             conversation,
+	// The token ledger names an item's owner by the conversation its rows
+	// are keyed by (app.ForItem).
+	"usage#UsageItemOwner.session": conversation,
 	// W6: a handoff's sender, resolved like a dispatch's root.
 	"handover#BrokerHandoff.from_session":        conversation,
 	"handover#BrokerHandoffRequest.from_session": conversation,
