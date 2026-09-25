@@ -113,6 +113,23 @@ func newBroker(s *Server) *orchestrator.Broker {
 			_, err := s.actions().Send(ctx, terminalID, text)
 			return err
 		},
+		// The completion notice's way past Claude Code's composer
+		// (orchestrator stash.go): the same send, with a keystroke and a look
+		// first, inside the same lane turn.
+		TypePrepared: func(ctx context.Context, terminalID, text string, prepare orchestrator.Prepare) error {
+			_, err := s.actions().SendPrepared(ctx, terminalID, text, prepare)
+			return err
+		},
+		// Read at every stash, so a binding the person adds needs no restart.
+		// Absent or unreadable is Claude Code's defaults.
+		StashRebound: func() bool {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return false
+			}
+			data, err := os.ReadFile(filepath.Join(home, ".claude", "keybindings.json"))
+			return err == nil && orchestrator.StashReboundIn(data)
+		},
 		// A session showing a menu is read from the reading this daemon has
 		// already taken, rather than by capturing its screen again: a second
 		// capture is a second subprocess against a terminal somebody is typing

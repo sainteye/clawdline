@@ -434,11 +434,21 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 	if b.Choosing != nil && b.Choosing(ctx, target.ID) {
 		return b.holdNotice(ctx, r.ID, seen, at, holdChoosing)
 	}
-	switch b.readComposer(ctx, target.ID, r.Root.Assistant) {
+	state, screen := b.readComposer(ctx, target.ID, r.Root.Assistant)
+	var prepare Prepare
+	composer := ""
+	switch state {
 	case ComposerDraft:
 		// A root whose composer holds a half-written line would have the notice
-		// appended to it and submitted with it.
-		return b.holdNotice(ctx, r.ID, seen, at, holdComposer)
+		// appended to it and submitted with it. Unless it is Claude Code's own
+		// suggestion, or a draft its stash can keep (stash.go) — which is only
+		// asked of text that stood still for a whole hold, because a person
+		// still typing is somebody whose next keystroke lands after the stash.
+		text := composerHolds(screen, session.Assistant(r.Root.Assistant))
+		if b.observed.sawDraft(seen.ID, text) != text || !b.mayStash(r.Root.Assistant) {
+			return b.holdNotice(ctx, r.ID, seen, at, holdComposer)
+		}
+		prepare = stashDraft(text, &composer)
 	case ComposerQueued:
 		// Something is already waiting to be read there. Whether that matters
 		// depends on whether it is this notice: a copy typed once and not yet
@@ -457,7 +467,7 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		return b.spendAttempt(ctx, r.ID, seen, at, "transport_failed",
 			"this daemon cannot type into a terminal")
 	}
-	if err := b.typeLine(ctx, target.ID, wire); err != nil {
+	if err := b.typeNotice(ctx, target.ID, wire, prepare); err != nil {
 		// A hold for the same reason as a chooser: the root's terminal was
 		// being written to by somebody else (its lane, D22), and nothing was
 		// typed.
@@ -465,10 +475,19 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		if errors.As(err, &busy) {
 			return b.holdNotice(ctx, r.ID, seen, at, holdLane)
 		}
+		// The look inside the lane did not clear the composer, and nothing
+		// was typed: the draft is held for as it was before stash.go.
+		if errors.Is(err, errStashWithheld) {
+			return b.holdNotice(ctx, r.ID, seen, at, holdComposer)
+		}
 		return b.spendAttempt(ctx, r.ID, seen, at, "transport_failed", err.Error())
 	}
 
-	b.moveNotice(ctx, r.ID, seen, "task.completion.delivered", func(n *Notice) {
+	var how map[string]any
+	if composer != "" {
+		how = map[string]any{"composer": composer}
+	}
+	b.moveNoticeWith(ctx, r.ID, seen, "task.completion.delivered", how, func(n *Notice) {
 		n.Attempts++
 		n.LastAttemptAt = at
 		n.State = NoticeDelivered
@@ -483,6 +502,7 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		// again inside a minute.
 		n.NextRetryAt = at.Add(AckWaitDelay(n.Attempts))
 	})
+	b.observed.forgetDraft(seen.ID)
 	return true
 }
 
@@ -579,15 +599,37 @@ func (b *Broker) holdNotice(ctx context.Context, taskID string, seen Notice, at 
 // machine's state corrupted. Weighed against holding every notice on a Mac whose
 // root terminal cannot be captured — which would turn every completion into a
 // dead letter and a push — the notice goes.
-func (b *Broker) readComposer(ctx context.Context, terminalID, assistant string) ComposerState {
+func (b *Broker) readComposer(ctx context.Context, terminalID, assistant string) (ComposerState, string) {
 	if b.Screen == nil {
-		return ComposerEmpty
+		return ComposerEmpty, ""
 	}
 	screen, ok := b.Screen(ctx, terminalID)
 	if !ok {
-		return ComposerEmpty
+		return ComposerEmpty, ""
 	}
-	return ReadComposer(screen, session.Assistant(assistant))
+	return ReadComposer(screen, session.Assistant(assistant)), screen
+}
+
+// mayStash is whether a root's composer text may be put to Claude Code's stash
+// (stash.go): a Claude Code root, a daemon that can press a key inside the
+// send's lane turn, and a ctrl+s that still means what was measured.
+func (b *Broker) mayStash(assistant string) bool {
+	if session.Assistant(assistant) != session.AssistantClaude || b.TypePrepared == nil {
+		return false
+	}
+	return b.StashRebound == nil || !b.StashRebound()
+}
+
+// typeNotice is typeLine, with prepare run first inside the same lane turn when
+// there is one.
+func (b *Broker) typeNotice(ctx context.Context, terminalID, text string, prepare Prepare) error {
+	if prepare == nil {
+		return b.typeLine(ctx, terminalID, text)
+	}
+	if err := outside(); err != nil {
+		return err
+	}
+	return b.TypePrepared(ctx, terminalID, text, prepare)
 }
 
 // How the broker learns a root already knows, spelled once so a reader can see

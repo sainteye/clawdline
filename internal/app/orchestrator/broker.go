@@ -62,6 +62,15 @@ type Broker struct {
 	Fault func(pass int64)
 	// Type types one line into a terminal and submits it.
 	Type func(ctx context.Context, terminalID, text string) error
+	// TypePrepared is Type with a step of the broker's own run first, inside
+	// the same turn of that terminal's lane (stash.go). An error from prepare
+	// means nothing was typed. Nil leaves a Claude Code root's composer text
+	// held as a draft, as it was before stash.go.
+	TypePrepared func(ctx context.Context, terminalID, text string, prepare Prepare) error
+	// StashRebound reports whether the person has bound ctrl+s or chat:stash
+	// to something of their own in Claude Code, which is the one way the
+	// stash's keystroke would not mean what stash.go measured. Nil is no.
+	StashRebound func() bool
 	// Choosing reports whether a terminal is showing a menu. Typing into one
 	// answers the menu instead of delivering the message, so both the message
 	// route and the notice pump ask first.
