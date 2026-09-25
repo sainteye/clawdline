@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
-import { isPicture, prepareReferencePicture } from "../legacy/shots-bridge.js"
+import { prepareReferencePicture } from "../legacy/shots-bridge.js"
 import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, readWorkV2Item, remindWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { WorkSteps } from "../pages/work/WorkSteps.js"
 import { completionReports, WorkCompletionReports } from "../pages/work/WorkCompletionReport.js"
 import { WorkIcon } from "../pages/work/WorkIcon.js"
+import { PendingPictures } from "../pages/work/ReferencePictures.js"
+import { VoiceTextarea } from "../pages/work/VoiceTextarea.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
 import "../pages/work/work.css"
@@ -156,8 +158,8 @@ export function Todos({ row, agentCount, agentPanel }: {
         }}>
           <h2 id="session-todo-modal-title">新增 Session 待辦</h2>
           <p>輸入你希望這個 Session 接下來完成的事情。</p>
-          <textarea value={text} autoFocus maxLength={8192} onChange={(ev) => setText(ev.target.value)} />
-          <TodoImagePicker images={images} busy={busy === "new"} onChange={setImages} />
+          <VoiceTextarea value={text} autoFocus maxLength={8192} aria-label="待辦內容" onValue={setText} />
+          <PendingPictures images={images} busy={busy === "new"} note="建立待辦後上傳" onChange={setImages} />
           <div className="work-actions">
             <button className="chip on" type="submit" disabled={busy === "new" || !text.trim()}>新增</button>
             <button className="chip" type="button" onClick={() => { setAdding(false); setImages([]) }}>取消</button>
@@ -246,8 +248,8 @@ function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolea
       : { mark: "", words: "尚未傳送；Session 會在下一次讀取待辦時看到", state: "unsent" }
   return <article className={`session-direct-todo${completed ? " completed" : ""}`}>
     {completed
-      ? <button className="session-todo-check completed" type="button" disabled aria-label="已完成"><WorkIcon name="check" /></button>
-      : <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}><WorkIcon name="circle" /></button>}
+      ? <button className="session-todo-check completed" type="button" disabled aria-label="已完成"><WorkIcon name="boxChecked" /></button>
+      : <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}><WorkIcon name="box" /></button>}
     <div><b>{todo.text}</b><small>{completed ? `完成 ${when(todo.completed_at!)}` : when(todo.created_at)} <span
       className="session-todo-receipt" data-state={completed ? "completed" : receipt.state}
       aria-label={completed ? "已完成" : receipt.words}>{completed ? "已完成" : <><span className="session-todo-receipt-mark" aria-hidden="true">{receipt.mark}</span>{receipt.words}</>}</span></small></div>
@@ -260,26 +262,6 @@ function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolea
       <button className="chip danger" type="button" disabled={busy} onClick={() => onAction("delete")}>Delete</button>
     </div>
   </article>
-}
-
-function TodoImagePicker({ images, busy, onChange }: { images: File[]; busy: boolean; onChange: (images: File[]) => void }) {
-  const picker = useRef<HTMLInputElement>(null)
-  return <div className="work-modal-images">
-    <span>參考圖片</span>
-    <input ref={picker} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(event) => {
-      const selected = Array.from(event.currentTarget.files ?? []).filter(isPicture)
-      event.currentTarget.value = ""
-      onChange([...images, ...selected].slice(0, 6))
-    }} />
-    <div className="work-modal-image-tools">
-      <button className="chip" type="button" disabled={busy || images.length >= 6} onClick={() => picker.current?.click()}>＋ 加入參考圖片</button>
-      <small>{images.length} / 6 · 建立待辦後上傳</small>
-    </div>
-    {!!images.length && <ul className="work-modal-image-list">{images.map((file, index) => <li key={`${file.name}-${file.lastModified}-${index}`}>
-      <span title={file.name}>{file.name}</span><button type="button" disabled={busy} aria-label={`移除 ${file.name}`}
-        onClick={() => onChange(images.filter((_, at) => at !== index))}><WorkIcon name="close" /></button>
-    </li>)}</ul>}
-  </div>
 }
 
 function ReferenceImage({ image, compact = false }: { image: WorkV2Image; compact?: boolean }) {

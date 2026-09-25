@@ -12,6 +12,10 @@ import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports } from "./WorkCompletionReport.js"
 import { WorkIcon } from "./WorkIcon.js"
+import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
+import { VoiceTextarea } from "./VoiceTextarea.js"
+import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
+import { useBoardMotion } from "./board-motion.js"
 import {
   assignNewWorkV2,
   assignWorkV2,
@@ -73,6 +77,12 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [busy, setBusy] = useState("")
   const [failure, setFailure] = useState("")
   const loadGeneration = useRef(0)
+  const board = useRef<HTMLElement>(null)
+  // What is on screen keeps its place until the view is opened afresh, its
+  // filter changes, or Refresh is pressed; see `board-order.ts`.
+  const arrangement = useRef<{ view: string; places: Map<string, number> } | null>(null)
+  const rearrange = useRef(true)
+  useBoardMotion(board)
 
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current
@@ -82,7 +92,12 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       const work = await readWorkV2(selectedProject || undefined, status, search)
       if (generation !== loadGeneration.current) return
       setProject(selectedProject)
-      setItems(work.rows); setTruncated(work.truncated); setLoaded(true)
+      const view = `${selectedProject}\n${status}\n${search}`
+      const kept = rearrange.current || arrangement.current?.view !== view ? null : arrangement.current.places
+      rearrange.current = false
+      const rows = arrangeWorkItems(work.rows, kept)
+      arrangement.current = { view, places: workItemPlaces(rows) }
+      setItems(rows); setTruncated(work.truncated); setLoaded(true)
       setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setFailure("")
       setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
     } catch (e) {
@@ -110,6 +125,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     const timer = window.setTimeout(() => setSearch(searchInput.trim()), 220)
     return () => window.clearTimeout(timer)
   }, [searchInput])
+  useEffect(() => { if (shown) rearrange.current = true }, [shown])
   useEffect(() => {
     if (!shown && !creating && !createdItem) return
     void load()
@@ -141,12 +157,12 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const done = items.filter((item) => item.closed_at)
 
   return <>
-  <section id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title">
+  <section ref={board} id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title">
     <header className="board-head">
       <div><p className="board-eyebrow">WORK SYSTEM V2</p><h1 id="work-v2-title">看板</h1></div>
       <div className="work-head-tools">
         <button className="board-button" type="button" onClick={() => { setFailure(""); setCreatedItem(null); setCreateDraft({}); setCreating(true) }}>＋ 建立項目</button>
-        <button className="board-button" type="button" disabled={!!busy} onClick={() => void load()}>{L.strings.webInfoRefresh}</button>
+        <button className="board-button" type="button" disabled={!!busy} onClick={() => { rearrange.current = true; void load() }}>{L.strings.webInfoRefresh}</button>
       </div>
     </header>
     <div className="work-wrap">
@@ -284,7 +300,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
         event.currentTarget.value = ""
         if (!files.length) return
         void run(`image-add-${item.id}`, async () => {
-          if ((item.images?.length ?? 0) + files.length > 6) {
+          if ((item.images?.length ?? 0) + files.length > MAX_REFERENCE_PICTURES) {
             throw new RefusalError(507, { error: "images_full", detail: "Each item keeps at most six reference images." })
           }
           let version = item.version
@@ -492,7 +508,7 @@ function EditWorkModal({ item, busy, failure, onClose, onSave }: {
       <div className="work-modal-head"><div><p className="board-eyebrow">EDIT WORK ITEM</p><h2 id={`work-edit-title-${item.id}`}>編輯看板項目</h2></div>
         <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(event) => setTitle(event.target.value)} /></label>
-      <label>描述<textarea value={description} maxLength={65536} onChange={(event) => setDescription(event.target.value)} /></label>
+      <label>描述<VoiceTextarea value={description} maxLength={65536} onValue={setDescription} /></label>
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "儲存中…" : "儲存變更"}</button>
         <button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
@@ -537,6 +553,7 @@ function WorkReferenceImage({ item, image, busy, run }: {
 }) {
   const [source, setSource] = useState("")
   const [failed, setFailed] = useState("")
+  const [marking, setMarking] = useState(false)
   useEffect(() => {
     let active = true
     let objectURL = ""
@@ -552,11 +569,40 @@ function WorkReferenceImage({ item, image, busy, run }: {
       if (objectURL) URL.revokeObjectURL(objectURL)
     }
   }, [image.id])
+  const editable = !item.closed_at
+  // The marked copy takes the original's place: added at its position, then
+  // the original removed. A full item has no room for the copy first, so it
+  // removes the original first and puts it back if the copy is refused.
+  const replaceWithMarks = (canvas: HTMLCanvasElement) => {
+    const marked = markedFile(canvas, image.title)
+    void run(`image-mark-${image.id}`, async () => {
+      const picture = await prepareReferencePicture(marked)
+      if ((item.images?.length ?? 0) < MAX_REFERENCE_PICTURES) {
+        const added = await addWorkV2Image(item.id, item.version, picture, image.position)
+        return deleteWorkV2Image(added.item, image.id)
+      }
+      const original = await prepareReferencePicture(new File([await (await fetch(source)).blob()], image.title, { type: image.media_type }))
+      const removed = await deleteWorkV2Image(item, image.id)
+      try {
+        return await addWorkV2Image(item.id, removed.item.version, picture, image.position)
+      } catch (error) {
+        await addWorkV2Image(item.id, removed.item.version, original, image.position).catch(() => {})
+        throw error
+      }
+    })
+    return true
+  }
   return <figure className="work-reference-image">
-    {source ? <a href={source} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`}>
-      <img src={source} alt={image.title} width={image.width} height={image.height} />
-    </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || "載入圖片…"}</div>}
+    {source ? editable
+      ? <button className="work-reference-open" type="button" disabled={!!busy} aria-label={`用紅筆標記參考圖片 ${image.title}`}
+        title="用紅筆標記" onClick={() => setMarking(true)}>
+        <img src={source} alt={image.title} width={image.width} height={image.height} />
+      </button>
+      : <a href={source} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`}>
+        <img src={source} alt={image.title} width={image.width} height={image.height} />
+      </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || "載入圖片…"}</div>}
     <figcaption title={image.title}>{image.title}</figcaption>
+    {marking && source && <PictureMarkup picture={{ id: image.id, url: source }} onCancel={() => setMarking(false)} onSave={replaceWithMarks} />}
     {!item.closed_at && <button type="button" aria-label={`移除參考圖片 ${image.title}`} disabled={!!busy}
       onClick={() => void run(`image-delete-${image.id}`, () => deleteWorkV2Image(item, image.id))}><WorkIcon name="close" /></button>}
   </figure>
@@ -622,7 +668,6 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   const [title, setTitle] = useState(initialDraft.title || "")
   const [description, setDescription] = useState(initialDraft.description || "")
   const [images, setImages] = useState<File[]>([])
-  const imagePicker = useRef<HTMLInputElement>(null)
   const createDecision = useRef<WorkV2CreateDecision | null>(null)
   const projectPlaces = initialDraft.project && !places.some((place) => place.id === initialDraft.project?.id)
     ? [initialDraft.project, ...places]
@@ -648,23 +693,8 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
         <span><b>{meta.label}</b><small>{meta.description}</small></span><span className="work-kind-radio"><WorkIcon name={kind === value ? "radio" : "circle"} /></span></button> })}
     </div></fieldset>
     <label>標題<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
-    <label>描述<textarea value={description} onChange={(e) => setDescription(e.target.value)} /></label>
-    <div className="work-modal-images">
-      <span>參考圖片</span>
-      <input ref={imagePicker} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(event) => {
-        const selected = Array.from(event.currentTarget.files ?? []).filter(isPicture)
-        event.currentTarget.value = ""
-        setImages((current) => [...current, ...selected].slice(0, 6))
-      }} />
-      <div className="work-modal-image-tools">
-        <button className="chip" type="button" disabled={busy || images.length >= 6} onClick={() => imagePicker.current?.click()}>＋ 加入參考圖片</button>
-        <small>{images.length} / 6 · 建立項目後上傳</small>
-      </div>
-      {!!images.length && <ul className="work-modal-image-list">{images.map((file, index) => <li key={`${file.name}-${file.lastModified}-${index}`}>
-        <span title={file.name}>{file.name}</span><button type="button" disabled={busy} aria-label={`移除 ${file.name}`}
-          onClick={() => setImages((current) => current.filter((_, at) => at !== index))}><WorkIcon name="close" /></button>
-      </li>)}</ul>}
-    </div>
+    <label>描述<VoiceTextarea value={description} onValue={setDescription} /></label>
+    <PendingPictures images={images} busy={busy} note="建立項目後上傳" onChange={setImages} />
     {failure && <p className="work-note" role="alert">{failure}</p>}
     <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "建立中…" : "建立"}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
   </form></div>

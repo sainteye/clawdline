@@ -1,9 +1,11 @@
-export type WorkIconName = "add" | "check" | "circle" | "close" | "delete" | "dot" | "edit" | "open" | "radio" | "remind" | "search"
+export type WorkIconName = "add" | "box" | "boxChecked" | "check" | "circle" | "close" | "delete" | "dot" | "edit" | "open" | "radio" | "remind" | "search"
 
 /** Font glyph boxes are not optically centered. Work controls use one geometric icon canvas instead. */
 export function WorkIcon({ name }: { name: WorkIconName }) {
   return <svg className="work-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
     {name === "add" && <path d="M12 5v14M5 12h14" />}
+    {name === "box" && <rect x="5" y="5" width="14" height="14" rx="3.5" />}
+    {name === "boxChecked" && <><rect x="5" y="5" width="14" height="14" rx="3.5" /><path d="m8.5 12.25 2.5 2.5 4.75-5" /></>}
     {name === "check" && <path d="m5.5 12.5 4 4 9-9" />}
     {name === "circle" && <circle cx="12" cy="12" r="7" />}
     {name === "close" && <path d="m7 7 10 10M17 7 7 17" />}
