@@ -85,6 +85,33 @@ it is shown.
 What this cannot see: rules and protocol also shape how long the assistant thinks and writes. That
 cost is inside `talk` and every category's output, indistinguishable by this method.
 
+### What the reader settled
+
+`transcript.LedgerState` (`internal/adapters/transcript/ledger.go`, `ledger_codex.go`) settled what
+the rules above left open:
+
+- **Before the first call.** What arrived before it — the person's first message, the
+  `instructions` attachment, other harness attachments — is counted at its estimated size; the rest of
+  the first call's context is **harness**. The `prompt_snapshot` attachment is not an arrival: it is
+  the resident base itself.
+- **Input.** Uncached input tokens go with the cache writes, to the new segments. A call with no new
+  segment (a context a little smaller than the last) pays its writes pro rata to everything held.
+- **One call doing several things.** Its output is divided evenly among its tool calls' categories.
+  One shell command with several parts takes its most specific part, in the order `board`,
+  `protocol`, `rules`, `impl`.
+- **A tool result with no known tool use** (a background task's, say) is **other**.
+- **Codex.** A `token_count` repeating the running total of the one before it is the same call and is
+  counted once; one with no `info` is not a call. Input is `input_tokens` less `cached_input_tokens`,
+  there are no cache writes, and the model has no price, so its cost is unknown. The
+  `# AGENTS.md instructions` and `<user_instructions>` user messages Codex writes are **rules**, the
+  `<environment_context>` one **harness**.
+- **Which file is which.** A transcript is named by a digest of its first 4 KiB, not an inode, so the
+  identity survives being copied between machines and means the same on every platform.
+- **Base composition** needs the `prompt_snapshot` attachment; without it the composition is absent,
+  not zero. The attachment shapes the reader expects (`systemPrompt`, `tools[].name`; files as
+  objects with a `path` and a `content`) were written from the brief, not from a recorded transcript;
+  a shape it does not recognise leaves that part in `other`.
+
 ## Storage and reading
 
 - A session is read **incrementally**: the ledger keeps, per transcript, the byte offset it read to,
@@ -95,7 +122,9 @@ cost is inside `talk` and every category's output, indistinguishable by this met
   no tool input, no transcript text is stored.
 - Reading is bounded: a registered limit on bytes read per pass and on sessions per pass; a line that
   does not decode is counted, not fatal; a transcript that cannot be read leaves that session
-  **unknown**, never zero.
+  **unknown**, never zero. The bytes per pass (64 MiB, finishing the line it is in) and the longest
+  line decoded (8 MiB; a longer one is skipped and counted) are `docs/limits.md` N42; the sessions
+  per pass belong to the pass that stores them.
 
 ## Which session is which
 
