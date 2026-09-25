@@ -279,19 +279,23 @@ export const ActionConfirm = {
       return
     }
 
-    const completed = document.createElement("section")
-    completed.className = "end-work-completed"
-    const completedMark = document.createElement("span")
-    completedMark.className = "end-work-completed-mark"
-    completedMark.setAttribute("aria-hidden", "true")
-    completedMark.textContent = "✓"
-    const completedCopy = document.createElement("span")
-    completedCopy.textContent = nextWord("endWorkCompletedSummary", {
-      work: recentWork.length,
-      todos: completedDirect.length,
-    })
-    completed.append(completedMark, completedCopy)
-    say.appendChild(completed)
+    // Only something done earns the green line: "0 Board items, 0 TODOs"
+    // carries nothing and reads like an achievement.
+    if (recentWork.length || completedDirect.length) {
+      const completed = document.createElement("section")
+      completed.className = "end-work-completed"
+      const completedMark = document.createElement("span")
+      completedMark.className = "end-work-completed-mark"
+      completedMark.setAttribute("aria-hidden", "true")
+      completedMark.textContent = "✓"
+      const completedCopy = document.createElement("span")
+      completedCopy.textContent = nextWord("endWorkCompletedSummary", {
+        work: recentWork.length,
+        todos: completedDirect.length,
+      })
+      completed.append(completedMark, completedCopy)
+      say.appendChild(completed)
+    }
 
     if (work.length || openDirect.length) {
       const section = document.createElement("section")
