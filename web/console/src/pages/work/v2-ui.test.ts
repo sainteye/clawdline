@@ -204,3 +204,11 @@ test("work controls use reusable vector icons instead of font glyph positioning"
   assert.match(styles, /\.work-icon \{[^}]*display:\s*block[^}]*width:\s*1em[^}]*height:\s*1em/)
   assert.match(styles, /\.work-modal-image-list li button \{[^}]*display:\s*grid[^}]*place-items:\s*center/)
 })
+
+test("a recording microphone is an accent ring, never a filled disc that hides its own icon", () => {
+  const pressed = /\.work-voice-mic\[aria-pressed="true"\] \{([^}]*)\}/.exec(styles)?.[1] ?? ""
+  assert.match(pressed, /color:\s*var\(--accent\)/)
+  assert.doesNotMatch(pressed, /background:\s*var\(--accent\)/)
+  // A phone keeps :hover after a tap; unguarded, it painted the icon the fill's colour.
+  assert.match(styles, /@media \(hover: hover\) \{\s*\.work-voice-mic:not\(:disabled\):hover/)
+})

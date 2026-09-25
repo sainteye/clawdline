@@ -461,8 +461,14 @@
     border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--dim); cursor: pointer;
 }
 .work-voice-mic svg { width: 18px; height: 18px; }
-.work-voice-mic:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
-.work-voice-mic[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: #fff; }
+/* Hover only where there is a pointer that hovers: a phone keeps :hover after
+   a tap, and it used to paint the stop icon the colour of its own background. */
+@media (hover: hover) {
+    .work-voice-mic:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+}
+/* Recording: an accent ring and stop icon, not a filled disc. The row above the
+   box already says it is listening, with its timer, Cancel and Done. */
+.work-voice-mic[aria-pressed="true"] { border-color: var(--accent); background: var(--bg); color: var(--accent); }
 .work-voice-mic:disabled { opacity: .45; cursor: default; }
 .work-modal-image-list li .work-pending-picture {
     flex: 1 1 auto; display: flex; width: auto; height: auto; min-width: 0; align-items: center; justify-content: flex-start;
