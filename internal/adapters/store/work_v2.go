@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS work_v2_items (
   updated_at        INTEGER NOT NULL,
   closed_at         INTEGER,
   cycle             INTEGER NOT NULL DEFAULT 1,
-  version           INTEGER NOT NULL DEFAULT 1
+  version           INTEGER NOT NULL DEFAULT 1,
+  created_via       TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS work_v2_items_project ON work_v2_items(project_id, updated_at DESC, id);
 CREATE INDEX IF NOT EXISTS work_v2_items_owner ON work_v2_items(owner_session, phase, updated_at DESC)
@@ -198,6 +199,16 @@ func openWorkV2(db *sql.DB) error {
 			return err
 		}
 	}
+	// created_via is the person's message a Session created the item on
+	// (work-system-v2 §2, amended 2026-09-25). Items written before it have
+	// none, which reads as "created by a person or by nobody's message".
+	if has, err = hasColumn(db, "work_v2_items", "created_via"); err != nil {
+		return err
+	} else if !has {
+		if _, err = db.Exec(`ALTER TABLE work_v2_items ADD COLUMN created_via TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
 	return migrateWorkV2DocumentRoles(db)
 }
 
@@ -273,18 +284,19 @@ func (t *WorkV2Tx) AddEffect(e Effect) (int64, error) {
 }
 
 const workV2Columns = `id, project_id, project_path, kind, title, description, phase, condition, user_action,
-  deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version`
+  deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version, created_via`
 
 const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description, i.phase, i.condition, i.user_action,
-  i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle, i.version`
+  i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle, i.version, i.created_via`
 
 func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	var i work.ItemV2
 	var created, updated int64
 	var closed sql.NullInt64
+	var via string
 	err := sc.Scan(&i.ID, &i.ProjectID, &i.ProjectPath, &i.Kind, &i.Title, &i.Description, &i.Phase,
 		&i.Condition, &i.UserAction, &i.DeploymentPolicy, &i.OwnerSession, &i.CreatedBy, &created, &updated, &closed,
-		&i.Cycle, &i.Version)
+		&i.Cycle, &i.Version, &via)
 	if err == sql.ErrNoRows {
 		return work.ItemV2{}, ErrNoWorkV2
 	}
@@ -295,7 +307,23 @@ func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	if closed.Valid {
 		i.ClosedAt = time.Unix(closed.Int64, 0)
 	}
+	if via != "" {
+		var v work.CreatedViaV2
+		// A column this daemon wrote and cannot read is kept out of the
+		// answer rather than failing the whole Board read.
+		if json.Unmarshal([]byte(via), &v) == nil && v.Run != "" {
+			i.CreatedVia = &v
+		}
+	}
 	return i, nil
+}
+
+func createdViaColumn(v *work.CreatedViaV2) string {
+	if v == nil {
+		return ""
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
 }
 
 func (t *WorkV2Tx) Item(id string) (work.ItemV2, error) {
@@ -346,16 +374,23 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_items
       (id, project_id, project_path, kind, title, description, phase, condition, user_action,
-       deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+       deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version, created_via)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
 		i.ID, i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.Phase, i.Condition,
-		i.UserAction, i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle, i.Version)
+		i.UserAction, i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle, i.Version,
+		createdViaColumn(i.CreatedVia))
 	if err != nil {
 		return err
 	}
 	t.wrote++
 	return t.AppendEvent(work.EventV2{WorkID: i.ID, Kind: "item.created", Actor: actor,
 		PreviousVersion: 0, NextVersion: i.Version, Payload: payload, At: i.CreatedAt})
+}
+
+// ItemsCreatedBy counts every item, open or closed, whose creator is actor —
+// how many items one person's message has already backed.
+func (t *WorkV2Tx) ItemsCreatedBy(actor string) (int64, error) {
+	return t.count(`created_by = ?`, actor)
 }
 
 // PristineEquivalentItem finds the item an uncertain create already wrote.
@@ -365,7 +400,7 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 func (t *WorkV2Tx) PristineEquivalentItem(i work.ItemV2) (work.ItemV2, bool, error) {
 	found, err := scanWorkV2(t.tx.QueryRowContext(t.ctx, `SELECT `+workV2Columns+` FROM work_v2_items
       WHERE project_id=? AND project_path=? AND kind=? AND title=? AND description=?
-        AND deployment_policy=? AND phase='created' AND owner_session='' AND closed_at IS NULL
+        AND deployment_policy=? AND phase='created' AND owner_session='' AND closed_at IS NULL AND created_via=''
         AND cycle=1 AND version=1
       ORDER BY created_at, id LIMIT 1`,
 		i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.DeploymentPolicy))

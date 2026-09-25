@@ -302,7 +302,7 @@ func TestASessionCanArrangeARepeatingScheduleOnAPersonsRun(t *testing.T) {
 	const conversation = "c6000003-0000-4000-8000-000000000003"
 	run, err := s.server.runs().Issue(context.Background(), session.Session{
 		ID: "terminal-3", ConversationID: conversation,
-	}, "local")
+	}, "local", "")
 	if err != nil {
 		t.Fatal(err)
 	}

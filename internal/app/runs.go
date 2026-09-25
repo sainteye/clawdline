@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -45,6 +47,23 @@ type runPayload struct {
 	Assistant string `json:"assistant,omitempty"`
 	Principal string `json:"principal"`
 	At        int64  `json:"at"`
+	Excerpt   string `json:"excerpt,omitempty"`
+}
+
+// runExcerptLimit is how many characters of a person's message its run keeps:
+// enough to recognise the message on a card, never the whole of it.
+const runExcerptLimit = 280
+
+// RunExcerptOf is the part of a message a run keeps: its whitespace folded to
+// single spaces and at most runExcerptLimit characters, cut on a character
+// boundary and marked with an ellipsis where it was cut.
+func RunExcerptOf(text string) string {
+	folded := strings.Join(strings.Fields(strings.ToValidUTF8(text, "")), " ")
+	if utf8.RuneCountInString(folded) <= runExcerptLimit {
+		return folded
+	}
+	runes := []rune(folded)
+	return strings.TrimSpace(string(runes[:runExcerptLimit-1])) + "…"
 }
 
 func (r *Runs) now() time.Time {
@@ -66,12 +85,13 @@ func newRunID() string {
 }
 
 // Issue records that a person, by principal, sent sess a message that was
-// typed into it, and answers the run.
-func (r *Runs) Issue(ctx context.Context, sess session.Session, principal string) (work.Run, error) {
+// typed into it, and answers the run. The run keeps an excerpt of text
+// (RunExcerptOf).
+func (r *Runs) Issue(ctx context.Context, sess session.Session, principal, text string) (work.Run, error) {
 	run := work.Run{ID: newRunID(), Session: sess.ConversationID, Terminal: sess.ID,
-		Assistant: string(sess.Assistant), Principal: principal, At: r.now()}
+		Assistant: string(sess.Assistant), Principal: principal, At: r.now(), Excerpt: RunExcerptOf(text)}
 	raw, _ := json.Marshal(runPayload{Run: run.ID, Session: run.Session, Terminal: run.Terminal,
-		Assistant: run.Assistant, Principal: run.Principal, At: run.At.Unix()})
+		Assistant: run.Assistant, Principal: run.Principal, At: run.At.Unix(), Excerpt: run.Excerpt})
 	if err := r.Store.Append(ctx, store.Event{Kind: EventRunIssued, Subject: run.ID, Payload: raw}); err != nil {
 		return work.Run{}, err
 	}
@@ -100,7 +120,7 @@ func runOf(e store.Event) (work.Run, bool) {
 		at = e.At
 	}
 	return work.Run{ID: p.Run, Session: p.Session, Terminal: p.Terminal, Assistant: p.Assistant,
-		Principal: p.Principal, At: at}, true
+		Principal: p.Principal, At: at, Excerpt: p.Excerpt}, true
 }
 
 func (r *Runs) read(ctx context.Context, kind, subject string) (work.Run, bool, error) {

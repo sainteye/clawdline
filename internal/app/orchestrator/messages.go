@@ -326,12 +326,14 @@ func (b *Broker) WhoAmI(ctx context.Context, conversationID string) (Identity, e
 	}, nil
 }
 
-// TodoOwner resolves the Session that is writing its own to-dos. It asks the
+// LiveRootSession resolves the Session that is writing on its person's word:
+// its own to-dos, or a Board item it creates from their message. It asks the
 // same live registry whoami does, and refuses rather than guesses: a
 // malformed id, no live Session, more than one, or a registry it cannot read
 // all write nothing. A live Clawdline child is refused as well — it reports
-// through its task result, and its to-do list is not where its work is kept.
-func (b *Broker) TodoOwner(ctx context.Context, conversationID string) (session.Session, error) {
+// through its task result, and neither its to-do list nor the Board is where
+// its work is kept.
+func (b *Broker) LiveRootSession(ctx context.Context, conversationID string) (session.Session, error) {
 	if !isLowercaseUUID(conversationID) {
 		return session.Session{}, refuse(http.StatusBadRequest, "conversation_id_malformed",
 			"The conversation id must be one lowercase UUID.")
@@ -341,7 +343,7 @@ func (b *Broker) TodoOwner(ctx context.Context, conversationID string) (session.
 		var r Refusal
 		if errors.As(err, &r) && r.Code == "conversation_not_found" {
 			return session.Session{}, refuse(http.StatusNotFound, "session_not_found",
-				"No live Session is bound to that conversation id; nothing was added.")
+				"No live Session is bound to that conversation id; nothing was written.")
 		}
 		return session.Session{}, err
 	}
@@ -352,7 +354,7 @@ func (b *Broker) TodoOwner(ctx context.Context, conversationID string) (session.
 	for _, r := range records {
 		if r.ChildTerminalID == s.ID && !r.State.Terminal() {
 			return session.Session{}, refuse(http.StatusConflict, "child_session",
-				"A Clawdline child reports through its task result, not its own to-dos.")
+				"A Clawdline child reports through its task result, not its own to-dos or Board items.")
 		}
 	}
 	return s, nil

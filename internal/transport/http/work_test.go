@@ -94,7 +94,7 @@ func TestTheBoardRoutesAnswerOnceAndOnlyToWhoMayWrite(t *testing.T) {
 	if rec := do(machine, http.MethodPost, item, "r0", `{"op":"start","owner":"root-conv","via":{"run":"run-42"}}`); rec.Code != 403 || code(rec) != "run_unknown" {
 		t.Fatalf("an invented run: %d %s", rec.Code, rec.Body)
 	}
-	run, err := s.runs().Issue(context.Background(), session.Session{ID: "%4", ConversationID: "root-conv"}, "local")
+	run, err := s.runs().Issue(context.Background(), session.Session{ID: "%4", ConversationID: "root-conv"}, "local", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestARelayReplaysAfterItsRunExpires(t *testing.T) {
 		s.workRoute(rec, req)
 		return rec
 	}
-	run, err := s.runs().Issue(context.Background(), session.Session{ID: "%4", ConversationID: "root-conv"}, "local")
+	run, err := s.runs().Issue(context.Background(), session.Session{ID: "%4", ConversationID: "root-conv"}, "local", "")
 	if err != nil {
 		t.Fatal(err)
 	}

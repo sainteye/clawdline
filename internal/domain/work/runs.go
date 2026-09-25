@@ -59,6 +59,10 @@ type Run struct {
 	// Principal is the credential that sent it: local, or device:<id>.
 	Principal string    `json:"principal"`
 	At        time.Time `json:"-"`
+	// Excerpt is the start of what the person said, kept so that what a
+	// Session did on their word can show that word (RunExcerptOf). Runs
+	// issued before it existed have none.
+	Excerpt string `json:"excerpt,omitempty"`
 }
 
 // Actor is who a move made on this run's word says it was.

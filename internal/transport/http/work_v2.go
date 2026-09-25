@@ -57,6 +57,7 @@ type workV2ItemWire struct {
 	DeploymentPolicy string                 `json:"deployment_policy"`
 	OwnerSession     *string                `json:"owner_session"`
 	CreatedBy        string                 `json:"created_by"`
+	CreatedVia       *workV2CreatedViaWire  `json:"created_via,omitempty"`
 	CreatedAt        int64                  `json:"created_at"`
 	UpdatedAt        int64                  `json:"updated_at"`
 	ClosedAt         *int64                 `json:"closed_at"`
@@ -67,6 +68,16 @@ type workV2ItemWire struct {
 	Images           []workV2ImageWire      `json:"images,omitempty"`
 	Steps            []workV2StepWire       `json:"steps,omitempty"`
 	Events           []workV2EventWire      `json:"events,omitempty"`
+}
+
+// workV2CreatedViaWire is the person's message a Session created an item on:
+// its run, when it was said, and the start of what was said. Absent for an
+// item a person created as themselves.
+type workV2CreatedViaWire struct {
+	Run       string `json:"run"`
+	SessionID string `json:"session_id"`
+	At        int64  `json:"at"`
+	Excerpt   string `json:"excerpt,omitempty"`
 }
 
 type workV2ImageWire struct {
@@ -228,6 +239,9 @@ func (s *Server) workV2ItemOf(ctx context.Context, v app.WorkV2View) workV2ItemW
 		DeploymentPolicy: string(i.DeploymentPolicy), OwnerSession: optionalString(i.OwnerSession),
 		CreatedBy: i.CreatedBy, CreatedAt: i.CreatedAt.Unix(), UpdatedAt: i.UpdatedAt.Unix(),
 		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, Version: i.Version}
+	if via := i.CreatedVia; via != nil && strings.HasPrefix(i.CreatedBy, work.ActorViaSession) {
+		out.CreatedVia = &workV2CreatedViaWire{Run: via.Run, SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
+	}
 	for _, a := range v.Assignments {
 		out.Assignments = append(out.Assignments, workV2AssignmentWire{ID: a.ID, Mode: a.Mode, SessionID: a.SessionID,
 			TerminalID: a.TerminalID, Assistant: a.Assistant, Model: a.Model, State: a.State,
@@ -1205,6 +1219,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		writeRefusal(w, http.StatusUnauthorized, "machine_required", "Only an authenticated Session may use this route.")
 		return
 	}
+	if len(parts) == 1 && parts[0] == "items" && r.Method == http.MethodPost {
+		s.agentCreateItem(w, r)
+		return
+	}
 	if len(parts) == 1 && parts[0] == "proposals" && r.Method == http.MethodPost {
 		var body struct {
 			ProjectID           string `json:"project_id"`
@@ -1505,7 +1523,7 @@ func (s *Server) agentAddSessionTodos(w http.ResponseWriter, r *http.Request, co
 			"This daemon has no broker to say which Session owns that conversation; nothing was added.")
 		return
 	}
-	if _, err := s.broker.TodoOwner(r.Context(), conversation); err != nil {
+	if _, err := s.broker.LiveRootSession(r.Context(), conversation); err != nil {
 		release()
 		if ref, typed := err.(orchestrator.Refusal); typed {
 			writeRefusal(w, ref.Status, ref.Code, ref.Message)
@@ -1532,6 +1550,94 @@ func (s *Server) agentAddSessionTodos(w http.ResponseWriter, r *http.Request, co
 	if err != nil {
 		release()
 		s.writeWorkV2Error(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write(answer)
+}
+
+// agentCreateItem is POST /v1/work/v2/agent/items: a Session creating a Board
+// item because its person told it to, in a message sent through Clawdline
+// (work-system-v2 §2, amended 2026-09-25). The body names that message's run;
+// the run must exist, be recent and have been said to this Session, the
+// Session must be a live non-child one, and one run backs at most
+// runItemLimit items. An executable item arrives assigned to the Session with
+// its steps; nothing is typed into the terminal, because the Session asked
+// for it. Every refusal is typed and writes nothing, and a replay with the
+// same key answers what was stored.
+func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		SessionID string `json:"session_id"`
+		Via       struct {
+			Run string `json:"run"`
+		} `json:"via"`
+		ProjectID        string   `json:"project_id"`
+		Kind             string   `json:"kind"`
+		Title            string   `json:"title"`
+		Description      string   `json:"description"`
+		DeploymentPolicy string   `json:"deployment_policy"`
+		Steps            []string `json:"steps"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+	if !ok {
+		return
+	}
+	refuse := func(err error) {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		if ref, typed := err.(orchestrator.Refusal); typed {
+			writeRefusal(w, ref.Status, ref.Code, ref.Message)
+			return
+		}
+		s.writeWorkV2Error(w, err)
+	}
+	if strings.TrimSpace(body.Via.Run) == "" {
+		refuse(&app.WorkError{Status: http.StatusForbidden, Code: "run_unknown",
+			Message: "A Session creates a Board item only on a person's message sent through Clawdline; name its run as " +
+				"{\"via\":{\"run\":\"…\"}}. Without one, file a proposal (POST /v1/work/v2/agent/proposals) for the person to accept."})
+		return
+	}
+	run, err := s.relayRun(r.Context(), body.Via.Run)
+	if err != nil {
+		refuse(err)
+		return
+	}
+	if s.broker == nil {
+		refuse(&app.WorkError{Status: http.StatusServiceUnavailable, Code: "session_unresolved",
+			Message: "This daemon has no broker to say which Session owns that conversation; nothing was created."})
+		return
+	}
+	sess, err := s.broker.LiveRootSession(r.Context(), body.SessionID)
+	if err != nil {
+		if _, typed := err.(orchestrator.Refusal); !typed {
+			err = &app.WorkError{Status: http.StatusServiceUnavailable, Code: "session_unresolved",
+				Message: "Which Session owns that conversation could not be read; nothing was created."}
+		}
+		refuse(err)
+		return
+	}
+	project, ok := s.workV2Project(r.Context(), body.ProjectID)
+	if !ok {
+		refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "project_not_found",
+			Message: "Choose a Project from the current Project catalog."})
+		return
+	}
+	sessionProject, _ := projects.CanonicalProjectKey(sess.CWD)
+	var answer []byte
+	_, err = s.workV2().CreateFromSession(r.Context(), app.NewSessionItemV2{Run: *run, SessionID: sess.ConversationID,
+		TerminalID: sess.ID, Assistant: string(sess.Assistant), SessionProject: sessionProject,
+		ProjectID: project.ID, ProjectPath: project.Path, Kind: work.Kind(body.Kind), Title: body.Title,
+		Description: body.Description, DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps},
+		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
+		})
+	if err != nil {
+		refuse(err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

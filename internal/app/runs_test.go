@@ -23,12 +23,12 @@ func TestARunIsIssuedFoundAndChecked(t *testing.T) {
 	at := time.Date(2026, 9, 19, 9, 0, 0, 0, time.UTC)
 	runs := &Runs{Store: st, Now: func() time.Time { return at }}
 	sess := session.Session{ID: "%4", ConversationID: "root-conv", Assistant: session.AssistantClaude}
-	first, err := runs.Issue(ctx, sess, "local")
+	first, err := runs.Issue(ctx, sess, "local", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	at = at.Add(time.Minute)
-	second, err := runs.Issue(ctx, sess, "device:phone")
+	second, err := runs.Issue(ctx, sess, "device:phone", "")
 	if err != nil || second.ID == first.ID || !work.RunShaped(second.ID) {
 		t.Fatalf("second run %+v %v", second, err)
 	}
@@ -66,5 +66,42 @@ func TestARunIsIssuedFoundAndChecked(t *testing.T) {
 	at = first.At.Add(work.RelayWindow + time.Second)
 	if _, err := runs.Relay(ctx, first.ID); codeOf(err) != "run_expired" {
 		t.Fatalf("a day-old run: %v", err)
+	}
+}
+
+// A run keeps the start of the message it was issued for across a restart,
+// and a run recorded before runs kept one reads with none.
+func TestARunsExcerptSurvivesARestartAndOlderRunsHaveNone(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	runs := &Runs{Store: st}
+	run, err := runs.Issue(ctx, session.Session{ID: "%4", ConversationID: "root-conv"}, "local", "Create a Board item\nwith steps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const older = "0f0f0f0f-0000-4000-8000-000000000001"
+	legacy := []byte(`{"run":"` + older + `","session_id":"root-conv","terminal_id":"%4","principal":"local","at":1790000000}`)
+	if err := st.Append(ctx, store.Event{Kind: EventRunIssued, Subject: older, Payload: legacy}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if st, err = store.Open(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	runs.Store = st
+	got, ok, err := runs.Find(ctx, run.ID)
+	if err != nil || !ok || got.Excerpt != "Create a Board item with steps" {
+		t.Fatalf("excerpt after a restart: %+v %v %v", got, ok, err)
+	}
+	old, ok, err := runs.Find(ctx, older)
+	if err != nil || !ok || old.Excerpt != "" || old.Session != "root-conv" {
+		t.Fatalf("an older run: %+v %v %v", old, ok, err)
 	}
 }

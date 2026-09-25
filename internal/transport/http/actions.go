@@ -117,7 +117,7 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			// are there (proposals.go, board-redesign §4.3), and the run the
 			// session relays their words under (runs.go, U4).
 			s.heardFrom(sent)
-			s.issueRun(ctx, r, sent)
+			s.issueRun(ctx, r, sent, body.Text)
 			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "typed"})
 		})
 	case "interrupt":
