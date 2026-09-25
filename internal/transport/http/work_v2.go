@@ -1499,6 +1499,12 @@ func (s *Server) agentAddSessionTodos(w http.ResponseWriter, r *http.Request, co
 		return
 	}
 	release := func() { _ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k) }
+	if s.broker == nil {
+		release()
+		writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved",
+			"This daemon has no broker to say which Session owns that conversation; nothing was added.")
+		return
+	}
 	if _, err := s.broker.TodoOwner(r.Context(), conversation); err != nil {
 		release()
 		if ref, typed := err.(orchestrator.Refusal); typed {
