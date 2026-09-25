@@ -74,7 +74,11 @@ type Entry struct {
 	Label    string    `json:"label"`
 	Icon     icon.Grid `json:"icon"`
 	Files    []File    `json:"files"`
-	Revision string    `json:"revision"`
+	// Withheld are carried paths the source has and did not send: over the
+	// file or entry budget, or unreadable. A mirror never deletes one of these
+	// as if the source had dropped it.
+	Withheld []string `json:"withheld,omitempty"`
+	Revision string   `json:"revision"`
 }
 
 // Skipped is a project the source has and does not carry, with why.
@@ -103,7 +107,10 @@ const (
 	SkipManifestFull = "manifest_full"
 )
 
-var repoShape = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*(/[a-z0-9._~-]+)+$`)
+// repoShape is host/owner/…/name. No segment starts with a dot or a tilde:
+// the last one names the clone's directory, and `.git` or `.ssh` there is a
+// directory nobody meant to create.
+var repoShape = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*(/[a-z0-9_-][a-z0-9._~-]*)+$`)
 
 // ErrNotPortable is a remote that names a place only this machine can reach:
 // a local path or a file URL.
@@ -140,6 +147,10 @@ func Repo(remote string) (string, error) {
 			return "", ErrNotPortable
 		}
 		host, p = r[:colon], r[colon+1:]
+		// git reads a slash before the first colon as a local path, not a host.
+		if strings.Contains(host, "/") {
+			return "", ErrNotPortable
+		}
 		if at := strings.LastIndex(host, "@"); at >= 0 {
 			host = host[at+1:]
 		}
@@ -184,6 +195,13 @@ func Allowed(rel string) bool {
 	}
 	for _, d := range Dirs {
 		if strings.HasPrefix(rel, d+"/") {
+			// A dot file or directory inside a carried place is where an
+			// ignored secret sits (`.env`), not a skill.
+			for _, part := range strings.Split(strings.TrimPrefix(rel, d+"/"), "/") {
+				if strings.HasPrefix(part, ".") {
+					return false
+				}
+			}
 			return true
 		}
 	}
@@ -205,12 +223,15 @@ func EntryRevision(e Entry) string {
 		files = append(files, [2]string{f.Path, f.SHA256})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i][0] < files[j][0] })
+	withheld := append([]string(nil), e.Withheld...)
+	sort.Strings(withheld)
 	data, _ := json.Marshal(struct {
-		Repo  string      `json:"repo"`
-		Label string      `json:"label"`
-		Icon  icon.Grid   `json:"icon"`
-		Files [][2]string `json:"files"`
-	}{e.Repo, e.Label, e.Icon, files})
+		Repo     string      `json:"repo"`
+		Label    string      `json:"label"`
+		Icon     icon.Grid   `json:"icon"`
+		Files    [][2]string `json:"files"`
+		Withheld []string    `json:"withheld"`
+	}{e.Repo, e.Label, e.Icon, files, withheld})
 	return Sum(data)[:32]
 }
 
@@ -244,8 +265,13 @@ func Check(e Entry, withContent bool) error {
 	if err := icon.Validate(e.Icon); err != nil {
 		return err
 	}
-	if len(e.Files) > MaxProjectFiles {
+	if len(e.Files) > MaxProjectFiles || len(e.Withheld) > MaxProjectFiles {
 		return fmt.Errorf("a project carries at most %d files", MaxProjectFiles)
+	}
+	for _, w := range e.Withheld {
+		if !Allowed(w) {
+			return fmt.Errorf("%q is not a carried project file", w)
+		}
 	}
 	seen := map[string]bool{}
 	for _, f := range e.Files {

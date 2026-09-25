@@ -138,3 +138,23 @@ func TestAnUnreadableMirrorRefusesToOpen(t *testing.T) {
 		t.Fatal("a corrupt mirror opened as an empty one")
 	}
 }
+
+func TestAnIdentityCannotNameALocalPathOrADotDirectory(t *testing.T) {
+	// git reads `a/b:c` as a local path, because a slash comes before the colon.
+	for _, remote := range []string{"github.com/owner:name", "https://github.com/x/.git.git", "git@github.com:x/.ssh", "https://github.com/x/~"} {
+		if got, err := Repo(remote); err == nil {
+			t.Errorf("Repo(%q) = %q; that clone could land on a local path or a dot directory", remote, got)
+		}
+	}
+	if ValidRepo("github.com/x/.git") {
+		t.Error("a repository named .git is valid")
+	}
+}
+
+func TestADotFileInsideACarriedPlaceIsNotCarried(t *testing.T) {
+	for _, p := range []string{".claude/skills/x/.env", ".claude/commands/.secret/x.md"} {
+		if Allowed(p) {
+			t.Errorf("%q must not be carried: an ignored dot file is where a secret sits", p)
+		}
+	}
+}

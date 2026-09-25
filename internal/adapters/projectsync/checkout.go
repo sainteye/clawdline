@@ -40,7 +40,8 @@ func git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+	// Literal pathspecs: a carried path with `*` or `[` in it names that file, not a glob.
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_LITERAL_PATHSPECS=1")
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); err != nil {
@@ -222,6 +223,11 @@ func Remove(root, rel string) error {
 // Clone makes a fresh checkout. It never prompts: a remote that needs
 // credentials this machine does not have fails with git's own last line.
 func Clone(ctx context.Context, url, dest string) error {
+	// Only a spelling that names a remote host: Repo refuses local paths, and
+	// this refuses anything Repo would not have produced an identity for.
+	if _, err := domain.Repo(url); err != nil {
+		return fmt.Errorf("refusing to clone %q: %w", url, err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, CloneTimeout)
 	defer cancel()
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {

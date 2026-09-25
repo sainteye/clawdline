@@ -19,14 +19,22 @@ This page is how one machine owns those settings and others read them.
   a local path, is listed as skipped with its reason and never matched by name
   (`docs/project-icons.md` explains why a path or a label is not an identity).
 - **Only what git does not carry travels.** Untracked and ignored files under `.claude/skills`,
-  `.claude/commands` and `.claude/agents`, and `CLAUDE.local.md`. A tracked file arrives with the
-  repository and is never written over. `.claude/settings.local.json` is deliberately excluded:
+  `.claude/commands` and `.claude/agents`, and `CLAUDE.local.md` — except dot files and dot
+  directories inside them (`.env` is where an ignored secret sits, not a skill). A tracked file
+  arrives with the repository and is never written over. `.claude/settings.local.json` is deliberately excluded:
   it holds the source machine's permission grants and absolute paths, and copying a grant to
   another machine is an escalation nobody chose there.
 - **A mirror does not destroy an edit.** Each apply compares every file with what the mirror last
   wrote. A file somebody changed on the mirror is kept and named (`local_edit`); a file the
   source dropped is removed only if nobody changed it. A write never passes through a symbolic
-  link (`unsafe_path`).
+  link (`unsafe_path`). A file the source has but did not send — over the 256 KiB file bound, past
+  the entry's budget, or unreadable — is named as `withheld`, and a mirror keeps its copy rather
+  than treating it as deleted. When a mirrored checkout moves to another path, the files the mirror
+  wrote at the old path stay there untouched.
+- **A repository name cannot become a local path.** `host/owner:name`, which git reads as a local
+  path, is refused, and no segment of the name may start with `.` or `~`, so a clone can never
+  create `~/.git` or `.ssh`. An apply that arrives while its repository is still being cloned
+  answers `cloning` and writes nothing.
 - **A missing repository can be cloned** when the person asks, into the directory most of that
   machine's projects already sit in (or `CLAWDLINE_PROJECTS_ROOT`, else `~/projects`). The clone
   never prompts for credentials: a remote the machine cannot reach fails with git's own last line,

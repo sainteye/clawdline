@@ -43,6 +43,9 @@ type Steps struct {
 func Plan(e Entry, owned map[string]string, here map[string]Here) Steps {
 	s := Steps{Owned: map[string]string{}}
 	offered := map[string]bool{}
+	for _, w := range e.Withheld {
+		offered[w] = true // still the source's; neither written nor removed
+	}
 	for _, f := range e.Files {
 		offered[f.Path] = true
 		h := here[f.Path]
@@ -60,7 +63,15 @@ func Plan(e Entry, owned map[string]string, here map[string]Here) Steps {
 			s.Kept = append(s.Kept, Kept{f.Path, KeepLocalEdit})
 		}
 	}
+	withheld := map[string]bool{}
+	for _, w := range e.Withheld {
+		withheld[w] = true
+	}
 	for p, sum := range owned {
+		if withheld[p] {
+			s.Owned[p] = sum
+			continue
+		}
 		if offered[p] {
 			continue
 		}

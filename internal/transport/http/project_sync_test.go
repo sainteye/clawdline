@@ -124,3 +124,32 @@ func unwrap(payload []byte, into any) error {
 	}
 	return json.Unmarshal(outer.Body, into)
 }
+
+func TestALargeProjectFitsItsOwnBound(t *testing.T) {
+	src, _ := syncStandIn(t, "git@github.com:acme/big.git", "")
+	dst, _ := syncStandIn(t, "https://github.com/acme/big", "")
+	project, _ := src.server.workV2Project(t.Context(), src.place)
+	big := make([]byte, 220<<10)
+	for i := 0; i < 7; i++ {
+		dir := filepath.Join(project.Path, ".claude", "skills", string(rune('a'+i)))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), big[:len(big)-i], 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	machine := cloudops.MachineReplySession
+	a, _ := src.ask(t, 1, map[string]any{"type": "project-entry", "session": machine, "request": "e", "repo": "github.com/acme/big"})
+	var entry struct {
+		Project map[string]any `json:"project"`
+	}
+	if !a.OK() || unwrap(a.Payload, &entry) != nil {
+		t.Fatalf("entry: %d", a.Status)
+	}
+	a, _ = dst.ask(t, 2, map[string]any{"type": "project-mirror-apply", "session": machine, "request": "apply",
+		"item": map[string]any{"source": map[string]any{"machine": "mac-01", "name": "Studio"}, "project": entry.Project, "clone": false}})
+	if !a.OK() {
+		t.Fatalf("a 1.5 MB project was refused: %d %.200s", a.Status, a.Payload)
+	}
+}

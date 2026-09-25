@@ -9,7 +9,7 @@ test("the seam reads the named machine, not the one on screen, through the clien
   const asked: unknown[] = []
   const client = {
     machines: async () => ({ machines: [
-      { id: "mac-a", label: "Mac · A", selectable: true },
+      { id: "mac-a", label: "Studio · A", selectable: true },
       { id: "linux-b", name: "B", label: "Linux · B", selectable: true },
     ] }),
     machineDescriptor: (id: string) => (id === "mac-a" ? { machine: { commands: ["project-manifest"] } } : null),
@@ -23,7 +23,7 @@ test("the seam reads the named machine, not the one on screen, through the clien
   await assert.rejects(seam.machines(), /not ready/)
   current = client
   assert.deepEqual(await seam.machines(), [
-    { id: "mac-a", name: "Mac · A", offers: true, selectable: true },
+    { id: "mac-a", name: "Studio · A", offers: true, selectable: true },
     { id: "linux-b", name: "B", offers: null, selectable: true },
   ])
   assert.deepEqual(await seam.read("mac-a", "project-entry", { repo: "github.com/o/n" }), { projects: [] })

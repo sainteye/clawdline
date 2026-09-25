@@ -284,3 +284,64 @@ func TestAFailedCloneIsReportedNotHidden(t *testing.T) {
 	}
 	t.Fatalf("the clone never reported failure: %+v", dst.State())
 }
+
+func TestTheManifestAndTheEntryAgreeAndAWithheldFileIsNeverDeleted(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	shop := checkout(t, filepath.Join(base, "shop"), "git@github.com:acme/shop.git")
+	big := string(make([]byte, 250<<10))
+	for i := 0; i < 10; i++ {
+		write(t, shop, ".claude/skills/s"+string(rune('a'+i))+"/SKILL.md", big[:len(big)-i])
+	}
+	src := service(t, shop)
+	m := src.Manifest(ctx)
+	e, err := src.Entry(ctx, "github.com/acme/shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Projects[0].Revision != e.Revision || len(m.Projects[0].Files) != len(e.Files) {
+		t.Fatalf("manifest %d files rev %s, entry %d files rev %s: a mirror would re-apply forever",
+			len(m.Projects[0].Files), m.Projects[0].Revision, len(e.Files), e.Revision)
+	}
+	if len(e.Withheld) == 0 {
+		t.Fatal("files over the budget should be named as withheld")
+	}
+	// A mirror that owns a withheld file keeps it.
+	there := checkout(t, filepath.Join(base, "there"), "git@github.com:acme/shop.git")
+	dst := service(t, there)
+	gone := e.Withheld[0]
+	write(t, there, gone, "old copy")
+	if err := dst.Mirror.Put(domain.Record{Repo: e.Repo, Path: there, Icon: colour("#000000"),
+		Files: map[string]string{gone: domain.Sum([]byte("old copy"))}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dst.Apply(ctx, ApplyRequest{Project: e}); err != nil {
+		t.Fatal(err)
+	}
+	if read(t, there, gone) != "old copy" {
+		t.Fatal("a file the source withheld was deleted as if the source had dropped it")
+	}
+}
+
+func TestAnApplyWhileCloningDoesNotWriteIntoTheHalfMadeCheckout(t *testing.T) {
+	ctx := context.Background()
+	content := []byte("x")
+	e := domain.Entry{Repo: "git.example.test/acme/slow", CloneURL: "https://git.example.test/acme/slow.git", Icon: colour("#000000"),
+		Files: []domain.File{{Path: "CLAUDE.local.md", Content: content, Size: 1, SHA256: domain.Sum(content)}}}
+	dst := service(t)
+	root := t.TempDir()
+	dst.CloneRoot = func() string { return root }
+	dst.jobs = map[string]*Job{e.Repo: {Repo: e.Repo, State: StateCloning, Dest: filepath.Join(root, "slow")}}
+	// The half-made checkout already names its origin, as git clone writes it first.
+	checkout(t, filepath.Join(root, "slow"), e.CloneURL)
+	res, err := dst.Apply(ctx, ApplyRequest{Project: e, Clone: true})
+	if err != nil || res.State != StateCloning {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if read(t, filepath.Join(root, "slow"), "CLAUDE.local.md") != "<missing>" {
+		t.Fatal("an apply wrote into a checkout that was still being cloned")
+	}
+	if len(dst.State().Clones) != 1 {
+		t.Fatal("the running clone was forgotten")
+	}
+}

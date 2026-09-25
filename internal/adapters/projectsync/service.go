@@ -152,6 +152,21 @@ func (s *Service) Entry(ctx context.Context, repo string) (domain.Entry, error) 
 	return domain.Entry{}, ErrNotOffered
 }
 
+// truncate cuts at a rune boundary, so a long name in any script stays valid UTF-8.
+func truncate(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	cut := 0
+	for i := range text {
+		if i > limit {
+			break
+		}
+		cut = i
+	}
+	return text[:cut]
+}
+
 func (s *Service) describe(ctx context.Context, c Checkout, withContent bool) (domain.Entry, string) {
 	if s.Mirror != nil && s.Mirror.Mirrored(c.Path) {
 		return domain.Entry{}, domain.SkipMirrored
@@ -171,24 +186,23 @@ func (s *Service) describe(ctx context.Context, c Checkout, withContent bool) (d
 	if err != nil {
 		return domain.Entry{}, domain.SkipUnreadable
 	}
-	e := domain.Entry{Repo: repo, CloneURL: url, Label: c.Label, Icon: s.Icon(c.Path), Files: []domain.File{}}
-	if len(e.Label) > 200 {
-		e.Label = e.Label[:200]
-	}
+	e := domain.Entry{Repo: repo, CloneURL: url, Label: truncate(c.Label, 200), Icon: s.Icon(c.Path), Files: []domain.File{}}
+	// One budget for the listing and the entry alike, by size, so the two
+	// agree about what is carried and a mirror compares like with like.
+	// Base64 grows a body by a third; the raw budget stays well under the bound.
 	total := 0
 	for _, p := range paths {
-		if len(e.Files) >= domain.MaxProjectFiles {
-			break
-		}
 		data, err := Read(c.Path, p)
-		if err != nil || data == nil {
+		if err != nil || data == nil || len(e.Files) >= domain.MaxProjectFiles || total+len(data) > domain.MaxEntryBytes/2 {
+			if err == nil && data == nil {
+				continue // gone since it was listed
+			}
+			if len(e.Withheld) < domain.MaxProjectFiles {
+				e.Withheld = append(e.Withheld, p)
+			}
 			continue
 		}
 		total += len(data)
-		if withContent && total > domain.MaxEntryBytes/2 {
-			// Base64 grows a body by a third; stop well before the bound.
-			break
-		}
 		f := domain.File{Path: p, SHA256: domain.Sum(data), Size: int64(len(data))}
 		if withContent {
 			f.Content = data
@@ -245,6 +259,16 @@ func (s *Service) Apply(ctx context.Context, req ApplyRequest) (ApplyResult, err
 	prev, had := s.Mirror.Get(e.Repo)
 	if had && !req.ReplaceSource && !sameSource(prev.Source, req.Source) {
 		return ApplyResult{}, fmt.Errorf("%w (%s)", ErrSourceMismatch, prev.Source.Name)
+	}
+	// A clone in progress already names its origin before its files exist;
+	// an apply now would write into a half-made checkout.
+	s.mu.Lock()
+	job, cloning := s.jobs[e.Repo]
+	cloning = cloning && job.State == StateCloning
+	s.mu.Unlock()
+	if cloning {
+		return ApplyResult{Repo: e.Repo, State: StateCloning, Path: job.Dest, Revision: e.Revision,
+			Written: []string{}, Deleted: []string{}, Kept: []domain.Kept{}}, nil
 	}
 	root := s.locate(ctx, e.Repo, prev.Path)
 	if root == "" {
