@@ -907,20 +907,36 @@ func scanDirectTodoV2(sc scanner) (work.DirectTodoV2, error) {
 const directTodoV2Columns = `id,session_id,text,created_by,created_at,sent_at,read_at,completed_at,completed_by,version`
 
 func (t *WorkV2Tx) CreateDirectTodo(td work.DirectTodoV2) error {
+	return t.CreateDirectTodos([]work.DirectTodoV2{td})
+}
+
+// CreateDirectTodos adds every row or none: the open-row bound is checked
+// against the whole batch before anything is written, so a batch that would
+// cross it is refused whole. Rows keep the order they are given in; rows
+// created in the same second are read back in insertion (rowid) order.
+func (t *WorkV2Tx) CreateDirectTodos(tds []work.DirectTodoV2) error {
+	if len(tds) == 0 {
+		return nil
+	}
 	var n int64
 	if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM session_direct_todos
-    WHERE session_id=? AND completed_at IS NULL`, td.SessionID).Scan(&n); err != nil {
+    WHERE session_id=? AND completed_at IS NULL`, tds[0].SessionID).Scan(&n); err != nil {
 		return err
-	} else if n >= DirectTodoV2Limit {
+	} else if n+int64(len(tds)) > DirectTodoV2Limit {
 		return ErrDirectTodoFull
 	}
-	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO session_direct_todos
-    (id,session_id,text,created_by,created_at,version) VALUES (?,?,?,?,?,1)`,
-		td.ID, td.SessionID, td.Text, td.CreatedBy, td.CreatedAt.Unix())
-	if err == nil {
+	for _, td := range tds {
+		if td.SessionID != tds[0].SessionID {
+			return errors.New("a direct to-do batch names one Session")
+		}
+		if _, err := t.tx.ExecContext(t.ctx, `INSERT INTO session_direct_todos
+    (id,session_id,text,created_by,created_at,read_at,version) VALUES (?,?,?,?,?,?,1)`,
+			td.ID, td.SessionID, td.Text, td.CreatedBy, td.CreatedAt.Unix(), zeroOrUnix(td.ReadAt)); err != nil {
+			return err
+		}
 		t.wrote++
 	}
-	return err
+	return nil
 }
 
 func (t *WorkV2Tx) AddDirectTodoImage(i work.DirectTodoImageV2, data []byte) error {
@@ -1051,14 +1067,14 @@ func (s *Store) DirectTodosV2(ctx context.Context, session string, includeComple
 		stmt := `SELECT ` + directTodoV2Columns + ` FROM session_direct_todos WHERE session_id=?`
 		if !includeCompleted {
 			stmt += ` AND completed_at IS NULL`
-			stmt += ` ORDER BY created_at,id LIMIT ?`
+			stmt += ` ORDER BY created_at,rowid LIMIT ?`
 		} else {
 			// Open work remains the actionable prefix in creation order. Completed
 			// rows follow newest first so the bounded person view keeps the most
 			// useful confirmations without hiding an old open row.
 			stmt += ` ORDER BY completed_at IS NOT NULL,
         CASE WHEN completed_at IS NULL THEN created_at END,
-        CASE WHEN completed_at IS NOT NULL THEN completed_at END DESC,id LIMIT ?`
+        CASE WHEN completed_at IS NOT NULL THEN completed_at END DESC,rowid LIMIT ?`
 		}
 		rows, err := tx.tx.QueryContext(ctx, stmt, session, limit+1)
 		if err != nil {

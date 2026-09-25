@@ -148,6 +148,8 @@ const words = {
     failedNetwork: "The daemon did not answer; nothing is known to have been done.",
 
     todosTitle: "Session to-dos",
+    todoAddedBySession: "Added by Session",
+    todoAddedBySessionLabel: "Added by this Session at your request; you did not send it",
     todosOpen: "{n} open",
     todosLede: "Made and closed by the broker's facts. Nothing here needs tending.",
     todosNone: "This session owes nothing.",
@@ -281,6 +283,8 @@ const words = {
     failedNetwork: "daemon 沒有回應；不知道有沒有做成。",
 
     todosTitle: "Session 待辦",
+    todoAddedBySession: "Session 建立",
+    todoAddedBySessionLabel: "這個 Session 依你的要求自己建立，不是你傳送的",
     todosOpen: "{n} 項未完成",
     todosLede: "由 broker 的事實自動建立、自動結束。你不需要整理它。",
     todosNone: "這個 session 沒有欠任何事。",

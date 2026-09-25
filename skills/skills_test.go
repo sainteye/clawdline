@@ -249,3 +249,33 @@ func TestEveryGuideExplainsDeferredBoardAssignments(t *testing.T) {
 		}
 	}
 }
+
+// A Session adds its own to-dos only when asked, and proposes a Board item
+// through the route whose rows the Board's Agent proposals queue shows. Both
+// guides say so; the older proposal route alone would put a proposal where
+// the Board never reads.
+func TestEveryGuideExplainsSessionOwnTodosAndBoardProposals(t *testing.T) {
+	wants := []string{
+		"clawdline todo add",
+		"clawdline todo done <to-do id>",
+		"POST /v1/work/v2/agent/session-todos/<conversation id>",
+		"POST /v1/work/v2/agent/proposals",
+		`"source_todo_id"`,
+		"source_todo_id",
+		"suggested_acceptance",
+		"child_session",
+		"direct_todos_full",
+		"`description`",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain a Session's own to-dos and Board proposals with %q", topic, want)
+			}
+		}
+	}
+}

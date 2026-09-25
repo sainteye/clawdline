@@ -22,6 +22,8 @@ const (
 	workV2UserActionLimit       = 8 << 10
 	workV2CompletionReasonLimit = 8 << 10
 	directTodoTextLimit         = 8 << 10
+	// A Session writes its own to-dos in batches of at most this many rows.
+	sessionTodoBatchLimit = 20
 )
 
 type WorkSystemV2 struct {
@@ -1146,6 +1148,63 @@ func (w *WorkSystemV2) CreateDirectTodo(ctx context.Context, n NewDirectTodoV2, 
 		return nil
 	})
 	return td, mapWorkV2Error(err)
+}
+
+// NewSessionTodosV2 is a Session writing its own to-dos, which it does only
+// when the person asked it to. The conversation id is both the owner and the
+// provenance: a row whose CreatedBy is its own SessionID was written by that
+// Session, not sent by the person.
+type NewSessionTodosV2 struct {
+	SessionID string
+	Texts     []string
+}
+
+type TodosV2Filer func([]work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool)
+
+// CreateSessionTodos writes the whole batch in one transaction or nothing.
+// The rows count as already read: the Session wrote them, so there is no
+// delivery for it to observe.
+func (w *WorkSystemV2) CreateSessionTodos(ctx context.Context, n NewSessionTodosV2, file TodosV2Filer) ([]work.DirectTodoV2, error) {
+	if n.SessionID == "" {
+		return nil, workV2Error(http.StatusBadRequest, "session_required", "Name the Session the to-dos belong to.")
+	}
+	switch {
+	case len(n.Texts) == 0:
+		return nil, workV2Error(http.StatusBadRequest, "todos_required", "Send at least one to-do.")
+	case len(n.Texts) > sessionTodoBatchLimit:
+		return nil, workV2Error(http.StatusRequestEntityTooLarge, "too_many_todos",
+			fmt.Sprintf("One call adds at most %d to-dos; nothing was added.", sessionTodoBatchLimit))
+	}
+	now := w.now()
+	rows := make([]work.DirectTodoV2, 0, len(n.Texts))
+	for i, text := range n.Texts {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil, workV2Error(http.StatusBadRequest, "todo_text_required",
+				fmt.Sprintf("To-do %d is empty; nothing was added.", i+1))
+		}
+		if len(text) > directTodoTextLimit {
+			return nil, workV2Error(http.StatusRequestEntityTooLarge, "todo_too_large",
+				fmt.Sprintf("To-do %d is over 8 KiB; nothing was added.", i+1))
+		}
+		rows = append(rows, work.DirectTodoV2{ID: newWorkID(), SessionID: n.SessionID, Text: text,
+			CreatedBy: n.SessionID, CreatedAt: now, ReadAt: now, Version: 1})
+	}
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		if err := tx.CreateDirectTodos(rows); err != nil {
+			return err
+		}
+		if file != nil {
+			if k, ans, ok := file(rows); ok {
+				return tx.CompleteReceipt(k, ans)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, mapWorkV2Error(err)
+	}
+	return rows, nil
 }
 
 func (w *WorkSystemV2) DirectTodos(ctx context.Context, session string, includeCompleted, markRead bool) ([]work.DirectTodoV2, bool, error) {

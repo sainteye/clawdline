@@ -262,7 +262,8 @@ that decision exists. A person may change the policy; the Agent may not.
 | Advance/rewind execution phase | no | yes | no | validates only |
 | Create proposal | no | yes | yes, attributed to its root | no |
 | Accept/reject/edit proposal | yes | no | no | no |
-| Create/Send/Delete quick Session to-do | yes | no | no | no |
+| Create quick Session to-do | yes | yes, for itself, on the person's explicit request | no | no |
+| Send/Delete quick Session to-do | yes | no | no | no |
 | Complete quick Session to-do | yes | yes, for itself | no | no |
 
 Person-only writes are served through device-authenticated routes requiring the send capability.
@@ -278,6 +279,12 @@ the request. Until a per-Session capability exists, the thin CLI supplies the co
 the assistant environment and the server revalidates it against the live identity and active
 assignment. This is a cooperative ownership boundary, not a sandbox against a deliberately forged
 conversation id, and the wire must say so rather than claiming stronger isolation.
+
+The owning Agent's own to-dos sit behind the same cooperative boundary. The rule that it writes
+them only when the person explicitly asked is carried by the guide, not enforced by the daemon; what
+the daemon enforces is that the conversation is one lowercase UUID naming exactly one live,
+non-child Session, and it records that conversation id as the row's `created_by`. A Session that
+forges another's conversation id is outside what this boundary claims to stop.
 
 ## 8. Assignment
 
@@ -414,7 +421,31 @@ assistants receive readable drop paths under the same fallback rules as the comp
 Images cannot be appended after an explicit Send or completion; an Agent pull that races the short
 upload sequence sees the complete set on its next read. Delete removes the row and cascades its image bytes from
 the active store as explicitly requested; its security/operation audit contains metadata, not the
-deleted text or images. Agent access may only read and complete its own row.
+deleted text or images. Agent access may read and complete its own rows, and add rows to its own
+list as below; it can never send or delete one.
+
+**Session-created rows.** When the person explicitly asks a Session to track its work as Clawdline
+to-dos, the Session adds them itself with
+`POST /v1/work/v2/agent/session-todos/<conversation id>` (`clawdline todo add`), body
+`{"todos": [{"text": "…"}, …]}`, Idempotency-Key required. One call carries 1–20 rows
+(`session.todo_batch_rows`), each under the same trim, non-empty and 8 KiB rules as a person's row,
+inside the 96 KiB work-system request body. The batch is one transaction: every row is written or
+none is, and a batch that would take the Session past its 500 open rows is refused whole
+(`direct_todos_full`). A malformed conversation id, one that names no live Session, one that is
+ambiguous, a registry that cannot be read, and a live Clawdline child's Session are all refused
+before anything is written (`conversation_id_malformed`, `session_not_found`,
+`conversation_ambiguous`, `registry_stale`, `child_session`).
+
+Such a row records the Session's conversation id as `created_by`, and its `read_at` equals its
+`created_at`: the Session wrote it, so there is no delivery for it to observe. Rows are read back in
+the order given; rows created in the same second are ordered by insertion (`rowid`), not by their
+random ids. Every direct-to-do row carries `created_by` on both the person's and the Agent's read.
+The Console shows a row whose `created_by` equals the Session's own conversation id with a
+localized "Added by Session" label (with accessible text) in place of the sent/read receipt, since
+the person never sent it; a completed one still shows its completion. Complete, Send and Delete
+controls are unchanged, and only the person can send or delete such a row. Session-created rows
+never appear on the Board; a Board item comes only through an Agent proposal (§10), which may cite
+the to-do as its `source_todo_id`.
 
 The Console draws `✓✓` as an overlapping double-check and exposes localized accessible text for
 unsent, sent, synchronized-but-open, and completed; color alone never carries the receipt state.

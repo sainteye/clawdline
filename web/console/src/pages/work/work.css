@@ -387,6 +387,10 @@
 .session-todo-check:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .session-todo-receipt { color: var(--faint); }
 .session-todo-receipt[data-state="read"] { color: var(--accent); }
+.session-todo-author {
+    display: inline-block; margin-right: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px;
+    color: var(--faint);
+}
 .session-todo-receipt-mark { display: inline-block; margin-right: 5px; letter-spacing: -4px; padding-right: 4px; }
 .session-todo-modal {
     position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: #0009;

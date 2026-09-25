@@ -959,20 +959,24 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 }
 
 type directTodoV2Wire struct {
-	ID          string            `json:"id"`
-	Text        string            `json:"text"`
-	CreatedAt   int64             `json:"created_at"`
-	SentAt      *int64            `json:"sent_at"`
-	ReadAt      *int64            `json:"read_at"`
-	CompletedAt *int64            `json:"completed_at"`
-	CompletedBy string            `json:"completed_by,omitempty"`
-	Version     int64             `json:"version"`
-	Images      []workV2ImageWire `json:"images,omitempty"`
+	ID          string `json:"id"`
+	Text        string `json:"text"`
+	CreatedAt   int64  `json:"created_at"`
+	SentAt      *int64 `json:"sent_at"`
+	ReadAt      *int64 `json:"read_at"`
+	CompletedAt *int64 `json:"completed_at"`
+	CompletedBy string `json:"completed_by,omitempty"`
+	// CreatedBy is who wrote the row: the person's actor, or the Session's own
+	// conversation id when the Session added it on the person's request.
+	CreatedBy string            `json:"created_by"`
+	Version   int64             `json:"version"`
+	Images    []workV2ImageWire `json:"images,omitempty"`
 }
 
 func directTodoWire(td work.DirectTodoV2, images []work.DirectTodoImageV2) directTodoV2Wire {
 	out := directTodoV2Wire{ID: td.ID, Text: td.Text, CreatedAt: td.CreatedAt.Unix(), SentAt: optionalUnix(td.SentAt),
-		ReadAt: optionalUnix(td.ReadAt), CompletedAt: optionalUnix(td.CompletedAt), CompletedBy: td.CompletedBy, Version: td.Version}
+		ReadAt: optionalUnix(td.ReadAt), CompletedAt: optionalUnix(td.CompletedAt), CompletedBy: td.CompletedBy,
+		CreatedBy: td.CreatedBy, Version: td.Version}
 	for _, image := range images {
 		out.Images = append(out.Images, workV2ImageWire{ID: image.ID, Title: image.Title, MediaType: image.MediaType,
 			ByteCount: image.ByteCount, Width: image.Width, Height: image.Height, Position: image.Position,
@@ -1443,6 +1447,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 				"direct_todos": out, "truncated": truncated || itemTruncated || recentTruncated})
 			return
 		}
+		if len(parts) == 2 && r.Method == http.MethodPost {
+			s.agentAddSessionTodos(w, r, sessionID)
+			return
+		}
 		if len(parts) == 4 && parts[3] == "complete" && r.Method == http.MethodPost {
 			var body struct{}
 			raw, ok := readWorkV2Body(w, r, &body)
@@ -1470,6 +1478,59 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 	}
 	writeRefusal(w, http.StatusNotFound, "not_found", "No such Agent work-system route.")
+}
+
+// agentAddSessionTodos is POST /v1/work/v2/agent/session-todos/<conversation>:
+// a Session writing its own to-dos because the person asked it to. The
+// conversation must be a live, non-child Session; the batch is written whole
+// or not at all, and a replay with the same key answers what was stored.
+func (s *Server) agentAddSessionTodos(w http.ResponseWriter, r *http.Request, conversation string) {
+	var body struct {
+		Todos []struct {
+			Text string `json:"text"`
+		} `json:"todos"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, conversation, raw)
+	if !ok {
+		return
+	}
+	release := func() { _ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k) }
+	if _, err := s.broker.TodoOwner(r.Context(), conversation); err != nil {
+		release()
+		if ref, typed := err.(orchestrator.Refusal); typed {
+			writeRefusal(w, ref.Status, ref.Code, ref.Message)
+			return
+		}
+		writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved",
+			"Which Session owns that conversation could not be read; nothing was added.")
+		return
+	}
+	texts := make([]string, 0, len(body.Todos))
+	for _, td := range body.Todos {
+		texts = append(texts, td.Text)
+	}
+	var answer []byte
+	_, err := s.workV2().CreateSessionTodos(r.Context(), app.NewSessionTodosV2{SessionID: conversation, Texts: texts},
+		func(rows []work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			wires := make([]directTodoV2Wire, 0, len(rows))
+			for _, td := range rows {
+				wires = append(wires, directTodoWire(td, nil))
+			}
+			answer, _ = json.Marshal(map[string]any{"ok": true, "todos": wires})
+			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
+		})
+	if err != nil {
+		release()
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write(answer)
 }
 
 func resetConfirmation(counts map[string]int64) string {

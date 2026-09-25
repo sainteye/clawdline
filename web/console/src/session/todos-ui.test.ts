@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
+// @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
+import { addedBySession } from "./todo-author.ts"
 
 const source = readFileSync(new URL("./Todos.tsx", import.meta.url), "utf8")
 
@@ -166,4 +168,28 @@ test("closing a Session reads and names unfinished Board items before it can con
   assert.match(styles, /\.end-work-completed-mark[\s\S]*?color:\s*var\(--ok\)/)
   assert.match(styles, /\.end-work-status\.is-ready[\s\S]*?color:\s*var\(--ink\)/)
   assert.match(styles, /\.end-work-ready-mark[\s\S]*?color:\s*var\(--ok\)/)
+})
+
+test("a row the Session added itself is labelled as such, and a person's row is not", () => {
+  const conversation = "10000000-0000-4000-8000-000000000004"
+  assert.equal(addedBySession({ created_by: conversation }, conversation), true)
+  assert.equal(addedBySession({ created_by: "device:phone" }, conversation), false)
+  assert.equal(addedBySession({ created_by: "local" }, conversation), false)
+  assert.equal(addedBySession({}, conversation), false)
+  // A Session whose conversation is not known yet labels nothing.
+  assert.equal(addedBySession({ created_by: conversation }, undefined), false)
+  assert.equal(addedBySession({ created_by: "" }, ""), false)
+})
+
+test("the Session-added label replaces the sent/read receipt, and the controls stay", () => {
+  const words = readFileSync(new URL("../pages/work/words.ts", import.meta.url), "utf8")
+  assert.match(source, /const own = addedBySession\(todo, conversation\)/)
+  assert.match(source, /conversation=\{row\.sessionId\}/)
+  assert.match(source, /\{own\s*&& <span className="session-todo-author" aria-label=\{workWord\("todoAddedBySessionLabel"\)\}/)
+  assert.match(source, /\{\(completed \|\| !own\) && <span\s*className="session-todo-receipt"/)
+  assert.match(words, /todoAddedBySession: "Added by Session"/)
+  assert.match(words, /todoAddedBySession: "Session 建立"/)
+  // Delete, Complete and Send are not gated on who wrote the row.
+  assert.match(source, /<button className="chip danger" type="button" disabled=\{busy\} onClick=\{\(\) => onAction\("delete"\)\}>Delete<\/button>/)
+  assert.doesNotMatch(source, /own && <button|!own && <button/)
 })

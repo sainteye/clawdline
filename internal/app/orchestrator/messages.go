@@ -326,6 +326,38 @@ func (b *Broker) WhoAmI(ctx context.Context, conversationID string) (Identity, e
 	}, nil
 }
 
+// TodoOwner resolves the Session that is writing its own to-dos. It asks the
+// same live registry whoami does, and refuses rather than guesses: a
+// malformed id, no live Session, more than one, or a registry it cannot read
+// all write nothing. A live Clawdline child is refused as well — it reports
+// through its task result, and its to-do list is not where its work is kept.
+func (b *Broker) TodoOwner(ctx context.Context, conversationID string) (session.Session, error) {
+	if !isLowercaseUUID(conversationID) {
+		return session.Session{}, refuse(http.StatusBadRequest, "conversation_id_malformed",
+			"The conversation id must be one lowercase UUID.")
+	}
+	s, err := b.terminalFor(ctx, conversationID, "")
+	if err != nil {
+		var r Refusal
+		if errors.As(err, &r) && r.Code == "conversation_not_found" {
+			return session.Session{}, refuse(http.StatusNotFound, "session_not_found",
+				"No live Session is bound to that conversation id; nothing was added.")
+		}
+		return session.Session{}, err
+	}
+	records, err := b.records(ctx)
+	if err != nil {
+		return session.Session{}, err
+	}
+	for _, r := range records {
+		if r.ChildTerminalID == s.ID && !r.State.Terminal() {
+			return session.Session{}, refuse(http.StatusConflict, "child_session",
+				"A Clawdline child reports through its task result, not its own to-dos.")
+		}
+	}
+	return s, nil
+}
+
 // SessionDelivery is a root's own receipt: one sentence saying this turn
 // delivered something.
 //

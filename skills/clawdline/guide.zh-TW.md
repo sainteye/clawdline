@@ -431,20 +431,30 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 看板有三種結構——看板項目、Backlog，以及每個 session 自己的待辦清單——而且**上面放什麼由人決定**。
 session 只能提案，從不自己建卡片。
 
-**提議一條工作線。**
+**提議一個看板項目。** 看板上的 **Agent 提案**佇列只由這一條路由餵進去：
 
 ```
-POST /v1/orchestrator/proposals     (Idempotency-Key required)
-{"session_id": "<your conversation id>", "title": "…", "project": "<project>", "work_id" or "task_id": "<uuid>",
- "effects": ["deploy" | "publish" | "push_default_branch" | "spend" | "email"]}
+POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
+{"project_id": "<place id>", "kind": "feature" | "issue" | "epic" | "refactor" | "plan",
+ "title": "…", "description": "…", "reason": "why this is worth doing",
+ "suggested_acceptance": "what would count as done", "session_id": "<your conversation id>",
+ "source_work_id": "<uuid>" or "source_todo_id": "<uuid>"}
 ```
 
-- `201` 會回傳 proposal 和 `instructions`，告訴你要**現在問使用者**還是**先擱著**。照做。只有使用者
-  在場時才可以問——也就是他在過去 30 分鐘內透過 Clawdline 寫過訊息給這個 session——而且每個 turn 最多
-  一次、每天最多三次。問完要回報：`POST /v1/orchestrator/proposals/<id>/asked`。
-- 拒絕：`proposal_already_tracked`、`proposal_duplicate`、`proposal_below_threshold`、
-  `not_the_root`、`facts_unknown`、`proposals_full`，以及欄位錯誤的 code（`invalid_title`、…）。
-- child 可以用自己的 task secret 和 `task_id` 提案；會記在它的 root 名下。
+- `project_id` 是 `GET /v1/places` 某一列的 `id`。
+- 一定要有一個來源，而且必須是你自己的：這個 Session 負責的看板項目，或這個 Session 自己的待辦
+  （`proposal_source_required`、`proposal_source_invalid`）。從使用者要求而來的提案，要引用它來自
+  的那筆待辦——所以路徑是：使用者提出要求、你用 `clawdline todo add` 記下來（見下文）、再以那筆待辦
+  的 id 提案。
+- **要提一個帶 TODO 清單的項目**，就在 `description` 裡寫兩列以上的頂層 Markdown 清單。使用者接受並
+  指派這個項目時，每一列都會變成它的一個 `steps`（見下文）。
+- `201` 會回傳這筆待決提案。使用者在看板的 Agent 提案佇列裡接受、編輯或拒絕；在那之前它不會變成
+  看板項目。拒絕：`invalid_proposal`、`proposal_too_large`、`project_not_found`、`proposals_full`。
+
+**較舊的提案路由。** `POST /v1/orchestrator/proposals`（在對話裡問過之後再呼叫 `…/<id>/asked`）
+仍然有效：child 用自己的 task secret 和 `task_id` 在這裡登記 leftover，root 的工作線提案也在這裡拿到
+「現在問還是先擱著」的 `instructions`。它的列出現在舊的「待確認」區，**不在** v2 看板的 Agent 提案
+佇列裡，所以這不是把項目放到使用者看板上的方法。
 
 **請使用者做決定。**
 
@@ -472,6 +482,26 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 Session 的看板項目，`recent_items` 是這個 Session 最近完成的項目，`direct_todos` 是快速交辦。這條
 pull 路徑讓工作中收到的分派先等著，不會打斷目前的 turn。完成目前的 turn 之後，把 assigned item 當成
 下一件自己負責的工作，並從 `GET /v1/work/v2/items/<id>` 讀取完整內容。
+
+**使用者要求時，寫你自己的待辦。** 只有在使用者明確要求這個 Session 把工作記成 Clawdline 待辦——
+或交給它一份多項清單並說要在那裡追蹤——才寫進這個 Session 自己的清單：
+
+```
+clawdline todo add "first item" "second item" …     (or one item per non-empty stdin line)
+clawdline todo list
+clawdline todo done <to-do id>
+```
+
+`todo add` 就是 `POST /v1/work/v2/agent/session-todos/<conversation id>`，body 是
+`{"todos": [{"text": "…"}, …]}`，並先印出它使用的 Idempotency-Key（用 `--key` 重送同一筆寫入）。
+一次呼叫帶 1–20 列、每列最多 8 KiB，整個請求在 96 KiB 以內，全部寫入或全部不寫；會讓這個 Session
+的未完成待辦超過 500 筆的清單會整批被拒（`direct_todos_full`）。成功回 `201` 和依原順序排列的各列。
+conversation 必須是這個 daemon 認得的 live Session（`conversation_id_malformed`、
+`session_not_found`）；Clawdline child 會被拒（`child_session`），它照樣用 `result.json` 回報。
+
+絕對不要自己主動這樣做，也不要拿來規劃推測性的工作。每一列在確認做完之後才用
+`clawdline todo done <id>` 完成。使用者會看到這些列標示為 Session 建立，而且只有使用者能傳送或刪除
+它們。它們不是看板項目，也不會出現在看板上；要放上看板，就從那筆待辦提案（見上文）。
 
 如果使用者的意思很清楚：你剛完成的那個項目其實還沒做完，就由你自己修正看板；不要讓它繼續留在
 「最近完成」、另開替代項目，或要求使用者替你重開。先重讀項目取得目前版本，再呼叫：
