@@ -177,6 +177,7 @@ internal/app/orchestrator.handoffListLimit # page: one read of the handoffs; the
 internal/app/orchestrator.handoffTitleLimit # admission: a handoff's title, refused past it (W6)
 internal/app/orchestrator.instructionsLimit # admission: a dispatch's instructions
 internal/app/orchestrator.kindLimit # admission: a dispatch's kind (limits N8's silent cut, C3)
+internal/app/orchestrator.landingDetectLimit # parameter: pending landings one look of the landing detector asks git about, one in twelve beat passes; the rest are the next look's, which starts after the last one examined (landing_detect.go)
 internal/app/orchestrator.messageTextLimit # admission: one relayed message
 internal/app/orchestrator.notifyBodyLimit # admission: one agent push body
 internal/app/orchestrator.notifyHourLimit # parameter: agent pushes an hour, refused past it (limits N6, ✓)

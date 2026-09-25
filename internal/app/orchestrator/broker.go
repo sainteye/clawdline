@@ -191,6 +191,9 @@ type Broker struct {
 	// ran is measured from (reclaim.go, linger.go).
 	reclaim       reclaimState
 	lingerStarted time.Time
+	// landingDetect is where the landing detector's last look stopped and what it
+	// has already logged (landing_detect.go). In memory only.
+	landingDetect landingDetectState
 	// lingers is what the beat has seen of each lingering tab since its task
 	// ended, and when an iTerm2 close may next be tried (linger.go). Both are
 	// observations, kept in memory only.

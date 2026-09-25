@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -76,6 +77,26 @@ func (g *Git) Merged(ctx context.Context, repo, branch, target string) (merged b
 		return false, false
 	}
 	return ok, true
+}
+
+// BranchesContaining names every local branch whose history holds commit,
+// without the `refs/heads/` prefix. An error is "could not ask", never "no
+// branch has it".
+func (g *Git) BranchesContaining(ctx context.Context, repo, commit string) ([]string, error) {
+	if commit == "" || strings.HasPrefix(commit, "-") {
+		return nil, fmt.Errorf("%q is not a commit to ask about", commit)
+	}
+	out, err := g.run(ctx, repo, "for-each-ref", "--format=%(refname)", "--contains", commit, "refs/heads/")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		if name := strings.TrimPrefix(strings.TrimSpace(line), "refs/heads/"); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 // Commits counts what a delivery branch carries over the commit it started
