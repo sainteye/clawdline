@@ -33,9 +33,13 @@
 }
 .cloud-switch:hover { color: var(--ink); background: var(--card-hi); }
 .cloud-switch > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.cloud-switch-chevron { flex: 0 0 auto; color: var(--faint); font-size: 12px; transform: translateY(-1px); }
+.cloud-switch-chevron {
+    display: block; flex: 0 0 auto; width: 12px; height: 12px;
+    fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+    transition: transform 180ms var(--ease);
+}
 .cloud-switch[aria-expanded="true"] { color: var(--ink); background: var(--card-hi); border-color: var(--accent-ed); }
-.cloud-switch[aria-expanded="true"] .cloud-switch-chevron { transform: rotate(180deg) translateY(1px); }
+.cloud-switch[aria-expanded="true"] .cloud-switch-chevron { transform: rotate(180deg); }
 .cloud-switch-menu {
     position: absolute; top: calc(100% + 10px); right: 0; z-index: 30;
     box-sizing: border-box; width: min(300px, calc(100vw - 24px)); padding: 8px;

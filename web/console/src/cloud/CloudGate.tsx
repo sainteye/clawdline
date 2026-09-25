@@ -814,7 +814,11 @@ export function CloudGate({ declared }: { declared: string }) {
         onClick={() => setSwitcherOpen((open) => !open)}
       >
         <span>{chosen.name || chosen.label || chosen.id}</span>
-        <span className="cloud-switch-chevron" aria-hidden="true">⌄</span>
+        {/* Drawn, not typed: "⌄" sits at the bottom of its font box, so the
+            text glyph hung low beside the name and high once turned over. */}
+        <svg className="cloud-switch-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+          <path d="m3 4.5 3 3 3-3" />
+        </svg>
       </button>
       {switcherOpen && (
         <div
