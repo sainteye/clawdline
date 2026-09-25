@@ -70,8 +70,13 @@ func main() {
 			return
 		}
 		doctor()
-	case "dispatch", "land", "settle":
-		// The older dispatch skeleton's three commands are gone with it
+	case "dispatch":
+		// The broker's own dispatch, guide §4 in one command. The older
+		// skeleton's `dispatch` wrote a second table of tasks; this one writes
+		// nothing the broker does not read.
+		dispatchCommand(os.Args[2:])
+	case "land", "settle":
+		// The older dispatch skeleton's other two commands are gone with it
 		// (docs/design-decisions.md D07): they wrote a second table of tasks
 		// the broker's claims never saw. Said by name, so a script that still
 		// runs one learns where the work went rather than reading a usage line.
@@ -345,10 +350,11 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|tunnel|cloud|board|project|task|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|dispatch|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|tunnel|cloud|board|project|task|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
+	fmt.Fprintln(os.Stderr, "  dispatch --title <t> --claims a,b < brief   dispatch an owned child: task.json, inventory and POST in one step")
 	fmt.Fprintln(os.Stderr, "  todo <add|list|done>          this session's own to-dos, added only when the person asks")
 	fmt.Fprintln(os.Stderr, "  item <add|steps|step-done>    a Board item the person's message asked for, with its --step rows")
 	fmt.Fprintln(os.Stderr, "  send --to <terminal> [text…]  relay a message into another session's composer")
@@ -363,4 +369,5 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  board tracks [--rows] [--json]   the old cards on the three tracks, read-only")
 	fmt.Fprintln(os.Stderr, "  project <add|remove|list>    explicitly keep directories in the session-start list")
 	fmt.Fprintln(os.Stderr, "  task finish [--port n] <task dir>   a child's result, validated and put in place; no node needed")
+	fmt.Fprintln(os.Stderr, "  task ack <task id> <notice id>      acknowledge a child's completion notice, so it stops being typed")
 }

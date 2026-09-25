@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -43,6 +44,10 @@ import (
 const collectAnswerLimit = 64 << 10
 
 func taskCommand(args []string) {
+	if len(args) > 0 && args[0] == "ack" {
+		ackCommand(args[1:])
+		return
+	}
 	if len(args) == 0 || args[0] != "finish" {
 		taskUsage()
 	}
@@ -76,7 +81,57 @@ func taskCommand(args []string) {
 func taskUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline task finish [--port n] [--no-collect] <task dir>")
 	fmt.Fprintln(os.Stderr, "  validates <task dir>/result.json.tmp and publishes it as result.json, then asks the broker to collect it")
+	fmt.Fprintln(os.Stderr, "       clawdline task ack [--port n] <task id> <notice id>")
+	fmt.Fprintln(os.Stderr, "  acknowledges a child's completion notice, so the daemon stops typing it into this session")
 	os.Exit(2)
+}
+
+// `clawdline task ack <task id> <notice id>`: the root's side of a finished
+// child. The daemon keeps typing a completion notice into the root's composer
+// until it is acknowledged (guide §5); this is that acknowledgement, with the
+// orchestrator token, as one line.
+func ackCommand(args []string) {
+	fs := flag.NewFlagSet("task ack", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
+	if err := fs.Parse(args); err != nil {
+		taskUsage()
+	}
+	rest := fs.Args()
+	if len(rest) != 2 {
+		taskUsage()
+	}
+	b, err := openBroker(*port)
+	if err != nil {
+		fail(err)
+	}
+	os.Exit(ackTask(os.Stdout, os.Stderr, b, rest[0], rest[1]))
+}
+
+// ackTask is the command, answering its exit status.
+func ackTask(stdout, stderr io.Writer, b *broker, id, notice string) int {
+	id, notice = strings.TrimSpace(id), strings.TrimSpace(notice)
+	if id == "" || notice == "" {
+		fmt.Fprintln(stderr, "clawdline task ack: both the task id and the notice id are required")
+		return 2
+	}
+	a, err := b.request(http.MethodPost, "/v1/orchestrator/tasks/"+url.PathEscape(id)+"/completion/ack", nil,
+		map[string]string{"notice_id": notice}, "")
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task ack:", err)
+		return 1
+	}
+	if !a.ok() {
+		return report(stdout, stderr, "task ack", a)
+	}
+	var got contract.BrokerAckResult
+	_ = json.Unmarshal(a.Body, &got)
+	if got.Changed {
+		fmt.Fprintf(stdout, "acknowledged %s notice %s\n", id, got.NoticeID)
+	} else {
+		fmt.Fprintf(stdout, "acknowledged %s notice %s (already acknowledged)\n", id, got.NoticeID)
+	}
+	return 0
 }
 
 // finishTask is the command, answering its exit status.

@@ -22,7 +22,8 @@ Three things replace it, and all three are this binary:
 | `clawdline skill install` / `uninstall` | Writes the stub to `~/.claude/skills/clawdline/SKILL.md`, and puts back what was there | `internal/adapters/skillfile/skillfile.go` |
 
 And a handful of **thin commands** a session runs instead of hand-built curl: `session report`,
-`send`, `notify`, `landings`, `assistants` (`cmd/clawdline/session.go`, `relay.go`, `broker.go`).
+`dispatch`, `task ack`, `send`, `notify`, `landings`, `assistants` (`cmd/clawdline/session.go`,
+`dispatch.go`, `task.go`, `relay.go`, `broker.go`).
 
 ## The guide is compiled in
 
@@ -114,6 +115,8 @@ stdout when it said yes, `refused, <status> <code>: <message>` on stderr and exi
 | --- | --- | --- |
 | `clawdline session report --summary …` | `GET /v1/orchestrator/whoami`, then `POST /v1/orchestrator/sessions/<terminal>/complete` | The conversation comes from `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, else `--conversation`; `--terminal` skips the lookup. The terminal id is escaped as one path segment |
 | `clawdline send --to <terminal> [text…]` | `POST /v1/orchestrator/messages` | Prints the `Idempotency-Key` before sending; `--key` retries the same message instead of typing it twice |
+| `clawdline dispatch --title … --claims … < brief` | `GET /v1/orchestrator/inventory`, then `POST /v1/orchestrator/tasks` | Writes `<task_root>/<id>/task.json` (guide §4) with a fresh id and a secret that is never printed or written there; one `stale_inventory` re-reads the inventory and resends once. Prints `dispatched <id> <state> [worktree <path>]` and one line per warning; `--json` prints the answer |
+| `clawdline task ack <id> <notice id>` | `POST /v1/orchestrator/tasks/<id>/completion/ack` | Prints one line |
 | `clawdline notify --title … --body …` | `POST /v1/orchestrator/notify` | |
 | `clawdline landings`, `clawdline assistants` | `GET /v1/orchestrator/landings`, `…/assistants` | |
 
