@@ -610,7 +610,7 @@ function WorkReferenceImage({ item, image, busy, run }: {
       </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || "載入圖片…"}</div>}
     <figcaption title={image.title} role={fullFailed ? "alert" : undefined}>{fullFailed || image.title}</figcaption>
     {marking && full && <PictureMarkup picture={{ id: image.id, url: full }} onCancel={() => setMarking(false)} onSave={replaceWithMarks} />}
-    {!item.closed_at && <button type="button" aria-label={`移除參考圖片 ${image.title}`} disabled={!!busy}
+    {!item.closed_at && <button className="work-reference-remove" type="button" aria-label={`移除參考圖片 ${image.title}`} disabled={!!busy}
       onClick={() => void run(`image-delete-${image.id}`, () => deleteWorkV2Image(item, image.id))}><WorkIcon name="close" /></button>}
   </figure>
 }

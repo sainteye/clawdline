@@ -222,3 +222,11 @@ test("a recording microphone is an accent ring, never a filled disc that hides i
   // A phone keeps :hover after a tap; unguarded, it painted the icon the fill's colour.
   assert.match(styles, /@media \(hover: hover\) \{\s*\.work-voice-mic:not\(:disabled\):hover/)
 })
+
+test("a reference picture's remove control is the only button drawn as the round corner badge", () => {
+  // The picture itself became a red-pen button; a rule on every direct child
+  // button made it absolute, 24 px tall and pill-shaped, squashing the thumbnail.
+  assert.doesNotMatch(styles, /\.work-reference-image\s*>\s*button\b/)
+  assert.match(styles, /\.work-reference-image > \.work-reference-remove \{[^}]*position: absolute/)
+  assert.match(source, /<button className="work-reference-remove" type="button" aria-label=\{`移除參考圖片/)
+})
