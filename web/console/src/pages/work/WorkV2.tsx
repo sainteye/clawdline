@@ -13,6 +13,7 @@ import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports } from "./WorkCompletionReport.js"
 import { WorkIcon } from "./WorkIcon.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
+import { useReferenceImage } from "./useReferenceImage.js"
 import { VoiceTextarea } from "./VoiceTextarea.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
@@ -569,24 +570,11 @@ function WorkReferenceImage({ item, image, busy, run }: {
   busy: string
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
 }) {
-  const [source, setSource] = useState("")
-  const [failed, setFailed] = useState("")
+  // The card draws the small copy; the red pen and the new tab get the
+  // original, read when they are opened (`useReferenceImage`).
+  const { source, failed, full, fullFailed, opening, loadFull, openFull } = useReferenceImage(image.id)
   const [marking, setMarking] = useState(false)
-  useEffect(() => {
-    let active = true
-    let objectURL = ""
-    setFailed("")
-    void fetch(`/v1/work/v2/images/${image.id}`, { credentials: "same-origin" }).then(async (response) => {
-      if (!response.ok) throw new Error(`reference image answered ${response.status}`)
-      objectURL = URL.createObjectURL(await response.blob())
-      if (active) setSource(objectURL)
-      else URL.revokeObjectURL(objectURL)
-    }).catch((error: unknown) => { if (active) setFailed(failureWords(error)) })
-    return () => {
-      active = false
-      if (objectURL) URL.revokeObjectURL(objectURL)
-    }
-  }, [image.id])
+  const mark = () => { void loadFull().then(() => setMarking(true), () => {}) }
   const editable = !item.closed_at
   // The marked copy takes the original's place: added at its position, then
   // the original removed. A full item has no room for the copy first, so it
@@ -599,7 +587,8 @@ function WorkReferenceImage({ item, image, busy, run }: {
         const added = await addWorkV2Image(item.id, item.version, picture, image.position)
         return deleteWorkV2Image(added.item, image.id)
       }
-      const original = await prepareReferencePicture(new File([await (await fetch(source)).blob()], image.title, { type: image.media_type }))
+      // The original goes back, not the thumbnail the card is drawn from.
+      const original = await prepareReferencePicture(new File([await (await fetch(full || await loadFull())).blob()], image.title, { type: image.media_type }))
       const removed = await deleteWorkV2Image(item, image.id)
       try {
         return await addWorkV2Image(item.id, removed.item.version, picture, image.position)
@@ -612,15 +601,15 @@ function WorkReferenceImage({ item, image, busy, run }: {
   }
   return <figure className="work-reference-image">
     {source ? editable
-      ? <button className="work-reference-open" type="button" disabled={!!busy} aria-label={`用紅筆標記參考圖片 ${image.title}`}
-        title="用紅筆標記" onClick={() => setMarking(true)}>
+      ? <button className="work-reference-open" type="button" disabled={!!busy || opening} aria-label={`用紅筆標記參考圖片 ${image.title}`}
+        title="用紅筆標記" onClick={mark}>
         <img src={source} alt={image.title} width={image.width} height={image.height} />
       </button>
-      : <a href={source} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`}>
+      : <a href={full || source} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`} onClick={openFull}>
         <img src={source} alt={image.title} width={image.width} height={image.height} />
       </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || "載入圖片…"}</div>}
-    <figcaption title={image.title}>{image.title}</figcaption>
-    {marking && source && <PictureMarkup picture={{ id: image.id, url: source }} onCancel={() => setMarking(false)} onSave={replaceWithMarks} />}
+    <figcaption title={image.title} role={fullFailed ? "alert" : undefined}>{fullFailed || image.title}</figcaption>
+    {marking && full && <PictureMarkup picture={{ id: image.id, url: full }} onCancel={() => setMarking(false)} onSave={replaceWithMarks} />}
     {!item.closed_at && <button type="button" aria-label={`移除參考圖片 ${image.title}`} disabled={!!busy}
       onClick={() => void run(`image-delete-${image.id}`, () => deleteWorkV2Image(item, image.id))}><WorkIcon name="close" /></button>}
   </figure>

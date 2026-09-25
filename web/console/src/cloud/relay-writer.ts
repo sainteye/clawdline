@@ -330,6 +330,10 @@ const HTTP_STATUS: Readonly<Record<string, number>> = {
   cloud_reconnecting: 503,
   machine_offline: 503,
   cloud_read_timeout: 504,
+  // The machine's reply channel was full. Its refusal carries 429 itself; this
+  // is for one that arrives without it, so a page that backs off on 429
+  // (`pages/work/reference-images.ts`) still sees one.
+  cloud_read_busy: 429,
   cloud_read_only: 403,
   cloud_read_needs_send_prompt: 403,
   cloud_commands_disabled: 403,
@@ -755,7 +759,22 @@ export class RelayWriter {
         if (typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", route.word, 501)
         }
-        const answer = await client._machineRequest(this.host.machine, route.word, { id: route.artifact }, "read") as {
+        // A card asks for the downscaled copy (`?size=thumb`) and only the
+        // full-size viewer asks for the original. Over Cloud every answer
+        // shares one reply channel on the machine, and a Board of full PNGs
+        // filled it: the size is carried so the machine sends the small one.
+        // The word's body is a fixed key set, so any other field, or a size
+        // this wire has no name for, is refused by its own name rather than
+        // dropped — dropped, the machine would answer the full picture to a
+        // page that asked for a thumbnail (`relay-reader.ts` `only`).
+        const body: { id: string; size?: "thumb" } = { id: route.artifact }
+        for (const [key, value] of url.searchParams) {
+          if (key !== "size" || value !== "thumb") {
+            throw failure("cloud_not_carried", `${url.pathname}?${key}=${key === "size" ? value : ""} is not carried over Clawdline Cloud: read it on the machine.`, 501)
+          }
+          body.size = "thumb"
+        }
+        const answer = await client._machineRequest(this.host.machine, route.word, body, "read") as {
           media_type?: unknown; data?: unknown
         }
         if (typeof answer.media_type !== "string" || typeof answer.data !== "string") {

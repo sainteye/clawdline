@@ -149,6 +149,15 @@ type SpoolLimits struct {
 	// record's canonical byte length.
 	OutboundWindowRowCap  int
 	OutboundWindowByteCap int
+
+	// RecipientRefusalCap is how many refusals one wire channel may have live
+	// at once (the register's `cloud.spool_refusals`). Each refusal answers
+	// one specific request — its payload names that request's own read id —
+	// so a second refusal on a channel is not a repeat of the first: it is
+	// the only answer the second waiter is going to get. The cap is what
+	// keeps a flood of refused reads from growing memory; only past it is a
+	// refusal dropped, and the caller logs that drop.
+	RecipientRefusalCap int
 }
 
 // DefaultSpoolLimits is what production uses. The four registered caps — the
@@ -171,6 +180,7 @@ func DefaultSpoolLimits() SpoolLimits {
 		SealedFrameFreshness:     240 * time.Second,
 		OutboundWindowRowCap:     8,
 		OutboundWindowByteCap:    4 << 20,
+		RecipientRefusalCap:      int(capacity.Default(capacity.CloudSpoolRefusals)),
 	}
 }
 
@@ -178,7 +188,8 @@ func DefaultSpoolLimits() SpoolLimits {
 // full. A refusal is the one answer whose delivery cannot be postponed until
 // the channel that is blocked has drained, because the channel drains only
 // when somebody stops waiting on it — so a row no larger than this is
-// admitted past the recipient's own caps, one live at a time.
+// admitted past the recipient's own caps, up to RecipientRefusalCap live at
+// a time.
 //
 // The number is the largest typed refusal this transport seals: the payload
 // is `{"read","status","error":{code,message,layer,seq,detail}}`, whose every
@@ -189,6 +200,29 @@ const spoolRefusalByteLimit = 4 << 10
 // configured field: a limit that could be lowered to nothing would make the
 // silence this reserve exists to prevent a setting.
 func (l SpoolLimits) RefusalByteLimit() int { return spoolRefusalByteLimit }
+
+// largeAnswerByteLimit and smallAnswerReserveLimit keep the small answers on a
+// channel from being starved by the large ones.
+//
+// Measured on 2026-09-25: every read a phone makes of this machine as a whole
+// — the Board, a Session's to-dos, and each reference image on them — answers
+// on one channel, `t/<machine>/__clawdline_machine__`. A few full-size
+// reference images (971,344 bytes as PNG, more as base64) in flight took that
+// channel to 3.2–4.0 MB of its 4 MiB, and the few-kilobyte to-do list behind
+// them was refused, again and again, for as long as the pictures were owed.
+//
+// So an answer larger than largeAnswerByteLimit is refused when admitting it
+// would leave less than smallAnswerReserveLimit of the channel free, unless
+// the channel holds nothing else (a picture as large as the channel itself
+// must still be deliverable on an idle one). An answer at or below the
+// threshold may use the reserve. Only a reservation that asks for it
+// (ReserveAnswer with headroom) is held to this: a transcript channel's own
+// answers are one Session's, and its cap was sized to hold two of its largest
+// (limits N22), which a reserve would halve.
+const (
+	largeAnswerByteLimit    = 256 << 10
+	smallAnswerReserveLimit = 1 << 20
+)
 
 // Spool refusals. Nothing is evicted to make room for anything
 // (`CloudOutboundSpool.swift:597-600`): a live row is somebody's unsent
@@ -208,8 +242,15 @@ var (
 	// that cannot get a refusal out has a different problem from one that
 	// cannot get an answer out, and telling them apart is the difference
 	// between "nobody was told" and "somebody already was".
-	ErrSpoolRefusalSize    = errors.New("that is too large for the refusal reserve")
-	ErrSpoolRefusalPending = errors.New("this channel is already being told it is full")
+	ErrSpoolRefusalSize = errors.New("that is too large for the refusal reserve")
+	// ErrSpoolRefusalPending is a channel that already has
+	// RecipientRefusalCap refusals owed to it. It used to be returned for the
+	// second one, which left every waiter after the first with no answer.
+	ErrSpoolRefusalPending = errors.New("this channel already has as many refusals owed as it may hold")
+	// ErrSpoolHeadroom is a large answer refused so that a small one behind
+	// it can still get through. It wraps ErrSpoolCapacity, because to the
+	// waiter it is the same fact: this channel may not take that now.
+	ErrSpoolHeadroom = fmt.Errorf("%w: the rest of this channel is reserved for small answers", ErrSpoolCapacity)
 )
 
 // SpoolRow is one outbound record.
@@ -323,7 +364,10 @@ type spoolTally struct {
 	// because the receipt table was full. Each one is a sequence whose late
 	// receipt will now read as one this machine never sent.
 	expired int64
-	lastAt  time.Time
+	// refusalsDropped is refusals turned away because their channel already
+	// had RecipientRefusalCap of them owed. Each is a waiter nobody told.
+	refusalsDropped int64
+	lastAt          time.Time
 }
 
 // SequenceFence is the durable high-water mark for the sequence counter. It is
@@ -395,6 +439,14 @@ func (s *Spool) ReserveLatestValue(channel SpoolChannel, recipient, logicalID st
 	return s.reserveLocked(channel, recipient, logicalID, chargedBytes)
 }
 
+// ReserveAnswer is Reserve for an answer to one read, with the small-answer
+// reserve held when headroom is set (largeAnswerByteLimit).
+func (s *Spool) ReserveAnswer(channel SpoolChannel, recipient, logicalID string, chargedBytes int, headroom bool) (uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.admitLocked(channel, recipient, logicalID, chargedBytes, admission{headroom: headroom})
+}
+
 // ReserveRefusal takes a sequence for the answer that says a channel is full.
 //
 // It is the one admission that may pass the recipient's own caps, and the
@@ -402,8 +454,17 @@ func (s *Spool) ReserveLatestValue(channel SpoolChannel, recipient, logicalID st
 // its answers are not being delivered; the person waiting on it is told
 // nothing; and the only thing that would make them stop waiting is the
 // sentence that cannot be sent. So a row no larger than spoolRefusalByteLimit
-// is admitted with one live refusal per recipient at a time — bounded by
-// construction, since the second refusal waits for the first to settle.
+// is admitted past them.
+//
+// **Every refusal, not the first one.** Each carried read waits on its own
+// read id, and a refusal's payload names that id; a second refusal on the
+// same channel is a different waiter's only answer. Admitting one live
+// refusal per channel (the rule until 2026-09-25) told the first waiter and
+// left every later one to its sixty-second timeout — measured as "did not fit
+// its channel and the refusal did not either" in the daemon log. What bounds
+// them now is RecipientRefusalCap live refusals per channel, each at most
+// spoolRefusalByteLimit, so a flood of refused reads holds at most
+// cap × 4 KiB for one channel.
 //
 // The global caps still hold. Past those there is no memory to put it in, and
 // a machine that admitted one more row to explain why it could not admit a
@@ -415,11 +476,19 @@ func (s *Spool) ReserveRefusal(channel SpoolChannel, recipient, logicalID string
 		return 0, fmt.Errorf("%w: a refusal of %d bytes is past the %d-byte reserve",
 			ErrSpoolRefusalSize, chargedBytes, s.limits.RefusalByteLimit())
 	}
-	return s.admitLocked(channel, recipient, logicalID, chargedBytes, true)
+	return s.admitLocked(channel, recipient, logicalID, chargedBytes, admission{refusal: true})
 }
 
 func (s *Spool) reserveLocked(channel SpoolChannel, recipient, logicalID string, chargedBytes int) (uint64, error) {
-	return s.admitLocked(channel, recipient, logicalID, chargedBytes, false)
+	return s.admitLocked(channel, recipient, logicalID, chargedBytes, admission{})
+}
+
+// admission is what kind of reservation admitLocked is deciding.
+type admission struct {
+	// refusal is a row admitted under the refusal reserve.
+	refusal bool
+	// headroom holds a large answer to the small-answer reserve.
+	headroom bool
 }
 
 // admitLocked is every capacity check, the counter move and the insert, under
@@ -430,7 +499,8 @@ func (s *Spool) reserveLocked(channel SpoolChannel, recipient, logicalID string,
 // a receipt whose payload went at Settle. Counting the second against a cap
 // meant for the first is what shut one transcript channel for ten minutes at
 // a time while the global budget was at 18% (measured 2026-09-21).
-func (s *Spool) admitLocked(channel SpoolChannel, recipient, logicalID string, chargedBytes int, refusal bool) (uint64, error) {
+func (s *Spool) admitLocked(channel SpoolChannel, recipient, logicalID string, chargedBytes int, kind admission) (uint64, error) {
+	refusal := kind.refusal
 	now := s.now()
 	s.collectLocked(now)
 
@@ -452,10 +522,14 @@ func (s *Spool) admitLocked(channel SpoolChannel, recipient, logicalID string, c
 	}
 
 	if refusal {
-		// One live refusal per recipient. A second would be the same sentence
-		// about the same channel, and the first is already on its way.
-		if recipientRefusals > 0 {
-			return 0, fmt.Errorf("%w: %s is already being told", ErrSpoolRefusalPending, recipient)
+		// Every refusal is one waiter's answer, so they are all admitted up
+		// to the cap; past it the refusal is refused and counted, and the
+		// caller logs whose it was.
+		if recipientRefusals >= s.limits.RecipientRefusalCap {
+			s.refusedLocked(now)
+			s.tally.refusalsDropped++
+			return 0, fmt.Errorf("%w: %s holds %d of %d", ErrSpoolRefusalPending, recipient,
+				recipientRefusals, s.limits.RecipientRefusalCap)
 		}
 	} else {
 		// The reserve opens at 90% of either global dimension. The threshold
@@ -479,6 +553,12 @@ func (s *Spool) admitLocked(channel SpoolChannel, recipient, logicalID string, c
 			s.refusedLocked(now)
 			return 0, fmt.Errorf("%w: %s holds %d bytes of %d", ErrSpoolCapacity,
 				recipient, recipientBytes, s.limits.RecipientByteCap)
+		}
+		if kind.headroom && chargedBytes > largeAnswerByteLimit && recipientBytes > 0 &&
+			recipientBytes+chargedBytes > s.limits.RecipientByteCap-smallAnswerReserveLimit {
+			s.refusedLocked(now)
+			return 0, fmt.Errorf("%w: %s holds %d bytes and an answer of %d would leave less than %d free",
+				ErrSpoolHeadroom, recipient, recipientBytes, chargedBytes, smallAnswerReserveLimit)
 		}
 	}
 	if rowsBefore+1 > s.limits.GlobalRowCap {
@@ -905,6 +985,28 @@ func (s *Spool) ChannelReadings() (channelBytes, receipts capacity.Reading) {
 		WindowSeconds: int64(s.limits.TombstoneRetention / time.Second),
 		Counters:      capacity.Counters{Expired: s.tally.expired, LastActionAt: s.tally.lastAt}}
 	return channelBytes, receipts
+}
+
+// RefusalReading is `cloud.spool_refusals`: the live refusals owed to the
+// fullest channel, which is the number that predicts the next dropped one,
+// and how many were dropped at the cap. The channel is not named, for the
+// reason ChannelReadings gives.
+func (s *Spool) RefusalReading() capacity.Reading {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	perChannel := map[string]int64{}
+	for _, row := range s.rows {
+		if row.Refusal && !row.State.IsTerminal() {
+			perChannel[row.Recipient]++
+		}
+	}
+	var fullest int64
+	for _, held := range perChannel {
+		fullest = max(fullest, held)
+	}
+	return capacity.Reading{Known: true, Used: fullest,
+		Counters: capacity.Counters{Refused: s.tally.refusalsDropped, LastActionAt: s.tally.lastAt},
+		Note:     fmt.Sprintf("the fullest of %d channel(s) with a refusal owed", len(perChannel))}
 }
 
 func (s *Spool) sortedSequencesLocked() []uint64 {

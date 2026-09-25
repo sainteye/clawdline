@@ -109,7 +109,7 @@ export const CARRIED = {
   "work.v2.edit": "PATCH /v1/work/v2/items/{id}",
   "work.v2.image-create": "POST /v1/work/v2/items/{id}/images",
   "work.v2.image-delete": "DELETE /v1/work/v2/items/{id}/images/{image}",
-  "work.v2.image": "GET /v1/work/v2/images/{id}",
+  "work.v2.image": "GET /v1/work/v2/images/{id}[?size=thumb]",
   "work.v2.item": "GET /v1/work/v2/items/{id}",
   "work.v2.items": "GET /v1/work/v2/items[?project=]",
   "work.v2.search": "GET /v1/work/v2/items?project=&status=&q=",

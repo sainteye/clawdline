@@ -753,6 +753,14 @@ func (l *Link) SpoolChannelReadings() (channelBytes, receipts capacity.Reading, 
 	return channelBytes, receipts, true
 }
 
+// SpoolRefusalReading is the same spool's `cloud.spool_refusals`.
+func (l *Link) SpoolRefusalReading() (capacity.Reading, bool) {
+	if l.relay == nil || l.relay.Spool == nil {
+		return capacity.Reading{}, false
+	}
+	return l.relay.Spool.RefusalReading(), true
+}
+
 // Status is what the status route answers.
 func (l *Link) Status() Status {
 	l.mu.Lock()

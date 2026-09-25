@@ -340,6 +340,19 @@ func (s *Server) workV2ReferenceImage(w http.ResponseWriter, r *http.Request, id
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A reference image is read with GET.")
 		return
 	}
+	// `?size=thumb` is the picture a card or a to-do row draws: long edge at
+	// most artifacts.MaxThumbnailEdge, as JPEG. No query is the full stored
+	// PNG, which is what the full-size viewer asks for. Anything else is a
+	// spelling this route does not know, refused rather than read as "full".
+	query := r.URL.Query()
+	thumb := false
+	for key, values := range query {
+		if key != "size" || len(values) != 1 || values[0] != "thumb" {
+			writeRefusal(w, http.StatusBadRequest, "bad_query", "A reference image is read whole, or with size=thumb.")
+			return
+		}
+		thumb = true
+	}
 	data, ok, err := s.store.WorkV2ImageBytes(r.Context(), id)
 	if err != nil {
 		writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "The reference image could not be read.")
@@ -349,7 +362,18 @@ func (s *Server) workV2ReferenceImage(w http.ResponseWriter, r *http.Request, id
 		writeRefusal(w, http.StatusNotFound, "image_not_found", "No reference image has that id.")
 		return
 	}
-	w.Header().Set("Content-Type", "image/png")
+	mediaType := "image/png"
+	if thumb {
+		// The stored image is read first either way, so a deleted image is a
+		// 404 and never a thumbnail the cache still holds.
+		t, err := s.thumbs.Get(id, data)
+		if err != nil {
+			writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "The reference image could not be drawn small.")
+			return
+		}
+		data, mediaType = t.JPEG, "image/jpeg"
+	}
+	w.Header().Set("Content-Type", mediaType)
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if r.Method == http.MethodGet {

@@ -609,8 +609,48 @@ JSON 壞掉、不是物件、channel 或 sequence 壞掉，只會得到
 指令不行——重試等於再跑一次。`detail` 只有讀那一條帶（`lane: "egress"`、`limit`、`retry_after`），
 因為 copied client 的白名單沒有指令那一條，帶了也會被丟掉。
 
-這句拒絕本身是從 spool 的保留額度進去的（`internal/adapters/cloud.spoolRefusalByteLimit`，每條
-channel 同時只有一句）。一條塞滿的 channel 沒辦法用塞滿它的那條路說自己塞滿了，這是唯一的例外。
+這句拒絕本身是從 spool 的保留額度進去的（`internal/adapters/cloud.spoolRefusalByteLimit`）。一條塞滿
+的 channel 沒辦法用塞滿它的那條路說自己塞滿了，這是唯一的例外。
+
+#### 9.5.2 Every refused read is told, and small answers keep a reserve (2026-09-25)
+
+**Measured.** Every read a phone makes of the machine as a whole — the Board, a Session's to-dos,
+and each reference image on them — answers on one channel, `t/<machine>/__clawdline_machine__`.
+Board cards and to-do rows fetched the full normalized PNG for every thumbnail (one was 971,344
+bytes, more as base64), so a few in flight held that channel at 3.2–4.0 MB of its 4 MiB. The daemon
+log had 153 `did not fit its channel` lines between 2026-09-23 and 2026-09-25; the first 20 minutes
+after the `operation=` logging logged 3, all `operation=work.v2.image`. And the refusal reserve
+admitted **one** live refusal per channel: every carried read waits on its own read id, so the
+second refused read on a channel got no answer at all and its browser waited out its timeout
+(`did not fit its channel and the refusal did not either`).
+
+Three rules replace that:
+
+1. **Every refusal is admitted, up to a cap.** A refusal's payload names its own read id, so a
+   second refusal on a channel is a different waiter's only answer, not the first one repeated.
+   Up to `cloud.spool_refusals` (64) refusals may be live on one channel, each at most
+   `spoolRefusalByteLimit` (4 KiB) — at most 256 KiB a channel. Only past the cap is a refusal
+   dropped, and that drop is logged with the read's `operation=`, its sender and its sequence. The
+   rule is the spool's and applies to every channel a refusal is published on, because every
+   refusal this daemon publishes (`Service.tellChannelFull`) answers one specific request; the
+   ingress `cloud_ingress_busy` answers (9.5) never used the reserve and are unchanged.
+2. **Small answers are not starved by large ones.** On the machine-read reply channel only
+   (`Outbound.Headroom`, set when the answer's session is `__clawdline_machine__`), an answer
+   larger than `largeAnswerByteLimit` (256 KiB) is refused as `cloud_read_busy` 429 — deliverably,
+   per rule 1 — when admitting it would leave less than `smallAnswerReserveLimit` (1 MiB) of the
+   channel's 4 MiB free. An answer at or below the threshold may use the reserve. A large answer on
+   an otherwise empty channel is always admitted, so a picture as large as
+   `imageMaxEncodedBytes()` still has a way through. A Session's own transcript channel keeps its
+   whole cap: it was sized for two of its largest answers (limits N22), which a reserve would halve.
+3. **Cards ask for a thumbnail.** `work.v2.image` takes an optional `size: "thumb"` (the body is
+   otherwise the fixed `{type, session, request, id}`; a page built before it sends no `size` and
+   is answered the full image). It is routed to `GET /v1/work/v2/images/{id}?size=thumb`, which
+   answers the stored image with its long edge at most 480 px (`artifacts.MaxThumbnailEdge`) as
+   `image/jpeg`; `shapeImage` carries `image/png` and `image/jpeg`. A 1600 × 873 reference measured
+   1,307,675 bytes as its normalized PNG and 13,199 bytes as its thumbnail. The console asks for
+   the original only when the full-size viewer or the red pen opens it, keeps at most two
+   reference-image reads in flight per page through Cloud, and retries `cloud_read_busy` after 1 s,
+   2 s and 4 s before showing the failure (`web/console/src/pages/work/reference-images.ts`).
 
 同一天順著這個問題做的稽核：**每一個決定「一筆答案可以多大」的地方，都要取兩個天花板裡小的那個**
 ——relay 的單封 ciphertext 上限，以及這台機器自己一條 channel 裝得下的量

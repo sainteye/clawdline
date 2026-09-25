@@ -500,6 +500,13 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			_, receipts := s.spoolChannelReadings()
 			return receipts
 		},
+		capacity.CloudSpoolRefusals: func() capacity.Reading { return s.spoolRefusalReading() },
+		capacity.CacheImageThumbs: func() capacity.Reading {
+			held, entries, evicted, lastAt := s.thumbs.Reading()
+			return capacity.Reading{Known: true, Used: held,
+				Counters: capacity.Counters{Evicted: evicted, LastActionAt: lastAt},
+				Note:     fmt.Sprintf("%d thumbnail(s) held", entries)}
+		},
 		capacity.SSEScreenPending: func() capacity.Reading {
 			if s.screenBus == nil {
 				return capacity.Unmeasured("this server publishes no event stream")
@@ -614,6 +621,24 @@ func (s *Server) spoolChannelReadings() (channelBytes, receipts capacity.Reading
 		return never, never
 	}
 	return channelBytes, receipts
+}
+
+func (s *Server) spoolRefusalReading() capacity.Reading {
+	line, ok := cloudLines.Load(s.cfg.Dir)
+	if !ok {
+		return capacity.Reading{Known: true, Note: "the Cloud line is off: there is no spool"}
+	}
+	q, ok := line.(interface {
+		SpoolRefusalReading() (capacity.Reading, bool)
+	})
+	if !ok {
+		return capacity.Unmeasured("this Cloud line does not report its spool")
+	}
+	r, ok := q.SpoolRefusalReading()
+	if !ok {
+		return capacity.Reading{Known: true, Note: "the Cloud line was never built: there is no spool"}
+	}
+	return r
 }
 
 // StartCapacity runs the register's beat on the scheduler's tick, the first

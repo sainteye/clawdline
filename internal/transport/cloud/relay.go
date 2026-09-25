@@ -243,7 +243,7 @@ func (r *Relay) Publish(ctx context.Context, out Outbound) error {
 	case kind.IsLatestValue():
 		seq, err = r.Spool.ReserveLatestValue(kind, out.Channel, out.Channel, len(out.Payload))
 	default:
-		seq, err = r.Spool.Reserve(kind, out.Channel, out.Channel, len(out.Payload))
+		seq, err = r.Spool.ReserveAnswer(kind, out.Channel, out.Channel, len(out.Payload), out.Headroom)
 	}
 	if err != nil {
 		return err
