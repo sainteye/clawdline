@@ -136,9 +136,13 @@
 .work-modal-image-list li button { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--faint); font-size: 15px; }
 .work-v2-project { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 12px; }
 .work-assignment { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-top: 4px; border-top: 1px solid var(--line); }
-.work-new-session { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; }
-.work-new-session .chip { display: inline-flex; align-items: center; justify-content: center; padding: 4px 10px; border-color: transparent; border-radius: 999px; }
-.work-new-session .chip .assistant-logo { display: block; width: 16px; height: 16px; }
+/* As tall as the chips beside it, whatever height the engine gives a line of
+   11.5px text (23px in WebKit, 26px in Chromium, measured): the group stretches
+   to the row and its own minimum stays below either. The marks are sized to
+   the words around them, not to the pill. */
+.work-new-session { display: inline-flex; align-self: stretch; gap: 2px; padding: 1px; border: 1px solid var(--line); border-radius: 999px; }
+.work-new-session .chip { display: inline-flex; align-items: center; justify-content: center; padding: 1px 9px; border-color: transparent; border-radius: 999px; }
+.work-new-session .chip .assistant-logo { display: block; width: 13px; height: 13px; }
 .work-new-session .chip:not(.on) .assistant-logo { opacity: 0.5; }
 .work-new-session .chip:hover:not(:disabled) .assistant-logo { opacity: 1; }
 .work-session-picker { position: relative; flex: 1 1 100%; min-width: 0; }
