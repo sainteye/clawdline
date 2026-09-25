@@ -288,6 +288,9 @@ POST /v1/orchestrator/tasks/<id>/landing
 
 - 只收這幾個 key，外加 `delivery`（收下但不使用）；其他 key 一律拒絕。`pending` 和 `abandoned` 接受
   task secret 或 orchestrator token；`landed` 和 `nothing_to_land` 只接受 orchestrator token。
+- **合併會自己記帳。** 已結束的 task 分支一旦合併進 target，broker 會在幾分鐘內用同一道 Git 查證
+  自己記成 `landed`，commit 是 target 當下的 head。紀錄上沒有 target 時，只有主 checkout 的 branch
+  是唯一含有這份交付的 branch 才會自己命名。cherry-pick、`incorporated` 與 `nothing_to_land` 仍由你記。
 - `landed` 需要 `target` 和 `commit`，而且 daemon **會去 Git 裡查證**；查不過就回
   `409 unverified_landing` 並附上 `reason`（`target_unresolved`、`commit_unresolved`、
   `not_on_target`、`predates_dispatch`、`nothing_delivered`、`not_the_delivery`、…）。

@@ -316,6 +316,11 @@ POST /v1/orchestrator/tasks/<id>/landing
 - `nothing_to_land` is refused with `409 wrote_to_repository` when the task did write.
 - A settled landing cannot change: `409 invalid_transition`, or `409 landing_conflict` for a
   different value.
+- **A merge records itself.** Once a finished task's branch is merged into its target, the broker
+  records `landed` on its own within a few minutes, through the same Git check, with the target's
+  head as the commit. With no target on record it names one only when the primary checkout's branch
+  is the single branch holding the delivery. A cherry-pick, an `incorporated` delivery and
+  `nothing_to_land` are still yours to record.
 
 `clawdline landings` (`GET /v1/orchestrator/landings`) is every pending landing on the machine, each
 with an `ownership.status`. `unknown` is not "nobody": it means the evidence could not be read.
