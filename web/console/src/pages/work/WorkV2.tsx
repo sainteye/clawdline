@@ -15,6 +15,7 @@ import { WorkIcon } from "./WorkIcon.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
 import { useReferenceImage } from "./useReferenceImage.js"
 import { VoiceTextarea } from "./VoiceTextarea.js"
+import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import {
@@ -334,6 +335,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
         onClick={() => imagePicker.current?.click()}>＋ 參考圖片</button>
       <small>{item.images?.length ?? 0} / 6</small>
     </div>}
+    <ItemUsageCard itemId={item.id} version={item.version} />
     <div className="work-meta"><span>{item.project.available ? (item.condition || "正常") : "project_unavailable"}</span>
       <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
       {owner ? <a className="work-session-link" href={sessionFragment(owner.id)}

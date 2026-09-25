@@ -19,6 +19,7 @@ import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import { OneRead, readFailureReason, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
 import { nextWord } from "../next-strings.js"
+import { ItemUsageDetail, SessionUsage } from "../pages/work/TokenBill.js"
 import "../pages/work/work.css"
 import "./todos.css"
 
@@ -145,6 +146,7 @@ export function Todos({ row, agentCount, agentPanel }: {
         </summary>
         <div className="session-todos-body">
           {agentPanel}
+          {row.sessionId && <SessionUsage conversation={row.sessionId} />}
           {readFailure && <p className="work-note" role="alert">{readFailure.words}</p>}
           {failure && <p className="work-note" role="alert">{failure}</p>}
           {page && hasAssigned && <section className="session-todos-list" aria-label="負責項目">
@@ -282,6 +284,7 @@ function WorkItemDetailModal({ item, failure, actionFailure, notice, reminding, 
       {failure && <p className="work-note" role="alert">最新資料讀取失敗：{failure}</p>}
       {actionFailure && <p className="work-note" role="alert">提醒傳送失敗：{actionFailure}</p>}
       {notice && <p className="work-note" role="status">{notice}</p>}
+      <ItemUsageDetail itemId={item.id} version={item.version} />
       {!!item.owner_session && !item.closed_at && <div className="work-actions">
         <button className="chip on" type="button" disabled={reminding} onClick={onRemind}>
           {reminding ? "提醒中…" : notice ? "✓ 已提醒" : "再次提醒 Session"}

@@ -1,5 +1,5 @@
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
-import type { SessionsSnapshot } from "@clawdline/contract"
+import type { SessionsSnapshot, UsageItem, UsageSession } from "@clawdline/contract"
 import type { CreatedVia } from "./words.js"
 
 /**
@@ -489,6 +489,10 @@ export const deleteWorkV2Image = (item: WorkV2Item, imageID: string) =>
 export const readSessionWorkV2 = (terminalID: string) =>
   call<SessionWorkV2>(`/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}`)
 export const readSessionsForWorkV2 = () => call<SessionsSnapshot>("/v1/sessions")
+/** The token ledger's bill of a Board item, and of one session (docs/token-ledger.md). */
+export const readItemUsage = (itemID: string) => call<UsageItem>(`/v1/usage/items/${encodeURIComponent(itemID)}`)
+export const readSessionUsage = (conversation: string) =>
+  call<UsageSession>(`/v1/usage/sessions/${encodeURIComponent(conversation)}`)
 
 export const createDirectTodoV2 = (terminalID: string, text: string) =>
   mutate<{ todo: DirectTodoV2 }>(`/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}`, { text })
