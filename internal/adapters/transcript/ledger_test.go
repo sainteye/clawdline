@@ -432,3 +432,22 @@ func mustRead(t *testing.T, path string) string {
 	}
 	return string(data)
 }
+
+// Claude Code records two prompt snapshots: a short one before the first
+// call and the one with every tool's description after it. The tools were in
+// the first request all the same, so the late snapshot completes the base.
+// Measured on a real transcript on 2026-09-25: without this the base had no
+// tools at all, and every other part was inflated to fill their share.
+func TestAPromptSnapshotAfterTheFirstCallAddsItsTools(t *testing.T) {
+	s := feedAll(t, fixture("claude_late_snapshot.jsonl"))
+	c := s.Composition
+	if c == nil {
+		t.Fatal("no composition")
+	}
+	if len(c.Tools) != 2 || c.Tools[0].Name != "Bash" || c.Tools[1].Name != "Read" {
+		t.Fatalf("tools = %+v, want Bash and Read from the late snapshot", c.Tools)
+	}
+	if !near(c.estimated(), float64(c.Measured)) || c.Measured != 2004 {
+		t.Fatalf("the parts sum to %.1f, want the first call's %d", c.estimated(), c.Measured)
+	}
+}

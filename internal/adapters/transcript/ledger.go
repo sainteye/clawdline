@@ -189,6 +189,13 @@ func (c *Composition) estimated() float64 {
 	return total
 }
 
+// clone is a copy that shares no slice with c.
+func (c Composition) clone() Composition {
+	c.Tools = append([]NamedSize(nil), c.Tools...)
+	c.Instructions = append([]NamedSize(nil), c.Instructions...)
+	return c
+}
+
 func (c *Composition) scale(f float64) {
 	c.SystemPrompt *= f
 	c.SkillListing *= f
@@ -272,7 +279,11 @@ type LedgerState struct {
 	// being gathered before that call.
 	Composition *Composition `json:"composition,omitempty"`
 	Pre         *Composition `json:"pre,omitempty"`
-	Snapshot    bool         `json:"snapshot,omitempty"`
+	// Unscaled is Composition before it was scaled to the measured context,
+	// kept so a prompt snapshot recorded after the first call can still add
+	// what the first one lacked.
+	Unscaled *Composition `json:"unscaled,omitempty"`
+	Snapshot bool         `json:"snapshot,omitempty"`
 }
 
 // FeedResult is what one Feed did.
@@ -582,6 +593,8 @@ func (s *LedgerState) firstContext(ctx int64) Sizes {
 	if pre := s.Pre; pre != nil && s.Snapshot {
 		comp := *pre
 		comp.Measured = ctx
+		raw := comp.clone()
+		s.Unscaled = &raw
 		if est := comp.estimated(); est > 0 {
 			comp.scale(float64(ctx) / est)
 			s.Composition = &comp
@@ -841,6 +854,7 @@ func (s *LedgerState) claudeAttachment(rec object) {
 	switch t, _ := att.str("type"); t {
 	case "prompt_snapshot":
 		if s.Calls > 0 {
+			s.lateSnapshot(att)
 			return
 		}
 		pre := s.pre()
@@ -875,6 +889,40 @@ func (s *LedgerState) claudeAttachment(rec object) {
 	default:
 		s.arrive(CategoryHarness, size)
 		s.pre().Other += size
+	}
+}
+
+// lateSnapshot adds the tools of a prompt snapshot recorded after the first
+// call. Claude Code writes two: a short one before the first call with the
+// system prompt, and the full one, with every tool's description, after it —
+// yet the tools were in the first request all the same. Measured on a real
+// transcript on 2026-09-25, dropping the late one left the tools out of the
+// base and inflated every other part by about 60% to fill the gap.
+func (s *LedgerState) lateSnapshot(att object) {
+	raw := s.Unscaled
+	if raw == nil || len(raw.Tools) > 0 {
+		return
+	}
+	tools, ok := rawArray(att["tools"])
+	if !ok || len(tools) == 0 {
+		return
+	}
+	for _, t := range tools {
+		name := "tool"
+		if o, ok := rawObject(t); ok {
+			if n, ok := o.str("name"); ok {
+				name = n
+			}
+		}
+		raw.Tools = append(raw.Tools, NamedSize{Name: name, Tokens: estimate(string(t))})
+	}
+	if sp := estimate(textOf(att["systemPrompt"])); sp > raw.SystemPrompt {
+		raw.SystemPrompt = sp
+	}
+	comp := raw.clone()
+	if est := comp.estimated(); est > 0 {
+		comp.scale(float64(comp.Measured) / est)
+		s.Composition = &comp
 	}
 }
 
