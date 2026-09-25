@@ -230,3 +230,18 @@ test("a reference picture's remove control is the only button drawn as the round
   assert.match(styles, /\.work-reference-image > \.work-reference-remove \{[^}]*position: absolute/)
   assert.match(source, /<button className="work-reference-remove" type="button" aria-label=\{`移除參考圖片/)
 })
+
+test("a dictating text box is never inside a <label>, which would hand its Done to Cancel", () => {
+  // Done redraws the row, so the button it was pressed on has left the page by
+  // the time the click bubbles; a <label> then reads the click as its own and
+  // forwards it to its first control — the redrawn row's Cancel. The recording
+  // was dropped and nothing was sent (WebKit and Chromium, 2026-09-25).
+  for (const [name, text] of [["WorkV2.tsx", source], ["Todos.tsx", todos]] as const) {
+    assert.doesNotMatch(text, /<label>[^<]*<VoiceTextarea/, name)
+  }
+  const voice = readFileSync(new URL("./VoiceTextarea.tsx", import.meta.url), "utf8")
+  assert.doesNotMatch(voice.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, ""), /<label\b/)
+  assert.match(voice, /aria-labelledby=\{label \? heading : undefined\}/)
+  assert.match(source, /<VoiceTextarea label="描述" value=\{description\} maxLength=\{65536\}/)
+  assert.match(source, /<VoiceTextarea label="描述" value=\{description\} onValue=\{setDescription\} \/>/)
+})

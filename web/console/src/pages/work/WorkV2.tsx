@@ -527,7 +527,7 @@ function EditWorkModal({ item, busy, failure, onClose, onSave }: {
       <div className="work-modal-head"><div><p className="board-eyebrow">EDIT WORK ITEM</p><h2 id={`work-edit-title-${item.id}`}>編輯看板項目</h2></div>
         <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(event) => setTitle(event.target.value)} /></label>
-      <label>描述<VoiceTextarea value={description} maxLength={65536} onValue={setDescription} /></label>
+      <VoiceTextarea label="描述" value={description} maxLength={65536} onValue={setDescription} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "儲存中…" : "儲存變更"}</button>
         <button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
@@ -700,7 +700,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
         <span><b>{meta.label}</b><small>{meta.description}</small></span><span className="work-kind-radio"><WorkIcon name={kind === value ? "radio" : "circle"} /></span></button> })}
     </div></fieldset>
     <label>標題<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
-    <label>描述<VoiceTextarea value={description} onValue={setDescription} /></label>
+    <VoiceTextarea label="描述" value={description} onValue={setDescription} />
     <PendingPictures images={images} busy={busy} note="建立項目後上傳" onChange={setImages} />
     {failure && <p className="work-note" role="alert">{failure}</p>}
     <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "建立中…" : "建立"}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
