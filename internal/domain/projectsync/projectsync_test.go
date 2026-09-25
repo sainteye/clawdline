@@ -158,3 +158,12 @@ func TestADotFileInsideACarriedPlaceIsNotCarried(t *testing.T) {
 		}
 	}
 }
+
+func TestABuildCacheInsideASkillIsNotCarried(t *testing.T) {
+	// Measured on a real checkout: a skill's __pycache__/*.pyc was offered.
+	for _, p := range []string{".claude/skills/ad/__pycache__/q.cpython-312.pyc", ".claude/skills/x/node_modules/a/index.js", ".claude/skills/x/q.pyc"} {
+		if Allowed(p) {
+			t.Errorf("%q is a build artifact, not a setting", p)
+		}
+	}
+}

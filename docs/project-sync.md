@@ -20,7 +20,8 @@ This page is how one machine owns those settings and others read them.
   (`docs/project-icons.md` explains why a path or a label is not an identity).
 - **Only what git does not carry travels.** Untracked and ignored files under `.claude/skills`,
   `.claude/commands` and `.claude/agents`, and `CLAUDE.local.md` — except dot files and dot
-  directories inside them (`.env` is where an ignored secret sits, not a skill). A tracked file
+  directories inside them (`.env` is where an ignored secret sits, not a skill), and build
+  artifacts a skill leaves behind by running (`__pycache__`, `*.pyc`, `node_modules`). A tracked file
   arrives with the repository and is never written over. `.claude/settings.local.json` is deliberately excluded:
   it holds the source machine's permission grants and absolute paths, and copying a grant to
   another machine is an escalation nobody chose there.
@@ -78,7 +79,9 @@ clawdline project export --out projects.json          # on the source
 clawdline project import --clone projects.json        # on the mirror
 ```
 
-The bundle contains file contents; treat it like the files themselves.
+The bundle contains file contents; treat it like the files themselves. A source that is on a Cloud
+account writes its Cloud machine id into the bundle, so a mirror imported by hand is still
+followed from that source when the Projects page is opened in the hosted console.
 
 ## State and bounds
 
