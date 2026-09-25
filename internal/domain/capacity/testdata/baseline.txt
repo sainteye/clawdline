@@ -225,6 +225,8 @@ internal/transport/cloud.TaskListBytesLimit # page: those records' encoded bytes
 internal/transport/cloud.taskReadLimit # read: the finished tasks one orch/ pass reads, the page the local console's stream reads (50); unfinished tasks are all read, and are bounded by TaskListLimit on the way out
 internal/transport/cloud.NewFake:chan(depth) # lane: the test fake's request queue
 internal/transport/cloud.(*Relay).start:chan(refusalLane) # lane: requests the full queue turned away, waiting for their cloud_ingress_busy answer; past it the sender is not told and cloud.relay_queue counts it dropped (limits N20, C3)
+internal/transport/cloud.CloudReadConcurrencyLimit # lane: Cloud reads answered at once beside the ordered command lane, 8; past it the read is answered 429 cloud_ingress_busy with retry_after at once, never waited for, so nothing fills and a stuck command cannot hold a read (limits N20)
+internal/transport/cloud.(*Link).runService:chan(depth) # lane: Cloud commands waiting for the one worker that answers them in arrival order, as deep as cloud.relay_queue; past it the command is answered 429 cloud_ingress_busy at once, so the loop sorting requests never waits and nothing fills (limits N20)
 internal/transport/http.(*Server).pastRoute.limit # page: past conversations in one answer
 internal/transport/http.(*Server).projectReaders:chan(4) # lane: project readers at a time
 internal/transport/http.keyBodyLimit # admission: one keys request body

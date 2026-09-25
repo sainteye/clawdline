@@ -1654,3 +1654,26 @@ func TestSessionsSnapshotAnswersTheIdsThePublisherStated(t *testing.T) {
 		}
 	}
 }
+
+// IsRead is what lets a transport answer a read beside its command lane, so a
+// word that has an effect must never pass it, and neither may a body the
+// bridge would refuse.
+func TestIsReadIsTrueOnlyForAKnownEffectFreeWord(t *testing.T) {
+	for _, c := range []struct {
+		body string
+		want bool
+	}{
+		{`{"type":"places","session":"__clawdline_machine__","request":"r1"}`, true},
+		{`{"type":"transcript","session":"%19","limit":50}`, true},
+		{`{"type":"send","session":"%19","text":"hi","images":[]}`, false},
+		{`{"type":"push-subscribe"}`, false},
+		{`{"type":"no-such-word"}`, false},
+		{`{"session":"%19"}`, false},
+		{`not json`, false},
+		{``, false},
+	} {
+		if got := IsRead([]byte(c.body)); got != c.want {
+			t.Errorf("IsRead(%s) = %v, want %v", c.body, got, c.want)
+		}
+	}
+}

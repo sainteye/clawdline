@@ -217,13 +217,16 @@ type Link struct {
 	status    *adaptercloud.StatusRecorder
 	service   Service
 
-	mu          sync.Mutex
-	state       string
-	lastErr     string
-	lastErrAt   time.Time
-	lastKind    adaptercloud.FailureKind
-	answered    int
-	refused     int
+	mu        sync.Mutex
+	state     string
+	lastErr   string
+	lastErrAt time.Time
+	lastKind  adaptercloud.FailureKind
+	answered  int
+	refused   int
+	// reading is how many reads are being answered beside the command lane,
+	// at most CloudReadConcurrencyLimit.
+	reading     int
 	fingerprint string
 	// stopRun cancels the socket currently up, and rotated says the next
 	// `Run` iteration should rebuild rather than return. They are one pair:
@@ -553,8 +556,49 @@ func (l *Link) refreshRoster(ctx context.Context) {
 	}
 }
 
+// CloudReadConcurrencyLimit is how many Cloud reads may be answered at once
+// beside the command lane. Past it a read is told `cloud_ingress_busy` at once
+// rather than waited for: waiting would put the command lane behind reads,
+// which is the same stall the other way round.
+const CloudReadConcurrencyLimit = 8
+
 // runService answers requests, counting what it answered.
+//
+// This goroutine only sorts; it never waits on an answer. Commands go to one
+// worker (runCommands) that answers them one at a time, in the order they
+// arrived: a command types into a session, and two of them overtaking each
+// other is text arriving out of the order it was sent in. Reads are not held
+// to that order. They have no effect, and one waiting behind a command that
+// has not come back is a picker saying "loading" about a machine that could
+// answer it — the Board's Project picker and the new-session dialog both wait
+// on `places`, and both stayed there while one request upstream never
+// returned and the pushed Session list kept moving. So a read is answered
+// beside the command lane, up to CloudReadConcurrencyLimit at once.
+//
+// Neither lane may make this goroutine wait, because whatever it waits on is
+// what every later request of the other kind waits behind. A read past its
+// bound and a command past the lane's depth are both answered
+// `cloud_ingress_busy` at once — the sentence Relay already sends for a full
+// queue, which the hosted console draws as "busy, try again", rather than a
+// request that silently never returns. The refusal asks no route, so it
+// cannot be what is stuck.
+//
+// Every answer this starts is waited for before it returns, so nothing is
+// written after the link has stopped.
 func (l *Link) runService(ctx context.Context) error {
+	var answers sync.WaitGroup
+	defer answers.Wait()
+	// The lane is as deep as the queue in front of it: the commands that
+	// could wait for the bridge before this lane existed may wait for it
+	// now, and no more.
+	depth := l.relay.QueueDepth()
+	commands := make(chan pending, depth)
+	answers.Add(1)
+	go func() {
+		defer answers.Done()
+		l.runCommands(ctx, commands)
+	}()
+	defer close(commands)
 	requests := l.relay.Requests()
 	for {
 		select {
@@ -564,19 +608,94 @@ func (l *Link) runService(ctx context.Context) error {
 			if !open {
 				return nil
 			}
-			if cloudops.AsksForSessions(request.Plaintext) {
+			// The service is taken here, on this goroutine, for every answer
+			// started off it: a rotation rewires l.service and must not race
+			// a late answer.
+			service := l.service
+			switch {
+			case cloudops.AsksForSessions(request.Plaintext):
 				// It waits for the publisher's next re-statement, up to one
-				// SnapshotInterval, and every other request would wait behind
-				// it. The publisher bounds how many may wait
+				// SnapshotInterval. The publisher bounds how many may wait
 				// (SessionSnapshotWaitersLimit) and answers the rest at once.
-				// The service is taken here, on this goroutine: a rotation
-				// rewires l.service and must not race a late answer.
-				go l.answer(ctx, l.service, request)
-				continue
+				answers.Add(1)
+				go func() {
+					defer answers.Done()
+					l.answer(ctx, service, request)
+				}()
+			case cloudops.IsRead(request.Plaintext):
+				if !l.takeReadSlot() {
+					l.refuseBusy(ctx, service, request, "read lane", CloudReadConcurrencyLimit)
+					continue
+				}
+				answers.Add(1)
+				go func() {
+					defer answers.Done()
+					defer l.releaseReadSlot()
+					l.answer(ctx, service, request)
+				}()
+			default:
+				select {
+				case commands <- pending{service: service, request: request}:
+				default:
+					l.refuseBusy(ctx, service, request, "command lane", depth)
+				}
 			}
-			l.answer(ctx, l.service, request)
 		}
 	}
+}
+
+// pending is one command waiting for its turn, with the service that was
+// current when it arrived.
+type pending struct {
+	service Service
+	request Inbound
+}
+
+// runCommands answers commands one at a time until the lane is closed. A
+// command still waiting when the link stops is not started: its effect would
+// land after the line that should carry its answer has gone.
+func (l *Link) runCommands(ctx context.Context, commands <-chan pending) {
+	for next := range commands {
+		if ctx.Err() != nil {
+			continue
+		}
+		l.answer(ctx, next.service, next.request)
+	}
+}
+
+// takeReadSlot claims one of the read lane's slots, or reports that none is
+// free. It never waits: the goroutine asking is the command lane's.
+func (l *Link) takeReadSlot() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.reading >= CloudReadConcurrencyLimit {
+		return false
+	}
+	l.reading++
+	return true
+}
+
+func (l *Link) releaseReadSlot() {
+	l.mu.Lock()
+	l.reading--
+	l.mu.Unlock()
+}
+
+// refuseBusy tells a request a lane had no room for that it was not taken,
+// and counts it as an answered refusal.
+func (l *Link) refuseBusy(ctx context.Context, service Service, request Inbound, lane string, limit int) {
+	why := service.Busy(ctx, request, limit)
+	l.mu.Lock()
+	l.answered++
+	l.refused++
+	l.mu.Unlock()
+	if why != "" {
+		l.logf("cloud: a request from %s seq=%d was refused at a full %s (%d) and its sender could not be told: %s",
+			request.Sender, request.Sequence, lane, limit, why)
+		return
+	}
+	l.logf("cloud: the %s is full (%d); refused a request from %s seq=%d, and its sender is told to retry",
+		lane, limit, request.Sender, request.Sequence)
 }
 
 // answer handles one request, counting what it answered.

@@ -212,6 +212,22 @@ func AsksForSessions(plaintext []byte) bool {
 
 const sessionsSnapshotWord = "sessions.snapshot"
 
+// IsRead reports whether this plaintext asks for an effect-free word, for a
+// transport that answers reads beside its ordered command lane: a read that
+// waits behind a command that has not come back is a picker saying "loading"
+// about a machine that could answer it at once. A body too malformed to say,
+// or a word this bridge does not know, is not a read — it stays in the lane
+// and is refused there like any other.
+func IsRead(plaintext []byte) bool {
+	parsed, err := decodeBody(plaintext)
+	if err != nil {
+		return false
+	}
+	word, _ := parsed.str("type")
+	o, known := catalog[word]
+	return known && o.read
+}
+
 // SessionsStated is what a `sessions.snapshot` pass said: the ids its
 // inventory named, and whether the reading behind it was the whole set.
 type SessionsStated struct {
