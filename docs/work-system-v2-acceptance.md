@@ -303,9 +303,11 @@ write, submit returns focus to the `+` control, and the narrow layout keeps all 
 Pressing Send records durable intent and types the row once. Successful delivery sets `sent_at` and
 shows `✓`. A retry replays the receipt. Machine/Agent calls to Send are refused. Busy, gone,
 ambiguous, and unreadable targets each have typed outcomes and do not falsely set `sent_at`. A
-second new request is refused while that delivery remains unread. Once `read_at` is present and the
-row remains open, the person may send a reminder exactly once; success replaces `sent_at`, clears
-the stale `read_at`, and returns the row to `✓`.
+second new request is refused while that delivery remains unread and younger than
+`app.DirectTodoResendAfter` (two minutes), so a double tap or a second screen does not type it twice.
+Once `read_at` is present, or the unread delivery is older than that, and the row remains open, the
+person may send a reminder; success replaces `sent_at`, clears the stale `read_at`, and returns the
+row to `✓`. A Session that never reads its queue therefore cannot leave a row unsendable.
 
 ### WS2-T03 — Agent read returns all next work and produces the double mark
 

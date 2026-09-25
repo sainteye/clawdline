@@ -64,8 +64,10 @@ func TestPersonTodoReadRetainsACompletedDirectTodo(t *testing.T) {
 
 func TestPersonCanRemindOnlyAfterThePreviousDeliveryWasRead(t *testing.T) {
 	s, p, id := directTodoServer(t)
+	// Sent just now: inside app.DirectTodoResendAfter an unread delivery is
+	// still protected from being typed twice.
 	if _, err := s.workV2().MarkDirectTodoSent(context.Background(), id, p.s.ConversationID,
-		time.Unix(1_790_000_001, 0)); err != nil {
+		time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
