@@ -2,72 +2,38 @@
 
 **This is the product.** Clawdline is a Go daemon plus a React console, built for macOS, Linux and
 Windows. The daemon owns port 7727 on this machine. `README.md` says what it is for; `docs/` says
-how each part was decided.
+how each part was decided. This page holds the rules; `docs/working-rules.md` holds the incidents
+and procedures behind them — read its section when you reach the thing it covers.
 
-## The other checkout is not this one
+## The retired Swift app
 
-`~/code/clawdline` is the **retired Swift app**. It was stopped on 2026-09-19, taken out of
-launch-at-login, and nothing has answered its port 7717 since. On 2026-09-20 `app.clawdline.com`
-also became this repository's console.
+The Swift app was stopped on 2026-09-19 and archived on 2026-09-22 as bundles under
+`~/code/clawdline-archive-20260922`; this checkout now lives at `~/code/clawdline`. Its code is a
+record of what still has to migrate and how it was done the first time. Comments cite it by file and
+line (`SessionInfo.swift:864-872`) and those citations stay. Never modify the archive.
 
-That tree is kept for two purposes, both read-only:
-
-1. **What still has to migrate** — features this rewrite has not reached yet.
-2. **How it was done the first time** — the measurements and the reasoning behind a behaviour this
-   repository copies. Comments here cite it by file and line (`SessionInfo.swift:864-872`) and
-   those citations are meant to stay.
-
-**Never modify `~/code/clawdline`.** Not a file, not a commit, not a `git add`. If work you were
-given seems to belong there, say so and stop; do not do it quietly. Two mechanisms read that tree
-on purpose and are the only ones allowed to: `tools/check-legacy-css.sh` compares
-`web/console/src/legacy/` against its `Resources/web` byte for byte, and `web/console/src/legacy/
-MANIFEST.json` records where each copy came from.
-
-A sentence in this repository that says the Swift app is running, holds a port, or is somewhere
-traffic goes is false. `TestNothingSaysTheRetiredAppIsStillRunning` (`internal/config/`) fails on
-one, and offers two ways to keep a measurement: write it in the past with its date, or mark the
-whole file `retired-app-record` with a date.
+A sentence here that says the Swift app is running, holds a port, or is somewhere traffic goes is
+false; `TestNothingSaysTheRetiredAppIsStillRunning` (`internal/config/`) fails on one. Write such a
+measurement in the past with its date, or mark the whole file `retired-app-record` with a date.
 
 ## Where work happens
 
-The branch is `main`, and it is the same name the public repository uses. It was `master`
-until 2026-09-22; a worktree or a landing that still names `master` is one written before
-that and is wrong now. Work lands through a **disposable worktree**, never in the shared
-checkout:
-
-
-**A task branch cut before 2026-09-22 cannot be landed, only cherry-picked.** `main` was rebased
-onto the published, scrubbed history that day. A delivery branch cut from the old line carries
-that line with it, so merging one makes an unfiltered history an ancestor of what gets published —
-measured once at 77 findings beyond the baseline, and the pre-push hook refused it. Cherry-pick
-the delivery's commits instead. The cost is that the broker cannot verify the landing: `landed`
-asks for the delivery branch to be an ancestor and it never will be, so the task stays without a
-truthful record and the reason belongs in the turn's report. `262c8861` is the one this was
-learned on, and its record names a commit that is no longer on `main`. Branches cut after that
-day have no such problem.
+The branch is `main` (it was `master` until 2026-09-22). Work lands through a **disposable
+worktree**, never in the shared checkout:
 
 ```sh
 git worktree add -f <scratch>/<name> HEAD
 ```
 
-A root integrates by **merging the child's branch**, not by applying its patch: the merge commit
-carries the branch, which is what makes the landing provable. Record it as soon as it lands.
-
-After recording a landing, run `tools/check-worktrees.sh`. It is a dry run and has four answers:
-0 means nothing is owed, 1 means it found proved landed-and-clean residue, 2 means it could not
-check, and 3 means at least one checkout is unknown. Inspect the report before running
-`tools/check-worktrees.sh --apply`; apply removes only broker-owned, landed, clean checkouts and
-never deletes their branches. Dirty, live, unlanded and unknown checkouts stay.
-
-For a root's own deployment snapshot, comparison tree or other read-only throwaway checkout, use
-`tools/check-worktrees.sh --ephemeral -- <command>` instead of a bare `git worktree add`. The
-wrapper creates a detached checkout in a temporary directory and pairs its creation with removal.
-If the command changes it or moves it off `main`, the wrapper keeps it and prints its path. See
-`docs/worktrees.md` for the evidence and recovery rules.
-
-A dispatched child gets its own worktree from the broker; **read its path from the task record**
-(`GET /v1/orchestrator/tasks/<id>` → `.task.worktree.path`) rather than composing it, because two
-brokers have two roots. `cd "$W" || exit 1` — a failed `cd` runs everything else somewhere else.
+- A root integrates by **merging the child's branch**, not by applying its patch, and records the
+  landing as soon as it lands. A branch cut before 2026-09-22 can only be cherry-picked
+  (`docs/working-rules.md`).
+- After recording a landing, run `tools/check-worktrees.sh` (a dry run: 0 nothing owed, 1 landed
+  residue, 2 could not check, 3 unknown) and inspect it before `--apply`. For a read-only
+  throwaway checkout use `tools/check-worktrees.sh --ephemeral -- <command>`. `docs/worktrees.md`.
+- A dispatched child's worktree path comes from the task record
+  (`GET /v1/orchestrator/tasks/<id>` → `.task.worktree.path`), never composed.
+  `cd "$W" || exit 1` — a failed `cd` runs everything else somewhere else.
 
 ## Before anything is committed
 
@@ -89,32 +55,24 @@ tools/check-private.sh -history -new    # no commit behind it added one either
 ( cd web && npm run check && npm run build )   # when anything under web/ changed
 ```
 
-`go vet ./...` on a Mac never reads a `_windows.go` or `!unix` file, and the Windows cross-build
-compiles no test, so a test that calls a POSIX-only `syscall` breaks Windows without either noticing.
-The Windows vet was red on exactly that from the day it could have been run until 2026-09-21, and
-a check that is always red is one nobody runs. A test that needs a Unix facility asks for it through
-a per-platform file (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.
-
-A new bound — a limit, a cache size, a number of rows — must be registered in
-`internal/domain/capacity`; `TestEveryBoundIsRegistered` fails otherwise. Drive the guard red
-before you make it green, and keep the output that proves it went red.
+- A test that needs a Unix facility asks for it through a per-platform file
+  (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.
+- A new bound — a limit, a cache size, a number of rows — must be registered in
+  `internal/domain/capacity`; `TestEveryBoundIsRegistered` fails otherwise. Drive the guard red
+  before you make it green, and keep the output that proves it went red.
+- When slow sends, long loading, pending messages that never clear or lost events recur, do not
+  only add a timeout or a spinner: trace the whole capacity and protocol path — queue and
+  concurrency limits, backpressure, synchronous external dependencies, retry amplification,
+  idempotency and receipts, SSE resume, stale snapshots, failure isolation — and tell apart
+  accepted, executed, delivered, observed and acknowledged. The fix carries typed errors and
+  failure-injection tests.
 
 ## This repository is public
 
-It is open source. **Nothing of the person's may appear in it**: no names of their businesses, no
-tokens, no paths into their accounts, no content from their conversations.
-`tools/check-private.sh` reads a word list kept out of git (`.git/info/private-words`); without
-that list it answers 3, **undetermined**, and not 0. `-history` reads the commits as well as the
-working tree, because a word committed and later removed is gone from the tree and still in what
-`git push` sends — `docs/cutover.md` at `ef067d70` is the live example, and the tree scan is green
-on it. A history finding names the commit, the file and the line, and never the matched text.
-This history is already red and stays red: three lines at `ef067d70` are in it for good unless
-somebody rewrites it, which is a decision about the whole repository and not a patch. So the
-pre-commit check is `-history -new`, which prints every standing finding and is red only for one
-today added. A routine push does **not** run the whole history again: the tracked pre-push hook
-compares the finding count at the published commit with the count after this push and refuses an
-increase. The full `-history -full -revs=--all` audit is reserved for an initial publication or an
-intentional history rewrite. `docs/privacy-guard.md` is the whole of it.
+**Nothing of the person's may appear in it**: no names of their businesses, no tokens, no paths
+into their accounts, no content from their conversations. `tools/check-private.sh` without its word
+list answers 3, undetermined, not 0; the pre-commit check is `-history -new`, and a history finding
+names the commit, file and line, never the matched text. `docs/privacy-guard.md` is the whole of it.
 
 Commit messages, comments and documentation are in **English**; the conversation with the person
 is in Traditional Chinese.
@@ -159,30 +117,16 @@ goes before these two lines so the status pair always remains the final two line
 
 ## What a child does not do
 
-- Does not `git add -A` in a shared tree, and never stages a file it was not assigned.
-- **Commits its delivery to its own task branch**, and never pushes. The worktree is the child's
-  own, so committing there disturbs nobody — and it is the only way the landing can be proved:
-  `POST /v1/orchestrator/tasks/<id>/landing` with `state: landed` checks in Git that the branch
-  carries something past its base and that the commit named on the target contains it. A child
-  that leaves only a patch has delivered work the machine cannot record, and the register goes on
-  saying it is owed. Measured on 2026-09-20: sixteen deliveries that had already been merged into
-  master were all refused `unverified_landing / nothing_delivered`, because every brief that day
-  had told the child not to commit.
-- Does not start a daemon on port 7727 or write to the person's running one. Use your own
-  `CLAWDLINE_NEXT_DIR` — an **empty** one, never a copy of `~/.config/clawdline-next`, whose task
-  records carry real session ids and whose daemon will type into somebody's live terminal.
-- Does not read the person's `~/.config/clawdline` (the retired app's own directory) except where
-  the code already does, and never writes it.
-- **Stops its own daemon by PID, never by pattern.** `pkill -f "clawdline serve"` matches the
-  person's daemon as well as yours: it is the same command line. On 2026-09-21 that one line took
-  port 7727 down for thirty-four seconds while somebody was reading their phone. Keep the PID your
-  own `serve` printed and kill that.
-- **Checks a restart by what it was restarted for.** `/v1/health` answers whether the daemon is
-  alive, and a daemon started without `CLAWDLINE_NEXT_WEB` is alive and shows no page. On
-  2026-09-21 two restarts were each confirmed with health while `/` answered 501 to everybody for
-  seven and a half hours. The console is back when `GET /` answers 200, or when the line under
-  `listening` in `logs/daemon.log` says `console: served from …`.
+- `git add -A` in a shared tree, or stage a file it was not assigned.
+- Leave its delivery uncommitted: it **commits to its own task branch** and never pushes — the
+  commit is what lets the landing be proved.
+- Start a daemon on port 7727 or write to the person's running one. Use an **empty**
+  `CLAWDLINE_NEXT_DIR` of its own, never a copy of `~/.config/clawdline-next`.
+- Read `~/.config/clawdline` except where the code already does, or write it.
+- Stop a daemon by pattern: stop your own **by the PID** your `serve` printed.
+- Confirm a restart with `/v1/health` alone: the console is back when `GET /` answers 200.
 
+The incident behind each of these is in `docs/working-rules.md`.
 
 ## The single pages
 
@@ -197,5 +141,6 @@ goes before these two lines so the status pair always remains the final two line
 | Deploying app.clawdline.com | `docs/hosted-console.md` |
 | Every bound and where it is enforced | `docs/limits.md` |
 | What keeps the person out of a public repository | `docs/privacy-guard.md` |
+| The incidents and procedures behind these rules | `docs/working-rules.md` |
 
 Where instruction files conflict, the nearest one wins, and a task brief wins over all of them.
