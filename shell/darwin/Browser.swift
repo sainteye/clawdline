@@ -52,6 +52,9 @@ enum Ink {
     static let accent = hex(0xd9_7757)      // --accent
     static let accentIn = hex(0xd9_7757, 0.13)   // --accent-in
     static let accentEd = hex(0xd9_7757, 0.34)   // --accent-ed
+    static let ok = hex(0x5f_9e73)          // --ok: `.conn[data-state="live"] .dot`
+    static let okIn = hex(0x5f_9e73, 0.13)
+    static let okEd = hex(0x5f_9e73, 0.34)
     static let radius: CGFloat = 11         // --radius
 }
 
@@ -64,7 +67,11 @@ enum Ink {
 /// string is its tooltip and what VoiceOver reads, so a button that stopped
 /// showing its name did not stop having one.
 final class PillButton: NSButton {
+    /// What a selected pill says: `.accent` is "this is the one shown",
+    /// `.ok` is "this is live", in the green the console gives a connection.
+    enum Tone { case accent, ok }
     var isSelected = false { didSet { paint() } }
+    var tone = Tone.accent { didSet { paint() } }
     override var isEnabled: Bool {
         didSet {
             paint()
@@ -105,14 +112,15 @@ final class PillButton: NSButton {
 
     /// An SF Symbol and a short visible word. The longer label remains the
     /// tooltip and VoiceOver name, so compact chrome does not cost meaning.
-    init(symbol: String, title: String, label: String, target: AnyObject?, action: Selector) {
+    init(symbol: String, title: String, label: String, symbolSize: CGFloat = 11.5,
+         target: AnyObject?, action: Selector) {
         isIcon = false
         super.init(frame: .zero)
         self.target = target
         self.action = action
         self.title = title
         image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11.5, weight: .medium))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: symbolSize, weight: .medium))
         alternateImage = image
         imagePosition = .imageLeading
         imageHugsTitle = true
@@ -174,7 +182,8 @@ final class PillButton: NSButton {
     }
 
     private func paint() {
-        let colour = !isEnabled ? Ink.faint : (isSelected ? Ink.accent : Ink.dim)
+        let live = tone == .ok
+        let colour = !isEnabled ? Ink.faint : (isSelected ? (live ? Ink.ok : Ink.accent) : Ink.dim)
         if image != nil { contentTintColor = colour }
         if !isIcon {
             attributedTitle = NSAttributedString(string: title, attributes: [
@@ -182,8 +191,8 @@ final class PillButton: NSButton {
                 .foregroundColor: colour,
             ])
         }
-        layer?.backgroundColor = (isSelected ? Ink.accentIn : Ink.card).cgColor
-        layer?.borderColor = (isSelected ? Ink.accentEd : Ink.line).cgColor
+        layer?.backgroundColor = (isSelected ? (live ? Ink.okIn : Ink.accentIn) : Ink.card).cgColor
+        layer?.borderColor = (isSelected ? (live ? Ink.okEd : Ink.accentEd) : Ink.line).cgColor
     }
 }
 
@@ -218,8 +227,12 @@ final class BrowserBar: NSView {
                              target: target, action: #selector(Shell.browserForward))
         refresh = PillButton(symbol: "arrow.clockwise", label: L.t.webInfoRefresh,
                              target: target, action: #selector(Shell.browserRefresh))
-        consoleTab = PillButton(L.t.homeLocalTitle, target: target,
-                                action: #selector(Shell.browserShowConsole))
+        // The `.conn` pill's dot and green: this machine's console is the one
+        // place that is always here, and it says so while it is answering.
+        consoleTab = PillButton(symbol: "circle.fill", title: L.t.homeLocalTitle,
+                                label: L.t.homeLocalTitle, symbolSize: 6,
+                                target: target, action: #selector(Shell.browserShowConsole))
+        consoleTab.tone = .ok
         cloudButton = PillButton(symbol: "cloud", title: L.t.browserCloud,
                                  label: L.t.browserOpenCloud, target: target,
                                  action: #selector(Shell.browserOpenCloud))
@@ -418,7 +431,9 @@ extension Shell {
         guard bar != nil else { return }
         bar.back.isEnabled = web.canGoBack
         bar.forward.isEnabled = web.canGoForward
-        bar.consoleTab.isSelected = true
+        // Green only while the console is actually loaded: a daemon that
+        // stopped answering takes the pill back to plain, as `.conn` does.
+        bar.consoleTab.isSelected = pageLoaded
         let zoom = web.pageZoom
         bar.zoom.show(PageZoom.label(zoom))
         bar.zoom.isSelected = PageZoom.larger(than: zoom) == nil || PageZoom.smaller(than: zoom) == nil
