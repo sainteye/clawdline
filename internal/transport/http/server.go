@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/adapters/process"
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
@@ -63,6 +64,10 @@ type Server struct {
 	// pictures is this daemon's own picture stores, the pasteboard a send
 	// lends pictures to, and the Swift app's picture store, read-only.
 	pictures pictures
+	// thumbs holds the reference-image thumbnails Board cards and to-do rows
+	// ask for, at most the `cache.image_thumbs` row's limit of bytes. Nil
+	// caches nothing: every thumbnail is drawn when it is asked for.
+	thumbs *artifacts.ThumbnailCache
 	// skillMenu holds each session's slash-menu skills for five minutes
 	// (skills.go), at most the `cache.session_skills` row's limit of them.
 	skillMenu *skillmenu.Cache
@@ -166,6 +171,7 @@ func New(cfg config.Config) (*Server, error) {
 		icons:     icons,
 		swift:     swiftstore.Open(swiftstore.Dir()),
 		pictures:  newPictures(cfg.Dir),
+		thumbs:    artifacts.NewThumbnailCache(int(CapacityLimit(capacity.CacheImageThumbs))),
 		skillMenu: skillmenu.NewCache(),
 		links:     projectlinks.NewCache(),
 		agents:    agents,

@@ -1026,9 +1026,14 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/work/v2/session-todos/" + segment(p.target)}
 			}},
 
+		// `size: "thumb"` is the picture a Board card or a to-do row draws,
+		// and the only size there is besides the whole one. A page built
+		// before it sends no `size` and is answered the full image, as it
+		// always was.
 		op{name: "work.v2.image", read: true, shape: shapeImage,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "id") {
+				if !b.hasOneOf([]string{"type", "session", "request", "id"},
+					[]string{"type", "session", "request", "id", "size"}) {
 					return plan{}, false
 				}
 				p, ok := machinePlan(b)
@@ -1036,11 +1041,18 @@ func init() {
 				if !ok || !idOK || len(id) > 256 {
 					return plan{}, false
 				}
+				if _, sized := b["size"]; sized {
+					if size, _ := b.str("size"); size != "thumb" {
+						return plan{}, false
+					}
+					p.kind = "thumb"
+				}
 				p.id = id
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
-				return LocalRequest{Method: "GET", Path: "/v1/work/v2/images/" + segment(p.id)}
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/images/" + segment(p.id),
+					Query: someOf(map[string]string{"size": p.kind})}
 			}},
 
 		op{name: "work.v2.create",

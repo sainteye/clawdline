@@ -11,6 +11,7 @@ import { completionReports, WorkCompletionReports } from "../pages/work/WorkComp
 import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { PendingPictures } from "../pages/work/ReferencePictures.js"
 import { VoiceTextarea } from "../pages/work/VoiceTextarea.js"
+import { useReferenceImage } from "../pages/work/useReferenceImage.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
 import { todoSend } from "./todo-send.js"
@@ -329,33 +330,20 @@ function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2
 }
 
 function ReferenceImage({ image, compact = false }: { image: WorkV2Image; compact?: boolean }) {
-  const [source, setSource] = useState("")
-  const [failed, setFailed] = useState("")
-  useEffect(() => {
-    let active = true
-    let objectURL = ""
-    void fetch(`/v1/work/v2/images/${image.id}`, { credentials: "same-origin" }).then(async (response) => {
-      if (!response.ok) throw new Error(`reference image answered ${response.status}`)
-      objectURL = URL.createObjectURL(await response.blob())
-      if (active) setSource(objectURL)
-      else URL.revokeObjectURL(objectURL)
-    }).catch((error: unknown) => { if (active) setFailed(failureWords(error)) })
-    return () => {
-      active = false
-      if (objectURL) URL.revokeObjectURL(objectURL)
-    }
-  }, [image.id])
-  if (compact) return source ? <a className="session-todo-image-link" href={source} target="_blank" rel="noreferrer"
-    aria-label={`開啟參考圖片 ${image.title}`} title={image.title}>
-    <span>{image.title}</span><span aria-hidden="true">↗</span>
+  // The row reads the small copy, which is what says the picture is there;
+  // the link opens the original, read on the press (`useReferenceImage`).
+  const { source, failed, full, fullFailed, openFull } = useReferenceImage(image.id)
+  if (compact) return source ? <a className="session-todo-image-link" href={full || source} target="_blank" rel="noreferrer"
+    aria-label={`開啟參考圖片 ${image.title}`} title={image.title} onClick={openFull}>
+    <span>{image.title}</span><span aria-hidden={fullFailed ? undefined : "true"} role={fullFailed ? "alert" : undefined}>{fullFailed || "↗"}</span>
   </a> : <div className="session-todo-image-link" data-state={failed ? "failed" : "loading"} role={failed ? "alert" : undefined}>
     <span title={image.title}>{image.title}</span><span>{failed || "載入中…"}</span>
   </div>
   return <figure className="work-reference-image">
-    {source ? <a href={source} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`}>
+    {source ? <a href={full || source} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`} onClick={openFull}>
       <img src={source} alt={image.title} width={image.width} height={image.height} />
     </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || "載入圖片…"}</div>}
-    <figcaption title={image.title}>{image.title}</figcaption>
+    <figcaption title={image.title} role={fullFailed ? "alert" : undefined}>{fullFailed || image.title}</figcaption>
   </figure>
 }
 

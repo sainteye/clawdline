@@ -315,10 +315,14 @@ const documentsMaximumListed = 200
 // cannot be: this machine is not reachable from the console, which is the entire
 // reason a relay exists. So the only question left is how large a picture may
 // be, and that is the relay's per-envelope cap arithmetic and nothing else.
+//
+// A thumbnail (`work.v2.image` with `size: "thumb"`) is a JPEG; every other
+// picture this machine stores is a PNG, and those two spellings are the only
+// ones that cross.
 func shapeImage(p plan, res LocalResponse) (json.RawMessage, Refusal) {
-	if res.ContentType != "image/png" {
+	if res.ContentType != "image/png" && res.ContentType != "image/jpeg" {
 		return nil, Refusal{Status: 415, Code: "image_media_type_unsupported",
-			Message: "That artifact is not a PNG and does not cross this connection.", Layer: layerRoute}
+			Message: "That artifact is not a PNG or a JPEG and does not cross this connection.", Layer: layerRoute}
 	}
 	if len(res.Body) == 0 {
 		return nil, Refusal{Status: 502, Code: "image_empty",

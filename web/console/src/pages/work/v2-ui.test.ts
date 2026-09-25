@@ -36,7 +36,7 @@ test("work cards add, show, open, and remove durable reference images", () => {
   assert.match(source, /＋ 參考圖片/)
   assert.match(source, /accept="image\/\*,\.heic,\.heif"/)
   assert.match(source, /prepareReferencePicture/)
-  assert.match(source, /\/v1\/work\/v2\/images\/\$\{image\.id\}/)
+  assert.match(source, /useReferenceImage\(image\.id\)/)
   assert.match(source, /deleteWorkV2Image/)
   assert.match(styles, /\.work-reference-images/)
 })
@@ -162,10 +162,20 @@ test("voice Board drafts are prefilled and still require the create confirmation
 })
 
 test("reference pictures use fetch-backed object URLs so Cloud can render their bytes", () => {
+  const hook = readFileSync(new URL("./useReferenceImage.ts", import.meta.url), "utf8")
   assert.match(source, /function WorkReferenceImage/)
-  assert.match(source, /fetch\(`\/v1\/work\/v2\/images\/\$\{image\.id\}`/)
-  assert.match(source, /URL\.createObjectURL/)
-  assert.match(source, /URL\.revokeObjectURL/)
+  // Board cards and to-do rows both read through the one hook, so both share
+  // the page's Cloud limit (`reference-images.ts`).
+  assert.match(source, /useReferenceImage\(image\.id\)/)
+  assert.match(todos, /useReferenceImage\(image\.id\)/)
+  assert.doesNotMatch(source, /fetch\(`\/v1\/work\/v2\/images\//)
+  assert.doesNotMatch(todos, /fetch\(`\/v1\/work\/v2\/images\//)
+  // The card draws the small copy; the red pen is given the original.
+  assert.match(hook, /referenceImages\.load\(id, "thumb"/)
+  assert.match(hook, /referenceImages\.load\(id, "full"/)
+  assert.match(source, /<PictureMarkup picture=\{\{ id: image\.id, url: full \}\}/)
+  assert.match(hook, /URL\.createObjectURL/)
+  assert.match(hook, /URL\.revokeObjectURL/)
 })
 
 test("every Board card exposes edit and guarded delete flows", () => {

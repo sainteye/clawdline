@@ -616,6 +616,43 @@ test("a Board reference picture is read as machine-scoped bytes", async () => {
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.image", { id: "img-1" }, "read"])
 })
 
+test("a Board card's thumbnail carries its size to the machine, and the answer's JPEG type crosses whole", async () => {
+  const client = new FakeClient()
+  const machineRequest = client._machineRequest.bind(client)
+  client._machineRequest = async (machine, word, body, kind, timeoutMs) => {
+    const answer = await machineRequest(machine, word, body, kind, timeoutMs)
+    return word === "work.v2.image" && body.size === "thumb" ? { ...(answer as object), media_type: "image/jpeg" } : answer
+  }
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/work/v2/images/img-1?size=thumb")
+  assert.equal(res.status, 200)
+  assert.equal(res.headers.get("content-type"), "image/jpeg")
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.image", { id: "img-1", size: "thumb" }, "read"])
+})
+
+test("a reference picture's query the wire has no field for is refused, not dropped", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  for (const query of ["?size=large", "?width=480", "?size=thumb&width=480"]) {
+    const res = await reader.fetch("/v1/work/v2/images/img-1" + query)
+    assert.equal(res.status, 501, query)
+    assert.equal((await json<{ error: { code: string } }>(res)).error.code, "cloud_not_carried", query)
+  }
+  assert.equal(client.calls.filter((call) => call[0] === "_machineRequest").length, 0)
+})
+
+test("a reference picture the machine could not fit on its reply channel answers 429 cloud_read_busy", async () => {
+  const client = new FakeClient()
+  client.fail._machineRequest = failureFromMac({
+    code: "cloud_read_busy", layer: "mac_transport", message: "the channel that answer goes on is full",
+    detail: { retry_after: 5, lane: "egress", limit: 4 << 20 },
+  }, 429, REF)
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/work/v2/images/img-1?size=thumb")
+  assert.equal(res.status, 429)
+  assert.equal((await json<{ error: { code: string } }>(res)).error.code, "cloud_read_busy")
+})
+
 test("a transcript's picture is read as bytes through the machine's `image`", async () => {
   const client = new FakeClient()
   client.rows = [row("s1")]

@@ -137,7 +137,9 @@ func TestAFullChannelCanStillSayItIsFull(t *testing.T) {
 	if _, err := spool.ReserveRefusal(SpoolChannelT, channel, "session", 400); err != nil {
 		t.Fatalf("the refusal could not be admitted to a full channel: %v", err)
 	}
-	if _, err := spool.ReserveRefusal(SpoolChannelT, channel, "session", 400); !errors.Is(err, ErrSpoolRefusalPending) {
+	// A second refusal on the same channel is a second waiter's answer, not
+	// the first one repeated, and it is admitted too.
+	if _, err := spool.ReserveRefusal(SpoolChannelT, channel, "session", 400); err != nil {
 		t.Fatalf("a second refusal for the same channel: %v", err)
 	}
 	if _, err := spool.ReserveRefusal(SpoolChannelT, channel, "session", 8<<10); !errors.Is(err, ErrSpoolRefusalSize) {
@@ -149,8 +151,8 @@ func TestAFullChannelCanStillSayItIsFull(t *testing.T) {
 	}
 }
 
-// The reserve is one at a time and not one for ever: a channel whose refusal
-// has been answered may be told again the next time it fills.
+// The reserve is bounded and not spent for ever: a channel whose refusals
+// have been answered may be told again the next time it fills.
 func TestAChannelMayBeToldAgainOnceTheLastRefusalWasAnswered(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1789000000, 0)

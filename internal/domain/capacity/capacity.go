@@ -208,6 +208,11 @@ const (
 	// are the tombstones that used to be charged as though they were queue.
 	CloudSpoolChannelBytes = "cloud.spool_channel_bytes"
 	CloudSpoolReceipts     = "cloud.spool_receipts"
+	// The typed refusals one wire channel may have owed at once: each answers
+	// one refused read by its own id, so there may be more than one.
+	CloudSpoolRefusals = "cloud.spool_refusals"
+	// The reference-image thumbnails drawn for Board cards and to-do rows.
+	CacheImageThumbs = "cache.image_thumbs"
 	// The slash menu's skills, per working directory and assistant.
 	CacheSessionSkills = "cache.session_skills"
 	// The plan-window reading of each assistant's account.
@@ -757,6 +762,35 @@ func Register() []Entry {
 			Name: CloudSpoolReceipts, Class: Idempotency, Unit: Rows,
 			Limit: 4_096, AtLimit: Expire,
 			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+		},
+		{
+			// The refusals one wire channel may have owed at once, each at
+			// most internal/adapters/cloud.spoolRefusalByteLimit and admitted
+			// past that channel's own byte cap. Until 2026-09-25 the rule was
+			// one: every carried read waits on its own read id, so the second
+			// refused read on a channel got no answer at all and its browser
+			// waited out its sixty seconds ("did not fit its channel and the
+			// refusal did not either"). Sixty-four is a whole Board's worth
+			// of reference images refused at once, and 64 × 4 KiB is 256 KiB
+			// a channel at the very worst. Past it a refusal is dropped and
+			// the drop is logged with the read's operation.
+			Name: CloudSpoolRefusals, Class: Buffer, Unit: Rows,
+			Limit: 64, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+		},
+		{
+			// The thumbnails a Board card or a to-do row asks for
+			// (`GET /v1/work/v2/images/{id}?size=thumb`), drawn from the
+			// stored image on a miss and held by id and digest. A thumbnail
+			// of a 1600 × 873 screenshot is tens of kilobytes; eight
+			// mebibytes is a couple of hundred of them. Past the limit the
+			// thumbnail used longest ago is let go and drawn again when it
+			// is next asked for; nothing durable is lost.
+			Name: CacheImageThumbs, Class: Cache, Unit: Bytes,
+			Limit: 8 << 20, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 		},
 		{

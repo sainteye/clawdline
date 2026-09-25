@@ -49,6 +49,12 @@ type Outbound struct {
 	// (`Spool.ReserveRefusal`), because everything else about a full channel
 	// is exactly what cannot get through it.
 	Refusal bool
+	// Headroom holds a large answer to the channel's small-answer reserve
+	// (`Spool.ReserveAnswer`): past it, a large answer is refused as busy so
+	// that a small one on the same channel still gets through. It is set for
+	// the machine-read reply channel, where every Board, to-do and
+	// reference-image read of this machine answers.
+	Headroom bool
 }
 
 // Reply is who an answer is for, which the payload itself does not say.
@@ -202,6 +208,7 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 		return answer
 	}
 	out := Outbound{Channel: channel, Class: string(cloud.ClassStream), Payload: answer.Payload,
+		Headroom: answer.Session == cloudops.MachineReplySession,
 		Reply: Reply{Sender: request.Sender, Sequence: request.Sequence, Name: answer.Name,
 			Status: answer.Status, Code: answer.Code}}
 	if err := s.Transport.Publish(ctx, out); err != nil {
@@ -294,8 +301,11 @@ func (s Service) tellChannelFull(ctx context.Context, request Inbound, answer cl
 		Reply: Reply{Sender: request.Sender, Sequence: request.Sequence, Name: refusal.Name,
 			Status: refusal.Status, Code: refusal.Code}}
 	if err := s.Transport.Publish(ctx, out); err != nil {
-		s.logf("cloud: %s (operation=%s) did not fit its channel and the refusal did not either: %v (channel: %v)",
-			answer.Name, operationOrUnknown(answer.Operation), err, cause)
+		// Since 2026-09-25 this is a channel with as many refusals owed as
+		// `cloud.spool_refusals` allows, or a spool at its global caps — not
+		// a second waiter on a channel that is already telling a first.
+		s.logf("cloud: %s (operation=%s) did not fit its channel and the refusal did not either: %v (channel: %v) sender=%s seq=%d",
+			answer.Name, operationOrUnknown(answer.Operation), err, cause, request.Sender, request.Sequence)
 		return
 	}
 	s.logf("cloud: %s (operation=%s) did not fit its channel and its sender was told %s (%d): %v",
