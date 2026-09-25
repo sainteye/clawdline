@@ -117,8 +117,9 @@ test("Board cards show the same lifecycle milestones as their owning Session", (
 })
 
 test("the create modal accepts reference pictures before creating the item", () => {
-  assert.match(source, /＋ 加入參考圖片/)
-  assert.match(source, /建立項目後上傳/)
+  const pictures = readFileSync(new URL("./ReferencePictures.tsx", import.meta.url), "utf8")
+  assert.match(pictures, /＋ 加入參考圖片/)
+  assert.match(source, /<PendingPictures images=\{images\} busy=\{busy\} note="建立項目後上傳"/)
   assert.match(source, /deployment_policy: "agent_decides" as const/)
   assert.match(source, /onCreate\(body, images, decision\.key\)/)
   assert.match(source, /addWorkV2Image\(answer\.item\.id/)

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react"
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react"
-import type { Shot } from "../legacy/shots-bridge.js"
 import { nextWord } from "../next-strings.js"
 import {
   clampView,
@@ -20,12 +19,22 @@ type Tool = "pen" | "move"
 type Gesture = { x: number; y: number; span: number }
 const FIT: MarkupView = { scale: 1, x: 0, y: 0 }
 
+/**
+ * Any picture the red pen can open: a composer shot, a Board reference, a
+ * to-do attachment not uploaded yet. Only the address and an identity that
+ * changes with it are read.
+ */
+export interface MarkupPicture {
+  id: number | string
+  url: string
+}
+
 export function ImageMarkup({
   shot,
   onCancel,
   onSave,
 }: {
-  shot: Shot
+  shot: MarkupPicture
   onCancel: () => void
   onSave: (canvas: HTMLCanvasElement) => boolean
 }) {
@@ -144,10 +153,12 @@ export function ImageMarkup({
       event.preventDefault()
       buttons[next].focus()
     }
-    document.addEventListener("keydown", key)
+    // Capture, so a dialog underneath that also closes on Escape — a Board
+    // or to-do sheet this was opened from — never hears the key.
+    document.addEventListener("keydown", key, true)
     cancelRef.current?.focus()
     return () => {
-      document.removeEventListener("keydown", key)
+      document.removeEventListener("keydown", key, true)
       before?.focus?.()
     }
   }, [])
