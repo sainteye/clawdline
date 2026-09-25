@@ -211,6 +211,8 @@ export interface WriteHost {
  */
 export type WriteRoute =
  | { op: "project-icon-copy"; word: Carried<"project-icon-copy">; id: string }
+  | { op: "project-mirror-apply"; word: Carried<"project-mirror-apply"> }
+  | { op: "project-mirror-detach"; word: Carried<"project-mirror-detach"> }
   | { op: "send"; word: Carried<"send">; session: string }
   | { op: "info"; word: Carried<"info">; session: string }
   | { op: "git"; word: Carried<"git">; session: string }
@@ -407,7 +409,11 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return { op: "work-v2-edit", word: "work.v2.edit", id: c }
   }
   if (head === "projects" && a && b === "icon" && segments.length === 3 && method === "PUT") return { op: "project-icon-copy", word: "project-icon-copy", id: a }
+  if (head === "project-sync" && a === "mirror" && segments.length === 2 && method === "DELETE") {
+    return { op: "project-mirror-detach", word: "project-mirror-detach" }
+  }
   if (method !== "POST") return null
+  if (head === "project-sync" && a === "mirror" && segments.length === 2) return { op: "project-mirror-apply", word: "project-mirror-apply" }
   if (head === "work" && a === "v2") {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
     if (b === "items" && c && d === "assign" && segments.length === 5) {
@@ -553,6 +559,8 @@ function spellingOf(route: WriteRoute): Spelling {
       return "flat"
     case "worktree-refresh":
     case "project-icon-copy":
+    case "project-mirror-apply":
+    case "project-mirror-detach":
       return "flat"
     case "work-v2-create":
     case "work-v2-edit":
@@ -906,6 +914,10 @@ export class RelayWriter {
         if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
         return this.machineWorkV2(client, route.word, { id: place.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
+      case "project-mirror-apply":
+        return this.machineWorkV2(client, route.word, { item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      case "project-mirror-detach":
+        return this.machineWorkV2(client, route.word, { repo: url.searchParams.get("repo") ?? "" }, headerOf(init, "idempotency-key"))
       case "work-v2-create": {
         const item = await bodyOf(init)
         if (typeof client._place !== "function") {

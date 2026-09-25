@@ -55,6 +55,12 @@ func (s *Server) projectIconRoute(w http.ResponseWriter, r *http.Request, id str
 		writeRefusal(w, 404, "project_not_found", "Choose a Project on this machine.")
 		return
 	}
+	// A mirrored project's mark belongs to its source machine
+	// (project_sync.go); change it there, or detach the mirror first.
+	if s.icons.Mirrored(project.Path) {
+		writeRefusal(w, 409, "project_mirrored", "Another machine owns this Project's settings. Change the icon there, or stop mirroring it here first.")
+		return
+	}
 	err := s.icons.Save(project.Path, body.Icon, body.Expected)
 	switch {
 	case errors.Is(err, icon.ErrIconChanged):

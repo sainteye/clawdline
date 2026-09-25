@@ -386,6 +386,26 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body:    map[string]any{"type": "project-icon-copy", "session": machine, "request": "req-icon", "id": "p1", "item": map[string]any{}},
 		session: machine, name: "action:req-icon", method: "PUT", path: "/v1/projects/p1/icon", body2: `{}`,
 	}, {
+		word:    "project-manifest",
+		body:    map[string]any{"type": "project-manifest", "session": machine, "request": "req-manifest"},
+		session: machine, name: "read:req-manifest", method: "GET", path: "/v1/project-sync/manifest",
+	}, {
+		word:    "project-entry",
+		body:    map[string]any{"type": "project-entry", "session": machine, "request": "req-entry", "repo": "github.com/o/n"},
+		session: machine, name: "read:req-entry", method: "GET", path: "/v1/project-sync/entry", query: map[string]string{"repo": "github.com/o/n"},
+	}, {
+		word:    "project-mirror",
+		body:    map[string]any{"type": "project-mirror", "session": machine, "request": "req-mirror"},
+		session: machine, name: "read:req-mirror", method: "GET", path: "/v1/project-sync/mirror",
+	}, {
+		word:    "project-mirror-apply",
+		body:    map[string]any{"type": "project-mirror-apply", "session": machine, "request": "req-apply", "item": map[string]any{}},
+		session: machine, name: "action:req-apply", method: "POST", path: "/v1/project-sync/mirror", body2: `{}`,
+	}, {
+		word:    "project-mirror-detach",
+		body:    map[string]any{"type": "project-mirror-detach", "session": machine, "request": "req-detach", "repo": "github.com/o/n"},
+		session: machine, name: "action:req-detach", method: "DELETE", path: "/v1/project-sync/mirror", query: map[string]string{"repo": "github.com/o/n"},
+	}, {
 		word:    "projects",
 		body:    map[string]any{"type": "projects", "session": machine, "request": "req-projects"},
 		session: machine, name: "read:req-projects",

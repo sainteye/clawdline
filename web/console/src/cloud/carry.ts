@@ -67,6 +67,14 @@ export const CARRIED = {
   places: "GET /v1/places",
   "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",
   "project-icon-copy": "PUT /v1/projects/{id}/icon",
+  // Project settings sync (docs/project-sync.md). The two source reads are
+  // also asked of *another* paired machine by `cloud/project-sync.ts`, which
+  // is how a mirror reads its source without either machine reaching the other.
+  "project-manifest": "GET /v1/project-sync/manifest",
+  "project-entry": "GET /v1/project-sync/entry?repo=",
+  "project-mirror": "GET /v1/project-sync/mirror",
+  "project-mirror-apply": "POST /v1/project-sync/mirror",
+  "project-mirror-detach": "DELETE /v1/project-sync/mirror?repo=",
   "project-worktree-lifecycle-refresh": "POST /v1/projects/{project}/worktrees/refresh",
   projects: "GET /v1/projects",
   "push-key": "GET /v1/push/key",

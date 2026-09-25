@@ -1,5 +1,6 @@
 import { createPortal } from "react-dom"
 import { IconCopy } from "./projects/IconCopy.js"
+import { ProjectSync } from "./projects/ProjectSync.js"
 import { useLayoutEffect, useRef, useState } from "react"
 import type { PageModule } from "./types.js"
 import { bindProjects, type ProjectsPage } from "../legacy/projects-bridge.js"
@@ -149,7 +150,10 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       hidden={!shown}
       dangerouslySetInnerHTML={{ __html: sectionMarkup }}
     />
-    {iconHost && createPortal(<IconCopy shown={shown} changed={() => { void page.current?.enter() }} />, iconHost)}
+    {iconHost && createPortal(<>
+      <ProjectSync shown={shown} changed={() => { void page.current?.enter() }} />
+      <IconCopy shown={shown} changed={() => { void page.current?.enter() }} />
+    </>, iconHost)}
     </>
   )
 }

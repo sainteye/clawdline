@@ -247,6 +247,20 @@ export const readDigests = () => call<{ rows: Digest[] }>("/v1/work/digests?kind
 export const copyProjectIcon = (id: string, icon: unknown, expected: unknown) =>
   mutate<{ ok: boolean; icon: unknown }>(`/v1/projects/${encodeURIComponent(id)}/icon`, { icon, expected }, "PUT")
 export const readProjectPlaces = () => call<ProjectPlacePage>("/v1/places")
+/** Project settings sync (docs/project-sync.md), as internal/domain/projectsync spells it. */
+export interface SyncFile { path: string; sha256: string; size: number; content?: string }
+export interface SyncEntry { repo: string; clone_url: string; label: string; icon: unknown; files: SyncFile[]; revision: string }
+export interface SyncManifest { version: number; at: number; revision: string; projects: SyncEntry[]; skipped: { label: string; path: string; reason: string }[] }
+export interface SyncSource { machine: string; name: string }
+export interface SyncRecord { repo: string; path: string; source: SyncSource; revision: string; label: string; icon: unknown; files: Record<string, string>; applied_at: number }
+export interface SyncClone { repo: string; state: "cloning" | "clone_failed"; dest: string; source: SyncSource; started: number; error?: string }
+export interface SyncMirror { clone_root: string; projects: SyncRecord[]; clones: SyncClone[] }
+export interface SyncResult { repo: string; state: "applied" | "unchanged" | "missing" | "cloning"; path?: string; revision: string; written: string[]; deleted: string[]; kept: { path: string; reason: string }[] }
+export const readProjectMirror = () => call<SyncMirror>("/v1/project-sync/mirror")
+export const applyProjectMirror = (source: SyncSource, project: SyncEntry, clone: boolean, replaceSource = false) =>
+  mutate<{ ok: boolean; result: SyncResult }>("/v1/project-sync/mirror", { source, project, clone, replace_source: replaceSource })
+export const detachProjectMirror = (repo: string) =>
+  call<{ ok: boolean; removed: boolean }>("/v1/project-sync/mirror" + query({ repo }), { method: "DELETE", headers: { "Idempotency-Key": mintKey() } })
 export const readTodos = (sessionRowId: string, state?: "outstanding" | "closed" | "all") =>
   call<TodoPage>(`/v1/sessions/${encodeURIComponent(sessionRowId)}/todos` + query({ state }))
 

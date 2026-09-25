@@ -1150,6 +1150,78 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/projects"}
 			}},
 
+		// Project settings sync (docs/project-sync.md): a source offers, a
+		// mirror applies. The viewer is the courier; neither machine reaches
+		// the other, and the relay carries only ciphertext.
+		op{name: "project-manifest", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/project-sync/manifest"}
+			}},
+		op{name: "project-entry", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "repo") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				repo, repoOK := b.nonEmpty("repo")
+				if !ok || !repoOK || len(repo) > 512 {
+					return plan{}, false
+				}
+				p.id = repo
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/project-sync/entry", Query: map[string]string{"repo": p.id}}
+			}},
+		op{name: "project-mirror", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/project-sync/mirror"}
+			}},
+		op{name: "project-mirror-apply",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "item") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				document, documentOK := b.object("item", projectSyncCloudBodyLimit)
+				if !ok || p.request == "" || !documentOK {
+					return plan{}, false
+				}
+				p.document = document
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/project-sync/mirror", Body: p.document, Header: asDevice()}
+			}},
+		op{name: "project-mirror-detach",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "repo") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				repo, repoOK := b.nonEmpty("repo")
+				if !ok || p.request == "" || !repoOK || len(repo) > 512 {
+					return plan{}, false
+				}
+				p.id = repo
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "DELETE", Path: "/v1/project-sync/mirror", Query: map[string]string{"repo": p.id}, Header: asDevice()}
+			}},
+
 		op{name: "project-worktree-lifecycle", read: true,
 			decode: decodeProject,
 			route: func(p plan) LocalRequest {
@@ -1911,6 +1983,9 @@ const pushBodyMaximumBytes = 64 << 10
 const (
 	workV2CloudBodyLimit      = 96 << 10
 	workV2CloudImageBodyLimit = 18 << 20
+	// projectSyncCloudBodyLimit is one project's settings with contents:
+	// internal/domain/projectsync.MaxEntryBytes.
+	projectSyncCloudBodyLimit = 4 << 20
 )
 
 // The header a Cloud write puts on its own local request, and the reason the

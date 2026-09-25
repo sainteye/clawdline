@@ -613,3 +613,13 @@ landing 從新版自己的 landing 紀錄推導。**
 `icons.side` rejects grids above 64 rows or columns; `icons.request_bytes` rejects a copy body
 above 96 KiB. A full registry still permits replacing an existing mark. See
 [project-icons.md](project-icons.md) for resolution, transfer and conflict behavior.
+
+### Project settings sync
+
+`projectsync.manifest_projects` offers at most 256 projects per manifest (the rest are listed as
+skipped, `manifest_full`); `projectsync.project_files` carries at most 64 files per project;
+`projectsync.file_bytes` skips a file above 256 KiB; `projectsync.path_bytes` refuses a path above
+512 bytes; `projectsync.entry_bytes` refuses one applied project above 4 MiB, over HTTP and over
+Cloud alike; `projectsync.mirrored` keeps at most 512 mirrored repositories without automatic
+eviction; `projectsync.clones` runs at most two clones at once and refuses a third with
+`429 clone_busy`. See [project-sync.md](project-sync.md).

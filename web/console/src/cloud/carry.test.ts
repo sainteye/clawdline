@@ -178,6 +178,8 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/snippets/order"],
     ["POST", "/v1/projects/%2Frepo/worktrees/refresh"],
     ["PUT", "/v1/projects/p1/icon"],
+    ["POST", "/v1/project-sync/mirror"],
+    ["DELETE", "/v1/project-sync/mirror"],
     ["POST", "/v1/work/v2/items"],
     ["PATCH", "/v1/work/v2/items/w1"],
     ["POST", "/v1/work/v2/items/w1/cancel"],
@@ -209,7 +211,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 64)
+  assert.equal(Object.keys(CARRIED).length, 69)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

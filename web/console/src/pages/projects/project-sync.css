@@ -1,0 +1,13 @@
+.project-sync { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+.project-sync summary { cursor: pointer; font-weight: 600; }
+.project-sync p { color: var(--dim); line-height: 1.6; overflow-wrap: anywhere; }
+.project-sync h4 { margin: 16px 0 8px; }
+.project-sync > label { display: grid; gap: 8px; margin-top: 12px; }
+.project-sync select { width: 100%; min-width: 0; padding: 8px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.project-sync-list { display: grid; gap: 8px; margin-top: 12px; }
+.project-sync-row { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.project-sync-row > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.project-sync-row small { color: var(--dim); }
+.project-sync-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.project-sync button { padding: 8px 12px; }
+.project-sync [role="alert"] { color: var(--bad); }
