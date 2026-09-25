@@ -56,12 +56,26 @@ transcript.
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
 | `clawdline assistants` | What each assistant's account has left |
 | `clawdline landings` | Every landing still owed on this machine |
+| `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
 
 The orchestration commands above print the daemon's JSON on success; on a refusal they print
 `refused, <status> <code>: <message>` and exit 1. Cloud commands use their own human-readable
 success and error output. `--port` overrides the port.
+
+`clawdline usage` is the token ledger (`docs/token-ledger.md` in the repository): what each token was
+spent on — `board`, `protocol`, `rules`, `impl`, `delegate`, `harness`, `talk`, `compaction`,
+`other`. With no flag it reads your own session, named by `CLAUDE_CODE_SESSION_ID` or
+`CODEX_THREAD_ID`. It prints one header line (calls, peak context, cost), one line per category by
+cost — share, tokens, cost — and then every gap; `--json` prints the daemon's answer. `rules` is an
+upper bound, and says so: a guard run in one shell command with other work takes that whole command.
+The routes are `GET /v1/usage/sessions/<conversation>`, `GET /v1/usage/tasks/<task id>` and
+`GET /v1/usage/items/<item id>`, read with a paired device or the orchestrator token. A session the
+ledger has not read, or can no longer read, answers `not_yet_read`, `transcript_missing` or
+`transcript_unreadable` — never an empty total; an id nobody knows is 404 `unknown_session`,
+`unknown_task` or `unknown_item`. Whether the ledger is still reading is `usage` in
+`/v1/diagnostics`.
 
 ### Pair a Cloud browser
 

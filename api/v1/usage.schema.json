@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "usage.schema.json",
+  "title": "Token ledger",
+  "description": "GET /v1/usage/sessions/{conversation}, /v1/usage/tasks/{id} and /v1/usage/items/{id} (docs/token-ledger.md \"What a person and a session see\"): what a session, a child task or a Board item spent, by what each token was spent on. Read with a paired device or this machine's orchestrator token. Totals only: no prompt, tool input or transcript text is ever in an answer.",
+  "$defs": {
+    "UsageCategoryName": {
+      "description": "What a token was spent on (docs/token-ledger.md \"Categories\").",
+      "type": "string",
+      "enum": ["board", "protocol", "rules", "impl", "delegate", "harness", "talk", "compaction", "other"]
+    },
+    "UsageReason": {
+      "description": "Why a reading is not current. `not_yet_read`: the ledger has no reading of it yet. `transcript_missing`: it was read before and its transcript is gone; the totals are that reading's. `transcript_unreadable`: its transcript is there and could not be read; the totals, if any, are from before.",
+      "type": "string",
+      "enum": ["not_yet_read", "transcript_missing", "transcript_unreadable"]
+    },
+    "UsageShareOf": {
+      "description": "What every category's `share` is a share of: `cost` when the whole cost is known, `tokens` when some of it is not (a model with no price).",
+      "type": "string",
+      "enum": ["cost", "tokens"]
+    },
+    "UsageTokens": {
+      "description": "Tokens by part, and their cost in US dollars at list price. The numbers are fractional because a measured count is divided pro rata. `unpriced` counts the tokens whose model has no price: `cost_known` is false when it is not zero, and `cost` is then only the priced part's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cache_read", "cache_write_1h", "cache_write_5m", "cost", "cost_known", "input", "output", "total", "unpriced"],
+      "properties": {
+        "input": { "type": "number" },
+        "cache_write_1h": { "type": "number" },
+        "cache_write_5m": { "type": "number" },
+        "cache_read": { "type": "number" },
+        "output": { "type": "number" },
+        "total": { "description": "Every token of every part.", "type": "number" },
+        "cost": { "type": "number" },
+        "cost_known": { "type": "boolean" },
+        "unpriced": { "type": "number" }
+      }
+    },
+    "UsageCategory": {
+      "description": "One category's part of a bill. `share` is its fraction (0…1) of the bill's cost, or of its tokens when the cost is not known (`UsageBill.share_of`). `upper_bound` is set on `rules`: a guard run in the same shell command as other work takes that whole command, so rules is at most this much (docs/token-ledger.md \"Categories\").",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "share", "tokens", "upper_bound"],
+      "properties": {
+        "name": { "$ref": "#/$defs/UsageCategoryName" },
+        "share": { "type": "number" },
+        "tokens": { "$ref": "#/$defs/UsageTokens" },
+        "upper_bound": { "type": "boolean" }
+      }
+    },
+    "UsageBill": {
+      "description": "What some sessions spent: every category in the ledger's order, each with its share, and the measured total they sum to.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["categories", "share_of", "total"],
+      "properties": {
+        "categories": { "type": "array", "items": { "$ref": "#/$defs/UsageCategory" } },
+        "share_of": { "$ref": "#/$defs/UsageShareOf" },
+        "total": { "$ref": "#/$defs/UsageTokens" }
+      }
+    },
+    "UsageGap": {
+      "description": "Something a bill could not count as a current reading: a `session`, `subagent`, `task` or `root_assignment`, and why. `counted` says an earlier reading of it is in the totals.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["counted", "id", "kind", "reason"],
+      "properties": {
+        "kind": { "type": "string" },
+        "id": { "type": "string" },
+        "reason": { "$ref": "#/$defs/UsageReason" },
+        "counted": { "type": "boolean" }
+      }
+    },
+    "UsageNamedSize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "tokens"],
+      "properties": {
+        "name": { "type": "string" },
+        "tokens": { "type": "number" }
+      }
+    },
+    "UsageComposition": {
+      "description": "What the session's first context was made of, when its transcript recorded the harness's prompt snapshot. The parts are estimated from their text and scaled to sum to `measured`, the first call's measured context. Absent when the snapshot was not recorded, never zero.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instructions", "mcp_instructions", "measured", "other", "skill_listing", "system_prompt", "tools"],
+      "properties": {
+        "measured": { "type": "integer" },
+        "system_prompt": { "type": "number" },
+        "tools": { "type": "array", "items": { "$ref": "#/$defs/UsageNamedSize" } },
+        "skill_listing": { "type": "number" },
+        "instructions": { "type": "array", "items": { "$ref": "#/$defs/UsageNamedSize" } },
+        "mcp_instructions": { "type": "number" },
+        "other": { "type": "number" }
+      }
+    },
+    "UsageSubagent": {
+      "description": "One subagent transcript of a session. Its whole measured count is in the session's `delegate`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "conversation", "measured"],
+      "properties": {
+        "conversation": { "type": "string" },
+        "reason": { "$ref": "#/$defs/UsageReason" },
+        "calls": { "type": "integer" },
+        "measured": { "$ref": "#/$defs/UsageTokens" }
+      }
+    },
+    "UsageSession": {
+      "description": "GET /v1/usage/sessions/{conversation}: one session's bill, its subagents folded into `delegate`. A session with `reason` has no current reading: `not_yet_read` has no totals at all, and the other two carry the last reading's. `calls`, `peak_context`, `compactions`, `calls_above` and `above` are the session's own calls; a subagent's calls are on its row. `above` is what the calls made with more than 200k tokens of context cost. `read_at` is Unix seconds, 0 when never read; `more` says the last pass stopped before the transcript's end.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["above", "bill", "calls", "calls_above", "compactions", "conversation", "gaps", "more", "peak_context", "read_at", "subagents"],
+      "properties": {
+        "conversation": { "type": "string" },
+        "assistant": { "type": "string" },
+        "task_id": { "description": "The child task this session's first message names.", "type": "string" },
+        "root_assignment": { "description": "The Root Assignment this session's first message names.", "type": "string" },
+        "reason": { "$ref": "#/$defs/UsageReason" },
+        "read_at": { "type": "integer" },
+        "more": { "type": "boolean" },
+        "bill": { "$ref": "#/$defs/UsageBill" },
+        "calls": { "type": "integer" },
+        "peak_context": { "type": "integer" },
+        "compactions": { "type": "integer" },
+        "calls_above": { "type": "integer" },
+        "above": { "$ref": "#/$defs/UsageTokens" },
+        "composition": { "$ref": "#/$defs/UsageComposition" },
+        "subagents": { "type": "array", "items": { "$ref": "#/$defs/UsageSubagent" } },
+        "gaps": { "type": "array", "items": { "$ref": "#/$defs/UsageGap" } }
+      }
+    },
+    "UsageTask": {
+      "description": "GET /v1/usage/tasks/{id}: a child task's bill — every session whose first message names it. `reason` is `not_yet_read` when the ledger has read none of them yet.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bill", "calls", "gaps", "peak_context", "sessions", "task_id"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "reason": { "$ref": "#/$defs/UsageReason" },
+        "bill": { "$ref": "#/$defs/UsageBill" },
+        "calls": { "description": "The sessions' own calls, added up.", "type": "integer" },
+        "peak_context": { "description": "The largest of the sessions' peaks.", "type": "integer" },
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/UsageSession" } },
+        "gaps": { "type": "array", "items": { "$ref": "#/$defs/UsageGap" } }
+      }
+    },
+    "UsageItemOwner": {
+      "description": "One stint of a session owning a Board item. `session` is empty for a Root Assignment whose session the ledger has not found yet. `to` is 0 while the stint is open. Unix seconds.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "from", "to"],
+      "properties": {
+        "session": { "type": "string" },
+        "root_assignment": { "type": "string" },
+        "from": { "type": "integer" },
+        "to": { "type": "integer" },
+        "current": { "type": "boolean" }
+      }
+    },
+    "UsageItem": {
+      "description": "GET /v1/usage/items/{id}: a Board item's bill — its owner sessions, whole, and the child tasks they dispatched while they owned it. An owner session is counted whole however many items it owned, so the bill is an upper bound for any one of them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bill", "calls", "gaps", "item_id", "owners", "peak_context", "sessions", "tasks"],
+      "properties": {
+        "item_id": { "type": "string" },
+        "bill": { "$ref": "#/$defs/UsageBill" },
+        "calls": { "description": "Every counted session's own calls, added up.", "type": "integer" },
+        "peak_context": { "description": "The largest peak of any counted session.", "type": "integer" },
+        "owners": { "type": "array", "items": { "$ref": "#/$defs/UsageItemOwner" } },
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/UsageSession" } },
+        "tasks": { "type": "array", "items": { "$ref": "#/$defs/UsageTask" } },
+        "gaps": { "type": "array", "items": { "$ref": "#/$defs/UsageGap" } }
+      }
+    },
+    "UsageDiagnostics": {
+      "description": "/v1/diagnostics.usage: the token ledger's reading loop. `running` is false when it was never started (no home directory, or a daemon that does not read). `at` is when the last pass ended, absent before the first; `due`, `fed`, `missing` and `unreadable` are what that pass found and did, and `limited` says more were due than a pass reads. `stalled` says no pass has ended for `stall_after_seconds`, counted from the last one or from the start. It does not turn `ok` red: an unread ledger stops no work.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["due", "every_seconds", "fed", "limited", "missing", "running", "stall_after_seconds", "stalled", "unreadable"],
+      "properties": {
+        "running": { "type": "boolean" },
+        "started": { "type": "integer" },
+        "at": { "type": "integer" },
+        "due": { "type": "integer" },
+        "fed": { "type": "integer" },
+        "limited": { "type": "boolean" },
+        "missing": { "type": "integer" },
+        "unreadable": { "type": "integer" },
+        "error": { "description": "Why the last pass could not finish.", "type": "string" },
+        "every_seconds": { "type": "integer" },
+        "stall_after_seconds": { "type": "integer" },
+        "stalled": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -49,7 +49,8 @@
         "port": { "type": "integer" },
         "scheduler": { "$ref": "#/$defs/SchedulerPulse" },
         "served_by": { "type": "string" },
-        "upstream": { "type": "integer" }
+        "upstream": { "type": "integer" },
+        "usage": { "$ref": "usage.schema.json#/$defs/UsageDiagnostics" }
       }
     },
     "ConsoleDiagnostics": {

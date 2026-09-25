@@ -339,8 +339,8 @@ func openPath(p string) bool {
 }
 
 // machineScoped is where the orchestrator credential is accepted in place of a
-// device: the orchestrator's own routes, the board, the project-place list a
-// schedule write names, and the worktree reads.
+// device: the orchestrator's own routes, the board, the token ledger, the
+// project-place list a schedule write names, and the worktree reads.
 // `/v1/next/coordinator` is the one `/v1/next/` name left that the
 // orchestrator's credential opens; the shadows of the board and the schedules
 // are gone (D07).
@@ -351,6 +351,11 @@ func machineScoped(p string) bool {
 	// The new board (work.go): a session reads it, and relays a person's
 	// words to it under their run; the handler refuses a session's own.
 	if strings.HasPrefix(p, "/v1/work/") {
+		return true
+	}
+	// The token ledger (usage.go): a session reads its own bill, and every
+	// route there only reads.
+	if strings.HasPrefix(p, "/v1/usage/") {
 		return true
 	}
 	switch p {

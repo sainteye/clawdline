@@ -186,11 +186,35 @@ What the implementation settled (`UsageLedger.ForSession`, `ForTask`, `ForItem`)
 
 ## What a person and a session see
 
-- `clawdline usage [--session <conversation> | --item <id> | --task <id>] [--json]`: the categories
-  with their share, raw token parts, and cost, one line each by default.
-- `GET /v1/usage/sessions/<conversation>`, `GET /v1/usage/items/<id>`: the same, typed; a session the
-  ledger could not read answers its reason (`transcript_missing`, `transcript_unreadable`,
-  `not_yet_read`), never an empty total.
+- `clawdline usage [--session <conversation> | --task <id> | --item <id>] [--json]`
+  (`cmd/clawdline/usage.go`): with no flag, the calling session, named by `CLAUDE_CODE_SESSION_ID` or
+  `CODEX_THREAD_ID` as `session report` names it. One header line — calls, peak context, cost, and for
+  a session its calls above 200k and its compactions — then one line per category that spent
+  anything, by cost (by tokens when the cost is not whole): name, share, tokens, cost, with `rules`
+  marked `(upper bound)`; then one line per gap. `--json` prints the daemon's answer. A refusal prints
+  `refused, <status> <code>: <message>` and exits 1, as every thin command does.
+- `GET /v1/usage/sessions/<conversation>`, `GET /v1/usage/tasks/<task id>`,
+  `GET /v1/usage/items/<item id>` (`internal/transport/http/usage.go`, typed in
+  `api/v1/usage.schema.json`): read with a paired device or this machine's orchestrator token, as the
+  Board is. Each answers a `bill`: every category in the ledger's order with its tokens by part
+  (input, 1-hour and 5-minute cache writes, cache reads, output), its cost and its `share` — of the
+  cost, or of the tokens when some model has no price (`share_of`). `rules` carries
+  `upper_bound: true`. A session adds its own calls, peak context, compactions, the calls and the
+  cost above 200k context, its base composition when the transcript recorded one, and its
+  subagents; a task and an item add their sessions' calls and largest peak. Every answer carries the
+  `gaps` the app layer reports.
+- **What each id means when there is no reading.** A session with a row answers its row's reason
+  (`transcript_missing`, `transcript_unreadable`) with the last reading's totals. A session with no
+  row is `not_yet_read` when its transcript is on disk — Claude's under any project, or a Codex
+  rollout — and a 404 `unknown_session` when it is not: an id that names nothing is not an empty
+  bill. A subagent asked for as a session is a 404 that names its session. A task no session names
+  is `not_yet_read` when the broker has its record and a 404 `unknown_task` otherwise; an item that
+  is not on the Board is a 404 `unknown_item`. An id is letters, digits, `-`, `_` and `.`: anything
+  else is a 400 before it reaches a query or a file name.
+- **Whether it is still reading**: `usage` in `/v1/diagnostics` is the reading loop's own account —
+  whether it runs, when the last pass ended and what it found (due, fed, limited, missing,
+  unreadable), and `stalled` when no pass has ended for three intervals (`usageStallPasses`). It does
+  not turn `ok` red: an unread ledger stops no work.
 - Later: the Board card's cost line, and the Swift ledger's Project/Feature analytics migrated onto
   these rows.
 

@@ -40,6 +40,9 @@ const (
 	usageWindowLimit = 7 * 24 * time.Hour
 	// usageEvery is how often the daemon runs a pass.
 	usageEvery = time.Minute
+	// usageStallPasses is how many passes' time may go by with none finished
+	// before the ledger is said to be stalled (/v1/diagnostics).
+	usageStallPasses = 3
 )
 
 // Openings of a first message that name what a session is. They are the
@@ -73,6 +76,9 @@ type UsageLedger struct {
 	limited bool
 	// said is how many lines this ledger logged, for a test to count.
 	said int
+	// started is when Run began, and pulse what its last pass did.
+	started time.Time
+	pulse   *UsagePulse
 }
 
 // NewUsageLedger is a ledger over st, reading the transcripts under home.
@@ -114,9 +120,16 @@ func (u *UsageLedger) say(format string, args ...any) {
 func (u *UsageLedger) Run(ctx context.Context) {
 	tick := time.NewTicker(usageEvery)
 	defer tick.Stop()
+	u.mu.Lock()
+	u.started = u.now()
+	u.mu.Unlock()
 	for {
-		if _, err := u.Pass(ctx); err != nil && ctx.Err() == nil {
+		pass, err := u.Pass(ctx)
+		if err != nil && ctx.Err() == nil {
 			u.sayOnce("pass", "the pass could not read the store: "+err.Error())
+		}
+		if ctx.Err() == nil {
+			u.record(pass, err)
 		}
 		select {
 		case <-ctx.Done():
@@ -137,6 +150,56 @@ type UsagePass struct {
 	// read.
 	Missing    int
 	Unreadable int
+}
+
+// UsagePulse is what the reading loop says about itself: when it started, its
+// last finished pass and what that pass did. A loop that stopped and one with
+// nothing to read are both silence from outside; this tells them apart.
+type UsagePulse struct {
+	// Running says Run has started; Started is when.
+	Running bool
+	Started time.Time
+	// At is when the last pass ended, zero before the first; Pass is what it
+	// did and Err why it could not finish.
+	At   time.Time
+	Pass UsagePass
+	Err  string
+	// Every is how often a pass runs, and StallAfter how long without one
+	// ending is a stall.
+	Every, StallAfter time.Duration
+	// Stalled says no pass has ended for usageStallPasses intervals, counted
+	// from the last one or, before the first, from the start.
+	Stalled bool
+}
+
+func (u *UsageLedger) record(pass UsagePass, err error) {
+	p := UsagePulse{At: u.now(), Pass: pass}
+	if err != nil {
+		p.Err = pathless(err).Error()
+	}
+	u.mu.Lock()
+	u.pulse = &p
+	u.mu.Unlock()
+}
+
+// Pulse is the reading loop's account of itself now.
+func (u *UsageLedger) Pulse() UsagePulse {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	out := UsagePulse{Every: usageEvery, StallAfter: usageStallPasses * usageEvery}
+	if u.pulse != nil {
+		out.At, out.Pass, out.Err = u.pulse.At, u.pulse.Pass, u.pulse.Err
+	}
+	if u.started.IsZero() {
+		return out
+	}
+	out.Running, out.Started = true, u.started
+	since := out.At
+	if since.IsZero() {
+		since = u.started
+	}
+	out.Stalled = u.now().Sub(since) > out.StallAfter
+	return out
 }
 
 // usageFile is one transcript a pass may visit.

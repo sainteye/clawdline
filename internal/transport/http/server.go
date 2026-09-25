@@ -439,6 +439,8 @@ func (s *Server) Handler() http.Handler {
 	// The Project Timeline reads this daemon's own history and stores nothing.
 	mux.HandleFunc("/v1/timeline", s.timelineRoute)
 	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
+	// The token ledger, read by a person or a session (usage.go).
+	mux.HandleFunc("/v1/usage/", s.usageRoute)
 	// Pictures: stored by a session (machine token), read by id (images.go).
 	mux.HandleFunc("/v1/artifacts/images", s.imagesRoute)
 	mux.HandleFunc("/v1/artifacts/images/", s.imageRoute)
@@ -528,6 +530,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		ServedBy:  servedBy,
 		Port:      int64(s.cfg.Port),
 		Upstream:  int64(s.cfg.UpstreamPort),
+		Usage:     s.usageDiagnostics(),
 		Dir:       s.cfg.Dir,
 		At:        time.Now().Unix(),
 	})

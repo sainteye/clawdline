@@ -22,8 +22,8 @@ Three things replace it, and all three are this binary:
 | `clawdline skill install` / `uninstall` | Writes the stub to `~/.claude/skills/clawdline/SKILL.md`, and puts back what was there | `internal/adapters/skillfile/skillfile.go` |
 
 And a handful of **thin commands** a session runs instead of hand-built curl: `session report`,
-`dispatch`, `task ack`, `send`, `notify`, `landings`, `assistants` (`cmd/clawdline/session.go`,
-`dispatch.go`, `task.go`, `relay.go`, `broker.go`).
+`dispatch`, `task ack`, `send`, `notify`, `landings`, `assistants`, `usage`
+(`cmd/clawdline/session.go`, `dispatch.go`, `task.go`, `relay.go`, `broker.go`, `usage.go`).
 
 ## The guide is compiled in
 
@@ -119,6 +119,7 @@ stdout when it said yes, `refused, <status> <code>: <message>` on stderr and exi
 | `clawdline task ack <id> <notice id>` | `POST /v1/orchestrator/tasks/<id>/completion/ack` | Prints one line |
 | `clawdline notify --title … --body …` | `POST /v1/orchestrator/notify` | |
 | `clawdline landings`, `clawdline assistants` | `GET /v1/orchestrator/landings`, `…/assistants` | |
+| `clawdline usage [--session c \| --task id \| --item id]` | `GET /v1/usage/sessions/<conversation>`, `…/tasks/<id>`, `…/items/<id>` | The token ledger (`docs/token-ledger.md`). With no flag, the calling session, named as `session report` names it. Prints a header line (calls, peak context, cost), one line per category by cost — share, tokens, cost, `rules` marked as an upper bound — and the gaps; `--json` prints the answer |
 
 **The credential stays in the process.** The orchestrator token is read from
 `<state dir>/orchestrator-token` — `CLAWDLINE_NEXT_DIR`, else `~/.config/clawdline-next` — and

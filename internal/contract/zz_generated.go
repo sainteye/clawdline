@@ -2444,6 +2444,7 @@ type Diagnostics struct {
 	Scheduler SchedulerPulse       `json:"scheduler"`
 	ServedBy  string               `json:"served_by"`
 	Upstream  int64                `json:"upstream"`
+	Usage     *UsageDiagnostics    `json:"usage,omitempty"`
 }
 
 type DispatchRequest struct {
@@ -5466,6 +5467,229 @@ type TunnelStatus struct {
 	// The address, once a connection to Cloudflare's edge is registered. Present when
 	// state is up.
 	URL string `json:"url,omitempty"`
+}
+
+// What some sessions spent: every category in the ledger's order, each with its
+// share, and the measured total they sum to.
+type UsageBill struct {
+	Categories []UsageCategory `json:"categories"`
+	ShareOf    UsageShareOf    `json:"share_of"`
+	Total      UsageTokens     `json:"total"`
+}
+
+// One category's part of a bill. `share` is its fraction (0…1) of the bill's
+// cost, or of its tokens when the cost is not known (`UsageBill.share_of`).
+// `upper_bound` is set on `rules`: a guard run in the same shell command as
+// other work takes that whole command, so rules is at most this much
+// (docs/token-ledger.md "Categories").
+type UsageCategory struct {
+	Name       UsageCategoryName `json:"name"`
+	Share      float64           `json:"share"`
+	Tokens     UsageTokens       `json:"tokens"`
+	UpperBound bool              `json:"upper_bound"`
+}
+
+// What a token was spent on (docs/token-ledger.md "Categories").
+type UsageCategoryName string
+
+const (
+	UsageCategoryNameBoard      UsageCategoryName = "board"
+	UsageCategoryNameProtocol   UsageCategoryName = "protocol"
+	UsageCategoryNameRules      UsageCategoryName = "rules"
+	UsageCategoryNameImpl       UsageCategoryName = "impl"
+	UsageCategoryNameDelegate   UsageCategoryName = "delegate"
+	UsageCategoryNameHarness    UsageCategoryName = "harness"
+	UsageCategoryNameTalk       UsageCategoryName = "talk"
+	UsageCategoryNameCompaction UsageCategoryName = "compaction"
+	UsageCategoryNameOther      UsageCategoryName = "other"
+)
+
+// UsageCategoryNameValues is every value the contract allows, in contract order.
+var UsageCategoryNameValues = []UsageCategoryName{UsageCategoryNameBoard, UsageCategoryNameProtocol, UsageCategoryNameRules, UsageCategoryNameImpl, UsageCategoryNameDelegate, UsageCategoryNameHarness, UsageCategoryNameTalk, UsageCategoryNameCompaction, UsageCategoryNameOther}
+
+// What the session's first context was made of, when its transcript recorded
+// the harness's prompt snapshot. The parts are estimated from their text and
+// scaled to sum to `measured`, the first call's measured context. Absent when
+// the snapshot was not recorded, never zero.
+type UsageComposition struct {
+	Instructions    []UsageNamedSize `json:"instructions"`
+	McpInstructions float64          `json:"mcp_instructions"`
+	Measured        int64            `json:"measured"`
+	Other           float64          `json:"other"`
+	SkillListing    float64          `json:"skill_listing"`
+	SystemPrompt    float64          `json:"system_prompt"`
+	Tools           []UsageNamedSize `json:"tools"`
+}
+
+// /v1/diagnostics.usage: the token ledger's reading loop. `running` is false
+// when it was never started (no home directory, or a daemon that does not
+// read). `at` is when the last pass ended, absent before the first; `due`,
+// `fed`, `missing` and `unreadable` are what that pass found and did, and
+// `limited` says more were due than a pass reads. `stalled` says no pass has
+// ended for `stall_after_seconds`, counted from the last one or from the start.
+// It does not turn `ok` red: an unread ledger stops no work.
+type UsageDiagnostics struct {
+	At  int64 `json:"at,omitempty"`
+	Due int64 `json:"due"`
+
+	// Why the last pass could not finish.
+	Error             string `json:"error,omitempty"`
+	EverySeconds      int64  `json:"every_seconds"`
+	Fed               int64  `json:"fed"`
+	Limited           bool   `json:"limited"`
+	Missing           int64  `json:"missing"`
+	Running           bool   `json:"running"`
+	StallAfterSeconds int64  `json:"stall_after_seconds"`
+	Stalled           bool   `json:"stalled"`
+	Started           int64  `json:"started,omitempty"`
+	Unreadable        int64  `json:"unreadable"`
+}
+
+// Something a bill could not count as a current reading: a `session`,
+// `subagent`, `task` or `root_assignment`, and why. `counted` says an earlier
+// reading of it is in the totals.
+type UsageGap struct {
+	Counted bool        `json:"counted"`
+	ID      string      `json:"id"`
+	Kind    string      `json:"kind"`
+	Reason  UsageReason `json:"reason"`
+}
+
+// GET /v1/usage/items/{id}: a Board item's bill — its owner sessions, whole,
+// and the child tasks they dispatched while they owned it. An owner session is
+// counted whole however many items it owned, so the bill is an upper bound for
+// any one of them.
+type UsageItem struct {
+	Bill UsageBill `json:"bill"`
+
+	// Every counted session's own calls, added up.
+	Calls  int64            `json:"calls"`
+	Gaps   []UsageGap       `json:"gaps"`
+	ItemID string           `json:"item_id"`
+	Owners []UsageItemOwner `json:"owners"`
+
+	// The largest peak of any counted session.
+	PeakContext int64          `json:"peak_context"`
+	Sessions    []UsageSession `json:"sessions"`
+	Tasks       []UsageTask    `json:"tasks"`
+}
+
+// One stint of a session owning a Board item. `session` is empty for a Root
+// Assignment whose session the ledger has not found yet. `to` is 0 while the
+// stint is open. Unix seconds.
+type UsageItemOwner struct {
+	Current        bool   `json:"current"`
+	From           int64  `json:"from"`
+	RootAssignment string `json:"root_assignment,omitempty"`
+	Session        string `json:"session,omitempty"`
+	To             int64  `json:"to"`
+}
+
+type UsageNamedSize struct {
+	Name   string  `json:"name"`
+	Tokens float64 `json:"tokens"`
+}
+
+// Why a reading is not current. `not_yet_read`: the ledger has no reading of it
+// yet. `transcript_missing`: it was read before and its transcript is gone; the
+// totals are that reading's. `transcript_unreadable`: its transcript is there
+// and could not be read; the totals, if any, are from before.
+type UsageReason string
+
+const (
+	UsageReasonNotYetRead           UsageReason = "not_yet_read"
+	UsageReasonTranscriptMissing    UsageReason = "transcript_missing"
+	UsageReasonTranscriptUnreadable UsageReason = "transcript_unreadable"
+)
+
+// UsageReasonValues is every value the contract allows, in contract order.
+var UsageReasonValues = []UsageReason{UsageReasonNotYetRead, UsageReasonTranscriptMissing, UsageReasonTranscriptUnreadable}
+
+// GET /v1/usage/sessions/{conversation}: one session's bill, its subagents
+// folded into `delegate`. A session with `reason` has no current reading:
+// `not_yet_read` has no totals at all, and the other two carry the last
+// reading's. `calls`, `peak_context`, `compactions`, `calls_above` and `above`
+// are the session's own calls; a subagent's calls are on its row. `above` is
+// what the calls made with more than 200k tokens of context cost. `read_at` is
+// Unix seconds, 0 when never read; `more` says the last pass stopped before the
+// transcript's end.
+type UsageSession struct {
+	Above        UsageTokens       `json:"above"`
+	Assistant    string            `json:"assistant,omitempty"`
+	Bill         UsageBill         `json:"bill"`
+	Calls        int64             `json:"calls"`
+	CallsAbove   int64             `json:"calls_above"`
+	Compactions  int64             `json:"compactions"`
+	Composition  *UsageComposition `json:"composition,omitempty"`
+	Conversation string            `json:"conversation"`
+	Gaps         []UsageGap        `json:"gaps"`
+	More         bool              `json:"more"`
+	PeakContext  int64             `json:"peak_context"`
+	ReadAt       int64             `json:"read_at"`
+	Reason       UsageReason       `json:"reason,omitempty"`
+
+	// The Root Assignment this session's first message names.
+	RootAssignment string          `json:"root_assignment,omitempty"`
+	Subagents      []UsageSubagent `json:"subagents"`
+
+	// The child task this session's first message names.
+	TaskID string `json:"task_id,omitempty"`
+}
+
+// What every category's `share` is a share of: `cost` when the whole cost is
+// known, `tokens` when some of it is not (a model with no price).
+type UsageShareOf string
+
+const (
+	UsageShareOfCost   UsageShareOf = "cost"
+	UsageShareOfTokens UsageShareOf = "tokens"
+)
+
+// UsageShareOfValues is every value the contract allows, in contract order.
+var UsageShareOfValues = []UsageShareOf{UsageShareOfCost, UsageShareOfTokens}
+
+// One subagent transcript of a session. Its whole measured count is in the
+// session's `delegate`.
+type UsageSubagent struct {
+	Calls        int64       `json:"calls"`
+	Conversation string      `json:"conversation"`
+	Measured     UsageTokens `json:"measured"`
+	Reason       UsageReason `json:"reason,omitempty"`
+}
+
+// GET /v1/usage/tasks/{id}: a child task's bill — every session whose first
+// message names it. `reason` is `not_yet_read` when the ledger has read none of
+// them yet.
+type UsageTask struct {
+	Bill UsageBill `json:"bill"`
+
+	// The sessions' own calls, added up.
+	Calls int64      `json:"calls"`
+	Gaps  []UsageGap `json:"gaps"`
+
+	// The largest of the sessions' peaks.
+	PeakContext int64          `json:"peak_context"`
+	Reason      UsageReason    `json:"reason,omitempty"`
+	Sessions    []UsageSession `json:"sessions"`
+	TaskID      string         `json:"task_id"`
+}
+
+// Tokens by part, and their cost in US dollars at list price. The numbers are
+// fractional because a measured count is divided pro rata. `unpriced` counts
+// the tokens whose model has no price: `cost_known` is false when it is not
+// zero, and `cost` is then only the priced part's.
+type UsageTokens struct {
+	CacheRead    float64 `json:"cache_read"`
+	CacheWrite1h float64 `json:"cache_write_1h"`
+	CacheWrite5m float64 `json:"cache_write_5m"`
+	Cost         float64 `json:"cost"`
+	CostKnown    bool    `json:"cost_known"`
+	Input        float64 `json:"input"`
+	Output       float64 `json:"output"`
+
+	// Every token of every part.
+	Total    float64 `json:"total"`
+	Unpriced float64 `json:"unpriced"`
 }
 
 // GET /v1/voice/language: what the next recording will be read as, and who said
