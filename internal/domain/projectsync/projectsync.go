@@ -197,13 +197,13 @@ func Allowed(rel string) bool {
 	for _, d := range Dirs {
 		if strings.HasPrefix(rel, d+"/") {
 			// A dot file or directory inside a carried place is where an
-			// ignored secret sits (`.env`), not a skill.
+			// ignored secret sits (`.env`), not a skill. Nor is a build artifact a skill left behind by running it.
 			for _, part := range strings.Split(strings.TrimPrefix(rel, d+"/"), "/") {
-				if strings.HasPrefix(part, ".") {
+				if strings.HasPrefix(part, ".") || part == "__pycache__" || part == "node_modules" {
 					return false
 				}
 			}
-			return true
+			return !strings.HasSuffix(rel, ".pyc")
 		}
 	}
 	return false

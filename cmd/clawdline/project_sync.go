@@ -9,9 +9,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	psync "github.com/sainteye/clawdline/internal/adapters/projectsync"
+	"github.com/sainteye/clawdline/internal/config"
 	domain "github.com/sainteye/clawdline/internal/domain/projectsync"
 )
 
@@ -52,11 +55,19 @@ func projectExport(args []string) {
 	if err := daemonJSON("GET", "/v1/project-sync/manifest", nil, &manifest); err != nil {
 		fail(err)
 	}
-	source := *name
-	if source == "" {
-		source, _ = os.Hostname()
+	source := domain.Source{Name: *name}
+	// A machine on a Cloud account names itself by its Cloud id, which is how
+	// a mirror's console later finds this source again and follows it.
+	if identity, found, err := adaptercloud.NewIdentityStore(filepath.Join(config.Load().Dir, "cloud")).Load(); err == nil && found {
+		source.Machine = identity.MachineID
+		if source.Name == "" {
+			source.Name = identity.Name
+		}
 	}
-	bundle := projectBundle{Version: domain.Version, Source: domain.Source{Name: source}, At: time.Now().Unix(), Projects: []domain.Entry{}}
+	if source.Name == "" {
+		source.Name, _ = os.Hostname()
+	}
+	bundle := projectBundle{Version: domain.Version, Source: source, At: time.Now().Unix(), Projects: []domain.Entry{}}
 	for _, p := range manifest.Projects {
 		var answer struct {
 			Project domain.Entry `json:"project"`
