@@ -313,8 +313,26 @@ function daemon(): Server {
         closed_at: null,
         cycle: 1,
         version: 1,
+      }, {
+        // Three actions and a Project name that cannot wrap: the header that ran past the
+        // card on a phone (2026-09-25).
+        id: "header-fixture",
+        project: { id: "project-fixture", label: "clawdlinewithalongprojectname", path: "/tmp/fixture", icon: null, available: true },
+        kind: "issue",
+        title: "Keep the header inside the card",
+        description: "Remind, edit and delete fit beside or under the Project name.",
+        phase: "implementing",
+        condition: null,
+        area: "assigned",
+        deployment_policy: "agent_decides",
+        owner_session: SAFE,
+        created_at: 1,
+        updated_at: 1,
+        closed_at: null,
+        cycle: 1,
+        version: 1,
       }],
-      counts: { unassigned: 1 },
+      counts: { unassigned: 1, assigned: 1 },
       truncated: false,
       })
     }
@@ -933,7 +951,21 @@ test("the Board assignment picker explains a Session before assignment", () =>
           const finish = () => {
             const detail = document.querySelector('.work-session-detail')
             const text = detail?.textContent || ''
-            if (text.includes('Repair the previous release')) return resolve({ menu, detail: text })
+            if (text.includes('Repair the previous release')) {
+              // Opened again with a Session chosen, the menu still hangs from
+              // the button, not from under the chosen Session's detail.
+              const card = document.querySelector('[data-work-id="assignment-fixture"]')
+              const again = card.querySelector('.work-session-trigger')
+              again.click()
+              return setTimeout(() => {
+                const button = again.getBoundingClientRect()
+                const list = card.querySelector('.work-session-menu')?.getBoundingClientRect()
+                const picker = card.querySelector('.work-session-picker').getBoundingClientRect()
+                const progress = card.querySelector('.work-milestones').getBoundingClientRect()
+                resolve({ menu, detail: text, gap: list ? list.top - button.bottom : null,
+                  pickerAboveProgress: picker.top < progress.top })
+              }, 50)
+            }
             if (Date.now() >= deadline) return reject(new Error('the selected Session detail did not arrive: ' + text))
             setTimeout(finish, 25)
           }
@@ -951,6 +983,9 @@ test("the Board assignment picker explains a Session before assignment", () =>
     assert.match(shown.detail, /Coordinate the live deployment/)
     assert.match(shown.detail, /Review the release note/)
     assert.match(shown.detail, /Repair the previous release/)
+    assert.ok(shown.gap !== null && Math.abs(shown.gap - 6) <= 1,
+      `the reopened menu was ${shown.gap}px below its button, not 6`)
+    assert.ok(shown.pickerAboveProgress, "the Session picker sat below the item's progress")
     await tab.shot("board-session-assignment")
   }))
 
@@ -993,6 +1028,38 @@ test("Board action icons are geometrically centered on a phone", () =>
     assert.ok(board.close.dx <= 0.5 && board.close.dy <= 0.5,
       `Board close icon was off center by ${JSON.stringify(board.close)}`)
     await tab.shot("board-icons-centered")
+  }))
+
+test("a Board card's actions stay inside the card beside a long Project name on a phone", () =>
+  inTab(async (tab) => {
+    await tab.go("/#page=work")
+    const header = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const card = document.querySelector('[data-work-id="header-fixture"]')
+        const controls = [...(card?.querySelectorAll('.work-card-controls button') || [])]
+        if (controls.length !== 3) {
+          if (Date.now() >= deadline) return reject(new Error('the three Board actions did not arrive'))
+          return setTimeout(read, 25)
+        }
+        const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom } }
+        const cut = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
+        const inner = card.getBoundingClientRect()
+        const style = getComputedStyle(card)
+        const edge = inner.right - parseFloat(style.borderRightWidth)
+        const name = box(card.querySelector('.work-v2-project > span'))
+        resolve({
+          width: document.documentElement.clientWidth,
+          past: controls.map(box).filter((b) => b.right > edge + 0.5).length,
+          over: controls.map(box).filter((b) => cut(b, name)).length,
+        })
+      }
+      read()
+    })`)
+    assert.equal(header.width, 390)
+    assert.equal(header.past, 0, "a Board action ran past the card's edge")
+    assert.equal(header.over, 0, "a Board action was drawn over the Project name")
+    await tab.shot("board-card-header")
   }))
 
 test("the Session todo add icon is geometrically centered on a phone", () =>
