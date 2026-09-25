@@ -165,6 +165,34 @@ func TestTheBrokerNamesATargetOnlyWhenThereIsOne(t *testing.T) {
 	}
 }
 
+// A parked integration branch that nobody has checked out is not a target,
+// even when it is the only branch holding the delivery: the primary
+// checkout's branch is the line work lands on.
+func TestAParkedIntegrationBranchIsNotNamedTheTarget(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	repo := gitRepo(t)
+	id := "d0000000-0000-4000-8000-000000000016"
+	r := deliveredTask(t, b, ctx, repo, id)
+
+	gitIn(t, repo, "branch", "parked", "main")
+	scratch, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	park := filepath.Join(scratch, "park")
+	gitIn(t, repo, "worktree", "add", "-q", park, "parked")
+	gitIn(t, park, "merge", "-q", "--no-ff", "-m", "park", r.Worktree.Branch)
+	gitIn(t, repo, "worktree", "remove", park)
+	if n := b.detectLandings(ctx); n != 0 {
+		t.Fatalf("recorded %d; the only holder is a parked branch, not main", n)
+	}
+	gitIn(t, repo, "merge", "-q", "--ff-only", "parked") // main
+	gitIn(t, repo, "branch", "-D", "parked")
+	if n := b.detectLandings(ctx); n != 1 {
+		t.Fatalf("recorded %d, want 1 once main holds it", n)
+	}
+}
+
 // ⑤ One repository that cannot be read does not stop the others, and is said
 // once, not on every look.
 func TestAnUnreadableRepositoryDoesNotStopTheOthers(t *testing.T) {

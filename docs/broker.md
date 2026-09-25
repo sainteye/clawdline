@@ -58,7 +58,9 @@ the broker noticing a merge is not the root reading anything.
 The target is the record's (D19). A pending landing opens without one, and the broker does **not** fill it with `HEAD`.
 It names one only when git proves there is a single candidate: among the local branches whose history holds the delivery
 head, leaving out the broker's own `clawdline/task/*` branches and every branch checked out in a linked worktree (an
-integration still in progress), exactly one remains. None, or two or more, is a root's decision. Left alone, and not
+integration still in progress), exactly one remains — and it is the branch the primary checkout has out, the line work
+lands on; a parked branch nobody has checked out is not named even when it is the only holder. None, or two or more,
+or one that is not the primary checkout's, is a root's decision. Left alone, and not
 counted as failures: an empty delivery (head under its base), a cherry-picked one (not an ancestor), a branch that is
 gone. A repository git cannot read, or that takes longer than 10 seconds for one task, costs that task this look and
 nothing else; the log says it once per task per distinct reason. A second look changes nothing: a `landed` task is no

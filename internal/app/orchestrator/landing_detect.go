@@ -213,7 +213,11 @@ func (b *Broker) onlyTarget(ctx context.Context, repo, head string) (string, err
 	// Every checkout after the first is linked, and a branch checked out in
 	// one is somebody's work in progress — an integration not yet finished.
 	busy := map[string]bool{}
+	primary := ""
 	for i, c := range checkouts {
+		if i == 0 {
+			primary = strings.TrimPrefix(c.Branch, "refs/heads/")
+		}
 		if i > 0 && c.Branch != "" && filepath.Clean(c.Path) != filepath.Clean(repo) {
 			busy[strings.TrimPrefix(c.Branch, "refs/heads/")] = true
 		}
@@ -228,6 +232,14 @@ func (b *Broker) onlyTarget(ctx context.Context, repo, head string) (string, err
 			return "", nil
 		}
 		named = name
+	}
+	// The one candidate must also be what the primary checkout has out — the
+	// line work lands on. A branch nobody has checked out that happens to be
+	// the only holder is more often an integration a root parked than the
+	// target: recording it would settle a landing before the work reached
+	// the line everybody reads.
+	if named != primary {
+		return "", nil
 	}
 	return named, nil
 }
