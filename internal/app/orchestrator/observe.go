@@ -390,8 +390,11 @@ type observations struct {
 	sessions   int
 	executors  map[string]Executor
 	deferred   map[string]time.Time
-	progress   map[string]string
-	accepted   map[string]string
+	// drafts is the composer text a held notice was last held for, so a
+	// stash is only tried on text that stood still for a whole hold.
+	drafts   map[string]string
+	progress map[string]string
+	accepted map[string]string
 	// seen is who the last reading showed, for a pending landing's owner
 	// (landing.go). Replaced whole by every pass.
 	seen presence
@@ -431,6 +434,26 @@ func (o *observations) forgetNotice(noticeID string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	delete(o.deferred, noticeID)
+	delete(o.drafts, noticeID)
+}
+
+func (o *observations) forgetDraft(noticeID string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	delete(o.drafts, noticeID)
+}
+
+// sawDraft records the composer text a notice is held for and answers what it
+// was at the look before, "" the first time.
+func (o *observations) sawDraft(noticeID, text string) string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.drafts == nil {
+		o.drafts = map[string]string{}
+	}
+	was := o.drafts[noticeID]
+	o.drafts[noticeID] = text
+	return was
 }
 
 // progressKnown answers whether this exact progress.json body was already

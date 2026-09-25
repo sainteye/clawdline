@@ -14,6 +14,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/lane"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/task"
@@ -226,6 +227,47 @@ func (a Actions) send(ctx context.Context, s session.Session, text string) (sess
 		return s, Refusal{Code: "send_failed", Detail: err.Error(), Cause: err}
 	}
 	a.record(ctx, "session.typed", s.ID, map[string]any{"bytes": len(text)})
+	return s, nil
+}
+
+// SendPrepared is Send with prepare run first, inside the same turn of the
+// terminal's lane, so nobody else's line lands between what prepare saw and the
+// text. prepare presses raw keys and looks at the screen; an error from it types
+// nothing more and is the Refusal's Cause. The completion notice is the one
+// caller: it clears a Claude Code root's composer through the CLI's own stash
+// (orchestrator stash.go).
+func (a Actions) SendPrepared(ctx context.Context, id, text string, prepare orchestrator.Prepare) (session.Session, error) {
+	if text == "" {
+		return session.Session{}, Refusal{Code: "empty_text", Detail: "there is nothing to type",
+			Cause: terminal.Unsent{Why: "there is nothing to type"}}
+	}
+	s, err := a.Find(ctx, id)
+	if err != nil {
+		return session.Session{}, beforeTheFirstByte(err)
+	}
+	h, err := a.host(s)
+	if err != nil {
+		return session.Session{}, beforeTheFirstByte(err)
+	}
+	keys, ok := h.(ports.KeyHost)
+	if !ok || a.Inventory.Screen == nil {
+		return s, beforeTheFirstByte(Refusal{Code: "backend_unsupported",
+			Detail: fmt.Sprintf("nothing on this machine presses keys into and reads a %q session", s.Backend)})
+	}
+	release, err := a.turn(ctx, s)
+	if err != nil {
+		return s, err
+	}
+	defer release()
+	press := func(b []byte) error { return keys.Keystroke(ctx, s, b) }
+	look := func() (string, bool) { return a.Inventory.Screen.Capture(ctx, s) }
+	if err := prepare(ctx, press, look); err != nil {
+		return s, Refusal{Code: "send_withheld", Detail: err.Error(), Cause: err}
+	}
+	if err := h.Send(ctx, s, text); err != nil {
+		return s, Refusal{Code: "send_failed", Detail: err.Error(), Cause: err}
+	}
+	a.record(ctx, "session.typed", s.ID, map[string]any{"bytes": len(text), "prepared": true})
 	return s, nil
 }
 
