@@ -309,9 +309,13 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
       <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment} />
       <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => void run(item.id, () => assignWorkV2(item, terminal))}>指派</button>
       <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
+        {/* The product mark alone: the button beside it already spells out the
+            chosen assistant, so the name is kept for the label and tooltip. */}
         {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
           role="radio" aria-checked={choice === assistant} disabled={!!busy}
-          onClick={() => { setAssistant(choice); rememberAssistant(choice) }}>{assistantName(choice)}</button>)}
+          aria-label={assistantName(choice)} title={assistantName(choice)}
+          onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
+          dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
       </div>
       <button className="chip" type="button" disabled={!!busy} onClick={() => void run(item.id, () => assignNewWorkV2(item, assistant))}>開新 {assistantName(assistant)} Session</button>
     </div>}
