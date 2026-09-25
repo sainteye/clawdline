@@ -193,6 +193,7 @@ const (
 	WorkItemUserActionBytes   = "work.item_user_action_bytes"
 	WorkCompletionReasonBytes = "work.completion_reason_bytes"
 	SessionDirectTodoBytes    = "session.direct_todo_bytes"
+	SessionTodoBatchRows      = "session.todo_batch_rows"
 	WorkRequestBodyBytes      = "work.request_body_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
@@ -619,10 +620,19 @@ func Register() []Entry {
 			Sources: []string{"internal/app.directTodoTextLimit"},
 		},
 		{
+			// The rows one Session may add to its own to-do list in one call.
+			// The whole batch is written or none of it is.
+			Name: SessionTodoBatchRows, Class: Buffer, Unit: Rows,
+			Limit: 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.sessionTodoBatchLimit"},
+		},
+		{
 			Name: WorkRequestBodyBytes, Class: Buffer, Unit: Bytes,
 			Limit: 96 << 10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/transport/http.workV2BodyLimit", "internal/app/cloudops.workV2CloudBodyLimit"},
+			Sources: []string{"internal/transport/http.workV2BodyLimit", "internal/app/cloudops.workV2CloudBodyLimit",
+				"cmd/clawdline.todoInputLimit"},
 		},
 		{
 			// Proposals waiting for a person's answer — the "to confirm"

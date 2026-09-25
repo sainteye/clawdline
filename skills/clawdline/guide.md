@@ -459,21 +459,33 @@ that it is rare. `--session <terminal>` makes a tap open that session.
 The board has three structures — board items, the Backlog, and each session's own to-do list — and
 **a person decides what goes on it**. A session proposes; it never files a card by itself.
 
-**Propose a line of work.**
+**Propose a Board item.** The Board's **Agent proposals** queue is fed by one route:
 
 ```
-POST /v1/orchestrator/proposals     (Idempotency-Key required)
-{"session_id": "<your conversation id>", "title": "…", "project": "<project>", "work_id" or "task_id": "<uuid>",
- "effects": ["deploy" | "publish" | "push_default_branch" | "spend" | "email"]}
+POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
+{"project_id": "<place id>", "kind": "feature" | "issue" | "epic" | "refactor" | "plan",
+ "title": "…", "description": "…", "reason": "why this is worth doing",
+ "suggested_acceptance": "what would count as done", "session_id": "<your conversation id>",
+ "source_work_id": "<uuid>" or "source_todo_id": "<uuid>"}
 ```
 
-- `201` answers the proposal and `instructions`: whether to **ask the person now** or **hold it**.
-  Follow it. Asking is allowed only while the person is present — they wrote to this session
-  through Clawdline in the last 30 minutes — and at most once a turn and three times a day. After
-  asking, report it: `POST /v1/orchestrator/proposals/<id>/asked`.
-- Refusals: `proposal_already_tracked`, `proposal_duplicate`, `proposal_below_threshold`,
-  `not_the_root`, `facts_unknown`, `proposals_full`, and field codes (`invalid_title`, …).
-- A child may propose with its task secret and `task_id`; it is recorded for its root.
+- `project_id` is the `id` of a row from `GET /v1/places`.
+- One source is required, and it must be yours: a Board item this Session owns, or one of this
+  Session's own to-dos (`proposal_source_required`, `proposal_source_invalid`). A proposal that
+  came from something the person asked for cites the to-do it came from — so the path is: the
+  person asks, you `clawdline todo add` it (below), and you propose from that to-do's id.
+- **To propose an item with a TODO list**, write the list as two or more top-level Markdown list
+  rows in `description`. When the person accepts and assigns the item, each row becomes one of its
+  `steps` (see below).
+- `201` answers the pending proposal. The person accepts, edits or rejects it in the Board's Agent
+  proposals queue; nothing becomes a Board item until they do. Refusals: `invalid_proposal`,
+  `proposal_too_large`, `project_not_found`, `proposals_full`.
+
+**The older proposal route.** `POST /v1/orchestrator/proposals` (with `…/<id>/asked` after asking
+in the conversation) is still served: it is where a child files a leftover with its task secret and
+`task_id`, and where a root's line-of-work proposal gets its ask-now-or-hold `instructions`. Its
+rows appear in the older "to confirm" area, **not** in the v2 Board's Agent proposals queue, so it
+is not how to put an item in front of the person on the Board.
 
 **Ask the person a decision.**
 
@@ -505,6 +517,29 @@ person has given this Session, its `recent_items` are items this Session recentl
 `direct_todos` are quick requests. This pull is how an assignment made while you were working waits
 without interrupting the current turn. Finish the current turn, then take the assigned item as your
 next owned work and read its complete record at `GET /v1/work/v2/items/<id>`.
+
+**Your own to-dos, when the person asks.** Only when the person explicitly asks this Session to
+record its work as Clawdline to-dos — or hands it a list of several items and says to track them
+there — write them to this Session's own list:
+
+```
+clawdline todo add "first item" "second item" …     (or one item per non-empty stdin line)
+clawdline todo list
+clawdline todo done <to-do id>
+```
+
+`todo add` is `POST /v1/work/v2/agent/session-todos/<conversation id>` with
+`{"todos": [{"text": "…"}, …]}` and an Idempotency-Key it prints first (`--key` retries the same
+write). One call carries 1–20 rows of at most 8 KiB each, inside the 96 KiB request body, and adds
+all of them or none; a list that would take this Session past 500 open to-dos is refused whole
+(`direct_todos_full`). It answers `201` with the rows, in the order given. The conversation must be
+a live Session this daemon knows (`conversation_id_malformed`, `session_not_found`); a Clawdline
+child is refused (`child_session`) and keeps reporting through `result.json`.
+
+Never do this on your own initiative, and never to plan speculative work. Complete each row with
+`clawdline todo done <id>` only once it is verified done. The person sees these rows marked as
+added by the Session, and only the person can send or delete them. They are not Board items and
+never appear on the Board; to put one there, propose it from that to-do (above).
 
 If the person's meaning clearly says that the item you just completed is still unfinished, correct
 the Board yourself; do not leave it in Recently Done, create a replacement item, or ask the person

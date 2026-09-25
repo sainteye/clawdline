@@ -123,6 +123,11 @@ func (a answer) refusal() (code, message string) {
 	if json.Unmarshal(a.Body, &r) == nil {
 		return r.Error.Code, r.Error.Message
 	}
+	// The work-system routes answer the flat envelope: {"error": code, "detail": …}.
+	var flat contract.Refusal
+	if json.Unmarshal(a.Body, &flat) == nil {
+		return flat.Error, flat.Detail
+	}
 	return "", ""
 }
 

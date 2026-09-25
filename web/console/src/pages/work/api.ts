@@ -369,6 +369,8 @@ export interface DirectTodoV2 {
   read_at: number | null
   completed_at: number | null
   completed_by?: string
+  /** Who wrote the row: the person's actor, or the Session's own conversation id. */
+  created_by?: string
   version: number
   images?: WorkV2Image[]
 }

@@ -11,6 +11,7 @@ import { completionReports, WorkCompletionReports } from "../pages/work/WorkComp
 import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
+import { addedBySession } from "./todo-author.js"
 import "../pages/work/work.css"
 
 /** The authoritative projection of unfinished assigned items plus direct user to-dos. */
@@ -127,13 +128,13 @@ export function Todos({ row, agentCount, agentPanel }: {
           {page && hasDirect && <section className="session-todos-list" aria-label="直接待辦">
             <p>直接交給這個 Session 的待辦。✓✓ 只表示已同步到 Session，尚未完成；需要時可以再次 Send。</p>
             {openDirect.map((todo) => (
-              <DirectTodo key={todo.id} todo={todo} busy={busy === todo.id}
+              <DirectTodo key={todo.id} todo={todo} conversation={row.sessionId} busy={busy === todo.id}
                 onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />
             ))}
           </section>}
           {page && hasCompletedDirect && <section className="session-todos-list session-recent-todos" aria-label="最近完成的直接待辦">
             <p>最近完成的直接待辦</p>
-            {completedDirect.map((todo) => <DirectTodo key={todo.id} todo={todo} busy={busy === todo.id}
+            {completedDirect.map((todo) => <DirectTodo key={todo.id} todo={todo} conversation={row.sessionId} busy={busy === todo.id}
               onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />)}
           </section>}
           {empty && <p className="session-todos-empty">目前沒有待辦。</p>}
@@ -239,18 +240,21 @@ function WorkItemDetailModal({ item, failure, actionFailure, notice, reminding, 
   </div>, document.body)
 }
 
-function DirectTodo({ todo, busy, onAction }: { todo: DirectTodoV2; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
+function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2; conversation?: string; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
   const completed = !!todo.completed_at
+  const own = addedBySession(todo, conversation)
   const receipt = todo.read_at ? { mark: "✓✓", words: "已同步到 Session，尚未完成", state: "read" }
     : todo.sent_at ? { mark: "✓", words: "已傳送，等待 Session 同步", state: "sent" }
       : { mark: "", words: "尚未傳送；Session 會在下一次讀取待辦時看到", state: "unsent" }
-  return <article className={`session-direct-todo${completed ? " completed" : ""}`}>
+  return <article className={`session-direct-todo${completed ? " completed" : ""}`} data-author={own ? "session" : "person"}>
     {completed
       ? <button className="session-todo-check completed" type="button" disabled aria-label="已完成"><WorkIcon name="check" /></button>
       : <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}><WorkIcon name="circle" /></button>}
-    <div><b>{todo.text}</b><small>{completed ? `完成 ${when(todo.completed_at!)}` : when(todo.created_at)} <span
+    <div><b>{todo.text}</b><small>{completed ? `完成 ${when(todo.completed_at!)}` : when(todo.created_at)} {own
+      && <span className="session-todo-author" aria-label={workWord("todoAddedBySessionLabel")}
+        title={workWord("todoAddedBySessionLabel")}>{workWord("todoAddedBySession")}</span>}{(completed || !own) && <span
       className="session-todo-receipt" data-state={completed ? "completed" : receipt.state}
-      aria-label={completed ? "已完成" : receipt.words}>{completed ? "已完成" : <><span className="session-todo-receipt-mark" aria-hidden="true">{receipt.mark}</span>{receipt.words}</>}</span></small></div>
+      aria-label={completed ? "已完成" : receipt.words}>{completed ? "已完成" : <><span className="session-todo-receipt-mark" aria-hidden="true">{receipt.mark}</span>{receipt.words}</>}</span>}</small></div>
     {!!todo.images?.length && <div className="work-reference-images session-todo-images" role="group" aria-label="待辦參考圖片">
       {todo.images.map((image) => <ReferenceImage key={image.id} image={image} compact />)}
     </div>}

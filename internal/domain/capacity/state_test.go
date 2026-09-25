@@ -61,15 +61,16 @@ func kinds(events []Event) string {
 // limits.md §4.7, layer 1: every row with its limit injected at 20, written to
 // the 16th (80%), 19th (95%), 20th (100%) and 21st item.
 //
-// A row whose own limit is below twenty is walked at its own instead
+// A row whose own limit is at or below twenty is walked at its own instead
 // (theSmallRow below). An override may only lower a limit, so twenty cannot be
-// injected into a row that holds two — and a row that holds two is a real
+// injected into a row that holds two, and injecting it into a row that already
+// holds twenty is no override at all — and a row that holds two is a real
 // bound, not a missing one: how many terminal captures this daemon may have in
 // flight is the bound that keeps a queue from forming in front of a person's
 // keystroke, and it is small on purpose.
 func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 	for _, e := range Register() {
-		if e.Limit < 20 {
+		if e.Limit <= 20 {
 			t.Run(e.Name, func(t *testing.T) { theSmallRow(t, e) })
 			continue
 		}
