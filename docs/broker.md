@@ -43,6 +43,27 @@ Landing 是 task 的終止狀態以外、唯一回答「這份交付後來怎麼
 | `nothing_to_land` | task 沒有寫出要落地的東西 | 只有 orchestrator token | branch 與 checkout 的既有證據都沒有顯示寫入 |
 | `abandoned` | 這份交付不採用 | task secret 或 orchestrator token | 這是處置決定，不冒充 Git 證明 |
 
+**`landed` the broker records by itself (`landing_detect.go`, 2026-09-25).** A landing used to be settled only when
+somebody asked: a root that forgot, or a root refused `409 close_blocked` when it tried to close. In the root transcripts
+read that day one root was refused 16 times, the person pressed close six times, settling took 48 calls, and the code
+behind its 19 pending landings had long been merged; only the record was missing. So the beat asks git: on the first pass
+and every 12th after it (about a minute at the 5-second tick), at most 16 pending landings a look (`landingDetectLimit`),
+each look starting after the last task the previous one examined. It reads only the rows that still owe a landing (`store.BrokerTasksOwingLanding`, on the expression index `broker_tasks_landing`), so its cost is what is owed, not the history (G33). A task qualifies when it has finished, its landing is
+still `pending`, and it has a delivery branch and base of its own. When its branch head is an ancestor of the target, the
+broker records `landed` through **the route's own gate** (`land()`, with the orchestrator's credential), at the target's
+current head, with a note saying the broker recorded it; whatever the route would refuse is not written. It does not call
+the exported `Land()`: a landing the root records says the root read the delivery and closes its completion notice, and
+the broker noticing a merge is not the root reading anything.
+
+The target is the record's (D19). A pending landing opens without one, and the broker does **not** fill it with `HEAD`.
+It names one only when git proves there is a single candidate: among the local branches whose history holds the delivery
+head, leaving out the broker's own `clawdline/task/*` branches and every branch checked out in a linked worktree (an
+integration still in progress), exactly one remains. None, or two or more, is a root's decision. Left alone, and not
+counted as failures: an empty delivery (head under its base), a cherry-picked one (not an ancestor), a branch that is
+gone. A repository git cannot read, or that takes longer than 10 seconds for one task, costs that task this look and
+nothing else; the log says it once per task per distinct reason. A second look changes nothing: a `landed` task is no
+longer on the list.
+
 `incorporated` 刻意不假裝 Git 會讀程式語意。它擋得住不存在的 carrier、尚未落地的 carrier、別的 repo、別的 target、
 別的 commit、空 delivery，以及其實可以正常記成 `landed` 的祖先關係；它擋不住「整合者解衝突時漏掉一個行為」。後者不是
 tree equality 能回答的問題：語意整合本來就會讓兩棵樹不同。判斷依據必須留在 `note`，code review 與測試仍負責內容正確性。

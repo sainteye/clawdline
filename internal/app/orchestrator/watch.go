@@ -55,6 +55,9 @@ type Pulse struct {
 	// Todos is how many session to-dos this pass moved: made or followed on
 	// the first pass, handed off, returned or dropped on a reading (todos.go).
 	Todos int
+	// Landed is how many pending landings this pass recorded as landed because
+	// their delivery branch had been merged into the target (landing_detect.go).
+	Landed int
 	// StoreErr is why the pass could not read the store, when it could not.
 	// A pass that read nothing because it could not read is not a pass that
 	// found nothing, and the two must not look alike from outside.
@@ -164,6 +167,9 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	// the beat, when one is due — the reclamation sweep (reclaim.go).
 	p.Closed += b.closeLingers(ctx, rd)
 	b.reclaimDue(ctx)
+	// Last, and on one pass in twelve: pending landings whose branch has been
+	// merged are recorded landed (landing_detect.go).
+	p.Landed = b.detectLandingsDue(ctx, number)
 	return p
 }
 
