@@ -29,6 +29,7 @@ import { INTERRUPTED } from "./persist.js"
 import { look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
+import "./working-line.css"
 import { conversationNotStarted } from "./readiness.js"
 import { agentReportIdentity } from "./agent-report.js"
 import "./agent-report.css"
@@ -120,6 +121,10 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   useLayoutEffect(turnPendingSpinners)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const session = useSession(id)
+  // The list row's spinner and live line, repeated under the conversation's
+  // newest end, where the reader's eye already is. Only the session's own
+  // transcript: a provider subagent's page is not what the row's state is about.
+  const working = !agentId && !!session && L.workState(session).state === "working"
   const entries = useMemo<Entry[]>(() => (data ? data.entries.map((e) => ({ ...e })) : []), [data])
   const skeleton = useWait(!data && !error)
   // `S.newestFirst` and `S.assistantIcons`, read on every draw as the original
@@ -151,7 +156,8 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // A card arriving, changing or going is a new draw too: a reader at the
   // bottom when they pressed Send stays there to watch it.
   const pendingSignature = cards.map((card) => card.token + ":" + card.state).join(",")
-  const drawnSignature = skeleton || !data ? undefined : data.signature ? data.signature + "|" + pendingSignature : null
+  const drawnSignature =
+    skeleton || !data ? undefined : data.signature ? data.signature + "|" + pendingSignature + (working ? "|working" : "") : null
   const shownSignature = useRef<string | null | undefined>(undefined)
   const stick = useRef(false)
   const held = useRef(0)
@@ -188,8 +194,12 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   const T = L.strings
   if (skeleton) return <Skeleton />
   // Newest end: the bottom, or the top when the transcript reads newest first.
-  const pending = (newestFirst ? [...cards].reverse() : cards).map(pendingHTML)
-  if (!data && !error) return pending.length ? <>{pending}</> : null
+  const cardsDrawn = (newestFirst ? [...cards].reverse() : cards).map(pendingHTML)
+  const live = working ? <WorkingLine key="working" line={session?.line ?? ""} /> : null
+  // The working line is newer than any card: the turn it stands for is the
+  // one answering them.
+  const pending = newestFirst ? [live, ...cardsDrawn] : [...cardsDrawn, live]
+  if (!data && !error) return cardsDrawn.length || live ? <>{pending}</> : null
   // The daemon's note is diagnostic English. It is useful evidence in the
   // disclosure below, but never the main sentence in a translated interface.
   // `no_record` is not a failure at all: the provider has not created its
@@ -299,6 +309,22 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
       {cut && newestFirst && cut}
       {!newestFirst && pending}
     </>
+  )
+}
+
+/**
+ * The row's working state, drawn where the conversation ends: the same pixel
+ * spinner on the page's one clock (`turnPendingSpinners` registers it) and the
+ * same live line the list row carries, so a reader inside the session does not
+ * have to look back at the list to know a turn is still going. The line falls
+ * back to the state's own word when the provider has said nothing yet.
+ */
+function WorkingLine({ line }: { line: string }) {
+  return (
+    <div className="tx-working" role="status">
+      <canvas className="spin"></canvas>
+      <span className="line">{line || L.strings.webStateWorking}</span>
+    </div>
   )
 }
 
