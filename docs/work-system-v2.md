@@ -477,6 +477,26 @@ the active store as explicitly requested; its security/operation audit contains 
 deleted text or images. Agent access may read and complete its own rows, and add rows to its own
 list as below; it can never send or delete one.
 
+**Send names the row.** Send — the first one and every reminder — types the row's text unchanged
+(trailing line breaks dropped), a blank line, and one last line:
+`(Clawdline to-do <id>. When it is done: clawdline todo done <id>)`. Pictures are unchanged. The
+text is built in one place, `app.DirectTodoSendText`, and the phone's Send reaches it too: the
+Cloud `work.v2.todo-action` operation is carried to the same route. Measured on 2026-09-25: before
+this line, a Session received an ordinary message with no id, did the work, deployed and reported
+its turn, and the row stayed open because nothing told it which row it had finished.
+
+**The turn receipt reminds.** `POST /v1/orchestrator/sessions/<terminal>/complete` (`clawdline
+session report`) records the receipt first and then also answers `open_todos`: the Session's direct
+to-dos with `sent_at` or `read_at` set and no `completed_at`, oldest first, at most 20
+(`session.report_open_todo_rows`; `open_todos_truncated` says there were more), each
+`{id, text, sent_at, read_at}` with the text folded to one line and cut at 120 characters
+(`session.report_open_todo_characters`). Session-created rows are included, since their `read_at`
+is set at creation. The read does not mark anything read. A turn may legitimately end with to-dos
+open, so the receipt is never refused for them; when they cannot be read the answer carries
+`open_todos: []` with `open_todos_unknown: true`, because unknown is not zero. The command prints
+the rows on stderr after the daemon's JSON with `clawdline todo done <id>` as the way to complete
+each, and its exit status is unchanged.
+
 **Session-created rows.** When the person explicitly asks a Session to track its work as Clawdline
 to-dos, the Session adds them itself with
 `POST /v1/work/v2/agent/session-todos/<conversation id>` (`clawdline todo add`), body

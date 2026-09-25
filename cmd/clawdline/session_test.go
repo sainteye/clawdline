@@ -110,6 +110,57 @@ func TestSessionReportAsksWhoamiThenCompletes(t *testing.T) {
 	}
 }
 
+// After the receipt, the to-dos the person sent that are still open are said
+// on stderr with the command that completes each; the exit status is still 0.
+func TestSessionReportRemindsOfSentToDosStillOpen(t *testing.T) {
+	_, b := newStandIn(t, func(r *http.Request) (int, string) {
+		return 200, `{"ok":true,"created":true,"disposition":{"scope":"session","title":"Done."},` +
+			`"open_todos":[{"id":"td-1","text":"Fix the login page","sent_at":1,"read_at":null},` +
+			`{"id":"td-2","text":"Rename the button","sent_at":2,"read_at":3}],` +
+			`"open_todos_truncated":false,"open_todos_unknown":false}`
+	})
+	var out, errs bytes.Buffer
+	if code := reportSession(&out, &errs, b, "Done.", "", "%12", envOf(nil)); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	want := "2 to-dos were sent to this Session and are not checked off:\n" +
+		"  td-1  Fix the login page\n" +
+		"  td-2  Rename the button\n" +
+		"Complete each finished one with: clawdline todo done <id>\n"
+	if errs.String() != want {
+		t.Fatalf("stderr:\n%s\nwant:\n%s", errs.String(), want)
+	}
+	if !strings.Contains(out.String(), `"open_todos"`) {
+		t.Fatalf("the daemon's answer was not printed: %s", out.String())
+	}
+}
+
+// None open says nothing more; unreadable says unknown, never "none".
+func TestSessionReportSaysNothingOrUnknownAboutToDos(t *testing.T) {
+	for _, c := range []struct{ name, body, want string }{
+		{"none", `{"ok":true,"open_todos":[],"open_todos_truncated":false,"open_todos_unknown":false}`, ""},
+		{"unknown", `{"ok":true,"open_todos":[],"open_todos_truncated":false,"open_todos_unknown":true}`,
+			"The to-dos sent to this Session could not be read, so whether any are still open is unknown.\n"},
+		{"one, truncated", `{"ok":true,"open_todos":[{"id":"td-1","text":"a"}],"open_todos_truncated":true}`,
+			"At least 1 to-dos were sent to this Session and are not checked off:\n  td-1  a\n" +
+				"Complete each finished one with: clawdline todo done <id>\n"},
+		{"one", `{"ok":true,"open_todos":[{"id":"td-1","text":"a"}]}`,
+			"1 to-do was sent to this Session and is not checked off:\n  td-1  a\n" +
+				"Complete each finished one with: clawdline todo done <id>\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, c.body })
+			var out, errs bytes.Buffer
+			if code := reportSession(&out, &errs, b, "Done.", "", "%12", envOf(nil)); code != 0 {
+				t.Fatalf("exit %d", code)
+			}
+			if errs.String() != c.want {
+				t.Fatalf("stderr %q, want %q", errs.String(), c.want)
+			}
+		})
+	}
+}
+
 // A refusal is said with its code, and exits 1.
 func TestSessionReportSaysTheRefusal(t *testing.T) {
 	_, b := newStandIn(t, func(r *http.Request) (int, string) {

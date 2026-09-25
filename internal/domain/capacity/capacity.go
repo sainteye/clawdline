@@ -194,6 +194,8 @@ const (
 	WorkCompletionReasonBytes = "work.completion_reason_bytes"
 	SessionDirectTodoBytes    = "session.direct_todo_bytes"
 	SessionTodoBatchRows      = "session.todo_batch_rows"
+	ReportOpenTodoRows        = "session.report_open_todo_rows"
+	ReportOpenTodoCharacters  = "session.report_open_todo_characters"
 	RunCreatedItems           = "run.created_items"
 	WorkRequestBodyBytes      = "work.request_body_bytes"
 	// T4: where a person takes part.
@@ -632,6 +634,25 @@ func Register() []Entry {
 			Limit: 20, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app.sessionTodoBatchLimit"},
+		},
+		{
+			// The delivered, unfinished to-dos one turn receipt lists
+			// (work-system-v2 §11.2). A row past it is not admitted to the
+			// answer, which says so with open_todos_truncated; nothing is
+			// removed from the store.
+			Name: ReportOpenTodoRows, Class: Buffer, Unit: Rows,
+			Limit: 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.reportOpenTodoLimit"},
+		},
+		{
+			// How much of each listed to-do's text that receipt repeats, on
+			// one line and ending in an ellipsis when cut; the id names the
+			// whole row.
+			Name: ReportOpenTodoCharacters, Class: Buffer, Unit: Characters,
+			Limit: 120, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.reportOpenTodoTextLimit"},
 		},
 		{
 			// The Board items one person's message may back when a Session

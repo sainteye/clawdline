@@ -370,6 +370,10 @@ terminal 還掛著同一個 conversation 時顯示。
   `--conversation`），向 `GET /v1/orchestrator/whoami` 問出 terminal，再把 `{"summary"}` 送到
   `POST /v1/orchestrator/sessions/<terminal>/complete`。
 - summary 長度 1–500 字元。每呼叫一次就是一張新的收據；以最新的為準。
+- 回應裡還有 `open_todos`：這個 Session 已送出或已讀、但還沒完成的 direct to-do，由舊到新，最多
+  20 筆（更多時 `open_todos_truncated` 為 true）。指令會在收據之後把它們印到 stderr，一行一個 id
+  和文字。做完的每一筆都用 `clawdline todo done <id>` 勾掉。收據無論如何都會記錄，離開碼也不變；
+  `open_todos_unknown: true` 表示讀不到，不代表沒有未完成的。
 - 拒絕：`conversation_id_malformed`（不是小寫的 UUID）、`conversation_not_found`、
   `conversation_ambiguous`、`registry_stale`、`session_not_found`、`session_unbound`、
   `child_session`。被拒絕就照實回報；在聊天裡寫一句話不算收據。
@@ -523,6 +527,13 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 Session 的看板項目，`recent_items` 是這個 Session 最近完成的項目，`direct_todos` 是快速交辦。這條
 pull 路徑讓工作中收到的分派先等著，不會打斷目前的 turn。完成目前的 turn 之後，把 assigned item 當成
 下一件自己負責的工作，並從 `GET /v1/work/v2/items/<id>` 讀取完整內容。
+
+**使用者送來的待辦。** 訊息最後一行如果是
+`(Clawdline to-do <id>. When it is done: clawdline todo done <id>)`，那就是使用者從 Clawdline
+送來的一筆 `direct_todos`；那一行上面的文字才是交辦內容。把事情做完，驗證確實完成之後，**在回報這個
+turn 之前**先執行 `clawdline todo done <id>`（用那一行的 id）——否則工作做完了，那一列在使用者的清單上
+還是開著。還沒做完的就讓它開著。`clawdline session report` 會在 stderr 列出所有送給這個 Session、
+還沒勾掉的待辦（§7）。
 
 **使用者要求時，寫你自己的待辦。** 只有在使用者明確要求這個 Session 把工作記成 Clawdline 待辦——
 或交給它一份多項清單並說要在那裡追蹤——才寫進這個 Session 自己的清單：

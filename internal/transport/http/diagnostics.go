@@ -401,6 +401,12 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.SessionTodoBatchRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},
+		capacity.ReportOpenTodoRows: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-answer window over the open to-dos; no retained buffer"}
+		},
+		capacity.ReportOpenTodoCharacters: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-row preview in one answer; no retained buffer"}
+		},
 		capacity.RunCreatedItems: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-run guard, counted inside each create; no retained buffer"}
 		},

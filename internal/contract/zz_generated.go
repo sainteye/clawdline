@@ -914,6 +914,16 @@ type BrokerObservations struct {
 	Sources []BrokerSourceReading `json:"sources,omitempty"`
 }
 
+// One delivered, unfinished direct to-do a turn receipt reminds the Session of.
+// `text` is at most 120 characters on one line; `clawdline todo done <id>`
+// completes it.
+type BrokerOpenTodo struct {
+	ID     string `json:"id"`
+	ReadAt *int64 `json:"read_at"`
+	SentAt *int64 `json:"sent_at"`
+	Text   string `json:"text"`
+}
+
 // A tab this broker opened for somebody who is not its child.
 type BrokerOpenedSession struct {
 	Backend    string `json:"backend"`
@@ -1271,6 +1281,18 @@ type BrokerSessionDelivery struct {
 	Created     bool              `json:"created"`
 	Disposition BrokerDisposition `json:"disposition"`
 	OK          bool              `json:"ok"`
+
+	// This Session's direct to-dos that were sent or read and are not completed,
+	// oldest first, at most 20. The receipt is recorded either way: a turn may end
+	// with to-dos still open.
+	OpenTodos []BrokerOpenTodo `json:"open_todos"`
+
+	// More delivered to-dos are open than open_todos lists.
+	OpenTodosTruncated bool `json:"open_todos_truncated"`
+
+	// The to-dos could not be read, so open_todos is empty without meaning none are
+	// open. Unknown is not zero.
+	OpenTodosUnknown bool `json:"open_todos_unknown"`
 }
 
 type BrokerSourceReading struct {

@@ -24,6 +24,10 @@ const (
 	directTodoTextLimit         = 8 << 10
 	// A Session writes its own to-dos in batches of at most this many rows.
 	sessionTodoBatchLimit = 20
+	// The delivered, unfinished to-dos one turn receipt lists, and the
+	// characters of each one's text it repeats. The rest is a truncated flag.
+	reportOpenTodoLimit     = 20
+	reportOpenTodoTextLimit = 120
 )
 
 type WorkSystemV2 struct {
@@ -1301,6 +1305,57 @@ func CheckDirectTodoSend(td work.DirectTodoV2, session string, now time.Time) er
 		return workV2Error(http.StatusConflict, "todo_awaiting_read", "This delivery was sent moments ago and the Session has not read it yet.")
 	}
 	return nil
+}
+
+// DirectTodoSendText is what Send types into a Session for a direct to-do:
+// the person's words unchanged, then one line naming the row and the command
+// that checks it off. Without that line the Session reads an ordinary message
+// and, once the work is done, has no way to tell which row it finished
+// (measured 2026-09-25: fixed, deployed and reported, with the to-do left
+// open). Only trailing line breaks are dropped, so exactly one blank line
+// separates the words from the line.
+func DirectTodoSendText(id, text string) string {
+	line := "(Clawdline to-do " + id + ". When it is done: clawdline todo done " + id + ")"
+	text = strings.TrimRight(text, "\r\n")
+	if strings.TrimSpace(text) == "" {
+		return line
+	}
+	return text + "\n\n" + line
+}
+
+// OpenDeliveredTodos are this Session's direct to-dos that were sent or read
+// and are not completed, oldest first: what a turn receipt reminds the
+// Session to check off. It reads without marking anything read — a receipt
+// is not the Session reading its queue. The answer holds at most
+// reportOpenTodoLimit rows; truncated says there were more, or that the
+// bounded read of open rows stopped before it saw them all.
+func (w *WorkSystemV2) OpenDeliveredTodos(ctx context.Context, session string) ([]work.DirectTodoV2, bool, error) {
+	rows, truncated, err := w.DirectTodos(ctx, session, false, false)
+	if err != nil {
+		return nil, false, err
+	}
+	out := make([]work.DirectTodoV2, 0, len(rows))
+	for _, td := range rows {
+		if !td.Open() || (td.SentAt.IsZero() && td.ReadAt.IsZero()) {
+			continue
+		}
+		if len(out) == reportOpenTodoLimit {
+			return out, true, nil
+		}
+		out = append(out, td)
+	}
+	return out, truncated, nil
+}
+
+// TodoPreview is a to-do's text cut to reportOpenTodoTextLimit characters,
+// never inside one, with its line breaks folded so it prints as one line.
+func TodoPreview(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if utf8.RuneCountInString(text) <= reportOpenTodoTextLimit {
+		return text
+	}
+	r := []rune(text)
+	return string(r[:reportOpenTodoTextLimit-1]) + "…"
 }
 
 func (w *WorkSystemV2) MarkDirectTodoSent(ctx context.Context, id, session string, at time.Time) (work.DirectTodoV2, error) {

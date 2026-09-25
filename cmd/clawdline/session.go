@@ -103,5 +103,46 @@ func reportSession(stdout, stderr io.Writer, b *broker, summary, conversation, t
 		fmt.Fprintln(stderr, "clawdline session report:", err)
 		return 1
 	}
-	return report(stdout, stderr, "session report", a)
+	code := report(stdout, stderr, "session report", a)
+	if code == 0 {
+		remindOpenTodos(stderr, a.Body)
+	}
+	return code
+}
+
+// remindOpenTodos says, after the receipt, which to-dos the person sent to
+// this Session are still not checked off. The receipt stands either way: a
+// turn may end with to-dos open, and the exit status does not change.
+func remindOpenTodos(stderr io.Writer, body []byte) {
+	var answer struct {
+		OpenTodos []struct {
+			ID   string `json:"id"`
+			Text string `json:"text"`
+		} `json:"open_todos"`
+		Truncated bool `json:"open_todos_truncated"`
+		Unknown   bool `json:"open_todos_unknown"`
+	}
+	if json.Unmarshal(body, &answer) != nil {
+		return
+	}
+	if answer.Unknown {
+		fmt.Fprintln(stderr, "The to-dos sent to this Session could not be read, so whether any are still open is unknown.")
+		return
+	}
+	if len(answer.OpenTodos) == 0 {
+		return
+	}
+	count := fmt.Sprint(len(answer.OpenTodos))
+	if answer.Truncated {
+		count = "At least " + count
+	}
+	phrase := "to-dos were sent to this Session and are not checked off:"
+	if len(answer.OpenTodos) == 1 && !answer.Truncated {
+		phrase = "to-do was sent to this Session and is not checked off:"
+	}
+	fmt.Fprintln(stderr, count, phrase)
+	for _, td := range answer.OpenTodos {
+		fmt.Fprintf(stderr, "  %s  %s\n", td.ID, td.Text)
+	}
+	fmt.Fprintln(stderr, "Complete each finished one with: clawdline todo done <id>")
 }

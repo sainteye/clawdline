@@ -442,11 +442,26 @@
       "description": "A root's own receipt: one sentence saying this turn delivered something. It produces the check that means `delivered, awaiting approval`, and can never produce `landed`.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["created", "disposition", "ok"],
+      "required": ["created", "disposition", "ok", "open_todos", "open_todos_truncated", "open_todos_unknown"],
       "properties": {
         "ok": { "type": "boolean" },
         "created": { "type": "boolean" },
-        "disposition": { "$ref": "#/$defs/BrokerDisposition" }
+        "disposition": { "$ref": "#/$defs/BrokerDisposition" },
+        "open_todos": { "description": "This Session's direct to-dos that were sent or read and are not completed, oldest first, at most 20. The receipt is recorded either way: a turn may end with to-dos still open.", "type": "array", "items": { "$ref": "#/$defs/BrokerOpenTodo" } },
+        "open_todos_truncated": { "description": "More delivered to-dos are open than open_todos lists.", "type": "boolean" },
+        "open_todos_unknown": { "description": "The to-dos could not be read, so open_todos is empty without meaning none are open. Unknown is not zero.", "type": "boolean" }
+      }
+    },
+    "BrokerOpenTodo": {
+      "description": "One delivered, unfinished direct to-do a turn receipt reminds the Session of. `text` is at most 120 characters on one line; `clawdline todo done <id>` completes it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "sent_at": { "type": "integer", "nullable": true },
+        "read_at": { "type": "integer", "nullable": true }
       }
     },
     "BrokerDisposition": {

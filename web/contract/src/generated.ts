@@ -1031,6 +1031,18 @@ export interface BrokerObservations {
 }
 
 /**
+ * One delivered, unfinished direct to-do a turn receipt reminds the Session of.
+ * `text` is at most 120 characters on one line; `clawdline todo done <id>`
+ * completes it.
+ */
+export interface BrokerOpenTodo {
+  id: string
+  read_at: number | null
+  sent_at: number | null
+  text: string
+}
+
+/**
  * A tab this broker opened for somebody who is not its child.
  */
 export interface BrokerOpenedSession {
@@ -1432,6 +1444,24 @@ export interface BrokerSessionDelivery {
   created: boolean
   disposition: BrokerDisposition
   ok: boolean
+
+  /**
+   * This Session's direct to-dos that were sent or read and are not completed,
+   * oldest first, at most 20. The receipt is recorded either way: a turn may end
+   * with to-dos still open.
+   */
+  open_todos: BrokerOpenTodo[]
+
+  /**
+   * More delivered to-dos are open than open_todos lists.
+   */
+  open_todos_truncated: boolean
+
+  /**
+   * The to-dos could not be read, so open_todos is empty without meaning none are
+   * open. Unknown is not zero.
+   */
+  open_todos_unknown: boolean
 }
 
 export interface BrokerSourceReading {

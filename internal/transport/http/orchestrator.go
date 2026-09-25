@@ -3,13 +3,16 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/limits"
+	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // The broker's routes.
@@ -561,7 +564,7 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 		writeBrokerError(w, err)
 		return
 	}
-	writeJSON(w, contract.BrokerSessionDelivery{
+	answer := contract.BrokerSessionDelivery{
 		OK:      true,
 		Created: out.Created,
 		Disposition: contract.BrokerDisposition{
@@ -570,7 +573,27 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 			Evidence:  out.Evidence,
 			ReceiptAt: out.At.Unix(),
 		},
-	})
+		OpenTodos: []contract.BrokerOpenTodo{},
+	}
+	// The receipt is already recorded. What follows only reminds the Session
+	// of to-dos the person sent that it has not checked off, so a failed read
+	// is said as unknown and never turns the receipt into a refusal.
+	var rows []work.DirectTodoV2
+	var truncated bool
+	err = errors.New("no store")
+	if s.store != nil {
+		rows, truncated, err = s.workV2().OpenDeliveredTodos(r.Context(), out.Conversation)
+	}
+	if err != nil {
+		answer.OpenTodosUnknown = true
+	} else {
+		answer.OpenTodosTruncated = truncated
+		for _, td := range rows {
+			answer.OpenTodos = append(answer.OpenTodos, contract.BrokerOpenTodo{
+				ID: td.ID, Text: app.TodoPreview(td.Text), SentAt: optionalUnix(td.SentAt), ReadAt: optionalUnix(td.ReadAt)})
+		}
+	}
+	writeJSON(w, answer)
 }
 
 // brokerAssistants is GET /v1/orchestrator/assistants: what this Mac can say

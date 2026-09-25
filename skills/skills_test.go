@@ -280,6 +280,31 @@ func TestEveryGuideExplainsSessionOwnTodosAndBoardProposals(t *testing.T) {
 	}
 }
 
+// A to-do the person sends arrives as ordinary words with one last line that
+// names it. Both guides say what that line means, that the row is checked
+// off before the turn is reported, and that the report lists any still open
+// — otherwise the work gets done and the row stays open (2026-09-25).
+func TestEveryGuideExplainsCheckingOffASentToDo(t *testing.T) {
+	wants := []string{
+		"(Clawdline to-do <id>. When it is done: clawdline todo done <id>)",
+		"clawdline todo done <id>",
+		"clawdline session report",
+		"open_todos",
+		"open_todos_unknown",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain checking off a sent to-do with %q", topic, want)
+			}
+		}
+	}
+}
+
 // A Session creates a Board item itself only on the person's message through
 // Clawdline, with the person's list as the item's steps — never also as its
 // own to-dos — and falls back to a proposal when there is no run. Both guides
