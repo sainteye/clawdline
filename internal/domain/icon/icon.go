@@ -173,6 +173,10 @@ type art struct {
 // The original registry remains a read-only compatibility input. Copied marks
 // are persisted separately by this daemon; see overrides.go.
 type Registry struct {
+	// mirror is the settings another machine owns for a project here
+	// (internal/domain/projectsync). It wins over every local source, because
+	// a mirrored project's mark is by definition not this machine's to choose.
+	mirror       func(cwd string) (Grid, string, bool)
 	overrideMu   sync.Mutex
 	overridePath string
 	overrides    map[string]Grid
@@ -232,10 +236,27 @@ func (r *Registry) For(cwd string) Grid {
 	if cwd == "" {
 		return Grid{Cells: [][]*string{}}
 	}
+	if r.mirror != nil {
+		if g, _, ok := r.mirror(cwd); ok {
+			return g
+		}
+	}
 	if g, ok := r.override(cwd); ok {
 		return g
 	}
 	return r.legacyFor(cwd)
+}
+
+// SetMirror attaches the mirrored settings lookup. Set once, before serving.
+func (r *Registry) SetMirror(lookup func(cwd string) (Grid, string, bool)) { r.mirror = lookup }
+
+// Mirrored is whether another machine owns this path's mark.
+func (r *Registry) Mirrored(cwd string) bool {
+	if r.mirror == nil {
+		return false
+	}
+	_, _, ok := r.mirror(cwd)
+	return ok
 }
 
 func (r *Registry) legacyFor(cwd string) Grid {
@@ -263,6 +284,11 @@ func (r *Registry) legacyFor(cwd string) Grid {
 
 // Label returns the name the registry gives a directory, if it gives one.
 func (r *Registry) Label(cwd string) string {
+	if r.mirror != nil {
+		if _, label, ok := r.mirror(cwd); ok && label != "" {
+			return label
+		}
+	}
 	_, label, _ := r.Match(cwd)
 	return label
 }

@@ -1084,3 +1084,17 @@ test("project icon copy resolves the receiving place and carries only the mark",
   const refused = await reader.fetch("/v1/projects/cloud-p1/icon", { ...post(item), method: "PUT" })
   assert.equal(refused.status, 409)
 })
+
+test("a project settings apply and detach reach the mirror as its own words, and a read reaches the machine", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const item = { source: { machine: "mac-b", name: "Studio" }, project: { repo: "github.com/o/n" }, clone: false }
+  const applied = await reader.fetch("/v1/project-sync/mirror", post(item))
+  assert.equal(applied.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "project-mirror-apply", { item }, "action"])
+  const detached = await reader.fetch("/v1/project-sync/mirror?repo=github.com%2Fo%2Fn", { method: "DELETE" })
+  assert.equal(detached.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "project-mirror-detach", { repo: "github.com/o/n" }, "action"])
+  assert.equal(writeRoute("GET", "/v1/project-sync/mirror"), null)
+  assert.equal(writeRoute("PUT", "/v1/project-sync/mirror"), null)
+})

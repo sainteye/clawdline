@@ -28,6 +28,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/adapters/process"
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
+	psync "github.com/sainteye/clawdline/internal/adapters/projectsync"
 	"github.com/sainteye/clawdline/internal/adapters/skillmenu"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/subagents"
@@ -41,6 +42,7 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/icon"
+	"github.com/sainteye/clawdline/internal/domain/projectsync"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -57,6 +59,8 @@ type Server struct {
 	// icons derives each project's mark by the same rules the Swift app uses,
 	// reading the same registry, so the two draw the same creature.
 	icons *icon.Registry
+	// projectSync offers this machine's project settings and mirrors another's.
+	projectSync *psync.Service
 	// swift reads the Swift app's store, and only reads it: which session is
 	// Clawdfather, which task opened a tab, who waits on whom, what was
 	// delivered. See internal/adapters/swiftstore for the rules it keeps.
@@ -160,6 +164,12 @@ func New(cfg config.Config) (*Server, error) {
 		st.Close()
 		return nil, fmt.Errorf("could not open project icons: %w", err)
 	}
+	mirror, err := projectsync.OpenMirror(cfg.Dir)
+	if err != nil {
+		st.Close()
+		return nil, fmt.Errorf("could not open the project mirror: %w", err)
+	}
+	icons.SetMirror(mirrorLookup(mirror))
 	home, _ := os.UserHomeDir()
 	agents := subagents.New(home)
 	srv := &Server{
@@ -227,6 +237,7 @@ func New(cfg config.Config) (*Server, error) {
 			log.Printf("live screens: took back %d pipe(s) from a previous run: %v", len(taken), taken)
 		}
 	}()
+	srv.projectSync = srv.newProjectSync(mirror)
 	return srv, nil
 }
 
@@ -423,6 +434,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/places/", s.placeRoute)
 	mux.HandleFunc("/v1/projects", s.projectCatalogRoute)
 	mux.HandleFunc("/v1/projects/", s.projectsRoute)
+	// Project settings a source machine offers and a mirror applies (project_sync.go).
+	mux.HandleFunc("/v1/project-sync/", s.projectSyncRoute)
 	// The Project Timeline reads this daemon's own history and stores nothing.
 	mux.HandleFunc("/v1/timeline", s.timelineRoute)
 	mux.HandleFunc("/v1/transcript", s.transcriptRoute)

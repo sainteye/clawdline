@@ -22,6 +22,14 @@ func projectCommand(args []string) {
 		projectUsage()
 		os.Exit(2)
 	}
+	switch args[0] {
+	case "export":
+		projectExport(args[1:])
+		return
+	case "import":
+		projectImport(args[1:])
+		return
+	}
 	registry := projects.OpenPlaceRegistry(config.Load().Dir, foreignDirs()...)
 	resolved, _ := capacity.Resolve(capacity.Register(), os.Getenv(capacity.OverrideEnv))
 	registry.SetLimit(capacity.Limit(resolved, capacity.PlacesRegistered))
@@ -73,9 +81,13 @@ func projectCommand(args []string) {
 
 func projectUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline project <add|remove|list> [--json] [directory…]")
+	fmt.Fprintln(os.Stderr, "       clawdline project export [--out file] [--name source]")
+	fmt.Fprintln(os.Stderr, "       clawdline project import [--clone] [--replace-source] <file>")
 	fmt.Fprintln(os.Stderr, "  add <directory…>      keep existing directories in the session-start list")
 	fmt.Fprintln(os.Stderr, "  remove <directory…>   forget directories without deleting them")
 	fmt.Fprintln(os.Stderr, "  list                  show explicitly registered directories")
+	fmt.Fprintln(os.Stderr, "  export                this machine's project settings (icons, names, untracked skills), as a file")
+	fmt.Fprintln(os.Stderr, "  import <file>         mirror another machine's project settings here; it owns them from then on")
 }
 
 func printProjectRegistry(rows []projects.RegisteredPlace, asJSON bool) {

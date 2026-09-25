@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/sainteye/clawdline/internal/domain/projectsync"
 )
 
 // Every request body this daemon reads itself has a size it is refused past
@@ -47,6 +49,8 @@ var bodyLimits = map[string]int64{
 	"/v1/sessions/":                     sendBodyLimit,
 	"/v1/voice":                         voiceBodyLimit,
 	"/v1/orchestrator/schedule-imports": scheduleImportBodyLimit,
+	// One project's settings with contents (project_sync.go).
+	"/v1/project-sync/": projectsync.MaxEntryBytes,
 }
 
 // bodyLimitFor is the bound for a request the mux dispatches under pattern,

@@ -23,6 +23,7 @@ import { CARRY_TABLE } from "./carry.js"
 import { afterForget, forgetMachine, honestyIsOurs, type ForgetOutcome } from "./forget.js"
 import { NAME_MAX, renameMachine, type RenameOutcome } from "./rename.js"
 import { setAccountMachines, setMachineForgetting, setMachinePairing } from "../legacy/devices-bridge.js"
+import { setProjectSyncSeam, syncSeamFor, type SyncClient } from "./project-sync.js"
 import { machinePresentation } from "../legacy/js/session/selection.js"
 import { accountMachineRoster, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
 import { machineSeenWord } from "./machine-seen.js"
@@ -241,6 +242,7 @@ export function CloudGate({ declared }: { declared: string }) {
   // The Devices page's list belongs to this gate's line. A gate that is gone
   // leaves no source behind for a page to read an account through.
   useEffect(() => () => setAccountMachines(null), [])
+  useEffect(() => () => setProjectSyncSeam(null), [])
   useEffect(() => () => {
     uninstallScheduleWebhooks.current?.()
     uninstallScheduleWebhooks.current = null
@@ -605,6 +607,13 @@ export function CloudGate({ declared }: { declared: string }) {
           // still on the list the relay decrypted, and a card offering "New
           // session" on it would be the page saying something the account has
           // stopped being true.
+          // Project settings sync reads a source machine while this console
+          // shows another (`cloud/project-sync.ts`); the client is read per
+          // call because a renewal replaces it.
+          setProjectSyncSeam(syncSeamFor(
+            () => client.current as unknown as SyncClient | null,
+            () => reader.current?.machine ?? null,
+          ))
           setAccountMachines(async () => {
             const current = client.current
             if (!current) return { machines: [], syncing: true, retryAfterMs: 1000 }

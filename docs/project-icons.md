@@ -27,7 +27,9 @@ destination, inspect the current and copied marks, and apply. Only the picture s
 browser tab's session storage; no source name or path is retained. Clear it when finished.
 Closing the tab ends the transfer buffer.
 
-This is a snapshot copy, not continuous synchronization. Later source changes do not propagate.
+This is a snapshot copy. Later source changes do not propagate through it; a project that should
+follow another machine is mirrored instead (`docs/project-sync.md`), and a mirrored project refuses
+this copy with `409 project_mirrored`.
 Both machines need not be online together: the source must answer when copying and the receiver
 when applying. Both must already be paired with the viewer; the receiver must allow remote writes.
 An older receiver that does not advertise `project-icon-copy` refuses by name and needs an update.
@@ -60,9 +62,9 @@ The existing boundary is reused:
   database, image CDN, public image URLs, or a protocol change.
 
 No cloud-service implementation change is required. This avoids a second authoritative icon
-store and exposing artwork to the service. Continuous synchronization would first need explicit
-cross-machine project bindings, revisions/conflicts, deletion behavior and offline rules.
-Matching folder names alone must not create a binding.
+store and exposing artwork to the service. Following another machine is `docs/project-sync.md`:
+it binds projects by their origin repository, never by folder name, records a revision per
+project, keeps edits made on the mirror, and names machines that could not be read.
 
 ## Bounds and verification
 
