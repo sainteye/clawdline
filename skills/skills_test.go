@@ -279,3 +279,47 @@ func TestEveryGuideExplainsSessionOwnTodosAndBoardProposals(t *testing.T) {
 		}
 	}
 }
+
+// A Session creates a Board item itself only on the person's message through
+// Clawdline, with the person's list as the item's steps — never also as its
+// own to-dos — and falls back to a proposal when there is no run. Both guides
+// say so, and each carries the rule in its own language in one sentence, so
+// "an item with TODOs" cannot be read as "an item and some to-dos".
+func TestEveryGuideExplainsCreatingABoardItemFromThePersonsMessage(t *testing.T) {
+	wants := []string{
+		"clawdline item add",
+		"--step",
+		"clawdline item steps <item id>",
+		"clawdline item step-done",
+		"POST /v1/work/v2/agent/items",
+		`"via": {"run"}`,
+		"run_unknown",
+		"run_other_session",
+		"run_items_exhausted",
+		"planning_has_no_steps",
+		"no_run",
+	}
+	rule := map[string]string{
+		"en":    "TODO / 待辦 / 土度 said together with a Board item means that item's steps.",
+		"zh-TW": "TODO／待辦／土度跟看板項目一起講，指的就是那個項目的 steps。",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain creating a Board item from the person's message with %q", topic, want)
+			}
+		}
+		phrase, ok := rule[topic]
+		if !ok {
+			t.Errorf("guide %s has no TODO-means-steps rule on record here", topic)
+			continue
+		}
+		if !bytes.Contains(guide, []byte(phrase)) {
+			t.Errorf("guide %s does not state %q", topic, phrase)
+		}
+	}
+}

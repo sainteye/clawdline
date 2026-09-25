@@ -429,7 +429,48 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 ## 10. 看板
 
 看板有三種結構——看板項目、Backlog，以及每個 session 自己的待辦清單——而且**上面放什麼由人決定**。
-session 只能提案，從不自己建卡片。
+只有在使用者透過 Clawdline 送來的訊息親口要求時，session 才自己建立看板項目；其他時候只能提案。
+從不主動建卡片。
+
+**TODO／待辦／土度跟看板項目一起講，指的就是那個項目的 steps。** 用 `--step` 放到項目上。**不要**
+再用 `clawdline todo add` 寫一次。`clawdline todo add` 只用在使用者要你把一份清單記成這個 Session
+自己的待辦、而且沒有看板項目的時候。
+
+**使用者要你建立看板項目時。** 只有在他的訊息——透過 Clawdline 送來，所以有 run——明確要求時，
+才由你自己建立：
+
+```
+clawdline item add --project <place id> --kind feature|issue|epic|refactor|plan --title "…" \
+  --step "第一步" --step "第二步" …   [--description-file f | description 從 stdin]
+```
+
+範例。使用者寫：「開一個看板項目整理 release notes，TODO：起草、檢查連結、發佈。」這就是一條指令，
+別的都不做：
+
+```
+echo "下次 release 前把 release notes 整理好。" | \
+  clawdline item add --project <place id> --kind feature --title "整理 release notes" \
+  --step "起草" --step "檢查連結" --step "發佈"
+```
+
+- `item add` 會讀這個對話最新的 run（`GET /v1/orchestrator/sessions/<conversation>/run`），除非用
+  `--run` 指定；送出前先印出 Idempotency-Key（用 `--key` 重送同一筆寫入），成功後印出建立的項目和
+  每個 step 的 id。它就是 `POST /v1/work/v2/agent/items`，body 是 `{"session_id", "via": {"run"},
+  "project_id", "kind", "title", "description", "deployment_policy"?, "steps"?: ["…"]}`。
+- Feature 或 Issue 建好時**已經指派給你**，phase 是 `assigned`，並帶著 steps：依序是那些 `--step`，
+  沒給的話，就是 description 裡兩列以上的頂層 Markdown 清單。不會有任何字打進你的 terminal——是你自己
+  要的。照順序做，每一步確認完成後就勾掉（`clawdline item steps <item id>`、`clawdline item step-done
+  <item id> <step id>`），並像任何已指派項目一樣推進 phase。Epic、Refactor、Plan 會以未指派狀態建在
+  規劃區，不帶 steps（`planning_has_no_steps`）。
+- 使用者會看到卡片上寫著「Session 依你 HH:MM 的訊息建立」，並引用他的原話。
+- 拒絕，每一種都什麼都不寫：`run_unknown`（沒指名 run，或沒有這個 run）、`run_expired`（超過一天）、
+  `run_other_session`（那是傳給別的 Session 的訊息）、`session_not_found`、`child_session`（child 用
+  `result.json` 回報）、`project_not_found`、`project_mismatch`（可執行的項目必須在你工作的 Project
+  裡）、`too_many_steps`（超過 128）、`run_items_exhausted`（一則訊息最多撐五個項目）。
+- **沒有 run**——使用者是直接在 terminal 打字，所以 `item add` 回 `no_run` 或 `run_unknown`：改走
+  提案（見下文），並告訴使用者到看板的 Agent 提案裡接受它。
+
+絕對不要主動建立看板項目，也不要一次建好幾個來規劃推測性的工作。
 
 **提議一個看板項目。** 看板上的 **Agent 提案**佇列只由這一條路由餵進去：
 
@@ -501,7 +542,9 @@ conversation 必須是這個 daemon 認得的 live Session（`conversation_id_ma
 
 絕對不要自己主動這樣做，也不要拿來規劃推測性的工作。每一列在確認做完之後才用
 `clawdline todo done <id>` 完成。使用者會看到這些列標示為 Session 建立，而且只有使用者能傳送或刪除
-它們。它們不是看板項目，也不會出現在看板上；要放上看板，就從那筆待辦提案（見上文）。
+它們。它們不是看板項目，也不會出現在看板上。待辦是目前這個 Session 裡的一串雜事；看板項目是使用者要在
+看板上追蹤的工作——他要的是這個時，用 `clawdline item add`（見上文），清單以項目的 `--step` 放進去，
+絕不同時再寫成待辦。
 
 如果使用者的意思很清楚：你剛完成的那個項目其實還沒做完，就由你自己修正看板；不要讓它繼續留在
 「最近完成」、另開替代項目，或要求使用者替你重開。先重讀項目取得目前版本，再呼叫：
@@ -529,7 +572,7 @@ PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 不再等待時，用同一路由把 `condition` 設成空字串，daemon 會一起清掉 `user_action`，避免看板留下過期要求。
 
 已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
-steps；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，以 machine authentication 和
+steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，以 machine authentication 和
 Idempotency-Key 呼叫 `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete`，body 是
 `{"expected_version": <item version>, "session_id": "<你的 conversation id>"}`。版本衝突時先重讀。
 只要還有任何 step 未完成，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
