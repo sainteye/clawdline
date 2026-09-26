@@ -1,0 +1,43 @@
+/* The way back to the newest end (`Transcript.tsx`, `JumpToLatest`).
+
+   A zero-height strip that sticks to the transcript's newest edge, so the
+   button floats over the conversation at the bottom of the reading column
+   (the top, when it reads newest first) without taking a line of its own.
+   It is set like the pane's other small rounded buttons — card fill, a
+   hairline, the dim ink — and only its "something new" dot carries the
+   accent, the way the background strip's live dot does. */
+.tx-jump {
+    position: sticky; z-index: 5;
+    height: 0;
+    display: flex; justify-content: center;
+    pointer-events: none;
+}
+.tx-jump[data-end="bottom"] { bottom: 14px; align-items: flex-end; }
+.tx-jump[data-end="top"] { top: 10px; align-items: flex-start; }
+.tx-jump-go {
+    pointer-events: auto;
+    display: inline-flex; align-items: center; gap: 7px;
+    min-height: 34px; padding: 0 14px 0 12px;
+    border: 1px solid #33333c; border-radius: 999px;
+    background: var(--card); color: var(--dim);
+    font-family: inherit; font-size: 12px; font-weight: 500; line-height: 1;
+    box-shadow: 0 8px 24px rgb(0 0 0 / .45);
+    cursor: pointer;
+    opacity: 0; transform: translateY(6px) scale(.96);
+    transition: opacity 140ms ease, transform 160ms cubic-bezier(.2, .8, .2, 1), color 120ms, background 120ms;
+}
+.tx-jump[data-end="top"] .tx-jump-go { transform: translateY(-6px) scale(.96); }
+.tx-jump[data-shown="on"] .tx-jump-go { opacity: 1; transform: none; }
+.tx-jump[data-shown="off"] .tx-jump-go { pointer-events: none; visibility: hidden; transition-property: opacity, transform, visibility; transition-delay: 0s, 0s, 160ms; }
+.tx-jump-go:hover { background: var(--card-hi); color: var(--ink); }
+.tx-jump-go:focus-visible { outline: 2px solid var(--accent-ed); outline-offset: 2px; }
+.tx-jump-go svg { flex: 0 0 auto; width: 14px; height: 14px; }
+.tx-jump-go .dot {
+    flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+}
+.tx-jump[data-fresh="on"] .tx-jump-go { color: var(--ink); border-color: var(--accent-ed); }
+@media (prefers-reduced-motion: reduce) {
+    .tx-jump-go { transition: none; transform: none; }
+    .tx-jump[data-end="top"] .tx-jump-go { transform: none; }
+}
