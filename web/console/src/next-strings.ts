@@ -141,6 +141,14 @@ const words = {
       "Complete Clawdline Cloud pairing on the target machine {machine}. First verify that the machine you are operating is that exact target. If it is not, use existing authorized access to connect to it or hand this task to an agent running there; do not run the command on the current machine.\n\nOn the target machine, run this one-time command exactly once:\n{command}\n\nTreat the offer as a short-lived, one-use secret: do not decode, edit, store, or repeat it in your reply. When it succeeds, run `clawdline cloud devices` on that same machine, compare the printed browser and machine fingerprints with the browser, and report the result without the offer.",
     cloudPairSettings:
       "A machine with Clawdline's settings window can take the part after -offer in its field for the browser's pairing code instead.",
+    cloudPairAgentHand: "Hand it to this Mac's AI",
+    cloudPairAgentHandWhen:
+      "You are asked first. Then an AI session here reaches {machine} with the access it already has (ssh, for example) and runs the command there.",
+    cloudPairAgentSending: "Waiting for your answer in the confirmation…",
+    cloudPairAgentSent: "Handed to the AI. This card finishes by itself when {machine} answers.",
+    cloudPairAgentDirect: "The pairing was finished directly on this machine.",
+    cloudPairAgentCancelled: "Cancelled. Nothing ran.",
+    cloudPairAgentRefused: "It was not handed over ({reason}). You can still copy the instruction below.",
     cloudPairCopy: "Copy for AI agent",
     cloudPairCopied: "Agent instruction copied.",
     cloudPairCopyFailed: "This browser would not copy it. Select the complete instruction and copy it by hand.",
@@ -587,6 +595,13 @@ const words = {
     cloudPairAgentPrompt:
       "請在目標機器 {machine} 上完成 Clawdline Cloud 配對。先確認你目前操作的就是這個確切目標；如果不是，請用既有且已授權的方式連到它，或把工作交給正在那台機器上執行的 Agent。不要在目前這台機器代跑。\n\n在目標機器上，將以下一次性指令原樣執行一次：\n{command}\n\noffer 是短效、只能使用一次的秘密；不要解碼、修改、保存，也不要在回覆中重貼。成功後請在同一台機器執行 `clawdline cloud devices`，核對瀏覽器與機器指紋，並回報結果但不要附上 offer。",
     cloudPairSettings: "有 Clawdline 設定視窗的機器，也可以把 -offer 後面那一串貼進「瀏覽器顯示的配對碼」那一欄。",
+    cloudPairAgentHand: "交給這台 Mac 的 AI",
+    cloudPairAgentHandWhen: "會先跳出確認；確認後，這裡的 AI 會用現有的連線方式（例如 ssh）連到 {machine}，在那裡執行指令。",
+    cloudPairAgentSending: "等你在確認視窗回答…",
+    cloudPairAgentSent: "已交給 AI。{machine} 回應後，這張卡會自己完成。",
+    cloudPairAgentDirect: "配對已直接在這台機器完成。",
+    cloudPairAgentCancelled: "已取消，沒有執行任何東西。",
+    cloudPairAgentRefused: "沒有交出去（{reason}）。仍然可以複製下面的指示。",
     cloudPairCopy: "複製給 AI Agent",
     cloudPairCopied: "已複製 Agent 指示。",
     cloudPairCopyFailed: "這個瀏覽器不讓這一頁複製，請手動選取完整指示。",

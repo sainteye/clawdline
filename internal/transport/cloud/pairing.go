@@ -297,13 +297,8 @@ func (p *Pairing) Complete(ctx context.Context, offerFragment string) (PairingSt
 	if p == nil || p.Client == nil || p.Credential == "" || p.MachineID == "" {
 		return PairingState{}, ErrPairingUnavailable
 	}
-	offer, err := domaincloud.DecodePairingOfferFragment(offerFragment, p.now().UnixMilli())
+	offer, err := p.CheckOffer(offerFragment)
 	if err != nil {
-		p.failed(err)
-		return p.State(), err
-	}
-	if offer.AccountID != p.AccountID {
-		err := fmt.Errorf("that pairing code belongs to account %s, not %s", offer.AccountID, p.AccountID)
 		p.failed(err)
 		return p.State(), err
 	}
@@ -314,6 +309,24 @@ func (p *Pairing) Complete(ctx context.Context, offerFragment string) (PairingSt
 		return p.State(), err
 	}
 	return state, nil
+}
+
+// CheckOffer reads an offer the way Complete does — it decodes, it has not
+// expired, and it belongs to this machine's account — without touching the
+// pairing in progress. It is how a caller that carries an offer somewhere
+// else (a hand-off to another machine) refuses one Complete would refuse.
+func (p *Pairing) CheckOffer(offerFragment string) (domaincloud.PairingOffer, error) {
+	if p == nil {
+		return domaincloud.PairingOffer{}, ErrPairingUnavailable
+	}
+	offer, err := domaincloud.DecodePairingOfferFragment(offerFragment, p.now().UnixMilli())
+	if err != nil {
+		return domaincloud.PairingOffer{}, err
+	}
+	if offer.AccountID != p.AccountID {
+		return domaincloud.PairingOffer{}, fmt.Errorf("that pairing code belongs to account %s, not %s", offer.AccountID, p.AccountID)
+	}
+	return offer, nil
 }
 
 // deliver seals, delivers, checks the echo and pins. It is the one place any

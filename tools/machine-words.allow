@@ -41,3 +41,10 @@ internal/domain/privacy/privacy.go	`\b[A-Za-z]+-(?:MacBook(?:-Pro|-Air)?|iMac|Ma
 # is the test data, not a claim about anything.
 internal/adapters/tunnel/supervisor_test.go	"https://Mac.Example.com/"
 internal/adapters/tunnel/tunnel_test.go	"  Mac.Example.com "
+
+# The Cloud pairing card's hand-off button, in the words the person chose. It
+# is drawn only when the Mac app's Cloud tab has registered its
+# `clawdlinePairAgent` handler (PairPanel.tsx `pairAgentAvailable`), so the
+# machine it names really is a Mac; every other sentence around it is neutral.
+web/console/src/next-strings.ts	"Hand it to this Mac's AI"
+web/console/src/next-strings.ts	"交給這台 Mac 的 AI"

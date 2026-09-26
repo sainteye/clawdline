@@ -130,6 +130,18 @@ struct ShellCopy {
     let browserShowCloud = "在這個視窗打開 Clawdline Cloud"
     let dialogOK = "好"
     let dialogCancel = "取消"
+    // **Not from the Swift app** either: it could not pair another machine
+    // for a Cloud browser. Handing the pairing to this Mac's assistant
+    // (CloudPairing.swift `CloudPairAgent`), 2026-09-27.
+    func pairAgentAsks(_ machine: String) -> String { "讓這台 Mac 的 AI 連到「\(machine)」執行配對？" }
+    func pairAgentCommand(_ offer: String) -> String {
+        """
+        它會用這台 Mac 已經有的連線方式（例如 ssh）連過去，只執行這一行：
+
+        clawdline cloud pair -offer '\(offer)'
+        """
+    }
+    let pairAgentStart = "開始"
 
     // The pairing alert (`main.swift` showPairing in the Swift app).
     let pairingIgnore = "忽略"

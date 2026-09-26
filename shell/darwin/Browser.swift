@@ -430,6 +430,12 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
             // nuisance, a shared jar is a leak.
             config.websiteDataStore = .nonPersistent()
         }
+        // The one page-to-shell message this view answers: carrying a pairing
+        // offer to another machine through this Mac's assistant, after the
+        // person says yes (CloudPairing.swift `CloudPairAgent`). On this
+        // view's controller only; the console tab never has it.
+        config.userContentController.addScriptMessageHandler(
+            CloudPairAgent(), contentWorld: .page, name: CloudPairAgent.name)
         view = WKWebView(frame: .zero, configuration: config)
         super.init()
         view.navigationDelegate = self

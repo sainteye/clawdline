@@ -185,3 +185,151 @@ final class CloudSelfPairing {
         return String(array.dropFirst().dropLast())
     }
 }
+
+// MARK: - Pairing another machine through this Mac's assistant
+
+/// What the daemon answers `POST /v1/cloud/pairing/agent` with, or refuses it
+/// with.
+private struct DaemonPairAgent: Decodable {
+    let mode: String?
+    let taskID: String?
+    let error: Refusal?
+
+    struct Refusal: Decodable {
+        let code: String?
+        let message: String?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case mode, error
+        case taskID = "task_id"
+    }
+}
+
+/// The Cloud tab's way of asking this Mac to carry a pairing offer to another
+/// machine.
+///
+/// The Cloud console, shown a machine this browser is not paired with, offers a
+/// command to paste on that machine. This Mac often reaches that machine
+/// already — an ssh alias, a cloud provider's session manager — so the page
+/// can post the offer here instead (`clawdlinePairAgent`), and an assistant on
+/// this Mac runs the same command over that access. The offer travels over the
+/// person's own channel either way, never through Cloud.
+///
+/// Three things keep this from being a way for a page to start work on this
+/// Mac:
+///
+/// - It is registered on the Cloud view's content controller only, and it
+///   answers only the main frame of Cloud's own origin.
+/// - The person is asked, in a native sheet naming the machine and showing the
+///   command, before anything runs.
+/// - The page supplies an offer, an id and a name, and no text: the daemon
+///   checks all three and writes the instructions from its own template.
+///
+/// The offer is never logged, and the sheet shows only its first characters.
+@MainActor
+final class CloudPairAgent: NSObject, WKScriptMessageHandlerWithReply {
+    static let name = "clawdlinePairAgent"
+
+    /// One question at a time: a second press while the sheet is up is not a
+    /// second request.
+    private var asking = false
+
+    func userContentController(_ controller: WKUserContentController,
+                               didReceive message: WKScriptMessage,
+                               replyHandler: @escaping (Any?, String?) -> Void) {
+        let refuse = { (why: String) in replyHandler(["ok": false, "error": why], nil) }
+        guard message.frameInfo.isMainFrame, isCloudOrigin(message.frameInfo.securityOrigin),
+              let page = message.webView?.url, isCloud(page) else {
+            shellLog("cloud: refused a pairing hand-off from outside Cloud's main frame")
+            refuse("not_cloud")
+            return
+        }
+        guard let body = message.body as? [String: Any],
+              let offer = body["offer"] as? String, !offer.isEmpty, offer.utf8.count <= 4096,
+              let machineID = body["machine_id"] as? String, !machineID.isEmpty, machineID.utf8.count <= 256 else {
+            refuse("bad_request")
+            return
+        }
+        let shownName = (body["machine_name"] as? String).map(Self.oneLine) ?? ""
+        let name = shownName.isEmpty ? machineID : shownName
+        guard let window = message.webView?.window, !asking else {
+            refuse("busy")
+            return
+        }
+        asking = true
+        let alert = NSAlert()
+        alert.messageText = L.t.pairAgentAsks(name)
+        alert.informativeText = L.t.pairAgentCommand(String(offer.prefix(12)) + "…")
+        alert.addButton(withTitle: L.t.pairAgentStart)
+        alert.addButton(withTitle: L.t.dialogCancel)
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else {
+                self?.asking = false
+                shellLog("cloud: the person declined handing the pairing with \(machineID) to this Mac")
+                refuse("cancelled")
+                return
+            }
+            Task { @MainActor in
+                defer { self?.asking = false }
+                let reply = await Self.handOff(offer: offer, machineID: machineID, machineName: shownName)
+                replyHandler(reply, nil)
+            }
+        }
+    }
+
+    /// The daemon's route, with this Mac's own token.
+    private static func handOff(offer: String, machineID: String, machineName: String) async -> [String: Any] {
+        guard let token = LocalToken.read() else {
+            shellLog("cloud: no local token yet; cannot hand the pairing to this Mac")
+            return ["ok": false, "error": "no_token"]
+        }
+        var request = URLRequest(url: home.appendingPathComponent("v1/cloud/pairing/agent"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 200
+        guard let payload = try? JSONSerialization.data(withJSONObject: [
+            "offer": offer, "machine_id": machineID, "machine_name": machineName,
+        ]) else {
+            return ["ok": false, "error": "bad_request"]
+        }
+        request.httpBody = payload
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let said = try? JSONDecoder().decode(DaemonPairAgent.self, from: data)
+            guard status == 200, let mode = said?.mode else {
+                // A refusal is words about the request, never the offer.
+                let code = said?.error?.code ?? "http_\(status)"
+                shellLog("cloud: this Mac refused the pairing hand-off with \(machineID): HTTP \(status) \(code)")
+                return ["ok": false, "error": said?.error?.message ?? code]
+            }
+            shellLog("cloud: handed the pairing with \(machineID) to this Mac (\(mode) \(said?.taskID ?? ""))")
+            return ["ok": true, "mode": mode, "task_id": said?.taskID ?? ""]
+        } catch {
+            shellLog("cloud: could not reach this Mac to hand the pairing over — \(error.localizedDescription)")
+            return ["ok": false, "error": "unreachable"]
+        }
+    }
+
+    /// Cloud's own origin, as WebKit reports the frame's: the URL's pieces,
+    /// with WebKit's 0 for a default port.
+    private func isCloudOrigin(_ origin: WKSecurityOrigin) -> Bool {
+        guard origin.`protocol`.lowercased() == cloudHome.scheme?.lowercased(),
+              origin.host.lowercased() == cloudHome.host?.lowercased() else { return false }
+        let asked: Int? = origin.port == 0 ? nil : origin.port
+        return asked == cloudHome.port
+    }
+
+    /// A name for the sheet: one line, at most 64 characters.
+    private static func oneLine(_ s: String) -> String {
+        let flat = s.unicodeScalars
+            .filter { !CharacterSet.controlCharacters.contains($0) || $0 == "\n" || $0 == "\t" }
+            .map { CharacterSet.whitespacesAndNewlines.contains($0) ? " " : String($0) }
+            .joined()
+            .split(separator: " ", omittingEmptySubsequences: true)
+            .joined(separator: " ")
+        return String(flat.prefix(64))
+    }
+}

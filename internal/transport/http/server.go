@@ -135,6 +135,10 @@ type Server struct {
 	intentMu            sync.Mutex
 	intentRun           sync.Mutex
 	intentQueued        int
+	// pairAgent is the dispatch seam behind /v1/cloud/pairing/agent: nil is
+	// the broker's own DispatchPairingAgent. Tests replace it so that they read
+	// the brief without opening a terminal.
+	pairAgent func(context.Context, orchestrator.PairingAgentRun) (orchestrator.Dispatched, error)
 }
 
 // servedBy names which implementation answered. It is how a reader tells this
@@ -299,6 +303,7 @@ func (s *Server) Handler() http.Handler {
 	// hands over the account key.
 	mux.HandleFunc("/v1/cloud/pairing", s.cloudPairingRoute)
 	mux.HandleFunc("/v1/cloud/pairing/offer", s.cloudPairingOfferRoute)
+	mux.HandleFunc("/v1/cloud/pairing/agent", s.cloudPairingAgentRoute)
 	mux.HandleFunc("/v1/cloud/devices/revoke", s.cloudDeviceRoute)
 	mux.HandleFunc("/v1/cloud/keys/rotate", s.cloudRotateRoute)
 	// The account-free way in from outside: what this daemon's cloudflared is

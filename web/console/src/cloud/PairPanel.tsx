@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { pairingCommand, type PairState } from "./pair.js"
+import { agentOutcome, agentSaid, handPairToAgent, pairAgentAvailable, type PairAgentReply } from "./pair-agent.js"
 
 /**
  * What the gate was asked to pair, and from where.
@@ -39,6 +40,9 @@ export function PairPanel(props: {
   const { request, state, nameOf, onBegin, onStop, onAgain, onClose, onPaired } = props
   const T = L.strings
   const [copied, setCopied] = useState<"" | "yes" | "no">("")
+  // The hand-off to the Mac app's assistant: nothing yet, the native sheet is
+  // up, or what the shell answered.
+  const [agent, setAgent] = useState<null | "sending" | PairAgentReply>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   const first = useRef<HTMLButtonElement>(null)
   const phase = state.phase
@@ -49,6 +53,7 @@ export function PairPanel(props: {
   }, [phase])
   useLayoutEffect(() => {
     setCopied("")
+    setAgent(null)
   }, [phase])
 
   const offer = request.mode === "offer"
@@ -173,11 +178,39 @@ export function PairPanel(props: {
         const line = pairingCommand(state.fragment)
         const target = asked ? `${JSON.stringify(asked.name)} (machine ID ${asked.id})` : nextWord("cloudPairTargetAny")
         const agentPrompt = nextWord("cloudPairAgentPrompt", { machine: target, command: line })
+        // Only inside the Mac app's Cloud tab, and only for a named machine:
+        // the shell needs to say which machine it is about to reach.
+        const handOff = offer && asked && pairAgentAvailable() ? asked : null
         return (
           <>
             {offer && (
               <>
                 <p className="fine">{nextWord("cloudPairWhy")}</p>
+                {handOff && (
+                  <div className="cloud-pair-agent">
+                    <button
+                      className="chip cloud-pair-generate"
+                      type="button"
+                      id="cloud-pair-agent"
+                      ref={first}
+                      disabled={agent === "sending" || (agent !== null && agent.ok)}
+                      onClick={() => {
+                        setAgent("sending")
+                        void handPairToAgent({ offer: state.fragment, machineID: handOff.id, machineName: handOff.name }).then(
+                          setAgent,
+                        )
+                      }}
+                    >
+                      {nextWord("cloudPairAgentHand")}
+                    </button>
+                    <p className="fine">{nextWord("cloudPairAgentHandWhen", { machine: handOff.name })}</p>
+                    {agent && (
+                      <p className="cloud-pair-agent-said" id="cloud-pair-agent-said" role="status" data-agent={agentOutcome(agent)}>
+                        {agentSaid(agent, handOff.name, nextWord)}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <p className="cloud-pair-step">
                   {asked ? nextWord("cloudPairRun", { machine: asked.name }) : nextWord("cloudPairRunAny")}
                 </p>
@@ -194,7 +227,7 @@ export function PairPanel(props: {
                   onFocus={(event) => event.currentTarget.select()}
                 />
                 <div className="cloud-pair-copy">
-                  <button className="chip" type="button" id="cloud-pair-copy" ref={first} onClick={() => copy(agentPrompt)}>
+                  <button className="chip" type="button" id="cloud-pair-copy" ref={handOff ? undefined : first} onClick={() => copy(agentPrompt)}>
                     {nextWord("cloudPairCopy")}
                   </button>
                   {copied && (

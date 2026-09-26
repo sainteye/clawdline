@@ -18,7 +18,11 @@
  * person runs it on the machine — `clawdline cloud pair -offer <code>`, which
  * reaches `POST /v1/cloud/pairing/offer`, a route only the machine's own
  * credential may call (`internal/transport/http/cloud.go`). So pairing still
- * needs somebody who can run a command on that machine. A button that paired
+ * needs something that can run a command on that machine: the person, or —
+ * inside the Mac app — an assistant on that Mac that reaches the machine over
+ * access the Mac already has, after a native confirmation (`pair-agent.ts`,
+ * `POST /v1/cloud/pairing/agent`). Either way the offer travels over the
+ * person's own channel, not the cloud's. A button that paired
  * from here alone would need the machine to trust what the cloud said, which
  * is the thing the whole design refuses.
  *
