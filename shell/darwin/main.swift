@@ -958,13 +958,21 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// summon the window without the built-in combination. Its own scheme: the
     /// Swift app owns clawdline://. Only what this app can do is answered.
     func application(_ application: NSApplication, open urls: [URL]) {
-        shellLog("url: \(urls.map { $0.absoluteString }.joined(separator: " "))")
+        shellLog("url: \(urls.map { $0.host == "cloud-signed-in" ? "clawdline-next://cloud-signed-in" : $0.absoluteString }.joined(separator: " "))")
         guard let url = urls.first else { return }
         switch url.host ?? "" {
         case "toggle":
             toggleConsole()
         case "", "open", "home", "setup":
             showConsole()
+        case "cloud-signed-in":
+            // The browser sign-in's answer, when it reached the app rather than
+            // the sign-in session that asked for it (Browser.swift). Without
+            // the verifier that session holds it is nothing, and it is not
+            // written to the log.
+            shellLog("url: a Cloud sign-in answer")
+            showConsole()
+            cloud?.signedIn(url, error: nil)
         default:
             shellLog("url: \(url.host ?? "") is a Swift app route this app does not have; showing the window")
             showConsole()
