@@ -15,7 +15,9 @@ import (
 // to, in a message sent through Clawdline (docs/work-system-v2.md §2, amended
 // 2026-09-25). `add` creates it under that message's run — read from this
 // conversation's latest run unless --run names one — and it arrives assigned
-// to this Session with its steps. `steps` lists an item's steps with their
+// to this Session with its steps. `claim` takes an existing, unassigned item
+// for this Session under that message's run, when the message told it to.
+// `steps` lists an item's steps with their
 // ids, `step-add` breaks an item this Session owns into further steps,
 // `step-done` completes one after it is verified, and `phase` moves an
 // item this Session owns to its next execution phase with that phase's
@@ -106,6 +108,13 @@ func itemCommand(args []string) {
 			}
 			f.steps = append(f.steps, lines...)
 		}
+	case "claim":
+		if len(positional) != 1 {
+			fmt.Fprintf(os.Stderr, "clawdline item claim: takes one item id, got %d arguments\n", len(positional))
+			itemUsage()
+		}
+		rest = positional
+		f.run = *run
 	case "steps":
 		if len(positional) != 1 {
 			fmt.Fprintf(os.Stderr, "clawdline item steps: takes one item id, got %d arguments\n", len(positional))
@@ -170,6 +179,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline item add --project <id> --kind <feature|issue|epic|refactor|plan> --title <t>")
 	fmt.Fprintln(os.Stderr, "                          [--step <text>]… [--steps-file f] [--description-file f | stdin]")
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
+	fmt.Fprintln(os.Stderr, "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
@@ -178,6 +188,8 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
 	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
 	fmt.Fprintln(os.Stderr, "  it arrives assigned to this Session, and its --step rows are the item's steps, not to-dos;")
+	fmt.Fprintln(os.Stderr, "  claim assigns an existing item to this Session only because the person's message through")
+	fmt.Fprintln(os.Stderr, "  Clawdline told it to take that item; never on its own initiative;")
 	fmt.Fprintln(os.Stderr, "  step-add breaks an item this Session owns into ordered steps, after any it already has;")
 	fmt.Fprintln(os.Stderr, "  phase moves an item this Session owns one phase on, with that phase's evidence")
 	os.Exit(2)
@@ -290,29 +302,11 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			fmt.Fprintf(stderr, "clawdline %s: --project, --kind and --title are all required. Nothing was created.\n", name)
 			return 2
 		}
-		run := strings.TrimSpace(f.run)
-		if run == "" {
-			a, err := b.request(http.MethodGet, "/v1/orchestrator/sessions/"+url.PathEscape(conversation)+"/run", nil, nil, "")
-			if err != nil {
-				fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
-				return 1
-			}
-			if !a.ok() {
-				report(stdout, stderr, name, a)
-				fmt.Fprintf(stderr, "Nothing was created. Without a message sent through Clawdline, file a proposal "+
-					"(POST /v1/work/v2/agent/proposals) and tell the person to accept it in the Board's Agent proposals.\n")
-				return 1
-			}
-			var got struct {
-				Run struct {
-					ID string `json:"id"`
-				} `json:"run"`
-			}
-			if json.Unmarshal(a.Body, &got) != nil || got.Run.ID == "" {
-				fmt.Fprintf(stderr, "clawdline %s: the daemon's run answer names no run: %s\n", name, strings.TrimSpace(string(a.Body)))
-				return 1
-			}
-			run = got.Run.ID
+		run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
+			"Nothing was created. Without a message sent through Clawdline, file a proposal "+
+				"(POST /v1/work/v2/agent/proposals) and tell the person to accept it in the Board's Agent proposals.")
+		if code != 0 {
+			return code
 		}
 		steps := make([]string, 0, len(f.steps))
 		for _, s := range f.steps {
@@ -329,6 +323,25 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			body["steps"] = steps
 		}
 		path = "/v1/work/v2/agent/items"
+	case "claim":
+		itemID := strings.TrimSpace(args[0])
+		run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
+			"Nothing was claimed. Without a message sent through Clawdline, leave the item for the person to assign.")
+		if code != 0 {
+			return code
+		}
+		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
+		if err != nil {
+			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
+			return 1
+		}
+		it, ok := itemOf(a)
+		if !a.ok() || !ok {
+			return report(stdout, stderr, name, a)
+		}
+		body = map[string]any{"expected_version": it.Version, "session_id": conversation,
+			"via": map[string]string{"run": run}}
+		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/claim"
 	case "step-done":
 		itemID, stepID := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
 		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
@@ -396,6 +409,34 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	}
 	printItem(stdout, it)
 	return 0
+}
+
+// wordRun is the run a write on the person's word goes under: the one --run
+// named, else this conversation's latest. nothing is said when there is none.
+func wordRun(stdout, stderr io.Writer, b *broker, name, named, conversation, nothing string) (string, int) {
+	if run := strings.TrimSpace(named); run != "" {
+		return run, 0
+	}
+	a, err := b.request(http.MethodGet, "/v1/orchestrator/sessions/"+url.PathEscape(conversation)+"/run", nil, nil, "")
+	if err != nil {
+		fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
+		return "", 1
+	}
+	if !a.ok() {
+		report(stdout, stderr, name, a)
+		fmt.Fprintln(stderr, nothing)
+		return "", 1
+	}
+	var got struct {
+		Run struct {
+			ID string `json:"id"`
+		} `json:"run"`
+	}
+	if json.Unmarshal(a.Body, &got) != nil || got.Run.ID == "" {
+		fmt.Fprintf(stderr, "clawdline %s: the daemon's run answer names no run: %s\n", name, strings.TrimSpace(string(a.Body)))
+		return "", 1
+	}
+	return got.Run.ID, 0
 }
 
 // itemStepAdd posts one step per title, in order. Each is written after a

@@ -52,6 +52,10 @@ type WorkV2View struct {
 	Images      []work.ImageV2
 	Steps       []work.StepV2
 	Events      []work.EventV2
+	// Claim is the person's message the owning Session claimed the item on,
+	// read for a page of items that carries no assignments; a view that
+	// carries them answers it from its active assignment instead.
+	Claim *work.CreatedViaV2
 	// EffectIDs are durable side effects recorded by this write. They are not
 	// part of the work-system response; the transport hands them to the shared
 	// outbox runner after the transaction commits.
@@ -223,7 +227,11 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner, status, search 
 		if stepErr != nil {
 			return nil, false, mapWorkV2Error(stepErr)
 		}
-		out = append(out, WorkV2View{Item: i, Documents: documents, Images: images, Steps: steps})
+		claim, claimErr := w.Store.WorkV2ActiveClaim(ctx, i.ID)
+		if claimErr != nil {
+			return nil, false, mapWorkV2Error(claimErr)
+		}
+		out = append(out, WorkV2View{Item: i, Documents: documents, Images: images, Steps: steps, Claim: claim})
 	}
 	return out, truncated, nil
 }
@@ -447,6 +455,9 @@ type AssignWorkV2 struct {
 	Model           string
 	Actor           string
 	AssignmentID    string
+	// Claim is the person's message a Session claims the item on
+	// (ClaimFromSession); nil for a person's own assignment.
+	Claim *work.CreatedViaV2
 }
 
 func descriptionStepTitles(description string) []string {
@@ -523,6 +534,11 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		if prev.Phase.Terminal() {
 			return work.RefuseV2("item_terminal", "Reopen terminal work before assigning it.")
 		}
+		if c.Claim != nil {
+			if err := claimable(tx, prev, c.Actor); err != nil {
+				return err
+			}
+		}
 		if c.AssignmentID == "" {
 			c.AssignmentID = newWorkID()
 		}
@@ -533,7 +549,7 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		}
 		a := work.AssignmentV2{ID: c.AssignmentID, WorkID: id, Mode: c.Mode, SessionID: c.SessionID,
 			TerminalID: c.TerminalID, Assistant: c.Assistant, Model: c.Model, State: state,
-			HumanActor: c.Actor, CreatedAt: now, UpdatedAt: now}
+			HumanActor: c.Actor, CreatedAt: now, UpdatedAt: now, ClaimedVia: c.Claim}
 		if !pending && strings.TrimSpace(a.SessionID) == "" {
 			return work.RefuseV2("session_required", "An active assignment needs a Session conversation id.")
 		}
@@ -574,9 +590,12 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 			}
 		}
 		next.UpdatedAt = now
-		if err := tx.PutItem(prev, next, "item.assigned", c.Actor, payload(map[string]any{
-			"assignment_id": a.ID, "mode": a.Mode, "pending": pending, "session_id": a.SessionID,
-			"seeded_steps": len(seeded)})); err != nil {
+		fields := map[string]any{"assignment_id": a.ID, "mode": a.Mode, "pending": pending,
+			"session_id": a.SessionID, "seeded_steps": len(seeded)}
+		if c.Claim != nil {
+			fields["via_run"], fields["claimed"], fields["excerpt"] = c.Claim.Run, true, c.Claim.Excerpt
+		}
+		if err := tx.PutItem(prev, next, "item.assigned", c.Actor, payload(fields)); err != nil {
 			return err
 		}
 		next.Version++

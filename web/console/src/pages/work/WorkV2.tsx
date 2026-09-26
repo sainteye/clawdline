@@ -50,7 +50,7 @@ import {
   sessionWorkStateName,
 } from "./session-assignment.js"
 import { workV2CreateDecision, type WorkV2CreateDecision } from "./create-decision.js"
-import { createdViaLine, workWord } from "./words.js"
+import { claimedViaLine, createdViaLine, workWord } from "./words.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
 const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
@@ -296,6 +296,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>
     <h3>{item.title}</h3>
     <CreatedViaNote item={item} />
+    <ClaimedViaNote item={item} />
     <p>{item.description}</p>
     {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
       <strong>需要你做的事</strong><p>{item.user_action}</p>
@@ -371,6 +372,22 @@ function CreatedViaNote({ item }: { item: WorkV2Item }) {
   const line = createdViaLine(item.created_via)
   if (!line) return null
   const excerpt = item.created_via?.excerpt ?? ""
+  if (!excerpt) return <p className="work-created-via">{line}</p>
+  return <details className="work-created-via">
+    <summary title={excerpt}>{line}</summary>
+    <blockquote aria-label={workWord("createdViaQuote")}>{excerpt}</blockquote>
+  </details>
+}
+
+/**
+ * Who took this item, when its Session claimed it on the person's message:
+ * the same small line and quote as CreatedViaNote. An item the person
+ * assigned shows nothing here.
+ */
+function ClaimedViaNote({ item }: { item: WorkV2Item }) {
+  const line = claimedViaLine(item.claimed_via)
+  if (!line) return null
+  const excerpt = item.claimed_via?.excerpt ?? ""
   if (!excerpt) return <p className="work-created-via">{line}</p>
   return <details className="work-created-via">
     <summary title={excerpt}>{line}</summary>

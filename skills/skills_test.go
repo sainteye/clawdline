@@ -404,3 +404,28 @@ func TestEveryGuideExplainsAdvancingAnItemsPhase(t *testing.T) {
 		}
 	}
 }
+
+// A Session claims a Board item only when the person's message through
+// Clawdline names it, with one command, and both guides name every refusal.
+func TestEveryGuideExplainsClaimingABoardItemFromThePersonsMessage(t *testing.T) {
+	wants := []string{
+		"clawdline item claim <item id>",
+		"POST /v1/work/v2/agent/items/<id>/claim",
+		`{"expected_version", "session_id", "via": {"run"}}`,
+		"run_unknown", "run_expired", "run_other_session", "session_not_found", "child_session",
+		"work_not_found", "project_mismatch", "item_assigned", "item_terminal",
+		"planning_not_assignable", "version_conflict", "run_claims_exhausted", "no_run",
+		"session_cannot_create_item",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain claiming a Board item with %q", topic, want)
+			}
+		}
+	}
+}

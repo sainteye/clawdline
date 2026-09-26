@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { clockOf, createdViaLine } from "./words.ts"
+import { claimedViaLine, clockOf, createdViaLine } from "./words.ts"
 
 const source = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
 const styles = readFileSync(new URL("./work.css", import.meta.url), "utf8")
@@ -35,4 +35,13 @@ test("the card draws the line with the excerpt as its tooltip and quotes it when
 
 test("an item without an excerpt still says who created it, with nothing to open", () => {
   assert.match(source, /if \(!excerpt\) return <p className="work-created-via">\{line\}<\/p>/)
+})
+
+test("a card its Session claimed on the person's message says so, in both languages", () => {
+  assert.equal(claimedViaLine(via, "zh-Hant"), "Session 依你 09:05 的訊息認領")
+  assert.equal(claimedViaLine(via, "en"), "Claimed by the Session from your message at 09:05")
+  assert.equal(claimedViaLine(undefined, "en"), null)
+  assert.equal(claimedViaLine({ run: "", session_id: "", at: 0 }, "zh-Hant"), null)
+  assert.match(source, /<ClaimedViaNote item=\{item\} \/>/)
+  assert.match(source, /claimedViaLine\(item\.claimed_via\)/)
 })

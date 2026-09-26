@@ -42,7 +42,9 @@ and projects an assigned item into its owner's Session to-do panel.
    a person typing straight into a terminal leaves no run, so that case stays a proposal (§10).
 2. **Only a person assigns, reassigns, unassigns, deletes/cancels, or reopens an item.** An Agent may not
    appoint itself or another Session — except that an item created under §7.1 arrives assigned to
-   the Session that relayed the person's message, because that message is the person's assignment.
+   the Session that relayed the person's message, and an item claimed under §7.2 is assigned to
+   the Session the person's message told to take it, because that message is the person's
+   assignment.
 3. **An Agent may propose, never promote.** A proposal is a previewable draft. It becomes a work
    item only after a person accepts it, possibly after editing it.
 4. **One item has at most one owning Session at a time.** One Session may own several items.
@@ -348,6 +350,36 @@ machine", and `run_other_session` stops a Session using another Session's run by
 intent. That a Session creates items only when the person's message explicitly asks is carried by
 the guide, like its own to-dos. The proposal path (§10) stays the fallback for everything without a
 run.
+
+### 7.2 A Session claiming an item on the person's message
+
+The same relay, for an item already on the Board: the person tells a Session, in a message through
+Clawdline, to take a specific item. The person's own assign route stays the person's
+(`session_cannot_create_item` for any machine caller); the Session calls its own:
+
+```
+POST /v1/work/v2/agent/items/<id>/claim     (machine auth, Idempotency-Key required)
+{"expected_version": N, "session_id": "<conversation id>", "via": {"run": "<run id>"}}
+```
+
+There is no field naming a Session or terminal: the item goes to the Session the run was said to,
+and only to it. The run and Session are checked exactly as §7.1 checks them (`run_unknown`,
+`run_expired`, `run_other_session`, `session_not_found`, `child_session`), then the item: it exists
+(`work_not_found`), is in the Project the Session works in (`project_mismatch`, the person's
+`existing_session` check), is not a planning kind (`planning_not_assignable`) or finished
+(`item_terminal`), has not changed (`version_conflict`), and has no Session and none being opened
+for it (`item_assigned` — a person may move an item between Sessions, a Session may only take one
+nobody holds). One run backs at most five claims, active or released (`run_claims_exhausted`,
+capacity row `run.claimed_items`, mirroring `run.created_items`). Every refusal writes nothing.
+
+Underneath it is the person's `existing_session` Assign — one transaction writing the active
+assignment, the owner, `assigned`, the description-seeded steps and the `item.assigned` event — with
+two differences: the actor is `user_via_session:<run>`, and the assignment keeps the run's provenance
+in `claimed_via` (the event carries `via_run`, `claimed` and the excerpt). Nothing is typed into the
+terminal. The item wire carries it as `claimed_via`, on the item for its active assignment and on
+that assignment, and the Console draws "Claimed by the Session from your message at HH:MM" on the
+card, quoting the excerpt. `clawdline item claim <item id>` is the command; the guide says a Session
+runs it only when the person's message names the item.
 
 ## 8. Assignment
 

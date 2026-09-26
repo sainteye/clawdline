@@ -303,3 +303,75 @@ func TestItemStepAddStopsAtARefusal(t *testing.T) {
 		t.Fatalf("exit %d, asked %d times, stderr %q", code, len(s.requests()), errs.String())
 	}
 }
+
+// `item claim` reads this conversation's latest run and the item's version,
+// then claims the item on the Agent route under a key it prints first; the
+// body names only this conversation, never another Session or terminal.
+func TestItemClaimPostsTheLatestRunAndTheItemsVersion(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if strings.HasSuffix(r.URL.Path, "/run") {
+			return 200, `{"ok":true,"run":{"id":"` + itemRun + `","session_id":"` + thinConversation + `"}}`
+		}
+		return 200, createdItem
+	})
+	var out, errs bytes.Buffer
+	code := sessionItem(&out, &errs, b, "claim", itemFlags{}, []string{"item-1"}, "", "",
+		envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation}))
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 3 || seen[0].EscapedPath != "/v1/orchestrator/sessions/"+thinConversation+"/run" ||
+		seen[1].Method != "GET" || seen[1].EscapedPath != "/v1/work/v2/items/item-1" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	r := seen[2]
+	if r.Method != "POST" || r.EscapedPath != "/v1/work/v2/agent/items/item-1/claim" || !strings.HasPrefix(r.Key, "item-") ||
+		!strings.Contains(errs.String(), "Idempotency-Key: "+r.Key) {
+		t.Fatalf("claim = %+v, stderr %q", r, errs.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(r.Body, &body); err != nil || len(body) != 3 || body["session_id"] != thinConversation ||
+		body["expected_version"] != float64(2) || body["via"].(map[string]any)["run"] != itemRun {
+		t.Fatalf("body = %s", r.Body)
+	}
+	if !strings.Contains(out.String(), "item-1  Ship it  [feature, assigned, assigned to "+thinConversation+"]") {
+		t.Fatalf("stdout = %s", out.String())
+	}
+}
+
+// --run and --key are used as given; with no run at all nothing is claimed
+// and the person's own assignment is named; a refusal is said by its code.
+func TestItemClaimUsesTheNamedRunOrClaimsNothing(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "claim", itemFlags{run: itemRun}, []string{"item-1"}, thinConversation,
+		"claim-retry", envOf(nil)); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	if seen := s.requests(); len(seen) != 2 || seen[1].Key != "claim-retry" {
+		t.Fatalf("requests = %+v", seen)
+	}
+
+	none, b := newStandIn(t, func(r *http.Request) (int, string) {
+		return 404, `{"error":"no_run","detail":"Nobody has sent this session a message through Clawdline."}`
+	})
+	out.Reset()
+	errs.Reset()
+	if code := sessionItem(&out, &errs, b, "claim", itemFlags{}, []string{"item-1"}, thinConversation, "", envOf(nil)); code != 1 ||
+		!strings.Contains(errs.String(), "Nothing was claimed") || len(none.requests()) != 1 {
+		t.Fatalf("exit %d, stderr %q", code, errs.String())
+	}
+
+	_, b = newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodGet {
+			return 200, createdItem
+		}
+		return 409, `{"error":"item_assigned","detail":"That item already has a Session."}`
+	})
+	errs.Reset()
+	if code := sessionItem(&out, &errs, b, "claim", itemFlags{run: itemRun}, []string{"item-1"}, thinConversation, "",
+		envOf(nil)); code != 1 || !strings.Contains(errs.String(), "refused, 409 item_assigned") {
+		t.Fatalf("exit %d, stderr %q", code, errs.String())
+	}
+}

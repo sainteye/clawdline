@@ -200,6 +200,7 @@ const (
 	ReportOpenTodoRows        = "session.report_open_todo_rows"
 	ReportOpenTodoCharacters  = "session.report_open_todo_characters"
 	RunCreatedItems           = "run.created_items"
+	RunClaimedItems           = "run.claimed_items"
 	WorkRequestBodyBytes      = "work.request_body_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
@@ -692,6 +693,16 @@ func Register() []Entry {
 			Limit: 5, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app.runItemLimit"},
+		},
+		{
+			// The Board items one person's message may have a Session claim
+			// on it, mirroring run.created_items. Counted over every
+			// assignment claimed on that run, active or released; the sixth
+			// is refused run_claims_exhausted and nothing is written.
+			Name: RunClaimedItems, Class: Buffer, Unit: Rows,
+			Limit: 5, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.runClaimLimit"},
 		},
 		{
 			Name: WorkRequestBodyBytes, Class: Buffer, Unit: Bytes,

@@ -145,6 +145,10 @@ type AssignmentV2 struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	ReleasedAt     time.Time
+	// ClaimedVia is the person's message a Session claimed this item on:
+	// the same provenance an item a Session created carries, recorded on
+	// the assignment it produced. Nil for an assignment a person made.
+	ClaimedVia *CreatedViaV2
 }
 
 type DocumentV2 struct {

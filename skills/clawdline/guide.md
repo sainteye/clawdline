@@ -609,6 +609,37 @@ echo "Clean up the release notes before the next release." | \
 
 Never create a Board item on your own initiative, and never several to plan speculative work.
 
+**Claim a Board item the person pointed you at.** When the person's message through Clawdline tells
+you to take a specific item already on the Board — *"take the release-notes item"*, *"claim
+<item id>"* — claim it; that is one command:
+
+```
+clawdline item claim <item id>
+```
+
+- `item claim` reads this conversation's latest run unless `--run` names one, reads the item for
+  its version, prints its Idempotency-Key before asking (`--key` retries the same write), and
+  prints the item after. It is `POST /v1/work/v2/agent/items/<id>/claim` with
+  `{"expected_version", "session_id", "via": {"run"}}`, and it assigns the item to **you, the
+  Session that message was sent to** — nothing in it names another Session or terminal.
+- The item then reads exactly as if the person had assigned it to you from the Board: you own it,
+  it moves to `assigned`, its steps are seeded from the description's list if it had none. Nothing
+  is typed into your terminal. Work it as any assigned item (below).
+- The person sees the card marked "Claimed by the Session from your message at HH:MM", with their
+  words quoted.
+- Refusals, each writing nothing: `run_unknown`, `run_expired`, `run_other_session`,
+  `session_not_found`, `child_session` (as for `item add`); `work_not_found`; `project_mismatch`
+  (the item is in a Project you do not work in); `item_assigned` (it already has a Session, or one
+  is being opened for it — only the person moves an item between Sessions); `item_terminal` (done or
+  cancelled); `planning_not_assignable` (an Epic, Refactor or Plan stays in Planning);
+  `version_conflict` (it changed; run the command again); `run_claims_exhausted` (one message backs
+  at most five claims).
+- **No run** answers `no_run` or `run_unknown`: leave the item for the person to assign.
+
+Never claim an item on your own initiative — only the one the person's message names — and never
+use the person's `POST /v1/work/v2/items/<id>/assign`, which refuses a Session
+(`session_cannot_create_item`).
+
 **Propose a Board item.** The Board's **Agent proposals** queue is fed by one route:
 
 ```
