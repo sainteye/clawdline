@@ -3,7 +3,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { askAgainBeforeRefusing, createdScheduleID, hookMoveRequest, moveSchedule, planScheduleMove, recordBody, refusedByOlderTarget, retargetInstructions, targetBody, type MoveHook, type MoveRecord, type MovePlace } from "./schedule-move.ts"
+import { askAgainBeforeRefusing, createdScheduleID, hookMoveRequest, movedRevision, moveSchedule, planScheduleMove, recordBody, refusedAsStaleRevision, refusedByOlderBinder, refusedByOlderTarget, retargetInstructions, targetBody, type MoveHook, type MoveRecord, type MovePlace } from "./schedule-move.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { answerSchedulePresence, choosesMachine, groupSchedules, noteScheduleMachineAnswered, publishScheduleFleet, recheckSchedulePresence, scheduleFleet, type ScheduleFleet } from "./schedule-machines.ts"
 
@@ -293,16 +293,21 @@ test("a bound webhook is planned to move with the schedule; a disabled one is le
   assert.deepEqual({ hook: plain.plan.hook, left: plain.plan.hookLeftDisabled }, { hook: null, left: false })
 })
 
-type HookFail = Partial<Record<"disable" | "create" | "restore" | "remove" | "copy" | "move" | "moveBack" | "bind" | "rebind", boolean>>
+type HookFail = Partial<Record<"disable" | "create" | "restore" | "remove" | "copy" | "move" | "moveBack" | "bind" | "rebind", boolean | string>>
 
-/** Every write, the hook's included, in the order it happened. */
+/**
+ * Every write, the hook's included, in the order it happened. Cloud's moves
+ * answer the hook at the revision they raised it to: 4 forward, 5 back.
+ * A string in `fail` is the refusal's code.
+ */
 function hookRecorder(fail: HookFail = {}, created: unknown = { ok: true, schedule: { id: "s2" } }) {
   const calls: string[] = []
   let updates = 0
   let moves = 0
   let binds = 0
   const refuse = (step: keyof HookFail) => {
-    if (fail[step]) throw Object.assign(new Error(step), { code: step === "move" ? "stale_revision" : "machine_offline" })
+    const code = typeof fail[step] === "string" ? fail[step] : step === "move" ? "stale_revision" : "machine_offline"
+    if (fail[step]) throw Object.assign(new Error(step), { code })
   }
   return {
     calls,
@@ -325,10 +330,12 @@ function hookRecorder(fail: HookFail = {}, created: unknown = { ok: true, schedu
         const step = moves++ === 0 ? "move" : "moveBack"
         calls.push(`${step} ${hookID}->${machine} rev=${revision}`)
         refuse(step)
+        return { schema: "clawdline.schedule_webhook.management.v1",
+          hook: { hook_id: hookID, state: "pending_binding", revision: step === "move" ? 4 : 5 } }
       },
-      async bindHook(hookID: string, scheduleID: string, machine: string) {
+      async bindHook(hookID: string, scheduleID: string, machine: string, revision: number | null) {
         const step = binds++ === 0 ? "bind" : "rebind"
-        calls.push(`${step} ${hookID}->${scheduleID}@${machine}`)
+        calls.push(`${step} ${hookID}->${scheduleID}@${machine} rev=${revision}`)
         refuse(step)
       },
     },
@@ -346,7 +353,7 @@ test("the hook moves after the copy exists and before the source is deleted, bou
     "disable s1@mac-a enabled=false",
     "create cloud.dst",
     "move swh_1->linux-b rev=3",
-    "bind swh_1->s2@linux-b",
+    "bind swh_1->s2@linux-b rev=4",
     "remove s1@mac-a",
   ])
 })
@@ -379,14 +386,56 @@ test("a target that does not bind moves the hook back, binds it to the source sc
     "disable s1@mac-a enabled=false",
     "create cloud.dst",
     "move swh_1->linux-b rev=3",
-    "bind swh_1->s2@linux-b",
+    "bind swh_1->s2@linux-b rev=4",
     // The forward move changed the revision: the way back reads it again.
     "moveBack swh_1->mac-a rev=null",
-    "rebind swh_1->s1@mac-a",
+    "rebind swh_1->s1@mac-a rev=5",
     "remove s2@linux-b",
     "restore s1@mac-a enabled=true",
   ])
   assert.ok(!r.calls.includes("remove s1@mac-a"), "the source is never deleted on a failed bind")
+})
+
+test("each bind carries the revision Cloud's move answered, not the one read before it", async () => {
+  // The move raised 3 to 4 and the move back 4 to 5; Cloud activates a hook
+  // only at the revision it is at, so a bind at any other number is refused.
+  const r = hookRecorder({ bind: true })
+  await hookMove(r)
+  assert.deepEqual(r.calls.filter((c) => c.includes("bind")), [
+    "bind swh_1->s2@linux-b rev=4",
+    "rebind swh_1->s1@mac-a rev=5",
+  ])
+  // A move answer that names no revision leaves it to be read before the bind.
+  assert.equal(movedRevision({ hook: { revision: 4 } }), 4)
+  assert.equal(movedRevision({ revision: 0 }), 0)
+  assert.equal(movedRevision({ hook: {} }), null)
+  assert.equal(movedRevision(undefined), null)
+  assert.equal(movedRevision({ hook: { revision: -1 } }), null)
+})
+
+test("a target too old for hook_revision is undone before anything is lost, and a source as old leaves the hook paused there", async () => {
+  // The target's Cloud bridge refuses the unknown key; the move is undone and
+  // the source, being new enough, binds the hook again at the move-back revision.
+  const target = hookRecorder({ bind: "malformed_command" })
+  const t = await hookMove(target)
+  assert.equal(t.state, "hook_bind_failed")
+  assert.ok(refusedByOlderBinder((t as { error: unknown }).error))
+  assert.deepEqual((t as { rollback: unknown }).rollback, { hookBack: true, rebound: true, copyRemoved: true, restored: true })
+  assert.ok(!target.calls.includes("remove s1@mac-a"), "the source is never deleted")
+  // Both too old: the schedule is back on the source, enabled, the copy gone,
+  // and the hook on the source, paused — the page names that machine.
+  const both = await hookMove(hookRecorder({ bind: "malformed_command", rebind: "malformed_command" }))
+  assert.deepEqual((both as { rollback: unknown }).rollback, { hookBack: true, rebound: false, copyRemoved: true, restored: true })
+})
+
+test("the bind's refusals are told apart: an older machine, and a hook at another revision", () => {
+  assert.equal(refusedByOlderBinder({ code: "malformed_command", status: 400 }), true)
+  assert.equal(refusedByOlderBinder({ code: "bad_request", status: 400 }), true)
+  assert.equal(refusedByOlderBinder({ code: "stale_revision", status: 409 }), false)
+  assert.equal(refusedByOlderBinder({ code: "temporarily_unavailable", status: 503 }), false)
+  assert.equal(refusedByOlderBinder(null), false)
+  assert.equal(refusedAsStaleRevision({ code: "stale_revision", status: 409 }), true)
+  assert.equal(refusedAsStaleRevision({ code: "temporarily_unavailable", status: 503 }), false)
 })
 
 test("a rollback that cannot finish says which step did not happen", async () => {
@@ -413,7 +462,7 @@ test("a copy whose id the target did not answer is removed from nowhere and the 
 test("a refused delete after the hook moved leaves it on the target, bound to the copy", async () => {
   const r = hookRecorder({ remove: true })
   assert.equal((await hookMove(r)).state, "delete_failed")
-  assert.deepEqual(r.calls.slice(-3), ["move swh_1->linux-b rev=3", "bind swh_1->s2@linux-b", "remove s1@mac-a"])
+  assert.deepEqual(r.calls.slice(-3), ["move swh_1->linux-b rev=3", "bind swh_1->s2@linux-b rev=4", "remove s1@mac-a"])
 })
 
 test("a page without Cloud webhook management cannot move a bound hook, and undoes the copy", async () => {

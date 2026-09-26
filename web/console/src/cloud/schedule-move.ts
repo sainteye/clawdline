@@ -19,7 +19,11 @@
 // Cloud (`POST /v1/schedule-webhooks/:id/move`, which leaves it paused as
 // `pending_binding`), then bound to the copy on the target with the same
 // `schedule-webhook-bind-v1` step a new hook takes; the target activates it
-// with its own machine credential. The hook is never active while pointing at
+// with its own machine credential. The move raises the hook's revision, and
+// Cloud activates a hook only at the revision it is at, so the bind carries
+// `hook_revision`, the one Cloud's move answered — a new hook's bind sends
+// none and is activated at 0. A target older than that key refuses the bind,
+// which is said as that machine needing an update (`refusedByOlderBinder`). The hook is never active while pointing at
 // a schedule that does not exist: it is paused from the Cloud move until the
 // target has bound the copy. Deleting the source drops its local binding
 // (`DeleteScheduleFile`). A disabled hook cannot be moved and is not needed:
@@ -319,8 +323,38 @@ export interface MoveWrites {
    * forward move changed it).
    */
   moveHook?(hookID: string, machine: string, revision: number | null): Promise<unknown>
-  /** `schedule-webhook-bind-v1` on `machine`, resolved once Cloud shows the hook active. */
-  bindHook?(hookID: string, scheduleID: string, machine: string): Promise<unknown>
+  /**
+   * `schedule-webhook-bind-v1` on `machine`, resolved once Cloud shows the hook
+   * active. `revision` is the one Cloud's move answered, which the bind sends as
+   * `hook_revision`; null when that answer named none, and is read first.
+   */
+  bindHook?(hookID: string, scheduleID: string, machine: string, revision: number | null): Promise<unknown>
+}
+
+/** The revision a Cloud move answered: `{hook: {revision}}` or the hook itself; null when it names none. */
+export function movedRevision(answer: unknown): number | null {
+  const outer = answer && typeof answer === "object" ? (answer as { hook?: unknown }) : null
+  const hook = outer && outer.hook && typeof outer.hook === "object" ? outer.hook : outer
+  const revision = hook ? (hook as { revision?: unknown }).revision : undefined
+  return typeof revision === "number" && Number.isSafeInteger(revision) && revision >= 0 ? revision : null
+}
+
+/**
+ * Whether a bind carrying `hook_revision` was refused by a machine older than
+ * that key. Its Cloud bridge refuses the unknown key before the route reads it
+ * (`malformed_command`); a route reached some other way answers `bad_request`.
+ * The console builds every other part of the body the way the plain bind does,
+ * so on a bind that carried the revision either code is the machine's age.
+ */
+export function refusedByOlderBinder(error: unknown): boolean {
+  const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined
+  return code === "malformed_command" || code === "bad_request"
+}
+
+/** Whether Cloud refused the bind's activation because the hook is at another revision. */
+export function refusedAsStaleRevision(error: unknown): boolean {
+  const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined
+  return code === "stale_revision"
 }
 
 /**
@@ -404,23 +438,29 @@ export async function moveSchedule(
   if (plan.hook) {
     const hook = plan.hook.id
     const copyID = createdScheduleID(created)
+    let moved: number | null = null
     try {
       if (!copyID) throw new Error("the target's answer named no schedule id")
       if (!writes.moveHook) throw new Error("no Cloud webhook management on this page")
-      await writes.moveHook(hook, target, plan.hook.revision)
+      moved = movedRevision(await writes.moveHook(hook, target, plan.hook.revision))
     } catch (error) {
       const copyRemoved = copyID ? await succeeded(() => writes.remove(copyID, target)) : false
       return { state: "hook_move_failed", error, copyRemoved, restored: await succeeded(restore) }
     }
     try {
       if (!writes.bindHook) throw new Error("no Cloud webhook management on this page")
-      await writes.bindHook(hook, copyID, target)
+      await writes.bindHook(hook, copyID, target, moved)
     } catch (error) {
       // Back in the reverse order: the hook to the source and bound to the
-      // schedule it was bound to (the source still holds that binding), then
-      // the copy, then the source enabled.
-      const hookBack = await succeeded(() => writes.moveHook!(hook, source, null))
-      const rebound = hookBack && writes.bindHook ? await succeeded(() => writes.bindHook!(hook, record.id, source)) : false
+      // schedule it was bound to (the source still holds that binding), at the
+      // revision the move back answered, then the copy, then the source
+      // enabled. A source too old for `hook_revision` refuses that bind too:
+      // the hook then stays paused on the source, and the page says so.
+      let back: number | null = null
+      const hookBack = await succeeded(async () => {
+        back = movedRevision(await writes.moveHook!(hook, source, null))
+      })
+      const rebound = hookBack && writes.bindHook ? await succeeded(() => writes.bindHook!(hook, record.id, source, back)) : false
       const copyRemoved = await succeeded(() => writes.remove(copyID, target))
       const restored = await succeeded(restore)
       return { state: "hook_bind_failed", error, rollback: { hookBack, rebound, copyRemoved, restored } }

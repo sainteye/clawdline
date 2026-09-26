@@ -27,7 +27,14 @@ func NewScheduleWebhookClient(baseURL, credential string) ScheduleWebhookClient 
 	return ScheduleWebhookClient{Client: client, Credential: credential}
 }
 
-func (c ScheduleWebhookClient) Activate(ctx context.Context, hookID, requestID string) (int64, error) {
+// Activate asks Cloud to turn the hook on at expectedRevision, the revision it
+// is at. A new hook is at 0; Cloud's `/move` raises it, and Cloud refuses
+// `stale_revision` for any other number, so a moved hook is activated at the
+// revision the move answered. The answer must be the next revision, active.
+func (c ScheduleWebhookClient) Activate(ctx context.Context, hookID, requestID string, expectedRevision int64) (int64, error) {
+	if expectedRevision < 0 {
+		return 0, fmt.Errorf("%w: negative schedule webhook revision", ErrIncompatible)
+	}
 	path := "/v1/schedule-webhooks/" + url.PathEscape(hookID) + "/activate"
 	var out struct {
 		Schema string `json:"schema"`
@@ -38,11 +45,11 @@ func (c ScheduleWebhookClient) Activate(ctx context.Context, hookID, requestID s
 		} `json:"hook"`
 	}
 	if err := c.Client.postWithHeaders(ctx, path, c.Credential,
-		map[string]any{"expected_revision": 0}, map[string]string{"Idempotency-Key": requestID}, &out); err != nil {
+		map[string]any{"expected_revision": expectedRevision}, map[string]string{"Idempotency-Key": requestID}, &out); err != nil {
 		return 0, err
 	}
 	if out.Schema != "clawdline.schedule_webhook.management.v1" || out.Hook.HookID != hookID ||
-		out.Hook.State != "active" || out.Hook.Revision != 1 {
+		out.Hook.State != "active" || out.Hook.Revision != expectedRevision+1 {
 		return 0, fmt.Errorf("%w: invalid schedule webhook activation", ErrIncompatible)
 	}
 	return out.Hook.Revision, nil
