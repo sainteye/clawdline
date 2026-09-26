@@ -205,14 +205,28 @@ func (s *Store) ReplaceScheduleFile(ctx context.Context, id string, body []byte)
 }
 
 // DeleteScheduleFile removes a schedule. Its runs stay: they are tasks with
-// their own records, and removing a schedule is not cancelling its work.
+// their own records, and removing a schedule is not cancelling its work. Its
+// webhook binding goes with it, in the same transaction: a moved schedule's
+// hook is bound to the copy on the other machine, and a row here naming the
+// deleted schedule would refuse that hook if it ever came back.
 func (s *Store) DeleteScheduleFile(ctx context.Context, id string) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM schedule_files WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `DELETE FROM schedule_files WHERE id = ?`, id)
 	if err != nil {
 		return false, err
 	}
 	n, _ := res.RowsAffected()
-	return n > 0, nil
+	if n == 0 {
+		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM schedule_webhook_bindings WHERE schedule_id = ?`, id); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
 }
 
 // MarkScheduleFire records an occurrence as decided. It only ever moves
@@ -392,6 +406,13 @@ func (s *Store) BindScheduleWebhook(ctx context.Context, hookID, scheduleID, rep
 		}
 	} else if current != "" {
 		return ErrBindingConflict
+	}
+	// A hook bound to a schedule that no longer exists is not bound: a daemon
+	// older than DeleteScheduleFile's cleanup left such rows behind.
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM schedule_webhook_bindings WHERE hook_id = ?
+		 AND schedule_id NOT IN (SELECT id FROM schedule_files)`, hookID); err != nil {
+		return err
 	}
 	var other string
 	err = tx.QueryRowContext(ctx,
