@@ -14,6 +14,17 @@
 // back to what it was; if (c) fails the source stays disabled and the page says
 // where it is.
 //
+// A Cloud webhook bound to the schedule moves with it and keeps its URL, so
+// whoever calls it changes nothing. Between (b) and (c) the hook is moved on
+// Cloud (`POST /v1/schedule-webhooks/:id/move`, which leaves it paused as
+// `pending_binding`), then bound to the copy on the target with the same
+// `schedule-webhook-bind-v1` step a new hook takes; the target activates it
+// with its own machine credential. The hook is never active while pointing at
+// a schedule that does not exist: it is paused from the Cloud move until the
+// target has bound the copy. Deleting the source drops its local binding
+// (`DeleteScheduleFile`). A disabled hook cannot be moved and is not needed:
+// the schedule moves without it and the page says so.
+//
 // Everything that can refuse is asked before (a), so a refusal changes nothing.
 // A place id is a digest of a path on one machine, so the project is found on
 // the target by the repository it clones (`repo`, GET /v1/places).
@@ -46,6 +57,14 @@ export interface MoveRecord {
   notify_on_failure?: boolean
   fired_at?: number
   webhook_binding_availability?: string
+  webhook_hook_id?: string
+}
+
+/** The bound hook as Cloud answers it; `null` when Cloud could not be read. */
+export interface MoveHook {
+  hook_id: string
+  state: string
+  revision: number
 }
 
 /**
@@ -68,7 +87,6 @@ export type MoveRefusal =
   | { code: "schedule_move_no_origin"; project: string }
   | { code: "schedule_move_source_unlisted"; project: string; machine: string }
   | { code: "schedule_move_no_project"; machine: string; repo: string }
-  | { code: "schedule_move_webhook_bound"; title: string; machine: string }
   | { code: "schedule_move_webhook_unknown"; title: string; machine: string }
   | { code: "schedule_move_spent"; title: string }
 
@@ -78,6 +96,10 @@ export interface MovePlan {
   repo: string
   /** Every target place cloning that repository; the page preselects the first. */
   targets: MovePlace[]
+  /** The hook that moves with the schedule, at the revision read before anything was written. */
+  hook: { id: string; revision: number } | null
+  /** A disabled hook was bound: it stays where it is and the schedule moves without it. */
+  hookLeftDisabled: boolean
 }
 
 function projectName(path: string): string {
@@ -97,17 +119,27 @@ export function planScheduleMove(input: {
   target: { id: string; name: string; online: boolean }
   sourcePlaces: readonly MovePlace[]
   targetPlaces: readonly MovePlace[] | null
+  /** The bound hook read from Cloud; null or absent when it could not be. Read only when bound. */
+  hook?: MoveHook | null
 }): { refusal: MoveRefusal } | { plan: MovePlan } {
   const { record, source, target } = input
   const title = record.title || ""
   if (record.fired_at) return { refusal: { code: "schedule_move_spent", title } }
-  // A webhook is bound to a schedule id on the source machine. The copy has a
-  // new id on another machine, so the hook would keep calling a schedule that
-  // is gone; and "could not read the binding" is not "unbound".
+  // A bound webhook moves with the schedule. "Could not read the binding",
+  // or a hook Cloud cannot say anything about, is not "unbound": the move
+  // would leave a hook calling a schedule that is gone.
   const binding = record.webhook_binding_availability
-  if (binding === "active") return { refusal: { code: "schedule_move_webhook_bound", title, machine: source.name } }
-  if (binding && binding !== "unbound") {
-    return { refusal: { code: "schedule_move_webhook_unknown", title, machine: source.name } }
+  const unknown = { refusal: { code: "schedule_move_webhook_unknown", title, machine: source.name } } as const
+  let hook: MovePlan["hook"] = null
+  let hookLeftDisabled = false
+  if (binding === "active") {
+    const read = input.hook
+    if (!read || !record.webhook_hook_id || read.hook_id !== record.webhook_hook_id) return unknown
+    if (read.state === "disabled") hookLeftDisabled = true
+    else if (read.state === "active" || read.state === "pending_binding") hook = { id: read.hook_id, revision: read.revision }
+    else return unknown
+  } else if (binding && binding !== "unbound") {
+    return unknown
   }
   if (!target.online || input.targetPlaces === null) {
     return { refusal: { code: "schedule_move_target_offline", machine: target.name } }
@@ -124,7 +156,7 @@ export function planScheduleMove(input: {
   }
   const targets = input.targetPlaces.filter((place) => place.repo === here.repo)
   if (!targets.length) return { refusal: { code: "schedule_move_no_project", machine: target.name, repo: here.repo } }
-  return { plan: { sourcePlace: here.id, repo: here.repo, targets } }
+  return { plan: { sourcePlace: here.id, repo: here.repo, targets, hook, hookLeftDisabled } }
 }
 
 /**
@@ -233,6 +265,47 @@ export interface MoveWrites {
   update(id: string, body: Record<string, unknown>, machine: string): Promise<unknown>
   create(body: Record<string, unknown>): Promise<unknown>
   remove(id: string, machine: string): Promise<unknown>
+  /**
+   * Cloud's move of a hook to `machine`. `revision` is the one read before the
+   * move began; null reads the current one first (the rollback, after the
+   * forward move changed it).
+   */
+  moveHook?(hookID: string, machine: string, revision: number | null): Promise<unknown>
+  /** `schedule-webhook-bind-v1` on `machine`, resolved once Cloud shows the hook active. */
+  bindHook?(hookID: string, scheduleID: string, machine: string): Promise<unknown>
+}
+
+/**
+ * Cloud's move of a hook, as the request the copied webhook client sends: the
+ * body has exactly these two keys (the Cloud's PROTOCOL.md). The copy of that
+ * client is pinned byte for byte, so the route is described here and sent
+ * through its `send`, which adds the session cookie and an `Idempotency-Key`.
+ */
+export function hookMoveRequest(hookID: string, machine: string, revision: number) {
+  return {
+    method: "POST",
+    path: "/v1/schedule-webhooks/" + encodeURIComponent(hookID) + "/move",
+    body: { machine_id: machine, expected_revision: revision },
+  } as const
+}
+
+/** The id the target gave the copy: `{schedule: {id}}`, as a create answers. */
+export function createdScheduleID(created: unknown): string | null {
+  const schedule = created && typeof created === "object" ? (created as { schedule?: unknown }).schedule : undefined
+  const id = schedule && typeof schedule === "object" ? (schedule as { id?: unknown }).id : undefined
+  return typeof id === "string" && id ? id : null
+}
+
+/** What the rollback after a failed bind managed; each false is said by name. */
+export interface HookRollback {
+  /** The hook is back on the source machine (still paused until re-bound). */
+  hookBack: boolean
+  /** The source bound it again and Cloud shows it active. */
+  rebound: boolean
+  /** The copy on the target was deleted. */
+  copyRemoved: boolean
+  /** The source is enabled again as it was. */
+  restored: boolean
 }
 
 export type MoveOutcome =
@@ -243,12 +316,31 @@ export type MoveOutcome =
   | { state: "create_failed"; error: unknown; restored: boolean }
   /** (c) was refused: the copy runs on the target, the source is stored disabled. */
   | { state: "delete_failed"; error: unknown; created: unknown }
+  /**
+   * Cloud refused to move the hook: it is where it was, untouched. The copy is
+   * deleted and the source switched back; each says whether that worked.
+   */
+  | { state: "hook_move_failed"; error: unknown; copyRemoved: boolean; restored: boolean }
+  /** The target did not bind the hook; the rollback's every step is reported. */
+  | { state: "hook_bind_failed"; error: unknown; rollback: HookRollback }
+
+/** Whether a write went through; the caller says by name what did not. */
+async function succeeded(write: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await write()
+    return true
+  } catch {
+    // refusal-ok: the step that failed first is the one said; this one is reported as a boolean
+    return false
+  }
+}
 
 export async function moveSchedule(
   writes: MoveWrites,
-  input: { record: MoveRecord; source: string; plan: MovePlan; copy: Record<string, unknown> },
+  input: { record: MoveRecord; source: string; target: string; plan: MovePlan; copy: Record<string, unknown> },
 ): Promise<MoveOutcome> {
-  const { record, source, plan } = input
+  const { record, source, target, plan } = input
+  const restore = () => writes.update(record.id, recordBody(record, plan.sourcePlace, record.enabled !== false), source)
   try {
     await writes.update(record.id, recordBody(record, plan.sourcePlace, false), source)
   } catch (error) {
@@ -258,14 +350,33 @@ export async function moveSchedule(
   try {
     created = await writes.create(input.copy)
   } catch (error) {
-    let restored = true
+    // The create's refusal is the one said; the page says the source stayed disabled.
+    return { state: "create_failed", error, restored: await succeeded(restore) }
+  }
+  if (plan.hook) {
+    const hook = plan.hook.id
+    const copyID = createdScheduleID(created)
     try {
-      await writes.update(record.id, recordBody(record, plan.sourcePlace, record.enabled !== false), source)
-    } catch {
-      // refusal-ok: the create's refusal is the one said; the page says the source stayed disabled
-      restored = false
+      if (!copyID) throw new Error("the target's answer named no schedule id")
+      if (!writes.moveHook) throw new Error("no Cloud webhook management on this page")
+      await writes.moveHook(hook, target, plan.hook.revision)
+    } catch (error) {
+      const copyRemoved = copyID ? await succeeded(() => writes.remove(copyID, target)) : false
+      return { state: "hook_move_failed", error, copyRemoved, restored: await succeeded(restore) }
     }
-    return { state: "create_failed", error, restored }
+    try {
+      if (!writes.bindHook) throw new Error("no Cloud webhook management on this page")
+      await writes.bindHook(hook, copyID, target)
+    } catch (error) {
+      // Back in the reverse order: the hook to the source and bound to the
+      // schedule it was bound to (the source still holds that binding), then
+      // the copy, then the source enabled.
+      const hookBack = await succeeded(() => writes.moveHook!(hook, source, null))
+      const rebound = hookBack && writes.bindHook ? await succeeded(() => writes.bindHook!(hook, record.id, source)) : false
+      const copyRemoved = await succeeded(() => writes.remove(copyID, target))
+      const restored = await succeeded(restore)
+      return { state: "hook_bind_failed", error, rollback: { hookBack, rebound, copyRemoved, restored } }
+    }
   }
   try {
     await writes.remove(record.id, source)

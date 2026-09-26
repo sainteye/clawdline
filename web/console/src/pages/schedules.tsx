@@ -53,7 +53,7 @@ import {
   scheduleOwner,
   type ScheduleMachine,
 } from "../cloud/schedule-machines.js"
-import { moveSchedule, planScheduleMove, refusedByOlderTarget, targetBody, type MoveRefusal, type MoveWrites } from "../cloud/schedule-move.js"
+import { moveSchedule, planScheduleMove, refusedByOlderTarget, targetBody, type MoveHook, type MoveRefusal, type MoveWrites } from "../cloud/schedule-move.js"
 import "./schedules/machines.css"
 import overlaysMarkup from "./schedules/overlays.html?raw"
 
@@ -1228,8 +1228,6 @@ const Schedule = (() => {
         return nextWord("scheduleMoveSourceUnlisted", { project: refusal.project, machine: refusal.machine })
       case "schedule_move_no_project":
         return nextWord("scheduleMoveNoProject", { machine: refusal.machine, repo: refusal.repo })
-      case "schedule_move_webhook_bound":
-        return nextWord("scheduleMoveWebhookBound", { title: refusal.title, machine: refusal.machine })
       case "schedule_move_webhook_unknown":
         return nextWord("scheduleMoveWebhookUnknown", { title: refusal.title, machine: refusal.machine })
       case "schedule_move_spent":
@@ -1238,11 +1236,42 @@ const Schedule = (() => {
   }
 
   /**
-   * Save with another machine chosen: disable here, create there, delete here
-   * (`cloud/schedule-move.ts`). Everything that can refuse is asked first.
+   * The bound hook as Cloud answers it, read before a move plans; null when it
+   * cannot be read, which the plan refuses rather than calling "unbound".
+   */
+  async function boundHook(record: ScheduleRecord): Promise<MoveHook | null> {
+    const management = scheduleWebhookManagement()
+    if (record.webhook_binding_availability !== "active" || !record.webhook_hook_id || !management) return null
+    try {
+      const answer = await management.client.read(record.webhook_hook_id)
+      const hook = "hook" in answer && answer.hook ? answer.hook : (answer as MoveHook)
+      return { hook_id: hook.hook_id, state: hook.state, revision: hook.revision }
+    } catch {
+      // refusal-ok: an unreadable hook is the plan's schedule_move_webhook_unknown, said by name
+      return null
+    }
+  }
+
+  /**
+   * Save with another machine chosen: disable here, create there, move and
+   * bind the webhook when one is bound, delete here (`cloud/schedule-move.ts`).
+   * Everything that can refuse is asked first.
    */
   function move(form: ScheduleBody): void {
-    const id = editingId!
+    if (editRecord && editRecord.webhook_binding_availability === "active") {
+      creating = true
+      paint()
+      const record = editRecord
+      void boundHook(record).then((hook) => {
+        creating = false
+        if (editRecord === record) moveWith(form, hook)
+      })
+      return
+    }
+    moveWith(form, null)
+  }
+
+  function moveWith(form: ScheduleBody, hook: MoveHook | null): void {
     const from = machineNamed(ownerMachine || "")
     const to = machineNamed(machine || "")
     if (!editRecord || !from || !to) {
@@ -1262,6 +1291,7 @@ const Schedule = (() => {
       target: { id: to.id, name: targetName, online: to.online },
       sourcePlaces: ownerPlaces,
       targetPlaces: listed ? places || [] : null,
+      hook,
     })
     if ("refusal" in answer) {
       said(refusalSentence(answer.refusal))
@@ -1270,10 +1300,15 @@ const Schedule = (() => {
     // The project the form shows, when it is one of the target's clones of the
     // repository; otherwise the first clone.
     const place = answer.plan.targets.find((p) => p.id === chosenPlace) || answer.plan.targets[0]
+    const management = scheduleWebhookManagement()
     const writes: MoveWrites = {
       update: (scheduleID, body, on) => scheduleApi.updateSchedule(scheduleID, body, on),
       create: (body) => scheduleApi.createSchedule(body),
       remove: (scheduleID, on) => scheduleApi.deleteSchedule(scheduleID, on),
+      ...(management && {
+        moveHook: (hookID: string, on: string, revision: number | null) => management.move(hookID, on, revision),
+        bindHook: (hookID: string, scheduleID: string, on: string) => management.bindOn(on, scheduleID, hookID, null),
+      }),
     }
     const record = editRecord
     creating = true
@@ -1282,10 +1317,12 @@ const Schedule = (() => {
     const copy = targetBody({ ...form } as Record<string, unknown>, record, place)
     // The success sentence says so when the first message's path was changed.
     const retargeted = copy.instructions !== form.instructions
+    const plan = answer.plan
     moveSchedule(writes, {
       record,
       source: from.id,
-      plan: answer.plan,
+      target: to.id,
+      plan,
       copy,
     }).then((outcome) => {
       creating = false
@@ -1299,11 +1336,41 @@ const Schedule = (() => {
       if (outcome.state === "moved" || outcome.state === "delete_failed") {
         close()
         Schedules.refresh()
-        const moved =
-          outcome.state === "moved"
-            ? nextWord("scheduleMoved", { machine: targetName })
-            : nextWord("scheduleMoveDeleteFailed", { machine: targetName, source: sourceName, why: reason(outcome.error) })
-        toast(retargeted ? moved + " " + nextWord("scheduleMovePathRewritten", { path: place.path }) : moved)
+        const words = [
+          outcome.state === "delete_failed"
+            ? nextWord("scheduleMoveDeleteFailed", { machine: targetName, source: sourceName, why: reason(outcome.error) })
+            : nextWord("scheduleMoved", { machine: targetName }),
+        ]
+        if (plan.hook) words.push(nextWord("scheduleMoveWebhookMoved", { machine: targetName }))
+        if (plan.hookLeftDisabled) words.push(nextWord("scheduleMoveWebhookLeftDisabled", { machine: targetName }))
+        if (retargeted) words.push(nextWord("scheduleMovePathRewritten", { path: place.path }))
+        toast(words.join(" "))
+        return
+      }
+      if (outcome.state === "hook_move_failed" || outcome.state === "hook_bind_failed") {
+        // Every step of the undo that did not happen is said by name: which
+        // machine the hook is on and that it is paused, where each copy is.
+        const title = record.title || ""
+        const words = [
+          outcome.state === "hook_move_failed"
+            ? nextWord("scheduleMoveHookMoveFailed", { source: sourceName, why: reason(outcome.error) })
+            : nextWord("scheduleMoveHookBindFailed", { machine: targetName, source: sourceName, why: reason(outcome.error) }),
+        ]
+        const undo =
+          outcome.state === "hook_move_failed"
+            ? { copyRemoved: outcome.copyRemoved, restored: outcome.restored }
+            : outcome.rollback
+        if (outcome.state === "hook_bind_failed" && !outcome.rollback.rebound) {
+          words.push(nextWord("scheduleMoveHookStranded", {
+            title,
+            machine: outcome.rollback.hookBack ? sourceName : targetName,
+          }))
+        }
+        if (!undo.copyRemoved) words.push(nextWord("scheduleMoveCopyLeft", { machine: targetName }))
+        if (!undo.restored) words.push(nextWord("scheduleMoveSourceLeftDisabled", { source: sourceName }))
+        said(words.join(" "))
+        Schedules.refresh()
+        paint()
         return
       }
       if (outcome.state === "not_started") {

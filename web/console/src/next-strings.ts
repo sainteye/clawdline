@@ -207,6 +207,17 @@ const words = {
     scheduleMachineUnread: "{machine}: offline or unreadable",
     scheduleMoving: "Moving to {machine}…",
     scheduleMoved: "Moved to {machine}.",
+    scheduleMoveWebhookMoved: "Its webhook moved with it to {machine}, and its URL is unchanged.",
+    scheduleMoveWebhookLeftDisabled:
+      "Its webhook was disabled, so it did not move; generate a new one on {machine} if you need one.",
+    scheduleMoveHookMoveFailed:
+      "Clawdline Cloud did not move the webhook, so the schedule was not moved: it stays on {source} and its webhook is as it was. {why}",
+    scheduleMoveHookBindFailed:
+      "{machine} did not take the webhook, so the move was undone: the schedule stays on {source}. If Clawdline on {machine} is older than webhook binding, update it, then move again. {why}",
+    scheduleMoveHookStranded:
+      "The webhook of “{title}” is on {machine} and paused: calls to it run nothing. To fix it, open this schedule's webhook, disable it and generate a new one (its URL changes).",
+    scheduleMoveCopyLeft: "The copy on {machine} could not be deleted: it is there, switched on. Delete it on {machine}.",
+    scheduleMoveSourceLeftDisabled: "The schedule on {source} could not be switched back on: it is there, disabled. Switch it on.",
     scheduleMoveTargetOffline: "{machine} is offline, so the schedule was not moved. Move it once that machine is back.",
     scheduleMoveTargetOutdated:
       "Clawdline on {machine} is too old to say which repository each project clones, so the schedule was not moved. Update Clawdline on {machine}, then move it.",
@@ -217,8 +228,6 @@ const words = {
     scheduleMoveSourceUnlisted:
       "“{project}” is no longer in {machine}'s project list, so this schedule cannot be switched off there to move it. Open the project on {machine} once, then move it.",
     scheduleMoveNoProject: "{machine} has no project cloned from {repo}. Clone it there and open it once, then move the schedule.",
-    scheduleMoveWebhookBound:
-      "“{title}” has a webhook bound to it on {machine}, which would keep calling a schedule that is no longer there. Disable the webhook first, then move it.",
     scheduleMoveWebhookUnknown:
       "Whether “{title}” has a webhook could not be read on {machine}, so it was not moved. Try again.",
     scheduleMoveSpent:
@@ -578,6 +587,15 @@ const words = {
     scheduleMachineUnread: "{machine}：離線／讀不到",
     scheduleMoving: "正在搬到 {machine}…",
     scheduleMoved: "已搬到 {machine}。",
+    scheduleMoveWebhookMoved: "webhook 也一起搬到 {machine}，網址不變。",
+    scheduleMoveWebhookLeftDisabled: "它原本綁的 webhook 已停用，所以沒有一起搬；需要的話請在 {machine} 上重新產生一個。",
+    scheduleMoveHookMoveFailed: "Clawdline Cloud 沒有搬動 webhook，所以排程沒有搬：它仍在 {source}，webhook 維持原狀。{why}",
+    scheduleMoveHookBindFailed:
+      "{machine} 沒有接下 webhook，所以這次搬移已經復原：排程仍在 {source}。如果 {machine} 上的 Clawdline 比 webhook 綁定功能還舊，請先更新再搬。{why}",
+    scheduleMoveHookStranded:
+      "「{title}」的 webhook 現在在 {machine} 上，處於暫停：呼叫它不會執行任何排程。修正方式：打開這個排程的 webhook，停用後重新產生一個（網址會換）。",
+    scheduleMoveCopyLeft: "{machine} 上的那份複本沒能刪掉：它還在那裡，而且是啟用的。請到 {machine} 刪掉它。",
+    scheduleMoveSourceLeftDisabled: "{source} 上的原排程沒能重新啟用：它還在那裡，目前停用。請把它打開。",
     scheduleMoveTargetOffline: "{machine} 目前離線，排程沒有搬。等那台機器上線後再搬。",
     scheduleMoveTargetOutdated:
       "{machine} 上的 Clawdline 版本太舊，還不會說每個專案 clone 自哪個 repository，所以排程沒有搬。請先更新 {machine} 上的 Clawdline 再搬。",
@@ -588,7 +606,6 @@ const words = {
     scheduleMoveSourceUnlisted:
       "「{project}」已經不在 {machine} 的專案清單裡，沒辦法先在那裡停用這個排程再搬。請在 {machine} 上開過一次這個專案再搬。",
     scheduleMoveNoProject: "{machine} 上沒有 clone 自 {repo} 的專案。請先在那台機器 clone 並開過一次，再搬這個排程。",
-    scheduleMoveWebhookBound: "「{title}」在 {machine} 上綁了 webhook，搬走後它會一直呼叫一個已經不在的排程。請先停用 webhook 再搬。",
     scheduleMoveWebhookUnknown: "讀不到「{title}」在 {machine} 上有沒有綁 webhook，所以沒有搬。請再試一次。",
     scheduleMoveSpent: "「{title}」是只跑一次的排程，而且已經跑過了；搬過去會再跑一次。請直接在另一台機器新增一個。",
     scheduleMoveTargetTooOld: "{machine} 上的 Clawdline 版本太舊，收不下這個排程帶著的設定。請先更新 {machine} 上的 Clawdline 再搬。",

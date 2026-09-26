@@ -3,7 +3,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { moveSchedule, planScheduleMove, recordBody, refusedByOlderTarget, retargetInstructions, targetBody, type MoveRecord, type MovePlace } from "./schedule-move.ts"
+import { createdScheduleID, hookMoveRequest, moveSchedule, planScheduleMove, recordBody, refusedByOlderTarget, retargetInstructions, targetBody, type MoveHook, type MoveRecord, type MovePlace } from "./schedule-move.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { choosesMachine, groupSchedules, type ScheduleFleet } from "./schedule-machines.ts"
 
@@ -25,6 +25,9 @@ const targetPlaces: MovePlace[] = [
   { id: "cloud.other", path: "/home/bob/other", label: "other", repo: "example.com/team/other" },
   { id: "cloud.dst", path: "/home/bob/tool", label: "tool", repo: "example.com/team/tool" },
 ]
+
+const bound: MoveRecord = { ...record, webhook_binding_availability: "active", webhook_hook_id: "swh_1" }
+const hook: MoveHook = { hook_id: "swh_1", state: "active", revision: 3 }
 
 function plan(over: Partial<Parameters<typeof planScheduleMove>[0]> = {}) {
   return planScheduleMove({ record, source: mac, target: linux, sourcePlaces, targetPlaces, ...over })
@@ -53,8 +56,12 @@ test("every refusal is asked before anything is written, and names what to act o
       { code: "schedule_move_source_unlisted", project: "tool", machine: "Studio" }],
     ["a target without the project", { targetPlaces: [targetPlaces[0]] },
       { code: "schedule_move_no_project", machine: "Runner", repo: "example.com/team/tool" }],
-    ["a bound webhook", { record: { ...record, webhook_binding_availability: "active" } },
-      { code: "schedule_move_webhook_bound", title: "Nightly", machine: "Studio" }],
+    ["a bound webhook Cloud could not be read about", { record: bound },
+      { code: "schedule_move_webhook_unknown", title: "Nightly", machine: "Studio" }],
+    ["a bound webhook Cloud answers for another hook", { record: bound, hook: { ...hook, hook_id: "swh_other" } },
+      { code: "schedule_move_webhook_unknown", title: "Nightly", machine: "Studio" }],
+    ["a bound webhook in a state nothing moves", { record: bound, hook: { ...hook, state: "unknown" } },
+      { code: "schedule_move_webhook_unknown", title: "Nightly", machine: "Studio" }],
     ["an unreadable binding", { record: { ...record, webhook_binding_availability: "binding_store_unavailable" } },
       { code: "schedule_move_webhook_unknown", title: "Nightly", machine: "Studio" }],
     ["a one-time schedule that ran", { record: { ...record, fired_at: 1_790_000_000 } },
@@ -89,39 +96,39 @@ function recorder(fail: Partial<Record<"disable" | "create" | "restore" | "remov
   }
 }
 
-const movePlan = { sourcePlace: "cloud.src", repo: "example.com/team/tool", targets: [targetPlaces[1]] }
+const movePlan = { sourcePlace: "cloud.src", repo: "example.com/team/tool", targets: [targetPlaces[1]], hook: null, hookLeftDisabled: false }
 const copy = { title: "Nightly", at: "09:00", days: "daily", place_id: "cloud.dst", enabled: true }
 
 test("a move disables the source, creates the copy, then deletes the source — in that order", async () => {
   const r = recorder()
-  const outcome = await moveSchedule(r.writes, { record, source: "mac-a", plan: movePlan, copy })
+  const outcome = await moveSchedule(r.writes, { record, source: "mac-a", target: "linux-b", plan: movePlan, copy })
   assert.equal(outcome.state, "moved")
   assert.deepEqual(r.calls, ["disable s1@mac-a enabled=false", "create cloud.dst", "remove s1@mac-a"])
 })
 
 test("a refused copy switches the source back to what it was", async () => {
   const r = recorder({ create: true })
-  const outcome = await moveSchedule(r.writes, { record, source: "mac-a", plan: movePlan, copy })
+  const outcome = await moveSchedule(r.writes, { record, source: "mac-a", target: "linux-b", plan: movePlan, copy })
   assert.deepEqual({ state: outcome.state, restored: (outcome as { restored?: boolean }).restored }, { state: "create_failed", restored: true })
   assert.deepEqual(r.calls, ["disable s1@mac-a enabled=false", "create cloud.dst", "restore s1@mac-a enabled=true"])
   // A source that was disabled before the move is left disabled, as it was.
   const off = recorder({ create: true })
-  await moveSchedule(off.writes, { record: { ...record, enabled: false }, source: "mac-a", plan: movePlan, copy })
+  await moveSchedule(off.writes, { record: { ...record, enabled: false }, source: "mac-a", target: "linux-b", plan: movePlan, copy })
   assert.equal(off.calls[2], "restore s1@mac-a enabled=false")
 })
 
 test("a restore that also fails is said, not hidden", async () => {
   const r = recorder({ create: true, restore: true })
-  const outcome = await moveSchedule(r.writes, { record, source: "mac-a", plan: movePlan, copy })
+  const outcome = await moveSchedule(r.writes, { record, source: "mac-a", target: "linux-b", plan: movePlan, copy })
   assert.deepEqual({ state: outcome.state, restored: (outcome as { restored?: boolean }).restored }, { state: "create_failed", restored: false })
 })
 
 test("a refused disable writes nothing else, and a refused delete leaves the source disabled", async () => {
   const first = recorder({ disable: true })
-  assert.equal((await moveSchedule(first.writes, { record, source: "mac-a", plan: movePlan, copy })).state, "not_started")
+  assert.equal((await moveSchedule(first.writes, { record, source: "mac-a", target: "linux-b", plan: movePlan, copy })).state, "not_started")
   assert.deepEqual(first.calls, ["disable s1@mac-a enabled=false"])
   const last = recorder({ remove: true })
-  assert.equal((await moveSchedule(last.writes, { record, source: "mac-a", plan: movePlan, copy })).state, "delete_failed")
+  assert.equal((await moveSchedule(last.writes, { record, source: "mac-a", target: "linux-b", plan: movePlan, copy })).state, "delete_failed")
   assert.deepEqual(last.calls, ["disable s1@mac-a enabled=false", "create cloud.dst", "remove s1@mac-a"])
 })
 
@@ -207,7 +214,7 @@ test("a target that refuses the template is not asked again without it", async (
   const answer = plan({ record: hidden })
   assert.ok("plan" in answer)
   const outcome = await moveSchedule(writes, {
-    record: hidden, source: "mac-a", plan: answer.plan,
+    record: hidden, source: "mac-a", target: "linux-b", plan: answer.plan,
     copy: targetBody({ title: "Nightly" }, hidden, targetPlaces[1]),
   })
   assert.equal(outcome.state, "create_failed")
@@ -229,7 +236,7 @@ test("a target that refuses the permission field is not asked again without it",
   const answer = plan({ record: full })
   assert.ok("plan" in answer)
   const outcome = await moveSchedule(writes, {
-    record: full, source: "mac-a", plan: answer.plan,
+    record: full, source: "mac-a", target: "linux-b", plan: answer.plan,
     copy: targetBody({ title: "Nightly", permission_mode: "full" }, full, targetPlaces[1]),
   })
   assert.equal(outcome.state, "create_failed")
@@ -266,4 +273,181 @@ test("the machine is only chosen when there is more than one to choose from", ()
   assert.equal(choosesMachine(null), false)
   assert.equal(choosesMachine({ current: "a", machines: [fleet.machines[0]] }), false)
   assert.equal(choosesMachine(fleet), true)
+})
+
+// ---- A bound webhook moves with its schedule and keeps its URL ------------
+
+test("a bound webhook is planned to move with the schedule; a disabled one is left and said", () => {
+  for (const state of ["active", "pending_binding"]) {
+    const answer = plan({ record: bound, hook: { ...hook, state } })
+    assert.ok("plan" in answer, state)
+    assert.deepEqual({ hook: answer.plan.hook, left: answer.plan.hookLeftDisabled },
+      { hook: { id: "swh_1", revision: 3 }, left: false }, state)
+  }
+  const disabled = plan({ record: bound, hook: { ...hook, state: "disabled" } })
+  assert.ok("plan" in disabled)
+  assert.deepEqual({ hook: disabled.plan.hook, left: disabled.plan.hookLeftDisabled }, { hook: null, left: true })
+  // Unbound: nothing to move, and Cloud is not needed.
+  const plain = plan()
+  assert.ok("plan" in plain)
+  assert.deepEqual({ hook: plain.plan.hook, left: plain.plan.hookLeftDisabled }, { hook: null, left: false })
+})
+
+type HookFail = Partial<Record<"disable" | "create" | "restore" | "remove" | "copy" | "move" | "moveBack" | "bind" | "rebind", boolean>>
+
+/** Every write, the hook's included, in the order it happened. */
+function hookRecorder(fail: HookFail = {}, created: unknown = { ok: true, schedule: { id: "s2" } }) {
+  const calls: string[] = []
+  let updates = 0
+  let moves = 0
+  let binds = 0
+  const refuse = (step: keyof HookFail) => {
+    if (fail[step]) throw Object.assign(new Error(step), { code: step === "move" ? "stale_revision" : "machine_offline" })
+  }
+  return {
+    calls,
+    writes: {
+      async update(id: string, body: Record<string, unknown>, machine: string) {
+        const step = updates++ === 0 ? "disable" : "restore"
+        calls.push(`${step} ${id}@${machine} enabled=${body.enabled}`)
+        refuse(step)
+      },
+      async create(body: Record<string, unknown>) {
+        calls.push(`create ${body.place_id}`)
+        refuse("create")
+        return created
+      },
+      async remove(id: string, machine: string) {
+        calls.push(`remove ${id}@${machine}`)
+        refuse(id === "s1" ? "remove" : "copy")
+      },
+      async moveHook(hookID: string, machine: string, revision: number | null) {
+        const step = moves++ === 0 ? "move" : "moveBack"
+        calls.push(`${step} ${hookID}->${machine} rev=${revision}`)
+        refuse(step)
+      },
+      async bindHook(hookID: string, scheduleID: string, machine: string) {
+        const step = binds++ === 0 ? "bind" : "rebind"
+        calls.push(`${step} ${hookID}->${scheduleID}@${machine}`)
+        refuse(step)
+      },
+    },
+  }
+}
+
+const hookPlan = { ...movePlan, hook: { id: "swh_1", revision: 3 } }
+const hookMove = (r: ReturnType<typeof hookRecorder>) =>
+  moveSchedule(r.writes, { record: bound, source: "mac-a", target: "linux-b", plan: hookPlan, copy })
+
+test("the hook moves after the copy exists and before the source is deleted, bound to the copy's id", async () => {
+  const r = hookRecorder()
+  assert.equal((await hookMove(r)).state, "moved")
+  assert.deepEqual(r.calls, [
+    "disable s1@mac-a enabled=false",
+    "create cloud.dst",
+    "move swh_1->linux-b rev=3",
+    "bind swh_1->s2@linux-b",
+    "remove s1@mac-a",
+  ])
+})
+
+test("Cloud refusing the hook's move deletes the copy and switches the source back; the hook is untouched", async () => {
+  const r = hookRecorder({ move: true })
+  const outcome = await hookMove(r)
+  assert.deepEqual({ ...outcome, error: undefined },
+    { state: "hook_move_failed", error: undefined, copyRemoved: true, restored: true })
+  assert.deepEqual(r.calls, [
+    "disable s1@mac-a enabled=false",
+    "create cloud.dst",
+    "move swh_1->linux-b rev=3",
+    "remove s2@linux-b",
+    "restore s1@mac-a enabled=true",
+  ])
+  // And when the undo cannot finish, each part says so.
+  const stuck = await hookMove(hookRecorder({ move: true, copy: true, restore: true }))
+  assert.deepEqual({ ...stuck, error: undefined },
+    { state: "hook_move_failed", error: undefined, copyRemoved: false, restored: false })
+})
+
+test("a target that does not bind moves the hook back, binds it to the source schedule again, then undoes the copy", async () => {
+  const r = hookRecorder({ bind: true })
+  const outcome = await hookMove(r)
+  assert.equal(outcome.state, "hook_bind_failed")
+  assert.deepEqual((outcome as { rollback: unknown }).rollback,
+    { hookBack: true, rebound: true, copyRemoved: true, restored: true })
+  assert.deepEqual(r.calls, [
+    "disable s1@mac-a enabled=false",
+    "create cloud.dst",
+    "move swh_1->linux-b rev=3",
+    "bind swh_1->s2@linux-b",
+    // The forward move changed the revision: the way back reads it again.
+    "moveBack swh_1->mac-a rev=null",
+    "rebind swh_1->s1@mac-a",
+    "remove s2@linux-b",
+    "restore s1@mac-a enabled=true",
+  ])
+  assert.ok(!r.calls.includes("remove s1@mac-a"), "the source is never deleted on a failed bind")
+})
+
+test("a rollback that cannot finish says which step did not happen", async () => {
+  // The hook could not come back: it stays on the target, paused, and is not re-bound.
+  const away = hookRecorder({ bind: true, moveBack: true })
+  const a = await hookMove(away)
+  assert.deepEqual((a as { rollback: unknown }).rollback, { hookBack: false, rebound: false, copyRemoved: true, restored: true })
+  assert.ok(!away.calls.some((c) => c.startsWith("rebind")), "a hook that did not come back is not bound here")
+  // The hook came back and the source did not activate it: paused on the source.
+  const paused = await hookMove(hookRecorder({ bind: true, rebind: true, copy: true }))
+  assert.deepEqual((paused as { rollback: unknown }).rollback, { hookBack: true, rebound: false, copyRemoved: false, restored: true })
+})
+
+test("a copy whose id the target did not answer is removed from nowhere and the hook is never moved", async () => {
+  const r = hookRecorder({}, { ok: true })
+  const outcome = await hookMove(r)
+  assert.deepEqual({ ...outcome, error: undefined },
+    { state: "hook_move_failed", error: undefined, copyRemoved: false, restored: true })
+  assert.ok(!r.calls.some((c) => c.startsWith("move")), r.calls.join(", "))
+  assert.equal(createdScheduleID({ schedule: { id: "s2" } }), "s2")
+  assert.equal(createdScheduleID({ schedule: {} }), null)
+})
+
+test("a refused delete after the hook moved leaves it on the target, bound to the copy", async () => {
+  const r = hookRecorder({ remove: true })
+  assert.equal((await hookMove(r)).state, "delete_failed")
+  assert.deepEqual(r.calls.slice(-3), ["move swh_1->linux-b rev=3", "bind swh_1->s2@linux-b", "remove s1@mac-a"])
+})
+
+test("a page without Cloud webhook management cannot move a bound hook, and undoes the copy", async () => {
+  const r = hookRecorder()
+  const { moveHook: _m, bindHook: _b, ...plain } = r.writes
+  const outcome = await moveSchedule(plain, { record: bound, source: "mac-a", target: "linux-b", plan: hookPlan, copy })
+  assert.deepEqual({ ...outcome, error: undefined },
+    { state: "hook_move_failed", error: undefined, copyRemoved: true, restored: true })
+})
+
+test("the Cloud move is POST /v1/schedule-webhooks/:id/move with exactly machine_id and expected_revision", async () => {
+  assert.deepEqual(hookMoveRequest("swh_1", "mac_target", 3), {
+    method: "POST",
+    path: "/v1/schedule-webhooks/swh_1/move",
+    body: { machine_id: "mac_target", expected_revision: 3 },
+  })
+  // Sent through the copied client's own seam, which adds the session and an Idempotency-Key.
+  const { ScheduleWebhookClient } = await import("../legacy/js/net/schedule-webhooks.js")
+  const sent: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = []
+  const client = new ScheduleWebhookClient({
+    origin: "https://api.example.test/",
+    idempotencyKey: () => "intent-1",
+    fetch: async (url: string, init: { method: string; headers: Record<string, string>; body: string }) => {
+      sent.push({ url, method: init.method, headers: init.headers, body: JSON.parse(init.body) })
+      return new Response(JSON.stringify({ hook: { hook_id: "swh_1", state: "pending_binding", revision: 4 } }), { status: 200 })
+    },
+  })
+  const request = hookMoveRequest("swh_1", "mac_target", 3)
+  const answer = await client.send(request.method, request.path, request.body, true)
+  assert.deepEqual(sent, [{
+    url: "https://api.example.test/v1/schedule-webhooks/swh_1/move",
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", "Idempotency-Key": "intent-1" },
+    body: { machine_id: "mac_target", expected_revision: 3 },
+  }])
+  assert.equal(answer.hook.state, "pending_binding")
 })

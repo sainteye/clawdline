@@ -95,6 +95,9 @@ event can open a full agent session on your machine instead of running a fixed s
 - `202` means Clawdline Cloud durably accepted the request, not that the run finished. The result
   is in the schedule's history.
 - **輪替網址** (rotate URL) replaces the address; **停用 Webhook** (disable) turns it off.
+- Moving the schedule to another machine (changing **機器**) moves its webhook too, and the URL stays
+  the same, so whatever calls it needs no change. A disabled webhook is not moved; generate a new one
+  on the other machine if you need one.
 
 ## Troubleshooting
 
