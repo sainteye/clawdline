@@ -3,7 +3,7 @@ import test from "node:test"
 import type { SessionRow } from "@clawdline/contract"
 import type { SessionWorkV2 } from "./api.js"
 // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
-import { assistantName, rememberAssistant, rememberedAssistant, sessionActivityName, sessionWorkCounts, sessionWorkStateName } from "./session-assignment.ts"
+import { assignmentCandidates, assistantName, rememberAssistant, rememberedAssistant, sessionActivityName, sessionWorkCounts, sessionWorkStateName } from "./session-assignment.ts"
 
 test("assignment choices distinguish live activity from unreadable state", () => {
   assert.equal(sessionActivityName("working"), "Working")
@@ -43,4 +43,12 @@ test("a new Session keeps the assistant last chosen, and Codex before any choice
   const blocked = { getItem: () => { throw new Error("blocked") }, setItem: () => { throw new Error("blocked") } }
   assert.equal(rememberedAssistant(blocked), "codex")
   assert.doesNotThrow(() => rememberAssistant("claude", blocked))
+})
+
+test("an owned item can be handed to any other Session in its Project, never back to its owner", () => {
+  const row = (id: string, sessionId: string, cwd = "/p") => ({ id, sessionId, cwd }) as SessionRow
+  const sessions = [row("%1", "owner"), row("%2", "other"), row("%3", ""), row("%4", "elsewhere", "/q")]
+  const item = { project: { path: "/p" }, owner_session: "owner" }
+  assert.deepEqual(assignmentCandidates(sessions, item).map((s) => s.id), ["%2"])
+  assert.deepEqual(assignmentCandidates(sessions, { ...item, owner_session: null }).map((s) => s.id), ["%1", "%2"])
 })

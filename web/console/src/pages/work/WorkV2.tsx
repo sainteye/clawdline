@@ -43,6 +43,7 @@ import {
   type SessionWorkV2,
 } from "./api.js"
 import {
+  assignmentCandidates,
   assistantName,
   NEW_SESSION_ASSISTANTS,
   rememberAssistant,
@@ -271,18 +272,22 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   const [deleting, setDeleting] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [reminded, setReminded] = useState(false)
+  // Moving an owned item to another Session opens the same picker an
+  // unassigned card shows, without its owner among the choices.
+  const [reassigning, setReassigning] = useState(false)
   // An assignment that failed says so on this card: opening a new Session can
   // take a minute and a half, and the page-level note it used to land in is
   // scrolled out of sight on a phone, where the press looked like nothing.
   const [assignFailed, setAssignFailed] = useState(false)
   const assign = (task: () => Promise<unknown>) => {
     clearFailure(); setAssignFailed(false)
-    void run(item.id, task).then((ok) => setAssignFailed(!ok))
+    void run(item.id, task).then((ok) => { setAssignFailed(!ok); if (ok) setReassigning(false) })
   }
   const imagePicker = useRef<HTMLInputElement>(null)
-  const eligible = useMemo(() => sessions.filter((s) => s.cwd === item.project.path && s.sessionId), [sessions, item.project.path])
+  const eligible = useMemo(() => assignmentCandidates(sessions, item), [sessions, item.project.path, item.owner_session])
   const owner = item.owner_session ? sessions.find((session) => session.sessionId === item.owner_session) : undefined
   const assignable = item.area !== "planning" && !item.closed_at && !item.owner_session
+  const reassignable = item.area !== "planning" && !item.closed_at && !!item.owner_session
   return <article className="work-card work-v2-card" data-work-id={item.id} data-phase={item.phase}>
     <div className="work-card-toolbar">
       <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></div>
@@ -291,6 +296,9 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
           onClick={() => { clearFailure(); setReminded(false); void run(`remind-${item.id}`, () => remindWorkV2(item)).then(setReminded) }}>
           <WorkIcon name={reminded ? "check" : "remind"} /> {reminded ? "已提醒" : "提醒 Session"}
         </button>}
+        {reassignable && <button type="button" disabled={!!busy} aria-expanded={reassigning}
+          onClick={() => { clearFailure(); setAssignFailed(false); setTerminal(""); setReassigning((shown) => !shown) }}>
+          <WorkIcon name="reassign" /> 改派</button>}
         {!item.closed_at && <button type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setCompleting(true) }}><WorkIcon name="check" /> 完成</button>}
         <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><WorkIcon name="edit" /> 編輯</button>
@@ -318,7 +326,9 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     </section>}
     {/* Choosing who does the work is what an unassigned card is for, so the
         picker sits under what the work is, above its progress and pictures. */}
-    {assignable && <div className="work-assignment">
+    {(assignable || (reassignable && reassigning)) && <div className="work-assignment">
+      {reassignable && <p className="work-reassign-note">改派給其他 Session：目前的 phase、steps 與文件都會保留，新 Session
+        會被告知從哪裡接手；原本的 Session 會收到停止通知。</p>}
       <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment} />
       <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => assign(() => assignWorkV2(item, terminal))}>指派</button>
       <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
@@ -333,6 +343,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
       <button className="chip" type="button" disabled={!!busy} aria-busy={busy === item.id}
         onClick={() => assign(() => assignNewWorkV2(item, assistant))}>
         {busy === item.id ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button>
+      {reassignable && <button className="chip" type="button" disabled={!!busy} onClick={() => setReassigning(false)}>取消</button>}
       {assignFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     </div>}
     <WorkSteps steps={item.steps} />

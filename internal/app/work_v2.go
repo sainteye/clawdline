@@ -592,6 +592,9 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		next.UpdatedAt = now
 		fields := map[string]any{"assignment_id": a.ID, "mode": a.Mode, "pending": pending,
 			"session_id": a.SessionID, "seeded_steps": len(seeded)}
+		if old.ID != "" {
+			fields["previous_session"] = old.SessionID
+		}
 		if c.Claim != nil {
 			fields["via_run"], fields["claimed"], fields["excerpt"] = c.Claim.Run, true, c.Claim.Excerpt
 		}

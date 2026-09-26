@@ -245,3 +245,10 @@ test("a dictating text box is never inside a <label>, which would hand its Done 
   assert.match(source, /<VoiceTextarea label="描述" value=\{description\} maxLength=\{65536\}/)
   assert.match(source, /<VoiceTextarea label="描述" value=\{description\} onValue=\{setDescription\} \/>/)
 })
+
+test("an assigned card can be moved to another or a new Session", () => {
+  assert.match(source, /const reassignable = item\.area !== "planning" && !item\.closed_at && !!item\.owner_session/)
+  assert.match(source, /<WorkIcon name="reassign" \/> 改派/)
+  assert.match(source, /\(assignable \|\| \(reassignable && reassigning\)\) && <div className="work-assignment">/)
+  assert.match(source, /assignmentCandidates\(sessions, item\)/)
+})

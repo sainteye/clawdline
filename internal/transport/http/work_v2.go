@@ -189,6 +189,57 @@ func workV2AssignmentBrief(id, title string) string {
 		workV2StepsInstruction(id), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
 }
 
+// workV2ReassignmentBrief is what an existing Session is sent when the person
+// moves an item to it from another Session: the item is mid-flight, so it is
+// told to continue from what is recorded rather than start over.
+func workV2ReassignmentBrief(id, title string, phase work.Phase) string {
+	return fmt.Sprintf("Clawdline reassigned Board item %s: %s to you. %s %s %s %s", id, title,
+		workV2TakeoverNote(phase), workV2StepsInstruction(id), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
+}
+
+// workV2TakeoverNote says what a Session taking an item over from another one
+// must read first. The previous Session is not named by id: it may have run
+// out of tokens or been closed, and the item's record is what carries over.
+func workV2TakeoverNote(phase work.Phase) string {
+	return fmt.Sprintf("Another Session owned it before and no longer does; the item is in phase %s, and its steps, "+
+		"documents and history are kept. Read them, and look for work the previous Session left in this Project "+
+		"(its branch or worktree) before starting over, then continue from where it stopped.", phase)
+}
+
+// workV2ReleasedNotice is what the Session an item was moved away from is
+// sent, so a Session that is still running stops working on it.
+func workV2ReleasedNotice(id, title string) string {
+	return fmt.Sprintf("Clawdline moved Board item %s: %s from this Session to another Session. It is no longer yours: "+
+		"do not change its phase, steps or documents, and do not land it. If you have uncommitted work for it, commit it "+
+		"on your branch so the new owner can find it; then stop working on this item.", id, title)
+}
+
+// workV2ActiveOwner is the item's active assignment held by its owner, or the
+// zero assignment when nobody holds it.
+func workV2ActiveOwner(item app.WorkV2View) work.AssignmentV2 {
+	for _, a := range item.Assignments {
+		if a.State == "active" && a.SessionID != "" && a.SessionID == item.Item.OwnerSession {
+			return a
+		}
+	}
+	return work.AssignmentV2{}
+}
+
+// tellReleasedOwner sends the courtesy notice to the Session an item was just
+// moved away from. The assignment record is the durable fact; the notice is
+// typed only when the terminal still holds that conversation and reads idle,
+// so a recycled terminal never receives another Session's work.
+func (s *Server) tellReleasedOwner(ctx context.Context, previous work.AssignmentV2, id, title string) {
+	if previous.TerminalID == "" {
+		return
+	}
+	sess, err := s.actions().Find(ctx, previous.TerminalID)
+	if err != nil || sess.ConversationID != previous.SessionID {
+		return
+	}
+	_, _ = s.actions().SendIfIdle(ctx, sess.ID, workV2ReleasedNotice(id, title))
+}
+
 // workV2RootAssignmentAcceptance is the acceptance of the Root Assignment a
 // new Session is opened with for an item.
 func workV2RootAssignmentAcceptance(id string) string {
@@ -993,6 +1044,11 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		if !sessionInProject(sess, item.Item) {
 			return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "project_mismatch", Message: "The chosen Session is not working in this item's Project."}
 		}
+		previous := workV2ActiveOwner(item)
+		if previous.SessionID == sess.ConversationID {
+			return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "assignment_unchanged",
+				Message: "That Session already owns this item; choose another Session, or remind it instead."}
+		}
 		assigned, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
 			SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant), Actor: actor}, false, nil)
 		if err != nil {
@@ -1003,6 +1059,10 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		// courtesy when a fresh reading still says idle. Working, waiting and
 		// unknown rows pull their to-do list after their present turn.
 		brief := workV2AssignmentBrief(id, item.Item.Title)
+		if previous.ID != "" {
+			brief = workV2ReassignmentBrief(id, item.Item.Title, assigned.Item.Phase)
+			s.tellReleasedOwner(ctx, previous, id, item.Item.Title)
+		}
 		if _, sendErr := s.actions().SendIfIdle(ctx, sess.ID, brief); sendErr != nil {
 			refusal, deferred := sendErr.(app.Refusal)
 			if !deferred || refusal.Code != "session_not_idle" {
@@ -1043,6 +1103,11 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 	if err != nil {
 		return app.WorkV2View{}, err
 	}
+	previous := workV2ActiveOwner(item)
+	scope := item.Item.Description
+	if previous.ID != "" {
+		scope = workV2TakeoverNote(item.Item.Phase) + "\n\n" + scope
+	}
 	assignmentID, requestID := newWorkV2UUID(), newWorkV2UUID()
 	pending, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
 		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID}, true, nil)
@@ -1052,7 +1117,7 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 	ra, _, openErr := s.broker.OpenRootAssignment(ctx, requestID, orchestrator.RootAssignmentRequest{
 		RequestID: requestID, Assistant: assistant, Model: model, ProjectDir: item.Item.ProjectPath,
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
-			Scope: item.Item.Description, Constraints: "Own only this Board item. Do not create Board items.",
+			Scope: scope, Constraints: "Own only this Board item. Do not create Board items.",
 			RelevantReferences: "Board item: " + item.Item.ID,
 			Acceptance:         workV2RootAssignmentAcceptance(item.Item.ID)}})
 	failure, resolvedTerminal, resolvedSession := "", "", ""
@@ -1083,6 +1148,9 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 	}
 	if failure != "" {
 		return finished, &app.WorkError{Status: http.StatusBadGateway, Code: "assignment_failed", Message: failure}
+	}
+	if previous.ID != "" && previous.SessionID != resolvedSession {
+		s.tellReleasedOwner(ctx, previous, id, item.Item.Title)
 	}
 	// File the answer after the external root was opened and the local owner is durable.
 	answer := workV2Answer(s.workV2ItemOf(ctx, finished))
