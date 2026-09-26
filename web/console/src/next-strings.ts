@@ -305,6 +305,12 @@ const words = {
       "This page kept the words when it was reloaded, but not the pictures, so this one cannot be sent again from here.",
     menuUnknown: "Not known whether that answer reached the machine. Waiting for the session to update.",
     menuChooseAgain: "Choose again",
+    menuUnreadSay:
+      "Claude Code is showing a menu on that machine, and Clawdline could not read its choices from the screen.",
+    menuUnreadHow:
+      "*Sending a message will not answer it.* Open the live screen to see what it asks, or cancel the menu (the same as pressing Esc there) and then say your answer in the message box.",
+    menuCancel: "Cancel this menu (Esc)",
+    menuCancelSent: "Esc sent. Once the menu has closed, say your answer in the message box.",
     menuTicked: "Ticked. Nothing is sent until you press Submit.",
     newBuild: "A newer Clawdline is being served. This page is still the older one.",
     newBuildReload: "Reload",
@@ -609,6 +615,11 @@ const words = {
     sendKeptWords: "重新載入時這一頁留住了文字，但沒有留住圖片，所以這一則不能從這裡再送一次。",
     menuUnknown: "不知道剛才的選擇有沒有送到那台機器，等畫面更新。",
     menuChooseAgain: "重新選擇",
+    menuUnreadSay: "Claude Code 正在那台機器上顯示一個選單，Clawdline 沒能從畫面讀出它的選項。",
+    menuUnreadHow:
+      "*直接送訊息不會回答它。*打開即時畫面看它在問什麼，或取消這個選單（等於在那台機器上按 Esc），再用下面的輸入框說你的答案。",
+    menuCancel: "取消這個選單（Esc）",
+    menuCancelSent: "已送出 Esc。選單關掉後，用輸入框說你的答案。",
     menuTicked: "已打勾。要按 Submit 才會送出。",
     newBuild: "已經有新版的 Clawdline，這個頁面還是舊的那一份。",
     newBuildReload: "重新載入",

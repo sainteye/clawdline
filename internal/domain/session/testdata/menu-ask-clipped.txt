@@ -1,0 +1,23 @@
+│ The afternoon order goes out at three, and the kitchen closes the
+│ tea urn at half past two, so whatever is chosen now is what
+│ arrives. The biscuits run out first on Fridays; the fruit bowl
+│ is refilled every hour. Water is always there, which is why it
+│ is not on this list. Which should be ordered for the meeting
+│ room?
+
+❯ 1. Tea and biscuits (Recommended)
+     A pot of black tea for six with a plate of shortbread. It
+     is what was ordered last week and nobody complained, though
+     the shortbread went before the second pot.
+     A second plate can be added before three.
+  2. Coffee only
+     A cafetière for six. Nothing to eat, so the meeting stays
+     short and nobody leaves crumbs on the projector.
+  3. Fruit
+     Whatever the bowl has at three. Cheaper than either, but
+     the choice is the kitchen's.
+  4. Type something.
+────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

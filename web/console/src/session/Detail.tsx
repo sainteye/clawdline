@@ -253,7 +253,7 @@ export function Detail({
         </div>
       </div>
 
-      {selectedAgent ? null : <Composer row={row} onDid={onDid} />}
+      {selectedAgent ? null : <Composer row={row} onDid={onDid} onScreen={() => setScreenOpen(true)} />}
       {selectedAgent ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens

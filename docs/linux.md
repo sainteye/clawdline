@@ -184,6 +184,36 @@ hand submitted it immediately and the child then ran to `success`.
 Neither defect is about Linux. They are what a Linux box hits first because codex may be the only
 assistant signed in on it.
 
+### 4.2a A picker taller than an 80×24 pane lost its frame, and the phone could not answer it
+
+A session this daemon starts in tmux on a machine nobody is attached to gets tmux's `default-size`,
+80×24, and Claude Code runs it on the alternate screen, so there is no scrollback either. An
+AskUserQuestion picker with a few lines of description under each row is taller than that: its tab
+bar and the rule above the question are drawn off the top, and the screen starts in the middle of
+the question. `session.ReadMenu` trusted AskUserQuestion's flush-left caret only under such a frame,
+so on 2026-09-26 a session sat `waiting` with `menu: null`. The phone's card said the menu could not
+be read and to answer it "on the Mac"; a message sent anyway was typed into the picker and never
+submitted (`send_unsubmitted`), and every button on the card was switched off.
+
+What changed:
+
+- **The picker's own key line stands in for the frame.** A screen that ends on
+  `Enter to select · … · Esc to cancel`, with the registry's gate open and nothing of the session's
+  own between the top of the screen and the rows, is read as the picker it is
+  (`TestAPickerWithItsTopCutOffIsStillRead`, `menu-ask-clipped.txt`).
+- **A menu that still cannot be read has a way out on the phone.** The card says that a message will
+  not answer it and offers two things that need no reading: **Live screen**, to see what is asked,
+  and **Cancel this menu (Esc)** — the stop row's `POST /interrupt` — which closes the picker so the
+  answer can be said in the message box. It no longer names a Mac.
+
+When a session is stuck on a question again: open Live screen; if the choices are there but not on
+the card, the screen's last line and the rows above it are the evidence the reader missed — capture
+it (`tmux capture-pane -p -e -J -t <pane>`), rewrite it in a fixture's own words, and make
+`ReadMenu` read it. Until then, Cancel this menu and answer in words.
+
+Not done: the pane is still 80×24. Starting panes larger would make fewer pickers overflow, but it
+changes every Linux session's screen and was left for its own decision.
+
 ### 4.3 Schedules have no route in standalone mode
 
 The scheduler clock runs — `/v1/diagnostics` reports `scheduler.considered/due/fired` and a

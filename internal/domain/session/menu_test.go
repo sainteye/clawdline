@@ -267,3 +267,55 @@ func TestCodexPickerIsStillRead(t *testing.T) {
 		t.Fatalf("menu %+v", m)
 	}
 }
+
+// A picker taller than its pane is drawn with its top cut off: on an 80×24
+// tmux pane — what a session started on a Linux machine with nobody attached
+// gets — the tab bar and the rule above the question are gone, and the screen
+// starts in the middle of the question. The frame this file asks for before it
+// trusts a flush-left caret is not there to be found, and on 2026-09-26 a
+// session sat on such a picker with a phone saying the menu could not be read
+// and no way to answer it (`menu-ask-clipped`, drawn in the shape of that
+// screen, in this test's own words).
+//
+// The picker's own key line stands in for the frame: "Enter to select … Esc to
+// cancel" is drawn by the picker and by nothing else, as the last line of the
+// screen.
+func TestAPickerWithItsTopCutOffIsStillRead(t *testing.T) {
+	screen := fixture(t, "menu-ask-clipped.txt")
+	m, ok := ReadMenu(screen, AssistantClaude, true)
+	if !ok {
+		t.Fatal("no menu on a screen whose picker lost its frame off the top")
+	}
+	if got := labels(m); got != "Tea and biscuits (Recommended)|Coffee only|Fruit|Type something.|Chat about this" {
+		t.Fatalf("labels %q", got)
+	}
+	if m.Selected == nil || *m.Selected != 1 || !m.Numbered || m.Submit != nil {
+		t.Fatalf("menu %+v", m)
+	}
+	if !strings.HasPrefix(m.Options[1].Detail, "A cafetière for six.") {
+		t.Fatalf("detail %q", m.Options[1].Detail)
+	}
+}
+
+// What the key line is standing in for is still required: the gate, the key
+// line itself, and nothing of the session's own between the top of the screen
+// and the rows.
+func TestACutOffPickerNeedsItsKeyLineAndTheGate(t *testing.T) {
+	screen := fixture(t, "menu-ask-clipped.txt")
+	if _, ok := ReadMenu(screen, AssistantClaude, false); ok {
+		t.Fatal("a cut-off picker was read with the gate shut")
+	}
+	footer := "Enter to select · ↑/↓ to navigate · Esc to cancel"
+	if !strings.Contains(screen, footer) {
+		t.Fatal("fixture lost its key line")
+	}
+	if m, ok := ReadMenu(strings.Replace(screen, footer, "", 1), AssistantClaude, true); ok {
+		t.Fatalf("rows with no key line under them read as %+v", m.Options)
+	}
+	// A turn of the session's above the rows: this is scrollback of a list it
+	// printed, and the key line belongs to something else.
+	marked := strings.Replace(screen, "│ room?", "⏺ room?", 1)
+	if m, ok := ReadMenu(marked, AssistantClaude, true); ok {
+		t.Fatalf("rows under a turn marker read as %+v", m.Options)
+	}
+}

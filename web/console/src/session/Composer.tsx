@@ -72,7 +72,15 @@ import { ImageMarkup } from "./ImageMarkup.js"
  * `useKeyboardBar` below is still a local rendering of `input/edges.js`, which
  * is not among the copied modules.
  */
-export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => void }) {
+export function Composer({
+  row,
+  onDid,
+  onScreen,
+}: {
+  row: SessionRow | null
+  onDid: () => void
+  onScreen?: () => void
+}) {
   const T = L.strings
   const msg = useRef<HTMLDivElement>(null)
   const send = useRef<HTMLButtonElement>(null)
@@ -443,7 +451,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
         void submit()
       }}
     >
-      <Waiting row={row} write={write} />
+      <Waiting row={row} write={write} onScreen={onScreen} />
       <div
         className="shots"
         id="shots"
