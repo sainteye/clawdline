@@ -502,7 +502,7 @@ func refusalReply(b body, word string, class Class) (string, string, bool) {
 		return "", "", false
 	}
 	switch word {
-	case "send", "answer", "key", "end", "focus", "smart-title", "shell-kill":
+	case "send", "answer", "key", "end", "focus", "interrupt", "smart-title", "shell-kill":
 		return session, "action:" + request, true
 	}
 	// Every machine command, and any word this machine does not know, is answered
@@ -1563,6 +1563,25 @@ func init() {
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "POST", Path: "/v1/sessions/" + segment(p.target) + "/focus"}
+			}},
+
+		// Stopping the turn a session is working on: the one Escape its own
+		// working line asks for. Not a Swift word — that app had no stop — and
+		// not `key`, whose allowlist is a menu's answers and which this bridge
+		// refuses unless the answer names its question; a stop has no question.
+		op{name: "interrupt",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, true)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/sessions/" + segment(p.target) + "/interrupt", Body: []byte("{}")}
 			}},
 
 		op{name: "smart-title",

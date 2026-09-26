@@ -29,6 +29,9 @@ func (t *Tmux) Keystroke(ctx context.Context, s session.Session, bytes []byte) e
 
 var _ ports.KeyHost = (*Tmux)(nil)
 
+// keyEscape is what Interrupt types on every backend.
+var keyEscape = []byte{0x1b}
+
 // Screens reads a session's visible screen through whichever backend owns it:
 // tmux on every platform, iTerm2 where there is one. A backend with no way to
 // read its screen answers false, which callers treat as "unread", not "empty".

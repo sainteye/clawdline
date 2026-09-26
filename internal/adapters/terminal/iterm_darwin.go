@@ -318,11 +318,11 @@ func (i *ITerm) Open(ctx context.Context, req ports.OpenRequest) (session.Sessio
 	return session.Session{}, errUnsupported("open a session")
 }
 
-// Interrupt is not implemented for the iTerm backend yet. It answers with a
-// refusal rather than doing nothing quietly, because a caller that believes a
-// turn was stopped is worse off than one told it was not.
+// Interrupt stops the current turn with one Escape, as Tmux.Interrupt does
+// and for the same reason, typed through the same key script a menu answer
+// uses.
 func (i *ITerm) Interrupt(ctx context.Context, s session.Session) error {
-	return errUnsupported("interrupt")
+	return i.Keystroke(ctx, s, keyEscape)
 }
 
 // Close closes one iTerm2 session — the session, never its tab or window

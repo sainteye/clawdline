@@ -221,6 +221,7 @@ export type WriteRoute =
   | { op: "end"; word: Carried<"end">; session: string }
   | { op: "focus"; word: Carried<"focus">; session: string }
   | { op: "smart-title"; word: Carried<"smart-title">; session: string }
+  | { op: "interrupt"; word: Carried<"interrupt">; session: string }
   | { op: "start"; word: Carried<"start">; place: string; assistant: string; model: string }
   | { op: "resume"; word: Carried<"resume">; place: string; assistant: string; past: string }
   | { op: "voice"; word: Carried<"voice"> }
@@ -257,8 +258,8 @@ export type WriteRoute =
   | { op: "work-v2-todo-create"; word: Carried<"work.v2.todo-create">; terminal: string }
   | { op: "work-v2-todo-image-create"; word: Carried<"work.v2.todo-image-create">; terminal: string; id: string }
   | { op: "work-v2-todo-action"; word: Carried<"work.v2.todo-action">; terminal: string; id: string; action: "send" | "complete" | "delete" }
-  // `interrupt` and manual `title` are not Cloud words at all — not here and not in
-  // the Swift app's vocabulary — so this one is a plain string.
+  // Manual `title` is not a Cloud word at all — not here and not in the Swift
+  // app's vocabulary — so this one is a plain string.
   | { op: "uncarried"; word: string; session?: string }
 
 /**
@@ -282,7 +283,6 @@ const USAGE_WORD: Readonly<Record<string, Carried<"usage.session" | "usage.task"
  * can be done instead, rather than as a generic "not carried".
  */
 const NO_CLOUD_WORD: Readonly<Record<string, string>> = {
-  interrupt: "interrupt",
   rename: "title",
   title: "title",
 }
@@ -487,6 +487,8 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
         return { op: "focus", word: "focus", session: a }
       case "smart-title":
         return { op: "smart-title", word: "smart-title", session: a }
+      case "interrupt":
+        return { op: "interrupt", word: "interrupt", session: a }
     }
     if (b && NO_CLOUD_WORD[b]) return { op: "uncarried", word: NO_CLOUD_WORD[b], session: a }
     return null
@@ -542,6 +544,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "end":
     case "focus":
     case "smart-title":
+    case "interrupt":
     case "info":
     case "git":
     case "git-diff":
@@ -700,10 +703,11 @@ export class RelayWriter {
       }
       case "focus":
         return client.focus(await this.identity(client, route.session))
-      case "smart-title": {
+      case "smart-title":
+      case "interrupt": {
         const request = headerOf(init, "idempotency-key")
         if (!request) {
-          throw failure("bad_request", "smart naming needs an Idempotency-Key", 400)
+          throw failure("bad_request", `${route.word} needs an Idempotency-Key`, 400)
         }
         if (typeof client._read !== "function") {
           throw failure("cloud_not_carried", route.word, 501)
@@ -1189,6 +1193,7 @@ function sessionOf(route: WriteRoute): string | null {
     case "answer":
     case "end":
     case "focus":
+    case "interrupt":
       return route.session
     case "uncarried":
       return route.session ?? null

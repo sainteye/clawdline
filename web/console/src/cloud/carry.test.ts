@@ -195,6 +195,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/work/v2/proposals/pr1/accept"],
     ["POST", "/v1/work/v2/session-todos/%251"],
     ["POST", "/v1/work/v2/session-todos/%251/t1/send"],
+    ["POST", "/v1/sessions/s1/interrupt"],
   ]
   for (const [method, path] of routes) {
     const word = writeRoute(method, path)?.word
@@ -210,12 +211,13 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("timeline" in CARRIED)
   // 64, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
-  // copied client's reconnect ask for every Session row, and the token bill's three usage reads. Keep the count beside the catalog so
+  // copied client's reconnect ask for every Session row, the token bill's three usage reads, and the menu's stop. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
   assert.ok("usage.item" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 72)
+  assert.ok("interrupt" in CARRIED)
+  assert.equal(Object.keys(CARRIED).length, 73)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

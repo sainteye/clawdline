@@ -198,9 +198,17 @@ func (t *Tmux) Send(ctx context.Context, s session.Session, text string) error {
 	return submit(ctx, tmuxInput{call: t.call, target: s.ID}, text, sendConfirm)
 }
 
-// Interrupt stops the current turn without closing the pane.
+// Interrupt stops the current turn without closing the pane: one Escape,
+// the key both assistants name on their own working line ("esc to
+// interrupt").
+//
+// It used to be C-c. That stops a turn as well, but it is also the first half
+// of quitting: Claude Code and Codex both take a second C-c at an idle prompt
+// as "exit", so a stop pressed just as the turn ended, and pressed again
+// because nothing seemed to happen, closed the session. Escape at an idle
+// prompt does nothing that a second one undoes.
 func (t *Tmux) Interrupt(ctx context.Context, s session.Session) error {
-	return t.run(ctx, "send-keys", "-t", s.ID, "C-c")
+	return t.Keystroke(ctx, s, keyEscape)
 }
 
 // Close removes the pane, once nothing this close may not end is running in

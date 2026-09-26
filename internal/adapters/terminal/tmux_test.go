@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The inventory runs under LC_ALL=C and splits on \x01. tmux rewrites control
@@ -279,4 +281,26 @@ func stubTmux(t *testing.T, out string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// A stop is one Escape, the key both assistants name on their working line,
+// and not C-c: a second C-c at an idle prompt quits Claude Code and Codex, so
+// a stop pressed twice because the first seemed slow closed the session.
+func TestInterruptTypesOneEscapeAndNotControlC(t *testing.T) {
+	dir := t.TempDir()
+	said := filepath.Join(dir, "args")
+	path := filepath.Join(dir, "tmux")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > "+said+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Tmux{Binary: path}).Interrupt(context.Background(), session.Session{ID: "%19"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(said)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "send-keys\n-t\n%19\n-H\n1b\n"; string(got) != want {
+		t.Fatalf("tmux was asked %q, want %q", got, want)
+	}
 }
