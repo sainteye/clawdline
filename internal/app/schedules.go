@@ -413,15 +413,15 @@ func (b *ScheduleBook) MachineRefusal(ctx context.Context, method, id string, bo
 var formFields = map[string]bool{
 	"title": true, "at": true, "days": true, "on": true, "place_id": true, "assistant": true,
 	"instructions": true, "enabled": true, "close_tab": true, "catch_up_hours": true,
-	"notify_on_failure": true, "timeout_minutes": true, "model": true,
+	"notify_on_failure": true, "timeout_minutes": true, "model": true, "permission_mode": true,
 }
 
 // templateFields are the task-template keys a create may carry in `template`:
 // the ones a save already carries from the stored file (`build`), so a
 // schedule moved from another machine arrives with them rather than without.
-// `permission_mode` is carried by a save and never taken from a create: any
-// device that may send could otherwise make a schedule that runs with more
-// than the form can grant.
+// `permission_mode` is not one of them: it is the form's own field, which
+// `permissionRefusal` keeps from an agent, and `template` must not be a
+// second door around that check.
 var templateFields = map[string]bool{
 	"claims": true, "serialize": true, "isolation": true, "isolation_base": true,
 	"deliverables": true, "kind": true, "plan": true, "graph": true, "reasoning_effort": true,
@@ -448,8 +448,7 @@ func createTemplate(body map[string]any) (map[string]any, map[string]any, *Sched
 	}
 	if _, named := tmpl["permission_mode"]; named {
 		r := refusedSchedule(400, "template_permission_mode",
-			"template may not set permission_mode: a schedule made here runs with the permission the form gives it. "+
-				"Make it without, then change the permission setting on this machine.")
+			"template may not set permission_mode: send it as the permission_mode field, as the form does.")
 		return nil, nil, &r
 	}
 	unknown := []string{}
@@ -517,11 +516,26 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 	} else if kept, ok := carried["model"]; ok {
 		tmpl["model"] = kept
 	}
+	// `permission_mode` as `model`: no key keeps what the file says, `""`
+	// takes it off (the machine's default), a name is read by the parser.
+	if mode, ok := body["permission_mode"]; ok {
+		name, isString := mode.(string)
+		if !isString {
+			r := refusedSchedule(400, "bad_request",
+				`permission_mode must be one of: ask, edits, full, or "" for this machine's default`)
+			return nil, schedule.Schedule{}, &r
+		}
+		if name != "" {
+			tmpl["permission_mode"] = name
+		}
+	} else if kept, ok := carried["permission_mode"]; ok {
+		tmpl["permission_mode"] = kept
+	}
 	if timeout, ok := body["timeout_minutes"]; ok {
 		tmpl["timeout_minutes"] = timeout
 	}
 	// Fields no form has a control for are carried, not dropped.
-	for _, key := range []string{"claims", "permission_mode", "serialize", "isolation",
+	for _, key := range []string{"claims", "serialize", "isolation",
 		"isolation_base", "deliverables", "kind", "plan", "graph"} {
 		if kept, ok := carried[key]; ok {
 			tmpl[key] = kept
@@ -579,6 +593,51 @@ func (b *ScheduleBook) parseObject(obj map[string]any, id string) (schedule.Sche
 		return schedule.Schedule{}, err
 	}
 	return schedule.Parse(decoded, id, b.isDirectory)
+}
+
+// permissionOf is a template's `permission_mode`, "" when it names none —
+// which is also what an empty value means to the parser.
+func permissionOf(task map[string]any) string {
+	name, _ := task["permission_mode"].(string)
+	return name
+}
+
+// permissionRefusal is the one thing an agent may not do to a schedule: set
+// or change the permission its runs get. The orchestrator token is
+// machine-wide, and a session relaying a person's message is still an agent
+// choosing the words, so either could otherwise grant itself a recurring
+// full-permission wake-up. They may keep what the file already says.
+func permissionRefusal(authority ScheduleAuthority, obj, stored map[string]any) *ScheduleReply {
+	if !authority.Machine && authority.Run == "" {
+		return nil
+	}
+	task, _ := obj["task"].(map[string]any)
+	if permissionOf(task) == permissionOf(stored) {
+		return nil
+	}
+	r := refusedSchedule(403, "permission_needs_person",
+		"A schedule's permission is set by a person, from the schedule form in the console. "+
+			"This machine's orchestrator token, and a session carrying a person's message, may keep the "+
+			"permission_mode a schedule already has, not set or change it: leave permission_mode out.")
+	return &r
+}
+
+// permissionAudit adds the permission to a write's audit line when it changed.
+func permissionAudit(fields map[string]string, obj, stored map[string]any) map[string]string {
+	task, _ := obj["task"].(map[string]any)
+	now, was := permissionOf(task), permissionOf(stored)
+	if now == was {
+		return fields
+	}
+	word := func(name string) string {
+		if name == "" {
+			return "default"
+		}
+		return name
+	}
+	fields["permission"] = word(now)
+	fields["permission_was"] = word(was)
+	return fields
 }
 
 // encodeFile is how this daemon writes a schedule: sorted keys, indented, no
@@ -639,6 +698,9 @@ func (b *ScheduleBook) Create(ctx context.Context, body map[string]any, authorit
 	if refusal != nil {
 		return *refusal
 	}
+	if refusal := permissionRefusal(authority, obj, nil); refusal != nil {
+		return *refusal
+	}
 	if !b.takeWriteRate() {
 		return rateLimited()
 	}
@@ -662,7 +724,7 @@ func (b *ScheduleBook) Create(ctx context.Context, body map[string]any, authorit
 	if placeID, _ := body["place_id"].(string); placeID != "" {
 		fields["place"] = placeID
 	}
-	b.audit("orchestrator.schedule.created", authority.audit(fields))
+	b.audit("orchestrator.schedule.created", authority.audit(permissionAudit(fields, obj, nil)))
 	return answered(map[string]any{"ok": true, "schedule": b.summary(made, now),
 		"dispatch_enabled": b.dispatchEnabled()})
 }
@@ -711,6 +773,9 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 	if refusal != nil {
 		return *refusal
 	}
+	if refusal := permissionRefusal(authority, obj, carried); refusal != nil {
+		return *refusal
+	}
 	moves := !made.When.Same(existing.s.When)
 	if made.When.Once() != existing.s.When.Once() {
 		if existing.s.When.On != nil {
@@ -754,7 +819,8 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 		return refusedSchedule(500, "write_failed",
 			"The change was written and could not be read back, so the schedule you already had has been put back.")
 	}
-	b.audit("orchestrator.schedule.updated", authority.audit(map[string]string{"schedule": id, "ok": "1"}))
+	b.audit("orchestrator.schedule.updated",
+		authority.audit(permissionAudit(map[string]string{"schedule": id, "ok": "1"}, obj, carried)))
 	return answered(map[string]any{"ok": true, "schedule": b.summary(saved, now)})
 }
 
