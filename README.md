@@ -86,6 +86,10 @@ check that it worked, is in [Install and first run](docs/user/install.md).
   it ships.
 - **Windows** builds and runs the daemon and console, but cannot list or control sessions yet.
   Linux runs headless under a `systemd --user` service; macOS has an optional native app.
+- Claude's **`5h`/`7d` plan percentages** need a Claude Code status line that writes
+  `~/.claude/statusline-cache/rate-limits.json`. Claude Code hands them to `statusLine.command`
+  on stdin and nowhere else, so with none configured — the usual state of a fresh Linux box —
+  that corner reads unknown. [usage.md](docs/user/usage.md) says what to set.
 - Everything on your own machine is free and needs no account. **Clawdline Cloud** (several
   machines, remote pairing, schedule webhooks) is optional, off by default, and in preview.
 

@@ -397,7 +397,12 @@ function resetMoment(unix: number): string {
 }
 
 function limitsHTML(limits: SessionLimits): string {
-  if (!limits.windows.length) return note(T.webInfoUnknown)
+  // An empty reading is four different facts wearing one word, and the daemon
+  // already says which one it found and names the file it rests on. Dropping
+  // that sentence for a bare "unknown" is what leaves a person with no status
+  // line configured — the only thing Claude Code ever hands its 5h and 7d
+  // percentages to — with nowhere to read why the corner is blank.
+  if (!limits.windows.length) return note(limits.detail || T.webInfoUnknown)
   return limits.windows
     .map((window) => {
       const pct = Math.max(0, Math.min(100, Math.round(window.usedPercent)))

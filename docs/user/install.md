@@ -17,8 +17,14 @@ Windows builds, but cannot list or control sessions yet ([platforms.md](platform
 | Node.js with npm | `npm --version` |
 | tmux | `tmux -V` |
 | Claude Code or Codex | `claude --version` or `codex --version` |
+| *(optional)* a Claude Code status line that writes `~/.claude/statusline-cache/rate-limits.json` | `ls ~/.claude/statusline-cache/rate-limits.json` |
 
 Nothing needs an account. Clawdline Cloud is optional and off by default.
+
+The last row is the only one you can skip and still lose something visible: Claude Code hands its
+`5h`/`7d` plan percentages to the stdin of `statusLine.command` and to nothing else, so without
+one the Status Line's right edge reads `方案額度 未知` forever. [usage.md](usage.md) says what to
+configure; everything else works without it.
 
 ## 1. Build
 
