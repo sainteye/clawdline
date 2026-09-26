@@ -196,9 +196,12 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		"projectsync.project_files":     func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-project guard"} },
 		"projectsync.file_bytes":        func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-file guard"} },
 		"projectsync.path_bytes":        func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-path guard"} },
-		"projectsync.entry_bytes":       func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request byte guard"} },
-		"icons.side":                    func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-icon dimension guard"} },
-		"icons.request_bytes":           func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request byte guard"} },
+		"places.git_config_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read guard; no retained buffer"}
+		},
+		"projectsync.entry_bytes": func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request byte guard"} },
+		"icons.side":              func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-icon dimension guard"} },
+		"icons.request_bytes":     func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request byte guard"} },
 		capacity.LogDaemon: func() capacity.Reading {
 			w, ok := daemonLogs.Load(s.cfg.Dir)
 			if !ok {
