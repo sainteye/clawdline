@@ -34,6 +34,18 @@ export function sessionWorkCounts(page: SessionWorkV2): SessionWorkCounts {
   return { board, todos, unfinished: board + todos }
 }
 
+/**
+ * The Sessions an item can be handed to: those working in its Project with a
+ * conversation id, less the one that already owns it — moving an item to its
+ * own owner is refused by the daemon (`assignment_unchanged`).
+ */
+export function assignmentCandidates(
+  sessions: SessionRow[],
+  item: { project: { path: string }; owner_session: string | null },
+): SessionRow[] {
+  return sessions.filter((s) => s.cwd === item.project.path && s.sessionId && s.sessionId !== item.owner_session)
+}
+
 /** The assistants a new Session can be opened with, in the order the Board offers them. */
 export const NEW_SESSION_ASSISTANTS: readonly Assistant[] = ["codex", "claude"]
 

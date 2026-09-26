@@ -148,6 +148,7 @@
 .work-v2-project > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-assignment { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-top: 4px; border-top: 1px solid var(--line); }
 .work-assignment > .work-note { flex-basis: 100%; margin: 0; }
+.work-assignment > .work-reassign-note { flex-basis: 100%; margin: 0; color: var(--dim); font-size: 12px; line-height: 1.5; }
 /* As tall as the chips beside it, whatever height the engine gives a line of
    11.5px text (23px in WebKit, 26px in Chromium, measured): the group stretches
    to the row and its own minimum stays below either. The marks are sized to
