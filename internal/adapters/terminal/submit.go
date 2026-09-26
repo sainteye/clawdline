@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -53,6 +54,13 @@ const screenLines = 12
 // inputCarets are the glyphs each CLI starts its input line with: ">" and
 // Codex's "›", and Claude Code's "❯" (composerCarets in the orchestrator).
 var inputCarets = []string{">", "›", "❯"}
+
+// framedCarets start an input line only inside a frame, a rule directly above
+// and one somewhere below: Claude Code's shell mode draws its composer's caret
+// as "!", and a "!" anywhere else is a shell's history or that mode's own
+// footer. Without it the last caret on a shell-mode screen is a message above
+// the composer, and a line pasted with a leading "!" is never seen arriving.
+var framedCarets = []string{"!"}
 
 // pastePlaceholders are what a CLI draws in its input line after consuming a
 // paste instead of showing its bytes: Claude Code's "[Pasted text #3]",
@@ -144,7 +152,7 @@ func inputLine(screen string) shownInput {
 		head := strings.TrimLeftFunc(lines[i], func(r rune) bool {
 			return unicode.IsSpace(r) || r == '│' || r == '┃' || r == '|'
 		})
-		for _, caret := range inputCarets {
+		for _, caret := range append(inputCarets, framedCarets...) {
 			if !strings.HasPrefix(head, caret) {
 				continue
 			}
@@ -152,8 +160,12 @@ func inputLine(screen string) shownInput {
 			for end < len(lines) && !isFrame(lines[end]) {
 				end++
 			}
+			framed := end < len(lines)
+			if slices.Contains(framedCarets, caret) && !(framed && i > 0 && isFrame(lines[i-1])) {
+				continue
+			}
 			typed := strings.TrimPrefix(head, caret) + strings.Join(lines[i+1:end], "")
-			return shownInput{text: squeeze(typed), found: true, framed: end < len(lines)}
+			return shownInput{text: squeeze(typed), found: true, framed: framed}
 		}
 	}
 	return shownInput{text: squeeze(strings.Join(lines[top:], ""))}
@@ -216,9 +228,10 @@ func stillHolds(confirmed, now string) bool {
 // the same screens.
 var inputRuleJS = func() string {
 	carets, _ := json.Marshal(inputCarets)
+	framed, _ := json.Marshal(framedCarets)
 	holders, _ := json.Marshal(pastePlaceholders)
 	return fmt.Sprintf(`
-const INPUT_CARETS = %s, PASTE_PLACEHOLDERS = %s;
+const FRAMED_CARETS = %s, INPUT_CARETS = %s.concat(FRAMED_CARETS), PASTE_PLACEHOLDERS = %s;
 function squeeze(s) { return String(s).replace(/\s+/g, ""); }
 function needle(text) { const r = Array.from(squeeze(text)); return r.slice(Math.max(0, r.length - %d)).join(""); }
 function isFrame(line) {
@@ -237,8 +250,10 @@ function inputLine(screen) {
       if (head.indexOf(INPUT_CARETS[c]) !== 0) continue;
       let end = i + 1;
       while (end < lines.length && !isFrame(lines[end])) end++;
+      const framed = end < lines.length;
+      if (FRAMED_CARETS.indexOf(INPUT_CARETS[c]) >= 0 && !(framed && i > 0 && isFrame(lines[i - 1]))) continue;
       const typed = head.slice(INPUT_CARETS[c].length) + lines.slice(i + 1, end).join("");
-      return { text: squeeze(typed), found: true, framed: end < lines.length };
+      return { text: squeeze(typed), found: true, framed: framed };
     }
   }
   return { text: squeeze(lines.slice(top).join("")), found: false, framed: false };
@@ -257,7 +272,7 @@ function stillHolds(confirmed, now) {
   const was = inputLine(confirmed), is = inputLine(now);
   return was.framed && is.framed && was.text !== "" && was.text === is.text;
 }
-`, carets, holders, needleRunes, screenLines)
+`, framed, carets, holders, needleRunes, screenLines)
 }()
 
 // input is one terminal session as a send drives it.

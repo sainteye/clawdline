@@ -47,6 +47,12 @@ func composerScreen(line string) string {
 	return strings.Join([]string{"❯ earlier message", "", rule, "❯ " + line, rule, "  ? for shortcuts"}, "\n")
 }
 
+// shellModeScreen is Claude Code in shell mode, as tmux captured it: the
+// composer's caret is "!" and its status lines give way to one footer.
+func shellModeScreen(line string) string {
+	return strings.Join([]string{"❯ earlier message", "", rule, "!  " + line, rule, "  ! for shell mode"}, "\n")
+}
+
 // fastSubmit shortens every wait, so a test that waits out a window is quick.
 func fastSubmit(t *testing.T) {
 	t.Helper()
@@ -180,6 +186,18 @@ func ruleCases() []ruleCase {
 			Before: strings.Join([]string{"❯ the same line again 0123456789abcdef", rule, "❯ ", rule}, "\n"),
 			After:  strings.Join([]string{"❯ the same line again 0123456789abcdef", rule, "❯ ", rule}, "\n"),
 			Text:   "the same line again 0123456789abcdef"},
+		// Claude Code's shell mode: a line pasted with a leading "!" puts the
+		// composer in shell mode, whose caret is "!", and the footer under it
+		// says so. The last "❯" on the screen is then a message above the
+		// composer, and reading that as the input line is how a phone's
+		// "! git merge …" was typed and never submitted.
+		{Name: "claude's shell mode draws its caret as !", Before: composerScreen(""),
+			After: shellModeScreen("cd ~/code/clawdline && git merge --ff-only agent-phase-route"),
+			Text:  "! cd ~/code/clawdline && git merge --ff-only agent-phase-route", Shows: true, Holds: true},
+		{Name: "shell mode's footer is not its input line", Before: shellModeScreen(""),
+			After: shellModeScreen(""), Text: "for shell mode"},
+		{Name: "a line starting with ! with no frame above it is not a composer",
+			Before: "! history line\n" + rule, After: "! history line\n" + rule, Text: "history line"},
 		{Name: "a shell echoes the command", Before: "user@mac ~ % ",
 			After: "user@mac ~ % claude --add-dir /tmp/x", Text: "claude --add-dir /tmp/x", Shows: true},
 		{Name: "a shell line is never nudged", Before: "❯ ", After: "❯ claude --add-dir /tmp/x",
