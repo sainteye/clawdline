@@ -218,6 +218,13 @@ The owning-Agent phase request carries the claim as structured input, not prose:
 
 The stored event replaces `<full commit>` and both target spellings with Git's resolved object ids.
 
+The request is `POST /v1/work/v2/agent/items/<id>/phase`, and `clawdline item phase <item id> <next>`
+sends it with the version it reads first. The owner's edit route refuses a `phase` field by name
+(`phase_not_editable`) and points at this route, and every brief an owner receives — the courtesy
+brief typed into an existing Session and a Root Assignment's acceptance — names the command. Before
+2026-09-26 neither the guide nor any brief did, and a Session that had deployed its work left the
+item in `assigned`.
+
 ### 6.1 Rework and failure
 
 - A failed verification returns to `implementing` with the failed check preserved.

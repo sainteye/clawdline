@@ -16,7 +16,9 @@ import (
 // 2026-09-25). `add` creates it under that message's run — read from this
 // conversation's latest run unless --run names one — and it arrives assigned
 // to this Session with its steps. `steps` lists an item's steps with their
-// ids, and `step-done` completes one after it is verified.
+// ids, `step-done` completes one after it is verified, and `phase` moves an
+// item this Session owns to its next execution phase with that phase's
+// evidence (docs/work-system-v2.md §6).
 //
 // A person's TODO list said together with a Board item is that item's steps:
 // pass them with --step. They are not this Session's own to-dos, which
@@ -32,6 +34,13 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 type itemFlags struct {
 	project, kind, title, description, deploy, run string
 	steps                                          []string
+	phase                                          phaseEvidence
+}
+
+// phaseEvidence is what `item phase` carries to the daemon besides the next
+// phase; the daemon decides which of it the transition needs.
+type phaseEvidence struct {
+	verification, commit, target, remote, deployment, noDeployment string
 }
 
 func itemCommand(args []string) {
@@ -53,6 +62,13 @@ func itemCommand(args []string) {
 	run := fs.String("run", "", "the run of the person's message (default: this conversation's latest run)")
 	var steps stringList
 	fs.Var(&steps, "step", "one step of the item, in order; repeat it for each step")
+	var ev phaseEvidence
+	fs.StringVar(&ev.verification, "verification", "", "for merging: what was run to verify and what it showed")
+	fs.StringVar(&ev.commit, "commit", "", "for deploying: the landed commit")
+	fs.StringVar(&ev.target, "target", "", "for deploying: the local target branch the commit is on")
+	fs.StringVar(&ev.remote, "remote", "", "for deploying: the remote whose tracking target also holds it")
+	fs.StringVar(&ev.deployment, "deployment", "", "for done: what was deployed, where, which version")
+	fs.StringVar(&ev.noDeployment, "no-deployment-reason", "", "for done: why nothing needs deploying")
 	if err := fs.Parse(args[1:]); err != nil {
 		itemUsage()
 	}
@@ -91,11 +107,12 @@ func itemCommand(args []string) {
 			itemUsage()
 		}
 		rest = fs.Args()
-	case "step-done":
+	case "step-done", "phase":
 		if fs.NArg() != 2 {
 			itemUsage()
 		}
 		rest = fs.Args()
+		f.phase = ev
 	default:
 		itemUsage()
 	}
@@ -112,8 +129,12 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
+	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r]")
+	fmt.Fprintln(os.Stderr, "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]")
+	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
 	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
-	fmt.Fprintln(os.Stderr, "  it arrives assigned to this Session, and its --step rows are the item's steps, not to-dos")
+	fmt.Fprintln(os.Stderr, "  it arrives assigned to this Session, and its --step rows are the item's steps, not to-dos;")
+	fmt.Fprintln(os.Stderr, "  phase moves an item this Session owns one phase on, with that phase's evidence")
 	os.Exit(2)
 }
 
@@ -272,6 +293,34 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		}
 		body = map[string]any{"expected_version": it.Version, "session_id": conversation}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/steps/" + url.PathEscape(stepID) + "/complete"
+	case "phase":
+		itemID, next := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
+		ev := f.phase
+		landing := ev.commit != "" || ev.target != "" || ev.remote != ""
+		if landing && (ev.commit == "" || ev.target == "" || ev.remote == "") {
+			fmt.Fprintf(stderr, "clawdline %s: --commit, --target and --remote go together. Nothing was changed.\n", name)
+			return 2
+		}
+		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
+		if err != nil {
+			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
+			return 1
+		}
+		it, ok := itemOf(a)
+		if !a.ok() || !ok {
+			return report(stdout, stderr, name, a)
+		}
+		body = map[string]any{"expected_version": it.Version, "session_id": conversation, "next": next}
+		for k, v := range map[string]string{"verification": ev.verification, "deployment": ev.deployment,
+			"no_deployment_reason": ev.noDeployment} {
+			if strings.TrimSpace(v) != "" {
+				body[k] = v
+			}
+		}
+		if landing {
+			body["landing"] = map[string]string{"commit": ev.commit, "target": ev.target, "remote": ev.remote}
+		}
+		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/phase"
 	default:
 		fmt.Fprintf(stderr, "clawdline item: no such action %q\n", op)
 		return 2

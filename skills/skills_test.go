@@ -348,3 +348,32 @@ func TestEveryGuideExplainsCreatingABoardItemFromThePersonsMessage(t *testing.T)
 		}
 	}
 }
+
+// Every guide tells the owning Session how it moves its item's phase: the
+// command, the route, the one-step graph and the evidence each step takes. A
+// guide that only said "advance the phases" left a Session that had finished
+// its work with an item stuck in assigned (2026-09-26).
+func TestEveryGuideExplainsAdvancingAnItemsPhase(t *testing.T) {
+	wants := []string{
+		"clawdline item phase <item id> implementing",
+		"POST /v1/work/v2/agent/items/<id>/phase",
+		"assigned → implementing → verifying → merging → deploying → done",
+		"--verification",
+		"--commit <sha> --target main --remote origin",
+		"--no-deployment-reason",
+		"phase_not_editable",
+		"invalid_transition",
+		"landing_not_published",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain advancing an item's phase with %q", topic, want)
+			}
+		}
+	}
+}

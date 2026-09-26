@@ -365,7 +365,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  setting <get|set> claude_auto_compact_window [n|off]   when the Claude sessions Clawdline opens compact")
 	fmt.Fprintln(os.Stderr, "  dispatch --title <t> --claims a,b < brief   dispatch an owned child: task.json, inventory and POST in one step")
 	fmt.Fprintln(os.Stderr, "  todo <add|list|done>          this session's own to-dos, added only when the person asks")
-	fmt.Fprintln(os.Stderr, "  item <add|steps|step-done>    a Board item the person's message asked for, with its --step rows")
+	fmt.Fprintln(os.Stderr, "  item <add|steps|step-done|phase>   a Board item the person's message asked for, its --step rows, its phase")
 	fmt.Fprintln(os.Stderr, "  send --to <terminal> [text…]  relay a message into another session's composer")
 	fmt.Fprintln(os.Stderr, "  notify --title <t> --body <b>   push a notification to the person")
 	fmt.Fprintln(os.Stderr, "  landings | assistants         every landing still owed; what each assistant's account has left")

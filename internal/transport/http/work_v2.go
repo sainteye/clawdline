@@ -150,6 +150,16 @@ type workV2GitReader interface {
 	IsAncestor(context.Context, string, string, string) (bool, error)
 }
 
+// workV2PhaseInstruction names the command that moves the phase, in every
+// brief an owner receives: a Session told only to "implement, verify, merge
+// and deploy" finished the work and left its item in assigned, because nothing
+// it read named the route (2026-09-26).
+func workV2PhaseInstruction(id string) string {
+	return "Move the item through its phases yourself as the work happens: `clawdline item phase " + id +
+		" implementing`, then verifying, merging (--verification), deploying (--commit --target --remote) and done " +
+		"(--deployment or --no-deployment-reason); `clawdline guide board` says what each one needs."
+}
+
 const workV2CompletionReportInstruction = "When substantial investigation was needed to find a non-obvious cause, add a user-readable completion_report before done; a straightforward fix does not require one."
 
 func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.WorkV2View,
@@ -509,7 +519,14 @@ func readWorkV2BodyAtMost(w http.ResponseWriter, r *http.Request, into any, limi
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(into); err != nil {
-		writeRefusal(w, http.StatusBadRequest, "invalid_request", "The body is not a valid work-system request.")
+		message := "The body is not a valid work-system request."
+		// encoding/json spells a field DisallowUnknownFields refused as
+		// `json: unknown field "x"`; naming it tells the caller what to drop
+		// instead of leaving it to guess at the whole body.
+		if field, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			message = "The body is not a valid work-system request: this route does not take the field " + field + "."
+		}
+		writeRefusal(w, http.StatusBadRequest, "invalid_request", message)
 		return nil, false
 	}
 	return raw, true
@@ -712,9 +729,21 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		Condition       *string `json:"condition"`
 		UserAction      *string `json:"user_action"`
 		SessionID       string  `json:"session_id"`
+		// Phase is read only to refuse it by name: a Session that reaches
+		// for the edit route to close its item is told where the phase moves.
+		Phase json.RawMessage `json:"phase"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
+		return
+	}
+	if body.Phase != nil {
+		message := "An item's phase is not edited; it moves through the item's own actions."
+		if !person {
+			message = "An item's phase is not edited; the owning Session moves it with POST /v1/work/v2/agent/items/" +
+				id + "/phase (clawdline item phase)."
+		}
+		writeRefusal(w, http.StatusBadRequest, "phase_not_editable", message)
 		return
 	}
 	if !person {
@@ -898,7 +927,8 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		// Session's assigned-item projection immediately. Typing is only a
 		// courtesy when a fresh reading still says idle. Working, waiting and
 		// unknown rows pull their to-do list after their present turn.
-		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items. %s", id, item.Item.Title, workV2CompletionReportInstruction)
+		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items. %s %s", id, item.Item.Title,
+			workV2PhaseInstruction(id), workV2CompletionReportInstruction)
 		if _, sendErr := s.actions().SendIfIdle(ctx, sess.ID, brief); sendErr != nil {
 			refusal, deferred := sendErr.(app.Refusal)
 			if !deferred || refusal.Code != "session_not_idle" {
@@ -951,7 +981,7 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 			Scope: item.Item.Description, Constraints: "Own only this Board item. Do not create Board items.",
 			RelevantReferences: "Board item: " + item.Item.ID,
 			Acceptance: "Implement, verify, merge, and deploy according to the item's deployment policy. " +
-				workV2CompletionReportInstruction}})
+				workV2PhaseInstruction(item.Item.ID) + " " + workV2CompletionReportInstruction}})
 	failure, resolvedTerminal, resolvedSession := "", "", ""
 	if openErr != nil {
 		failure = openErr.Error()

@@ -212,7 +212,8 @@ func TestOnlyAnIdleSessionReceivesAnAssignmentBrief(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := p.done(); len(got) != 1 || !strings.HasPrefix(got[0], "send:") ||
-		!strings.Contains(got[0], "completion_report") || !strings.Contains(got[0], "straightforward fix") {
+		!strings.Contains(got[0], "completion_report") || !strings.Contains(got[0], "straightforward fix") ||
+		!strings.Contains(got[0], "clawdline item phase "+v.Item.ID+" implementing") {
 		t.Fatalf("idle Session brief = %v", got)
 	}
 }
@@ -438,5 +439,48 @@ func TestANewSessionAssignmentRecordsTheChosenAssistant(t *testing.T) {
 	}
 	if len(after.Assignments) != 0 || after.Item.Version != v.Item.Version {
 		t.Fatalf("a refused assistant wrote %+v", after)
+	}
+}
+
+// A Session that reaches for the edit route to move its item's phase is told
+// by name where the phase moves, and the item is not touched; any other field
+// the route does not take is named in the refusal.
+func TestTheEditRouteNamesThePhaseRouteAndAnyFieldItRefuses(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	assigned, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := func(key string, fields map[string]any) *httptest.ResponseRecorder {
+		fields["expected_version"], fields["session_id"] = assigned.Item.Version, p.s.ConversationID
+		body, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPatch, "/v1/work/v2/agent/items/"+v.Item.ID+"/edit", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", key)
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{
+			machine: true, verdict: auth.Verdict{Allowed: true},
+		}))
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, req)
+		return rec
+	}
+	rec := edit("agent-edits-phase", map[string]any{"phase": "done"})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "phase_not_editable") ||
+		!strings.Contains(rec.Body.String(), "/v1/work/v2/agent/items/"+v.Item.ID+"/phase") ||
+		!strings.Contains(rec.Body.String(), "clawdline item phase") {
+		t.Fatalf("phase edit: %d %s", rec.Code, rec.Body)
+	}
+	after, err := s.workV2().Item(context.Background(), v.Item.ID)
+	if err != nil || after.Item.Phase != work.PhaseAssigned || after.Item.Version != assigned.Item.Version {
+		t.Fatalf("item after a refused phase edit: %+v %v", after.Item, err)
+	}
+	rec = edit("agent-edits-bogus", map[string]any{"bogus": 1})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") ||
+		!strings.Contains(rec.Body.String(), `\"bogus\"`) {
+		t.Fatalf("unknown field edit: %d %s", rec.Code, rec.Body)
 	}
 }

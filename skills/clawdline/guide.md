@@ -557,7 +557,7 @@ echo "Clean up the release notes before the next release." | \
   in order, or — when you give none — two or more top-level Markdown list rows of the description.
   Nothing is typed into your terminal; you asked for it. Work the steps in order, complete each
   one when it is verified (`clawdline item steps <item id>`, `clawdline item step-done <item id>
-  <step id>`), and advance the phases as for any assigned item. An Epic, Refactor or Plan is created
+  <step id>`), and advance the phases with `clawdline item phase` as for any assigned item (below). An Epic, Refactor or Plan is created
   unassigned, in Planning, and takes no steps (`planning_has_no_steps`).
 - The person sees the card marked "Created by the Session from your message at HH:MM", with their
   words quoted.
@@ -694,6 +694,46 @@ PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 putting one on another condition is refused by name. When the wait ends, set `condition` to the
 empty string on the same route; the daemon clears `user_action` with it so the Board cannot retain
 a stale request.
+
+**Advancing the phase.** The owning Session moves its item through the execution phases itself;
+nobody else does, and a turn receipt or a cleared condition does not. The phase is not a field of
+`…/edit` (`phase_not_editable`). Run each transition when the work it names has actually happened:
+
+```
+clawdline item phase <item id> implementing                  # when you start
+clawdline item phase <item id> verifying                     # the change exists; now check it
+clawdline item phase <item id> merging --verification "what was run and what it showed"
+clawdline item phase <item id> deploying --commit <sha> --target main --remote origin
+clawdline item phase <item id> done --deployment "what went live, where, which version"
+clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
+```
+
+The command reads the item's version, prints its Idempotency-Key (`--key` retries the same write)
+and prints the item. It is
+
+```
+POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>", "next": "<phase>",
+ "verification"?: "…", "landing"?: {"commit", "target", "remote"},
+ "deployment"?: "…", "no_deployment_reason"?: "…"}
+```
+
+- One step at a time: `assigned → implementing → verifying → merging → deploying → done`.
+  From `verifying` you may go back to `implementing`; from `merging`, back to `implementing` or
+  `verifying`. Nothing skips a phase, and `done` is reached only from `deploying`.
+- `merging` needs `verification`. `deploying` needs a landing: a broker child of this item that
+  landed, or `landing` naming a commit the daemon finds on both the Project's local `target` branch
+  and `refs/remotes/<remote>/<target>` — push first. `done` needs `deployment` or
+  `no_deployment_reason`; the item's `deployment_policy` decides which (`required` takes only
+  `deployment`, `not_required` only `no_deployment_reason`, `agent_decides` either). Every step
+  must be complete first.
+- `done` releases your assignment and moves the item to the Session's recently done row. Add a
+  completion report (below) before it when one is owed.
+- Refusals: `invalid_transition` (not a next phase, or its evidence is missing), `steps_incomplete`,
+  `not_item_owner`, `item_unassigned`, `item_terminal` (a person reopens it), `evidence_unknown`,
+  `direct_landing_not_applicable`, `invalid_landing_evidence`, `landing_commit_unresolved`,
+  `landing_target_unresolved`, `landing_not_on_target`, `landing_remote_unresolved`,
+  `landing_not_published`, and `version_conflict`: reread and send again.
 
 An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
 Markdown list rows in the description, and an item you created with `clawdline item add` carries
