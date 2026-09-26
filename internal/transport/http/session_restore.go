@@ -326,7 +326,8 @@ func tryOpening(ctx context.Context) (func(), bool) {
 // restoreRowsReading is the register's reading of the recorder.
 func (s *Server) restoreRowsReading() capacity.Reading {
 	if s.restore == nil {
-		return capacity.Reading{Known: false, Note: "the recorder is not running"}
+		// Nothing records, so nothing has been left unrecorded.
+		return capacity.Reading{Known: true, Note: "no recorder on this server; nothing is recorded"}
 	}
 	return capacity.Reading{Known: true, Counters: capacity.Counters{Evicted: s.restore.Dropped()},
 		Note: "conversations recorded per boot; evicted counts the ones left unrecorded past the limit"}
