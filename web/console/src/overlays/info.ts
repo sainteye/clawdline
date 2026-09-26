@@ -113,6 +113,20 @@ function why(e: unknown): string {
   })
 }
 
+/**
+ * A smart title's refusal, naming the assistant whose quota the confirmation
+ * promised to spend. Without these the card said it could not read the
+ * session, which sent the person looking in the wrong place.
+ */
+function namingWhy(e: unknown, assistant: string): string {
+  const code = (e as { code?: string } | null)?.code
+  const sentence = code === "namer_out_of_quota" ? nextWord("smartTitleOutOfQuota", { assistant })
+    : code === "naming_failed" ? nextWord("smartTitleFailed", { assistant })
+    : code === "no_namer" ? nextWord("smartTitleNoNamer", { assistant })
+    : ""
+  return sentence ? failureSentence(e, { sentence, fallback: T.webInfoFailed }) : why(e)
+}
+
 /** `1d 2h`, `2h 14m`, `14m`. */
 function span(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds))
@@ -731,6 +745,7 @@ export const Info = {
   generateSmartTitle(request: string): Promise<void> {
     const id = forId
     if (!id || !host.writable() || busy) return Promise.resolve()
+    const assistant = namingAssistantName(data?.session?.namingAssistant || "codex")
     busy = true
     said("")
     draw()
@@ -748,7 +763,7 @@ export const Info = {
       (error) => {
         if (forId !== id) return
         busy = false
-        said(why(error), false)
+        said(namingWhy(error, assistant), false)
         draw()
       },
     )

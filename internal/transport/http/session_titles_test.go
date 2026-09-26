@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/config"
@@ -164,6 +166,21 @@ func TestSmartTitleFailureDoesNotReplaceTheExistingName(t *testing.T) {
 	}
 	if values, err := nextconfig.Open(s.cfg.Dir).Read(); err != nil || values.Exists {
 		t.Fatalf("failed naming changed settings: exists=%v err=%v", values.Exists, err)
+	}
+}
+
+func TestSmartTitleSaysWhenTheAssistantIsOutOfQuota(t *testing.T) {
+	item := session.Session{ID: "%46", Backend: session.BackendTmux, Assistant: session.AssistantClaude,
+		ConversationID: "conversation-46", State: session.StateIdle}
+	s := paneServer(t, &pane{s: item})
+	s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
+	s.firstSessionRequest = func(session.Session) (string, error) { return "name this", nil }
+	s.nameSession = func(context.Context, string, string) (string, error) {
+		return "", fmt.Errorf("%w: exit status 1", planner.ErrOutOfQuota)
+	}
+	rec := act(t, s, "smart-title", item.ID, "smart-quota", `{}`)
+	if rec.Code != http.StatusServiceUnavailable || codeOf(t, rec) != "namer_out_of_quota" {
+		t.Fatalf("out of quota = %d %s", rec.Code, rec.Body)
 	}
 }
 

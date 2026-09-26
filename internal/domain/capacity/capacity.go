@@ -250,6 +250,7 @@ const (
 	IntentPlannerQueue     = "intent.planner_queue"
 	IntentPlannerSeconds   = "intent.planner_seconds"
 	IntentCloudWaitSeconds = "intent.cloud_wait_seconds"
+	IntentStderrBytes      = "intent.stderr_bytes"
 	// A release keeps the previous selector until the restarted daemon and
 	// its console prove the new commit. At this deadline it rolls back.
 	DeployHealthSeconds = "deploy.health_seconds"
@@ -1113,6 +1114,16 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/transport/http.intentCloudWaitLimit"},
+		},
+		{
+			// The end of a failed planner or naming turn's stderr, kept so a
+			// CLI's usage-limit refusal can be told apart from any other
+			// failure. Older bytes give way to newer ones.
+			Name: IntentStderrBytes, Class: Observation, Unit: Bytes,
+			Limit: 4 << 10, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/planner.stderrLimit"},
 		},
 		{
 			// The unprivileged Linux deploy keeps the previous release selected

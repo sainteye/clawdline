@@ -88,6 +88,7 @@ let intentRequests = 0
 let placeRequests = 0
 let smartTitleRequests = 0
 let smartTitleRequestKey = ""
+let smartTitleRefusal = ""
 let interruptRequests: { id: string; key: string }[] = []
 let requestedPaths: string[] = []
 let failPlacesOnRequest = 0
@@ -187,6 +188,9 @@ function daemon(): Server {
     if (smartTitle && req.method === "POST") {
       smartTitleRequests++
       smartTitleRequestKey = String(req.headers["idempotency-key"] ?? "")
+      if (smartTitleRefusal) {
+        return json(res, 503, { error: smartTitleRefusal, detail: "fixture naming assistant refused" })
+      }
       void requestJSON(req).then(() => json(res, 200, {
         ok: true,
         title: "Smart release helper",
@@ -618,6 +622,45 @@ test("desk: smart naming explains the one model turn before it spends it, then s
       read()
     })`)
     assert.ok(smartTitleRequestKey, "the one mutating request carries an idempotency key")
+  }))
+
+test("desk: an exhausted naming account is named, not reported as an unreadable session", () =>
+  inTab(DESK, async (tab) => {
+    smartTitleRequests = 0
+    smartTitleRefusal = "namer_out_of_quota"
+    try {
+      await tab.go("/" + FRAGMENT[TTY])
+      await tab.until("the session opens", (s) => s.open === TTY)
+      await tab.run(`document.getElementById("detail-info")?.click()`)
+      await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000
+        const read = () => {
+          const button = document.querySelector("button.title-smart")
+          if (button && !button.disabled) return resolve(true)
+          if (Date.now() > deadline) return reject(new Error("the smart-name button did not appear"))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      await tab.run(`document.querySelector("button.title-smart")?.click()`)
+      await tab.run(`document.getElementById("action-confirm-go")?.click()`)
+      const said = await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000
+        const read = () => {
+          const said = document.getElementById("info-said")?.textContent || ""
+          if (said.includes("namer_out_of_quota")) return resolve(said)
+          if (Date.now() > deadline) return reject(new Error("the refusal was not shown: " + JSON.stringify(said)))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.equal(smartTitleRequests, 1)
+      assert.match(said, /Claude Code 的額度已用完/)
+      assert.match(said, /自動命名新的 session/)
+      assert.doesNotMatch(said, /讀不到這個 session 的資訊/)
+    } finally {
+      smartTitleRefusal = ""
+    }
   }))
 
 test("desk: the session menu's first row stops the current turn with one keyed request", () =>
