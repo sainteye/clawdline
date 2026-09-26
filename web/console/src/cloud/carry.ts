@@ -86,6 +86,11 @@ export const CARRIED = {
   "push-test": "POST /v1/push/test",
   "push-unsubscribe": "POST /v1/push/unsubscribe",
   resume: "POST /v1/places/{id}/resume[/{assistant}]/{past}",
+  // The live screen (`session/ScreenPanel.tsx`). It sat in `DEFERRED` and in
+  // `DEFERRED_ASKED` while this machine answered it, so 「即時畫面」 on a phone
+  // only ever said to go and look on the machine — including from the Waiting
+  // card that sends a person there to read the question.
+  screen: "GET /v1/sessions/{id}/screen",
   // The sessions a reboot took away (docs/session-restore.md), offered where
   // the empty session list stands (`session/Restore.tsx`). The read is the
   // machine's; the two commands carry the sheet's press key as their request.
@@ -184,7 +189,6 @@ export const DEFERRED = {
   // chosen for (F1, `RelayWriter.press`). `key` is the older spelling and is
   // deliberately never sent.
   key: "A waiting card's press is sent as `answer`, which names the question it answers; `key` is the older spelling of the same command.",
-  screen: "What the terminal is showing is not read over Clawdline Cloud yet: look at it on the machine.",
 } as const
 
 /**
@@ -205,7 +209,7 @@ export const DEFERRED = {
  * `git` needed and did not have — the day `git-bridge.ts` landed, the entry
  * had to say so.
  */
-export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["document", "documents", "screen"]
+export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["document", "documents"]
 
 /**
  * Words the machine knows and has nothing behind. Asking for one is answered
@@ -307,8 +311,6 @@ export function uncarriedWordOf(method: string, path: string): string {
   // spelled a second time here.
   if (head === "sessions" && a && b) {
     switch (b) {
-      case "screen":
-        return "screen"
       case "skills":
         return "skills"
       case "documents":

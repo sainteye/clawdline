@@ -775,7 +775,7 @@ commands carrying the paired-device marker, each with the route's JSON body whol
 | `transcript` | read | `GET /v1/transcript?session&limit` | 409 `session_unknown` | 接上（`priority` 收下不用） |
 | `info` | read | `GET /v1/sessions/{id}/info` | 409 `session_unknown` | 接上（`parts` 兩半同一個 body） |
 | `git` | read | `GET /v1/sessions/{id}/git` | 409 `session_unknown` | 接上 |
-| `screen` | read | `GET /v1/sessions/{id}/screen` | 409 `session_unknown` | 接上 |
+| `screen` | read | `GET /v1/sessions/{id}/screen` | 409 `session_unknown` | 接上（hosted console 2026-09-26 起也問；Cloud 上沒有 `screen` 修訂事件，tmux 也照 `on-demand` 每秒問一次） |
 | `image` | read | `GET /v1/artifacts/images/{id}` | 404 `artifact_not_found` | 接上（PNG → base64） |
 | `documents` | read | `GET /v1/sessions/{id}/documents` | 404 `document_not_found` | 接上（清單去掉本機網址） |
 | `document` | read | `GET /v1/sessions/{id}/documents/{scope}[/{task}]/{path}` | 404 `document_not_found` | 接上（只送 inert UTF-8） |

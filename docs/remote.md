@@ -31,6 +31,12 @@ Go 版有對應本機功能的約 7 種：send、end、info、transcript、dispa
 其餘 20 種沒有：agent、answer、board.items、diagnostics.events、diagnostics.report、document、documents、
 focus、git、image、places、resume、schedule、screen、shell、skills、snippets、start、timeline、voice。
 
+這份清單是 Go 版剛起步時的記錄，不是今天的狀態。今天這台機器回應哪些字，看 `cloudops.Implemented()`
+與 `docs/cloud-wire.md` 的操作表；hosted console 會問哪些，看 `web/console/src/cloud/carry.ts` 的
+`CARRIED`（Go 測試 `TestTheConsoleCarryTableMatchesThisMachinesVocabulary` 讓兩邊對得上）。例如
+`screen`：機器這邊早就接上，hosted console 則到 2026-09-26 才開始問，在那之前手機上的「即時畫面」
+只會叫人回機器上看。
+
 底下還要一層傳輸：帳號、裝置配對與核准、金鑰、端對端加密的封包、canonical JSON、指令帳本（重送去重）、
 送出佇列、交接、推播。接縫合約是 Cloud 服務（the cloud service）的協定文件（`PROTOCOL.md`，不公開）；這一邊照它寫下的公開規格是 `docs/cloud-wire.md`。
 

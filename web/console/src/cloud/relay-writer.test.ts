@@ -84,6 +84,9 @@ class FakeClient implements CloudWriteClient {
   git(identity: CloudIdentity) {
     return this.act("git", [identity], { git: { branch: "main", ahead: 0, behind: 0, clean: true, files: [] } })
   }
+  screen(identity: CloudIdentity) {
+    return this.act("screen", [identity], { screen: { id: identity.session, backend: "iterm2", channel: "on-demand", captures: 0, pending: true, readable: true } })
+  }
   places(machine: string) {
     return this.act("places", [machine], { places: [{ id: "mac-a\u0000p1", label: "api" }], assistants: [{ id: "claude" }] })
   }
