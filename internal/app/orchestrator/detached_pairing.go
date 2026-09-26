@@ -68,13 +68,13 @@ func PairingAgentInstructions(machineID, machineName, offer string) string {
 
 const pairingAgentTemplate = `# Pair a Clawdline Cloud browser with another machine
 
-In the Clawdline Cloud tab on this Mac, the person asked for the machine named %[1]s
-(Cloud machine id ` + "`%[2]s`" + `) to be paired with their browser, and confirmed it in a
-native dialog. Nobody is watching this tab: do the steps below and nothing else.
+From Clawdline Cloud, the person asked for the machine named %[1]s
+(Cloud machine id ` + "`%[2]s`" + `) to be paired with their browser, and confirmed it on
+this computer. Nobody is watching this tab: do the steps below and nothing else.
 
-1. Reach that machine with the access this Mac already has — an ssh host alias, a
+1. Reach that machine with the access this computer already has — an ssh host alias, a
    cloud provider's session manager (for example ` + "`aws ssm start-session`" + ` or
-   ` + "`aws ssm send-command`" + `), whichever this Mac's own configuration (~/.ssh/config,
+   ` + "`aws ssm send-command`" + `), whichever this computer's own configuration (~/.ssh/config,
    known hosts, the cloud CLI's profiles) shows reaches a machine of that name or id.
    Do not install anything, create credentials, or change any configuration to get there.
 
@@ -86,7 +86,7 @@ native dialog. Nobody is watching this tab: do the steps below and nothing else.
    then ~/.local/bin/clawdline and /usr/local/bin/clawdline, then the ExecStart= line of
    ` + "`systemctl --user cat clawdline`" + ` or ` + "`systemctl cat clawdline`" + ` — and run the same
    command with that full path. Change nothing else on that machine, and do not run the
-   command on this Mac.
+   command on this computer.
 
 3. Report the ` + "`browser`" + ` and ` + "`machine`" + ` fingerprint lines the command prints, word for
    word, so the person can compare them with what the browser shows.
