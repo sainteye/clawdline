@@ -97,6 +97,10 @@ type Server struct {
 	// it may be answered from the held reading (`reading`) or must have one
 	// taken for it (`freshReading`). See internal/app/inventory_reading.go.
 	readings *app.InventoryReading
+	// restore records which conversations this boot has open, from every
+	// scan readings takes, and offers the previous boot's back
+	// (session_restore.go, docs/session-restore.md).
+	restore *app.SessionRestore
 	// screenBus carries a moved screen's revision to every open event stream.
 	screenBus *screenBus
 	// broker is the loop from a root asking for work to a child reporting that
@@ -207,6 +211,8 @@ func New(cfg config.Config) (*Server, error) {
 	// One producer in front of it, so three loops are one scan.
 	srv.readings = app.NewInventoryReading(srv.inventory.Read, 0)
 	srv.readings.SetRetentionAge(CapacityLimit(capacity.CacheSessionInventory))
+	srv.restore = srv.newSessionRestore()
+	srv.readings.Observe(srv.restore.Observe)
 	srv.inventory.Held.SetLimits(CapacityLimit(capacity.ScreensCaptureSlots),
 		CapacityLimit(capacity.CacheTerminalScreens))
 	// The transcript caches and the skills cache hold their register rows' limits.
@@ -297,6 +303,11 @@ func (s *Server) Handler() http.Handler {
 	// each, because the id is a path segment and Go's mux matches prefixes,
 	// not patterns.
 	mux.HandleFunc("/v1/sessions/", func(w http.ResponseWriter, r *http.Request) {
+		// The sessions a reboot took away: three fixed paths, asked before
+		// anything reads the next segment as a session id.
+		if s.restorableRoute(w, r) {
+			return
+		}
 		if sessionID, agentID, ok := agentPath(r); ok {
 			s.sessionAgentRoute(w, r, sessionID, agentID)
 			return

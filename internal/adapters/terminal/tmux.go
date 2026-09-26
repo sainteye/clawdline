@@ -247,7 +247,7 @@ func (t *Tmux) farewell() farewell {
 // process it is, which is enough to see an assistant and to see it leave, and
 // not enough to aim a signal at. Where the processes behind the tty can be
 // read they are, and the ladder gets its escalation rung; where they cannot —
-// every platform but macOS today (tty_other.go) — it stops at the polite word
+// anywhere but macOS and Linux (tty_other.go) — it stops at the polite word
 // and says so rather than signalling something it cannot name.
 //
 // The pane id tmux answers with is checked against the one asked for: tmux

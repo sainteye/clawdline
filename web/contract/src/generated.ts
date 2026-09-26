@@ -2840,6 +2840,24 @@ export interface Diagnostics {
   usage?: UsageDiagnostics
 }
 
+/**
+ * How many rows on offer this dismissed. Zero is an answer: they were already
+ * answered, or none were named that are on offer.
+ */
+export interface DismissRestorableAnswer {
+  at: number
+  dismissed: number
+  ok: boolean
+}
+
+/**
+ * POST /v1/sessions/restorable/dismiss. Without `conversations`, every conversation
+ * on offer is dismissed.
+ */
+export interface DismissRestorableRequest {
+  conversations?: string[]
+}
+
 export interface DispatchRequest {
   assistant: Assistant
 
@@ -4186,6 +4204,111 @@ export interface Refusal {
   error: string
   route?: string
   upstream?: string
+}
+
+/**
+ * Why nothing can be offered. `boot_unknown`: this machine cannot read its boot id,
+ * so it cannot tell a reboot from a daemon restart, and it records nothing.
+ */
+export type RestorableReason =
+    "boot_unknown"
+
+export const RestorableReasonValues: readonly RestorableReason[] = ["boot_unknown"] as const
+
+/**
+ * One conversation that was open before the machine last restarted, is not open
+ * now, and has been neither restored nor dismissed.
+ */
+export interface RestorableSession {
+  /**
+   * `claude` or `codex`.
+   */
+  assistant: string
+  conversation_id: string
+  cwd: string
+
+  /**
+   * Unix seconds: the last complete reading that recorded it open, at most
+   * sessions.restore_seen_age stale.
+   */
+  last_seen: number
+
+  /**
+   * The place id of the directory (POST /v1/places/{id}/…).
+   */
+  place: string
+  place_label: string
+
+  /**
+   * The manual title when one was known, else the session's own; empty when it had
+   * none.
+   */
+  title: string
+}
+
+/**
+ * GET /v1/sessions/restorable. `available` false carries `reason` and no sessions.
+ * Sessions are the previous boot's, most recently seen first.
+ */
+export interface RestorableSessions {
+  at: number
+  available: boolean
+
+  /**
+   * Unix seconds: the last time the previous boot was seen at all. Absent when
+   * there is no previous boot on record.
+   */
+  previous_boot_last_seen?: number
+  reason?: RestorableReason
+  sessions: RestorableSession[]
+}
+
+/**
+ * Why one conversation was not restored. `not_restorable`: it is not on offer
+ * (never recorded, already answered, open now, or no boot id). `place_unavailable`:
+ * its directory is no longer a place this machine can open.
+ * `conversation_not_found`: the assistant no longer lists it for that directory.
+ * `open_failed`: the terminal could not open it; `message` says why.
+ * `over_capacity`: other sessions were being opened; ask again.
+ */
+export type RestoreCode =
+    "not_restorable"
+  | "place_unavailable"
+  | "conversation_not_found"
+  | "open_failed"
+  | "over_capacity"
+
+export const RestoreCodeValues: readonly RestoreCode[] = ["not_restorable", "place_unavailable", "conversation_not_found", "open_failed", "over_capacity"] as const
+
+/**
+ * One named conversation's answer. `ok` carries the new terminal (`id`, `backend`,
+ * and `attach` for a detached tmux server); otherwise `code` and `message`.
+ */
+export interface RestoreResult {
+  attach?: string
+  backend?: Backend
+  code?: RestoreCode
+  conversation_id: string
+  id?: string
+  message?: string
+  ok: boolean
+}
+
+/**
+ * The answer to a restore: one result per distinct conversation named, in the order
+ * named.
+ */
+export interface RestoreSessionsAnswer {
+  at: number
+  results: RestoreResult[]
+}
+
+/**
+ * POST /v1/sessions/restorable/restore. At most sessions.restore_batch
+ * conversations; a longer list is refused whole with `restore_batch_too_large`.
+ */
+export interface RestoreSessionsRequest {
+  conversations: string[]
 }
 
 /**

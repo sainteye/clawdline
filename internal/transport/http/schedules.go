@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -354,12 +355,26 @@ func (s *Server) scheduleWebhookBindRoute(w http.ResponseWriter, r *http.Request
 	if v, ok := replaceRaw.(string); ok {
 		replace = &v
 	}
-	if strings.Join(keys, ",") != "hook_id,replace_hook_id,request_id,schedule_id" || requestID == "" ||
-		hookID == "" || scheduleID == "" || !hasReplace || (replaceRaw != nil && replace == nil) {
+	// `hook_revision` is optional: the revision a moved hook is at. Without
+	// it the hook is new, at 0, which is every bind before moves existed.
+	var revision *int64
+	revisionRaw, hasRevision := body["hook_revision"]
+	if n, ok := revisionRaw.(json.Number); ok {
+		if v, err := strconv.ParseInt(n.String(), 10, 64); err == nil && v >= 0 {
+			revision = &v
+		}
+	}
+	shape := "hook_id,replace_hook_id,request_id,schedule_id"
+	if hasRevision {
+		shape = "hook_id,hook_revision,replace_hook_id,request_id,schedule_id"
+	}
+	if strings.Join(keys, ",") != shape || requestID == "" ||
+		hookID == "" || scheduleID == "" || !hasReplace || (replaceRaw != nil && replace == nil) ||
+		(hasRevision && revision == nil) {
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "Could not read that request")
 		return
 	}
-	status, answer := s.scheduleBook().BindWebhook(r.Context(), requestID, hookID, scheduleID, replace, "local")
+	status, answer := s.scheduleBook().BindWebhook(r.Context(), requestID, hookID, scheduleID, replace, revision, "local")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write(answer)

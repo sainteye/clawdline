@@ -86,6 +86,12 @@ export const CARRIED = {
   "push-test": "POST /v1/push/test",
   "push-unsubscribe": "POST /v1/push/unsubscribe",
   resume: "POST /v1/places/{id}/resume[/{assistant}]/{past}",
+  // The sessions a reboot took away (docs/session-restore.md), offered where
+  // the empty session list stands (`session/Restore.tsx`). The read is the
+  // machine's; the two commands carry the sheet's press key as their request.
+  "restorable-sessions": "GET /v1/sessions/restorable",
+  "restore-sessions": "POST /v1/sessions/restorable/restore",
+  "dismiss-restorable": "POST /v1/sessions/restorable/dismiss",
   "schedule-create": "POST /v1/orchestrator/schedules",
   "schedule-delete": "DELETE /v1/orchestrator/schedules/{id}",
   "schedule-webhook-bind-v1": "POST /v1/orchestrator/schedule-webhooks/bind",

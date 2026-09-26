@@ -205,6 +205,9 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/work/v2/session-todos/%251"],
     ["POST", "/v1/work/v2/session-todos/%251/t1/send"],
     ["POST", "/v1/sessions/s1/interrupt"],
+    ["GET", "/v1/sessions/restorable"],
+    ["POST", "/v1/sessions/restorable/restore"],
+    ["POST", "/v1/sessions/restorable/dismiss"],
   ]
   for (const [method, path] of routes) {
     const word = writeRoute(method, path)?.word
@@ -221,7 +224,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   // 64, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
   // copied client's reconnect ask for every Session row, the token bill's three usage reads, the menu's stop and the
-  // compaction comparison, the seven verification words, and the Settings page's capacity read. Keep the count beside the catalog so
+  // compaction comparison, the seven verification words, the Settings page's capacity read, and the three words that
+  // offer back the sessions a reboot took away. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
@@ -230,7 +234,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("usage.compare-compaction" in CARRIED)
   assert.ok("capacity" in CARRIED)
   assert.ok("verification.delete" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 82)
+  assert.ok("restore-sessions" in CARRIED)
+  assert.equal(Object.keys(CARRIED).length, 85)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

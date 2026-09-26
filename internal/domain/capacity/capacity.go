@@ -243,6 +243,14 @@ const (
 	CacheSessionLinks = "cache.session_links"
 	// Directories a person explicitly keeps in the session-start list.
 	PlacesRegistered = "places.registered"
+	// Which conversations were open in this boot and the one before it, so
+	// they can be offered back after a reboot (docs/session-restore.md).
+	SessionsRestoreRows    = "sessions.restore_rows"
+	SessionsRestoreBoots   = "sessions.restore_boots"
+	SessionsRestoreBatch   = "sessions.restore_batch"
+	SessionsRestoreSeenAge = "sessions.restore_seen_age"
+	SessionsRestoreBeat    = "sessions.restore_heartbeat"
+	SessionsRestoreGrace   = "sessions.restore_grace"
 	// Provider-native work under a session: how many rows the fleet carries,
 	// and the immutable metadata/changing-tail cursors held to make a one-second
 	// reading cheap.
@@ -1013,6 +1021,66 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice, Health},
 			EvictedBy: Person,
 			Projects:  true,
+		},
+		{
+			// Conversations one boot records. They are read again from the
+			// machine on every complete reading; past the limit the ones that
+			// moved longest ago are not recorded and the count says so.
+			Name: SessionsRestoreRows, Class: Observation, Unit: Rows,
+			Limit: 200, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.restoreRowsLimit"},
+		},
+		{
+			// This boot and the one before it. An older boot's rows can no
+			// longer be offered, so they go with it.
+			Name: SessionsRestoreBoots, Class: Journal, Unit: Rows,
+			Limit: 2, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.restoreBootsLimit"},
+		},
+		{
+			// Conversations one restore may name. A longer list is refused
+			// whole, and nothing is opened.
+			Name: SessionsRestoreBatch, Class: Buffer, Unit: Rows,
+			Limit: 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.restoreBatchLimit"},
+		},
+		{
+			// How stale a recorded last_seen may grow while the set of open
+			// conversations is unchanged; past it the next complete reading
+			// writes the same set again with the new time.
+			Name: SessionsRestoreSeenAge, Class: Cache, Unit: Seconds,
+			Limit: 300, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.restoreSeenLimit"},
+		},
+		{
+			// How stale the boot's own last_seen may grow while complete
+			// readings keep arriving with nothing changed; past it the next
+			// one moves last_seen alone, one row update. It is what the
+			// grace line after a reboot is drawn from.
+			Name: SessionsRestoreBeat, Class: Cache, Unit: Seconds,
+			Limit: 60, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.restoreBeatLimit"},
+		},
+		{
+			// How long before the previous boot was last seen a conversation
+			// may have gone and still be offered back: a shutdown's final
+			// wave. One that went earlier expires from the offer; its row
+			// stays until the boot does.
+			Name: SessionsRestoreGrace, Class: Cache, Unit: Seconds,
+			Limit: 180, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.restoreGraceLimit"},
 		},
 		{
 			Name: "icons.saved", Class: Evidence, Unit: Rows,

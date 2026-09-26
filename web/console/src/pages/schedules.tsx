@@ -59,6 +59,8 @@ import {
   askAgainBeforeRefusing,
   moveSchedule,
   planScheduleMove,
+  refusedAsStaleRevision,
+  refusedByOlderBinder,
   refusedByOlderTarget,
   targetBody,
   type MoveHook,
@@ -1384,7 +1386,8 @@ const Schedule = (() => {
       remove: (scheduleID, on) => scheduleApi.deleteSchedule(scheduleID, on),
       ...(management && {
         moveHook: (hookID: string, on: string, revision: number | null) => management.move(hookID, on, revision),
-        bindHook: (hookID: string, scheduleID: string, on: string) => management.bindOn(on, scheduleID, hookID, null),
+        bindHook: (hookID: string, scheduleID: string, on: string, revision: number | null) =>
+          management.bindOn(on, scheduleID, hookID, null, revision),
       }),
     }
     creating = true
@@ -1409,6 +1412,14 @@ const Schedule = (() => {
         refusedByOlderTarget(error)
           ? nextWord("scheduleMoveTargetTooOld", { machine: targetName })
           : why(error as ScheduleFailureLike, T().webRequestFailed)
+      // The bind's refusal: a target older than `hook_revision`, or Cloud
+      // finding the hook at another revision than the move answered.
+      const bindReason = (error: unknown) =>
+        refusedByOlderBinder(error)
+          ? nextWord("scheduleMoveTargetTooOld", { machine: targetName })
+          : refusedAsStaleRevision(error)
+            ? nextWord("scheduleMoveHookStale", {})
+            : reason(error)
       if (outcome.state === "moved" || outcome.state === "delete_failed") {
         close()
         Schedules.refresh()
@@ -1430,7 +1441,7 @@ const Schedule = (() => {
         const words = [
           outcome.state === "hook_move_failed"
             ? nextWord("scheduleMoveHookMoveFailed", { source: sourceName, why: reason(outcome.error) })
-            : nextWord("scheduleMoveHookBindFailed", { machine: targetName, source: sourceName, why: reason(outcome.error) }),
+            : nextWord("scheduleMoveHookBindFailed", { machine: targetName, source: sourceName, why: bindReason(outcome.error) }),
         ]
         const undo =
           outcome.state === "hook_move_failed"

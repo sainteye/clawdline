@@ -54,6 +54,7 @@ marked English in the tables below. The rest are written in Traditional Chinese.
 | [work-system-v2.md](work-system-v2.md) | Public design note | English | The approved replacement: person-created Project work, human assignment, Agent-driven lifecycle, broker evidence, proposals and direct Session to-dos |
 | [work-system-v2-acceptance.md](work-system-v2-acceptance.md) | Public acceptance contract | English | Positive, negative and failure-injection scenarios that must pass before work system v2 can replace the current implementation |
 | [limits.md](limits.md) | Public design note | Chinese | Every bounded thing: its limit, what happens when it is full, and who finds out |
+| [session-restore.md](session-restore.md) | Public design note | English | Offering back the Claude Code and Codex sessions a reboot or crash took away: the boot-id rule, the record, the routes, and what is not covered |
 | [coordination.md](coordination.md) | Public design note | Chinese | The coordinator role redesigned around one `Obligation` model for waits, landings, handoffs and dead letters |
 | [broker.md](broker.md) | Public design note | Chinese | The broker's routes and credentials, and where it differs from the Swift app on purpose. Written at its first wave; later waves added handoffs, leases and reclaim |
 | [board-redesign.md](board-redesign.md) | Public design note | English | Board, backlog and session to-do: three structures, their lifecycles, and where a person joins in |
