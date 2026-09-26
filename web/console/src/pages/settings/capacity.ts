@@ -74,9 +74,14 @@ export function stateWord(state: CapacityState): string {
   }
 }
 
-/** A reading in its row's unit: bytes in binary units, rows as a count. */
+/**
+ * A reading in its row's unit: bytes in binary units, the others as the count
+ * their register row names — the words `capacity.amountOf` gives a push.
+ */
 export function amount(unit: CapacityEntry["unit"], n: number): string {
-  if (unit !== "bytes") return words(`${n}`, `${n} 筆`)
+  if (unit === "characters") return words(`${n} chars`, `${n} 字`)
+  if (unit === "seconds") return words(`${n} s`, `${n} 秒`)
+  if (unit === "rows") return words(`${n}`, `${n} 筆`)
   const k = 1024
   if (n >= k * k * k) return `${(n / (k * k * k)).toFixed(1)} GiB`
   if (n >= k * k) return `${(n / (k * k)).toFixed(1)} MiB`
