@@ -8,6 +8,7 @@ import { SessionFacts, requestInfo } from "../overlays/index.js"
 import { nextWord } from "../next-strings.js"
 import { conversationNotStarted } from "./readiness.js"
 import { readGit } from "../legacy/git-bridge.js"
+import "./status-line-deploy.css"
 
 /**
  * The status line under the open conversation — the original's `footer#status-line`.
@@ -41,7 +42,9 @@ import { readGit } from "../legacy/git-bridge.js"
  * - `.deploy` carries whatever is running, from the same `/info` answer's
  *   `deploy` rows — the project-link walk, served from a projection per
  *   working directory (`links.go`), so the chip costs the page nothing beyond
- *   the read it was already making.
+ *   the read it was already making. While it is drawn the footer carries
+ *   `data-deploy`, and `status-line-deploy.css` hides `.context` and `.files`
+ *   to give it their room.
  * - `.limits` carries the plan windows, from the same `/info` answer: the
  *   account-level reading every session of that assistant shares. The newest
  *   reading per assistant is held and drawn over an older answer, and while an
@@ -122,7 +125,7 @@ export function StatusLine({
   }
 
   return (
-    <footer className="status-line" id="status-line">
+    <footer className="status-line" id="status-line" data-deploy={deploy ? deploy.kind || "deploy" : undefined}>
       {open}
       <button
         className="files"
