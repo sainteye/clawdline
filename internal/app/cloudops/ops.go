@@ -1338,6 +1338,20 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/capacity"}
 			}},
 
+		// The dashboard behind the session counts: this machine's CPU and
+		// memory and each session's share. Machine-wide and parameterless, as
+		// the local route is; a read, since the route writes nothing.
+		op{name: "machine-usage", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/machine/usage"}
+			}},
+
 		op{name: "agent", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "agent", "limit") {

@@ -3039,6 +3039,104 @@ const (
 // LivenessValues is every value the contract allows, in contract order.
 var LivenessValues = []Liveness{LivenessOnline, LivenessOffline, LivenessUnknown}
 
+// Percent of the last ten seconds in which some task (or, for `memory_full`,
+// every task) waited on the resource.
+type MachinePressure struct {
+	CpuSome    float64 `json:"cpu_some"`
+	IoSome     float64 `json:"io_some"`
+	MemoryFull float64 `json:"memory_full"`
+	MemorySome float64 `json:"memory_some"`
+}
+
+// GET /v1/machine/usage, for any paired device: this machine's CPU and memory
+// now, and each session's share of them — the dashboard opened from the
+// session counts beside the wordmark. Clawdline Cloud carries it as the
+// `machine-usage` word. The CPU figures are shares over `interval_ms`, the time
+// between two readings, because a process's CPU time is a counter: a share
+// needs two. Every percentage is of the whole machine, all cores together,
+// 0-100. A session's figures are its whole process tree: the assistant, the
+// shells it opened and what they started, each process given to the nearest
+// session above it. A process that ended inside the interval is in the
+// machine's figures and in no row. On a platform without a reader the route
+// answers 501 `machine_usage_unsupported` rather than an idle machine.
+type MachineUsage struct {
+	At int64 `json:"at"`
+
+	// The cores the kernel counts.
+	Cores      int64   `json:"cores"`
+	CpuPercent float64 `json:"cpu_percent"`
+
+	// One row per session whose process is alive, and one for this daemon.
+	Groups     []MachineUsageGroup `json:"groups"`
+	IntervalMs int64               `json:"interval_ms"`
+
+	// The load averages over one, five and fifteen minutes: runnable and
+	// uninterruptible tasks, which above `cores` means waiting.
+	Load                 []float64 `json:"load"`
+	MemoryAvailableBytes int64     `json:"memory_available_bytes"`
+	MemoryTotalBytes     int64     `json:"memory_total_bytes"`
+
+	// Total less what the kernel says is available without swapping.
+	MemoryUsedBytes int64 `json:"memory_used_bytes"`
+
+	// The heaviest process names in memory outside every row, a few at most, each
+	// summed over its processes: what the rest of the used memory is.
+	Others []MachineUsageOther `json:"others"`
+
+	// The kernel's pressure-stall averages over ten seconds. Absent where the kernel
+	// keeps none, which is not the same as none.
+	Pressure       *MachinePressure `json:"pressure,omitempty"`
+	SwapTotalBytes int64            `json:"swap_total_bytes"`
+	SwapUsedBytes  int64            `json:"swap_used_bytes"`
+}
+
+// What one tree of processes used.
+type MachineUsageGroup struct {
+	Assistant  string  `json:"assistant,omitempty"`
+	CpuPercent float64 `json:"cpu_percent"`
+
+	// The session id, as the session list spells it; empty for the daemon.
+	ID   string                `json:"id"`
+	Kind MachineUsageGroupKind `json:"kind"`
+
+	// The session's name as the scan read it. The console prefers the name its own
+	// session row carries.
+	Label string `json:"label,omitempty"`
+
+	// The root of the tree.
+	PID       int64 `json:"pid"`
+	Processes int64 `json:"processes"`
+
+	// Resident memory summed over the tree. Pages shared between processes are counted
+	// in each.
+	RssBytes int64 `json:"rss_bytes"`
+
+	// Swapped-out memory summed over the tree: memory the session holds that the
+	// machine had no room for.
+	SwapBytes int64  `json:"swap_bytes"`
+	TTY       string `json:"tty,omitempty"`
+}
+
+// `session`: an assistant session's tree, keyed by the session id the session
+// list uses. `daemon`: this daemon's own process.
+type MachineUsageGroupKind string
+
+const (
+	MachineUsageGroupKindSession MachineUsageGroupKind = "session"
+	MachineUsageGroupKindDaemon  MachineUsageGroupKind = "daemon"
+)
+
+// MachineUsageGroupKindValues is every value the contract allows, in contract order.
+var MachineUsageGroupKindValues = []MachineUsageGroupKind{MachineUsageGroupKindSession, MachineUsageGroupKindDaemon}
+
+// Processes outside every row that share a name.
+type MachineUsageOther struct {
+	CpuPercent float64 `json:"cpu_percent"`
+	Name       string  `json:"name"`
+	Processes  int64   `json:"processes"`
+	RssBytes   int64   `json:"rss_bytes"`
+}
+
 type Mover struct {
 	ID   string    `json:"id"`
 	Kind MoverKind `json:"kind"`

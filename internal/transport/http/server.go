@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/adapters/machineusage"
 	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/adapters/process"
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
@@ -108,6 +109,10 @@ type Server struct {
 	// records — the Swift store is read for the Swift app's tasks and never
 	// written (plan.md §4).
 	broker *orchestrator.Broker
+	// usage keeps the previous reading of this machine's CPU and memory, so
+	// the dashboard's shares are measured between two (machine_usage.go).
+	usageOnce sync.Once
+	usage     *machineusage.Sampler
 	// beat is the broker's account of its last pass, read by /v1/diagnostics.
 	beat atomic.Pointer[orchestrator.Pulse]
 	// pulse is the scheduler's own account of its last pass, read by
@@ -283,6 +288,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/health", s.health)
 	mux.HandleFunc("/v1/diagnostics", s.diagnostics)
 	mux.HandleFunc("/v1/capacity", s.capacityRoute)
+	// The dashboard behind the session counts: this machine's CPU and memory and
+	// each session's share (machine_usage.go). Any paired device, as /v1/capacity.
+	mux.HandleFunc("/v1/machine/usage", s.machineUsageRoute)
 	// What the line to app.clawdline.com is doing (cloud.go). This machine's
 	// own token only.
 	mux.HandleFunc("/v1/cloud/status", s.cloudStatusRoute)
