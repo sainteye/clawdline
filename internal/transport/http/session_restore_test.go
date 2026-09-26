@@ -33,7 +33,8 @@ func restoreServer(t *testing.T, boot func(context.Context) (string, error)) *Se
 		{ConversationID: "conv-a", Assistant: "claude", CWD: "/nowhere/a", Place: "place-a", Title: "first", Backend: "tmux"},
 		{ConversationID: "conv-b", Assistant: "codex", CWD: "/nowhere/b", Place: "place-b", Backend: "iterm"},
 	}
-	if err := st.RecordBoot(context.Background(), "boot-before", rows, then, 2); err != nil {
+	if _, err := st.RecordBoot(context.Background(), store.BootReading{Boot: "boot-before", Rows: rows, At: then,
+		KeepBoots: 2, KeepRows: 200}); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{cfg: config.Config{Dir: dir}, store: st}

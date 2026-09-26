@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/lane"
@@ -47,12 +48,15 @@ func TestEachRungOfACloseSaysWhichOneItWas(t *testing.T) {
 type closeHost struct {
 	calls []string
 	err   error
+	// conversation is the one the session in it is running, if any.
+	conversation string
 }
 
 func (h *closeHost) Name() string { return "tmux" }
 func (h *closeHost) Inventory(context.Context) (session.Inventory, error) {
 	return session.Inventory{Complete: true, Provenance: "tmux", Sessions: []session.Session{
-		{ID: "%1", TTY: "ttys1", Backend: session.BackendTmux, Assistant: session.AssistantClaude, PID: 400},
+		{ID: "%1", TTY: "ttys1", Backend: session.BackendTmux, Assistant: session.AssistantClaude, PID: 400,
+			CWD: "/work", ConversationID: h.conversation},
 	}}, nil
 }
 func (h *closeHost) Open(context.Context, ports.OpenRequest) (session.Session, error) {
@@ -102,5 +106,27 @@ func TestACloseTakesTheTerminalsLane(t *testing.T) {
 	}
 	if len(h.calls) != 1 {
 		t.Fatalf("calls: %v", h.calls)
+	}
+}
+
+// A close through Clawdline is the person saying they are done with that
+// conversation, so the record of this boot marks it closed and no later
+// restore offers it, however close to a reboot it happened.
+func TestACloseMarksTheConversationClosedInTheRestoreRecord(t *testing.T) {
+	st := restoreStore(t)
+	clock := time.Unix(80_000, 0)
+	r := restoreUnder(st, "boot-now", &clock)
+	h := &closeHost{conversation: "conv-1"}
+	a := closeActions(h)
+	a.Restore = r
+	ctx := context.Background()
+	r.Observe(ctx, complete(session.Session{ID: "%1", Backend: session.BackendTmux,
+		Assistant: session.AssistantClaude, CWD: "/work", ConversationID: "conv-1"}))
+	clock = clock.Add(time.Second)
+	if _, err := a.Close(ctx, "%1", false); err != nil {
+		t.Fatal(err)
+	}
+	if row := recorded(t, st, "boot-now")["conv-1"]; !row.ClosedAt.Equal(clock) {
+		t.Fatalf("after the close: %+v", row)
 	}
 }

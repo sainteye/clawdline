@@ -16,10 +16,15 @@ import (
 // Offering back the sessions a reboot took away (docs/session-restore.md).
 //
 // Every complete reading of the machine is shown to Observe, which keeps the
-// current boot's rows equal to the conversations that reading saw. After the
-// next boot, the previous boot's rows — less those already answered and those
-// open again — are what Restorable offers, and Restore opens them through the
-// one launcher this daemon has (Starter.Resume).
+// current boot's rows up to date with the conversations that reading saw: one
+// it no longer sees is marked gone, not deleted, because the last readings
+// before a restart see iTerm2 quit and the tmux server killed and would
+// otherwise erase the record the restart needs. After the next boot, the
+// previous boot's rows that were open at its end — or went within
+// restoreGraceLimit of the last time it was seen — less those already
+// answered, closed through Clawdline, or open again, are what Restorable
+// offers, and Restore opens them through the one launcher this daemon has
+// (Starter.Resume).
 
 // The shipped bounds, each registered in internal/domain/capacity.
 const (
@@ -33,6 +38,15 @@ const (
 	// restoreSeenLimit is how stale a recorded last_seen may grow while the
 	// set of open conversations stays the same.
 	restoreSeenLimit = 5 * time.Minute
+	// restoreBeatLimit is how stale the boot's own last_seen may grow while
+	// complete readings keep arriving: the heartbeat the grace line is drawn
+	// from, one cheap row update at most this often.
+	restoreBeatLimit = time.Minute
+	// restoreGraceLimit is how long before the previous boot's last sight a
+	// conversation may have gone and still be offered. A shutdown quits apps
+	// and kills the tmux server over seconds; a conversation the person
+	// closed longer ago than this was closed on purpose.
+	restoreGraceLimit = 3 * time.Minute
 )
 
 // The reason Restorable is unavailable.
@@ -61,7 +75,9 @@ var ErrRestoreBatch = errors.New("too many conversations in one restore")
 
 // RestoreStore is the part of the store this needs.
 type RestoreStore interface {
-	RecordBoot(ctx context.Context, boot string, rows []store.RestoreRow, now time.Time, keep int) error
+	RecordBoot(ctx context.Context, rd store.BootReading) (int64, error)
+	TouchBoot(ctx context.Context, boot string, now time.Time) error
+	CloseRestore(ctx context.Context, boot, conversation string, now time.Time) error
 	PreviousBoot(ctx context.Context, current string) (store.RestoreBoot, bool, error)
 	RestoreRows(ctx context.Context, boot string) ([]store.RestoreRow, error)
 	ResolveRestore(ctx context.Context, boot string, ids []string, resolution string, now time.Time) (int64, error)
@@ -82,13 +98,14 @@ type SessionRestore struct {
 	Now   func() time.Time
 
 	RowsLimit, BootsLimit, BatchLimit int
-	SeenEvery                         time.Duration
+	SeenEvery, BeatEvery, Grace       time.Duration
 
 	mu        sync.Mutex
 	boot      string
 	bootErr   error
 	lastKey   string
 	lastWrite time.Time
+	lastBeat  time.Time
 	written   bool
 	dropped   int64
 	writeErr  error
@@ -109,6 +126,18 @@ func (r *SessionRestore) seenEvery() time.Duration {
 		return r.SeenEvery
 	}
 	return restoreSeenLimit
+}
+func (r *SessionRestore) beatEvery() time.Duration {
+	if r.BeatEvery > 0 {
+		return r.BeatEvery
+	}
+	return restoreBeatLimit
+}
+func (r *SessionRestore) grace() time.Duration {
+	if r.Grace > 0 {
+		return r.Grace
+	}
+	return restoreGraceLimit
 }
 
 func orDefault(v, d int) int {
@@ -155,7 +184,8 @@ func restorable(s session.Session) bool {
 
 // Observe records one reading. Only a complete reading changes anything, and
 // only a changed set of conversations — or a last_seen older than SeenEvery —
-// is written.
+// is written. An unchanged set moves only the boot's last_seen, at most once
+// per BeatEvery.
 func (r *SessionRestore) Observe(ctx context.Context, inv session.Inventory) {
 	if r == nil || r.Store == nil || !inv.Complete {
 		return
@@ -178,6 +208,13 @@ func (r *SessionRestore) Observe(ctx context.Context, inv session.Inventory) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.written && key == r.lastKey && now.Sub(r.lastWrite) < r.seenEvery() {
+		if now.Sub(r.lastBeat) >= r.beatEvery() {
+			if err := r.Store.TouchBoot(ctx, boot, now); err != nil {
+				r.writeErr = err
+				return
+			}
+			r.lastBeat = now
+		}
 		return
 	}
 
@@ -219,16 +256,42 @@ func (r *SessionRestore) Observe(ctx context.Context, inv session.Inventory) {
 			Place: projects.PlaceID(s.CWD), Title: title, Backend: string(s.Backend),
 		})
 	}
-	if err := r.Store.RecordBoot(ctx, boot, rows, now, r.bootsLimit()); err != nil {
+	evicted, err := r.Store.RecordBoot(ctx, store.BootReading{Boot: boot, Rows: rows, At: now,
+		ScannedAt: inv.ObservedAt, KeepBoots: r.bootsLimit(), KeepRows: r.rowsLimit()})
+	if err != nil {
 		r.writeErr = err
 		return
 	}
 	r.writeErr = nil
-	r.lastKey, r.lastWrite, r.written = key, now, true
-	r.dropped += dropped
+	r.lastKey, r.lastWrite, r.lastBeat, r.written = key, now, now, true
+	r.dropped += dropped + evicted
 }
 
-// Dropped is how many conversations have gone unrecorded past RowsLimit.
+// Closed marks the conversation in s as closed by the person through this
+// daemon (Actions.Close), so no restore after the next boot offers it however
+// near the reboot the close was. It is best effort: a close the record did
+// not hear of is a row that may be offered, and the person can dismiss it.
+func (r *SessionRestore) Closed(ctx context.Context, s session.Session) {
+	if r == nil || r.Store == nil || s.ConversationID == "" {
+		return
+	}
+	boot, err := r.currentBoot(ctx)
+	if err != nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.Store.CloseRestore(ctx, boot, s.ConversationID, r.now()); err != nil {
+		r.writeErr = err
+		return
+	}
+	// The record moved under the last written set; the next complete
+	// reading writes whatever it sees rather than being taken as unchanged.
+	r.written = false
+}
+
+// Dropped is how many conversations have gone unrecorded, or had their row
+// dropped, past RowsLimit.
 func (r *SessionRestore) Dropped() int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -254,8 +317,11 @@ type Restorable struct {
 	Rows     []store.RestoreRow
 }
 
-// Restorable is the previous boot's unanswered rows that are not open now.
-// live is a reading of the machine; a conversation in it is not offered.
+// Restorable is the previous boot's unanswered rows that are not open now and
+// were open at its end: never seen to go (a crash, a power loss), or gone no
+// more than Grace before the boot was last seen (a shutdown's final wave). A
+// row closed through Clawdline is never offered. live is a reading of the
+// machine; a conversation in it is not offered.
 func (r *SessionRestore) Restorable(ctx context.Context, live session.Inventory) (Restorable, error) {
 	boot, err := r.currentBoot(ctx)
 	if err != nil {
@@ -280,8 +346,12 @@ func (r *SessionRestore) Restorable(ctx context.Context, live session.Inventory)
 			open[s.ConversationID] = true
 		}
 	}
+	line := prev.LastSeen.Add(-r.grace())
 	for _, row := range rows {
-		if row.Resolution != "" || open[row.ConversationID] {
+		if row.Resolution != "" || !row.ClosedAt.IsZero() || open[row.ConversationID] {
+			continue
+		}
+		if !row.GoneAt.IsZero() && row.GoneAt.Before(line) {
 			continue
 		}
 		out.Rows = append(out.Rows, row)

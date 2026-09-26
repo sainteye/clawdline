@@ -51,6 +51,8 @@ func (s *Server) newSessionRestore() *app.SessionRestore {
 		BootsLimit: int(CapacityLimit(capacity.SessionsRestoreBoots)),
 		BatchLimit: int(CapacityLimit(capacity.SessionsRestoreBatch)),
 		SeenEvery:  time.Duration(CapacityLimit(capacity.SessionsRestoreSeenAge)) * time.Second,
+		BeatEvery:  time.Duration(CapacityLimit(capacity.SessionsRestoreBeat)) * time.Second,
+		Grace:      time.Duration(CapacityLimit(capacity.SessionsRestoreGrace)) * time.Second,
 	}
 }
 
