@@ -3789,7 +3789,14 @@ type ScheduleRequest struct {
 	Model           string `json:"model,omitempty"`
 	NotifyOnFailure bool   `json:"notify_on_failure,omitempty"`
 	On              string `json:"on,omitempty"`
-	PlaceID         string `json:"place_id"`
+
+	// ask, edits or full; an empty string takes it off (this machine's default); no
+	// key keeps what the file says. Only a person's device sets or changes it: this
+	// machine's orchestrator token, and a session carrying a person's message, are
+	// refused with permission_needs_person unless the value is what the file already
+	// says.
+	PermissionMode string `json:"permission_mode,omitempty"`
+	PlaceID        string `json:"place_id"`
 
 	// The conversation the person's message was sent to. Required with via for a
 	// session-authorized repeating write.
@@ -3865,8 +3872,8 @@ type ScheduleSummary struct {
 }
 
 // The task template, as the file carries it. The fields a request may never
-// name — project_dir, claims, permission_mode and the rest — are set in the
-// file and carried across every save.
+// name — project_dir, claims and the rest — are set in the file and carried
+// across every save. permission_mode is the form's own field (ScheduleRequest).
 type ScheduleTask struct {
 	Assistant       string   `json:"assistant"`
 	Claims          []string `json:"claims,omitempty"`
@@ -3891,9 +3898,10 @@ type ScheduleTask struct {
 // names it is refused, because a save carries the stored fields itself. The
 // file's parser reads each value, as it reads a stored file. `graph` is
 // accepted too, as a stored file holds it (the generator has no type for it).
-// `permission_mode` is refused by name: a create may not grant a schedule more
-// than the form can. Any other key is refused by name. `reasoning_effort` is
-// kept only when the assistant is codex, as a save keeps it.
+// `permission_mode` is refused by name (`template_permission_mode`): it is sent
+// as the form's own field, where who may set it is checked. Any other key is
+// refused by name. `reasoning_effort` is kept only when the assistant is codex,
+// as a save keeps it.
 type ScheduleTemplate struct {
 	Claims          []string `json:"claims,omitempty"`
 	Deliverables    []string `json:"deliverables,omitempty"`

@@ -125,6 +125,15 @@
                 <span class="field-label" id="schedule-model-label"></span>
                 <div class="row" id="schedule-model"></div>
             </div>
+            <!-- What the session this schedule opens may do without asking. No chip on is the
+                 machine's own default. Only a person sets it: the orchestrator token is refused
+                 (`permission_needs_person`). `Schedule.drawPermission` opens `More` when a
+                 schedule being edited has one, so it is never set out of sight. -->
+            <div class="block">
+                <span class="field-label" id="schedule-permission-label"></span>
+                <div class="row" id="schedule-permission"></div>
+                <p class="said" id="schedule-permission-warn" role="note"></p>
+            </div>
         </details>
 
         <p class="said" id="schedule-said" role="status" aria-live="polite"></p>

@@ -3,7 +3,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { moveSchedule, planScheduleMove, recordBody, refusedForTemplate, retargetInstructions, targetBody, type MoveRecord, type MovePlace } from "./schedule-move.ts"
+import { moveSchedule, planScheduleMove, recordBody, refusedByOlderTarget, retargetInstructions, targetBody, type MoveRecord, type MovePlace } from "./schedule-move.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { choosesMachine, groupSchedules, type ScheduleFleet } from "./schedule-machines.ts"
 
@@ -59,9 +59,6 @@ test("every refusal is asked before anything is written, and names what to act o
       { code: "schedule_move_webhook_unknown", title: "Nightly", machine: "Studio" }],
     ["a one-time schedule that ran", { record: { ...record, fired_at: 1_790_000_000 } },
       { code: "schedule_move_spent", title: "Nightly" }],
-    ["a permission setting a create may not grant",
-      { record: { ...record, task: { ...record.task, claims: ["web"], permission_mode: "full" } } },
-      { code: "schedule_move_unformed_fields", fields: ["permission_mode"] }],
   ]
   for (const [name, over, refusal] of cases) {
     assert.deepEqual(plan(over), { refusal }, name)
@@ -152,6 +149,19 @@ test("the copy carries the settings the form does not show, and sends no templat
   assert.equal("template" in targetBody({ title: "Nightly" }, record, targetPlaces[1]), false)
 })
 
+test("the copy carries the form's permission as the form field, never in template", () => {
+  const full: MoveRecord = { ...record, task: { ...record.task, claims: ["web"], permission_mode: "full" } }
+  assert.ok("plan" in plan({ record: full }), "a schedule with a permission setting is moved")
+  const copy = targetBody({ title: "Nightly", permission_mode: "full" }, full, targetPlaces[1])
+  assert.equal(copy.permission_mode, "full")
+  assert.deepEqual(copy.template, { claims: ["web"] })
+  // "Not set" has nothing to take off a copy being made, so the key is not
+  // sent, and a target older than the field still takes it.
+  assert.equal("permission_mode" in targetBody({ title: "Nightly", permission_mode: "" }, record, targetPlaces[1]), false)
+  // The disable is a save that leaves the stored permission alone.
+  assert.equal("permission_mode" in recordBody(full, "cloud.src", false), false)
+})
+
 test("the project directory in the first message becomes the target's, as a whole path only", () => {
   const from = "/Users/alice/code/dual"
   const to = "/home/bob/dual"
@@ -172,12 +182,15 @@ test("the project directory in the first message becomes the target's, as a whol
   assert.equal(copy.instructions, "你在 /home/bob/tool。")
 })
 
-test("a target older than template is told apart from any other refusal", () => {
-  assert.equal(refusedForTemplate(Object.assign(new Error("unknown field: template"), { code: "bad_request" })), true)
-  assert.equal(refusedForTemplate(new Error("unknown field: on, template")), true)
-  assert.equal(refusedForTemplate(new Error("unknown template field: model")), false)
-  assert.equal(refusedForTemplate(new Error("place_id must be one of the ids GET /v1/places lists.")), false)
-  assert.equal(refusedForTemplate(null), false)
+test("a target older than template or the permission field is told apart from any other refusal", () => {
+  assert.equal(refusedByOlderTarget(new Error("unknown field: permission_mode")), true)
+  assert.equal(refusedByOlderTarget(new Error("unknown field: permission_mode, template")), true)
+  assert.equal(refusedByOlderTarget(new Error("task.permission_mode must be one of: ask, edits, full")), false)
+  assert.equal(refusedByOlderTarget(Object.assign(new Error("unknown field: template"), { code: "bad_request" })), true)
+  assert.equal(refusedByOlderTarget(new Error("unknown field: on, template")), true)
+  assert.equal(refusedByOlderTarget(new Error("unknown template field: model")), false)
+  assert.equal(refusedByOlderTarget(new Error("place_id must be one of the ids GET /v1/places lists.")), false)
+  assert.equal(refusedByOlderTarget(null), false)
 })
 
 test("a target that refuses the template is not asked again without it", async () => {
@@ -199,7 +212,30 @@ test("a target that refuses the template is not asked again without it", async (
   })
   assert.equal(outcome.state, "create_failed")
   assert.equal(sent.length, 1)
-  assert.ok(refusedForTemplate((outcome as { error: unknown }).error))
+  assert.ok(refusedByOlderTarget((outcome as { error: unknown }).error))
+})
+
+test("a target that refuses the permission field is not asked again without it", async () => {
+  const sent: Record<string, unknown>[] = []
+  const writes = {
+    update: async () => ({}),
+    create: async (body: Record<string, unknown>) => {
+      sent.push(body)
+      throw Object.assign(new Error("unknown field: permission_mode"), { code: "bad_request" })
+    },
+    remove: async () => ({}),
+  }
+  const full: MoveRecord = { ...record, task: { ...record.task, permission_mode: "full" } }
+  const answer = plan({ record: full })
+  assert.ok("plan" in answer)
+  const outcome = await moveSchedule(writes, {
+    record: full, source: "mac-a", plan: answer.plan,
+    copy: targetBody({ title: "Nightly", permission_mode: "full" }, full, targetPlaces[1]),
+  })
+  assert.equal(outcome.state, "create_failed")
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].permission_mode, "full")
+  assert.ok(refusedByOlderTarget((outcome as { error: unknown }).error))
 })
 
 const fleet: ScheduleFleet = {
