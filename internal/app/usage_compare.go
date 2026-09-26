@@ -58,9 +58,21 @@ const (
 	// queued, or spawn_failed before a launch — so no window was decided.
 	CompareExcludedNotLaunched = "not_launched"
 	// CompareExcludedUnrecorded is a Claude task that was launched and whose
-	// record does not say with what window: recorded before the field was.
+	// record does not say with what window. Since the setting's own daemon
+	// there is no such task: every launch records its window. It is kept for
+	// a record that has the field and no value.
 	CompareExcludedUnrecorded = "window_unrecorded"
 )
+
+// CompareBeforeSetting is the group of Claude tasks launched by a daemon
+// that could not set a window at all — their records predate the field, so
+// Claude Code compacted them near its own window, which is exactly "none".
+// They are kept apart from `none` rather than folded into it because they are
+// another period's work: the comparison shows both and lets the reader judge.
+// Measured on 2026-09-26, two hours after the setting was turned on: `none`
+// held one task and 164 launched Claude tasks were excluded as unrecorded,
+// so a readout a week later would have compared the window against nothing.
+const CompareBeforeSetting int64 = -1
 
 // CompareNotRecorded is each quality signal the brief asked for that nothing
 // records, so the answer names it rather than showing a count of zero.
@@ -237,15 +249,24 @@ func (u *UsageLedger) CompareCompaction(ctx context.Context, since time.Time) (C
 
 // compareExclusion is why a task is left out, or empty when it has a window.
 func compareExclusion(r orchestrator.Record) string {
+	_, why := compareWindow(r)
+	return why
+}
+
+// compareWindow is the group a task falls in, or why it falls in none.
+func compareWindow(r orchestrator.Record) (int64, string) {
 	switch {
 	case r.AutoCompactWindow != nil:
-		return ""
+		return *r.AutoCompactWindow, ""
 	case r.Assistant != "" && r.Assistant != "claude":
-		return CompareExcludedCodex
+		return 0, CompareExcludedCodex
 	case r.SpawnedAt.IsZero() && r.ChildTerminalID == "":
-		return CompareExcludedNotLaunched
+		return 0, CompareExcludedNotLaunched
+	case r.AutoCompactRequested == nil:
+		// Launched by a daemon with no window to give: before the setting.
+		return CompareBeforeSetting, ""
 	}
-	return CompareExcludedUnrecorded
+	return 0, CompareExcludedUnrecorded
 }
 
 // FoldCompactionComparison is the comparison of these tasks, newest first,
@@ -271,7 +292,7 @@ func FoldCompactionComparison(records []orchestrator.Record, bills map[string]Ta
 			}
 			continue
 		}
-		w := *r.AutoCompactWindow
+		w, _ := compareWindow(r)
 		a := groups[w]
 		if a == nil {
 			a = &acc{g: CompactionGroup{Window: w, CostKnown: true}}
@@ -400,6 +421,9 @@ func medianInt(v []int64) int64 {
 
 // CompareGroupName is a group as a person reads it: `none`, or its window.
 func CompareGroupName(window int64) string {
+	if window == CompareBeforeSetting {
+		return "before-setting"
+	}
 	if window == 0 {
 		return "none"
 	}

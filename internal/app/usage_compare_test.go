@@ -36,7 +36,10 @@ func newCompareHarness(t *testing.T) *compareHarness {
 type compareTask struct {
 	id, assistant, state string
 	// window is the record's auto_compact_window: nil leaves it out.
-	window    *int64
+	window *int64
+	// requested is the record's auto_compact_requested: nil leaves it out,
+	// which is how a record written before the setting existed reads.
+	requested *int64
 	launched  bool
 	stalled   bool
 	respawnOf string
@@ -55,6 +58,9 @@ func (h *compareHarness) task(c compareTask) {
 		"created_at": at}
 	if c.window != nil {
 		rec["auto_compact_window"] = *c.window
+	}
+	if c.requested != nil {
+		rec["auto_compact_requested"] = *c.requested
 	}
 	if c.launched {
 		rec["spawned_at"] = at.Add(time.Second)
@@ -143,6 +149,7 @@ func (h *compareHarness) seed() {
 		{id: "x-codex", assistant: "codex", state: "success", launched: true},
 		{id: "x-queued", state: "spawn_failed"},
 		{id: "x-old-record", state: "success", launched: true},
+		{id: "x-unrecorded", state: "success", launched: true, requested: win(300_000)},
 		{id: "x-before-range", state: "success", window: early, launched: true, age: 20 * 24 * time.Hour},
 	} {
 		h.task(c)
@@ -173,8 +180,13 @@ func TestTheComparisonGroupsTasksByTheWindowTheyWereLaunchedWith(t *testing.T) {
 	for _, g := range got.Groups {
 		windows = append(windows, g.Window)
 	}
-	if len(windows) != 3 || windows[0] != 0 || windows[1] != 60_000 || windows[2] != 300_000 {
-		t.Fatalf("groups %v, wanted none, 60000, 300000", windows)
+	if len(windows) != 4 || windows[0] != CompareBeforeSetting || windows[1] != 0 || windows[2] != 60_000 || windows[3] != 300_000 {
+		t.Fatalf("groups %v, wanted before-setting, none, 60000, 300000", windows)
+	}
+	// A task launched by a daemon that could not set a window compacted near
+	// Claude Code's own: it is the before-setting group, not left out.
+	if before := groupOf(t, got, CompareBeforeSetting); before.Tasks != 1 || CompareGroupName(before.Window) != "before-setting" {
+		t.Fatalf("before-setting: %d tasks named %q; wanted 1 named before-setting", before.Tasks, CompareGroupName(before.Window))
 	}
 	none := groupOf(t, got, 0)
 	if none.Tasks != 5 || none.Read != 4 || none.Sessions != 4 {
@@ -222,7 +234,7 @@ func TestTheComparisonCountsAndNamesWhatItLeavesOut(t *testing.T) {
 		t.Fatalf("excluded %d (truncated %v), wanted 3: %+v", got.Excluded, got.ExcludedTruncated, got.ExcludedTasks)
 	}
 	want := map[string]string{"x-codex": CompareExcludedCodex, "x-queued": CompareExcludedNotLaunched,
-		"x-old-record": CompareExcludedUnrecorded}
+		"x-unrecorded": CompareExcludedUnrecorded}
 	for _, e := range got.ExcludedTasks {
 		if want[e.TaskID] != e.Reason {
 			t.Fatalf("%s excluded as %q, wanted %q", e.TaskID, e.Reason, want[e.TaskID])

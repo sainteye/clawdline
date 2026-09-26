@@ -257,7 +257,13 @@ compactions, which is what an experiment groups by.
 /v1/usage/compare-compaction?since=…`, which a phone asks through Clawdline Cloud as the word
 `usage.compare-compaction`) is the side-by-side that answers the experiment: the child tasks created
 in the range — 14 days unless `--since` names `<n>d`, `<n>h` or a Unix time — grouped by the window
-their record says they were launched with, `none` first. One row per group:
+their record says they were launched with, `none` first. Claude tasks launched by a daemon older
+than the setting have no window on their record; they compacted near Claude Code's own window, which
+is what `none` means, and they form their own group, `before-setting`, first in the table. They are
+kept apart from `none` because they are another period's work — the reader compares them knowing
+that. Without them the experiment had no control group: two hours after the window was set to
+300000 on 2026-09-26, `none` held one task and 164 launched Claude tasks were left out. One row per
+group:
 
 | Column | What it is |
 |---|---|
