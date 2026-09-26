@@ -286,7 +286,7 @@ export async function cloudDisable(seam: CloudPushSeam, browser: BrowserPush): P
   try {
     await seam.api.remove(record.cloudId)
   } catch (e) {
-    untold.push({ machine: "", name: "Clawdline Cloud", ok: false, code: String((e as { code?: unknown }).code || "push_failed") })
+    untold.push({ machine: "", name: CLOUD_ROW, ok: false, code: String((e as { code?: unknown }).code || "push_failed") })
   }
   return untold
 }
@@ -345,6 +345,9 @@ export async function cloudTest(seam: CloudPushSeam): Promise<unknown> {
   }
   throw last
 }
+
+/** The row naming Cloud itself when its own half of turning notifications off failed. */
+const CLOUD_ROW = "Clawdline Cloud"
 
 let installed: CloudPushSeam | null = null
 const listeners = new Set<() => void>()
