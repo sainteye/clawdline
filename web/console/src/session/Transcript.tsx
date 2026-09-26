@@ -638,6 +638,7 @@ function pendingHTML(card: PendingSend): ReactElement {
 /** Why the last Enter on an unsubmitted card did not go, or may not have. */
 function enterRefusalSentence(code: string): string {
   if (code === "input_behind_question") return nextWord("sendEnterBehindQuestion")
+  // refusal-ok: every other code is named in the sentence it ends in, and the card offers the same Enter either way.
   return outcomeOf({ status: 409, code }) === "not_done"
     ? nextWord("sendEnterRefused", { code })
     : nextWord("sendEnterUnknown", { code })
