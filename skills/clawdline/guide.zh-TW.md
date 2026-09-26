@@ -557,6 +557,31 @@ echo "下次 release 前把 release notes 整理好。" | \
 
 絕對不要主動建立看板項目，也不要一次建好幾個來規劃推測性的工作。
 
+**認領使用者指給你的看板項目。** 使用者透過 Clawdline 傳來的訊息要你接下看板上某個已經存在的項目——
+「把 release notes 那個項目接走」「認領 <item id>」——就認領它，一條指令：
+
+```
+clawdline item claim <item id>
+```
+
+- `item claim` 會讀這個對話最新的 run，除非用 `--run` 指定；接著讀項目拿到 version，送出前先印出
+  Idempotency-Key（用 `--key` 重送同一筆寫入），成功後印出項目。它就是
+  `POST /v1/work/v2/agent/items/<id>/claim`，body 是 `{"expected_version", "session_id", "via": {"run"}}`，
+  而且只會把項目指派給**你，也就是那則訊息送達的 Session**——裡面沒有任何欄位能指名別的 Session 或
+  terminal。
+- 之後這個項目看起來就跟使用者從看板把它指派給你一模一樣：你是 owner，phase 變成 `assigned`，原本沒有
+  steps 的話會從 description 的清單補上。不會有任何字打進你的 terminal。照任何已指派項目的做法做（見下文）。
+- 使用者會看到卡片上寫著「Session 依你 HH:MM 的訊息認領」，並引用他的原話。
+- 拒絕，每一種都什麼都不寫：`run_unknown`、`run_expired`、`run_other_session`、`session_not_found`、
+  `child_session`（同 `item add`）；`work_not_found`；`project_mismatch`（項目在你沒在工作的 Project）；
+  `item_assigned`（已經有 Session，或正在為它開一個——只有使用者能把項目從一個 Session 移到另一個）；
+  `item_terminal`（已完成或已取消）；`planning_not_assignable`（Epic、Refactor、Plan 留在規劃區）；
+  `version_conflict`（項目變了，重跑一次指令）；`run_claims_exhausted`（一則訊息最多撐五次認領）。
+- **沒有 run** 會回 `no_run` 或 `run_unknown`：把項目留給使用者指派。
+
+絕對不要主動認領項目——只認領使用者訊息指名的那一個——也不要用使用者的
+`POST /v1/work/v2/items/<id>/assign`，那條會拒絕 Session（`session_cannot_create_item`）。
+
 **提議一個看板項目。** 看板上的 **Agent 提案**佇列只由這一條路由餵進去：
 
 ```

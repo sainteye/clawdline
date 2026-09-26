@@ -335,6 +335,8 @@ export interface WorkV2Item {
   created_by?: string
   /** Present when a Session created the item on the person's message through Clawdline. */
   created_via?: CreatedVia
+  /** Present when the owning Session claimed the item on the person's message through Clawdline. */
+  claimed_via?: CreatedVia
   created_at: number
   updated_at: number
   closed_at: number | null

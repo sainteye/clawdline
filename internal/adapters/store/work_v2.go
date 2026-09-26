@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS work_v2_assignments (
   failure            TEXT NOT NULL DEFAULT '',
   created_at         INTEGER NOT NULL,
   updated_at         INTEGER NOT NULL,
-  released_at        INTEGER
+  released_at        INTEGER,
+  claimed_via        TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS work_v2_one_active_assignment ON work_v2_assignments(work_id)
   WHERE state = 'active';
@@ -206,6 +207,15 @@ func openWorkV2(db *sql.DB) error {
 		return err
 	} else if !has {
 		if _, err = db.Exec(`ALTER TABLE work_v2_items ADD COLUMN created_via TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	// claimed_via is the person's message a Session claimed the item on;
+	// assignments written before it were all made by a person.
+	if has, err = hasColumn(db, "work_v2_assignments", "claimed_via"); err != nil {
+		return err
+	} else if !has {
+		if _, err = db.Exec(`ALTER TABLE work_v2_assignments ADD COLUMN claimed_via TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 	}
@@ -576,8 +586,9 @@ func scanAssignmentV2(sc scanner) (work.AssignmentV2, error) {
 	var a work.AssignmentV2
 	var created, updated int64
 	var released sql.NullInt64
+	var via string
 	err := sc.Scan(&a.ID, &a.WorkID, &a.Mode, &a.SessionID, &a.TerminalID, &a.Assistant, &a.Model,
-		&a.State, &a.HumanActor, &a.RootAssignment, &a.Failure, &created, &updated, &released)
+		&a.State, &a.HumanActor, &a.RootAssignment, &a.Failure, &created, &updated, &released, &via)
 	if err != nil {
 		return a, err
 	}
@@ -585,11 +596,28 @@ func scanAssignmentV2(sc scanner) (work.AssignmentV2, error) {
 	if released.Valid {
 		a.ReleasedAt = time.Unix(released.Int64, 0)
 	}
+	if via != "" {
+		var v work.CreatedViaV2
+		// Kept out of the answer, as an item's created_via is, when unreadable.
+		if json.Unmarshal([]byte(via), &v) == nil && v.Run != "" {
+			a.ClaimedVia = &v
+		}
+	}
 	return a, nil
 }
 
 const assignmentV2Columns = `id, work_id, mode, session_id, terminal_id, assistant, model, state,
-  human_actor, root_assignment_id, failure, created_at, updated_at, released_at`
+  human_actor, root_assignment_id, failure, created_at, updated_at, released_at, claimed_via`
+
+// AssignmentsClaimedBy counts every assignment, active or released, a Session
+// claimed on actor's word — how many items one person's message has already
+// had claimed.
+func (t *WorkV2Tx) AssignmentsClaimedBy(actor string) (int64, error) {
+	var n int64
+	err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM work_v2_assignments
+    WHERE human_actor = ? AND claimed_via <> ''`, actor).Scan(&n)
+	return n, err
+}
 
 func (t *WorkV2Tx) ActiveAssignment(workID string) (work.AssignmentV2, error) {
 	a, err := scanAssignmentV2(t.tx.QueryRowContext(t.ctx, `SELECT `+assignmentV2Columns+`
@@ -632,10 +660,11 @@ func (t *WorkV2Tx) CreateAssignment(a work.AssignmentV2) error {
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_assignments
       (id, work_id, mode, session_id, terminal_id, assistant, model, state, human_actor,
-       root_assignment_id, failure, created_at, updated_at, released_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       root_assignment_id, failure, created_at, updated_at, released_at, claimed_via)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, a.WorkID, a.Mode, a.SessionID, a.TerminalID, a.Assistant, a.Model, a.State, a.HumanActor,
-		a.RootAssignment, a.Failure, a.CreatedAt.Unix(), a.UpdatedAt.Unix(), zeroOrUnix(a.ReleasedAt))
+		a.RootAssignment, a.Failure, a.CreatedAt.Unix(), a.UpdatedAt.Unix(), zeroOrUnix(a.ReleasedAt),
+		createdViaColumn(a.ClaimedVia))
 	if err == nil {
 		t.wrote++
 	}
@@ -675,6 +704,17 @@ func (s *Store) WorkV2Assignments(ctx context.Context, workID string) ([]work.As
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// WorkV2ActiveClaim is the person's message a Session claimed an item on,
+// when the item's active assignment is such a claim; nil otherwise.
+func (s *Store) WorkV2ActiveClaim(ctx context.Context, workID string) (*work.CreatedViaV2, error) {
+	a, err := scanAssignmentV2(s.db.QueryRowContext(ctx, `SELECT `+assignmentV2Columns+`
+    FROM work_v2_assignments WHERE work_id=? AND state='active' AND claimed_via <> ''`, workID))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return a.ClaimedVia, err
 }
 
 // WorkV2RootAssignmentsForSessions answers, for each of one assistant's

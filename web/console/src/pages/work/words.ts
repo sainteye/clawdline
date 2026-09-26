@@ -165,6 +165,7 @@ const words = {
     todoIncorporated: "Integrated by another landed task",
     createdViaSession: "Created by the Session from your message at {time}",
     createdViaQuote: "Your message",
+    claimedViaSession: "Claimed by the Session from your message at {time}",
     usageTitle: "Token bill",
     usageCardLabel: "What this item's tokens cost; open for the breakdown",
     usageLoading: "Reading the token bill…",
@@ -353,6 +354,7 @@ const words = {
     todoIncorporated: "已由另一個落地任務整合",
     createdViaSession: "Session 依你 {time} 的訊息建立",
     createdViaQuote: "你的訊息",
+    claimedViaSession: "Session 依你 {time} 的訊息認領",
     usageTitle: "Token 帳單",
     usageCardLabel: "這個項目的 token 花費；打開看明細",
     usageLoading: "正在讀 token 帳單…",
@@ -455,4 +457,13 @@ export function clockOf(at: number): string {
 export function createdViaLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language()): string | null {
   if (!via || !via.run || !via.at) return null
   return workWordIn(lang, "createdViaSession", { time: clockOf(via.at) })
+}
+
+/**
+ * The line a card a Session claimed on the person's message carries, or null
+ * for an item the person assigned or nobody holds.
+ */
+export function claimedViaLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language()): string | null {
+  if (!via || !via.run || !via.at) return null
+  return workWordIn(lang, "claimedViaSession", { time: clockOf(via.at) })
 }

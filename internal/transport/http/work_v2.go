@@ -22,6 +22,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -45,29 +46,32 @@ type workV2ProjectWire struct {
 }
 
 type workV2ItemWire struct {
-	ID               string                 `json:"id"`
-	Project          workV2ProjectWire      `json:"project"`
-	Kind             string                 `json:"kind"`
-	Title            string                 `json:"title"`
-	Description      string                 `json:"description"`
-	Phase            string                 `json:"phase"`
-	Condition        *string                `json:"condition"`
-	UserAction       string                 `json:"user_action"`
-	Area             string                 `json:"area"`
-	DeploymentPolicy string                 `json:"deployment_policy"`
-	OwnerSession     *string                `json:"owner_session"`
-	CreatedBy        string                 `json:"created_by"`
-	CreatedVia       *workV2CreatedViaWire  `json:"created_via,omitempty"`
-	CreatedAt        int64                  `json:"created_at"`
-	UpdatedAt        int64                  `json:"updated_at"`
-	ClosedAt         *int64                 `json:"closed_at"`
-	Cycle            int64                  `json:"cycle"`
-	Version          int64                  `json:"version"`
-	Assignments      []workV2AssignmentWire `json:"assignments,omitempty"`
-	Documents        []workV2DocumentWire   `json:"documents,omitempty"`
-	Images           []workV2ImageWire      `json:"images,omitempty"`
-	Steps            []workV2StepWire       `json:"steps,omitempty"`
-	Events           []workV2EventWire      `json:"events,omitempty"`
+	ID               string                `json:"id"`
+	Project          workV2ProjectWire     `json:"project"`
+	Kind             string                `json:"kind"`
+	Title            string                `json:"title"`
+	Description      string                `json:"description"`
+	Phase            string                `json:"phase"`
+	Condition        *string               `json:"condition"`
+	UserAction       string                `json:"user_action"`
+	Area             string                `json:"area"`
+	DeploymentPolicy string                `json:"deployment_policy"`
+	OwnerSession     *string               `json:"owner_session"`
+	CreatedBy        string                `json:"created_by"`
+	CreatedVia       *workV2CreatedViaWire `json:"created_via,omitempty"`
+	// ClaimedVia is the person's message the owning Session claimed the item
+	// on; absent when the person assigned it, or nobody holds it.
+	ClaimedVia  *workV2CreatedViaWire  `json:"claimed_via,omitempty"`
+	CreatedAt   int64                  `json:"created_at"`
+	UpdatedAt   int64                  `json:"updated_at"`
+	ClosedAt    *int64                 `json:"closed_at"`
+	Cycle       int64                  `json:"cycle"`
+	Version     int64                  `json:"version"`
+	Assignments []workV2AssignmentWire `json:"assignments,omitempty"`
+	Documents   []workV2DocumentWire   `json:"documents,omitempty"`
+	Images      []workV2ImageWire      `json:"images,omitempty"`
+	Steps       []workV2StepWire       `json:"steps,omitempty"`
+	Events      []workV2EventWire      `json:"events,omitempty"`
 }
 
 // workV2CreatedViaWire is the person's message a Session created an item on:
@@ -104,6 +108,9 @@ type workV2AssignmentWire struct {
 	Failure        string `json:"failure,omitempty"`
 	CreatedAt      int64  `json:"created_at"`
 	UpdatedAt      int64  `json:"updated_at"`
+	// ClaimedVia is the person's message a Session claimed the item on;
+	// absent for an assignment a person made.
+	ClaimedVia *workV2CreatedViaWire `json:"claimed_via,omitempty"`
 }
 
 type workV2DocumentWire struct {
@@ -286,10 +293,23 @@ func (s *Server) workV2ItemOf(ctx context.Context, v app.WorkV2View) workV2ItemW
 	if via := i.CreatedVia; via != nil && strings.HasPrefix(i.CreatedBy, work.ActorViaSession) {
 		out.CreatedVia = &workV2CreatedViaWire{Run: via.Run, SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
 	}
+	claim := v.Claim
+	for _, a := range v.Assignments {
+		if a.State == "active" && a.ClaimedVia != nil {
+			claim = a.ClaimedVia
+		}
+	}
+	if claim != nil {
+		out.ClaimedVia = &workV2CreatedViaWire{Run: claim.Run, SessionID: claim.Session, At: claim.At, Excerpt: claim.Excerpt}
+	}
 	for _, a := range v.Assignments {
 		out.Assignments = append(out.Assignments, workV2AssignmentWire{ID: a.ID, Mode: a.Mode, SessionID: a.SessionID,
 			TerminalID: a.TerminalID, Assistant: a.Assistant, Model: a.Model, State: a.State,
 			RootAssignment: a.RootAssignment, Failure: a.Failure, CreatedAt: a.CreatedAt.Unix(), UpdatedAt: a.UpdatedAt.Unix()})
+		if via := a.ClaimedVia; via != nil && strings.HasPrefix(a.HumanActor, work.ActorViaSession) {
+			out.Assignments[len(out.Assignments)-1].ClaimedVia = &workV2CreatedViaWire{Run: via.Run,
+				SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
+		}
 	}
 	for _, d := range v.Documents {
 		out.Documents = append(out.Documents, workV2DocumentWire{ID: d.ID, Role: d.Role, Title: d.Title, Body: d.Body,
@@ -947,8 +967,7 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		if err != nil {
 			return app.WorkV2View{}, err
 		}
-		canonical, ok := projects.CanonicalProjectKey(sess.CWD)
-		if !ok || canonical != item.Item.ProjectPath {
+		if !sessionInProject(sess, item.Item) {
 			return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "project_mismatch", Message: "The chosen Session is not working in this item's Project."}
 		}
 		assigned, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
@@ -1353,6 +1372,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		_, _ = w.Write(answer)
 		return
 	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "claim" && r.Method == http.MethodPost {
+		s.agentClaimItem(w, r, parts[1])
+		return
+	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "edit" && r.Method == http.MethodPatch {
 		s.workV2Edit(w, r, parts[1], false)
 		return
@@ -1734,36 +1757,12 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	refuse := func(err error) {
-		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
-		if ref, typed := err.(orchestrator.Refusal); typed {
-			writeRefusal(w, ref.Status, ref.Code, ref.Message)
-			return
-		}
-		s.writeWorkV2Error(w, err)
-	}
-	if strings.TrimSpace(body.Via.Run) == "" {
-		refuse(&app.WorkError{Status: http.StatusForbidden, Code: "run_unknown",
-			Message: "A Session creates a Board item only on a person's message sent through Clawdline; name its run as " +
-				"{\"via\":{\"run\":\"…\"}}. Without one, file a proposal (POST /v1/work/v2/agent/proposals) for the person to accept."})
-		return
-	}
-	run, err := s.relayRun(r.Context(), body.Via.Run)
+	refuse := s.relayRefuser(w, r, k)
+	run, sess, err := s.relaySession(r.Context(), body.Via.Run, body.SessionID,
+		"A Session creates a Board item only on a person's message sent through Clawdline; name its run as "+
+			"{\"via\":{\"run\":\"…\"}}. Without one, file a proposal (POST /v1/work/v2/agent/proposals) for the person to accept.",
+		"nothing was created")
 	if err != nil {
-		refuse(err)
-		return
-	}
-	if s.broker == nil {
-		refuse(&app.WorkError{Status: http.StatusServiceUnavailable, Code: "session_unresolved",
-			Message: "This daemon has no broker to say which Session owns that conversation; nothing was created."})
-		return
-	}
-	sess, err := s.broker.LiveRootSession(r.Context(), body.SessionID)
-	if err != nil {
-		if _, typed := err.(orchestrator.Refusal); !typed {
-			err = &app.WorkError{Status: http.StatusServiceUnavailable, Code: "session_unresolved",
-				Message: "Which Session owns that conversation could not be read; nothing was created."}
-		}
 		refuse(err)
 		return
 	}
@@ -1790,6 +1789,113 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write(answer)
+}
+
+// relayRefuser answers a relay route's refusal after releasing its receipt,
+// so the same key may be tried again once the cause is gone.
+func (s *Server) relayRefuser(w http.ResponseWriter, r *http.Request, k store.ReceiptKey) func(error) {
+	return func(err error) {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		if ref, typed := err.(orchestrator.Refusal); typed {
+			writeRefusal(w, ref.Status, ref.Code, ref.Message)
+			return
+		}
+		s.writeWorkV2Error(w, err)
+	}
+}
+
+// relaySession is the person's message a Session relays and the live,
+// non-child Session relaying it: the run found and checked as a relay's run,
+// the Session resolved through the broker. Whether the run was said to that
+// Session is checked where the write happens (work.RelayTo). noRun is the
+// refusal for a body that names no run; nothing ends each other refusal.
+func (s *Server) relaySession(ctx context.Context, runID, sessionID, noRun, nothing string) (*work.Run, session.Session, error) {
+	if strings.TrimSpace(runID) == "" {
+		return nil, session.Session{}, &app.WorkError{Status: http.StatusForbidden, Code: "run_unknown", Message: noRun}
+	}
+	run, err := s.relayRun(ctx, runID)
+	if err != nil {
+		return nil, session.Session{}, err
+	}
+	if s.broker == nil {
+		return nil, session.Session{}, &app.WorkError{Status: http.StatusServiceUnavailable, Code: "session_unresolved",
+			Message: "This daemon has no broker to say which Session owns that conversation; " + nothing + "."}
+	}
+	sess, err := s.broker.LiveRootSession(ctx, sessionID)
+	if err != nil {
+		if _, typed := err.(orchestrator.Refusal); !typed {
+			err = &app.WorkError{Status: http.StatusServiceUnavailable, Code: "session_unresolved",
+				Message: "Which Session owns that conversation could not be read; " + nothing + "."}
+		}
+		return nil, session.Session{}, err
+	}
+	return run, sess, nil
+}
+
+// agentClaimItem is POST /v1/work/v2/agent/items/<id>/claim: a Session taking
+// a Board item because its person told it to, in a message sent through
+// Clawdline. The item goes to the Session that message was said to — the body
+// names no other Session or terminal — through the same Assign a person's
+// "existing Session" choice uses, so it reads as the person's assignment
+// would, plus the message it was claimed on. The run is checked as
+// agentCreateItem checks it; a child, another Project, an item already held
+// or finished, a planning kind and a spent run are refused by name, and
+// nothing is written. Nothing is typed into the terminal: the Session asked.
+func (s *Server) agentClaimItem(w http.ResponseWriter, r *http.Request, id string) {
+	var body struct {
+		ExpectedVersion int64  `json:"expected_version"`
+		SessionID       string `json:"session_id"`
+		Via             struct {
+			Run string `json:"run"`
+		} `json:"via"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+	if !ok {
+		return
+	}
+	refuse := s.relayRefuser(w, r, k)
+	run, sess, err := s.relaySession(r.Context(), body.Via.Run, body.SessionID,
+		"A Session claims a Board item only on a person's message sent through Clawdline that tells it to; name "+
+			"its run as {\"via\":{\"run\":\"…\"}}. Without one, leave the item for the person to assign.",
+		"nothing was claimed")
+	if err != nil {
+		refuse(err)
+		return
+	}
+	item, err := s.workV2().Item(r.Context(), id)
+	if err != nil {
+		refuse(err)
+		return
+	}
+	if !sessionInProject(sess, item.Item) {
+		refuse(&app.WorkError{Status: http.StatusConflict, Code: "project_mismatch",
+			Message: "This Session is not working in that item's Project; nothing was claimed."})
+		return
+	}
+	var answer []byte
+	_, err = s.workV2().ClaimFromSession(r.Context(), id, app.ClaimWorkV2{Run: *run, ExpectedVersion: body.ExpectedVersion,
+		SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant)},
+		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+		})
+	if err != nil {
+		refuse(err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
+}
+
+// sessionInProject is whether a Session works in an item's Project, the check
+// a person's "existing Session" assignment and a Session's claim both make.
+func sessionInProject(sess session.Session, item work.ItemV2) bool {
+	canonical, ok := projects.CanonicalProjectKey(sess.CWD)
+	return ok && canonical == item.ProjectPath
 }
 
 func resetConfirmation(counts map[string]int64) string {
