@@ -1,6 +1,6 @@
 import type { Screen, SessionRow } from "@clawdline/contract"
 import { useEffect, useRef, useState } from "react"
-import { client } from "../client.js"
+import { client, followsRelay } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { readFailure, type ReadState } from "../read-state.js"
@@ -41,6 +41,14 @@ import {
  * the panel. It costs one of the browser's six connections to this host while
  * somebody is watching a terminal, which is the cheapest way to keep the `即時`
  * badge true without changing a package this task does not own.
+ *
+ * **Over Clawdline Cloud there is no such stream, and none is opened.** This
+ * origin's `/v1/events` is the static host's, and the relay carries named
+ * answers, not the machine's `screen` revisions. So the copied client names
+ * every screen it reads `on-demand` at the one-second floor
+ * (`cloud-client.js`, `screen`), and the clock below asks at that floor while
+ * the page is visible — for tmux too, which on the machine's own network would
+ * have been told when to ask.
  */
 export function ScreenPanel({
   row,
@@ -145,7 +153,7 @@ export function ScreenPanel({
     // is dropped without asking the daemon anything. That is where the
     // byte-identical fifth of captures would otherwise have gone.
     let stream: EventSource | null = null
-    if (typeof EventSource === "function") {
+    if (!followsRelay() && typeof EventSource === "function") {
       stream = new EventSource(client.url("/v1/events"))
       stream.addEventListener("screen", (ev) => {
         let moved: { id?: string; revision?: string }

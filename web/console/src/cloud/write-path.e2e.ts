@@ -132,6 +132,11 @@ class GoClient implements CloudWriteClient {
   git(identity: CloudIdentity) {
     return this._read(identity, "git", {})
   }
+  // The live screen's read, spelled as the copied client spells it: the
+  // session and nothing else, which is all `cloudops`' `screen` decodes.
+  screen(identity: CloudIdentity) {
+    return this._read(identity, "screen", {})
+  }
   places() {
     return Promise.reject(new Error("not asked here"))
   }
@@ -243,6 +248,30 @@ test("the status line's read reaches this machine's own route, by both its names
     assert.equal(refusal.layer, "mac_route", half + ": " + JSON.stringify(refusal))
     assert.equal(refusal.word, "info")
   }
+})
+
+// The live screen, on the wire: the page's own route becomes a `screen` read
+// this machine admits and decodes, and whatever comes back is the machine's
+// route answering — not the page refusing itself, which is what 「即時畫面」
+// over Clawdline Cloud said until 2026-09-26.
+test("the live screen's read reaches this machine's own route", async () => {
+  const before = client.asked.length
+  const res = await doFetch(url("/v1/sessions/%254/screen"))
+  assert.deepEqual(client.asked.slice(before).map((one) => one.body), [{ type: "screen", session: "%4" }])
+  if (res.status === 200) {
+    const body = (await res.json()) as { screen?: unknown }
+    assert.equal(typeof body.screen, "object", "the answer is this daemon's `{screen: …}`")
+    return
+  }
+  const refusal = (await res.json()) as { error?: string; layer?: string; word?: string }
+  assert.ok(
+    !["cloud_not_carried", "unknown_command", "malformed_command", "cloud_feature_unavailable", "cloud_machine_unsupported"].includes(
+      refusal.error ?? "",
+    ),
+    "the machine did not admit `screen`: " + JSON.stringify(refusal),
+  )
+  assert.equal(refusal.layer, "mac_route", JSON.stringify(refusal))
+  assert.equal(refusal.word, "screen")
 })
 
 // F1, both ends: the page reads one permission prompt, the machine moves on to the
