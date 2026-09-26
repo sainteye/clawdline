@@ -29,3 +29,7 @@ func ttySight(tty string, s session.Session) (farewellSight, error) {
 
 // ttySignal is nothing here: a signal with nothing to aim it at.
 var ttySignal func(group int, step escalation) error
+
+func processSight(tty string, s session.Session) (farewellSight, error) {
+	return farewellSight{}, errNoTTYReading
+}

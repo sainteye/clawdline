@@ -117,6 +117,15 @@ type KeyHost interface {
 	Keystroke(ctx context.Context, s session.Session, bytes []byte) error
 }
 
+// ProcessCloser ends a session only the process table saw: an assistant on a
+// tty that no terminal backend here lists (another terminal app, a tmux server
+// on a socket of its own). There is no tab or pane to take away and nothing to
+// type into, so the close is the assistant process itself being asked to
+// leave. Nil is a machine that cannot, and such a close is refused by name.
+type ProcessCloser interface {
+	CloseProcess(ctx context.Context, s session.Session) error
+}
+
 // TerminalHost enumerates and drives terminal sessions. One interface covers
 // both surfaces: a terminal somebody else opened (attached) and a pty this
 // daemon owns.

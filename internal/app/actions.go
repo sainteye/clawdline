@@ -51,6 +51,8 @@ type Actions struct {
 	// Restore is told of every close, so the record of this boot's sessions
 	// never offers a conversation the person closed here. Nil tells nobody.
 	Restore *SessionRestore
+	// Processes ends a session no terminal backend lists (ProcessCloser).
+	Processes ports.ProcessCloser
 }
 
 // laneWait is the longest a write waits for its terminal's turn.
@@ -631,7 +633,7 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 			}
 		}
 	}
-	h, err := a.host(s)
+	closeIt, err := a.closer(s)
 	if err != nil {
 		return session.Session{}, err
 	}
@@ -645,7 +647,7 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 		return s, err
 	}
 	defer release()
-	if err := h.Close(ctx, s); err != nil {
+	if err := closeIt(ctx, s); err != nil {
 		return s, closeRefusal(err)
 	}
 	// The terminal backend just answered the existence question positively:
@@ -658,6 +660,33 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 	a.Restore.Closed(ctx, s)
 	a.record(ctx, "session.closed", s.ID, map[string]any{"forced": force, "owed": len(c.Reasons)})
 	return s, nil
+}
+
+// closer is what takes this session away.
+//
+// **A row only the process table saw is not a terminal backend's to close.**
+// Its id is its tty (session.SourceForID), and it carries the iTerm2 backend
+// only because that is the process scan's default; iTerm2 has no session by
+// that id. Asking iTerm2 answered "that session is gone" about an assistant
+// that was plainly still running — a claude in a tmux server started on a
+// socket of its own was closed from the phone twice, got close_nothing_there
+// both times, and stayed on the list. The process is what there is, so the
+// process is what is asked to leave.
+func (a Actions) closer(s session.Session) (func(context.Context, session.Session) error, error) {
+	if session.SourceForID(s.ID) == "ps" {
+		if a.Processes == nil {
+			return nil, Refusal{
+				Code:   "backend_unsupported",
+				Detail: "this session is only a process on " + s.TTY + ", and nothing on this machine can end one",
+			}
+		}
+		return a.Processes.CloseProcess, nil
+	}
+	h, err := a.host(s)
+	if err != nil {
+		return nil, err
+	}
+	return h.Close, nil
 }
 
 // closeRefusal names which rung of the close stopped it.
