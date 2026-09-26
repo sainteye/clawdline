@@ -891,6 +891,70 @@ func (w *WorkSystemV2) Cancel(ctx context.Context, id string, expected int64, ac
 	return out, mapWorkV2Error(err)
 }
 
+// workV2PersonCompletion is the event a person's manual completion writes.
+// ReopenIncomplete reads it to refuse an Agent retracting that completion.
+const workV2PersonCompletion = "item.completed"
+
+// Complete is the person's override that closes an item as done. Unlike an
+// Agent's Advance it asks for no verification, landing or deployment evidence
+// and does not refuse on open steps; it records how many were open instead.
+// It works from any non-terminal phase, owned or not.
+func (w *WorkSystemV2) Complete(ctx context.Context, id string, expected int64, actor, note string, file WorkV2Filer) (WorkV2View, error) {
+	note = strings.TrimSpace(note)
+	if len(note) > workV2CompletionReasonLimit {
+		return WorkV2View{}, workV2Error(http.StatusRequestEntityTooLarge, "note_too_large",
+			"A completion note is at most 8 KiB.")
+	}
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		if prev.Version != expected {
+			return store.ErrConflict
+		}
+		if prev.Phase.Terminal() {
+			return work.RefuseV2("item_terminal", "This item is already terminal.")
+		}
+		steps, err := tx.Steps(id)
+		if err != nil {
+			return err
+		}
+		open := 0
+		for _, step := range steps {
+			if !step.Done {
+				open++
+			}
+		}
+		now := w.now()
+		if a, err := tx.ActiveAssignment(id); err != nil {
+			return err
+		} else if a.ID != "" {
+			a.State, a.ReleasedAt, a.UpdatedAt = "released", now, now
+			if err := tx.UpdateAssignment(a); err != nil {
+				return err
+			}
+		}
+		next := prev
+		next.Phase, next.OwnerSession, next.Condition, next.UserAction = work.PhaseDone, "", "", ""
+		next.ClosedAt, next.UpdatedAt = now, now
+		if err := tx.PutItem(prev, next, workV2PersonCompletion, actor, payload(map[string]any{
+			"from": prev.Phase, "open_steps": open, "note": note})); err != nil {
+			return err
+		}
+		next.Version++
+		out = WorkV2View{Item: next}
+		if file != nil {
+			if k, ans, ok := file(out); ok {
+				return tx.CompleteReceipt(k, ans)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
 func (w *WorkSystemV2) Reopen(ctx context.Context, id string, expected int64, actor string, file WorkV2Filer) (WorkV2View, error) {
 	var out WorkV2View
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
@@ -963,6 +1027,15 @@ func (w *WorkSystemV2) ReopenIncomplete(ctx context.Context, id string, c AgentR
 			completed.ReleasedAt.IsZero() || !completed.ReleasedAt.Equal(prev.ClosedAt) {
 			return work.RefuseV2("not_completing_session",
 				"Only the Session that recorded this completion may retract it after user feedback.")
+		}
+		// A person's completion releases the assignment at ClosedAt too, so
+		// the assignment ledger alone cannot tell it from the Session's own;
+		// the event that closed the item can.
+		if closing, _, err := tx.LatestEventOf(id, "item.phase_changed", workV2PersonCompletion); err != nil {
+			return err
+		} else if closing == workV2PersonCompletion {
+			return work.RefuseV2("not_completing_session",
+				"A person completed this item; only a person may reopen it.")
 		}
 		active, err := tx.ActiveAssignment(id)
 		if err != nil {

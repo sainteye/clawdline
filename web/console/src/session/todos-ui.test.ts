@@ -136,7 +136,8 @@ test("an open assigned Board item can remind its Session from the detail", () =>
   assert.match(source, /remindWorkV2/)
   assert.match(source, /再次提醒 Session/)
   assert.match(source, /已再次提醒這個 Session/)
-  assert.match(source, /!!item\.owner_session && !item\.closed_at/)
+  // Only an open item shows the actions, and only an owned one the reminder.
+  assert.match(source, /\{!item\.closed_at && \(confirming[\s\S]*?\{!!item\.owner_session && <button[^>]*onClick=\{onRemind\}/)
   assert.match(api, /items\/\$\{item\.id\}\/remind/)
 })
 

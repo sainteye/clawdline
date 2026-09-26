@@ -738,6 +738,11 @@ request id as its idempotency key. The bridge therefore cannot accidentally exer
 or machine-only authority merely because Cloud execution happens through the daemon's in-process
 router. The console's carried-word list and the daemon vocabulary are checked together by tests.
 
+As of 2026-09-26 an eighteenth, `work.v2.complete`, carries the person's manual completion the same
+way `work.v2.cancel` does: `{type, session, request, id, item}` routed to
+`POST /v1/work/v2/items/<id>/complete` with the paired-device marker, `item` being
+`{expected_version, note?}`.
+
 As of 2026-09-26 the token bill crosses too, as three read words: `usage.session`, `usage.task` and
 `usage.item`, each `{type, session, request, id}` on the machine reply channel and routed to
 `GET /v1/usage/{sessions,tasks,items}/<id>`. The id is refused before the route when the route

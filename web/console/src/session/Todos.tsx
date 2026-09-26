@@ -3,8 +3,9 @@ import { createPortal } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, readWorkV2Item, remindWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
+import { addDirectTodoV2Image, completeWorkV2, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, readWorkV2Item, remindWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
+import { completeConfirmWords } from "../pages/work/complete-item.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { WorkSteps } from "../pages/work/WorkSteps.js"
 import { completionReports, WorkCompletionReports } from "../pages/work/WorkCompletionReport.js"
@@ -112,7 +113,26 @@ export function Todos({ row }: { row: SessionRow | null }) {
       setDetailNotice("已再次提醒這個 Session。")
       await refresh(true)
     } catch (error) {
-      setDetailActionFailure(failureWords(error))
+      setDetailActionFailure(`提醒傳送失敗：${failureWords(error)}`)
+    } finally {
+      setBusy("")
+    }
+  }
+  // The person's override: the item closes as done whatever its phase and
+  // steps, and leaves this Session's open list for its recent history.
+  const completeDetail = async (item: WorkV2Item) => {
+    const key = `complete-${item.id}`
+    if (busy) return false
+    setBusy(key); setDetailActionFailure(""); setDetailNotice("")
+    try {
+      const answer = await completeWorkV2(item)
+      setDetail((current) => current?.id === item.id ? answer.item : current)
+      setDetailNotice("已標記完成。")
+      await refresh(true)
+      return true
+    } catch (error) {
+      setDetailActionFailure(`標記完成失敗：${failureWords(error)}`)
+      return false
     } finally {
       setBusy("")
     }
@@ -193,6 +213,7 @@ export function Todos({ row }: { row: SessionRow | null }) {
       </div>}
       {detail && <WorkItemDetailModal item={detail} failure={detailFailure} actionFailure={detailActionFailure} notice={detailNotice}
         reminding={busy === `remind-${detail.id}`} onRemind={() => { void remindDetail(detail) }}
+        completing={busy === `complete-${detail.id}`} onComplete={() => completeDetail(detail)}
         onClose={() => { setDetail(null); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice("") }} />}
     </>
   )
@@ -238,15 +259,18 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
   </article>
 }
 
-function WorkItemDetailModal({ item, failure, actionFailure, notice, reminding, onRemind, onClose }: {
+function WorkItemDetailModal({ item, failure, actionFailure, notice, reminding, onRemind, completing, onComplete, onClose }: {
   item: WorkV2Item
   failure: string
   actionFailure: string
   notice: string
   reminding: boolean
   onRemind: () => void
+  completing: boolean
+  onComplete: () => Promise<boolean>
   onClose: () => void
 }) {
+  const [confirming, setConfirming] = useState(false)
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose() }
     document.addEventListener("keydown", close)
@@ -274,14 +298,24 @@ function WorkItemDetailModal({ item, failure, actionFailure, notice, reminding, 
         {item.images.map((image) => <ReferenceImage key={image.id} image={image} />)}
       </div>}
       {failure && <p className="work-note" role="alert">最新資料讀取失敗：{failure}</p>}
-      {actionFailure && <p className="work-note" role="alert">提醒傳送失敗：{actionFailure}</p>}
+      {actionFailure && <p className="work-note" role="alert">{actionFailure}</p>}
       {notice && <p className="work-note" role="status">{notice}</p>}
       <ItemUsageDetail itemId={item.id} version={item.version} />
-      {!!item.owner_session && !item.closed_at && <div className="work-actions">
-        <button className="chip on" type="button" disabled={reminding} onClick={onRemind}>
-          {reminding ? "提醒中…" : notice ? "✓ 已提醒" : "再次提醒 Session"}
-        </button>
-      </div>}
+      {!item.closed_at && (confirming
+        ? <div className="work-actions" role="group" aria-label="確認標記完成">
+          <p className="work-note">{completeConfirmWords(item)}</p>
+          <button className="chip on" type="button" disabled={completing}
+            onClick={() => { void onComplete().then((ok) => { if (ok) setConfirming(false) }) }}>
+            <WorkIcon name="check" />{completing ? "標記中…" : "確認標記完成"}</button>
+          <button className="chip" type="button" disabled={completing} onClick={() => setConfirming(false)}>取消</button>
+        </div>
+        : <div className="work-actions">
+          {!!item.owner_session && <button className="chip on" type="button" disabled={reminding} onClick={onRemind}>
+            {reminding ? "提醒中…" : notice ? "✓ 已提醒" : "再次提醒 Session"}
+          </button>}
+          <button className="chip" type="button" disabled={reminding} onClick={() => setConfirming(true)}>
+            <WorkIcon name="check" />標記完成</button>
+        </div>)}
       <div className="work-meta"><span>{deploymentPolicyName(item.deployment_policy)}</span>
         <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span></div>
     </article>

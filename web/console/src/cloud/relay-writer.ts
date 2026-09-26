@@ -274,6 +274,7 @@ export type WriteRoute =
   | { op: "work-v2-assign"; word: Carried<"work.v2.assign">; id: string }
   | { op: "work-v2-remind"; word: Carried<"work.v2.remind">; id: string }
   | { op: "work-v2-cancel"; word: Carried<"work.v2.cancel">; id: string }
+  | { op: "work-v2-complete"; word: Carried<"work.v2.complete">; id: string }
   | { op: "work-v2-image-create"; word: Carried<"work.v2.image-create">; id: string }
   | { op: "work-v2-image-delete"; word: Carried<"work.v2.image-delete">; id: string; image: string }
   | { op: "work-v2-proposal-resolve"; word: Carried<"work.v2.proposal-resolve">; id: string; decision: "accept" | "reject" }
@@ -500,6 +501,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (b === "items" && c && d === "cancel" && segments.length === 5) {
       return { op: "work-v2-cancel", word: "work.v2.cancel", id: c }
     }
+    if (b === "items" && c && d === "complete" && segments.length === 5) {
+      return { op: "work-v2-complete", word: "work.v2.complete", id: c }
+    }
     if (b === "items" && c && d === "images" && segments.length === 5) {
       return { op: "work-v2-image-create", word: "work.v2.image-create", id: c }
     }
@@ -653,6 +657,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "work-v2-assign":
     case "work-v2-remind":
     case "work-v2-cancel":
+    case "work-v2-complete":
     case "work-v2-image-create":
     case "work-v2-image-delete":
     case "work-v2-proposal-resolve":
@@ -1158,6 +1163,9 @@ export class RelayWriter {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-cancel": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-complete": {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-image-create": {

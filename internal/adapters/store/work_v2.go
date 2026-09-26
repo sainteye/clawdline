@@ -454,6 +454,25 @@ func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) 
 		PreviousVersion: prev.Version, NextVersion: next.Version, Payload: payload, At: next.UpdatedAt})
 }
 
+// LatestEventOf returns the kind and actor of the newest event of one of the
+// given kinds for one item, or empty strings when there is none. seq is the
+// event ledger's insertion order.
+func (t *WorkV2Tx) LatestEventOf(workID string, kinds ...string) (kind, actor string, err error) {
+	if len(kinds) == 0 {
+		return "", "", nil
+	}
+	args := []any{workID}
+	for _, k := range kinds {
+		args = append(args, k)
+	}
+	err = t.tx.QueryRowContext(t.ctx, `SELECT kind, actor FROM work_v2_events WHERE work_id=? AND kind IN (?`+
+		strings.Repeat(",?", len(kinds)-1)+`) ORDER BY seq DESC LIMIT 1`, args...).Scan(&kind, &actor)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	return kind, actor, err
+}
+
 func (t *WorkV2Tx) AppendEvent(e work.EventV2) error {
 	if strings.TrimSpace(e.Payload) == "" {
 		e.Payload = "{}"

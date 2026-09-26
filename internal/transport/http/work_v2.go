@@ -872,6 +872,7 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 		Assistant       string `json:"assistant"`
 		Model           string `json:"model"`
 		Reason          string `json:"reason"`
+		Note            string `json:"note"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -901,6 +902,8 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 		out, err = s.workV2().Unassign(r.Context(), id, body.ExpectedVersion, actor, file)
 	case "cancel":
 		out, err = s.workV2().Cancel(r.Context(), id, body.ExpectedVersion, actor, body.Reason, file)
+	case "complete":
+		out, err = s.workV2().Complete(r.Context(), id, body.ExpectedVersion, actor, body.Note, file)
 	case "reopen":
 		out, err = s.workV2().Reopen(r.Context(), id, body.ExpectedVersion, actor, file)
 	default:

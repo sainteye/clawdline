@@ -195,6 +195,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/work/v2/items"],
     ["PATCH", "/v1/work/v2/items/w1"],
     ["POST", "/v1/work/v2/items/w1/cancel"],
+    ["POST", "/v1/work/v2/items/w1/complete"],
     ["POST", "/v1/work/v2/items/w1/assign"],
     ["POST", "/v1/work/v2/items/w1/remind"],
     ["GET", "/v1/work/v2/images/img1"],
