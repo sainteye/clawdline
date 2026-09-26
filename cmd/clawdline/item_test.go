@@ -154,3 +154,45 @@ func TestItemAddWithoutAConversationAsksNothing(t *testing.T) {
 		t.Fatalf("exit %d, asked %d times", code, len(s.requests()))
 	}
 }
+
+// `phase` reads the item for its version and posts the next phase with only
+// the evidence it was given, the landing as one object.
+func TestItemPhasePostsTheNextPhaseWithItsEvidence(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+	env := envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	var out, errs bytes.Buffer
+	f := itemFlags{phase: phaseEvidence{commit: "abc123", target: "main", remote: "origin", landingProject: "p2"}}
+	if code := sessionItem(&out, &errs, b, "phase", f, []string{"item-1", "deploying"}, "", "", env); code != 0 {
+		t.Fatalf("phase exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 2 || seen[0].Method != "GET" || seen[0].EscapedPath != "/v1/work/v2/items/item-1" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	p := seen[1]
+	if p.Method != "POST" || p.EscapedPath != "/v1/work/v2/agent/items/item-1/phase" || p.Key == "" ||
+		!strings.Contains(errs.String(), "Idempotency-Key: "+p.Key) {
+		t.Fatalf("phase = %+v, stderr %q", p, errs.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(p.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	landing, _ := body["landing"].(map[string]any)
+	if body["expected_version"] != float64(2) || body["session_id"] != thinConversation || body["next"] != "deploying" ||
+		landing["commit"] != "abc123" || landing["target"] != "main" || landing["remote"] != "origin" ||
+		landing["project"] != "p2" || len(body) != 4 {
+		t.Fatalf("phase body = %s", p.Body)
+	}
+}
+
+// Half a landing is refused before anything is asked.
+func TestItemPhaseRefusesHalfALanding(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+	var out, errs bytes.Buffer
+	code := sessionItem(&out, &errs, b, "phase", itemFlags{phase: phaseEvidence{commit: "abc123"}},
+		[]string{"item-1", "deploying"}, thinConversation, "", envOf(nil))
+	if code != 2 || len(s.requests()) != 0 || !strings.Contains(errs.String(), "go together") {
+		t.Fatalf("exit %d, asked %d times, stderr %q", code, len(s.requests()), errs.String())
+	}
+}

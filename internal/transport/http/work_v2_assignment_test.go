@@ -212,7 +212,8 @@ func TestOnlyAnIdleSessionReceivesAnAssignmentBrief(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := p.done(); len(got) != 1 || !strings.HasPrefix(got[0], "send:") ||
-		!strings.Contains(got[0], "completion_report") || !strings.Contains(got[0], "straightforward fix") {
+		!strings.Contains(got[0], "completion_report") || !strings.Contains(got[0], "straightforward fix") ||
+		!strings.Contains(got[0], "clawdline item phase "+v.Item.ID+" implementing") {
 		t.Fatalf("idle Session brief = %v", got)
 	}
 }
@@ -438,5 +439,85 @@ func TestANewSessionAssignmentRecordsTheChosenAssistant(t *testing.T) {
 	}
 	if len(after.Assignments) != 0 || after.Item.Version != v.Item.Version {
 		t.Fatalf("a refused assistant wrote %+v", after)
+	}
+}
+
+// A Session that reaches for the edit route to move its item's phase is told
+// by name where the phase moves, and the item is not touched; any other field
+// the route does not take is named in the refusal.
+func TestTheEditRouteNamesThePhaseRouteAndAnyFieldItRefuses(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	assigned, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := func(key string, fields map[string]any) *httptest.ResponseRecorder {
+		fields["expected_version"], fields["session_id"] = assigned.Item.Version, p.s.ConversationID
+		body, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPatch, "/v1/work/v2/agent/items/"+v.Item.ID+"/edit", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", key)
+		req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{
+			machine: true, verdict: auth.Verdict{Allowed: true},
+		}))
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, req)
+		return rec
+	}
+	rec := edit("agent-edits-phase", map[string]any{"phase": "done"})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "phase_not_editable") ||
+		!strings.Contains(rec.Body.String(), "/v1/work/v2/agent/items/"+v.Item.ID+"/phase") ||
+		!strings.Contains(rec.Body.String(), "clawdline item phase") {
+		t.Fatalf("phase edit: %d %s", rec.Code, rec.Body)
+	}
+	after, err := s.workV2().Item(context.Background(), v.Item.ID)
+	if err != nil || after.Item.Phase != work.PhaseAssigned || after.Item.Version != assigned.Item.Version {
+		t.Fatalf("item after a refused phase edit: %+v %v", after.Item, err)
+	}
+	rec = edit("agent-edits-bogus", map[string]any{"bogus": 1})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") ||
+		!strings.Contains(rec.Body.String(), `\"bogus\"`) {
+		t.Fatalf("unknown field edit: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A landing that names a Project the catalog does not hold is refused by
+// name, leaves the item in merging, and releases its key for a corrected try.
+func TestALandingInAnUnknownProjectIsRefusedByName(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	owned, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct {
+		next         work.Phase
+		verification string
+	}{{work.PhaseImplementing, ""}, {work.PhaseVerifying, ""}, {work.PhaseMerging, "verified"}} {
+		owned, err = s.workV2().Advance(context.Background(), v.Item.ID, app.AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+			SessionID: p.s.ConversationID, Next: step.next, Verification: step.verification, Actor: p.s.ConversationID}, nil)
+		if err != nil {
+			t.Fatalf("advance %s: %v", step.next, err)
+		}
+	}
+	body, _ := json.Marshal(map[string]any{"expected_version": owned.Item.Version, "session_id": p.s.ConversationID,
+		"next": "deploying", "landing": map[string]string{"commit": "HEAD", "target": "main", "remote": "origin",
+			"project": "no-such-project"}})
+	req := httptest.NewRequest(http.MethodPost, "/v1/work/v2/agent/items/"+v.Item.ID+"/phase", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "landing-in-unknown-project")
+	req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{machine: true, verdict: auth.Verdict{Allowed: true}}))
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "landing_project_not_found") {
+		t.Fatalf("unknown landing project: %d %s", rec.Code, rec.Body)
+	}
+	after, err := s.workV2().Item(context.Background(), v.Item.ID)
+	if err != nil || after.Item.Phase != work.PhaseMerging || after.Item.Version != owned.Item.Version {
+		t.Fatalf("item after refusal: %+v %v", after.Item, err)
 	}
 }
