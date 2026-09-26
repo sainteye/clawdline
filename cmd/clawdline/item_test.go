@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"net/http"
 	"strings"
 	"testing"
@@ -194,5 +195,27 @@ func TestItemPhaseRefusesHalfALanding(t *testing.T) {
 		[]string{"item-1", "deploying"}, thinConversation, "", envOf(nil))
 	if code != 2 || len(s.requests()) != 0 || !strings.Contains(errs.String(), "go together") {
 		t.Fatalf("exit %d, asked %d times, stderr %q", code, len(s.requests()), errs.String())
+	}
+}
+
+// Flags parse wherever they stand, as the guide writes them after the item
+// id and phase; after "--" everything is positional.
+func TestItemFlagsParseAfterThePositionalArguments(t *testing.T) {
+	for _, tc := range []struct {
+		args       []string
+		positional []string
+		verify     string
+	}{
+		{[]string{"item-1", "merging", "--verification", "ran it"}, []string{"item-1", "merging"}, "ran it"},
+		{[]string{"--verification", "ran it", "item-1", "merging"}, []string{"item-1", "merging"}, "ran it"},
+		{[]string{"item-1", "--verification=ran it", "merging"}, []string{"item-1", "merging"}, "ran it"},
+		{[]string{"item-1", "--", "--verification"}, []string{"item-1", "--verification"}, ""},
+	} {
+		fs := flag.NewFlagSet("item phase", flag.ContinueOnError)
+		verify := fs.String("verification", "", "")
+		got, err := parseInterspersed(fs, tc.args)
+		if err != nil || strings.Join(got, "|") != strings.Join(tc.positional, "|") || *verify != tc.verify {
+			t.Errorf("%q: positional %q, verification %q, err %v", tc.args, got, *verify, err)
+		}
 	}
 }
