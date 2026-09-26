@@ -97,7 +97,24 @@ func (c PushClient) Send(ctx context.Context, request PushSendRequest) (PushSend
 	}
 	if json.Unmarshal(data, &body) == nil {
 		reply.PushStatus = body.PushStatus
-		if seconds, err := body.RetryAfter.Int64(); err == nil && seconds > 0 {
+		retryAfter := body.RetryAfter
+		// Cloud's API puts a refusal's facts inside `error.details`; the flat
+		// spelling above is what a success carries.
+		var nested struct {
+			Details struct {
+				PushStatus int         `json:"push_status"`
+				RetryAfter json.Number `json:"retry_after"`
+			} `json:"details"`
+		}
+		if len(body.Error) > 0 && json.Unmarshal(body.Error, &nested) == nil {
+			if reply.PushStatus == 0 {
+				reply.PushStatus = nested.Details.PushStatus
+			}
+			if retryAfter == "" {
+				retryAfter = nested.Details.RetryAfter
+			}
+		}
+		if seconds, err := retryAfter.Int64(); err == nil && seconds > 0 {
 			reply.RetryAfter = time.Duration(seconds) * time.Second
 		}
 	}

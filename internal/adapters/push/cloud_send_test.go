@@ -204,6 +204,16 @@ func TestCloudsOtherAnswersAreRetriedOrLeftAlone(t *testing.T) {
 			answer(http.StatusOK, `{"status":"sent","push_status":201}`)}, true, 2, nil},
 		{"502 from a 400", []func(http.ResponseWriter){
 			answer(http.StatusBadGateway, `{"error":"push_failed","push_status":400}`)}, false, 1, nil},
+		// The shape Cloud's API actually answers: the code and the push
+		// service's status inside `error`, the retry inside `error.details`.
+		{"nested 502 from a 503 then sent", []func(http.ResponseWriter){
+			answer(http.StatusBadGateway, `{"error":{"code":"push_failed","message":"x","details":{"push_status":503}}}`),
+			answer(http.StatusOK, `{"status":"sent","push_status":201}`)}, true, 2, nil},
+		{"nested 502 from a 400", []func(http.ResponseWriter){
+			answer(http.StatusBadGateway, `{"error":{"code":"push_failed","message":"x","details":{"push_status":400}}}`)}, false, 1, nil},
+		{"nested 429 then sent", []func(http.ResponseWriter){
+			answer(http.StatusTooManyRequests, `{"error":{"code":"rate_limited","message":"x","details":{"retry_after":7}}}`),
+			answer(http.StatusOK, `{"status":"sent","push_status":201}`)}, true, 2, []time.Duration{7 * time.Second}},
 		{"404 unknown", []func(http.ResponseWriter){
 			answer(http.StatusNotFound, `{"error":"unknown_subscription"}`)}, false, 1, nil},
 		{"429 past the ceiling", []func(http.ResponseWriter){
