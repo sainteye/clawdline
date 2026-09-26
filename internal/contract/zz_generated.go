@@ -2463,6 +2463,20 @@ type Diagnostics struct {
 	Usage     *UsageDiagnostics    `json:"usage,omitempty"`
 }
 
+// How many rows on offer this dismissed. Zero is an answer: they were already
+// answered, or none were named that are on offer.
+type DismissRestorableAnswer struct {
+	At        int64 `json:"at"`
+	Dismissed int64 `json:"dismissed"`
+	OK        bool  `json:"ok"`
+}
+
+// POST /v1/sessions/restorable/dismiss. Without `conversations`, every
+// conversation on offer is dismissed.
+type DismissRestorableRequest struct {
+	Conversations []string `json:"conversations,omitempty"`
+}
+
 type DispatchRequest struct {
 	Assistant Assistant `json:"assistant"`
 
@@ -3616,6 +3630,96 @@ type Refusal struct {
 	Error    string `json:"error"`
 	Route    string `json:"route,omitempty"`
 	Upstream string `json:"upstream,omitempty"`
+}
+
+// Why nothing can be offered. `boot_unknown`: this machine cannot read its boot
+// id, so it cannot tell a reboot from a daemon restart, and it records nothing.
+type RestorableReason string
+
+const (
+	RestorableReasonBootUnknown RestorableReason = "boot_unknown"
+)
+
+// RestorableReasonValues is every value the contract allows, in contract order.
+var RestorableReasonValues = []RestorableReason{RestorableReasonBootUnknown}
+
+// One conversation that was open before the machine last restarted, is not open
+// now, and has been neither restored nor dismissed.
+type RestorableSession struct {
+	// `claude` or `codex`.
+	Assistant      string `json:"assistant"`
+	ConversationID string `json:"conversation_id"`
+	CWD            string `json:"cwd"`
+
+	// Unix seconds: the last complete reading that recorded it open, at most
+	// sessions.restore_seen_age stale.
+	LastSeen int64 `json:"last_seen"`
+
+	// The place id of the directory (POST /v1/places/{id}/…).
+	Place      string `json:"place"`
+	PlaceLabel string `json:"place_label"`
+
+	// The manual title when one was known, else the session's own; empty when it had
+	// none.
+	Title string `json:"title"`
+}
+
+// GET /v1/sessions/restorable. `available` false carries `reason` and no
+// sessions. Sessions are the previous boot's, most recently seen first.
+type RestorableSessions struct {
+	At        int64 `json:"at"`
+	Available bool  `json:"available"`
+
+	// Unix seconds: the last time the previous boot was seen at all. Absent when there
+	// is no previous boot on record.
+	PreviousBootLastSeen int64               `json:"previous_boot_last_seen,omitempty"`
+	Reason               RestorableReason    `json:"reason,omitempty"`
+	Sessions             []RestorableSession `json:"sessions"`
+}
+
+// Why one conversation was not restored. `not_restorable`: it is not on offer
+// (never recorded, already answered, open now, or no boot id).
+// `place_unavailable`: its directory is no longer a place this machine can
+// open. `conversation_not_found`: the assistant no longer lists it for that
+// directory. `open_failed`: the terminal could not open it; `message` says why.
+// `over_capacity`: other sessions were being opened; ask again.
+type RestoreCode string
+
+const (
+	RestoreCodeNotRestorable        RestoreCode = "not_restorable"
+	RestoreCodePlaceUnavailable     RestoreCode = "place_unavailable"
+	RestoreCodeConversationNotFound RestoreCode = "conversation_not_found"
+	RestoreCodeOpenFailed           RestoreCode = "open_failed"
+	RestoreCodeOverCapacity         RestoreCode = "over_capacity"
+)
+
+// RestoreCodeValues is every value the contract allows, in contract order.
+var RestoreCodeValues = []RestoreCode{RestoreCodeNotRestorable, RestoreCodePlaceUnavailable, RestoreCodeConversationNotFound, RestoreCodeOpenFailed, RestoreCodeOverCapacity}
+
+// One named conversation's answer. `ok` carries the new terminal (`id`,
+// `backend`, and `attach` for a detached tmux server); otherwise `code` and
+// `message`.
+type RestoreResult struct {
+	Attach         string      `json:"attach,omitempty"`
+	Backend        Backend     `json:"backend,omitempty"`
+	Code           RestoreCode `json:"code,omitempty"`
+	ConversationID string      `json:"conversation_id"`
+	ID             string      `json:"id,omitempty"`
+	Message        string      `json:"message,omitempty"`
+	OK             bool        `json:"ok"`
+}
+
+// The answer to a restore: one result per distinct conversation named, in the
+// order named.
+type RestoreSessionsAnswer struct {
+	At      int64           `json:"at"`
+	Results []RestoreResult `json:"results"`
+}
+
+// POST /v1/sessions/restorable/restore. At most sessions.restore_batch
+// conversations; a longer list is refused whole with `restore_batch_too_large`.
+type RestoreSessionsRequest struct {
+	Conversations []string `json:"conversations"`
 }
 
 // POST /v1/auth/devices/revoke-all: every paired device, the password and the

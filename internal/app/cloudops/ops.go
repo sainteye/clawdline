@@ -224,6 +224,10 @@ type plan struct {
 	// kind is a digest's daily-or-weekly, named rather than folded into `id`.
 	kind                            string
 	images                          []string
+	// conversations is a restore's or a dismissal's list; allConversations
+	// is a dismissal that named none, which means every one on offer.
+	conversations    []string
+	allConversations bool
 	upcoming, acceptLoss            bool
 	closeability                    string
 	rate, limit, byteWindow, offset int64
@@ -406,6 +410,25 @@ func machinePlan(b body) (plan, bool) {
 		return plan{}, false
 	}
 	return plan{session: id, request: request, name: "read:" + request}, true
+}
+
+// conversationList is a list of conversation ids: each one a printable,
+// bounded name. How many one request may carry is the route's to refuse
+// (sessions.restore_batch), not this bridge's.
+func conversationList(value any) ([]string, bool) {
+	raw, ok := value.([]any)
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		id, ok := sessionName(item)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, id)
+	}
+	return out, true
 }
 
 // actionPlan is a command's answer channel: `action:<request>`, on the
@@ -1800,6 +1823,73 @@ func init() {
 					route += segment(p.assistant) + "/"
 				}
 				return LocalRequest{Method: "POST", Path: route + segment(p.past), Body: []byte("{}")}
+			}},
+
+		// The sessions a reboot took away (docs/session-restore.md). The
+		// read is the list; the two commands carry the viewer's request as
+		// their Idempotency-Key, as `resume` does, because a restore is one
+		// resume per conversation and a retried envelope must not open a
+		// second tab.
+		op{name: "restorable-sessions", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/sessions/restorable"}
+			}},
+
+		op{name: "restore-sessions",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "conversations") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				ids, ok := conversationList(b["conversations"])
+				if !ok || len(ids) == 0 {
+					return plan{}, false
+				}
+				p.conversations = ids
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/sessions/restorable/restore",
+					Body: jsonBody(map[string]any{"conversations": p.conversations})}
+			}},
+
+		op{name: "dismiss-restorable",
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf([]string{"type", "session", "request"},
+					[]string{"type", "session", "request", "conversations"}) {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				raw, named := b["conversations"]
+				if !named {
+					p.allConversations = true
+					return p, true
+				}
+				ids, ok := conversationList(raw)
+				if !ok {
+					return plan{}, false
+				}
+				p.conversations = ids
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				if p.allConversations {
+					return LocalRequest{Method: "POST", Path: "/v1/sessions/restorable/dismiss", Body: []byte("{}")}
+				}
+				return LocalRequest{Method: "POST", Path: "/v1/sessions/restorable/dismiss",
+					Body: jsonBody(map[string]any{"conversations": p.conversations})}
 			}},
 
 		op{name: "voice",
