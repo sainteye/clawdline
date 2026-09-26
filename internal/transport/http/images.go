@@ -74,19 +74,20 @@ func (s *Server) imageRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	found := s.pictures.store.Lookup(id, now)
-	data, state := found.Data, found.State
+	data, state, mediaType := found.Data, found.State, found.Artifact.MediaType
 	if state == artifacts.Missing {
 		_, bytes, swiftState := s.pictures.swift.Lookup(id, now)
 		switch swiftState {
 		case swiftstore.ImageLive:
-			data, state = bytes, artifacts.Live
+			// The Swift app's store holds PNGs only (swiftstore.SessionImages).
+			data, state, mediaType = bytes, artifacts.Live, artifacts.MediaTypePNG
 		case swiftstore.ImageExpired:
 			state = artifacts.Expired
 		}
 	}
 	switch state {
 	case artifacts.Live:
-		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Content-Type", mediaType)
 		w.Header().Set("Cache-Control", "private, no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)

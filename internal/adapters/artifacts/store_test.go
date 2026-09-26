@@ -74,7 +74,7 @@ func TestNormalizeBoundsBeforeDecoding(t *testing.T) {
 	}
 	gif, _ := base64.StdEncoding.DecodeString("R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==")
 	n, err := Normalize(context.Background(), gif, ProductionPolicy)
-	if err != nil || n.Width != 1 || n.Height != 1 || !bytes.HasPrefix(n.PNG, []byte("\x89PNG")) {
+	if err != nil || n.Width != 1 || n.Height != 1 || !bytes.HasPrefix(n.Data, []byte("\x89PNG")) {
 		t.Fatalf("gif: %v %+v", err, n.Width)
 	}
 }
@@ -94,7 +94,7 @@ func TestStoreImportsLooksUpAndExpires(t *testing.T) {
 	if Marker(a.ID) != `<clawdline-image id="`+a.ID+`">` {
 		t.Fatal(Marker(a.ID))
 	}
-	for _, p := range []string{s.Dir, s.imagePath(a.ID), s.metadataPath(a.ID)} {
+	for _, p := range []string{s.Dir, s.imagePath(a), s.metadataPath(a.ID)} {
 		info, _ := os.Stat(p)
 		want := os.FileMode(0o600)
 		if p == s.Dir {
@@ -126,7 +126,7 @@ func TestStoreImportsLooksUpAndExpires(t *testing.T) {
 		t.Fatalf("expired: %v", f.State)
 	}
 	// Expiry leaves a tombstone, so the id stays "expired" rather than "unknown".
-	if _, err := os.Stat(s.imagePath(a.ID)); !os.IsNotExist(err) {
+	if _, err := os.Stat(s.imagePath(a)); !os.IsNotExist(err) {
 		t.Fatalf("picture kept after expiry: %v", err)
 	}
 	if f := s.Lookup(a.ID, later); f.State != Expired {
@@ -148,7 +148,7 @@ func TestStoreLookupRefusesATamperedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := stored[0].Artifact.ID
-	if err := os.WriteFile(s.imagePath(id), []byte("short"), 0o600); err != nil {
+	if err := os.WriteFile(stored[0].File, []byte("short"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if f := s.Lookup(id, now); f.State != Expired {

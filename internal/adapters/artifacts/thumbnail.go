@@ -77,13 +77,7 @@ func MakeThumbnail(stored []byte) (Thumbnail, error) {
 
 // thumbnailSize keeps the aspect ratio and never enlarges.
 func thumbnailSize(w, h int) (int, int) {
-	long := max(w, h)
-	if long <= MaxThumbnailEdge {
-		return w, h
-	}
-	tw := max(1, (w*MaxThumbnailEdge+long/2)/long)
-	th := max(1, (h*MaxThumbnailEdge+long/2)/long)
-	return tw, th
+	return longEdgeSize(w, h, MaxThumbnailEdge)
 }
 
 // downscale fills dst with the area average of src, composited onto white.

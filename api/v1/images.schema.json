@@ -19,7 +19,7 @@
         "expires_at": { "description": "Unix seconds after which the picture is gone.", "type": "integer" },
         "height": { "type": "integer" },
         "id": { "description": "A lowercase UUID. The whole of what the bytes are fetched by.", "type": "string" },
-        "media_type": { "description": "Always image/png: every stored picture was drawn and written out again.", "type": "string" },
+        "media_type": { "description": "image/jpeg for a photograph, image/png for anything else: every stored picture was drawn and written out again.", "type": "string" },
         "state": { "$ref": "#/$defs/ImageAbsence" },
         "width": { "type": "integer" }
       }
