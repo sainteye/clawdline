@@ -335,6 +335,9 @@ transcript tail、完成通知 cursor，每張最多 256。穩定的一次掃描
 它是人的選擇（`evidence`），所以滿了拒絕新增，不自動淘汰；只有 `clawdline project remove` 會移除。
 diagnostics 每次直接數這個最多 512 列的檔案，壞掉或讀不到回 `unknown`，不把既有 Project 說成零個。
 
+`places.git_config_bytes` 是讀一個 Project 的 git config 來回答 `repo`（`GET /v1/places`）時最多讀的位元組，64 KiB。
+超過就不解析，這個 place 的 `repo` 是 `""`（等同沒有 origin），不拿截斷的前半段猜；它不累積，所以沒有淘汰，只在 place 讀取時量。
+
 Work v2 的看板項目與直接 Session 待辦參考圖片是使用者輸入，在其主體存續期間不可自動淘汰，因此以 evidence 列登記並在滿載時拒絕：
 `work.images_per_item` 6 張、`work.image_bytes` 每張正規化 PNG 5 MiB、
 `work.image_bytes_per_item` 15 MiB、`work.image_bytes_total` 512 MiB；另有 buffer 列
