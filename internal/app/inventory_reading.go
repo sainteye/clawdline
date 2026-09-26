@@ -107,6 +107,9 @@ type InventoryReading struct {
 	flight    *inventoryFlight
 	counts    InventoryCounts
 	expired   int64
+	// observers are shown every scan's raw reading after its readers have
+	// been answered (Observe).
+	observers []func(context.Context, session.Inventory)
 }
 
 // sourceReading is the last complete answer from one terminal source. It is
@@ -161,6 +164,20 @@ func (r *InventoryReading) Forget(row session.Session) {
 		good.rows = withoutSession(good.rows, row)
 		r.good[source] = good
 	}
+}
+
+// Observe adds fn to what every scan's raw reading is shown, once the readers
+// waiting on that scan have their answer.
+//
+// It is how something that must follow the machine whether or not anybody is
+// looking — the record of which sessions were open in this boot
+// (SessionRestore) — rides on the scans the broker's beat already takes every
+// few seconds, rather than taking scans of its own. fn runs on the scan's own
+// goroutine, so it holds up the next scan and nobody's answer.
+func (r *InventoryReading) Observe(fn func(context.Context, session.Inventory)) {
+	r.mu.Lock()
+	r.observers = append(r.observers, fn)
+	r.mu.Unlock()
 }
 
 // SetRetentionAge applies the capacity register's seconds limit. A nonpositive
@@ -282,10 +299,14 @@ func (r *InventoryReading) run(ctx context.Context, flight *inventoryFlight) {
 	r.held = display
 	r.holds = true
 	r.flight = nil
+	observers := r.observers
 	r.mu.Unlock()
 	flight.raw = raw
 	flight.display = display
 	close(flight.done)
+	for _, fn := range observers {
+		fn(scan, raw)
+	}
 }
 
 // retainLocked turns one failed source reading into an earlier, named reading
