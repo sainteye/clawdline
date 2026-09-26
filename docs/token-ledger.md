@@ -250,3 +250,50 @@ its task.json asked for), a Root Assignment's or handoff's `executor`/`opened`, 
 `UsageSession` answer, where `null` means Clawdline did not launch that session or cannot say and `0`
 means it applied none. `clawdline usage --task <id>` prints it per session beside peak context and
 compactions, which is what an experiment groups by.
+
+### Did compacting early pay
+
+`clawdline usage --compare-compaction [--since 14d] [--json]` (and `GET
+/v1/usage/compare-compaction?since=…`, which a phone asks through Clawdline Cloud as the word
+`usage.compare-compaction`) is the side-by-side that answers the experiment: the child tasks created
+in the range — 14 days unless `--since` names `<n>d`, `<n>h` or a Unix time — grouped by the window
+their record says they were launched with, `none` first. One row per group:
+
+| Column | What it is |
+|---|---|
+| sessions, tasks | The group's child tasks and the ledger sessions whose first message names one of them |
+| cost/task | The median of each task's whole bill, its subagents included, over the tasks the ledger has read; `+` when part of it has no price. `--json` also has the total |
+| calls/task, compactions/task | The sessions' own calls and compactions, per read task |
+| above-200k share | What the sessions' own calls made with more than 200k tokens of context cost, as a share of the sessions' own cost (a subagent's calls are not in either) |
+| success rate | Successes over the tasks that ended — success, failure, timeout, cancelled, spawn_failed. `--json` has each rate and count, and `running` for the rest |
+| stalled | Tasks the broker ended as `spawn_failed` because the child sat idle after its briefing (the stall report on the record); any other `spawn_failed` is `lost` |
+| respawns | Tasks in the group that retried an earlier `spawn_failed` one |
+
+**How to read it.** Compare a group's cost/task with its success rate together, never alone. A
+group that costs less and also succeeds less, stalls more or needs more respawns has not saved
+anything: the work it did not finish is still owed, and its retry costs a whole second task. The
+question the experiment asks is whether the window lowers cost/task and the above-200k share while
+the endings stay where `none` has them. Compactions/task says how often the window actually fired —
+a window above what a group's tasks ever reached changed nothing, and its row is `none` under
+another name.
+
+**What it cannot tell.**
+
+- *Why.* Tasks are not assigned to groups at random. The window a task gets is the machine's
+  setting at its launch, so the groups are, in practice, *before* and *after* the day the setting
+  changed, and whatever else changed that day — the briefs, the repositories, the model, the
+  person's week — is in the difference too. Only a task.json's `auto_compact_window`, set by the
+  dispatcher for tasks of the same brief, makes the two halves comparable.
+- *Small groups.* A group with fewer than 5 tasks (`min_tasks`, limits N44) says `too few` and shows
+  no percentage; its counts are still there.
+- *Finish refusals.* `clawdline task finish` refuses an invalid `result.json` in the child's own
+  process and writes nothing, so no record, result or event keeps a refusal; the answer names it
+  under `not_recorded` rather than showing zero.
+- *Anything but child tasks.* Root Assignments and a handoff's receiver are launched with the window
+  too, but they have no ending to compare; they are not in the answer.
+- *Tasks with no known window* are counted and named under `excluded`: a Codex task (`codex`), a
+  task whose tab never opened (`not_launched`), and one whose record was written before the window
+  was recorded (`window_unrecorded`).
+
+An answer reads at most 500 tasks, newest first, and says `truncated` past that; it names at most 50
+excluded tasks, with the count always whole (limits N44).

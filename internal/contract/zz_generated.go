@@ -5539,6 +5539,98 @@ const (
 // UsageCategoryNameValues is every value the contract allows, in contract order.
 var UsageCategoryNameValues = []UsageCategoryName{UsageCategoryNameBoard, UsageCategoryNameProtocol, UsageCategoryNameRules, UsageCategoryNameImpl, UsageCategoryNameDelegate, UsageCategoryNameHarness, UsageCategoryNameTalk, UsageCategoryNameCompaction, UsageCategoryNameOther}
 
+// GET /v1/usage/compare-compaction?since=… (docs/token-ledger.md "Did
+// compacting early pay"): the child tasks created in [`since`, `until`] (Unix
+// seconds) grouped by the compaction window they were launched with, `none`
+// first, each with its bill beside how its tasks ended. `since` is `<n>d`,
+// `<n>h` or a Unix time, 14 days when absent. `excluded` counts the tasks with
+// no known window and `excluded_tasks` names the newest of them
+// (`excluded_truncated` when not all); `truncated` says the range held more
+// tasks than one answer reads and only the newest were. `not_recorded` names
+// what was asked for and is recorded nowhere. Tasks are not assigned to groups
+// at random: the answer says what happened, not why.
+type UsageCompactionComparison struct {
+	Excluded          int64                  `json:"excluded"`
+	ExcludedTasks     []UsageCompareExcluded `json:"excluded_tasks"`
+	ExcludedTruncated bool                   `json:"excluded_truncated"`
+	Groups            []UsageCompactionGroup `json:"groups"`
+	MinTasks          int64                  `json:"min_tasks"`
+	NotRecorded       []UsageCompareMissing  `json:"not_recorded"`
+	Since             int64                  `json:"since"`
+	Truncated         bool                   `json:"truncated"`
+	Until             int64                  `json:"until"`
+}
+
+// The child tasks launched with one compaction window. `group` is `none` for
+// tasks launched with no window (`window` 0), otherwise the window in tokens.
+// `read_tasks` are those the ledger has a reading of: every cost, call,
+// compaction and context figure is over them, and `cost_known` is false when
+// part of that cost has no price. `above_200k_share` is the share of the
+// sessions' own cost spent on calls made with more than 200k tokens of context.
+// The endings are the broker's records: `ended` counts tasks in a final state
+// and is what every rate is a share of; `stalled` is a child the broker ended
+// as spawn_failed because it sat idle after its briefing, `lost` any other
+// spawn_failed; `running` has not ended. `respawns` counts tasks that retried
+// an earlier spawn_failed one. `too_few` says the group has fewer tasks than
+// `min_tasks`: then every share and rate is null.
+type UsageCompactionGroup struct {
+	Above200kShare     *float64 `json:"above_200k_share"`
+	CallsPerTask       float64  `json:"calls_per_task"`
+	Cancelled          int64    `json:"cancelled"`
+	CompactionsPerTask float64  `json:"compactions_per_task"`
+	CostKnown          bool     `json:"cost_known"`
+	CostMedianPerTask  float64  `json:"cost_median_per_task"`
+	CostTotal          float64  `json:"cost_total"`
+	Ended              int64    `json:"ended"`
+	Failure            int64    `json:"failure"`
+	FailureRate        *float64 `json:"failure_rate"`
+	Group              string   `json:"group"`
+	Lost               int64    `json:"lost"`
+	PeakContextMax     int64    `json:"peak_context_max"`
+	PeakContextMedian  int64    `json:"peak_context_median"`
+	ReadTasks          int64    `json:"read_tasks"`
+	Respawns           int64    `json:"respawns"`
+	Running            int64    `json:"running"`
+	Sessions           int64    `json:"sessions"`
+	Stalled            int64    `json:"stalled"`
+	StalledRate        *float64 `json:"stalled_rate"`
+	Success            int64    `json:"success"`
+	SuccessRate        *float64 `json:"success_rate"`
+	Tasks              int64    `json:"tasks"`
+	Timeout            int64    `json:"timeout"`
+	TimeoutRate        *float64 `json:"timeout_rate"`
+	TooFew             bool     `json:"too_few"`
+	Window             int64    `json:"window"`
+}
+
+// One child task left out of every group, and why.
+type UsageCompareExcluded struct {
+	Reason UsageCompareExcludedReason `json:"reason"`
+	TaskID string                     `json:"task_id"`
+}
+
+// Why a child task in the range is in no group. `codex`: a Codex task, never
+// given a window. `not_launched`: a Claude task whose tab never opened, so no
+// window was decided. `window_unrecorded`: a Claude task that was launched and
+// whose record does not say with what window (written before the field was).
+type UsageCompareExcludedReason string
+
+const (
+	UsageCompareExcludedReasonCodex            UsageCompareExcludedReason = "codex"
+	UsageCompareExcludedReasonNotLaunched      UsageCompareExcludedReason = "not_launched"
+	UsageCompareExcludedReasonWindowUnrecorded UsageCompareExcludedReason = "window_unrecorded"
+)
+
+// UsageCompareExcludedReasonValues is every value the contract allows, in contract order.
+var UsageCompareExcludedReasonValues = []UsageCompareExcludedReason{UsageCompareExcludedReasonCodex, UsageCompareExcludedReasonNotLaunched, UsageCompareExcludedReasonWindowUnrecorded}
+
+// A signal the comparison was asked for and cannot show, because nothing
+// records it; named rather than shown as zero.
+type UsageCompareMissing struct {
+	Name string `json:"name"`
+	Why  string `json:"why"`
+}
+
 // What the session's first context was made of, when its transcript recorded
 // the harness's prompt snapshot. The parts are estimated from their text and
 // scaled to sum to `measured`, the first call's measured context. Absent when

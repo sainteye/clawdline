@@ -1431,6 +1431,35 @@ func init() {
 		usageRead("usage.task", "tasks"),
 		usageRead("usage.item", "items"),
 
+		// Whether compacting early paid (docs/token-ledger.md "Did compacting
+		// early pay"): the local route's own question, with its one query
+		// field, `since`, taken exactly as the route takes it and nothing else.
+		op{name: "usage.compare-compaction", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf([]string{"type", "session", "request"}, []string{"type", "session", "request", "since"}) {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				if _, named := b["since"]; named {
+					since, ok := b.str("since")
+					if !ok || !compareSince.MatchString(since) {
+						return plan{}, false
+					}
+					p.query = since
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				out := LocalRequest{Method: "GET", Path: "/v1/usage/compare-compaction"}
+				if p.query != "" {
+					out.Query = map[string]string{"since": p.query}
+				}
+				return out
+			}},
+
 		// The sentences somebody wrote once, read from a phone.
 		//
 		// **The whole machine's list, and no session in the question.** The
@@ -2406,3 +2435,10 @@ func usageRead(word, kind string) op {
 			return LocalRequest{Method: "GET", Path: "/v1/usage/" + kind + "/" + segment(p.id)}
 		}}
 }
+
+// compareSince is the spelling of `since` the comparison route reads
+// (app.ParseCompareSince): `<n>d`, `<n>h` or a Unix time in seconds, spelled
+// a second time for the reason usageID is. The route still refuses a range it
+// does not take — `0d`, more than ten years — with its own `bad_request`;
+// this only keeps anything that is not a number and a unit off its query.
+var compareSince = regexp.MustCompile(`^[0-9]{1,12}[dh]?$`)

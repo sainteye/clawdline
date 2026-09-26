@@ -1195,3 +1195,32 @@ test("the token bill's three reads cross as the machine's usage words, with the 
   assert.equal(unknown.status, 404)
   assert.equal((await json(unknown)).error, "unknown_item")
 })
+
+test("the compaction comparison crosses as its machine word, with since and nothing else", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal(writeRoute("GET", "/v1/usage/compare-compaction")?.word, "usage.compare-compaction")
+  const plain = await reader.fetch("/v1/usage/compare-compaction")
+  assert.equal(plain.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "usage.compare-compaction", {}, "read"])
+  const ranged = await reader.fetch("/v1/usage/compare-compaction?since=30d")
+  assert.equal(ranged.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "usage.compare-compaction", { since: "30d" }, "read"])
+
+  // Nothing under it is a word, and a write to it is not a read.
+  assert.equal(writeRoute("GET", "/v1/usage/compare-compaction/more"), null)
+  assert.equal(writeRoute("POST", "/v1/usage/compare-compaction"), null)
+
+  // A field the word does not carry, or since twice, is refused by name.
+  for (const path of ["/v1/usage/compare-compaction?limit=3", "/v1/usage/compare-compaction?since=1d&since=2d"]) {
+    const res = await reader.fetch(path)
+    assert.equal(res.status, 501, path)
+    assert.equal((await json(res)).error, "cloud_not_carried", path)
+  }
+
+  // The route's own refusal of a since it cannot read crosses with its code.
+  client.fail._machineRequest = refusal("bad_request", { status: 400, layer: "mac_route", message: "since: out of range." })
+  const bad = await reader.fetch("/v1/usage/compare-compaction?since=0d")
+  assert.equal(bad.status, 400)
+  assert.equal((await json(bad)).error, "bad_request")
+})

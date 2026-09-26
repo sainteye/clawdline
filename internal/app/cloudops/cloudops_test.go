@@ -302,6 +302,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-usage-item",
 		method: "GET", path: "/v1/usage/items/w1",
 	}, {
+		word: "usage.compare-compaction",
+		body: map[string]any{"type": "usage.compare-compaction", "session": machine,
+			"request": "req-usage-compare", "since": "14d"},
+		session: machine, name: "read:req-usage-compare",
+		method: "GET", path: "/v1/usage/compare-compaction",
+		query: map[string]string{"since": "14d"},
+	}, {
 		word: "work.v2.items",
 		body: map[string]any{"type": "work.v2.items", "session": machine,
 			"request": "req-work-v2-items", "project": "p1"},
@@ -1323,7 +1330,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
 		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action",
-		"usage.session", "usage.task", "usage.item"} {
+		"usage.session", "usage.task", "usage.item", "usage.compare-compaction"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}
@@ -1763,5 +1770,49 @@ func TestTheTokenBillCrossesOnlyWithAnIdTheLocalRouteWouldTake(t *testing.T) {
 	body, _ := answerOf(t, answer)["body"].(map[string]any)
 	if answer.Status != 200 || body["reason"] != "not_yet_read" {
 		t.Fatalf("the reason did not cross: %d %s", answer.Status, answer.Payload)
+	}
+}
+
+// TestTheCompactionComparisonCrossesWithOnlyTheSinceTheRouteReads. The word
+// is the local route's question: no `since` asks for its default range, a
+// `since` the route could read crosses as its query, and anything else —
+// another field, a since that is not a number and a unit, a session channel —
+// is refused here before this machine is asked anything.
+func TestTheCompactionComparisonCrossesWithOnlyTheSinceTheRouteReads(t *testing.T) {
+	word := "usage.compare-compaction"
+	r := &router{}
+	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": word, "session": MachineReplySession, "request": "req"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Path != "/v1/usage/compare-compaction" || len(r.last().Query) != 0 {
+		t.Fatalf("no since: %+v, asked %+v", answer, r.seen)
+	}
+	for _, since := range []string{"14d", "36h", "1790000000"} {
+		r := &router{}
+		answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+			map[string]any{"type": word, "session": MachineReplySession, "request": "req", "since": since}))
+		if answer.Status != 200 || len(r.seen) != 1 || r.last().Query["since"] != since {
+			t.Fatalf("since %q: %+v, asked %+v", since, answer, r.seen)
+		}
+	}
+	for _, body := range []map[string]any{
+		{"type": word, "session": MachineReplySession, "request": "req", "since": "14w"},
+		{"type": word, "session": MachineReplySession, "request": "req", "since": "14d&x=1"},
+		{"type": word, "session": MachineReplySession, "request": "req", "since": ""},
+		{"type": word, "session": MachineReplySession, "request": "req", "since": 14},
+		{"type": word, "session": MachineReplySession, "request": "req", "limit": 1},
+		{"type": word, "session": pane, "request": "req"},
+		{"type": word, "session": MachineReplySession},
+	} {
+		r := &router{}
+		if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); answer.Code != "malformed_read" || len(r.seen) != 0 {
+			t.Fatalf("took %v: %+v, asked %v", body, answer, r.seen)
+		}
+	}
+	// The route's own refusal of a range it does not take crosses as itself.
+	refused := &router{status: 400, body: `{"error":"bad_request","detail":"since: out of range."}`}
+	answer = open(refused).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": word, "session": MachineReplySession, "request": "req", "since": "0d"}))
+	if answer.Status != 400 || answer.Code != "bad_request" {
+		t.Fatalf("answered %d/%q, wanted 400/bad_request", answer.Status, answer.Code)
 	}
 }

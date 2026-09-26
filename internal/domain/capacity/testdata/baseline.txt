@@ -259,6 +259,10 @@ internal/app.maxUnseenWait # parameter: how long a session stands on a question 
 internal/app.waitingPushHourLimit # parameter: stopped sessions pushed per hour, counted apart from the agents' 30 and the decisions' 30; over it a stop is recorded over_budget and never pushed later
 internal/app.usagePassLimit # parameter: transcripts one token-ledger pass feeds, one Feed each; the rest are the next pass's, which starts after the last one fed, and a pass that meets it says so once until it clears (limits N43)
 internal/app.usageWindowLimit # parameter: how far back a token-ledger pass looks for written transcripts; an older one keeps its stored totals and is not visited until it is written again (limits N43)
+internal/app.compareTooFewLimit # parameter: the fewest child tasks a compaction-comparison group needs before a share or rate is shown; below it the group says too_few and every percentage is null (limits N44)
+internal/app.compareTaskLimit # page: child tasks one compaction comparison reads, newest first; past it the answer says truncated (limits N44)
+internal/app.compareExcludedLimit # page: excluded tasks one compaction comparison names; the count is always whole and excluded_truncated says so (limits N44)
+internal/app.compareSinceDaysLimit # admission: the longest range a compaction comparison's since may name in days; a longer one is a 400 (limits N44)
 internal/app.digestLineLimit # page: the lines one digest section lists; its total is always there
 internal/app.digestMoveLimit # read: the moves one daily digest reads, and past it the digest says moves_truncated
 internal/domain/work.decisionOptionsLimit # admission: the options one decision offers

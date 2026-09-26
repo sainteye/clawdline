@@ -104,3 +104,62 @@ func TestUsageSaysNotYetReadAndRefusals(t *testing.T) {
 		t.Fatalf("no conversation: exit %d, %s", code, errs.String())
 	}
 }
+
+// A comparison as the daemon answers it: none and 300000 comparable, 60000
+// too few, two tasks left out, and the one signal nothing records.
+const compareAnswer = `{"since":1789200000,"until":1790409600,"min_tasks":5,"truncated":false,"excluded":2,"excluded_truncated":false,
+"excluded_tasks":[{"task_id":"x1","reason":"codex"},{"task_id":"x2","reason":"window_unrecorded"}],
+"not_recorded":[{"name":"finish_refusals","why":"nothing keeps them."}],
+"groups":[
+ {"group":"none","window":0,"tasks":5,"read_tasks":4,"sessions":4,"too_few":false,"cost_total":56,"cost_median_per_task":13,"cost_known":true,
+  "calls_per_task":50,"compactions_per_task":0.25,"peak_context_median":500000,"peak_context_max":900000,"above_200k_share":0.5556,
+  "ended":5,"running":0,"success":2,"failure":1,"timeout":1,"cancelled":0,"stalled":1,"lost":0,
+  "success_rate":0.4,"failure_rate":0.2,"timeout_rate":0.2,"stalled_rate":0.2,"respawns":1},
+ {"group":"60000","window":60000,"tasks":2,"read_tasks":2,"sessions":2,"too_few":true,"cost_total":5,"cost_median_per_task":2.5,"cost_known":false,
+  "calls_per_task":10,"compactions_per_task":3,"peak_context_median":70000,"peak_context_max":80000,"above_200k_share":null,
+  "ended":2,"running":0,"success":1,"failure":1,"timeout":0,"cancelled":0,"stalled":0,"lost":0,
+  "success_rate":null,"failure_rate":null,"timeout_rate":null,"stalled_rate":null,"respawns":0},
+ {"group":"300000","window":300000,"tasks":5,"read_tasks":4,"sessions":5,"too_few":false,"cost_total":28,"cost_median_per_task":7,"cost_known":true,
+  "calls_per_task":40,"compactions_per_task":1.75,"peak_context_median":285000,"peak_context_max":310000,"above_200k_share":0.0714,
+  "ended":4,"running":1,"success":3,"failure":0,"timeout":0,"cancelled":0,"stalled":0,"lost":1,
+  "success_rate":0.75,"failure_rate":0,"timeout_rate":0,"stalled_rate":0,"respawns":0}]}`
+
+// --compare-compaction asks its route with --since as its query and prints
+// one table: a row per group, then what the answer could not compare.
+func TestUsageCompareCompactionPrintsOneTable(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, compareAnswer })
+	var out, errs bytes.Buffer
+	if code := showCompactionComparison(&out, &errs, b, "30d", false); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 1 || seen[0].Method != http.MethodGet || seen[0].EscapedPath != "/v1/usage/compare-compaction" ||
+		seen[0].Query != "since=30d" || seen[0].Token != thinToken {
+		t.Fatalf("requests: %+v", seen)
+	}
+	want := strings.Join([]string{
+		"child tasks created 2026-09-12 08:00Z – 2026-09-26 08:00Z, by the compaction window they were launched with",
+		"   group  sessions  tasks  cost/task  calls/task  compactions/task  above-200k share  success rate  stalled  respawns",
+		"    none         4      5     $13.00        50.0              0.25               56%           40%        1         1",
+		"   60000         2      2     $2.50+        10.0              3.00           too few       too few        0         0",
+		"  300000         5      5      $7.00        40.0              1.75                7%           75%        0         0",
+		"cost/task is the median over the tasks the ledger has read; + means part of it has no price.",
+		"none: 0 still running, 1 not read by the ledger yet",
+		"60000: 2 tasks, fewer than 5 — too few to compare, so no percentage is shown",
+		"300000: 1 still running, 1 not read by the ledger yet",
+		"excluded: 2 tasks with no known window (1 codex, 1 window_unrecorded)",
+		"not recorded: finish_refusals — nothing keeps them.",
+	}, "\n") + "\n"
+	if out.String() != want {
+		t.Fatalf("output:\n%s\nwant:\n%s", out.String(), want)
+	}
+
+	// --json prints the answer; with no --since the route's default is asked.
+	out.Reset()
+	if code := showCompactionComparison(&out, &errs, b, "", true); code != 0 || !strings.Contains(out.String(), `"min_tasks": 5`) {
+		t.Fatalf("--json: exit %d\n%s", code, out.String())
+	}
+	if last := s.requests()[1]; last.Query != "" {
+		t.Fatalf("no --since asked %q", last.Query)
+	}
+}

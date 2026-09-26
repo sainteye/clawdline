@@ -107,6 +107,9 @@ export const CARRIED = {
   transcript: "GET /v1/transcript?session={id}",
   // The token bill (`pages/work/TokenBill.tsx`). Machine reads, not session
   // reads: a conversation id is the ledger's key and not a row this page holds.
+  // Whether compacting early paid (docs/token-ledger.md "Did compacting early
+  // pay"): a machine read with its one query field.
+  "usage.compare-compaction": "GET /v1/usage/compare-compaction[?since=]",
   "usage.item": "GET /v1/usage/items/{id}",
   "usage.session": "GET /v1/usage/sessions/{conversation}",
   "usage.task": "GET /v1/usage/tasks/{id}",

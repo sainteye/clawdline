@@ -72,11 +72,15 @@ func (s *Server) usageDiagnostics() *contract.UsageDiagnostics {
 var usageID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$`)
 
 // usageRoute is GET /v1/usage/{sessions,tasks,items}/<id> (docs/token-ledger.md
-// "What a person and a session see"). The gate lets a paired device and this
+// "What a person and a session see") and GET /v1/usage/compare-compaction. The gate lets a paired device and this
 // machine's orchestrator token through (machineScoped); both only read.
 func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "The token ledger is read with GET.")
+		return
+	}
+	if routePath(r) == "/v1/usage/compare-compaction" {
+		s.usageCompareCompaction(w, r)
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(routePath(r), "/v1/usage/"), "/")
@@ -113,6 +117,31 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusNotFound, "not_found",
 			"Ask for /v1/usage/sessions/<conversation>, /v1/usage/tasks/<id> or /v1/usage/items/<id>.")
 	}
+}
+
+// usageCompareCompaction is GET /v1/usage/compare-compaction?since=…
+// (docs/token-ledger.md "Did compacting early pay"): the child tasks created
+// since then, grouped by the compaction window they were launched with. A
+// query it does not read is refused by name rather than ignored.
+func (s *Server) usageCompareCompaction(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	for key, values := range q {
+		if key != "since" || len(values) != 1 {
+			writeRefusal(w, http.StatusBadRequest, "bad_request",
+				"The comparison reads one query field, since: `14d`, `36h` or a Unix time in seconds.")
+			return
+		}
+	}
+	got, err := s.usageLedger().CompareCompactionSince(r.Context(), q.Get("since"))
+	if errors.Is(err, app.ErrCompareSince) {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "since: "+err.Error()+".")
+		return
+	}
+	if err != nil {
+		usageStoreRefusal(w, err)
+		return
+	}
+	writeJSON(w, usageComparison(got))
 }
 
 func usageStoreRefusal(w http.ResponseWriter, err error) {
@@ -354,5 +383,35 @@ func usageItem(it app.ItemUsage, window windowOf) contract.UsageItem {
 		peak = max(peak, task.PeakContext)
 	}
 	out.Calls, out.PeakContext = calls, peak
+	return out
+}
+
+func usageComparison(c app.CompactionComparison) contract.UsageCompactionComparison {
+	out := contract.UsageCompactionComparison{
+		Since: unixOrZero(c.Since), Until: unixOrZero(c.Until), MinTasks: int64(c.MinTasks),
+		Groups: []contract.UsageCompactionGroup{}, Excluded: int64(c.Excluded),
+		ExcludedTasks: []contract.UsageCompareExcluded{}, ExcludedTruncated: c.ExcludedTruncated,
+		Truncated: c.Truncated, NotRecorded: []contract.UsageCompareMissing{},
+	}
+	for _, g := range c.Groups {
+		out.Groups = append(out.Groups, contract.UsageCompactionGroup{
+			Group: app.CompareGroupName(g.Window), Window: g.Window,
+			Tasks: int64(g.Tasks), ReadTasks: int64(g.Read), Sessions: int64(g.Sessions), TooFew: g.TooFew,
+			CostTotal: g.CostTotal, CostMedianPerTask: g.CostMedian, CostKnown: g.CostKnown,
+			CallsPerTask: g.CallsPerTask, CompactionsPerTask: g.CompactionsPerTask,
+			PeakContextMedian: g.PeakMedian, PeakContextMax: g.PeakMax, Above200kShare: g.AboveShare,
+			Ended: int64(g.Ended), Running: int64(g.Running), Success: int64(g.Success), Failure: int64(g.Failure),
+			Timeout: int64(g.Timeout), Cancelled: int64(g.Cancelled), Stalled: int64(g.Stalled), Lost: int64(g.Lost),
+			SuccessRate: g.SuccessRate, FailureRate: g.FailureRate, TimeoutRate: g.TimeoutRate, StalledRate: g.StalledRate,
+			Respawns: int64(g.Respawns),
+		})
+	}
+	for _, e := range c.ExcludedTasks {
+		out.ExcludedTasks = append(out.ExcludedTasks, contract.UsageCompareExcluded{TaskID: e.TaskID,
+			Reason: contract.UsageCompareExcludedReason(e.Reason)})
+	}
+	for _, m := range c.NotRecorded {
+		out.NotRecorded = append(out.NotRecorded, contract.UsageCompareMissing{Name: m.Name, Why: m.Why})
+	}
 	return out
 }
