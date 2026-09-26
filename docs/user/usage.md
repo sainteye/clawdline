@@ -56,6 +56,43 @@ clawdline assistants
 For each of Claude Code and Codex: whether it is installed, its availability (`ok`, `low`,
 `exhausted` or `unknown`), when its quota window resets, and how old the reading is.
 
+### Claude's 5h and 7d need a status line that writes them down
+
+The two percentages at the right edge of the Status Line — `5h 96% 7d 45%` — are the account's,
+not a session's, and Clawdline does not ask Anthropic for them: spending quota to find out how
+much quota is left is the one cost this reading must never have.
+
+**Claude Code hands those percentages to the stdin of whatever `statusLine.command` names in
+`~/.claude/settings.json`, and to nothing else.** Not the transcript, not a file, not an endpoint
+this daemon could call. With no status line configured they exist only for as long as the render
+that received them, and Clawdline has nothing to read. The corner then says `方案額度 未知`
+(plan limits unknown), and **Session 資訊** carries the sentence naming the file that is missing.
+
+So the numbers appear only if your status line writes
+`~/.claude/statusline-cache/rate-limits.json`. This is the ordinary state of a fresh **Linux**
+install: a Mac often carries a status line over from another machine, a new Linux box rarely has
+one, and the corner then looks blank rather than broken.
+
+[claude-bestiary](https://github.com/sainteye/claude-bestiary) is one that writes it:
+
+```sh
+git clone https://github.com/sainteye/claude-bestiary.git
+cd claude-bestiary && ./install.sh          # symlinks into ~/.claude, then verifies
+```
+
+then add to `~/.claude/settings.json`:
+
+```json
+{ "statusLine": { "type": "command",
+                  "command": "bash ~/.claude/statusline-command.sh",
+                  "refreshInterval": 2 } }
+```
+
+Any status line will do, as long as it writes that file with the `rate_limits` object Claude Code
+handed it. A running session keeps the settings it started with, so the numbers appear in the
+next `claude` you start. Codex needs none of this: its weekly window is read from its own
+rollouts.
+
 ## Capacity: is anything filling up
 
 Everything the daemon keeps has a limit — the log, the device list, push subscriptions, pictures,

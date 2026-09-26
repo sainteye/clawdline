@@ -101,16 +101,6 @@ const RULES: Rule[] = [
     probes: [{ file: "web/core/src/refusal.ts", all: ["typeof (value as Refusal).error === \"string\"", "typeof (value as Refusal).detail === \"string\""] }],
   },
   {
-    id: "U08",
-    family: U,
-    title: "A named daemon refusal reaches Now as unexpected_error",
-    cause: "downstream_of_shape_rejected",
-    probes: [
-      { file: "web/core/src/refusal.ts", all: ["typeof (value as Refusal).error === \"string\""] },
-      { file: "web/console/src/pages/now/shared.ts", all: ["return L.failureSentence(e, nowWord(\"unreadable\"))"] },
-    ],
-  },
-  {
     id: "U09",
     family: U,
     title: "A schedule-place refusal becomes an offline boolean",
@@ -270,7 +260,7 @@ const RULES: Rule[] = [
   },
 ]
 
-const EXPECTED_RULES = 29
+const EXPECTED_RULES = 28
 const EXPECTED_OPEN = 0
 const EXPECTED_LOCKED = 0
 

@@ -231,6 +231,14 @@ func (s *Server) starter(reading startReading) app.Starter {
 		Past: func(ctx context.Context, place projects.Place, assistant string) []projects.Past {
 			return s.past(ctx, place, assistant, reading, 200)
 		},
+		// The broker's answer, so a session the person starts and one the
+		// broker opens answer in the same language.
+		Language: func(assistant string) string {
+			if s.broker == nil {
+				return ""
+			}
+			return s.broker.ClaudeLanguage(assistant)
+		},
 	}
 }
 

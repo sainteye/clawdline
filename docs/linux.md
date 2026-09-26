@@ -232,6 +232,13 @@ section with a `+` that leads nowhere.
 
 ### 4.4 Smaller things worth knowing
 
+- **Claude's `5h`/`7d` percentages stay blank until a status line writes them down.** Not a Linux
+  defect and not this daemon's: Claude Code hands `rate_limits` to the stdin of whatever
+  `statusLine.command` names and to nothing else, so a machine with none configured never writes
+  `~/.claude/statusline-cache/rate-limits.json` and there is nothing to read. It surfaces here
+  because a new Linux box rarely has a status line where a Mac often carries one over.
+  [docs/user/usage.md](user/usage.md) has what to configure. Codex's weekly window comes from its
+  own rollouts and is unaffected.
 - **A session outside tmux is labelled `backend: "iterm"` on Linux.** `process/ps_unix.go` hardcodes
   `BackendITerm` for any assistant on a tty, and the merge only upgrades it when a tmux pane matches
   the same tty. On a machine with no iTerm2 that row's id is a tty no action can reach.

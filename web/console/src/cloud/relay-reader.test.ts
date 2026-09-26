@@ -131,6 +131,26 @@ test("an agent transcript is asked of the chosen machine with both decoded ids a
   assert.equal(r.log.at(-1)?.word, "agent")
 })
 
+test("a shell's output is asked of the chosen machine with both decoded ids and the local byte window", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 1000 })
+
+  const answer = await r.fetch("/v1/sessions/root%20pane/shells/b0aau3e6s?bytes=99999999")
+  assert.equal(answer.status, 200)
+  const small = await r.fetch("/v1/sessions/root%20pane/shells/b0aau3e6s")
+  assert.equal(small.status, 200)
+  assert.deepEqual(client.reads, [{
+    machine: "mac-a",
+    word: "shell",
+    body: { session: "root pane", shell: "b0aau3e6s", bytes: 1048576 },
+  }, {
+    machine: "mac-a",
+    word: "shell",
+    body: { session: "root pane", shell: "b0aau3e6s", bytes: 65536 },
+  }])
+  assert.equal(r.log.at(-1)?.word, "shell")
+})
+
 test("empty is believed only after the machine's inventory, and not while it is still sending rows", async () => {
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })

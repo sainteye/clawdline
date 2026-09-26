@@ -320,6 +320,10 @@ func (s *Server) Handler() http.Handler {
 			s.sessionAgentRoute(w, r, sessionID, agentID)
 			return
 		}
+		if sessionID, shellID, ok := shellPath(r); ok {
+			s.sessionShellRoute(w, r, sessionID, shellID)
+			return
+		}
 		if id, ok := infoPath(r); ok {
 			s.sessionInfoRoute(w, r, id)
 			return

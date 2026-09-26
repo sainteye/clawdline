@@ -86,6 +86,11 @@ type Broker struct {
 	// screen is a composer and not the workspace-trust dialog nothing may
 	// answer (openSession). Nil records nothing, which only a test wants.
 	TrustClaudeProject func(dir string) error
+	// ClaudeSetsLanguage is whether the person's own Claude Code settings
+	// already name a response language. When they do not, a Claude session
+	// this broker opens is given DisplayLanguage (ClaudeLanguage). Nil gives
+	// none, which only a test wants.
+	ClaudeSetsLanguage func() bool
 	// TerminalCapabilities is what this machine's terminals can do —
 	// read_screen and send_keys — asked before a dispatch is admitted
 	// (capability.go). Nil answers unknown, which refuses nothing.

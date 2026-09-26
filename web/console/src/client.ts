@@ -26,6 +26,15 @@ export function fleetTransport(): StreamTransport | undefined {
   return fleetStream ?? nativeEventSourceTransport()
 }
 
+/**
+ * Whether the page reads its machine through Clawdline Cloud. There, this
+ * origin's `/v1/events` is the static host's and not the machine's, so a panel
+ * that would open its own EventSource asks the machine instead.
+ */
+export function followsRelay(): boolean {
+  return fleetStream !== null
+}
+
 /** Follow `transport` instead of `/v1/events`. Set once, before the console is drawn. */
 export function followFleetFrom(transport: StreamTransport): void {
   fleetStream = transport

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { GitSnapshot, ProjectLink, SessionInfo, SessionInfoContext, SessionLimits, SessionRow } from "@clawdline/contract"
 import { contextCell } from "./context.js"
 import { conversationBecameKnown } from "./info-freshness.js"
-import { statusLimitCells } from "./status-limits.js"
+import { statusLimitRow } from "./status-limits.js"
 import * as L from "../legacy/bridge.js"
 import { SessionFacts, requestInfo } from "../overlays/index.js"
 import { nextWord } from "../next-strings.js"
@@ -49,7 +49,9 @@ import "./status-line-deploy.css"
  *   account-level reading every session of that assistant shares. The newest
  *   reading per assistant is held and drawn over an older answer, and while an
  *   answer is still loading the held one is drawn, as the original's
- *   `SessionFacts` does (`machineLimits`).
+ *   `SessionFacts` does (`machineLimits`). A reading that found no window at
+ *   all says so here rather than leaving the corner empty — `statusLimitRow`
+ *   has the reason.
  */
 export function StatusLine({
   row,
@@ -66,8 +68,8 @@ export function StatusLine({
   const drawn = useRef(false)
   if (row) drawn.current = true
   const info = useSessionInfo(row)
-  const windows = row ? (info ? overlayMachineLimits(info) : machineLimits(row.assistant))?.windows ?? [] : []
-  const limitCells = statusLimitCells(windows, T.webInfoUnknown)
+  const reading = row ? (info ? overlayMachineLimits(info) : machineLimits(row.assistant)) : null
+  const limitCells = statusLimitRow(reading, { unknown: T.webInfoUnknown, limits: T.webInfoLimits })
   const deploy = runningDeploy(info)
   const progress = useDeployProgress(deploy)
   const git = useGitStatus(row)
@@ -141,7 +143,7 @@ export function StatusLine({
       {deployChip(deploy, progress, drawn.current)}
       <div className="limits" id="status-line-limits">
         {limitCells.map((window, index) => (
-          <span className="limit" data-level={window.level} key={`${window.name}:${index}`}>
+          <span className="limit" data-level={window.level} title={window.title} key={`${window.name}:${index}`}>
             {window.name} <b>{window.value}</b>
           </span>
         ))}

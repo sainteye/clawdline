@@ -32,6 +32,8 @@ const NOT_DONE: ReadonlySet<string> = new Set([
   "bad_request", "empty_text", "too_large", "not_found", "method_not_allowed",
   // The session.
   "session_not_found", "session_unknown", "backend_unsupported", "pictures_unavailable",
+  // A question on the session's screen: nothing was typed at it.
+  "session_asking",
   // Its terminal's lane was full.
   "busy",
   // The device, and the machine's own switch.
@@ -67,6 +69,16 @@ export function outcomeOf(failure: FailedWrite): Outcome {
  */
 export function sitsUnsubmitted(code: string): boolean {
   return code === "send_unsubmitted"
+}
+
+/**
+ * Whether the Mac refused the words because the session is showing a question
+ * (`session_asking`, `internal/app/actions.go`): a dialog would have taken the
+ * paste and the Enter. Nothing was typed; the row's own buttons answer the
+ * question, and the same send then goes.
+ */
+export function waitsOnQuestion(code: string): boolean {
+  return code === "session_asking"
 }
 
 /**

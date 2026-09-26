@@ -501,6 +501,8 @@ Swift app 裝在 `~/Applications/Clawdline.app`（建於 2026-09-21），我當�
 
 ## 11. W4 與 W6 落地了（2026-09-21）
 
+> 2026-09-26: W4's page was retired because the v2 Board replaced it; the freshness words it added stay on the wire.
+
 這一節是實作紀錄，不是新的審查。§0 到 §10 是 2026-09-20 的那一份，**沒有改**——包括 §10 說
 「本輪沒有改任何實作」，那句話講的是那一輪。
 

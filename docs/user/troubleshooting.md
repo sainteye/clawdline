@@ -39,6 +39,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7727/     # 200 means 
 | The list is empty on Windows | Windows has no session discovery yet | See [platforms.md](platforms.md) |
 | You can read a session but cannot type into it | The browser was opened without write permission | Run `./bin/clawdline open --send`, or see [remote-access.md](remote-access.md) for a paired device |
 | A state reads as unknown, not idle | The screen or transcript could not be read, and Clawdline does not guess | Open the session's screen; the state returns when the evidence does |
+| The Status Line's right edge says `方案額度 未知`, or a fresh Linux box never shows Claude's `5h`/`7d` | Claude Code hands those percentages to the stdin of `statusLine.command` and to nothing else, so with no status line configured nothing ever writes `~/.claude/statusline-cache/rate-limits.json` | Configure a status line that writes that file ([usage.md](usage.md)). **Session 資訊** names the missing file. Codex's weekly window is unaffected |
 
 ## Clawdline Cloud
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
@@ -24,11 +24,7 @@ import "../pages/work/work.css"
 import "./todos.css"
 
 /** The authoritative projection of unfinished assigned items plus direct user to-dos. */
-export function Todos({ row, agentCount, agentPanel }: {
-  row: SessionRow | null
-  agentCount?: number | null
-  agentPanel?: ReactNode
-}) {
+export function Todos({ row }: { row: SessionRow | null }) {
   const [open, setOpen] = useState(false)
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState("")
@@ -140,12 +136,8 @@ export function Todos({ row, agentCount, agentPanel }: {
             : !readFailure && <span id="session-todos-count">{L.strings.webLoading}</span>}
           {readFailure && <ReadFailure state={todoHeaderState(page !== null, true)} reason={readFailure.reason}
             retrying={reading} onRetry={() => { void refresh(true) }} />}
-          {agentCount !== undefined ? <span className="session-todos-agent-count">
-            {L.strings.webAgents} {agentCount === null ? "?" : agentCount}
-          </span> : null}
         </summary>
         <div className="session-todos-body">
-          {agentPanel}
           {row.sessionId && <SessionUsage conversation={row.sessionId} />}
           {readFailure && <p className="work-note" role="alert">{readFailure.words}</p>}
           {failure && <p className="work-note" role="alert">{failure}</p>}

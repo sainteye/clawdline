@@ -387,8 +387,8 @@ backdrop press dismiss both dialogs without mutation, including at phone width.
 ### WS2-U06 — One authoritative Board
 
 Navigation exposes one Board. Project links open it with a Project filter. The retired Project
-Board is absent from navigation and no current card/count is read from its source. The Now page may
-summarize the same v2 ids/versions but cannot write a duplicate state.
+Board and the Now page (retired 2026-09-26) are absent from navigation, and no current card/count is
+read from their sources.
 
 ## 11. Capacity and read failures
 

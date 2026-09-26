@@ -432,9 +432,8 @@ function ProposalsFold({
   const [evidence, setEvidence] = useState("")
   const previousTotal = useRef<number | null>(null)
 
-  // The Now page's action opens this page. When proposals have arrived,
-  // their answer controls must therefore be visible without a second,
-  // undiscoverable press on a folded summary. A person may still close the
+  // When proposals have arrived, their answer controls must be visible
+  // without a second, undiscoverable press on a folded summary. A person may still close the
   // fold; the next 30-second refresh does not force it open again unless the
   // pending total actually changes.
   useEffect(() => {

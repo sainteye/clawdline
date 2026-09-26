@@ -112,6 +112,13 @@ export interface CloudWriteClient extends CloudReadClient {
    * is not: both have been in the copied client since it was copied.
    */
   git(identity: CloudIdentity): Promise<unknown>
+  /**
+   * The live screen's read (`cloud-client.js`, `screen`). The copied client
+   * says a tmux screen is `on-demand` at the one-second floor, because no
+   * revision event crosses the relay and the panel only asks again on its own
+   * for a backend that says it has to be asked.
+   */
+  screen(identity: CloudIdentity): Promise<unknown>
   setVoiceHost?(machine: string): Promise<unknown>
   /**
    * The three notification writes. Each picks the account's push machine strictly
@@ -217,6 +224,7 @@ export type WriteRoute =
   | { op: "info"; word: Carried<"info">; session: string }
   | { op: "git"; word: Carried<"git">; session: string }
   | { op: "git-diff"; word: Carried<"git-diff">; session: string }
+  | { op: "screen"; word: Carried<"screen">; session: string }
   | { op: "answer"; word: Carried<"answer">; session: string }
   | { op: "end"; word: Carried<"end">; session: string }
   | { op: "focus"; word: Carried<"focus">; session: string }
@@ -433,6 +441,10 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "sessions" && a && b === "git" && c === "diff" && segments.length === 4) {
       return { op: "git-diff", word: "git-diff", session: a }
     }
+    // A session's read for the same reason: asked under the row's identity.
+    if (head === "sessions" && a && b === "screen" && segments.length === 3) {
+      return { op: "screen", word: "screen", session: a }
+    }
     return null
   }
   // The three schedule writes that are not a POST. They are parsed before the
@@ -602,6 +614,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "info":
     case "git":
     case "git-diff":
+    case "screen":
     case "uncarried":
       return "flat"
     case "push-subscribe":
@@ -801,6 +814,13 @@ export class RelayWriter {
         // branches on — because `git-bridge.ts` reads the code and not the
         // sentence (`session/GitPanel.tsx`).
         return client.git(await this.identity(client, route.session))
+      case "screen":
+        // A read, and the lease on the machine's capture: asking is how the
+        // page says it is still watching. The answer crosses as the machine
+        // wrote it — a first read is `pending` with no `text` — except that
+        // the copied client names a tmux screen `on-demand`, which is what
+        // keeps the panel asking at the machine's floor (`screen`).
+        return client.screen(await this.identity(client, route.session))
       case "git-diff": {
         const path = url.searchParams.get("path") ?? ""
         if (!path || typeof client._read !== "function") {

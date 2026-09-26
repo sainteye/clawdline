@@ -514,14 +514,6 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/timeline",
 		query: map[string]string{"project": "clawdline-go", "upcoming": "false"},
 	}, {
-		// Machine-wide and so parameterless: the landing ledger is not one
-		// repository's debt, and a word that took a project would let a page
-		// show one repository's rows as the whole answer.
-		word:    "landings",
-		body:    map[string]any{"type": "landings", "session": machine, "request": "req-landings"},
-		session: machine, name: "read:req-landings",
-		method: "GET", path: "/v1/orchestrator/landings",
-	}, {
 		// The Settings page's capacity block, which every capacity push names:
 		// machine-wide and parameterless, as the local route is.
 		word:    "capacity",
@@ -738,14 +730,15 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: pane, name: "agent:ag_4", method: "GET",
 		path: "/v1/sessions/%2519/agents/ag_4", query: map[string]string{"limit": "200"},
 	}, {
+		word:    "shell",
+		body:    map[string]any{"type": "shell", "session": pane, "shell": "b0aau3e6s", "bytes": 65536},
+		session: pane, name: "shell:b0aau3e6s", method: "GET",
+		path: "/v1/sessions/%2519/shells/b0aau3e6s", query: map[string]string{"bytes": "65536"},
+	}, {
 		// The words this daemon knows and cannot answer. `unknown_command` is
 		// not a guess at a code: it is the one the hosted console learns from
 		// (`machineLacks` in net/cloud-client.js), so a machine that says it stops
 		// being asked.
-		word:    "shell",
-		body:    map[string]any{"type": "shell", "session": pane, "shell": "sh_2", "bytes": 65536},
-		session: pane, name: "shell:sh_2", code: "unknown_command", status: 400,
-	}, {
 		word:    "skills",
 		body:    map[string]any{"type": "skills", "session": pane},
 		session: pane, name: "skills", code: "unknown_command", status: 400,
@@ -1425,19 +1418,19 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		}
 	}
 	// The daemon's published list must not promise what it refuses.
-	for _, word := range []string{"shell", "skills",
+	for _, word := range []string{"skills",
 		"diagnostics.report", "diagnostics.events", "dispatch"} {
 		if implemented[word] {
 			t.Fatalf("%s is advertised and has no local capability", word)
 		}
 	}
-	for _, word := range []string{"send", "answer", "end", "focus", "interrupt", "smart-title", "start", "resume", "voice", "intents", "agent",
+	for _, word := range []string{"send", "answer", "end", "focus", "interrupt", "smart-title", "start", "resume", "voice", "intents", "agent", "shell",
 		"transcript", "info", "git", "git-diff", "screen", "image", "documents", "document", "places",
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "landings", "capacity", "machine-usage",
+		"project-worktree-lifecycle-refresh", "capacity", "machine-usage",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",

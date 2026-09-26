@@ -5044,6 +5044,29 @@ type SettleResult struct {
 	TaskID  string    `json:"task_id"`
 }
 
+// The tail of one command's output file. A reader repaints only when
+// `signature` changes and stops asking once `ended` is true.
+type ShellOutputReply struct {
+	// The last non-empty line is Claude Code's ending marker, `[exited …]` or
+	// `[killed]`.
+	Ended bool `json:"ended"`
+
+	// The command's row, as the session list carries it. `doing` is absent once it has
+	// ended.
+	Shell SessionShell `json:"shell"`
+
+	// Changes whenever the file does: its modification time and size.
+	Signature string `json:"signature"`
+
+	// The last `bytes` of the output file, starting at a line boundary when the file
+	// was longer. UTF-8 as the command wrote it; a byte sequence that is not UTF-8 is
+	// replaced.
+	Text string `json:"text"`
+
+	// The file holds more before `text`. Absent when `text` is the whole file.
+	Truncated bool `json:"truncated,omitempty"`
+}
+
 // A new or adopted token, twice: here for a script, and in `Set-Cookie:
 // clawdline-next=…; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict`
 // (plus `; Secure` behind an HTTPS proxy) for a page.

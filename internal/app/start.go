@@ -29,6 +29,10 @@ type Starter struct {
 	Launcher ports.Launcher
 	// Past lists what an assistant has already recorded in a place.
 	Past func(ctx context.Context, place projects.Place, assistant string) []projects.Past
+	// Language is Claude Code's response language for a session started with
+	// assistant (projects.ClaudeLanguage), or "" to leave it as Claude Code
+	// starts. Nil is "", which only a test wants.
+	Language func(assistant string) string
 }
 
 // Started is StartPoints.Outcome.started. Attach is filled for the one plan
@@ -72,8 +76,12 @@ func (s Starter) Place(ctx context.Context, id string) (projects.Place, bool) {
 
 // Start is StartPoints.start(_:assistant:model:…resume:).
 func (s Starter) Start(ctx context.Context, place projects.Place, assistant, model, resume string) (Started, error) {
+	language := ""
+	if s.Language != nil {
+		language = s.Language(assistant)
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
-		Model: model, Resume: resume})
+		Model: model, Resume: resume, Language: language})
 	if err != nil {
 		if errors.Is(err, projects.ErrInvalidLaunch) {
 			return Started{}, StartRefusal{Status: http.StatusBadRequest, Code: "invalid_launch", Message: err.Error()}

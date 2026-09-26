@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -25,15 +26,18 @@ import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
-import { sitsUnsubmitted } from "./outcome.js"
+import { sitsUnsubmitted, waitsOnQuestion } from "./outcome.js"
 import { INTERRUPTED } from "./persist.js"
 import { look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
 import "./working-line.css"
 import { conversationNotStarted } from "./readiness.js"
+import { transcriptShow } from "./transcript-trouble.js"
 import { agentReportIdentity } from "./agent-report.js"
 import "./agent-report.css"
+import { atNewest, jumpOffered } from "./jump.js"
+import "./jump.css"
 
 /*
  * The transcript pane, drawn as `view/transcript.js` draws it.
@@ -111,7 +115,18 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   const cards = agentId ? [] : pendingSends.of(id)
   const following = cards.some((card) => card.state !== "failed")
-  const { data, error } = usePoll<TranscriptPage>(read, following ? FOLLOW_MS : POLL_MS)
+  const poll = usePoll<TranscriptPage>(read, following ? FOLLOW_MS : POLL_MS)
+  const { data, error } = poll
+  // A read nobody answered waits out its quiet stretch before it is news
+  // (`transcript-trouble.ts`); until then the skeleton, or the entries already
+  // read, stay as they are.
+  const show = transcriptShow({
+    hasData: !!data,
+    failureKind: poll.failureKind,
+    failures: poll.failures,
+    failingForMs: poll.failingSince === null ? 0 : Date.now() - poll.failingSince,
+    noRecord: data?.evidence === "none" && !!data.note,
+  })
   // Each read settles the cards it confirms before it is painted, so the turn
   // and the card standing for it are never on screen together.
   useLayoutEffect(() => {
@@ -127,7 +142,7 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // transcript: a provider subagent's page is not what the row's state is about.
   const working = !agentId && !!session && L.workState(session).state === "working"
   const entries = useMemo<Entry[]>(() => (data ? data.entries.map((e) => ({ ...e })) : []), [data])
-  const skeleton = useWait(!data && !error)
+  const skeleton = useWait(show === "loading")
   // `S.newestFirst` and `S.assistantIcons`, read on every draw as the original
   // reads them, and a draw of their own when either changes.
   const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
@@ -162,6 +177,26 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   const shownSignature = useRef<string | null | undefined>(undefined)
   const stick = useRef(false)
   const held = useRef(0)
+  // The way back to the newest end (`jump.ts`). `fresh` is something drawn
+  // there while the reader was away from it; `chasing` is a jump still on its
+  // way, so a draw landing during the smooth scroll goes on to the end instead
+  // of holding the reader wherever the scroll had got to.
+  const [jump, setJump] = useState({ shown: false, fresh: false })
+  const fresh = useRef(false)
+  const chasing = useRef(false)
+  const order = useRef(newestFirst)
+  order.current = newestFirst
+  const measure = useCallback(() => {
+    const el = document.getElementById("tx-scroll")
+    if (!el) return
+    if (atNewest(el, order.current)) {
+      fresh.current = false
+      chasing.current = false
+    }
+    const shown = jumpOffered(el, order.current, fresh.current)
+    const isFresh = fresh.current
+    setJump((was) => (was.shown === shown && was.fresh === isFresh ? was : { shown, fresh: isFresh }))
+  }, [])
   if (drawnSignature !== undefined && (drawnSignature === null || drawnSignature !== shownSignature.current)) {
     stick.current = atBottom()
     held.current = scrollTop()
@@ -169,10 +204,67 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   useLayoutEffect(() => {
     if (drawnSignature === undefined) return
     if (drawnSignature !== null && drawnSignature === shownSignature.current) return
+    const arriving = drawnSignature !== null && shownSignature.current !== undefined
     shownSignature.current = drawnSignature
-    if (stick.current) toBottom()
+    if (chasing.current) toNewest(newestFirst)
+    else if (stick.current) toBottom()
     else toScrollTop(held.current)
+    const el = document.getElementById("tx-scroll")
+    if (arriving && el && !atNewest(el, newestFirst)) fresh.current = true
+    measure()
   }, [data, drawnSignature])
+
+  // The button follows the reader's scrolling, and the conversation growing
+  // or a fold opening under them; a hand on the wheel or the glass stops a
+  // jump still on its way.
+  useEffect(() => {
+    const el = document.getElementById("tx-scroll")
+    const box = document.getElementById("tx")
+    if (!el) return
+    let frame = 0
+    const onScroll = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        measure()
+      })
+    }
+    const stop = () => {
+      chasing.current = false
+    }
+    el.addEventListener("scroll", onScroll, { passive: true })
+    el.addEventListener("wheel", stop, { passive: true })
+    el.addEventListener("touchstart", stop, { passive: true })
+    el.addEventListener("keydown", stop)
+    const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onScroll)
+    resized?.observe(el)
+    if (box) resized?.observe(box)
+    measure()
+    return () => {
+      if (frame) cancelAnimationFrame(frame)
+      el.removeEventListener("scroll", onScroll)
+      el.removeEventListener("wheel", stop)
+      el.removeEventListener("touchstart", stop)
+      el.removeEventListener("keydown", stop)
+      resized?.disconnect()
+    }
+  }, [measure])
+  useEffect(measure, [measure, newestFirst])
+  const jumpToNewest = () => {
+    const el = document.getElementById("tx-scroll")
+    if (!el) return
+    chasing.current = true
+    const end = newestFirst ? 0 : el.scrollHeight - el.clientHeight
+    const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (still) return toNewest(newestFirst)
+    // Many screens away, the glide would take a second of scrolling past
+    // things nobody asked to see: arrive a screen short and glide the rest,
+    // which still says which way the page went.
+    if (Math.abs(end - el.scrollTop) > el.clientHeight * 1.5) {
+      el.scrollTop = newestFirst ? end + el.clientHeight : end - el.clientHeight
+    }
+    el.scrollTo({ top: end, behavior: "smooth" })
+  }
 
   // `toggleOrder`: the transcript is drawn the other way round and goes back to
   // its top — whoever turned it over, the settings row or `r`.
@@ -200,12 +292,12 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // The working line is newer than any card: the turn it stands for is the
   // one answering them.
   const pending = newestFirst ? [live, ...cardsDrawn] : [...cardsDrawn, live]
-  if (!data && !error) return cardsDrawn.length || live ? <>{pending}</> : null
+  if (show === "loading") return cardsDrawn.length || live ? <>{pending}</> : null
   // The daemon's note is diagnostic English. It is useful evidence in the
   // disclosure below, but never the main sentence in a translated interface.
   // `no_record` is not a failure at all: the provider has not created its
   // first conversation record yet.
-  const technical = error ? String(error) : data?.evidence === "none" ? data.note || "" : ""
+  const technical = show !== "failure" ? "" : poll.failureKind ? String(error) : data?.note || ""
   const notStarted = conversationNotStarted(session)
   if (notStarted && !entries.length) {
     return (
@@ -216,11 +308,11 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
       </>
     )
   }
-  const failed = technical ? T.webTranscriptFailed : null
+  const failed = show === "failure" ? readFailed(poll.reading, poll.retry) : null
   if (failed && !entries.length) {
     return (
       <>
-        <div className="tx-note err">{failed}</div>
+        {failed}
         {technicalDetails(technical)}
         {pending}
       </>
@@ -228,7 +320,7 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   }
   const notice = failed ? (
     <>
-      <div className="tx-note err">{failed}</div>
+      {failed}
       {technicalDetails(technical)}
     </>
   ) : null
@@ -301,15 +393,63 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // its first entry; this is a deliberate difference, in the copied note's
   // class, at whichever end is the oldest.
   const cut = cutNote(data)
+  const jumpDrawn = <JumpToLatest key="jump" {...jump} newestFirst={newestFirst} onJump={jumpToNewest} />
   return (
     <>
+      {newestFirst && jumpDrawn}
       {notice}
       {newestFirst && pending}
       {cut && !newestFirst && cut}
       {drawn.flat()}
       {cut && newestFirst && cut}
       {!newestFirst && pending}
+      {!newestFirst && jumpDrawn}
     </>
+  )
+}
+
+/**
+ * The way back to the conversation's newest end, offered once the reader is a
+ * screen or more away from it, or sooner when something new has been drawn
+ * there (`jump.ts`). It floats on the reading column's newest edge; hidden, it
+ * stays in the page so it can fade, but out of reach of the pointer, the tab
+ * key and a screen reader.
+ */
+function JumpToLatest({
+  shown,
+  fresh,
+  newestFirst,
+  onJump,
+}: {
+  shown: boolean
+  fresh: boolean
+  newestFirst: boolean
+  onJump: () => void
+}) {
+  const said = nextWord(fresh ? "transcriptJumpNew" : "transcriptJumpLatest")
+  return (
+    <div
+      className="tx-jump"
+      data-end={newestFirst ? "top" : "bottom"}
+      data-shown={shown ? "on" : "off"}
+      data-fresh={fresh ? "on" : "off"}
+    >
+      <button
+        type="button"
+        className="tx-jump-go"
+        tabIndex={shown ? 0 : -1}
+        aria-hidden={shown ? undefined : true}
+        title={said}
+        onClick={onJump}
+      >
+        {fresh ? <span className="dot" aria-hidden="true" /> : null}
+        <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"
+          strokeLinecap="round" strokeLinejoin="round">
+          {newestFirst ? <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /> : <path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" />}
+        </svg>
+        <span>{said}</span>
+      </button>
+    </div>
   )
 }
 
@@ -325,6 +465,22 @@ function WorkingLine({ line }: { line: string }) {
     <div className="tx-working" role="status">
       <canvas className="spin"></canvas>
       <span className="line">{line || L.strings.webStateWorking}</span>
+    </div>
+  )
+}
+
+/**
+ * `webTranscriptFailed`, and beside it the way to ask again now rather than at
+ * the next poll. While that read is out the button says so and waits; the
+ * sentence stays until an answer replaces it.
+ */
+function readFailed(reading: boolean, retry: () => void): ReactElement {
+  return (
+    <div className="tx-note err tx-failed" role="alert">
+      <span>{L.strings.webTranscriptFailed}</span>
+      <button type="button" className="go" disabled={reading} onClick={retry}>
+        {nextWord(reading ? "transcriptRetrying" : "transcriptRetry")}
+      </button>
     </div>
   )
 }
@@ -376,7 +532,14 @@ function pendingHTML(card: PendingSend): ReactElement {
   if (card.state === "failed") {
     body +=
       '<div class="pending-state" role="alert"><span>' +
-      esc(pendingFailureSentence(card.failure)) +
+      // A dialog on the session's screen refused the words before a byte was
+      // typed: the card names the question as what to deal with, and "try
+      // again" sends the same words once it is answered.
+      esc(
+        waitsOnQuestion(card.failure)
+          ? nextWord("sendAsking", { code: card.failure })
+          : pendingFailureSentence(card.failure),
+      ) +
       "</span>" +
       (card.partial
         ? partial
@@ -657,6 +820,12 @@ function atBottom(): boolean {
 function toBottom(): void {
   const el = document.getElementById("tx-scroll")
   if (el) el.scrollTop = el.scrollHeight
+}
+
+/** The newest end: the bottom, or the top when the transcript reads newest first. */
+function toNewest(newestFirst: boolean): void {
+  if (newestFirst) toScrollTop(0)
+  else toBottom()
 }
 
 function scrollTop(): number {

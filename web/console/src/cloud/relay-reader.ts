@@ -517,6 +517,15 @@ export class RelayReader {
           limit: clampedWhole(q.limit, 200, 1, 1000),
         })
       }
+      const shell = sessionShell(path)
+      if (shell) {
+        const q = this.only(url, path, "bytes")
+        return await this.machineRead(init?.signal, method, path, "shell", {
+          session: shell.session,
+          shell: shell.shell,
+          bytes: clampedWhole(q.bytes, 65536, 1024, 1048576),
+        })
+      }
       const workTerminal = workV2SessionTodosTerminal(path)
       if (workTerminal) {
         this.only(url, path)
@@ -788,13 +797,6 @@ export class RelayReader {
         case "/v1/project-sync/mirror":
           this.only(url, path)
           return await this.machineRead(init?.signal, method, path, "project-mirror", {})
-        case "/v1/orchestrator/landings": {
-          // No parameters: the landing ledger is machine-wide, and the one
-          // page that reads it asks what this machine owes, not what one
-          // repository does.
-          this.only(url, path)
-          return await this.machineRead(init?.signal, method, path, "landings", {})
-        }
         case "/v1/timeline": {
           // `upcoming` is a filter with two meanings and the page sends it
           // every time; the rest are left as the page left them, because this
@@ -1289,6 +1291,19 @@ function clampedWhole(value: string | undefined, fallback: number, low: number, 
   const n = Number(value)
   if (!Number.isSafeInteger(n)) return fallback
   return Math.min(high, Math.max(low, n))
+}
+
+/** The two ids in `/v1/sessions/{session}/shells/{shell}`, decoded after splitting. */
+function sessionShell(path: string): { session: string; shell: string } | null {
+  const parts = path.split("/")
+  if (parts.length !== 6 || parts[1] !== "v1" || parts[2] !== "sessions" || parts[4] !== "shells") return null
+  try {
+    const session = decodeURIComponent(parts[3])
+    const shell = decodeURIComponent(parts[5])
+    return session && shell ? { session, shell } : null
+  } catch {
+    return null
+  }
 }
 
 /** The two ids in `/v1/sessions/{session}/agents/{agent}`, decoded after splitting. */

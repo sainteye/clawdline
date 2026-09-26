@@ -775,7 +775,8 @@ commands carrying the paired-device marker, each with the route's JSON body whol
 | `transcript` | read | `GET /v1/transcript?session&limit` | 409 `session_unknown` | 接上（`priority` 收下不用） |
 | `info` | read | `GET /v1/sessions/{id}/info` | 409 `session_unknown` | 接上（`parts` 兩半同一個 body） |
 | `git` | read | `GET /v1/sessions/{id}/git` | 409 `session_unknown` | 接上 |
-| `screen` | read | `GET /v1/sessions/{id}/screen` | 409 `session_unknown` | 接上 |
+| `screen` | read | `GET /v1/sessions/{id}/screen` | 409 `session_unknown` | 接上（hosted console 2026-09-26 起也問；Cloud 上沒有 `screen` 修訂事件，tmux 也照 `on-demand` 每秒問一次） |
+| `shell` | read | `GET /v1/sessions/{id}/shells/{shell}?bytes` | 404 `not_found`（transcript 沒宣告過的 id，`TestTheShellRouteServesAnnouncedCommandsOnly`） | 接上（2026-09-26；`bytes` 1 KiB–1 MiB，與本機 `sessions.shell_output_bytes` 同一個界線；`shell-kill` 仍沒有本機能力） |
 | `image` | read | `GET /v1/artifacts/images/{id}` | 404 `artifact_not_found` | 接上（PNG → base64） |
 | `documents` | read | `GET /v1/sessions/{id}/documents` | 404 `document_not_found` | 接上（清單去掉本機網址） |
 | `document` | read | `GET /v1/sessions/{id}/documents/{scope}[/{task}]/{path}` | 404 `document_not_found` | 接上（只送 inert UTF-8） |
@@ -795,7 +796,6 @@ commands carrying the paired-device marker, each with the route's JSON body whol
 | `push-unsubscribe` | read-level command | `POST /v1/push/unsubscribe` | 200 | 接上（2026-09-20） |
 | `push-test` | read-level command | `POST /v1/push/test` | 沒實測（會真的對 `web.push.apple.com` 發 HTTPS） | 接上（2026-09-20），路由由 `push.go` 讀出 |
 | `agent` | read | — | `GET …/agents/{id}` 405 | 回 `unknown_command` |
-| `shell` | read | — | `GET …/shells/{id}` 405 | 回 `unknown_command` |
 | `skills` | read | — | `GET …/skills` 405 | 回 `unknown_command` |
 | `board.items` | read | — | 本機沒有卡片模型 | 回 `unknown_command` |
 | `timeline` | read | — | `GET /v1/timeline` 501 | 回 `unknown_command` |

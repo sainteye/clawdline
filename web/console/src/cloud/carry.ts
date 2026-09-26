@@ -69,7 +69,6 @@ export const CARRIED = {
   info: "GET /v1/sessions/{id}/info[?parts=summary]",
   interrupt: "POST /v1/sessions/{id}/interrupt",
   intents: "POST /v1/intents",
-  landings: "GET /v1/orchestrator/landings",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
   places: "GET /v1/places",
   "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",
@@ -89,6 +88,11 @@ export const CARRIED = {
   "push-test": "POST /v1/push/test",
   "push-unsubscribe": "POST /v1/push/unsubscribe",
   resume: "POST /v1/places/{id}/resume[/{assistant}]/{past}",
+  // The live screen (`session/ScreenPanel.tsx`). It sat in `DEFERRED` and in
+  // `DEFERRED_ASKED` while this machine answered it, so 「即時畫面」 on a phone
+  // only ever said to go and look on the machine — including from the Waiting
+  // card that sends a person there to read the question.
+  screen: "GET /v1/sessions/{id}/screen",
   // The sessions a reboot took away (docs/session-restore.md), offered where
   // the empty session list stands (`session/Restore.tsx`). The read is the
   // machine's; the two commands carry the sheet's press key as their request.
@@ -103,6 +107,9 @@ export const CARRIED = {
   schedule: "GET /v1/orchestrator/schedules/{id}",
   schedules: "GET /v1/orchestrator/schedules",
   send: "POST /v1/sessions/{id}/send",
+  // The Shell panel (`session/ShellPanel.tsx`): the tail of one background
+  // command's output, polled while the panel is open.
+  shell: "GET /v1/sessions/{id}/shells/{shell}?bytes=",
   // No console route asks this: the copied client does, on every connection
   // that did not take over a live socket (`_recoverSessions`), so a list
   // opened after a relay eviction is sent every row rather than whichever
@@ -187,7 +194,6 @@ export const DEFERRED = {
   // chosen for (F1, `RelayWriter.press`). `key` is the older spelling and is
   // deliberately never sent.
   key: "A waiting card's press is sent as `answer`, which names the question it answers; `key` is the older spelling of the same command.",
-  screen: "What the terminal is showing is not read over Clawdline Cloud yet: look at it on the machine.",
 } as const
 
 /**
@@ -208,7 +214,7 @@ export const DEFERRED = {
  * `git` needed and did not have — the day `git-bridge.ts` landed, the entry
  * had to say so.
  */
-export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["document", "documents", "screen"]
+export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["document", "documents"]
 
 /**
  * Words the machine knows and has nothing behind. Asking for one is answered
@@ -223,7 +229,6 @@ export const NO_MACHINE_ROUTE = {
   "diagnostics.events": "This machine does not take a page's diagnostic events over Clawdline Cloud.",
   "diagnostics.report": "This machine does not take a diagnostic report over Clawdline Cloud.",
   dispatch: "Dispatching a task over Clawdline Cloud has no pinned wire shape on this machine: dispatch it on the machine.",
-  shell: "A session's shell is not read over Clawdline Cloud: read it on the machine.",
   skills: "A session's skills are not listed over Clawdline Cloud: read them on the machine.",
 } as const
 
@@ -310,8 +315,6 @@ export function uncarriedWordOf(method: string, path: string): string {
   // spelled a second time here.
   if (head === "sessions" && a && b) {
     switch (b) {
-      case "screen":
-        return "screen"
       case "skills":
         return "skills"
       case "documents":
