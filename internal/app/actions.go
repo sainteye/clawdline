@@ -218,6 +218,9 @@ func (a Actions) send(ctx context.Context, s session.Session, text string) (sess
 	if err != nil {
 		return session.Session{}, beforeTheFirstByte(err)
 	}
+	if err := questionOnScreen(s); err != nil {
+		return s, err
+	}
 	release, err := a.turn(ctx, s)
 	if err != nil {
 		return s, err
@@ -245,6 +248,28 @@ func sendRefusal(s session.Session, err error) Refusal {
 	return Refusal{Code: code, Detail: err.Error(), Cause: err}
 }
 
+// questionOnScreen refuses a line for a session whose fresh reading has a
+// question on its screen, before a byte is typed.
+//
+// A dialog takes the paste as keystrokes of its own, or drops it: the line
+// never reaches the input line, the send waits out its window and answers
+// send_unsubmitted, and the card on the phone says the words are sitting in
+// the input line when they are not. The Enter that the send holds back would
+// have answered the dialog's highlighted row. What the person can do is answer
+// the question — the row carries it as buttons — and send again.
+func questionOnScreen(s session.Session) error {
+	if s.Menu == nil {
+		return nil
+	}
+	why := "the session is showing a question and would not read the line"
+	if q := strings.TrimSpace(s.Menu.Question); q != "" {
+		why += ": " + q
+	}
+	return Refusal{Code: "session_asking",
+		Detail: "The session is showing a question, so nothing was typed. Answer it, then send again.",
+		Cause:  terminal.Unsent{Why: why}}
+}
+
 // SendPrepared is Send with prepare run first, inside the same turn of the
 // terminal's lane, so nobody else's line lands between what prepare saw and the
 // text. prepare presses raw keys and looks at the screen; an error from it types
@@ -268,6 +293,9 @@ func (a Actions) SendPrepared(ctx context.Context, id, text string, prepare orch
 	if !ok || a.Inventory.Screen == nil {
 		return s, beforeTheFirstByte(Refusal{Code: "backend_unsupported",
 			Detail: fmt.Sprintf("nothing on this machine presses keys into and reads a %q session", s.Backend)})
+	}
+	if err := questionOnScreen(s); err != nil {
+		return s, err
 	}
 	release, err := a.turn(ctx, s)
 	if err != nil {

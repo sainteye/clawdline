@@ -263,8 +263,8 @@ func (in Inventory) named(s session.Session) session.Session {
 // own record can say it is working; only the screen says what it is working
 // on, and the Swift app draws that line under every working row whatever told
 // it the state. So a registry-backed session is captured too — but only while
-// it is working, which is the only time there is a line to find, or waiting,
-// which is the only time there is a menu to find.
+// it is working, which is the only time there is a line to find, or waiting
+// or idle, when there may be a menu to find.
 //
 // **A menu beats a spinner, and beats a registry that says busy.** Claude Code
 // draws its dialog below whatever came before it without always erasing the
@@ -274,6 +274,15 @@ func (in Inventory) named(s session.Session) session.Session {
 // SessionRegistry.merge). A registry that says waiting opens the parsing gate
 // for AskUserQuestion's flush-left caret; nothing else here does, because this
 // daemon installs no hooks.
+//
+// **A registry that says idle is read for a menu too, and only for one.**
+// Claude Code puts dialogs of its own over the composer — "Teach auto mode
+// about your environment?" with Yes / Not now / Don't show again, captured on
+// 2026-09-26 — without its registry leaving idle. Skipped, the row read idle
+// with no buttons, and every line sent from the phone was pasted into the
+// dialog, never reached the input line, and came back send_unsubmitted: three
+// in two minutes to one pane, and nothing on the phone could dismiss it. The
+// gate stays shut for it, and its idle is never overruled by ReadState.
 func (in Inventory) readScreen(ctx context.Context, s session.Session) session.Session {
 	reader := in.screens()
 	if reader == nil || !s.IsAssistant() {
@@ -284,9 +293,6 @@ func (in Inventory) readScreen(ctx context.Context, s session.Session) session.S
 	// not a record that the screen would overrule: the screen still answers,
 	// and only when it holds positive evidence (session.ReadState).
 	unread := registry && s.State == session.StateUnknown
-	if registry && !unread && s.State != session.StateWorking && s.State != session.StateWaiting {
-		return s
-	}
 	screen, ok := reader.Capture(ctx, s)
 	if !ok {
 		return s

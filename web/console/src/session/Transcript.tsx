@@ -25,7 +25,7 @@ import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
-import { sitsUnsubmitted } from "./outcome.js"
+import { sitsUnsubmitted, waitsOnQuestion } from "./outcome.js"
 import { INTERRUPTED } from "./persist.js"
 import { look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
@@ -376,7 +376,14 @@ function pendingHTML(card: PendingSend): ReactElement {
   if (card.state === "failed") {
     body +=
       '<div class="pending-state" role="alert"><span>' +
-      esc(pendingFailureSentence(card.failure)) +
+      // A dialog on the session's screen refused the words before a byte was
+      // typed: the card names the question as what to deal with, and "try
+      // again" sends the same words once it is answered.
+      esc(
+        waitsOnQuestion(card.failure)
+          ? nextWord("sendAsking", { code: card.failure })
+          : pendingFailureSentence(card.failure),
+      ) +
       "</span>" +
       (card.partial
         ? partial
