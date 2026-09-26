@@ -467,3 +467,48 @@ func TestACloudMoveCarriesThePermissionAsTheFormField(t *testing.T) {
 		t.Fatalf("the stored task: %v, want permission_mode full and the claims", task)
 	}
 }
+
+// TestACloudWebhookBindReachesTheBinder: the hosted console binds a webhook
+// with `schedule-webhook-bind-v1`, which arrives as a paired device that may
+// send, like every other Cloud write. The local route once took only the
+// orchestrator token, so every bind from the phone answered 403 `forbidden`
+// before the binder ran — creating a webhook and moving one both failed.
+func TestACloudWebhookBindReachesTheBinder(t *testing.T) {
+	s := cloudStandIn(t)
+	answer, payload := s.ask(t, 1, map[string]any{"type": "schedule-create",
+		"session": cloudops.MachineReplySession, "request": "req-hooked",
+		"schedule": dailySchedule(s.place, "hooked sweep", "09:00")})
+	if !answer.OK() {
+		t.Fatalf("the schedule was refused: %d/%q %s", answer.Status, answer.Code, answer.Payload)
+	}
+	made, _ := bodyOf(t, payload)["schedule"].(map[string]any)
+	id, _ := made["id"].(string)
+
+	bound, _ := s.ask(t, 2, map[string]any{"type": "schedule-webhook-bind-v1",
+		"request_id": "b1000001-0000-4000-8000-000000000001", "hook_id": "swh_0123456789abcdefghjkmnpqrs",
+		"schedule_id": id, "replace_hook_id": nil})
+	if bound.Status == http.StatusForbidden || bound.Code == "forbidden" {
+		t.Fatalf("the bind was refused at the door: %d/%q %s", bound.Status, bound.Code, bound.Payload)
+	}
+	// The stand-in holds no machine credential, so the binder itself answers
+	// after storing the binding; that it answered at all is the point.
+	if bound.Code != "no_machine_credential" && !bound.OK() {
+		t.Fatalf("the binder did not answer: %d/%q %s", bound.Status, bound.Code, bound.Payload)
+	}
+}
+
+// TestAReadOnlyDeviceStillCannotBindAWebhook: the bind route opened to a
+// device that may send, and to nobody less.
+func TestAReadOnlyDeviceStillCannotBindAWebhook(t *testing.T) {
+	f, h := newGateFixture(t)
+	rec := call{path: "/v1/orchestrator/schedule-webhooks/bind", body: `{}`, headers: map[string]string{
+		"Authorization": "Bearer " + f.read, "Content-Type": "application/json"}}.do(h)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("a read-only device reached the binder: %d %s", rec.Code, rec.Body)
+	}
+	rec = call{path: "/v1/orchestrator/schedule-webhooks/bind", body: `{}`, headers: map[string]string{
+		"Authorization": "Bearer " + f.send, "Content-Type": "application/json"}}.do(h)
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("a device that may send was refused: %d %s", rec.Code, rec.Body)
+	}
+}

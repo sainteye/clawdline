@@ -24,7 +24,7 @@
 | `GET /v1/orchestrator/schedules`、`GET …/schedules/:id` | 已配對裝置（唯讀即可）、本機 orchestrator token |
 | `POST …/schedules`、`PATCH …/:id`、`DELETE …/:id` | 可以 send 的裝置＋`Idempotency-Key`；本機 orchestrator token 可直接動「只跑一次」（`when.on`）的排程；a Session carrying `session_id` + `via.run` from the person's latest message to that conversation may relay that explicit instruction to create, change or delete a repeating schedule. **`permission_mode`（權限）只有人能設**：可以 send 的裝置（含每一筆經 Cloud 的寫入）與本機 console 可以設、改、拿掉；orchestrator token 與 `session_id`＋`via.run` 轉達只能保留檔案裡原本的值，設或改一律 `403 permission_needs_person` |
 | `POST …/:id/run` | 可以 send 的裝置＋key；或 orchestrator token（不用 key） |
-| `POST /v1/orchestrator/schedule-webhooks/bind` | 只有 orchestrator token（Cloud `schedule-webhook-bind-v1` 指令的本機那半） |
+| `POST /v1/orchestrator/schedule-webhooks/bind` | 可以 send 的裝置（Cloud `schedule-webhook-bind-v1` 指令的本機那半，經 Cloud 進來時就是這個身分），或本機 orchestrator token |
 | `POST /v1/orchestrator/schedule-imports` | 只有 orchestrator token，**而且 `config.json` 要有 `"schedule_imports_enabled": true`**（預設關；本 daemon 新增，遷移用） |
 | `GET /v1/orchestrator/schedule-exports` | 只有 orchestrator token（本 daemon 新增，遷移用） |
 

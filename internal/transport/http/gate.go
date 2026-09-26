@@ -418,6 +418,12 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !machine && !send {
 			return http.StatusForbidden, "forbidden", "This device may read, and not send."
 		}
+	case p == "/v1/orchestrator/schedule-webhooks/bind":
+		// The Cloud bind command's local half, the same two doors: the hosted
+		// console binds a hook as a device that may send.
+		if !machine && !send {
+			return http.StatusForbidden, "forbidden", "This device may read, and not send."
+		}
 	case p == "/v1/board":
 		if !machine && !send {
 			return http.StatusForbidden, "forbidden", "This device may only read the board."

@@ -326,15 +326,18 @@ func (s *Server) scheduleAuthority(ctx context.Context, machine bool, body map[s
 // scheduleWebhookBindRoute is the local half of the Cloud's
 // `schedule-webhook-bind-v1` command. The Swift app answers that command in
 // process; this daemon's Cloud line reaches local capabilities through routes,
-// so the command's own route name (`CloudLocalRoute`) is served here, to this
-// machine's token only.
+// so the command's own route name (`CloudLocalRoute`) is served here. The
+// command arrives the way every Cloud write does, as a paired device that may
+// send (`X-Clawdline-Actor: device`), so that device is let in beside this
+// machine's own token: binding a hook is the person's act, like making the
+// schedule it names.
 func (s *Server) scheduleWebhookBindRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request", "No such route")
 		return
 	}
-	if !machineAuthed(r) {
-		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "That needs the orchestrator token.")
+	if !machineAuthed(r) && !maySend(r) {
+		writeAuthRefusal(w, http.StatusForbidden, "forbidden", "That needs a device that may send, or the orchestrator token.")
 		return
 	}
 	body := scheduleBody(scheduleRaw(r))
