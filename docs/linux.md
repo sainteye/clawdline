@@ -235,10 +235,12 @@ carried over Clawdline Cloud as an `answer` that names its words instead of a qu
 reads the screen inside the terminal's turn and presses one Return only while the input line is an
 assistant's composer — Claude Code's framed one, or Codex's `›` — that still shows the end of those
 words or a paste placeholder, and no question is on the screen (`app.Actions.SubmitTyped`,
-`terminal.HoldsTyped`). Anything else is refused with nothing pressed: `input_moved` (sent, cleared,
-behind a question, or a shell now holds the words, where Enter would run them) and
-`input_unreadable`. After `input_moved` the card offers a look at the transcript, as for any unknown
-send; after `input_unreadable` it offers the Enter again.
+`terminal.HoldsTyped`). Anything else is refused with nothing pressed: `input_moved` (sent, cleared, or a
+shell now holds the words, where Enter would run them), `input_behind_question` (a picker would take
+the Enter) and `input_unreadable`. After `input_moved` the card offers a look at the transcript, as
+for any unknown send. After every other answer — a refusal, or none at all — it offers the Enter
+again, never "send again": the words may still be in the input line, and a second Enter is pressed
+only while they are.
 
 ### 4.3 Schedules have no route in standalone mode
 

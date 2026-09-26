@@ -375,7 +375,7 @@ func actionStatus(code string) int {
 		// could not be read to say: nothing was typed, and asking again
 		// against a fresh reading is the remedy.
 		return http.StatusConflict
-	case "input_moved", "input_unreadable":
+	case "input_moved", "input_behind_question", "input_unreadable":
 		// An Enter for words typed and never submitted, refused before it was
 		// pressed: they are not in the input line now, a question is up, or
 		// the screen could not be read. Nothing was pressed.

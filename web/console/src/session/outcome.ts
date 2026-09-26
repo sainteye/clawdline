@@ -40,7 +40,7 @@ const NOT_DONE: ReadonlySet<string> = new Set([
   "menu_moved", "menu_unreadable", "menu_unverified",
   // An Enter for words typed and never submitted, checked against the input
   // line before it was pressed (`app.SubmitTyped`).
-  "input_moved", "input_unreadable",
+  "input_moved", "input_behind_question", "input_unreadable",
   // A close refused by what the session owes, or by not being able to say.
   "close_blocked", "closeability_unknown",
   // The request's receipt, refused before it was carried out.

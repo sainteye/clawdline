@@ -25,7 +25,7 @@ import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
-import { sitsUnsubmitted } from "./outcome.js"
+import { outcomeOf, sitsUnsubmitted } from "./outcome.js"
 import { INTERRUPTED } from "./persist.js"
 import { enter, look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
@@ -399,7 +399,7 @@ function pendingHTML(card: PendingSend): ReactElement {
     body +=
       '<div class="pending-state" role="alert"><span>' +
       esc(nextWord("sendUnsubmitted", { code: card.failure })) +
-      (card.enterRefused ? " " + esc(nextWord("sendEnterRefused", { code: card.enterRefused })) : "") +
+      (card.enterRefused ? " " + esc(enterRefusalSentence(card.enterRefused)) : "") +
       "</span>" +
       '<button type="button" class="go" data-pending-enter="' +
       esc(card.token) +
@@ -470,6 +470,14 @@ function pendingHTML(card: PendingSend): ReactElement {
       <div className="body" onClick={pendingAction} dangerouslySetInnerHTML={{ __html: body }} />
     </div>
   )
+}
+
+/** Why the last Enter on an unsubmitted card did not go, or may not have. */
+function enterRefusalSentence(code: string): string {
+  if (code === "input_behind_question") return nextWord("sendEnterBehindQuestion")
+  return outcomeOf({ status: 409, code }) === "not_done"
+    ? nextWord("sendEnterRefused", { code })
+    : nextWord("sendEnterUnknown", { code })
 }
 
 /** A press inside a pending card: try again, look, press Enter, close it, or a code block's copy button. */

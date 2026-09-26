@@ -219,10 +219,11 @@ export class Sender {
   /**
    * "Press Enter" on a card whose words the machine typed and held Enter back
    * on. Taken: the words were submitted, and the card waits for their turn like
-   * any accepted one. `input_moved`: they are not in the input line now — sent,
-   * cleared, or behind a question — and the card is looked at. Any other
-   * refusal that proves nothing was pressed offers the Enter again; an answer
-   * that proves nothing is `unknown`.
+   * any accepted one. `input_moved`: they are not in the input line now — sent
+   * or cleared — and the card is looked at. Anything else, a refusal or no
+   * answer at all, offers the Enter again: the words may still be in the input
+   * line, where sending them again would type them twice, and the machine
+   * presses a second Enter only while they are there.
    */
   async enter(token: string): Promise<void> {
     const { cards, now } = this.deps
@@ -236,15 +237,14 @@ export class Sender {
       posted = { ok: false, status: null, code: "offline" }
     }
     if (posted.ok) {
-      cards.accepted(token, now())
+      cards.entered(token, now())
       return
     }
-    const outcome = this.deps.outcomeOf({ status: posted.status, code: posted.code, said: posted.outcome })
-    if (outcome === "not_done" && posted.code !== "input_moved") {
-      cards.enterRefusedFor(token, posted.code)
+    if (posted.code === "input_moved") {
+      cards.uncertain(token, posted.code)
       return
     }
-    cards.uncertain(token, posted.code)
+    cards.enterRefusedFor(token, posted.code)
   }
 
   /** "Look" at an unknown card: read the transcript fresh; never post. */

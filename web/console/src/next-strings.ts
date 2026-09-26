@@ -355,6 +355,8 @@ const words = {
     sendEnterMoved:
       "Enter was not pressed: these words are no longer in the session's input line, or it is asking a question now ({code}).",
     sendEnterRefused: "Enter was not pressed ({code}).",
+    sendEnterUnknown: "Not known whether Enter was pressed ({code}). Pressing it again is safe: it is pressed only while these words are still in the input line.",
+    sendEnterBehindQuestion: "Enter was not pressed: the session is asking a question, and Enter would answer it. Answer it first, then press Enter here.",
     sendLook: "Look",
     sendLookTip: "Read the conversation on the machine again: if this is there, the card goes.",
     sendLooking: "Looking…",
@@ -739,6 +741,8 @@ const words = {
     sendEntering: "正在按 Enter…",
     sendEnterMoved: "沒有按下 Enter：這段字已經不在 session 的輸入列，或畫面上正在問問題（{code}）。",
     sendEnterRefused: "沒有按下 Enter（{code}）。",
+    sendEnterUnknown: "不知道 Enter 有沒有按下去（{code}）。可以放心再按一次：只有這段字還在輸入列時才會按。",
+    sendEnterBehindQuestion: "沒有按下 Enter：畫面上正在問問題，按 Enter 會回答它。先回答那個問題，再回來這裡按 Enter。",
     sendLook: "去看看",
     sendLookTip: "重新讀一次那台機器上的對話：如果已經在裡面，這張卡就會消失。",
     sendLooking: "正在看…",

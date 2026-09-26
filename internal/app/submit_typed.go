@@ -24,12 +24,14 @@ const KeyEnter = "enter"
 //
 //   - the screen is read first, inside the terminal's turn, and an unreadable
 //     screen is input_unreadable with nothing pressed;
-//   - a question on the screen is input_moved: an Enter at a picker confirms
-//     whatever is highlighted, which nobody chose;
+//   - a question on the screen is input_behind_question: an Enter at a picker
+//     confirms whatever is highlighted, which nobody chose. The words may still
+//     be in the input line under it, so the page offers the Enter again rather
+//     than sending them again;
 //   - an input line that is not an assistant's composer holding the words —
-//     the end of `typed`, or a paste placeholder — is input_moved as well: the
-//     words were submitted, cleared, or the assistant is gone and an Enter
-//     would run them in a shell (terminal.HoldsTyped).
+//     the end of `typed`, or a paste placeholder — is input_moved: the words
+//     were submitted, cleared, or the assistant is gone and an Enter would run
+//     them in a shell (terminal.HoldsTyped).
 //
 // `typed` is the send's text, or its end; a send of pictures alone names "".
 // A nil error means Enter reached the tty. Whether the assistant took the turn
@@ -68,7 +70,7 @@ func (a Actions) SubmitTyped(ctx context.Context, id, typed string) (session.Ses
 	if _, menu := session.ReadMenu(screen, assistant, true); menu {
 		note["verdict"] = "menu_up"
 		a.record(ctx, "session.key", s.ID, note)
-		return s, Refusal{Code: "input_moved",
+		return s, Refusal{Code: "input_behind_question",
 			Detail: "That session is asking a question now, and Enter would answer it. Enter was not pressed."}
 	}
 	if !terminal.HoldsTyped(screen, typed) {

@@ -307,14 +307,38 @@ export class PendingSends {
     return card
   }
 
-  /** The Enter was refused before it was pressed: the words are where they were, and the Enter is offered again. */
+  /**
+   * The Enter was refused, or nothing said whether it was pressed: the words
+   * may be where they were, so the Enter is offered again — never "send
+   * again", which would type them a second time. A second Enter is pressed only
+   * while they are still in the input line, and a turn in the transcript
+   * settles the card as it would any other.
+   */
   enterRefusedFor(token: string, code: string): void {
     const card = this.find(token)
     if (!card) return
     card.state = "unknown"
     card.failure = UNSUBMITTED
     card.checking = false
+    card.absent = false
     card.enterRefused = code
+    this.changed()
+  }
+
+  /**
+   * The Enter reached the terminal. The card is accepted from now: its turn is
+   * this moment's, which may be long after the words were typed, and the
+   * window a turn is matched in (`inWindow`) is counted from `sentAt`.
+   */
+  entered(token: string, now: number): void {
+    const card = this.find(token)
+    if (!card) return
+    card.state = "accepted"
+    card.sentAt = now
+    card.acceptedAt = now
+    card.failure = ""
+    card.checking = false
+    card.enterRefused = ""
     this.changed()
   }
 

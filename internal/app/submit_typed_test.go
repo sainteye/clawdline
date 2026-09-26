@@ -34,7 +34,7 @@ func TestAnEnterAnywhereElsePressesNothing(t *testing.T) {
 	}{
 		{"the words were submitted or cleared", composer(""), false, "input_moved"},
 		{"someone typed something else", composer("git push --force"), false, "input_moved"},
-		{"a question is up", permissionPrompt("rm -rf /", 1), false, "input_moved"},
+		{"a question is up", permissionPrompt("rm -rf /", 1), false, "input_behind_question"},
 		{"the assistant is gone and a shell has the words", "❯ please read CHILD.md", false, "input_moved"},
 		{"the screen cannot be read", "", true, "input_unreadable"},
 	}

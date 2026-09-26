@@ -3363,10 +3363,10 @@ export interface InventorySession {
  * multi-select's button, and "enter" presses Enter on a send that was typed and
  * never submitted (send_unsubmitted) — only while the session's input line is an
  * assistant's composer still holding `typed` and no question is on its screen, and
- * refused as input_moved or input_unreadable with nothing pressed otherwise.
- * Anything else is refused before the session is looked up. Never a way to type
- * text: words sent to a picker are thrown away and the Return after them confirms
- * whatever is highlighted.
+ * refused as input_moved, input_behind_question or input_unreadable with nothing
+ * pressed otherwise. Anything else is refused before the session is looked up.
+ * Never a way to type text: words sent to a picker are thrown away and the Return
+ * after them confirms whatever is highlighted.
  */
 export interface KeyRequest {
   /**
