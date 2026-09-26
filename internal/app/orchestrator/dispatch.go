@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -573,6 +574,23 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		r.SpawnError = err.Error()
 		r.FinishedAt = b.now()
 		return r
+	}
+	// A schedule's run works in the project folder the person set the
+	// schedule up for, and Claude Code asks whether to trust a folder it has
+	// never been told about before it draws a composer. Unanswered, that
+	// dialog is all the briefing ever sees: a daily schedule in a project
+	// nobody had opened Claude Code in ended spawn_failed ("the child is
+	// showing a dialog") at its first run, and pressing Run did the same. The person
+	// decided (2026-09-26) that a schedule they made answers the question for
+	// its folder, as asking for a new Session does (openSession). Only a
+	// scheduled run, and never a disposable worktree; a task a session
+	// dispatched is not the person's answer. A folder that could not be
+	// recorded still opens, and the briefing reports the dialog as before.
+	if launch.Assistant == projects.AssistantClaude && r.ScheduleID != "" && r.Worktree == nil &&
+		b.TrustClaudeProject != nil {
+		if err := b.TrustClaudeProject(cwd); err != nil {
+			log.Printf("broker: %s was not recorded as a folder Claude Code trusts: %v", cwd, err)
+		}
 	}
 	r.AutoCompactWindow = b.autoCompactFor(r.Assistant, r.AutoCompactRequested)
 	line := "cd " + projects.ShellQuoted(cwd) + " && " + shellCommand(launch, r, b.Tasks.Dir, cwd)
