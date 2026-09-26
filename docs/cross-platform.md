@@ -733,7 +733,11 @@ open-outside button hands the Cloud page in front to the system browser. Signing
 GitHub round trip in the default browser through `ASWebAuthenticationSession`, so the browser's own GitHub session and
 password manager are used; the Cloud API hands the result back over `clawdline-next://cloud-signed-in` as a 60-second
 token bound to a PKCE verifier only the shell holds, and the Cloud view trades it at `/v1/auth/oauth/handoff` for the
-ordinary login ticket. When the system cannot open a browser sign-in, the tab signs in in place as before. The address is a
+ordinary login ticket. When the system cannot open a browser sign-in, the tab signs in in place as before. When Cloud
+then asks that tab to be paired, the shell pairs it with this Mac itself (`CloudPairing.swift`): it draws an invitation
+from its own daemon (`POST /v1/cloud/pairing`, the one `clawdline cloud pair` prints), puts the link in the tab, answers
+it, and closes the card only when the two fingerprints the page shows equal the ones the daemon reports. Anything else
+leaves the manual pairing screen to the person, once per launch. The address is a
 selectable, read-only value rather than navigation UI. It remains the only shell with Keychain,
 the notch, Carbon hotkeys and `SMAppService`; these are exactly "the few features only a Mac has".
 
