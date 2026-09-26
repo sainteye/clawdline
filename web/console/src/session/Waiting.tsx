@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react"
 import type { SessionMenu, SessionMenuOption, SessionMenuStep, SessionMenuSubmit, SessionRow } from "@clawdline/contract"
 import { toast, toastFailure } from "../overlays/toast.js"
 import * as L from "../legacy/bridge.js"
+import { askInterrupt } from "../legacy/screen-bridge.js"
 import { menuKey, pressKey, waitingHTML, type KeyFailure } from "../legacy/waiting-bridge.js"
 import { nextWord } from "../next-strings.js"
 import { menuFingerprint } from "./fingerprint.js"
@@ -52,16 +53,25 @@ const PRESS_SHOWN_MS = 150
  * Across Clawdline Cloud the first of those is a second or more
  * (`cloud/relay-writer.ts`).
  *
- * Three things this daemon cannot do are drawn switched off rather than left
- * out: the refresh button (no `/v1/sessions/refresh` here, so
- * `aria-disabled="true"`), "Show on Mac" and "Live screen" (no `/focus` or
- * `/screen` route yet, so `disabled`).
+ * Two things this daemon cannot do from here are drawn switched off rather
+ * than left out: the refresh button (no `/v1/sessions/refresh` here, so
+ * `aria-disabled="true"`) and "Show on Mac" (`disabled`). "Live screen" opens
+ * the session's screen panel when the page gave the card a way to
+ * (`onScreen`).
+ *
+ * **A menu whose choices could not be read still has a way out.** The card
+ * says so and offers two things that need no reading: the live screen, to see
+ * what is asked, and one Esc (`POST /interrupt`, the stop row's own route),
+ * which closes the picker so the answer can be said in the message box. On
+ * 2026-09-26 a session on a Linux machine sat on a picker its 80×24 pane had
+ * cut the top off; the card told the person to answer "on the Mac", and there
+ * was nothing on the phone that could move it.
  */
-export function Waiting({ row, write }: { row: SessionRow | null; write: boolean }) {
+export function Waiting({ row, write, onScreen }: { row: SessionRow | null; write: boolean; onScreen?: () => void }) {
   const box = useRef<HTMLDivElement>(null)
   const state = useRef<CardState>({ drawn: null, answered: null, dismissed: null, folded: null })
-  const current = useRef<{ row: SessionRow | null; write: boolean }>({ row, write })
-  current.current = { row, write }
+  const current = useRef<{ row: SessionRow | null; write: boolean; onScreen?: () => void }>({ row, write, onScreen })
+  current.current = { row, write, onScreen }
 
   const render = () => {
     const el = box.current
@@ -120,7 +130,8 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
             write: current.current.write,
             refresh: rows ? null : { busy: false, status: "", off: true },
             focusOff: true,
-            screenOff: true,
+            screenOff: !current.current.onScreen,
+            cancel: current.current.write,
           })
     if (want === st.drawn) return
     st.drawn = want
@@ -244,8 +255,33 @@ export function Waiting({ row, write }: { row: SessionRow | null; write: boolean
         return
       }
 
-      // No refresh, focus or screen route on this daemon: those buttons are
-      // drawn switched off, and a press on them does nothing.
+      if (target.closest("[data-screen]")) {
+        current.current.onScreen?.()
+        return
+      }
+
+      // One Esc, and nothing read first: there was nothing to read. The
+      // button goes dead until the answer comes back, so a second tap is not
+      // a second Esc into whatever the session does next.
+      const cancel = target.closest<HTMLButtonElement>("[data-cancel]")
+      if (cancel) {
+        if (!open || cancel.disabled) return
+        cancel.disabled = true
+        const asked = open.id
+        askInterrupt(asked).then(
+          () => {
+            if (current.current.row?.id === asked) toast(nextWord("menuCancelSent"))
+          },
+          (err: unknown) => {
+            cancel.disabled = false
+            if (current.current.row?.id === asked) toastFailure(err, L.strings.webRequestFailed)
+          },
+        )
+        return
+      }
+
+      // No refresh or focus route on this daemon: those buttons are drawn
+      // switched off, and a press on them does nothing.
     }
     el.addEventListener("click", click)
     return () => el.removeEventListener("click", click)

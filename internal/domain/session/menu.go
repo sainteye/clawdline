@@ -205,8 +205,18 @@ func readMenu(screen string, assistant Assistant, tailLines int, gate bool) (Men
 	// markdown table the session printed leaves `├──┼──┤` and `└──┴──┘` in the
 	// transcript. Between a dialog's frame and its rows stands the question it
 	// is asking, so that is what is required here (askedAbove).
-	if flushLeftSelection >= 0 && (dialogStart == 0 || !askedAbove(tailText, dialogStart, flushLeftSelection)) {
-		flushLeftSelection = -1
+	//
+	// Except when the frame is off the top of the screen: a picker taller than
+	// its pane loses its tab bar and rule first, and on an 80×24 pane with
+	// nobody attached that is most pickers with descriptions under their rows.
+	// Then the picker's own key line under the rows stands in for the frame,
+	// and what stands above them must still be the question and nothing else.
+	if flushLeftSelection >= 0 {
+		framed := dialogStart > 0 && askedAbove(tailText, dialogStart, flushLeftSelection)
+		clipped := dialogStart == 0 && pickerKeyLine(tailText) && askedAbove(tailText, 0, flushLeftSelection)
+		if !framed && !clipped {
+			flushLeftSelection = -1
+		}
 	}
 
 	// Found before the options, because the button is otherwise read as the
@@ -308,6 +318,18 @@ func askedAbove(tail []string, start, row int) bool {
 		}
 	}
 	return true
+}
+
+// pickerKeyLine is whether the screen ends on Claude Code's picker's key line,
+// "Enter to select · ↑/↓ to navigate · Esc to cancel" (v2.1.274 wrote
+// "Tab/Arrow keys" in the middle). The composer and the transcript never end
+// a screen with it; only a picker still waiting for its answer does.
+func pickerKeyLine(tail []string) bool {
+	if len(tail) == 0 {
+		return false
+	}
+	last := trimSpaces(dialogText(tail[len(tail)-1]))
+	return strings.HasPrefix(last, "Enter to select") && strings.HasSuffix(last, "Esc to cancel")
 }
 
 // askedOver is the same question asked of the physical lines, for a dialog
