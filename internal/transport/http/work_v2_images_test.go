@@ -8,6 +8,8 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +21,8 @@ import (
 )
 
 func TestWorkV2ReferenceImageRouteReadsOnlyDurableBoardBytes(t *testing.T) {
-	st, err := store.Open(t.TempDir())
+	dir := t.TempDir()
+	st, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +64,25 @@ func TestWorkV2ReferenceImageRouteReadsOnlyDurableBoardBytes(t *testing.T) {
 		"/v1/work/v2/images/32000000-0000-4000-8000-000000000099", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("missing image: %d %s", rec.Code, rec.Body.String())
+	}
+	// A row whose file differs, then is gone, is a named 410 — never a 500,
+	// never an empty picture — for the full picture and the thumbnail alike.
+	path := filepath.Join(store.ReferenceImagesDir(dir), imageID+".png")
+	for _, c := range []struct{ code, body string }{{"image_file_mismatch", "other"}, {"image_file_missing", ""}} {
+		if c.body == "" {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		} else if err := os.WriteFile(path, []byte(c.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{"", "?size=thumb"} {
+			rec := httptest.NewRecorder()
+			s.workV2Route(rec, httptest.NewRequest(http.MethodGet, "/v1/work/v2/images/"+imageID+query, nil))
+			if rec.Code != http.StatusGone || !strings.Contains(rec.Body.String(), `"`+c.code+`"`) {
+				t.Fatalf("%s%s: %d %s", c.code, query, rec.Code, rec.Body.String())
+			}
+		}
 	}
 }
 

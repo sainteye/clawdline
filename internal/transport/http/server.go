@@ -552,6 +552,8 @@ func (s *Server) StartScheduler(ctx context.Context) {
 		Report: func(p app.Pulse) { s.pulse.Store(&p) },
 	}.Run(ctx)
 	log.Printf("scheduler ticking every %s", tick)
+	// Reference-image files no row names: swept at Open, then on this clock.
+	go s.store.SweepReferenceImagesEvery(ctx, store.ReferenceImageSweepIntervalLimit)
 }
 
 // schedulerTick is the clock's period: a minute, or CLAWDLINE_NEXT_TICK. The

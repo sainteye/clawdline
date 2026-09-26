@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -35,6 +36,9 @@ type Store struct {
 	// and a nonce minted at Open, so a restart is a different owner even if
 	// the operating system hands it the same pid.
 	owner owner
+	// images is where Board and to-do reference pictures keep their bytes
+	// (work_v2_image_files.go).
+	images *imageFiles
 }
 
 // Event is one persisted fact. Events are never edited and never deleted: a
@@ -214,7 +218,16 @@ func Open(dir string) (*Store, error) {
 	for _, suffix := range []string{"", "-wal", "-shm"} {
 		_ = os.Chmod(path+suffix, 0o600)
 	}
-	return &Store{db: db, stats: newWriteStats(), owner: newOwner()}, nil
+	images := &imageFiles{dir: ReferenceImagesDir(dir)}
+	if err := openReferenceImages(db, images); err != nil {
+		db.Close()
+		return nil, err
+	}
+	s := &Store{db: db, stats: newWriteStats(), owner: newOwner(), images: images}
+	if _, err := s.SweepReferenceImages(context.Background(), time.Now()); err != nil {
+		log.Printf("store: the reference-image sweep at open failed: %v", err)
+	}
+	return s, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

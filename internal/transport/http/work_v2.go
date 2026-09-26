@@ -399,6 +399,22 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// referenceImageFileRefusal names a reference image whose row is there and
+// whose file is not, or is not the bytes the row recorded. It is 410: the
+// picture was stored and cannot be served again, and asking again will not
+// bring it back — not a 500, and never an empty picture.
+func referenceImageFileRefusal(err error) (*app.WorkError, bool) {
+	switch {
+	case errors.Is(err, store.ErrReferenceImageMissing):
+		return &app.WorkError{Status: http.StatusGone, Code: "image_file_missing",
+			Message: "That reference image's file is gone from this machine."}, true
+	case errors.Is(err, store.ErrReferenceImageMismatch):
+		return &app.WorkError{Status: http.StatusGone, Code: "image_file_mismatch",
+			Message: "That reference image's file is not the picture that was stored."}, true
+	}
+	return nil, false
+}
+
 func (s *Server) workV2ReferenceImage(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A reference image is read with GET.")
@@ -418,6 +434,10 @@ func (s *Server) workV2ReferenceImage(w http.ResponseWriter, r *http.Request, id
 		thumb = true
 	}
 	data, mediaType, ok, err := s.store.WorkV2ImageBytes(r.Context(), id)
+	if refusal, named := referenceImageFileRefusal(err); named {
+		writeRefusal(w, refusal.Status, refusal.Code, refusal.Message)
+		return
+	}
 	if err != nil {
 		writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "The reference image could not be read.")
 		return
@@ -1277,6 +1297,10 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			break
 		}
 		pictures, pictureErr := s.store.DirectTodoV2ImagePayloads(r.Context(), found.ID)
+		if refusal, named := referenceImageFileRefusal(pictureErr); named {
+			err = refusal
+			break
+		}
 		if pictureErr != nil {
 			err = &app.WorkError{Status: http.StatusServiceUnavailable, Code: "store_unavailable", Message: pictureErr.Error()}
 			break

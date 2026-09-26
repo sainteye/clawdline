@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS work_v2_images (
   work_id    TEXT NOT NULL REFERENCES work_v2_items(id) ON DELETE CASCADE,
   title      TEXT NOT NULL,
   media_type TEXT NOT NULL CHECK (media_type IN ('image/png','image/jpeg')),
-  data       BLOB NOT NULL,
+  sha256     TEXT NOT NULL,
   byte_count INTEGER NOT NULL,
   width      INTEGER NOT NULL,
   height     INTEGER NOT NULL,
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS session_direct_todo_images (
   todo_id    TEXT NOT NULL REFERENCES session_direct_todos(id) ON DELETE CASCADE,
   title      TEXT NOT NULL,
   media_type TEXT NOT NULL CHECK (media_type IN ('image/png','image/jpeg')),
-  data       BLOB NOT NULL,
+  sha256     TEXT NOT NULL,
   byte_count INTEGER NOT NULL,
   width      INTEGER NOT NULL,
   height     INTEGER NOT NULL,
@@ -222,52 +222,11 @@ func openWorkV2(db *sql.DB) error {
 	if err := migrateWorkV2DocumentRoles(db); err != nil {
 		return err
 	}
-	return migrateImageMediaTypes(db)
-}
-
-// migrateImageMediaTypes widens the media-type CHECK on both reference-image
-// tables from PNG alone to PNG or JPEG, since a photograph is stored as the
-// JPEG it is. Every row is kept as it was: a picture stored before this is a
-// PNG and says so. The table is rebuilt the way migrateWorkV2DocumentRoles
-// rebuilds one, because SQLite cannot alter a CHECK in place.
-func migrateImageMediaTypes(db *sql.DB) error {
-	for _, t := range []struct{ table, index, columns string }{
-		{"work_v2_images", "work_v2_images_item",
-			"id,work_id,title,media_type,data,byte_count,width,height,position,created_by,created_at"},
-		{"session_direct_todo_images", "session_direct_todo_images_todo",
-			"id,todo_id,title,media_type,data,byte_count,width,height,position,created_by,created_at"},
-	} {
-		var ddl string
-		err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, t.table).Scan(&ddl)
-		if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "image/jpeg")) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		before := t.table + "_before_jpeg"
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
-		steps := []string{
-			`ALTER TABLE ` + t.table + ` RENAME TO ` + before,
-			`DROP INDEX IF EXISTS ` + t.index,
-			workV2Schema,
-			`INSERT INTO ` + t.table + ` (` + t.columns + `) SELECT ` + t.columns + ` FROM ` + before,
-			`DROP TABLE ` + before,
-		}
-		for _, step := range steps {
-			if _, err := tx.Exec(step); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("%s.media_type: %w", t.table, err)
-			}
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-	}
-	return nil
+	// A store from before the pictures moved to files still has their bytes
+	// in a `data` column; Open moves them out (openReferenceImages) and then
+	// rebuilds the tables without it, which also widens a PNG-only
+	// media-type CHECK to take a JPEG.
+	return addReferenceImageHashColumns(db)
 }
 
 // migrateWorkV2DocumentRoles widens the CHECK on an existing document table.
@@ -309,16 +268,22 @@ type WorkV2Tx struct {
 	tx    *sql.Tx
 	s     *Store
 	wrote int64
+	// added is the picture files this transaction wrote, dropped the ones
+	// whose rows it deleted (work_v2_image_files.go settles both).
+	added, dropped []imageRef
 }
 
 func (s *Store) WriteWorkV2(ctx context.Context, fn func(*WorkV2Tx) error) error {
-	return s.write(ctx, func(tx *sql.Tx) (int64, error) {
-		t := &WorkV2Tx{ctx: ctx, tx: tx, s: s}
+	var t *WorkV2Tx
+	err := s.write(ctx, func(tx *sql.Tx) (int64, error) {
+		t = &WorkV2Tx{ctx: ctx, tx: tx, s: s}
 		if err := fn(t); err != nil {
 			return 0, err
 		}
 		return t.wrote, nil
 	})
+	s.settleImageFiles(ctx, t, err)
+	return err
 }
 
 func (t *WorkV2Tx) CompleteReceipt(k ReceiptKey, a ReceiptAnswer) error {
@@ -841,14 +806,29 @@ func (t *WorkV2Tx) AddImage(i work.ImageV2, data []byte) error {
 	if int64(len(data)) > WorkV2ImageTotalLimit-totalBytes {
 		return ErrWorkV2ImageBytesFull
 	}
-	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_images
-    (id,work_id,title,media_type,data,byte_count,width,height,position,created_by,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`, i.ID, i.WorkID, i.Title, i.MediaType, data, len(data), i.Width,
+	sum, err := t.addImageFile(imageRef{i.ID, i.MediaType}, data)
+	if err != nil {
+		return err
+	}
+	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_images
+    (id,work_id,title,media_type,sha256,byte_count,width,height,position,created_by,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`, i.ID, i.WorkID, i.Title, i.MediaType, sum, len(data), i.Width,
 		i.Height, i.Position, i.CreatedBy, i.CreatedAt.Unix())
 	if err == nil {
 		t.wrote++
 	}
 	return err
+}
+
+// addImageFile writes a picture's file before its row is inserted, and
+// remembers it so a transaction that does not commit takes it back.
+func (t *WorkV2Tx) addImageFile(r imageRef, data []byte) (string, error) {
+	sum, err := t.s.images.write(r, data)
+	if err != nil {
+		return "", err
+	}
+	t.added = append(t.added, r)
+	return sum, nil
 }
 
 func scanWorkV2Image(sc scanner) (work.ImageV2, error) {
@@ -870,6 +850,10 @@ func (t *WorkV2Tx) Image(id string) (work.ImageV2, error) {
 }
 
 func (t *WorkV2Tx) DeleteImage(id string) error {
+	r := imageRef{id: id}
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT media_type FROM work_v2_images WHERE id=?`, id).Scan(&r.mediaType); err != nil {
+		return err
+	}
 	res, err := t.tx.ExecContext(t.ctx, `DELETE FROM work_v2_images WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -880,6 +864,7 @@ func (t *WorkV2Tx) DeleteImage(id string) error {
 		return sql.ErrNoRows
 	}
 	t.wrote++
+	t.dropped = append(t.dropped, r)
 	return nil
 }
 
@@ -902,22 +887,22 @@ func (s *Store) WorkV2Images(ctx context.Context, workID string) ([]work.ImageV2
 }
 
 // WorkV2ImageBytes returns a durable Board or Session-to-do reference image
-// without exposing the database or either BLOB column to the HTTP layer.
+// without exposing the database or the picture files to the HTTP layer.
 //
-// The media type is the one recorded with the bytes: image/png, or image/jpeg
-// for a photograph stored since photographs stayed JPEG.
+// The media type is the one recorded with the row: image/png, or image/jpeg
+// for a photograph stored since photographs stayed JPEG. A row whose file is
+// gone or is not the bytes it recorded answers ErrReferenceImageMissing or
+// ErrReferenceImageMismatch, with ok true: the image exists and cannot be read.
 func (s *Store) WorkV2ImageBytes(ctx context.Context, id string) ([]byte, string, bool, error) {
 	if err := reading(); err != nil {
 		return nil, "", false, err
 	}
-	var data []byte
-	var mediaType string
-	err := s.db.QueryRowContext(ctx, `SELECT data, media_type FROM work_v2_images WHERE id=?
-    UNION ALL SELECT data, media_type FROM session_direct_todo_images WHERE id=? LIMIT 1`, id, id).Scan(&data, &mediaType)
-	if err == sql.ErrNoRows {
-		return nil, "", false, nil
+	r, byteCount, sum, ok, err := s.referenceImage(ctx, id)
+	if !ok || err != nil {
+		return nil, "", ok, err
 	}
-	return data, mediaType, err == nil, err
+	data, err := s.images.read(r, byteCount, sum)
+	return data, r.mediaType, true, err
 }
 
 func (t *WorkV2Tx) AddStep(s work.StepV2) error {
@@ -1086,9 +1071,13 @@ func (t *WorkV2Tx) AddDirectTodoImage(i work.DirectTodoImageV2, data []byte) err
 	if int64(len(data)) > WorkV2ImageTotalLimit-totalBytes {
 		return ErrDirectTodoImageBytesFull
 	}
-	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO session_direct_todo_images
-    (id,todo_id,title,media_type,data,byte_count,width,height,position,created_by,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`, i.ID, i.TodoID, i.Title, i.MediaType, data, len(data), i.Width,
+	sum, err := t.addImageFile(imageRef{i.ID, i.MediaType}, data)
+	if err != nil {
+		return err
+	}
+	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO session_direct_todo_images
+    (id,todo_id,title,media_type,sha256,byte_count,width,height,position,created_by,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`, i.ID, i.TodoID, i.Title, i.MediaType, sum, len(data), i.Width,
 		i.Height, i.Position, i.CreatedBy, i.CreatedAt.Unix())
 	if err == nil {
 		t.wrote++
@@ -1133,25 +1122,45 @@ type DirectTodoImagePayload struct {
 	Data  []byte
 }
 
+// DirectTodoV2ImagePayloads is a to-do's pictures with their bytes, read from
+// their files after the rows: one missing or mismatched file refuses the whole
+// set (ErrReferenceImageMissing, ErrReferenceImageMismatch), since a to-do
+// typed with a picture left out is not the to-do the person wrote.
 func (s *Store) DirectTodoV2ImagePayloads(ctx context.Context, todoID string) ([]DirectTodoImagePayload, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+directTodoImageV2Columns+`,data
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+directTodoImageV2Columns+`,sha256
     FROM session_direct_todo_images WHERE todo_id=? ORDER BY position,id`, todoID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []DirectTodoImagePayload{}
+	var sums []string
 	for rows.Next() {
 		var p DirectTodoImagePayload
 		var created int64
+		var sum string
 		if err := rows.Scan(&p.Image.ID, &p.Image.TodoID, &p.Image.Title, &p.Image.MediaType, &p.Image.ByteCount,
-			&p.Image.Width, &p.Image.Height, &p.Image.Position, &p.Image.CreatedBy, &created, &p.Data); err != nil {
+			&p.Image.Width, &p.Image.Height, &p.Image.Position, &p.Image.CreatedBy, &created, &sum); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		p.Image.CreatedAt = time.Unix(created, 0)
 		out = append(out, p)
+		sums = append(sums, sum)
 	}
-	return out, rows.Err()
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		data, err := s.images.read(imageRef{out[i].Image.ID, out[i].Image.MediaType}, out[i].Image.ByteCount, sums[i])
+		if err != nil {
+			return nil, err
+		}
+		out[i].Data = data
+	}
+	return out, nil
 }
 
 func (t *WorkV2Tx) DirectTodo(id string) (work.DirectTodoV2, error) {
@@ -1175,7 +1184,26 @@ func (t *WorkV2Tx) PutDirectTodo(prev, next work.DirectTodoV2) error {
 	return nil
 }
 
+// DeleteDirectTodo deletes a to-do, and its pictures' rows with it by the
+// cascade; their files go once the delete commits.
 func (t *WorkV2Tx) DeleteDirectTodo(id, session string) (bool, error) {
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT i.id,i.media_type FROM session_direct_todo_images i
+    JOIN session_direct_todos d ON d.id=i.todo_id WHERE d.id=? AND d.session_id=?`, id, session)
+	if err != nil {
+		return false, err
+	}
+	var pictures []imageRef
+	for rows.Next() {
+		var r imageRef
+		if err := rows.Scan(&r.id, &r.mediaType); err != nil {
+			rows.Close()
+			return false, err
+		}
+		pictures = append(pictures, r)
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
 	res, err := t.tx.ExecContext(t.ctx, `DELETE FROM session_direct_todos WHERE id=? AND session_id=?`, id, session)
 	if err != nil {
 		return false, err
@@ -1183,6 +1211,7 @@ func (t *WorkV2Tx) DeleteDirectTodo(id, session string) (bool, error) {
 	n, err := res.RowsAffected()
 	if err == nil && n > 0 {
 		t.wrote++
+		t.dropped = append(t.dropped, pictures...)
 	}
 	return n > 0, err
 }

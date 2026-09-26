@@ -170,7 +170,7 @@ func (s *Store) ImportPaths(ctx context.Context, paths []string, now time.Time) 
 		}
 	}
 	defer unlock()
-	if err := ensurePrivateDir(s.Dir); err != nil {
+	if err := EnsurePrivateDir(s.Dir); err != nil {
 		return nil, storageFailed("Clawdline could not open its image-artifact store.")
 	}
 	s.pruneLocked(now)
@@ -181,7 +181,7 @@ func (s *Store) ImportPaths(ctx context.Context, paths []string, now time.Time) 
 			Width: item.Width, Height: item.Height, ExpiresAt: now.Unix() + p.TTLSeconds,
 		}
 		file := s.imagePath(a)
-		err := writePrivate(file, item.Data)
+		err := WritePrivate(file, item.Data)
 		if err == nil {
 			err = s.writeMetadata(metadata{Artifact: a, CreatedAt: seconds(now)})
 			if err != nil {
@@ -351,7 +351,7 @@ func (s *Store) writeMetadata(m metadata) error {
 	if err != nil {
 		return err
 	}
-	return writePrivate(s.metadataPath(m.Artifact.ID), data)
+	return WritePrivate(s.metadataPath(m.Artifact.ID), data)
 }
 
 func (s *Store) readMetadata(id string) (metadata, bool) {
