@@ -1,18 +1,34 @@
-// The window's second half: a bar across the top, and a clear way out.
+// The window's second half: a bar across the top, and two pages behind it.
 //
-// The WKWebView is only this machine's console. It carries this machine's local
-// token in its cookie store and is allowed to be nowhere else. Cloud belongs in
-// the person's browser, where their login and password manager already live;
-// the Cloud pill hands only `cloudHome` to that browser.
+// The window holds two WKWebViews, side by side and never mixed:
+//   the console   http://127.0.0.1:<port>  — `Shell.web`, carrying this
+//                 machine's local token in its cookie store and allowed to be
+//                 nowhere else.
+//   Cloud         `cloudHome`              — `CloudWeb`, with a data store of
+//                 its own that the token has never been written to.
+//
+// **Two stores rather than one view that navigates.** A single view would have
+// to put the token cookie in, take it out again, and be right about it every
+// time, and the thing it would have to be right about is a credential. Two
+// stores is the same rule expressed once, where WebKit enforces it: a jar the
+// token was never written to cannot hand it to anybody, whatever the Cloud page
+// does or wherever it goes.
+//
+// Cloud was in the person's browser only from 2026-09-20 (3a977be0) to
+// 2026-09-27. The person asked for it back in this window so that switching to
+// Cloud does not leave the app. What that costs is the browser's password
+// manager on the GitHub sign-in page; the bar's "open in browser" button still
+// hands the Cloud page in front to the person's browser for that.
 //
 // The address is a reading, not a destination field. It is selectable so the
 // value can be copied, but it has no border, focus ring, action or editable
 // state that could promise navigation this shell does not offer.
 import AppKit
+import UniformTypeIdentifiers
 import WebKit
 
-/// The Cloud console. `CLAWDLINE_NEXT_CLOUD` points the external Cloud button
-/// at something else, which is how a development build opens a test service.
+/// The Cloud console. `CLAWDLINE_NEXT_CLOUD` points the Cloud tab at something
+/// else, which is how a development build opens a test service.
 let cloudHome: URL = {
     let raw = ProcessInfo.processInfo.environment["CLAWDLINE_NEXT_CLOUD"] ?? ""
     if !raw.isEmpty, let url = URL(string: raw), url.scheme == "http" || url.scheme == "https" {
@@ -236,7 +252,7 @@ final class BrowserBar: NSView {
     let forward: PillButton
     let refresh: PillButton
     let consoleTab: PillButton
-    let cloudButton: PillButton
+    let cloudTab: PillButton
     let field = NSTextField(labelWithString: "")
     /// How big the page in front is drawn, shown only when it is not 100%;
     /// pressing it is ⌘0.
@@ -262,9 +278,9 @@ final class BrowserBar: NSView {
         // place that is always here, and it says so while it is answering.
         consoleTab = PillButton(status: L.t.homeLocalTitle, target: target,
                                 action: #selector(Shell.browserShowConsole))
-        cloudButton = PillButton(symbol: "cloud", title: L.t.browserCloud,
-                                 label: L.t.browserOpenCloud, target: target,
-                                 action: #selector(Shell.browserOpenCloud))
+        cloudTab = PillButton(symbol: "cloud", title: L.t.browserCloud,
+                              label: L.t.browserShowCloud, target: target,
+                              action: #selector(Shell.browserShowCloud))
         zoom = PillButton(L.t.zoomLevel(100), target: target, action: #selector(Shell.browserZoomReset))
         // Not a compass: the default browser is whichever one the person chose,
         // and Safari's mark would be a claim about which.
@@ -286,18 +302,26 @@ final class BrowserBar: NSView {
         field.lineBreakMode = .byTruncatingTail
         field.cell?.isScrollable = true
         field.translatesAutoresizingMaskIntoConstraints = false
+        // The address gives way before anything else does. A label resists
+        // being squeezed below its whole text's width, so a long address — a
+        // sign-in page's return URL runs to thousands of points — made that
+        // the bar's minimum width, and the window grew past the screen with
+        // the buttons on the right pushed off it. Truncating needs room to be
+        // taken away, from the field and from the box that holds it.
+        field.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
 
         box.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(field)
         box.setContentHuggingPriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
+        box.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
 
-        let row = NSStackView(views: [back, forward, refresh, consoleTab, cloudButton, box, zoom, outside])
+        let row = NSStackView(views: [back, forward, refresh, consoleTab, cloudTab, box, zoom, outside])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.distribution = .fill
         row.spacing = 6
         row.setCustomSpacing(12, after: refresh)
-        row.setCustomSpacing(12, after: cloudButton)
+        row.setCustomSpacing(12, after: cloudTab)
         row.setCustomSpacing(8, after: box)
         row.edgeInsets = NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -328,14 +352,241 @@ final class BrowserBar: NSView {
 
     required init?(coder: NSCoder) { fatalError("this shell builds its views in code") }
 
-    /// Follow the console so the arrows and address are what is true rather
+    /// Follow both views, so the arrows and address are what is true rather
     /// than what was true when something was last pressed.
-    func follow(_ view: WKWebView, onChange: @escaping () -> Void) {
-        watch = [view.observe(\.url) { _, _ in onChange() },
-                 view.observe(\.canGoBack) { _, _ in onChange() },
-                 view.observe(\.canGoForward) { _, _ in onChange() }]
+    func follow(_ views: [WKWebView], onChange: @escaping () -> Void) {
+        watch = views.flatMap { view in
+            [view.observe(\.url) { _, _ in onChange() },
+             view.observe(\.canGoBack) { _, _ in onChange() },
+             view.observe(\.canGoForward) { _, _ in onChange() }]
+        }
     }
 
+}
+
+// MARK: - The Cloud side
+
+/// Whether a URL is the Cloud console's own origin: scheme, host and port, as
+/// the URL's pieces, for the same reason `isConsole` compares them that way.
+func isCloud(_ url: URL) -> Bool {
+    guard let scheme = url.scheme?.lowercased(), scheme == cloudHome.scheme?.lowercased() else { return false }
+    guard url.host?.lowercased() == cloudHome.host?.lowercased() else { return false }
+    return url.port == cloudHome.port
+}
+
+/// The Cloud console, in a store of its own.
+///
+/// It has its own delegates rather than the shell's: the shell's hand the
+/// console's outgoing links to the person's browser and inject the fleet bridge
+/// and the settings words, which are the console's half of a conversation with
+/// this shell and not something a hosted page is handed.
+///
+/// It goes wherever the Cloud page sends it over http or https, because signing
+/// in is a round trip through the Cloud API and GitHub. It never goes to the
+/// console's own address: the tab beside it is how somebody gets there.
+final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
+    let view: WKWebView
+
+    /// The bar's cue: something about where this view is has changed.
+    var onNavigation: (() -> Void)?
+
+    /// A fixed identifier, so signing in to Cloud survives a relaunch, and an
+    /// identifier *of its own*, so this is a different jar from the one the
+    /// local token is written into. The same one the Cloud tab used until
+    /// 2026-09-20, so a sign-in kept from then is still there. Changing it is
+    /// throwing away everybody's sign-in.
+    private static let storeID = UUID(uuidString: "2faf7ef2-488c-47db-98d9-050ec1781455")!
+
+    override init() {
+        let config = WKWebViewConfiguration()
+        if #available(macOS 14.0, *) {
+            config.websiteDataStore = WKWebsiteDataStore(forIdentifier: CloudWeb.storeID)
+        } else {
+            // Before macOS 14 there is one persistent store and it is the
+            // console's. In memory then: a sign-in that does not last is a
+            // nuisance, a shared jar is a leak.
+            config.websiteDataStore = .nonPersistent()
+        }
+        view = WKWebView(frame: .zero, configuration: config)
+        super.init()
+        view.navigationDelegate = self
+        view.uiDelegate = self
+        view.allowsBackForwardNavigationGestures = true
+    }
+
+    /// Whether anything has been asked of it yet. It loads the first time the
+    /// tab is pressed, not at launch: somebody who never opens Cloud never
+    /// sends it a request.
+    var hasLoaded: Bool { view.url != nil }
+
+    func load(_ url: URL) {
+        shellLog("cloud: going to \(url.absoluteString)")
+        view.load(URLRequest(url: url))
+    }
+
+    // MARK: Where it may go
+
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = action.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+        // Only where this view itself is going. A subframe is the page's own
+        // business.
+        if let frame = action.targetFrame, !frame.isMainFrame {
+            decisionHandler(.allow)
+            return
+        }
+        let scheme = url.scheme?.lowercased() ?? ""
+        if scheme == "about" || scheme == "blob" || scheme == "data" {
+            decisionHandler(.allow)
+            return
+        }
+        guard scheme == "http" || scheme == "https" else {
+            // mailto:, an app's own scheme: the system knows what to do with
+            // them and a web view does not. `file:` is this Mac's disk and not
+            // a hosted page's to open.
+            decisionHandler(.cancel)
+            if scheme == "file" {
+                shellLog("cloud: refused \(url.absoluteString) — a page may not open this machine's files")
+            } else {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        // Not because it would leak anything — this store has no token, so the
+        // daemon would answer 401 — but because a hosted page must not be able
+        // to aim this window at the console at all.
+        if isConsole(url) {
+            decisionHandler(.cancel)
+            shellLog("cloud: refused \(url.absoluteString) — the console is reached by its own tab")
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    /// `target="_blank"`: Cloud's own pages stay here; anything else is a link
+    /// out of Cloud and opens in the person's browser, as a link out of the
+    /// console does. Returning nil is what tells WebKit it was handled.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard let url = action.request.url, url.scheme == "http" || url.scheme == "https",
+              !isConsole(url) else { return nil }
+        if isCloud(url) {
+            view.load(URLRequest(url: url))
+        } else {
+            shellLog("cloud: a new window at \(url.absoluteString); handing it to the browser")
+            NSWorkspace.shared.open(url)
+        }
+        return nil
+    }
+
+    /// The microphone, for Cloud's own origin and nothing it navigates to — the
+    /// same answer, for the same reason, as the console's in Microphone.swift.
+    /// The camera is never asked for by Cloud's page, so it is never granted.
+    @available(macOS 12.0, *)
+    func webView(_ webView: WKWebView,
+                 requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo,
+                 type: WKMediaCaptureType,
+                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let port = origin.port == 0 ? "" : ":\(origin.port)"
+        let asking = URL(string: "\(origin.`protocol`)://\(origin.host)\(port)")
+        guard type == .microphone, let asking, isCloud(asking) else {
+            shellLog("cloud: \(origin.host) asked for a capture device; denied")
+            decisionHandler(.deny)
+            return
+        }
+        decisionHandler(.grant)
+    }
+
+    /// The composer's image picker, as the console's (Microphone.swift): a
+    /// WKWebView opens nothing for `<input type="file">` unless asked here.
+    func webView(_ webView: WKWebView,
+                 runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        guard frame.isMainFrame, let page = webView.url, isCloud(page), let window = webView.window else {
+            shellLog("cloud: refused a file panel outside Cloud's main frame")
+            completionHandler(nil)
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.allowedContentTypes = [.image]
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
+    /// `window.confirm`, which Cloud asks before running a schedule now. A
+    /// WKWebView without this answers `false` without showing anything, which
+    /// reads as a button that does nothing.
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        guard let window = webView.window else {
+            completionHandler(false)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: L.t.dialogOK)
+        alert.addButton(withTitle: L.t.dialogCancel)
+        alert.beginSheetModal(for: window) { completionHandler($0 == .alertFirstButtonReturn) }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        guard let window = webView.window else {
+            completionHandler()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: L.t.dialogOK)
+        alert.beginSheetModal(for: window) { _ in completionHandler() }
+    }
+
+    // MARK: What happened
+
+    func webView(_ webView: WKWebView, didFinish nav: WKNavigation!) {
+        shellLog("cloud: loaded \(webView.url?.absoluteString ?? "?") title=\(webView.title ?? "?")")
+        onNavigation?()
+        report(webView, attempt: 0)
+    }
+
+    /// What Cloud drew, once it has drawn: the page is rendered by script, so
+    /// a document that arrived is not yet a screen. Said as counts and one
+    /// fact — whether it is asking somebody to sign in — never the page's text,
+    /// which is the person's sessions.
+    private func report(_ webView: WKWebView, attempt: Int) {
+        let probe = "[document.querySelectorAll('[id]').length, !!document.getElementById('cloud-sign-in')]"
+        webView.evaluateJavaScript(probe) { [weak self] value, _ in
+            let parts = value as? [Any] ?? []
+            let nodes = parts.first as? Int ?? -1
+            let signIn = parts.count > 1 ? (parts[1] as? Bool ?? false) : false
+            if nodes < 10 && attempt < 20 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self?.report(webView, attempt: attempt + 1) }
+                return
+            }
+            shellLog("cloud: drawn \(webView.url?.host ?? "?") elements-with-id=\(nodes) sign-in=\(signIn)")
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation nav: WKNavigation!,
+                 withError error: Error) {
+        let failed = (error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey] as? String
+        shellLog("cloud: could not load \(failed ?? "?") — \(error.localizedDescription)")
+        onNavigation?()
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        shellLog("cloud: the page's process ended; loading it again")
+        if webView.url != nil { webView.reload() }
+    }
 }
 
 // MARK: - How big a page is drawn
@@ -372,22 +623,25 @@ enum PageZoom {
     }
 }
 
-/// Where the console zoom is remembered: `<NextConfig.directory>/shell-zoom.json`,
-/// beside `shell-introduced.json`, as `{"console": 1.25}`.
+/// Where the two zooms are remembered: `<NextConfig.directory>/shell-zoom.json`,
+/// beside `shell-introduced.json`, as `{"cloud": 1, "console": 1.25}`.
+///
+/// One per view rather than one for the app: making the console bigger is not
+/// a reason to make Cloud bigger too.
 ///
 /// Its own file rather than a key in config.json, which the settings page
 /// writes through the daemon: one file, one writer.
 struct ZoomStore {
     var fileURL: URL { NextConfig.directory.appendingPathComponent("shell-zoom.json") }
 
-    /// At 100% where the file, or the key, is missing or unreadable, and pulled
-    /// inside the limits where a hand edit put it outside — said in
+    /// Both, at 100% where the file, or the key, is missing or unreadable, and
+    /// pulled inside the limits where a hand edit put them outside — said in
     /// the log, since a value quietly changed looks like a value obeyed.
-    func read() -> CGFloat {
-        guard let data = try? Data(contentsOf: fileURL) else { return 1 }
+    func read() -> (console: CGFloat, cloud: CGFloat) {
+        guard let data = try? Data(contentsOf: fileURL) else { return (1, 1) }
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            shellLog("zoom: \(fileURL.path) is not a JSON object; using 100%")
-            return 1
+            shellLog("zoom: \(fileURL.path) is not a JSON object; both at 100%")
+            return (1, 1)
         }
         func value(_ key: String) -> CGFloat {
             guard let number = obj[key] as? NSNumber else { return 1 }
@@ -400,11 +654,11 @@ struct ZoomStore {
             }
             return kept
         }
-        return value("console")
+        return (value("console"), value("cloud"))
     }
 
-    func write(console: CGFloat) {
-        let obj: [String: Any] = ["console": Double(console)]
+    func write(console: CGFloat, cloud: CGFloat) {
+        let obj: [String: Any] = ["console": Double(console), "cloud": Double(cloud)]
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
@@ -420,9 +674,10 @@ struct ZoomStore {
 // MARK: - The shell's half
 
 extension Shell {
-    var active: WKWebView { web }
+    /// Which of the two the window is showing.
+    var active: WKWebView { showingCloud ? cloud.view : web }
 
-    /// The window's contents: the bar and the local console.
+    /// The window's contents: the bar, and whichever view is being shown.
     func buildBrowser() -> NSView {
         let root = NSView()
         root.wantsLayer = true
@@ -430,58 +685,84 @@ extension Shell {
 
         bar = BrowserBar(target: self)
         bar.translatesAutoresizingMaskIntoConstraints = false
-        web.translatesAutoresizingMaskIntoConstraints = false
+        cloud = CloudWeb()
+        content = NSView()
+        content.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(bar)
-        root.addSubview(web)
+        root.addSubview(content)
         NSLayoutConstraint.activate([
             bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             bar.topAnchor.constraint(equalTo: root.topAnchor),
             bar.heightAnchor.constraint(equalToConstant: 40),
-            web.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            web.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            web.topAnchor.constraint(equalTo: bar.bottomAnchor),
-            web.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            content.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            content.bottomAnchor.constraint(equalTo: root.bottomAnchor),
         ])
 
-        // Before it loads anything: a zoom set on a view is kept across every
-        // local route it navigates to, so this is the only time it is applied.
+        // Before either loads anything: a zoom set on a view is kept across
+        // everything it navigates to, so this is the only time it is applied.
         let saved = ZoomStore().read()
-        web.pageZoom = saved
-        shellLog("zoom: console \(PageZoom.percent(saved))%")
+        web.pageZoom = saved.console
+        cloud.view.pageZoom = saved.cloud
+        shellLog("zoom: console \(PageZoom.percent(saved.console))% cloud \(PageZoom.percent(saved.cloud))%")
 
-        bar.follow(web) { [weak self] in self?.refreshBrowserBar() }
-        refreshBrowserBar()
+        bar.follow([web, cloud.view]) { [weak self] in self?.refreshBrowserBar() }
+        cloud.onNavigation = { [weak self] in self?.refreshBrowserBar() }
+        showTab(cloud: false)
         return root
+    }
+
+    /// Put one of the two in the window. Cloud is not loaded until the first
+    /// time it is shown; after that it is kept, signed in and where it was, and
+    /// switching back and forth is a swap of views, not a reload.
+    func showTab(cloud showCloud: Bool) {
+        let shown = showCloud ? cloud.view : web!
+        let hidden = showCloud ? web! : cloud.view
+        hidden.removeFromSuperview()
+        if shown.superview !== content {
+            shown.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(shown)
+            NSLayoutConstraint.activate([
+                shown.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+                shown.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+                shown.topAnchor.constraint(equalTo: content.topAnchor),
+                shown.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            ])
+        }
+        showingCloud = showCloud
+        if showCloud && !cloud.hasLoaded { cloud.load(cloudHome) }
+        shellLog("browser: showing \(showCloud ? "Cloud" : "the console")")
+        window?.makeFirstResponder(shown)
+        refreshBrowserBar()
     }
 
     /// The arrows and address, from what the console actually says.
     func refreshBrowserBar() {
-        guard bar != nil else { return }
-        bar.back.isEnabled = web.canGoBack
-        bar.forward.isEnabled = web.canGoForward
+        guard bar != nil, cloud != nil else { return }
+        let view = active
+        bar.back.isEnabled = view.canGoBack
+        bar.forward.isEnabled = view.canGoForward
         // Green only while the console is actually loaded: a daemon that
         // stopped answering takes the pill back to plain, as `.conn` does.
         bar.consoleTab.isSelected = pageLoaded
-        let zoom = web.pageZoom
+        bar.cloudTab.isSelected = showingCloud
+        let zoom = view.pageZoom
         bar.zoom.show(PageZoom.label(zoom))
         bar.zoom.isSelected = PageZoom.larger(than: zoom) == nil || PageZoom.smaller(than: zoom) == nil
         bar.zoom.isHidden = PageZoom.percent(zoom) == 100
         bar.outside.isEnabled = outsideURL != nil
-        bar.field.stringValue = web.url?.absoluteString ?? ""
-        bar.field.toolTip = web.url?.absoluteString
+        bar.field.stringValue = view.url?.absoluteString ?? ""
+        bar.field.toolTip = view.url?.absoluteString
     }
 
     // MARK: The bar's buttons
 
     @objc func browserBack() { active.goBack() }
     @objc func browserForward() { active.goForward() }
-    @objc func browserShowConsole() { window?.makeFirstResponder(web) }
-
-    @objc func browserOpenCloud() {
-        shellLog("browser: handing \(cloudHome.absoluteString) to the default browser")
-        NSWorkspace.shared.open(cloudHome)
-    }
+    @objc func browserShowConsole() { showTab(cloud: false) }
+    @objc func browserShowCloud() { showTab(cloud: true) }
 
     @objc func browserRefresh() { reloadActive() }
 
@@ -489,6 +770,10 @@ extension Shell {
     /// yet. The console's reload goes through the token again: the daemon
     /// replaces the file when its own store no longer matches it.
     func reloadActive() {
+        if showingCloud {
+            if cloud.hasLoaded { cloud.view.reload() } else { cloud.load(cloudHome) }
+            return
+        }
         load(web.url.flatMap { isConsole($0) ? $0 : home } ?? home)
     }
 
@@ -498,7 +783,7 @@ extension Shell {
     @objc func browserZoomOut() { zoomActive(by: -1) }
     @objc func browserZoomReset() { zoomActive(by: 0) }
 
-    /// One step up, one step down, or back to 100%, on the console, and
+    /// One step up, one step down, or back to 100%, on the view in front, and
     /// remembered for next time. See `PageZoom` for the limits and what a press
     /// past one does.
     func zoomActive(by step: Int) {
@@ -507,15 +792,15 @@ extension Shell {
         let after = step == 0 ? 1 : (step > 0 ? PageZoom.larger(than: before) : PageZoom.smaller(than: before))
         guard let after else {
             NSSound.beep()
-            shellLog("zoom: console is at its \(step > 0 ? "ceiling" : "floor"), \(PageZoom.percent(before))%;"
+            shellLog("zoom: \(showingCloud ? "cloud" : "console") is at its \(step > 0 ? "ceiling" : "floor"), \(PageZoom.percent(before))%;"
                      + " the press changed nothing")
             refreshBrowserBar()
             return
         }
         guard after != before else { return }
         view.pageZoom = after
-        ZoomStore().write(console: web.pageZoom)
-        shellLog("zoom: console \(PageZoom.percent(before))% → \(PageZoom.percent(after))%")
+        ZoomStore().write(console: web.pageZoom, cloud: cloud.view.pageZoom)
+        shellLog("zoom: \(showingCloud ? "cloud" : "console") \(PageZoom.percent(before))% → \(PageZoom.percent(after))%")
         refreshBrowserBar()
     }
 
@@ -566,6 +851,9 @@ extension Shell {
             item.target = self
             menu.addItem(item)
         }
+        add(L.t.homeLocalTitle, #selector(browserShowConsole), "1")
+        add(L.t.browserCloud, #selector(browserShowCloud), "2")
+        menu.addItem(.separator())
         add(L.t.menuActualSize, #selector(browserZoomReset), "0")
         add(L.t.menuZoomIn, #selector(browserZoomIn), "+")
         add(L.t.menuZoomOut, #selector(browserZoomOut), "-")

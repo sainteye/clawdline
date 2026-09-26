@@ -237,7 +237,7 @@ webview 之外，舊 app 的原生面：
 | Dock 圖示 | — | ✅ `360c9fd`：與舊 app 逐位元組相同。兩個 app 同時跑會有兩個相同圖示與 ✳，這是忠實復刻的結果 |
 | 原生「設定⋯」 | — | ✅ `c9f60c1`：⌘, 與選單列都打開 `#page=settings`；熱鍵錄製在殼裡。只做過型別檢查，殼沒有實際跑過 |
 | 配對 alert、本機 token | — | ✅ `5cca6b1`（審查後合併）：只有「忽略」的 NSAlert、cookie 注入。2026-09-17 以 `de7c5da` 重新打包，對開著閘門的 7727 實測：殼帶著本機 token 載入，`booting=false elements-with-id=265 rows=8`。alert 沒有在這台機器上觸發過 |
-| 內嵌瀏覽器（舊版沒有） | — | ✅ 見下一段：一個只載本機 console 的 WKWebView；Cloud 明確交給系統瀏覽器 |
+| 內嵌瀏覽器（舊版沒有） | — | ✅ 見下一段：本機 console 與 Cloud 各一個 WKWebView，cookie store 分開 |
 | 快捷面板（`Controller` + `Panel`） | 5,400 行 | 目前以 webview 視窗代替 |
 | 原生設定（`Settings.swift`） | 3,822 行 | 未開始 |
 | 導覽（`Onboarding.swift`） | 1,468 行 | 未開始 |
@@ -250,15 +250,20 @@ webview 之外，舊 app 的原生面：
 使用者要的是在新 app 裡直接使用本機 Clawdline，並且能清楚前往 Cloud。**舊 app 沒有這一面可抄**——它整個
 沒有 WKWebView（`grep -rl WebKit Sources/` 只有 Onboarding／Settings／RemotePage／WebPush，都不是 web view）。
 
-目前做法是**一個只載本機 console 的 WKWebView**：`Shell.web` 只能到
-`http://127.0.0.1:<port>`，本機 token 只存在它的 cookie store；console 的外連結一律交給系統瀏覽器。
-Cloud 不再是第二個內嵌 WebView。「雲朵＋Cloud」按鈕直接用 `NSWorkspace.shared.open` 打開
-`https://app.clawdline.com`（開發時可用 `CLAWDLINE_NEXT_CLOUD` 指向測試服務），所以登入、密碼管理器與
-瀏覽器資料都留在使用者選定的瀏覽器。
+目前做法是**兩個 WKWebView、兩個 cookie store**：`Shell.web` 只能到 `http://127.0.0.1:<port>`，本機
+token 只存在它的 cookie store；console 的外連結一律交給系統瀏覽器。「雲朵＋Cloud」是第二個分頁
+（`CloudWeb`），第一次按才載入 `https://app.clawdline.com`（開發時可用 `CLAWDLINE_NEXT_CLOUD` 指向測試
+服務），用固定 identifier 的持久 store，所以 Cloud 登入重開 app 後還在，而且那個 store 從來沒寫過本機
+token。Cloud 分頁可以走 GitHub 登入的來回，但不能被導到 console 的位址；Cloud 裡的外連結交給系統瀏覽器。
 
-上方原生列的網址只報告目前本機頁面：可選取與複製，但沒有邊框、輸入 action 或可編輯狀態。返回、前進、
-重新整理與縮放只作用在本機 console。顏色與間距仍直接使用 `legacy/tokens.css` 的值；Cloud 使用 SF Symbol
-`cloud` 加上可見短字 `Cloud`，完整的「用瀏覽器打開 Clawdline Cloud」保留給 tooltip 與 VoiceOver。
+2026-09-20 到 2026-09-27 之間 Cloud 是交給系統瀏覽器（`3a977be0`），理由是登入與密碼管理器留在使用者的
+瀏覽器。使用者要求改回在同一個視窗切換，不必另開瀏覽器；密碼管理器這一點由列上的「用瀏覽器打開」
+（⇧⌘O）承接，它把前面那一頁（包括 Cloud 頁）交給系統瀏覽器。
+
+上方原生列的網址只報告目前前面那一頁：可選取與複製，但沒有邊框、輸入 action 或可編輯狀態。返回、前進、
+重新整理與縮放作用在前面那一頁，縮放兩邊各自記在 `shell-zoom.json`；「顯示方式」選單的 ⌘1／⌘2 切換
+兩個分頁。顏色與間距仍直接使用 `legacy/tokens.css` 的值；Cloud 使用 SF Symbol `cloud` 加上可見短字
+`Cloud`，完整的「在這個視窗打開 Clawdline Cloud」保留給 tooltip 與 VoiceOver。
 
 ### 排程（2026-09-18）
 
