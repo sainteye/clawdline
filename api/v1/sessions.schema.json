@@ -268,7 +268,7 @@
         "cwd": { "type": "string" },
         "id": { "type": "string" },
         "model": { "description": "The model the session is on, as its record last named it: the newest assistant turn's model, or a `/model` switch made after it. Absent when the record says nothing.", "type": "string" },
-        "namingAssistant": { "description": "The assistant selected in Settings for one-turn session naming. The confirmation shows it before spending that assistant's quota.", "$ref": "common.schema.json#/$defs/Assistant" },
+        "namingAssistant": { "description": "The assistant selected in Settings for one-turn session naming. The confirmation shows it before spending that assistant's quota. `auto` asks Claude Code first and Codex only when Claude Code has no usage left or is not installed.", "type": "string", "enum": ["claude", "codex", "auto"] },
         "sessionId": { "type": "string" },
         "title": { "description": "The same label the session list shows.", "type": "string" }
       }
@@ -391,6 +391,7 @@
         "downstream": { "description": "local_only in this daemon; retained as a string because older machines may report a downstream assistant sync state.", "type": "string" },
         "downstream_synced": { "type": "boolean" },
         "local_applied": { "type": "boolean" },
+        "named_by": { "description": "For a smart title, the assistant whose turn produced it. Under `auto` it can be the second one tried.", "$ref": "common.schema.json#/$defs/Assistant" },
         "ok": { "type": "boolean" },
         "title": { "description": "The normalized local title, or empty when it was cleared.", "type": "string" }
       }

@@ -461,6 +461,7 @@ export function SettingsWindow() {
                 { label: W.settingsOff, value: "off" },
                 { label: ASSISTANT_LABEL.codex, value: "codex" },
                 { label: ASSISTANT_LABEL.claude, value: "claude" },
+                { label: W.settingsAutoNameAuto, value: "auto" },
               ]}
               onPick={(value) => {
                 // One control, three states, and no impossible pair of an off

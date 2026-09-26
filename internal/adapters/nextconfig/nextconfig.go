@@ -437,8 +437,8 @@ var Settables = []Settable{
 	{Name: "reopen_on_return", Kind: "bool"},
 	{Name: "follow_target", Kind: "bool"},
 	{Name: "codex_auto_name", Kind: "bool"},
-	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"claude", "codex"},
-		Refusal: "invalid_assistant", Because: "claude or codex"},
+	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"claude", "codex", "auto"},
+		Refusal: "invalid_assistant", Because: "claude, codex or auto"},
 	{Name: "notch", Kind: "bool"},
 	// The Swift app takes y_fraction strictly between 0.02 and 0.9; the bound
 	// here is inclusive, so it is stated a step inside on both sides.

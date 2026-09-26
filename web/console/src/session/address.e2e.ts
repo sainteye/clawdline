@@ -89,6 +89,8 @@ let placeRequests = 0
 let smartTitleRequests = 0
 let smartTitleRequestKey = ""
 let smartTitleRefusal = ""
+let namingAssistant = "claude"
+let smartTitleNamedBy = ""
 let interruptRequests: { id: string; key: string }[] = []
 let requestedPaths: string[] = []
 let failPlacesOnRequest = 0
@@ -168,7 +170,7 @@ function daemon(): Server {
             id: session.id,
             title: session.label,
             assistant: "claude",
-            namingAssistant: "claude",
+            namingAssistant,
             sessionId: session.sessionId,
             cwd: session.cwd,
           },
@@ -198,6 +200,7 @@ function daemon(): Server {
         local_applied: true,
         downstream: "local_only",
         downstream_synced: false,
+        ...(smartTitleNamedBy ? { named_by: smartTitleNamedBy } : {}),
       }), () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
       return
     }
@@ -659,6 +662,66 @@ test("desk: an exhausted naming account is named, not reported as an unreadable 
       assert.match(said, /自動命名新的 session/)
       assert.doesNotMatch(said, /讀不到這個 session 的資訊/)
     } finally {
+      smartTitleRefusal = ""
+    }
+  }))
+
+/** Opens Session Info, presses smart naming and confirms; returns the confirmation and what the card then said. */
+async function smartNameOnce(tab: Tab, until: string): Promise<{ say: string; said: string }> {
+  await tab.go("/" + FRAGMENT[TTY])
+  await tab.until("the session opens", (s) => s.open === TTY)
+  await tab.run(`document.getElementById("detail-info")?.click()`)
+  await tab.run(`new Promise((resolve, reject) => {
+    const deadline = Date.now() + 5000
+    const read = () => {
+      const button = document.querySelector("button.title-smart")
+      if (button && !button.disabled) return resolve(true)
+      if (Date.now() > deadline) return reject(new Error("the smart-name button did not appear"))
+      setTimeout(read, 25)
+    }
+    read()
+  })`)
+  await tab.run(`document.querySelector("button.title-smart")?.click()`)
+  const say = await tab.run(`document.getElementById("action-confirm-say")?.textContent || ""`)
+  await tab.run(`document.getElementById("action-confirm-go")?.click()`)
+  const said = await tab.run(`new Promise((resolve, reject) => {
+    const deadline = Date.now() + 5000
+    const read = () => {
+      const said = document.getElementById("info-said")?.textContent || ""
+      if (said.includes(${JSON.stringify(until)})) return resolve(said)
+      if (Date.now() > deadline) return reject(new Error("the card did not say it: " + JSON.stringify(said)))
+      setTimeout(read, 25)
+    }
+    read()
+  })`)
+  return { say, said }
+}
+
+test("desk: automatic naming says it may use Codex, and names who answered", () =>
+  inTab(DESK, async (tab) => {
+    namingAssistant = "auto"
+    smartTitleNamedBy = "codex"
+    try {
+      const { say, said } = await smartNameOnce(tab, "由 Codex 命名")
+      assert.match(say, /Claude Code/)
+      assert.match(say, /額度用完或沒安裝時，才改交給 Codex/)
+      assert.equal(said, "智能標題已儲存（由 Codex 命名）。")
+    } finally {
+      namingAssistant = "claude"
+      smartTitleNamedBy = ""
+    }
+  }))
+
+test("desk: automatic naming with both accounts exhausted names both", () =>
+  inTab(DESK, async (tab) => {
+    namingAssistant = "auto"
+    smartTitleRefusal = "namer_out_of_quota"
+    try {
+      const { said } = await smartNameOnce(tab, "namer_out_of_quota")
+      assert.match(said, /Claude Code 和 Codex 的額度都已用完/)
+      assert.doesNotMatch(said, /讀不到這個 session 的資訊/)
+    } finally {
+      namingAssistant = "claude"
       smartTitleRefusal = ""
     }
   }))
