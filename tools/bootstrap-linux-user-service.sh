@@ -18,6 +18,9 @@ case "$service_home" in
 esac
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
+# Only tools/test-bootstrap-linux-user-service.sh sets this, to keep /etc and /run inside a scratch
+# directory. sudo's default env_reset drops it from a real run.
+sysroot=${CLAWDLINE_BOOTSTRAP_SYSROOT:-}
 data_root=$service_home/.local/share/clawdline-next
 current=$data_root/current
 [ -L "$current" ] && [ -x "$current/clawdline" ] && [ -f "$current/dist/BUILD.json" ] || {
@@ -32,7 +35,7 @@ install -m 0600 -o "$service_uid" -g "$service_gid" \
 
 loginctl enable-linger "$service_user"
 systemctl start "user-runtime-dir@$service_uid.service" "user@$service_uid.service"
-runtime=/run/user/$service_uid
+runtime=$sysroot/run/user/$service_uid
 [ -S "$runtime/bus" ] || { echo "user service manager did not create $runtime/bus" >&2; exit 1; }
 
 as_user() {
@@ -42,24 +45,43 @@ as_user() {
     systemctl --user "$@"
 }
 
-# Preserve tmux and assistant processes that the old system service opened.
-dropin=/etc/systemd/system/clawdline-next.service.d/90-preserve-sessions.conf
-install -d -m 0755 "$(dirname "$dropin")"
-printf '[Service]\nKillMode=process\n' >"$dropin"
-systemctl daemon-reload
+# A machine installed before the user unit existed runs a system-wide clawdline-next.service that
+# this retires; a fresh machine never had one, and every step that touches it is skipped there.
+# systemctl answers LoadState=not-found for a unit with no file, and fails outright only when it
+# cannot ask systemd at all, which stops the script.
+migrating=0
+load_state=$(systemctl show --property=LoadState --value clawdline-next.service)
+[ "$load_state" = not-found ] || migrating=1
+
+if [ "$migrating" -eq 1 ]; then
+  # Preserve tmux and assistant processes that the old system service opened.
+  dropin=$sysroot/etc/systemd/system/clawdline-next.service.d/90-preserve-sessions.conf
+  install -d -m 0755 "$(dirname "$dropin")"
+  printf '[Service]\nKillMode=process\n' >"$dropin"
+  systemctl daemon-reload
+fi
+
+# Undo this run: stop the user unit and, when migrating, give the machine its system unit back.
+restore() {
+  as_user disable --now clawdline-next.service || true
+  if [ "$migrating" -eq 1 ]; then
+    systemctl enable --now clawdline-next.service || true
+    echo "$1; restored the system service" >&2
+  else
+    echo "$1; stopped and disabled it" >&2
+  fi
+  exit 1
+}
 
 as_user daemon-reload
 as_user enable clawdline-next.service
-if systemctl is-active --quiet clawdline-next.service; then
+if [ "$migrating" -eq 1 ] && systemctl is-active --quiet clawdline-next.service; then
   systemctl stop clawdline-next.service
 fi
-if ! as_user start clawdline-next.service; then
-  as_user disable --now clawdline-next.service || true
-  systemctl start clawdline-next.service || true
-  echo "user service failed to start; restored the system service" >&2
-  exit 1
+as_user start clawdline-next.service || restore "user service failed to start"
+if [ "$migrating" -eq 1 ]; then
+  systemctl disable clawdline-next.service >/dev/null
 fi
-systemctl disable clawdline-next.service >/dev/null
 
 expected=$(sed -n 's/.*"stamp":"\([0-9a-f]*\)".*/\1/p' "$current/dist/BUILD.json")
 token=$(cat "$service_home/.config/clawdline-next/local-token")
@@ -81,11 +103,6 @@ while [ "$SECONDS" -lt "$deadline" ]; do
   fi
   sleep 1
 done
-[ "$healthy" -eq 1 ] || {
-  as_user disable --now clawdline-next.service || true
-  systemctl enable --now clawdline-next.service || true
-  echo "user service did not prove its console and exact release; restored the system service" >&2
-  exit 1
-}
+[ "$healthy" -eq 1 ] || restore "user service did not prove its console and exact release"
 
 echo "bootstrap complete: future deploys run as $service_user with tools/deploy-linux-user.sh"

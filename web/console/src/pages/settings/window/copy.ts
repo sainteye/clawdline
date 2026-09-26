@@ -27,7 +27,7 @@ const ownWords = {
     settingsTunnelHint:
       "cloudflared connects outward from this machine — no port forwarding, and nothing listens on your network. It starts only after a device has been paired, because behind the tunnel are every repository name and work title on this machine.",
     settingsRemoteWriteHint:
-      "When this is off, paired devices can only read. When it is on, they can send text into a session and open new sessions — which runs code on this machine, because that is what Claude Code does. That is separate from the setting above, so it has its own switch.",
+      "When this is off, a device paired with a code can only read, and a browser opened with clawdline open --send keeps the sending it was given. When it is on, every paired device can send text into a session and open new sessions — which runs code on this machine, because that is what Claude Code does. It takes effect on the next request. Clawdline Cloud has its own switch, clawdline cloud commands on.",
     settingsOrchestratorMaxHint:
       "The default is five. The limit is per session, not per machine. Each child is a terminal tab with an assistant doing work in it.",
     settingsHotkeyHint:
@@ -62,7 +62,7 @@ const ownWords = {
     settingsTunnelHint:
       "透過 cloudflared 從這台機器往外連出去——不必開通訊埠轉發，你的網路上也沒有東西在聽。要先配對過一台裝置它才會啟動，因為通道後面就是這台機器上每一個儲存庫名稱、每一個工作標題。",
     settingsRemoteWriteHint:
-      "關著的時候，配對過的裝置只能讀。打開之後，它可以把文字送進 session，也可以開新的 session——那就是在這台機器上執行程式碼，因為 Claude Code 做的就是這件事。這跟上面那一題是兩回事，所以它是另一個開關。",
+      "關著的時候，用配對碼配對的裝置只能讀；用 clawdline open --send 開的瀏覽器照樣保有當初給它的送出權限。打開之後，每一台配對過的裝置都可以把文字送進 session，也可以開新的 session——那就是在這台機器上執行程式碼，因為 Claude Code 做的就是這件事。下一個請求就生效。Clawdline Cloud 另有自己的開關：clawdline cloud commands on。",
     settingsOrchestratorMaxHint:
       "預設五個，一個 session 算一份，不是整台機器算一份。每一個都是一個終端機分頁，裡面有一個 assistant 在做事。",
     settingsHotkeyHint:

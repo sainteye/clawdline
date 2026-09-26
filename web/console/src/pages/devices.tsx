@@ -1,9 +1,11 @@
-import { useLayoutEffect, useRef, type MouseEvent } from "react"
+import { useLayoutEffect, useRef, useState, type MouseEvent } from "react"
+import { createPortal } from "react-dom"
 import type { PageModule } from "./types.js"
-import { bindDevices, devicesLede, offerForgetting, offerLastSeen, offerPairing, watchMachineActions, type DevicesPage } from "../legacy/devices-bridge.js"
+import { accountMachinesInstalled, bindDevices, devicesLede, offerForgetting, offerLastSeen, offerPairing, watchMachineActions, type DevicesPage } from "../legacy/devices-bridge.js"
 import { nextWord } from "../next-strings.js"
 import { machineSeenWord } from "../cloud/machine-seen.js"
 import sectionMarkup from "./devices/section.html?raw"
+import { SignedInBlock } from "./devices/SignedInBlock.js"
 import "./devices-actions.css"
 
 /**
@@ -37,10 +39,27 @@ import "./devices-actions.css"
  * sentence pointing at a control the machine may not have and nothing to press.
  * The list is watched rather than decorated once: the module rebuilds its cards
  * whenever what they say changes.
+ *
+ * Under the cards, on the console the daemon serves, is who is signed in to
+ * this machine directly (`SignedInBlock`): the browsers `clawdline open` made
+ * and the devices that paired, each with a Revoke. It is React's, drawn into
+ * a node of its own at the end of the copied shell, so the copied module never
+ * sees it.
  */
 function DevicesPageView({ shown }: { shown: boolean }) {
   const page = useRef<DevicesPage | null>(null)
   const was = useRef(false)
+  const [signedIn, setSignedIn] = useState<HTMLElement | null>(null)
+
+  useLayoutEffect(() => {
+    const shell = document.querySelector("#devices .devices-shell")
+    if (!shell || accountMachinesInstalled()) return
+    const node = document.createElement("div")
+    node.id = "devices-signed-in"
+    shell.appendChild(node)
+    setSignedIn(node)
+    return () => node.remove()
+  }, [])
 
   useLayoutEffect(() => {
     if (!page.current) {
@@ -105,15 +124,18 @@ function DevicesPageView({ shown }: { shown: boolean }) {
   }, [shown])
 
   return (
-    <section
-      className="page devices"
-      id="devices"
-      data-page-view="devices"
-      aria-labelledby="devices-title"
-      hidden={!shown}
-      onClick={followPageLink}
-      dangerouslySetInnerHTML={{ __html: sectionMarkup }}
-    />
+    <>
+      <section
+        className="page devices"
+        id="devices"
+        data-page-view="devices"
+        aria-labelledby="devices-title"
+        hidden={!shown}
+        onClick={followPageLink}
+        dangerouslySetInnerHTML={{ __html: sectionMarkup }}
+      />
+      {signedIn && createPortal(<SignedInBlock shown={shown} />, signedIn)}
+    </>
   )
 }
 
