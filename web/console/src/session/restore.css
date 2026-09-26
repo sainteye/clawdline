@@ -6,14 +6,15 @@
    added is the hint under the title and the one button. */
 .restore-hero { display: flex; flex-direction: column; align-items: center; gap: 0; }
 .restore-hero .restore-hint { display: block; max-width: 34ch; line-height: 1.5; }
-.restore-hero .restore-open { margin-top: 16px; }
+.restore-hero .chip.restore-open { margin-top: 16px; }
 .empty.home-hero-list .restore-hero { align-items: center; }
 
-.restore-open {
+/* Two classes, so the accent holds whichever of this file and `.chip`'s the bundle writes last. */
+.chip.restore-open {
     border-color: var(--accent-ed); color: var(--accent);
     padding: 9px 16px; min-height: 40px; font-size: 13px;
 }
-.restore-open:hover:not(:disabled) { background: var(--accent-in); color: var(--accent); }
+.chip.restore-open:hover:not(:disabled) { background: var(--accent-in); color: var(--accent); }
 
 /* Above rows the person already has: one line of what, one of why, and the button. */
 .restore-card {
@@ -25,7 +26,7 @@
 .restore-card-copy { flex: 1 1 auto; min-width: 0; }
 .restore-card b { display: block; color: var(--ink); font-size: 13px; font-weight: 600; margin-bottom: 3px; }
 .restore-card .restore-hint { display: block; color: var(--dim); font-size: 12px; line-height: 1.45; }
-.restore-card .restore-open { flex: 0 0 auto; }
+.restore-card .chip.restore-open { flex: 0 0 auto; }
 
 /* The sheet. */
 .restore-sheet { width: min(520px, 100%); max-height: calc(var(--vvh, 100dvh) - 48px); display: flex; flex-direction: column; }
@@ -43,6 +44,7 @@
 .sheet .chip.check.restore-row .tick { margin-top: 2px; }
 .sheet .chip.check.restore-row:disabled { opacity: 1; }
 .sheet .chip.check.restore-row[data-outcome="opened"] .tick .box { fill: var(--ok); stroke: var(--ok); }
+.sheet .chip.check.restore-row[data-outcome="opened"] .tick .mark { stroke: var(--bg); }
 .restore-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
 .restore-name {
     color: var(--ink); font-size: 13px; font-weight: 500;
@@ -55,7 +57,6 @@
 .restore-path {
     font-family: var(--mono); font-size: 11px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
-    direction: rtl; text-align: left;
 }
 .restore-outcome { font-size: 12px; line-height: 1.45; color: var(--dim); }
 .restore-outcome.opened { color: var(--ok); }
@@ -63,17 +64,17 @@
 
 .restore-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .restore-buttons .chip { min-width: 88px; padding: 9px 14px; min-height: 40px; text-align: center; }
-.restore-buttons .restore-go { order: 3; border-color: var(--accent-ed); color: var(--accent); }
-.restore-buttons .restore-go:disabled { opacity: 0.45; }
+.restore-buttons .chip.restore-go { order: 3; border-color: var(--accent-ed); color: var(--accent); }
+.restore-buttons .chip.restore-go:disabled { opacity: 0.45; }
 
 @media (max-width: 899px) {
     .restore-card { flex-direction: column; align-items: stretch; }
-    .restore-card .restore-open { width: 100%; }
+    .restore-card .chip.restore-open { width: 100%; }
     .empty.home-hero-list .restore-hero { align-items: flex-start; }
     .empty.home-hero-list .restore-hero .restore-hint { color: var(--dim); font-size: 13.5px; }
     #restore.overlay { align-items: flex-end; padding: 0; }
     .restore-sheet { width: 100%; border-radius: 16px 16px 0 0; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); }
     .restore-buttons { flex-direction: column; }
     .restore-buttons .chip { width: 100%; }
-    .restore-buttons .restore-go { order: 0; }
+    .restore-buttons .chip.restore-go { order: 0; }
 }
