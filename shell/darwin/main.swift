@@ -180,8 +180,11 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// the way out rather than left behind.
     private var termination: DispatchSourceSignal?
 
-    /// The bar across the top. Browser.swift.
+    /// The bar across the top, and the two views under it. Browser.swift.
     var bar: BrowserBar!
+    var cloud: CloudWeb!
+    var content: NSView!
+    var showingCloud = false
 
     private let hotKey = HotKey()
     private var hotKeyActive = false
@@ -446,8 +449,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         window.isReleasedWhenClosed = false
         // The Swift app's Home window floor.
         window.minSize = NSSize(width: 680, height: 620)
-        // The console stays inside this window; Cloud opens in the person's
-        // browser. The bar and that boundary are in Browser.swift.
+        // The console and Cloud share this window, each in its own view with
+        // its own cookie store. The bar and that boundary are in Browser.swift.
         window.contentView = buildBrowser()
         // The address is a reading, so the keyboard starts in the page.
         window.initialFirstResponder = active
@@ -901,8 +904,11 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     // the console window's (Bar.swift).
     @objc private func openPanel() { inputBar.toggle() }
 
-    /// "Home" is the console; Cloud is never another in-app tab.
-    @objc private func showHome() { showConsole() }
+    /// "Home" is the console, even when Cloud was the tab left in front.
+    @objc private func showHome() {
+        showConsole()
+        if showingCloud { showTab(cloud: false) }
+    }
 
     /// Launch at login, through SMAppService, off until somebody turns it on.
     /// Registering changes the person's login items; nothing here does it on
@@ -972,8 +978,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// This is the view that carries this machine's token in its cookie store,
     /// so where it is allowed to go is not a matter of taste. A link out of the
     /// console opens in the person's own browser — what the Swift app does with
-    /// every link it shows, `NSWorkspace.shared.open` — and the browser beside
-    /// it is reached by its own tab, never by a page steering this one.
+    /// every link it shows, `NSWorkspace.shared.open` — and Cloud beside it
+    /// is reached by its own tab, never by a page steering this one.
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else {
@@ -1102,6 +1108,9 @@ extension Shell {
     /// Ask the console for a page the way its own address does. Before the
     /// console has loaded, the request waits for it.
     func goToPage(_ name: String) {
+        // A console page asked for while Cloud is in front is asked for to be
+        // seen, so the console comes to the front with it.
+        if showingCloud { showTab(cloud: false) }
         guard pageLoaded else {
             pendingPage = name
             return

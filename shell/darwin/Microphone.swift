@@ -89,7 +89,7 @@ extension Shell: WKUIDelegate {
     /// console's own origin is a page of this window's and is loaded in it,
     /// with the token, rather than opened somewhere that has none.
     ///
-    /// The browser tab beside this one has its own delegate and its own answer
+    /// The Cloud tab beside this one has its own delegate and its own answer
     /// to both of these — see Browser.swift.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {

@@ -101,11 +101,10 @@ struct ShellCopy {
     let settingsOff = "關閉"
 
     // The browser bar (shell/darwin/Browser.swift). Cloud is deliberately the
-    // short product name requested for the external-browser button; its longer
-    // sentence is the tooltip and VoiceOver label.
+    // short product name requested for the Cloud tab; its longer sentence is
+    // the tooltip and VoiceOver label.
     let homeLocalTitle = "本機瀏覽器"
     let browserCloud = "Cloud"
-    let browserOpenCloud = "用瀏覽器打開 Clawdline Cloud"
     let webInfoRefresh = "重新整理"
     let settingsRemoteOpen = "用瀏覽器打開"
 
@@ -125,6 +124,12 @@ struct ShellCopy {
     func zoomLevel(_ percent: Int) -> String { "\(percent)%" }
     func zoomCeiling(_ percent: Int) -> String { "上限 \(percent)%" }
     func zoomFloor(_ percent: Int) -> String { "下限 \(percent)%" }
+    // The Cloud tab (2026-09-27): Cloud opens in this window rather than in
+    // the person's browser. "好"／"取消" are the buttons macOS itself puts on
+    // a web page's confirm() in Safari.
+    let browserShowCloud = "在這個視窗打開 Clawdline Cloud"
+    let dialogOK = "好"
+    let dialogCancel = "取消"
 
     // The pairing alert (`main.swift` showPairing in the Swift app).
     let pairingIgnore = "忽略"
