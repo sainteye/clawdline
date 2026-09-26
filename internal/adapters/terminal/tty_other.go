@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build !darwin && !linux
 
 package terminal
 
@@ -10,9 +10,9 @@ import (
 
 // What is in front of a terminal, on a platform where this daemon cannot ask.
 //
-// The macOS reading is a `kern.proc.tty` sysctl (tty_darwin.go). There is no
-// portable equivalent written here yet, and a guess would be worse than the
-// refusal: the whole point of reading the tty is to decide whether a process
+// macOS asks a `kern.proc.tty` sysctl and Linux reads /proc (tty_job.go,
+// tty_linux.go). Nothing is written for anywhere else, and a guess would be
+// worse than the refusal: the whole point of reading the tty is to decide whether a process
 // may be signalled and whether a terminal is safe to close, and both of those
 // fail closed.
 //
