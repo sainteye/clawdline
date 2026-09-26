@@ -32,6 +32,7 @@ import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
 import "./working-line.css"
 import { conversationNotStarted } from "./readiness.js"
+import { transcriptShow } from "./transcript-trouble.js"
 import { agentReportIdentity } from "./agent-report.js"
 import "./agent-report.css"
 
@@ -111,7 +112,18 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   useSyncExternalStore(pendingSends.subscribe, pendingSends.getVersion)
   const cards = agentId ? [] : pendingSends.of(id)
   const following = cards.some((card) => card.state !== "failed")
-  const { data, error } = usePoll<TranscriptPage>(read, following ? FOLLOW_MS : POLL_MS)
+  const poll = usePoll<TranscriptPage>(read, following ? FOLLOW_MS : POLL_MS)
+  const { data, error } = poll
+  // A read nobody answered waits out its quiet stretch before it is news
+  // (`transcript-trouble.ts`); until then the skeleton, or the entries already
+  // read, stay as they are.
+  const show = transcriptShow({
+    hasData: !!data,
+    failureKind: poll.failureKind,
+    failures: poll.failures,
+    failingForMs: poll.failingSince === null ? 0 : Date.now() - poll.failingSince,
+    noRecord: data?.evidence === "none" && !!data.note,
+  })
   // Each read settles the cards it confirms before it is painted, so the turn
   // and the card standing for it are never on screen together.
   useLayoutEffect(() => {
@@ -127,7 +139,7 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // transcript: a provider subagent's page is not what the row's state is about.
   const working = !agentId && !!session && L.workState(session).state === "working"
   const entries = useMemo<Entry[]>(() => (data ? data.entries.map((e) => ({ ...e })) : []), [data])
-  const skeleton = useWait(!data && !error)
+  const skeleton = useWait(show === "loading")
   // `S.newestFirst` and `S.assistantIcons`, read on every draw as the original
   // reads them, and a draw of their own when either changes.
   const newestFirst = useSyncExternalStore(L.subscribeSettings, L.settingsNewestFirst)
@@ -200,12 +212,12 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   // The working line is newer than any card: the turn it stands for is the
   // one answering them.
   const pending = newestFirst ? [live, ...cardsDrawn] : [...cardsDrawn, live]
-  if (!data && !error) return cardsDrawn.length || live ? <>{pending}</> : null
+  if (show === "loading") return cardsDrawn.length || live ? <>{pending}</> : null
   // The daemon's note is diagnostic English. It is useful evidence in the
   // disclosure below, but never the main sentence in a translated interface.
   // `no_record` is not a failure at all: the provider has not created its
   // first conversation record yet.
-  const technical = error ? String(error) : data?.evidence === "none" ? data.note || "" : ""
+  const technical = show !== "failure" ? "" : poll.failureKind ? String(error) : data?.note || ""
   const notStarted = conversationNotStarted(session)
   if (notStarted && !entries.length) {
     return (
@@ -216,11 +228,11 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
       </>
     )
   }
-  const failed = technical ? T.webTranscriptFailed : null
+  const failed = show === "failure" ? readFailed(poll.reading, poll.retry) : null
   if (failed && !entries.length) {
     return (
       <>
-        <div className="tx-note err">{failed}</div>
+        {failed}
         {technicalDetails(technical)}
         {pending}
       </>
@@ -228,7 +240,7 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   }
   const notice = failed ? (
     <>
-      <div className="tx-note err">{failed}</div>
+      {failed}
       {technicalDetails(technical)}
     </>
   ) : null
@@ -325,6 +337,22 @@ function WorkingLine({ line }: { line: string }) {
     <div className="tx-working" role="status">
       <canvas className="spin"></canvas>
       <span className="line">{line || L.strings.webStateWorking}</span>
+    </div>
+  )
+}
+
+/**
+ * `webTranscriptFailed`, and beside it the way to ask again now rather than at
+ * the next poll. While that read is out the button says so and waits; the
+ * sentence stays until an answer replaces it.
+ */
+function readFailed(reading: boolean, retry: () => void): ReactElement {
+  return (
+    <div className="tx-note err tx-failed" role="alert">
+      <span>{L.strings.webTranscriptFailed}</span>
+      <button type="button" className="go" disabled={reading} onClick={retry}>
+        {nextWord(reading ? "transcriptRetrying" : "transcriptRetry")}
+      </button>
     </div>
   )
 }
