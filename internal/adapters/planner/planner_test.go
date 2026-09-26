@@ -176,12 +176,12 @@ func TestNamerUsesOnlyTheChosenAssistantAndNoTools(t *testing.T) {
 					}
 					joined := strings.Join(args, " ")
 					if assistant == "claude" {
-						if !hasEmptyTools(args) || stdin != "ship the helper" {
+						if !hasEmptyTools(args) || stdin != "ship the helper" || !strings.Contains(joined, "--model sonnet") {
 							t.Fatalf("claude run = %q stdin=%q", joined, stdin)
 						}
 						return []byte(`{"structured_output":{"title":"Release helper"}}`), nil
 					}
-					if !strings.Contains(joined, "agents.enabled=false") || !strings.Contains(stdin, "<request>\nship the helper\n</request>") {
+					if !strings.Contains(joined, "agents.enabled=false") || !strings.Contains(stdin, "<session>\nship the helper\n</session>") {
 						t.Fatalf("codex run = %q stdin=%q", joined, stdin)
 					}
 					for i := 0; i+1 < len(args); i++ {

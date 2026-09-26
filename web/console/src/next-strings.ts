@@ -59,7 +59,7 @@ const words = {
     smartTitleAction: "name this session with AI",
     smartTitleConfirmTitle: "Name this session with AI?",
     smartTitleConfirmSay:
-      "Clawdline will send this session's first request to {assistant} for one small model turn, then save its answer as the session title. This uses that assistant's quota. Cancel to make no model call and edit the title yourself instead.",
+      "Clawdline will send this session's requests and the assistant's latest reply to {assistant} for one small model turn, then save its answer as the session title. This uses that assistant's quota. Cancel to make no model call and edit the title yourself instead.",
     smartTitleWorking: "Naming…",
     smartTitleSaved: "Smart title saved.",
     smartTitleOutOfQuota:
@@ -67,7 +67,7 @@ const words = {
     smartTitleFailed: "{assistant} did not return a usable title. No title was changed.",
     smartTitleNoNamer: "{assistant}, the naming assistant chosen in Settings, is not installed on this machine.",
     smartTitleConfirmSayAuto:
-      "Clawdline will send this session's first request to Claude Code for one small model turn, and to Codex only if Claude Code has no usage left or is not installed. The answer is saved as the session title and uses the quota of whichever assistant answered. Cancel to make no model call and edit the title yourself instead.",
+      "Clawdline will send this session's requests and the assistant's latest reply to Claude Code for one small model turn, and to Codex only if Claude Code has no usage left or is not installed. The answer is saved as the session title and uses the quota of whichever assistant answered. Cancel to make no model call and edit the title yourself instead.",
     smartTitleSavedBy: "Smart title saved, named by {assistant}.",
     smartTitleOutOfQuotaAll:
       "Claude Code and Codex both have no usage left on their accounts, so no title was changed. Try again once either one resets.",
@@ -806,7 +806,7 @@ const words = {
     smartTitleAction: "智能命名這個 session",
     smartTitleConfirmTitle: "要智能命名這個 session 嗎？",
     smartTitleConfirmSay:
-      "Clawdline 會把這個 session 的第一則需求交給 {assistant} 跑一次小型模型 turn，再把答案存成 session 標題；這會使用該助理的額度。取消就不會呼叫模型，也可以改用手動編輯標題。",
+      "Clawdline 會把這個 session 的需求與助理最新的回覆交給 {assistant} 跑一次小型模型 turn，再把答案存成 session 標題；這會使用該助理的額度。取消就不會呼叫模型，也可以改用手動編輯標題。",
     smartTitleWorking: "命名中…",
     smartTitleSaved: "智能標題已儲存。",
     smartTitleOutOfQuota:
@@ -814,7 +814,7 @@ const words = {
     smartTitleFailed: "{assistant} 沒有回傳可用的標題，標題沒有變更。",
     smartTitleNoNamer: "設定裡選的命名助理 {assistant} 沒有安裝在這台機器上。",
     smartTitleConfirmSayAuto:
-      "Clawdline 會把這個 session 的第一則需求交給 Claude Code 跑一次小型模型 turn；只有在 Claude Code 額度用完或沒安裝時，才改交給 Codex。答案會存成 session 標題，並使用實際回答的那個助理的額度。取消就不會呼叫模型，也可以改用手動編輯標題。",
+      "Clawdline 會把這個 session 的需求與助理最新的回覆交給 Claude Code 跑一次小型模型 turn；只有在 Claude Code 額度用完或沒安裝時，才改交給 Codex。答案會存成 session 標題，並使用實際回答的那個助理的額度。取消就不會呼叫模型，也可以改用手動編輯標題。",
     smartTitleSavedBy: "智能標題已儲存（由 {assistant} 命名）。",
     smartTitleOutOfQuotaAll: "Claude Code 和 Codex 的額度都已用完，標題沒有變更。等其中一個額度恢復再試。",
     smartTitleNoNamerAll: "這台機器上沒有安裝 Claude Code，也沒有 Codex，標題沒有變更。",

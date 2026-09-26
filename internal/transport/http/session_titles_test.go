@@ -97,13 +97,16 @@ func TestSmartTitleUsesOneReceiptedTurnAndSavesItsAnswer(t *testing.T) {
 		}
 		return strings.Repeat("界", 2000) + " trailing words", nil
 	}
+	s.sessionTailRead = func(session.Session) (transcript.Page, error) { return transcript.Page{}, nil }
 	runs := 0
 	s.nameSession = func(_ context.Context, text, assistant string) (string, error) {
 		runs++
 		if assistant != "claude" {
 			t.Fatalf("assistant = %q", assistant)
 		}
-		if len([]byte(text)) > int(capacity.Default(capacity.IntentRequestBytes)) {
+		// The opening request gets a third of the naming budget; the tags
+		// around it are the only other bytes.
+		if len([]byte(text)) > int(capacity.Default(capacity.NamingContextBytes))/3+64 {
 			t.Fatalf("naming input was not capped: %d bytes", len([]byte(text)))
 		}
 		return "  Release\n helper  ", nil
@@ -159,6 +162,7 @@ func TestSmartTitleFailureDoesNotReplaceTheExistingName(t *testing.T) {
 	s := paneServer(t, &pane{s: item})
 	s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
 	s.firstSessionRequest = func(session.Session) (string, error) { return "name this", nil }
+	s.sessionTailRead = func(session.Session) (transcript.Page, error) { return transcript.Page{}, nil }
 	s.nameSession = func(context.Context, string, string) (string, error) { return "", errors.New("provider unavailable") }
 	rec := act(t, s, "smart-title", item.ID, "smart-fail", `{}`)
 	if rec.Code != http.StatusBadGateway || codeOf(t, rec) != "naming_failed" {
@@ -175,6 +179,7 @@ func TestSmartTitleSaysWhenTheAssistantIsOutOfQuota(t *testing.T) {
 	s := paneServer(t, &pane{s: item})
 	s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
 	s.firstSessionRequest = func(session.Session) (string, error) { return "name this", nil }
+	s.sessionTailRead = func(session.Session) (transcript.Page, error) { return transcript.Page{}, nil }
 	s.nameSession = func(context.Context, string, string) (string, error) {
 		return "", fmt.Errorf("%w: exit status 1", planner.ErrOutOfQuota)
 	}
@@ -248,6 +253,7 @@ func TestAutoNamingFallsBackOnlyWhenAnAssistantCannotAnswer(t *testing.T) {
 				t.Fatal(err)
 			}
 			s.firstSessionRequest = func(session.Session) (string, error) { return "name this", nil }
+			s.sessionTailRead = func(session.Session) (transcript.Page, error) { return transcript.Page{}, nil }
 			var asked []string
 			s.nameSession = func(_ context.Context, _ string, assistant string) (string, error) {
 				asked = append(asked, assistant)

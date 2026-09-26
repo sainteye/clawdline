@@ -125,7 +125,7 @@ export const W = {
   settingsFollow: "終端機顯示輸入條指著的那個 session",
   settingsFollowHint: "它會把那個 session 的分頁選起來。它不會把終端機叫到最前面——不然每按一次 Tab，鍵盤就從你正在打字的那個框裡跑掉了。",
   settingsCodexAutoName: "自動命名新的 session",
-  settingsCodexAutoNameHint: "每個尚未命名的 session 會由你選的助理跑一次小型 turn。它使用第一則需求、消耗該助理的額度，而且不會蓋掉你自己取的名稱。",
+  settingsCodexAutoNameHint: "每個尚未命名的 session 會由你選的助理跑一次小型 turn。它使用這個 session 的需求與助理最新的回覆、消耗該助理的額度，而且不會蓋掉你自己取的名稱。",
   settingsNotch: "住在瀏海裡",
   settingsNotchHint: "在鏡頭那塊住一隻角色。關掉就是真的關掉——什麼都不畫，視窗也不會建立。",
   settingsPosition: "在螢幕上的高度",

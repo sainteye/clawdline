@@ -121,6 +121,7 @@ type Server struct {
 	// both, so verification never consumes an assistant account's quota.
 	nameSession         func(context.Context, string, string) (string, error)
 	firstSessionRequest func(session.Session) (string, error)
+	sessionTailRead     func(session.Session) (transcript.Page, error)
 	intentContext       func(context.Context) ([]planner.Place, []string)
 	intentMu            sync.Mutex
 	intentRun           sync.Mutex

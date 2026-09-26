@@ -492,7 +492,12 @@ export const ActionConfirm = {
       if (word) word.textContent = T.webClosing
       setConfirmSpin(go.querySelector("canvas"))
     } else if (this.busy && this.pending?.ask?.waiting) {
-      go.textContent = this.pending.ask.waiting
+      // An ask's turn takes seconds (a model call for smart naming), so it
+      // spins from the first frame rather than after the close's 150ms grace.
+      go.innerHTML = '<span class="busy"><canvas></canvas><span></span></span>'
+      const word = go.querySelector(".busy span")
+      if (word) word.textContent = this.pending.ask.waiting
+      setConfirmSpin(go.querySelector("canvas"))
     } else {
       const recordedWorkClear = this.pending?.workState === "ready" &&
         this.pending.work.length === 0 && !this.pending.directTodos.some((todo) => !todo.completed_at)
