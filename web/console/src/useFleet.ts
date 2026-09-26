@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
-import { ClawdlineClient, FleetStore, type FleetState } from "@clawdline/core"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { ClawdlineClient, FleetStore, RefusalError, TransportError, type FleetState } from "@clawdline/core"
 import { fleetTransport } from "./client.js"
+import { initialPollState, Poller, type PollState, type ReadFailureKind } from "./poll.js"
 
 /**
  * Binds the framework-free store to React.
@@ -35,42 +36,39 @@ export function useFleet(client: ClawdlineClient): FleetState & { refresh: () =>
  * `pending` starts true and only ever goes false, so a panel can tell "not
  * asked yet" from "asked and the answer was empty" — the same distinction the
  * scan payload makes, applied to the panels that have no scan of their own.
+ *
+ * A failed read keeps what it threw and says which kind it was, and how long
+ * the reads have been failing, so a panel can wait out one missed poll instead
+ * of announcing it (`session/transcript-trouble.ts`). `retry` asks now; the
+ * rules for when it does not are `Poller`'s (`poll.ts`).
  */
-export function usePoll<T>(read: () => Promise<T>, intervalMs = 5000): {
-  data: T | null
-  error: string | null
-  pending: boolean
-} {
-  const [data, setData] = useState<T | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState(true)
+export function usePoll<T>(read: () => Promise<T>, intervalMs = 5000): PollState<T> & { retry: () => void } {
+  const [state, setState] = useState<PollState<T>>(initialPollState)
+  const [poller, setPoller] = useState<Poller<T> | null>(null)
+  // The interval is read once when the poller is made and handed over after,
+  // so a page that changes pace keeps what it has read.
+  const pace = useRef(intervalMs)
+  pace.current = intervalMs
 
   useEffect(() => {
-    let alive = true
-    let timer: ReturnType<typeof setTimeout>
-    const tick = async () => {
-      try {
-        const next = await read()
-        if (!alive) return
-        setData(next)
-        setError(null)
-      } catch (err) {
-        if (!alive) return
-        setError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (alive) {
-          setPending(false)
-          timer = setTimeout(tick, intervalMs)
-        }
-      }
-    }
-    void tick()
-    return () => {
-      alive = false
-      clearTimeout(timer)
-    }
+    const next = new Poller<T>({ read, intervalMs: pace.current, classify: readFailureKind, onChange: setState })
+    setPoller(next)
+    next.start()
+    return () => next.stop()
     // read is expected to be stable; callers build it with useMemo.
-  }, [read, intervalMs])
+  }, [read])
 
-  return { data, error, pending }
+  useEffect(() => {
+    poller?.setIntervalMs(intervalMs)
+  }, [poller, intervalMs])
+
+  const retry = useCallback(() => poller?.retry(), [poller])
+  return { ...state, retry }
+}
+
+/** `TransportError` and `RefusalError` are the core's two answers; see `ReadFailureKind`. */
+function readFailureKind(err: unknown): ReadFailureKind {
+  if (err instanceof RefusalError) return "refused"
+  if (err instanceof TransportError) return "unanswered"
+  return "unknown"
 }
