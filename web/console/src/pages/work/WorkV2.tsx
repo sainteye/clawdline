@@ -267,6 +267,14 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [reminded, setReminded] = useState(false)
+  // An assignment that failed says so on this card: opening a new Session can
+  // take a minute and a half, and the page-level note it used to land in is
+  // scrolled out of sight on a phone, where the press looked like nothing.
+  const [assignFailed, setAssignFailed] = useState(false)
+  const assign = (task: () => Promise<unknown>) => {
+    clearFailure(); setAssignFailed(false)
+    void run(item.id, task).then((ok) => setAssignFailed(!ok))
+  }
   const imagePicker = useRef<HTMLInputElement>(null)
   const eligible = useMemo(() => sessions.filter((s) => s.cwd === item.project.path && s.sessionId), [sessions, item.project.path])
   const owner = item.owner_session ? sessions.find((session) => session.sessionId === item.owner_session) : undefined
@@ -295,7 +303,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
         picker sits under what the work is, above its progress and pictures. */}
     {assignable && <div className="work-assignment">
       <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment} />
-      <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => void run(item.id, () => assignWorkV2(item, terminal))}>指派</button>
+      <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => assign(() => assignWorkV2(item, terminal))}>指派</button>
       <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
         {/* The product mark alone: the button beside it already spells out the
             chosen assistant, so the name is kept for the label and tooltip. */}
@@ -305,7 +313,10 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
       </div>
-      <button className="chip" type="button" disabled={!!busy} onClick={() => void run(item.id, () => assignNewWorkV2(item, assistant))}>開新 {assistantName(assistant)} Session</button>
+      <button className="chip" type="button" disabled={!!busy} aria-busy={busy === item.id}
+        onClick={() => assign(() => assignNewWorkV2(item, assistant))}>
+        {busy === item.id ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button>
+      {assignFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     </div>}
     <WorkSteps steps={item.steps} />
     <WorkMilestones phase={item.phase} />

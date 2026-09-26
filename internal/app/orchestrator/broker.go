@@ -81,6 +81,11 @@ type Broker struct {
 	Screen func(ctx context.Context, terminalID string) (string, bool)
 	// Launcher opens the child's tab.
 	Launcher ports.Launcher
+	// TrustClaudeProject records a project folder as one Claude Code may work
+	// in, before a session the person asked for is opened there, so its first
+	// screen is a composer and not the workspace-trust dialog nothing may
+	// answer (openSession). Nil records nothing, which only a test wants.
+	TrustClaudeProject func(dir string) error
 	// TerminalCapabilities is what this machine's terminals can do —
 	// read_screen and send_keys — asked before a dispatch is admitted
 	// (capability.go). Nil answers unknown, which refuses nothing.
