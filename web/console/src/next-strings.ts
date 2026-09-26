@@ -33,6 +33,7 @@ const words = {
     sessionNotStartedShort: "Conversation not started yet",
     infoContext: "Context",
     infoContextUsed: "{used} of {window} tokens in the context",
+    infoResetsInMinutes: "in {n} min",
     sessionLastActivity: "last activity {time}",
     sessionStateUnrecognizedList:
       "Clawdline read the screen but could not identify its state. Open this session to inspect it.",
@@ -501,6 +502,7 @@ const words = {
     sessionNotStartedShort: "對話還沒開始",
     infoContext: "Context",
     infoContextUsed: "context 裡有 {used} / {window} tokens",
+    infoResetsInMinutes: "{n} 分鐘後",
     sessionLastActivity: "上次活動：{time}",
     sessionStateUnrecognizedList: "Clawdline 已讀到畫面，但無法辨認狀態。請開啟這個 session 查看。",
     sessionStateUnrecognizedDetail: "Clawdline 已讀到畫面，但無法辨認狀態。決定下一步前，請查看下方對話。",
