@@ -42,6 +42,7 @@ import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
 import { installScheduleWebhookManagement } from "./schedule-webhooks.js"
+import { installCloudPush, type CloudPushClient } from "./cloud-push.js"
 import {
   machineAccessProblem,
   machineListAnswer,
@@ -235,6 +236,7 @@ export function CloudGate({ declared }: { declared: string }) {
   const unlisten = useRef<(() => void) | null>(null)
   const recheck = useRef<ReturnType<typeof setTimeout> | null>(null)
   const uninstallScheduleWebhooks = useRef<(() => void) | null>(null)
+  const uninstallCloudPush = useRef<(() => void) | null>(null)
   // What this tab has forgotten, where the machine source installed once can
   // read it. The source outlives every render that changes the list.
   const gone = useRef<readonly string[]>([])
@@ -247,6 +249,8 @@ export function CloudGate({ declared }: { declared: string }) {
   useEffect(() => () => {
     uninstallScheduleWebhooks.current?.()
     uninstallScheduleWebhooks.current = null
+    uninstallCloudPush.current?.()
+    uninstallCloudPush.current = null
   }, [])
 
   useEffect(() => {
@@ -326,7 +330,19 @@ export function CloudGate({ declared }: { declared: string }) {
     reader.current = next
     readThroughRelay(next)
     uninstallScheduleWebhooks.current?.()
+    uninstallCloudPush.current?.()
     if (config) {
+      // Notifications are the account's, not this machine's: the browser
+      // subscribes once with Cloud's key and every machine on the account is
+      // handed the subscription (`cloud-push.ts`).
+      uninstallCloudPush.current = installCloudPush({
+        apiOrigin: config.apiOrigin,
+        connected: () => {
+          const active = client.current
+          if (!active) throw Object.assign(new Error("the cloud connection is not ready"), { code: "offline" })
+          return active as unknown as CloudPushClient
+        },
+      })
       uninstallScheduleWebhooks.current = installScheduleWebhookManagement({
         apiOrigin: config.apiOrigin,
         machineID: machine.id,

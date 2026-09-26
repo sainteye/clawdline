@@ -1,5 +1,16 @@
 import { Diagnostics } from "../legacy/js/core/layout-diagnostics.js"
 import * as L from "../legacy/bridge.js"
+import {
+  cloudDisable,
+  cloudEnable,
+  cloudPush,
+  cloudResume,
+  onCloudPush,
+  type BrowserPush,
+  type CloudPushSeam,
+  type MachineOutcome,
+} from "../cloud/cloud-push.js"
+import { nextWord } from "../next-strings.js"
 import { pushKey, pushSubscribe, pushTest, pushUnsubscribe } from "./api.js"
 
 /**
@@ -39,6 +50,11 @@ import { pushKey, pushSubscribe, pushTest, pushUnsubscribe } from "./api.js"
 const WORKER_READY_TIMEOUT_MS = 15_000
 const PERMISSION_TIMEOUT_MS = 60_000
 const PUSH_OPERATION_TIMEOUT_MS = 30_000
+/**
+ * The Cloud path asks the account twice and every machine once, in parallel,
+ * each machine bounded by the copied client's own read timeout.
+ */
+const CLOUD_OPERATION_TIMEOUT_MS = 60_000
 
 export type PushState = "unsupported" | "homescreen" | "blocked" | "off" | "on"
 
@@ -294,8 +310,128 @@ function readServed(error: unknown): void {
   if (code === "not_implemented" || code === "not_found") served = false
 }
 
+/** The browser's half of the Cloud flows, over one registration. */
+function browserPush(r: ServiceWorkerRegistration): BrowserPush {
+  return {
+    current: () => r.pushManager.getSubscription(),
+    subscribe: (key) =>
+      r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }),
+  }
+}
+
+/**
+ * What the fan-out came to, by machine name: who will notify this device, and
+ * who did not take it this time and will be asked again on the next visit.
+ */
+function outcomeWords(outcomes: MachineOutcome[]): { said: string; saidCalm: boolean } {
+  const reached = outcomes.filter((row) => row.ok).map((row) => row.name)
+  const missed = outcomes.filter((row) => !row.ok)
+  if (!reached.length && !missed.length) return { said: nextWord("pushCloudNoMachine"), saidCalm: false }
+  const parts: string[] = []
+  if (reached.length) parts.push(nextWord("pushCloudReached", { machines: reached.join("、") }))
+  if (missed.length) {
+    parts.push(
+      nextWord("pushCloudUnreached", {
+        machines: missed.map((row) => row.name).join("、"),
+        why: [...new Set(missed.map((row) => row.code || "push_failed"))].join(", "),
+      }),
+    )
+  }
+  return { said: parts.join(" "), saidCalm: !missed.length }
+}
+
+function failed(e: StagedError): void {
+  readServed(e)
+  publish({ busy: false })
+  redraw()
+  Diagnostics.note("push.enable.failure", {
+    stage: e?.stage || "enable",
+    code: e?.code || "push_failed",
+  })
+  const detail = " [" + (e?.stage || "enable") + ": " + (e?.code || "push_failed") + "]"
+  publish({ said: L.failureSentence(e, L.strings.webNotifyOnFailed) + detail })
+}
+
+/**
+ * Clawdline Cloud's console: the account's key, and the subscription handed to
+ * every machine on it (`cloud/cloud-push.ts`).
+ */
+function enableCloud(seam: CloudPushSeam): void {
+  timed("permission", PERMISSION_TIMEOUT_MS, askPermission)
+    .then((answer) => {
+      if (answer !== "granted") {
+        publish({ busy: false })
+        redraw()
+        return null
+      }
+      return timed("worker.ready", WORKER_READY_TIMEOUT_MS, ensureRegistration)
+        .then((r) => {
+          registration = r
+          return timed("cloud.subscribe", CLOUD_OPERATION_TIMEOUT_MS, () => cloudEnable(seam, browserPush(r)))
+        })
+        .then((outcomes) => {
+          subscribed = true
+          publish({ busy: false, ...outcomeWords(outcomes) })
+          redraw()
+          return null
+        })
+    })
+    .catch(failed)
+}
+
+function disableCloud(seam: CloudPushSeam): void {
+  timed("worker.ready", WORKER_READY_TIMEOUT_MS, ensureRegistration)
+    .then((r) => timed("cloud.unsubscribe", CLOUD_OPERATION_TIMEOUT_MS, () => cloudDisable(seam, browserPush(r))))
+    .then((untold) => {
+      subscribed = false
+      publish({ busy: false })
+      redraw()
+      if (untold.length) {
+        Diagnostics.note("push.disable.untold", { code: untold[0]!.code || "push_failed" })
+        publish({
+          said: nextWord("pushCloudOffUntold", {
+            machines: untold.map((row) => row.name).join("、"),
+            why: [...new Set(untold.map((row) => row.code || "push_failed"))].join(", "),
+          }),
+        })
+      }
+    })
+    .catch((e: unknown) => {
+      publish({ busy: false })
+      redraw()
+      publish({ said: L.failureSentence(e, L.strings.webNotifyOffFailed) })
+    })
+}
+
+/**
+ * A visit on Cloud's console: whether this browser is subscribed with the
+ * account's key, and the subscription delivered to every machine that joined
+ * since or was offline last time. Said only when a machine was asked.
+ */
+function resumeCloud(seam: CloudPushSeam): void {
+  const first = decide()
+  if (first === "unsupported" || first === "homescreen" || first === "blocked") return
+  timed("worker.ready", WORKER_READY_TIMEOUT_MS, ensureRegistration)
+    .then((r) => timed("cloud.resume", CLOUD_OPERATION_TIMEOUT_MS, () => cloudResume(seam, browserPush(r))))
+    .then(({ subscribed: on, outcomes }) => {
+      subscribed = on
+      publish({ settled: true })
+      redraw()
+      if (outcomes.length) publish(outcomeWords(outcomes))
+    })
+    .catch(() => {
+      publish({ settled: true })
+      redraw()
+    })
+}
+
 function enable(): void {
   publish({ busy: true, said: "", saidCalm: false })
+  const seam = cloudPush()
+  if (seam) {
+    enableCloud(seam)
+    return
+  }
   timed("permission", PERMISSION_TIMEOUT_MS, askPermission)
     .then((answer) => {
       if (answer !== "granted") {
@@ -329,21 +465,16 @@ function enable(): void {
           return null
         })
     })
-    .catch((e: StagedError) => {
-      readServed(e)
-      publish({ busy: false })
-      redraw()
-      Diagnostics.note("push.enable.failure", {
-        stage: e?.stage || "enable",
-        code: e?.code || "push_failed",
-      })
-      const detail = " [" + (e?.stage || "enable") + ": " + (e?.code || "push_failed") + "]"
-      publish({ said: L.failureSentence(e, L.strings.webNotifyOnFailed) + detail })
-    })
+    .catch(failed)
 }
 
 function disable(): void {
   publish({ busy: true, said: "", saidCalm: false })
+  const seam = cloudPush()
+  if (seam) {
+    disableCloud(seam)
+    return
+  }
   const id = recall()
   timed("worker.ready", WORKER_READY_TIMEOUT_MS, ensureRegistration)
     .then((r) => timed("browser.lookup", PUSH_OPERATION_TIMEOUT_MS, () => r.pushManager.getSubscription()))
@@ -420,10 +551,21 @@ export function startPush(): void {
   if (started) return
   started = true
   redraw()
+  // The hosted gate installs the Cloud seam once a machine is chosen, which is
+  // usually after this first read; each install is a visit to deliver from.
+  onCloudPush(() => {
+    const seam = cloudPush()
+    if (seam) resumeCloud(seam)
+  })
   const first = decide()
   if (first === "unsupported" || first === "homescreen") {
     publish({ settled: true })
     redraw()
+    return
+  }
+  const seam = cloudPush()
+  if (seam) {
+    resumeCloud(seam)
     return
   }
   timed("worker.ready", WORKER_READY_TIMEOUT_MS, ensureRegistration)

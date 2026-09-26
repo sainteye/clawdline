@@ -391,6 +391,11 @@ const words = {
       "Read-only overview. Refresh asks the owning machine for one bounded observation. Cleanup is intentionally unavailable in a browser.",
     projectsDeliveredNotLanded: "Delivered, not landed",
     projectsUnattributedWorktrees: "Unattributed worktrees",
+    pushCloudReached: "Notifications are on: {machines} will notify this device.",
+    pushCloudUnreached: "{machines} did not take it this time ({why}); this page tries again the next time it opens.",
+    pushCloudNoMachine:
+      "Notifications are on here, but no machine on this account has taken them yet; this page tries again the next time it opens.",
+    pushCloudOffUntold: "This device no longer gets notifications, but {machines} could not be told: {why}",
   },
   "zh-Hant": {
     olderNotRead: "更早的對話沒有載入：這一頁只讀對話記錄的最後 {window}，前面還有 {bytes} 沒有讀。",
@@ -706,6 +711,10 @@ const words = {
     smartTitleSaved: "智能標題已儲存。",
     sessionStop: "停止目前的工作（Esc）",
     sessionStopSent: "已送出 Esc，session 讀到後會停下目前這一輪。",
+    pushCloudReached: "通知已開啟：{machines} 會通知這台裝置。",
+    pushCloudUnreached: "{machines} 這次沒收到（{why}），下次打開這一頁會再送。",
+    pushCloudNoMachine: "這台裝置的通知已開啟，但帳號上還沒有機器收下；下次打開這一頁會再送。",
+    pushCloudOffUntold: "這台裝置已經不會收到通知，但沒能通知 {machines}：{why}",
   },
 } as const
 
