@@ -23,7 +23,7 @@ import (
 
 // ErrUnsupported is the platform having no reader yet. It is a refusal to
 // guess, not an empty machine: the route answers it as its own code.
-var ErrUnsupported = errors.New("machine usage is read on Linux only")
+var ErrUnsupported = errors.New("machine usage is read on Linux and macOS only")
 
 // Proc is one process as a sample saw it.
 type Proc struct {
@@ -58,6 +58,12 @@ type Sample struct {
 	Load                   [3]float64
 	Pressure               *Pressure
 	Procs                  map[int]Proc
+
+	// ProcCPU says the machine has no CPU counters of its own here (a Mac
+	// without cgo): its CPU is the sum of every process's CPU time over the
+	// interval, and Ticks are in hundredths of a second. CPUTotal and CPUIdle
+	// are unused.
+	ProcCPU bool
 }
 
 // Root is a process whose tree is one row: a session's assistant, or this
@@ -124,26 +130,41 @@ func Compute(prev, cur Sample, roots []Root, swapOf func(int) int64, topOthers i
 	u.MemUsed = clamp(cur.MemTotal-cur.MemAvailable, 0, cur.MemTotal)
 	u.SwapUsed = clamp(cur.SwapTotal-cur.SwapFree, 0, cur.SwapTotal)
 
-	var total uint64
-	if cur.CPUTotal > prev.CPUTotal {
-		total = cur.CPUTotal - prev.CPUTotal
-	}
-	if total > 0 {
-		idle := uint64(0)
-		if cur.CPUIdle > prev.CPUIdle {
-			idle = cur.CPUIdle - prev.CPUIdle
-		}
-		u.CPUPercent = percent(total-min(idle, total), total)
-	}
-
+	// A process seen before, with the same start and a counter that did not
+	// go backwards, spent the difference; anything else is a process that
+	// began inside the interval and spent all of its time in it. The counter
+	// check is what tells a reused pid apart where there is no start time
+	// (a Mac's `ps`).
 	spent := func(p Proc) uint64 {
-		if before, ok := prev.Procs[p.PID]; ok && before.Start == p.Start {
-			if p.Ticks > before.Ticks {
-				return p.Ticks - before.Ticks
-			}
-			return 0
+		if before, ok := prev.Procs[p.PID]; ok && before.Start == p.Start && p.Ticks >= before.Ticks {
+			return p.Ticks - before.Ticks
 		}
 		return p.Ticks
+	}
+
+	var total uint64
+	if cur.ProcCPU {
+		if cur.At.After(prev.At) && cur.Cores > 0 {
+			total = uint64(cur.At.Sub(prev.At).Seconds()*darwinTicksPerSecond*float64(cur.Cores) + 0.5)
+		}
+		if total > 0 {
+			var busy uint64
+			for _, p := range cur.Procs {
+				busy += spent(p)
+			}
+			u.CPUPercent = percent(min(busy, total), total)
+		}
+	} else {
+		if cur.CPUTotal > prev.CPUTotal {
+			total = cur.CPUTotal - prev.CPUTotal
+		}
+		if total > 0 {
+			idle := uint64(0)
+			if cur.CPUIdle > prev.CPUIdle {
+				idle = cur.CPUIdle - prev.CPUIdle
+			}
+			u.CPUPercent = percent(total-min(idle, total), total)
+		}
 	}
 
 	index := map[int]int{}

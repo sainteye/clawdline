@@ -33,7 +33,7 @@ func TestAPairedDeviceReadsTheMachinesUsage(t *testing.T) {
 
 	reader := map[string]string{"Authorization": "Bearer " + f.read}
 	rec := call{method: http.MethodGet, path: "/v1/machine/usage", headers: reader}.do(h)
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		if rec.Code != http.StatusNotImplemented || !strings.Contains(rec.Body.String(), "machine_usage_unsupported") {
 			t.Fatalf("a machine without a reader: %d %s", rec.Code, rec.Body)
 		}

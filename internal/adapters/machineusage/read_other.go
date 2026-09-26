@@ -1,10 +1,9 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package machineusage
 
-// Read has no reader on this platform yet. macOS keeps these counters behind
-// host_statistics and proc_pidinfo, and Windows behind the PDH counters; each is
-// a reader of its own, not a guess from `ps`.
+// Read has no reader on this platform yet. Windows keeps these counters behind
+// the PDH counters and the toolhelp snapshot, a reader of its own.
 func Read() (Sample, error) { return Sample{}, ErrUnsupported }
 
 // Swap has nothing to read where Read has nothing.

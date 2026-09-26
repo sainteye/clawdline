@@ -888,8 +888,8 @@ checkout).
 
 **Run a build or a test suite through `clawdline heavy -- <command>`**, not bare. It queues for
 `heavy_compile`, waits until the machine has memory available (a quarter of it, at most 1 GB, and
-no memory stall above 10%), runs the command at a lower priority as the first thing the kernel
-kills if memory runs out, renews the lease while it runs and releases it after. It keeps the
+no memory stall above 10%), runs the command at a lower priority — on Linux also as the first
+thing the kernel kills if memory runs out — renews the lease while it runs and releases it after. It keeps the
 command's exit status. It never refuses to build: no daemon, a refusal, or `--max-wait` (default
 30m) passed runs the command anyway with a sentence on stderr. A `heavy` inside a `heavy` runs
 directly. `--min-available 1500M` asks for more; `--no-slot` checks memory only. In a repository

@@ -46,7 +46,7 @@ async function call(method: string, path: string): Promise<MachineUsage> {
 export function failureWords(err: unknown, zh: boolean): string {
   if (err instanceof RefusalError) {
     if (err.code === "machine_usage_unsupported") {
-      return zh ? "這台機器的作業系統還沒有用量讀取器（目前只支援 Linux）。" : "This machine's system has no usage reader yet (Linux only for now)."
+      return zh ? "這台機器的作業系統還沒有用量讀取器（目前支援 Linux 和 macOS）。" : "This machine's system has no usage reader yet (Linux and macOS for now)."
     }
     if (err.code === "cloud_not_carried" || err.code === "unknown_command") {
       return zh ? "這台機器的 Clawdline 版本還不會回答用量，更新後就能看到。" : "This machine's Clawdline does not answer usage yet; update it to see this."
