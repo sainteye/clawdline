@@ -261,7 +261,9 @@ token。Cloud 分頁可以走 GitHub 登入的來回，但不能被導到 consol
 按登入時，殼用 `ASWebAuthenticationSession` 在預設瀏覽器走 GitHub 授權，用得到瀏覽器原本的 GitHub
 登入與密碼管理器；Cloud API 把結果以綁定 PKCE verifier 的 60 秒交接碼經 `clawdline-next://cloud-signed-in`
 交回，Cloud 分頁再到 `/v1/auth/oauth/handoff` 換成一般的登入票。系統開不了瀏覽器登入時，退回在分頁內
-登入。
+登入。登入後 Cloud 要這個分頁配對時，殼直接跟本機配對（`CloudPairing.swift`）：向自己的 daemon 要一張
+邀請（`POST /v1/cloud/pairing`，就是 `clawdline cloud pair` 印的那張），把連結放進分頁、按下接受，
+頁面顯示的兩組指紋與 daemon 回報的一致才關掉卡片。任何一步不如預期就留在手動配對畫面，每次啟動只試一次。
 
 上方原生列的網址只報告目前前面那一頁：可選取與複製，但沒有邊框、輸入 action 或可編輯狀態。返回、前進、
 重新整理與縮放作用在前面那一頁，縮放兩邊各自記在 `shell-zoom.json`；「顯示方式」選單的 ⌘1／⌘2 切換

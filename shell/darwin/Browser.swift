@@ -410,6 +410,9 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
     /// The bar's cue: something about where this view is has changed.
     var onNavigation: (() -> Void)?
 
+    /// Pairs this view with this Mac when Cloud asks it to; see CloudPairing.swift.
+    private var selfPairing: CloudSelfPairing?
+
     /// A fixed identifier, so signing in to Cloud survives a relaunch, and an
     /// identifier *of its own*, so this is a different jar from the one the
     /// local token is written into. The same one the Cloud tab used until
@@ -702,6 +705,8 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthent
         shellLog("cloud: loaded \(loggable(webView.url)) title=\(webView.title ?? "?")")
         onNavigation?()
         report(webView, attempt: 0)
+        if selfPairing == nil { selfPairing = CloudSelfPairing(view: webView) }
+        selfPairing?.look()
     }
 
     /// What Cloud drew, once it has drawn: the page is rendered by script, so
