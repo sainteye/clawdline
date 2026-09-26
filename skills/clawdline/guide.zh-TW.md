@@ -512,7 +512,7 @@ echo "下次 release 前把 release notes 整理好。" | \
 - Feature 或 Issue 建好時**已經指派給你**，phase 是 `assigned`，並帶著 steps：依序是那些 `--step`，
   沒給的話，就是 description 裡兩列以上的頂層 Markdown 清單。不會有任何字打進你的 terminal——是你自己
   要的。照順序做，每一步確認完成後就勾掉（`clawdline item steps <item id>`、`clawdline item step-done
-  <item id> <step id>`），並像任何已指派項目一樣推進 phase。Epic、Refactor、Plan 會以未指派狀態建在
+  <item id> <step id>`），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。Epic、Refactor、Plan 會以未指派狀態建在
   規劃區，不帶 steps（`planning_has_no_steps`）。
 - 使用者會看到卡片上寫著「Session 依你 HH:MM 的訊息建立」，並引用他的原話。
 - 拒絕，每一種都什麼都不寫：`run_unknown`（沒指名 run，或沒有這個 run）、`run_expired`（超過一天）、
@@ -629,6 +629,48 @@ PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 
 `user_action` 最多 8 KiB，而且只屬於 `waiting_user`；缺少具體動作或在其他 condition 寫入都會被具名拒絕。
 不再等待時，用同一路由把 `condition` 設成空字串，daemon 會一起清掉 `user_action`，避免看板留下過期要求。
+
+**推進 phase。** 負責項目的 Session 自己把項目推過執行階段；別人不會替你推，turn receipt 或清掉
+condition 也不會。phase 不是 `…/edit` 的欄位（`phase_not_editable`）。每一步所說的事真的發生了，
+才執行那一步：
+
+```
+clawdline item phase <item id> implementing                  # 開始動手時
+clawdline item phase <item id> verifying                     # 改動已經在了，開始檢查
+clawdline item phase <item id> merging --verification "跑了什麼、結果是什麼"
+clawdline item phase <item id> deploying --commit <sha> --target main --remote origin
+clawdline item phase <item id> deploying --commit <sha> --target main --remote origin --landing-project <place id>
+clawdline item phase <item id> done --deployment "上線了什麼、在哪裡、哪個版本"
+clawdline item phase <item id> done --no-deployment-reason "為什麼不需要部署"
+```
+
+指令會先讀項目的 version，印出 Idempotency-Key（用 `--key` 重送同一筆寫入），成功後印出項目。它就是
+
+```
+POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>", "next": "<phase>",
+ "verification"?: "…", "landing"?: {"commit", "target", "remote", "project"?},
+ "deployment"?: "…", "no_deployment_reason"?: "…"}
+```
+
+- 一次走一步：`assigned → implementing → verifying → merging → deploying → done`。`verifying` 可以
+  退回 `implementing`；`merging` 可以退回 `implementing` 或 `verifying`。不能跳過任何一步，`done`
+  只能從 `deploying` 進入。
+- `merging` 要帶 `verification`。`deploying` 要有 landing：這個項目的 broker child 已經 land，或用
+  `landing` 指名一個 commit，daemon 要在 Project 的本機 `target` branch 和
+  `refs/remotes/<remote>/<target>` 上都找得到它——先 push。工作落在別的 repository 時（後端項目、
+  改動卻是前端的 commit），用 `landing.project`（`--landing-project`）指名那個 Project 在
+  `GET /v1/places` 的 id，daemon 就改在那裡找 commit，收據會記下是哪個 repository。`done` 要帶 `deployment` 或
+  `no_deployment_reason`，由項目的 `deployment_policy` 決定（`required` 只收 `deployment`，
+  `not_required` 只收 `no_deployment_reason`，`agent_decides` 兩者皆可）。所有 step 都要先完成。
+- `done` 會釋放你的 assignment，項目移到這個 Session 的「最近完成」。需要結案報告時（見下文）
+  要在這之前加上。
+- 拒絕：`invalid_transition`（不是下一個 phase，或缺它要的證據）、`steps_incomplete`、
+  `not_item_owner`、`item_unassigned`、`item_terminal`（要由人重開）、`evidence_unknown`、
+  `direct_landing_not_applicable`、`invalid_landing_evidence`、`landing_project_not_found`、
+  `landing_commit_unresolved`、
+  `landing_target_unresolved`、`landing_not_on_target`、`landing_remote_unresolved`、
+  `landing_not_published`，以及 `version_conflict`：重讀後再送。
 
 已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
 steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，以 machine authentication 和

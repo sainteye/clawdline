@@ -142,6 +142,9 @@ type workV2LandingRequest struct {
 	Commit string `json:"commit"`
 	Target string `json:"target"`
 	Remote string `json:"remote"`
+	// Project names another catalog Project whose repository holds the
+	// commit, when the work landed outside the item's own Project.
+	Project string `json:"project"`
 }
 
 type workV2GitReader interface {
@@ -150,10 +153,22 @@ type workV2GitReader interface {
 	IsAncestor(context.Context, string, string, string) (bool, error)
 }
 
+// workV2PhaseInstruction names the command that moves the phase, in every
+// brief an owner receives: a Session told only to "implement, verify, merge
+// and deploy" finished the work and left its item in assigned, because nothing
+// it read named the route (2026-09-26).
+func workV2PhaseInstruction(id string) string {
+	return "Move the item through its phases yourself as the work happens: `clawdline item phase " + id +
+		" implementing`, then verifying, merging (--verification), deploying (--commit --target --remote) and done " +
+		"(--deployment or --no-deployment-reason); `clawdline guide board` says what each one needs."
+}
+
 const workV2CompletionReportInstruction = "When substantial investigation was needed to find a non-obvious cause, add a user-readable completion_report before done; a straightforward fix does not require one."
 
+// repo is the repository the commit is looked for in: the item's Project, or
+// the catalog Project the request named, resolved by the caller.
 func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.WorkV2View,
-	session string, ask *workV2LandingRequest) (*app.VerifiedLandingV2, *app.WorkError) {
+	session, repo string, ask *workV2LandingRequest) (*app.VerifiedLandingV2, *app.WorkError) {
 	if ask == nil {
 		return nil, nil
 	}
@@ -177,11 +192,10 @@ func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.
 		return nil, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_landing_evidence",
 			Message: "Landing evidence needs a commit, a valid local target branch, and one remote name."}
 	}
-	repo := item.Item.ProjectPath
 	resolved, err := g.ResolveCommit(ctx, repo, commit)
 	if err != nil {
 		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_commit_unresolved",
-			Message: "The landing commit does not resolve in the item's Project."}
+			Message: "The landing commit does not resolve in the item's Project. Work that landed in another Project names it with landing.project."}
 	}
 	localRef := "refs/heads/" + target
 	localHead, err := g.ResolveCommit(ctx, repo, localRef)
@@ -205,8 +219,12 @@ func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.
 		return nil, &app.WorkError{Status: http.StatusConflict, Code: "landing_not_published",
 			Message: "The landing commit is not contained by the remote-tracking target."}
 	}
-	return &app.VerifiedLandingV2{Commit: resolved, Target: target, TargetCommit: localHead,
-		Remote: remote, RemoteCommit: remoteHead}, nil
+	landing := &app.VerifiedLandingV2{Commit: resolved, Target: target, TargetCommit: localHead,
+		Remote: remote, RemoteCommit: remoteHead}
+	if repo != item.Item.ProjectPath {
+		landing.Repository = repo
+	}
+	return landing, nil
 }
 
 func (s *Server) workV2Project(ctx context.Context, id string) (workV2ProjectWire, bool) {
@@ -509,7 +527,14 @@ func readWorkV2BodyAtMost(w http.ResponseWriter, r *http.Request, into any, limi
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(into); err != nil {
-		writeRefusal(w, http.StatusBadRequest, "invalid_request", "The body is not a valid work-system request.")
+		message := "The body is not a valid work-system request."
+		// encoding/json spells a field DisallowUnknownFields refused as
+		// `json: unknown field "x"`; naming it tells the caller what to drop
+		// instead of leaving it to guess at the whole body.
+		if field, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			message = "The body is not a valid work-system request: this route does not take the field " + field + "."
+		}
+		writeRefusal(w, http.StatusBadRequest, "invalid_request", message)
 		return nil, false
 	}
 	return raw, true
@@ -712,9 +737,21 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		Condition       *string `json:"condition"`
 		UserAction      *string `json:"user_action"`
 		SessionID       string  `json:"session_id"`
+		// Phase is read only to refuse it by name: a Session that reaches
+		// for the edit route to close its item is told where the phase moves.
+		Phase json.RawMessage `json:"phase"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
+		return
+	}
+	if body.Phase != nil {
+		message := "An item's phase is not edited; it moves through the item's own actions."
+		if !person {
+			message = "An item's phase is not edited; the owning Session moves it with POST /v1/work/v2/agent/items/" +
+				id + "/phase (clawdline item phase)."
+		}
+		writeRefusal(w, http.StatusBadRequest, "phase_not_editable", message)
 		return
 	}
 	if !person {
@@ -898,7 +935,8 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		// Session's assigned-item projection immediately. Typing is only a
 		// courtesy when a fresh reading still says idle. Working, waiting and
 		// unknown rows pull their to-do list after their present turn.
-		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items. %s", id, item.Item.Title, workV2CompletionReportInstruction)
+		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items. %s %s", id, item.Item.Title,
+			workV2PhaseInstruction(id), workV2CompletionReportInstruction)
 		if _, sendErr := s.actions().SendIfIdle(ctx, sess.ID, brief); sendErr != nil {
 			refusal, deferred := sendErr.(app.Refusal)
 			if !deferred || refusal.Code != "session_not_idle" {
@@ -951,7 +989,7 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 			Scope: item.Item.Description, Constraints: "Own only this Board item. Do not create Board items.",
 			RelevantReferences: "Board item: " + item.Item.ID,
 			Acceptance: "Implement, verify, merge, and deploy according to the item's deployment policy. " +
-				workV2CompletionReportInstruction}})
+				workV2PhaseInstruction(item.Item.ID) + " " + workV2CompletionReportInstruction}})
 	failure, resolvedTerminal, resolvedSession := "", "", ""
 	if openErr != nil {
 		failure = openErr.Error()
@@ -1350,7 +1388,18 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			s.writeWorkV2Error(w, err)
 			return
 		}
-		landing, landingErr := verifyWorkV2DirectLanding(r.Context(), gitadapter.New(), item, body.SessionID, body.Landing)
+		repo := item.Item.ProjectPath
+		if body.Landing != nil && strings.TrimSpace(body.Landing.Project) != "" {
+			other, ok := s.workV2Project(r.Context(), strings.TrimSpace(body.Landing.Project))
+			if !ok {
+				_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+				writeRefusal(w, http.StatusUnprocessableEntity, "landing_project_not_found",
+					"landing.project names no Project in the current catalog.")
+				return
+			}
+			repo = other.Path
+		}
+		landing, landingErr := verifyWorkV2DirectLanding(r.Context(), gitadapter.New(), item, body.SessionID, repo, body.Landing)
 		if landingErr != nil {
 			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
 			s.writeWorkV2Error(w, landingErr)
