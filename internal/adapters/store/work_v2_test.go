@@ -134,6 +134,82 @@ VALUES ('doc-a','item-a','test','Existing test','green','',0,1,1,1)`)
 	}
 }
 
+// A reference image stored before photographs stayed JPEG is a PNG row under a
+// CHECK that allowed nothing else. Opening that store keeps the row, still a
+// PNG, and lets a JPEG in beside it.
+func TestOpeningAPNGOnlyImageStoreKeepsItsPicturesAndTakesAJPEG(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE work_v2_items (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, project_path TEXT NOT NULL, kind TEXT NOT NULL,
+  title TEXT NOT NULL, description TEXT NOT NULL, phase TEXT NOT NULL, condition TEXT NOT NULL DEFAULT '',
+  user_action TEXT NOT NULL DEFAULT '', deployment_policy TEXT NOT NULL, owner_session TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER,
+  cycle INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE work_v2_images (
+  id TEXT PRIMARY KEY, work_id TEXT NOT NULL REFERENCES work_v2_items(id) ON DELETE CASCADE,
+  title TEXT NOT NULL, media_type TEXT NOT NULL CHECK (media_type = 'image/png'), data BLOB NOT NULL,
+  byte_count INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, position INTEGER NOT NULL,
+  created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX work_v2_images_item ON work_v2_images(work_id, position, id);
+CREATE TABLE session_direct_todos (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL, text TEXT NOT NULL, created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL, sent_at INTEGER, read_at INTEGER, completed_at INTEGER,
+  completed_by TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE session_direct_todo_images (
+  id TEXT PRIMARY KEY, todo_id TEXT NOT NULL REFERENCES session_direct_todos(id) ON DELETE CASCADE,
+  title TEXT NOT NULL, media_type TEXT NOT NULL CHECK (media_type = 'image/png'), data BLOB NOT NULL,
+  byte_count INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, position INTEGER NOT NULL,
+  created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
+INSERT INTO work_v2_items
+  (id,project_id,project_path,kind,title,description,phase,condition,user_action,deployment_policy,
+   owner_session,created_by,created_at,updated_at,closed_at,cycle,version)
+VALUES ('item-a','p','/p','issue','Existing','Existing','created','','','agent_decides','','local',1,1,NULL,1,1);
+INSERT INTO work_v2_images VALUES ('img-a','item-a','old.png','image/png',X'89504E47',4,2,2,0,'local',1);
+INSERT INTO session_direct_todos (id,session_id,text,created_by,created_at) VALUES ('todo-a','s','t','local',1);
+INSERT INTO session_direct_todo_images VALUES ('timg-a','todo-a','old.png','image/png',X'89504E47',4,2,2,0,'local',1)`)
+	if closeErr := db.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	for _, id := range []string{"img-a", "timg-a"} {
+		data, mediaType, ok, err := s.WorkV2ImageBytes(ctx, id)
+		if err != nil || !ok || string(data) != "\x89PNG" || mediaType != "image/png" {
+			t.Fatalf("%s after the migration: %q %q %v %v", id, data, mediaType, ok, err)
+		}
+	}
+	if _, err := s.db.Exec(`INSERT INTO work_v2_images VALUES ('img-b','item-a','photo.jpg','image/jpeg',X'FFD8FF',3,2,2,1,'local',2)`); err != nil {
+		t.Fatalf("a JPEG reference after the migration: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO session_direct_todo_images VALUES ('timg-b','todo-a','photo.jpg','image/jpeg',X'FFD8FF',3,2,2,1,'local',2)`); err != nil {
+		t.Fatalf("a JPEG to-do picture after the migration: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO work_v2_images VALUES ('img-c','item-a','x.gif','image/gif',X'47',1,1,1,2,'local',3)`); err == nil {
+		t.Fatal("a media type Normalize never writes was stored")
+	}
+	if _, _, ok, _ := s.WorkV2ImageBytes(ctx, "img-b"); !ok {
+		t.Fatal("the JPEG reference is not readable")
+	}
+	// The cascade still reaches the rebuilt table.
+	if _, err := s.db.Exec(`DELETE FROM session_direct_todos WHERE id='todo-a'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok, _ := s.WorkV2ImageBytes(ctx, "timg-a"); ok {
+		t.Fatal("deleting the to-do left its picture behind")
+	}
+}
+
 func v2Item(id string, at time.Time) work.ItemV2 {
 	return work.ItemV2{ID: id, ProjectID: "project-a", ProjectPath: "/project-a", Kind: work.KindFeature,
 		Title: "Visible feature", Description: "What should change", Phase: work.PhaseCreated,
@@ -352,9 +428,9 @@ func TestDirectTodoImagesStayWithTheTodoAndShareTheWorkImageBudget(t *testing.T)
 	if err != nil || len(images) != 1 || images[0].Title != image.Title || images[0].ByteCount != int64(len(data)) {
 		t.Fatalf("metadata: %+v, %v", images, err)
 	}
-	got, ok, err := s.WorkV2ImageBytes(ctx, image.ID)
-	if err != nil || !ok || string(got) != string(data) {
-		t.Fatalf("bytes: %q %v %v", got, ok, err)
+	got, mediaType, ok, err := s.WorkV2ImageBytes(ctx, image.ID)
+	if err != nil || !ok || string(got) != string(data) || mediaType != "image/png" {
+		t.Fatalf("bytes: %q %q %v %v", got, mediaType, ok, err)
 	}
 	counts, err := s.WorkV2CapacityCounts(ctx)
 	if err != nil || counts["images_per_item"] != 1 || counts["image_bytes_total"] != int64(len(data)) {
@@ -369,7 +445,7 @@ func TestDirectTodoImagesStayWithTheTodoAndShareTheWorkImageBudget(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.WorkV2ImageBytes(ctx, image.ID); err != nil || ok {
+	if _, _, ok, err := s.WorkV2ImageBytes(ctx, image.ID); err != nil || ok {
 		t.Fatalf("deleted todo left image bytes: %v %v", ok, err)
 	}
 }
@@ -398,9 +474,9 @@ func TestWorkV2ReferenceImagesKeepMetadataAndBytesTogether(t *testing.T) {
 	if err != nil || len(images) != 1 || images[0].Title != image.Title || images[0].ByteCount != int64(len(data)) {
 		t.Fatalf("metadata: %+v, %v", images, err)
 	}
-	got, ok, err := s.WorkV2ImageBytes(ctx, image.ID)
-	if err != nil || !ok || string(got) != string(data) {
-		t.Fatalf("bytes: %q %v %v", got, ok, err)
+	got, mediaType, ok, err := s.WorkV2ImageBytes(ctx, image.ID)
+	if err != nil || !ok || string(got) != string(data) || mediaType != "image/png" {
+		t.Fatalf("bytes: %q %q %v %v", got, mediaType, ok, err)
 	}
 	counts, err := s.WorkV2CapacityCounts(ctx)
 	if err != nil || counts["images_per_item"] != 1 || counts["image_bytes_total"] != int64(len(data)) {
@@ -409,7 +485,7 @@ func TestWorkV2ReferenceImagesKeepMetadataAndBytesTogether(t *testing.T) {
 	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.DeleteImage(image.ID) }); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.WorkV2ImageBytes(ctx, image.ID); err != nil || ok {
+	if _, _, ok, err := s.WorkV2ImageBytes(ctx, image.ID); err != nil || ok {
 		t.Fatalf("deleted image still readable: %v %v", ok, err)
 	}
 }

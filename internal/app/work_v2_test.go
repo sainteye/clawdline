@@ -431,9 +431,14 @@ func TestPersonCommandsVersionReferenceImages(t *testing.T) {
 	w := newWorkV2Test(t)
 	v := createWorkV2Test(t, w, work.KindFeature)
 	added, err := w.AddImage(context.Background(), v.Item.ID, AddImageV2{ExpectedVersion: v.Item.Version,
-		Title: "state.png", Data: []byte("png"), Width: 3, Height: 2, Actor: "local"}, nil)
+		Title: "state.png", Data: []byte("png"), MediaType: "image/png", Width: 3, Height: 2, Actor: "local"}, nil)
 	if err != nil || added.Item.Version != v.Item.Version+1 || len(added.Images) != 1 {
 		t.Fatalf("add: %+v %v", added, err)
+	}
+	// Only what Normalize writes is stored.
+	if _, err := w.AddImage(context.Background(), v.Item.ID, AddImageV2{ExpectedVersion: added.Item.Version,
+		Title: "state.gif", Data: []byte("gif"), MediaType: "image/gif", Width: 3, Height: 2, Actor: "local"}, nil); err == nil {
+		t.Fatal("a reference image in a media type Normalize never writes was stored")
 	}
 	full, err := w.Item(context.Background(), v.Item.ID)
 	if err != nil || len(full.Images) != 1 || full.Images[0].Title != "state.png" {
@@ -508,9 +513,9 @@ func TestPersonAddsImagesOnlyBeforeDirectTodoDelivery(t *testing.T) {
 	}
 	added, image, err := w.AddDirectTodoImage(context.Background(), todo.ID, AddDirectTodoImageV2{
 		ExpectedVersion: todo.Version, SessionID: todo.SessionID, Title: "screen.png",
-		Data: []byte("png"), Width: 3, Height: 2, Actor: "local",
+		Data: []byte("jpeg"), MediaType: "image/jpeg", Width: 3, Height: 2, Actor: "local",
 	}, nil)
-	if err != nil || added.Version != todo.Version+1 || image.TodoID != todo.ID {
+	if err != nil || added.Version != todo.Version+1 || image.TodoID != todo.ID || image.MediaType != "image/jpeg" {
 		t.Fatalf("add: %+v %+v %v", added, image, err)
 	}
 	images, err := w.DirectTodoImages(context.Background(), todo.ID)

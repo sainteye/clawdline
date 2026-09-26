@@ -3217,7 +3217,8 @@ export interface ImageArtifact {
   id: string
 
   /**
-   * Always image/png: every stored picture was drawn and written out again.
+   * image/jpeg for a photograph, image/png for anything else: every stored picture
+   * was drawn and written out again.
    */
   media_type: string
   state?: ImageAbsence

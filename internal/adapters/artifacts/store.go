@@ -17,10 +17,10 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
-// Store is `SessionImageArtifactStore`, owned by this daemon: normalized PNGs
-// under opaque ids, each with a metadata record, expiring after a day and kept
-// as a tombstone for a week so "expired" and "never heard of it" stay two
-// different answers.
+// Store is `SessionImageArtifactStore`, owned by this daemon: normalized
+// pictures (`<id>.png`, or `<id>.jpg` for a photograph) under opaque ids, each
+// with a metadata record, expiring after a day and kept as a tombstone for a
+// week so "expired" and "never heard of it" stay two different answers.
 //
 // The directory is an ownership boundary. Every name removed here is built from
 // a validated id, and nothing ever follows an input path back to its source.
@@ -153,7 +153,7 @@ func (s *Store) ImportPaths(ctx context.Context, paths []string, now time.Time) 
 		if err != nil {
 			return nil, err
 		}
-		total += len(n.PNG)
+		total += len(n.Data)
 		prepared = append(prepared, n)
 	}
 	if total > p.MaxTotalBytes {
@@ -177,11 +177,11 @@ func (s *Store) ImportPaths(ctx context.Context, paths []string, now time.Time) 
 	written := []Stored{}
 	for _, item := range prepared {
 		a := Artifact{
-			ID: newUUID(), MediaType: "image/png", ByteCount: len(item.PNG),
+			ID: newUUID(), MediaType: item.MediaType, ByteCount: len(item.Data),
 			Width: item.Width, Height: item.Height, ExpiresAt: now.Unix() + p.TTLSeconds,
 		}
-		file := s.imagePath(a.ID)
-		err := writePrivate(file, item.PNG)
+		file := s.imagePath(a)
+		err := writePrivate(file, item.Data)
 		if err == nil {
 			err = s.writeMetadata(metadata{Artifact: a, CreatedAt: seconds(now)})
 			if err != nil {
@@ -264,7 +264,7 @@ func (s *Store) Lookup(id string, now time.Time) Found {
 	if found.State != Live {
 		return found
 	}
-	data, err := readBounded(s.imagePath(id), s.Policy.MaxEncodedBytes)
+	data, err := readBounded(s.imagePath(found.Artifact), s.Policy.MaxEncodedBytes)
 	if err != nil || len(data) != found.Artifact.ByteCount {
 		if m, ok := s.readMetadata(id); ok {
 			s.tombstoneLocked(m, now)
@@ -275,7 +275,7 @@ func (s *Store) Lookup(id string, now time.Time) Found {
 	return found
 }
 
-// Liveness is the cheap door: metadata and file existence, never the PNG. The
+// Liveness is the cheap door: metadata and file existence, never the picture. The
 // transcript asks it once per marker, so it sweeps nothing.
 func (s *Store) Liveness(id string, now time.Time) Found {
 	if !IsID(id) {
@@ -291,7 +291,7 @@ func (s *Store) livenessLocked(id string, now time.Time) Found {
 	if !ok {
 		return Found{State: Missing}
 	}
-	_, statErr := os.Stat(s.imagePath(id))
+	_, statErr := os.Stat(s.imagePath(m.Artifact))
 	if m.DeletedAt != nil || now.Unix() >= m.Artifact.ExpiresAt || statErr != nil {
 		if m.DeletedAt == nil {
 			s.tombstoneLocked(m, now)
@@ -310,7 +310,7 @@ func (s *Store) Delete(ids []string, now time.Time) {
 			continue
 		}
 		if m, ok := s.readMetadata(id); ok {
-			_ = os.Remove(s.imagePath(id))
+			_ = os.Remove(s.imagePath(m.Artifact))
 			if m.DeletedAt == nil {
 				s.tombstoneLocked(m, now)
 			}
@@ -320,14 +320,31 @@ func (s *Store) Delete(ids []string, now time.Time) {
 }
 
 func (s *Store) tombstoneLocked(m metadata, now time.Time) {
-	_ = os.Remove(s.imagePath(m.Artifact.ID))
+	_ = os.Remove(s.imagePath(m.Artifact))
 	at := seconds(now)
 	m.DeletedAt = &at
 	_ = s.writeMetadata(m)
 }
 
-func (s *Store) imagePath(id string) string    { return filepath.Join(s.Dir, id+".png") }
+// imagePath is where a picture's bytes are: `<id>.png`, or `<id>.jpg` for a
+// photograph. Every picture stored before photographs stayed JPEG is a PNG
+// and keeps its name.
+func (s *Store) imagePath(a Artifact) string {
+	return filepath.Join(s.Dir, a.ID+Extension(a.MediaType))
+}
+
 func (s *Store) metadataPath(id string) string { return filepath.Join(s.Dir, id+".json") }
+
+// imageFileID is the id in a picture file's name, and whether the name is one
+// this store writes.
+func imageFileID(name string) (string, bool) {
+	for _, ext := range []string{".png", ".jpg"} {
+		if id, ok := strings.CutSuffix(name, ext); ok && IsID(id) {
+			return id, true
+		}
+	}
+	return "", false
+}
 
 func (s *Store) writeMetadata(m metadata) error {
 	data, err := json.Marshal(m)
@@ -377,14 +394,18 @@ func (s *Store) pruneLocked(now time.Time) {
 	if entries, err := os.ReadDir(s.Dir); err == nil {
 		for _, e := range entries {
 			name := e.Name()
-			if id, ok := strings.CutSuffix(name, ".png"); ok && IsID(id) {
-				if _, ok := s.readMetadata(id); !ok {
-					_ = os.Remove(s.imagePath(id))
+			if id, ok := imageFileID(name); ok {
+				// A picture with no record, or one its record names under the
+				// other ending, is nobody's.
+				if m, ok := s.readMetadata(id); !ok || s.imagePath(m.Artifact) != filepath.Join(s.Dir, name) {
+					_ = os.Remove(filepath.Join(s.Dir, name))
 				}
 			} else if id, ok := strings.CutSuffix(name, ".json"); ok && IsID(id) {
 				if _, ok := s.readMetadata(id); !ok {
 					_ = os.Remove(s.metadataPath(id))
-					_ = os.Remove(s.imagePath(id))
+					for _, ext := range []string{".png", ".jpg"} {
+						_ = os.Remove(filepath.Join(s.Dir, id+ext))
+					}
 				}
 			}
 		}
@@ -395,7 +416,7 @@ func (s *Store) pruneLocked(now time.Time) {
 		if m.DeletedAt != nil {
 			continue
 		}
-		_, statErr := os.Stat(s.imagePath(m.Artifact.ID))
+		_, statErr := os.Stat(s.imagePath(m.Artifact))
 		if now.Unix() >= m.Artifact.ExpiresAt || statErr != nil {
 			s.tombstoneLocked(m, now)
 			continue
@@ -444,7 +465,7 @@ func (s *Store) pruneLocked(now time.Time) {
 // live pictures by count and by bytes, and what each limit has let go.
 //
 // A directory listing and a stat per picture, never a metadata record read:
-// a live picture is one whose `<id>.png` is still there, because letting one
+// a live picture is one whose `<id>.png` or `<id>.jpg` is still there, because letting one
 // go removes the file and keeps the record as a tombstone. A picture whose
 // day is up but that nobody has asked for since is still counted: it is
 // still taking the room.
@@ -460,8 +481,7 @@ func (s *Store) Readings(now time.Time) (count, bytes capacity.Reading) {
 	} else {
 		count, bytes = capacity.Reading{Known: true}, capacity.Reading{Known: true}
 		for _, e := range entries {
-			id, ok := strings.CutSuffix(e.Name(), ".png")
-			if !ok || !IsID(id) || !e.Type().IsRegular() {
+			if _, ok := imageFileID(e.Name()); !ok || !e.Type().IsRegular() {
 				continue
 			}
 			info, err := e.Info()

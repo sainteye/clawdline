@@ -152,17 +152,19 @@ func NewDrops(stateDir string) *Drops {
 func DropsDir(stateDir string) string { return filepath.Join(stateDir, "drops") }
 
 // dropName is every name this cache writes and the only names it removes:
-// `clawdline-<yyyyMMdd-HHmmss-SSS>-<random>.png`, the Swift app's spelling.
-var dropName = regexp.MustCompile(`^clawdline-\d{8}-\d{6}-\d{3}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$`)
+// `clawdline-<yyyyMMdd-HHmmss-SSS>-<random>.png`, the Swift app's spelling, or
+// the same ending `.jpg` for a photograph (Normalize).
+var dropName = regexp.MustCompile(`^clawdline-\d{8}-\d{6}-\d{3}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpg)$`)
 
-// Store writes one PNG and returns its absolute path.
+// Store writes one normalized picture and returns its absolute path. The name
+// ends as the bytes are: `.jpg` for a JPEG, `.png` for anything else.
 func (d *Drops) Store(data []byte, now time.Time) (string, error) {
 	d.mu.Lock()
 	if err := ensurePrivateDir(d.Dir); err != nil {
 		d.mu.Unlock()
 		return "", err
 	}
-	name := "clawdline-" + now.Format("20060102-150405.000") + "-" + newUUID() + ".png"
+	name := "clawdline-" + now.Format("20060102-150405.000") + "-" + newUUID() + Extension(sniffMediaType(data))
 	name = strings.Replace(name, ".", "-", 1)
 	path := filepath.Join(d.Dir, name)
 	if err := writePrivate(path, data); err != nil {

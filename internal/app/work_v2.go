@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
@@ -255,10 +256,18 @@ type AddImageV2 struct {
 	ExpectedVersion int64
 	Title           string
 	Data            []byte
-	Width           int
-	Height          int
-	Position        int64
-	Actor           string
+	// MediaType is what Normalize wrote Data as: image/png or image/jpeg.
+	MediaType string
+	Width     int
+	Height    int
+	Position  int64
+	Actor     string
+}
+
+// referenceMediaType is a media type a reference image is stored in: what
+// Normalize writes, and nothing else.
+func referenceMediaType(t string) bool {
+	return t == artifacts.MediaTypePNG || t == artifacts.MediaTypeJPEG
 }
 
 // AddImage stores a person-supplied reference. Sessions can read references
@@ -283,11 +292,11 @@ func (w *WorkSystemV2) AddImage(ctx context.Context, id string, c AddImageV2, fi
 		if len(c.Title) > workV2TitleLimit {
 			return work.RefuseV2("image_title_too_large", "A reference-image title is at most 240 bytes.")
 		}
-		if len(c.Data) == 0 || c.Width <= 0 || c.Height <= 0 {
-			return work.RefuseV2("invalid_image", "A reference image needs decoded PNG pixels.")
+		if len(c.Data) == 0 || c.Width <= 0 || c.Height <= 0 || !referenceMediaType(c.MediaType) {
+			return work.RefuseV2("invalid_image", "A reference image needs normalized PNG or JPEG pixels.")
 		}
 		now := w.now()
-		image := work.ImageV2{ID: newWorkID(), WorkID: id, Title: c.Title, MediaType: "image/png",
+		image := work.ImageV2{ID: newWorkID(), WorkID: id, Title: c.Title, MediaType: c.MediaType,
 			ByteCount: int64(len(c.Data)), Width: c.Width, Height: c.Height, Position: c.Position,
 			CreatedBy: c.Actor, CreatedAt: now}
 		if err := tx.AddImage(image, c.Data); err != nil {
@@ -1225,10 +1234,12 @@ type AddDirectTodoImageV2 struct {
 	SessionID       string
 	Title           string
 	Data            []byte
-	Width           int
-	Height          int
-	Position        int64
-	Actor           string
+	// MediaType is what Normalize wrote Data as: image/png or image/jpeg.
+	MediaType string
+	Width     int
+	Height    int
+	Position  int64
+	Actor     string
 }
 
 type TodoImageV2Filer func(work.DirectTodoV2, work.DirectTodoImageV2) (store.ReceiptKey, store.ReceiptAnswer, bool)
@@ -1258,10 +1269,10 @@ func (w *WorkSystemV2) AddDirectTodoImage(ctx context.Context, id string, c AddD
 		if len(c.Title) > workV2TitleLimit {
 			return work.RefuseV2("image_title_too_large", "A reference-image title is at most 240 bytes.")
 		}
-		if len(c.Data) == 0 || c.Width <= 0 || c.Height <= 0 {
-			return work.RefuseV2("invalid_image", "A reference image needs decoded PNG pixels.")
+		if len(c.Data) == 0 || c.Width <= 0 || c.Height <= 0 || !referenceMediaType(c.MediaType) {
+			return work.RefuseV2("invalid_image", "A reference image needs normalized PNG or JPEG pixels.")
 		}
-		image = work.DirectTodoImageV2{ID: newWorkID(), TodoID: id, Title: c.Title, MediaType: "image/png",
+		image = work.DirectTodoImageV2{ID: newWorkID(), TodoID: id, Title: c.Title, MediaType: c.MediaType,
 			ByteCount: int64(len(c.Data)), Width: c.Width, Height: c.Height, Position: c.Position,
 			CreatedBy: c.Actor, CreatedAt: w.now()}
 		if err := tx.AddDirectTodoImage(image, c.Data); err != nil {
