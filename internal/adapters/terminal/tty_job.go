@@ -132,3 +132,44 @@ func foregroundJob(procs []ttyProc, fg int) []ttyProc {
 	}
 	return group
 }
+
+// processSight is what holds tty now, for a session only the process table
+// saw (ProcessCloser).
+func processSight(tty string, s session.Session) (farewellSight, error) {
+	procs, fg, err := ttyProcesses(tty)
+	if err != nil {
+		return farewellSight{}, err
+	}
+	return processSightOf(procs, fg, s), nil
+}
+
+// processSightOf is processSight once the kernel has answered.
+//
+// **It is not ttySightOf, because there is no shell to come back to.** That
+// one reads a terminal the way a tab reads: a job in front of a shell, and the
+// tab safe to close once the shell is in front again. A session no backend
+// lists may have no shell under it at all — a tmux pane started straight into
+// `claude` has the assistant as the root of its tty, which ttySightOf reads as
+// "the shell at its prompt" and would report as nothing to end. Here the
+// question is only whether the process the reading named is still on this tty,
+// and still the one in front of it.
+func processSightOf(procs []ttyProc, fg int, s session.Session) farewellSight {
+	if s.PID == 0 {
+		// Nothing to look for: a row with no pid has no process to end, and
+		// "not found" would be read as gone. The foreground, unnamed, is
+		// refused by ours.
+		return farewellSight{Job: true}
+	}
+	for _, p := range procs {
+		if p.PID != s.PID {
+			continue
+		}
+		if p.PGID != fg || fg == 0 {
+			// Still here, and no longer what the terminal is attached to:
+			// something else was brought in front of it.
+			return farewellSight{Job: true, PID: p.PID, Start: p.Start}
+		}
+		return farewellSight{Job: true, Assistant: s.Assistant, PID: p.PID, Start: p.Start, Group: fg}
+	}
+	return farewellSight{Gone: true}
+}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -290,8 +291,9 @@ func sessionWriteFiled(status int) bool {
 // actions builds the action surface for one request.
 func (s *Server) actions() app.Actions {
 	return app.Actions{Inventory: s.inventory, Reading: s.readings, Terminals: s.terminals, Store: s.store,
-		Restore:  s.restore,
-		Pictures: app.Pictures{Drops: s.pictures.drops, Pasteboard: s.pictures.pasteboard},
+		Restore:   s.restore,
+		Processes: terminal.ProcessCloser{},
+		Pictures:  app.Pictures{Drops: s.pictures.drops, Pasteboard: s.pictures.pasteboard},
 		Owed: func(ctx context.Context) ([]task.Obligation, error) {
 			return s.owed(ctx, s.reading(ctx).Sessions)
 		}}

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -128,5 +129,63 @@ func TestACloseMarksTheConversationClosedInTheRestoreRecord(t *testing.T) {
 	}
 	if row := recorded(t, st, "boot-now")["conv-1"]; !row.ClosedAt.Equal(clock) {
 		t.Fatalf("after the close: %+v", row)
+	}
+}
+
+// looseScan is a process table with one assistant on a tty no terminal lists:
+// a claude in a tmux server started on a socket of its own.
+type looseScan struct{}
+
+func (looseScan) Scan(context.Context) (session.Inventory, error) {
+	return session.Inventory{Complete: true, Provenance: "ps", Sessions: []session.Session{
+		{ID: "ttys011", TTY: "ttys011", Backend: session.BackendITerm, Assistant: session.AssistantClaude, PID: 77548},
+	}}, nil
+}
+
+// itermNamed is closeHost answering as iTerm2, which has no session by a tty's
+// name and says so the way the real one does.
+type itermNamed struct{ closeHost }
+
+func (h *itermNamed) Name() string { return "iterm" }
+func (h *itermNamed) Inventory(context.Context) (session.Inventory, error) {
+	return session.Inventory{Complete: true, Provenance: "iterm"}, nil
+}
+
+type processCloser struct{ closed []string }
+
+func (p *processCloser) CloseProcess(_ context.Context, s session.Session) error {
+	p.closed = append(p.closed, s.ID+" pid "+fmt.Sprint(s.PID))
+	return nil
+}
+
+// A row only the process table saw is closed by asking its process to leave.
+// Asked of iTerm2 instead, it answered close_nothing_there about an assistant
+// that was still running, every time, and the row stayed on the list.
+func TestASessionOnlyTheProcessTableSawIsClosedThroughItsProcess(t *testing.T) {
+	iterm := &itermNamed{closeHost: closeHost{err: terminal.Unsent{Why: "That session is gone"}}}
+	procs := &processCloser{}
+	a := Actions{
+		Inventory: Inventory{Process: looseScan{}, Terminals: []ports.TerminalHost{iterm}},
+		Terminals: []ports.TerminalHost{iterm},
+		Owed:      func(context.Context) ([]task.Obligation, error) { return nil, nil },
+		Processes: procs,
+	}
+	if _, err := a.Close(context.Background(), "ttys011", false); err != nil {
+		t.Fatalf("close = %v", err)
+	}
+	if len(iterm.calls) != 0 {
+		t.Fatalf("iTerm2 was asked to close a tty it never listed: %v", iterm.calls)
+	}
+	if len(procs.closed) != 1 || procs.closed[0] != "ttys011 pid 77548" {
+		t.Fatalf("process closes = %v, want the one row's process", procs.closed)
+	}
+
+	// With nothing that can end a process, it is refused by name rather than
+	// reported as already gone.
+	a.Processes = nil
+	_, err := a.Close(context.Background(), "ttys011", false)
+	var ref Refusal
+	if !errors.As(err, &ref) || ref.Code != "backend_unsupported" {
+		t.Fatalf("close with no process closer = %v, want backend_unsupported", err)
 	}
 }
