@@ -604,9 +604,10 @@ test("desk: smart naming explains the one model turn before it spends it, then s
       return {
         busy: document.getElementById("action-confirm-sheet")?.getAttribute("aria-busy"),
         label: document.getElementById("action-confirm-go")?.textContent,
+        spinning: !!document.querySelector("#action-confirm-go .busy canvas"),
       }
     })()`)
-    assert.deepEqual(started, { busy: "true", label: "命名中…" })
+    assert.deepEqual(started, { busy: "true", label: "命名中…", spinning: true })
     await new Promise((resolve) => setTimeout(resolve, 250))
     assert.equal(smartTitleRequests, 1, "confirming sends exactly one naming request: " + JSON.stringify(requestedPaths))
     await tab.run(`new Promise((resolve, reject) => {
