@@ -284,6 +284,24 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-work-v2-item",
 		method: "GET", path: "/v1/work/v2/items/w1",
 	}, {
+		word: "usage.session",
+		body: map[string]any{"type": "usage.session", "session": machine,
+			"request": "req-usage-session", "id": "c0ffee00-0000-4000-8000-000000000005"},
+		session: machine, name: "read:req-usage-session",
+		method: "GET", path: "/v1/usage/sessions/c0ffee00-0000-4000-8000-000000000005",
+	}, {
+		word: "usage.task",
+		body: map[string]any{"type": "usage.task", "session": machine,
+			"request": "req-usage-task", "id": taskID},
+		session: machine, name: "read:req-usage-task",
+		method: "GET", path: "/v1/usage/tasks/" + taskID,
+	}, {
+		word: "usage.item",
+		body: map[string]any{"type": "usage.item", "session": machine,
+			"request": "req-usage-item", "id": "w1"},
+		session: machine, name: "read:req-usage-item",
+		method: "GET", path: "/v1/usage/items/w1",
+	}, {
 		word: "work.v2.items",
 		body: map[string]any{"type": "work.v2.items", "session": machine,
 			"request": "req-work-v2-items", "project": "p1"},
@@ -1299,7 +1317,8 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
-		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action"} {
+		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action",
+		"usage.session", "usage.task", "usage.item"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}
@@ -1675,5 +1694,69 @@ func TestIsReadIsTrueOnlyForAKnownEffectFreeWord(t *testing.T) {
 		if got := IsRead([]byte(c.body)); got != c.want {
 			t.Errorf("IsRead(%s) = %v, want %v", c.body, got, c.want)
 		}
+	}
+}
+
+// TestTheTokenBillCrossesOnlyWithAnIdTheLocalRouteWouldTake. The three usage
+// reads are the local routes' own question, so they take exactly the ids those
+// routes take (`usageID` in internal/transport/http/usage.go) and refuse the
+// rest here, before this machine is asked anything. A refusal the route itself
+// gives — a Board item it has never seen — crosses with the route's own code,
+// because the bill says "no such item" by that code and not by its sentence.
+func TestTheTokenBillCrossesOnlyWithAnIdTheLocalRouteWouldTake(t *testing.T) {
+	longest := strings.Repeat("a", 200)
+	for _, word := range []string{"usage.session", "usage.task", "usage.item"} {
+		for _, id := range []string{"w1", taskID, "rollout-2026.09.26_x", longest} {
+			r := &router{}
+			answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+				map[string]any{"type": word, "session": MachineReplySession, "request": "req", "id": id}))
+			if answer.Status != 200 || len(r.seen) != 1 {
+				t.Fatalf("%s refused %q with the write switch off: %+v", word, id, answer)
+			}
+			if got := r.last().Path; !strings.HasSuffix(got, "/"+id) || !strings.HasPrefix(got, "/v1/usage/") {
+				t.Fatalf("%s asked %s for %q", word, got, id)
+			}
+		}
+		for _, id := range []any{"", longest + "a", ".hidden", "-flag", "a..b", "a/b", "%19", "a b", "a\nb", 7, nil} {
+			r := &router{}
+			answer := open(r).Handle(context.Background(), request(t, ClassCtl,
+				map[string]any{"type": word, "session": MachineReplySession, "request": "req", "id": id}))
+			if answer.Code != "malformed_read" || len(r.seen) != 0 {
+				t.Fatalf("%s took the id %#v: %+v, asked %v", word, id, answer, r.seen)
+			}
+			if answer.Name != "read:req" {
+				t.Fatalf("%s refused %#v on %q, wanted the machine's read:req", word, id, answer.Name)
+			}
+		}
+		for _, body := range []map[string]any{
+			{"type": word, "session": pane, "request": "req", "id": "w1"},
+			{"type": word, "session": MachineReplySession, "id": "w1"},
+			{"type": word, "session": MachineReplySession, "request": "req", "id": "w1", "limit": 1},
+		} {
+			r := &router{}
+			if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); answer.Code != "malformed_read" || len(r.seen) != 0 {
+				t.Fatalf("%s took %v: %+v", word, body, answer)
+			}
+		}
+	}
+
+	unknown := &router{status: 404, body: `{"error":"unknown_item","detail":"No Board item has this id."}`}
+	answer := open(unknown).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "usage.item", "session": MachineReplySession, "request": "req", "id": "w404"}))
+	if answer.Status != 404 || answer.Code != "unknown_item" {
+		t.Fatalf("answered %d/%q, wanted 404/unknown_item", answer.Status, answer.Code)
+	}
+	if failure := errorOf(t, answer); failure["message"] != "No Board item has this id." {
+		t.Fatalf("the route's own sentence did not cross: %v", failure)
+	}
+
+	// `not_yet_read` and `transcript_missing` are not refusals: they are a
+	// bill's own `reason`, inside a 200, and cross as the body they are.
+	unread := &router{body: `{"conversation":"c1","reason":"not_yet_read","bill":{"categories":[]}}`}
+	answer = open(unread).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "usage.session", "session": MachineReplySession, "request": "req", "id": "c1"}))
+	body, _ := answerOf(t, answer)["body"].(map[string]any)
+	if answer.Status != 200 || body["reason"] != "not_yet_read" {
+		t.Fatalf("the reason did not cross: %d %s", answer.Status, answer.Payload)
 	}
 }

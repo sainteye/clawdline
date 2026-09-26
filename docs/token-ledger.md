@@ -211,6 +211,12 @@ What the implementation settled (`UsageLedger.ForSession`, `ForTask`, `ForItem`)
   is `not_yet_read` when the broker has its record and a 404 `unknown_task` otherwise; an item that
   is not on the Board is a 404 `unknown_item`. An id is letters, digits, `-`, `_` and `.`: anything
   else is a 400 before it reaches a query or a file name.
+- **On a phone.** The hosted console asks the same three routes through Clawdline Cloud, as the words
+  `usage.session`, `usage.task` and `usage.item` (`internal/app/cloudops/ops.go`,
+  `web/console/src/cloud/carry.ts`), so Session detail's 「Token 帳單」 and a Board item's bill read
+  the same answer on a phone as on this machine's own network, reasons and refusals included. The
+  bill's component does not know which: the seam turns `/v1/usage/…` into the word. `carry.test.ts`
+  reads every `/v1/usage/…` path the console spells and fails on one that does not cross.
 - **Whether it is still reading**: `usage` in `/v1/diagnostics` is the reading loop's own account —
   whether it runs, when the last pass ended and what it found (due, fed, limited, missing,
   unreadable), and `stalled` when no pass has ended for three intervals (`usageStallPasses`). It does
