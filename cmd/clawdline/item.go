@@ -16,7 +16,8 @@ import (
 // 2026-09-25). `add` creates it under that message's run — read from this
 // conversation's latest run unless --run names one — and it arrives assigned
 // to this Session with its steps. `steps` lists an item's steps with their
-// ids, `step-done` completes one after it is verified, and `phase` moves an
+// ids, `step-add` breaks an item this Session owns into further steps,
+// `step-done` completes one after it is verified, and `phase` moves an
 // item this Session owns to its next execution phase with that phase's
 // evidence (docs/work-system-v2.md §6).
 //
@@ -111,6 +112,21 @@ func itemCommand(args []string) {
 			itemUsage()
 		}
 		rest = positional
+	case "step-add":
+		if len(positional) < 1 {
+			fmt.Fprintln(os.Stderr, "clawdline item step-add: takes an item id and the steps' titles")
+			itemUsage()
+		}
+		rest = positional
+		// Titles one per non-empty stdin line when none are arguments, as
+		// `todo add` reads them; a terminal is not waited on.
+		if st, statErr := os.Stdin.Stat(); len(rest) == 1 && statErr == nil && st.Mode()&os.ModeCharDevice == 0 {
+			lines, err := todoLines(os.Stdin)
+			if err != nil {
+				fail(err)
+			}
+			rest = append(rest, lines...)
+		}
 	case "step-done", "phase":
 		if len(positional) != 2 {
 			fmt.Fprintf(os.Stderr, "clawdline item %s: takes an item id and one more argument, got %d arguments\n", op, len(positional))
@@ -155,12 +171,14 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                          [--step <text>]… [--steps-file f] [--description-file f | stdin]")
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
+	fmt.Fprintln(os.Stderr, "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id]]")
 	fmt.Fprintln(os.Stderr, "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
 	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
 	fmt.Fprintln(os.Stderr, "  it arrives assigned to this Session, and its --step rows are the item's steps, not to-dos;")
+	fmt.Fprintln(os.Stderr, "  step-add breaks an item this Session owns into ordered steps, after any it already has;")
 	fmt.Fprintln(os.Stderr, "  phase moves an item this Session owns one phase on, with that phase's evidence")
 	os.Exit(2)
 }
@@ -195,9 +213,10 @@ type itemWire struct {
 	OwnerSession *string `json:"owner_session"`
 	Version      int64   `json:"version"`
 	Steps        []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-		Done  bool   `json:"done"`
+		ID       string `json:"id"`
+		Title    string `json:"title"`
+		Done     bool   `json:"done"`
+		Position int64  `json:"position"`
 	} `json:"steps"`
 }
 
@@ -259,6 +278,9 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			"Pass --conversation <this assistant's conversation id>. Nothing was changed.\n",
 			name, strings.Join(conversationEnv, ", "))
 		return 2
+	}
+	if op == "step-add" {
+		return itemStepAdd(stdout, stderr, b, args, conversation, key)
 	}
 	var path string
 	var body map[string]any
@@ -371,6 +393,83 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	it, ok := itemOf(a)
 	if !a.ok() || !ok {
 		return report(stdout, stderr, name, a)
+	}
+	printItem(stdout, it)
+	return 0
+}
+
+// itemStepAdd posts one step per title, in order. Each is written after a
+// fresh read of the item, for its version and for the last position: the
+// daemon orders steps by position and then by id, and an id is random, so
+// each new step takes the position after every step already there. --key is
+// the first write's; the rest get their own, each printed before its write.
+func itemStepAdd(stdout, stderr io.Writer, b *broker, args []string, conversation, key string) int {
+	const name = "item step-add"
+	itemID := strings.TrimSpace(args[0])
+	var titles []string
+	for _, t := range args[1:] {
+		if t = strings.TrimSpace(t); t != "" {
+			titles = append(titles, t)
+		}
+	}
+	if len(titles) == 0 {
+		fmt.Fprintf(stderr, "clawdline %s: no step titles, as arguments or on stdin. Nothing was changed.\n", name)
+		return 2
+	}
+	read := func() (itemWire, int) {
+		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
+		if err != nil {
+			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
+			return itemWire{}, 1
+		}
+		it, ok := itemOf(a)
+		if !a.ok() || !ok {
+			return itemWire{}, report(io.Discard, stderr, name, a)
+		}
+		return it, 0
+	}
+	stopped := func(added int) {
+		if added == 0 {
+			fmt.Fprintf(stderr, "No step was added.\n")
+			return
+		}
+		fmt.Fprintf(stderr, "%d of %d steps were added; the rest were not: %s\n", added, len(titles),
+			strings.Join(titles[added:], " | "))
+	}
+	for i, title := range titles {
+		it, code := read()
+		if code != 0 {
+			stopped(i)
+			return code
+		}
+		position := int64(0)
+		for j, s := range it.Steps {
+			if j == 0 || s.Position >= position {
+				position = s.Position + 1
+			}
+		}
+		k := key
+		if k == "" || i > 0 {
+			k = newKey("item")
+		}
+		fmt.Fprintf(stderr, "Idempotency-Key: %s\n", k)
+		body := map[string]any{"expected_version": it.Version, "session_id": conversation, "title": title, "position": position}
+		a, err := b.request(http.MethodPost, "/v1/work/v2/agent/items/"+url.PathEscape(itemID)+"/steps", nil, body, k)
+		if err != nil {
+			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
+			fmt.Fprintf(stderr, "To retry the same write: clawdline %s --key %s %s …\n", name, k, itemID)
+			stopped(i)
+			return 1
+		}
+		if !a.ok() {
+			code := report(io.Discard, stderr, name, a)
+			stopped(i)
+			return code
+		}
+	}
+	it, code := read()
+	if code != 0 {
+		return code
 	}
 	printItem(stdout, it)
 	return 0

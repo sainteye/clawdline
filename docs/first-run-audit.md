@@ -459,7 +459,7 @@ B03（tmux 不在 `PATH`）也會影響 U9 的 Mac app，但算在 U4。
 - **為什麼幫不了**：頁首的燈號量的是 relay 連線，不是那台機器。整個 console 沒有一處說「這台機器可能沒開」，也沒說可以回去換一台。
 - **位置**：`web/console/src/cloud/relay-reader.ts:577-584`；`zh-Hant.json:107` → `web/console/src/App.tsx:922-924`；`next-strings.ts:216-217` → `Sessions.tsx:155`
 - **應該**：燈號或橫幅反映 `machine.freshness`，例如「這台機器 N 分鐘前最後回報」；等太久時提供「換一台機器」。
-- **紅燈**：選一台 `freshness:"stale"` 的機器之後，`#conn[data-state]` 不能是 `live`。
+- **紅燈**：選一台 `freshness:"stale"` 的機器之後，`#cloud-switch[data-state]` 不能是 `live`（Cloud 的連線燈號已併進機器膠囊；本機 console 仍是 `#conn`）。
 
 #### M23〔讀碼〕hosted：「有一台機器的資料在這裡讀不出來」，沒說是哪一台｜U4-C
 - **在哪**：機器清單的最下面。

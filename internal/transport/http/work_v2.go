@@ -163,6 +163,32 @@ func workV2PhaseInstruction(id string) string {
 		"(--deployment or --no-deployment-reason); `clawdline guide board` says what each one needs."
 }
 
+// workV2StepsInstruction says when an owner breaks its item into steps, in
+// every brief an owner receives: the daemon already took steps from their
+// owner, yet no brief or command named that, so complex work was never broken
+// down unless the person wrote the list themselves; and a simple change must
+// not grow a ceremony of steps (2026-09-26).
+func workV2StepsInstruction(id string) string {
+	return "If this item has no steps and the work is multi-stage — several changes verified separately, or more than " +
+		"one part of the system — first break it into its ordered steps with `clawdline item step-add " + id +
+		" \"…\" \"…\"` and complete each with `clawdline item step-done` once it is verified; a single straightforward " +
+		"change takes no steps."
+}
+
+// workV2AssignmentBrief is what an existing Session is sent when it is
+// assigned an item.
+func workV2AssignmentBrief(id, title string) string {
+	return fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items. %s %s %s", id, title,
+		workV2StepsInstruction(id), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
+}
+
+// workV2RootAssignmentAcceptance is the acceptance of the Root Assignment a
+// new Session is opened with for an item.
+func workV2RootAssignmentAcceptance(id string) string {
+	return "Implement, verify, merge, and deploy according to the item's deployment policy. " +
+		workV2StepsInstruction(id) + " " + workV2PhaseInstruction(id) + " " + workV2CompletionReportInstruction
+}
+
 const workV2CompletionReportInstruction = "When substantial investigation was needed to find a non-obvious cause, add a user-readable completion_report before done; a straightforward fix does not require one."
 
 // repo is the repository the commit is looked for in: the item's Project, or
@@ -935,8 +961,7 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		// Session's assigned-item projection immediately. Typing is only a
 		// courtesy when a fresh reading still says idle. Working, waiting and
 		// unknown rows pull their to-do list after their present turn.
-		brief := fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items. %s %s", id, item.Item.Title,
-			workV2PhaseInstruction(id), workV2CompletionReportInstruction)
+		brief := workV2AssignmentBrief(id, item.Item.Title)
 		if _, sendErr := s.actions().SendIfIdle(ctx, sess.ID, brief); sendErr != nil {
 			refusal, deferred := sendErr.(app.Refusal)
 			if !deferred || refusal.Code != "session_not_idle" {
@@ -988,8 +1013,7 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
 			Scope: item.Item.Description, Constraints: "Own only this Board item. Do not create Board items.",
 			RelevantReferences: "Board item: " + item.Item.ID,
-			Acceptance: "Implement, verify, merge, and deploy according to the item's deployment policy. " +
-				workV2PhaseInstruction(item.Item.ID) + " " + workV2CompletionReportInstruction}})
+			Acceptance:         workV2RootAssignmentAcceptance(item.Item.ID)}})
 	failure, resolvedTerminal, resolvedSession := "", "", ""
 	if openErr != nil {
 		failure = openErr.Error()

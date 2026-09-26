@@ -315,6 +315,7 @@ func TestEveryGuideExplainsCreatingABoardItemFromThePersonsMessage(t *testing.T)
 		"clawdline item add",
 		"--step",
 		"clawdline item steps <item id>",
+		"clawdline item step-add",
 		"clawdline item step-done",
 		"POST /v1/work/v2/agent/items",
 		`"via": {"run"}`,
@@ -345,6 +346,30 @@ func TestEveryGuideExplainsCreatingABoardItemFromThePersonsMessage(t *testing.T)
 		}
 		if !bytes.Contains(guide, []byte(phrase)) {
 			t.Errorf("guide %s does not state %q", topic, phrase)
+		}
+	}
+}
+
+// Every guide tells the owner of an item how it breaks multi-stage work into
+// the item's steps by itself, by command and by route, and that a simple
+// change takes none. Without it no brief or guide named the route, and
+// complex work was never broken down unless the person wrote the list
+// (2026-09-26).
+func TestEveryGuideExplainsBreakingYourOwnItemIntoSteps(t *testing.T) {
+	wants := []string{
+		"clawdline item step-add <item id>",
+		"POST /v1/work/v2/agent/items/<id>/steps",
+		`"position"`,
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain breaking an owned item into steps with %q", topic, want)
+			}
 		}
 	}
 }

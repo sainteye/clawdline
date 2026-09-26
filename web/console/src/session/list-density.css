@@ -72,6 +72,14 @@
   max-width: 46%;
 }
 
+/* The unreadable-state sentence is the row's whole state line, so it takes the
+ * room the badges beside it leave and wraps inside it, instead of pushing them
+ * into a sliver. */
+.row .state > .unread {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* The completion is one status segment. Its check and sentence share that
  * segment's boundary; bounding the nested sentence a second time leaves the
  * unused half of the completion between it and the next status. */
@@ -82,11 +90,29 @@
 
 /* On a phone the total is hidden whenever a live count follows it. The old
  * sibling separator still belonged to that hidden total, so the first visible
- * count began with a dot. Each visible count gets its own shrink boundary as
- * the status sentences above do. */
+ * count began with a dot. The counts are read whole: when the header line is
+ * too short for them, they take a second line rather than an ellipsis, and a
+ * count shrinks to its own ellipsis only when it alone is wider than the
+ * whole block. */
 @media (max-width: 899px) {
   .counts {
     display: flex;
+    flex-wrap: wrap;
+    align-content: center;
+    line-height: 1.3;
+  }
+
+  /* Chrome and WebKit both measure this block a few hundredths of a pixel
+   * narrower than the counts they then lay out in it, so counts that fit
+   * exactly still broke onto a second line (measured at 375 and 414px: 124.50
+   * for 124.56 of counts, 120.89 for 120.92). A zero-height spacer widens the
+   * measure by more than the error; being last, it is what takes the second
+   * line, where it draws nothing. WebKit counts its `width`, not a basis. */
+  .counts::after {
+    content: "";
+    flex: none;
+    width: 2px;
+    height: 0;
   }
 
   .counts > .part {

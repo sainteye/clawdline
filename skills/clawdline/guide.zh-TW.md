@@ -545,7 +545,7 @@ echo "下次 release 前把 release notes 整理好。" | \
 - Feature 或 Issue 建好時**已經指派給你**，phase 是 `assigned`，並帶著 steps：依序是那些 `--step`，
   沒給的話，就是 description 裡兩列以上的頂層 Markdown 清單。不會有任何字打進你的 terminal——是你自己
   要的。照順序做，每一步確認完成後就勾掉（`clawdline item steps <item id>`、`clawdline item step-done
-  <item id> <step id>`），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。Epic、Refactor、Plan 會以未指派狀態建在
+  <item id> <step id>`；做下去發現還少一步，就用 `clawdline item step-add` 補上），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。Epic、Refactor、Plan 會以未指派狀態建在
   規劃區，不帶 steps（`planning_has_no_steps`）。
 - 使用者會看到卡片上寫著「Session 依你 HH:MM 的訊息建立」，並引用他的原話。
 - 拒絕，每一種都什麼都不寫：`run_unknown`（沒指名 run，或沒有這個 run）、`run_expired`（超過一天）、
@@ -711,6 +711,26 @@ Idempotency-Key 呼叫 `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/c
 `{"expected_version": <item version>, "session_id": "<你的 conversation id>"}`。版本衝突時先重讀。
 只要還有任何 step 未完成，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
 step 勾成完成。
+
+**自己把項目拆成 steps。** 你負責的項目還沒有 steps、而工作要分階段做——好幾個要各自驗證的改動，或
+動到系統裡不只一個部分——就在動手實作之前，自己把它拆成有順序的 steps：兩到八個具體、各自能驗證的
+步驟。單純一次就改完的事**不要**拆 steps，也不要為了有清單而湊數。做下去發現比想像的大，再補上那一步。
+
+```
+clawdline item step-add <item id> "接上 route" "補一個測試" "寫進 guide"
+```
+
+標題直接當參數給，或從 stdin 一行一個（空行略過）。指令每加一個標題前都會重讀項目，寫入前先印出
+Idempotency-Key，最後印出項目和它所有的 steps。每個標題就是一次只有 owner 能送的請求：
+
+```
+POST /v1/work/v2/agent/items/<id>/steps     （必須帶 Idempotency-Key）
+{"expected_version": <version>, "session_id": "<conversation id>", "title": "…", "position": <n>}
+```
+
+`"position"` 取現有最後一個 step 的下一號，因為 steps 是照 position 排序的。之後每一步確認完成，就用
+`clawdline item step-done` 勾掉。這不是看板項目和待辦禁止的「主動建立」：項目本來就是你的，steps 是
+讓使用者看到你手上這件工作分成哪幾段。
 
 如果 issue 或 incident 必須經過深入調查，才找出 root cause（根因），或必須排除多個看似合理的解法才
 確認真正修正，請在把項目推進 `done` 之前加入一份給使用者閱讀的結案報告。直接觀察就能確認的直觀修正

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { Icon, SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client } from "./client.js"
-import { connectionLightState } from "./connection-state.js"
+import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { useFleet, usePoll } from "./useFleet.js"
 import { SessionsPage } from "./Sessions.js"
 import { toggleOrder } from "./session/Transcript.js"
@@ -178,12 +178,16 @@ function rowNode(id: string): HTMLElement | null {
 }
 
 /**
- * `aside` is drawn in the header between the counts and the connection light.
- * The daemon's console passes nothing; a console reading a machine through
- * Clawdline Cloud puts which machine it is there (`cloud/CloudGate.tsx`).
+ * `aside` is drawn in the header after the counts. The daemon's console passes
+ * nothing and draws the connection light there. A console reading a machine
+ * through Clawdline Cloud passes a function: which machine it is and whether
+ * that machine answers are one fact there, so the switcher is handed the
+ * light and draws both in one control (`cloud/CloudGate.tsx`) — on a phone two
+ * pills beside each other left the counts no room to be read.
  */
-export default function App({ aside }: { aside?: ReactNode } = {}) {
+export default function App({ aside }: { aside?: ReactNode | ((light: ConnectionLight) => ReactNode) } = {}) {
   const fleet = useFleet(client)
+  const light = useConnectionLight(fleet.live, fleet.refresh)
   const [page, setPage] = useState<Page>("sessions")
   const [menu, setMenu] = useState(false)
   const [, setLoaded] = useState(0)
@@ -700,8 +704,12 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
           <b>clawdline</b>
         </button>
         <Counts reading={sessionCountState(fleet)} recovering={!!fleet.snapshot && !fleet.snapshot.scan.complete} />
-        {aside}
-        <Conn live={fleet.live} onRetry={fleet.refresh} />
+        {typeof aside === "function" ? aside(light) : (
+          <>
+            {aside}
+            <Conn light={light} />
+          </>
+        )}
       </header>
 
       {/* The dark half is the way out, told from a row by what was hit — not by
@@ -894,33 +902,30 @@ function Counts({
 }
 
 /**
- * The connection light, `renderConn` (`view/list.js`).
+ * The connection light's reading, `renderConn` (`view/list.js`), polled once
+ * for whichever control draws it.
  *
- * The tip is "streaming from the app · version" when live and "not connected —
- * press to retry" otherwise, and pressing it asks again (`detail-actions.js`).
- * The original's version comes from its hello frame; this daemon's `/v1/health`
- * carries none, so the tip ends where the version would start. It is read from
- * the field the original reads, so it appears when the field does.
+ * The original's version comes from its hello frame; this daemon's
+ * `/v1/health` carries none, so the tip ends where the version would start. It
+ * is read from the field the original reads, so it appears when the field does.
  */
-function Conn({ live, onRetry }: { live: boolean; onRetry: () => void }) {
+function useConnectionLight(live: boolean, onRetry: () => void): ConnectionLight {
   const read = useMemo(() => () => client.health(), [])
   const { data, error: healthError } = usePoll(read, 15000)
-  const T = L.strings
   // The stream says the browser's line is open; health says the selected host
   // answered. In Cloud those are different subjects, so the relay opening
   // must not paint "connected" before the chosen machine's health arrives.
   const state = connectionLightState(live, data !== null, healthError !== null)
-  const label =
-    state === "offline" ? T.webConnOffline : state === "live" ? T.webConnLive : T.webConnConnecting
   const version = (data as unknown as { version?: unknown } | null)?.version
-  const tip =
-    state === "live"
-      ? T.webConnTipLive + (typeof version === "string" && version ? " · " + version : "")
-      : T.webConnTipDown
+  return { state, ...connectionLightWords(state, L.strings, version), onRetry }
+}
+
+/** The connection light as its own pill; pressing it asks again (`detail-actions.js`). */
+function Conn({ light }: { light: ConnectionLight }) {
   return (
-    <button className="conn" id="conn" data-state={state} title={tip} onClick={onRetry}>
+    <button className="conn" id="conn" data-state={light.state} title={light.tip} onClick={light.onRetry}>
       <span className="dot" />
-      <span id="conn-label">{label || state}</span>
+      <span id="conn-label">{light.label}</span>
     </button>
   )
 }
