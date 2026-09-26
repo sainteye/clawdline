@@ -10,6 +10,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"text/tabwriter"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/contract"
 )
@@ -25,6 +27,8 @@ func usageCommand(args []string) {
 	session := fs.String("session", "", "a conversation id (default: this assistant's own)")
 	task := fs.String("task", "", "a child task id")
 	item := fs.String("item", "", "a Board item id")
+	compare := fs.Bool("compare-compaction", false, "child tasks grouped by the compaction window they were launched with")
+	since := fs.String("since", "", "with --compare-compaction: `14d`, `36h` or a Unix time (default 14d)")
 	asJSON := fs.Bool("json", false, "print the daemon's answer as JSON")
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
@@ -36,12 +40,15 @@ func usageCommand(args []string) {
 			named++
 		}
 	}
-	if named > 1 {
+	if named > 1 || (*compare && named > 0) || (*since != "" && !*compare) {
 		usageCommandUsage()
 	}
 	b, err := openBroker(*port)
 	if err != nil {
 		fail(err)
+	}
+	if *compare {
+		os.Exit(showCompactionComparison(os.Stdout, os.Stderr, b, *since, *asJSON))
 	}
 	os.Exit(showUsage(os.Stdout, os.Stderr, b, usageAsk{Session: *session, Task: *task, Item: *item, JSON: *asJSON}, os.Getenv))
 }
@@ -49,6 +56,8 @@ func usageCommand(args []string) {
 func usageCommandUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline usage [--session <conversation> | --task <id> | --item <id>] [--json] [--port n]")
 	fmt.Fprintln(os.Stderr, "  what a session, a child task or a Board item spent, by category; this session's own by default")
+	fmt.Fprintln(os.Stderr, "       clawdline usage --compare-compaction [--since 14d] [--json] [--port n]")
+	fmt.Fprintln(os.Stderr, "  child tasks grouped by the compaction window they were launched with: what they cost and how they ended")
 	os.Exit(2)
 }
 
@@ -224,4 +233,96 @@ func usageWindow(w *int64) string {
 		return "launched with no compaction window"
 	}
 	return "launched to compact at " + usageCount(float64(*w))
+}
+
+// showCompactionComparison is `usage --compare-compaction`: one GET to
+// /v1/usage/compare-compaction and one table, a row per group, then what the
+// answer left out (docs/token-ledger.md "Did compacting early pay").
+func showCompactionComparison(stdout, stderr io.Writer, b *broker, since string, asJSON bool) int {
+	path := "/v1/usage/compare-compaction"
+	if since != "" {
+		path += "?since=" + url.QueryEscape(since)
+	}
+	a, err := b.request(http.MethodGet, path, nil, nil, "")
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline usage:", err)
+		return 1
+	}
+	if asJSON || !a.ok() {
+		return report(stdout, stderr, "usage", a)
+	}
+	var c contract.UsageCompactionComparison
+	if json.Unmarshal(a.Body, &c) != nil {
+		return unreadableUsage(stderr)
+	}
+	fmt.Fprintf(stdout, "child tasks created %s – %s, by the compaction window they were launched with\n",
+		time.Unix(c.Since, 0).UTC().Format("2006-01-02 15:04Z"), time.Unix(c.Until, 0).UTC().Format("2006-01-02 15:04Z"))
+	if len(c.Groups) == 0 {
+		fmt.Fprintln(stdout, "no child task in this range was launched with a known window")
+	} else {
+		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
+		fmt.Fprintln(tw, "group\tsessions\ttasks\tcost/task\tcalls/task\tcompactions/task\tabove-200k share\tsuccess rate\tstalled\trespawns\t")
+		for _, g := range c.Groups {
+			cost := "—"
+			if g.ReadTasks > 0 {
+				cost = fmt.Sprintf("$%.2f", g.CostMedianPerTask)
+				if !g.CostKnown {
+					cost += "+"
+				}
+			}
+			fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%.1f\t%.2f\t%s\t%s\t%d\t%d\t\n", g.Group, g.Sessions, g.Tasks, cost,
+				g.CallsPerTask, g.CompactionsPerTask, comparePercent(g.Above200kShare, g.TooFew),
+				comparePercent(g.SuccessRate, g.TooFew), g.Stalled, g.Respawns)
+		}
+		_ = tw.Flush()
+		fmt.Fprintln(stdout, "cost/task is the median over the tasks the ledger has read; + means part of it has no price.")
+		for _, g := range c.Groups {
+			if g.TooFew {
+				fmt.Fprintf(stdout, "%s: %d tasks, fewer than %d — too few to compare, so no percentage is shown\n",
+					g.Group, g.Tasks, c.MinTasks)
+			}
+			if g.Running > 0 || g.ReadTasks < g.Tasks {
+				fmt.Fprintf(stdout, "%s: %d still running, %d not read by the ledger yet\n", g.Group, g.Running, g.Tasks-g.ReadTasks)
+			}
+		}
+	}
+	if c.Excluded > 0 {
+		reasons := map[contract.UsageCompareExcludedReason]int{}
+		for _, e := range c.ExcludedTasks {
+			reasons[e.Reason]++
+		}
+		var parts []string
+		for _, r := range contract.UsageCompareExcludedReasonValues {
+			if reasons[r] > 0 {
+				parts = append(parts, fmt.Sprintf("%d %s", reasons[r], r))
+			}
+		}
+		line := fmt.Sprintf("excluded: %d tasks with no known window", c.Excluded)
+		if len(parts) > 0 {
+			line += " (" + strings.Join(parts, ", ")
+			if c.ExcludedTruncated {
+				line += fmt.Sprintf(" among the newest %d", len(c.ExcludedTasks))
+			}
+			line += ")"
+		}
+		fmt.Fprintln(stdout, line)
+	}
+	if c.Truncated {
+		fmt.Fprintln(stdout, "truncated: the range held more tasks than one answer reads; these are the newest")
+	}
+	for _, m := range c.NotRecorded {
+		fmt.Fprintf(stdout, "not recorded: %s — %s\n", m.Name, m.Why)
+	}
+	return 0
+}
+
+// comparePercent is a share as a percentage, or why there is none.
+func comparePercent(p *float64, tooFew bool) string {
+	switch {
+	case tooFew:
+		return "too few"
+	case p == nil:
+		return "—"
+	}
+	return fmt.Sprintf("%.0f%%", *p*100)
 }

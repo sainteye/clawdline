@@ -6632,6 +6632,103 @@ export type UsageCategoryName =
 export const UsageCategoryNameValues: readonly UsageCategoryName[] = ["board", "protocol", "rules", "impl", "delegate", "harness", "talk", "compaction", "other"] as const
 
 /**
+ * GET /v1/usage/compare-compaction?since=… (docs/token-ledger.md "Did compacting
+ * early pay"): the child tasks created in [`since`, `until`] (Unix seconds) grouped
+ * by the compaction window they were launched with, `none` first, each with its
+ * bill beside how its tasks ended. `since` is `<n>d`, `<n>h` or a Unix time, 14
+ * days when absent. `excluded` counts the tasks with no known window and
+ * `excluded_tasks` names the newest of them (`excluded_truncated` when not all);
+ * `truncated` says the range held more tasks than one answer reads and only the
+ * newest were. `not_recorded` names what was asked for and is recorded nowhere.
+ * Tasks are not assigned to groups at random: the answer says what happened, not
+ * why.
+ */
+export interface UsageCompactionComparison {
+  excluded: number
+  excluded_tasks: UsageCompareExcluded[]
+  excluded_truncated: boolean
+  groups: UsageCompactionGroup[]
+  min_tasks: number
+  not_recorded: UsageCompareMissing[]
+  since: number
+  truncated: boolean
+  until: number
+}
+
+/**
+ * The child tasks launched with one compaction window. `group` is `none` for tasks
+ * launched with no window (`window` 0), otherwise the window in tokens.
+ * `read_tasks` are those the ledger has a reading of: every cost, call, compaction
+ * and context figure is over them, and `cost_known` is false when part of that cost
+ * has no price. `above_200k_share` is the share of the sessions' own cost spent on
+ * calls made with more than 200k tokens of context. The endings are the broker's
+ * records: `ended` counts tasks in a final state and is what every rate is a share
+ * of; `stalled` is a child the broker ended as spawn_failed because it sat idle
+ * after its briefing, `lost` any other spawn_failed; `running` has not ended.
+ * `respawns` counts tasks that retried an earlier spawn_failed one. `too_few` says
+ * the group has fewer tasks than `min_tasks`: then every share and rate is null.
+ */
+export interface UsageCompactionGroup {
+  above_200k_share: number | null
+  calls_per_task: number
+  cancelled: number
+  compactions_per_task: number
+  cost_known: boolean
+  cost_median_per_task: number
+  cost_total: number
+  ended: number
+  failure: number
+  failure_rate: number | null
+  group: string
+  lost: number
+  peak_context_max: number
+  peak_context_median: number
+  read_tasks: number
+  respawns: number
+  running: number
+  sessions: number
+  stalled: number
+  stalled_rate: number | null
+  success: number
+  success_rate: number | null
+  tasks: number
+  timeout: number
+  timeout_rate: number | null
+  too_few: boolean
+  window: number
+}
+
+/**
+ * One child task left out of every group, and why.
+ */
+export interface UsageCompareExcluded {
+  reason: UsageCompareExcludedReason
+  task_id: string
+}
+
+/**
+ * Why a child task in the range is in no group. `codex`: a Codex task, never given
+ * a window. `not_launched`: a Claude task whose tab never opened, so no window was
+ * decided. `window_unrecorded`: a Claude task that was launched and whose record
+ * does not say with what window (written before the field was).
+ */
+export type UsageCompareExcludedReason =
+    "codex"
+  | "not_launched"
+  | "window_unrecorded"
+
+export const UsageCompareExcludedReasonValues: readonly UsageCompareExcludedReason[] = ["codex", "not_launched", "window_unrecorded"] as const
+
+/**
+ * A signal the comparison was asked for and cannot show, because nothing records
+ * it; named rather than shown as zero.
+ */
+export interface UsageCompareMissing {
+  name: string
+  why: string
+}
+
+/**
  * What the session's first context was made of, when its transcript recorded the
  * harness's prompt snapshot. The parts are estimated from their text and scaled to
  * sum to `measured`, the first call's measured context. Absent when the snapshot

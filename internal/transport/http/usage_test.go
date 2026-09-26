@@ -327,3 +327,63 @@ func TestDiagnosticsSayWhetherTheLedgerIsStalled(t *testing.T) {
 		t.Fatalf("three intervals on: %+v", d)
 	}
 }
+
+// GET /v1/usage/compare-compaction groups the child tasks by the window their
+// records say they were launched with, over the ledger's bills, and names the
+// ones it leaves out. It is read like the other usage routes, and a query it
+// does not read is refused rather than ignored.
+func TestUsageCompareCompactionAnswersTheGroups(t *testing.T) {
+	u := newUsageFixture(t)
+	u.seed()
+	task := store.BrokerRow{ID: "task-1", Project: "/p", Assistant: "claude", State: "success", CreatedAt: u.at,
+		UpdatedAt: u.at, SecretHash: "h", Record: json.RawMessage(`{"task_id":"task-1","assistant":"claude","state":"success",` +
+			`"auto_compact_window":300000,"spawned_at":"2026-09-21T00:00:00Z"}`)}
+	if err := u.s.store.SaveBrokerTask(context.Background(), task, nil); err != nil {
+		t.Fatal(err)
+	}
+	code, body := u.get("/v1/usage/compare-compaction?since=1789000000", nil)
+	if code != http.StatusOK {
+		t.Fatalf("%d %s", code, body)
+	}
+	var got contract.UsageCompactionComparison
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Since != 1_789_000_000 || got.MinTasks != 5 || len(got.Groups) != 1 {
+		t.Fatalf("answer: %s", body)
+	}
+	g := got.Groups[0]
+	// sess-read's own 9 and its subagent's 1.
+	if g.Group != "300000" || g.Window != 300_000 || g.Tasks != 1 || g.Sessions != 1 || math.Abs(g.CostTotal-10) > 1e-9 ||
+		g.Success != 1 || !g.TooFew || g.SuccessRate != nil || g.Above200kShare != nil {
+		t.Fatalf("group: %+v", g)
+	}
+	if got.Excluded != 1 || len(got.ExcludedTasks) != 1 || got.ExcludedTasks[0].TaskID != "task-2" ||
+		got.ExcludedTasks[0].Reason != contract.UsageCompareExcludedReasonNotLaunched {
+		t.Fatalf("excluded: %s", body)
+	}
+	if len(got.NotRecorded) != 1 || got.NotRecorded[0].Name != "finish_refusals" {
+		t.Fatalf("not recorded: %s", body)
+	}
+
+	for _, tc := range []struct {
+		path string
+		want int
+	}{
+		{"/v1/usage/compare-compaction?since=14w", http.StatusBadRequest},
+		{"/v1/usage/compare-compaction?limit=3", http.StatusBadRequest},
+		{"/v1/usage/compare-compaction?since=1d&since=2d", http.StatusBadRequest},
+		{"/v1/usage/compare-compaction/more", http.StatusNotFound},
+	} {
+		code, body := u.get(tc.path, nil)
+		if code != tc.want {
+			t.Errorf("%s: %d %s", tc.path, code, body)
+		}
+	}
+	if code, _ := u.get("/v1/usage/compare-compaction", map[string]string{}); code != http.StatusUnauthorized {
+		t.Fatalf("no token: %d", code)
+	}
+	if code, body := u.get("/v1/usage/compare-compaction", map[string]string{"Authorization": "Bearer " + u.f.read}); code != http.StatusOK {
+		t.Fatalf("a paired device: %d %s", code, body)
+	}
+}

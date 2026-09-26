@@ -189,6 +189,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/usage/sessions/c1"],
     ["GET", "/v1/usage/tasks/t1"],
     ["GET", "/v1/usage/items/w1"],
+    ["GET", "/v1/usage/compare-compaction"],
     ["POST", "/v1/work/v2/items/w1/images"],
     ["DELETE", "/v1/work/v2/items/w1/images/img1"],
     ["POST", "/v1/work/v2/session-todos/%251/t1/images"],
@@ -210,12 +211,14 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("timeline" in CARRIED)
   // 64, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
-  // copied client's reconnect ask for every Session row, and the token bill's three usage reads. Keep the count beside the catalog so
+  // copied client's reconnect ask for every Session row, the token bill's three usage reads and the compaction
+  // comparison. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
   assert.ok("usage.item" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 72)
+  assert.ok("usage.compare-compaction" in CARRIED)
+  assert.equal(Object.keys(CARRIED).length, 73)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -385,6 +388,17 @@ test("every path the token bill reads is carried, so a phone reads the bill too"
   }
   walk(resolve(console_, "src"))
   assert.ok(asked.length >= 2, "the scan found " + asked.length + " token-bill paths; it has stopped reading this tree")
+  // And every /v1/usage route the daemon's contract names, whether or not a
+  // screen here asks it yet: `clawdline usage --compare-compaction` reads one
+  // no page spells (2026-09-26), and a phone must be able to ask it too.
+  const contract = resolve(console_, "../../api/v1/usage.schema.json")
+  const named = new Set<string>()
+  for (const m of readFileSync(contract, "utf8").matchAll(/GET (\/v1\/usage\/[a-z-]+(?:\/\{[a-z]+\})?)/g)) {
+    named.add(m[1].replace(/\{[a-z]+\}/g, "x1"))
+  }
+  assert.ok(named.has("/v1/usage/compare-compaction"), "the contract scan found " + [...named].join(", "))
+  assert.ok(named.size >= 4, "the contract scan found " + named.size + " usage routes; it has stopped reading the contract")
+  for (const path of named) asked.push({ path, where: "api/v1/usage.schema.json" })
   for (const { path, where } of asked) {
     const word = writeRoute("GET", path)?.word
     assert.ok(word && word in CARRIED, where + " reads " + path + ", which this console does not carry over Cloud")

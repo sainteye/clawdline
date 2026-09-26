@@ -230,6 +230,7 @@ export type WriteRoute =
   | { op: "image"; word: Carried<"image">; artifact: string }
   | { op: "work-v2-image"; word: Carried<"work.v2.image">; artifact: string }
   | { op: "usage"; word: Carried<"usage.session" | "usage.task" | "usage.item">; id: string }
+  | { op: "usage-compare"; word: Carried<"usage.compare-compaction"> }
   | { op: "push-subscribe"; word: Carried<"push-subscribe"> }
   | { op: "push-unsubscribe"; word: Carried<"push-unsubscribe"> }
   | { op: "push-test"; word: Carried<"push-test"> }
@@ -372,6 +373,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // channel as `work.v2.item` is answered, so a Session's bill is not asked
     // under the session's identity: the conversation is the ledger's key, and
     // this page may hold no row for a child's conversation at all.
+    if (head === "usage" && a === "compare-compaction" && segments.length === 2) {
+      return { op: "usage-compare", word: "usage.compare-compaction" }
+    }
     if (head === "usage" && b && segments.length === 3) {
       const word = USAGE_WORD[a ?? ""]
       if (word) return { op: "usage", word, id: b }
@@ -592,6 +596,7 @@ function spellingOf(route: WriteRoute): Spelling {
     // `/v1/usage/*` refuses with `writeRefusal`, the flat spelling
     // (internal/transport/http/usage.go), and the bill's reader takes it.
     case "usage":
+    case "usage-compare":
       return "flat"
     default:
       return "nested"
@@ -793,6 +798,22 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
         }
         return client._machineRequest(this.host.machine, route.word, { id: route.id }, "read")
+      }
+      case "usage-compare": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", route.word, 501)
+        }
+        // `since` is the route's one query field and the word's one field;
+        // anything else would be dropped on the machine, so it is refused by
+        // its own name here. The machine checks since's spelling.
+        const body: { since?: string } = {}
+        for (const [key, value] of url.searchParams) {
+          if (key !== "since" || "since" in body) {
+            throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
+          }
+          body.since = value
+        }
+        return client._machineRequest(this.host.machine, route.word, body, "read")
       }
       case "work-v2-image": {
         if (typeof client._machineRequest !== "function") {
