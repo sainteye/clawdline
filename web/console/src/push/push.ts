@@ -4,6 +4,7 @@ import {
   cloudDisable,
   cloudEnable,
   cloudPush,
+  cloudTest,
   cloudResume,
   onCloudPush,
   type BrowserPush,
@@ -518,7 +519,19 @@ function disable(): void {
 export function sendPushTest(sessionId: string | null): void {
   if (shape.testing) return
   publish({ testing: true, said: "", saidCalm: false })
-  pushTest(sessionId)
+  // On Cloud every machine holds the subscription. A Session's own machine
+  // still answers a test that names it; one the copied client cannot place on
+  // a single machine goes to a machine the subscription reached instead.
+  const seam = cloudPush()
+  const sent: Promise<unknown> = !seam
+    ? pushTest(sessionId)
+    : !sessionId
+      ? cloudTest(seam)
+      : pushTest(sessionId).catch((e: unknown) => {
+          if ((e as { code?: unknown } | null)?.code !== "cloud_machine_ambiguous") throw e
+          return cloudTest(seam)
+        })
+  sent
     .then(() => {
       publish({ said: L.strings.webNotifyTestSent, saidCalm: true })
     })

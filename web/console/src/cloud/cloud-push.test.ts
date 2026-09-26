@@ -12,6 +12,7 @@ import {
   cloudEnable,
   cloudPush,
   cloudResume,
+  cloudTest,
   installCloudPush,
   keyText,
   type BrowserPush,
@@ -210,4 +211,28 @@ test("the local console has no Cloud seam, so push.ts keeps its own routes", () 
 
 test("keyText reads a key the way the account writes it", () => {
   assert.equal(keyText(bytesOf(CLOUD_KEY)), keyText(CLOUD_KEY))
+})
+
+test("the test goes to a machine the subscription reached, not to the one push machine the old client wanted", async () => {
+  const { client, sent } = fleet([STUDIO, BUILDER], new Set([STUDIO.id]))
+  const seam: CloudPushSeam = {
+    api: account().api,
+    client: () => client,
+    record: memory({ cloudId: "cloud-sub-1", publicKey: CLOUD_KEY, machines: { [STUDIO.id]: "row-a", [BUILDER.id]: "row-b" } }),
+  }
+  await cloudTest(seam)
+  assert.deepEqual(
+    sent.map((s) => [s.machine, s.type]),
+    [
+      [STUDIO.id, "push-test"],
+      [BUILDER.id, "push-test"],
+    ],
+  )
+})
+
+test("a test with no machine holding the subscription says not_subscribed and asks nobody", async () => {
+  const { client, sent } = fleet([STUDIO, BUILDER])
+  const seam: CloudPushSeam = { api: account().api, client: () => client, record: memory(null) }
+  await assert.rejects(cloudTest(seam), { code: "not_subscribed" })
+  assert.equal(sent.length, 0)
 })

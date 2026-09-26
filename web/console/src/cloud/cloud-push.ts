@@ -318,6 +318,34 @@ export const localRecord: RecordStore = {
   },
 }
 
+/**
+ * The test button on this console. The copied client sends a test with no
+ * Session to the one push machine (`_pushMachine`, strict), which is exactly
+ * what stops making sense once every machine holds the subscription: two of
+ * them is `cloud_machine_ambiguous`. Here the test goes to a machine this
+ * browser's subscription reached — the first of the account's push machines,
+ * in the client's order, that took it, then any other that did — so a test
+ * proves the road the next real notification will take. With no machine that
+ * took it, the answer is `not_subscribed`, the sentence the button already has.
+ */
+export async function cloudTest(seam: CloudPushSeam): Promise<unknown> {
+  const record = seam.record.read()
+  const took = new Set(Object.keys(record?.machines ?? {}))
+  if (took.size === 0) throw Object.assign(new Error("not_subscribed"), { code: "not_subscribed" })
+  const client = seam.client()
+  const ordered = pushMachines(client).map((row) => row.id).filter((id) => took.has(id))
+  for (const id of took) if (!ordered.includes(id)) ordered.push(id)
+  let last: unknown = null
+  for (const machine of ordered) {
+    try {
+      return await client._machineRequest(machine, "push-test", { target: "" }, "action")
+    } catch (e) {
+      last = e
+    }
+  }
+  throw last
+}
+
 let installed: CloudPushSeam | null = null
 const listeners = new Set<() => void>()
 
