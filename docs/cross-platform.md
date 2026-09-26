@@ -725,8 +725,12 @@ If a shell is ever really needed, deal with it then, and the first thing to buil
 
 #### macOS
 
-The Swift shell owns one local-console WKWebView. Its `Cloud` button opens the hosted console in the system browser,
-and its address is a selectable, read-only value rather than navigation UI. It remains the only shell with Keychain,
+The Swift shell owns two WKWebViews behind one native bar: the local console, whose cookie store alone carries the
+local token, and — since 2026-09-27 — a `Cloud` tab that loads the hosted console in a persistent store of its own
+(`WKWebsiteDataStore(forIdentifier:)`, in memory before macOS 14). The Cloud view may follow the GitHub sign-in round
+trip but never navigates to the console's address; a link out of Cloud opens in the system browser, and the bar's
+open-outside button hands the Cloud page in front to the system browser for its password manager. The address is a
+selectable, read-only value rather than navigation UI. It remains the only shell with Keychain,
 the notch, Carbon hotkeys and `SMAppService`; these are exactly "the few features only a Mac has".
 
 **Summary-table correction**: none.
