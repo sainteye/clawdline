@@ -138,3 +138,77 @@ test("look: the turn settles the card; its absence is said; a failed read change
   await h.sender.look(card.token)
   assert.equal(h.cards.card(card.token), undefined)
 })
+
+/** A card the machine typed and held Enter back on, and a daemon whose Enter answers as it is told. */
+function unsubmitted(...enters: (Posted | "throw")[]) {
+  const clock = { t: T0 }
+  const cards = new PendingSends()
+  const pressed: string[] = []
+  const sender = new Sender({
+    cards,
+    now: () => clock.t,
+    post: async () => ({ ok: false, status: 502, code: "send_unsubmitted" }),
+    enter: async (card) => {
+      pressed.push(card.token)
+      const next = enters.shift() ?? { ok: true }
+      if (next === "throw") throw new Error("the network went away")
+      return next
+    },
+    readBack: async () => [],
+    outcomeOf,
+  })
+  const card = cards.add("s", "please read CHILD.md", [], T0)
+  return { clock, cards, pressed, sender, card, ready: () => sender.deliver(card) }
+}
+
+// The phone cannot reach the machine's keyboard: words typed and held back
+// are submitted from the card, by the Enter the machine held back.
+test("an Enter on words typed and never submitted takes the card to accepted, and sends nothing again", async () => {
+  const h = unsubmitted({ ok: true })
+  await h.ready()
+  assert.equal(h.cards.card(h.card.token)?.failure, "send_unsubmitted")
+  h.clock.t = T0 + 30 * 60_000
+  await h.sender.enter(h.card.token)
+  assert.deepEqual(h.pressed, [h.card.token])
+  const card = h.cards.card(h.card.token)
+  assert.equal(card?.state, "accepted", "Enter reached the terminal; the turn settles the card")
+  assert.equal(card?.checking, false)
+  assert.equal(card?.sentAt, T0 + 30 * 60_000, "the turn is looked for from the Enter, not from the typing")
+  h.cards.reconcile("s", [user("please read CHILD.md", T0 + 30 * 60_000 + 2_000)], T0 + 30 * 60_000 + 3_000)
+  assert.equal(h.cards.card(h.card.token), undefined, "an Enter pressed long after the typing still settles on its turn")
+  await h.sender.enter(h.card.token)
+  assert.equal(h.pressed.length, 1, "an accepted card offers no second Enter")
+})
+
+// The words may still be in the input line after any of these, where "send
+// again" would type them twice; only the Enter is offered, and the machine
+// presses it only while they are there.
+test("an Enter refused, behind a question, or unanswered is offered again, never a second send", async () => {
+  for (const answer of [
+    { ok: false, status: 409, code: "input_unreadable" },
+    { ok: false, status: 409, code: "input_behind_question" },
+    { ok: false, status: 504, code: "cloud_read_timeout", outcome: "unknown" },
+    "throw",
+  ] as (Posted | "throw")[]) {
+    const h = unsubmitted(answer, { ok: true })
+    await h.ready()
+    await h.sender.enter(h.card.token)
+    const card = h.cards.card(h.card.token)
+    const code = answer === "throw" ? "offline" : answer.ok ? "" : answer.code
+    assert.equal(card?.state, "unknown", code)
+    assert.equal(card?.failure, "send_unsubmitted", code + ": the Enter is offered again")
+    assert.equal(card?.enterRefused, code)
+    assert.equal(card?.checking, false)
+    await h.sender.enter(h.card.token)
+    assert.equal(h.pressed.length, 2, code + ": a second Enter can be pressed")
+  }
+})
+
+test("words no longer in the input line are looked at rather than pressed again", async () => {
+  const moved = unsubmitted({ ok: false, status: 409, code: "input_moved" })
+  await moved.ready()
+  await moved.sender.enter(moved.card.token)
+  assert.equal(moved.cards.card(moved.card.token)?.failure, "input_moved")
+  await moved.sender.enter(moved.card.token)
+  assert.equal(moved.pressed.length, 1, "no Enter is offered once the words have moved")
+})

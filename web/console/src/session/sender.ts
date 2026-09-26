@@ -15,6 +15,10 @@
  *   nothing.** That read fails exactly when the Mac is busy or far away — when
  *   the first attempt is most likely to have landed after all — so the card
  *   goes to `unknown` instead of typing the words a second time (F2).
+ * - **Words typed and never submitted are submitted by their Enter, never sent
+ *   again.** The machine presses it only while they are still in the input
+ *   line (`app.SubmitTyped`); a refusal it proves typed nothing on offers the
+ *   Enter again, and any other answer is `unknown` and looked at.
  * - **An `unknown` card is looked at, not retried.** Looking reads the
  *   transcript: the turn there settles the card; a read that shows no turn
  *   marks it `absent`, and only then is sending offered — under the same
@@ -33,6 +37,8 @@ export interface SenderDeps {
   now(): number
   /** Post one attempt of the card, under `card.request`. A throw is an attempt nothing answered. */
   post(card: PendingSend): Promise<Posted>
+  /** Press Enter on the card's words where they sit typed and never submitted (`postEnter`). A throw is a press nothing answered. */
+  enter?(card: PendingSend): Promise<Posted>
   /** The session's transcript read fresh from the daemon, or null when it could not be read. */
   readBack(session: string): Promise<SeenTurn[] | null>
   /** `outcome.ts` `outcomeOf`, handed in so that this file imports nothing at run time. */
@@ -68,6 +74,45 @@ export async function postCard(doFetch: typeof fetch, url: (path: string) => str
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": card.request },
       body: JSON.stringify(body),
+      credentials: "same-origin",
+      signal: controller.signal,
+    })
+  } catch {
+    return { ok: false, status: null, code: "offline" }
+  } finally {
+    clearTimeout(timer)
+  }
+  if (res.ok) return { ok: true }
+  return { ok: false, ...(await refusalOf(res)) }
+}
+
+/** How much of the end of a card's words an Enter names: more than the machine looks for (`needleRunes`, 24). */
+const TYPED_RUNES = 64
+
+/**
+ * The end of a card's words as an Enter names them (`typed`): whitespace
+ * removed, as the machine reads its input line, and only the end, which is all
+ * it looks for. Pictures alone name "".
+ */
+export function typedEnd(text: string): string {
+  return Array.from(text.replace(/\s+/gu, "")).slice(-TYPED_RUNES).join("")
+}
+
+/**
+ * The Enter the machine held back on a card's words: `POST
+ * /v1/sessions/<id>/key` with `enter` and the end of the words, under a request
+ * of its own — the card's belongs to its send. Across Clawdline Cloud the relay
+ * carries it as an answer that names its words (`cloud/relay-writer.ts`).
+ */
+export async function postEnter(doFetch: typeof fetch, url: (path: string) => string, card: PendingSend, request: string): Promise<Posted> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), POST_WAIT_MS)
+  let res: Response
+  try {
+    res = await doFetch(url("/v1/sessions/" + encodeURIComponent(card.session) + "/key"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": request },
+      body: JSON.stringify({ key: "enter", typed: typedEnd(card.text) }),
       credentials: "same-origin",
       signal: controller.signal,
     })
@@ -169,6 +214,37 @@ export class Sender {
     cards.reconcile(card.session, turns, now())
     const again = cards.resend(token, now())
     if (again) await this.deliver(again)
+  }
+
+  /**
+   * "Press Enter" on a card whose words the machine typed and held Enter back
+   * on. Taken: the words were submitted, and the card waits for their turn like
+   * any accepted one. `input_moved`: they are not in the input line now — sent
+   * or cleared — and the card is looked at. Anything else, a refusal or no
+   * answer at all, offers the Enter again: the words may still be in the input
+   * line, where sending them again would type them twice, and the machine
+   * presses a second Enter only while they are there.
+   */
+  async enter(token: string): Promise<void> {
+    const { cards, now } = this.deps
+    if (!this.deps.enter) return
+    const card = cards.entering(token)
+    if (!card) return
+    let posted: Posted
+    try {
+      posted = await this.deps.enter(card)
+    } catch {
+      posted = { ok: false, status: null, code: "offline" }
+    }
+    if (posted.ok) {
+      cards.entered(token, now())
+      return
+    }
+    if (posted.code === "input_moved") {
+      cards.uncertain(token, posted.code)
+      return
+    }
+    cards.enterRefusedFor(token, posted.code)
   }
 
   /** "Look" at an unknown card: read the transcript fresh; never post. */
