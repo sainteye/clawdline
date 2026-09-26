@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS work_v2_images (
   id         TEXT PRIMARY KEY,
   work_id    TEXT NOT NULL REFERENCES work_v2_items(id) ON DELETE CASCADE,
   title      TEXT NOT NULL,
-  media_type TEXT NOT NULL CHECK (media_type = 'image/png'),
+  media_type TEXT NOT NULL CHECK (media_type IN ('image/png','image/jpeg')),
   data       BLOB NOT NULL,
   byte_count INTEGER NOT NULL,
   width      INTEGER NOT NULL,
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS session_direct_todo_images (
   id         TEXT PRIMARY KEY,
   todo_id    TEXT NOT NULL REFERENCES session_direct_todos(id) ON DELETE CASCADE,
   title      TEXT NOT NULL,
-  media_type TEXT NOT NULL CHECK (media_type = 'image/png'),
+  media_type TEXT NOT NULL CHECK (media_type IN ('image/png','image/jpeg')),
   data       BLOB NOT NULL,
   byte_count INTEGER NOT NULL,
   width      INTEGER NOT NULL,
@@ -209,7 +209,55 @@ func openWorkV2(db *sql.DB) error {
 			return err
 		}
 	}
-	return migrateWorkV2DocumentRoles(db)
+	if err := migrateWorkV2DocumentRoles(db); err != nil {
+		return err
+	}
+	return migrateImageMediaTypes(db)
+}
+
+// migrateImageMediaTypes widens the media-type CHECK on both reference-image
+// tables from PNG alone to PNG or JPEG, since a photograph is stored as the
+// JPEG it is. Every row is kept as it was: a picture stored before this is a
+// PNG and says so. The table is rebuilt the way migrateWorkV2DocumentRoles
+// rebuilds one, because SQLite cannot alter a CHECK in place.
+func migrateImageMediaTypes(db *sql.DB) error {
+	for _, t := range []struct{ table, index, columns string }{
+		{"work_v2_images", "work_v2_images_item",
+			"id,work_id,title,media_type,data,byte_count,width,height,position,created_by,created_at"},
+		{"session_direct_todo_images", "session_direct_todo_images_todo",
+			"id,todo_id,title,media_type,data,byte_count,width,height,position,created_by,created_at"},
+	} {
+		var ddl string
+		err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, t.table).Scan(&ddl)
+		if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "image/jpeg")) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		before := t.table + "_before_jpeg"
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		steps := []string{
+			`ALTER TABLE ` + t.table + ` RENAME TO ` + before,
+			`DROP INDEX IF EXISTS ` + t.index,
+			workV2Schema,
+			`INSERT INTO ` + t.table + ` (` + t.columns + `) SELECT ` + t.columns + ` FROM ` + before,
+			`DROP TABLE ` + before,
+		}
+		for _, step := range steps {
+			if _, err := tx.Exec(step); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("%s.media_type: %w", t.table, err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateWorkV2DocumentRoles widens the CHECK on an existing document table.
@@ -815,17 +863,21 @@ func (s *Store) WorkV2Images(ctx context.Context, workID string) ([]work.ImageV2
 
 // WorkV2ImageBytes returns a durable Board or Session-to-do reference image
 // without exposing the database or either BLOB column to the HTTP layer.
-func (s *Store) WorkV2ImageBytes(ctx context.Context, id string) ([]byte, bool, error) {
+//
+// The media type is the one recorded with the bytes: image/png, or image/jpeg
+// for a photograph stored since photographs stayed JPEG.
+func (s *Store) WorkV2ImageBytes(ctx context.Context, id string) ([]byte, string, bool, error) {
 	if err := reading(); err != nil {
-		return nil, false, err
+		return nil, "", false, err
 	}
 	var data []byte
-	err := s.db.QueryRowContext(ctx, `SELECT data FROM work_v2_images WHERE id=?
-    UNION ALL SELECT data FROM session_direct_todo_images WHERE id=? LIMIT 1`, id, id).Scan(&data)
+	var mediaType string
+	err := s.db.QueryRowContext(ctx, `SELECT data, media_type FROM work_v2_images WHERE id=?
+    UNION ALL SELECT data, media_type FROM session_direct_todo_images WHERE id=? LIMIT 1`, id, id).Scan(&data, &mediaType)
 	if err == sql.ErrNoRows {
-		return nil, false, nil
+		return nil, "", false, nil
 	}
-	return data, err == nil, err
+	return data, mediaType, err == nil, err
 }
 
 func (t *WorkV2Tx) AddStep(s work.StepV2) error {

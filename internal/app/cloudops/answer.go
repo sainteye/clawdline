@@ -316,9 +316,10 @@ const documentsMaximumListed = 200
 // reason a relay exists. So the only question left is how large a picture may
 // be, and that is the relay's per-envelope cap arithmetic and nothing else.
 //
-// A thumbnail (`work.v2.image` with `size: "thumb"`) is a JPEG; every other
-// picture this machine stores is a PNG, and those two spellings are the only
-// ones that cross.
+// A thumbnail (`work.v2.image` with `size: "thumb"`) is a JPEG, and so is a
+// photograph this machine stored (Normalize); everything else it stores is a
+// PNG. Those two spellings are the only ones that cross, and the one the route
+// answered is the one the payload names.
 func shapeImage(p plan, res LocalResponse) (json.RawMessage, Refusal) {
 	if res.ContentType != "image/png" && res.ContentType != "image/jpeg" {
 		return nil, Refusal{Status: 415, Code: "image_media_type_unsupported",

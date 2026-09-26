@@ -2793,7 +2793,8 @@ type ImageArtifact struct {
 	// A lowercase UUID. The whole of what the bytes are fetched by.
 	ID string `json:"id"`
 
-	// Always image/png: every stored picture was drawn and written out again.
+	// image/jpeg for a photograph, image/png for anything else: every stored picture
+	// was drawn and written out again.
 	MediaType string       `json:"media_type"`
 	State     ImageAbsence `json:"state,omitempty"`
 	Width     int64        `json:"width"`

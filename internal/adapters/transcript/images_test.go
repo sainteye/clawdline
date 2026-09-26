@@ -88,9 +88,13 @@ func TestSessionMessageVersionTwo(t *testing.T) {
 	if !ok || len(e.Artifacts) != 1 || e.Artifacts[0].Width != 1192 || e.Artifacts[0].ID != idA {
 		t.Fatalf("%v %+v", ok, e)
 	}
+	// A photograph is stored as a JPEG, and a message may carry one.
+	if e, ok := sessionMessage(envelope(strings.Replace(ref, `"image/png"`, `"image/jpeg"`, 1)), 1); !ok || e.Artifacts[0].MediaType != "image/jpeg" {
+		t.Fatalf("a JPEG reference: %v %+v", ok, e)
+	}
 	for _, bad := range []string{
 		``,
-		strings.Replace(ref, `"image/png"`, `"image/jpeg"`, 1),
+		strings.Replace(ref, `"image/png"`, `"image/gif"`, 1),
 		strings.Replace(ref, `1192`, `true`, 1),
 		strings.Replace(ref, `1192`, `0`, 1),
 		strings.Replace(ref, `"width":1192`, `"width":1192,"state":"expired"`, 1),

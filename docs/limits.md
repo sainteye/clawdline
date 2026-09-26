@@ -165,7 +165,7 @@ HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST
 | N12 | `remote-audit.jsonl` | **無輪替**；`O_APPEND`＋0600（比舊版好，`devices/files.go:513-543`）；欄位值 256 B **靜默截斷**（`:75-77`） | 只增不減；寫失敗只記 log | log | 部分 | c |
 | N13 | 裝置清單 `remote.json` | 裝置數**無上限**，每次密碼登入新增一台（`auth/authority.go:718`）；讀取上限 4 MiB（`devices/files.go:70`） | **超過 4 MiB 時 auth 在啟動時整個失敗**（`gate.go:120-124`） | log | 服務中斷 | c（滿了是全面停擺） |
 | N14 | push 訂閱 | 無數量上限（`push/store.go:225-237`）；檔案讀取上限 1 MiB | 超過 1 MiB → `ErrUnreadable`，**所有推播都失敗** | log；notify 回 502 | — | c |
-| N15 | 圖片 | 照搬舊版 policy（`artifacts/artifact.go:59-70`） | 淘汰最舊，**不記 log**（`store.go:365-372`）；讀者拿到 410 `artifact_expired` | 讀的人事後才知道 | 是 | b |
+| N15 | 圖片 | 照搬舊版 policy（`artifacts/artifact.go:59-70`）. Since 2026-09-26 every picture the daemon stores — drops, this store, and Board and to-do reference images — has a long edge of at most 1,600 px (`artifacts.MaxLongEdge`, the console's `LONG_EDGE`); a larger one is scaled down, not refused. A photograph is stored as JPEG (quality 90) and anything else as 8-bit PNG: a 146 KB phone JPEG had been a 1.19 MB 16-bit PNG | 淘汰最舊，**不記 log**（`store.go:365-372`）；讀者拿到 410 `artifact_expired` | 讀的人事後才知道 | 是 | b |
 | N16 | Drops | 40（`drops.go:33-34`） | 淘汰，有 log | log | 是 | b |
 | N17 | transcript | 8 MiB 尾端、150 KiB 回應（`transcript/turns.go:36-39`、`http/transcript.go`） | 同舊版；React `Transcript.tsx` 不讀 `truncation` | 沒人 | 否 | b |
 | N18 | 記憶體快取（transcript titles） | 256 筆 LRU（`transcript/claude.go`、`transcript/lru.go`） | 淘汰最久未使用的讀數並計數 | diagnostics、notice | 是 | ✓ |

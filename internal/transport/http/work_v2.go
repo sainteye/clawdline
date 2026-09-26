@@ -397,7 +397,7 @@ func (s *Server) workV2ReferenceImage(w http.ResponseWriter, r *http.Request, id
 		}
 		thumb = true
 	}
-	data, ok, err := s.store.WorkV2ImageBytes(r.Context(), id)
+	data, mediaType, ok, err := s.store.WorkV2ImageBytes(r.Context(), id)
 	if err != nil {
 		writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "The reference image could not be read.")
 		return
@@ -406,7 +406,6 @@ func (s *Server) workV2ReferenceImage(w http.ResponseWriter, r *http.Request, id
 		writeRefusal(w, http.StatusNotFound, "image_not_found", "No reference image has that id.")
 		return
 	}
-	mediaType := "image/png"
 	if thumb {
 		// The stored image is read first either way, so a deleted image is a
 		// 404 and never a thumbnail the cache still holds.
@@ -608,7 +607,7 @@ func (s *Server) workV2AddImage(w http.ResponseWriter, r *http.Request, id strin
 	}
 	var answer []byte
 	_, err = s.workV2().AddImage(r.Context(), id, app.AddImageV2{ExpectedVersion: body.ExpectedVersion,
-		Title: body.Title, Data: normalized.PNG, Width: normalized.Width, Height: normalized.Height,
+		Title: body.Title, Data: normalized.Data, MediaType: normalized.MediaType, Width: normalized.Width, Height: normalized.Height,
 		Position: body.Position, Actor: actor}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 		answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
 		return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
@@ -1206,7 +1205,7 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		var answer []byte
 		_, _, err := s.workV2().AddDirectTodoImage(r.Context(), parts[1], app.AddDirectTodoImageV2{
 			ExpectedVersion: body.ExpectedVersion, SessionID: conversation, Title: body.Title,
-			Data: normalized.PNG, Width: normalized.Width, Height: normalized.Height,
+			Data: normalized.Data, MediaType: normalized.MediaType, Width: normalized.Width, Height: normalized.Height,
 			Position: body.Position, Actor: actor,
 		}, func(td work.DirectTodoV2, image work.DirectTodoImageV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = directTodoAnswer(td, []work.DirectTodoImageV2{image})
@@ -1265,7 +1264,7 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		}
 		dataURLs := make([]string, 0, len(pictures))
 		for _, picture := range pictures {
-			dataURLs = append(dataURLs, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(picture.Data))
+			dataURLs = append(dataURLs, "data:"+picture.Image.MediaType+";base64,"+base64.StdEncoding.EncodeToString(picture.Data))
 		}
 		if _, sendErr := s.actions().SendWithPictures(r.Context(), terminalID,
 			app.DirectTodoSendText(found.ID, found.Text), dataURLs); sendErr != nil {

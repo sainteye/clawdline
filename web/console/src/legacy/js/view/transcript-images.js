@@ -5,7 +5,7 @@ const artifactTileBindings = new WeakMap();
 
 function validArtifact(a) {
     return typeof a.id === "string" && artifactID.test(a.id) &&
-        a.media_type === "image/png" && Number.isSafeInteger(a.byte_count) && a.byte_count > 0 &&
+        (a.media_type === "image/png" || a.media_type === "image/jpeg") && Number.isSafeInteger(a.byte_count) && a.byte_count > 0 &&
         Number.isSafeInteger(a.width) && a.width > 0 &&
         Number.isSafeInteger(a.height) && a.height > 0 &&
         Number.isSafeInteger(a.expires_at) && a.expires_at > 0;

@@ -370,7 +370,9 @@ export interface WorkV2Step {
 export interface WorkV2Image {
   id: string
   title: string
-  media_type: "image/png"
+  // A photograph is stored as the JPEG it is; anything else, and every picture
+  // stored before that, as PNG.
+  media_type: "image/png" | "image/jpeg"
   byte_count: number
   width: number
   height: number

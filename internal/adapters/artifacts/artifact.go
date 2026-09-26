@@ -90,7 +90,7 @@ func IsID(id string) bool { return artifactID.MatchString(id) }
 // Valid is `SessionImageArtifact.isValidReference` under a policy.
 func (a Artifact) Valid(p Policy) bool {
 	return IsID(a.ID) &&
-		a.MediaType == "image/png" &&
+		(a.MediaType == MediaTypePNG || a.MediaType == MediaTypeJPEG) &&
 		a.ByteCount > 0 && a.ByteCount <= p.MaxEncodedBytes &&
 		a.Width > 0 && a.Height > 0 &&
 		a.Width <= p.MaxDimension && a.Height <= p.MaxDimension &&

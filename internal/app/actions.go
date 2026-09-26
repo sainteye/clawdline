@@ -384,7 +384,7 @@ func (a Actions) SendWithPictures(ctx context.Context, id, text string, images [
 			log.Printf("send: a picture was left out: %v", err)
 			continue
 		}
-		path, err := a.Pictures.Drops.Store(pic.PNG, time.Now())
+		path, err := a.Pictures.Drops.Store(pic.Data, time.Now())
 		if err != nil {
 			log.Printf("send: a picture could not be kept: %v", err)
 			continue
