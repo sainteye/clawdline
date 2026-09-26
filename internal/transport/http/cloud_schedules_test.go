@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -398,5 +399,43 @@ func TestTheActorHeaderOnlyEverTakesAuthorityAway(t *testing.T) {
 		if rec.Code != tc.want {
 			t.Errorf("%s: %d %s, want %d", tc.name, rec.Code, rec.Body, tc.want)
 		}
+	}
+}
+
+// TestACloudMoveCarriesTheTemplateToTheStoredFile: a schedule moved through
+// Clawdline Cloud keeps its hidden settings end to end. Every layer between
+// the browser and the file — the Cloud word, the local route, the idempotent
+// receipt, `build` — would drop `deliverables` without a word if it reshaped
+// the body, so the test reads the stored schedule back rather than the answer.
+func TestACloudMoveCarriesTheTemplateToTheStoredFile(t *testing.T) {
+	s := cloudStandIn(t)
+
+	body := dailySchedule(s.place, "morning sweep", "09:00")
+	body["template"] = map[string]any{"deliverables": []any{"docs/report.md"}, "claims": []any{"web"}}
+	answer, payload := s.ask(t, 1, map[string]any{"type": "schedule-create",
+		"session": cloudops.MachineReplySession, "request": "req-move", "schedule": body})
+	if !answer.OK() {
+		t.Fatalf("the moved copy was refused: %d/%q %s", answer.Status, answer.Code, answer.Payload)
+	}
+	made, _ := bodyOf(t, payload)["schedule"].(map[string]any)
+	id, _ := made["id"].(string)
+
+	answer, payload = s.ask(t, 2, map[string]any{"type": "schedule",
+		"session": cloudops.MachineReplySession, "request": "req-read", "id": id})
+	if !answer.OK() {
+		t.Fatalf("the copy could not be read back: %d/%q", answer.Status, answer.Code)
+	}
+	record, _ := bodyOf(t, payload)["schedule"].(map[string]any)
+	task, _ := record["task"].(map[string]any)
+	if fmt.Sprint(task["deliverables"]) != "[docs/report.md]" || fmt.Sprint(task["claims"]) != "[web]" {
+		t.Fatalf("the stored task lost its template: %v", task)
+	}
+
+	// And the permission setting stays a named refusal on this door too.
+	body["template"] = map[string]any{"permission_mode": "full"}
+	answer, _ = s.ask(t, 3, map[string]any{"type": "schedule-create",
+		"session": cloudops.MachineReplySession, "request": "req-wider", "schedule": body})
+	if answer.Code != "template_permission_mode" {
+		t.Fatalf("a template naming permission_mode answered %d/%q", answer.Status, answer.Code)
 	}
 }

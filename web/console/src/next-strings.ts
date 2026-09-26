@@ -217,7 +217,10 @@ const words = {
     scheduleMoveSpent:
       "“{title}” ran once and is done; a copy would run it again. Make a new schedule on the other machine instead.",
     scheduleMoveUnformed:
-      "This schedule has settings the form does not show ({fields}); a copy on another machine would lose them, so it was not moved.",
+      "This schedule has a permission setting the form does not show ({fields}). A copy made on another machine may not be given it, so it was not moved.",
+    scheduleMoveTargetTooOld:
+      "Clawdline on {machine} is too old to take the settings this schedule carries. Update Clawdline on {machine}, then move it.",
+    scheduleMovePathRewritten: "The path in the first message now reads {path}.",
     scheduleMoveNotStarted: "{source} did not switch the schedule off, so nothing was moved. {why}",
     scheduleMoveCreateFailed: "{machine} refused the copy, so the schedule stays on {source} as it was. {why}",
     scheduleMoveCreateFailedDisabled:
@@ -536,7 +539,9 @@ const words = {
     scheduleMoveWebhookBound: "「{title}」在 {machine} 上綁了 webhook，搬走後它會一直呼叫一個已經不在的排程。請先停用 webhook 再搬。",
     scheduleMoveWebhookUnknown: "讀不到「{title}」在 {machine} 上有沒有綁 webhook，所以沒有搬。請再試一次。",
     scheduleMoveSpent: "「{title}」是只跑一次的排程，而且已經跑過了；搬過去會再跑一次。請直接在另一台機器新增一個。",
-    scheduleMoveUnformed: "這個排程有表單沒有顯示的設定（{fields}），搬到另一台機器會把它們弄丟，所以沒有搬。",
+    scheduleMoveUnformed: "這個排程有表單沒有顯示的權限設定（{fields}）。在另一台機器建立的副本不能帶上它，所以沒有搬。",
+    scheduleMoveTargetTooOld: "{machine} 上的 Clawdline 版本太舊，收不下這個排程帶著的設定。請先更新 {machine} 上的 Clawdline 再搬。",
+    scheduleMovePathRewritten: "第一則訊息裡的路徑已換成 {path}。",
     scheduleMoveNotStarted: "{source} 沒有停用這個排程，所以什麼都沒搬。{why}",
     scheduleMoveCreateFailed: "{machine} 拒絕建立這份排程，排程仍在 {source}，維持原狀。{why}",
     scheduleMoveCreateFailedDisabled: "{machine} 拒絕建立這份排程，而 {source} 上的原排程沒能重新啟用：它還在那裡，目前停用。{why}",

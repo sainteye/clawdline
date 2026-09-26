@@ -3793,6 +3793,7 @@ type ScheduleRequest struct {
 	// The conversation the person's message was sent to. Required with via for a
 	// session-authorized repeating write.
 	SessionID      string                     `json:"session_id,omitempty"`
+	Template       *ScheduleTemplate          `json:"template,omitempty"`
 	TimeoutMinutes int64                      `json:"timeout_minutes,omitempty"`
 	Title          string                     `json:"title"`
 	Via            *ScheduleUserAuthorization `json:"via,omitempty"`
@@ -3881,6 +3882,26 @@ type ScheduleTask struct {
 	Serialize       []string `json:"serialize,omitempty"`
 	TimeoutMinutes  int64    `json:"timeout_minutes,omitempty"`
 	Title           string   `json:"title,omitempty"`
+}
+
+// Task-template fields the form has no control for, which a create may carry
+// — what a save already carries from the stored file, so a schedule moved
+// from another machine arrives as it was. Accepted on POST only; a PATCH that
+// names it is refused, because a save carries the stored fields itself. The
+// file's parser reads each value, as it reads a stored file. `graph` is
+// accepted too, as a stored file holds it (the generator has no type for it).
+// `permission_mode` is refused by name: a create may not grant a schedule more
+// than the form can. Any other key is refused by name. `reasoning_effort` is
+// kept only when the assistant is codex, as a save keeps it.
+type ScheduleTemplate struct {
+	Claims          []string `json:"claims,omitempty"`
+	Deliverables    []string `json:"deliverables,omitempty"`
+	Isolation       string   `json:"isolation,omitempty"`
+	IsolationBase   string   `json:"isolation_base,omitempty"`
+	Kind            string   `json:"kind,omitempty"`
+	Plan            string   `json:"plan,omitempty"`
+	ReasoningEffort string   `json:"reasoning_effort,omitempty"`
+	Serialize       []string `json:"serialize,omitempty"`
 }
 
 // The recent run issued when the person sent this session the instruction.

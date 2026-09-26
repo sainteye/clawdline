@@ -50,14 +50,22 @@ export interface MoveRecord {
 
 /**
  * Template fields a stored schedule may carry that the form has no control
- * for. A save on the same machine keeps them (`build`, internal/app/schedules.go);
- * a create on another machine cannot send them, so a schedule carrying any is
- * not moved rather than moved without them.
+ * for, and that travel: a save on the same machine keeps them (`build`,
+ * internal/app/schedules.go), and a create takes them in `template`
+ * (`createTemplate`), so the copy carries what the source's file said.
  */
-export const UNFORMED_TASK_FIELDS = [
-  "claims", "permission_mode", "serialize", "isolation", "isolation_base",
+export const CARRIED_TASK_FIELDS = [
+  "claims", "serialize", "isolation", "isolation_base",
   "deliverables", "kind", "plan", "graph", "reasoning_effort",
 ] as const
+
+/**
+ * The template fields that cannot travel. A create may not set the permission
+ * setting — any device that may send could otherwise make a schedule that runs
+ * with more than the form can grant — so a schedule carrying one is not moved
+ * rather than moved without it.
+ */
+export const UNFORMED_TASK_FIELDS = ["permission_mode"] as const
 
 export type MoveRefusal =
   | { code: "schedule_move_target_offline"; machine: string }
@@ -154,18 +162,75 @@ export function recordBody(record: MoveRecord, place: string, enabled: boolean):
   return body
 }
 
+/** The source's template fields that travel, or null when it has none. */
+export function carriedTemplate(record: MoveRecord): Record<string, unknown> | null {
+  const task = record.task || {}
+  const template: Record<string, unknown> = {}
+  for (const key of CARRIED_TASK_FIELDS) if (key in task) template[key] = task[key]
+  return Object.keys(template).length ? template : null
+}
+
+/** A character that continues a path name: `/a/dual` does not end inside `/a/dual-astro`. */
+const PATH_CHARACTER = /[A-Za-z0-9_~\-]/
+
+/**
+ * `text` with every mention of the project directory `from`, as a whole path,
+ * changed to `to`. A mention is `from` exactly, not preceded by a character
+ * that would make it the tail of a longer path, and followed by the end, a `/`
+ * or anything that does not continue a name — a `.` ends a sentence, and
+ * continues a name only when a name character follows it (`/a/dual.git`).
+ * Nothing else in the text is touched.
+ */
+export function retargetInstructions(text: string, from: string, to: string): string {
+  const source = from.replace(/\/+$/, "")
+  const target = to.replace(/\/+$/, "")
+  if (!source || !target || source === target) return text
+  let out = ""
+  let at = 0
+  for (let found = text.indexOf(source); found !== -1; found = text.indexOf(source, found + 1)) {
+    if (found < at) continue
+    const before = found > 0 ? text[found - 1] : ""
+    const end = found + source.length
+    const after = text[end] ?? ""
+    const continues =
+      PATH_CHARACTER.test(after) || (after === "." && PATH_CHARACTER.test(text[end + 1] ?? ""))
+    if ((before && (PATH_CHARACTER.test(before) || before === "/" || before === ".")) || continues) continue
+    out += text.slice(at, found) + target
+    at = end
+  }
+  return out + text.slice(at)
+}
+
 /**
  * The copy's body: what the form holds, on the target's place. A one-time
  * schedule's date is carried, since the form has no control for it and a copy
- * without it would repeat daily.
+ * without it would repeat daily. The source's hidden template fields go in
+ * `template` — only when there are any, so a schedule without them still moves
+ * to a machine too old to read the key. The project directory named in the
+ * instructions becomes the target's.
  */
-export function targetBody(form: Record<string, unknown>, record: MoveRecord, place: string): Record<string, unknown> {
-  const body: Record<string, unknown> = { ...form, place_id: place }
+export function targetBody(form: Record<string, unknown>, record: MoveRecord, place: MovePlace): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...form, place_id: place.id }
   if (record.when?.on !== undefined) {
     body.on = record.when.on
     if (record.when.days === undefined) delete body.days
   }
+  const template = carriedTemplate(record)
+  if (template) body.template = template
+  if (typeof body.instructions === "string" && record.task?.project_dir) {
+    body.instructions = retargetInstructions(body.instructions, record.task.project_dir, place.path)
+  }
   return body
+}
+
+/**
+ * Whether a create was refused because the target daemon predates `template`:
+ * it answers `unknown field: template`. The move says the target needs
+ * updating, and never tries again without the fields.
+ */
+export function refusedForTemplate(error: unknown): boolean {
+  const message = error && typeof error === "object" ? (error as { message?: unknown }).message : undefined
+  return typeof message === "string" && /unknown field:[^.]*\btemplate\b/.test(message)
 }
 
 /** The three writes, each to the machine it names. `create` routes by the body's place. */
