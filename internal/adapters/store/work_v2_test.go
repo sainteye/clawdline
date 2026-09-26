@@ -135,8 +135,9 @@ VALUES ('doc-a','item-a','test','Existing test','green','',0,1,1,1)`)
 }
 
 // A reference image stored before photographs stayed JPEG is a PNG row under a
-// CHECK that allowed nothing else. Opening that store keeps the row, still a
-// PNG, and lets a JPEG in beside it.
+// CHECK that allowed nothing else, with its bytes in the row. Opening that
+// store moves the bytes to a file, keeps the row, still a PNG, and lets a JPEG
+// in beside it.
 func TestOpeningAPNGOnlyImageStoreKeepsItsPicturesAndTakesAJPEG(t *testing.T) {
 	dir := t.TempDir()
 	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
@@ -168,9 +169,9 @@ INSERT INTO work_v2_items
   (id,project_id,project_path,kind,title,description,phase,condition,user_action,deployment_policy,
    owner_session,created_by,created_at,updated_at,closed_at,cycle,version)
 VALUES ('item-a','p','/p','issue','Existing','Existing','created','','','agent_decides','','local',1,1,NULL,1,1);
-INSERT INTO work_v2_images VALUES ('img-a','item-a','old.png','image/png',X'89504E47',4,2,2,0,'local',1);
+INSERT INTO work_v2_images VALUES ('32000000-0000-4000-8000-00000000000a','item-a','old.png','image/png',X'89504E47',4,2,2,0,'local',1);
 INSERT INTO session_direct_todos (id,session_id,text,created_by,created_at) VALUES ('todo-a','s','t','local',1);
-INSERT INTO session_direct_todo_images VALUES ('timg-a','todo-a','old.png','image/png',X'89504E47',4,2,2,0,'local',1)`)
+INSERT INTO session_direct_todo_images VALUES ('32000000-0000-4000-8000-00000000001a','todo-a','old.png','image/png',X'89504E47',4,2,2,0,'local',1)`)
 	if closeErr := db.Close(); err == nil {
 		err = closeErr
 	}
@@ -183,29 +184,42 @@ INSERT INTO session_direct_todo_images VALUES ('timg-a','todo-a','old.png','imag
 	}
 	defer s.Close()
 	ctx := context.Background()
-	for _, id := range []string{"img-a", "timg-a"} {
+	imgA, timgA := "32000000-0000-4000-8000-00000000000a", "32000000-0000-4000-8000-00000000001a"
+	for _, id := range []string{imgA, timgA} {
 		data, mediaType, ok, err := s.WorkV2ImageBytes(ctx, id)
 		if err != nil || !ok || string(data) != "\x89PNG" || mediaType != "image/png" {
 			t.Fatalf("%s after the migration: %q %q %v %v", id, data, mediaType, ok, err)
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO work_v2_images VALUES ('img-b','item-a','photo.jpg','image/jpeg',X'FFD8FF',3,2,2,1,'local',2)`); err != nil {
+	for _, table := range []string{"work_v2_images", "session_direct_todo_images"} {
+		if has, err := hasColumn(s.db, table, "data"); err != nil || has {
+			t.Fatalf("%s still has its data column: %v %v", table, has, err)
+		}
+	}
+	imgB, timgB := "32000000-0000-4000-8000-00000000000b", "32000000-0000-4000-8000-00000000001b"
+	at := time.Unix(2, 0)
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		if err := tx.AddImage(work.ImageV2{ID: imgB, WorkID: "item-a", Title: "photo.jpg", MediaType: "image/jpeg",
+			Width: 2, Height: 2, Position: 1, CreatedBy: "local", CreatedAt: at}, []byte{0xFF, 0xD8, 0xFF}); err != nil {
+			return err
+		}
+		return tx.AddDirectTodoImage(work.DirectTodoImageV2{ID: timgB, TodoID: "todo-a", Title: "photo.jpg",
+			MediaType: "image/jpeg", Width: 2, Height: 2, Position: 1, CreatedBy: "local", CreatedAt: at}, []byte{0xFF, 0xD8, 0xFF})
+	}); err != nil {
 		t.Fatalf("a JPEG reference after the migration: %v", err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO session_direct_todo_images VALUES ('timg-b','todo-a','photo.jpg','image/jpeg',X'FFD8FF',3,2,2,1,'local',2)`); err != nil {
-		t.Fatalf("a JPEG to-do picture after the migration: %v", err)
-	}
-	if _, err := s.db.Exec(`INSERT INTO work_v2_images VALUES ('img-c','item-a','x.gif','image/gif',X'47',1,1,1,2,'local',3)`); err == nil {
+	if _, err := s.db.Exec(`INSERT INTO work_v2_images (id,work_id,title,media_type,sha256,byte_count,width,height,position,created_by,created_at)
+    VALUES ('32000000-0000-4000-8000-00000000000c','item-a','x.gif','image/gif','',1,1,1,2,'local',3)`); err == nil {
 		t.Fatal("a media type Normalize never writes was stored")
 	}
-	if _, _, ok, _ := s.WorkV2ImageBytes(ctx, "img-b"); !ok {
-		t.Fatal("the JPEG reference is not readable")
+	if data, mediaType, ok, err := s.WorkV2ImageBytes(ctx, imgB); !ok || err != nil || mediaType != "image/jpeg" || len(data) != 3 {
+		t.Fatalf("the JPEG reference is not readable: %v %v", ok, err)
 	}
 	// The cascade still reaches the rebuilt table.
 	if _, err := s.db.Exec(`DELETE FROM session_direct_todos WHERE id='todo-a'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, ok, _ := s.WorkV2ImageBytes(ctx, "timg-a"); ok {
+	if _, _, ok, _ := s.WorkV2ImageBytes(ctx, timgA); ok {
 		t.Fatal("deleting the to-do left its picture behind")
 	}
 }

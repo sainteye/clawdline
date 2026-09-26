@@ -160,14 +160,14 @@ var dropName = regexp.MustCompile(`^clawdline-\d{8}-\d{6}-\d{3}-[0-9a-f]{8}-[0-9
 // ends as the bytes are: `.jpg` for a JPEG, `.png` for anything else.
 func (d *Drops) Store(data []byte, now time.Time) (string, error) {
 	d.mu.Lock()
-	if err := ensurePrivateDir(d.Dir); err != nil {
+	if err := EnsurePrivateDir(d.Dir); err != nil {
 		d.mu.Unlock()
 		return "", err
 	}
 	name := "clawdline-" + now.Format("20060102-150405.000") + "-" + newUUID() + Extension(sniffMediaType(data))
 	name = strings.Replace(name, ".", "-", 1)
 	path := filepath.Join(d.Dir, name)
-	if err := writePrivate(path, data); err != nil {
+	if err := WritePrivate(path, data); err != nil {
 		d.mu.Unlock()
 		return "", err
 	}
@@ -329,9 +329,9 @@ func (d *Drops) forgetYoungLocked(now time.Time) {
 	d.youngAt = d.youngAt[cut:]
 }
 
-// ensurePrivateDir makes dir 0700, and makes an existing one 0700 too: a cache
+// EnsurePrivateDir makes dir 0700, and makes an existing one 0700 too: a cache
 // somebody loosened is a cache other users can read pictures out of.
-func ensurePrivateDir(dir string) error {
+func EnsurePrivateDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -345,17 +345,24 @@ func ensurePrivateDir(dir string) error {
 	return os.Chmod(dir, 0o700)
 }
 
-// writePrivate writes a whole file 0600 through a temporary name, so a reader
-// never sees half of it and a failure leaves nothing under the real name.
-func writePrivate(path string, data []byte) error {
-	tmp := path + ".tmp-" + newUUID()
+// WritePrivate writes a whole file 0600 through a temporary name, so a reader
+// never sees half of it and a failure leaves nothing under the real name. The
+// bytes are synced before the rename, so a name that survives a crash names
+// the whole file; the directory is synced after it where the platform allows
+// (Windows cannot sync a directory handle, and that is not this write failing).
+//
+// The temporary name is `<path>` + TempSuffix + a random UUID, so a sweep of a
+// directory written through here can recognise one a crash left behind.
+func WritePrivate(path string, data []byte) error {
+	tmp := path + TempSuffix + newUUID()
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
 	_, werr := f.Write(data)
+	serr := f.Sync()
 	cerr := f.Close()
-	if err := errors.Join(werr, cerr); err != nil {
+	if err := errors.Join(werr, serr, cerr); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
@@ -363,8 +370,16 @@ func writePrivate(path string, data []byte) error {
 		_ = os.Remove(tmp)
 		return err
 	}
+	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
 	return nil
 }
+
+// TempSuffix is what WritePrivate puts between a file's name and the random
+// part of its temporary name.
+const TempSuffix = ".tmp-"
 
 // newUUID is a lowercase random UUID, spelled as Foundation spells one.
 func newUUID() string {

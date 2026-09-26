@@ -304,6 +304,9 @@ internal/domain/snippet.MaxBodyBytes # admission: one snippet's text, the same
 internal/domain/snippet.MaxProjectBytes # admission: the project path a project-scoped snippet names, this platform's PATH_MAX, so it cannot refuse a path that could exist
 internal/domain/snippet.MaxPosition # parameter: the numeric range `position` is read back within, so a hand-written row cannot arm the next create's +100 into an overflow
 internal/adapters/store.snippetWriteLimit # admission: snippet writes in snippetWriteWindow, the Swift store's disk brake; a refused write answers 429 rate_limited and the next window lets it through
+internal/adapters/store.ReferenceImageBatchLimit # page: bytes of pictures one step of the move out of SQLite reads, writes, verifies and clears; a larger picture moves alone (limits N48)
+internal/adapters/store.ReferenceImageOrphanAgeLimit # parameter: how old a reference-image file no row names must be before the sweep removes it (limits N48)
+internal/adapters/store.ReferenceImageSweepIntervalLimit # parameter: how often the daemon sweeps reference-image files no row names, after the sweep at Open (limits N48)
 internal/transport/http.snippetBodyLimit # admission: one snippet write's body, refused before it is read; the fields inside it are bounded by internal/domain/snippet
 internal/transport/http.timelinePageLimit # page: entries in one Timeline page, continued by its keyset cursor; nothing fills
 internal/transport/http.timelineSummaryLimit # page: a delivery's own account of itself as a Timeline card draws it; the whole of it stays on the task

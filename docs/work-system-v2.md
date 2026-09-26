@@ -168,6 +168,17 @@ view, but cannot add, replace, order, or delete them. Adding or deleting one is 
 idempotent item mutation that increments the item version and appends an immutable event. A
 terminal item must be reopened before its references change.
 
+Since 2026-09-26 an image's bytes are a file, not a row's BLOB: `<id>.png` or `<id>.jpg` (the stored
+media type) under `reference-images/` in the daemon's state directory, written through a temporary
+name, synced and renamed before the row that names it commits. The row, in `work_v2_images` or
+`session_direct_todo_images`, keeps the metadata above and the file's sha256; every read of the bytes
+proves the file against it, and a file that is gone or differs is refused 410 `image_file_missing` or
+`image_file_mismatch`, never served empty. Deleting an image, or the to-do its rows cascade from,
+removes the file after the commit, and a sweep at Open and every six hours removes files no row
+names, only under those names and only once an hour old (limits N48). A store opened with the bytes
+still in SQLite moves them out in bounded steps, each file verified before its bytes are cleared,
+then rebuilds both tables without the `data` column and runs `VACUUM`.
+
 ### 5.5 Events
 
 Every accepted mutation appends one typed event naming actor, subject, previous version, next
@@ -517,8 +528,8 @@ yet been read cannot be doubled. Send and Delete are person-only. Send hands the
 to the existing terminal picture-delivery path, so Claude Code receives pasted images and other
 assistants receive readable drop paths under the same fallback rules as the composer.
 Images cannot be appended after an explicit Send or completion; an Agent pull that races the short
-upload sequence sees the complete set on its next read. Delete removes the row and cascades its image bytes from
-the active store as explicitly requested; its security/operation audit contains metadata, not the
+upload sequence sees the complete set on its next read. Delete removes the row, cascades its image rows, and removes their files
+once that commits; its security/operation audit contains metadata, not the
 deleted text or images. Agent access may read and complete its own rows, and add rows to its own
 list as below; it can never send or delete one.
 
@@ -635,7 +646,7 @@ Every new bound is registered in `internal/domain/capacity` before implementatio
 design needs limits for open items, planning items, pending proposals, active assignments, item
 steps, item documents, reference-image count and bytes, direct Session to-dos, and page sizes.
 Reference images are limited to six per item or direct to-do, 5 MiB normalized per image, 15 MiB per subject, and
-512 MiB across the store; an upload request is at most 18 MiB so its encrypted Cloud envelope also
+512 MiB across the store (the rows' byte counts, which are the files' sizes); an upload request is at most 18 MiB so its encrypted Cloud envelope also
 fits the wire bound. Hitting a limit refuses the new row;
 it does not evict a person's work.
 
