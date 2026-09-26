@@ -171,6 +171,8 @@ export interface ScheduleBody {
   catch_up_hours: number
   notify_on_failure: boolean
   timeout_minutes: number
+  /** ask, edits or full; "" takes a stored one off; absent keeps what the file says. */
+  permission_mode?: string
 }
 
 export interface SchedulePlace {

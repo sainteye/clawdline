@@ -439,3 +439,31 @@ func TestACloudMoveCarriesTheTemplateToTheStoredFile(t *testing.T) {
 		t.Fatalf("a template naming permission_mode answered %d/%q", answer.Status, answer.Code)
 	}
 }
+
+// TestACloudMoveCarriesThePermissionAsTheFormField: a Cloud write is a
+// person's device, so the move's copy may carry the source's permission, as
+// the form field, and the stored file says it.
+func TestACloudMoveCarriesThePermissionAsTheFormField(t *testing.T) {
+	s := cloudStandIn(t)
+
+	body := dailySchedule(s.place, "full sweep", "09:00")
+	body["permission_mode"] = "full"
+	body["template"] = map[string]any{"claims": []any{"web"}}
+	answer, payload := s.ask(t, 1, map[string]any{"type": "schedule-create",
+		"session": cloudops.MachineReplySession, "request": "req-move-full", "schedule": body})
+	if !answer.OK() {
+		t.Fatalf("the moved copy was refused: %d/%q %s", answer.Status, answer.Code, answer.Payload)
+	}
+	made, _ := bodyOf(t, payload)["schedule"].(map[string]any)
+	id, _ := made["id"].(string)
+	answer, payload = s.ask(t, 2, map[string]any{"type": "schedule",
+		"session": cloudops.MachineReplySession, "request": "req-read-full", "id": id})
+	if !answer.OK() {
+		t.Fatalf("the copy could not be read back: %d/%q", answer.Status, answer.Code)
+	}
+	record, _ := bodyOf(t, payload)["schedule"].(map[string]any)
+	task, _ := record["task"].(map[string]any)
+	if task["permission_mode"] != "full" || fmt.Sprint(task["claims"]) != "[web]" {
+		t.Fatalf("the stored task: %v, want permission_mode full and the claims", task)
+	}
+}

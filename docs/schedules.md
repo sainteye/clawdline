@@ -22,7 +22,7 @@
 | 路由 | 誰可以 |
 |---|---|
 | `GET /v1/orchestrator/schedules`、`GET …/schedules/:id` | 已配對裝置（唯讀即可）、本機 orchestrator token |
-| `POST …/schedules`、`PATCH …/:id`、`DELETE …/:id` | 可以 send 的裝置＋`Idempotency-Key`；本機 orchestrator token 可直接動「只跑一次」（`when.on`）的排程；a Session carrying `session_id` + `via.run` from the person's latest message to that conversation may relay that explicit instruction to create, change or delete a repeating schedule |
+| `POST …/schedules`、`PATCH …/:id`、`DELETE …/:id` | 可以 send 的裝置＋`Idempotency-Key`；本機 orchestrator token 可直接動「只跑一次」（`when.on`）的排程；a Session carrying `session_id` + `via.run` from the person's latest message to that conversation may relay that explicit instruction to create, change or delete a repeating schedule. **`permission_mode`（權限）只有人能設**：可以 send 的裝置（含每一筆經 Cloud 的寫入）與本機 console 可以設、改、拿掉；orchestrator token 與 `session_id`＋`via.run` 轉達只能保留檔案裡原本的值，設或改一律 `403 permission_needs_person` |
 | `POST …/:id/run` | 可以 send 的裝置＋key；或 orchestrator token（不用 key） |
 | `POST /v1/orchestrator/schedule-webhooks/bind` | 只有 orchestrator token（Cloud `schedule-webhook-bind-v1` 指令的本機那半） |
 | `POST /v1/orchestrator/schedule-imports` | 只有 orchestrator token，**而且 `config.json` 要有 `"schedule_imports_enabled": true`**（預設關；本 daemon 新增，遷移用） |
@@ -250,8 +250,9 @@ is the courier, in three writes, in this order:
 
 1. the source is saved with `enabled: false` and every stored field (`model` is omitted, which leaves it as
    stored);
-2. a copy is created on the target with every field the form holds, plus a one-time schedule's `on`, plus
-   the source's template fields the form has no control for, in `template` (below);
+2. a copy is created on the target with every field the form holds — including its permission
+   (`permission_mode`), sent as the form field — plus a one-time schedule's `on`, plus the source's template
+   fields the form has no control for, in `template` (below);
 3. the source is deleted.
 
 **The fields the form does not show travel in `template`.** `POST /v1/orchestrator/schedules` takes an
@@ -260,14 +261,15 @@ save already carries from the stored file — `claims`, `serialize`, `isolation`
 `deliverables`, `kind`, `plan`, `graph`, and `reasoning_effort` when the assistant is codex
 (`createTemplate`, `internal/app/schedules.go`). They reach `build` as if a stored file carried them, so the
 schedule parser reads each value, as it reads a file. Any other key is refused by name
-(`unknown template field: …`). **`permission_mode` is refused** (`template_permission_mode`): any device
-that may send could otherwise make a schedule that runs with more than the form can grant, so a schedule
-carrying a permission setting is still not moved. A `PATCH` naming `template` is refused — a save keeps the
+(`unknown template field: …`). **`permission_mode` is refused in `template`** (`template_permission_mode`):
+it is the form's own 「權限」 field, and travels as that form field, where who may set it is checked;
+`template` is never a second door around that check. A `PATCH` naming `template` is refused — a save keeps the
 stored fields itself. The Cloud `schedule-create` word, the relay writer and the copied client carry the
 body whole; `TestACloudMoveCarriesTheTemplateToTheStoredFile` (`internal/transport/http`) reads the stored
 file back after a Cloud create. The console sends `template` only when the source has such fields, so a
-schedule without them still moves to an older target; a target from before this change answers
-`unknown field: template`, which the page says as "Clawdline on <machine> is too old to take the settings
+schedule without them still moves to an older target, and sends `permission_mode` only when the form has
+one chosen. A target from before either answers `unknown field: template` or
+`unknown field: permission_mode` (`refusedByOlderTarget`), which the page says as "Clawdline on <machine> is too old to take the settings
 this schedule carries" (`scheduleMoveTargetTooOld`), and the move is never retried without the fields.
 
 **The project path in the first message is rewritten.** When the copy's instructions name the source
@@ -302,14 +304,28 @@ what to act on (`next-strings.ts`, `scheduleMove*`):
 | no project | the target has no clone of that repository |
 | webhook bound / unknown | a Cloud webhook is bound to the schedule id (`schedule-webhook-bind-v1`), or the binding could not be read; the copy gets a new id, so the hook would call a schedule that is gone |
 | spent | a one-time schedule that already ran; a copy would arm it again |
-| unformed fields | the template carries a permission setting (`permission_mode`); a create may not set it, so the move refuses rather than dropping it. Every other hidden field travels in `template` |
 
 A save that changes nothing about the machine keeps the relay's `cloud_schedule_machine_mismatch` refusal
 for a body whose place is on another machine than the schedule: a move is three writes, not a save.
 
 **Needs a redeploy.** Both the source and the target daemon must send `repo`; a machine running a build
 from before 2026-09-26 is refused by name as outdated until it is updated. A schedule with hidden template fields also needs a target
-that takes `template`; an older one is refused by name as too old, after the source was switched back on.
+that takes `template`, and a schedule with a permission a target that takes `permission_mode`; an older one
+is refused by name as too old, after the source was switched back on.
+
+## The permission field
+
+The form's 「權限」 (in More) is `task.permission_mode`: 這台機器的預設 (no key), 每一步都問我 (`ask`),
+可以直接改檔案 (`edits`), 完全權限（不再詢問）(`full`), with a one-line warning under the last. Editing a
+schedule shows its stored value and opens More when it has one. The route reads the field as it reads
+`model`: a name sets it (the parser checks it), `""` takes it off, no key keeps what the file says; the
+console sends the key only when a permission is chosen or a stored one is being taken off, so a daemon
+older than the field still takes a schedule that never had one. Only a person sets it: the orchestrator
+token and a session relaying a person's message may keep the stored value and nothing else
+(`permissionRefusal`, `403 permission_needs_person`), so an agent cannot grant itself a full-permission
+recurring wake-up. The create or save audit line carries `permission` and `permission_was` whenever it
+changed (`TestTheSchedulePermissionFieldRoundTrips`, `TestAnAgentMayNotSetOrChangeASchedulesPermission`,
+`internal/app/schedule_permission_test.go`).
 
 ## 還沒有的（依賴別的工作線）
 

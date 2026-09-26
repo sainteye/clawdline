@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react"
 import * as L from "../legacy/bridge.js"
-import { nextWord } from "../next-strings.js"
+import { nextWord, type NextWord } from "../next-strings.js"
 import { toast } from "../overlays/index.js"
 import { readAnswer, readFailure, readReady, type ReadState } from "../read-state.js"
 import { invalidScheduleErrorHTML } from "../schedule-errors.js"
@@ -53,7 +53,7 @@ import {
   scheduleOwner,
   type ScheduleMachine,
 } from "../cloud/schedule-machines.js"
-import { moveSchedule, planScheduleMove, refusedForTemplate, targetBody, type MoveRefusal, type MoveWrites } from "../cloud/schedule-move.js"
+import { moveSchedule, planScheduleMove, refusedByOlderTarget, targetBody, type MoveRefusal, type MoveWrites } from "../cloud/schedule-move.js"
 import "./schedules/machines.css"
 import overlaysMarkup from "./schedules/overlays.html?raw"
 
@@ -476,6 +476,13 @@ const Schedule = (() => {
   const CATCH_DEFAULT = 6
   const TIMEOUT_DEFAULT = 30
   const MODELS = ["haiku", "sonnet", "opus"]
+  // `task.permission_mode` as the parser reads it; "" is no key, the machine's default.
+  const PERMISSIONS: [string, NextWord][] = [
+    ["", "schedulePermissionDefault"],
+    ["ask", "schedulePermissionAsk"],
+    ["edits", "schedulePermissionEdits"],
+    ["full", "schedulePermissionFull"],
+  ]
 
   let places: SchedulePlace[] | null = null
   let placesReading: ReadState<SchedulePlaces> = { phase: "loading" }
@@ -485,6 +492,9 @@ const Schedule = (() => {
   let chosenPlacePath: string | null = null
   let chosenAssistant: string | null = null
   let chosenModel = ""
+  let chosenPermission = ""
+  // What the schedule being edited has, so a save to "not set" sends "" to take it off.
+  let storedPermission = ""
   let days: string | string[] = "daily"
   let daysGuessed = false
   let closeTab = "on_success"
@@ -537,7 +547,15 @@ const Schedule = (() => {
       // A move says why it cannot go (`move`), so an unreadable target does not grey Save out.
       el<HTMLInputElement>(id).disabled = b || (id === "schedule-go" && !placesReady && !moving())
     })
-    ;["schedule-machine", "schedule-with", "schedule-model", "schedule-days", "schedule-close", "schedule-flags"].forEach((id) => {
+    ;[
+      "schedule-machine",
+      "schedule-with",
+      "schedule-model",
+      "schedule-permission",
+      "schedule-days",
+      "schedule-close",
+      "schedule-flags",
+    ].forEach((id) => {
       const chips = el(id).querySelectorAll<HTMLButtonElement>(".chip")
       for (let i = 0; i < chips.length; i++) chips[i].disabled = b
     })
@@ -642,6 +660,26 @@ const Schedule = (() => {
       }
       row.appendChild(chip)
     })
+    paint()
+  }
+
+  function drawPermission(): void {
+    const row = el("schedule-permission")
+    row.innerHTML = ""
+    PERMISSIONS.forEach(([value, word]) => {
+      const chip = document.createElement("button")
+      chip.type = "button"
+      chip.className = "chip" + (value === chosenPermission ? " on" : "")
+      chip.textContent = nextWord(word)
+      chip.setAttribute("aria-pressed", value === chosenPermission ? "true" : "false")
+      chip.onclick = () => {
+        chosenPermission = value
+        drawPermission()
+      }
+      row.appendChild(chip)
+    })
+    el("schedule-permission-warn").textContent =
+      chosenPermission === "full" ? nextWord("schedulePermissionFullWarning") : ""
     paint()
   }
 
@@ -882,6 +920,8 @@ const Schedule = (() => {
     chosenPlacePath = null
     chosenAssistant = null
     chosenModel = ""
+    chosenPermission = ""
+    storedPermission = ""
     days = "daily"
     daysGuessed = false
     closeTab = "on_success"
@@ -902,6 +942,7 @@ const Schedule = (() => {
     said("")
     drawWith()
     drawModel()
+    drawPermission()
     drawDays()
     drawClose()
     drawFlags()
@@ -996,6 +1037,10 @@ const Schedule = (() => {
     enabled = record.enabled !== false
     closeTab = record.close_tab && CLOSE_VALUES.indexOf(record.close_tab) >= 0 ? record.close_tab : "on_success"
     notify = record.notify_on_failure !== false
+    storedPermission = typeof task.permission_mode === "string" ? task.permission_mode : ""
+    chosenPermission = PERMISSIONS.some(([value]) => value === storedPermission) ? storedPermission : ""
+    // A schedule that has a permission shows it, rather than keeping it folded away.
+    if (storedPermission) el<HTMLDetailsElement>("schedule-more").open = true
     el<HTMLInputElement>("schedule-catch").value = String(record.catch_up_hours != null ? record.catch_up_hours : CATCH_DEFAULT)
     el<HTMLInputElement>("schedule-timeout").value = String(
       task.timeout_minutes != null ? task.timeout_minutes : TIMEOUT_DEFAULT,
@@ -1003,6 +1048,7 @@ const Schedule = (() => {
     drawDays()
     drawClose()
     drawFlags()
+    drawPermission()
     said("")
     ensurePlaces().then(() => {
       chosenPlace = placeIdForPath(task.project_dir)
@@ -1133,6 +1179,10 @@ const Schedule = (() => {
       notify_on_failure: notify,
       timeout_minutes: timeout,
     }
+    // Sent only when it says something: a chosen permission, or "" to take a
+    // stored one off. No key keeps what the file has, and a daemon older than
+    // the field still takes a schedule that never had one.
+    if (chosenPermission || (editing && storedPermission)) payload.permission_mode = chosenPermission
 
     if (moving()) {
       move(payload)
@@ -1184,8 +1234,6 @@ const Schedule = (() => {
         return nextWord("scheduleMoveWebhookUnknown", { title: refusal.title, machine: refusal.machine })
       case "schedule_move_spent":
         return nextWord("scheduleMoveSpent", { title: refusal.title })
-      case "schedule_move_unformed_fields":
-        return nextWord("scheduleMoveUnformed", { fields: refusal.fields.join(", ") })
     }
   }
 
@@ -1242,9 +1290,10 @@ const Schedule = (() => {
     }).then((outcome) => {
       creating = false
       const reason = (error: unknown) =>
-        // A target older than `template` refuses the key; the fields are not
-        // sent again without it, and updating that machine is what to do.
-        refusedForTemplate(error)
+        // A target older than `template` or `permission_mode` refuses the key;
+        // the fields are not sent again without it, and updating that machine
+        // is what to do.
+        refusedByOlderTarget(error)
           ? nextWord("scheduleMoveTargetTooOld", { machine: targetName })
           : why(error as ScheduleFailureLike, T().webRequestFailed)
       if (outcome.state === "moved" || outcome.state === "delete_failed") {
@@ -1834,6 +1883,8 @@ function paintStatic(): void {
     t.webScheduleTimeout,
   )
   text(node("schedule-model-label"), t.webScheduleModel)
+  text(node("schedule-permission-label"), nextWord("schedulePermissionField"))
+  attr(node("schedule-permission"), "aria-label", nextWord("schedulePermissionField"))
   text(node("schedule-delete"), t.webScheduleDelete)
   text(node("schedule-cancel"), t.webCancel)
   text(node("schedule-delete-confirm-cancel"), t.webCancel)

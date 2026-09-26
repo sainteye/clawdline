@@ -209,6 +209,61 @@ paired, and to remove one:
 **Check:** `cloud status` reports the line as connected, and app.clawdline.com lists this machine
 with its sessions.
 
+## 7. Bring your projects to another machine
+
+A second machine — a Linux server on the same Cloud account, say — can have the repositories and
+still lack what git does not carry: the name and icon each project has in the console, and the
+skills, commands and agents you keep untracked under `.claude/`, plus `CLAUDE.local.md`. One
+machine owns those settings; the others mirror them read-only. Projects are matched by their git
+`origin`, so the checkouts may sit at different paths. The full design is
+[project-sync.md](project-sync.md).
+
+**Before you start**
+
+- Both machines run this version. An older one is listed with 「需要更新 Clawdline」 and cannot be
+  chosen.
+- The browser is paired with both machines (section 6), and the receiving machine lets the browser
+  act on it: `./bin/clawdline cloud commands on` there.
+- Each project has an `origin` remote that the other machine can reach. A project with no origin,
+  or a folder that is not a git repository, is listed as skipped with its reason.
+
+**Through Clawdline Cloud**
+
+1. In the hosted console, open the **receiving** machine and go to **Projects**.
+2. Open **專案設定同步** (project settings sync) and choose the source under **主要機器**.
+3. Press **讀取它的專案**, untick anything you do not want, and, if the receiving machine does not
+   have some of the repositories yet, tick the line that clones them. It names the directory they
+   will go into: the one most of that machine's projects already sit in, or
+   `CLAWDLINE_PROJECTS_ROOT` if you set it for the daemon.
+4. Press **同步所選的 N 個專案**. Each project reports what happened: files written, files kept
+   because they were edited on this machine, or a clone in progress.
+
+From then on, change a project's icon or skills on the source. Opening **Projects** on the
+receiving machine applies whatever changed there. To make a project the receiving machine's own
+again, press **改回本機設定** on its row.
+
+**Without Cloud**
+
+```sh
+# on the source machine
+./bin/clawdline project export --out projects.json
+
+# copy projects.json over, then on the receiving machine
+./bin/clawdline project import --clone projects.json
+```
+
+The file holds the contents of those skills and notes, so move it the way you would move the files
+themselves, and delete it afterwards. `--clone` is optional; without it a repository the machine
+does not have is reported as missing.
+
+**Check:** on the receiving machine, **Projects** shows each project with the source's name and
+icon, and a mirrored skill is in that checkout's `.claude/skills/`. Changing the icon there is
+refused (`project_mirrored`): the source owns it.
+
+Some things are deliberately not copied: `.claude/settings.local.json` (it holds the source's
+permission grants), dot files such as `.env` and build caches inside those directories, and your
+personal `~/.claude/skills`.
+
 ## When something does not come up
 
 | You see | It means |
@@ -221,10 +276,14 @@ with its sessions.
 | `the daemon did not answer` from the CLI | Nothing is listening on that port, or the CLI and the daemon have different `CLAWDLINE_NEXT_PORT` values |
 | A session is missing from the list | It is not running inside tmux (or iTerm2 on a Mac), or tmux is not on `PATH` nor in `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` or `/opt/local/bin` |
 | The Cloud line stays off | `./bin/clawdline cloud status` gives the reason. A broken Cloud setting never stops the daemon, it only keeps the line down |
+| `mirror_source_mismatch` when syncing a project | Another machine already owns that project's settings here. Choose that machine as the source, or run `project import --replace-source` to hand it over |
+| `project_mirrored` when changing an icon | The project is mirrored from another machine. Change it there, or press 改回本機設定 on its row first |
+| A clone reports `clone_failed` | The receiving machine could not reach the remote with its own credentials; git's own last line is shown. Clone it by hand into the named directory, then sync again |
 
 Everything the daemon does is in `logs/daemon.log` in the state directory.
 
 ## Next
 
 - [architecture.md](architecture.md): how the pieces fit
+- [project-sync.md](project-sync.md): how project settings move between machines, and what never does
 - [README.md](README.md): every document, and which ones are public design notes
