@@ -51,7 +51,7 @@
   "webCancel": "取消",
   "webClawdfatherCreateLabel": "把新的 session 命名為 Clawdfather",
   "webClawdfatherIs": "這個 session 就是 {name}",
-  "webClawdfatherRegisterAsk": "請把這個新的 session 註冊成這台 Mac 的 Clawdfather，也就是 machine coordinator。你的 terminal-neutral session id 是 {id}。先用 ~/.config/clawdline/orchestrator-token 裡的 orchestrator token 讀 coordinator 紀錄。只有在完全沒有 coordinator 登記時，才照 docs/orchestrator.md 裡「Becoming Clawdfather」的註冊那一段做。只要已經有登記的 coordinator，就算它離線了，也不要取代它。做完告訴我結果。",
+  "webClawdfatherRegisterAsk": "請把這個新的 session 註冊成這台機器的 Clawdfather，也就是 machine coordinator。你的 terminal-neutral session id 是 {id}。先跑 `clawdline guide connect` 和 `clawdline guide coordination`：前者說明怎麼連到這個 daemon 又不把 token 放進指令列，後者說明這個角色怎麼註冊。有 clawdline 指令可用的地方就用指令，不要貼出或印出任何 token。先查看目前的 coordinator。只有在完全沒有 coordinator 登記時，才註冊這個 session。只要已經有登記的 coordinator，就算它離線了，也不要取代它。做完告訴我結果。",
   "webClawdfatherRegisterBlocked": "這台 Mac 的 coordinator 紀錄讀不出來，所以完全不會去動它。",
   "webClawdfatherRegisterLate": "新的 session 沒能及時就緒，來不及命名為 Clawdfather。",
   "webClawdfatherRegisterSent": "已經請新的 session 去當 Clawdfather",

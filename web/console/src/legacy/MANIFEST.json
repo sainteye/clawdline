@@ -32,7 +32,7 @@
   "cssSource": "~/code/clawdline/Resources/web/app/css",
   "js": {
     "js/core/esc.js": "74964734afc56b08",
-    "js/core/i18n.js": "16c74b78f5d1851b",
+    "js/core/i18n.js": "7e9a6225690a8aef",
     "js/core/state.js": "71c00aefabffdb8d",
     "js/core/dom.js": "72b6562e35b09177",
     "js/core/util.js": "8d830d9646260e74",
@@ -60,7 +60,7 @@
     "js/view/plan.js": "fa7a621929fe58ab",
     "js/net/billing.js": "ebe94bc98d31048f",
     "js/input/start.js": "360d6a8b2bf9b6cb",
-    "js/input/clawdfather.js": "5f1a061118d8b474",
+    "js/input/clawdfather.js": "d1ab27f493191c35",
     "js/input/shots.js": "452a3ddb5d5e6369",
     "js/input/skill-picker-state.js": "3a26c85a720fdccb",
     "js/view/transcript-images.js": "14f9b14d9beb7c4d",
@@ -87,7 +87,7 @@
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {
-    "public/strings/zh-Hant.json": "d69538841570f7f9"
+    "public/strings/zh-Hant.json": "e951eb0ec48ac53a"
   },
   "stringsSource": "~/code/clawdline/Resources/web/strings",
   "inlined": {

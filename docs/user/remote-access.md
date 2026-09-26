@@ -9,7 +9,7 @@ permission away again. Your agents and code stay on your machine whichever way y
 | Way | Account | Reaches | What it can do | State |
 | --- | --- | --- | --- | --- |
 | A. SSH port forward | None | Another computer you can SSH from | Read, or read and send | Works |
-| B. Your own cloudflared tunnel | None | Any browser, including a phone | Read only | Built; the real Cloudflare leg has not been tested end to end |
+| B. Your own cloudflared tunnel | None | Any browser, including a phone | Read, and send once you allow it | Built; the real Cloudflare leg has not been tested end to end |
 | C. Clawdline Cloud | Clawdline account (GitHub sign-in) | Any browser, including a phone; several machines | Read, and act once you allow it | Preview |
 
 The daemon itself listens on `127.0.0.1` only. None of these opens a port on your network.
@@ -29,9 +29,9 @@ ssh -L 7727:127.0.0.1:7727 you@your-machine
 Open the printed address in your local browser. It carries a key in its fragment; treat it like a
 password until it has been used.
 
-**Check:** the console loads with the machine's sessions. **Undo:** stop the SSH forward. Each
-`clawdline open` creates a device of its own; there is no command yet to list or remove those
-devices, so run it only for browsers you mean to keep.
+**Check:** the console loads with the machine's sessions. **Undo:** stop the SSH forward, and
+revoke the browser (see [Signed-in devices](#see-and-revoke-devices-signed-in-directly)): each
+`clawdline open` creates a device of its own, and it stays signed in until it is revoked.
 
 ## B. A phone, through your own cloudflared tunnel
 
@@ -69,9 +69,52 @@ Then:
 
 **Check:** the phone shows **配對好了——這個瀏覽器進來了** (paired) and then the session list.
 
-**Limits.** A device paired this way can **read only**; there is not yet a switch in the interface
-that lets it send. Asking to pair is limited to three requests every ten minutes, and five wrong
-codes end the attempt. **Undo:** set the tunnel to **關閉** (off), or `"remote_tunnel": "off"`.
+**Limits.** Asking to pair is limited to three requests every ten minutes, and five wrong codes end
+the attempt. **Undo:** set the tunnel to **關閉** (off), or `"remote_tunnel": "off"`.
+
+### Let paired devices send
+
+A device paired with a code can **read only** until you allow sending. The switch is
+**讓配對過的裝置寫進 session** (let paired devices write into a session) on the same **遠端**
+(Remote) tab, or `"remote_write": true` in `config.json`:
+
+- **On:** every paired device may send text, answer, and start or close sessions on this machine —
+  which runs code here, because that is what the assistant in the session does.
+- **Off** (the default): a device paired with a code reads only. A browser signed in with
+  `clawdline open --send` keeps the sending it was given when you opened it; one opened without
+  `--send` reads only.
+
+The daemon reads the switch at every request, so turning it off holds from the next request, with
+no restart. It does not govern Clawdline Cloud, which has its own switch (below).
+
+**Check:** with the switch off, a send from the phone is refused with `403`; turn it on and the
+same send goes through.
+
+### See and revoke devices signed in directly
+
+Browsers signed in with `clawdline open`, devices paired with a code, and devices signed in with the
+password are listed in two places. Only this machine's own key can see the list or revoke from it:
+
+- **The macOS app's window**, on the **裝置** (Devices) page, under **登入這台機器的裝置** (signed in
+  to this machine). Each device shows what it may do, when it signed in and when it was last used.
+  **撤銷** (revoke) asks first, naming the device, and only **確定撤銷** (revoke it) acts. The line
+  **這個視窗用的是這台機器自己的金鑰** says the window itself uses the machine's own key: that key is
+  never in the list and cannot be revoked there.
+- **A terminal on the machine:**
+
+  ```sh
+  ./bin/clawdline devices                    # one line per device: id, read or read+send, signed in, last used, name
+  ./bin/clawdline devices revoke <device-id> # names the device and asks [y/N]; --yes skips the question
+  ```
+
+A browser signed in as a device of its own is not shown the list. Its Devices page says **這個瀏覽器是以自己
+的裝置身分登入的** (this browser is signed in as a device of its own) and offers **登出這個瀏覽器** (sign
+this browser out), which asks first and then revokes that browser's own key.
+
+**Check:** a revoked device's next request is refused and it is back at the pairing page. When nothing
+else is signed in and no password is set, the tunnel in B closes by itself.
+
+These are not the browsers Clawdline Cloud relays for; those are `clawdline cloud devices` (C below).
 
 ## C. Clawdline Cloud
 
@@ -140,8 +183,8 @@ and needs no account.
   conditions is missing, or says cloudflared is not installed.
 - **The Cloud line stays off**: `./bin/clawdline cloud status` says why. A broken Cloud setting
   never stops the daemon.
-- **A phone can read but not act**: over Cloud, run `cloud commands on`. Over the tunnel, sending
-  is not available yet.
+- **A phone can read but not act**: over Cloud, run `cloud commands on`. Over the tunnel, turn on
+  **讓配對過的裝置寫進 session** (`"remote_write": true`).
 - **Notifications on the phone**: [notifications.md](notifications.md).
 
 ## Deeper
