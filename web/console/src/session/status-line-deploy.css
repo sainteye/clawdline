@@ -1,0 +1,40 @@
+/* While a deploy or a local run holds the chip, the context reading and the
+   working tree step aside, as the copied stylesheet's own comment above
+   `.status-line .deploy` always said they would. Nothing in that sheet did it:
+   on a 390px phone the chip, the branch, `ctx` and both plan windows were all
+   drawn at once, and the chip's label ran over the windows. The model, the
+   cost and the plan windows stay — they still decide the next turn — and both
+   cells come back the moment the run is no longer running.
+
+   The footer names the chip itself (`data-deploy`, set by `StatusLine.tsx`),
+   so this does not depend on `:has()`. Three classes and an element outrank
+   `git-status.css`, which puts the tree back on every viewport. */
+footer.status-line[data-deploy] .files,
+footer.status-line[data-deploy] .open .context {
+  display: none;
+}
+
+/* A long label ellipsises inside the chip instead of spilling out of it. The
+   chip is a link, and a link's underline was drawn under the `·` before it
+   and the gap after it too — a stray `_` in the row. Only the label is
+   underlined; a local run keeps its dotted one from the copied sheet. */
+footer.status-line .deploy {
+  overflow: hidden;
+  text-decoration: none;
+}
+
+footer.status-line .deploy[href]:not([data-kind="run"]) .label {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+footer.status-line .deploy .label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Room under the letters: at the row's `line-height: 1` the clip above
+     would cut the underline off. */
+  line-height: 1.6;
+}

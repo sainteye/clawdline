@@ -11,6 +11,10 @@ import { readFileSync } from "node:fs"
 // daemon was sending them all along. Measured in WebKit on 2026-09-26 without
 // that rule: at 390px and 360px `ctx 61%` and `$57.39` draw whole, inside the
 // footer, and the branch shrinks to make room.
+//
+// One exception is deliberate and not a media rule: while a deploy or a local
+// run holds the chip, `status-line-deploy.css` hides ctx and the tree at every
+// width until it ends (`status-line-deploy.e2e.ts`). The cost stays.
 const sheets = ["../legacy/status-line.css", "../legacy/responsive.css", "./git-status.css"]
 
 function mediaBlocks(css: string): string[] {
