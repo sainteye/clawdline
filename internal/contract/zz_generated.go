@@ -4272,9 +4272,10 @@ type SessionInfoSession struct {
 	Model string `json:"model,omitempty"`
 
 	// The assistant selected in Settings for one-turn session naming. The confirmation
-	// shows it before spending that assistant's quota.
-	NamingAssistant Assistant `json:"namingAssistant,omitempty"`
-	SessionID       string    `json:"sessionId,omitempty"`
+	// shows it before spending that assistant's quota. `auto` asks Claude Code first
+	// and Codex only when Claude Code has no usage left or is not installed.
+	NamingAssistant string `json:"namingAssistant,omitempty"`
+	SessionID       string `json:"sessionId,omitempty"`
 
 	// The same label the session list shows.
 	Title string `json:"title,omitempty"`
@@ -4550,7 +4551,11 @@ type SessionTitleReply struct {
 	Downstream       string `json:"downstream"`
 	DownstreamSynced bool   `json:"downstream_synced"`
 	LocalApplied     bool   `json:"local_applied"`
-	OK               bool   `json:"ok"`
+
+	// For a smart title, the assistant whose turn produced it. Under `auto` it can be
+	// the second one tried.
+	NamedBy Assistant `json:"named_by,omitempty"`
+	OK      bool      `json:"ok"`
 
 	// The normalized local title, or empty when it was cleared.
 	Title string `json:"title"`

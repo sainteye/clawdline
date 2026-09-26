@@ -216,3 +216,61 @@ func TestSessionTitleRowsExpireAndKeepTheNewestBound(t *testing.T) {
 		t.Fatalf("rows = %+v", got)
 	}
 }
+
+// `auto` asks Claude Code first and Codex only when Claude Code cannot answer
+// at all. A turn that ran and failed is not retried on the other account, and
+// when both are out of usage the refusal still says so.
+func TestAutoNamingFallsBackOnlyWhenAnAssistantCannotAnswer(t *testing.T) {
+	quota := fmt.Errorf("%w: exit status 1", planner.ErrOutOfQuota)
+	cases := []struct {
+		name    string
+		answers map[string]error
+		code    string
+		asked   string
+		namedBy string
+	}{
+		{"claude answers", map[string]error{"claude": nil, "codex": nil}, "", "claude", "claude"},
+		{"claude out of usage", map[string]error{"claude": quota, "codex": nil}, "", "claude,codex", "codex"},
+		{"claude not installed", map[string]error{"claude": planner.ErrNoPlanner, "codex": nil}, "", "claude,codex", "codex"},
+		{"claude failed", map[string]error{"claude": errors.New("stream closed"), "codex": nil}, "naming_failed", "claude", ""},
+		{"both out of usage", map[string]error{"claude": quota, "codex": quota}, "namer_out_of_quota", "claude,codex", ""},
+		{"one out, one missing", map[string]error{"claude": quota, "codex": planner.ErrNoPlanner}, "namer_out_of_quota", "claude,codex", ""},
+		{"neither installed", map[string]error{"claude": planner.ErrNoPlanner, "codex": planner.ErrNoPlanner}, "no_namer", "claude,codex", ""},
+	}
+	for i, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			item := session.Session{ID: fmt.Sprintf("%%%d", 60+i), Backend: session.BackendTmux, Assistant: session.AssistantCodex,
+				ConversationID: fmt.Sprintf("conversation-%d", 60+i), State: session.StateIdle}
+			s := paneServer(t, &pane{s: item})
+			s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
+			s.icons = &icon.Registry{}
+			if _, err := nextconfig.Open(s.cfg.Dir).Set(map[string]any{"auto_name_assistant": "auto"}); err != nil {
+				t.Fatal(err)
+			}
+			s.firstSessionRequest = func(session.Session) (string, error) { return "name this", nil }
+			var asked []string
+			s.nameSession = func(_ context.Context, _ string, assistant string) (string, error) {
+				asked = append(asked, assistant)
+				if err := c.answers[assistant]; err != nil {
+					return "", err
+				}
+				return "Named by " + assistant, nil
+			}
+			rec := act(t, s, "smart-title", item.ID, "smart-auto", `{}`)
+			if got := strings.Join(asked, ","); got != c.asked {
+				t.Fatalf("asked %q, want %q", got, c.asked)
+			}
+			if c.code != "" {
+				if codeOf(t, rec) != c.code {
+					t.Fatalf("answer = %d %s, want %s", rec.Code, rec.Body, c.code)
+				}
+				return
+			}
+			var answer contract.SessionTitleReply
+			if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &answer) != nil ||
+				string(answer.NamedBy) != c.namedBy || answer.Title != "Named by "+c.namedBy {
+				t.Fatalf("answer = %d %s", rec.Code, rec.Body)
+			}
+		})
+	}
+}

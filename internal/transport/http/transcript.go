@@ -326,7 +326,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 		Models: []contract.SessionModel{},
 	}
 	if naming, err := s.namingAssistant(); err == nil {
-		info.Session.NamingAssistant = contract.Assistant(naming)
+		info.Session.NamingAssistant = naming
 	}
 	for _, m := range transcript.Models(home, string(item.Assistant)) {
 		info.Models = append(info.Models, contract.SessionModel{ID: m.ID, Name: m.Name, Command: m.Command})

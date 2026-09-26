@@ -118,11 +118,14 @@ function why(e: unknown): string {
  * promised to spend. Without these the card said it could not read the
  * session, which sent the person looking in the wrong place.
  */
-function namingWhy(e: unknown, assistant: string): string {
+function namingWhy(e: unknown, chosen: string | undefined): string {
   const code = (e as { code?: string } | null)?.code
-  const sentence = code === "namer_out_of_quota" ? nextWord("smartTitleOutOfQuota", { assistant })
+  const auto = chosen === "auto"
+  const assistant = namingAssistantName(chosen)
+  const sentence = code === "namer_out_of_quota"
+    ? auto ? nextWord("smartTitleOutOfQuotaAll") : nextWord("smartTitleOutOfQuota", { assistant })
     : code === "naming_failed" ? nextWord("smartTitleFailed", { assistant })
-    : code === "no_namer" ? nextWord("smartTitleNoNamer", { assistant })
+    : code === "no_namer" ? auto ? nextWord("smartTitleNoNamerAll") : nextWord("smartTitleNoNamer", { assistant })
     : ""
   return sentence ? failureSentence(e, { sentence, fallback: T.webInfoFailed }) : why(e)
 }
@@ -215,6 +218,9 @@ function smartTitleButton(disabled: boolean): string {
 function namingAssistantName(assistant: string | undefined): string {
   if (assistant === "claude") return "Claude Code"
   if (assistant === "codex") return "Codex"
+  // A turn under `auto` that ran and failed was Claude Code's: Codex is only
+  // asked when Claude Code could not answer at all.
+  if (assistant === "auto") return "Claude Code"
   return L.assistantDisplayName(assistant)
 }
 
@@ -733,10 +739,11 @@ export const Info = {
   confirmSmartTitle(opener: HTMLElement): void {
     const id = forId
     if (!id || !host.writable() || busy || !data?.session) return
-    const assistant = namingAssistantName(data.session.namingAssistant || "codex")
+    const chosen = data.session.namingAssistant || "codex"
+    const assistant = namingAssistantName(chosen)
     ActionConfirm.open(nextWord("smartTitleAction"), id, opener, {
       title: nextWord("smartTitleConfirmTitle"),
-      say: nextWord("smartTitleConfirmSay", { assistant }),
+      say: chosen === "auto" ? nextWord("smartTitleConfirmSayAuto") : nextWord("smartTitleConfirmSay", { assistant }),
       waiting: nextWord("smartTitleWorking"),
       go: (request) => Info.generateSmartTitle(request),
     }, { focus: "cancel" })
@@ -745,7 +752,7 @@ export const Info = {
   generateSmartTitle(request: string): Promise<void> {
     const id = forId
     if (!id || !host.writable() || busy) return Promise.resolve()
-    const assistant = namingAssistantName(data?.session?.namingAssistant || "codex")
+    const chosen = data?.session?.namingAssistant || "codex"
     busy = true
     said("")
     draw()
@@ -757,13 +764,14 @@ export const Info = {
           data.session.title = answer.display_title
         }
         SessionFacts.drop(id)
-        said(nextWord("smartTitleSaved"), true)
+        said(answer.named_by ? nextWord("smartTitleSavedBy", { assistant: namingAssistantName(answer.named_by) })
+          : nextWord("smartTitleSaved"), true)
         draw()
       },
       (error) => {
         if (forId !== id) return
         busy = false
-        said(namingWhy(error, assistant), false)
+        said(namingWhy(error, chosen), false)
         draw()
       },
     )

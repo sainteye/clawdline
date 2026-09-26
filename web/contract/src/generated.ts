@@ -4985,9 +4985,11 @@ export interface SessionInfoSession {
 
   /**
    * The assistant selected in Settings for one-turn session naming. The
-   * confirmation shows it before spending that assistant's quota.
+   * confirmation shows it before spending that assistant's quota. `auto` asks
+   * Claude Code first and Codex only when Claude Code has no usage left or is not
+   * installed.
    */
-  namingAssistant?: Assistant
+  namingAssistant?: string
   sessionId?: string
 
   /**
@@ -5360,6 +5362,12 @@ export interface SessionTitleReply {
   downstream: string
   downstream_synced: boolean
   local_applied: boolean
+
+  /**
+   * For a smart title, the assistant whose turn produced it. Under `auto` it can be
+   * the second one tried.
+   */
+  named_by?: Assistant
   ok: boolean
 
   /**
