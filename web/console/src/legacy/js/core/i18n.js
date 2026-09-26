@@ -130,7 +130,7 @@ export var T = {
     webConfirmEndLoses: "Closing also ends:",
     webClawdfatherCreateLabel: "Name the new session Clawdfather",
     webClawdfatherIs: "This session is {name}",
-    webClawdfatherRegisterAsk: "Please register this new session as this Mac's Clawdfather, the machine coordinator. Your terminal-neutral session id is {id}. Read the coordinator record using the orchestrator token at ~/.config/clawdline/orchestrator-token. If and only if no coordinator is configured, follow the registration branch of “Becoming Clawdfather” in docs/orchestrator.md. If any coordinator is already configured, including one that is offline, do not replace it. Then report what happened.",
+    webClawdfatherRegisterAsk: "Please register this new session as this machine's Clawdfather, the machine coordinator. Your terminal-neutral session id is {id}. First run `clawdline guide connect` and `clawdline guide coordination`: the first says how to reach this daemon without putting its token on a command line, the second how the role is registered. Use a clawdline command wherever one exists, and never paste or print a token. Inspect the coordinator first. If and only if no coordinator is configured, register this session. If any coordinator is already configured, including one that is offline, do not replace it. Then report what happened.",
     webClawdfatherRegisterSent: "The new session was asked to become Clawdfather",
     webClawdfatherRegisterLate: "The new session did not become ready in time to name it Clawdfather.",
     webClawdfatherRegisterBlocked: "This Mac's coordinator record cannot be read, so it is left exactly as it is.",
