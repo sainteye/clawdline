@@ -144,6 +144,14 @@ func StateFromAssistantStatus(status string) State {
 		return StateWorking
 	case "idle":
 		return StateIdle
+	case "shell":
+		// Claude Code's word for a finished turn that left a background shell
+		// running: the composer is empty and waiting for a person, and the
+		// shell is the row's own `Shells`. Read as unknown, every session that
+		// had started a build and gone quiet was drawn as an unreadable
+		// terminal until the shell ended (measured 2026-09-26, Claude Code
+		// 2.1.283).
+		return StateIdle
 	case "waiting":
 		// A person is being asked. The registry decides *whether* a session is
 		// waiting; only the screen says what it is being asked (Menu).
