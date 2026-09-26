@@ -266,11 +266,15 @@ test("phone: a running deploy hides the context and the tree, and neither comes 
     await browser.loaded(s, mark)
     await until("the chip is drawn", `(() => { const n = document.querySelector("#status-line .deploy"); return !!n && n.getClientRects().length > 0 })()`)
     await until("the windows are drawn", `/7d/.test(document.querySelector("#status-line .limits").textContent)`)
+    // The tree is \`hidden\` until \`/git\` answers; wait for its branch to be in the
+    // markup, so what hides it below is the stylesheet and not the wait.
+    await until("the tree has answered", `/a-branch/.test(document.querySelector("#status-line .files .branch")?.textContent ?? "")`)
     let seen = await run(FOOTER)
     await shot("status-deploy-390")
     assert.equal(seen.context, false, "ctx is still drawn beside a running deploy: " + JSON.stringify(seen))
     assert.equal(seen.files, false, "the tree is still drawn beside a running deploy: " + JSON.stringify(seen))
     assert.equal(seen.cost, true, "the cost stays: " + JSON.stringify(seen))
+    assert.equal(seen.labelEllipsised, true, "the long label is cut inside the chip: " + JSON.stringify(seen))
     assert.match(seen.limits, /5h\s*42%/)
     assert.match(seen.limits, /7d\s*41%/)
     assert.ok(seen.chip.right <= seen.windows.left + 0.5, "the chip runs over the plan windows: " + JSON.stringify(seen))
