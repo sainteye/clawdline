@@ -37,8 +37,8 @@ differences are where people fall:
 ## 1. Root or child
 
 If your first message said *"You are a Clawdline CHILD agent for task …"*, you are a **child**. The
-`CHILD.md` it names governs you: you do not dispatch, you do not send a turn receipt, and you finish
-with `clawdline task finish`. Stop reading here.
+`CHILD.md` it names governs you: you do not dispatch, you do not send a turn receipt, you sign with
+`clawdline task accept` and you finish with `clawdline task finish`. Stop reading here.
 
 Otherwise you are a **root**: an ordinary session a person is talking to. The rest is for you.
 
@@ -58,6 +58,9 @@ transcript.
 | `clawdline landings` | Every landing still owed on this machine |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
+| `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
+| `clawdline task ack <task id> <notice id>` | Acknowledges a child's completion notice (§5) |
+| `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
 
 The orchestration commands above print the daemon's JSON on success; on a refusal they print
@@ -231,7 +234,9 @@ need it again. (A respawn is the one answer that carries a secret: its copy's ne
 **2. Read the inventory** (§3) for `generation` and `task_root`.
 
 **3. Write `<task_root>/<TASK_ID>/task.json`.** The daemon reads the brief from this file, not from
-the request, so the child reads the same bytes that were validated.
+the request. At admission it validates it, rewrites `task.json` from what it admitted, and writes the
+child's `CHILD.md` from the same record — title, instructions, claims, deliverables, kind and timeout
+included — so the task the child reads is the one that was validated, and it does not read `task.json`.
 
 | Field | Rule |
 |---|---|
@@ -292,14 +297,18 @@ most twice per original.
 
 ## 5. While it runs, and when it finishes
 
-The child signs for its briefing (`/accepted`), may send one progress note when its plan changes
-(`/progress`), may push up to five notifications (`/notify`), and finishes by writing `result.json`
-and running `clawdline task finish`. You do not call those routes.
+The child signs for its briefing (`clawdline task accept`, which posts `/accepted` or leaves
+`accepted.json`), may send one progress note when its plan changes (`/progress`), may push up to five
+notifications (`/notify`), and finishes by writing `result.json` and running `clawdline task finish`.
+You do not call those routes.
 
 - `GET /v1/orchestrator/tasks/<id>` — one task, with its state. `GET /v1/orchestrator/tasks` lists
   them (`?state=`, `?limit=` up to 500).
-- **When it finishes, the daemon types a `<clawdline-notice>` line into your composer** with the
-  state, the path of `result.json` and a `notice_id`. It retries on a 5→300-second ladder, eight
+- **When it finishes, the daemon types a `<clawdline-notice>` line into your composer.** Its `body`
+  is one short sentence: the task, how it ended, the facts that are this delivery's alone (a stall,
+  released claims, its branch, how many leftovers) and the two commands to run —
+  `clawdline task show <id>`, then `clawdline task ack <id> <notice_id>`. Its JSON still carries
+  `state`, `result_path`, `outstanding`, `leftovers`, `notice_id` and `ack_path`. It retries on a 5→300-second ladder, eight
   times, until you acknowledge it — and never types while you are showing a menu. A menu does not
   use up those eight: the line waits, for up to 12 hours, and is typed once the menu is gone:
 
@@ -316,7 +325,13 @@ and running `clawdline task finish`. You do not call those routes.
   lists `unacknowledged_completions` — each child of yours that finished and that you have not
   acknowledged, with `task_id`, `title`, `state`, `kind`, `result_path`, `notice_id` and `ack_path`, whether
   its notice is still pending or gave up. `clawdline session report` prints them after its receipt.
-  For each: read its `result.json`, integrate it, then ACK it; the ACK takes it off both lists.
+  For each: `clawdline task show <id>`, integrate it, then ACK it; the ACK takes it off both lists.
+  `task show` prints the summary whole and counts what it leaves out; `--json` is the daemon's whole
+  answer, symbols and artifacts included. Read `result.json` itself only when that is not enough.
+- **A delivery that names leftovers** — things the child says it did not do — changes nothing by
+  itself. `task show` lists their titles. To put one to the person,
+  `POST /v1/orchestrator/proposals {"session_id":"<yours>","task_id":"<id>","leftover":"<its title>"}`;
+  they answer track, later (Backlog) or no, and nothing reaches their board until they do.
 - **A child that stops right after its briefing is nudged, then reported.** If a child whose
   briefing was typed has not signed for it and its screen reads idle — prompt drawn, composer
   empty, no menu, no working line — for 5 minutes, the daemon types it one line naming its
@@ -352,6 +367,14 @@ POST /v1/orchestrator/tasks/<id>/landing
   head as the commit. With no target on record it names one only when the primary checkout's branch
   is the single branch holding the delivery. A cherry-pick, an `incorporated` delivery and
   `nothing_to_land` are still yours to record.
+- **The completion notice names the state of the branch when the task ended**, and each asks for
+  one thing. *Nothing is committed on its branch*: a landing is proved from that branch, so as it
+  stands nothing could ever be recorded as landed — commit in its checkout, on that branch, while
+  the checkout is still on disk; once the sweep takes it, only `abandoned` and `nothing_to_land`
+  remain. *Committed on its branch*: merge that branch into its target and record the landing with
+  the commit that carries it. *Could not be read*: whether anything was committed is not known —
+  look at the branch before recording. *Wrote the shared checkout*: record the landing with the
+  commit that carries that work onto its target, or `abandoned`.
 
 `clawdline landings` (`GET /v1/orchestrator/landings`) is every pending landing on the machine, each
 with an `ownership.status`. `unknown` is not "nobody": it means the evidence could not be read.

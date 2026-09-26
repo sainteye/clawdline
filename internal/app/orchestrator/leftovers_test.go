@@ -24,14 +24,16 @@ func TestTheFinishedLineCarriesWhatIsLeftOver(t *testing.T) {
 		}}}
 
 	line := b.FinishedLine(r, "n1")
-	for _, want := range []string{"did not do 2 thing(s)", "/v1/orchestrator/proposals", `"leftover"`, r.ID} {
+	for _, want := range []string{"2 leftover(s)", "clawdline task show " + r.ID} {
 		if !strings.Contains(line, want) {
 			t.Errorf("the line does not say %q:\n%s", want, line)
 		}
 	}
-	// It never says a person's board changed, because nothing has.
-	if !strings.Contains(line, "nothing reaches their board until they do") {
-		t.Errorf("the line does not say nothing happens by itself:\n%s", line)
+	// How to raise one, and that nothing reaches the person's board until
+	// they answer, is the guide's (§5): read once a session, not typed once a
+	// child.
+	if strings.Contains(line, "/v1/orchestrator/proposals") {
+		t.Errorf("the line still spells out the proposal route:\n%s", line)
 	}
 
 	// The envelope carries the count, and stays one physical line whatever
@@ -57,11 +59,11 @@ func TestTheFinishedLineCarriesWhatIsLeftOver(t *testing.T) {
 	// the broker's own verdict is not the child speaking.
 	quiet := r
 	quiet.Result = &taskdir.Result{Status: "success"}
-	if strings.Contains(b.FinishedLine(quiet, "n1"), "did not do") {
+	if strings.Contains(b.FinishedLine(quiet, "n1"), "leftover") {
 		t.Error("a delivery with no leftovers still said something")
 	}
 	timedOut := Record{ID: r.ID, Title: r.Title, State: StateTimeout, Verdict: "passed its timeout"}
-	if strings.Contains(b.FinishedLine(timedOut, ""), "did not do") {
+	if strings.Contains(b.FinishedLine(timedOut, ""), "leftover") {
 		t.Error("a task with no result named leftovers")
 	}
 }

@@ -34,7 +34,8 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 ## 1. Root 還是 child
 
 如果你的第一則訊息寫著 *"You are a Clawdline CHILD agent for task …"*，你就是 **child**。訊息裡指定的
-`CHILD.md` 管你：你不派工，不送 turn receipt，最後用 `clawdline task finish` 收尾。讀到這裡就可以停了。
+`CHILD.md` 管你：你不派工，不送 turn receipt，用 `clawdline task accept` 簽收，最後用
+`clawdline task finish` 收尾。讀到這裡就可以停了。
 
 否則你是 **root**：一個有人正在跟你對話的一般 session。後面的內容都是寫給你的。
 
@@ -53,6 +54,9 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline landings` | 這台機器上所有還欠著的 landing |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
+| `clawdline task show [--json] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout（§5） |
+| `clawdline task ack <task id> <notice id>` | ACK 一則 child 完成通知（§5） |
+| `clawdline task accept <task dir>` | child 簽收 briefing。root 永遠不執行它 |
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
 
 上面那些 orchestration 指令成功時會印出 daemon 回的 JSON；被拒絕時印出
@@ -209,8 +213,10 @@ secret。）
 
 **2. 讀 inventory**（§3），拿到 `generation` 和 `task_root`。
 
-**3. 寫 `<task_root>/<TASK_ID>/task.json`。** daemon 從這個檔案讀 brief，不是從 request 讀，所以 child
-讀到的，就是通過驗證的那份位元組。
+**3. 寫 `<task_root>/<TASK_ID>/task.json`。** daemon 從這個檔案讀 brief，不是從 request 讀。收件時它先
+驗證，再用收下的內容重寫 `task.json`，並從同一筆紀錄寫出 child 的 `CHILD.md`——標題、instructions、
+claims、deliverables、kind 和 timeout 都在裡面——所以 child 讀到的 task 就是通過驗證的那一份，它不必再讀
+`task.json`。
 
 | 欄位 | 規則 |
 |---|---|
@@ -271,13 +277,16 @@ task 最多兩次。
 
 ## 5. 執行中，以及結束時
 
-child 會簽收 briefing（`/accepted`），計畫改變時可以送一則進度說明（`/progress`），最多可以推五則通知
-（`/notify`），最後寫好 `result.json`、執行 `clawdline task finish` 收尾。這些路由你不用呼叫。
+child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，連不到時留下 `accepted.json`），
+計畫改變時可以送一則進度說明（`/progress`），最多可以推五則通知（`/notify`），最後寫好 `result.json`、
+執行 `clawdline task finish` 收尾。這些路由你不用呼叫。
 
 - `GET /v1/orchestrator/tasks/<id>`——單一 task 和它的狀態。`GET /v1/orchestrator/tasks` 列出全部
   （`?state=`、`?limit=` 最多 500）。
-- **child 結束時，daemon 會在你的輸入框打一行 `<clawdline-notice>`**，內容有狀態、`result.json` 的路徑和
-  一個 `notice_id`。它照 5→300 秒的階梯重試，一共八次，直到你 ACK 為止——而且你正在顯示選單時，它絕不
+- **child 結束時，daemon 會在你的輸入框打一行 `<clawdline-notice>`。** 它的 `body` 只有一句：哪個 task、
+  怎麼結束、只屬於這次交付的事實（stalled、claims 已釋放、它的 branch、幾個 leftover），以及要執行的兩個
+  指令——先 `clawdline task show <id>`，再 `clawdline task ack <id> <notice_id>`。JSON 仍帶著 `state`、
+  `result_path`、`outstanding`、`leftovers`、`notice_id` 和 `ack_path`。它照 5→300 秒的階梯重試，一共八次，直到你 ACK 為止——而且你正在顯示選單時，它絕不
   打字。選單不會用掉那八次：那一行會等，最多等 12 小時，選單一消失就打進去：
 
   ```
@@ -290,8 +299,14 @@ child 會簽收 briefing（`/accepted`），計畫改變時可以送一則進度
 - **就算你沒看到那一行，也會知道。** 你每個 turn 邊界都會讀的
   `GET /v1/work/v2/agent/session-todos/<conversation id>` 會列出 `unacknowledged_completions`：每一個已經
   結束、你還沒 ACK 的 child，附 `task_id`、`title`、`state`、`kind`、`result_path`、`notice_id` 和 `ack_path`，不管它的
-  通知還在重送還是已經放棄。`clawdline session report` 在收據之後也會印出來。每一筆都去讀它的
-  `result.json`、整合，然後 ACK；ACK 之後兩邊都不會再列。
+  通知還在重送還是已經放棄。`clawdline session report` 在收據之後也會印出來。每一筆都先執行
+  `clawdline task show <id>`、整合，然後 ACK；ACK 之後兩邊都不會再列。`task show` 會完整印出 summary，
+  省略的部分只給數量；`--json` 是 daemon 的完整回應，包括 symbols 與 artifacts。只有不夠用時才去讀
+  `result.json` 本身。
+- **交付裡列了 leftovers**（child 說它沒做的事），本身不會觸發任何事。`task show` 會列出它們的標題。要把
+  其中一項提給使用者，送
+  `POST /v1/orchestrator/proposals {"session_id":"<yours>","task_id":"<id>","leftover":"<its title>"}`；
+  使用者會回答 track、later（Backlog）或 no，在他回答之前，什麼都不會進到他的 board。
 - **child 收到 briefing 就停住，會先被推一下，再回報給你。** briefing 已經打進去、child 卻還沒簽收，而且
   它的畫面連續 5 分鐘都是閒置（提示字元在、輸入框是空的、沒有選單、沒有正在跑的那一行），daemon 會在它的
   分頁打一行字，指出它的 `CHILD.md`（絕不再打一次 secret）。再過 5 分鐘仍沒簽收、仍閒置，task 就以
@@ -316,6 +331,12 @@ POST /v1/orchestrator/tasks/<id>/landing
 - **合併會自己記帳。** 已結束的 task 分支一旦合併進 target，broker 會在幾分鐘內用同一道 Git 查證
   自己記成 `landed`，commit 是 target 當下的 head。紀錄上沒有 target 時，只有主 checkout 的 branch
   是唯一含有這份交付的 branch 才會自己命名。cherry-pick、`incorporated` 與 `nothing_to_land` 仍由你記。
+- **完成通知會寫出 task 結束當下 branch 的狀態**，每一種只要求一件事。*branch 上什麼都沒 commit*：landing
+  要從那個 branch 證明，所以照現況永遠不可能記成 landed——趁 checkout 還在磁碟上，在它裡面、那個 branch
+  上 commit；sweep 把 checkout 收走之後，只剩 `abandoned` 和 `nothing_to_land` 可記。*branch 上有
+  commit*：把那個 branch 合併進 target，再用帶著它的 commit 記 landing。*讀不到*：不知道有沒有 commit——
+  先去看 branch 再記。*寫進共用 checkout*：用把那份工作帶上 target 的 commit 記 landing，或記
+  `abandoned`。
 - `landed` 需要 `target` 和 `commit`，而且 daemon **會去 Git 裡查證**；查不過就回
   `409 unverified_landing` 並附上 `reason`（`target_unresolved`、`commit_unresolved`、
   `not_on_target`、`predates_dispatch`、`nothing_delivered`、`not_the_delivery`、…）。
