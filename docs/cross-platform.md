@@ -729,7 +729,11 @@ The Swift shell owns two WKWebViews behind one native bar: the local console, wh
 local token, and — since 2026-09-27 — a `Cloud` tab that loads the hosted console in a persistent store of its own
 (`WKWebsiteDataStore(forIdentifier:)`, in memory before macOS 14). The Cloud view may follow the GitHub sign-in round
 trip but never navigates to the console's address; a link out of Cloud opens in the system browser, and the bar's
-open-outside button hands the Cloud page in front to the system browser for its password manager. The address is a
+open-outside button hands the Cloud page in front to the system browser. Signing in to Cloud from that tab runs the
+GitHub round trip in the default browser through `ASWebAuthenticationSession`, so the browser's own GitHub session and
+password manager are used; the Cloud API hands the result back over `clawdline-next://cloud-signed-in` as a 60-second
+token bound to a PKCE verifier only the shell holds, and the Cloud view trades it at `/v1/auth/oauth/handoff` for the
+ordinary login ticket. When the system cannot open a browser sign-in, the tab signs in in place as before. The address is a
 selectable, read-only value rather than navigation UI. It remains the only shell with Keychain,
 the notch, Carbon hotkeys and `SMAppService`; these are exactly "the few features only a Mac has".
 

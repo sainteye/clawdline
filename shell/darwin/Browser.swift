@@ -24,6 +24,8 @@
 // value can be copied, but it has no border, focus ring, action or editable
 // state that could promise navigation this shell does not offer.
 import AppKit
+import AuthenticationServices
+import CryptoKit
 import UniformTypeIdentifiers
 import WebKit
 
@@ -366,6 +368,15 @@ final class BrowserBar: NSView {
 
 // MARK: - The Cloud side
 
+/// base64url without padding, RFC 4648 §5 — the alphabet RFC 7636 asks of a
+/// verifier and a challenge.
+func base64url(_ data: Data) -> String {
+    data.base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "=", with: "")
+}
+
 /// Whether a URL is the Cloud console's own origin: scheme, host and port, as
 /// the URL's pieces, for the same reason `isConsole` compares them that way.
 func isCloud(_ url: URL) -> Bool {
@@ -384,8 +395,17 @@ func isCloud(_ url: URL) -> Bool {
 /// It goes wherever the Cloud page sends it over http or https, because signing
 /// in is a round trip through the Cloud API and GitHub. It never goes to the
 /// console's own address: the tab beside it is how somebody gets there.
-final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
+final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate, ASWebAuthenticationPresentationContextProviding {
     let view: WKWebView
+
+    /// Signing in, while the person's browser has it (see `signInThroughBrowser`).
+    private var signIn: ASWebAuthenticationSession?
+    /// The PKCE verifier for the sign-in in flight, and the API it was started
+    /// at. Held here and nowhere else: the browser only ever sees its hash.
+    private var pending: (verifier: String, api: URL, start: URL)?
+    /// The one sign-in start this view may load itself: the fallback, when the
+    /// browser could not be used.
+    private var allowInView: URL?
 
     /// The bar's cue: something about where this view is has changed.
     var onNavigation: (() -> Void)?
@@ -420,8 +440,125 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
     var hasLoaded: Bool { view.url != nil }
 
     func load(_ url: URL) {
-        shellLog("cloud: going to \(url.absoluteString)")
+        shellLog("cloud: going to \(loggable(url))")
         view.load(URLRequest(url: url))
+    }
+
+    // MARK: Signing in through the person's browser
+
+    /// The Cloud page's sign-in: `/v1/auth/oauth/start` on the API, which the
+    /// page reaches by a top-level navigation (`cloud-boot.js` `signInURL`).
+    /// One that already carries an `app_challenge` is ours, not the page's.
+    private func isSignInStart(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https" || url.scheme?.lowercased() == "http",
+              url.path == "/v1/auth/oauth/start" else { return false }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        return !items.contains { $0.name == "app_challenge" }
+    }
+
+    /// Sign in where the person's GitHub session and password manager already
+    /// are — their default browser, through `ASWebAuthenticationSession` — and
+    /// bring only the result back into this view.
+    ///
+    /// This view shares no cookies with Safari or Chrome, and it cannot: that
+    /// store is theirs, and an app reading it would be doing what a cookie
+    /// thief does. So the browser signs in with the Cloud API, the API hands a
+    /// sixty-second token back over `clawdline-next://cloud-signed-in`, and this
+    /// view trades it at `/v1/auth/oauth/handoff` for the same login ticket the
+    /// browser would have been given. The token is bound to a verifier that
+    /// never leaves this object (RFC 7636 S256), so another app that caught the
+    /// redirect holds a string it cannot spend.
+    private func signInThroughBrowser(_ start: URL) {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess,
+              var parts = URLComponents(url: start, resolvingAgainstBaseURL: false) else {
+            shellLog("cloud: could not prepare a browser sign-in; signing in here instead")
+            signInHere(start)
+            return
+        }
+        let verifier = base64url(Data(bytes))
+        let challenge = base64url(Data(SHA256.hash(data: Data(verifier.utf8))))
+        parts.queryItems = (parts.queryItems ?? []) + [URLQueryItem(name: "app_challenge", value: challenge)]
+        var api = URLComponents()
+        api.scheme = start.scheme
+        api.host = start.host
+        api.port = start.port
+        guard let asked = parts.url, let apiRoot = api.url else {
+            signInHere(start)
+            return
+        }
+        signIn?.cancel()
+        pending = (verifier, apiRoot, start)
+        let session = ASWebAuthenticationSession(url: asked, callbackURLScheme: "clawdline-next") { [weak self] url, error in
+            DispatchQueue.main.async { self?.signedIn(url, error: error) }
+        }
+        session.presentationContextProvider = self
+        // Not ephemeral: the whole point is the browser's own GitHub session.
+        session.prefersEphemeralWebBrowserSession = false
+        signIn = session
+        if session.start() {
+            shellLog("cloud: signing in through the default browser")
+        } else {
+            shellLog("cloud: the system would not open a browser sign-in; signing in here instead")
+            signIn = nil
+            pending = nil
+            signInHere(start)
+        }
+    }
+
+    /// The browser came back, or did not.
+    func signedIn(_ callback: URL?, error: Error?) {
+        signIn = nil
+        guard let pending else {
+            shellLog("cloud: a sign-in answer arrived with none in flight; ignored")
+            return
+        }
+        if let error {
+            self.pending = nil
+            if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin {
+                shellLog("cloud: the browser sign-in was cancelled")
+            } else {
+                shellLog("cloud: the browser sign-in failed — \(error.localizedDescription); signing in here instead")
+                signInHere(pending.start)
+            }
+            return
+        }
+        guard let callback, callback.host == "cloud-signed-in",
+              let token = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "handoff" })?.value,
+              var trade = URLComponents(url: pending.api.appendingPathComponent("v1/auth/oauth/handoff"),
+                                        resolvingAgainstBaseURL: false) else {
+            shellLog("cloud: the browser sign-in came back without a hand-off; signing in here instead")
+            self.pending = nil
+            signInHere(pending.start)
+            return
+        }
+        self.pending = nil
+        trade.queryItems = [URLQueryItem(name: "handoff", value: token),
+                            URLQueryItem(name: "verifier", value: pending.verifier)]
+        guard let url = trade.url else { return }
+        shellLog("cloud: signed in through the browser; handing the sign-in to this view")
+        view.load(URLRequest(url: url))
+    }
+
+    /// The fallback: the page's own sign-in, in this view, as before.
+    private func signInHere(_ start: URL) {
+        allowInView = start
+        view.load(URLRequest(url: start))
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        view.window ?? NSApp.keyWindow ?? ASPresentationAnchor()
+    }
+
+    /// An address fit for the log: the hand-off's token and verifier are a
+    /// credential for a minute, so that one is written without its query.
+    private func loggable(_ url: URL?) -> String {
+        guard let url else { return "?" }
+        if url.path.hasSuffix("/oauth/handoff") || url.host == "cloud-signed-in" {
+            return "\(url.scheme ?? "")://\(url.host ?? "")\(url.path)"
+        }
+        return url.absoluteString
     }
 
     // MARK: Where it may go
@@ -462,6 +599,15 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel)
             shellLog("cloud: refused \(url.absoluteString) — the console is reached by its own tab")
             return
+        }
+        if isSignInStart(url) {
+            if let allowed = allowInView, allowed == url {
+                allowInView = nil
+            } else {
+                decisionHandler(.cancel)
+                signInThroughBrowser(url)
+                return
+            }
         }
         decisionHandler(.allow)
     }
@@ -553,7 +699,7 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
     // MARK: What happened
 
     func webView(_ webView: WKWebView, didFinish nav: WKNavigation!) {
-        shellLog("cloud: loaded \(webView.url?.absoluteString ?? "?") title=\(webView.title ?? "?")")
+        shellLog("cloud: loaded \(loggable(webView.url)) title=\(webView.title ?? "?")")
         onNavigation?()
         report(webView, attempt: 0)
     }
@@ -578,8 +724,8 @@ final class CloudWeb: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation nav: WKNavigation!,
                  withError error: Error) {
-        let failed = (error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey] as? String
-        shellLog("cloud: could not load \(failed ?? "?") — \(error.localizedDescription)")
+        let failed = (error as NSError).userInfo[NSURLErrorFailingURLErrorKey] as? URL
+        shellLog("cloud: could not load \(loggable(failed)) — \(error.localizedDescription)")
         onNavigation?()
     }
 
