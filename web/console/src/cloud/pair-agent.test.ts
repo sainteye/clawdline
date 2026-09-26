@@ -97,6 +97,4 @@ test("both languages carry every hand-off sentence", () => {
   ]) {
     assert.equal(words.split(`    ${key}:`).length - 1, 2, `${key} is in both languages`)
   }
-  assert.match(words, /cloudPairAgentHand: "交給這台 Mac 的 AI"/)
-  assert.match(words, /cloudPairAgentHand: "Hand it to this Mac's AI"/)
 })

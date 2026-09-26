@@ -221,6 +221,16 @@
     width: 100%; margin-top: 8px; padding: 8px 10px; text-align: center;
 }
 .cloud-pair-protection { padding-top: 2px; }
+/* The Mac app's hand-off, above the copy box: the one button that does the
+   whole thing, so it is the full width and the recommended way's colour. */
+.cloud-pair-agent {
+    margin-top: 12px; padding: 10px 11px;
+    border: 1px solid var(--accent); border-radius: 8px;
+}
+.cloud-pair-agent .cloud-pair-generate { width: 100%; padding: 8px 10px; text-align: center; }
+.cloud-pair-agent .fine { margin: 6px 0 0 0; }
+.cloud-pair-agent-said { margin: 6px 0 0 0; font-size: 12px; color: var(--ink); }
+.cloud-pair-agent-said[data-agent="refused"] { color: var(--warn, var(--ink)); }
 .cloud-pair-step { margin: 14px 0 6px 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
 .cloud-pair-command {
     display: block; box-sizing: border-box; width: 100%; resize: none;
