@@ -1350,8 +1350,6 @@ func init() {
 					Query: map[string]string{"limit": strconv.FormatInt(p.limit, 10)}}
 			}},
 
-		// MARK: reads this daemon has no local capability for
-
 		op{name: "shell", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "shell", "bytes") {
@@ -1373,7 +1371,16 @@ func init() {
 				}
 				p.id, p.byteWindow = shell, window
 				return p, true
+			},
+			// The Shell panel's read (internal/transport/http/shells.go). The
+			// window is the local route's `sessions.shell_output_bytes`, so
+			// the two bounds are one.
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/sessions/" + segment(p.session) + "/shells/" + segment(p.id),
+					Query: map[string]string{"bytes": strconv.FormatInt(p.byteWindow, 10)}}
 			}},
+
+		// MARK: reads this daemon has no local capability for
 
 		op{name: "skills", read: true,
 			decode: func(b body) (plan, bool) {
