@@ -503,8 +503,10 @@ export class RelayReader {
       }
       const schedule = scheduleDetailID(path)
       if (schedule) {
-        this.only(url, path)
-        return await this.machineRead(init?.signal, method, path, "schedule", { id: schedule })
+        // `?machine=` is the machine the list said the row is on: a schedule
+        // lives on the machine that runs it, which need not be this page's.
+        const q = this.only(url, path, "machine")
+        return await this.machineRead(init?.signal, method, path, "schedule", { id: schedule }, q.machine || undefined)
       }
       const agent = sessionAgent(path)
       if (agent) {
@@ -556,37 +558,44 @@ export class RelayReader {
           // were not read over Cloud yet, and the machine had been answering it
           // the whole time. The sentence was what had stopped being true.
           //
-          // Unlike the task list this is asked of the machine (`schedules` is a
-          // word, and this daemon publishes no schedules on its descriptor),
-          // and the answer is cut to this machine's rows for the reason the
-          // session list is: the copied client merges every machine's into
-          // one, and a row from another machine under this one's list would be a
-          // schedule this page cannot open, edit or run.
+          // Unlike the task list this is asked of the machines (`schedules` is
+          // a word, and this daemon publishes no schedules on its descriptor).
+          //
+          // **Every machine's rows, each with its machine.** This answer used
+          // to be cut to this machine's rows, because a row from another
+          // machine was a schedule this page could not open, edit or run. It
+          // can now: each action names the row's machine (`?machine=`, below
+          // and in `relay-writer.ts`), and a schedule is chosen onto a machine
+          // and moved between them from this list (docs/schedules.md). A
+          // person with a Mac and a Linux machine sees both machines'
+          // schedules without switching the whole console.
+          this.only(url, path)
           const client = this.connected()
           if (typeof client.schedules !== "function") {
             return this.refuse(method, path, 501, "cloud_not_carried",
               "This console cannot read this machine's schedules.")
           }
           const answer = await client.schedules({ fresh: true })
-          // **A resolved answer is not this machine's answer.** The read fans
+          // **A resolved answer is not every machine's answer.** The read fans
           // out and settles as long as one machine replied, so a machine that
-          // refused, timed out or was never asked comes back as an account
-          // with fewer rows in it — which is this page saying "there are
-          // none" on its behalf. Its own failure is raised instead, and the
-          // page draws nothing rather than an empty list (`pages/schedules.tsx`).
-          const missed = (answer.unanswered ?? []).find((row) => row?.machine === this.machine)
-          if (missed) throw missed.error ?? new NotConnected()
-          if ((answer.unconfirmed ?? []).includes(this.machine)) {
-            return this.refuse(method, path, 503, "cloud_read_unavailable",
-              "This machine has not published an inventory to this account yet.")
-          }
-          const schedules = (answer.schedules ?? []).filter((row) => row?.machine === this.machine)
+          // refused, timed out or was never asked would otherwise come back as
+          // a machine with no schedules. Each is named instead, with its code,
+          // and the page draws it as a machine it could not read — never as an
+          // empty list (`pages/schedules.tsx`). Only the typed code goes out:
+          // the failure object is the copied client's and is not JSON.
+          const unanswered = [
+            ...(answer.unanswered ?? []).flatMap((row) => typeof row?.machine === "string" && row.machine
+              ? [{ machine: row.machine, label: row.label ?? row.machine, code: failureCode(row.error) }]
+              : []),
+            ...(answer.unconfirmed ?? []).map((machine) => ({ machine, label: machine, code: "cloud_read_unavailable" })),
+          ]
+          const schedules = (answer.schedules ?? []).filter((row) => typeof row?.machine === "string" && row.machine)
           // Typed against the table, as `transcript` below is: dropping it
           // from `CARRIED` is a compile error here rather than a silent
           // disagreement.
           const word: CarriedWord = "schedules"
           this.note(method, path, "relay", undefined, { word })
-          return json(200, { schedules, at: answer.at || Math.floor(this.now() / 1000) })
+          return json(200, { schedules, at: answer.at || Math.floor(this.now() / 1000), unanswered })
         }
         case "/v1/snippets": {
           // 常用句 — the sheet a phone could not open. Both halves were true
@@ -1090,6 +1099,7 @@ export class RelayReader {
     path: string,
     word: CarriedWord,
     body: Record<string, unknown>,
+    machine: string = this.machine,
   ): Promise<Response> {
     const client = this.connected()
     if (typeof client._machineRequest !== "function") {
@@ -1103,7 +1113,7 @@ export class RelayReader {
     // fifteen-second bound (`pages/work/api.ts`) silently became the copied
     // client's sixty-second read timeout plus its ten-second status probe:
     // a Session's to-do fold said "loading" for over a minute per try.
-    const answer = await abandonable(client._machineRequest(this.machine, word, body, "read"), signal, word)
+    const answer = await abandonable(client._machineRequest(machine, word, body, "read"), signal, word)
     this.note(method, path, "relay", undefined, { word })
     return json(200, answer)
   }
@@ -1292,6 +1302,12 @@ function sessionAgent(path: string): { session: string; agent: string } | null {
   } catch {
     return null
   }
+}
+
+/** A typed failure's code, as a machine that did not answer the list is named by. */
+function failureCode(error: unknown): string {
+  const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined
+  return typeof code === "string" && code ? code : "unanswered"
 }
 
 /** The id in `GET /v1/orchestrator/schedules/{id}`, decoded after splitting. */

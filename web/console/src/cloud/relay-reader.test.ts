@@ -487,7 +487,7 @@ test("a key nobody can ask for is refused by name, not left to the network", asy
 // Cloud yet, and this machine had been answering `schedules` the whole time — so
 // the seam refused the route to itself and the section stayed hidden, with
 // nothing in the machine's log because nothing had been asked for.
-test("the schedule list is asked of this machine, and is this machine's rows", async () => {
+test("the schedule list is every machine's rows, each with its machine", async () => {
   const client = new FakeClient()
   client.scheduleAnswer = async () => ({
     schedules: [schedule("mac-a", "s-1"), schedule("mac-b", "s-2"), schedule("mac-a", "s-3")],
@@ -496,13 +496,15 @@ test("the schedule list is asked of this machine, and is this machine's rows", a
   const r = reader(client, { t: 1000 })
   const res = await r.fetch("/v1/orchestrator/schedules")
   assert.equal(res.status, 200)
-  const list = await body<{ schedules: { id: string }[]; at: number }>(res)
-  assert.deepEqual(list.schedules.map((s) => s.id), ["s-1", "s-3"], "another machine's schedules are not this list")
+  const list = await body<{ schedules: { id: string; machine: string }[]; at: number; unanswered: unknown[] }>(res)
+  // It used to be cut to this machine's rows, which is why a schedule on the
+  // Linux machine could only be seen by switching the whole console to it.
+  assert.deepEqual(list.schedules.map((s) => [s.id, s.machine]),
+    [["s-1", "mac-a"], ["s-2", "mac-b"], ["s-3", "mac-a"]], "every machine's schedules are this list")
   assert.equal(list.at, 1_700)
+  assert.deepEqual(list.unanswered, [])
   // `fresh`, and not for freshness: this daemon publishes no schedules on its
-  // `orch/` descriptor, so the retained reading refuses forever — and the
-  // fresh one is also what teaches the copied client which machine an id is on,
-  // which is what the four writes are routed by.
+  // `orch/` descriptor, so the retained reading refuses forever.
   assert.deepEqual(client.scheduleAsks, [{ fresh: true }])
   const last = r.log[r.log.length - 1]
   assert.equal(last.answer, "relay")
@@ -521,11 +523,13 @@ test("one schedule is asked of the chosen machine so its history and webhook pan
   assert.deepEqual(await res.json(), {
     schedule: { id: "schedule 9", webhook_binding_availability: "unbound" },
   })
-  assert.deepEqual(client.reads, [{
-    machine: "mac-a",
-    word: "schedule",
-    body: { id: "schedule 9" },
-  }])
+  // A row the list said is on another machine is read there.
+  const there = await r.fetch("/v1/orchestrator/schedules/schedule%209?machine=mac-b")
+  assert.equal(there.status, 200)
+  assert.deepEqual(client.reads, [
+    { machine: "mac-a", word: "schedule", body: { id: "schedule 9" } },
+    { machine: "mac-b", word: "schedule", body: { id: "schedule 9" } },
+  ])
 })
 
 // The distinction this whole read is drawn around: "this machine has none" and
@@ -536,7 +540,7 @@ test("an empty list is only ever what the machine said, never what a refusal bec
   const empty = new FakeClient()
   const said = await reader(empty, { t: 1000 }).fetch("/v1/orchestrator/schedules")
   assert.equal(said.status, 200)
-  assert.deepEqual(await said.json(), { schedules: [], at: 1 }, "an answer with no rows is an answer")
+  assert.deepEqual(await said.json(), { schedules: [], at: 1, unanswered: [] }, "an answer with no rows is an answer")
 
   // The copied client's own refusal for a machine running a build that publishes
   // no schedules, and for an account no snapshot has arrived from.
@@ -553,8 +557,9 @@ test("an empty list is only ever what the machine said, never what a refusal bec
 
 // The fan-out's own trap: `schedules()` settles as soon as *one* machine
 // answers, so an account with two machines and one silent one resolves with the
-// silent one's rows simply absent. Read as this machine's list that is the
-// page asserting an inventory nobody read.
+// silent one's rows simply absent. Read as a list that is the page asserting
+// that machine has no schedules; instead the machine is named, with its code,
+// and `pages/schedules.tsx` draws it as a machine it could not read.
 test("a machine that did not answer is not a machine with no schedules", async () => {
   const silent = new FakeClient()
   silent.scheduleAnswer = async () => ({
@@ -562,15 +567,19 @@ test("a machine that did not answer is not a machine with no schedules", async (
     at: 1_700,
     unanswered: [{ machine: "mac-a", label: "this machine", error: Object.assign(new Error("timed out"), { code: "cloud_read_timeout" }) }],
   })
-  // `cloud_read_timeout` is one of the codes that mean nobody answered, so it
-  // rejects the way a dropped connection does and the list is left as it was.
-  await assert.rejects(reader(silent, { t: 1000 }).fetch("/v1/orchestrator/schedules"), TypeError)
+  const res = await reader(silent, { t: 1000 }).fetch("/v1/orchestrator/schedules")
+  assert.equal(res.status, 200)
+  assert.deepEqual(await res.json(), {
+    schedules: [schedule("mac-b", "s-2")],
+    at: 1_700,
+    unanswered: [{ machine: "mac-a", label: "this machine", code: "cloud_read_timeout" }],
+  })
 
+  // A machine never asked, because its descriptor has not arrived, is named too.
   const never = new FakeClient()
   never.scheduleAnswer = async () => ({ schedules: [schedule("mac-b", "s-2")], at: 1_700, unconfirmed: ["mac-a"] })
-  const res = await reader(never, { t: 1000 }).fetch("/v1/orchestrator/schedules")
-  assert.equal(res.status, 503)
-  assert.equal((await body<{ error: string }>(res)).error, "cloud_read_unavailable")
+  const list = await (await reader(never, { t: 1000 }).fetch("/v1/orchestrator/schedules")).json()
+  assert.deepEqual(list.unanswered, [{ machine: "mac-a", label: "mac-a", code: "cloud_read_unavailable" }])
 })
 
 // A copied client older than the word: refused by name, in the spelling

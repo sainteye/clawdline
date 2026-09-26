@@ -939,6 +939,41 @@ test("saving an open schedule does not depend on a retained schedule inventory",
   ])
 })
 
+// A schedule lives on the machine that runs it, and the list shows every
+// machine's rows (docs/schedules.md). Each action on a row names the row's
+// machine, and goes there rather than to this page's machine; a save naming
+// another machine's Project is still refused, because a move is three writes,
+// not one save (`cloud/schedule-move.ts`).
+test("an action on another machine's schedule goes to that machine", async () => {
+  const client = new FakeClient()
+  client._scheduleBody = (schedule: unknown) => {
+    const body = schedule as Record<string, unknown>
+    return { machine: String(body.place_id).split("\u0000")[0], schedule: body }
+  }
+  const { reader } = seam(client)
+  const form = { title: "a schedule", place_id: "linux-b\u0000p2" }
+  const saved = await reader.fetch("/v1/orchestrator/schedules/sch-9?machine=linux-b", { ...post(form), method: "PATCH" })
+  assert.equal(saved.status, 200)
+  const removed = await reader.fetch("/v1/orchestrator/schedules/sch-9?machine=linux-b", { method: "DELETE" })
+  assert.equal(removed.status, 200)
+  const ran = await reader.fetch("/v1/orchestrator/schedules/sch-9/run?machine=linux-b", post({}))
+  assert.equal(ran.status, 200)
+  const places = await reader.fetch("/v1/places?machine=linux-b")
+  assert.equal(places.status, 200)
+  assert.deepEqual(client.calls, [
+    ["_machineRequest", "linux-b", "schedule-update", { id: "sch-9", schedule: form }, "action"],
+    ["_machineRequest", "linux-b", "schedule-delete", { id: "sch-9" }, "action"],
+    ["_machineRequest", "linux-b", "schedule-run", { id: "sch-9" }, "action"],
+    ["places", "linux-b"],
+  ])
+
+  client.calls.length = 0
+  const crossed = await reader.fetch("/v1/orchestrator/schedules/sch-9?machine=mac-a", { ...post(form), method: "PATCH" })
+  assert.equal(crossed.status, 409)
+  assert.equal((await json<{ error: { code: string } }>(crossed)).error.code, "cloud_schedule_machine_mismatch")
+  assert.deepEqual(client.calls, [], "nothing is written for a save that names another machine's Project")
+})
+
 // The schedule routes refuse through `writeAuthRefusal` and
 // `writeBrokerRefusal` (internal/transport/http/schedules.go), both of which
 // send `{"error":{"code","message",…}}` — and the form reads a broker
