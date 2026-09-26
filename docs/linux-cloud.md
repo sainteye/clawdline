@@ -369,6 +369,10 @@ In order, and only the person can do 1 and 3:
    on the machine and open the link it prints in the app. Either way, check that both fingerprints
    match what the machine prints.
 4. On the machine, if the phone is to act and not only watch: `clawdline cloud commands on`.
+5. Optionally, bring the projects over: in the hosted console, open this machine's **Projects**
+   page and use 專案設定同步 with the workstation as the source, or `clawdline project export` /
+   `import` by hand ([getting-started.md §7](getting-started.md#7-bring-your-projects-to-another-machine)).
+   Step 4 is what lets the console write them here.
 
 It is not one button. It is two approvals and two switches, and the two switches are the machine's
 own — the shape `docs/cloud-cutover.md` already describes, with no desktop to show either half.

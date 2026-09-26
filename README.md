@@ -138,9 +138,26 @@ tools/package-macos.sh          # dist/Clawdline Next.app
 tools/package-macos.sh --dmg    # also create a disk image
 ```
 
+### Bring your projects to another machine
+
+A second machine (a Linux server, for example) can have the same repositories and still be missing
+each project's name, icon, and the skills and notes you keep out of git. Pick one machine as the
+source and mirror the rest from it: in the hosted console, open the receiving machine's
+**Projects** page and use **專案設定同步** (project settings sync), or move a file by hand:
+
+```sh
+./bin/clawdline project export --out projects.json          # on the source machine
+./bin/clawdline project import --clone projects.json        # on the receiving machine
+```
+
+Projects are matched by their git `origin`, not by folder name. The steps are in the
+[getting-started guide](docs/getting-started.md#7-bring-your-projects-to-another-machine), and
+what is and is not copied is in [project-sync.md](docs/project-sync.md).
+
 For pairing, Cloud setup, diagnostics, and troubleshooting, continue with the
 [getting-started guide](docs/getting-started.md).
 
 [Architecture](docs/architecture.md) · [Remote access](docs/remote.md) ·
+[Projects across machines](docs/project-sync.md) ·
 [Token ledger](docs/token-ledger.md) ·
 [All documentation](docs/README.md) · [MIT License](LICENSE)
