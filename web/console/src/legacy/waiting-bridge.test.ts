@@ -27,7 +27,9 @@ test("a menu that could not be read offers its Esc and the live screen", () => {
   const html = waitingHTML(unread)
   assert.match(html, /<button type="button" class="go" data-cancel="1">/)
   assert.match(html, /<button type="button" class="go" data-screen="1">/)
-  assert.doesNotMatch(html, /\bMac\b(?![^<]*<\/button>)/, "the card's sentences name no Mac")
+  const said = [...html.matchAll(/<div class="say">(.*?)<\/div>/g)].map((m) => m[1]).join(" ")
+  assert.ok(said.length > 0)
+  assert.doesNotMatch(said, /\bMac\b/, "the card's sentences name the machine as a machine")
 })
 
 test("the way out is shut where this device may not type", () => {
