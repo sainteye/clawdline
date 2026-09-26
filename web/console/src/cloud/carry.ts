@@ -151,6 +151,7 @@ export const CARRIED = {
   "work.v2.assign": "POST /v1/work/v2/items/{id}/assign",
   "work.v2.remind": "POST /v1/work/v2/items/{id}/remind",
   "work.v2.cancel": "POST /v1/work/v2/items/{id}/cancel",
+  "work.v2.complete": "POST /v1/work/v2/items/{id}/complete",
   "work.v2.create": "POST /v1/work/v2/items",
   "work.v2.edit": "PATCH /v1/work/v2/items/{id}",
   "work.v2.image-create": "POST /v1/work/v2/items/{id}/images",

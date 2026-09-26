@@ -605,6 +605,12 @@ test("Work v2 person actions keep their exact route subject and body across Clou
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.cancel", {
     id: "w1", item: { expected_version: 5, reason: "Deleted by the person from the Board." },
   }, "action"])
+
+  const completed = await reader.fetch("/v1/work/v2/items/w1/complete", post({ expected_version: 6 }))
+  assert.equal(completed.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.complete", {
+    id: "w1", item: { expected_version: 6 },
+  }, "action"])
 })
 
 test("a Work v2 create resolves the Cloud Project id and keeps the press id through the machine", async () => {

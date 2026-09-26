@@ -475,6 +475,13 @@ export const deleteWorkV2 = (item: WorkV2Item) =>
     reason: "Deleted by the person from the Board.",
   })
 
+// The person's override: closes the item as done without the evidence an
+// owning Session must give, whatever its steps say.
+export const completeWorkV2 = (item: WorkV2Item) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/complete`, {
+    expected_version: item.version,
+  })
+
 export const addWorkV2Image = (itemID: string, expectedVersion: number, picture: {
   url: string
   name: string

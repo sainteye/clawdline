@@ -1117,6 +1117,13 @@ func init() {
 					Body: p.document, Header: asDevice()}
 			}},
 
+		op{name: "work.v2.complete",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/complete",
+					Body: p.document, Header: asDevice()}
+			}},
+
 		op{name: "work.v2.image-create",
 			decode: decodeWorkV2NamedImageDocument,
 			route: func(p plan) LocalRequest {

@@ -187,7 +187,9 @@ that action and restores the phase presentation. Broker-derived
 
 A device may reopen done/cancelled work. When user feedback clearly says a Session's just-completed
 item remains unfinished, that same Session may retract only its own `done` claim with a nonblank
-reason. The correction starts a new cycle in `implementing`, creates a new active assignment for
+reason. An item a person completed by hand (`item.completed`) is not that Session's claim, even
+though its assignment was released at `closed_at`: the retraction is refused with
+`not_completing_session`. The correction starts a new cycle in `implementing`, creates a new active assignment for
 that Session, and retains the released assignment plus all earlier events/evidence. Another Session,
 an Agent attempting to reverse `cancelled`, and a reasonless request are refused without mutation.
 A person-directed reopening is either unassigned or deliberately assigned according to the person's

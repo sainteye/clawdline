@@ -40,11 +40,14 @@ and projects an assigned item into its owner's Session to-do panel.
    one machine-credential path is `POST /v1/work/v2/agent/items`, and it needs the run of a message
    the person sent that same Session through this daemon (§7.1). Task secrets never create one, and
    a person typing straight into a terminal leaves no run, so that case stays a proposal (§10).
-2. **Only a person assigns, reassigns, unassigns, deletes/cancels, or reopens an item.** An Agent may not
+2. **Only a person assigns, reassigns, unassigns, deletes/cancels, completes by hand, or reopens an
+   item.** An Agent may not
    appoint itself or another Session — except that an item created under §7.1 arrives assigned to
    the Session that relayed the person's message, and an item claimed under §7.2 is assigned to
    the Session the person's message told to take it, because that message is the person's
-   assignment.
+   assignment. A person's completion (`POST /v1/work/v2/items/<id>/complete`, event
+   `item.completed`) needs no evidence and is not refused by open steps, whose count it records; no
+   Agent can retract it — only a person reopens it.
 3. **An Agent may propose, never promote.** A proposal is a previewable draft. It becomes a work
    item only after a person accepts it, possibly after editing it.
 4. **One item has at most one owning Session at a time.** One Session may own several items.
@@ -285,7 +288,8 @@ that decision exists. A person may change the policy; the Agent may not.
 | --- | ---: | ---: | ---: | ---: |
 | Create item | yes | yes, on the person's explicit message relayed by its run (§7.1); arrives assigned to itself | no | no |
 | Assign/reassign/unassign/delete (cancel) | yes | no | no | no |
-| Reopen terminal work | yes | own just-completed `done` only | no | no |
+| Complete by hand (to `done` without evidence) | yes | no | no | no |
+| Reopen terminal work | yes | own just-completed `done` only, never a person's completion | no | no |
 | Change Project/kind/deployment policy | yes | no | no | no |
 | Edit title/description | yes | yes | no | no |
 | Add/edit documents and steps | yes | yes | no | no |

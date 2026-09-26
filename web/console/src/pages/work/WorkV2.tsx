@@ -18,10 +18,12 @@ import { VoiceTextarea } from "./VoiceTextarea.js"
 import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
+import { completeConfirmWords } from "./complete-item.js"
 import {
   assignNewWorkV2,
   assignWorkV2,
   addWorkV2Image,
+  completeWorkV2,
   createWorkV2,
   deleteWorkV2,
   deleteWorkV2Image,
@@ -267,6 +269,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [completing, setCompleting] = useState(false)
   const [reminded, setReminded] = useState(false)
   // An assignment that failed says so on this card: opening a new Session can
   // take a minute and a half, and the page-level note it used to land in is
@@ -288,11 +291,23 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
           onClick={() => { clearFailure(); setReminded(false); void run(`remind-${item.id}`, () => remindWorkV2(item)).then(setReminded) }}>
           <WorkIcon name={reminded ? "check" : "remind"} /> {reminded ? "已提醒" : "提醒 Session"}
         </button>}
+        {!item.closed_at && <button type="button" disabled={!!busy}
+          onClick={() => { clearFailure(); setCompleting(true) }}><WorkIcon name="check" /> 完成</button>}
         <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><WorkIcon name="edit" /> 編輯</button>
         {!item.closed_at && <button className="danger" type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setDeleting(true) }}><WorkIcon name="delete" /> 刪除</button>}
       </div>
     </div>
+    {/* The person's override closes the item without the owning Session's
+        evidence, so it asks once more, here on the card, before it does. */}
+    {completing && !item.closed_at && <div className="work-actions" role="group" aria-label="確認標記完成">
+      <p className="work-note">{completeConfirmWords(item)}</p>
+      <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === `complete-${item.id}`}
+        onClick={() => { void run(`complete-${item.id}`, () => completeWorkV2(item)).then((ok) => { if (ok) setCompleting(false) }) }}>
+        <WorkIcon name="check" />{busy === `complete-${item.id}` ? "標記中…" : "確認標記完成"}</button>
+      <button className="chip" type="button" disabled={busy === `complete-${item.id}`} onClick={() => setCompleting(false)}>取消</button>
+      {failure && <p className="work-note" role="alert">標記完成失敗：{failure}</p>}
+    </div>}
     <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>
     <h3>{item.title}</h3>
     <CreatedViaNote item={item} />
