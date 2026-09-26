@@ -436,3 +436,23 @@ func TestAPairingWithNoIdentityRefusesRatherThanFails(t *testing.T) {
 		t.Fatalf("a link with no identity answered %v", err)
 	}
 }
+
+// CheckOffer refuses what Complete refuses, and leaves the pairing in
+// progress alone either way: a hand-off that was refused is not this
+// machine's pairing failing.
+func TestCheckOfferRefusesWhatCompleteRefusesWithoutFailingThePairing(t *testing.T) {
+	h := newPairingHarness(t)
+	if _, err := h.pairing.CheckOffer(h.viewer.offer.Fragment()); err != nil {
+		t.Fatalf("a good offer was refused: %v", err)
+	}
+	other := newGoViewer(t, "usr_other", h.plane.pairingID, h.plane.claimNonce, time.Now().Add(5*time.Minute))
+	if _, err := h.pairing.CheckOffer(other.offer.Fragment()); err == nil {
+		t.Fatal("an offer for another account was accepted")
+	}
+	if _, err := h.pairing.CheckOffer("not-an-offer"); err == nil {
+		t.Fatal("text that is not an offer was accepted")
+	}
+	if phase := h.pairing.State().Phase; phase != "" && phase != PairingIdle {
+		t.Fatalf("checking offers moved the pairing to %q", phase)
+	}
+}
