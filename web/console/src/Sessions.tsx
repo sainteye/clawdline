@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
-import type { BearingsSource, ScanSource, SessionRow, TaskRow } from "@clawdline/contract"
+import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { paintSwipe, Row } from "./session/List.js"
@@ -7,6 +7,8 @@ import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { Command, CommandSheet } from "./session/Command.js"
 import { Starting } from "./session/Starting.js"
+import { RestoreCard, RestoreHero, RestoreSheet, useRestoreOffer } from "./session/Restore.js"
+import { offerShape } from "./session/restore-offer.js"
 import { taskReads } from "./session/task-read.js"
 import { swipes } from "./session/swipe.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
@@ -176,6 +178,15 @@ export function SessionsPage({
   }
   const emptyClass = skeleton ? "skel" : "empty" + (homeEmpty ? " home-hero-list" : "")
 
+  // The sessions a reboot took away (docs/session-restore.md). Offered in the
+  // home hero's place when the list is empty, and as a card above the rows
+  // when the person has already opened something; nothing new is drawn when
+  // there is nothing to offer, so the empty words above stay what they were.
+  const restore = useRestoreOffer(live)
+  const [restoring, setRestoring] = useState<RestorableSession[] | null>(null)
+  const offerAt = offerShape(restore.offer, skeleton || listUnknown ? "loading" : homeEmpty ? "home" : "rows")
+  const openRestore = () => setRestoring(restore.offer ? [...restore.offer.sessions] : null)
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const ptrRef = useRef<HTMLDivElement>(null)
   // The swipe binds first, so that by the time pull-to-refresh reads a move
@@ -282,6 +293,7 @@ export function SessionsPage({
             <div className="ptr" id="ptr" ref={ptrRef}>
               <span id="ptr-label">{ptrWord === "release" ? T.webPullRelease : ptrWord === "busy" ? T.webPullBusy : T.webPull}</span>
             </div>
+            {offerAt === "compact" && restore.offer && <RestoreCard offer={restore.offer} onOpen={openRestore} />}
             <ul className="rows" id="rows" role="listbox" aria-label={T.webListLabel} tabIndex={0} ref={listRef}>
               {!skeleton && arriving && <StartingRow place={arriving} />}
               {drawn.map((r) => (
@@ -298,6 +310,8 @@ export function SessionsPage({
             <div className={emptyClass} id="list-empty" hidden={!skeleton && !empty}>
               {said.current === "skel" ? (
                 <ListSkeleton />
+              ) : offerAt === "hero" && restore.offer ? (
+                <RestoreHero offer={restore.offer} onOpen={openRestore} />
               ) : said.current ? (
                 <>
                   <b>{said.current[0]}</b>
@@ -314,6 +328,9 @@ export function SessionsPage({
       </main>
       <StartSheet />
       <CommandSheet />
+      {restoring && (
+        <RestoreSheet sessions={restoring} onClose={() => setRestoring(null)} onChanged={restore.refresh} />
+      )}
     </>
   )
 }
