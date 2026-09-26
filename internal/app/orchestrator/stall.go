@@ -24,7 +24,8 @@ import (
 // So the beat watches for exactly that shape, and only that shape:
 //
 //   - the briefing was typed (the tab is recorded and the task is not
-//     Unbriefed), the task is still `spawning`, and it has not signed;
+//     Unbriefed, nor left at a dialog), the task is still `spawning`, and
+//     it has not signed;
 //   - every reading of its screen for stallIdleLimit said idle: the
 //     assistant's prompt, an empty composer, no menu, no live working line.
 //     Any other reading — working, a dialog, a draft, a screen that could not
@@ -113,7 +114,7 @@ func (w *stallWatch) forget(id string) {
 // stallCandidate is a task whose briefing was typed and which has signed
 // nothing since.
 func stallCandidate(r Record) bool {
-	return r.State == StateSpawning && r.AcceptedAt.IsZero() && !r.Unbriefed &&
+	return r.State == StateSpawning && r.AcceptedAt.IsZero() && !r.Unbriefed && r.AwaitingDialogSince.IsZero() &&
 		r.ChildTerminalID != "" && !r.SpawnedAt.IsZero()
 }
 

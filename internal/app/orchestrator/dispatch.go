@@ -398,6 +398,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		r.SpawnedAt = spawned.SpawnedAt
 		r.SpawnError = spawned.SpawnError
 		r.Unbriefed = spawned.Unbriefed
+		r.AwaitingDialogSince = spawned.AwaitingDialogSince
 		r.AutoCompactWindow = spawned.AutoCompactWindow
 		if r.State == StateQueued {
 			r.State = spawned.State
@@ -407,7 +408,11 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	if err != nil {
 		return Dispatched{}, err
 	}
-	b.forgetSecret(record.ID)
+	// A child left at a dialog keeps its secret in this process, and only
+	// there, until the beat types it or the task ends (dialog.go).
+	if record.AwaitingDialogSince.IsZero() || record.State != StateSpawning {
+		b.forgetSecret(record.ID)
+	}
 	// A child that was never briefed is settled now, not at the beat's clock
 	// and not at its own timeout: the secret is gone with the line above, so
 	// no reading taken later can change the answer, and every minute it waits
@@ -646,6 +651,14 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	// typed into. Waiting here rather than in the watch beat keeps the whole
 	// spawn in one place; the beat's own 4-minute clock is the backstop.
 	if err := b.brief(ctx, r, secret); err != nil {
+		// A dialog is not a failure to brief yet: the tab stays open for a
+		// person to answer it, and the beat types the briefing once the
+		// composer is up (dialog.go). Nothing was typed.
+		var waiting awaitingDialog
+		if errors.As(err, &waiting) {
+			r.AwaitingDialogSince = b.now()
+			return r
+		}
 		// A briefing whose typing may have landed is not `spawn_failed`: the
 		// keystrokes may be in the child, and the beat decides that with
 		// evidence. One that was never typed — never tried, or refused before
@@ -773,6 +786,8 @@ func trustArgs(assistant, cwd string) []string {
 //
 // The wait is bounded here and again by the four-minute clock in the beat, so a
 // child that never draws a prompt is reported rather than waited on for ever.
+// A dialog is the exception: it is left in its tab for a person to answer, and
+// the beat types the briefing once they have (dialog.go).
 //
 // A give-up before any keystroke was sent answers unbriefed, and says why: a
 // tab this daemon's reading never listed under the id the terminal gave back
@@ -797,10 +812,21 @@ func (b *Broker) brief(ctx context.Context, r Record, secret string) error {
 	deadline := b.now().Add(90 * time.Second)
 	var last error
 	listed := false
+	dialogs := 0
 	for b.now().Before(deadline) {
 		if s, ok := b.sessionByTerminal(ctx, r.ChildTerminalID); ok && s.IsAssistant() {
 			listed = true
 			ready, why := b.composerReady(ctx, r.ChildTerminalID, r.Assistant)
+			// A dialog on two readings in a row is left for a person, not
+			// waited out here: nothing this loop does can answer it, and a
+			// person cannot answer it in a tab that is closed (dialog.go).
+			if errors.Is(why, errShowingDialog) {
+				if dialogs++; dialogs >= dialogReadings {
+					return awaitingDialog{}
+				}
+			} else {
+				dialogs = 0
+			}
 			if ready {
 				err := b.typeLine(ctx, r.ChildTerminalID, FirstLine(r, secret, b.Language))
 				if err == nil {
@@ -876,7 +902,7 @@ func (b *Broker) composerReady(ctx context.Context, terminalID, assistant string
 	}
 	which := session.Assistant(assistant)
 	if Choosing(screen, which) {
-		return false, errors.New("the child is showing a dialog; the briefing would have answered it")
+		return false, errShowingDialog
 	}
 	if !ComposerReady(screen, which) {
 		return false, fmt.Errorf("the child's screen showed no input line %s draws, so it had not finished "+

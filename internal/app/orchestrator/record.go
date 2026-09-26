@@ -433,6 +433,13 @@ type Record struct {
 	// False on a briefing that was typed and errored — those keystrokes may
 	// have landed, and only a receipt can say.
 	Unbriefed bool `json:"unbriefed,omitempty"`
+	// AwaitingDialogSince is when the briefing found the child's first screen
+	// holding a dialog and left it for a person to answer in the tab
+	// (dialog.go). Zero for every task not waiting on one, and cleared once
+	// the briefing is typed. While it is set this process still holds the
+	// secret; a process that does not is one that restarted, and the task
+	// ends as unbriefed.
+	AwaitingDialogSince time.Time `json:"awaiting_dialog_since,omitempty"`
 	// Stall is the nudge and the report for a child that sat idle after its
 	// briefing without signing for it (stall.go). Nil for every other task.
 	Stall *Stall `json:"stall,omitempty"`

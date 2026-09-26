@@ -130,7 +130,7 @@ tree equality 能回答的問題：語意整合本來就會讓兩棵樹不同。
 | task 紀錄 | `~/.config/clawdline/orchestrator.json` | 自己的 SQLite `broker_tasks` | 新派的 task 完全存在新版自己的地方；舊 store 只讀、只用來畫舊 app 的 task |
 | tmux 的 child | （舊版開 iTerm 分頁） | 每個 child 一個新的 detached session，名字 `clawdline-task-<id 前 8 碼>` | `new-window` 不指定 session 會落在 tmux 最後用過的那個——這台機器上是有人正在用的 `clawdline`（25 個視窗）。broker 不可以把 child 放到別人的鍵盤前 |
 | 派工前 root 必須在 | 會解析 | 會解析（`root_unresolved`、`conversation_ambiguous`） | 一樣。root 不在，完成通知就沒有收件人 |
-| 4 分鐘時鐘 | 沒有 progress note 就 `spawn_failed` | 分頁還活著就不判 `spawn_failed`；分頁不見或卡在對話框才判 | 見下面「實測抓到的三件事」第二條 |
+| 4 分鐘時鐘 | 沒有 progress note 就 `spawn_failed` | 分頁還活著就不判 `spawn_failed`；分頁不見才判。第一個畫面是對話框的 child 不歸這個時鐘管，留給人回答（下面「A dialog is the person's」） | 見下面「實測抓到的三件事」第二條 |
 | `serialize`、`graph`、`attach_session` | 支援 | **明確拒絕**（`bad_task`，說出欄位名） | 還沒做。默默忽略 `serialize` 會把該等待的 task 直接開起來 |
 | `reasoning_effort` | 支援 | 支援（codex 限定，`high`／`xhigh`，接成 `--config model_reasoning_effort=…`） | 2026-09-20 補上。之前是具名拒絕，而那句拒絕請人「改用 Swift app」——那個 app 已經退役，等於沒有出路；同時 schedule 那邊早就會驗、會存這個欄位，存得下去卻發不出來 |
 
@@ -218,8 +218,34 @@ learn it; the verdict and the notice kind carry the difference instead. The cost
 side: a child that wakes after it was reported finds its task over (`/accepted` answers
 `not_live`), and its root's respawn is the one that counts.
 
-A child showing a menu is not typed at by this path; the spawn clock already ends a tab holding a
-dialog at four minutes, before the nudge's interval is up.
+A child showing a menu is not typed at by this path, and a child whose first screen was a dialog is
+not a stall candidate at all: it is waiting for a person (below).
+
+## A dialog is the person's (2026-09-26)
+
+Measured on 2026-09-26: a schedule with `permission_mode: full` opened Claude Code with
+`--permission-mode bypassPermissions` on a machine that had never accepted that mode. Its first
+screen was the bypass-permissions warning with "No, exit" under the highlight. The briefing rightly
+typed nothing, then gave up at 90 seconds, settled `spawn_failed` and closed the tab — so the only
+person allowed to answer the question never saw it, however many times they pressed Run.
+
+Now the briefing stops on a dialog (two readings in a row) and leaves it:
+
+- The task stays `spawning` with `awaiting_dialog_since` set, the tab stays open, and the secret
+  stays in this process's memory — never at rest — for the wait.
+- The console draws the dialog's rows as buttons. `app.Inventory` opens the menu gate when the
+  screen is a dialog by structure (a caret with no composer under it, `orchestrator.Choosing`);
+  before, an unnumbered dialog drawn ahead of any registry entry read as `idle` with no buttons.
+  The ordinary waiting push ("有人在等你回答", `docs/push.md`) tells the person, with the time the
+  task has left.
+- The beat watches the tab (`dialog.go`, `tendDialog`): a composer drawn means the person answered,
+  and the briefing is typed once; the assistant gone from the tab, or the tab gone, ends the task
+  `spawn_failed` saying so; still the dialog, nothing. The 4-minute clock does not judge it; the
+  task's own timeout ends the wait.
+- A daemon that restarts during the wait has lost the secret, and the task ends `spawn_failed` as
+  unbriefed on the next beat.
+
+Nothing in this path ever answers a dialog: that stays the person's decision.
 
 ## What the protocol costs a child and a root (2026-09-26)
 

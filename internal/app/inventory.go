@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -297,7 +298,14 @@ func (in Inventory) readScreen(ctx context.Context, s session.Session) session.S
 	if !ok {
 		return s
 	}
-	gate := registry && s.State == session.StateWaiting
+	// A caret with no composer under it is a dialog whatever the registry
+	// says, and one drawn before the session has a registry entry at all —
+	// Claude Code's workspace-trust and bypass-permissions warnings — has no
+	// other witness. Its rows are unnumbered, so without this the row read
+	// as starting and drew no buttons, and a child left at such a dialog for
+	// a person to answer (orchestrator dialog.go) could not be answered from
+	// the console.
+	gate := (registry && s.State == session.StateWaiting) || orchestrator.Choosing(screen, s.Assistant)
 	if menu, found := session.ReadMenu(screen, s.Assistant, gate); found {
 		if s.State != session.StateWaiting {
 			s.State = session.StateWaiting
