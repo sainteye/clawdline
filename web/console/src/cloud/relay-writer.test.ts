@@ -1224,3 +1224,64 @@ test("the compaction comparison crosses as its machine word, with since and noth
   assert.equal(bad.status, 400)
   assert.equal((await json(bad)).error, "bad_request")
 })
+
+test("a verification crosses as its machine word, with the record's id and its body whole", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const id = "7e000000-0000-4000-8000-000000000006"
+  const listed = await reader.fetch("/v1/verifications")
+  assert.equal(listed.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "verification.list", {}, "read"])
+  const opened = await reader.fetch("/v1/verifications/" + id)
+  assert.equal(opened.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "verification.get", { id }, "read"])
+
+  const writes: [string, string, Record<string, unknown>, string, Record<string, unknown>][] = [
+    ["POST", "/v1/verifications", { title: "t", due_at: 2, criteria: ["c"] },
+      "verification.create", { verification: { title: "t", due_at: 2, criteria: ["c"] } }],
+    ["POST", `/v1/verifications/${id}/notes`, { text: "looked" },
+      "verification.note", { id, verification: { text: "looked" } }],
+    ["POST", `/v1/verifications/${id}/criteria/2`, { state: "passed" },
+      "verification.criterion", { id, index: 2, verification: { state: "passed" } }],
+    ["POST", `/v1/verifications/${id}/close`, { status: "rejected", reason: "cost more" },
+      "verification.close", { id, verification: { status: "rejected", reason: "cost more" } }],
+  ]
+  for (const [method, path, sent, word, body] of writes) {
+    const res = await reader.fetch(path, { ...post(sent), method })
+    assert.equal(res.status, 200, path)
+    assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", word, body, "action"], path)
+  }
+  const removed = await reader.fetch(`/v1/verifications/${id}`, { method: "DELETE" })
+  assert.equal(removed.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "verification.delete", { id, force: false }, "action"])
+  const forced = await reader.fetch(`/v1/verifications/${id}?force=1`, { method: "DELETE" })
+  assert.equal(forced.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "verification.delete", { id, force: true }, "action"])
+  // A press keeps its id through the machine.
+  await reader.fetch(`/v1/verifications/${id}/notes`, post({ text: "once" }, { "Idempotency-Key": "press-note-1" }))
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "press-note-1", "mac-a", "verification.note",
+    { id, verification: { text: "once" } }, "action"])
+
+  // Nothing else is a word: no bulk delete, no criterion past two digits, no
+  // write the routes do not have.
+  assert.equal(writeRoute("DELETE", "/v1/verifications"), null)
+  assert.equal(writeRoute("POST", `/v1/verifications/${id}/criteria/01`), null)
+  assert.equal(writeRoute("POST", `/v1/verifications/${id}/criteria/100`), null)
+  assert.equal(writeRoute("POST", `/v1/verifications/${id}/reopen`), null)
+  assert.equal(writeRoute("GET", `/v1/verifications/${id}/notes`), null)
+  assert.equal(writeRoute("PATCH", `/v1/verifications/${id}`), null)
+
+  // A query the word has no field for is refused by name, not dropped.
+  for (const [path, method] of [["/v1/verifications?status=open", "GET"], [`/v1/verifications/${id}?force=yes`, "DELETE"],
+    [`/v1/verifications/${id}?all=1`, "DELETE"]]) {
+    const res = await reader.fetch(path, { method })
+    assert.equal(res.status, 501, path)
+    assert.equal((await json(res)).error, "cloud_not_carried", path)
+  }
+
+  // The route's own refusal crosses flat, with its code.
+  client.fail._machineRequest = refusal("verification_open", { status: 409, layer: "mac_route", message: "Close it first, or force." })
+  const open = await reader.fetch(`/v1/verifications/${id}`, { method: "DELETE" })
+  assert.equal(open.status, 409)
+  assert.equal((await json(open)).error, "verification_open")
+})

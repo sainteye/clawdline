@@ -441,6 +441,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
 	// The token ledger, read by a person or a session (usage.go).
 	mux.HandleFunc("/v1/usage/", s.usageRoute)
+	// Things waiting to be verified, kept until the person settles them (verify.go).
+	mux.HandleFunc("/v1/verifications", s.verificationsRoute)
+	mux.HandleFunc("/v1/verifications/", s.verificationsRoute)
 	// Pictures: stored by a session (machine token), read by id (images.go).
 	mux.HandleFunc("/v1/artifacts/images", s.imagesRoute)
 	mux.HandleFunc("/v1/artifacts/images/", s.imageRoute)

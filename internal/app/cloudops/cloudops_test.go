@@ -34,6 +34,9 @@ const snippetID = "3b000000-0000-4000-8000-000000000004"
 // machine's name for a row, and not a uuid like the two above.
 const pushID = "9f1c0b3a4d5e6f708192a3b4c5d6e7f8"
 
+// verificationFixture is one verification record's id, made up here.
+const verificationFixture = "7e000000-0000-4000-8000-000000000006"
+
 // router records what it was asked and answers what the test told it to.
 type router struct {
 	seen     []LocalRequest
@@ -308,6 +311,55 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-usage-compare",
 		method: "GET", path: "/v1/usage/compare-compaction",
 		query: map[string]string{"since": "14d"},
+	}, {
+		// Things waiting to be verified: two reads on the machine's channel
+		// and five commands, each a device's press, each with its document
+		// handed to the route whole.
+		word:    "verification.list",
+		body:    map[string]any{"type": "verification.list", "session": machine, "request": "req-verify-list"},
+		session: machine, name: "read:req-verify-list",
+		method: "GET", path: "/v1/verifications",
+	}, {
+		word: "verification.get",
+		body: map[string]any{"type": "verification.get", "session": machine, "request": "req-verify-get",
+			"id": verificationFixture},
+		session: machine, name: "read:req-verify-get",
+		method: "GET", path: "/v1/verifications/" + verificationFixture,
+	}, {
+		word: "verification.create",
+		body: map[string]any{"type": "verification.create", "session": machine, "request": "req-verify-add",
+			"verification": map[string]any{"title": "a check", "due_at": 1_790_000_000, "criteria": []any{"it holds"}}},
+		session: machine, name: "action:req-verify-add",
+		method: "POST", path: "/v1/verifications",
+		body2: `{"criteria":["it holds"],"due_at":1790000000,"title":"a check"}`,
+	}, {
+		word: "verification.note",
+		body: map[string]any{"type": "verification.note", "session": machine, "request": "req-verify-note",
+			"id": verificationFixture, "verification": map[string]any{"text": "looked"}},
+		session: machine, name: "action:req-verify-note",
+		method: "POST", path: "/v1/verifications/" + verificationFixture + "/notes",
+		body2: `{"text":"looked"}`,
+	}, {
+		word: "verification.criterion",
+		body: map[string]any{"type": "verification.criterion", "session": machine, "request": "req-verify-mark",
+			"id": verificationFixture, "index": 2, "verification": map[string]any{"state": "passed"}},
+		session: machine, name: "action:req-verify-mark",
+		method: "POST", path: "/v1/verifications/" + verificationFixture + "/criteria/2",
+		body2: `{"state":"passed"}`,
+	}, {
+		word: "verification.close",
+		body: map[string]any{"type": "verification.close", "session": machine, "request": "req-verify-close",
+			"id": verificationFixture, "verification": map[string]any{"status": "accepted", "reason": "it held"}},
+		session: machine, name: "action:req-verify-close",
+		method: "POST", path: "/v1/verifications/" + verificationFixture + "/close",
+		body2: `{"reason":"it held","status":"accepted"}`,
+	}, {
+		word: "verification.delete",
+		body: map[string]any{"type": "verification.delete", "session": machine, "request": "req-verify-gone",
+			"id": verificationFixture, "force": true},
+		session: machine, name: "action:req-verify-gone",
+		method: "DELETE", path: "/v1/verifications/" + verificationFixture,
+		query: map[string]string{"force": "1"},
 	}, {
 		word: "work.v2.items",
 		body: map[string]any{"type": "work.v2.items", "session": machine,
@@ -1330,7 +1382,9 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
 		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action",
-		"usage.session", "usage.task", "usage.item", "usage.compare-compaction"} {
+		"usage.session", "usage.task", "usage.item", "usage.compare-compaction",
+		"verification.list", "verification.get", "verification.create", "verification.note",
+		"verification.criterion", "verification.close", "verification.delete"} {
 		if !implemented[word] {
 			t.Fatalf("%s has a local capability and is not advertised", word)
 		}
@@ -1814,5 +1868,68 @@ func TestTheCompactionComparisonCrossesWithOnlyTheSinceTheRouteReads(t *testing.
 		"type": word, "session": MachineReplySession, "request": "req", "since": "0d"}))
 	if answer.Status != 400 || answer.Code != "bad_request" {
 		t.Fatalf("answered %d/%q, wanted 400/bad_request", answer.Status, answer.Code)
+	}
+}
+
+// TestAVerificationCrossesOnlyAsTheRouteWouldTakeIt. The verification words
+// name one record by an id the route takes (letters, digits, dashes, at most
+// 64) and refuse the rest here; a delete names its force every time, so a
+// phone that forgot to say is refused rather than read as either; a criterion
+// is an index the route could have. The five commands are commands: the write
+// switch refuses them before their bodies are read.
+func TestAVerificationCrossesOnlyAsTheRouteWouldTakeIt(t *testing.T) {
+	for _, id := range []any{"", strings.Repeat("a", 65), "a/b", "a..b", "a b", "%2F", 7, nil} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl,
+			map[string]any{"type": "verification.get", "session": MachineReplySession, "request": "req", "id": id}))
+		if answer.Code != "malformed_read" || len(r.seen) != 0 {
+			t.Fatalf("verification.get took the id %#v: %+v", id, answer)
+		}
+	}
+	for _, body := range []map[string]any{
+		{"type": "verification.delete", "session": MachineReplySession, "request": "req", "id": verificationFixture},
+		{"type": "verification.delete", "session": MachineReplySession, "request": "req", "id": verificationFixture, "force": "yes"},
+		{"type": "verification.delete", "session": MachineReplySession, "request": "req", "id": "a/b", "force": false},
+		{"type": "verification.delete", "session": MachineReplySession, "id": verificationFixture, "force": false},
+		{"type": "verification.criterion", "session": MachineReplySession, "request": "req", "id": verificationFixture,
+			"index": 12, "verification": map[string]any{"state": "passed"}},
+		{"type": "verification.criterion", "session": MachineReplySession, "request": "req", "id": verificationFixture,
+			"index": -1, "verification": map[string]any{"state": "passed"}},
+		{"type": "verification.note", "session": MachineReplySession, "request": "req", "id": verificationFixture,
+			"verification": "looked"},
+		{"type": "verification.note", "session": pane, "request": "req", "id": verificationFixture,
+			"verification": map[string]any{"text": "looked"}},
+		{"type": "verification.create", "session": MachineReplySession, "request": "req",
+			"verification": map[string]any{"text": strings.Repeat("x", 70<<10)}},
+	} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, body))
+		if answer.Status == 200 || len(r.seen) != 0 {
+			t.Fatalf("took %v: %+v", body, answer)
+		}
+	}
+	// Without force, the delete asks with no query at all.
+	r := &router{}
+	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "verification.delete",
+		"session": MachineReplySession, "request": "req", "id": verificationFixture, "force": false}))
+	if len(r.seen) != 1 || len(r.last().Query) != 0 || r.last().Method != "DELETE" {
+		t.Fatalf("asked %+v", r.seen)
+	}
+	if got := r.last().Header[actorHeader]; got != actorDevice {
+		t.Fatalf("the delete is not a device's press: %q", got)
+	}
+	// The reads cross with the write switch off; the commands do not.
+	closed := Bridge{MachineID: "mac-01", Router: &router{}}
+	if answer := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "verification.list",
+		"session": MachineReplySession, "request": "req"})); answer.Status != 200 {
+		t.Fatalf("the list is a read: %+v", answer)
+	}
+	for _, word := range []string{"verification.create", "verification.note", "verification.criterion",
+		"verification.close", "verification.delete"} {
+		answer := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": word,
+			"session": MachineReplySession, "request": "req"}))
+		if answer.Code != "cloud_commands_disabled" {
+			t.Fatalf("%s crossed with the write switch off: %+v", word, answer)
+		}
 	}
 }

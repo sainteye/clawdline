@@ -67,6 +67,9 @@ var sessionFields = map[string]string{
 	// The token ledger names an item's owner by the conversation its rows
 	// are keyed by (app.ForItem).
 	"usage#UsageItemOwner.session": conversation,
+	// A note's author when a session writes it: the calling conversation
+	// (`clawdline verify note` reads it from conversationEnv).
+	"verifications#VerificationNoteCreate.session": conversation,
 	// W6: a handoff's sender, resolved like a dispatch's root.
 	"handover#BrokerHandoff.from_session":        conversation,
 	"handover#BrokerHandoffRequest.from_session": conversation,

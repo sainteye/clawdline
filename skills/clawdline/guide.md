@@ -458,6 +458,20 @@ there is no run: ask them to send the instruction through Clawdline. Never reuse
 permission for work the person's message did not request. This proof makes the relay auditable; it
 does not turn the machine-wide orchestrator token into a session-specific credential.
 
+A scheduled task that reads data for something waiting to be verified (the sidebar's 驗收,
+docs/verifications.md) writes its readout as a note on that record with its own task secret — not
+the orchestrator token, which it should not hold:
+
+```sh
+curl -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
+  -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<readout>"}'
+```
+
+It lands only on a record whose `schedule_id` is the schedule that started this task
+(`schedule_mismatch` otherwise), is signed `task:<task id>`, and is refused as `not_scheduled` for a
+task no schedule started. Find the record id with `clawdline verify list`.
+
 ## 7. Report your own finished turn
 
 When your turn is genuinely finished — the work done, verified and committed where that applies —

@@ -67,6 +67,8 @@ func (s *Server) orchestratorTaskRoute(w http.ResponseWriter, r *http.Request) {
 		s.brokerLanding(w, r, id)
 	case action == "notify" && r.Method == http.MethodPost:
 		s.brokerNotify(w, r, id)
+	case action == "verification-note" && r.Method == http.MethodPost:
+		s.verificationTaskNote(w, r, id)
 	case action == "respawn" && r.Method == http.MethodPost:
 		s.brokerRespawn(w, r, id)
 	default:

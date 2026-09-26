@@ -746,6 +746,14 @@ a bill's `not_yet_read` or `transcript_missing` reason inside a 200, an unknown 
 route's own answer. These rows are not in the table below, which is a measurement of 2026-09-18
 against the running daemon; these words were tested against the bridge, not measured there.
 
+Also as of 2026-09-26, things waiting to be verified (docs/verifications.md) cross as seven words:
+`verification.list` and `verification.get` are machine reads like the bill's; `verification.create`,
+`verification.note`, `verification.criterion`, `verification.close` and `verification.delete` are
+commands carrying the paired-device marker, each with the route's JSON body whole under
+`verification` (at most 64 KiB), the id checked before the route (letters, digits and `-`, at most
+64), a criterion's index an integer 0–11, and delete's `force` a required boolean that becomes
+`?force=1`. There is no word that deletes more than one record. Not in the measured table either.
+
 ### 10.4 派工就是 task.json
 
 遠端派工的加密載荷帶的就是本機 orchestrator 已經在講的 wire format：**task.json 就是協定**。

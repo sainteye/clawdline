@@ -113,6 +113,16 @@ export const CARRIED = {
   "usage.item": "GET /v1/usage/items/{id}",
   "usage.session": "GET /v1/usage/sessions/{conversation}",
   "usage.task": "GET /v1/usage/tasks/{id}",
+  // Things waiting to be verified (`pages/verify.tsx`, docs/verifications.md):
+  // the phone is where the person reads them, so every route crosses. Two
+  // machine reads and five commands, each with its body as the route reads it.
+  "verification.close": "POST /v1/verifications/{id}/close",
+  "verification.create": "POST /v1/verifications",
+  "verification.criterion": "POST /v1/verifications/{id}/criteria/{index}",
+  "verification.delete": "DELETE /v1/verifications/{id}[?force=1]",
+  "verification.get": "GET /v1/verifications/{id}",
+  "verification.list": "GET /v1/verifications",
+  "verification.note": "POST /v1/verifications/{id}/notes",
   voice: "POST /v1/voice",
   "work.backlog": "GET /v1/work/backlog[?project=&cursor=]",
   "work.board": "GET /v1/work/board[?project=&cursor=]",

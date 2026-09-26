@@ -358,6 +358,11 @@ func machineScoped(p string) bool {
 	if strings.HasPrefix(p, "/v1/usage/") {
 		return true
 	}
+	// Things waiting to be verified (verify.go): a session reads them and
+	// writes its notes on them through the CLI.
+	if p == "/v1/verifications" || strings.HasPrefix(p, "/v1/verifications/") {
+		return true
+	}
 	switch p {
 	case "/v1/board", "/v1/next/coordinator", "/v1/places":
 		return true
@@ -388,7 +393,7 @@ func taskSecretRoute(method, p string) bool {
 	case http.MethodPost:
 		return strings.HasSuffix(p, "/complete") || strings.HasSuffix(p, "/notify") ||
 			strings.HasSuffix(p, "/landing") || strings.HasSuffix(p, "/progress") ||
-			strings.HasSuffix(p, "/accepted")
+			strings.HasSuffix(p, "/accepted") || strings.HasSuffix(p, "/verification-note")
 	case http.MethodGet:
 		return strings.HasSuffix(p, "/inflight")
 	}
@@ -418,6 +423,10 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 	case strings.HasPrefix(p, "/v1/work/"):
 		if !machine && !send {
 			return http.StatusForbidden, "forbidden", "This device may only read the board."
+		}
+	case p == "/v1/verifications" || strings.HasPrefix(p, "/v1/verifications/"):
+		if !machine && !send {
+			return http.StatusForbidden, "forbidden", "This device may read the verifications, and not change them."
 		}
 	case p == "/v1/next/coordinator":
 		if !machine {

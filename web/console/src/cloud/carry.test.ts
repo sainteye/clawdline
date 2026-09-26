@@ -190,6 +190,13 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/usage/tasks/t1"],
     ["GET", "/v1/usage/items/w1"],
     ["GET", "/v1/usage/compare-compaction"],
+    ["GET", "/v1/verifications"],
+    ["GET", "/v1/verifications/v1"],
+    ["POST", "/v1/verifications"],
+    ["POST", "/v1/verifications/v1/notes"],
+    ["POST", "/v1/verifications/v1/criteria/2"],
+    ["POST", "/v1/verifications/v1/close"],
+    ["DELETE", "/v1/verifications/v1"],
     ["POST", "/v1/work/v2/items/w1/images"],
     ["DELETE", "/v1/work/v2/items/w1/images/img1"],
     ["POST", "/v1/work/v2/session-todos/%251/t1/images"],
@@ -213,14 +220,15 @@ test("one word, one list, and every route names a word the table carries", () =>
   // 64, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
   // copied client's reconnect ask for every Session row, the token bill's three usage reads, the menu's stop and the
-  // compaction comparison. Keep the count beside the catalog so
+  // compaction comparison, and the seven verification words. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
   assert.ok("usage.item" in CARRIED)
   assert.ok("interrupt" in CARRIED)
   assert.ok("usage.compare-compaction" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 74)
+  assert.ok("verification.delete" in CARRIED)
+  assert.equal(Object.keys(CARRIED).length, 81)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -421,6 +429,47 @@ test("every path the token bill reads is carried, so a phone reads the bill too"
     assert.equal(res.status, 200, path)
   }
   assert.deepEqual(machineAsked.map(([word]) => word).sort(), asked.map(({ path }) => writeRoute("GET", path)!.word).sort())
+})
+
+test("every verification route is carried, so the 驗收 page works on a phone", async () => {
+  // The same guard the token bill has: the 驗收 page spells its routes as
+  // template literals beside their method (`pages/verify/api.ts`), which the
+  // double-quoted scan cannot see. Each one it spells, and each one the
+  // contract names whether or not a page asks it yet, must parse to a
+  // carried word. A route added later that nobody carries fails here by name.
+  const asked: { method: string; path: string; where: string }[] = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolve(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (entry.name !== "cloud" && entry.name !== "node_modules") walk(full)
+        continue
+      }
+      if (!/\.(ts|tsx|js)$/.test(entry.name) || /\.test\.[tj]sx?$/.test(entry.name)) continue
+      readFileSync(full, "utf8").split("\n").forEach((line, index) => {
+        for (const m of line.matchAll(/["'`](GET|POST|DELETE)["'`],\s*[`"'](\/v1\/verifications[^`"'?]*)/g)) {
+          asked.push({ method: m[1], path: m[2].replace(/\$\{[^}]*\}/g, "1"), where: full.slice(console_.length + 1) + ":" + (index + 1) })
+        }
+      })
+    }
+  }
+  walk(resolve(console_, "src"))
+  assert.ok(asked.length >= 6, "the scan found " + asked.length + " verification paths; it has stopped reading this tree")
+  const contract = resolve(console_, "../../api/v1/verifications.schema.json")
+  const named = new Set<string>()
+  for (const m of readFileSync(contract, "utf8").matchAll(/(GET|POST|DELETE) (\/v1\/verifications[a-z{}/]*)/g)) {
+    named.add(m[1] + " " + m[2].replace(/\{[a-z]+\}/g, "1"))
+  }
+  assert.equal(named.size, 7, "the contract scan found " + [...named].join(", "))
+  for (const route of named) {
+    const [method, path] = route.split(" ")
+    asked.push({ method, path, where: "api/v1/verifications.schema.json" })
+  }
+  for (const { method, path, where } of asked) {
+    const word = writeRoute(method, path)?.word
+    assert.ok(word && word in CARRIED && word.startsWith("verification."),
+      where + " asks " + method + " " + path + ", which this console does not carry over Cloud")
+  }
 })
 
 test("the Git panel's read reaches the machine, and its refusals keep their names", async () => {

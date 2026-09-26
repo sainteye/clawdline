@@ -93,6 +93,8 @@ func main() {
 		sessionCommand(os.Args[2:])
 	case "usage":
 		usageCommand(os.Args[2:])
+	case "verify":
+		verifyCommand(os.Args[2:])
 	case "setting":
 		settingCommand(os.Args[2:])
 	case "todo":
@@ -178,6 +180,9 @@ func serve() {
 	// The token ledger: transcripts read, a bounded pass a minute, into what
 	// each session spent (docs/token-ledger.md).
 	srv.StartUsage(context.Background())
+	// Things waiting to be verified: the records this daemon owes are planted
+	// once (docs/verifications.md "The first one").
+	srv.StartVerifications(context.Background())
 	startCloudLine(context.Background(), cfg, srv)
 	// The account-free tunnel, if the settings ask for one and something is
 	// paired: a cloudflared an earlier run left behind is stopped first.
@@ -357,7 +362,7 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|usage|setting|dispatch|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|tunnel|cloud|board|project|task|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|usage|verify|setting|dispatch|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|tunnel|cloud|board|project|task|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")

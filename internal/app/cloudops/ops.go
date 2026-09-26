@@ -1460,6 +1460,104 @@ func init() {
 				return out
 			}},
 
+		// Things waiting to be verified (docs/verifications.md). The phone is
+		// where the person reads them, so every route crosses: two machine
+		// reads, and five commands that carry `X-Clawdline-Actor: device` for
+		// the reason the schedule writes do — a press on a phone is the person,
+		// and a note it writes is signed as the person, not as this machine's
+		// own hand. Each sub-document goes to the route whole; the route owns
+		// its shape and refuses a field it does not read by name.
+		op{name: "verification.list", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/verifications"}
+			}},
+
+		op{name: "verification.get", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				id, idOK := b.str("id")
+				if !ok || !idOK || !verificationID.MatchString(id) {
+					return plan{}, false
+				}
+				p.id = id
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/verifications/" + segment(p.id)}
+			}},
+
+		op{name: "verification.create",
+			decode: decodeVerificationWrite(false),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/verifications", Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "verification.note",
+			decode: decodeVerificationWrite(true),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/verifications/" + segment(p.id) + "/notes",
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "verification.close",
+			decode: decodeVerificationWrite(true),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/verifications/" + segment(p.id) + "/close",
+					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "verification.criterion",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id", "index", "verification") {
+					return plan{}, false
+				}
+				p, ok := decodeVerificationWrite(true)(body{"type": b["type"], "session": b["session"],
+					"request": b["request"], "id": b["id"], "verification": b["verification"]})
+				index, indexOK := b.integer("index")
+				if !ok || !indexOK || index < 0 || index >= verificationCriteriaMaximum {
+					return plan{}, false
+				}
+				p.offset = index
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/verifications/" + segment(p.id) + "/criteria/" +
+					strconv.FormatInt(p.offset, 10), Body: p.document, Header: asDevice()}
+			}},
+
+		// One record, by its id, and never more: the wire has no word that
+		// deletes a list. `force` is the person saying an open one may go.
+		op{name: "verification.delete",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id", "force") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				id, idOK := b.str("id")
+				force, forceOK := b.boolean("force")
+				if !ok || p.request == "" || !idOK || !verificationID.MatchString(id) || !forceOK {
+					return plan{}, false
+				}
+				p.id, p.acceptLoss = id, force
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				out := LocalRequest{Method: "DELETE", Path: "/v1/verifications/" + segment(p.id), Header: asDevice()}
+				if p.acceptLoss {
+					out.Query = map[string]string{"force": "1"}
+				}
+				return out
+			}},
+
 		// The sentences somebody wrote once, read from a phone.
 		//
 		// **The whole machine's list, and no session in the question.** The
@@ -2442,3 +2540,46 @@ func usageRead(word, kind string) op {
 // does not take — `0d`, more than ten years — with its own `bad_request`;
 // this only keeps anything that is not a number and a unit off its query.
 var compareSince = regexp.MustCompile(`^[0-9]{1,12}[dh]?$`)
+
+// verificationID is app.VerificationIDShape, spelled a second time for the
+// reason usageID is: letters, digits and dashes, at most 64.
+var verificationID = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+
+// verificationCriteriaMaximum is app's verificationCriteriaLimit: an index at
+// or past it names no criterion on any record.
+const verificationCriteriaMaximum = 12
+
+// verificationCloudBodyLimit is the largest sub-document a verification word
+// carries: a note of 8000 characters, each up to four bytes, escaped.
+const verificationCloudBodyLimit = 64 << 10
+
+// decodeVerificationWrite is a verification command's body: the record's id
+// when it names one, and the `verification` document the route reads.
+func decodeVerificationWrite(named bool) func(b body) (plan, bool) {
+	want := []string{"type", "session", "request", "verification"}
+	if named {
+		want = []string{"type", "session", "request", "id", "verification"}
+	}
+	return func(b body) (plan, bool) {
+		if !b.has(want...) {
+			return plan{}, false
+		}
+		p, ok := actionPlan(b, false)
+		if !ok || p.request == "" {
+			return plan{}, false
+		}
+		if named {
+			id, ok := b.str("id")
+			if !ok || !verificationID.MatchString(id) {
+				return plan{}, false
+			}
+			p.id = id
+		}
+		document, ok := b.object("verification", verificationCloudBodyLimit)
+		if !ok {
+			return plan{}, false
+		}
+		p.document = document
+		return p, true
+	}
+}
