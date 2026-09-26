@@ -846,6 +846,25 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}
 }
 
+// TestAMovedHookBindCarriesItsRevision: a moved hook is bound on the target
+// at the revision the move answered, so `hook_revision` reaches the local route
+// as the integer it was; a body without it is the plain bind, unchanged.
+func TestAMovedHookBindCarriesItsRevision(t *testing.T) {
+	r := &router{}
+	answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "schedule-webhook-bind-v1", "request_id": scheduleWebhookRequestID,
+		"hook_id": scheduleWebhookHook, "schedule_id": scheduleID, "replace_hook_id": nil,
+		"hook_revision": 2}))
+	if !answer.OK() || len(r.seen) != 1 {
+		t.Fatalf("the bind with a revision was refused: %+v", answer)
+	}
+	want := `{"hook_id":"` + scheduleWebhookHook + `","hook_revision":2,"replace_hook_id":null,` +
+		`"request_id":"` + scheduleWebhookRequestID + `","schedule_id":"` + scheduleID + `"}`
+	if got := string(r.last().Body); got != want {
+		t.Fatalf("the body is %s, wanted %s", got, want)
+	}
+}
+
 // TestEveryChangeCarriesAnIdempotencyKey is the difference between a retry and
 // a second effect. The viewer's own request id is the key, because that is the
 // identity it retries under.
@@ -1035,6 +1054,12 @@ func TestAMalformedBodyIsRefusedWhereItSafelyNames(t *testing.T) {
 		body: map[string]any{"type": "past-sessions", "session": MachineReplySession,
 			"request": "req", "place": "/tmp"},
 		code: "malformed_read", published: true,
+	}, {
+		name: "a webhook bind at a revision below zero",
+		body: map[string]any{"type": "schedule-webhook-bind-v1",
+			"request_id": scheduleWebhookRequestID, "hook_id": scheduleWebhookHook,
+			"schedule_id": scheduleID, "replace_hook_id": nil, "hook_revision": -1},
+		code: "malformed_command", published: true,
 	}, {
 		name: "a schedule that is not an object",
 		body: map[string]any{"type": "schedule-create", "session": MachineReplySession,

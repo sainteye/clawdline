@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/schedule"
@@ -97,7 +98,8 @@ type ScheduleBook struct {
 	// Activate turns a bound hook on at the Cloud. Nil is a machine with no
 	// Cloud credential, which is what the Swift app answers
 	// `401 no_machine_credential` for.
-	Activate func(ctx context.Context, hookID, requestID string) (int64, error)
+	// expectedRevision is the revision the hook is at: 0 for a new one.
+	Activate func(ctx context.Context, hookID, requestID string, expectedRevision int64) (int64, error)
 	// ImportsEnabled is `schedule_imports_enabled`; nil or false keeps the
 	// import route shut.
 	ImportsEnabled func() bool
@@ -1220,13 +1222,23 @@ var hookPattern = regexp.MustCompile(`^swh_[0-9abcdefghjkmnpqrstvwxyz]{26}$`)
 // from an opaque Cloud hook to a schedule, made durable before the Cloud is
 // asked to activate the hook, so a lost answer is repaired by replaying the
 // same request id. It never accepts a trigger token.
+//
+// hookRevision is the revision the hook is at, which a move raises; nil is a
+// new hook, at 0. It enters the request's digest only when given, so a
+// request recorded before the field existed still replays as itself.
 func (b *ScheduleBook) BindWebhook(ctx context.Context, requestID, hookID, scheduleID string,
-	replaceHookID *string, sender string) (int, []byte) {
+	replaceHookID *string, hookRevision *int64, sender string) (int, []byte) {
 	replace := any(nil)
 	if replaceHookID != nil {
 		replace = *replaceHookID
 	}
-	canonical, _ := json.Marshal(map[string]any{"hook_id": hookID, "replace_hook_id": replace, "schedule_id": scheduleID})
+	fields := map[string]any{"hook_id": hookID, "replace_hook_id": replace, "schedule_id": scheduleID}
+	expected := int64(0)
+	if hookRevision != nil {
+		fields["hook_revision"] = *hookRevision
+		expected = *hookRevision
+	}
+	canonical, _ := json.Marshal(fields)
 	sum := sha256.Sum256(canonical)
 	digest := hex.EncodeToString(sum[:])
 	finish := func(status int, code string, body []byte) (int, []byte) {
@@ -1264,7 +1276,8 @@ func (b *ScheduleBook) BindWebhook(ctx context.Context, requestID, hookID, sched
 	} else if !ok {
 		return complete(failure(404, "schedule_not_found"))
 	}
-	if !hookPattern.MatchString(hookID) || (replaceHookID != nil && !hookPattern.MatchString(*replaceHookID)) {
+	if !hookPattern.MatchString(hookID) || (replaceHookID != nil && !hookPattern.MatchString(*replaceHookID)) ||
+		expected < 0 {
 		return complete(failure(503, "binding_store_unavailable"))
 	}
 	replacing := ""
@@ -1280,8 +1293,16 @@ func (b *ScheduleBook) BindWebhook(ctx context.Context, requestID, hookID, sched
 	if b.Activate == nil {
 		return complete(failure(401, "no_machine_credential"))
 	}
-	revision, err := b.Activate(ctx, hookID, requestID)
+	revision, err := b.Activate(ctx, hookID, requestID, expected)
 	if err != nil {
+		// Cloud's own refusal is said as itself — `stale_revision` once hid
+		// behind this 503 for every moved hook. What did not reach Cloud, or
+		// came back unreadable, stays temporarily unavailable.
+		var refusal *adaptercloud.APIError
+		if errors.As(err, &refusal) && refusal.Code != "" &&
+			(refusal.Status == 404 || refusal.Status == 409) {
+			return complete(failure(refusal.Status, refusal.Code))
+		}
 		return complete(failure(503, "temporarily_unavailable"))
 	}
 	body, _ := json.Marshal(map[string]any{"accepted": true, "hook_id": hookID, "schedule_id": scheduleID,

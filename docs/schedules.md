@@ -326,6 +326,13 @@ its `revision`. Between (2) and (3) two more steps run, in this order:
   claim one.
 - (2b) the target binds it to the **copy's** id with the same `schedule-webhook-bind-v1` step a new hook
   takes, and activates it with its own machine credential; the page waits until Cloud shows it `active`.
+  The move raised the hook's revision and Cloud activates only at the revision a hook is at, so this bind
+  carries the optional `hook_revision` — the revision (2a) answered (the rollback's bind, the one the move
+  back answered); a new hook's bind sends none and activates at 0. Until 2026-09-26 the daemon always
+  activated at 0, and every moved hook was refused `stale_revision`, said as `503 temporarily_unavailable`
+  (`TestAMovedWebhookActivatesAtTheRevisionItIsAt`). Cloud's own refusal of an activation is now answered as
+  itself (`409 stale_revision`, `409 invalid_state`, `404 not_found`); only a Cloud that was not reached
+  stays `503 temporarily_unavailable`.
 
 So the hook is never active while pointing at a schedule that does not exist: it is paused from (2a) until
 the target has bound the copy. Deleting the source in (3) drops the source's local binding in the same
@@ -347,6 +354,11 @@ When a step fails, the page says what state things are in, by name (`moveSchedul
   come back, or came back and was not activated, the page says which machine it is on, that it is paused,
   and the one action that fixes it: disable it and generate a new one (the URL changes)
   (`scheduleMoveHookStranded`). A copy left on the target or a source left disabled is each said too.
+  A target older than `hook_revision` refuses the bind (`malformed_command` from its Cloud bridge) and the
+  reason is said as that machine needing an update (`scheduleMoveTargetTooOld`); the rollback runs as
+  above, and a source as old refuses its bind too, which leaves the schedule back on the source, switched
+  on, the copy deleted, and the hook on the source, paused (`scheduleMoveHookStranded`). `stale_revision`
+  (the hook changed while it was moving) is said as `scheduleMoveHookStale`.
 - (3) refused: as without a hook — the hook runs the copy on the target; the old copy is on the source,
   disabled.
 
@@ -362,7 +374,8 @@ for a body whose place is on another machine than the schedule: a move is three 
 from before 2026-09-26 is refused by name as outdated until it is updated. A schedule with hidden template fields also needs a target
 that takes `template`, and a schedule with a permission a target that takes `permission_mode`; an older one
 is refused by name as too old, after the source was switched back on. Moving a schedule with a bound webhook
-needs the Cloud `move` route, and a target from 2026-09-22 or later (webhook binding); the source daemon
+needs the Cloud `move` route, and a target — and, for the rollback, a source — from 2026-09-26 or later
+(`hook_revision` on the bind); the source daemon
 drops the binding on delete from this change on — an older source leaves a stale row that the updated
 daemon's bind replaces.
 

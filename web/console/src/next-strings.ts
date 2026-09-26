@@ -244,6 +244,8 @@ const words = {
       "“{title}” ran once and is done; a copy would run it again. Make a new schedule on the other machine instead.",
     scheduleMoveTargetTooOld:
       "Clawdline on {machine} is too old to take the settings this schedule carries. Update Clawdline on {machine}, then move it.",
+    scheduleMoveHookStale:
+      "Clawdline Cloud found the webhook changed while it was being moved, so it was not switched on. Move the schedule again.",
     scheduleMovePathRewritten: "The path in the first message now reads {path}.",
     scheduleMoveNotStarted: "{source} did not switch the schedule off, so nothing was moved. {why}",
     scheduleMoveCreateFailed: "{machine} refused the copy, so the schedule stays on {source} as it was. {why}",
@@ -643,6 +645,7 @@ const words = {
     scheduleMoveWebhookUnknown: "讀不到「{title}」在 {machine} 上有沒有綁 webhook，所以沒有搬。請再試一次。",
     scheduleMoveSpent: "「{title}」是只跑一次的排程，而且已經跑過了；搬過去會再跑一次。請直接在另一台機器新增一個。",
     scheduleMoveTargetTooOld: "{machine} 上的 Clawdline 版本太舊，收不下這個排程帶著的設定。請先更新 {machine} 上的 Clawdline 再搬。",
+    scheduleMoveHookStale: "Clawdline Cloud 發現 webhook 在搬移途中被改過，所以沒有啟用它。請再搬一次。",
     scheduleMovePathRewritten: "第一則訊息裡的路徑已換成 {path}。",
     scheduleMoveNotStarted: "{source} 沒有停用這個排程，所以什麼都沒搬。{why}",
     scheduleMoveCreateFailed: "{machine} 拒絕建立這份排程，排程仍在 {source}，維持原狀。{why}",

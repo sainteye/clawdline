@@ -25,8 +25,18 @@ export interface ScheduleWebhookManagement {
   client: ScheduleWebhookClientAPI
   machine(scheduleID: string | null): string
   bind(scheduleID: string, hookID: string, replaceHookID: string | null): Promise<ScheduleWebhookHook>
-  /** `bind` on a named machine: a schedule just created there is not in the list yet. */
-  bindOn(machine: string, scheduleID: string, hookID: string, replaceHookID: string | null): Promise<ScheduleWebhookHook>
+  /**
+   * `bind` on a named machine: a schedule just created there is not in the list
+   * yet. `hookRevision` is sent only by a move — the revision the hook is at,
+   * null to read it from Cloud first; a new hook's bind leaves it out.
+   */
+  bindOn(
+    machine: string,
+    scheduleID: string,
+    hookID: string,
+    replaceHookID: string | null,
+    hookRevision?: number | null,
+  ): Promise<ScheduleWebhookHook>
   /** Cloud's move to `machine`; a null revision is read first. */
   move(hookID: string, machine: string, revision: number | null): Promise<ScheduleWebhookHook>
   copy(value: string): Promise<void>
@@ -55,19 +65,18 @@ export function installScheduleWebhookManagement(options: {
     machine: (scheduleID) => scheduleOwner(scheduleID) ?? options.machineID,
     bind: (scheduleID, hookID, replaceHookID) =>
       management.bindOn(scheduleOwner(scheduleID) ?? options.machineID, scheduleID, hookID, replaceHookID),
-    bindOn: async (machine, scheduleID, hookID, replaceHookID) => {
+    bindOn: async (machine, scheduleID, hookID, replaceHookID, hookRevision) => {
       const requestID = crypto.randomUUID().toLowerCase()
-      await options.connected()._publishCommand(
-        machine,
-        "schedule-webhook-bind-v1",
-        {
-          request_id: requestID,
-          hook_id: hookID,
-          schedule_id: scheduleID,
-          replace_hook_id: replaceHookID,
-        },
-        "ctl",
-      )
+      const body: Record<string, unknown> = {
+        request_id: requestID,
+        hook_id: hookID,
+        schedule_id: scheduleID,
+        replace_hook_id: replaceHookID,
+      }
+      if (hookRevision !== undefined) {
+        body.hook_revision = hookRevision ?? hookOf(await client.read(hookID)).revision
+      }
+      await options.connected()._publishCommand(machine, "schedule-webhook-bind-v1", body, "ctl")
       for (let attempt = 0; attempt < 20; attempt += 1) {
         const current = hookOf(await client.read(hookID))
         if (current.state === "active") return current

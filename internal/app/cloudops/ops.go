@@ -2540,8 +2540,11 @@ func scheduleWebhookHookID(value string) bool {
 // decodeScheduleWebhookBind keeps the original console's exact wire body.
 // `request_id` is also the local receipt key; replace is explicitly null for
 // a first binding and a hook id only when replacing a disabled hook.
+// `hook_revision`, the revision a moved hook is at, is optional and travels
+// only when sent, so a console that sends none binds a new hook as before.
 func decodeScheduleWebhookBind(b body) (plan, bool) {
-	if !b.has("type", "request_id", "hook_id", "schedule_id", "replace_hook_id") {
+	if !b.hasOneOf([]string{"type", "request_id", "hook_id", "schedule_id", "replace_hook_id"},
+		[]string{"type", "request_id", "hook_id", "schedule_id", "replace_hook_id", "hook_revision"}) {
 		return plan{}, false
 	}
 	requestID, requestOK := b.nonEmpty("request_id")
@@ -2559,10 +2562,18 @@ func decodeScheduleWebhookBind(b body) (plan, bool) {
 		}
 		replace = value
 	}
-	document := jsonBody(map[string]any{
+	fields := map[string]any{
 		"request_id": requestID, "hook_id": hookID,
 		"schedule_id": scheduleID, "replace_hook_id": replace,
-	})
+	}
+	if _, sent := b["hook_revision"]; sent {
+		revision, ok := b.integer("hook_revision")
+		if !ok || revision < 0 {
+			return plan{}, false
+		}
+		fields["hook_revision"] = revision
+	}
+	document := jsonBody(fields)
 	return plan{session: MachineReplySession, name: "action:" + requestID,
 		request: requestID, document: document}, true
 }

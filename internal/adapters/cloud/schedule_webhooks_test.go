@@ -48,7 +48,7 @@ func TestScheduleWebhookClientUsesMachineCredentialAndIdempotencyKeys(t *testing
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	client := ScheduleWebhookClient{Client: NewAccountClient(server.URL), Credential: "machine-secret"}
-	if revision, err := client.Activate(context.Background(), "swh_test", "request-1"); err != nil || revision != 1 {
+	if revision, err := client.Activate(context.Background(), "swh_test", "request-1", 0); err != nil || revision != 1 {
 		t.Fatalf("activate: %d %v", revision, err)
 	}
 	if claim, err := client.Claim(context.Background(), 20); err != nil || claim.Delivery != nil || claim.PollAfter.Milliseconds() != 250 {

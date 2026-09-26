@@ -17,7 +17,9 @@ type webhookCloudFake struct {
 	receipts []schedulewebhook.Receipt
 }
 
-func (f *webhookCloudFake) Activate(context.Context, string, string) (int64, error) { return 1, nil }
+func (f *webhookCloudFake) Activate(_ context.Context, _, _ string, at int64) (int64, error) {
+	return at + 1, nil
+}
 func (f *webhookCloudFake) Claim(context.Context, int) (schedulewebhook.ClaimResult, error) {
 	claim := f.claim
 	f.claim = nil

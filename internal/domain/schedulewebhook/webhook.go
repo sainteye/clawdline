@@ -74,7 +74,9 @@ type ReceiptAck struct {
 }
 
 type Cloud interface {
-	Activate(context.Context, string, string) (int64, error)
+	// Activate turns a bound hook on at the revision it is at: 0 for a new
+	// hook, the one `/move` answered for a moved one.
+	Activate(ctx context.Context, hookID, requestID string, expectedRevision int64) (int64, error)
 	Claim(context.Context, int) (ClaimResult, error)
 	Receipt(context.Context, string, Receipt) (ReceiptAck, error)
 }
