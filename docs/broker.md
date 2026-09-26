@@ -205,7 +205,7 @@ The beat now watches for that shape and only that shape (`internal/app/orchestra
   (5 minutes) after the nudge, the task ends `spawn_failed` with a verdict that says it stalled
   (`stall.reported_at`, events `task.stalled` then `task.spawn_failed`). The settlement opens the
   ordinary completion notice, typed with `"kind": "task_stalled"` instead of `task_finished`, whose
-  line names `/respawn`. It is listed in `GET /v1/orchestrator/completions` and in the root's
+  line says to respawn it or dispatch again. It is listed in `GET /v1/orchestrator/completions` and in the root's
   `session-todos` `unacknowledged_completions` (with `kind`) until acknowledged. The child's tab
   is closed as every `spawn_failed` tab is.
 
@@ -220,6 +220,36 @@ side: a child that wakes after it was reported finds its task over (`/accepted` 
 
 A child showing a menu is not typed at by this path; the spawn clock already ends a tab holding a
 dialog at four minutes, before the nudge's interval is up.
+
+## What the protocol costs a child and a root (2026-09-26)
+
+Measured on 2026-09-26 over a week of transcripts, cost-weighted with cache re-reads: a child spent
+about 6% of its cost on protocol and a root about 10%. The parts cut, and where each went:
+
+- **A child reads one file.** `CHILD.md` carries the task itself — title, kind, timeout, declared
+  writes, deliverables and the instructions, fenced so their own headings and fences stay theirs
+  (`brief.go`, `writeTask`). It was reading `task.json` after `CHILD.md`, 2.4 times a session on
+  average (0.9% of its cost). `task.json` stays the daemon's source, rewritten from the admitted
+  record at admission, and the briefing names it once as the copy the child need not read.
+- **Signing is one command.** `clawdline task accept <task dir>` posts `/accepted` with the task
+  secret from `CLAWDLINE_TASK_SECRET` or stdin — never argv, never printed — and leaves
+  `accepted.json` when the daemon cannot be reached, as `task finish` does for its result. The
+  curl recipe and the fallback paragraph (0.6%) are gone from the briefing; the route stays.
+- **A root reads a compact view.** `clawdline task show <id>` prints state, verdict, the whole
+  summary, leftover titles, the symbol count, verification, landing and checkout; `--json` is the
+  daemon's whole answer. A root was reading the child's whole `result.json` (2.1%) and `task.json`
+  (1.5%).
+- **The completion notice is a pointer.** Its `body` says the task, how it ended, the facts that
+  are this delivery's alone and the two commands; what to do about a leftover or a landing moved to
+  the guide's §5 and §6. Every JSON key it carried is still there.
+
+Sizes, from the same record on both sides (this change's own task, 3,072 bytes of instructions):
+
+| | before | after |
+|---|---|---|
+| What a child reads to start | `CHILD.md` 9,061 + `task.json` 4,000 (read 2.4× on average) | `CHILD.md` 12,059 |
+| Completion notice, plain success | 910 (body 337) | 825 (body 252) |
+| Completion notice, empty branch and two leftovers | 1,753 (body 1,134) | 1,100 (body 513) |
 
 ## 還沒做（這一波刻意不做，或做不到）
 

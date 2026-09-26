@@ -148,3 +148,152 @@ func TestTaskFinishRefusesAnInvalidResult(t *testing.T) {
 		t.Fatal("an invalid result was reported to the broker")
 	}
 }
+
+// A task directory as the broker leaves it, with nothing written by the child.
+func acceptTestDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), taskTestID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	task := `{"clawdline_protocol": 1, "task_id": "` + taskTestID + `", "kind": "custom"}`
+	if err := os.WriteFile(filepath.Join(dir, "task.json"), []byte(task), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// Signing online is one POST to …/accepted with the task's own secret, and
+// the secret is never said back.
+func TestTaskAcceptSignsWithTheBroker(t *testing.T) {
+	dir := acceptTestDir(t)
+	var seen asked
+	port := brokerAt(t, http.StatusOK, `{"ok":true,"task":{"id":"`+taskTestID+`"}}`, &seen)
+	var out, errs bytes.Buffer
+	if code := acceptTask(&out, &errs, dir, port, taskTestSecret, http.DefaultClient); code != 0 {
+		t.Fatalf("exit %d: %s %s", code, out.String(), errs.String())
+	}
+	if method, path, secret := seen.get(); method != http.MethodPost ||
+		path != "/v1/orchestrator/tasks/"+taskTestID+"/accepted" || secret != taskTestSecret {
+		t.Fatalf("the broker was asked %s %s", method, path)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "accepted.json")); !os.IsNotExist(err) {
+		t.Fatal("a receipt the broker took was also left as a file")
+	}
+	if strings.Contains(out.String()+errs.String(), taskTestSecret) {
+		t.Fatalf("the secret was printed: %s %s", out.String(), errs.String())
+	}
+}
+
+// With no broker to reach, the receipt is the file the broker collects, and
+// the command still exits 0: the child has signed.
+func TestTaskAcceptWithNoBrokerLeavesTheReceipt(t *testing.T) {
+	dir := acceptTestDir(t)
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	var out, errs bytes.Buffer
+	if code := acceptTask(&out, &errs, dir, port, taskTestSecret, http.DefaultClient); code != 0 {
+		t.Fatalf("exit %d: %s %s", code, out.String(), errs.String())
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "accepted.json"))
+	if err != nil {
+		t.Fatal("no accepted.json was left")
+	}
+	if string(body) != `{"task_secret":"`+taskTestSecret+`"}`+"\n" {
+		t.Fatalf("accepted.json is %s", body)
+	}
+	if info, _ := os.Stat(filepath.Join(dir, "accepted.json")); info.Mode().Perm() != 0o600 {
+		t.Fatalf("accepted.json is %v, readable beyond this user", info.Mode().Perm())
+	}
+	if strings.Contains(out.String()+errs.String(), taskTestSecret) {
+		t.Fatalf("the secret was printed: %s %s", out.String(), errs.String())
+	}
+}
+
+// A broker that refuses the secret is a refusal, not a reason to leave a file.
+func TestTaskAcceptSaysARefusal(t *testing.T) {
+	dir := acceptTestDir(t)
+	var seen asked
+	port := brokerAt(t, http.StatusForbidden, `{"error":{"code":"forbidden","message":"not this task's secret"}}`, &seen)
+	var out, errs bytes.Buffer
+	if code := acceptTask(&out, &errs, dir, port, strings.Repeat("0", 64), http.DefaultClient); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(errs.String(), "forbidden") {
+		t.Fatalf("said: %s", errs.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "accepted.json")); !os.IsNotExist(err) {
+		t.Fatal("a refused secret was left as a receipt")
+	}
+}
+
+// The secret comes from the environment or stdin. On the command line it
+// would be in argv for anybody's `ps`, so an extra argument is refused
+// before anything is sent, and the refusal does not repeat it.
+func TestTaskAcceptTakesTheSecretOnlyFromEnvOrStdin(t *testing.T) {
+	if _, _, err := acceptArgs([]string{"/t/dir", taskTestSecret}); err == nil {
+		t.Fatal("a secret on the command line was accepted")
+	} else if strings.Contains(err.Error(), taskTestSecret) {
+		t.Fatalf("the refusal repeats the secret: %v", err)
+	}
+	if dir, port, err := acceptArgs([]string{"--port", "7791", "/t/dir"}); err != nil || dir != "/t/dir" || port != 7791 {
+		t.Fatalf("acceptArgs = %q %d %v", dir, port, err)
+	}
+
+	env := envOf(map[string]string{"CLAWDLINE_TASK_SECRET": taskTestSecret})
+	if got, err := acceptSecret(env, strings.NewReader("")); err != nil || got != taskTestSecret {
+		t.Fatalf("from the environment: %q %v", got, err)
+	}
+	if got, err := acceptSecret(envOf(nil), strings.NewReader(taskTestSecret+"\n")); err != nil || got != taskTestSecret {
+		t.Fatalf("from stdin: %q %v", got, err)
+	}
+	if _, err := acceptSecret(envOf(nil), strings.NewReader("<TASK_SECRET>")); err == nil ||
+		strings.Contains(err.Error(), "<TASK_SECRET>") {
+		t.Fatalf("a placeholder was taken, or repeated: %v", err)
+	}
+}
+
+// `task show` is the root's compact view of a child: what a completion
+// notice sends it to instead of the whole result.json.
+func TestTaskShowIsTheCompactView(t *testing.T) {
+	task := `{"ok":true,"task":{"id":"` + taskTestID + `","title":"shorter protocol","state":"success",` +
+		`"verdict":"result.json collected","summary":"broker summary",` +
+		`"result":{"status":"success","summary":"Did the whole thing.\nOn two lines.",` +
+		`"symbols":["a","b","c"],"artifacts":["artifacts/x"],` +
+		`"verification":{"runs":2,"seconds":40,"last":"pass","scope":"go test ./..."},` +
+		`"leftovers":[{"title":"Roots read one line per child","why":"out of scope","suggested_acceptance":"x"}]},` +
+		`"landing":{"state":"pending","settlement":"branch_carries_commits"},` +
+		`"worktree":{"base":"b","branch":"clawdline/task/x","path":"/w/x","repository":"/r",` +
+		`"branch_exists":null,"commits":null,"dirty":null,"merged":null}}}`
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, task })
+	var out, errs bytes.Buffer
+	if code := showTask(&out, &errs, b, taskTestID, false); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	got := out.String()
+	for _, want := range []string{"success", "result.json collected", "Did the whole thing.\nOn two lines.",
+		"Roots read one line per child", "3 symbols", "2 runs, last pass: go test ./...",
+		"pending (branch_carries_commits)", "/w/x"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("task show does not say %q:\n%s", want, got)
+		}
+	}
+	for _, gone := range []string{"out of scope", `"a"`, "artifacts/x"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("task show carries %q, which is --json's:\n%s", gone, got)
+		}
+	}
+	if req := s.requests(); len(req) != 1 || req[0].Method != http.MethodGet ||
+		req[0].EscapedPath != "/v1/orchestrator/tasks/"+taskTestID {
+		t.Fatalf("asked %+v", req)
+	}
+
+	out.Reset()
+	if code := showTask(&out, &errs, b, taskTestID, true); code != 0 || !strings.Contains(out.String(), `"out of scope"`) {
+		t.Fatalf("--json: exit %d:\n%s", code, out.String())
+	}
+}

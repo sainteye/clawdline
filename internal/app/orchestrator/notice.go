@@ -90,44 +90,47 @@ type noticeTask struct {
 }
 
 // FinishedLine is the sentence a person reads in the root's tab.
+//
+// It is a pointer, not a manual. It used to spell out the result path, the
+// proposal route with its JSON, the whole landing argument and the ACK route
+// — about 1 KB typed into every root on every completion, and measured on
+// 2026-09-26 at 0.5–0.8% of a root's cost, before the root then read the
+// whole result.json anyway (2.1%). Now it says which task, how it ended, the
+// facts that are this delivery's alone — a stall, released claims, the state
+// of its branch, how many leftovers — and the two commands: `clawdline task
+// show` for the compact view, `clawdline task ack` to stop the retries. What
+// to do about a leftover or a landing is the guide's §5 and §6, read once
+// per session rather than typed once per child.
 func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	short := r.ID
 	if len(short) > 8 {
 		short = short[:8]
 	}
-	resultPath := filepath.Join(b.Tasks.Path(r.ID), "result.json")
-	line := fmt.Sprintf("[clawdline] task %s (%s) finished: %s — read %s",
-		short, r.Title, r.State, resultPath)
+	line := fmt.Sprintf("[clawdline] task %s (%s) finished: %s", short, r.Title, r.State)
 	if r.State == StateTimeout && len(r.Lease()) > 0 {
-		line += " — claims released; child tab may still be writing"
+		line += "; claims released, its tab may still be writing"
 	}
 	if r.Stalled() {
-		line += fmt.Sprintf(" — it stalled: briefed, never signed, idle through one nudge; "+
-			"POST /v1/orchestrator/tasks/%s/respawn opens a copy", r.ID)
+		line += "; it stalled before signing — respawn it or dispatch again"
 	}
 	if r.Landing != nil && r.Landing.State == LandingPending {
-		line += " — " + landingLine(r)
+		line += "; " + landingLine(r)
 	}
-	// The moment this whole path exists for. A root integrating a child has
-	// just read what it did not do, and until now the only place that went
-	// was the root's memory: every Backlog row on this machine was written in
-	// a moment somebody complained, never in this one. The line says what is
-	// there and what raising one costs; nothing is created by saying nothing.
+	// The moment this whole path exists for: a root integrating a child has
+	// just been told there is something it did not do. The count is here; the
+	// list is in `task show`, and what raising one costs is in the guide.
 	if n := len(leftoversOf(r)); n > 0 {
-		line += fmt.Sprintf(" — it says it did not do %d thing(s) (result.leftovers); to put one to the person, "+
-			`POST /v1/orchestrator/proposals {"session_id":"<yours>","task_id":"%s","leftover":"<its title>"}`+
-			" — they answer track, later (Backlog) or no, and nothing reaches their board until they do",
-			n, r.ID)
+		line += fmt.Sprintf("; %d leftover(s)", n)
 	}
+	line += " — run clawdline task show " + r.ID
 	if noticeID != "" {
-		line += fmt.Sprintf(" — after observing, ACK notice %s at /v1/orchestrator/tasks/%s/completion/ack",
-			noticeID, r.ID)
+		line += ", then clawdline task ack " + r.ID + " " + noticeID
 	}
 	return line
 }
 
-// landingLine is the one sentence the completion notice spends on the landing
-// this delivery has just opened.
+// landingLine is the clause the completion notice spends on the landing this
+// delivery has just opened.
 //
 // **It used to ask for an action that had already happened.** "claimed work
 // may still be in the shared tree; mark landing pending so other roots can see
@@ -141,10 +144,12 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 //
 // So it says what this broker knew at that moment and nothing else, and for an
 // empty branch it says it while the checkout is still on disk — which is the
-// whole point of saying it now. It never refuses the delivery and it never
-// commits anything itself: rejecting finished work does not bring the work
-// back, and a daemon committing somebody's changes is an irreversible act it
-// has no standing to take (§2.3, the two paths deliberately not taken).
+// whole point of saying it now. Why each state asks for what it asks is the
+// guide's §6; the clause keeps the fact and the action. It never refuses the
+// delivery and it never commits anything itself: rejecting finished work does
+// not bring the work back, and a daemon committing somebody's changes is an
+// irreversible act it has no standing to take (§2.3, the two paths
+// deliberately not taken).
 func landingLine(r Record) string {
 	branch, path := "", ""
 	if r.Worktree != nil {
@@ -152,19 +157,14 @@ func landingLine(r Record) string {
 	}
 	switch r.Landing.Settlement {
 	case SettlementEmpty:
-		return "nothing is committed on its delivery branch " + branch + ", and a landing is proved from that " +
-			"branch — so as it stands there is nothing this task could ever be recorded as landing. Its checkout " +
-			path + " is still on disk: commit there, on that branch, now. Once the sweep takes the checkout the " +
-			"only records left for it are abandoned and nothing_to_land"
+		return "nothing is committed on branch " + branch + "; commit in " + path +
+			" before the sweep takes it, or record abandoned"
 	case SettlementCarried:
-		return "its delivery is committed on branch " + branch + "; merge that branch into its target and record " +
-			"the landing with the commit that carries it"
+		return "committed on branch " + branch + "; merge it, then record the landing"
 	case SettlementUnreadable:
-		return "its delivery branch " + branch + " could not be read when it ended, so whether anything was " +
-			"committed is not known; look at the branch before recording this landing"
+		return "branch " + branch + " could not be read; look before recording the landing"
 	}
-	return "it wrote the shared checkout under its claims; record the landing with the commit that carries that " +
-		"work onto its target, or abandoned"
+	return "it wrote the shared checkout; record the landing, or abandoned"
 }
 
 // outstandingFor is how many other tasks of one root are still running: the

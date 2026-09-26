@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
@@ -25,6 +24,21 @@ import (
 // `clawdline task finish`, named by this daemon's own absolute path so that it
 // needs nothing on the child's PATH — node least of all (D16).
 func (b *Broker) finishCommand(dir string, port int) string {
+	return b.taskCommand("finish", dir, port)
+}
+
+// acceptCommand is the one line a child runs to sign for its briefing. The
+// secret goes in through the environment, never argv: `ps` shows argv to
+// anybody on the machine, and the command never prints it back.
+func (b *Broker) acceptCommand(dir string, port int) string {
+	return AcceptSecretEnv + "=<TASK_SECRET> " + b.taskCommand("accept", dir, port)
+}
+
+// AcceptSecretEnv is where `clawdline task accept` reads the task secret
+// from, when it is not on stdin.
+const AcceptSecretEnv = "CLAWDLINE_TASK_SECRET"
+
+func (b *Broker) taskCommand(verb, dir string, port int) string {
 	exe := b.Executable
 	if exe == "" {
 		if self, err := os.Executable(); err == nil {
@@ -37,7 +51,7 @@ func (b *Broker) finishCommand(dir string, port int) string {
 	if exe == "" {
 		exe = "clawdline"
 	}
-	return fmt.Sprintf("%s task finish --port %d %s", projects.ShellQuoted(exe), port, projects.ShellQuoted(dir))
+	return fmt.Sprintf("%s task %s --port %d %s", projects.ShellQuoted(exe), verb, port, projects.ShellQuoted(dir))
 }
 
 // FirstLine is what is typed into the child's composer.
@@ -86,11 +100,15 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 		// by a clock, and saying "a root session" would send it looking for one.
 		w("You are a CHILD session started by the schedule %q on this machine. No session", r.ScheduleTitle)
 		w("dispatched you and none is waiting on this tab: `result.json` is how the schedule learns")
-		w("you finished. Your one job is the task described in %s/task.json — read that file now.", dir)
+		w("you finished. Your one job is the task under \"The task\" below.")
 	} else {
-		w("You are a CHILD session working for a Clawdline root session. Your one job is the task")
-		w("described in %s/task.json — read that file now.", dir)
+		w("You are a CHILD session working for a Clawdline root session. Your one job is the task under")
+		w("\"The task\" below.")
 	}
+	// The daemon's copy is named once, so that a child that knows the old
+	// protocol does not go and read it: it was 2.4 reads a session, for bytes
+	// this file already carries (measured on 2026-09-26).
+	w("%s/task.json holds the same; you need not read it.", dir)
 	w("")
 	w("## Language, and the first thing you say")
 	w("")
@@ -98,31 +116,21 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("language the person watching this terminal reads. This briefing is in English only so that")
 	w("every assistant reads it the same way.")
 	w("")
-	w("Before you read task.json or touch anything, say exactly this line, on its own:")
+	w("Before you touch anything, say exactly this line, on its own:")
 	w("")
 	w("%s", announce(r.Title, b.Language))
 	w("")
-	w("Then, once you have read task.json, one more line saying in your own words what you are")
-	w("about to do and where the output will go.")
+	w("Then, once you have read the task, one more line saying in your own words what you are about")
+	w("to do and where the output will go.")
 	w("")
+	writeTask(w, r)
 	w("## Sign for this briefing, before you start the work")
 	w("")
-	w("Once you have read task.json, tell the broker you have it. This receipt is the only thing")
-	w("that proves the briefing reached you: typing it into your terminal proved nothing, and your")
-	w("tab starting a turn proves only that something is running. Send it once; a repeat is harmless.")
-	w("It is part of this protocol, not extra work: send it even when task.json says to do nothing")
-	w("but the task.")
+	w("Run this once: it is the only proof the briefing reached you, and when the broker cannot be")
+	w("reached it leaves the receipt in this task's directory for the broker to collect.")
 	w("")
 	w("```bash")
-	w("curl --fail-with-body -sS -X POST %s/accepted \\", base)
-	w(`  -H "X-Clawdline-Task-Secret: <TASK_SECRET>"`)
-	w("```")
-	w("")
-	w("If that `curl` cannot connect — some sandboxes have no loopback — write %s/accepted.json", dir)
-	w("instead, and the broker collects it:")
-	w("")
-	w("```json")
-	w(`{"task_secret": "<the TASK_SECRET value from your first message>"}`)
+	w("%s", b.acceptCommand(dir, port))
 	w("```")
 	w("")
 	w("## Rules")
@@ -184,7 +192,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 		if hasBase {
 			w("How work is handed out here — whether to dispatch, how big a task is, when to arrange a")
 			w("review — is in %s. It is written for sessions that dispatch, and you", filepath.Join(b.Dir, PolicyBaseFile))
-			w("cannot; read it only if task.json asks you to plan work for others.")
+			w("cannot; read it only if the task asks you to plan work for others.")
 			w("")
 		}
 	}
@@ -213,7 +221,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 
 	w("## Report only a material boundary change")
 	w("")
-	w("Do not echo a clear `task.json` back as a progress message and do not send heartbeats. Send")
+	w("Do not echo a clear task back as a progress message and do not send heartbeats. Send")
 	w("one short note only when the write set, approach, dependency, risk or blocker materially")
 	w("differs from the briefing.")
 	w("")
@@ -285,4 +293,57 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	return s.String()
 }
 
-var _ = strconv.Itoa
+// writeTask is the task itself, as admission validated it: what task.json
+// holds, rendered once so the child reads one file.
+//
+// The instructions go in a fence one backtick longer than the longest run
+// inside them, so a fence of their own cannot close it and a heading of
+// their own is not one of this briefing's.
+func writeTask(w func(string, ...any), r Record) {
+	w("## The task")
+	w("")
+	w("- Title: %s", r.Title)
+	w("- Kind: %s", r.Kind)
+	w("- Timeout: %d minutes", r.TimeoutMinutes)
+	switch writes := r.Claims; {
+	case writes == nil:
+		w("- Declared writes: none were declared")
+	case len(writes) == 0:
+		w("- Declared writes: none — this task writes nothing in the repository")
+	default:
+		w("- Declared writes (claims): %s", strings.Join(quoted(writes), ", "))
+	}
+	if len(r.Deliverables) > 0 {
+		w("- Deliverables: %s", strings.Join(quoted(r.Deliverables), ", "))
+	}
+	w("")
+	w("Instructions:")
+	w("")
+	fence := strings.Repeat("`", max(3, longestRun(r.Instructions, '`')+1))
+	w("%stext", fence)
+	w("%s", strings.TrimRight(r.Instructions, "\n"))
+	w("%s", fence)
+	w("")
+}
+
+func quoted(paths []string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = "`" + p + "`"
+	}
+	return out
+}
+
+// longestRun is the length of the longest run of c in s.
+func longestRun(s string, c byte) int {
+	longest, run := 0, 0
+	for i := 0; i < len(s); i++ {
+		if s[i] != c {
+			run = 0
+			continue
+		}
+		run++
+		longest = max(longest, run)
+	}
+	return longest
+}
