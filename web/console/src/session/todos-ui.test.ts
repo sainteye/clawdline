@@ -196,6 +196,13 @@ test("closing a Session reads and names unfinished Board items before it can con
   assert.match(styles, /\.end-work-completed-mark[\s\S]*?color:\s*var\(--ok\)/)
   assert.match(styles, /\.end-work-status\.is-ready[\s\S]*?color:\s*var\(--ink\)/)
   assert.match(styles, /\.end-work-ready-mark[\s\S]*?color:\s*var\(--ok\)/)
+
+  // While the list is read the sheet holds a skeleton of its answer, and the
+  // answer eases the height rather than making the sheet jump open.
+  assert.match(confirmation, /if \(workState === "loading"\) \{\s*say\.append\(\.\.\.this\.endWorkSkeleton\(\)\)/)
+  assert.match(confirmation, /easeHeight\(node\("action-confirm-sheet"\), \(\) => this\.renderEnd\(pending\)\)/)
+  assert.match(confirmation, /prefers-reduced-motion: reduce/)
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{\s*\.end-work-bone \{ animation: none; \}/)
 })
 
 test("a row the Session added itself is labelled as such, and a person's row is not", () => {
