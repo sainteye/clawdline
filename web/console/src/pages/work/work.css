@@ -204,6 +204,10 @@
 .work-clock { color: var(--faint); font: 11px/1.5 var(--mono); }
 .work-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .work-actions .chip { padding: 5px 10px; }
+/* `.work-icon` is a block, so in a plain chip it took a line of its own above
+   the words; a chip that carries one lays it to their left instead. */
+.work-actions .chip:has(> .work-icon) { display: inline-flex; align-items: center; gap: 5px; }
+.work-actions .chip > .work-icon { width: 13px; height: 13px; }
 .work-input {
     min-height: 30px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px;
     background: var(--bg); color: var(--ink); font: inherit; font-size: 13px; min-width: 0;

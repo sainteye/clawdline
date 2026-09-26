@@ -33,3 +33,10 @@ test("a Board card completes only after an inline confirmation", () => {
   assert.match(board, /!item\.closed_at && <button type="button" disabled=\{!!busy\}\s+onClick=\{\(\) => \{ clearFailure\(\); setCompleting\(true\) \}\}><WorkIcon name="check" \/> 完成<\/button>/)
   assert.match(board, /completeConfirmWords\(item\)[\s\S]*?run\(`complete-\$\{item\.id\}`, \(\) => completeWorkV2\(item\)\)[\s\S]*?確認標記完成[\s\S]*?setCompleting\(false\)[\s\S]*?取消/)
 })
+
+test("a work action chip lays its icon to the left of its words", () => {
+  // `.work-icon` is a block, so in a plain chip it took a line of its own above
+  // 標記完成 and 確認標記完成 instead of sitting beside them.
+  const css = readFileSync(new URL("./work.css", import.meta.url), "utf8")
+  assert.match(css, /\.work-actions \.chip:has\(> \.work-icon\) \{[^}]*display: inline-flex;[^}]*align-items: center;/)
+})
