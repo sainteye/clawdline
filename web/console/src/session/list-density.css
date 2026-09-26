@@ -72,6 +72,14 @@
   max-width: 46%;
 }
 
+/* The unreadable-state sentence is the row's whole state line, so it takes the
+ * room the badges beside it leave and wraps inside it, instead of pushing them
+ * into a sliver. */
+.row .state > .unread {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* The completion is one status segment. Its check and sentence share that
  * segment's boundary; bounding the nested sentence a second time leaves the
  * unused half of the completion between it and the next status. */

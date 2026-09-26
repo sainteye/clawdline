@@ -280,7 +280,11 @@ func (in Inventory) readScreen(ctx context.Context, s session.Session) session.S
 		return s
 	}
 	registry := s.Evidence == session.EvidenceRegistry
-	if registry && s.State != session.StateWorking && s.State != session.StateWaiting {
+	// A registry word this build does not know has told us nothing, so it is
+	// not a record that the screen would overrule: the screen still answers,
+	// and only when it holds positive evidence (session.ReadState).
+	unread := registry && s.State == session.StateUnknown
+	if registry && !unread && s.State != session.StateWorking && s.State != session.StateWaiting {
 		return s
 	}
 	screen, ok := reader.Capture(ctx, s)
@@ -300,7 +304,7 @@ func (in Inventory) readScreen(ctx context.Context, s session.Session) session.S
 		s.Line = session.MenuRevision(menu)
 		return s
 	}
-	if !registry {
+	if !registry || unread {
 		if state, read := session.ReadState(screen, s.Assistant); read {
 			s.State = state
 			s.Evidence = session.EvidenceScreen
