@@ -41,19 +41,27 @@ Every one of these, and every one green:
 
 ```sh
 gofmt -l internal cmd          # silent
-go vet ./...
-go build ./...
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/clawdline
-GOOS=windows go vet ./...      # the Windows-only files, and every test, as Windows compiles them
-go test ./...
+tools/heavy.sh go vet ./...
+tools/heavy.sh go build ./...
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 tools/heavy.sh go build -o /dev/null ./cmd/clawdline
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 tools/heavy.sh go build -o /dev/null ./cmd/clawdline
+GOOS=windows tools/heavy.sh go vet ./...      # the Windows-only files, and every test, as Windows compiles them
+tools/heavy.sh go test ./...
 go run ./tools/contract-gen -check      # Go and TypeScript are generated together
 tools/check-legacy-css.sh               # the byte-for-byte copies still match
 tools/check-machine-words.sh            # no shown sentence calls the machine a Mac
 tools/check-private.sh                  # nothing of the person's is in a public repo
 tools/check-private.sh -history -new    # no commit behind it added one either
-( cd web && npm run check && npm run build )   # when anything under web/ changed
+( cd web && npm run check && ../tools/heavy.sh npm run build )   # when anything under web/ changed
 ```
+
+- **Every compile, test suite or bundle build goes through `tools/heavy.sh`** (`clawdline heavy`):
+  it waits for the machine's one compile slot and for available memory, runs the command at a
+  lower priority, and gives the slot back. On 2026-09-26 several sessions building at once on a
+  2-core, 1.9 GB machine drove the load to 34 and every console read to 8-74 s, and Claude Code
+  killed a landing's checks twice for low memory. It never refuses to build: with no daemon, or
+  after `--max-wait`, it runs the command anyway and says so. Wrap the whole script once, not its
+  steps — a `heavy` inside a `heavy` runs directly.
 
 - A test that needs a Unix facility asks for it through a per-platform file
   (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.

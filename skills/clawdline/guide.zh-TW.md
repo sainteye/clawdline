@@ -799,6 +799,8 @@ body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成�
 
 **Lease。** 兩種資源：`heavy_compile`（整台機器唯一的重度編譯名額）和 `landing`（每份 checkout 一個）。
 
+**編譯或跑測試套件時，用 `clawdline heavy -- <指令>` 包起來，不要直接跑。** 它會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。它從不拒絕執行：daemon 沒回應、被拒絕、或超過 `--max-wait`（預設 30 分鐘）都會照跑，並在 stderr 說明。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
+
 - `POST /v1/orchestrator/leases`——
   `{"request_id": "<uuid>", "resource", "checkout" (landing only), "holder", "reason", "session_id", "pid"}`。
   回 `granted`，或回 `queued` 並附上 `position` 和 `retry_after_seconds`。排隊中的請求用同一個

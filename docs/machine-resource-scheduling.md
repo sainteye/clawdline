@@ -2,6 +2,19 @@
 
 # Machine resource scheduling
 
+**The Go daemon, 2026-09-26.** The daemon kept the lease (`internal/app/orchestrator/leases.go`,
+resource `heavy_compile`) with the four rules below, and nothing called it. `clawdline heavy --
+<command>` (`cmd/clawdline/heavy.go`) is the caller, and `tools/heavy.sh` is how this repository's
+check list reaches it. It takes the slot, then waits for memory (available memory above a quarter
+of the machine, at most 1 GB, and the kernel's memory stall under 10%), runs the command at nice 10
+with `oom_score_adj` 500 on Linux, renews every 20 s and releases. **It fails open** — no daemon, a
+refusal it does not know, or `--max-wait` passed all run the command — because of `cf4b63d6` below:
+the lease that stopped a build reaching its compiler did so on the path after a crash. What made it
+necessary was a Linux machine of 2 cores and 1.9 GB with nine sessions: overlapping `go test` and
+`go vet` runs took the load to 34, every console read to 8-74 s, and Claude Code killed a landing's
+checks twice for low memory. The admission half this page removed on the Mac is back in one
+narrow form — a memory floor read from the kernel, not a per-compile peak nobody had measured.
+
 Status: **the exclusion is built and in use; the scheduler in front of it was built, used by
 nobody, and removed on 2026-09-03.** What is on this machine today:
 

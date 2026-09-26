@@ -141,6 +141,8 @@ internal/adapters/git.outputLimit # read: one git command's output
 internal/adapters/limits.rateLimitsReadLimit # read: the status line's rate-limits.json, a few hundred bytes; anything larger is not that file (limits N18's reader)
 internal/adapters/limits.rolloutScanLimit # read: Codex rollout files one plan-window reading looks at, in a directory this daemon does not own; it stops at the first five that said anything (limits N17, N18)
 internal/adapters/limits.rolloutTailLimit # read: the tail of one Codex rollout, as transcript.recordReadLimit bounds a transcript (limits N17)
+internal/adapters/machineusage.maxDepth # parameter: how far one process's parent chain is walked to find its session; a chain is as deep as the process tree, and the bound only stops a cycle read while a pid is being reused
+internal/adapters/machineusage.maxInterval # parameter: how old the dashboard's previous reading may be before a CPU share is measured over a fresh half second instead; nothing is kept past one previous sample
 internal/adapters/projects.changedPathLimit # page: changed paths in one project row
 internal/adapters/projects.codexThreadList:chan(16) # lane: lines from one codex app-server read
 internal/adapters/projects.dirtyPathLimit # page: dirty paths in one project row
@@ -282,6 +284,7 @@ cmd/clawdline.brokerAnswerLimit # read: one daemon answer to a thin command (lan
 cmd/clawdline.brokerTokenLimit # read: the orchestrator-token file the thin commands read, a few dozen bytes; the daemon's own read of it is internal/adapters/devices.tokenLimit
 cmd/clawdline.relayInputLimit # admission: the message `clawdline send` reads from stdin, at the daemon's 2 MiB body cap (limits N27); how many characters is the daemon's rule
 cmd/clawdline.dispatchInstructionsLimit # admission: the brief `clawdline dispatch` reads from stdin or --instructions-file, refused before any task directory exists; it is the daemon's own internal/app/orchestrator.instructionsLimit, 16 KiB
+cmd/clawdline.runForeground:chan(2) # lane: the interrupt and terminate signals `clawdline heavy` passes on to the command it runs
 internal/adapters/skillfile.recordLimit # read: the skill install record, a few hundred bytes (docs/skill.md)
 internal/adapters/skillfile.stubLimit # read: the SKILL.md an install replaces or an uninstall restores; a stub is a few kilobytes, and a file past this is refused rather than backed up
 internal/adapters/terminal.itermSendLimit # wait: the whole iTerm2 send script — the look for the paste, the looks after the Return, and the Apple Events between; a send that has not been confirmed by then is Unsubmitted rather than half-sent
