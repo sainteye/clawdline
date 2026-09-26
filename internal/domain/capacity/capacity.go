@@ -168,6 +168,9 @@ const (
 	ArtifactsImages    = "artifacts.images"
 	ArtifactsImageSize = "artifacts.image_bytes"
 	ArtifactsDrops     = "artifacts.drops"
+	// The drops the byte cap removed while they were young: the one thing
+	// about that cache a person is pushed (limits N16).
+	ArtifactsDropsYoung = "artifacts.drops_young"
 	// W5: the coordination plane (design-decisions §6 W5).
 	LeasesQueue        = "leases.queue"
 	CoordinatorAliases = "coordinator.aliases"
@@ -275,6 +278,11 @@ type Entry struct {
 	// before it does. A queue that fills and drains, or a file that rotates
 	// at its limit by design, has no wall to warn about.
 	Projects bool
+	// QuietRecovery says the row's coming back to ok is only written down,
+	// never announced: a row whose every notice is about something that
+	// already happened has nothing to say when a day passes without it, and
+	// an announcement would spend the day's notice the next time it does.
+	QuietRecovery bool
 	// Sources are the declarations in this repository that bound this row, as
 	// the register guard spells them (guard_test.go). A bounded declaration
 	// that is neither a row's source nor on the guard's baseline is a failing
@@ -461,13 +469,33 @@ func Register() []Entry {
 		},
 		{
 			// Pictures written out for a terminal program to read, each one
-			// already typed into a prompt as a path (limits N16). Measured
-			// after each write, like the images, so the warning comes before
-			// the oldest file is removed.
-			Name: ArtifactsDrops, Class: UserInput, Unit: Rows,
-			Limit: 40, AtLimit: EvictOldest,
-			Told:      []Channel{Diagnostics, Notice, Log},
+			// already typed into a prompt as a path (limits N16). The bytes
+			// are what limits the cache: files past a week go on their own
+			// (the reading's window), except the newest forty, and past this
+			// many bytes the oldest go whatever their age. So this row reads
+			// full only when the cap is what is removing pictures — which is
+			// said in diagnostics and the log, and pushed only when the file
+			// it removed was young (artifacts.drops_young).
+			Name: ArtifactsDrops, Class: UserInput, Unit: Bytes,
+			Limit: 256 << 20, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Log},
 			EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/artifacts.MaxDropsBytes",
+				"internal/adapters/artifacts.DropsAgeLimit"},
+		},
+		{
+			// Pictures the byte cap of artifacts.drops removed while they
+			// were less than a day old, within the last day. Each was typed
+			// into a prompt recently enough to be read again after a
+			// compaction or a resume, so one is the cache too small for how
+			// it is used, and it is pushed; a day without one is written
+			// down and not announced. The limit is one: any at all.
+			Name: ArtifactsDropsYoung, Class: UserInput, Unit: Rows,
+			Limit: 1, AtLimit: EvictOldest,
+			Told:          []Channel{Diagnostics, Notice, Log},
+			EvictedBy:     Daemon,
+			QuietRecovery: true,
+			Sources:       []string{"internal/adapters/artifacts.DropsYoungLimit"},
 		},
 		{
 			// The askers waiting for one lease — the compile slot, or one
