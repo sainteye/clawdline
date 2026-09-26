@@ -53,6 +53,21 @@ the account that has them knows where. From that checkout:
     --project-name=clawdline-app --branch=main --commit-hash=<sha> )
 ```
 
+**Deploy only a commit that descends from what production serves, and check it immediately
+before the deploy, not when you started.** Several sessions land and deploy from the same `main`.
+On 2026-09-26 a session read production as its merge's parent, spent a few minutes rebuilding the
+app, and deployed; in that gap another session had deployed a newer `main` that already
+contained the change, and the deploy put production back twelve commits. So, in the same shell
+as the deploy:
+
+```sh
+live=$(curl -s https://app.clawdline.com/BUILD.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["stamp"])')
+git merge-base --is-ancestor "$live" <sha> || { echo "production is at $live, not behind <sha>: do not deploy"; exit 1; }
+```
+
+When it refuses and `<sha>` is already an ancestor of `$live`, production already carries the
+change: there is nothing to deploy.
+
 ## The check that answers the right question
 
 ```sh
@@ -81,12 +96,17 @@ the rollback below is read before deploying, not after.
 ## Rollback
 
 `wrangler pages deployment list --project-name=clawdline-app` names every deployment with its
-source commit. Note the current production id **before** deploying, and:
+source commit. Note the current production id **before** deploying. Wrangler 4 has no
+`pages deployment rollback` (it answers "Unknown arguments"); the rollback is the Pages API's,
+with the same credentials:
 
 ```sh
 ( set -a; . ./.env.pages.local; set +a       # same checkout as the deploy above
-  ./relay/node_modules/.bin/wrangler pages deployment rollback <id> --project-name=clawdline-app )
+  curl -s -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/clawdline-app/deployments/<id>/rollback" )
 ```
+
+It answers `"success": true` with the restored deployment's id; then run the three checks above.
 
 Both consoles register a service worker with `skipWaiting` and `clients.claim`, so one reload
 picks up whichever version is current. A phone stuck on a broken version needs a reload, not a
