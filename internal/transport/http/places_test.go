@@ -1,6 +1,8 @@
 package http
 
 import (
+	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,5 +123,48 @@ func TestBrokerCheckoutsAreNotOfferedAsPlaces(t *testing.T) {
 				t.Errorf("%s is not offered (live %d): %s", name, len(live), dir)
 			}
 		}
+	}
+}
+
+// A schedule moved to this machine finds its project by the repository the
+// place clones (docs/schedules.md), so the list a Cloud `places` op relays
+// carries it — and leaves it off a folder that clones nothing.
+func TestPlacesNameTheRepositoryTheyClone(t *testing.T) {
+	home := placesHome(t)
+	state := filepath.Join(home, ".config", "clawdline-next")
+	cloned := filepath.Join(home, "projects", "cloned")
+	plain := filepath.Join(home, "projects", "plain")
+	for _, dir := range []string{filepath.Join(cloned, ".git"), plain} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitConfig := "[remote \"origin\"]\n\turl = https://example.com/Team/Tool.git\n"
+	if err := os.WriteFile(filepath.Join(cloned, ".git", "config"), []byte(gitConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	registry := projects.OpenPlaceRegistry(state)
+	if _, err := registry.Add([]string{cloned, plain}, time.Unix(1_790_000_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{cfg: config.Config{Dir: state}, broker: &orchestrator.Broker{Dir: state}, icons: &icon.Registry{}}
+	rec := httptest.NewRecorder()
+	s.placesRoute(rec, httptest.NewRequest("GET", "/v1/places", nil))
+	var answer struct {
+		Places []map[string]any `json:"places"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatalf("%d %s: %v", rec.Code, rec.Body.String(), err)
+	}
+	repos := map[string]any{}
+	for _, p := range answer.Places {
+		repos[p["path"].(string)] = p["repo"]
+	}
+	if repos[cloned] != "example.com/team/tool" {
+		t.Errorf("the clone answered repo %v", repos[cloned])
+	}
+	if got, present := repos[plain]; !present || got != nil {
+		t.Errorf("the plain folder answered repo %v (listed: %v)", got, present)
 	}
 }

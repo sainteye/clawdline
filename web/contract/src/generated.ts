@@ -5879,6 +5879,14 @@ export interface StartPlace {
   id: string
   label: string
   path: string
+
+  /**
+   * The repository this place's checkout clones, host/owner/name from its origin
+   * remote, absent when it has none. `id` is a digest of a path on this machine, so
+   * this is the name one project has on two machines; a schedule is moved between
+   * machines by it.
+   */
+  repo?: string
 }
 
 /**

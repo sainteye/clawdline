@@ -991,6 +991,16 @@ func Register() []Entry {
 			Sources: []string{"internal/domain/projectsync.MaxFileBytes"},
 		},
 		{
+			// How much of one checkout's git config GET /v1/places reads to
+			// name the repository a place clones (its `repo`). A longer config
+			// is not parsed and the place names no repository, which the
+			// console says as "this project has no origin" when a schedule is
+			// moved to another machine.
+			Name: "places.git_config_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/projects.MaxGitConfigBytes"},
+		},
+		{
 			Name: "projectsync.path_bytes", Class: Buffer, Unit: Bytes,
 			Limit: 512, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectsync.MaxPathBytes"},

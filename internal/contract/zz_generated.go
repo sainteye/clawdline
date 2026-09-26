@@ -4901,6 +4901,12 @@ type StartPlace struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
 	Path  string `json:"path"`
+
+	// The repository this place's checkout clones, host/owner/name from its origin
+	// remote, absent when it has none. `id` is a digest of a path on this machine, so
+	// this is the name one project has on two machines; a schedule is moved between
+	// machines by it.
+	Repo string `json:"repo,omitempty"`
 }
 
 // GET /v1/places: explicitly registered directories, recorded Claude Code
