@@ -3,6 +3,7 @@ package cloudops
 import (
 	"bytes"
 	"encoding/json"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1420,6 +1421,16 @@ func init() {
 				}}
 			}},
 
+		// The token bill (docs/token-ledger.md, "What a person and a session
+		// see"): one conversation, one child task, one Board item. Each is the
+		// local route's own question with its id in the path, so each takes
+		// exactly the ids that route takes and nothing else. The answer is the
+		// route's, whole — a `reason` of `not_yet_read` or `transcript_missing`
+		// rides inside a 200, and an unknown id is the route's own 404.
+		usageRead("usage.session", "sessions"),
+		usageRead("usage.task", "tasks"),
+		usageRead("usage.item", "items"),
+
 		// The sentences somebody wrote once, read from a phone.
 		//
 		// **The whole machine's list, and no session in the question.** The
@@ -2346,4 +2357,33 @@ func routeAnswer(p plan) LocalRequest {
 	}
 	return LocalRequest{Method: "POST", Path: "/v1/sessions/" + segment(p.target) + "/key",
 		Body: jsonBody(body)}
+}
+
+// usageID is `usageID` in internal/transport/http/usage.go, spelled a second
+// time because this package cannot import a transport: letters, digits and
+// `-`, `_`, `.`, starting with a letter or digit, at most 200, and never `..`.
+// A looser copy would ask the route something it refuses as `bad_request`; a
+// stricter one would refuse on a phone an id the machine's own page reads.
+var usageID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$`)
+
+// usageRead is one of the token ledger's three reads: `{type, session,
+// request, id}` on the machine's reply channel, asked as
+// GET /v1/usage/<kind>/<id>.
+func usageRead(word, kind string) op {
+	return op{name: word, read: true,
+		decode: func(b body) (plan, bool) {
+			if !b.has("type", "session", "request", "id") {
+				return plan{}, false
+			}
+			p, ok := machinePlan(b)
+			id, idOK := b.str("id")
+			if !ok || !idOK || !usageID.MatchString(id) || strings.Contains(id, "..") {
+				return plan{}, false
+			}
+			p.id = id
+			return p, true
+		},
+		route: func(p plan) LocalRequest {
+			return LocalRequest{Method: "GET", Path: "/v1/usage/" + kind + "/" + segment(p.id)}
+		}}
 }

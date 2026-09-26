@@ -229,6 +229,7 @@ export type WriteRoute =
   | { op: "past"; word: Carried<"past-sessions">; place: string; assistant: string }
   | { op: "image"; word: Carried<"image">; artifact: string }
   | { op: "work-v2-image"; word: Carried<"work.v2.image">; artifact: string }
+  | { op: "usage"; word: Carried<"usage.session" | "usage.task" | "usage.item">; id: string }
   | { op: "push-subscribe"; word: Carried<"push-subscribe"> }
   | { op: "push-unsubscribe"; word: Carried<"push-unsubscribe"> }
   | { op: "push-test"; word: Carried<"push-test"> }
@@ -266,6 +267,13 @@ export type WriteRoute =
  * vocabulary is not written down a second time in this file.
  */
 type Carried<K extends CarriedWord> = K
+
+/** The token ledger's three routes, by the path segment that names each (`GET /v1/usage/<kind>/<id>`). */
+const USAGE_WORD: Readonly<Record<string, Carried<"usage.session" | "usage.task" | "usage.item">>> = {
+  sessions: "usage.session",
+  tasks: "usage.task",
+  items: "usage.item",
+}
 
 /**
  * The routes this daemon answers locally that have no command on the Cloud
@@ -359,6 +367,14 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (method === "GET") {
     if (head === "work" && a === "v2" && b === "images" && c && segments.length === 4) {
       return { op: "work-v2-image", word: "work.v2.image", artifact: c }
+    }
+    // The token bill's three reads. The machine answers them on its one reply
+    // channel as `work.v2.item` is answered, so a Session's bill is not asked
+    // under the session's identity: the conversation is the ledger's key, and
+    // this page may hold no row for a child's conversation at all.
+    if (head === "usage" && b && segments.length === 3) {
+      const word = USAGE_WORD[a ?? ""]
+      if (word) return { op: "usage", word, id: b }
     }
     if (head === "places" && segments.length === 1) return { op: "places", word: "places" }
     if (head === "places" && a && b === "sessions" && segments.length <= 4) {
@@ -573,6 +589,9 @@ function spellingOf(route: WriteRoute): Spelling {
     case "work-v2-todo-create":
     case "work-v2-todo-image-create":
     case "work-v2-todo-action":
+    // `/v1/usage/*` refuses with `writeRefusal`, the flat spelling
+    // (internal/transport/http/usage.go), and the bill's reader takes it.
+    case "usage":
       return "flat"
     default:
       return "nested"
@@ -762,6 +781,18 @@ export class RelayWriter {
           throw failure("malformed_read", "a picture is read with the session it belongs to", 400)
         }
         return client.image(await this.identity(client, session), route.artifact)
+      }
+      case "usage": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", route.word, 501)
+        }
+        // The local route reads no query, and neither does the word: a field
+        // added here would be dropped on the machine and answered as if it
+        // had not been asked, so it is refused by its own name instead.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
+        }
+        return client._machineRequest(this.host.machine, route.word, { id: route.id }, "read")
       }
       case "work-v2-image": {
         if (typeof client._machineRequest !== "function") {
