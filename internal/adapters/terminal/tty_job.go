@@ -3,6 +3,8 @@
 package terminal
 
 import (
+	"errors"
+	"io/fs"
 	"strings"
 	"syscall"
 	"time"
@@ -135,8 +137,18 @@ func foregroundJob(procs []ttyProc, fg int) []ttyProc {
 
 // processSight is what holds tty now, for a session only the process table
 // saw (ProcessCloser).
+//
+// A tty whose device is no longer there is an answer, not a failed read: a
+// pseudo-terminal is released only once nothing holds it open, so the process
+// that did is gone. It is the ordinary end of the one case this was written
+// for — the claude was the whole of its tmux pane, the pane went with it, the
+// server went with the pane, and the next look found no /dev/ttys011. Read as
+// unreadable, a close that had worked answered close_unreadable.
 func processSight(tty string, s session.Session) (farewellSight, error) {
 	procs, fg, err := ttyProcesses(tty)
+	if errors.Is(err, fs.ErrNotExist) {
+		return farewellSight{Gone: true}, nil
+	}
 	if err != nil {
 		return farewellSight{}, err
 	}

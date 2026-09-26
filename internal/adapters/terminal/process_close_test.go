@@ -128,3 +128,13 @@ func TestSomethingElseInFrontOfALooseSessionIsLeftAlone(t *testing.T) {
 		}
 	}
 }
+
+// The claude that was the whole of its tmux pane takes the pane, the server
+// and the pseudo-terminal with it when it leaves. The next look finds no
+// device, and that is the close having worked.
+func TestATTYThatNoLongerExistsIsGone(t *testing.T) {
+	got, err := processSight("/dev/clawdline-no-such-tty-for-this-test", looseRow)
+	if err != nil || !got.Gone {
+		t.Fatalf("processSight of a missing tty = %+v, %v; want gone", got, err)
+	}
+}
