@@ -15,12 +15,17 @@ import (
 // countingStore counts the writes that reach the store.
 type countingStore struct {
 	*store.Store
-	records int
+	records, touches int
 }
 
-func (c *countingStore) RecordBoot(ctx context.Context, boot string, rows []store.RestoreRow, now time.Time, keep int) error {
+func (c *countingStore) RecordBoot(ctx context.Context, rd store.BootReading) (int64, error) {
 	c.records++
-	return c.Store.RecordBoot(ctx, boot, rows, now, keep)
+	return c.Store.RecordBoot(ctx, rd)
+}
+
+func (c *countingStore) TouchBoot(ctx context.Context, boot string, now time.Time) error {
+	c.touches++
+	return c.Store.TouchBoot(ctx, boot, now)
 }
 
 func restoreStore(t *testing.T) *countingStore {
@@ -63,7 +68,7 @@ func recorded(t *testing.T, st RestoreStore, boot string) map[string]store.Resto
 	return out
 }
 
-func TestRestoreRecordingReplacesTheCurrentBootAndIgnoresIncompleteReadings(t *testing.T) {
+func TestRestoreRecordingFollowsTheCurrentBootAndIgnoresIncompleteReadings(t *testing.T) {
 	st := restoreStore(t)
 	clock := time.Unix(10_000, 0)
 	r := restoreUnder(st, "boot-now", &clock)
@@ -86,17 +91,157 @@ func TestRestoreRecordingReplacesTheCurrentBootAndIgnoresIncompleteReadings(t *t
 		t.Fatalf("an incomplete reading changed the record: %+v", got)
 	}
 
-	// A complete reading is the whole set: what it does not show is gone.
+	// A complete reading is the whole set: what it does not show is gone,
+	// and its row says since when rather than disappearing.
 	clock = clock.Add(time.Second)
+	gone := clock
 	r.Observe(ctx, complete(claudeRow("%1", "c-1")))
-	if got := recorded(t, st, "boot-now"); len(got) != 1 || got["c-1"].ConversationID == "" {
+	got = recorded(t, st, "boot-now")
+	if len(got) != 3 || !got["c-1"].GoneAt.IsZero() || !got["c-2"].GoneAt.Equal(gone) || !got["cx-1"].GoneAt.Equal(gone) {
 		t.Fatalf("recorded = %+v", got)
 	}
-	// And a complete empty one empties it.
+	// A complete empty one — a shutdown's last scan, after iTerm2 quit and
+	// the tmux server was killed — keeps every row.
 	clock = clock.Add(time.Second)
 	r.Observe(ctx, complete())
-	if got := recorded(t, st, "boot-now"); len(got) != 0 {
-		t.Fatalf("a complete empty reading left rows: %+v", got)
+	got = recorded(t, st, "boot-now")
+	if len(got) != 3 || !got["c-1"].GoneAt.Equal(clock) || !got["c-2"].GoneAt.Equal(gone) {
+		t.Fatalf("a complete empty reading left: %+v", got)
+	}
+	// Seen again in the same boot, it is open again.
+	clock = clock.Add(time.Second)
+	r.Observe(ctx, complete(claudeRow("%5", "c-2")))
+	if got := recorded(t, st, "boot-now"); !got["c-2"].GoneAt.IsZero() || got["c-1"].GoneAt.IsZero() {
+		t.Fatalf("after c-2 came back: %+v", got)
+	}
+}
+
+func TestTheBootsHeartbeatBeatsAtMostOnceAMinute(t *testing.T) {
+	st := restoreStore(t)
+	clock := time.Unix(25_000, 0)
+	r := restoreUnder(st, "boot-now", &clock)
+	ctx := context.Background()
+	inv := complete(claudeRow("%1", "c-1"))
+	r.Observe(ctx, inv) // the first write stamps the boot itself
+	// Twelve beats of the broker, five seconds apart, is one minute.
+	for i := 0; i < 12; i++ {
+		clock = clock.Add(5 * time.Second)
+		r.Observe(ctx, inv)
+	}
+	if st.records != 1 || st.touches != 1 {
+		t.Fatalf("a minute of identical readings: %d writes, %d heartbeats; want 1 and 1", st.records, st.touches)
+	}
+	prev, _, err := st.PreviousBoot(ctx, "boot-after")
+	if err != nil || !prev.LastSeen.Equal(clock) {
+		t.Fatalf("the boot was last seen %v, want %v (%v)", prev.LastSeen, clock, err)
+	}
+	// Another 55 seconds is no beat yet; the sixtieth is.
+	for i := 0; i < 11; i++ {
+		clock = clock.Add(5 * time.Second)
+		r.Observe(ctx, inv)
+	}
+	if st.touches != 1 {
+		t.Fatalf("heartbeats after 55 more seconds = %d", st.touches)
+	}
+	clock = clock.Add(5 * time.Second)
+	r.Observe(ctx, inv)
+	if st.touches != 2 {
+		t.Fatalf("heartbeats after a second minute = %d", st.touches)
+	}
+	// An incomplete reading is no evidence the machine was seen.
+	clock = clock.Add(2 * time.Minute)
+	r.Observe(ctx, session.Inventory{Complete: false})
+	if st.touches != 2 {
+		t.Fatalf("an incomplete reading beat the heart: %d", st.touches)
+	}
+}
+
+// A boot that ended with a shutdown: the person closed c-early long before,
+// c-final and c-last went in the final wave, c-never was never seen to go.
+func TestRestorableOffersTheFinalWaveAndWhatNeverWentButNotWhatClosedEarlier(t *testing.T) {
+	st := restoreStore(t)
+	clock := time.Unix(50_000, 0)
+	before := restoreUnder(st, "boot-before", &clock)
+	ctx := context.Background()
+	early, final, last, never := claudeRow("%1", "c-early"), claudeRow("%2", "c-final"), claudeRow("%3", "c-last"), claudeRow("%4", "c-never")
+	before.Observe(ctx, complete(early, final, last, never))
+	clock = clock.Add(time.Minute)
+	before.Observe(ctx, complete(final, last, never)) // c-early closed
+	// An hour of the same set, heartbeat and all.
+	for i := 0; i < 720; i++ {
+		clock = clock.Add(5 * time.Second)
+		before.Observe(ctx, complete(final, last, never))
+	}
+	// The shutdown: iTerm2 quits, then the tmux server goes.
+	clock = clock.Add(5 * time.Second)
+	before.Observe(ctx, complete(last, never))
+	clock = clock.Add(5 * time.Second)
+	// An incomplete reading (a source that timed out) is all that sees
+	// c-never's end; then the power goes.
+	before.Observe(ctx, session.Inventory{Complete: false})
+
+	clock = clock.Add(time.Hour)
+	offer, err := restoreUnder(st, "boot-after", &clock).Restorable(ctx, complete())
+	if err != nil || !offer.Available {
+		t.Fatalf("offer = %+v, %v", offer, err)
+	}
+	got := map[string]bool{}
+	for _, row := range offer.Rows {
+		got[row.ConversationID] = true
+	}
+	if !got["c-final"] || !got["c-last"] || !got["c-never"] || got["c-early"] || len(got) != 3 {
+		t.Fatalf("offered %v, want c-final, c-last and c-never", got)
+	}
+}
+
+func TestRestorableDrawsTheGraceLineFromTheBootsLastSeen(t *testing.T) {
+	st := restoreStore(t)
+	clock := time.Unix(60_000, 0)
+	before := restoreUnder(st, "boot-before", &clock)
+	ctx := context.Background()
+	inside, outside := claudeRow("%1", "inside"), claudeRow("%2", "outside")
+	before.Observe(ctx, complete(inside, outside))
+	clock = clock.Add(time.Minute)
+	before.Observe(ctx, complete(inside)) // outside goes here
+	clock = clock.Add(time.Second)
+	insideGone := clock
+	before.Observe(ctx, complete()) // inside goes one second later
+	// Nothing changes for exactly grace, so the boot's last sight is a
+	// heartbeat: inside went exactly grace before it, outside one second more.
+	clock = clock.Add(restoreGraceLimit)
+	before.Observe(ctx, complete())
+	if prev, _, _ := st.PreviousBoot(ctx, "boot-after"); !prev.LastSeen.Equal(insideGone.Add(restoreGraceLimit)) {
+		t.Fatalf("the boot was last seen %v", prev.LastSeen)
+	}
+
+	clock = clock.Add(time.Hour)
+	offer, err := restoreUnder(st, "boot-after", &clock).Restorable(ctx, complete())
+	if err != nil || len(offer.Rows) != 1 || offer.Rows[0].ConversationID != "inside" {
+		t.Fatalf("offer = %+v, %v", offer, err)
+	}
+}
+
+func TestASessionClosedThroughClawdlineIsNeverOffered(t *testing.T) {
+	st := restoreStore(t)
+	clock := time.Unix(70_000, 0)
+	before := restoreUnder(st, "boot-before", &clock)
+	ctx := context.Background()
+	kept, closed := claudeRow("%1", "kept"), claudeRow("%2", "closed")
+	before.Observe(ctx, complete(kept, closed))
+	clock = clock.Add(5 * time.Second)
+	before.Closed(ctx, closed)
+	// A scan that began before the close still showed it.
+	clock = clock.Add(5 * time.Second)
+	stale := complete(kept, closed)
+	stale.ObservedAt = clock.Add(-7 * time.Second)
+	before.Observe(ctx, stale)
+	clock = clock.Add(5 * time.Second)
+	before.Observe(ctx, complete()) // the shutdown, seconds later
+
+	clock = clock.Add(time.Hour)
+	offer, err := restoreUnder(st, "boot-after", &clock).Restorable(ctx, complete())
+	if err != nil || len(offer.Rows) != 1 || offer.Rows[0].ConversationID != "kept" {
+		t.Fatalf("offer = %+v, %v", offer, err)
 	}
 }
 

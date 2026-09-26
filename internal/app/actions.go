@@ -48,6 +48,9 @@ type Actions struct {
 	// process-wide set, so an Actions built anywhere still shares the one
 	// lane per terminal — two sets of lanes would be two writers again.
 	Lanes *lane.Lanes
+	// Restore is told of every close, so the record of this boot's sessions
+	// never offers a conversation the person closed here. Nil tells nobody.
+	Restore *SessionRestore
 }
 
 // laneWait is the longest a write waits for its terminal's turn.
@@ -624,6 +627,7 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 	if a.Reading != nil {
 		a.Reading.Forget(s)
 	}
+	a.Restore.Closed(ctx, s)
 	a.record(ctx, "session.closed", s.ID, map[string]any{"forced": force, "owed": len(c.Reasons)})
 	return s, nil
 }

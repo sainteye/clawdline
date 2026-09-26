@@ -249,6 +249,8 @@ const (
 	SessionsRestoreBoots   = "sessions.restore_boots"
 	SessionsRestoreBatch   = "sessions.restore_batch"
 	SessionsRestoreSeenAge = "sessions.restore_seen_age"
+	SessionsRestoreBeat    = "sessions.restore_heartbeat"
+	SessionsRestoreGrace   = "sessions.restore_grace"
 	// Provider-native work under a session: how many rows the fleet carries,
 	// and the immutable metadata/changing-tail cursors held to make a one-second
 	// reading cheap.
@@ -1057,6 +1059,28 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app.restoreSeenLimit"},
+		},
+		{
+			// How stale the boot's own last_seen may grow while complete
+			// readings keep arriving with nothing changed; past it the next
+			// one moves last_seen alone, one row update. It is what the
+			// grace line after a reboot is drawn from.
+			Name: SessionsRestoreBeat, Class: Cache, Unit: Seconds,
+			Limit: 60, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.restoreBeatLimit"},
+		},
+		{
+			// How long before the previous boot was last seen a conversation
+			// may have gone and still be offered back: a shutdown's final
+			// wave. One that went earlier expires from the offer; its row
+			// stays until the boot does.
+			Name: SessionsRestoreGrace, Class: Cache, Unit: Seconds,
+			Limit: 180, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.restoreGraceLimit"},
 		},
 		{
 			Name: "icons.saved", Class: Evidence, Unit: Rows,
