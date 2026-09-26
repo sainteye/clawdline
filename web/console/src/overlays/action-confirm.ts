@@ -161,6 +161,24 @@ function waiting(onShow: () => void, showAfter = 150, minShown = 320) {
 
 const endWait = waiting(() => ActionConfirm.sync())
 
+/**
+ * Redraw the sheet and glide from the height it had to the one it has now.
+ * The skeleton gets it close; this covers the rest — a longer list, or the
+ * lines that only an answer carries — so nothing below jumps.
+ */
+function easeHeight(sheet: HTMLElement | null, redraw: () => void): void {
+  const before = sheet ? sheet.getBoundingClientRect().height : 0
+  redraw()
+  if (!sheet || !before || typeof sheet.animate !== "function") return
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return
+  const after = sheet.getBoundingClientRect().height
+  if (Math.abs(after - before) < 1) return
+  sheet.animate(
+    [{ height: `${before}px`, overflow: "hidden" }, { height: `${after}px`, overflow: "hidden" }],
+    { duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+  )
+}
+
 export const ActionConfirm = {
   pending: null as Pending | null,
   busy: false,
@@ -232,7 +250,7 @@ export const ActionConfirm = {
       if (this.pending !== pending || !this.isOpen()) return
       pending.workState = "unreadable"
     }
-    this.renderEnd(pending)
+    easeHeight(node("action-confirm-sheet"), () => this.renderEnd(pending))
     this.sync()
   },
 
@@ -270,10 +288,15 @@ export const ActionConfirm = {
       say.appendChild(section)
     }
 
-    if (workState === "loading" || workState === "unreadable") {
+    if (workState === "loading") {
+      say.append(...this.endWorkSkeleton())
+      this.renderTechnical(pending.why, pending.help?.detailsLabel)
+      return
+    }
+    if (workState === "unreadable") {
       const status = document.createElement("p")
-      status.className = "end-work-status" + (workState === "unreadable" ? " is-warning" : "")
-      status.textContent = nextWord(workState === "loading" ? "endWorkChecking" : "endWorkUnreadable")
+      status.className = "end-work-status is-warning"
+      status.textContent = nextWord("endWorkUnreadable")
       say.appendChild(status)
       this.renderTechnical(pending.why, pending.help?.detailsLabel)
       return
@@ -353,6 +376,39 @@ export const ActionConfirm = {
       say.appendChild(truncated)
     }
     this.renderTechnical(pending.why, pending.help?.detailsLabel)
+  },
+
+  /**
+   * What stands in for the answer while it is read: the open-work box and the
+   * status line under it, at about their size, so the sheet opens at nearly
+   * its final height instead of growing under the person's thumb when the
+   * list arrives. Only the heading is words; the bars are hidden from readers.
+   */
+  endWorkSkeleton(): HTMLElement[] {
+    const section = document.createElement("section")
+    section.className = "end-work-open end-work-skeleton"
+    const heading = document.createElement("h3")
+    heading.textContent = nextWord("endWorkChecking")
+    const list = document.createElement("ul")
+    list.setAttribute("aria-hidden", "true")
+    for (const width of ["72%", "48%"]) {
+      const row = document.createElement("li")
+      const badge = document.createElement("span")
+      badge.className = "end-work-bone end-work-bone-kind"
+      const bar = document.createElement("span")
+      bar.className = "end-work-bone"
+      bar.style.width = width
+      row.append(badge, bar)
+      list.appendChild(row)
+    }
+    section.append(heading, list)
+    const status = document.createElement("p")
+    status.className = "end-work-status end-work-skeleton-status"
+    status.setAttribute("aria-hidden", "true")
+    const bar = document.createElement("span")
+    bar.className = "end-work-bone"
+    status.appendChild(bar)
+    return [section, status]
   },
 
   endWorkRow(kind: string, text: string): HTMLLIElement {

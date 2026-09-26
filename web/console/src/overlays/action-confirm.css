@@ -125,3 +125,57 @@
   color: var(--faint);
   font-size: 11.5px;
 }
+
+/* The answer's stand-in (`endWorkSkeleton`): the same box and status line the
+   list will fill, with bars where its rows go. */
+.end-work-skeleton {
+  background: var(--card);
+}
+
+.end-work-skeleton h3 {
+  color: var(--dim);
+  font-weight: 500;
+}
+
+.end-work-skeleton li {
+  align-items: center;
+}
+
+.end-work-bone {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  /* `--faint` over the card, because `--line` is a hairline and vanishes as a fill. */
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--faint) 18%, var(--card)) 0%,
+    color-mix(in srgb, var(--faint) 36%, var(--card)) 50%,
+    color-mix(in srgb, var(--faint) 18%, var(--card)) 100%
+  ) 0 0 / 200% 100%;
+  /* A fast answer replaces the bars before they move at all. */
+  animation: end-work-bone-sweep 1.2s ease-in-out 150ms infinite;
+}
+
+.end-work-bone-kind {
+  width: 34px;
+  height: 15px;
+}
+
+.end-work-skeleton-status {
+  display: flex;
+  align-items: center;
+  min-height: 1.55em;
+}
+
+.end-work-skeleton-status .end-work-bone {
+  width: 58%;
+}
+
+@keyframes end-work-bone-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .end-work-bone { animation: none; }
+}
