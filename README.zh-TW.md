@@ -133,8 +133,23 @@ tools/package-macos.sh          # dist/Clawdline Next.app
 tools/package-macos.sh --dmg    # 同時建立 disk image
 ```
 
+### 把 Project 帶到另一台機器
+
+第二台機器（例如 Linux 伺服器）即使有同樣的程式庫，也還是少了每個 Project 的名稱、圖示，以及
+你沒有放進 git 的 skill 與筆記。選一台當主要機器，其他機器從它鏡像：在 hosted console 打開
+接收那台機器的 **Projects** 頁，使用「**專案設定同步**」；或手動搬一個檔案：
+
+```sh
+./bin/clawdline project export --out projects.json          # 在主要機器
+./bin/clawdline project import --clone projects.json        # 在接收的機器
+```
+
+Project 以 git `origin` 對應，不看資料夾名稱。操作步驟在[開始使用指南](docs/getting-started.md#7-bring-your-projects-to-another-machine)，
+哪些會同步、哪些刻意不同步，請看 [project-sync.md](docs/project-sync.md)。
+
 配對、Cloud 設定、診斷與疑難排解，請繼續閱讀[開始使用指南](docs/getting-started.md)。
 
 [系統架構](docs/architecture.md) · [遠端存取](docs/remote.md) ·
+[跨機器的 Project](docs/project-sync.md) ·
 [Token 帳本](docs/token-ledger.md) ·
 [所有文件](docs/README.md) · [MIT License](LICENSE)
