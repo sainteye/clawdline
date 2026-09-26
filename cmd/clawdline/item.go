@@ -70,14 +70,16 @@ func itemCommand(args []string) {
 	fs.StringVar(&ev.landingProject, "landing-project", "", "for deploying: the catalog Project whose repository holds the commit, when it is not the item's")
 	fs.StringVar(&ev.deployment, "deployment", "", "for done: what was deployed, where, which version")
 	fs.StringVar(&ev.noDeployment, "no-deployment-reason", "", "for done: why nothing needs deploying")
-	if err := fs.Parse(args[1:]); err != nil {
+	positional, err := parseInterspersed(fs, args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "clawdline item %s: %v\n", op, err)
 		itemUsage()
 	}
 	var f itemFlags
 	var rest []string
 	switch op {
 	case "add":
-		if fs.NArg() != 0 {
+		if len(positional) != 0 {
 			itemUsage()
 		}
 		f = itemFlags{project: *project, kind: *kind, title: *title, deploy: *deploy, run: *run, steps: steps}
@@ -104,15 +106,17 @@ func itemCommand(args []string) {
 			f.steps = append(f.steps, lines...)
 		}
 	case "steps":
-		if fs.NArg() != 1 {
+		if len(positional) != 1 {
+			fmt.Fprintf(os.Stderr, "clawdline item steps: takes one item id, got %d arguments\n", len(positional))
 			itemUsage()
 		}
-		rest = fs.Args()
+		rest = positional
 	case "step-done", "phase":
-		if fs.NArg() != 2 {
+		if len(positional) != 2 {
+			fmt.Fprintf(os.Stderr, "clawdline item %s: takes an item id and one more argument, got %d arguments\n", op, len(positional))
 			itemUsage()
 		}
-		rest = fs.Args()
+		rest = positional
 		f.phase = ev
 	default:
 		itemUsage()
@@ -122,6 +126,28 @@ func itemCommand(args []string) {
 		fail(err)
 	}
 	os.Exit(sessionItem(os.Stdout, os.Stderr, b, op, f, rest, *conversation, *key, os.Getenv))
+}
+
+// parseInterspersed parses flags wherever they stand among the positional
+// arguments: `item phase <id> merging --verification …` is how a person and
+// the guide write it, and the flag package alone stops at `<id>` and leaves
+// the flags as positionals. After "--" everything is positional.
+func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		rest := fs.Args()
+		if consumed := len(args) - len(rest); consumed > 0 && args[consumed-1] == "--" {
+			return append(positional, rest...), nil
+		}
+		if len(rest) == 0 {
+			return positional, nil
+		}
+		positional = append(positional, rest[0])
+		args = rest[1:]
+	}
 }
 
 func itemUsage() {

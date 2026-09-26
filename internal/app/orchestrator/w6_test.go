@@ -615,3 +615,39 @@ func TestARemedyIsBuiltFromTheTable(t *testing.T) {
 }
 
 var _ = store.Reclaim{}
+
+// A new Claude Code session is opened in a project folder recorded as trusted
+// first, so its first screen is a composer rather than the workspace-trust
+// dialog nothing may answer. Codex carries its answer on the command line and
+// records nothing.
+func TestANewClaudeRootIsOpenedInATrustedFolder(t *testing.T) {
+	for _, assistant := range []string{"claude", "codex"} {
+		b, ctx := newTestBroker(t)
+		keys := &typedKeys{}
+		b.Type = keys.Type
+		b.Launcher = &openingLauncher{pane: "%62"}
+		which := session.AssistantClaude
+		if assistant == "codex" {
+			which = session.AssistantCodex
+		}
+		b.Live = func(context.Context) []session.Session {
+			return []session.Session{{ID: "%62", Assistant: which}}
+		}
+		var trusted []string
+		b.TrustClaudeProject = func(dir string) error { trusted = append(trusted, dir); return nil }
+		project := t.TempDir()
+		req := RootAssignmentRequest{RequestID: "c6500002-0000-4000-8000-00000000000" + map[string]string{"claude": "1", "codex": "2"}[assistant],
+			Assistant: assistant, ProjectDir: project, Label: "Feature Z", Assignment: Assignment{Objective: "o", Scope: "s",
+				Constraints: "c", RelevantReferences: "r", Acceptance: "a"}}
+		if _, _, err := b.OpenRootAssignment(ctx, req.RequestID, req); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{}
+		if assistant == "claude" {
+			want = []string{project}
+		}
+		if len(trusted) != len(want) || (len(want) == 1 && trusted[0] != want[0]) {
+			t.Fatalf("%s: trusted %v, want %v", assistant, trusted, want)
+		}
+	}
+}
