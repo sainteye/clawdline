@@ -84,11 +84,6 @@ footer.status-line .files[hidden] {
     padding-right: 10px;
   }
 
-  footer.status-line .open .context,
-  footer.status-line .open .cost {
-    display: none;
-  }
-
   footer.status-line .files {
     flex: 1 1 auto;
   }

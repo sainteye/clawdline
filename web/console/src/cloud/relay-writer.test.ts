@@ -1098,3 +1098,39 @@ test("a project settings apply and detach reach the mirror as its own words, and
   assert.equal(writeRoute("GET", "/v1/project-sync/mirror"), null)
   assert.equal(writeRoute("PUT", "/v1/project-sync/mirror"), null)
 })
+
+test("the token bill's three reads cross as the machine's usage words, with the id and nothing else", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const cases: [string, string, string][] = [
+    ["/v1/usage/sessions/c0ffee00-0000-4000-8000-000000000005", "usage.session", "c0ffee00-0000-4000-8000-000000000005"],
+    ["/v1/usage/tasks/7a000000-0000-4000-8000-000000000001", "usage.task", "7a000000-0000-4000-8000-000000000001"],
+    ["/v1/usage/items/w1", "usage.item", "w1"],
+    // What `pages/work/api.ts` sends is `encodeURIComponent`'d; the machine is
+    // asked for the id, not for its spelling in a URL.
+    ["/v1/usage/items/w.1_a-b", "usage.item", "w.1_a-b"],
+  ]
+  for (const [path, word, id] of cases) {
+    assert.equal(writeRoute("GET", path)?.word, word, path)
+    const res = await reader.fetch(path)
+    assert.equal(res.status, 200, path)
+    assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", word, { id }, "read"], path)
+  }
+  // Nothing else under /v1/usage is a word, and a write to one is not a read.
+  assert.equal(writeRoute("GET", "/v1/usage/sessions"), null)
+  assert.equal(writeRoute("GET", "/v1/usage/sessions/c1/more"), null)
+  assert.equal(writeRoute("GET", "/v1/usage/other/c1"), null)
+  assert.equal(writeRoute("POST", "/v1/usage/items/w1"), null)
+
+  // A query this wire has no field for is refused by name rather than dropped.
+  const queried = await reader.fetch("/v1/usage/items/w1?since=1")
+  assert.equal(queried.status, 501)
+  assert.equal((await json(queried)).error, "cloud_not_carried")
+
+  // The route's own refusal crosses with its code, in the flat spelling the
+  // bill's reader takes (`pages/work/api.ts`, `RefusalError`).
+  client.fail._machineRequest = refusal("unknown_item", { status: 404, layer: "mac_route", message: "No Board item has this id." })
+  const unknown = await reader.fetch("/v1/usage/items/w404")
+  assert.equal(unknown.status, 404)
+  assert.equal((await json(unknown)).error, "unknown_item")
+})

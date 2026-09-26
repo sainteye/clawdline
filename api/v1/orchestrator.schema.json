@@ -228,7 +228,9 @@
         "spawn_error": { "type": "string" },
         "executor": { "$ref": "#/$defs/BrokerExecutor" },
         "respawn_of": { "description": "The spawn_failed task this one retried.", "type": "string" },
-        "respawn_generation": { "type": "integer" }
+        "respawn_generation": { "type": "integer" },
+        "auto_compact_window": { "description": "The context size in tokens this child was launched to compact at — task.json's `auto_compact_window` when it named one, the machine's `claude_auto_compact_window` otherwise — and 0 when none was applied. Null for a Codex task, which is never given one, and for a task not launched yet.", "nullable": true, "type": "integer" },
+        "auto_compact_requested": { "description": "What task.json's `auto_compact_window` asked for: a window, or 0 for its null. Null when it said nothing and the setting decided.", "nullable": true, "type": "integer" }
       }
     },
     "BrokerChild": {

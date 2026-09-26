@@ -211,6 +211,12 @@ What the implementation settled (`UsageLedger.ForSession`, `ForTask`, `ForItem`)
   is `not_yet_read` when the broker has its record and a 404 `unknown_task` otherwise; an item that
   is not on the Board is a 404 `unknown_item`. An id is letters, digits, `-`, `_` and `.`: anything
   else is a 400 before it reaches a query or a file name.
+- **On a phone.** The hosted console asks the same three routes through Clawdline Cloud, as the words
+  `usage.session`, `usage.task` and `usage.item` (`internal/app/cloudops/ops.go`,
+  `web/console/src/cloud/carry.ts`), so Session detail's 「Token 帳單」 and a Board item's bill read
+  the same answer on a phone as on this machine's own network, reasons and refusals included. The
+  bill's component does not know which: the seam turns `/v1/usage/…` into the word. `carry.test.ts`
+  reads every `/v1/usage/…` path the console spells and fails on one that does not cross.
 - **Whether it is still reading**: `usage` in `/v1/diagnostics` is the reading loop's own account —
   whether it runs, when the last pass ended and what it found (due, fed, limited, missing,
   unreadable), and `stalled` when no pass has ended for three intervals (`usageStallPasses`). It does
@@ -224,3 +230,23 @@ The largest lever measured is not a document but a session's age: context above 
 of all input, and cache reads grow with every call. The ledger records, per session, peak context,
 calls, compactions and the cost of the calls made above a threshold, so a later change — handing a
 long root over to a fresh one, or suggesting it — can be judged by what it would have saved.
+
+The first such change is a setting to experiment with, not a default. Claude Code compacts on its own
+only near its 1M window; `CLAUDE_CODE_AUTO_COMPACT_WINDOW=<tokens>` in a session's environment moves
+that point (measured 2026-09-25 against claude 2.1.282: a 60000 window compacted at 67k–83k, three
+times, and the task still finished; the `autoCompactWindow` key passed through `--settings` did not).
+`claude_auto_compact_window` is that number for every Claude session Clawdline itself opens — owned
+children, Root Assignments and a handoff's receiver — and never for Codex or a session the person
+opened. It is empty (0) by default, which changes nothing; the console's settings page and
+`clawdline setting set claude_auto_compact_window <n|off>` change it, within 50000 to 1000000 tokens,
+and it is read at every launch, so changing it restarts nothing. A task.json's `auto_compact_window`
+(a number, or `null` for none) overrides it for that one task, so two runs of one brief can be
+compared.
+
+What it trades is fewer tokens re-read per call against a summary that may lose detail — files read
+again, decisions forgotten — and about ten seconds per compaction. So the window each session was
+launched with is recorded: the task row's `auto_compact_window` (and `auto_compact_requested`, what
+its task.json asked for), a Root Assignment's or handoff's `executor`/`opened`, and every
+`UsageSession` answer, where `null` means Clawdline did not launch that session or cannot say and `0`
+means it applied none. `clawdline usage --task <id>` prints it per session beside peak context and
+compactions, which is what an experiment groups by.

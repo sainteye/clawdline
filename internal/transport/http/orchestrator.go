@@ -957,6 +957,8 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 	if r.RespawnGeneration > 0 {
 		row.RespawnGeneration = int64(r.RespawnGeneration)
 	}
+	row.AutoCompactWindow = r.AutoCompactWindow
+	row.AutoCompactRequested = r.AutoCompactRequested
 	// What the beat last saw of the child's session: live, from memory, and
 	// never from the store (observe.go).
 	if e, ok := s.broker.ExecutorOf(r.ID); ok && !r.State.Terminal() {

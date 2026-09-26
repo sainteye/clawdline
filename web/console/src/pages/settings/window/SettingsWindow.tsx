@@ -28,6 +28,7 @@ import {
 import { Block, Chip, Head, MemoField, Mono, Note, PopUp, Row, Slider, Switch, TabStrip } from "./controls.js"
 import { PairingQr, expiredFailure } from "./PairingQr.js"
 import { settingsFailureSentence } from "./failure.js"
+import { COMPACT_MAX, COMPACT_MIN, compactWindowText, compactWindowValue } from "./compact.js"
 
 /**
  * The native "Clawdline 設定" window, as a web page.
@@ -1073,6 +1074,24 @@ export function SettingsWindow() {
                 { label: W.settingsOrchestratorCloseKeep, value: "-1" },
               ]}
               onPick={(value) => void change({ orchestrator_child_linger: Number(value) })}
+            />
+          </Row>
+          <Row label={W.settingsCompactWindow} hint={W.settingsCompactWindowHint}>
+            <MemoField
+              label={W.settingsCompactWindow}
+              value={compactWindowText(Number(now("claude_auto_compact_window")))}
+              example="200000"
+              onCommit={(text) => {
+                const asked = compactWindowValue(text)
+                if (!("value" in asked)) {
+                  setSaid(
+                    fill(W.settingsCompactWindowInvalid, { min: String(COMPACT_MIN), max: String(COMPACT_MAX) }),
+                  )
+                  return
+                }
+                if (asked.value === Number(reading(snapshotRef.current, "claude_auto_compact_window"))) return
+                void change({ claude_auto_compact_window: asked.value })
+              }}
             />
           </Row>
         </div>

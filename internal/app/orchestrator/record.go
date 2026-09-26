@@ -20,6 +20,7 @@ package orchestrator
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -355,8 +356,18 @@ type Record struct {
 	// as well as used: what a session was started with is not readable off the
 	// session afterwards, and a task list that cannot say it cannot answer why
 	// two runs of one brief cost differently.
-	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// AutoCompactRequested is task.json's `auto_compact_window` as admitted:
+	// nil when the brief said nothing and the machine's setting decides, 0
+	// when it said null, otherwise the window it asked for (compact.go).
+	AutoCompactRequested *int64 `json:"auto_compact_requested,omitempty"`
+	// AutoCompactWindow is the window the child was launched with, decided
+	// when its tab is opened: 0 when none was applied. Nil for a Codex task,
+	// which is never given one, and for one not launched yet. Recorded for
+	// the reason ReasoningEffort is: a session's environment cannot be read
+	// off it afterwards, and an experiment has to group by it.
+	AutoCompactWindow *int64    `json:"auto_compact_window,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
 	// AssistantQuota is the evidence available when this task was dispatched,
 	// fixed at that moment. It is deliberately not refreshed: its job is to
 	// answer why this dispatch spent this assistant's quota, not what either
@@ -535,6 +546,14 @@ func (r Record) Brief() taskdir.Brief {
 		TimeoutMinutes: r.TimeoutMinutes,
 		CreatedAt:      r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		WorkID:         r.WorkID,
+	}
+	// Kept in the file for a respawn, which copies it: a retried half of a
+	// comparison has to run with the same window.
+	if w := r.AutoCompactRequested; w != nil {
+		b.AutoCompactWindow = json.RawMessage("null")
+		if *w != 0 {
+			b.AutoCompactWindow = json.RawMessage(strconv.FormatInt(*w, 10))
+		}
 	}
 	if r.Graph != nil {
 		b.Graph, _ = json.Marshal(r.Graph)

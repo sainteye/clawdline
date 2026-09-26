@@ -205,6 +205,11 @@
           "nullable": true,
           "type": "integer"
         },
+        "claude_auto_compact_window": {
+          "description": "The context size, in tokens, at which the Claude sessions this daemon opens — children, Root Assignments, handoffs — compact their history into a summary. Null or 0 is none, the default: Claude Code then compacts only near its own window. A task.json's `auto_compact_window` overrides it for one task. Never given to Codex, or to a session the person opened.",
+          "nullable": true,
+          "type": "integer"
+        },
         "on_state_change": {
           "description": "The file's `on_state_change`, the argv this app runs when a session changes state. Read only here: it is an argument list, not a command line, and a single text box invites exactly the word-splitting that would break a path with a space in it. Absent is an empty list.",
           "type": "array",
@@ -401,6 +406,11 @@
         },
         "orchestrator_child_linger": {
           "description": "0, 180 or -1.",
+          "nullable": true,
+          "type": "integer"
+        },
+        "claude_auto_compact_window": {
+          "description": "0 for none, or 50000 to 1000000 tokens.",
           "nullable": true,
           "type": "integer"
         }

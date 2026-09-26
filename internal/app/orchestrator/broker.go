@@ -137,6 +137,11 @@ type Broker struct {
 	// Negative leaves it open for good — the session becomes a root of its
 	// own. Nil is the Swift app's default, three minutes (linger.go).
 	ChildLinger func() time.Duration
+	// AutoCompactWindow is the `claude_auto_compact_window` setting, read at
+	// every launch so a change restarts nothing: the window a Claude session
+	// this broker opens is started with, 0 for none (compact.go). Nil is the
+	// setting's default, none.
+	AutoCompactWindow func() int64
 	// ReclaimAuto lets the beat start a reclamation sweep every six hours
 	// (reclaim.go); ReclaimGrace is how long after a task ends its checkout
 	// and directory are left alone — zero is the default of twenty-four

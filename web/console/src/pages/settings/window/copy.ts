@@ -50,6 +50,10 @@ const ownWords = {
     webCloudPairPinnedFailed:
       "Could not read this machine's paired-browser list, so no browser is accepted now: {why}",
     webFailMachineWritesOff: "This machine does not currently accept commands from Cloud.",
+    settingsCompactWindow: "Compact Claude sessions at",
+    settingsCompactWindowHint:
+      "Only for Claude sessions Clawdline opens — children, Root Assignments, handoffs — never Codex, never a session you opened. Past this many tokens of context the session replaces its history with a summary: every later call re-reads fewer tokens, which is where most of a long session's cost goes, but the summary can lose detail, files get read again, and each compaction takes about ten seconds. Empty leaves Claude Code alone; it then compacts near its own 1M window. A task can ask for its own. Takes effect at the next launch.",
+    settingsCompactWindowInvalid: "A whole number of tokens from {min} to {max}, or empty for none.",
   },
   "zh-Hant": {
     settingsRemoteHint:
@@ -79,6 +83,10 @@ const ownWords = {
     webCloudPairRevoked: "已在這台機器撤銷",
     webCloudPairPinnedFailed: "讀不到這台機器的已配對清單，所以現在不接受任何瀏覽器：{why}",
     webFailMachineWritesOff: "這台機器目前不接受來自 Cloud 的指令。",
+    settingsCompactWindow: "Claude session 壓縮門檻",
+    settingsCompactWindowHint:
+      "只套用在 Clawdline 開的 Claude session——child、Root Assignment、handoff——不會動到 Codex，也不會動到你自己開的 session。context 超過這麼多 token，session 就把歷史換成一份摘要：之後每一次呼叫要重讀的 token 變少，長 session 的花費大多在這裡；代價是摘要可能漏掉細節、檔案要重讀，每次壓縮大約花十秒。空白就是不插手，Claude Code 會等到接近它自己的 1M 上限才壓縮。單一任務可以另外指定。下一次開 session 時生效。",
+    settingsCompactWindowInvalid: "要是 {min} 到 {max} 之間的整數 token 數，或留空表示不插手。",
   },
 } as const
 
@@ -180,6 +188,10 @@ export const W = {
   settingsOrchestratorCloseNow: "馬上把分頁關掉",
   settingsOrchestratorCloseLinger: "三分鐘後再關",
   settingsOrchestratorCloseKeep: "留著不要關",
+  // This build's own (ownWords): the Swift app never set this.
+  settingsCompactWindow: ownWord("settingsCompactWindow"),
+  settingsCompactWindowHint: ownWord("settingsCompactWindowHint"),
+  settingsCompactWindowInvalid: ownWord("settingsCompactWindowInvalid"),
   menuMascot: "吉祥物",
 
   // **Not from the Swift app.** Its hotkey row never had to say that macOS

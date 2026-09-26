@@ -186,6 +186,9 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/work/v2/items/w1/assign"],
     ["POST", "/v1/work/v2/items/w1/remind"],
     ["GET", "/v1/work/v2/images/img1"],
+    ["GET", "/v1/usage/sessions/c1"],
+    ["GET", "/v1/usage/tasks/t1"],
+    ["GET", "/v1/usage/items/w1"],
     ["POST", "/v1/work/v2/items/w1/images"],
     ["DELETE", "/v1/work/v2/items/w1/images/img1"],
     ["POST", "/v1/work/v2/session-todos/%251/t1/images"],
@@ -207,11 +210,12 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("timeline" in CARRIED)
   // 64, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
-  // copied client's reconnect ask for every Session row. Keep the count beside the catalog so
+  // copied client's reconnect ask for every Session row, and the token bill's three usage reads. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 69)
+  assert.ok("usage.item" in CARRIED)
+  assert.equal(Object.keys(CARRIED).length, 72)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -354,6 +358,53 @@ test("a deferred word a screen in this console already asks for says so", () => 
   // above passes by finding nothing. The terminal's picture is the one this
   // round leaves deferred with a screen in front of it.
   assert.ok(asked.has("screen"), "the path scan found no console route for `screen`; it has stopped reading this tree")
+})
+
+test("every path the token bill reads is carried, so a phone reads the bill too", async () => {
+  // The bill said "讀不到 token 帳單：這件事還不能經由 Clawdline Cloud 做" on
+  // every phone until its three routes became words (2026-09-26). The scan
+  // above reads only double-quoted paths, and the bill spells its paths as
+  // template literals — so it is read here, from every file that asks the
+  // token ledger anything, and each path it spells must parse to a carried
+  // word. A route the bill adds later that nobody carries fails here by name.
+  const asked: { path: string; where: string }[] = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolve(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (entry.name !== "cloud" && entry.name !== "node_modules") walk(full)
+        continue
+      }
+      if (!/\.(ts|tsx|js)$/.test(entry.name) || /\.test\.[tj]sx?$/.test(entry.name)) continue
+      readFileSync(full, "utf8").split("\n").forEach((line, index) => {
+        for (const m of line.matchAll(/[`"'](\/v1\/usage[^`"']*)[`"']/g)) {
+          asked.push({ path: m[1].replace(/\$\{[^}]*\}/g, "x1"), where: full.slice(console_.length + 1) + ":" + (index + 1) })
+        }
+      })
+    }
+  }
+  walk(resolve(console_, "src"))
+  assert.ok(asked.length >= 2, "the scan found " + asked.length + " token-bill paths; it has stopped reading this tree")
+  for (const { path, where } of asked) {
+    const word = writeRoute("GET", path)?.word
+    assert.ok(word && word in CARRIED, where + " reads " + path + ", which this console does not carry over Cloud")
+  }
+
+  // And carried means asked of the machine, not refused by the page.
+  const mac = new FakeMac()
+  const machineAsked: [string, unknown][] = []
+  Object.assign(mac, {
+    _machineRequest(_machine: string, word: string, body: unknown) {
+      machineAsked.push([word, body])
+      return Promise.resolve({ conversation: "c1", reason: "not_yet_read" })
+    },
+  })
+  const reader = seam(mac)
+  for (const { path } of asked) {
+    const res = await reader.fetch(path)
+    assert.equal(res.status, 200, path)
+  }
+  assert.deepEqual(machineAsked.map(([word]) => word).sort(), asked.map(({ path }) => writeRoute("GET", path)!.word).sort())
 })
 
 test("the Git panel's read reaches the machine, and its refusals keep their names", async () => {

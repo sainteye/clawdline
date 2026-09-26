@@ -104,6 +104,11 @@ export const CARRIED = {
   start: "POST /v1/places/{id}/start[/{assistant}[/{model}]]",
   timeline: "GET /v1/timeline?project=&entry=&cursor=&environment=&category=&upcoming=",
   transcript: "GET /v1/transcript?session={id}",
+  // The token bill (`pages/work/TokenBill.tsx`). Machine reads, not session
+  // reads: a conversation id is the ledger's key and not a row this page holds.
+  "usage.item": "GET /v1/usage/items/{id}",
+  "usage.session": "GET /v1/usage/sessions/{conversation}",
+  "usage.task": "GET /v1/usage/tasks/{id}",
   voice: "POST /v1/voice",
   "work.backlog": "GET /v1/work/backlog[?project=&cursor=]",
   "work.board": "GET /v1/work/board[?project=&cursor=]",

@@ -397,6 +397,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		r.SpawnedAt = spawned.SpawnedAt
 		r.SpawnError = spawned.SpawnError
 		r.Unbriefed = spawned.Unbriefed
+		r.AutoCompactWindow = spawned.AutoCompactWindow
 		if r.State == StateQueued {
 			r.State = spawned.State
 		}
@@ -572,6 +573,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		r.FinishedAt = b.now()
 		return r
 	}
+	r.AutoCompactWindow = b.autoCompactFor(r.Assistant, r.AutoCompactRequested)
 	line := "cd " + projects.ShellQuoted(cwd) + " && " + shellCommand(launch, r, b.Tasks.Dir, cwd)
 
 	// The same decision the dispatch was admitted on (capability.go), read
@@ -675,15 +677,14 @@ func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 	args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
 	args = append(args, permissionArgs(r)...)
 	args = append(args, trustArgs(r.Assistant, cwd)...)
-	prefix := ""
-	if keys := projects.InheritedIdentityKeys(l.Assistant); len(keys) > 0 {
-		parts := make([]string, len(keys))
-		for i, k := range keys {
-			parts[i] = "-u " + k
-		}
-		prefix = "env " + strings.Join(parts, " ") + " "
+	// The window was decided for this record at spawn; a Codex record never
+	// has one, and the assistant is checked here again because this line is
+	// the gate between a record and what a machine executes.
+	var set []string
+	if l.Assistant == projects.AssistantClaude {
+		set = autoCompactEnv(r.AutoCompactWindow)
 	}
-	return prefix + strings.Join(append([]string{l.Assistant}, args...), " ")
+	return envPrefix(l.Assistant, set) + strings.Join(append([]string{l.Assistant}, args...), " ")
 }
 
 // permissionArgs is the ceiling the dispatcher asked for, spelled the way each

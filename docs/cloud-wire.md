@@ -738,6 +738,14 @@ request id as its idempotency key. The bridge therefore cannot accidentally exer
 or machine-only authority merely because Cloud execution happens through the daemon's in-process
 router. The console's carried-word list and the daemon vocabulary are checked together by tests.
 
+As of 2026-09-26 the token bill crosses too, as three read words: `usage.session`, `usage.task` and
+`usage.item`, each `{type, session, request, id}` on the machine reply channel and routed to
+`GET /v1/usage/{sessions,tasks,items}/<id>`. The id is refused before the route when the route
+itself would refuse it (letters, digits, `-`, `_`, `.`, at most 200, never `..`); everything else —
+a bill's `not_yet_read` or `transcript_missing` reason inside a 200, an unknown id's 404 — is the
+route's own answer. These rows are not in the table below, which is a measurement of 2026-09-18
+against the running daemon; these words were tested against the bridge, not measured there.
+
 ### 10.4 派工就是 task.json
 
 遠端派工的加密載荷帶的就是本機 orchestrator 已經在講的 wire format：**task.json 就是協定**。

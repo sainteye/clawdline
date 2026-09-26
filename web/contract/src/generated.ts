@@ -1046,6 +1046,13 @@ export interface BrokerOpenTodo {
  * A tab this broker opened for somebody who is not its child.
  */
 export interface BrokerOpenedSession {
+  /**
+   * The context size in tokens a Claude session was opened to compact at — the
+   * machine's `claude_auto_compact_window` then — and 0 when none was applied.
+   * Null for Codex, which is never given one, and on a record from before it was
+   * kept.
+   */
+  auto_compact_window: number | null
   backend: string
   opened_at: number
   terminal_id: string
@@ -1588,6 +1595,20 @@ export interface BrokerTask {
   accepted_at?: number
   assistant: Assistant
   assistant_quota?: BrokerAssistantQuotaDecision
+
+  /**
+   * What task.json's `auto_compact_window` asked for: a window, or 0 for its null.
+   * Null when it said nothing and the setting decided.
+   */
+  auto_compact_requested: number | null
+
+  /**
+   * The context size in tokens this child was launched to compact at —
+   * task.json's `auto_compact_window` when it named one, the machine's
+   * `claude_auto_compact_window` otherwise — and 0 when none was applied. Null
+   * for a Codex task, which is never given one, and for a task not launched yet.
+   */
+  auto_compact_window: number | null
   child?: BrokerChild
   claims: string[]
 
@@ -5347,6 +5368,11 @@ export interface SettingsRequest {
   card_opacity: number | null
 
   /**
+   * 0 for none, or 50000 to 1000000 tokens.
+   */
+  claude_auto_compact_window: number | null
+
+  /**
    * Whether a new session is named by an assistant.
    */
   codex_auto_name: boolean | null
@@ -5533,6 +5559,15 @@ export interface SettingsSnapshot {
    * The bar card's opacity.
    */
   card_opacity: number | null
+
+  /**
+   * The context size, in tokens, at which the Claude sessions this daemon opens —
+   * children, Root Assignments, handoffs — compact their history into a summary.
+   * Null or 0 is none, the default: Claude Code then compacts only near its own
+   * window. A task.json's `auto_compact_window` overrides it for one task. Never
+   * given to Codex, or to a session the person opened.
+   */
+  claude_auto_compact_window: number | null
 
   /**
    * Whether a new session is named by an assistant. The Swift app's spelling, kept
@@ -6720,6 +6755,14 @@ export const UsageReasonValues: readonly UsageReason[] = ["not_yet_read", "trans
 export interface UsageSession {
   above: UsageTokens
   assistant?: string
+
+  /**
+   * The context size in tokens Clawdline launched this session to compact at, 0
+   * when it applied none, from the record of the task or Root Assignment the
+   * session names. Null when that is not known: a session the person opened, a
+   * Codex one, or a record this daemon does not have.
+   */
+  auto_compact_window: number | null
   bill: UsageBill
   calls: number
   calls_above: number

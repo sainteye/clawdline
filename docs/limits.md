@@ -637,3 +637,16 @@ is how long it must then stay idle and unsigned before the task ends `spawn_fail
 capacity baseline, not rows: nothing accumulates. At most one nudge per task, recorded on the
 task before it is typed (`task.nudged`). See [broker.md](broker.md), "A child that stalls after
 its briefing".
+
+### When launched sessions compact
+
+`claude_auto_compact_window` and a task.json's `auto_compact_window` take 0 (or null) for none, or a
+whole number of tokens from `minAutoCompactWindow` (50000) to `maxAutoCompactWindow` (1000000),
+both in `internal/app/orchestrator/compact.go`; the settings row in `nextconfig.Settables` holds the
+same two numbers and `TestTheWindowSettingHasTheBrokersBounds` keeps them equal. Below the minimum
+a session's first turn is already past the window and it compacts on nearly every call; above the
+maximum is past Claude Code's own 1M window, where the variable changes nothing. Outside the range
+the settings route answers `invalid_auto_compact_window` and a task.json `bad_task`; a hand-edited
+file with an out-of-range number launches with none. `maxAutoCompactWindow` is a `parameter` line on
+the capacity baseline, not a row: nothing accumulates. See [token-ledger.md](token-ledger.md),
+"Long-running sessions".
