@@ -154,6 +154,7 @@ internal/adapters/push.secretLimit # read: the VAPID key file
 internal/adapters/swiftstore.maxBytes # read: one of the Swift app's files, read-only
 internal/adapters/transcript.ledgerFeedLimit # read: one token-ledger pass over a transcript; it stops between lines once past this and the next pass goes on from its offset, so a pass reads at most this plus one line and nothing accumulates (limits N42)
 internal/adapters/transcript.ledgerLineLimit # read: one transcript line the token ledger decodes; a longer one is skipped a limit at a time and counted in the state's overlong count, its category lost and its tokens still measured by the next call (limits N42)
+internal/adapters/transcript.maxShellID # admission: the longest background command id a route may name before it is refused as not found; Claude Code's are nine letters and digits (limits N50)
 internal/adapters/transcript.recordReadLimit # read: the tail of one transcript (limits N17)
 internal/adapters/transcript.statusCacheLimit # read: Claude Code's own per-session status-line cache, where the context reading gets its exact window and the session's cost; a fixed handful of fields rewritten in place, so nothing accumulates behind it and past this it is not read at all (limits N17, the transcript read family)
 internal/adapters/tunnel.attemptLimit # parameter: launches of cloudflared in a row that may die before the tunnel gives up and says so on /v1/tunnel

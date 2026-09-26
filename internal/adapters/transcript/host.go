@@ -100,15 +100,40 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 // Shells is what a Claude session left running in the background. Codex keeps
 // no such files, so it is not asked.
 func (h *Host) Shells(ctx context.Context, s session.Session) []session.Shell {
-	if s.Assistant != session.AssistantClaude || s.ConversationID == "" {
+	path, ok := h.claudeTranscript(s)
+	if !ok {
 		return nil
+	}
+	return h.shells.Running(path)
+}
+
+// ShellFiles is the reader behind Shells and ShellOutput, so a test can point
+// it at a folder of its own.
+func (h *Host) ShellFiles() *Shells { return h.shells }
+
+// ShellOutput is the tail of one command this session started in the
+// background (Shells.Output). Codex keeps no such files, so a Codex session
+// has none to read.
+func (h *Host) ShellOutput(ctx context.Context, s session.Session, id string, window int64) (ShellOutput, bool) {
+	path, ok := h.claudeTranscript(s)
+	if !ok {
+		return ShellOutput{}, false
+	}
+	return h.shells.Output(path, id, window)
+}
+
+// claudeTranscript is where a Claude session's transcript is, from the
+// registry's working directory when it has one and the scan's otherwise.
+func (h *Host) claudeTranscript(s session.Session) (string, bool) {
+	if s.Assistant != session.AssistantClaude || s.ConversationID == "" {
+		return "", false
 	}
 	cwd := s.CWD
 	if r, ok := h.claude[s.PID]; ok && r.CWD != "" {
 		cwd = r.CWD
 	}
 	if cwd == "" {
-		return nil
+		return "", false
 	}
-	return h.shells.Running(ClaudePath(h.Home, cwd, s.ConversationID))
+	return ClaudePath(h.Home, cwd, s.ConversationID), true
 }

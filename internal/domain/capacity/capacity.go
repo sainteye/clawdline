@@ -256,6 +256,9 @@ const (
 	// reading cheap.
 	SessionsAgentRows     = "sessions.agent_rows"
 	CacheBackgroundAgents = "cache.background_agents"
+	// SessionsShellOutputBytes is the most of one background command's
+	// output GET /v1/sessions/{id}/shells/{shell} sends.
+	SessionsShellOutputBytes = "sessions.shell_output_bytes"
 	// The sentence-to-draft planner: admitted bytes, queued turns and the
 	// longest one turn may hold its queue slot.
 	IntentRequestBytes     = "intent.request_bytes"
@@ -446,6 +449,17 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/subagents.MaximumCache"},
+		},
+		{
+			// The tail of one background command's output the Shell panel is
+			// sent (limits N50). The file is Claude Code's and stays whole:
+			// past this only its oldest bytes are left out of the answer,
+			// which says `truncated`. Asked of a request, never retained.
+			Name: SessionsShellOutputBytes, Class: Observation, Unit: Bytes,
+			Limit: 1 << 20, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/transcript.MaxShellOutput"},
 		},
 		{
 			// The screens one event stream has been told moved and has not

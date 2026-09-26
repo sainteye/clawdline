@@ -1,0 +1,106 @@
+/* The strip above the composer: one quiet line that says a session has work
+   going on in the background, set like the status line under the composer —
+   small, faint, monospace — because it is a fact about the session and not a
+   thing asking for attention. Only the dot of something still going carries
+   the accent. */
+.bg-strip {
+    position: relative;
+    flex: 0 0 auto;
+    border-top: 1px solid var(--line);
+}
+.pane-detail[data-panel] > .bg-strip { display: none; }
+.bg-strip-line {
+    display: flex; align-items: center; gap: 7px;
+    width: 100%; min-width: 0; min-height: 28px;
+    padding: 4px 18px;
+    color: var(--faint); font: 11px/1.5 var(--mono);
+    text-align: left; cursor: pointer;
+}
+.bg-strip-line:hover, .bg-strip[data-open="on"] .bg-strip-line { color: var(--dim); }
+.bg-strip-line .dot {
+    flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+    border: 1.5px solid var(--faint);
+}
+.bg-strip-line .dot[data-live="on"] { border-color: var(--accent); }
+.bg-strip-line .said {
+    flex: 0 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bg-strip-line .chev { flex: 0 0 auto; transform: rotate(-90deg); transition: transform 150ms; }
+.bg-strip[data-open="on"] .bg-strip-line .chev { transform: rotate(90deg); }
+
+/* The sheet it opens. Over the transcript and anchored to the strip on a desk;
+   a bottom sheet on a phone, where the pane is the whole screen. */
+.bg-sheet-backdrop {
+    position: fixed; inset: 0; z-index: 54;
+    padding: 0; border: 0; appearance: none;
+    background: transparent; cursor: pointer;
+}
+.bg-sheet {
+    position: absolute; z-index: 55;
+    left: 12px; bottom: calc(100% + 6px);
+    width: min(560px, calc(100% - 24px));
+    max-height: min(60vh, 480px);
+    display: flex; flex-direction: column;
+    background: var(--card); border: 1px solid var(--line-hi); border-radius: 12px;
+    box-shadow: 0 18px 44px rgb(0 0 0 / .56);
+    animation: bg-sheet-in 160ms cubic-bezier(.2, .8, .2, 1) both;
+}
+@keyframes bg-sheet-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .bg-sheet { animation: none; }
+    .bg-strip-line .chev { transition: none; }
+}
+.bg-sheet-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 9px;
+    padding: 10px 12px 9px 16px;
+    border-bottom: 1px solid var(--line);
+}
+.bg-sheet-head h2 {
+    flex: 1 1 auto; min-width: 0;
+    margin: 0; color: var(--ink); font-size: 13px; font-weight: 600;
+}
+.bg-sheet-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px 10px; }
+
+/* One background command: the command line first, because it is what a person
+   matches against what they remember asking for; under it what it was for and
+   the last line it printed; when it last printed on the right. */
+.bg-shell {
+    display: grid; grid-template-columns: 7px minmax(0, 1fr) auto;
+    column-gap: 8px; row-gap: 1px; align-items: baseline;
+    width: 100%; min-width: 0; text-align: left;
+    padding: 4px 5px; margin: 0 -5px; border-radius: 5px;
+    cursor: pointer;
+}
+.bg-shell:hover { background: var(--card-hi); }
+.bg-shell .mark {
+    width: 7px; height: 7px; border-radius: 50%;
+    border: 1.5px solid var(--accent); align-self: center;
+}
+.bg-shell .cmd {
+    min-width: 0; color: var(--dim); font: 11.5px/1.6 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bg-shell:hover .cmd { color: var(--ink); }
+.bg-shell .at { color: var(--faint); font-size: 11px; white-space: nowrap; }
+.bg-shell .sub {
+    grid-column: 2 / -1; min-width: 0;
+    color: var(--faint); font: 11px/1.5 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+@media (max-width: 480px) {
+    .bg-strip-line { padding-left: 12px; padding-right: 12px; }
+    .bg-sheet-backdrop { background: rgba(6, 6, 8, 0.5); }
+    .bg-sheet {
+        position: fixed; left: 0; right: 0; bottom: 0;
+        width: auto; max-height: 72vh;
+        border-radius: 14px 14px 0 0; border-bottom: 0;
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    .bg-sheet-body { padding-left: 12px; padding-right: 12px; }
+}

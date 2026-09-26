@@ -376,3 +376,106 @@ func clipped(line string) string {
 	runes := []rune(line)
 	return string(runes[:shellRoom-1]) + "…"
 }
+
+const (
+	// MaxShellOutput is the most of one command's output a reader is sent:
+	// its tail, never more. The Cloud word pins the same window
+	// (`internal/app/cloudops`, the `shell` op).
+	MaxShellOutput = 1 << 20
+	// ShellOutputFloor is the least; a smaller ask is raised to it.
+	ShellOutputFloor = 1 << 10
+	// ShellOutputDefault is what a reader that names no window gets.
+	ShellOutputDefault = 64 << 10
+	// maxShellID is the longest id taken from a route. Claude Code's are nine
+	// characters; this only keeps a hostile one from being a long string.
+	maxShellID = 64
+)
+
+// ShellOutput is one background command's output as the Shell panel reads it
+// — the Swift app's `Shells.output(of:id:bytes:)`, and its answer's four
+// fields.
+type ShellOutput struct {
+	// Shell is the command's row: what started it and when it last printed.
+	// Doing is empty once it has ended, as it is on the session row.
+	Shell session.Shell
+	// Text is the tail of the file, starting at a line boundary when it was
+	// cut.
+	Text string
+	// Truncated is whether the file holds more than Text, before it.
+	Truncated bool
+	// Ended is whether the last line written is Claude Code's ending marker.
+	Ended bool
+	// Signature changes whenever the file does, so a reader repaints only when
+	// bytes moved.
+	Signature string
+}
+
+// ValidShellID is whether id can name an output file in the folder and
+// nothing else: ASCII letters and digits only, which is every id Claude Code
+// has minted on this machine (`b0aau3e6s`) and the only characters the
+// announcement parser above accepts.
+func ValidShellID(id string) bool {
+	if id == "" || len(id) > maxShellID {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		if !isASCIIAlnum(id[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// Output is the tail of one background command's output, at most window
+// bytes of it.
+//
+// Only an id the transcript announced as a background command is read, the
+// same rule Running keeps — but whether or not it has ended, because a reader
+// watching a command must still see how it finished. Anything else, and an
+// announced id whose file is gone, is not found.
+func (s *Shells) Output(transcriptPath, id string, window int64) (ShellOutput, bool) {
+	if !ValidShellID(id) {
+		return ShellOutput{}, false
+	}
+	folder := s.Folder(transcriptPath)
+	if folder == "" {
+		return ShellOutput{}, false
+	}
+	if _, err := os.Stat(transcriptPath); err != nil {
+		return ShellOutput{}, false
+	}
+	was, ok := s.announced(transcriptPath)[id]
+	if !ok {
+		return ShellOutput{}, false
+	}
+	file := filepath.Join(folder, id+".output")
+	info, err := os.Stat(file)
+	if err != nil || !info.Mode().IsRegular() {
+		return ShellOutput{}, false
+	}
+	window = min(max(window, ShellOutputFloor), MaxShellOutput)
+	data, whole, err := tailData(file, window)
+	if err != nil {
+		return ShellOutput{}, false
+	}
+	out := ShellOutput{
+		Shell:     session.Shell{ID: id, At: info.ModTime(), Command: was.command, What: was.what},
+		Text:      string(data),
+		Truncated: !whole,
+		Signature: fmt.Sprintf("%d-%d", info.ModTime().UnixNano(), info.Size()),
+	}
+	last := ""
+	for _, line := range strings.Split(out.Text, "\n") {
+		if t := trimSpaces(line); t != "" {
+			last = t
+		}
+	}
+	switch {
+	case last == "":
+	case isEnding(last):
+		out.Ended = true
+	default:
+		out.Shell.Doing = clipped(last)
+	}
+	return out, true
+}

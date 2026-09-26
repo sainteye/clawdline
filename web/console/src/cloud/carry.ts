@@ -100,6 +100,9 @@ export const CARRIED = {
   schedule: "GET /v1/orchestrator/schedules/{id}",
   schedules: "GET /v1/orchestrator/schedules",
   send: "POST /v1/sessions/{id}/send",
+  // The Shell panel (`session/ShellPanel.tsx`): the tail of one background
+  // command's output, polled while the panel is open.
+  shell: "GET /v1/sessions/{id}/shells/{shell}?bytes=",
   // No console route asks this: the copied client does, on every connection
   // that did not take over a live socket (`_recoverSessions`), so a list
   // opened after a relay eviction is sent every row rather than whichever
@@ -220,7 +223,6 @@ export const NO_MACHINE_ROUTE = {
   "diagnostics.events": "This machine does not take a page's diagnostic events over Clawdline Cloud.",
   "diagnostics.report": "This machine does not take a diagnostic report over Clawdline Cloud.",
   dispatch: "Dispatching a task over Clawdline Cloud has no pinned wire shape on this machine: dispatch it on the machine.",
-  shell: "A session's shell is not read over Clawdline Cloud: read it on the machine.",
   skills: "A session's skills are not listed over Clawdline Cloud: read them on the machine.",
 } as const
 

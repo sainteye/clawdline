@@ -235,7 +235,9 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("capacity" in CARRIED)
   assert.ok("verification.delete" in CARRIED)
   assert.ok("restore-sessions" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 85)
+  // And the Shell panel's read, which the phone needs as much as the desk.
+  assert.ok("shell" in CARRIED)
+  assert.equal(Object.keys(CARRIED).length, 86)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -536,22 +538,23 @@ test("the seam says what this machine can do that this bundle never asks for", a
   const reader = seam(mac)
   assert.equal(reader.drift(), null, "no descriptor is not agreement")
   // Two words this machine knows and this bundle does not ask for, one from each
-  // uncarried list: `screen` is DEFERRED and `shell` is NO_MACHINE_ROUTE. Every
-  // pair this test has used before — `board`, `snippets`, and now `git` —
-  // became a carried word, which is exactly the drift this assertion is about.
-  mac.commands = [...Object.keys(CARRIED), "shell", "screen"]
-  assert.deepEqual(reader.drift(), { notCarried: ["screen", "shell"], notOnThisMachine: [] })
+  // uncarried list: `screen` is DEFERRED and `skills` is NO_MACHINE_ROUTE. Every
+  // pair this test has used before — `board`, `snippets`, `git`, and now
+  // `shell` — became a carried word, which is exactly the drift this assertion
+  // is about.
+  mac.commands = [...Object.keys(CARRIED), "skills", "screen"]
+  assert.deepEqual(reader.drift(), { notCarried: ["screen", "skills"], notOnThisMachine: [] })
   mac.commands = Object.keys(CARRIED).filter((word) => word !== "info")
   assert.deepEqual(reader.drift(), { notCarried: [], notOnThisMachine: ["info"] })
 
   // And it reaches this page's own log, once, the first time the list is read.
-  mac.commands = [...Object.keys(CARRIED), "shell"]
+  mac.commands = [...Object.keys(CARRIED), "skills"]
   const fresh = seam(mac)
   await fresh.fetch("/v1/sessions")
   await fresh.fetch("/v1/sessions")
   const said = fresh.log.filter((row) => row.code === "cloud_vocabulary_drift")
   assert.equal(said.length, 1, "said once, not on every reading")
-  assert.equal(said[0].word, "shell")
+  assert.equal(said[0].word, "skills")
 })
 
 test("the words are this build's own catalog, and the document says which", async () => {
