@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +31,38 @@ type Place struct {
 }
 
 var ErrNoPlanner = errors.New("no planner installed")
+
+// ErrOutOfQuota is an assistant that ran and refused because its account has
+// no usage left. It is told apart from every other failure because the person
+// can do something about it: wait, or pick the other assistant in Settings.
+var ErrOutOfQuota = errors.New("assistant usage limit reached")
+
+// quotaWords are the phrases each CLI prints when its account is out of
+// usage: Codex's "You've hit your usage limit", Claude's "usage limit
+// reached" and "5-hour limit reached".
+var quotaWords = []string{"usage limit", "limit reached"}
+
+// outOfQuota says whether what an assistant printed is its usage-limit refusal.
+func outOfQuota(said []byte) bool {
+	lower := strings.ToLower(string(said))
+	for _, w := range quotaWords {
+		if strings.Contains(lower, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// failed is the error a naming turn ends with when the process did not
+// answer: ErrOutOfQuota when its output says so, otherwise err itself.
+func failed(err error, said ...[]byte) error {
+	for _, s := range said {
+		if outOfQuota(s) {
+			return fmt.Errorf("%w: %v", ErrOutOfQuota, err)
+		}
+	}
+	return err
+}
 
 // Name runs exactly one tool-less turn with the assistant selected in
 // Settings. It never falls back to another account: the confirmation names
@@ -56,12 +87,12 @@ func (p Planner) Name(ctx context.Context, text, assistant string) (string, erro
 		raw, err := p.runner()(turn, executable, args, text, scratch(), nil)
 		cancel()
 		if err != nil {
-			return "", err
+			return "", failed(err, raw, stderrOf(err))
 		}
 		var ok bool
 		object, ok = objectFromClaude(raw)
 		if !ok {
-			return "", errors.New("namer did not return an object")
+			return "", failed(errors.New("namer did not return an object"), raw)
 		}
 	} else {
 		dir, err := os.MkdirTemp("", "clawdline-name-")
@@ -81,10 +112,10 @@ func (p Planner) Name(ctx context.Context, text, assistant string) (string, erro
 			env = append(env, "CODEX_HOME="+filepath.Join(p.Home, ".codex"))
 		}
 		turn, cancel := context.WithTimeout(ctx, p.timeout())
-		_, runErr := p.runner()(turn, executable, args, asked, dir, env)
+		out, runErr := p.runner()(turn, executable, args, asked, dir, env)
 		cancel()
 		if runErr != nil {
-			return "", runErr
+			return "", failed(runErr, out, stderrOf(runErr))
 		}
 		raw, readErr := os.ReadFile(answer)
 		if readErr != nil {
@@ -225,16 +256,59 @@ func (p Planner) executable(name string) string {
 	return ""
 }
 
+// stderrLimit is how much of a failed turn's stderr is kept: enough for the
+// CLI's last error line, never a whole transcript.
+const stderrLimit = 4 << 10
+
+// ExitError is a turn whose process failed, carrying the end of what it wrote
+// to stderr. Both CLIs say why they refused there — Codex's usage limit is
+// only on stderr — and nothing else in this package reads it.
+type ExitError struct {
+	Err    error
+	Stderr []byte
+}
+
+func (e *ExitError) Error() string { return e.Err.Error() }
+func (e *ExitError) Unwrap() error { return e.Err }
+
+func stderrOf(err error) []byte {
+	var exit *ExitError
+	if errors.As(err, &exit) {
+		return exit.Stderr
+	}
+	return nil
+}
+
 func run(ctx context.Context, executable string, args []string, stdin, dir string, env []string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Stdin = strings.NewReader(stdin)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = io.Discard
-	err := cmd.Run()
-	return stdout.Bytes(), err
+	cmd.Stderr = &tail{buf: &stderr, max: stderrLimit}
+	if err := cmd.Run(); err != nil {
+		return stdout.Bytes(), &ExitError{Err: err, Stderr: stderr.Bytes()}
+	}
+	return stdout.Bytes(), nil
+}
+
+// tail keeps only the last max bytes written to it.
+type tail struct {
+	buf *bytes.Buffer
+	max int
+}
+
+func (t *tail) Write(p []byte) (int, error) {
+	n := len(p)
+	if len(p) > t.max {
+		p = p[len(p)-t.max:]
+	}
+	if over := t.buf.Len() + len(p) - t.max; over > 0 {
+		t.buf.Next(over)
+	}
+	t.buf.Write(p)
+	return n, nil
 }
 
 func scratch() string {

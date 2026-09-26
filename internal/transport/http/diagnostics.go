@@ -455,6 +455,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.IntentCloudWaitSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "hosted-console request deadline; no retained buffer"}
 		},
+		capacity.IntentStderrBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-turn tail of a failed CLI's stderr; released with the turn"}
+		},
 		// T4's three rows (proposals.go).
 		capacity.ProposalsOpen: func() capacity.Reading {
 			c, err := s.participation().Counts(context.Background())

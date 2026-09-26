@@ -62,6 +62,10 @@ const words = {
       "Clawdline will send this session's first request to {assistant} for one small model turn, then save its answer as the session title. This uses that assistant's quota. Cancel to make no model call and edit the title yourself instead.",
     smartTitleWorking: "Naming…",
     smartTitleSaved: "Smart title saved.",
+    smartTitleOutOfQuota:
+      "{assistant} has no usage left on its account, so no title was changed. Wait for it to reset, or pick the other assistant under Settings → Auto-name new sessions and try again.",
+    smartTitleFailed: "{assistant} did not return a usable title. No title was changed.",
+    smartTitleNoNamer: "{assistant}, the naming assistant chosen in Settings, is not installed on this machine.",
     sessionStop: "Stop current work (Esc)",
     sessionStopSent: "Esc sent. The session stops its current turn once it reads it.",
     sessionStateUnrecognizedDetail:
@@ -749,6 +753,10 @@ const words = {
       "Clawdline 會把這個 session 的第一則需求交給 {assistant} 跑一次小型模型 turn，再把答案存成 session 標題；這會使用該助理的額度。取消就不會呼叫模型，也可以改用手動編輯標題。",
     smartTitleWorking: "命名中…",
     smartTitleSaved: "智能標題已儲存。",
+    smartTitleOutOfQuota:
+      "{assistant} 的額度已用完，標題沒有變更。等額度恢復，或到「設定 → 自動命名新的 session」改用另一個助理再試。",
+    smartTitleFailed: "{assistant} 沒有回傳可用的標題，標題沒有變更。",
+    smartTitleNoNamer: "設定裡選的命名助理 {assistant} 沒有安裝在這台機器上。",
     sessionStop: "停止目前的工作（Esc）",
     sessionStopSent: "已送出 Esc，session 讀到後會停下目前這一輪。",
     pushCloudReached: "通知已開啟：{machines} 會通知這台裝置。",

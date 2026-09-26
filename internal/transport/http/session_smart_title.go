@@ -67,6 +67,12 @@ func (s *Server) smartSessionTitle(w http.ResponseWriter, r *http.Request, id st
 			"The naming assistant selected in Settings is not installed on this machine.")
 		return
 	}
+	if errors.Is(err, planner.ErrOutOfQuota) {
+		log.Printf("audit session.smart_title assistant=%s ms=%d ok=0 why=out_of_quota", assistant, ms)
+		writeRefusal(w, http.StatusServiceUnavailable, "namer_out_of_quota",
+			"The naming assistant selected in Settings has no usage left on its account. No title was changed.")
+		return
+	}
 	if err != nil {
 		log.Printf("audit session.smart_title assistant=%s ms=%d ok=0 why=failed", assistant, ms)
 		writeRefusal(w, http.StatusBadGateway, "naming_failed",

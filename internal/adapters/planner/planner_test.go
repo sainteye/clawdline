@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -200,5 +201,48 @@ func TestNamerUsesOnlyTheChosenAssistantAndNoTools(t *testing.T) {
 				t.Fatalf("name=%q runs=%d err=%v", got, runs, err)
 			}
 		})
+	}
+}
+
+// A CLI whose account has no usage left says so and exits non-zero: Codex
+// only on stderr, Claude in its JSON result on stdout. Either is
+// ErrOutOfQuota, so the person is told to wait or switch assistants rather
+// than that something unreadable happened; any other failure is not.
+func TestNamerTellsAnExhaustedAccountFromOtherFailures(t *testing.T) {
+	cases := []struct {
+		assistant, stdout, stderr string
+		quota                     bool
+	}{
+		{"codex", "", "ERROR: You\u2019ve hit your usage limit. Visit the settings page or try again at Sep 27th, 2:11 PM.\n", true},
+		{"claude", `{"type":"result","is_error":true,"result":"Claude AI usage limit reached|1790000000"}`, "", true},
+		{"claude", `{"type":"result","is_error":true,"result":"5-hour limit reached \u2219 resets 3pm"}`, "", true},
+		{"codex", "", "ERROR: stream disconnected before completion\n", false},
+		{"claude", "", "Error: not logged in\n", false},
+	}
+	for _, c := range cases {
+		p := Planner{
+			Home:     t.TempDir(),
+			LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+			Run: func(context.Context, string, []string, string, string, []string) ([]byte, error) {
+				return []byte(c.stdout), &ExitError{Err: errors.New("exit status 1"), Stderr: []byte(c.stderr)}
+			},
+		}
+		_, err := p.Name(context.Background(), "ship the helper", c.assistant)
+		if err == nil || errors.Is(err, ErrOutOfQuota) != c.quota {
+			t.Errorf("%s stdout=%q stderr=%q: err=%v, want quota=%v", c.assistant, c.stdout, c.stderr, err, c.quota)
+		}
+	}
+}
+
+func TestRunKeepsOnlyTheEndOfStderr(t *testing.T) {
+	var b bytes.Buffer
+	w := &tail{buf: &b, max: 8}
+	for _, s := range []string{"0123", "456789", "abcdefghijkl", "XY"} {
+		if n, err := w.Write([]byte(s)); n != len(s) || err != nil {
+			t.Fatalf("write %q = %d %v", s, n, err)
+		}
+	}
+	if b.String() != "ghijklXY" {
+		t.Fatalf("kept %q", b.String())
 	}
 }
