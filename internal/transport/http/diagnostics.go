@@ -426,6 +426,16 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.SessionDirectTodoBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-write guard; no retained buffer"}
 		},
+		capacity.SessionsRestoreRows: s.restoreRowsReading,
+		capacity.SessionsRestoreBoots: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "this boot and the one before it; older boots are deleted at each write"}
+		},
+		capacity.SessionsRestoreBatch: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
+		capacity.SessionsRestoreSeenAge: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "refresh interval for an unchanged set; no retained buffer"}
+		},
 		capacity.SessionTodoBatchRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},

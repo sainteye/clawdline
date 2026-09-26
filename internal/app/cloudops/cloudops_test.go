@@ -586,6 +586,27 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST",
 		path:   "/v1/places/%2FUsers%2Fsean%2Fcode%2Fclawdline-go/resume/claude/018f2f7a",
 	}, {
+		// The sessions a reboot took away (docs/session-restore.md).
+		word:    "restorable-sessions",
+		body:    map[string]any{"type": "restorable-sessions", "session": machine, "request": "req-offer"},
+		session: machine, name: "read:req-offer",
+		method: "GET", path: "/v1/sessions/restorable",
+	}, {
+		word: "restore-sessions",
+		body: map[string]any{"type": "restore-sessions", "session": machine, "request": "req-restore",
+			"conversations": []any{"018f2f7a", "cx-9"}},
+		session: machine, name: "action:req-restore",
+		method: "POST", path: "/v1/sessions/restorable/restore",
+		body2: `{"conversations":["018f2f7a","cx-9"]}`,
+	}, {
+		// Without `conversations` it is every one on offer, and the route is
+		// sent no list at all rather than an empty one.
+		word:    "dismiss-restorable",
+		body:    map[string]any{"type": "dismiss-restorable", "session": machine, "request": "req-dismiss"},
+		session: machine, name: "action:req-dismiss",
+		method: "POST", path: "/v1/sessions/restorable/dismiss",
+		body2: `{}`,
+	}, {
 		word: "voice",
 		body: map[string]any{"type": "voice", "session": machine, "request": "req-voice",
 			"audio": "AAAAAA==", "rate": 16000},
@@ -2003,5 +2024,35 @@ func TestTheCapacityReadCrossesWithNothingButItsName(t *testing.T) {
 		"type": "capacity", "session": MachineReplySession, "request": "req"}))
 	if answer.Status != 405 || answer.Code != "bad_request" {
 		t.Fatalf("answered %d/%q, wanted 405/bad_request", answer.Status, answer.Code)
+	}
+}
+
+// TestRestoringCarriesTheRequestAsItsKeyAndRefusesABadList: a restore is one
+// resume per conversation, so a retried envelope must reach the route under
+// the same key, and a list that is not ids never reaches it at all.
+func TestRestoringCarriesTheRequestAsItsKeyAndRefusesABadList(t *testing.T) {
+	r := &router{}
+	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "restore-sessions", "session": MachineReplySession, "request": "req-restore",
+		"conversations": []any{"018f2f7a"}}))
+	if key := r.last().Header["Idempotency-Key"]; key != "req-restore" {
+		t.Fatalf("the key is %q, wanted the request id", key)
+	}
+	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "dismiss-restorable", "session": MachineReplySession, "request": "req-dismiss",
+		"conversations": []any{"018f2f7a"}}))
+	if got := r.last(); got.Header["Idempotency-Key"] != "req-dismiss" || string(got.Body) != `{"conversations":["018f2f7a"]}` {
+		t.Fatalf("the dismissal reached the route as %+v", got)
+	}
+	before := len(r.seen)
+	for _, bad := range []any{[]any{}, []any{7}, "018f2f7a", []any{"a\nb"}} {
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "restore-sessions", "session": MachineReplySession, "request": "req-bad", "conversations": bad}))
+		if answer.Status == 200 {
+			t.Fatalf("conversations %v was answered 200", bad)
+		}
+	}
+	if len(r.seen) != before {
+		t.Fatalf("a malformed list reached the route: %+v", r.seen[before:])
 	}
 }

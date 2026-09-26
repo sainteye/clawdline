@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "restore.schema.json",
+  "title": "Session restore",
+  "description": "The sessions a reboot or crash took away (docs/session-restore.md): GET /v1/sessions/restorable, read by any paired device; POST /v1/sessions/restorable/restore and POST /v1/sessions/restorable/dismiss, which need a device that may send and an Idempotency-Key. A retry with the same key is answered with the first answer. Refusals are the flat `{error, message}`.",
+  "$defs": {
+    "RestorableReason": {
+      "description": "Why nothing can be offered. `boot_unknown`: this machine cannot read its boot id, so it cannot tell a reboot from a daemon restart, and it records nothing.",
+      "type": "string",
+      "enum": ["boot_unknown"]
+    },
+    "RestorableSession": {
+      "description": "One conversation that was open before the machine last restarted, is not open now, and has been neither restored nor dismissed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversation_id", "assistant", "place", "place_label", "cwd", "title", "last_seen"],
+      "properties": {
+        "conversation_id": { "type": "string" },
+        "assistant": {
+          "description": "`claude` or `codex`.",
+          "type": "string"
+        },
+        "place": {
+          "description": "The place id of the directory (POST /v1/places/{id}/…).",
+          "type": "string"
+        },
+        "place_label": { "type": "string" },
+        "cwd": { "type": "string" },
+        "title": {
+          "description": "The manual title when one was known, else the session's own; empty when it had none.",
+          "type": "string"
+        },
+        "last_seen": {
+          "description": "Unix seconds: the last complete reading that recorded it open, at most sessions.restore_seen_age stale.",
+          "type": "integer"
+        }
+      }
+    },
+    "RestorableSessions": {
+      "description": "GET /v1/sessions/restorable. `available` false carries `reason` and no sessions. Sessions are the previous boot's, most recently seen first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "sessions", "at"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "reason": { "$ref": "#/$defs/RestorableReason" },
+        "previous_boot_last_seen": {
+          "description": "Unix seconds: the last time the previous boot was seen at all. Absent when there is no previous boot on record.",
+          "type": "integer"
+        },
+        "sessions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RestorableSession" }
+        },
+        "at": { "type": "integer" }
+      }
+    },
+    "RestoreSessionsRequest": {
+      "description": "POST /v1/sessions/restorable/restore. At most sessions.restore_batch conversations; a longer list is refused whole with `restore_batch_too_large`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversations"],
+      "properties": {
+        "conversations": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "RestoreCode": {
+      "description": "Why one conversation was not restored. `not_restorable`: it is not on offer (never recorded, already answered, open now, or no boot id). `place_unavailable`: its directory is no longer a place this machine can open. `conversation_not_found`: the assistant no longer lists it for that directory. `open_failed`: the terminal could not open it; `message` says why. `over_capacity`: other sessions were being opened; ask again.",
+      "type": "string",
+      "enum": ["not_restorable", "place_unavailable", "conversation_not_found", "open_failed", "over_capacity"]
+    },
+    "RestoreResult": {
+      "description": "One named conversation's answer. `ok` carries the new terminal (`id`, `backend`, and `attach` for a detached tmux server); otherwise `code` and `message`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversation_id", "ok"],
+      "properties": {
+        "conversation_id": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "code": { "$ref": "#/$defs/RestoreCode" },
+        "message": { "type": "string" },
+        "id": { "type": "string" },
+        "backend": { "$ref": "common.schema.json#/$defs/Backend" },
+        "attach": { "type": "string" }
+      }
+    },
+    "RestoreSessionsAnswer": {
+      "description": "The answer to a restore: one result per distinct conversation named, in the order named.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["results", "at"],
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RestoreResult" }
+        },
+        "at": { "type": "integer" }
+      }
+    },
+    "DismissRestorableRequest": {
+      "description": "POST /v1/sessions/restorable/dismiss. Without `conversations`, every conversation on offer is dismissed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "conversations": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "DismissRestorableAnswer": {
+      "description": "How many rows on offer this dismissed. Zero is an answer: they were already answered, or none were named that are on offer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "dismissed", "at"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "dismissed": { "type": "integer" },
+        "at": { "type": "integer" }
+      }
+    }
+  }
+}

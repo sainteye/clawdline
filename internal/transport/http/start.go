@@ -181,7 +181,11 @@ type startReading struct {
 func (s *Server) readForStart(ctx context.Context) startReading {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	inv := s.freshReading(ctx)
+	return startReadingFrom(s.freshReading(ctx))
+}
+
+// startReadingFrom is readForStart over a reading the caller already took.
+func startReadingFrom(inv session.Inventory) startReading {
 	home, _ := os.UserHomeDir()
 	out := startReading{openClaude: map[string]bool{}, openCodex: map[string]bool{}}
 	for _, item := range inv.Sessions {
