@@ -3,6 +3,7 @@ import {
   type ScheduleWebhookClientAPI,
   type ScheduleWebhookHook,
 } from "../legacy/schedules-bridge.js"
+import { scheduleOwner } from "./schedule-machines.js"
 
 /** The copied Cloud client method used by the old console's webhook binding flow. */
 export interface ScheduleWebhookCommandClient {
@@ -39,11 +40,13 @@ export function installScheduleWebhookManagement(options: {
   const client = new ScheduleWebhookClient({ origin: options.apiOrigin })
   const management: ScheduleWebhookManagement = {
     client,
-    machine: () => options.machineID,
+    // A schedule listed from another machine is bound on that machine: the
+    // binding lives beside the schedule, in the store that fires it.
+    machine: (scheduleID) => scheduleOwner(scheduleID) ?? options.machineID,
     bind: async (scheduleID, hookID, replaceHookID) => {
       const requestID = crypto.randomUUID().toLowerCase()
       await options.connected()._publishCommand(
-        options.machineID,
+        scheduleOwner(scheduleID) ?? options.machineID,
         "schedule-webhook-bind-v1",
         {
           request_id: requestID,

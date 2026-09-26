@@ -94,11 +94,15 @@ export interface ScheduleListRow {
   error_kind?: string
   // Added on this side from the Projects list, as `loadScheduleProjects` adds it.
   project?: { path: string; label: string; icon: ScheduleIcon }
+  /** The machine the row is on. Only a Cloud list names one (`cloud/relay-reader.ts`). */
+  machine?: string
 }
 
 export interface ScheduleList {
   schedules?: ScheduleListRow[]
   at?: number
+  /** Over Cloud: each machine that could have answered and did not, with its code. */
+  unanswered?: { machine?: string; label?: string; code?: string }[]
 }
 
 /** One retained run in a record's `runs`. */
@@ -176,6 +180,8 @@ export interface SchedulePlace {
   at?: number
   icon?: ScheduleIcon
   machine?: string
+  /** host/owner/name of the origin, "" for none; absent from a daemon older than it. */
+  repo?: string
 }
 export interface ScheduleAssistant {
   id: string
@@ -213,29 +219,40 @@ function post(body: unknown, extra: Record<string, string>): RequestInit {
   }
 }
 
+/**
+ * `?machine=<id>`, or nothing. Over Cloud a schedule lives on the machine that
+ * runs it, and the list names that machine on each row
+ * (`cloud/schedule-machines.ts`); the relay seam routes a request that names
+ * one there. On a daemon's own network nothing names one, so every URL is
+ * exactly what it was.
+ */
+function on(machine?: string): string {
+  return machine ? "?machine=" + encodeURIComponent(machine) : ""
+}
+
 /** The transport, as `net/live.js` spells it. Each write mints its own key, once per press. */
 export const scheduleApi = {
   schedules: () => jsonFetch<ScheduleList>("/v1/orchestrator/schedules"),
-  schedule: (id: string) =>
-    jsonFetch<{ schedule?: ScheduleRecord }>("/v1/orchestrator/schedules/" + encodeURIComponent(id)),
-  createSchedule: (schedule: ScheduleBody) =>
+  schedule: (id: string, machine?: string) =>
+    jsonFetch<{ schedule?: ScheduleRecord }>("/v1/orchestrator/schedules/" + encodeURIComponent(id) + on(machine)),
+  createSchedule: (schedule: ScheduleBody | Record<string, unknown>) =>
     jsonFetch<ScheduleWriteAnswer>("/v1/orchestrator/schedules", post(schedule, { "Idempotency-Key": uuid() })),
-  updateSchedule: (id: string, schedule: ScheduleBody) => {
+  updateSchedule: (id: string, schedule: ScheduleBody | Record<string, unknown>, machine?: string) => {
     const opts = post(schedule, { "Idempotency-Key": uuid() })
     opts.method = "PATCH"
-    return jsonFetch<ScheduleWriteAnswer>("/v1/orchestrator/schedules/" + encodeURIComponent(id), opts)
+    return jsonFetch<ScheduleWriteAnswer>("/v1/orchestrator/schedules/" + encodeURIComponent(id) + on(machine), opts)
   },
-  deleteSchedule: (id: string) =>
-    jsonFetch<{ ok?: boolean; deleted?: string }>("/v1/orchestrator/schedules/" + encodeURIComponent(id), {
+  deleteSchedule: (id: string, machine?: string) =>
+    jsonFetch<{ ok?: boolean; deleted?: string }>("/v1/orchestrator/schedules/" + encodeURIComponent(id) + on(machine), {
       method: "DELETE",
       headers: { "Idempotency-Key": uuid() },
     }),
-  runSchedule: (id: string) =>
+  runSchedule: (id: string, machine?: string) =>
     jsonFetch<Record<string, unknown>>(
-      "/v1/orchestrator/schedules/" + encodeURIComponent(id) + "/run",
+      "/v1/orchestrator/schedules/" + encodeURIComponent(id) + "/run" + on(machine),
       post({}, { "Idempotency-Key": uuid() }),
     ),
-  places: () => jsonFetch<SchedulePlaces>("/v1/places"),
+  places: (machine?: string) => jsonFetch<SchedulePlaces>("/v1/places" + on(machine)),
   /** `net/live.js`'s `resumePlace`, as `start-bridge.ts` spells it. */
   resumePlace: (id: string, session: string, assistant?: string | null) => {
     let path = "/v1/places/" + encodeURIComponent(id) + "/resume/"

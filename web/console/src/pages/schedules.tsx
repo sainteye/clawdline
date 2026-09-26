@@ -34,6 +34,7 @@ import {
   type ScheduleAssistant,
   type ScheduleBody,
   type ScheduleFailure,
+  type ScheduleList,
   type ScheduleListRow,
   type SchedulePlace,
   type SchedulePlaces,
@@ -41,6 +42,19 @@ import {
   type ScheduleRun,
 } from "../legacy/schedules-bridge.js"
 import { scheduleWebhookManagement } from "../cloud/schedule-webhooks.js"
+import {
+  choosesMachine,
+  groupSchedules,
+  machineNamed,
+  machineWords,
+  onScheduleFleet,
+  rememberScheduleOwners,
+  scheduleFleet,
+  scheduleOwner,
+  type ScheduleMachine,
+} from "../cloud/schedule-machines.js"
+import { moveSchedule, planScheduleMove, targetBody, type MoveRefusal, type MoveWrites } from "../cloud/schedule-move.js"
+import "./schedules/machines.css"
 import overlaysMarkup from "./schedules/overlays.html?raw"
 
 /**
@@ -206,22 +220,45 @@ function invalidRow(schedule: ScheduleListRow): string {
 }
 
 /** `renderSchedules`, with its three elements looked up when it is called rather than at import. */
-function renderSchedules(schedules: ScheduleListRow[] | undefined, at?: number): void {
+function renderSchedules(
+  schedules: ScheduleListRow[] | undefined,
+  at?: number,
+  unanswered: NonNullable<ScheduleList["unanswered"]> = [],
+): void {
   const section = document.getElementById("schedules")
   const count = document.getElementById("schedules-count")
   const rows = document.getElementById("schedule-rows")
   const list = schedules || []
   if (!section || !rows || !count) return
-  section.hidden = list.length === 0 && !write
-  if (!list.length) {
+  const row = (schedule: ScheduleListRow) =>
+    schedule && schedule.state === "invalid" ? invalidRow(schedule) : validRow(schedule || {}, at)
+  // An account with more than one machine: one group per machine, each headed
+  // by its name, and a machine that did not answer as a named line rather than
+  // as a machine with no schedules. Everywhere else the list is drawn as it
+  // always was.
+  const fleet = scheduleFleet()
+  const groups = choosesMachine(fleet) ? groupSchedules(list, unanswered, fleet) : null
+  const drawn = groups ? groups.reduce((n, group) => n + group.rows.length, 0) : list.length
+  section.hidden = drawn === 0 && !groups?.length && !write
+  if (!drawn && !groups?.length) {
     rows.innerHTML = ""
     count.textContent = ""
     return
   }
-  count.textContent = String(list.length)
-  rows.innerHTML = list
-    .map((schedule) => (schedule && schedule.state === "invalid" ? invalidRow(schedule) : validRow(schedule || {}, at)))
-    .join("")
+  count.textContent = drawn ? String(drawn) : ""
+  rows.innerHTML = groups
+    ? groups
+        .map(
+          (group) =>
+            '<li class="schedule-machine" role="presentation"' +
+            (group.unanswered ? ' data-state="unanswered"' : "") +
+            ">" +
+            esc(group.unanswered ? silentMachine(group.machine) : machineWords(group.machine)) +
+            "</li>" +
+            group.rows.map(row).join(""),
+        )
+        .join("")
+    : list.map(row).join("")
   const projects: Record<string, NonNullable<ScheduleListRow["project"]>> = {}
   list.forEach((schedule) => {
     if (schedule && schedule.id && schedule.project) projects[schedule.id] = schedule.project
@@ -237,14 +274,62 @@ function renderSchedules(schedules: ScheduleListRow[] | undefined, at?: number):
   }
 }
 
+/** When a machine was last heard from, as a clock time; with the date when it was not today. */
+function seenClock(at: number): string {
+  const when = new Date(at)
+  const today = new Date().toDateString() === when.toDateString()
+  const options: Intl.DateTimeFormatOptions = today
+    ? { hour: "2-digit", minute: "2-digit" }
+    : { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }
+  return when.toLocaleString(lang() || undefined, options)
+}
+
+/** A machine that did not answer: offline since a time when one is known, otherwise offline or unreadable. */
+function silentMachine(machine: ScheduleMachine): string {
+  const name = machineWords(machine)
+  if (!machine.online && machine.seenAt) {
+    return nextWord("scheduleMachineOffline", { machine: name, time: seenClock(machine.seenAt) })
+  }
+  return nextWord("scheduleMachineUnread", { machine: name })
+}
+
 /* ---- net/schedules.js: the one-minute lane -------------------------------- */
 
 const Schedules = (() => {
   let started = false
   let inFlight = false
   const projectBySchedule: Record<string, NonNullable<ScheduleListRow["project"]>> = {}
-  // The Projects list, read at most once every few minutes (`createPlacesCache`).
-  const placesCache = createPlacesCache({ places: () => scheduleApi.places() })
+  // The Projects list, read at most once every few minutes (`createPlacesCache`),
+  // one per machine: a place id is that machine's.
+  const placesCaches = new Map<string, ReturnType<typeof createPlacesCache>>()
+  function placesCache(machine: string | undefined) {
+    const key = machine || ""
+    let cache = placesCaches.get(key)
+    if (!cache) {
+      cache = createPlacesCache({ places: () => scheduleApi.places(machine) })
+      placesCaches.set(key, cache)
+    }
+    return cache
+  }
+
+  /** Each row's project, read from the row's own machine. */
+  function loadProjects(schedules: ScheduleListRow[]): Promise<ScheduleListRow[]> {
+    const byMachine = new Map<string, ScheduleListRow[]>()
+    for (const schedule of schedules) {
+      const key = (schedule && schedule.machine) || ""
+      byMachine.set(key, [...(byMachine.get(key) || []), schedule])
+    }
+    return Promise.all(
+      [...byMachine].map(([key, rows]) => {
+        const machine = key || undefined
+        return loadScheduleProjects(rows, (id) => scheduleApi.schedule(id, machine), placesCache(machine).read)
+      }),
+    ).then((parts) => {
+      const loaded = new Map<string, ScheduleListRow>()
+      for (const part of parts) for (const row of part) if (row && row.id) loaded.set(row.id, row)
+      return schedules.map((schedule) => (schedule && schedule.id && loaded.get(schedule.id)) || schedule)
+    })
+  }
   let lastRefreshAt: number | null = null
   let lane: ReturnType<typeof setInterval> | null = null
   const LANE_MS = 60000
@@ -260,14 +345,21 @@ const Schedules = (() => {
       .then((data) => {
         const schedules = (data && data.schedules) || []
         const at = data && data.at
+        const unanswered = (data && data.unanswered) || []
+        // With one machine to show, a machine that did not answer is the whole
+        // inventory unknown: the same as a refusal, below. With several, it is
+        // one named group and the rest still draw.
+        if (unanswered.length && !choosesMachine(scheduleFleet())) return
+        rememberScheduleOwners(schedules)
         renderSchedules(
           schedules.map((schedule) => {
             const project = schedule && schedule.id ? projectBySchedule[schedule.id] : undefined
             return project ? { ...schedule, project } : schedule
           }),
           at,
+          unanswered,
         )
-        return loadScheduleProjects(schedules, scheduleApi.schedule, placesCache.read).then((withProjects) => {
+        return loadProjects(schedules).then((withProjects) => {
           withProjects.forEach((schedule) => {
             if (schedule && schedule.id && schedule.project) projectBySchedule[schedule.id] = schedule.project
           })
@@ -277,6 +369,7 @@ const Schedules = (() => {
               return project && !schedule.project ? { ...schedule, project } : schedule
             }),
             at,
+            unanswered,
           )
         })
       })
@@ -337,6 +430,18 @@ const Schedules = (() => {
       beginWhenAuthed(0)
       if (!pageHidden()) lane = setInterval(refresh, LANE_MS)
       watchVisibility()
+      // The hosted gate learns the account's machines after this lane may have
+      // drawn; the list is drawn again in groups once it knows them.
+      // Only a change in which machines there are reads again; a last-seen time
+      // moving does not.
+      let machines = ""
+      onScheduleFleet(() => {
+        const fleet = scheduleFleet()
+        const next = fleet ? fleet.machines.map((m) => m.id).join(" ") : ""
+        if (next === machines) return
+        machines = next
+        Schedules.refresh()
+      })
     },
   }
 })()
@@ -389,8 +494,19 @@ const Schedule = (() => {
   let editingId: string | null = null
   let loadingEdit = false
   let deleteBusy = false
+  // The machine the form writes to, and — when editing — the one the schedule
+  // is on now. Both undefined on a console with one machine, which then sends
+  // exactly what it always sent. They differ only when Save is a move.
+  let machine: string | undefined
+  let ownerMachine: string | undefined
+  let editRecord: ScheduleRecord | null = null
+  // The owner's places, kept when the form turns to another machine: the move
+  // disables the source by its own place id.
+  let ownerPlaces: SchedulePlace[] | null = null
+  let placesTicket = 0
 
   const busy = () => creating || loadingEdit
+  const moving = () => !!editingId && machine !== ownerMachine
 
   function said(words: string): void {
     el("schedule-said").textContent = words || ""
@@ -418,14 +534,66 @@ const Schedule = (() => {
       "schedule-delete",
     ].forEach((id) => {
       const placesReady = readReady(placesReading) && (places?.length ?? 0) > 0
-      el<HTMLInputElement>(id).disabled = b || (id === "schedule-go" && !placesReady)
+      // A move says why it cannot go (`move`), so an unreadable target does not grey Save out.
+      el<HTMLInputElement>(id).disabled = b || (id === "schedule-go" && !placesReady && !moving())
     })
-    ;["schedule-with", "schedule-model", "schedule-days", "schedule-close", "schedule-flags"].forEach((id) => {
+    ;["schedule-machine", "schedule-with", "schedule-model", "schedule-days", "schedule-close", "schedule-flags"].forEach((id) => {
       const chips = el(id).querySelectorAll<HTMLButtonElement>(".chip")
       for (let i = 0; i < chips.length; i++) chips[i].disabled = b
     })
     const rows = el("schedule-places").querySelectorAll<HTMLButtonElement>(".place")
     for (let j = 0; j < rows.length; j++) rows[j].disabled = b
+  }
+
+  /** The machine chips: hidden unless the account has more than one machine to choose. */
+  function drawMachines(): void {
+    const block = el("schedule-machine-block")
+    const row = el("schedule-machine")
+    row.innerHTML = ""
+    const fleet = scheduleFleet()
+    block.hidden = !choosesMachine(fleet)
+    if (!choosesMachine(fleet)) return
+    fleet.machines.forEach((m) => {
+      const chip = document.createElement("button")
+      chip.type = "button"
+      chip.className = "chip" + (m.id === machine ? " on" : "")
+      chip.textContent = machineWords(m)
+      if (!m.online) chip.title = silentMachine(m)
+      chip.setAttribute("aria-pressed", m.id === machine ? "true" : "false")
+      chip.onclick = () => chooseMachine(m.id)
+      row.appendChild(chip)
+    })
+    paint()
+  }
+
+  /**
+   * Turn the form to another machine. Its project list is that machine's; the
+   * project already chosen stays chosen when the machine has a clone of the
+   * same repository, which is how a move finds it (`cloud/schedule-move.ts`).
+   */
+  function chooseMachine(id: string): void {
+    if (busy() || id === machine) return
+    const picked = (places || []).find((p) => p.id === chosenPlace)
+    const repo = picked?.repo || ""
+    const path = picked?.path || chosenPlacePath
+    machine = id
+    places = null
+    placesNote = ""
+    chosenPlace = null
+    chosenPlacePath = null
+    said("")
+    drawMachines()
+    drawPlaces()
+    ensurePlaces().then(() => {
+      const again =
+        (machine === ownerMachine && path ? (places || []).find((p) => p.path === path) : undefined) ||
+        (repo ? (places || []).find((p) => p.repo === repo) : undefined)
+      chosenPlace = again ? again.id : null
+      if (!assistants.some((a) => a.id === chosenAssistant)) defaultAssistant(null)
+      drawWith()
+      drawModel()
+      drawPlaces()
+    })
   }
 
   function drawWith(): void {
@@ -658,15 +826,21 @@ const Schedule = (() => {
   function ensurePlaces(): Promise<void> {
     if (places && places.length && !placesNote) return Promise.resolve()
     placesReading = { phase: "loading" }
+    const mine = ++placesTicket
+    const from = machine
     return scheduleApi
-      .places()
+      .places(from)
       .then((d: SchedulePlaces) => {
+        // A list read for a machine the form has since left is not this one's.
+        if (mine !== placesTicket) return
         places = (d && d.places) || []
+        if (from === ownerMachine && editingId) ownerPlaces = places
         assistants = (d && d.assistants) || []
         placesNote = unansweredSentence(d)
         placesReading = readAnswer(d, places.length === 0 && placesNote === "")
       })
       .catch((error) => {
+        if (mine !== placesTicket) return
         placesReading = readFailure(error)
       })
   }
@@ -694,6 +868,12 @@ const Schedule = (() => {
     creating = false
     editingId = null
     loadingEdit = false
+    const fleet = scheduleFleet()
+    machine = choosesMachine(fleet) ? fleet.current : undefined
+    ownerMachine = undefined
+    editRecord = null
+    ownerPlaces = null
+    placesTicket += 1
     places = null
     placesReading = { phase: "loading" }
     placesNote = ""
@@ -725,6 +905,7 @@ const Schedule = (() => {
     drawDays()
     drawClose()
     drawFlags()
+    drawMachines()
     drawPlaces()
   }
 
@@ -778,6 +959,10 @@ const Schedule = (() => {
     if (!el("schedule-form").hidden || !el("schedule-delete-confirm").hidden) return
     reset()
     editingId = id
+    // An edit opens on the machine the schedule is on, which need not be the header's.
+    if (machine !== undefined) machine = scheduleOwner(id) ?? machine
+    ownerMachine = machine
+    drawMachines()
     loadingEdit = true
     el("schedule-form-title").textContent = T().webScheduleEdit
     el("schedule-go").textContent = T().webScheduleSave
@@ -786,8 +971,9 @@ const Schedule = (() => {
     el("schedule-form").hidden = false
     paint()
     scheduleApi
-      .schedule(id)
+      .schedule(id, ownerMachine)
       .then((d) => {
+        editRecord = (d && d.schedule) || null
         fillFromRecord((d && d.schedule) || ({} as ScheduleRecord))
       })
       .catch((e: ScheduleFailureLike) => {
@@ -875,7 +1061,7 @@ const Schedule = (() => {
     deleteBusy = true
     paintDeleteConfirm()
     scheduleApi
-      .deleteSchedule(id)
+      .deleteSchedule(id, ownerMachine)
       .then(() => {
         deleteBusy = false
         el("schedule-delete-confirm").hidden = true
@@ -918,7 +1104,9 @@ const Schedule = (() => {
       said(T().webStartOff)
       return
     }
-    const problem = hint()
+    // A move names its own refusals — an offline machine, no clone of the
+    // project there — which are more use than "pick a project".
+    const problem = moving() ? (el<HTMLInputElement>("schedule-at").value ? "" : T().webScheduleNeedsTime) : hint()
     if (problem) {
       said(problem)
       if (!el<HTMLInputElement>("schedule-at").value) el("schedule-at").focus({ preventScroll: true })
@@ -946,10 +1134,17 @@ const Schedule = (() => {
       timeout_minutes: timeout,
     }
 
+    if (moving()) {
+      move(payload)
+      return
+    }
+
     creating = true
     said("")
     paint()
-    const request = editing ? scheduleApi.updateSchedule(editingId!, payload) : scheduleApi.createSchedule(payload)
+    const request = editing
+      ? scheduleApi.updateSchedule(editingId!, payload, ownerMachine)
+      : scheduleApi.createSchedule(payload)
     request
       .then((d) => {
         creating = false
@@ -966,6 +1161,108 @@ const Schedule = (() => {
         said(why(e, editing ? T().webRequestFailed : T().webScheduleFailed))
         paint()
       })
+  }
+
+  /** A refusal of a move, before anything was written, as the sentence to act on. */
+  function refusalSentence(refusal: MoveRefusal): string {
+    switch (refusal.code) {
+      case "schedule_move_target_offline":
+        return nextWord("scheduleMoveTargetOffline", { machine: refusal.machine })
+      case "schedule_move_target_outdated":
+        return nextWord("scheduleMoveTargetOutdated", { machine: refusal.machine })
+      case "schedule_move_source_outdated":
+        return nextWord("scheduleMoveSourceOutdated", { machine: refusal.machine })
+      case "schedule_move_no_origin":
+        return nextWord("scheduleMoveNoOrigin", { project: refusal.project })
+      case "schedule_move_source_unlisted":
+        return nextWord("scheduleMoveSourceUnlisted", { project: refusal.project, machine: refusal.machine })
+      case "schedule_move_no_project":
+        return nextWord("scheduleMoveNoProject", { machine: refusal.machine, repo: refusal.repo })
+      case "schedule_move_webhook_bound":
+        return nextWord("scheduleMoveWebhookBound", { title: refusal.title, machine: refusal.machine })
+      case "schedule_move_webhook_unknown":
+        return nextWord("scheduleMoveWebhookUnknown", { title: refusal.title, machine: refusal.machine })
+      case "schedule_move_spent":
+        return nextWord("scheduleMoveSpent", { title: refusal.title })
+      case "schedule_move_unformed_fields":
+        return nextWord("scheduleMoveUnformed", { fields: refusal.fields.join(", ") })
+    }
+  }
+
+  /**
+   * Save with another machine chosen: disable here, create there, delete here
+   * (`cloud/schedule-move.ts`). Everything that can refuse is asked first.
+   */
+  function move(form: ScheduleBody): void {
+    const id = editingId!
+    const from = machineNamed(ownerMachine || "")
+    const to = machineNamed(machine || "")
+    if (!editRecord || !from || !to) {
+      said(T().webRequestFailed)
+      return
+    }
+    const sourceName = machineWords(from)
+    const targetName = machineWords(to)
+    if (!ownerPlaces) {
+      said(nextWord("scheduleMoveTargetOffline", { machine: sourceName }))
+      return
+    }
+    const listed = placesReading.phase === "ready" || placesReading.phase === "empty_authoritative"
+    const answer = planScheduleMove({
+      record: editRecord,
+      source: { id: from.id, name: sourceName },
+      target: { id: to.id, name: targetName, online: to.online },
+      sourcePlaces: ownerPlaces,
+      targetPlaces: listed ? places || [] : null,
+    })
+    if ("refusal" in answer) {
+      said(refusalSentence(answer.refusal))
+      return
+    }
+    // The project the form shows, when it is one of the target's clones of the
+    // repository; otherwise the first clone.
+    const place = answer.plan.targets.find((p) => p.id === chosenPlace) || answer.plan.targets[0]
+    const writes: MoveWrites = {
+      update: (scheduleID, body, on) => scheduleApi.updateSchedule(scheduleID, body, on),
+      create: (body) => scheduleApi.createSchedule(body),
+      remove: (scheduleID, on) => scheduleApi.deleteSchedule(scheduleID, on),
+    }
+    const record = editRecord
+    creating = true
+    said(nextWord("scheduleMoving", { machine: targetName }))
+    paint()
+    moveSchedule(writes, {
+      record,
+      source: from.id,
+      plan: answer.plan,
+      copy: targetBody({ ...form } as Record<string, unknown>, record, place.id),
+    }).then((outcome) => {
+      creating = false
+      const reason = (error: unknown) => why(error as ScheduleFailureLike, T().webRequestFailed)
+      if (outcome.state === "moved" || outcome.state === "delete_failed") {
+        close()
+        Schedules.refresh()
+        toast(
+          outcome.state === "moved"
+            ? nextWord("scheduleMoved", { machine: targetName })
+            : nextWord("scheduleMoveDeleteFailed", { machine: targetName, source: sourceName, why: reason(outcome.error) }),
+        )
+        return
+      }
+      if (outcome.state === "not_started") {
+        said(nextWord("scheduleMoveNotStarted", { source: sourceName, why: reason(outcome.error) }))
+      } else {
+        said(
+          nextWord(outcome.restored ? "scheduleMoveCreateFailed" : "scheduleMoveCreateFailedDisabled", {
+            machine: targetName,
+            source: sourceName,
+            why: reason(outcome.error),
+          }),
+        )
+        if (!outcome.restored) Schedules.refresh()
+      }
+      paint()
+    })
   }
 
   return {
@@ -1332,8 +1629,8 @@ const ScheduleHistory = (() => {
     draw()
     el("schedule-history-close").focus({ preventScroll: true })
     const mine = ++ticket
-    const detail = scheduleApi.schedule(id)
-    const availablePlaces = scheduleApi.places().catch(() => ({ places: [] }) as SchedulePlaces)
+    const detail = scheduleApi.schedule(id, scheduleOwner(id))
+    const availablePlaces = scheduleApi.places(scheduleOwner(id)).catch(() => ({ places: [] }) as SchedulePlaces)
     Promise.all([detail, availablePlaces])
       .then((answers) => {
         if (mine !== ticket || scheduleId !== id) return
@@ -1396,14 +1693,14 @@ const ScheduleHistory = (() => {
     el("schedule-history-said").textContent = ""
     draw()
     scheduleApi
-      .runSchedule(id)
+      .runSchedule(id, scheduleOwner(id))
       .then(() => {
         if (scheduleId !== id) return
         runningNow = false
         el("schedule-history-said").textContent = scheduleRunWords().accepted
         draw()
         Schedules.refresh()
-        return scheduleApi.schedule(id).then(
+        return scheduleApi.schedule(id, scheduleOwner(id)).then(
           (answer) => {
             if (scheduleId !== id) return
             record = (answer && answer.schedule) || record
@@ -1515,6 +1812,7 @@ function paintStatic(): void {
   text(node("schedule-days-label"), t.webScheduleOn)
   attr(node("schedule-days"), "aria-label", t.webScheduleOn)
   text(node("schedule-where-label"), t.webScheduleWhere)
+  text(node("schedule-machine-label"), nextWord("scheduleMachineField"))
   text(node("schedule-with-label"), t.webScheduleWith)
   attr(node("schedule-places"), "aria-label", t.webScheduleWhere)
   text(node("schedule-first-label"), t.webScheduleFirst)

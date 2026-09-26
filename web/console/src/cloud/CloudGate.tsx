@@ -37,6 +37,7 @@ import {
 import { PairPanel, type PairRequest } from "./PairPanel.js"
 import { readThroughRelay } from "./install.js"
 import { machinesByCapability } from "./machine-access.js"
+import { publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
@@ -800,6 +801,27 @@ export function CloudGate({ declared }: { declared: string }) {
     [machineList, names, forgotten],
   )
   const quickMachines = shown.phase === "ready" ? shown.machines.filter((machine) => machine.selectable) : []
+
+  // The machines a schedule may be on are the ones this switcher offers, in
+  // its words (`cloud/schedule-machines.ts`). Published by value, so the
+  // schedule page redraws only when one of them changes.
+  const scheduleMachines: ScheduleMachine[] = quickMachines.map((machine) => {
+    const identity = machineIdentityFacts(machine)
+    return {
+      id: machine.id,
+      name: machine.name || machine.label || machine.id,
+      platform: platformWord(identity.platform),
+      seenAt: identity.seenAt,
+      online: machine.freshness === "current",
+    }
+  })
+  const scheduleFleetKey = chosen ? JSON.stringify([chosen.id, scheduleMachines]) : ""
+  useEffect(() => {
+    publishScheduleFleet(scheduleFleetKey ? (() => {
+      const [current, machines] = JSON.parse(scheduleFleetKey) as [string, ScheduleMachine[]]
+      return { current, machines }
+    })() : null)
+  }, [scheduleFleetKey])
 
   const switchMachine = (machine: CloudMachine) => {
     setSwitcherOpen(false)
