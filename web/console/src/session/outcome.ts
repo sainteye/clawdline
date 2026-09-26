@@ -38,6 +38,9 @@ const NOT_DONE: ReadonlySet<string> = new Set([
   "forbidden", "unauthorized", "write_disabled",
   // A menu answer checked against the screen before anything was typed.
   "menu_moved", "menu_unreadable", "menu_unverified",
+  // An Enter for words typed and never submitted, checked against the input
+  // line before it was pressed (`app.SubmitTyped`).
+  "input_moved", "input_unreadable",
   // A close refused by what the session owes, or by not being able to say.
   "close_blocked", "closeability_unknown",
   // The request's receipt, refused before it was carried out.
@@ -62,8 +65,9 @@ export function outcomeOf(failure: FailedWrite): Outcome {
  * Whether the Mac said the words are in the session's input line, typed and
  * never submitted (`send_unsubmitted`, `internal/app/actions.go`). Still
  * `unknown` to `outcomeOf` — nothing about it says "did not happen" — but the
- * card can say where the words are and what to do: press Enter, or clear them,
- * on the machine. Sending them again would leave two copies in one line.
+ * card can say where the words are and offer the Enter the machine held back
+ * (`Sender.enter`), which the machine presses only while they are still there.
+ * Sending them again would leave two copies in one line.
  */
 export function sitsUnsubmitted(code: string): boolean {
   return code === "send_unsubmitted"

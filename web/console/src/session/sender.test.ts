@@ -138,3 +138,66 @@ test("look: the turn settles the card; its absence is said; a failed read change
   await h.sender.look(card.token)
   assert.equal(h.cards.card(card.token), undefined)
 })
+
+/** A card the machine typed and held Enter back on, and a daemon whose Enter answers as it is told. */
+function unsubmitted(...enters: (Posted | "throw")[]) {
+  const clock = { t: T0 }
+  const cards = new PendingSends()
+  const pressed: string[] = []
+  const sender = new Sender({
+    cards,
+    now: () => clock.t,
+    post: async () => ({ ok: false, status: 502, code: "send_unsubmitted" }),
+    enter: async (card) => {
+      pressed.push(card.token)
+      const next = enters.shift() ?? { ok: true }
+      if (next === "throw") throw new Error("the network went away")
+      return next
+    },
+    readBack: async () => [],
+    outcomeOf,
+  })
+  const card = cards.add("s", "please read CHILD.md", [], T0)
+  return { cards, pressed, sender, card, ready: () => sender.deliver(card) }
+}
+
+// The phone cannot reach the machine's keyboard: words typed and held back
+// are submitted from the card, by the Enter the machine held back.
+test("an Enter on words typed and never submitted takes the card to accepted, and sends nothing again", async () => {
+  const h = unsubmitted({ ok: true })
+  await h.ready()
+  assert.equal(h.cards.card(h.card.token)?.failure, "send_unsubmitted")
+  await h.sender.enter(h.card.token)
+  assert.deepEqual(h.pressed, [h.card.token])
+  const card = h.cards.card(h.card.token)
+  assert.equal(card?.state, "accepted", "Enter reached the terminal; the turn settles the card")
+  await h.sender.enter(h.card.token)
+  assert.equal(h.pressed.length, 1, "an accepted card offers no second Enter")
+})
+
+test("an Enter refused before it was pressed is offered again, with why", async () => {
+  const h = unsubmitted({ ok: false, status: 409, code: "input_unreadable" })
+  await h.ready()
+  await h.sender.enter(h.card.token)
+  const card = h.cards.card(h.card.token)
+  assert.equal(card?.state, "unknown")
+  assert.equal(card?.failure, "send_unsubmitted", "the words are where they were")
+  assert.equal(card?.enterRefused, "input_unreadable")
+  assert.equal(card?.checking, false)
+})
+
+test("words no longer in the input line, or an Enter nobody answered, are looked at rather than pressed again", async () => {
+  const moved = unsubmitted({ ok: false, status: 409, code: "input_moved" })
+  await moved.ready()
+  await moved.sender.enter(moved.card.token)
+  assert.equal(moved.cards.card(moved.card.token)?.failure, "input_moved")
+  await moved.sender.enter(moved.card.token)
+  assert.equal(moved.pressed.length, 1, "no Enter is offered once the words have moved")
+
+  const lost = unsubmitted("throw")
+  await lost.ready()
+  await lost.sender.enter(lost.card.token)
+  const card = lost.cards.card(lost.card.token)
+  assert.equal(card?.state, "unknown")
+  assert.equal(card?.failure, "offline", "the Enter may have landed")
+})

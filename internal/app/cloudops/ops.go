@@ -217,7 +217,11 @@ type plan struct {
 	place, past, assistant, model     string
 	parts, priority, text, key, audio string
 	// expect is a menu answer's question, session.MenuFingerprint's hex.
-	expect                         string
+	expect string
+	// typed is the end of the words an `enter` submits, and namesTyped whether
+	// the body named them at all: a send of pictures alone names "".
+	typed                          string
+	namesTyped                     bool
 	project, item, audience, entry string
 	status, query                  string
 	environment, category, cursor  string
@@ -2588,7 +2592,8 @@ func decodeAnswer(word string) func(b body) (plan, bool) {
 	return func(b body) (plan, bool) {
 		if !b.hasOneOf([]string{"type", "session", field},
 			[]string{"type", "session", field, "request"},
-			[]string{"type", "session", field, "request", "expect"}) {
+			[]string{"type", "session", field, "request", "expect"},
+			[]string{"type", "session", field, "request", "typed"}) {
 			return plan{}, false
 		}
 		p, ok := actionPlan(b, true)
@@ -2607,6 +2612,13 @@ func decodeAnswer(word string) func(b body) (plan, bool) {
 			}
 			p.expect = expect
 		}
+		if _, named := b["typed"]; named {
+			typed, ok := b.str("typed")
+			if !ok {
+				return plan{}, false
+			}
+			p.typed, p.namesTyped = typed, true
+		}
 		return p, true
 	}
 }
@@ -2621,8 +2633,16 @@ func decodeAnswer(word string) func(b body) (plan, bool) {
 // The shapes without `expect` still decode, so the refusal reaches the page
 // that sent one by its code rather than as a malformed body; nothing is asked
 // of this machine's own route.
+//
+// `enter` is the one key that answers no question: it submits a send that was
+// typed and never submitted, and names those words (`typed`) instead, which
+// the machine checks are still in the input line before it presses anything
+// (app.SubmitTyped). An `enter` that names neither is refused the same way.
 func answerNamesItsQuestion(p plan) *Refusal {
 	if p.expect != "" {
+		return nil
+	}
+	if p.key == "enter" && p.namesTyped {
 		return nil
 	}
 	return &Refusal{Status: 428, Code: "menu_unverified",
@@ -2639,6 +2659,9 @@ func routeAnswer(p plan) LocalRequest {
 	body := map[string]any{"key": p.key}
 	if p.expect != "" {
 		body["expect"] = p.expect
+	}
+	if p.namesTyped {
+		body["typed"] = p.typed
 	}
 	return LocalRequest{Method: "POST", Path: "/v1/sessions/" + segment(p.target) + "/key",
 		Body: jsonBody(body)}

@@ -154,3 +154,37 @@ func TestThePictureDoorIsTheSmallerOfTheTwoCeilings(t *testing.T) {
 			payload, channel)
 	}
 }
+
+// An Enter on words typed and never submitted answers no question, so it
+// names the words instead, and those reach the route that checks they are
+// still in the input line before pressing (app.Actions.SubmitTyped). An
+// Enter that names neither is refused like any unnamed answer.
+func TestACloudEnterCarriesTheWordsItSubmits(t *testing.T) {
+	for _, typed := range []string{"please read CHILD.md", ""} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "answer", "session": pane, "request": "req-1", "answer": "enter", "typed": typed}))
+		if !answer.OK() || len(r.seen) != 1 {
+			t.Fatalf("%q: answered %d/%q, asked %d", typed, answer.Status, answer.Code, len(r.seen))
+		}
+		var body map[string]any
+		if err := json.Unmarshal(r.last().Body, &body); err != nil {
+			t.Fatal(err)
+		}
+		if r.last().Path != "/v1/sessions/%2519/key" || body["key"] != "enter" || body["typed"] != typed || len(body) != 2 {
+			t.Fatalf("%q: routed %s %s", typed, r.last().Path, r.last().Body)
+		}
+	}
+	r := &router{}
+	bare := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "answer", "session": pane, "request": "req-1", "answer": "enter"}))
+	if bare.Code != "menu_unverified" || len(r.seen) != 0 {
+		t.Fatalf("an enter naming nothing: %d/%q, asked %d", bare.Status, bare.Code, len(r.seen))
+	}
+	// A digit that names words instead of its question is still unnamed.
+	digit := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "answer", "session": pane, "request": "req-1", "answer": "1", "typed": "x"}))
+	if digit.Code != "menu_unverified" || len(r.seen) != 0 {
+		t.Fatalf("a digit naming words: %d/%q, asked %d", digit.Status, digit.Code, len(r.seen))
+	}
+}

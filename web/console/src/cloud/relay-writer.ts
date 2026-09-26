@@ -740,8 +740,9 @@ export class RelayWriter {
       case "answer": {
         const body = await bodyOf(init)
         const expect = typeof body.expect === "string" ? body.expect : ""
+        const typed = typeof body.typed === "string" ? body.typed : undefined
         const identity = await this.identity(client, route.session)
-        return this.press(client, identity, String(body.key ?? ""), expect, headerOf(init, "idempotency-key"))
+        return this.press(client, identity, String(body.key ?? ""), expect, headerOf(init, "idempotency-key"), typed)
       }
       case "end": {
         const body = await bodyOf(init)
@@ -1188,15 +1189,22 @@ export class RelayWriter {
    *
    * The card's own key is the request when it sent one, so a press retried
    * after its answer was lost is the same request to the machine's receipt.
+   *
+   * `enter` answers no question: it submits a send the machine typed and held
+   * Enter back on, and names those words (`typed`) instead of a question, which
+   * the machine checks are still in the input line before it presses
+   * (`app.SubmitTyped`). It goes only where that check happens, too.
    */
-  private press(client: CloudWriteClient, identity: CloudIdentity, key: string, expect: string, request: string): Promise<unknown> {
+  private press(client: CloudWriteClient, identity: CloudIdentity, key: string, expect: string, request: string, typed?: string): Promise<unknown> {
     const listed = declaredCommands(client, identity.machine)
     const checks = !client.macCapabilities?.has(identity.machine) && !!listed?.includes("answer") && typeof client._read === "function"
-    if (!expect || !checks) {
+    const names = key === "enter" ? typed !== undefined && !expect : !!expect
+    if (!names || !checks) {
       return Promise.reject(failure("menu_unverified", "this press cannot be checked against the machine's screen", 428))
     }
     const id = request || this.requestID()
-    return client._read!(identity, "answer", { request: id, answer: key, expect }, "action:" + id, undefined, { retireUncertain: true })
+    const named = key === "enter" ? { typed } : { expect }
+    return client._read!(identity, "answer", { request: id, answer: key, ...named }, "action:" + id, undefined, { retireUncertain: true })
   }
 
   /**

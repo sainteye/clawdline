@@ -222,6 +222,24 @@ it (`tmux capture-pane -p -e -J -t <pane>`), rewrite it in a fixture's own words
 Not done: the pane is still 80×24. Starting panes larger would make fewer pickers overflow, but it
 changes every Linux session's screen and was left for its own decision.
 
+### 4.2b Words typed and never submitted are submitted from the card
+
+A send whose paste the terminal never showed arriving in the input line is answered
+`send_unsubmitted`: the words are in the input line and Enter was held back
+(`internal/adapters/terminal/submit.go`). The card used to say to press Enter on the machine. On a
+Linux host nobody sits at, and from a phone anywhere, there was no Enter to press, so the reminder
+said only that the message was stuck.
+
+The card now offers **Press Enter** (`POST /v1/sessions/{id}/key` with `{"key":"enter","typed":…}`,
+carried over Clawdline Cloud as an `answer` that names its words instead of a question). The machine
+reads the screen inside the terminal's turn and presses one Return only while the input line is an
+assistant's composer — Claude Code's framed one, or Codex's `›` — that still shows the end of those
+words or a paste placeholder, and no question is on the screen (`app.Actions.SubmitTyped`,
+`terminal.HoldsTyped`). Anything else is refused with nothing pressed: `input_moved` (sent, cleared,
+behind a question, or a shell now holds the words, where Enter would run them) and
+`input_unreadable`. After `input_moved` the card offers a look at the transcript, as for any unknown
+send; after `input_unreadable` it offers the Enter again.
+
 ### 4.3 Schedules have no route in standalone mode
 
 The scheduler clock runs — `/v1/diagnostics` reports `scheduler.considered/due/fired` and a

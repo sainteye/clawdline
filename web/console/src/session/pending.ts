@@ -41,6 +41,9 @@
  * a terminal that failed part-way — after which the words may be on the Mac,
  * and the card says it does not know rather than that it failed (F3).
  */
+/** `outcome.ts` `sitsUnsubmitted`'s code, spelt here because this file imports nothing at run time. */
+const UNSUBMITTED = "send_unsubmitted"
+
 export type PendingState = "sending" | "accepted" | "failed" | "unknown"
 
 export interface PendingSend {
@@ -87,6 +90,12 @@ export interface PendingSend {
    * would be the message twice, which is what the request exists to stop (F2).
    */
   partial: boolean
+  /**
+   * Why the last Enter pressed on this `send_unsubmitted` card was refused
+   * before it was pressed (`Sender.enter`): a code the machine proved typed
+   * nothing on, so the Enter is offered again. Not kept between page loads.
+   */
+  enterRefused?: string
 }
 
 /** One transcript entry, as much of it as settling reads. */
@@ -283,6 +292,30 @@ export class PendingSends {
     card.checking = true
     this.changed()
     return card
+  }
+
+  /**
+   * "Press Enter" on a card whose words sit typed and never submitted in the
+   * session's input line: the card says it is pressing.
+   */
+  entering(token: string): PendingSend | null {
+    const card = this.find(token)
+    if (!card || card.state !== "unknown" || card.failure !== UNSUBMITTED || card.checking) return null
+    card.checking = true
+    card.enterRefused = ""
+    this.changed()
+    return card
+  }
+
+  /** The Enter was refused before it was pressed: the words are where they were, and the Enter is offered again. */
+  enterRefusedFor(token: string, code: string): void {
+    const card = this.find(token)
+    if (!card) return
+    card.state = "unknown"
+    card.failure = UNSUBMITTED
+    card.checking = false
+    card.enterRefused = code
+    this.changed()
   }
 
   /** One card, if it is still on the page. */

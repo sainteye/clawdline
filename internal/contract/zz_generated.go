@@ -2905,9 +2905,13 @@ type InventorySession struct {
 
 // One key for a session's menu: a digit "1"…"9" answers the row with that
 // number, "tab" and "shift+tab" are the only other keys, and "submit" presses a
-// multi-select's button. Anything else is refused before the session is looked
-// up. Never a way to type text: words sent to a picker are thrown away and the
-// Return after them confirms whatever is highlighted.
+// multi-select's button, and "enter" presses Enter on a send that was typed and
+// never submitted (send_unsubmitted) — only while the session's input line is
+// an assistant's composer still holding `typed` and no question is on its
+// screen, and refused as input_moved or input_unreadable with nothing pressed
+// otherwise. Anything else is refused before the session is looked up. Never a
+// way to type text: words sent to a picker are thrown away and the Return after
+// them confirms whatever is highlighted.
 type KeyRequest struct {
 	// The question this answer was chosen for: the SHA-256 (64 lowercase hex digits)
 	// of the menu's canonical form, as session.MenuFingerprint and
@@ -2919,6 +2923,11 @@ type KeyRequest struct {
 	// it is refused as menu_unverified.
 	Expect string `json:"expect,omitempty"`
 	Key    string `json:"key"`
+
+	// With "enter" only: the end of the send's text as the page sent it (a send of
+	// pictures alone names ""). Enter is pressed only if the input line shows the end
+	// of it, or a paste placeholder.
+	Typed string `json:"typed,omitempty"`
 }
 
 type LeaseHolder struct {

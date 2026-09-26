@@ -19,9 +19,9 @@
  */
 import { client } from "../client.js"
 import { outcomeOf } from "./outcome.js"
-import { PendingSends, turnWords, type PendingSend } from "./pending.js"
+import { newRequestID, PendingSends, turnWords, type PendingSend } from "./pending.js"
 import { Cards, type CardStore } from "./persist.js"
-import { postCard, readTranscript, Sender } from "./sender.js"
+import { postCard, postEnter, readTranscript, Sender } from "./sender.js"
 
 /** The page's one set of cards: a card outlives the composer that made it and the session being switched away from. */
 export const pendingSends = new PendingSends()
@@ -88,6 +88,7 @@ const sender = new Sender({
   cards: pendingSends,
   now: () => Date.now(),
   post: (card) => postCard(doFetch, url, card),
+  enter: (card) => postEnter(doFetch, url, card, newRequestID()),
   readBack: (session) => readTranscript(doFetch, url, session),
   outcomeOf,
 })
@@ -124,6 +125,11 @@ export function deliverUntilSeen(card: PendingSend): Promise<string> {
 /** A card's "try again" (`Sender.resend`): read first, and send only on a read that shows no turn. */
 export function resend(token: string): Promise<void> {
   return sender.resend(token)
+}
+
+/** A `send_unsubmitted` card's "press Enter" (`Sender.enter`): the machine presses it only at the card's words. */
+export function enter(token: string): Promise<void> {
+  return sender.enter(token)
 }
 
 /** An unknown card's "look" (`Sender.look`): read the transcript; never send. */

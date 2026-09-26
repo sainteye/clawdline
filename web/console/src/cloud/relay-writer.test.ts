@@ -724,6 +724,28 @@ test("F1: a press names the question it answers, under the press's own request",
   ])
 })
 
+test("an Enter on words typed and never submitted names the words, not a question", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  client.descriptors.set("mac-a", GO_DAEMON)
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/sessions/s1/key", post({ key: "enter", typed: "readCHILD.md" }, { "Idempotency-Key": "enter-1" }))
+  assert.equal(res.status, 200)
+  assert.deepEqual(client.calls.pop(), [
+    "_read", { machine: "mac-a", session: "s1" }, "answer", { request: "enter-1", answer: "enter", typed: "readCHILD.md" },
+    "action:enter-1", undefined, { retireUncertain: true },
+  ])
+  for (const [name, body] of [
+    ["an Enter naming no words", { key: "enter" }],
+    ["an Enter naming a question instead", { key: "enter", typed: "x", expect: FINGERPRINT }],
+    ["a digit naming words instead of its question", { key: "2", typed: "x" }],
+  ] as [string, Record<string, unknown>][]) {
+    const refused = await reader.fetch("/v1/sessions/s1/key", post(body))
+    assert.equal(refused.status, 428, name)
+  }
+  assert.deepEqual(client.calls.filter((c) => c[0] === "_read"), [], "nothing else was sealed")
+})
+
 test("F1, F7: a press that cannot be checked against the machine's screen is refused here, and nothing is sent", async () => {
   const cases: [string, (c: FakeClient) => void, Record<string, unknown>][] = [
     ["no question named", (c) => c.descriptors.set("mac-a", GO_DAEMON), { key: "2" }],

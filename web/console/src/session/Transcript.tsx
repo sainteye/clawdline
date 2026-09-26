@@ -27,7 +27,7 @@ import type { PendingSend } from "./pending.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
 import { sitsUnsubmitted } from "./outcome.js"
 import { INTERRUPTED } from "./persist.js"
-import { look, pendingSends, resend } from "./send.js"
+import { enter, look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
 import "./pending.css"
 import "./working-line.css"
@@ -385,16 +385,29 @@ function pendingHTML(card: PendingSend): ReactElement {
           : "") +
       dismiss +
       "</div>"
+  } else if (card.state === "unknown" && sitsUnsubmitted(card.failure) && card.checking) {
+    body +=
+      '<div class="pending-state" role="status"><canvas class="spin"></canvas><span>' +
+      esc(nextWord("sendEntering")) +
+      "</span></div>"
   } else if (card.state === "unknown" && sitsUnsubmitted(card.failure)) {
-    // The Mac typed the words and held Enter back: they are in the session's
-    // input line. Neither a look nor "send again" helps — the transcript has
-    // no turn for them, and a second send types them twice — so the card says
-    // where they are and offers only to close it.
+    // The machine typed the words and held Enter back: they are in the
+    // session's input line. Neither a look nor "send again" helps — the
+    // transcript has no turn for them, and a second send types them twice —
+    // so the card offers the Enter that was held back, which the machine
+    // presses only while the words are still there (`Sender.enter`).
     body +=
       '<div class="pending-state" role="alert"><span>' +
       esc(nextWord("sendUnsubmitted", { code: card.failure })) +
+      (card.enterRefused ? " " + esc(nextWord("sendEnterRefused", { code: card.enterRefused })) : "") +
       "</span>" +
-      partial +
+      '<button type="button" class="go" data-pending-enter="' +
+      esc(card.token) +
+      '" title="' +
+      esc(nextWord("sendEnterTip")) +
+      '">' +
+      esc(nextWord("sendEnter")) +
+      "</button>" +
       dismiss +
       "</div>"
   } else if (card.state === "unknown" && card.checking) {
@@ -412,7 +425,13 @@ function pendingHTML(card: PendingSend): ReactElement {
     // (`sendInterrupted`): the request went with the page, so nothing answered
     // and nothing here knows. Looking is the same press as for any other
     // unknown card.
-    const said = card.absent ? "sendAbsent" : card.failure === INTERRUPTED ? "sendInterrupted" : "sendUnknown"
+    const said = card.absent
+      ? "sendAbsent"
+      : card.failure === INTERRUPTED
+        ? "sendInterrupted"
+        : card.failure === "input_moved"
+          ? "sendEnterMoved"
+          : "sendUnknown"
     body +=
       '<div class="pending-state" role="alert"><span>' +
       esc(nextWord(said, { code: card.failure })) +
@@ -453,9 +472,14 @@ function pendingHTML(card: PendingSend): ReactElement {
   )
 }
 
-/** A press inside a pending card: try again, look, close it, or a code block's copy button. */
+/** A press inside a pending card: try again, look, press Enter, close it, or a code block's copy button. */
 function pendingAction(ev: MouseEvent<HTMLElement>) {
   const target = ev.target as Element
+  const entered = target.closest?.("[data-pending-enter]")
+  if (entered) {
+    void enter(entered.getAttribute("data-pending-enter") ?? "")
+    return
+  }
   const retry = target.closest?.("[data-pending-retry]")
   if (retry) {
     void resend(retry.getAttribute("data-pending-retry") ?? "")

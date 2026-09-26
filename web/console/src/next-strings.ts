@@ -348,7 +348,13 @@ const words = {
       "This machine cannot list its earlier sessions over Clawdline Cloud yet (it does not answer past-sessions), so none can be picked up from here. Pick it up on the machine, or start a new session here.",
     sendUnknown: "Not known whether this reached the machine ({code}).",
     sendUnsubmitted:
-      "This was typed into the session's input line on the machine, but Enter was not pressed ({code}). Press Enter there, or clear it; sending it again would type it twice.",
+      "This was typed into the session's input line on the machine, but Enter was not pressed ({code}). Press Enter here to submit it; sending it again would type it twice.",
+    sendEnter: "Press Enter",
+    sendEnterTip: "Enter is pressed only while these words are still in the session's input line and no question is on its screen.",
+    sendEntering: "Pressing Enter…",
+    sendEnterMoved:
+      "Enter was not pressed: these words are no longer in the session's input line, or it is asking a question now ({code}).",
+    sendEnterRefused: "Enter was not pressed ({code}).",
     sendLook: "Look",
     sendLookTip: "Read the conversation on the machine again: if this is there, the card goes.",
     sendLooking: "Looking…",
@@ -727,7 +733,12 @@ const words = {
     cloudPastUnavailable:
       "這台機器還不能經由 Clawdline Cloud 列出以前的 session（它不回答 past-sessions），所以這裡沒辦法接續。請到那台機器上接續，或在這裡開一個新的 session。",
     sendUnknown: "不知道有沒有送到那台機器（{code}）。",
-    sendUnsubmitted: "字已經打進那台機器這個 session 的輸入列，但沒有按下 Enter（{code}）。請到那台機器上按 Enter，或把它清掉；再送一次會打成兩份。",
+    sendUnsubmitted: "字已經打進那台機器這個 session 的輸入列，但還沒按下 Enter（{code}）。可以在這裡按 Enter 送出；再送一次會打成兩份。",
+    sendEnter: "按 Enter 送出",
+    sendEnterTip: "只有這段字還在 session 的輸入列、畫面上也沒有在問問題時，才會按下 Enter。",
+    sendEntering: "正在按 Enter…",
+    sendEnterMoved: "沒有按下 Enter：這段字已經不在 session 的輸入列，或畫面上正在問問題（{code}）。",
+    sendEnterRefused: "沒有按下 Enter（{code}）。",
     sendLook: "去看看",
     sendLookTip: "重新讀一次那台機器上的對話：如果已經在裡面，這張卡就會消失。",
     sendLooking: "正在看…",
