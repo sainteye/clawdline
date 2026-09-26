@@ -2,7 +2,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see `order.test.ts`.
-import { outcomeOf, sitsUnsubmitted, writeIsOff } from "./outcome.ts"
+import { outcomeOf, sitsUnsubmitted, waitsOnQuestion, writeIsOff } from "./outcome.ts"
 
 // F3: "did not happen" has to be proved; everything else is "not known". The
 // default is the uncertain answer, because the certain one sends a person to
@@ -47,5 +47,15 @@ test("a line typed and not submitted is known to be in the input line", () => {
   assert.equal(sitsUnsubmitted("send_unsubmitted"), true)
   for (const code of ["send_failed", "terminal_io_failed", "offline", "busy", ""]) {
     assert.equal(sitsUnsubmitted(code), false, code)
+  }
+})
+
+// A send refused because a dialog is up typed nothing: it is "did not
+// happen", so the card offers the send again once the question is answered.
+test("a send refused under a question did not happen", () => {
+  assert.equal(outcomeOf({ status: 409, code: "session_asking" }), "not_done")
+  assert.equal(waitsOnQuestion("session_asking"), true)
+  for (const code of ["send_unsubmitted", "session_not_idle", "menu_moved", ""]) {
+    assert.equal(waitsOnQuestion(code), false, code)
   }
 })

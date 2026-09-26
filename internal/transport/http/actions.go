@@ -375,6 +375,12 @@ func actionStatus(code string) int {
 		// could not be read to say: nothing was typed, and asking again
 		// against a fresh reading is the remedy.
 		return http.StatusConflict
+	case "session_asking":
+		// A question is on the session's screen and nothing was typed: the
+		// person answers it from the row's buttons, and the same send then
+		// goes. 409, and not kept under the key, because a fresh reading is
+		// what changes the answer.
+		return http.StatusConflict
 	case "pictures_unavailable":
 		return http.StatusServiceUnavailable
 	case "nobody_attached":
