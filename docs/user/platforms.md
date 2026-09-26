@@ -23,7 +23,15 @@ The app bundles its own daemon and console, so you do not run `serve` yourself.
 ```sh
 tools/package-macos.sh          # builds dist/Clawdline Next.app
 tools/package-macos.sh --dmg    # and a disk image
+tools/package-macos.sh --no-restart   # never quit a running app
 ```
+
+The new bundle is built and signed in `dist/.staging.<pid>/` first, so a failed build leaves the
+app you have as it was. If the app is running from this checkout's `dist/`, the script quits it
+(waiting up to 120 seconds), puts the new bundle in its place, opens it again and waits for its
+daemon to answer. It does this because replacing a running app's files makes macOS refuse its
+control of iTerm2 (error -1743) until it restarts. With `--no-restart` a running app is left
+alone: the script exits with an error and prints where the new bundle is.
 
 It needs Apple silicon, macOS 13 or newer, and the Xcode command line tools to build
 (`swiftc --version`). It is signed ad hoc, not notarized. Copy it to `/Applications` and open it.
