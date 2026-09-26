@@ -53,19 +53,13 @@ export interface MoveRecord {
  * for, and that travel: a save on the same machine keeps them (`build`,
  * internal/app/schedules.go), and a create takes them in `template`
  * (`createTemplate`), so the copy carries what the source's file said.
+ * `permission_mode` is not one: it is a form field, so it travels in the form
+ * the copy is made from, and `template` refuses it.
  */
 export const CARRIED_TASK_FIELDS = [
   "claims", "serialize", "isolation", "isolation_base",
   "deliverables", "kind", "plan", "graph", "reasoning_effort",
 ] as const
-
-/**
- * The template fields that cannot travel. A create may not set the permission
- * setting — any device that may send could otherwise make a schedule that runs
- * with more than the form can grant — so a schedule carrying one is not moved
- * rather than moved without it.
- */
-export const UNFORMED_TASK_FIELDS = ["permission_mode"] as const
 
 export type MoveRefusal =
   | { code: "schedule_move_target_offline"; machine: string }
@@ -77,7 +71,6 @@ export type MoveRefusal =
   | { code: "schedule_move_webhook_bound"; title: string; machine: string }
   | { code: "schedule_move_webhook_unknown"; title: string; machine: string }
   | { code: "schedule_move_spent"; title: string }
-  | { code: "schedule_move_unformed_fields"; fields: string[] }
 
 export interface MovePlan {
   /** The source's place id for the project, which the disable and the restore send. */
@@ -108,8 +101,6 @@ export function planScheduleMove(input: {
   const { record, source, target } = input
   const title = record.title || ""
   if (record.fired_at) return { refusal: { code: "schedule_move_spent", title } }
-  const unformed = UNFORMED_TASK_FIELDS.filter((key) => record.task && key in record.task)
-  if (unformed.length) return { refusal: { code: "schedule_move_unformed_fields", fields: [...unformed] } }
   // A webhook is bound to a schedule id on the source machine. The copy has a
   // new id on another machine, so the hook would keep calling a schedule that
   // is gone; and "could not read the binding" is not "unbound".
@@ -204,13 +195,16 @@ export function retargetInstructions(text: string, from: string, to: string): st
 /**
  * The copy's body: what the form holds, on the target's place. A one-time
  * schedule's date is carried, since the form has no control for it and a copy
- * without it would repeat daily. The source's hidden template fields go in
- * `template` — only when there are any, so a schedule without them still moves
- * to a machine too old to read the key. The project directory named in the
- * instructions becomes the target's.
+ * without it would repeat daily. The form's permission goes as the form field
+ * it is, and an empty one — nothing to take off a schedule being made — is left
+ * out. The source's hidden template fields go in `template` — only when there
+ * are any. Either key is sent only when it says something, so a schedule
+ * without them still moves to a machine too old to read it. The project
+ * directory named in the instructions becomes the target's.
  */
 export function targetBody(form: Record<string, unknown>, record: MoveRecord, place: MovePlace): Record<string, unknown> {
   const body: Record<string, unknown> = { ...form, place_id: place.id }
+  if (!body.permission_mode) delete body.permission_mode
   if (record.when?.on !== undefined) {
     body.on = record.when.on
     if (record.when.days === undefined) delete body.days
@@ -224,13 +218,14 @@ export function targetBody(form: Record<string, unknown>, record: MoveRecord, pl
 }
 
 /**
- * Whether a create was refused because the target daemon predates `template`:
- * it answers `unknown field: template`. The move says the target needs
- * updating, and never tries again without the fields.
+ * Whether a create was refused because the target daemon predates a key the
+ * copy carries — `template`, or the form's `permission_mode`: it answers
+ * `unknown field: …` naming it. The move says the target needs updating, and
+ * never tries again without the fields.
  */
-export function refusedForTemplate(error: unknown): boolean {
+export function refusedByOlderTarget(error: unknown): boolean {
   const message = error && typeof error === "object" ? (error as { message?: unknown }).message : undefined
-  return typeof message === "string" && /unknown field:[^.]*\btemplate\b/.test(message)
+  return typeof message === "string" && /unknown field:[^.]*\b(template|permission_mode)\b/.test(message)
 }
 
 /** The three writes, each to the machine it names. `create` routes by the body's place. */
