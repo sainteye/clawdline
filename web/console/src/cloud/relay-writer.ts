@@ -233,6 +233,11 @@ export type WriteRoute =
   | { op: "usage"; word: Carried<"usage.session" | "usage.task" | "usage.item">; id: string }
   | { op: "usage-compare"; word: Carried<"usage.compare-compaction"> }
   | { op: "capacity"; word: Carried<"capacity"> }
+  // The sessions a reboot took away: one machine read and two machine
+  // commands, none of them a session's — the rows are conversations the
+  // machine no longer has a terminal for.
+  | { op: "restorable"; word: Carried<"restorable-sessions"> }
+  | { op: "restore"; word: Carried<"restore-sessions" | "dismiss-restorable"> }
   // Things waiting to be verified. Machine words, not session ones: a record
   // belongs to the machine, and the page that reads it holds no session.
   | { op: "verification-read"; word: Carried<"verification.list" | "verification.get">; id: string }
@@ -390,6 +395,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // The capacity block on Settings: the register's rows and the dead
     // letters, machine-wide, on the machine's one reply channel.
     if (head === "capacity" && segments.length === 1) return { op: "capacity", word: "capacity" }
+    if (head === "sessions" && a === "restorable" && segments.length === 2) {
+      return { op: "restorable", word: "restorable-sessions" }
+    }
     if (head === "verifications" && segments.length === 1) {
       return { op: "verification-read", word: "verification.list", id: "" }
     }
@@ -506,6 +514,13 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // `GET /v1/orchestrator/schedules` is the reader's, and falls out above.
     if (segments.length === 2) return { op: "schedule-create", word: "schedule-create" }
     if (segments.length === 4 && b && c === "run") return { op: "schedule-run", word: "schedule-run", schedule: b }
+    return null
+  }
+  // Before the session writes below, which would read `restorable` as a
+  // session id and `restore` as an action it does not have.
+  if (head === "sessions" && a === "restorable" && segments.length === 3) {
+    if (b === "restore") return { op: "restore", word: "restore-sessions" }
+    if (b === "dismiss") return { op: "restore", word: "dismiss-restorable" }
     return null
   }
   if (head === "sessions" && a && segments.length === 3) {
@@ -635,6 +650,10 @@ function spellingOf(route: WriteRoute): Spelling {
     case "verification-write":
     case "verification-criterion":
     case "verification-delete":
+    // `/v1/sessions/restorable*` refuses flat (docs/session-restore.md), and
+    // `session/restore-offer.ts` reads that spelling.
+    case "restorable":
+    case "restore":
       return "flat"
     default:
       return "nested"
@@ -852,6 +871,32 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
         }
         return client._machineRequest(this.host.machine, route.word, {}, "read")
+      }
+      case "restorable": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", route.word, 501)
+        }
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
+        }
+        return client._machineRequest(this.host.machine, route.word, {}, "read")
+      }
+      case "restore": {
+        // A restore is one resume per conversation, so the sheet's one key per
+        // press is the command's request, as `resume` carries it: a retried
+        // envelope is answered with the first answer and opens nothing twice.
+        // The route refuses a press without one, and so does this seam,
+        // before anything is sealed.
+        const request = headerOf(init, "idempotency-key")
+        if (!request) throw failure("bad_request", `${route.word} needs an Idempotency-Key`, 400)
+        if (typeof client._machineRequestAs !== "function") throw failure("cloud_not_carried", route.word, 501)
+        const sent = await bodyOf(init)
+        // A dismissal that names no list dismisses every row on offer; an
+        // empty list names none. The word keeps that difference by leaving
+        // `conversations` out rather than sending it empty.
+        const body: Record<string, unknown> = {}
+        if (Array.isArray(sent.conversations)) body.conversations = sent.conversations
+        return client._machineRequestAs(request, this.host.machine, route.word, body, "action")
       }
       case "verification-read": {
         if (typeof client._machineRequest !== "function") {

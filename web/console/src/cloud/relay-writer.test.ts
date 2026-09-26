@@ -1309,3 +1309,58 @@ test("the capacity block crosses as its machine word, with no field of its own",
   assert.equal(bad.status, 405)
   assert.equal((await json<{ error: { code: string } }>(bad)).error.code, "bad_request")
 })
+
+test("the sessions a reboot took away cross as the machine's three words, under the press's key", async () => {
+  // Parsed before the session writes, which would take `restorable` for a
+  // session id and `restore` for an action it does not have.
+  assert.deepEqual(writeRoute("GET", "/v1/sessions/restorable"), { op: "restorable", word: "restorable-sessions" })
+  assert.deepEqual(writeRoute("POST", "/v1/sessions/restorable/restore"), { op: "restore", word: "restore-sessions" })
+  assert.deepEqual(writeRoute("POST", "/v1/sessions/restorable/dismiss"), { op: "restore", word: "dismiss-restorable" })
+  assert.equal(writeRoute("POST", "/v1/sessions/restorable"), null)
+  assert.equal(writeRoute("GET", "/v1/sessions/restorable/restore"), null)
+  assert.equal(writeRoute("POST", "/v1/sessions/restorable/other"), null)
+  // A session that happens to be called `restorable` still has a git read.
+  assert.equal(writeRoute("GET", "/v1/sessions/restorable/git")?.word, "git")
+
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const list = await reader.fetch("/v1/sessions/restorable")
+  assert.equal(list.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "restorable-sessions", {}, "read"])
+
+  const restored = await reader.fetch("/v1/sessions/restorable/restore",
+    post({ conversations: ["c1", "c2"] }, { "Idempotency-Key": "press-restore-1" }))
+  assert.equal(restored.status, 200)
+  assert.deepEqual(client.calls.pop(),
+    ["_machineRequestAs", "press-restore-1", "mac-a", "restore-sessions", { conversations: ["c1", "c2"] }, "action"])
+
+  // "Skip all" names no list, and the word keeps that: absent, not empty.
+  const all = await reader.fetch("/v1/sessions/restorable/dismiss", post({}, { "Idempotency-Key": "press-dismiss-1" }))
+  assert.equal(all.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "press-dismiss-1", "mac-a", "dismiss-restorable", {}, "action"])
+  const some = await reader.fetch("/v1/sessions/restorable/dismiss",
+    post({ conversations: ["c3"] }, { "Idempotency-Key": "press-dismiss-2" }))
+  assert.equal(some.status, 200)
+  assert.deepEqual(client.calls.pop(),
+    ["_machineRequestAs", "press-dismiss-2", "mac-a", "dismiss-restorable", { conversations: ["c3"] }, "action"])
+
+  // A command without the press's key is refused here, as the route refuses
+  // it, and nothing is sealed.
+  const keyless = await reader.fetch("/v1/sessions/restorable/restore", post({ conversations: ["c1"] }))
+  assert.equal(keyless.status, 400)
+  assert.equal((await json<{ error: string }>(keyless)).error, "bad_request")
+  assert.equal(client.calls.length, 0)
+
+  // A query the route does not read is refused by name, not dropped.
+  const extra = await reader.fetch("/v1/sessions/restorable?all=1")
+  assert.equal(extra.status, 501)
+
+  // The route's refusal crosses flat, with its code.
+  client.fail._machineRequestAs = failureFromMac({
+    code: "restore_batch_too_large", layer: "mac_route", message: "At most 20 conversations.",
+  }, 400, REF)
+  const tooMany = await reader.fetch("/v1/sessions/restorable/restore",
+    post({ conversations: ["c1"] }, { "Idempotency-Key": "press-restore-2" }))
+  assert.equal(tooMany.status, 400)
+  assert.equal((await json<{ error: string }>(tooMany)).error, "restore_batch_too_large")
+})
