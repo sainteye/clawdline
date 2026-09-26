@@ -566,6 +566,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		// brief was admitted; `Admit` refuses it again rather than trusting
 		// that, because it is the gate between a brief and a command line.
 		ReasoningEffort: r.ReasoningEffort,
+		Language:        b.ClaudeLanguage(r.Assistant),
 	})
 	if err != nil {
 		r.State = StateSpawnFailed

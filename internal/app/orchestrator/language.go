@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/whisper"
 )
 
@@ -35,4 +36,15 @@ func displayLanguage(setting string, machine []whisper.Answer, catalog string) s
 		return fallback
 	}
 	return "zh-Hant"
+}
+
+// ClaudeLanguage is the response language a session opened with assistant is
+// launched with (projects.ClaudeLanguage): DisplayLanguage, for Claude, unless
+// the person chose one in Claude Code's own settings. Read at every launch, so
+// changing either restarts nothing.
+func (b *Broker) ClaudeLanguage(assistant string) string {
+	if assistant != projects.AssistantClaude || b.ClaudeSetsLanguage == nil || b.ClaudeSetsLanguage() {
+		return ""
+	}
+	return projects.ClaudeLanguage(b.DisplayLanguage())
 }
