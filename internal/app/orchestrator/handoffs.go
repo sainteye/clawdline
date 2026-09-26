@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -73,6 +74,16 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model st
 	// the directory before it draws anything, and a session nobody can type
 	// into is a hand-over nobody receives (trustArgs).
 	args = append(args, trustArgs(launch.Assistant, cwd)...)
+	// Claude Code has no such flag, so the answer is recorded where Claude
+	// Code keeps it — for the project folder a session was asked for, never a
+	// child's disposable checkout (projects.TrustClaudeProject). A folder that
+	// could not be recorded still opens: its dialog is then what the briefing
+	// reports, as it was before.
+	if launch.Assistant == projects.AssistantClaude && b.TrustClaudeProject != nil {
+		if err := b.TrustClaudeProject(cwd); err != nil {
+			log.Printf("broker: %s was not recorded as a folder Claude Code trusts: %v", cwd, err)
+		}
+	}
 	// A session this broker opens is started with the machine's compaction
 	// window, as a child is; nobody's task names one here.
 	window := b.autoCompactFor(launch.Assistant, nil)

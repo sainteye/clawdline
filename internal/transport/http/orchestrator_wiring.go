@@ -160,6 +160,17 @@ func newBroker(s *Server) *orchestrator.Broker {
 			return "", false
 		},
 		Launcher: terminal.NewLauncher(),
+		// The person decided that asking for a new Claude Code session in a
+		// registered project answers Claude Code's workspace-trust question
+		// for that folder (projects.TrustClaudeProject).
+		TrustClaudeProject: func(dir string) error {
+			config, err := projects.ClaudeConfigPath()
+			if err != nil {
+				return err
+			}
+			_, err = projects.TrustClaudeProject(config, dir)
+			return err
+		},
 		// What this machine's terminals can do, asked before a dispatch is
 		// admitted (orchestrator capability.go, W7).
 		TerminalCapabilities: terminal.NewLauncher().Capabilities,
