@@ -1285,3 +1285,27 @@ test("a verification crosses as its machine word, with the record's id and its b
   assert.equal(open.status, 409)
   assert.equal((await json(open)).error, "verification_open")
 })
+
+test("the capacity block crosses as its machine word, with no field of its own", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal(writeRoute("GET", "/v1/capacity")?.word, "capacity")
+  const read = await reader.fetch("/v1/capacity")
+  assert.equal(read.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "capacity", {}, "read"])
+
+  // Nothing under it is a word, and a write to it is not a read.
+  assert.equal(writeRoute("GET", "/v1/capacity/artifacts.drops"), null)
+  assert.equal(writeRoute("POST", "/v1/capacity"), null)
+
+  // A query the route does not read is refused by name, not dropped.
+  const extra = await reader.fetch("/v1/capacity?all=1")
+  assert.equal(extra.status, 501)
+  assert.equal((await json<{ error: { code: string } }>(extra)).error.code, "cloud_not_carried")
+
+  // The route's own refusal crosses with its code.
+  client.fail._machineRequest = refusal("bad_request", { status: 405, layer: "mac_route", message: "The capacity panel is read with GET." })
+  const bad = await reader.fetch("/v1/capacity")
+  assert.equal(bad.status, 405)
+  assert.equal((await json<{ error: { code: string } }>(bad)).error.code, "bad_request")
+})

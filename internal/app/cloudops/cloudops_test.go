@@ -522,6 +522,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-landings",
 		method: "GET", path: "/v1/orchestrator/landings",
 	}, {
+		// The Settings page's capacity block, which every capacity push names:
+		// machine-wide and parameterless, as the local route is.
+		word:    "capacity",
+		body:    map[string]any{"type": "capacity", "session": machine, "request": "req-capacity"},
+		session: machine, name: "read:req-capacity",
+		method: "GET", path: "/v1/capacity",
+	}, {
 		word: "send",
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",
 			"text": "hello", "images": []any{}},
@@ -1377,7 +1384,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "landings",
+		"project-worktree-lifecycle-refresh", "landings", "capacity",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
@@ -1931,5 +1938,36 @@ func TestAVerificationCrossesOnlyAsTheRouteWouldTakeIt(t *testing.T) {
 		if answer.Code != "cloud_commands_disabled" {
 			t.Fatalf("%s crossed with the write switch off: %+v", word, answer)
 		}
+	}
+}
+
+// TestTheCapacityReadCrossesWithNothingButItsName. The capacity block on the
+// Settings page is what every capacity push points at, and the phone that got
+// the push reads it through here. The word is the local route's question and
+// nothing more: no field beyond the envelope, and no session channel, reaches
+// this machine; the route's own answer crosses as itself.
+func TestTheCapacityReadCrossesWithNothingButItsName(t *testing.T) {
+	r := &router{}
+	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": "capacity", "session": MachineReplySession, "request": "req"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Method != "GET" || r.last().Path != "/v1/capacity" || len(r.last().Query) != 0 {
+		t.Fatalf("answered %+v, asked %+v", answer, r.seen)
+	}
+	for _, body := range []map[string]any{
+		{"type": "capacity", "session": MachineReplySession, "request": "req", "all": true},
+		{"type": "capacity", "session": MachineReplySession, "request": "req", "name": "artifacts.drops"},
+		{"type": "capacity", "session": pane, "request": "req"},
+		{"type": "capacity", "session": MachineReplySession},
+	} {
+		r := &router{}
+		if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); answer.Code != "malformed_read" || len(r.seen) != 0 {
+			t.Fatalf("took %v: %+v, asked %v", body, answer, r.seen)
+		}
+	}
+	refused := &router{status: 405, body: `{"error":{"code":"bad_request","message":"The capacity panel is read with GET."}}`}
+	answer = open(refused).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "capacity", "session": MachineReplySession, "request": "req"}))
+	if answer.Status != 405 || answer.Code != "bad_request" {
+		t.Fatalf("answered %d/%q, wanted 405/bad_request", answer.Status, answer.Code)
 	}
 }

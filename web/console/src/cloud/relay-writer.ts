@@ -232,6 +232,7 @@ export type WriteRoute =
   | { op: "work-v2-image"; word: Carried<"work.v2.image">; artifact: string }
   | { op: "usage"; word: Carried<"usage.session" | "usage.task" | "usage.item">; id: string }
   | { op: "usage-compare"; word: Carried<"usage.compare-compaction"> }
+  | { op: "capacity"; word: Carried<"capacity"> }
   // Things waiting to be verified. Machine words, not session ones: a record
   // belongs to the machine, and the page that reads it holds no session.
   | { op: "verification-read"; word: Carried<"verification.list" | "verification.get">; id: string }
@@ -386,6 +387,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
       const word = USAGE_WORD[a ?? ""]
       if (word) return { op: "usage", word, id: b }
     }
+    // The capacity block on Settings: the register's rows and the dead
+    // letters, machine-wide, on the machine's one reply channel.
+    if (head === "capacity" && segments.length === 1) return { op: "capacity", word: "capacity" }
     if (head === "verifications" && segments.length === 1) {
       return { op: "verification-read", word: "verification.list", id: "" }
     }
@@ -837,6 +841,17 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
         }
         return client._machineRequest(this.host.machine, route.word, { id: route.id }, "read")
+      }
+      case "capacity": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", route.word, 501)
+        }
+        // The route reads no query and neither does the word: a field added
+        // here would be dropped on the machine, so it is refused by name.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
+        }
+        return client._machineRequest(this.host.machine, route.word, {}, "read")
       }
       case "verification-read": {
         if (typeof client._machineRequest !== "function") {

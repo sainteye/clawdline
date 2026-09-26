@@ -58,7 +58,8 @@ func runCapacityPush(ctx context.Context, b *Broker, e store.Effect) effectResul
 		return effectResult{state: store.EffectFailed, outcome: err.Error(), events: events}
 	case sent == 0 && failed == 0:
 		// Nobody asked to be notified: the notice is still in the store, in
-		// /v1/diagnostics and on the Dashboard, and there is nothing to retry.
+		// /v1/diagnostics and in the Settings page's capacity block, and there
+		// is nothing to retry.
 		return effectResult{state: store.EffectDone, outcome: "not_subscribed", events: events}
 	case sent == 0:
 		return effectResult{state: store.EffectFailed, outcome: "no push service accepted it", events: events}
