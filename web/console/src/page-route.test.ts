@@ -18,6 +18,10 @@ test("removed usage and verification-ledger addresses land on the session list",
   assert.equal(pageFromHash("#page=ledger&graph=g1", knows), "sessions")
 })
 
+test("a removed Now address lands on the session list", () => {
+  assert.equal(pageFromHash("#page=now", knows), "sessions")
+})
+
 test("a known page address still opens that page", () => {
   assert.equal(pageFromHash("#page=devices", knows), "devices")
 })

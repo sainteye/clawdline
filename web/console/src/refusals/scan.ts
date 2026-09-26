@@ -102,7 +102,7 @@ const EMPTY: ReadonlySet<string> = new Set<string>()
 const CATALOGS = new Set(["T", "S", "w", "words", "strings", "copy"])
 
 /** Calls that produce a sentence out of the catalogs. */
-const WORD_CALLS = new Set(["nextWord", "workWord", "nowWord", "fill", "fillString", "scheduleRunCopy"])
+const WORD_CALLS = new Set(["nextWord", "workWord", "fill", "fillString", "scheduleRunCopy"])
 
 /** A setter whose argument is what the screen will show. */
 function isSayingCall(node: ts.Node): boolean {

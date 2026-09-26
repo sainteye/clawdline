@@ -1,9 +1,8 @@
-# Board, session to-dos, Now and Verify
+# Board, session to-dos and Verify
 
 After this page you can put a piece of work on a project's Board, hand it to a Claude Code or Codex
 session, and follow it through implementation, verification, merge and deployment; keep a
-session's own to-dos; see what is in flight on **Now**; and keep a list of changes waiting to be
-verified on **Verify**.
+session's own to-dos; and keep a list of changes waiting to be verified on **Verify**.
 
 ## Availability
 
@@ -65,14 +64,6 @@ clawdline todo add "Write the migration" "Update the README"
 clawdline todo list
 clawdline todo done <to-do id>
 ```
-
-## Now: where things stand
-
-**現在** (Now; its heading is **現在是什麼狀況**, where things stand) collects what is in flight on
-this machine: **正在做** (in progress: dispatched tasks that have not finished) and **交了還沒記帳**
-(delivered, not recorded: finished work whose landing is not yet recorded; see
-[clawdfather-and-dispatch.md](clawdfather-and-dispatch.md)). A source that could not be read says
-so; it is never drawn as zero. Press **重新讀一次** to read again.
 
 ## Verify: changes waiting to be verified
 

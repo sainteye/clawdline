@@ -1,4 +1,4 @@
-export type SidebarIconName = "sessions" | "devices" | "projects" | "plan" | "settings" | "work" | "now" | "verify"
+export type SidebarIconName = "sessions" | "devices" | "projects" | "plan" | "settings" | "work" | "verify"
 
 /**
  * One visual language for the drawer, with a distinct object for each place:
@@ -59,12 +59,6 @@ export function SidebarIcon({ name }: { name: SidebarIconName }) {
         <>
           <rect x="4" y="3.5" width="16" height="17" rx="2.25" />
           <path d="m8 9 1.5 1.5L12.5 7.5M8 15l1.5 1.5 3-3M15 9.5h1.5M15 15.5h1.5" />
-        </>
-      )}
-      {name === "now" && (
-        <>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 7v5l3.25 2" />
         </>
       )}
     </svg>

@@ -1,7 +1,7 @@
 /* 驗收 (docs/verifications.md).
 
-   Not a copy: the Swift app has no screen for this. Like the "now" page beside
-   it, it invents no palette and no furniture: every colour is a token of
+   Not a copy: the Swift app has no screen for this. It invents no palette and
+   no furniture: every colour is a token of
    legacy/tokens.css, the page is board.css's `.board-page`, the buttons its
    `.board-button`.
 

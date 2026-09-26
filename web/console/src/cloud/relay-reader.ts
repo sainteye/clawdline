@@ -788,13 +788,6 @@ export class RelayReader {
         case "/v1/project-sync/mirror":
           this.only(url, path)
           return await this.machineRead(init?.signal, method, path, "project-mirror", {})
-        case "/v1/orchestrator/landings": {
-          // No parameters: the landing ledger is machine-wide, and the one
-          // page that reads it asks what this machine owes, not what one
-          // repository does.
-          this.only(url, path)
-          return await this.machineRead(init?.signal, method, path, "landings", {})
-        }
         case "/v1/timeline": {
           // `upcoming` is a filter with two meanings and the page sends it
           // every time; the rest are left as the page left them, because this

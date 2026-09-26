@@ -2,30 +2,11 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { nowWord } from "../now/words.ts"
-// @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { workProjectName, workWord } from "./words.ts"
+import { workProjectName } from "./words.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { proposalFoldShouldOpen } from "./fold.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { nextWord } from "../../next-strings.ts"
-
-test("Now names proposals separately from work that is already waiting to close", () => {
-  const prior = Object.getOwnPropertyDescriptor(globalThis, "navigator")
-  Object.defineProperty(globalThis, "navigator", {
-    configurable: true,
-    value: { language: "zh-TW" },
-  })
-  try {
-    assert.equal(nowWord("waitingTitle"), "提議待確認、問題待回答")
-    assert.equal(nowWord("waitingGo"), "處理待確認的提議")
-    assert.equal(workWord("sectionDecide"), "交付待收尾、問題待決定")
-    assert.notEqual(nowWord("waitingTitle"), workWord("sectionDecide"))
-  } finally {
-    if (prior) Object.defineProperty(globalThis, "navigator", prior)
-    else Reflect.deleteProperty(globalThis, "navigator")
-  }
-})
 
 test("pending proposals open their controls on arrival without defeating a manual close", () => {
   assert.equal(proposalFoldShouldOpen(null, 0), false)

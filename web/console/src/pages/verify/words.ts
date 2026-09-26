@@ -2,7 +2,7 @@
  * The words of the 驗收 page (docs/verifications.md).
  *
  * The Swift app never had this page, so its catalog has no words for it. They
- * live here beside the page, as the board's and the "now" page's do, and the
+ * live here beside the page, as the board's do, and the
  * copied `public/strings/zh-Hant.json` stays byte for byte. Where the catalog
  * already has the word — "載入中" — the page reads the catalog, not this.
  *

@@ -72,8 +72,7 @@ A child finishing is not the work being done. Clawdline keeps them apart:
   itself, within a few minutes.
 - A cherry-pick, work folded in some other way, or a task with nothing to land is recorded by the
   root session; the guide's `landing` part says how.
-- `clawdline landings` lists every landing still owed. The console's **現在** (Now) page shows them
-  as **交了還沒記帳** (delivered, not recorded) ([board.md](board.md)).
+- `clawdline landings` lists every landing still owed.
 
 A session can also record its own finished turn, which marks it "delivered, awaiting approval" in
 the console:
