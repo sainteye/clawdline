@@ -38,13 +38,6 @@ import (
 // left open instead.
 const itermChildEnd = 5 * time.Second
 
-// ttyProc is one process on a terminal, as the kernel describes it.
-type ttyProc struct {
-	PID, PPID, PGID int
-	Comm            string
-	Start           time.Time
-}
-
 // itermEnder is the close of a child's iTerm2 tab, with every step it takes
 // on the machine passed in, so the order and the refusals can be tested
 // without a terminal.
@@ -141,44 +134,6 @@ func (e itermEnder) waitGone(ctx context.Context, pgid int) bool {
 			return false
 		}
 	}
-}
-
-// foregroundJob is the tty's foreground group when it is a job — anything but
-// the shell at its prompt — and nil when it is the shell.
-//
-// The shell is the root of the tty's process tree (a shell iTerm2 started
-// directly), or the root's child when the root is `login`, as it is under
-// iTerm2's default profile. A foreground group led by anything else — the
-// assistant, a command, a shell started inside the shell — is a job.
-func foregroundJob(procs []ttyProc, fg int) []ttyProc {
-	onTTY := make(map[int]ttyProc, len(procs))
-	for _, p := range procs {
-		onTTY[p.PID] = p
-	}
-	var group []ttyProc
-	for _, p := range procs {
-		if p.PGID == fg {
-			group = append(group, p)
-		}
-	}
-	if len(group) == 0 {
-		return nil
-	}
-	leader, ok := onTTY[fg]
-	if !ok {
-		// A group whose leader has left the tty is not the shell.
-		return group
-	}
-	parent, parentOnTTY := onTTY[leader.PPID]
-	switch {
-	case !parentOnTTY:
-		return nil
-	case strings.TrimPrefix(parent.Comm, "-") == "login":
-		if _, grand := onTTY[parent.PPID]; !grand {
-			return nil
-		}
-	}
-	return group
 }
 
 // notTheChilds says why a job may not be ended as the child's: a process in
