@@ -171,6 +171,9 @@ func newBroker(s *Server) *orchestrator.Broker {
 			_, err = projects.TrustClaudeProject(config, dir)
 			return err
 		},
+		// A Claude session this broker opens answers in Clawdline's language
+		// unless the person chose one in Claude Code (projects.ClaudeLanguage).
+		ClaudeSetsLanguage: claudeSetsLanguage,
 		// What this machine's terminals can do, asked before a dispatch is
 		// admitted (orchestrator capability.go, W7).
 		TerminalCapabilities: terminal.NewLauncher().Capabilities,
@@ -210,6 +213,17 @@ func newBroker(s *Server) *orchestrator.Broker {
 		ReclaimAuto:       os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",
 		ReclaimGrace:      reclaimGrace(),
 	}
+}
+
+// claudeSetsLanguage is whether the person's Claude Code settings file names a
+// response language. A home that cannot be found counts as one that does, so
+// nothing is overridden on a guess.
+func claudeSetsLanguage() bool {
+	path, err := projects.ClaudeSettingsPath()
+	if err != nil {
+		return true
+	}
+	return projects.ClaudeSetsLanguage(path)
 }
 
 // brokerChildLinger is the `orchestrator_child_linger` setting in seconds;

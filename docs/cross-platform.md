@@ -400,6 +400,15 @@ whole of it.
 | **Linux** | `LANGUAGE` (only while a locale is set, as gettext reads it), `LC_ALL`, `LC_MESSAGES`, `LANG` | `C`, `POSIX` and `C.UTF-8` say nothing and are skipped — the ordinary state of a server, which then gets the catalog |
 | **Windows** | `LC_ALL`, `LC_MESSAGES`, `LANG` when set, then `GetUserDefaultLocaleName` | Not yet run on a Windows machine; cross-compiled only |
 
+**Which language a Claude session answers in** — `implemented`. Claude Code answers in English unless its own `language`
+setting says otherwise, and the machine's locale does not move it, so on a Linux server (`LC_ALL=C`) every session Clawdline
+opened answered in English. A Claude session this daemon opens — started from the console, a broker child, a Root Assignment,
+a handoff's receiver — is now given the same answer as above (Clawdline's `language`, then this machine, then `zh-Hant`) as
+`--settings '{"language":"…"}'`, spelled from a closed list (`internal/adapters/projects/claude_language.go`); English and
+anything off the list pass nothing. When the person's own Claude Code settings file (`~/.claude/settings.json`, or under
+`CLAUDE_CONFIG_DIR`) already names a `language`, nothing is passed: flag settings outrank that file, and a choice made there
+is theirs. Codex is not given one. A session the person opened outside Clawdline is never this daemon's to change.
+
 **Summary-table correction**: none.
 
 <!-- /section:whisper -->

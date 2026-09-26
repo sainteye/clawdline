@@ -136,6 +136,11 @@ type LaunchRequest struct {
 	// assistant: a brief that asked for it and got a session without it would
 	// have been answered yes to something that did not happen.
 	ReasoningEffort string
+	// Language is Claude Code's `language` setting (claude_language.go), empty
+	// to leave the session as Claude Code starts it. It is one of the names
+	// ClaudeLanguage answers and nothing else, and a Claude setting: Codex is
+	// refused one as Claude is refused a reasoning effort.
+	Language string
 }
 
 // Launch is ProviderLaunchPlan: the one command a new terminal is given.
@@ -178,6 +183,16 @@ func Admit(req LaunchRequest) (Launch, error) {
 				errors.New("the provider reasoning effort is not one this machine starts"))
 		}
 	}
+	if req.Language != "" {
+		if req.Assistant != AssistantClaude {
+			return Launch{}, errors.Join(ErrInvalidLaunch,
+				errors.New("a response language is a Claude Code setting and this is not Claude Code"))
+		}
+		if !knownClaudeLanguage(req.Language) {
+			return Launch{}, errors.Join(ErrInvalidLaunch,
+				errors.New("the response language is not one this machine starts"))
+		}
+	}
 	var args []string
 	// `resume` first: its value is optional to the CLI, so anything but the id
 	// immediately after it changes what it means.
@@ -196,6 +211,9 @@ func Admit(req LaunchRequest) (Launch, error) {
 	// command line reads as.
 	if req.ReasoningEffort != "" {
 		args = append(args, "--config", "model_reasoning_effort="+req.ReasoningEffort)
+	}
+	if req.Language != "" {
+		args = append(args, claudeLanguageArgs(req.Language)...)
 	}
 	return Launch{ProjectRoot: req.ProjectRoot, Assistant: req.Assistant, Arguments: args}, nil
 }
