@@ -85,7 +85,7 @@
 .work-section[data-section="done"] { --work-edge: var(--ok); }
 .work-card {
     display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 18px 20px;
-    border: 1px solid var(--line); border-left: 3px solid var(--work-edge, var(--line)); border-radius: 16px;
+    border: 1px solid var(--line); border-radius: 16px;
     background: var(--card); color: var(--ink);
 }
 .work-card h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
