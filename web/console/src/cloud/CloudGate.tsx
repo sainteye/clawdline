@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import App, { BRAND_MARK } from "../App.js"
+import type { ConnectionLight } from "../connection-state.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { cardsAreFor } from "../session/send.js"
@@ -828,23 +829,38 @@ export function CloudGate({ declared }: { declared: string }) {
     choose(machine)
   }
 
-  // Which machine this is, beside the connection light. Switching is an
-  // in-place header choice; the full machine screen remains one explicit
-  // step away for pairing, renaming and forgetting.
-  const aside = chosen && (
+  // Which machine this is and whether it answers, in one control: the
+  // console's connection light is handed in (`App`'s `aside`) and drawn as the
+  // dot before the name, so the phone's one header line keeps its room for the
+  // counts. Colour is not the only witness — the state's word is in the title
+  // and at the top of the menu, with the retry the light's press used to be.
+  // Switching is an in-place header choice; the full machine screen remains
+  // one explicit step away for pairing, renaming and forgetting.
+  const aside = (light: ConnectionLight) => chosen && (
     <div className="cloud-switcher" ref={switcherRef}>
       <button
         className="cloud-switch"
         id="cloud-switch"
         type="button"
-        title={(chosen.label || chosen.id) + " · " + nextWord("cloudSwitch")}
+        data-state={light.state}
+        // Down, the light's own tip says "press to retry", which this press
+        // does not do; the retry is in the menu.
+        title={
+          (chosen.label || chosen.id) +
+          " · " +
+          light.label +
+          (light.state === "live" ? " — " + light.tip : "") +
+          " · " +
+          nextWord("cloudSwitch")
+        }
         aria-haspopup="dialog"
         aria-expanded={switcherOpen}
         aria-controls="cloud-quick-machines"
         ref={switchButtonRef}
         onClick={() => setSwitcherOpen((open) => !open)}
       >
-        <span>{chosen.name || chosen.label || chosen.id}</span>
+        <span className="dot" aria-hidden="true" />
+        <span className="cloud-switch-name">{chosen.name || chosen.label || chosen.id}</span>
         {/* Drawn, not typed: "⌄" sits at the bottom of its font box, so the
             text glyph hung low beside the name and high once turned over. */}
         <svg className="cloud-switch-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
@@ -858,6 +874,17 @@ export function CloudGate({ declared }: { declared: string }) {
           role="dialog"
           aria-label={nextWord("cloudSwitch")}
         >
+          <div className="cloud-switch-conn" data-state={light.state}>
+            <span className="dot" aria-hidden="true" />
+            <span className="cloud-switch-conn-word">{light.label}</span>
+            {light.state === "live" ? (
+              <span className="cloud-switch-conn-tip">{light.tip}</span>
+            ) : (
+              <button type="button" className="cloud-switch-retry" onClick={light.onRetry}>
+                {nextWord("cloudConnRetry")}
+              </button>
+            )}
+          </div>
           <p className="cloud-switch-title">{nextWord("cloudMachinesLede")}</p>
           <div className="cloud-switch-options">
             {quickMachines.map((machine) => {

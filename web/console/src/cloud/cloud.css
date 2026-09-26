@@ -16,12 +16,15 @@
 .cloud-machine-identity { font-size: 11px; color: var(--faint); font-family: var(--mono); }
 .cloud-machine-facts { font-size: 12px; color: var(--dim); }
 
-/* In the header, shaped like the connection light beside it (`legacy/header.css` `.conn`).
-   The list opens here instead of replacing the console with the full machine
-   screen: switching machines is a frequent action; pairing and account
-   management are not. */
+/* In the header, shaped like the connection light it replaces (`legacy/header.css` `.conn`)
+   and carrying that light's dot before the machine's name. The list opens here
+   instead of replacing the console with the full machine screen: switching
+   machines is a frequent action; pairing and account management are not.
+   When the line is short the name is what gives way, not the counts: its
+   shrink is weighted far above theirs, down to a floor that still shows the
+   dot, a few letters and the chevron. */
 .cloud-switcher {
-    position: relative; flex: 0 1 auto; min-width: 0; max-width: 34vw;
+    position: relative; flex: 0 1000 auto; min-width: 84px; max-width: 34vw;
 }
 .cloud-switch {
     display: flex; align-items: center; gap: 6px;
@@ -32,7 +35,19 @@
     white-space: nowrap;
 }
 .cloud-switch:hover { color: var(--ink); background: var(--card-hi); }
-.cloud-switch > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cloud-switch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The light's dot, in `.conn`'s colours and breath. */
+.cloud-switch .dot,
+.cloud-switch-conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: 0 0 auto; }
+.cloud-switch[data-state="live"] .dot,
+.cloud-switch-conn[data-state="live"] .dot { background: var(--ok); }
+.cloud-switch[data-state="connecting"] .dot,
+.cloud-switch-conn[data-state="connecting"] .dot { background: var(--warn); animation: breathe 1.4s var(--ease) infinite; }
+.cloud-switch[data-state="retrying"] .dot,
+.cloud-switch-conn[data-state="retrying"] .dot { background: var(--warn); }
+.cloud-switch[data-state="offline"] .dot,
+.cloud-switch-conn[data-state="offline"] .dot { background: var(--bad); }
+.cloud-switch { padding-left: 9px; gap: 7px; }
 .cloud-switch-chevron {
     display: block; flex: 0 0 auto; width: 12px; height: 12px;
     fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
@@ -46,6 +61,21 @@
     border: 1px solid var(--line); border-radius: 12px;
     background: #141418; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.42);
 }
+/* The line's state in words, so it does not rest on the dot's colour alone,
+   and the retry the connection light's press used to be. */
+.cloud-switch-conn {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin: 2px 4px 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line);
+    color: var(--ink); font-size: 12px;
+}
+.cloud-switch-conn-tip { min-width: 0; color: var(--faint); font-size: 11px; }
+.cloud-switch-retry {
+    margin-left: auto; padding: 3px 10px;
+    border: 1px solid var(--line); border-radius: 999px;
+    color: var(--dim); font-size: 11.5px;
+}
+.cloud-switch-retry:hover,
+.cloud-switch-retry:focus-visible { color: var(--ink); background: var(--card-hi); }
 .cloud-switch-title {
     margin: 2px 4px 7px; color: var(--faint); font-size: 10.5px;
     font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase;
