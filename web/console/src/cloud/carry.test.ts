@@ -190,6 +190,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/usage/tasks/t1"],
     ["GET", "/v1/usage/items/w1"],
     ["GET", "/v1/usage/compare-compaction"],
+    ["GET", "/v1/capacity"],
     ["GET", "/v1/verifications"],
     ["GET", "/v1/verifications/v1"],
     ["POST", "/v1/verifications"],
@@ -220,15 +221,16 @@ test("one word, one list, and every route names a word the table carries", () =>
   // 64, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
   // copied client's reconnect ask for every Session row, the token bill's three usage reads, the menu's stop and the
-  // compaction comparison, and the seven verification words. Keep the count beside the catalog so
+  // compaction comparison, the seven verification words, and the Settings page's capacity read. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
   assert.ok("usage.item" in CARRIED)
   assert.ok("interrupt" in CARRIED)
   assert.ok("usage.compare-compaction" in CARRIED)
+  assert.ok("capacity" in CARRIED)
   assert.ok("verification.delete" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 81)
+  assert.equal(Object.keys(CARRIED).length, 82)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -577,4 +579,16 @@ test("the words are this build's own catalog, and the document says which", asyn
     catalogURL({ build: "", strings: {} }, "zh-Hant", "https://app.example/x/"),
     "https://app.example/x/strings/zh-Hant.json",
   )
+})
+
+test("the capacity block's read is carried, so the block a capacity push names opens on a phone", () => {
+  // Every capacity push ends by naming the Settings page's capacity block, and
+  // the phone that got the push is where it is read. The block spells its path
+  // beside its method (`pages/settings/capacity.ts`); the double-quoted scan
+  // above would see it too, but this names the one screen and the one route.
+  const source = readFileSync(resolve(console_, "src/pages/settings/capacity.ts"), "utf8")
+  const asked = [...source.matchAll(/"(GET)",\s*"(\/v1\/capacity[^"?]*)"/g)].map((m) => [m[1], m[2]])
+  assert.deepEqual(asked, [["GET", "/v1/capacity"]], "the block's read is no longer spelled where this test looks")
+  assert.equal(writeRoute("GET", "/v1/capacity")?.word, "capacity")
+  assert.ok("capacity" in CARRIED)
 })

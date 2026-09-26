@@ -67,9 +67,9 @@ func NoticeText(e Entry, state State, used, limit int64, full time.Time, loc *ti
 		body += "照最近的速度，" + full.In(loc).Format("01-02 15:04") + " 會滿。"
 	}
 	if e.EvictedBy == Person {
-		body += "要騰出空間得由你決定；細節在 Dashboard 的容量面板。"
+		body += "要騰出空間得由你決定；細節在設定頁的「容量」。"
 	} else {
-		body += "daemon 會照上面的規則自己處理；細節在 Dashboard 的容量面板。"
+		body += "daemon 會照上面的規則自己處理；細節在設定頁的「容量」。"
 	}
 	return title, body
 }

@@ -965,7 +965,10 @@ func (s *Server) capacityDiagnostics() (contract.CapacityDiagnostics, bool) {
 	return out, !exhausted && !stalled
 }
 
-// capacityRoute is GET /v1/capacity: the Dashboard's capacity panel (C4).
+// capacityRoute is GET /v1/capacity: the Settings page's capacity block (C4,
+// web/console/src/pages/settings/CapacityBlock.tsx), which every capacity push
+// names. Clawdline Cloud carries it as the `capacity` word, so the phone that
+// got the push can open it.
 //
 // /v1/diagnostics is this machine's own token's, because it carries where this
 // daemon keeps its state and which ports it holds. The panel is a person's

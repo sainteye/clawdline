@@ -1298,6 +1298,23 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/landings"}
 			}},
 
+		// The capacity block on the Settings page (docs/limits.md §4.5 "the
+		// screen"): every row of the register and the dead letters. A capacity
+		// push names that block, and the person reads it on the phone that got
+		// the push, so the one route crosses whole. Machine-wide and without
+		// a parameter, as the local route is; a read, since the route writes
+		// nothing.
+		op{name: "capacity", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/capacity"}
+			}},
+
 		op{name: "agent", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "agent", "limit") {

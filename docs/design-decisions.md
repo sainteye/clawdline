@@ -247,7 +247,7 @@ v1 implementation until cutover; they do not constrain v2.
 | U8 | 家規（`dispatch-policy.md`）搬到新 app | 那是你的規則；base 目前 15 KB、local 是你自己的 283 B | **過渡期**新 broker 唯讀舊的兩個檔（現況，只修切法）。**退役前**把現在的 base 原文放進新 repo 當新 app 的 base；你的 local 由你自己複製到 `~/.config/clawdline-next/`——新 app 永遠不寫你的 local | D23 |
 | U9 | 舊 broker 的資料不轉檔 | 你的資料（767 筆 task 的歷史） | **不轉檔、凍結、離線備份**；新 broker 從空的開始，舊畫面需要的舊 task 標題與交付勾仍由唯讀的 `swiftstore` 供應，直到 cutover B1 | D50 |
 | U10 | **（有期限）舊 app 的下一面牆**：30 天規則 **2026-09-28** 起刪舊 task 紀錄；看板收據約 9/23–9/26 開始 FIFO 淘汰；看板卡片約 10 月中撞 2,000 張 | 舊 app 與你的資料；本任務依規定不能碰 `~/.config/clawdline` | **只回報、不動舊 app**（與 limits §8 #1 相同）。如果你要「凍結」包含 09-28 以前的全部 task 紀錄：在 09-27 前做 cutover B5 的離線備份，或把舊 app 的 `orchestrator_task_record_retention_days` 調大（一行設定）。備份檔含 `secret_hash` 等欄位，要放在只有你能讀的地方 | D50、limits §2.4 |
-| U11 | 主畫面要不要有容量橫幅 | 會偏離 1:1，需要新字串 | **先不放在 1:1 的頁面**，放 Dashboard 的容量面板＋推播（limits §8 #3；該文件建議做） | D27、D35 |
+| U11 | 主畫面要不要有容量橫幅 | 會偏離 1:1，需要新字串 | **先不放在 1:1 的頁面**，放設定頁的「容量」區塊＋推播（原本是 Dashboard 的容量面板，該頁 2026-09-21 移除；limits §8 #3；該文件建議做） | D27、D35 |
 | U12 | 長文要不要在 90 天後刪或搬走 | 刪了就回不來 | **不刪、也先不搬**，留在資料庫的長文表；等容量告警再決定 | D26 |
 | U13 | 設計概規的上限（12 條）、編號（DG-n）與十條的取捨 | 那份文件自己寫明等你拍板（design-guidelines §5 #6） | **照現狀**：10 條、上限 12、新增要先說淘汰哪一條 | design-guidelines §1 |
 
@@ -323,7 +323,7 @@ broker 的波次以 **W** 編號，看板以 **T** 編號，容量（limits）�
 | **C1 容量登記表第一步** | limits §7.1：`internal/domain/capacity`、四列（`audit.security` 改按大小輪替、`store.db`、`board.receipts`、`cloud.relay_queue`）、`/v1/diagnostics.capacity`、health 的 `capacity_exhausted`、`clawdline doctor capacity --drill`；D27；G35 | limits §7.1 的驗收（drill 在拋棄式目錄上走完 `ok→warn→critical→full→rotated=1`、正好一個通知意圖；登記表守衛上線第一天紅在 G35） | 無（可現在做） | `internal/domain/capacity`（新）、`internal/adapters/devices`、`internal/transport/http` 的 health／diagnostics、`api/v1/system.schema.json` |
 | **C2 沒有上限的收口** | limits §7.2 波 2：daemon log 進 `CLAWDLINE_NEXT_DIR/logs/` 並輪替、稽核拆兩份、裝置清單與推播訂閱的上限要比讀取上限先叫（N13、N14）、記憶體快取 LRU、`result.json` 與缺上限的 request body（N9、N27）。**task 目錄與 worktree 的清掃不在這裡，併入 W6**（D13） | 各列在 C1 的登記表裡、drill 走得完 | C1 | 依項目 |
 | **C3 安靜失敗的收口** | limits §7.2 波 3：Cloud 入站佇列改成拒絕並告訴送的人（N20）、screen bus 改覆蓋（N19）、`Store.Append` 錯誤計數與證據寫入失敗翻 health（N2）、transcript 與文件列表的截斷旗標並畫出來（N17、N28）、圖片與 drops 被引用就先告警（N15、N16）。**看板收據併入 W2（D03）、summary 全文併入 W2（D25）、`progress.json` 超長併入 W1（G34）** | 每一項「把一個安靜的失敗換成一個吵的」都有一個會紅的測試 | C1 | 依項目 |
-| **C4 容量的通知與畫面** | 推播（獨立預算）、Dashboard 的容量面板、dead letter 與 spool 拒絕接上來；跟 W5 的 D24 一起做 | limits §4.7 第 4 層：縮小上限的拋棄式 daemon 走到 `capacity_exhausted` 並產生一筆通知意圖 | C1、W5 | 依項目 |
+| **C4 容量的通知與畫面** | 推播（獨立預算）、容量面板（現在是設定頁的「容量」區塊）、dead letter 與 spool 拒絕接上來；跟 W5 的 D24 一起做 | limits §4.7 第 4 層：縮小上限的拋棄式 daemon 走到 `capacity_exhausted` 並產生一筆通知意圖 | C1、W5 | 依項目 |
 | 時間軸 | 不排 | — | U7 | — |
 
 **跟 cutover 波次的對應**：cutover 波 2 ≈ W1＋W4 的排程部分；波 3 ≈ W2、W3、W5；波 4 ≈ W6；波 5 ≈ T 線；跨平台 ≈ W7；

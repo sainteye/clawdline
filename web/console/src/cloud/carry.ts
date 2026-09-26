@@ -54,6 +54,9 @@ export const CARRIED = {
   agent: "GET /v1/sessions/{id}/agents/{agent}?limit=",
   answer: "POST /v1/sessions/{id}/key",
   board: "GET /v1/board?project=&item=",
+  // The capacity block on Settings (`pages/settings/CapacityBlock.tsx`), which
+  // every capacity push names: a machine read with no parameter.
+  capacity: "GET /v1/capacity",
   "board.items": "GET /v1/board?project=&audience=&cursor=&limit=",
   end: "POST /v1/sessions/{id}/close",
   focus: "POST /v1/sessions/{id}/focus",

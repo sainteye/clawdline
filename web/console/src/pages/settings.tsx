@@ -14,6 +14,7 @@ import { pushShape, sendPushTest, startPush, subscribePush, togglePush } from ".
 import { legacyState } from "../legacy/overlay-bridge.js"
 import { ShellBlocks } from "./settings/ShellBlocks.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
+import { CapacityBlock } from "./settings/CapacityBlock.js"
 import { nextWord } from "../next-strings.js"
 
 /**
@@ -32,6 +33,10 @@ import { nextWord } from "../next-strings.js"
  * - **Project Board**: `BoardBlock` (settings/BoardBlock.tsx) is
  *   `BoardControls`: drawn from the last board answer that says whether the
  *   board is on, and its two toggles send `set_enabled` and `set_ai_consent`.
+ * - **Capacity**: `CapacityBlock` (settings/CapacityBlock.tsx), this app's own
+ *   block and not the original's: the register's rows and the dead letters from
+ *   `/v1/capacity`. Every capacity push names it, so it reads through Clawdline
+ *   Cloud as well.
  * - **Project Timeline**: this settings page has no project context to read,
  *   so its permanently disabled toggle says that the setting belongs to each
  *   project instead of presenting an unfinished read.
@@ -317,6 +322,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
           </button>
           <p className="say" id="settings-timeline-status" role="status"></p>
         </div>
+        <CapacityBlock shown={shown} />
         <div className="foot">
           <span id="settings-version" style={entered ? { cursor: "pointer" } : undefined} onClick={pressVersion}>
             {version}

@@ -1,0 +1,25 @@
+/* The settings page's capacity block (CapacityBlock.tsx). The sheet's furniture (`.block`, `.say`,
+   `.said`, `.row`, `.chip`) does the type; this adds the rows. Each row wraps rather than
+   truncating, so a long register name and its reading stay whole at phone width. */
+.settings-capacity .cap-warn { margin: 0 0 8px 0; color: var(--bad); font-size: 12.5px; line-height: 1.5; }
+.settings-capacity .cap-rows { list-style: none; margin: 0 0 10px 0; padding: 0; }
+.settings-capacity .cap { padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; min-width: 0; }
+.settings-capacity .cap:last-child { border-bottom: 0; }
+.settings-capacity .cap-line { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.settings-capacity .cap-name { flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; font: 12px/1.35 var(--mono); color: var(--ink); }
+.settings-capacity .cap-state { flex: none; font-size: 12px; font-weight: 600; color: var(--ok); }
+.settings-capacity .cap-amount { flex: none; font: 11.5px/1.35 var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }
+.settings-capacity .cap-meter { height: 4px; margin: 6px 0 5px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.settings-capacity .cap-meter i { display: block; height: 100%; background: var(--ok); }
+.settings-capacity .cap-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 11.5px; line-height: 1.45; color: var(--faint); }
+.settings-capacity .cap-note { margin: 4px 0 0 0; font-size: 11.5px; line-height: 1.45; color: var(--dim); overflow-wrap: anywhere; }
+
+.settings-capacity .cap[data-state="warn"] .cap-state { color: var(--warn); }
+.settings-capacity .cap[data-state="warn"] .cap-meter i { background: var(--warn); }
+.settings-capacity .cap[data-state="critical"] .cap-state,
+.settings-capacity .cap[data-state="full"] .cap-state { color: var(--bad); }
+.settings-capacity .cap[data-state="critical"] .cap-meter i,
+.settings-capacity .cap[data-state="full"] .cap-meter i { background: var(--bad); }
+/* Unknown has no bar: an empty track would read as zero. */
+.settings-capacity .cap[data-state="unknown"] .cap-state { color: var(--dim); }
+.settings-capacity .cap[data-state="unknown"] .cap-meter { background: none; border-top: 1px dashed var(--faint); height: 0; }
