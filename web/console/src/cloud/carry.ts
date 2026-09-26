@@ -66,7 +66,6 @@ export const CARRIED = {
   info: "GET /v1/sessions/{id}/info[?parts=summary]",
   interrupt: "POST /v1/sessions/{id}/interrupt",
   intents: "POST /v1/intents",
-  landings: "GET /v1/orchestrator/landings",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
   places: "GET /v1/places",
   "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",

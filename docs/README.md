@@ -29,7 +29,7 @@ marked English in the tables below. The rest are written in Traditional Chinese.
 | [user/notifications.md](user/notifications.md) | User page | English | Web Push on a computer or phone: turning it on, what you are told about, a test |
 | [user/remote-access.md](user/remote-access.md) | User page | English | Another computer over SSH, a phone over your own tunnel, and Clawdline Cloud pairing and permissions |
 | [user/schedules.md](user/schedules.md) | User page | English | Scheduled tasks on the local clock, and schedule webhooks on Cloud Pro |
-| [user/board.md](user/board.md) | User page | English | The Board, session to-dos, the Now page and things waiting to be verified |
+| [user/board.md](user/board.md) | User page | English | The Board, session to-dos and things waiting to be verified |
 | [user/clawdfather-and-dispatch.md](user/clawdfather-and-dispatch.md) | User page | English | The agent skill, dispatching children, landing, handoff, and the Clawdfather role |
 | [user/projects.md](user/projects.md) | User page | English | Adding projects, the Projects page, and bringing project settings to another machine |
 | [user/usage.md](user/usage.md) | User page | English | Token bills by category, assistant quotas, the compaction window and capacity |

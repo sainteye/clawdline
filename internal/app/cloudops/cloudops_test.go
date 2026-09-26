@@ -514,14 +514,6 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/timeline",
 		query: map[string]string{"project": "clawdline-go", "upcoming": "false"},
 	}, {
-		// Machine-wide and so parameterless: the landing ledger is not one
-		// repository's debt, and a word that took a project would let a page
-		// show one repository's rows as the whole answer.
-		word:    "landings",
-		body:    map[string]any{"type": "landings", "session": machine, "request": "req-landings"},
-		session: machine, name: "read:req-landings",
-		method: "GET", path: "/v1/orchestrator/landings",
-	}, {
 		// The Settings page's capacity block, which every capacity push names:
 		// machine-wide and parameterless, as the local route is.
 		word:    "capacity",
@@ -1430,7 +1422,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "landings", "capacity",
+		"project-worktree-lifecycle-refresh", "capacity",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",

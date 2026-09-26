@@ -637,7 +637,7 @@ Done; an executable nonterminal item without an owner goes to Unassigned (while 
 for its last phase); every other item goes to its lifecycle area. A Project filter changes only
 membership, never stored placement.
 
-The whole-machine Now page may summarize v2 facts but owns no duplicate state. Project pages link
+No other page keeps a machine-wide summary of work (the Now page was retired on 2026-09-26). Project pages link
 to the authoritative Board already filtered to that Project.
 
 ## 13. Capacity and concurrency

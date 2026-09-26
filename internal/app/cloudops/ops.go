@@ -1304,23 +1304,6 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/timeline", Query: query}
 			}},
 
-		// The landing ledger, machine-wide. It takes no project because the
-		// debt is not one repository's: the question the page asking for it
-		// puts is "what have I got out and not recorded", and a reader who
-		// had to name a repository first would be shown one repository's
-		// rows as if they were the machine's whole answer — the same shape as
-		// drawing an unread source as `0`, spelled differently.
-		op{name: "landings", read: true,
-			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request") {
-					return plan{}, false
-				}
-				return machinePlan(b)
-			},
-			route: func(p plan) LocalRequest {
-				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/landings"}
-			}},
-
 		// The capacity block on the Settings page (docs/limits.md §4.5 "the
 		// screen"): every row of the register and the dead letters. A capacity
 		// push names that block, and the person reads it on the phone that got

@@ -12,7 +12,6 @@ import type { PageModule } from "./pages/types.js"
 import { drawerEntries, pageReady } from "./pages/registry.js"
 import { pageFromHash } from "./page-route.js"
 import { workWord } from "./pages/work/words.js"
-import { nowWord } from "./pages/now/words.js"
 import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
@@ -46,7 +45,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "now" | "verify"
+type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -762,25 +761,9 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
             <SidebarIcon name="work" />
             {workWord("nav")}
           </button>
-          {/* "Where things stand" (work-system-review §5.2, W4): the one page
-              that answers the question the person asked three times in a day.
-              Last, beside the board, because it is a reading and not a place
-              work is done — nothing on it can be changed from it. */}
-          <button
-            className="sidebar-item"
-            id="nav-now"
-            type="button"
-            data-page-to="now"
-            aria-current={page === "now" ? "page" : undefined}
-            disabled={!ready("now")}
-            onClick={() => go("now")}
-          >
-            <SidebarIcon name="now" />
-            {nowWord("nav")}
-          </button>
           {/* 驗收 (docs/verifications.md): what was changed and waits for
-              someone to look again by a date. After "now", which only reads;
-              this one is where a verdict is written down. */}
+              someone to look again by a date. This is where a verdict is
+              written down. */}
           <button
             className="sidebar-item"
             id="nav-verify"

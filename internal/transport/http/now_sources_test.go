@@ -16,15 +16,15 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/auth"
 )
 
-// The three readings the "now" page is made of, each saying what it is worth
-// (work-system-review §5.2, W4).
+// Three readings, each saying what it is worth (work-system-review §5.2, W4).
 //
-// The page's hard rule is that a source which could not be read is never drawn
-// as `0`, and a page cannot keep that rule on its own: it can only print the
-// word the daemon gave it. Before this, the daemon had three words and all
-// three answered "did the reading happen" — so the one state this page has to
-// show, *read in full and possibly already wrong*, had no spelling at all and
-// came out as `current`.
+// They were written for the console's "now" page, which was retired on
+// 2026-09-26 when the v2 Board replaced it. The words stay because they are the
+// wire's, not the page's: a reader that could not read a source must never be
+// handed `0`, and it can only print the word the daemon gave it. Before this,
+// the daemon had three words and all three answered "did the reading happen" —
+// so *read in full and possibly already wrong* had no spelling at all and came
+// out as `current`.
 //
 // Each test here has the control that makes it red (DG-8): the neighbouring
 // case that must keep the ordinary word.
@@ -129,9 +129,9 @@ func TestWhatIsWaitingSaysWhetherItsClockIsTurning(t *testing.T) {
 	}
 }
 
-// The two routes the page's third block reads answer with that word on them.
+// The proposal and decision routes answer with that word on them.
 //
-// A field the page is written against and the route does not send is found by
+// A field a reader is written against and the route does not send is found by
 // something breaking on a phone, which is the worst place to find it.
 func TestTheWaitingRoutesCarryTheirFreshness(t *testing.T) {
 	st, err := store.Open(t.TempDir())
@@ -217,7 +217,7 @@ func TestTheLandingLedgerAnswersForItself(t *testing.T) {
 
 // What the branch held reaches the ledger's own rows, not only a task's record.
 //
-// The page draws "delivered, not recorded" from this route, and the difference
+// "Delivered, not recorded" is read from this route, and the difference
 // between a row whose branch carries a delivery and one whose branch carried
 // nothing is the difference between work waiting to be merged and work that was
 // never committed. Those want opposite actions from the person reading them.
