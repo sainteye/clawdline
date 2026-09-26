@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
@@ -36,8 +35,7 @@ func (s *Server) smartSessionTitle(w http.ResponseWriter, r *http.Request, id st
 			"This session's first request could not be read, so no model turn was started.")
 		return
 	}
-	first = namingInput(first)
-	if first == "" {
+	if scrub(first) == "" {
 		writeRefusal(w, http.StatusConflict, "conversation_empty",
 			"This session has no first request to name yet. Send its first message, then try again.")
 		return
@@ -58,7 +56,8 @@ func (s *Server) smartSessionTitle(w http.ResponseWriter, r *http.Request, id st
 	defer s.intentRun.Unlock()
 
 	started := time.Now()
-	title, namedBy, tried, err := s.nameWith(r.Context(), first, assistant)
+	asked := namingText(s.gatherNamingContext(findContext, item, first))
+	title, namedBy, tried, err := s.nameWith(r.Context(), asked, assistant)
 	ms := time.Since(started).Milliseconds()
 	if errors.Is(err, planner.ErrNoPlanner) {
 		log.Printf("audit session.smart_title assistant=%s tried=%s ms=%d ok=0 why=no_planner", assistant, tried, ms)
@@ -170,19 +169,4 @@ func (s *Server) namingAssistant() (string, error) {
 		return named, nil
 	}
 	return "codex", nil
-}
-
-// namingInput uses the existing spoken-intent request bound. The first request
-// can be a pasted document, but naming it must remain one small, capped turn.
-func namingInput(text string) string {
-	text = strings.TrimSpace(text)
-	limit := int(CapacityLimit(capacity.IntentRequestBytes))
-	if len(text) <= limit {
-		return text
-	}
-	text = text[:limit]
-	for !utf8.ValidString(text) && len(text) > 0 {
-		text = text[:len(text)-1]
-	}
-	return strings.TrimSpace(text)
 }

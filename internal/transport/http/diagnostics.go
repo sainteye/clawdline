@@ -458,6 +458,12 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.IntentStderrBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-turn tail of a failed CLI's stderr; released with the turn"}
 		},
+		capacity.NamingContextBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-turn naming input; built and released with the turn"}
+		},
+		capacity.NamingTailEntries: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-turn transcript rows read for naming; released with the turn"}
+		},
 		// T4's three rows (proposals.go).
 		capacity.ProposalsOpen: func() capacity.Reading {
 			c, err := s.participation().Counts(context.Background())

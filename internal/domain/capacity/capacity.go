@@ -254,6 +254,10 @@ const (
 	IntentPlannerSeconds   = "intent.planner_seconds"
 	IntentCloudWaitSeconds = "intent.cloud_wait_seconds"
 	IntentStderrBytes      = "intent.stderr_bytes"
+	// What one smart-title turn reads of a session: the resolved opening
+	// request, the newest later requests that fit, and the latest reply.
+	NamingContextBytes = "naming.context_bytes"
+	NamingTailEntries  = "naming.tail_entries"
 	// A release keeps the previous selector until the restarted daemon and
 	// its console prove the new commit. At this deadline it rolls back.
 	DeployHealthSeconds = "deploy.health_seconds"
@@ -1152,6 +1156,25 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/planner.stderrLimit"},
+		},
+		{
+			// One smart-title turn reads the session's resolved opening
+			// request, the newest later requests that fit, and an excerpt of
+			// the latest reply. Older later requests give way first.
+			Name: NamingContextBytes, Class: Observation, Unit: Bytes,
+			Limit: 12 << 10, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.namingContextLimit"},
+		},
+		{
+			// The newest transcript rows a smart-title turn looks through for
+			// later requests and the latest reply. Older rows are not read.
+			Name: NamingTailEntries, Class: Observation, Unit: Rows,
+			Limit: 400, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.namingTailLimit"},
 		},
 		{
 			// The unprivileged Linux deploy keeps the previous release selected
