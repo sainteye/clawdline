@@ -297,13 +297,23 @@ what to act on (`next-strings.ts`, `scheduleMove*`):
 
 | Refusal | When |
 |---|---|
-| target offline | the target is offline, or its project list could not be read |
+| target offline | the target is offline, or its project list could not be read, and asking again at Save failed too (below) |
 | target / source outdated | that machine's Clawdline sends no `repo`: update it there |
 | no origin | the project has no origin remote, so nothing names it on another machine |
 | source unlisted | the project is gone from the source's list, so the disable cannot name it |
 | no project | the target has no clone of that repository |
 | webhook unknown | the source's binding could not be read, or a bound hook could not be read from Cloud (or Cloud answered another hook, or a state that does not move); "could not read" is not "unbound" |
 | spent | a one-time schedule that already ran; a copy would arm it again |
+
+**"Offline" is asked again at Save, never read from the page** (2026-09-26). The fleet row is the hosted
+gate's machine list, which is not drawn again once a console is on screen, and the places are from when the
+machine was picked: a machine that was restarting when the page opened stayed "offline" in both, and every
+Save repeated a refusal telling the person to wait for what had already happened. So when either says the
+target is offline, or the source's places could not be read, Save shows busy and asks again — that
+machine's `GET /v1/places`, and which machines the Cloud client computes as reporting in now
+(`askAgainBeforeRefusing`, `recheckSchedulePresence`). A machine that answers its places is online; the
+refusal is said only when the fresh read also failed. What came back becomes the form's own state — the
+machine chips and the project list — so the page stops showing the old reading.
 
 **A bound webhook moves with the schedule and keeps its URL** (2026-09-26), so whoever calls it changes
 nothing. Before (1) the page reads the hook from Cloud (`GET /v1/schedule-webhooks/:id`) and plans with

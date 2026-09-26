@@ -47,13 +47,25 @@ import {
   groupSchedules,
   machineNamed,
   machineWords,
+  noteScheduleMachineAnswered,
   onScheduleFleet,
+  recheckSchedulePresence,
   rememberScheduleOwners,
   scheduleFleet,
   scheduleOwner,
   type ScheduleMachine,
 } from "../cloud/schedule-machines.js"
-import { moveSchedule, planScheduleMove, refusedByOlderTarget, targetBody, type MoveHook, type MoveRefusal, type MoveWrites } from "../cloud/schedule-move.js"
+import {
+  askAgainBeforeRefusing,
+  moveSchedule,
+  planScheduleMove,
+  refusedByOlderTarget,
+  targetBody,
+  type MoveHook,
+  type MoveReadings,
+  type MoveRefusal,
+  type MoveWrites,
+} from "../cloud/schedule-move.js"
 import "./schedules/machines.css"
 import overlaysMarkup from "./schedules/overlays.html?raw"
 
@@ -1271,6 +1283,13 @@ const Schedule = (() => {
     moveWith(form, null)
   }
 
+  /**
+   * The form's readings of both machines, with every "offline" in them asked
+   * again (`askAgainBeforeRefusing`): the fleet row and the places are
+   * snapshots from when the page and the machine were picked, and a refusal
+   * from them can tell the person to wait for what already happened. What the
+   * fresh reads say becomes the form's own state; Save shows busy meanwhile.
+   */
   function moveWith(form: ScheduleBody, hook: MoveHook | null): void {
     const from = machineNamed(ownerMachine || "")
     const to = machineNamed(machine || "")
@@ -1278,19 +1297,77 @@ const Schedule = (() => {
       said(T().webRequestFailed)
       return
     }
+    const record = editRecord
+    const source = from.id
+    const target = to.id
+    const listed = placesReading.phase === "ready" || placesReading.phase === "empty_authoritative"
+    const answers = new Map<string, SchedulePlaces>()
+    const ticket = placesTicket
+    creating = true
+    said("")
+    paint()
+    void askAgainBeforeRefusing(
+      { targetOnline: to.online, targetPlaces: listed ? places || [] : null, sourcePlaces: ownerPlaces },
+      { source, target },
+      {
+        presence: recheckSchedulePresence,
+        places: (on) =>
+          scheduleApi.places(on).then((d: SchedulePlaces) => {
+            // A machine named as not answering did not answer.
+            if (unansweredSentence(d)) return null
+            answers.set(on, d)
+            return (d && d.places) || []
+          }),
+      },
+    ).then((fresh) => {
+      creating = false
+      // The form was closed or turned elsewhere while asking: this is not its answer.
+      if (editRecord !== record || machine !== target || ownerMachine !== source) {
+        paint()
+        return
+      }
+      const sourceAnswer = answers.get(source)
+      if (sourceAnswer) {
+        ownerPlaces = sourceAnswer.places || []
+        noteScheduleMachineAnswered(source)
+      }
+      const targetAnswer = answers.get(target)
+      if (targetAnswer && placesTicket === ticket) {
+        placesTicket += 1
+        places = targetAnswer.places || []
+        assistants = targetAnswer.assistants || []
+        placesNote = ""
+        placesReading = readAnswer(targetAnswer, places.length === 0)
+        noteScheduleMachineAnswered(target)
+        drawWith()
+        drawModel()
+        drawPlaces()
+      }
+      if (fresh.asked) drawMachines()
+      else paint()
+      planAndMove(form, hook, record, fresh)
+    })
+  }
+
+  function planAndMove(form: ScheduleBody, hook: MoveHook | null, record: ScheduleRecord, fresh: MoveReadings): void {
+    const from = machineNamed(ownerMachine || "")
+    const to = machineNamed(machine || "")
+    if (!from || !to) {
+      said(T().webRequestFailed)
+      return
+    }
     const sourceName = machineWords(from)
     const targetName = machineWords(to)
-    if (!ownerPlaces) {
+    if (!fresh.sourcePlaces) {
       said(nextWord("scheduleMoveTargetOffline", { machine: sourceName }))
       return
     }
-    const listed = placesReading.phase === "ready" || placesReading.phase === "empty_authoritative"
     const answer = planScheduleMove({
-      record: editRecord,
+      record,
       source: { id: from.id, name: sourceName },
-      target: { id: to.id, name: targetName, online: to.online },
-      sourcePlaces: ownerPlaces,
-      targetPlaces: listed ? places || [] : null,
+      target: { id: to.id, name: targetName, online: fresh.targetOnline },
+      sourcePlaces: fresh.sourcePlaces,
+      targetPlaces: fresh.targetPlaces,
       hook,
     })
     if ("refusal" in answer) {
@@ -1310,7 +1387,6 @@ const Schedule = (() => {
         bindHook: (hookID: string, scheduleID: string, on: string) => management.bindOn(on, scheduleID, hookID, null),
       }),
     }
-    const record = editRecord
     creating = true
     said(nextWord("scheduleMoving", { machine: targetName }))
     paint()

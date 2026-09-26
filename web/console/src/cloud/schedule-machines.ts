@@ -53,6 +53,63 @@ export function onScheduleFleet(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
+/** One machine's presence as the client computes it now. */
+export interface ScheduleMachinePresence {
+  id: string
+  online: boolean
+  seenAt: number | null
+}
+
+// The published fleet is recomputed only when the gate lists machines again,
+// and it stops listing once a console is on screen: a machine that was
+// restarting when the page opened stays offline in it. The gate answers this
+// with the client's own computation, made now.
+let presenceNow: (() => Promise<readonly ScheduleMachinePresence[]>) | null = null
+
+/** Set by the hosted gate while it has a client; null takes it away. */
+export function answerSchedulePresence(ask: (() => Promise<readonly ScheduleMachinePresence[]>) | null): void {
+  presenceNow = ask
+}
+
+/**
+ * Which machines report in now, by id, with the published fleet brought up to
+ * it; null when there is no one to ask. A machine the answer does not list
+ * keeps its row as it was.
+ */
+export async function recheckSchedulePresence(): Promise<ReadonlyMap<string, boolean> | null> {
+  if (!presenceNow) return null
+  const rows = await presenceNow()
+  const now = new Map(rows.map((row) => [row.id, row] as const))
+  if (fleet) {
+    const changed = fleet.machines.some((m) => {
+      const row = now.get(m.id)
+      return !!row && (row.online !== m.online || row.seenAt !== m.seenAt)
+    })
+    if (changed) {
+      publishScheduleFleet({
+        ...fleet,
+        machines: fleet.machines.map((m) => {
+          const row = now.get(m.id)
+          return row ? { ...m, online: row.online, seenAt: row.seenAt } : m
+        }),
+      })
+    }
+  }
+  return new Map(rows.map((row) => [row.id, row.online] as const))
+}
+
+/**
+ * A machine that just answered a read is online: its row says so, so the
+ * page stops calling it offline from an older reading.
+ */
+export function noteScheduleMachineAnswered(id: string): void {
+  if (!fleet || !fleet.machines.some((m) => m.id === id && !m.online)) return
+  publishScheduleFleet({
+    ...fleet,
+    machines: fleet.machines.map((m) => (m.id === id ? { ...m, online: true } : m)),
+  })
+}
+
 /**
  * Whether the page says which machine at all. A console without Cloud has one
  * machine by definition, and an account with one selectable machine has

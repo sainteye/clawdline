@@ -3,9 +3,9 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { createdScheduleID, hookMoveRequest, moveSchedule, planScheduleMove, recordBody, refusedByOlderTarget, retargetInstructions, targetBody, type MoveHook, type MoveRecord, type MovePlace } from "./schedule-move.ts"
+import { askAgainBeforeRefusing, createdScheduleID, hookMoveRequest, moveSchedule, planScheduleMove, recordBody, refusedByOlderTarget, retargetInstructions, targetBody, type MoveHook, type MoveRecord, type MovePlace } from "./schedule-move.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { choosesMachine, groupSchedules, type ScheduleFleet } from "./schedule-machines.ts"
+import { answerSchedulePresence, choosesMachine, groupSchedules, noteScheduleMachineAnswered, publishScheduleFleet, recheckSchedulePresence, scheduleFleet, type ScheduleFleet } from "./schedule-machines.ts"
 
 const record: MoveRecord = {
   id: "s1",
@@ -450,4 +450,109 @@ test("the Cloud move is POST /v1/schedule-webhooks/:id/move with exactly machine
     body: { machine_id: "mac_target", expected_revision: 3 },
   }])
   assert.equal(answer.hook.state, "pending_binding")
+})
+
+// A save asks again before it calls a machine offline: the fleet row and the
+// places are snapshots from when the page opened and the machine was picked.
+
+/** The save's decision as the page makes it: ask again, then plan from what came back. */
+async function saveFrom(held: { targetOnline: boolean; targetPlaces: MovePlace[] | null; sourcePlaces: MovePlace[] | null }, ask: {
+  presence?: () => Promise<ReadonlyMap<string, boolean> | null>
+  places?: (machine: string) => Promise<MovePlace[] | null>
+}) {
+  const asked: string[] = []
+  const fresh = await askAgainBeforeRefusing(held, { source: mac.id, target: linux.id }, {
+    presence: async () => {
+      asked.push("presence")
+      return ask.presence ? ask.presence() : null
+    },
+    places: async (machine: string) => {
+      asked.push("places " + machine)
+      if (!ask.places) throw new Error("offline")
+      return ask.places(machine)
+    },
+  })
+  if (!fresh.sourcePlaces) return { asked, fresh, answer: { refusal: { code: "source_offline" } } }
+  const answer = planScheduleMove({
+    record,
+    source: mac,
+    target: { ...linux, online: fresh.targetOnline },
+    sourcePlaces: fresh.sourcePlaces,
+    targetPlaces: fresh.targetPlaces,
+  })
+  return { asked, fresh, answer }
+}
+
+test("a target the page saw offline that answers now is moved to, not refused", async () => {
+  const { asked, answer } = await saveFrom(
+    { targetOnline: false, targetPlaces: null, sourcePlaces },
+    { presence: async () => new Map([[linux.id, true]]), places: async () => targetPlaces },
+  )
+  assert.deepEqual(asked.sort(), ["places linux-b", "presence"])
+  assert.ok("plan" in answer, JSON.stringify(answer))
+  assert.deepEqual(answer.plan.targets.map((p: MovePlace) => p.id), ["cloud.dst"])
+})
+
+test("a target that answers its places is online, whatever an older presence reading says", async () => {
+  const { answer } = await saveFrom(
+    { targetOnline: false, targetPlaces: targetPlaces, sourcePlaces },
+    { presence: async () => new Map([[linux.id, false]]), places: async () => targetPlaces },
+  )
+  assert.ok("plan" in answer, JSON.stringify(answer))
+})
+
+test("a target whose fresh read also fails is refused as offline", async () => {
+  for (const ask of [
+    {},
+    { presence: async () => new Map([[linux.id, true]]) },
+    { presence: async () => new Map([[linux.id, false]]), places: async () => null },
+  ]) {
+    const { asked, answer } = await saveFrom({ targetOnline: false, targetPlaces: null, sourcePlaces }, ask)
+    assert.ok(asked.includes("places linux-b"))
+    assert.deepEqual(answer, { refusal: { code: "schedule_move_target_offline", machine: "Runner" } })
+  }
+})
+
+test("a source the page could not read is asked again before it is called offline", async () => {
+  const back = await saveFrom(
+    { targetOnline: true, targetPlaces, sourcePlaces: null },
+    { places: async (machine: string) => (machine === mac.id ? sourcePlaces : null) },
+  )
+  assert.deepEqual(back.asked, ["places mac-a"])
+  assert.ok("plan" in back.answer, JSON.stringify(back.answer))
+  const gone = await saveFrom({ targetOnline: true, targetPlaces, sourcePlaces: null }, {})
+  assert.deepEqual(gone.answer, { refusal: { code: "source_offline" } })
+})
+
+test("readings that said nothing was offline are not asked again", async () => {
+  const { asked, fresh } = await saveFrom({ targetOnline: true, targetPlaces, sourcePlaces }, {})
+  assert.deepEqual(asked, [])
+  assert.equal(fresh.asked, false)
+})
+
+test("asking which machines report in brings the published fleet up to the answer", async () => {
+  const fleet: ScheduleFleet = {
+    current: "mac-a",
+    machines: [
+      { id: "mac-a", name: "Studio", platform: "macOS", seenAt: 10, online: true },
+      { id: "linux-b", name: "Runner", platform: "Linux", seenAt: 5, online: false },
+    ],
+  }
+  publishScheduleFleet(fleet)
+  try {
+    assert.equal(await recheckSchedulePresence(), null, "no gate: nothing to ask")
+    answerSchedulePresence(async () => [{ id: "linux-b", online: true, seenAt: 20 }])
+    const now = await recheckSchedulePresence()
+    assert.equal(now?.get("linux-b"), true)
+    assert.deepEqual(scheduleFleet()?.machines.map((m) => [m.id, m.online, m.seenAt]), [
+      ["mac-a", true, 10],
+      ["linux-b", true, 20],
+    ])
+    publishScheduleFleet(fleet)
+    noteScheduleMachineAnswered("linux-b")
+    assert.equal(scheduleFleet()?.machines[1].online, true, "a machine that answered a read is online")
+  } finally {
+    answerSchedulePresence(null)
+    publishScheduleFleet(null)
+  }
 })

@@ -159,6 +159,54 @@ export function planScheduleMove(input: {
   return { plan: { sourcePlace: here.id, repo: here.repo, targets, hook, hookLeftDisabled } }
 }
 
+/** What the form holds about the two machines when Save is pressed. */
+export interface MoveReadings {
+  /** The target's row in the published fleet says it reported in recently. */
+  targetOnline: boolean
+  /** The target's places as the form read them; null when they could not be read. */
+  targetPlaces: readonly MovePlace[] | null
+  /** The source's places; null when they could not be read. */
+  sourcePlaces: readonly MovePlace[] | null
+}
+
+/** The two fresh questions a save asks before it calls a machine offline. */
+export interface MoveAskAgain {
+  /** Which machines report in now, by id; null when that could not be asked. */
+  presence(): Promise<ReadonlyMap<string, boolean> | null>
+  /** `GET /v1/places` on `machine` now; null when it did not answer. */
+  places(machine: string): Promise<readonly MovePlace[] | null>
+}
+
+/**
+ * The readings a move plans from, with every "offline" in them asked again.
+ *
+ * Both readings are snapshots: the fleet row is from when the list was drawn
+ * and the places from when the machine was picked. A machine that was
+ * restarting then is online now, and a refusal from the snapshot tells the
+ * person to wait for something that already happened. So a save asks again
+ * before refusing, and the refusal is said only when the fresh read also
+ * failed. A machine that answers its places is online, whatever an older
+ * presence reading says. Readings that did not say "offline" are not asked.
+ */
+export async function askAgainBeforeRefusing(
+  held: MoveReadings,
+  machines: { source: string; target: string },
+  ask: MoveAskAgain,
+): Promise<MoveReadings & { asked: boolean }> {
+  const target = !held.targetOnline || held.targetPlaces === null
+  const source = held.sourcePlaces === null
+  if (!target && !source) return { ...held, asked: false }
+  const quietly = <T>(read: () => Promise<T | null>): Promise<T | null> =>
+    read().catch(() => null) // refusal-ok: a fresh read that fails is the offline refusal, said by name
+  const [presence, targetPlaces, sourcePlaces] = await Promise.all([
+    target ? quietly(() => ask.presence()) : Promise.resolve(null),
+    target ? quietly(() => ask.places(machines.target)) : Promise.resolve(held.targetPlaces),
+    source ? quietly(() => ask.places(machines.source)) : Promise.resolve(held.sourcePlaces),
+  ])
+  const targetOnline = target ? targetPlaces !== null || presence?.get(machines.target) === true : held.targetOnline
+  return { targetOnline, targetPlaces, sourcePlaces, asked: true }
+}
+
 /**
  * The stored record as the flat body the schedule routes read, pointed at
  * `place` and with `enabled` as given. `model` is left out on purpose: an

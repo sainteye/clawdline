@@ -38,7 +38,7 @@ import {
 import { PairPanel, type PairRequest } from "./PairPanel.js"
 import { readThroughRelay } from "./install.js"
 import { machinesByCapability } from "./machine-access.js"
-import { publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
+import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
@@ -295,6 +295,24 @@ export function CloudGate({ declared }: { declared: string }) {
         setMachineList(machineListRefusal(error))
       },
     )
+  }, [])
+
+  // A schedule move asks which machines report in now before it calls one
+  // offline (`cloud/schedule-machines.ts`): the list above is not drawn again
+  // once a console is on screen, so the fleet it published can be old.
+  useEffect(() => {
+    answerSchedulePresence(async () => {
+      const current = client.current
+      if (!current) throw new Error("no Cloud client")
+      const answer = await machinesByCapability(current, claimedPairings.current)
+      setMachineList(machineListAnswer(answer))
+      return answer.machines.map((machine) => ({
+        id: machine.id,
+        online: machine.freshness === "current",
+        seenAt: machineIdentityFacts(machine).seenAt,
+      }))
+    })
+    return () => answerSchedulePresence(null)
   }, [])
 
   const choose = useCallback((machine: CloudMachine) => {
