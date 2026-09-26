@@ -4,6 +4,7 @@ import * as L from "../legacy/bridge.js"
 import { smartTitle as requestSmartTitle } from "../legacy/command-bridge.js"
 import { nextWord } from "../next-strings.js"
 import { contextCell } from "../session/context.js"
+import { resetWhen } from "../session/reset-when.js"
 import { repositoryNote } from "./links-note.js"
 import { SessionFacts } from "./facts.js"
 import { conversationBecameKnown, factsMissConversation } from "../session/info-freshness.js"
@@ -389,6 +390,12 @@ function usageHTML(u: Facts["usage"]): string {
   )
 }
 
+/** A window's reset, a moment ahead: `L.clock` reads only moments already past. */
+function resetMoment(unix: number): string {
+  const lang = document.documentElement.lang || navigator.language || "en"
+  return resetWhen(unix, Date.now() / 1000, lang, (n) => nextWord("infoResetsInMinutes", { n }))
+}
+
 function limitsHTML(limits: SessionLimits): string {
   if (!limits.windows.length) return note(T.webInfoUnknown)
   return limits.windows
@@ -396,7 +403,7 @@ function limitsHTML(limits: SessionLimits): string {
       const pct = Math.max(0, Math.min(100, Math.round(window.usedPercent)))
       const level = pct >= 85 ? "bad" : pct >= 60 ? "warn" : "ok"
       const reset = window.resetsAt
-        ? '<span class="when">' + esc(fill(T.webInfoResets, { when: L.clock(window.resetsAt) })) + "</span>"
+        ? '<span class="when">' + esc(fill(T.webInfoResets, { when: resetMoment(window.resetsAt) })) + "</span>"
         : ""
       const value = window.hit ? T.webInfoLimitHit : pct + "%"
       return (
