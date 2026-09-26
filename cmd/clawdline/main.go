@@ -117,6 +117,8 @@ func main() {
 		openCommand(os.Args[2:])
 	case "pair":
 		pairCommand(os.Args[2:])
+	case "devices":
+		devicesCommand(os.Args[2:])
 	case "cloud":
 		cloudCommand(os.Args[2:])
 	case "tunnel":
@@ -362,7 +364,7 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|usage|verify|setting|dispatch|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|tunnel|cloud|board|project|task|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|usage|verify|setting|dispatch|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
@@ -378,6 +380,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so")
 	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")
 	fmt.Fprintln(os.Stderr, "  pair [--watch]            show the code when a device asks to pair")
+	fmt.Fprintln(os.Stderr, "  devices [revoke <id>]     the browsers and devices signed in to this machine directly; revoke one")
 	fmt.Fprintln(os.Stderr, "  tunnel [--json]           what the cloudflared tunnel is doing; remote_tunnel in the settings turns it on")
 	fmt.Fprintln(os.Stderr, "  cloud <status|on|off|login|connect>   the line to app.clawdline.com; off by default")
 	fmt.Fprintln(os.Stderr, "  board tracks [--rows] [--json]   the old cards on the three tracks, read-only")

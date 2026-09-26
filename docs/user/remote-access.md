@@ -29,9 +29,9 @@ ssh -L 7727:127.0.0.1:7727 you@your-machine
 Open the printed address in your local browser. It carries a key in its fragment; treat it like a
 password until it has been used.
 
-**Check:** the console loads with the machine's sessions. **Undo:** stop the SSH forward. Each
-`clawdline open` creates a device of its own; there is no command yet to list or remove those
-devices, so run it only for browsers you mean to keep.
+**Check:** the console loads with the machine's sessions. **Undo:** stop the SSH forward, and
+revoke the browser (see [Signed-in devices](#see-and-revoke-devices-signed-in-directly)): each
+`clawdline open` creates a device of its own, and it stays signed in until it is revoked.
 
 ## B. A phone, through your own cloudflared tunnel
 
@@ -89,6 +89,32 @@ no restart. It does not govern Clawdline Cloud, which has its own switch (below)
 
 **Check:** with the switch off, a send from the phone is refused with `403`; turn it on and the
 same send goes through.
+
+### See and revoke devices signed in directly
+
+Browsers signed in with `clawdline open`, devices paired with a code, and devices signed in with the
+password are listed in two places. Only this machine's own key can see the list or revoke from it:
+
+- **The macOS app's window**, on the **裝置** (Devices) page, under **登入這台機器的裝置** (signed in
+  to this machine). Each device shows what it may do, when it signed in and when it was last used.
+  **撤銷** (revoke) asks first, naming the device, and only **確定撤銷** (revoke it) acts. The line
+  **這個視窗用的是這台機器自己的金鑰** says the window itself uses the machine's own key: that key is
+  never in the list and cannot be revoked there.
+- **A terminal on the machine:**
+
+  ```sh
+  ./bin/clawdline devices                    # one line per device: id, read or read+send, signed in, last used, name
+  ./bin/clawdline devices revoke <device-id> # names the device and asks [y/N]; --yes skips the question
+  ```
+
+A browser signed in as a device of its own is not shown the list. Its Devices page says **這個瀏覽器是以自己
+的裝置身分登入的** (this browser is signed in as a device of its own) and offers **登出這個瀏覽器** (sign
+this browser out), which asks first and then revokes that browser's own key.
+
+**Check:** a revoked device's next request is refused and it is back at the pairing page. When nothing
+else is signed in and no password is set, the tunnel in B closes by itself.
+
+These are not the browsers Clawdline Cloud relays for; those are `clawdline cloud devices` (C below).
 
 ## C. Clawdline Cloud
 
