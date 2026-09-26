@@ -80,6 +80,10 @@ CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
 - 控制台介面目前是**繁體中文**，這是它唯一附帶的語言。
 - **Windows** 可以建置並執行 daemon 與控制台，但還不能列出或控制 Session。Linux 可以在
   `systemd --user` 服務下無介面執行；macOS 另有選用的原生 App。
+- Claude 的 **`5h`／`7d` 方案用量**需要一個會寫出 `~/.claude/statusline-cache/rate-limits.json`
+  的 Claude Code status line。Claude Code 只把這兩個百分比交給 `statusLine.command` 的 stdin，
+  不寫進任何檔案，所以沒設定的機器（剛裝好的 Linux 通常就是）那個角落會一直是「未知」。
+  要設什麼見 [usage.md](docs/user/usage.md)。
 - 自己機器上的一切都免費、不需要帳號。**Clawdline Cloud**（多台機器、遠端配對、排程 Webhook）
   是選用的，預設關閉，目前仍是預覽版。
 
