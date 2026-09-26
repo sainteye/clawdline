@@ -25,6 +25,7 @@ import { ArtifactTiles, artifactTilesHTML, artifactsKey } from "../legacy/images
 import { byteWords, nextWord } from "../next-strings.js"
 import type { PendingSend } from "./pending.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
+import { sitsUnsubmitted } from "./outcome.js"
 import { INTERRUPTED } from "./persist.js"
 import { look, pendingSends, resend } from "./send.js"
 import { turnPendingSpinners } from "./spinners.js"
@@ -382,6 +383,18 @@ function pendingHTML(card: PendingSend): ReactElement {
         : pendingFailureCanRetry(card.failure)
           ? '<button type="button" class="go" data-pending-retry="' + esc(card.token) + '">' + esc(T.webPlanRetry) + "</button>"
           : "") +
+      dismiss +
+      "</div>"
+  } else if (card.state === "unknown" && sitsUnsubmitted(card.failure)) {
+    // The Mac typed the words and held Enter back: they are in the session's
+    // input line. Neither a look nor "send again" helps — the transcript has
+    // no turn for them, and a second send types them twice — so the card says
+    // where they are and offers only to close it.
+    body +=
+      '<div class="pending-state" role="alert"><span>' +
+      esc(nextWord("sendUnsubmitted", { code: card.failure })) +
+      "</span>" +
+      partial +
       dismiss +
       "</div>"
   } else if (card.state === "unknown" && card.checking) {

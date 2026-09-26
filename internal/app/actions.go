@@ -224,10 +224,25 @@ func (a Actions) send(ctx context.Context, s session.Session, text string) (sess
 	}
 	defer release()
 	if err := h.Send(ctx, s, text); err != nil {
-		return s, Refusal{Code: "send_failed", Detail: err.Error(), Cause: err}
+		return s, sendRefusal(s, err)
 	}
 	a.record(ctx, "session.typed", s.ID, map[string]any{"bytes": len(text)})
 	return s, nil
+}
+
+// sendRefusal is a terminal write that failed after it may have typed.
+//
+// A line typed and never submitted (terminal.Unsubmitted) is send_unsubmitted:
+// it is in the session's input line now, and a person told only send_failed
+// types it again, leaving two copies in one line. The daemon's own words are
+// logged, never the text, so the next such line names why Enter was held back.
+func sendRefusal(s session.Session, err error) Refusal {
+	code := "send_failed"
+	if errors.As(err, new(terminal.Unsubmitted)) {
+		code = "send_unsubmitted"
+	}
+	log.Printf("send: %s to session %s: %v", code, s.ID, err)
+	return Refusal{Code: code, Detail: err.Error(), Cause: err}
 }
 
 // SendPrepared is Send with prepare run first, inside the same turn of the
@@ -265,7 +280,7 @@ func (a Actions) SendPrepared(ctx context.Context, id, text string, prepare orch
 		return s, Refusal{Code: "send_withheld", Detail: err.Error(), Cause: err}
 	}
 	if err := h.Send(ctx, s, text); err != nil {
-		return s, Refusal{Code: "send_failed", Detail: err.Error(), Cause: err}
+		return s, sendRefusal(s, err)
 	}
 	a.record(ctx, "session.typed", s.ID, map[string]any{"bytes": len(text), "prepared": true})
 	return s, nil
@@ -406,7 +421,7 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 	}
 	sendPaths := func() (string, error) {
 		if err := h.Send(ctx, s, asPaths(paths)); err != nil {
-			return "", Refusal{Code: "send_failed", Detail: err.Error()}
+			return "", sendRefusal(s, err)
 		}
 		return "path", nil
 	}

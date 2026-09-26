@@ -93,3 +93,22 @@ func TestAssignmentCourtesySendRequiresAFreshIdleReading(t *testing.T) {
 		t.Fatalf("idle: typed %d times", host.total.Load())
 	}
 }
+
+// A line that was typed and never submitted is its own refusal. It is sitting
+// in the session's input line, so a person told only "send failed" types it
+// again and the program gets it twice in one line; told send_unsubmitted, the
+// person presses Enter on the machine or clears it there.
+func TestALineTypedAndNotSubmittedIsRefusedAsSuch(t *testing.T) {
+	host := &failingHost{overlapHost: newOverlapHost("%1"),
+		fail: terminal.Unsubmitted{Why: "the text was typed, but Enter was not pressed"}}
+	a := Actions{Inventory: Inventory{Terminals: []ports.TerminalHost{host}}, Terminals: []ports.TerminalHost{host}}
+	_, err := a.Send(context.Background(), "%1", "! git status")
+	var ref Refusal
+	if !errors.As(err, &ref) || ref.Code != "send_unsubmitted" {
+		t.Fatalf("err %v, want the send_unsubmitted refusal", err)
+	}
+	var unsubmitted terminal.Unsubmitted
+	if !errors.As(err, &unsubmitted) {
+		t.Fatalf("the terminal's own Unsubmitted was dropped from %v", err)
+	}
+}

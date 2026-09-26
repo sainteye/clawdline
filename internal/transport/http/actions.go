@@ -384,6 +384,12 @@ func actionStatus(code string) int {
 		return http.StatusConflict
 	case "backend_unsupported":
 		return http.StatusNotImplemented
+	case "send_unsubmitted":
+		// The line was typed and Enter was held back: it is in the session's
+		// input line. 502, like every write the terminal did not finish, so
+		// the answer is kept and a retry under the same key is told this
+		// rather than typing the line a second time.
+		return http.StatusBadGateway
 	case "terminal_io_failed":
 		// The Swift app's status for a terminal command that did not complete.
 		return http.StatusBadGateway

@@ -59,6 +59,17 @@ export function outcomeOf(failure: FailedWrite): Outcome {
 }
 
 /**
+ * Whether the Mac said the words are in the session's input line, typed and
+ * never submitted (`send_unsubmitted`, `internal/app/actions.go`). Still
+ * `unknown` to `outcomeOf` — nothing about it says "did not happen" — but the
+ * card can say where the words are and what to do: press Enter, or clear them,
+ * on the machine. Sending them again would leave two copies in one line.
+ */
+export function sitsUnsubmitted(code: string): boolean {
+  return code === "send_unsubmitted"
+}
+
+/**
  * Codes that mean this device may not write to this machine at all — the
  * daemon's own `write_disabled`, and the four Clawdline Cloud says it with:
  * the machine's remote-write switch, a device downgraded to reading, a device

@@ -289,6 +289,8 @@ const words = {
     cloudPastUnavailable:
       "This machine cannot list its earlier sessions over Clawdline Cloud yet (it does not answer past-sessions), so none can be picked up from here. Pick it up on the machine, or start a new session here.",
     sendUnknown: "Not known whether this reached the machine ({code}).",
+    sendUnsubmitted:
+      "This was typed into the session's input line on the machine, but Enter was not pressed ({code}). Press Enter there, or clear it; sending it again would type it twice.",
     sendLook: "Look",
     sendLookTip: "Read the conversation on the machine again: if this is there, the card goes.",
     sendLooking: "Looking…",
@@ -591,6 +593,7 @@ const words = {
     cloudPastUnavailable:
       "這台機器還不能經由 Clawdline Cloud 列出以前的 session（它不回答 past-sessions），所以這裡沒辦法接續。請到那台機器上接續，或在這裡開一個新的 session。",
     sendUnknown: "不知道有沒有送到那台機器（{code}）。",
+    sendUnsubmitted: "字已經打進那台機器這個 session 的輸入列，但沒有按下 Enter（{code}）。請到那台機器上按 Enter，或把它清掉；再送一次會打成兩份。",
     sendLook: "去看看",
     sendLookTip: "重新讀一次那台機器上的對話：如果已經在裡面，這張卡就會消失。",
     sendLooking: "正在看…",
