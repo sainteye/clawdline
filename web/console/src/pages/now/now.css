@@ -47,6 +47,8 @@
 .now-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--dim); font-size: 12px; line-height: 1.5; }
 .now-meta span { overflow-wrap: anywhere; }
 .now-note { color: var(--faint); font-size: 12px; line-height: 1.5; }
+.now-go { padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; line-height: 1.5; cursor: pointer; }
+.now-go:hover { text-decoration: underline; }
 .now-block[data-tone="warn"] .now-note { color: var(--warn); }
 .now-empty { margin: 0; padding: 10px 0 0; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
 .now-more { color: var(--faint); font: 11px/1.6 var(--mono); }
