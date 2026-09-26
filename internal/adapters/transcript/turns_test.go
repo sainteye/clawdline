@@ -404,3 +404,38 @@ func TestPasteMarksComeOffAndTheirContentStays(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestClaudeBashModeReadsAsTheLineThatWasTyped(t *testing.T) {
+	path := writeRecord(t,
+		claudeRow("user", "<bash-input> ls -la</bash-input>"),
+		claudeRow("user", "<bash-stdout>total 0\n\x1b[1mREADME.md\x1b[0m -&gt; docs</bash-stdout><bash-stderr>ls: cannot access &#39;x&#39;</bash-stderr>"),
+		claudeRow("user", []m{{"type": "text", "text": "<bash-input>git status</bash-input>"}}),
+		claudeRow("user", "<bash-stdout></bash-stdout><bash-stderr>\n</bash-stderr>"),
+	)
+	page, err := ReadClaude(path, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for _, e := range page.Entries {
+		got = append(got, e.Kind+"|"+e.Text)
+		if strings.Contains(e.Text, "<bash-") {
+			t.Fatalf("raw markup reached an entry: %q", e.Text)
+		}
+	}
+	want := "user|! ls -la\ntoolResult|total 0\nREADME.md -> docs\nls: cannot access 'x'\nuser|!git status"
+	if strings.Join(got, "\n") != want {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestFirstUserOfABashModeSessionIsTheTypedLine(t *testing.T) {
+	path := writeRecord(t,
+		claudeRow("user", "<bash-input>git status</bash-input>"),
+		claudeRow("user", "<bash-stdout>clean</bash-stdout><bash-stderr></bash-stderr>"),
+	)
+	got, err := FirstUser(path, "claude")
+	if err != nil || got != "!git status" {
+		t.Fatalf("first user = %q, %v", got, err)
+	}
+}

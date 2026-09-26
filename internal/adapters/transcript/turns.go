@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"os"
 	"path/filepath"
@@ -577,20 +578,25 @@ func claudeEntries(line []byte, sidechains bool) []Entry {
 				prose(raw)
 				continue
 			}
-			// A slash command goes back in as the line that was typed, and
-			// what it printed is filed as that call's result.
+			// A slash or `!` command goes back in as the line that was
+			// typed, and what it printed is filed as that call's result.
 			text := strings.TrimSpace(withoutMachineBlocks(raw))
-			if typed, ok := slashCommand(raw); ok {
-				if text == "" {
-					text = typed
-				} else {
-					text = typed + "\n" + text
+			for _, command := range []func(string) (string, bool){slashCommand, bashCommand} {
+				if typed, ok := command(raw); ok {
+					if text == "" {
+						text = typed
+					} else {
+						text = typed + "\n" + text
+					}
 				}
 			}
 			if text != "" {
 				out = append(out, Entry{Kind: KindUser, Text: text, At: at})
 			}
 			if printed, ok := commandOutput(raw); ok {
+				out = append(out, Entry{Kind: KindToolResult, Text: printed, At: at})
+			}
+			if printed, ok := bashOutput(raw); ok {
 				out = append(out, Entry{Kind: KindToolResult, Text: printed, At: at})
 			}
 		case "tool_use":
@@ -768,7 +774,8 @@ func firstLineOf(text string) string {
 }
 
 var machineTags = []string{"task-notification", "system-reminder", "local-command-stdout",
-	"local-command-stderr", "command-name", "command-message", "command-args"}
+	"local-command-stderr", "command-name", "command-message", "command-args",
+	"bash-input", "bash-stdout", "bash-stderr"}
 
 var agentMessageEnvelope = regexp.MustCompile(`(?s)^\s*<agent-message\s+from="([^"<>\r\n]+)">\r?\n?(.*)\r?\n?</agent-message>\s*$`)
 
@@ -946,15 +953,41 @@ func slashCommand(text string) (string, bool) {
 	return name + " " + args, true
 }
 
+// bashCommand is a `!` line as somebody typed it. Claude Code records it
+// without the `!` but with whatever space followed it, so `! ls` and `!ls`
+// each come back as they were typed.
+func bashCommand(text string) (string, bool) {
+	body, ok := innerTag("bash-input", text)
+	body = strings.TrimRight(body, " \t\r\n")
+	if !ok || strings.TrimSpace(body) == "" {
+		return "", false
+	}
+	return "!" + body, true
+}
+
 // commandOutput is what a slash command printed, without its colours.
 func commandOutput(text string) (string, bool) {
+	return printed(text, false, "local-command-stdout", "local-command-stderr")
+}
+
+// bashOutput is what a `!` command printed. Unlike a slash command's, it is
+// recorded HTML-escaped (`-&gt;`), and the page shows a result as text.
+func bashOutput(text string) (string, bool) {
+	return printed(text, true, "bash-stdout", "bash-stderr")
+}
+
+func printed(text string, escaped bool, tags ...string) (string, bool) {
 	parts := []string{}
-	for _, tag := range []string{"local-command-stdout", "local-command-stderr"} {
+	for _, tag := range tags {
 		body, ok := innerTag(tag, text)
 		if !ok {
 			continue
 		}
-		if p := strings.TrimSpace(plain(body)); p != "" {
+		p := strings.TrimSpace(plain(body))
+		if escaped {
+			p = html.UnescapeString(p)
+		}
+		if p != "" {
 			parts = append(parts, p)
 		}
 	}
