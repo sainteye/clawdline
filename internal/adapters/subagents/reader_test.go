@@ -49,6 +49,17 @@ func TestMissingProviderRecordIsUnknownNotZero(t *testing.T) {
 	}
 }
 
+func TestRecordWithoutAgentFolderIsCompleteZero(t *testing.T) {
+	home, row, _, folder := fixture(t)
+	if err := os.Remove(folder); err != nil {
+		t.Fatal(err)
+	}
+	got := New(home).ForSession(row)
+	if got.AgentReading.State != session.AgentsComplete || len(got.Agents) != 0 {
+		t.Fatalf("reading %+v agents %+v, want complete with none", got.AgentReading, got.Agents)
+	}
+}
+
 func TestRunningAgentIsReadAndStableBeatOpensNothing(t *testing.T) {
 	home, row, _, folder := fixture(t)
 	writeAgent(t, folder, "agent_1")
