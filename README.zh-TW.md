@@ -2,154 +2,116 @@
 
 [English](README.md)
 
-**Claude Code 與 Codex 的本機控制中心。一次看見所有 Session、知道哪一個正在等你，
-也讓 Agent 能彼此交接工作，而不會遺失交付紀錄。**
-
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](go.mod)
 
-Clawdline 由 Go daemon 與 React 控制台組成。Agent 與程式碼都留在你的機器上執行；
-選用的 Cloud 連線只負責提供一條加密路徑，讓其他裝置連回這台機器。
+**Claude Code 與 Codex 的本機控制中心。一次看見所有 Session、知道哪一個正在等你，
+也讓 Agent 能彼此交接工作，而不會遺失交付紀錄。**
 
-## 為什麼要使用 Clawdline？
+Clawdline 由 Go daemon 與 React 控制台組成。它看得到你本來就在 tmux（Mac 上也包括 iTerm2）
+裡跑的 Claude Code 與 Codex Session，不需要 wrapper、不裝 hook，讓你從瀏覽器或手機閱讀、回答、
+啟動和停止它們。Agent 與程式碼都留在你的機器上；選用的 Clawdline Cloud 只是一條端對端加密的
+路徑，讓其他裝置連回這台機器。
 
-一個程式開發 Agent 很容易掌握；但當多個 Agent 分散在多個程式庫，終端機分頁很快就會
-失控：你會忘記 Session 屬於哪個 Project、錯過權限詢問，也很難確認派出去的工作究竟只是
-做完了，還是真的通過檢查並合併。
-
-Clawdline 把這些彼此獨立的終端機，整理成一套看得見、管得到的系統。
-
-### 以 Project 為核心的 Session
-
-每個 Claude Code 或 Codex Session 都會顯示所屬 Project、終端機、Agent 與目前工作。
-你自行在 tmux 啟動的 Session 也會出現；Clawdline 不要求你透過 wrapper 啟動，也不會在
-Claude Code 或 Codex 裡安裝 hook。
-
-### Session 狀態回報與管理
-
-直接看出哪些 Session 正在工作、等待你、閒置、完成，或目前無法判讀。打開 Session 就能閱讀
-真正的對話紀錄、回答問題、補充指令、中斷或關閉。證據不足時會明確顯示 `unknown`，不會把它
-猜成 idle。
+## 它能做什麼
 
 <p align="center">
   <img src="docs/assets/sessions-live.gif" width="760" alt="Clawdline 即時更新多個 Claude Code 與 Codex Session 的狀態。">
 </p>
 
-### 用手機操作 Codex 與 Claude Code
-
-同一套控制台可以在瀏覽器中使用。啟用選用的 Clawdline Cloud 後，你能從手機查看進度、
-閱讀對話紀錄、接收需要注意的通知並回覆 Session，而工作仍在自己的機器上執行。讀取與送出
-指令是兩個獨立權限。
+- **Session 與注意力。** 每個 Session 都標出所屬 Project、Agent 與狀態：正在工作、在等你、
+  閒置，或讀不出來——讀不出來就照實說，不會猜成閒置。打開就能讀真正的對話紀錄、回答問題、
+  傳文字或畫過重點的圖片、用說的輸入、停下目前這一輪，或安全地關掉。
+- **用手機操作。** 同一套控制台在任何瀏覽器都能用。可以透過 SSH 轉發、你自己的 cloudflared
+  tunnel 或 Clawdline Cloud 連回來；「讀取」和「操作」是兩個分開的權限。問題等了十分鐘沒人回，
+  會推播通知你。
+- **排程與 Webhook。** 把 Claude Code 或 Codex 的任務存起來，照本機時鐘執行，有補跑、逾時與
+  失敗通知。Cloud Pro 還能用 Webhook 從任何事件啟動同一個任務。
+- **看板與驗收。** 把工作放上 Project 的看板、指派給 Session，由 Agent 帶著證據推進實作、驗證、
+  合併與部署。只能事後判斷的改動，放進「等待驗收」清單。
+- **Clawdfather 與派工。** Session 可以把範圍明確的工作派給子 Session、收回結果，或把整條工作
+  交接給新的 Session；交付的工作是否真的落地，由 Clawdline 記錄。也可以指定一個 Session 當
+  整台機器的協調者 **Clawdfather**。
+- **跨機器的 Project。** 讓第二台機器取得與第一台相同的 Project 名稱、圖示和沒進 git 的 skill，
+  以 git origin 對應。
 
 <p align="center">
   <img src="docs/assets/fleet-phone.png" width="390" alt="手機上的 Clawdline，顯示不同 Project 中正在工作、等待中與子 Session 的狀態。">
 </p>
 
-### Scheduled Task，由 Agent 執行
+## 和其他工具相比
 
-把 Claude Code 或 Codex 的任務存起來，設定單次或週期性排程。排程任務與互動式派工共用同一套
-broker、隔離、逾時、狀態與結果紀錄。daemon 離線期間若錯過執行時間，也只會補跑最近一次符合
-條件的工作，不會一次重播所有錯過的排程。
+[T3 Code](https://github.com/pingdotgg/t3code) 是完整的 Agent 操作介面，有 Web、桌面與手機 App，
+支援更多 Agent 與原生版本控制流程。[Herdr](https://github.com/herdrdev/herdr) 是以終端機為主的
+Agent 執行環境與 multiplexer，支援的 Agent 很廣。[Orca](https://github.com/stablyai/orca) 是完整的
+Agent Development Environment，有 worktree、編輯器、diff review 與各種整合。
 
-### 用 Webhook 執行複雜任務
-
-把 Cloud webhook 綁定到已儲存的 Agent 任務。事件送達時，Clawdline 可以在你的機器上啟動完整
-Agent Session，而不只是執行寫死的 shell command；持久化的 claim 與 receipt 會避免同一個事件
-悄悄開出重複工作。
-
-### Clawdfather 統合、協調其他 Sessions
-
-指定一個執行中的 Session 成為 **Clawdfather**，負責整台機器的協調工作。它可以檢視所有 Session、
-把範圍明確的任務交給 Claude Code 或 Codex 子 Session、等待結果、把整條工作移交給另一個 Session，
-並清楚區分「已交付」、「已審查」與「已合併」。
-
-## 和其他 Project 相比
-
-[T3 Code](https://github.com/pingdotgg/t3code) 是完整的 Agent 執行環境操作介面，提供 Web、桌面與
-手機 App，也支援比 Clawdline 更多的 Agent 與原生版本控制工作流程。若你要的是功能豐富、
-跨裝置、接近完整開發工作區的體驗，T3 Code 很合適；Clawdline 則更專注於管理你已經在 tmux 或
-iTerm2 中啟動的 Claude Code／Codex Session，以及它們的狀態、排程與持久協調紀錄。
-
-[Herdr](https://github.com/herdrdev/herdr) 是以真實終端機 pane 為核心的 Agent 執行環境與
-multiplexer，能偵測許多不同的程式開發 Agent、彙整工作區狀態，並快速跳到需要注意的 pane。
-如果你想要以終端機為主的多 Agent 工作區與廣泛的 Agent 支援，Herdr 的定位更直接；Clawdline
-的重點則是 Web／手機控制、broker 派工、landing 證據、Scheduled Task、Webhook 與 Clawdfather。
-
-[Orca](https://github.com/stablyai/orca) 是完整的 Agent Development Environment，主打隔離的
-git worktree、內建 terminal、editor、diff review、瀏覽器、GitHub／Linear 整合與手機 companion。
-如果你想在一個應用程式裡建立、比較並合併多個 Agent 的成果，Orca 涵蓋得更廣；Clawdline 不是
-IDE，而是環繞既有 Session 運作的控制平面，並把長時間執行的排程、Webhook 與 Agent 對 Agent
-協調放在核心。
-
-Clawdline 不取代 IDE，也不取代 Claude Code 或 Codex。當困難的地方不再是「開一個 Agent」，
-而是「長時間可靠地管理多個 Agent」，就是它適合的位置。
+Clawdline 不是 IDE，也不取代 Claude Code 或 Codex。它是環繞你既有 Session 的控制平面，核心是
+Web／手機控制、broker 派工、落地證據、排程、Webhook 與 Clawdfather 協調。當困難的地方不再是
+「開一個 Agent」，而是「長時間可靠地管理多個 Agent」，就是它適合的位置。
 
 ## 安裝
 
-Clawdline 目前仍是 pre-1.0，尚未提供 release 下載。請在 macOS 或 Linux 從原始碼建置。
-你需要 Go 1.25 以上、Node.js 與 npm、tmux，以及 Claude Code 或 Codex。Windows 版本可以完成
-build，但目前還不能在 Windows 上探索或控制 Session。
+在 macOS 或 Linux 從原始碼建置。你需要 Go 1.25 以上、Node.js 與 npm、tmux，以及 Claude Code
+或 Codex。
 
 ```sh
 git clone https://github.com/sainteye/clawdline.git
 cd clawdline
-
 (cd web && npm install && npm run build)
 go build -o bin/clawdline ./cmd/clawdline
-```
 
-啟動 daemon：
-
-```sh
 CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
 ```
 
-接著在另一個終端機執行：
+在另一個終端機：
 
 ```sh
-./bin/clawdline doctor
-./bin/clawdline open
+./bin/clawdline doctor      # 版本、port、狀態目錄
+./bin/clawdline open        # 讓這個瀏覽器登入；加 --send 才能在 Session 裡打字
 ```
 
-在 tmux 裡啟動 Claude Code 或 Codex，Session 就會出現在控制台：
+接著在 tmux 裡執行 `claude` 或 `codex`，Session 就會出現在清單上。每一步與確認方法，請看
+[Install and first run](docs/user/install.md)。
 
-```sh
-tmux new -s work
-cd /path/to/your/project
-claude  # 或：codex
-```
+## 幾點說明
 
-也可以在尚未啟動 Agent 前，明確把既有目錄加入「開一個 Session」清單；這個動作不會呼叫模型：
+- Clawdline 目前是 **pre-1.0**，還沒有 release 下載，之後還會變動。
+- 控制台介面目前是**繁體中文**，這是它唯一附帶的語言。
+- **Windows** 可以建置並執行 daemon 與控制台，但還不能列出或控制 Session。Linux 可以在
+  `systemd --user` 服務下無介面執行；macOS 另有選用的原生 App。
+- 自己機器上的一切都免費、不需要帳號。**Clawdline Cloud**（多台機器、遠端配對、排程 Webhook）
+  是選用的，預設關閉，目前仍是預覽版。
 
-```sh
-./bin/clawdline project add /path/to/project /path/to/another-project
-./bin/clawdline project list
-```
+## 文件
 
-在 macOS 上也可以建置原生外殼：
+下面的詳細說明頁是英文。中文的使用說明在 https://clawdline.com/docs/ 。
 
-```sh
-tools/package-macos.sh          # dist/Clawdline Next.app
-tools/package-macos.sh --dmg    # 同時建立 disk image
-```
+開始使用
 
-### 把 Project 帶到另一台機器
+- [安裝與第一次執行](docs/user/install.md)
+- [macOS、Linux 與 Windows](docs/user/platforms.md)：原生 App、`systemd --user` 服務、Windows
+  目前能做什麼
+- [疑難排解](docs/user/troubleshooting.md)
 
-第二台機器（例如 Linux 伺服器）即使有同樣的程式庫，也還是少了每個 Project 的名稱、圖示，以及
-你沒有放進 git 的 skill 與筆記。選一台當主要機器，其他機器從它鏡像：在 hosted console 打開
-接收那台機器的 **Projects** 頁，使用「**專案設定同步**」；或手動搬一個檔案：
+日常使用
 
-```sh
-./bin/clawdline project export --out projects.json          # 在主要機器
-./bin/clawdline project import --clone projects.json        # 在接收的機器
-```
+- [查看、回答、啟動、停止與關閉 Session](docs/user/sessions.md)
+- [鍵盤快捷鍵](docs/user/keyboard-shortcuts.md)
+- [通知](docs/user/notifications.md)
+- [從手機或另一台機器遠端存取](docs/user/remote-access.md)：SSH、自己的 tunnel、Clawdline Cloud
 
-Project 以 git `origin` 對應，不看資料夾名稱。操作步驟在[開始使用指南](docs/getting-started.md#7-bring-your-projects-to-another-machine)，
-哪些會同步、哪些刻意不同步，請看 [project-sync.md](docs/project-sync.md)。
+執行工作
 
-配對、Cloud 設定、診斷與疑難排解，請繼續閱讀[開始使用指南](docs/getting-started.md)。
+- [排程與 Webhook](docs/user/schedules.md)
+- [看板、Session 待辦、現在與驗收](docs/user/board.md)
+- [Clawdfather、派工、落地與交接](docs/user/clawdfather-and-dispatch.md)
+- [Project，以及把它們帶到另一台機器](docs/user/projects.md)
+- [Token 用量、Agent 額度與容量](docs/user/usage.md)
 
-[系統架構](docs/architecture.md) · [遠端存取](docs/remote.md) ·
-[跨機器的 Project](docs/project-sync.md) ·
-[Token 帳本](docs/token-ledger.md) ·
-[所有文件](docs/README.md) · [MIT License](LICENSE)
+要在它上面開發？從 [docs/architecture.md](docs/architecture.md)、[AGENTS.md](AGENTS.md) 開始，
+所有設計文件列在 [docs/README.md](docs/README.md)。
+
+## 授權
+
+[MIT](LICENSE)

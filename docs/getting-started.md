@@ -17,7 +17,7 @@ Use your own.
 | Xcode command line tools, macOS only | builds the native app, and only if you want it | `swiftc --version` |
 
 iTerm2 is optional on a Mac: its sessions are listed too. Windows is not supported yet. The daemon
-builds for it but has no way to list or drive sessions there ([README](../README.md#platforms)).
+builds for it but has no way to list or drive sessions there ([user/platforms.md](user/platforms.md)).
 
 ## 1. Clone and build
 
@@ -154,11 +154,11 @@ at login, and a mascot in the notch.
 
 ## 6. Reach it from a phone
 
-**There is no account-free way yet.** The pieces that exist are the gate in front of every
-request and six-digit pairing: when a device asks to pair, the code appears on this machine, in
-the macOS app or through `./bin/clawdline pair --watch`, and is never sent back to the device that
-asked. What is missing is the page on which a phone types that code, and anything that starts a
-tunnel. Until those exist, a phone reaches this machine through Clawdline Cloud.
+Three ways, compared in [user/remote-access.md](user/remote-access.md): an SSH port forward, your
+own cloudflared tunnel with six-digit pairing (no account; a device paired that way can only read),
+or Clawdline Cloud, below. When a device asks to pair over the tunnel, the code appears on this
+machine, in the macOS app or through `./bin/clawdline pair --watch`, and is never sent back to the
+device that asked.
 
 ### Turn on Clawdline Cloud (optional)
 
@@ -284,6 +284,8 @@ Everything the daemon does is in `logs/daemon.log` in the state directory.
 
 ## Next
 
+- [The user pages](../README.md#documentation): one page per job — sessions, notifications, remote access, schedules,
+  the Board, dispatch, projects, usage
 - [architecture.md](architecture.md): how the pieces fit
 - [project-sync.md](project-sync.md): how project settings move between machines, and what never does
 - [README.md](README.md): every document, and which ones are public design notes

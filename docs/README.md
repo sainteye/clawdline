@@ -12,10 +12,28 @@ Every document in this directory, and what kind it is.
   changed, and where one disagrees with a design note, the design note wins.
 - **Work list**: an inventory of what is still wrong, written to be dispatched. Each item says how to
   make it fail, and the list goes stale as items land.
+- **User page**: how to finish one job with Clawdline — what you need, the steps with the exact
+  labels and commands, how to tell it worked and how to undo it. They link here for the design.
 
-Nine pages are in English: the two that introduce the project, the six design/acceptance pages an
-outside reader judges it by, and the publishing operations guide. The rest are written in
-Traditional Chinese.
+The user pages are in English, and so are the two pages that introduce the project and the pages
+marked English in the tables below. The rest are written in Traditional Chinese.
+
+## Using Clawdline
+
+| Document | Kind | Language | What it is |
+| --- | --- | --- | --- |
+| [user/install.md](user/install.md) | User page | English | Build, start the daemon, open the console, and see a session in the list |
+| [user/platforms.md](user/platforms.md) | User page | English | The macOS app, a Linux `systemd --user` service, and what Windows can do |
+| [user/sessions.md](user/sessions.md) | User page | English | Read the list, open a session, answer, send pictures and snippets, dictate, start, stop and close |
+| [user/keyboard-shortcuts.md](user/keyboard-shortcuts.md) | User page | English | Every key the console answers to |
+| [user/notifications.md](user/notifications.md) | User page | English | Web Push on a computer or phone: turning it on, what you are told about, a test |
+| [user/remote-access.md](user/remote-access.md) | User page | English | Another computer over SSH, a phone over your own tunnel, and Clawdline Cloud pairing and permissions |
+| [user/schedules.md](user/schedules.md) | User page | English | Scheduled tasks on the local clock, and schedule webhooks on Cloud Pro |
+| [user/board.md](user/board.md) | User page | English | The Board, session to-dos, the Now page and things waiting to be verified |
+| [user/clawdfather-and-dispatch.md](user/clawdfather-and-dispatch.md) | User page | English | The agent skill, dispatching children, landing, handoff, and the Clawdfather role |
+| [user/projects.md](user/projects.md) | User page | English | Adding projects, the Projects page, and bringing project settings to another machine |
+| [user/usage.md](user/usage.md) | User page | English | Token bills by category, assistant quotas, the compaction window and capacity |
+| [user/troubleshooting.md](user/troubleshooting.md) | User page | English | From a symptom to its cause and fix |
 
 ## Start here
 
