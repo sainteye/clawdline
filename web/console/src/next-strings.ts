@@ -31,6 +31,8 @@ const words = {
     sessionGone: "The session in this address is no longer on this machine, so here is the list.",
     sessionNotStarted: "This session has not started a conversation yet. Send the first message and its contents will appear here.",
     sessionNotStartedShort: "Conversation not started yet",
+    infoContext: "Context",
+    infoContextUsed: "{used} of {window} tokens in the context",
     sessionLastActivity: "last activity {time}",
     sessionStateUnrecognizedList:
       "Clawdline read the screen but could not identify its state. Open this session to inspect it.",
@@ -372,6 +374,8 @@ const words = {
     sessionGone: "網址裡的那個 session 已經不在這台機器上了，先回到清單。",
     sessionNotStarted: "這個 session 還沒有開始對話。送出第一則訊息後，內容就會顯示在這裡。",
     sessionNotStartedShort: "對話還沒開始",
+    infoContext: "Context",
+    infoContextUsed: "context 裡有 {used} / {window} tokens",
     sessionLastActivity: "上次活動：{time}",
     sessionStateUnrecognizedList: "Clawdline 已讀到畫面，但無法辨認狀態。請開啟這個 session 查看。",
     sessionStateUnrecognizedDetail: "Clawdline 已讀到畫面，但無法辨認狀態。決定下一步前，請查看下方對話。",

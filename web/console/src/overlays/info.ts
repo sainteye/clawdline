@@ -3,6 +3,7 @@ import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { smartTitle as requestSmartTitle } from "../legacy/command-bridge.js"
 import { nextWord } from "../next-strings.js"
+import { contextCell } from "../session/context.js"
 import { repositoryNote } from "./links-note.js"
 import { SessionFacts } from "./facts.js"
 import { conversationBecameKnown, factsMissConversation } from "../session/info-freshness.js"
@@ -326,6 +327,30 @@ function statusHTML(s: Row | null): string {
   return '<div class="session-statuses">' + out + "</div>"
 }
 
+/**
+ * How full the context is — what every later call reads again, and so what a
+ * long session pays for most. The status line has the same reading as `ctx
+ * 61%`, but a phone hides nothing here, and this card was the one place that
+ * had the tokens and not the window. Unknown is said, never drawn as 0%.
+ */
+function contextHTML(c: Facts["context"]): string {
+  const cell = contextCell(c, T.webInfoTokens)
+  if (!cell || !c) return note(T.webInfoUnknown)
+  // The daemon sends the window only when it was measured, so the tokens
+  // line is shown only where both sides are real.
+  const tokens =
+    typeof c.usedTokens === "number" && typeof c.windowTokens === "number"
+      ? note(nextWord("infoContextUsed", { used: count(c.usedTokens), window: count(c.windowTokens) }))
+      : ""
+  return (
+    '<div class="win" data-level="' + cell.level + '">' +
+    '<span class="wn">ctx</span>' +
+    '<span class="bar" aria-hidden="true"><i style="--w:' + cell.percent + '%"></i></span>' +
+    '<span class="pct">' + cell.percent + "%</span></div>" +
+    tokens
+  )
+}
+
 function usageHTML(u: Facts["usage"]): string {
   if (!u) return note(T.webInfoNoUsage)
   const cells: [unknown, string][] = [
@@ -432,6 +457,7 @@ function html(d: Facts): string {
   out += sec(++i, T.webInfoStatus, "", statusHTML(session() || (s as unknown as Row)))
   // Read-only pairings get no buttons rather than dead ones.
   if (models.length && host.writable()) out += sec(++i, T.webInfoSwitchModel, "", modelsHTML(models, current))
+  out += sec(++i, nextWord("infoContext"), "", contextHTML(d.context))
   out += sec(++i, T.webInfoUsage, "", usageHTML(u))
   if (d.limits) {
     const when = d.limits.at ? esc(fill(T.webInfoAsOf, { when: L.clock(d.limits.at) })) : ""
