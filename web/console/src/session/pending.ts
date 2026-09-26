@@ -142,10 +142,13 @@ const EARLY_MS = 2 * 60 * 1000
  * The words as the transcript would carry them. The daemon takes Claude's
  * `[Image #n]` markers out of a turn that carries pictures and counts them
  * (`canonicalImageContent`), and a picture-only turn is the markers alone.
+ * A `!` command is the same line with or without a space after the `!`: the
+ * record keeps whichever arrived, and `! ls` and `!ls` run the same command.
  */
 export function turnWords(text: string, imageCount: number): string {
   const words = imageCount > 0 ? text.replace(/\[Image #\d+\]/g, "") : text
-  return words.replace(/\s+/g, " ").trim() + (imageCount > 0 ? "\u0001pictures" : "")
+  const flat = words.replace(/\s+/g, " ").trim().replace(/^! /, "!")
+  return flat + (imageCount > 0 ? "\u0001pictures" : "")
 }
 
 /** One turn's identity: when it was written and what it says. */

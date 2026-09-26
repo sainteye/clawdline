@@ -172,3 +172,20 @@ test("try again reads first: when the attempt did not arrive, it goes again as a
   p.reconcile("s", [user("unrelated", T0 + 500), user("refused", T0 + 31_000)], T0 + 32_000)
   assert.equal(p.of("s").length, 0)
 })
+
+test("a `!` command settles whether or not a space followed the `!`", () => {
+  for (const recorded of ["!ls -la", "! ls -la"]) {
+    const p = new PendingSends()
+    p.reconcile("s", [], T0 - 1)
+    const card = p.add("s", "! ls -la", [], T0)
+    p.accepted(card.token, T0 + 200)
+    p.reconcile("s", [user(recorded, T0 + 1_000)], T0 + 2_000)
+    assert.deepEqual(states(p), [], recorded)
+  }
+  const q = new PendingSends()
+  q.reconcile("s", [], T0 - 1)
+  const plain = q.add("s", "hello", [], T0)
+  q.accepted(plain.token, T0 + 200)
+  q.reconcile("s", [user("!hello", T0 + 1_000)], T0 + 2_000)
+  assert.deepEqual(states(q), ["accepted:hello"])
+})

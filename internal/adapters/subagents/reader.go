@@ -232,10 +232,25 @@ func (r *Reader) readClaude(s session.Session, cost *Measurement) ([]session.Age
 	cost.Stats++
 	names, err := os.ReadDir(folder)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, unknown(session.AgentsNoRecord)
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, unknown(session.AgentsUnreadable)
 		}
-		return nil, unknown(session.AgentsUnreadable)
+		// Claude Code makes the folder when the session's first background
+		// agent starts, so a session that never started one has none. With
+		// its record on disk that is a complete reading of zero; only a
+		// missing record leaves the count unknown.
+		cost.Stats++
+		st, err := os.Stat(record)
+		switch {
+		case err == nil && st.Mode().IsRegular():
+			return nil, session.AgentReading{State: session.AgentsComplete}
+		case err == nil:
+			return nil, unknown(session.AgentsUnrecognized)
+		case errors.Is(err, os.ErrNotExist):
+			return nil, unknown(session.AgentsNoRecord)
+		default:
+			return nil, unknown(session.AgentsUnreadable)
+		}
 	}
 
 	now := r.Now()
