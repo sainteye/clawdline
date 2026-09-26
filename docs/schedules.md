@@ -302,8 +302,48 @@ what to act on (`next-strings.ts`, `scheduleMove*`):
 | no origin | the project has no origin remote, so nothing names it on another machine |
 | source unlisted | the project is gone from the source's list, so the disable cannot name it |
 | no project | the target has no clone of that repository |
-| webhook bound / unknown | a Cloud webhook is bound to the schedule id (`schedule-webhook-bind-v1`), or the binding could not be read; the copy gets a new id, so the hook would call a schedule that is gone |
+| webhook unknown | the source's binding could not be read, or a bound hook could not be read from Cloud (or Cloud answered another hook, or a state that does not move); "could not read" is not "unbound" |
 | spent | a one-time schedule that already ran; a copy would arm it again |
+
+**A bound webhook moves with the schedule and keeps its URL** (2026-09-26), so whoever calls it changes
+nothing. Before (1) the page reads the hook from Cloud (`GET /v1/schedule-webhooks/:id`) and plans with
+its `revision`. Between (2) and (3) two more steps run, in this order:
+
+- (2a) Cloud moves the hook to the target: `POST /v1/schedule-webhooks/:id/move`
+  `{"machine_id", "expected_revision"}` (the Cloud's PROTOCOL.md). The hook becomes `pending_binding` —
+  paused: a call is answered as a pending hook is, and runs nothing — with the same URL and a new
+  generation; every not-yet-receipted delivery of the old generation is cancelled, so the source can never
+  claim one.
+- (2b) the target binds it to the **copy's** id with the same `schedule-webhook-bind-v1` step a new hook
+  takes, and activates it with its own machine credential; the page waits until Cloud shows it `active`.
+
+So the hook is never active while pointing at a schedule that does not exist: it is paused from (2a) until
+the target has bound the copy. Deleting the source in (3) drops the source's local binding in the same
+transaction (`DeleteScheduleFile`, `internal/adapters/store/schedules.go`); a binding whose schedule row is
+already gone no longer refuses the same hook when it is bound again later — rows daemons before this left
+behind (`TestAWebhookBindingLeavesWithItsSchedule`). A claim for a moved hook cannot reach the source in the
+meantime: Cloud claims only deliveries stamped with the claimant's `machine_id`
+(the Cloud API's delivery claim).
+
+When a step fails, the page says what state things are in, by name (`moveSchedule`, outcomes
+`hook_move_failed` and `hook_bind_failed`):
+
+- (2a) refused (stale revision, the hook disabled meanwhile, Cloud unreachable): the copy is deleted and the
+  source switched back; the hook was never touched.
+- (2b) fails — the target is offline, or its Clawdline is older than webhook binding (2026-09-22) and so
+  never activates it; the two cannot be told apart from the browser, so the sentence names both: the hook
+  is moved back to the source (its revision read again) and bound again to the source schedule (the source
+  still holds that binding), then the copy is deleted and the source switched back on. If the hook could not
+  come back, or came back and was not activated, the page says which machine it is on, that it is paused,
+  and the one action that fixes it: disable it and generate a new one (the URL changes)
+  (`scheduleMoveHookStranded`). A copy left on the target or a source left disabled is each said too.
+- (3) refused: as without a hook — the hook runs the copy on the target; the old copy is on the source,
+  disabled.
+
+A **disabled** hook bound to the schedule does not move and is not needed: the schedule moves without it,
+the source's binding goes with the deleted source, and the success toast says a new one can be generated on
+the target (`scheduleMoveWebhookLeftDisabled`). A successful move's toast says the webhook moved and its URL
+is unchanged (`scheduleMoveWebhookMoved`).
 
 A save that changes nothing about the machine keeps the relay's `cloud_schedule_machine_mismatch` refusal
 for a body whose place is on another machine than the schedule: a move is three writes, not a save.
@@ -311,7 +351,10 @@ for a body whose place is on another machine than the schedule: a move is three 
 **Needs a redeploy.** Both the source and the target daemon must send `repo`; a machine running a build
 from before 2026-09-26 is refused by name as outdated until it is updated. A schedule with hidden template fields also needs a target
 that takes `template`, and a schedule with a permission a target that takes `permission_mode`; an older one
-is refused by name as too old, after the source was switched back on.
+is refused by name as too old, after the source was switched back on. Moving a schedule with a bound webhook
+needs the Cloud `move` route, and a target from 2026-09-22 or later (webhook binding); the source daemon
+drops the binding on delete from this change on — an older source leaves a stale row that the updated
+daemon's bind replaces.
 
 ## The permission field
 

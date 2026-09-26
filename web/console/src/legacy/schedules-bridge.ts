@@ -346,6 +346,8 @@ export interface ScheduleWebhookClientAPI {
   create(machineID: string): Promise<ScheduleWebhookSecretResult>
   rotate(hookID: string, revision: number): Promise<ScheduleWebhookSecretResult>
   disable(hookID: string, revision: number): Promise<{ hook?: ScheduleWebhookHook } | ScheduleWebhookHook>
+  /** The copied client's own request seam: session cookie, JSON, an `Idempotency-Key` when `mutate`. */
+  send(method: string, path: string, body: unknown, mutate: boolean): Promise<{ hook?: ScheduleWebhookHook } | ScheduleWebhookHook>
   observe(hookID: string, deliveryID: string, receiptVersion: number): Promise<Record<string, unknown>>
 }
 export const ScheduleWebhookClient = ScheduleWebhookClientOriginal as unknown as new (options: {
