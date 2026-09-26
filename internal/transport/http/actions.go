@@ -128,7 +128,7 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "interrupted"})
 	case "key":
 		s.sessionWrite(w, r, keyBodyLimit, func(string, int64) string {
-			return "That is larger than one key. A key is \"1\"…\"9\", \"tab\", \"shift+tab\" or \"submit\"."
+			return "That is larger than one key. A key is \"1\"…\"9\", \"tab\", \"shift+tab\", \"submit\" or \"enter\"."
 		}, func(w http.ResponseWriter, raw []byte) {
 			s.sessionKey(ctx, w, id, raw)
 		})
@@ -380,6 +380,11 @@ func actionStatus(code string) int {
 		// person answers it from the row's buttons, and the same send then
 		// goes. 409, and not kept under the key, because a fresh reading is
 		// what changes the answer.
+		return http.StatusConflict
+	case "input_moved", "input_behind_question", "input_unreadable":
+		// An Enter for words typed and never submitted, refused before it was
+		// pressed: they are not in the input line now, a question is up, or
+		// the screen could not be read. Nothing was pressed.
 		return http.StatusConflict
 	case "pictures_unavailable":
 		return http.StatusServiceUnavailable

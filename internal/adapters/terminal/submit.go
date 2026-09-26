@@ -133,6 +133,8 @@ type shownInput struct {
 	// framed is whether a rule is drawn under it: a composer, as Claude Code
 	// draws one, rather than a shell prompt or a chooser's highlighted row.
 	framed bool
+	// caret is the glyph the input line starts with, when one was found.
+	caret string
 }
 
 // inputLine is what a screen shows in its input line.
@@ -165,7 +167,7 @@ func inputLine(screen string) shownInput {
 				continue
 			}
 			typed := strings.TrimPrefix(head, caret) + strings.Join(lines[i+1:end], "")
-			return shownInput{text: squeeze(typed), found: true, framed: framed}
+			return shownInput{text: squeeze(typed), found: true, framed: framed, caret: caret}
 		}
 	}
 	return shownInput{text: squeeze(strings.Join(lines[top:], ""))}
@@ -203,6 +205,31 @@ func showsText(before, after, text string) bool {
 	for _, p := range pastePlaceholders {
 		p = squeeze(p)
 		if strings.Count(now, p) > strings.Count(was, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// HoldsTyped is whether a screen's input line is an assistant's composer and
+// still holds a send that was typed and never submitted: the end of typed, or
+// a paste placeholder, in the input line. It is the check before an Enter
+// pressed from somewhere else than the machine (Actions.SubmitTyped).
+//
+// The composer must be one an Enter submits to the assistant: Claude Code's,
+// framed by its rules, or Codex's "›", which it draws without a frame. A
+// shell's prompt is neither, even one whose prompt is "❯" — an Enter there
+// runs the words as a command.
+func HoldsTyped(screen, typed string) bool {
+	in := inputLine(screen)
+	if !in.found || in.text == "" || !(in.framed || in.caret == "›") {
+		return false
+	}
+	if n := needle(typed); n != "" && strings.Contains(in.text, n) {
+		return true
+	}
+	for _, p := range pastePlaceholders {
+		if strings.Contains(in.text, squeeze(p)) {
 			return true
 		}
 	}

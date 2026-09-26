@@ -39,6 +39,21 @@ func (s *Server) sessionKey(ctx context.Context, w http.ResponseWriter, id strin
 		writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a key")
 		return
 	}
+	// Enter on a send that was typed and never submitted: pressed only at the
+	// words it names (app.SubmitTyped), never at a menu.
+	if body.Key == app.KeyEnter {
+		if body.Expect != "" {
+			writeRefusal(w, http.StatusBadRequest, "bad_request",
+				"enter submits typed words and answers no question; it names no expect.")
+			return
+		}
+		if _, err := s.actions().SubmitTyped(ctx, id, body.Typed); err != nil {
+			writeActionRefusal(w, err)
+			return
+		}
+		writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "keyed"})
+		return
+	}
 	if _, _, ok := app.KeyName(body.Key); !ok {
 		writeRefusal(w, http.StatusBadRequest, "bad_request",
 			`key must be "1"…"9", "tab", "shift+tab" or "submit".`)
