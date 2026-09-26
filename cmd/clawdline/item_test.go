@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -217,5 +218,88 @@ func TestItemFlagsParseAfterThePositionalArguments(t *testing.T) {
 		if err != nil || strings.Join(got, "|") != strings.Join(tc.positional, "|") || *verify != tc.verify {
 			t.Errorf("%q: positional %q, verification %q, err %v", tc.args, got, *verify, err)
 		}
+	}
+}
+
+// `step-add` posts one step per title, in the order given, each after a
+// fresh read of the item: the version it sends is the one it just read, and
+// each position lands after every step already there, so the daemon's
+// position-then-id order keeps the given order. Each key is printed before
+// its write, and the item is printed with all its steps afterwards.
+func TestItemStepAddPostsEachTitleInOrderAfterTheExistingSteps(t *testing.T) {
+	version, steps := 2, []string{`{"id":"s1","title":"draft","done":true,"position":0}`,
+		`{"id":"s2","title":"check","done":false,"position":4}`}
+	var posted []map[string]any
+	var s *standIn
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodPost {
+			seen := s.requests()
+			var body map[string]any
+			_ = json.Unmarshal(seen[len(seen)-1].Body, &body)
+			posted = append(posted, body)
+			version++
+			n := len(steps) + 1
+			steps = append(steps, fmt.Sprintf(`{"id":"s%d","title":%q,"done":false,"position":%d}`,
+				n, body["title"], int64(body["position"].(float64))))
+		}
+		return 200, fmt.Sprintf(`{"ok":true,"item":{"id":"item-1","title":"Ship it","kind":"feature","phase":"implementing",`+
+			`"owner_session":"%s","version":%d,"steps":[%s]}}`, thinConversation, version, strings.Join(steps, ","))
+	})
+	env := envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	var out, errs bytes.Buffer
+	code := sessionItem(&out, &errs, b, "step-add", itemFlags{}, []string{"item-1", "Wire the route", " ", "Guide it"},
+		"", "", env)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	var methods []string
+	for _, r := range seen {
+		methods = append(methods, r.Method+" "+r.EscapedPath)
+	}
+	want := []string{"GET /v1/work/v2/items/item-1", "POST /v1/work/v2/agent/items/item-1/steps",
+		"GET /v1/work/v2/items/item-1", "POST /v1/work/v2/agent/items/item-1/steps", "GET /v1/work/v2/items/item-1"}
+	if strings.Join(methods, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests:\n%s", strings.Join(methods, "\n"))
+	}
+	if len(posted) != 2 || posted[0]["title"] != "Wire the route" || posted[1]["title"] != "Guide it" ||
+		posted[0]["expected_version"] != float64(2) || posted[1]["expected_version"] != float64(3) ||
+		posted[0]["position"] != float64(5) || posted[1]["position"] != float64(6) ||
+		posted[0]["session_id"] != thinConversation || posted[1]["session_id"] != thinConversation {
+		t.Fatalf("posted = %v", posted)
+	}
+	if seen[1].Key == "" || seen[3].Key == "" || seen[1].Key == seen[3].Key ||
+		!strings.Contains(errs.String(), "Idempotency-Key: "+seen[1].Key) ||
+		!strings.Contains(errs.String(), "Idempotency-Key: "+seen[3].Key) {
+		t.Fatalf("keys %q %q, stderr %q", seen[1].Key, seen[3].Key, errs.String())
+	}
+	for _, line := range []string{"[x] s1  draft", "[ ] s2  check", "[ ] s3  Wire the route", "[ ] s4  Guide it"} {
+		if !strings.Contains(out.String(), line) {
+			t.Fatalf("stdout lacks %q:\n%s", line, out.String())
+		}
+	}
+}
+
+// With no title nothing is asked; a refusal stops the rest and names what
+// was already added.
+func TestItemStepAddStopsAtARefusal(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "step-add", itemFlags{}, []string{"item-1", " "}, thinConversation, "",
+		envOf(nil)); code != 2 || len(s.requests()) != 0 {
+		t.Fatalf("no titles: exit %d, asked %d times", code, len(s.requests()))
+	}
+	s, b = newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodPost {
+			return 403, `{"error":"not_item_owner","detail":"Only the owning Session may add item steps."}`
+		}
+		return 200, createdItem
+	})
+	errs.Reset()
+	code := sessionItem(&out, &errs, b, "step-add", itemFlags{}, []string{"item-1", "one", "two"}, thinConversation, "",
+		envOf(nil))
+	if code != 1 || len(s.requests()) != 2 || !strings.Contains(errs.String(), "refused, 403 not_item_owner") ||
+		!strings.Contains(errs.String(), "No step was added") {
+		t.Fatalf("exit %d, asked %d times, stderr %q", code, len(s.requests()), errs.String())
 	}
 }

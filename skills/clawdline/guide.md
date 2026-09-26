@@ -594,7 +594,7 @@ echo "Clean up the release notes before the next release." | \
   in order, or — when you give none — two or more top-level Markdown list rows of the description.
   Nothing is typed into your terminal; you asked for it. Work the steps in order, complete each
   one when it is verified (`clawdline item steps <item id>`, `clawdline item step-done <item id>
-  <step id>`), and advance the phases with `clawdline item phase` as for any assigned item (below). An Epic, Refactor or Plan is created
+  <step id>`; `clawdline item step-add` adds one the work turns out to need), and advance the phases with `clawdline item phase` as for any assigned item (below). An Epic, Refactor or Plan is created
   unassigned, in Planning, and takes no steps (`planning_has_no_steps`).
 - The person sees the card marked "Created by the Session from your message at HH:MM", with their
   words quoted.
@@ -785,6 +785,30 @@ Complete a verified step with an idempotent machine-authenticated request to
 `{"expected_version": <item version>, "session_id": "<your conversation id>"}`. Reread after a
 version conflict. A transition to `done` is refused with `steps_incomplete` while any step remains
 open; Clawdline never checks one merely because the parent phase advanced.
+
+**Breaking your own item into steps.** When an item you own has no steps and the work is
+multi-stage — several changes that are verified separately, or more than one part of the system —
+break it into its ordered steps yourself, before you implement: two to eight concrete steps, each
+one you can verify on its own. A single straightforward change takes **no** steps; do not pad a
+list to have one. When the work turns out bigger than it looked, add the step then.
+
+```
+clawdline item step-add <item id> "Wire the route" "Cover it with a test" "Say it in the guide"
+```
+
+Titles are arguments, or one per non-empty stdin line. The command rereads the item before each
+title, prints each Idempotency-Key before its write, and prints the item with all its steps. It is
+one owner-only request per title,
+
+```
+POST /v1/work/v2/agent/items/<id>/steps     (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>", "title": "…", "position": <n>}
+```
+
+with `"position"` one past the last existing step's, since steps are ordered by position. Then
+complete each with `clawdline item step-done` once it is verified. This is not the "own initiative"
+that is forbidden for Board items and to-dos: the item is already yours, and its steps are how you
+show the person the stages of work you were given.
 
 When resolving an issue or incident required substantial investigation to discover the root cause
 or to distinguish the real fix from plausible alternatives, add a user-readable completion report
