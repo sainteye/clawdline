@@ -55,6 +55,9 @@ func NoticeText(e Entry, state State, used, limit int64, full time.Time, loc *ti
 		return "容量已恢復：" + e.Name,
 			e.Name + " 回到 " + amount + "，已經低於告警門檻，不用做什麼。"
 	}
+	if e.Name == ArtifactsDropsYoung {
+		return youngDrops(used)
+	}
 	title = "容量快滿了：" + e.Name + "（" + percent(used, limit) + "）"
 	if state == Full {
 		title = "容量已滿：" + e.Name
@@ -72,6 +75,16 @@ func NoticeText(e Entry, state State, used, limit int64, full time.Time, loc *ti
 		body += "daemon 會照上面的規則自己處理；細節在設定頁的「容量」。"
 	}
 	return title, body
+}
+
+// youngDrops is the notice of artifacts.drops_young, the one row whose
+// reading is something that already happened rather than how full a thing is:
+// pictures the drop cache's byte cap removed before they were a day old. What
+// a person can do is send the picture again when a session cannot read it.
+func youngDrops(used int64) (title, body string) {
+	return "圖片快取太小：" + ArtifactsDropsYoung,
+		ArtifactsDropsYoung + "：過去一天有 " + strconv.FormatInt(used, 10) + " 張送出不到一天的圖，被 " + ArtifactsDrops +
+			" 的位元組上限提早刪掉了。這些路徑已經打進對話，assistant 之後回頭讀（例如 compact 或 resume 之後）會讀不到；需要時請重新貼一次。細節在設定頁的「容量」。"
 }
 
 // consequence is what the row does at its limit, in the words a person needs:

@@ -116,11 +116,12 @@ var drills = map[string]drill{
 	// same write that would take it past its bytes, so the row reads critical
 	// and then evicted=1 without ever reading full, and this harness requires
 	// full. Its warning still comes first (the C3 report shows the run).
-	capacity.ArtifactsDrops: {action: "evicted", limit: "20", open: func(dir string, limit int64) (func(int) error, func() capacity.Reading, error) {
+	// artifacts.drops counts bytes: twenty writes of forty bytes fill it.
+	capacity.ArtifactsDrops: {action: "evicted", limit: "800", open: func(dir string, limit int64) (func(int) error, func() capacity.Reading, error) {
 		d := artifacts.NewDrops(dir)
-		d.Keep = int(limit)
+		d.MaxBytes = limit
 		return func(n int) error {
-			_, err := d.Store([]byte("drill"), time.Now().Add(time.Duration(n)*time.Millisecond))
+			_, err := d.Store(make([]byte, 40), time.Now().Add(time.Duration(n)*time.Millisecond))
 			return err
 		}, d.Reading, nil
 	}},

@@ -94,10 +94,11 @@ func TestAPictureStoredIsMeasuredAtOnce(t *testing.T) {
 		t.Fatalf("artifacts.drops never read %d", want)
 	}
 	waitFor(0)
+	// artifacts.drops reads bytes: the three this picture holds.
 	if _, err := s.pictures.drops.Store([]byte("png"), time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(1)
+	waitFor(3)
 }
 
 // A picture let go to make room answers with the same code as one whose day

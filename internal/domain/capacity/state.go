@@ -248,7 +248,8 @@ func NewTracker() *Tracker { return &Tracker{rows: map[string]*track{}} }
 
 // Observe folds one reading into the row's history and answers what it means
 // and what it caused: a state event per transition, a notice on entering
-// critical or full or on recovering (at most one per row per NoticeEvery; the
+// critical or full or on recovering unless the row recovers quietly (at most
+// one per row per NoticeEvery; the
 // rest are counted as suppressed), and one event per counter that moved since
 // the last reading.
 func (t *Tracker) Observe(res Resolved, r Reading, now time.Time) (Status, []Event) {
@@ -301,7 +302,7 @@ func (t *Tracker) Observe(res Resolved, r Reading, now time.Time) (Status, []Eve
 		notice = true
 		tr.alerted = true
 	case next == OK && tr.alerted:
-		notice = true
+		notice = !e.QuietRecovery
 		tr.alerted = false
 	}
 	if notice {

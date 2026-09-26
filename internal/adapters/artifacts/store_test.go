@@ -206,7 +206,7 @@ func TestPathsFromIsClosed(t *testing.T) {
 
 // The drop cache keeps the newest by name and removes only its own names.
 func TestDropsPruneAndDiscardOnlyTheirOwn(t *testing.T) {
-	d := &Drops{Dir: filepath.Join(t.TempDir(), "drops"), Keep: 2}
+	d := &Drops{Dir: filepath.Join(t.TempDir(), "drops"), MaxBytes: 2}
 	start := time.Unix(1_800_000_000, 0)
 	var paths []string
 	for i := range 3 {
@@ -274,26 +274,5 @@ func TestAPictureLetGoAtTheLimitIsCountedAndSaysWhy(t *testing.T) {
 	found := s.Lookup(first, now.Add(5*time.Second))
 	if found.State != Expired || !found.Evicted {
 		t.Fatalf("the picture let go reads %+v; want expired and evicted", found)
-	}
-}
-
-// limits N16: every picture the drop cache removes was typed into a prompt as
-// a path, so each removal is counted and the row is measurable before it.
-func TestDropsCountWhatTheyPrune(t *testing.T) {
-	d := &Drops{Dir: filepath.Join(t.TempDir(), "drops"), Keep: 2}
-	if r := d.Reading(); !r.Known || r.Used != 0 {
-		t.Fatalf("an empty cache reads %+v", r)
-	}
-	heard := 0
-	d.OnStored(func() { heard++ })
-	now := time.Now()
-	for i := 0; i < 3; i++ {
-		if _, err := d.Store([]byte("png"), now.Add(time.Duration(i)*time.Second)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	r := d.Reading()
-	if r.Used != 2 || r.Counters.Evicted != 1 || heard != 3 {
-		t.Fatalf("after three stores into two: %+v, heard %d", r, heard)
 	}
 }

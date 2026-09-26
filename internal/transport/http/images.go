@@ -27,13 +27,14 @@ type pictures struct {
 }
 
 func newPictures(stateDir string) pictures {
-	// The two stores run at the capacity register's limits, which are the
-	// Swift app's numbers unless CLAWDLINE_NEXT_CAPACITY lowers them.
+	// The two stores run at the capacity register's limits unless
+	// CLAWDLINE_NEXT_CAPACITY lowers them. The picture store's are the Swift
+	// app's numbers; the drop cache's byte cap is this daemon's own (N16).
 	store := artifacts.NewStore(stateDir)
 	store.Policy.MaxCount = int(CapacityLimit(capacity.ArtifactsImages))
 	store.Policy.MaxTotalBytes = int(CapacityLimit(capacity.ArtifactsImageSize))
 	drops := artifacts.NewDrops(stateDir)
-	drops.Keep = int(CapacityLimit(capacity.ArtifactsDrops))
+	drops.MaxBytes = CapacityLimit(capacity.ArtifactsDrops)
 	return pictures{
 		store:      store,
 		drops:      drops,
