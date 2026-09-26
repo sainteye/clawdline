@@ -286,10 +286,18 @@ final class BrowserBar: NSView {
         field.lineBreakMode = .byTruncatingTail
         field.cell?.isScrollable = true
         field.translatesAutoresizingMaskIntoConstraints = false
+        // The address gives way before anything else does. A label resists
+        // being squeezed below its whole text's width, so a long address — a
+        // sign-in page's return URL runs to thousands of points — made that
+        // the bar's minimum width, and the window grew past the screen with
+        // the buttons on the right pushed off it. Truncating needs room to be
+        // taken away, from the field and from the box that holds it.
+        field.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
 
         box.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(field)
         box.setContentHuggingPriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
+        box.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
 
         let row = NSStackView(views: [back, forward, refresh, consoleTab, cloudButton, box, zoom, outside])
         row.orientation = .horizontal
