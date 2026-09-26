@@ -6,9 +6,9 @@
    and reads no coordinator state of its own.
 
    What it does instead is compose one sentence. The session on the other end is a local process
-   running as the person who owns this Mac, so it can read
-   `~/.config/clawdline/orchestrator-token` and carry out the registration-only branch of the
-   documented recipe itself — the same trust boundary every other Clawdline dispatch already
+   running as the person who owns this Mac, so it can learn the recipe from the binary's own guide
+   (`clawdline guide connect`, `clawdline guide coordination`) and carry out its registration-only
+   branch itself — the same trust boundary every other Clawdline dispatch already
    stands on, and the same one a person crosses by typing the curl by hand. The creation sheet
    separately reads the device-safe Bearings projection for one closed word — whether registering
    would write over something — so an existing offline owner, and a store nobody may overwrite,
@@ -124,12 +124,13 @@ export function clawdfatherChoiceSupported(client) {
 var CREATION_LABEL_EN = "Name the new session Clawdfather";
 
 var CREATION_ASK_EN =
-    "Please register this new session as this Mac's Clawdfather, the machine coordinator. "
-    + "Your terminal-neutral session id is {id}. Read the coordinator record using "
-    + "the orchestrator token at ~/.config/clawdline/orchestrator-token. If and only if no "
-    + "coordinator is configured, follow the registration branch of “Becoming Clawdfather” "
-    + "in docs/orchestrator.md. If any coordinator is already configured, including one that "
-    + "is offline, do not replace it. Then report what happened.";
+    "Please register this new session as this machine's Clawdfather, the machine coordinator. "
+    + "Your terminal-neutral session id is {id}. First run `clawdline guide connect` and "
+    + "`clawdline guide coordination`: the first says how to reach this daemon without putting its "
+    + "token on a command line, the second how the role is registered. Use a clawdline command "
+    + "wherever one exists, and never paste or print a token. Inspect the coordinator first. If and "
+    + "only if no coordinator is configured, register this session. If any coordinator is already "
+    + "configured, including one that is offline, do not replace it. Then report what happened.";
 
 /** A served string, or the English, when what arrived is not a sentence at all. */
 function served(value, english) {

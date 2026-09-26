@@ -12,8 +12,9 @@ import {
   type DecisionPage,
   type ProposalPage,
 } from "./now/api.js"
-import { ageWords, draw, readClock, type Drawn, type Reading, type Source } from "./now/freshness.js"
+import { ageWords, draw, readClock, type Drawn, type Source } from "./now/freshness.js"
 import { failureWords } from "./now/shared.js"
+import { joinWaiting, type Block, type WaitingRow } from "./now/waiting.js"
 import { nowWord } from "./now/words.js"
 import "./now/now.css"
 
@@ -57,8 +58,6 @@ const REFRESH_MS = 30_000
 
 /** How many rows a block lists before it says how many more there are. */
 const ROWS_SHOWN = 4
-
-type Block<T> = { reading: Reading; rows: T[] }
 
 const NOTHING: Block<never> = { reading: { read: false }, rows: [] }
 
@@ -216,6 +215,14 @@ function NowPageView({ shown }: { shown: boolean }) {
                   <div className="now-meta">
                     <span>{nowWord("waitingOldest", { age: ageWords(row.age) })}</span>
                   </div>
+                  {/* A proposal is accepted or rejected in the Board's Agent
+                      proposals queue (work system v2 §10); this page only
+                      points there. */}
+                  {row.kind === "proposal" && (
+                    <button className="now-go" type="button" onClick={() => requestPage({ page: "work" })}>
+                      {nowWord("waitingOnBoard")}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -283,66 +290,6 @@ function BlockView({
 function More({ shown, total }: { shown: number; total: number }) {
   if (total <= shown) return null
   return <p className="now-more">{nowWord("more", { n: total - shown })}</p>
-}
-
-/** One thing that is waiting for the person, from either of the two routes. */
-interface WaitingRow {
-  kind: "proposal" | "decision"
-  id: string
-  title: string
-  age: number
-}
-
-type Answered<T> = { ok: true; page: T } | { ok: false; why: string }
-
-/**
- * The two halves of "waiting for you", joined.
- *
- * Neither half standing in for the other: with one refused the block keeps
- * the rows it has and says, in the failed half's own words, that it is short.
- * That is `stale` — read, and known to be less than what there is — and it is
- * the reason this does not simply drop the refused half and show a smaller
- * number as if it were the answer.
- */
-export function joinWaiting(
-  proposals: Answered<ProposalPage>,
-  decisions: Answered<DecisionPage>,
-): Block<WaitingRow> {
-  const now = Math.floor(Date.now() / 1000)
-  const rows: WaitingRow[] = []
-  if (proposals.ok) {
-    for (const p of proposals.page.rows) {
-      rows.push({ kind: "proposal", id: p.id, title: p.title, age: now - p.created_at })
-    }
-  }
-  if (decisions.ok) {
-    for (const d of decisions.page.rows) {
-      rows.push({ kind: "decision", id: d.id, title: d.question, age: now - d.created_at })
-    }
-  }
-  rows.sort((a, b) => b.age - a.age)
-  if (!proposals.ok && !decisions.ok) {
-    return { reading: { read: false, failure: proposals.why }, rows: [] }
-  }
-  const half = !proposals.ok ? proposals.why : !decisions.ok ? decisions.why : ""
-  if (half) {
-    return {
-      reading: { read: true, rows: rows.length, source: { observed_at: now, provenance: "work", freshness: "stale" } },
-      rows,
-    }
-  }
-  // Both answered. The block is only as good as its weaker source.
-  const a = (proposals.ok && proposals.page.source) || undefined
-  const b = (decisions.ok && decisions.page.source) || undefined
-  return { reading: { read: true, rows: rows.length, source: worse(a, b) }, rows }
-}
-
-/** The weaker of two readings, in the order a reader should be warned. */
-export function worse(a: Source | undefined, b: Source | undefined): Source | undefined {
-  if (!a) return b
-  if (!b) return a
-  const rank = { missing: 3, stale: 2, unverified: 1, current: 0 }
-  return rank[b.freshness] > rank[a.freshness] ? b : a
 }
 
 /** How long a task has been going, from whichever time the row carries. */

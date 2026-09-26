@@ -55,9 +55,12 @@ tools/deploy-linux-user.sh --stage-only                   # as the service accou
 sudo tools/bootstrap-linux-user-service.sh <service-user> # once, as an administrator
 ```
 
-The bootstrap installs `tools/systemd/clawdline-next.service` into that user's
-`~/.config/systemd/user/`, runs `loginctl enable-linger` so it runs without a login, starts it and
-checks that the console answers. Releases live under `~/.local/share/clawdline-next/`.
+Run both on a fresh machine too; the bootstrap is not only for moving an older installation. It
+installs `tools/systemd/clawdline-next.service` into that user's `~/.config/systemd/user/`, runs
+`loginctl enable-linger` so it runs without a login, starts it and checks that the console answers.
+If the machine still runs the earlier system-wide `clawdline-next.service`, it also stops and
+disables that one; if not, it leaves system services alone. Running it again is harmless. Releases
+live under `~/.local/share/clawdline-next/`.
 
 Every later update is one unprivileged command:
 

@@ -55,6 +55,7 @@ const words = {
     waitingDecisions: "{n} to answer",
     waitingOldest: "Oldest: {age}",
     waitingGo: "Handle proposals to confirm",
+    waitingOnBoard: "Answer in the Board's Agent proposals",
 
     freshCurrent: "Read just now.",
     freshStale: "Read, and short: part of this source could not be reached, so there is more than this.",
@@ -106,6 +107,7 @@ const words = {
     waitingDecisions: "{n} 筆等你決定",
     waitingOldest: "最老的：{age}",
     waitingGo: "處理待確認的提議",
+    waitingOnBoard: "到看板的 Agent 提案回覆",
 
     freshCurrent: "剛剛讀到的。",
     freshStale: "讀到了，但不齊：這個來源有一部分連不上，所以實際上不只這些。",

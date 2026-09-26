@@ -1,4 +1,4 @@
-import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
+import { RefusalError, TransportError, isRefusal } from "@clawdline/core/refusal"
 import type { BrokerLandingList, TaskList } from "@clawdline/contract"
 import type { Source } from "./freshness.js"
 
@@ -16,17 +16,20 @@ import type { Source } from "./freshness.js"
  *
  * Every path here is carried over Clawdline Cloud, which is not automatic:
  * `/v1/orchestrator/tasks` rides on the machine descriptor (`ANSWERED_HERE`),
- * `work.proposals` and `work.decisions` were already words, and
+ * `work.v2.proposals` and `work.decisions` were already words, and
  * `/v1/orchestrator/landings` became one for this page (`cloud/carry.ts`).
  * A path that is not carried is a blank block on a phone and nothing at all
  * on this machine, which is the worst way to find out.
  */
 
-/** One proposal, as much of it as this page draws (`pages/work/api.ts` has the whole row). */
+/**
+ * One Agent proposal in the Board's queue (work system v2 §10), as much of it
+ * as this page draws; `WorkV2Proposal` in `pages/work/api.ts` has the whole row.
+ */
 export interface WaitingProposal {
   id: string
   title: string
-  project: string
+  project_id: string
   created_at: number
 }
 
@@ -38,10 +41,13 @@ export interface WaitingDecision {
   created_at: number
 }
 
+/**
+ * The Board's pending proposals. The v2 route carries no `source`: it is one
+ * read of the work store, whole unless `truncated` says the page was cut.
+ */
 export interface ProposalPage {
-  counts: Record<string, number>
   rows: WaitingProposal[]
-  source: Source
+  truncated: boolean
 }
 
 export interface DecisionPage {
@@ -85,7 +91,17 @@ export const readTasks = () => call<TaskList>("/v1/orchestrator/tasks")
 /** What has been delivered and not recorded, machine-wide, oldest first. */
 export const readLandings = () => call<BrokerLandingList>("/v1/orchestrator/landings")
 
-export const readProposals = () => call<ProposalPage>("/v1/work/proposals")
+/**
+ * The queue the person answers on the Board. Not `/v1/work/proposals`: that is
+ * work system v1's list, still mounted after the cutover and empty, so reading
+ * it drew "nothing is waiting" while the Board held proposals.
+ */
+export const readProposals = () => call<ProposalPage>("/v1/work/v2/proposals?state=pending")
+
+/**
+ * Questions a session asked (`POST /v1/orchestrator/decisions`); a person
+ * reads and answers them here, not on the session route.
+ */
 export const readDecisions = () => call<DecisionPage>("/v1/work/decisions")
 
 /** The states a task has not come back from. Everything else has finished. */
