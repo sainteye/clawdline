@@ -141,6 +141,11 @@ tools/package-macos.sh          # dist/Clawdline Next.app
 tools/package-macos.sh --dmg    # and a disk image
 ```
 
+If the app is already running from that `dist/`, the script quits it, puts the new build in its
+place and opens it again, because replacing a running app's files makes macOS refuse its control
+of iTerm2 until it restarts. Pass `--no-restart` to have it stop instead and leave the new build
+in `dist/.staging.<pid>/`.
+
 Apple silicon and macOS 13 or newer. The app is signed ad hoc, not notarized. It carries its own
 copy of the daemon and the console, starts that daemon with the three variables above, and signs
 its window in with the daemon's local token. You do not run `serve` yourself. If a daemon you
