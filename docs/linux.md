@@ -42,11 +42,19 @@ Stage the first release as the service account:
 tools/deploy-linux-user.sh --stage-only
 ```
 
-Then run the one-time migration from an administrator shell, naming that account:
+Then run the one-time bootstrap from an administrator shell, naming that account:
 
 ```sh
 sudo tools/bootstrap-linux-user-service.sh clawdline
 ```
+
+The same command serves a fresh machine and one that still runs the earlier root-owned
+`clawdline-next.service`. It asks systemd whether that system unit exists (`LoadState`); only when it
+does does it write the drop-in that keeps its tmux sessions alive, stop it, and disable it once the
+user unit has started. On a fresh machine those steps are skipped, and a failure stops and disables
+the user unit instead of claiming to restore a system service that was never there. Running it a
+second time is harmless. `tools/test-bootstrap-linux-user-service.sh` runs it against stubs for
+both machines.
 
 Every later update is one unprivileged command, suitable for an Agent to run directly:
 
