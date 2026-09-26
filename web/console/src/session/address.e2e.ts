@@ -88,6 +88,7 @@ let intentRequests = 0
 let placeRequests = 0
 let smartTitleRequests = 0
 let smartTitleRequestKey = ""
+let interruptRequests: { id: string; key: string }[] = []
 let requestedPaths: string[] = []
 let failPlacesOnRequest = 0
 let createdWork: Record<string, unknown> | null = null
@@ -175,6 +176,12 @@ function daemon(): Server {
           links: [],
         },
       })
+    }
+    const interrupt = /^\/v1\/sessions\/([^/]+)\/interrupt$/.exec(path)
+    if (interrupt && req.method === "POST") {
+      const id = decodeURIComponent(interrupt[1])
+      interruptRequests.push({ id, key: String(req.headers["idempotency-key"] ?? "") })
+      return json(res, 200, { ok: true, id, action: "interrupted" })
     }
     const smartTitle = /^\/v1\/sessions\/([^/]+)\/smart-title$/.exec(path)
     if (smartTitle && req.method === "POST") {
@@ -611,6 +618,41 @@ test("desk: smart naming explains the one model turn before it spends it, then s
       read()
     })`)
     assert.ok(smartTitleRequestKey, "the one mutating request carries an idempotency key")
+  }))
+
+test("desk: the session menu's first row stops the current turn with one keyed request", () =>
+  inTab(DESK, async (tab) => {
+    interruptRequests = []
+    await tab.go("/" + FRAGMENT[TMUX])
+    await tab.until("the session opens", (s) => s.open === TMUX)
+    await tab.run(`document.getElementById("detail-actions-trigger")?.click()`)
+    const menu = await tab.run(`(() => {
+      const first = document.querySelector("#session-actions-main button:not([hidden])")
+      return {
+        shown: document.getElementById("session-actions")?.hidden === false,
+        first: first?.id,
+        label: first?.textContent,
+        disabled: first?.hasAttribute("disabled"),
+      }
+    })()`)
+    assert.deepEqual(menu, { shown: true, first: "session-interrupt", label: "停止目前的工作（Esc）", disabled: false })
+    assert.equal(interruptRequests.length, 0, "opening the menu stops nothing")
+
+    await tab.run(`document.getElementById("session-interrupt")?.click()`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const said = document.getElementById("toast")?.textContent ?? ""
+        if (said.includes("已送出 Esc")) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the stop was not acknowledged: " + JSON.stringify(said)))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.equal(await tab.run(`document.getElementById("session-actions")?.hidden`), true, "the menu closes")
+    assert.equal(interruptRequests.length, 1, "one press is one stop")
+    assert.equal(interruptRequests[0].id, TMUX)
+    assert.ok(interruptRequests[0].key, "the stop carries an idempotency key, so a relay retry is not a second Escape")
   }))
 
 for (const id of [TMUX, TTY, ITERM]) {
