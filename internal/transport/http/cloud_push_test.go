@@ -497,3 +497,75 @@ func TestTheCSRFAnswerIsUnchanged(t *testing.T) {
 		t.Errorf("the console travelled as a header (%q), which a tunnelled browser could send too", got)
 	}
 }
+
+// cloudPushLine is a registered Cloud link that answers a status and a push
+// client pointed at a stand-in for Clawdline Cloud's API.
+type cloudPushLineStandIn struct{ api string }
+
+func (cloudPushLineStandIn) Status() cloud.Status { return cloud.Status{Enabled: true} }
+
+func (l cloudPushLineStandIn) PushClient() (adaptercloud.PushClient, bool) {
+	if l.api == "" {
+		return adaptercloud.PushClient{}, false
+	}
+	return adaptercloud.NewPushClient(l.api, "machine-credential-fixture"), true
+}
+
+// TestACloudSubscriptionIsSentThroughCloudEndToEnd: a Cloud viewer registers
+// with Cloud's id over the relay word, and a notification this machine sends
+// is sealed here and handed to Cloud's `POST /v1/push/send` — the endpoint
+// itself is never POSTed to from this machine.
+func TestACloudSubscriptionIsSentThroughCloudEndToEnd(t *testing.T) {
+	const cloudID = "c1000000-0000-4000-8000-000000000001"
+	s := newPushStandIn(t)
+	endpoint := 0
+	service := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		endpoint++
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer service.Close()
+	var sent []map[string]any
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/push/send" || r.Header.Get("Authorization") != "Bearer machine-credential-fixture" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		sent = append(sent, body)
+		_, _ = w.Write([]byte(`{"status":"sent","push_status":201}`))
+	}))
+	defer api.Close()
+
+	answer, _ := s.ask(t, 1, map[string]any{"type": "push-subscribe",
+		"session": cloudops.MachineReplySession, "request": "req-sub",
+		"subscription": cloudSubscription(t, service.URL+"/send"), "cloud_subscription_id": cloudID})
+	if !answer.OK() {
+		t.Fatalf("the viewer could not subscribe: %d/%q %s", answer.Status, answer.Code, answer.Payload)
+	}
+	if rows := s.rows(t); len(rows) != 1 || rows[0].CloudID != cloudID {
+		t.Fatalf("stored %+v", rows)
+	}
+
+	// Not signed in: undeliverable, and never sent with this machine's key.
+	if s.server.pushCourier() != nil {
+		t.Fatal("a courier with no Cloud line")
+	}
+	delivery, err := s.server.PushSend(context.Background(), "Clawdline", "waiting", "", "", "")
+	if err != nil || delivery.Sent != 0 || delivery.Failed != 1 || endpoint != 0 {
+		t.Fatalf("without Cloud: %+v, %v, endpoint %d", delivery, err, endpoint)
+	}
+
+	SetCloudLine(s.server.cfg.Dir, cloudPushLineStandIn{api: api.URL})
+	defer SetCloudLine(s.server.cfg.Dir, nil)
+	delivery, err = s.server.PushSend(context.Background(), "Clawdline", "waiting", "", "", "")
+	if err != nil || delivery.Sent != 1 {
+		t.Fatalf("through Cloud: %+v, %v", delivery, err)
+	}
+	if endpoint != 0 {
+		t.Fatalf("the endpoint was POSTed to directly %d times", endpoint)
+	}
+	if len(sent) != 1 || sent[0]["subscription_id"] != cloudID || sent[0]["ciphertext"] == "" {
+		t.Fatalf("Cloud received %v", sent)
+	}
+}

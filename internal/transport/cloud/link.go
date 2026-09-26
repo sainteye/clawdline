@@ -455,6 +455,16 @@ func (l *Link) ScheduleWebhooks() (schedulewebhook.Identity, schedulewebhook.Clo
 		adaptercloud.NewScheduleWebhookClient(l.settings.APIBase, l.identity.MachineCredential), true
 }
 
+// PushClient is the machine-credential client for `POST /v1/push/send`, when
+// this link has a usable enrolled identity. A subscription the browser made
+// against Cloud's VAPID key can only be delivered through it (docs/push.md).
+func (l *Link) PushClient() (adaptercloud.PushClient, bool) {
+	if !l.settings.Enabled || !l.identity.Valid() || l.settings.APIBase == "" {
+		return adaptercloud.PushClient{}, false
+	}
+	return adaptercloud.NewPushClient(l.settings.APIBase, l.identity.MachineCredential), true
+}
+
 // Run holds the line up until ctx is done.
 //
 // Two goroutines and no more: the transport owns the socket and the service

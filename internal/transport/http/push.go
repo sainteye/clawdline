@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/devices"
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -154,9 +155,11 @@ func (s *Server) pushSubscribeRoute(w http.ResponseWriter, r *http.Request) {
 	// destination for notices about what somebody is working on, which is
 	// exactly the kind of change the question "what did they do while they
 	// were in" needs an answer for.
-	s.audit("push.subscribe", map[string]string{
-		"id": subscription.ID, "device": device, "host": subscription.Host(),
-	})
+	fields := map[string]string{"id": subscription.ID, "device": device, "host": subscription.Host()}
+	if subscription.Cloud() {
+		fields["cloud_subscription_id"] = subscription.CloudID
+	}
+	s.audit("push.subscribe", fields)
 	writeJSON(w, contract.PushSubscribed{OK: true, ID: subscription.ID})
 }
 
@@ -229,7 +232,7 @@ func (s *Server) pushTestRoute(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), pushSendDeadline)
 	defer cancel()
-	sender := &adapterpush.Sender{Store: store}
+	sender := &adapterpush.Sender{Store: store, Cloud: s.pushCourier()}
 	// No tag, and no mark. A test that arrived must never be mistaken for a
 	// session that needs you, so it carries no project and nothing that would
 	// replace a real notification already on the phone.
@@ -312,10 +315,49 @@ func (s *Server) PushSend(ctx context.Context, title, body, sessionID, tag, icon
 	if sessionID != "" {
 		url = s.pushSessionURL(ctx, sessionID)
 	}
-	sender := &adapterpush.Sender{Store: store}
+	sender := &adapterpush.Sender{Store: store, Cloud: s.pushCourier()}
 	return sender.Send(ctx, adapterpush.Notification{
 		Title: title, Body: body, URL: url, Tag: tag, Icon: icon,
 	}, "")
+}
+
+// cloudPushLine is the half of a Cloud link that forwards pushes. It is its
+// own interface, beside CloudLine, so a test line that answers only a status
+// still registers.
+type cloudPushLine interface {
+	PushClient() (adaptercloud.PushClient, bool)
+}
+
+// pushCourier is Cloud's `POST /v1/push/send` for this state directory, or nil
+// when no link is registered or the link has no enrolled identity. nil is not
+// an error: a subscription made against this machine's own key never needs it,
+// and one made against Cloud's is then counted as undeliverable (docs/push.md).
+func (s *Server) pushCourier() adapterpush.CloudCourier {
+	held, ok := cloudLines.Load(s.cfg.Dir)
+	if !ok {
+		return nil
+	}
+	line, ok := held.(cloudPushLine)
+	if !ok {
+		return nil
+	}
+	client, ok := line.PushClient()
+	if !ok {
+		return nil
+	}
+	return cloudCourier{client}
+}
+
+// cloudCourier puts the push package's words on the Cloud adapter's.
+type cloudCourier struct{ client adaptercloud.PushClient }
+
+func (c cloudCourier) Forward(ctx context.Context, m adapterpush.CloudMessage) (adapterpush.CloudReply, error) {
+	reply, err := c.client.Send(ctx, adaptercloud.PushSendRequest{
+		SubscriptionID: m.SubscriptionID, Ciphertext: m.Ciphertext, ContentType: m.ContentType,
+		TTL: m.TTL, Urgency: m.Urgency, Topic: m.Topic,
+	})
+	return adapterpush.CloudReply{Status: reply.Status, Code: reply.Code,
+		PushStatus: reply.PushStatus, RetryAfter: reply.RetryAfter}, err
 }
 
 // pushSessionURL is the Swift app's `Orchestrator.pushURL(forSessionID:watching:)`:

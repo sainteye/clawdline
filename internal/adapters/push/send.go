@@ -30,6 +30,43 @@ type Sender struct {
 	Now   func() time.Time
 	Sleep func(ctx context.Context, d time.Duration) bool
 	Log   func(format string, args ...any)
+	// Cloud forwards a subscription made against Clawdline Cloud's VAPID key
+	// (Subscription.CloudID). nil is a machine that is not signed in to Cloud:
+	// such a row is undeliverable here, and it is never sent with this
+	// machine's own key instead, because the push service would refuse a
+	// token from a key the browser did not name.
+	Cloud CloudCourier
+}
+
+// CloudMessage is one sealed message for Clawdline Cloud's `POST
+// /v1/push/send`. It is ciphertext to the browser's own keys: Cloud never has
+// p256dh or auth, so it can forward this and cannot read it or forge one.
+type CloudMessage struct {
+	SubscriptionID string
+	Ciphertext     []byte
+	ContentType    string
+	TTL            int
+	Urgency        string
+	Topic          string
+}
+
+// CloudReply is Cloud's answer, before it becomes a verdict in forward.
+type CloudReply struct {
+	// Status is Cloud's own HTTP status.
+	Status int
+	// Code is its refusal code, or "".
+	Code string
+	// PushStatus is the push service's status as Cloud reported it; 0 when
+	// Cloud did not reach one.
+	PushStatus int
+	// RetryAfter is what a 429 asked for.
+	RetryAfter time.Duration
+}
+
+// CloudCourier is the machine-credential half of Cloud's push route. A
+// transport failure is the error; every HTTP answer is a reply.
+type CloudCourier interface {
+	Forward(ctx context.Context, message CloudMessage) (CloudReply, error)
 }
 
 const (
@@ -145,9 +182,18 @@ func (s *Sender) Send(ctx context.Context, n Notification, device string) (Deliv
 		// because a session changed state.
 		return Delivery{}, nil
 	}
-	key, err := s.Store.VAPIDKey()
-	if err != nil {
-		return Delivery{}, err
+	// This machine's own key is only for the rows that were made against it.
+	// A machine whose every subscription went through Cloud never mints one.
+	var key VAPIDKey
+	for _, target := range targets {
+		if target.Cloud() {
+			continue
+		}
+		key, err = s.Store.VAPIDKey()
+		if err != nil {
+			return Delivery{}, err
+		}
+		break
 	}
 	// One expiry for the whole fan-out. Endpoints on different hosts need
 	// different `aud` claims, so the token is re-signed per subscriber — but
@@ -190,10 +236,20 @@ func (s *Sender) one(ctx context.Context, n Notification, subscription Subscript
 	if shortened {
 		s.logf("push: the body was shortened to fit %d octets for %s", MaxPayload, subscription.Device)
 	}
-	credential, err := key.Authorization(subscription.Endpoint, expires, s.subject())
-	if err != nil {
-		s.logf("push: %s — %v", subscription.Device, err)
-		return false
+	var credential string
+	if subscription.Cloud() {
+		if s.Cloud == nil {
+			s.logf("push: %s subscribed through Clawdline Cloud and this machine is not signed in to it — undeliverable",
+				subscription.Device)
+			return false
+		}
+	} else {
+		var err error
+		credential, err = key.Authorization(subscription.Endpoint, expires, s.subject())
+		if err != nil {
+			s.logf("push: %s — %v", subscription.Device, err)
+			return false
+		}
 	}
 	var topic string
 	if n.Tag != "" {
@@ -279,6 +335,10 @@ func (s *Sender) post(ctx context.Context, message Message, subscription Subscri
 		return permanent, 0
 	}
 
+	if subscription.Cloud() {
+		return s.forward(ctx, sealed, message, subscription, topic)
+	}
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, subscription.Endpoint, bytes.NewReader(sealed))
 	if err != nil {
 		s.logf("push: %s — %v", subscription.Device, err)
@@ -324,6 +384,59 @@ func (s *Sender) post(ctx context.Context, message Message, subscription Subscri
 		return retryable, retryAfter(response.Header.Get("Retry-After"), s.now())
 	default:
 		s.logf("push: %s refused with %d — left alone", subscription.Device, response.StatusCode)
+		return permanent, 0
+	}
+}
+
+// forward hands one sealed message to Clawdline Cloud, which signs VAPID with
+// the account's key and POSTs it to the endpoint. Its answer becomes a verdict
+// here, beside the direct path's, and by the same rules: a gone subscription is
+// dropped, a moment's failure is retried, and anything else leaves the row
+// exactly where it is.
+func (s *Sender) forward(ctx context.Context, sealed []byte, message Message, subscription Subscription,
+	topic string) (outcome, time.Duration) {
+	reply, err := s.Cloud.Forward(ctx, CloudMessage{
+		SubscriptionID: subscription.CloudID,
+		Ciphertext:     sealed,
+		ContentType:    message.ContentType,
+		TTL:            TTL,
+		Urgency:        Urgency,
+		Topic:          topic,
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			s.logf("push: %s — the send was cut short: %v", subscription.Device, ctx.Err())
+			return permanent, 0
+		}
+		s.logf("push: %s — Clawdline Cloud could not be reached: %v", subscription.Device, err)
+		return retryable, 0
+	}
+	switch {
+	case ServiceAccepted(reply.Status):
+		return accepted, 0
+	case reply.Status == http.StatusGone:
+		// Cloud's push service answered 404 or 410 and Cloud has already
+		// deleted its row (`subscription_gone`); this one follows it.
+		return gone, 0
+	case reply.Status == http.StatusTooManyRequests:
+		s.logf("push: %s — Clawdline Cloud is rate-limiting this account — trying again", subscription.Device)
+		wait := reply.RetryAfter
+		if wait > RetryAfterCeiling {
+			wait = -1
+		}
+		return retryable, wait
+	case reply.Status == http.StatusBadGateway && (reply.PushStatus == 0 || Retryable(reply.PushStatus)):
+		s.logf("push: %s — the push service answered %d through Clawdline Cloud — trying again",
+			subscription.Device, reply.PushStatus)
+		return retryable, 0
+	case reply.Status != http.StatusBadGateway && Retryable(reply.Status):
+		s.logf("push: %s — Clawdline Cloud answered %d — trying again", subscription.Device, reply.Status)
+		return retryable, 0
+	default:
+		// An unknown_subscription (404) included: a row Cloud does not know
+		// is kept, not dropped. Cloud's 410 is the one proof it is gone.
+		s.logf("push: %s — Clawdline Cloud refused with %d (%s, push service %d) — left alone",
+			subscription.Device, reply.Status, orDefault(reply.Code, "no code"), reply.PushStatus)
 		return permanent, 0
 	}
 }

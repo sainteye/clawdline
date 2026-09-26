@@ -766,8 +766,10 @@ exact durable Linux task/session edge and enters the existing serialized `.close
   `cloud_machine_ambiguous`; `machine_pairing_required` when the only machines that could provide
   the feature are ones this browser is not paired with; or `cloud_machine_unsupported` when no
   machine on the account has the feature. For any other word, a machine whose descriptor has not
-  arrived counts only when no machine is evidently a Mac and none is known to answer. Push is strict: one Mac or `cloud_machine_ambiguous`, never the
-  fresher of two, because the key, the subscription and its removal must reach the same Mac.
+  arrived counts only when no machine is evidently a Mac and none is known to answer. Turning
+  notifications on is not one of these: since 2026-09-26 it subscribes with the account's key and
+  tells every paired machine that takes `push-subscribe` (`docs/push.md`, 經 Cloud 送出的推播). The
+  test button still picks strictly, one push machine or `cloud_machine_ambiguous`.
 - A read that spans machines (`places`, `schedules({ fresh })`, `snippets()` with no Session) asks
   only capable machines, each on its own under its read timeout. One that refuses, fails or stays
   silent is named in `unanswered` beside the others' rows instead of discarding them; one that
@@ -1145,12 +1147,15 @@ SecurityTool invocation.
 - **Other hosted locales.** Traditional Chinese is bundled from the same catalog as the Mac.
   Other non-English catalogs still fall back to the English document until they are exported and
   named in the build declaration.
-- **Push is machine-scoped.** The hosted worker and subscription now use the one connected Mac's
-  VAPID key through an encrypted request/reply. A Linux executor on the same account does not count;
-  an account showing more than one Mac is refused with `cloud_machine_ambiguous` instead of
-  registering a browser subscription against whichever machine happened to publish first. Turning
-  notifications off removes this browser's subscription either way and says so when the Mac could
-  not be told.
+- **Push is sent by Cloud, sealed by each machine.** Since 2026-09-26 the hosted console subscribes
+  once with the account's VAPID key (`GET /v1/push/key`), registers only the endpoint with Cloud
+  (`POST /v1/push/subscriptions`), and gives the browser's keys to every paired machine that takes
+  `push-subscribe` over the end-to-end channel, naming the ones that did not take it and retrying
+  them on a later visit. Each machine seals its message itself and hands the ciphertext to
+  `POST /v1/push/send` with its machine credential; Cloud never holds `p256dh` or `auth`. A machine
+  not signed in to Cloud reports such a subscription as undeliverable and never falls back to its own
+  key. What is not here yet: the test button still picks one push machine strictly. `docs/push.md`
+  has the shape and what was measured.
 - **The reads that cross.** A session's messages, both tiers of its Info, one
   background agent's conversation, one background command's output, its skills menu, its Git
   panel, its live screen and the pictures inside its transcript now cross. The viewer asks on

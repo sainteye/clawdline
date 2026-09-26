@@ -237,6 +237,78 @@ console 原本寫了 `viewport-fit=cover`，而它抄來的那份 stylesheet 在
 **沒量到的：** 權限詢問與 Codex 的核准等待——transcript 裡沒有「停在詢問上」的紀錄，所以 11 是下限。
 量測腳本只讀時間戳、tool 名稱與 id，不讀內容。
 
+## 經 Cloud 送出的推播（2026-09-26）
+
+**要解的問題。** 手機的瀏覽器一個 service worker 只有一份推播訂閱，而那份訂閱綁在一把 VAPID
+金鑰上。原本那把是某一台機器自己的，所以同一個 Cloud 帳號上的 Linux 機器永遠通知不到這支手機
+（量過：那台 daemon 的 `push/` 裡只有它自己的金鑰，沒有任何訂閱），帳號上只要出現第二台會推播的
+機器，console 的 `_pushMachine` 就回 `cloud_machine_ambiguous`。決定是：**由 Clawdline Cloud 送
+Web Push**，手機只訂閱一次，帳號上每台機器都叫得到它，不管其他機器有沒有在線。
+
+**Cloud 不能越過的線。** Cloud 只持有帳號的 VAPID 金鑰對與每份訂閱的 **endpoint**，從來拿不到
+`p256dh`、`auth` 或任何明文。每則訊息還是由機器自己封（RFC 8291 aes128gcm，就是原本的 `Build` ＋
+`Body`），Cloud 只轉送密文；它沒有 `auth`，所以造不出手機解得開的通知。`p256dh`／`auth`／origin
+由瀏覽器經既有的端對端通道（`push-subscribe` 這個 relay word）交給每一台機器，不經過 Cloud。
+
+### daemon 這一半
+
+- `push-subscribe` 這個字可以在 `subscription` 旁邊多帶一個 `cloud_subscription_id`（UUID）。
+  `internal/app/cloudops` 把它併進交給 `/v1/push/subscribe` 的同一份文件；`push.FromBrowser` 檢查
+  形狀，存成 `Subscription.CloudID`，寫進 `subscriptions.json` 的 `cloud_subscription_id` 欄位。
+  物件裡面也帶一份的，視為同一個問題兩個答案，拒絕。
+- 有 `CloudID` 的那一列：`Build` ＋ `Body` 跟原本一模一樣（Apple 的 declarative envelope 仍然看
+  endpoint 的 host 與存下來的 origin 決定），然後不 POST 到 endpoint，而是用機器憑證
+  `POST <api_origin>/v1/push/send`（`internal/adapters/cloud/push_send.go`，跟
+  `schedule_webhooks.go` 同一條呼叫 Cloud API 的路）。憑證與 API origin 從 Cloud link 拿
+  （`Link.PushClient`），http 層在送的那一刻透過 `pushCourier` 取得。
+- Cloud 的回答在 `send.go` 的 `forward` 變成判決，規則跟直送的一樣：2xx 算送達；**410
+  `subscription_gone` 在本機刪掉那一列**；429 照 `retry_after` 重試（超過 60 秒的上限就放棄，不排隊）；
+  502 裡的 `push_status` 是 0 或可重試的就重試，其餘不重試；其他 5xx 重試；其餘（包括
+  `404 unknown_subscription`、401、403）**原封不動留著**——只有 Cloud 的 410 算「已經不在」的證據。
+- 沒有 `CloudID` 的列照舊直送，用這台機器自己的 VAPID 金鑰（免費版／本機 console 的路徑，沒變）。
+  整個 fan-out 裡只要沒有直送的列，就**不會產生**這台機器自己的金鑰。
+- 沒登入 Cloud、又握著 Cloud 訂閱的機器：那一列算送不出去（`Failed`），**不會**改用自己的金鑰
+  （endpoint 綁的是 Cloud 的金鑰，push service 會拒）。`/v1/diagnostics` 的 `push.subscriptions`
+  那一列會寫出「N 份經 Clawdline Cloud 的訂閱送不出去：這台機器沒登入 Cloud」。
+
+### console 這一半
+
+`web/console/src/cloud/cloud-push.ts`，由 `CloudGate.tsx` 在選定機器時裝上；`push/push.ts` 看得到它
+就走 Cloud 路徑，看不到（本機 console）就跟以前一模一樣。`legacy/js/net/cloud-client.js` 是
+`MANIFEST.json` 釘住的拷貝，沒有動。
+
+- **開**：`GET {api}/v1/push/key`（`credentials: "include"`）→ 瀏覽器目前的訂閱如果是用別把金鑰
+  做的，先 `unsubscribe()` → 用 Cloud 的金鑰 `pushManager.subscribe` →
+  `POST {api}/v1/push/subscriptions {endpoint}`（帶 `Idempotency-Key`）拿到 id → 把
+  `{subscription, cloud_subscription_id}` **並行**送給每一台已配對、有 `push-subscribe` 的機器
+  （fan-out，不再嚴格挑一台，所以兩台不再是 `cloud_machine_ambiguous`）。畫面照機器名稱說哪幾台
+  收下了、哪幾台沒收到和原因；本來就沒有推播的機器（`unknown_command` 等）不列。
+- **之後每次開頁**：這個瀏覽器在 localStorage 的 `clawdline.push.cloud` 記著 Cloud 的 id、金鑰、
+  每台機器回的本機 row id。名單上缺的、有推播的機器（之後才加入的、上次離線的）這時補送。用
+  機器 id 比對，這是改動最小的讀法：不需要新的 relay word，重送對 daemon 是冪等的（同一個
+  endpoint 或同一台裝置只留一列）。
+- **關**：瀏覽器 unsubscribe → 對記錄裡每台機器送 `push-unsubscribe`（各自的 row id）→
+  `DELETE {api}/v1/push/subscriptions/:id`。沒通知到的照名稱說出來。
+
+### 驗證（2026-09-26，在 task worktree 裡跑）
+
+- `internal/adapters/push/cloud_send_test.go`：對著一個照合約實作的假 Cloud API——Cloud 訂閱經 API
+  送出、endpoint 一次都沒被直接 POST、瀏覽器的私鑰解得開 Cloud 收到的密文、Cloud 收到的 body 沒有
+  `p256dh`／`auth`／`endpoint`；410 在本機刪掉；429／502／404 各自重試或留著；本機訂閱仍然直送並
+  帶 `vapid t=`；`*.push.apple.com` 的 Cloud 訂閱仍然是 `application/notification+json`；沒有 Cloud
+  時送不出去也不退回自己的金鑰、不產生金鑰。暫時拿掉 `forward` 的分流，其中五個測試變紅，還原後
+  回綠。
+- `internal/transport/http` 的 `TestACloudSubscriptionIsSentThroughCloudEndToEnd`：Cloud viewer
+  經 relay word 帶 `cloud_subscription_id` 訂閱，沒登記 Cloud link 時 `PushSend` 算失敗、endpoint
+  沒被打到；登記之後經假 API 送達。
+- `internal/app/cloudops` 的 `TestACloudSubscriptionCarriesItsCloudIDToTheRoute`。
+- `web/console/src/cloud/cloud-push.test.ts`：兩台機器一台離線（點名）、金鑰不同時重新訂閱、
+  下次開頁只補送缺的那台、關閉時點名沒通知到的、沒裝 seam 時不碰 Cloud。
+
+**沒量到的**：真的 Cloud API（另一個 repository 平行在做）、真的手機收到經 Cloud 送出的通知。
+Cloud console 上的「測試通知」按鈕沒改，帳號上有兩台以上會推播的機器時仍然會回
+`cloud_machine_ambiguous`。
+
 ## 還沒接的線
 
 - **session 開始等待時的通知接上了（上一節），但只有這一條。** 舊版另外在 `DeployWatch.swift`、

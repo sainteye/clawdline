@@ -301,6 +301,23 @@ func (s *Store) Reading() capacity.Reading {
 		Counters: capacity.Counters{Refused: s.refused, LastActionAt: s.refusedAt}}
 }
 
+// CloudSubscriptions is how many rows are delivered through Clawdline Cloud.
+// A store that cannot be read has none it can speak for.
+func (s *Store) CloudSubscriptions() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.load() != nil {
+		return 0
+	}
+	n := 0
+	for _, row := range s.rows {
+		if row.Cloud() {
+			n++
+		}
+	}
+	return n
+}
+
 // Remove drops one subscription by id. A row that was not there is not an
 // error: unsubscribing twice is what a reload of the page looks like.
 func (s *Store) Remove(id string) (Subscription, bool, error) {
@@ -388,6 +405,13 @@ func (s *Store) load() error {
 		if row.ID == "" || row.Endpoint == "" {
 			continue
 		}
+		// A cloud id of the wrong shape is a row this machine cannot deliver
+		// through Cloud and must not deliver with its own key either: the
+		// endpoint was made against Cloud's. So it is dropped, like a bad key.
+		cloudID := strings.ToLower(row.CloudSubscriptionID)
+		if cloudID != "" && !CloudSubscriptionID(cloudID) {
+			continue
+		}
 		device := row.Device
 		if device == "" {
 			device = "?"
@@ -399,6 +423,7 @@ func (s *Store) load() error {
 			Auth:     secret,
 			Device:   device,
 			Origin:   WebAppOrigin(row.Origin),
+			CloudID:  cloudID,
 			Created:  time.Unix(int64(row.Created), 0),
 		}
 	}
@@ -407,13 +432,16 @@ func (s *Store) load() error {
 }
 
 type storedRow struct {
-	ID       string  `json:"id"`
-	Endpoint string  `json:"endpoint"`
-	P256dh   string  `json:"p256dh"`
-	Auth     string  `json:"auth"`
-	Device   string  `json:"device"`
-	Origin   string  `json:"origin,omitempty"`
-	Created  float64 `json:"created"`
+	ID       string `json:"id"`
+	Endpoint string `json:"endpoint"`
+	P256dh   string `json:"p256dh"`
+	Auth     string `json:"auth"`
+	Device   string `json:"device"`
+	Origin   string `json:"origin,omitempty"`
+	// CloudSubscriptionID is Subscription.CloudID; absent on every row
+	// written before Cloud sent pushes, which keeps them on the direct path.
+	CloudSubscriptionID string  `json:"cloud_subscription_id,omitempty"`
+	Created             float64 `json:"created"`
 }
 
 // sorted is every row, oldest first, as the caller must not depend on map order.
@@ -435,13 +463,14 @@ func (s *Store) save() error {
 	rows := make([]storedRow, 0, len(s.rows))
 	for _, row := range s.sorted() {
 		rows = append(rows, storedRow{
-			ID:       row.ID,
-			Endpoint: row.Endpoint,
-			P256dh:   EncodeBase64URL(row.P256dh),
-			Auth:     EncodeBase64URL(row.Auth),
-			Device:   row.Device,
-			Origin:   row.Origin,
-			Created:  float64(row.Created.Unix()),
+			ID:                  row.ID,
+			Endpoint:            row.Endpoint,
+			P256dh:              EncodeBase64URL(row.P256dh),
+			Auth:                EncodeBase64URL(row.Auth),
+			Device:              row.Device,
+			Origin:              row.Origin,
+			CloudSubscriptionID: row.CloudID,
+			Created:             float64(row.Created.Unix()),
 		})
 	}
 	// Without HTML escaping: an `&` in an endpoint's query is one byte on

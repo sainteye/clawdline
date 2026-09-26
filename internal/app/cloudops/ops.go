@@ -1990,7 +1990,12 @@ func init() {
 				"address against and is why a notification that arrived opened nothing; " +
 				"it is now `cloud_app_origin`, carried to the route beside the credential",
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "subscription") {
+				// `cloud_subscription_id` is present when the browser
+				// subscribed with Clawdline Cloud's VAPID key rather than this
+				// machine's: the row is then sealed here and forwarded
+				// through Cloud (docs/push.md, "Cloud-sent push").
+				if !b.hasOneOf([]string{"type", "session", "request", "subscription"},
+					[]string{"type", "session", "request", "subscription", "cloud_subscription_id"}) {
 					return plan{}, false
 				}
 				p, ok := actionPlan(b, false)
@@ -2001,7 +2006,23 @@ func init() {
 				// travel as. What counts as a usable subscription is the
 				// route's question (`push.FromBrowser`), and it is asked
 				// there so that an endpoint this machine will POST to is
-				// checked in exactly one place.
+				// checked in exactly one place — the cloud id with it,
+				// which rides beside the object's own keys.
+				subscription, ok := b["subscription"].(map[string]any)
+				if !ok {
+					return plan{}, false
+				}
+				if cloudID, present := b["cloud_subscription_id"]; present {
+					if _, clash := subscription["cloud_subscription_id"]; clash {
+						return plan{}, false
+					}
+					merged := make(map[string]any, len(subscription)+1)
+					for key, value := range subscription {
+						merged[key] = value
+					}
+					merged["cloud_subscription_id"] = cloudID
+					b = body{"subscription": merged}
+				}
 				document, ok := b.object("subscription", pushBodyMaximumBytes)
 				if !ok {
 					return plan{}, false

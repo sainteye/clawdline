@@ -230,7 +230,15 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			if err != nil {
 				return capacity.Unmeasured(err.Error())
 			}
-			return store.Reading()
+			reading := store.Reading()
+			// A subscription made against Cloud's key can only be delivered
+			// through Cloud, and a machine that is not signed in never falls
+			// back to its own key, so it says here that it is holding rows it
+			// cannot send to.
+			if n := store.CloudSubscriptions(); n > 0 && s.pushCourier() == nil {
+				reading.Note = fmt.Sprintf("%d subscription(s) made through Clawdline Cloud are undeliverable: this machine is not signed in to Cloud", n)
+			}
+			return reading
 		},
 		capacity.CacheTranscriptTitles: func() capacity.Reading {
 			h, ok := s.inventory.Identity.(*transcript.Host)

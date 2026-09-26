@@ -1607,6 +1607,40 @@ func TestAPushWriteIsJudgedAsTheDeviceThatSentIt(t *testing.T) {
 	}
 }
 
+// TestACloudSubscriptionCarriesItsCloudIDToTheRoute: a browser that
+// subscribed with Clawdline Cloud's key sends Cloud's id beside its own object,
+// and the route reads both in one document. An id inside the object as well
+// is two answers to one question, and is refused.
+func TestACloudSubscriptionCarriesItsCloudIDToTheRoute(t *testing.T) {
+	const cloudID = "c1000000-0000-4000-8000-000000000001"
+	subscription := func() map[string]any {
+		return map[string]any{"endpoint": "https://web.push.apple.com/QW",
+			"keys": map[string]any{"p256dh": "BPk", "auth": "c2VjcmV0"}}
+	}
+	r := &router{}
+	answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "push-subscribe", "session": MachineReplySession, "request": "req",
+		"subscription": subscription(), "cloud_subscription_id": cloudID}))
+	if !answer.OK() {
+		t.Fatalf("refused: %+v", answer)
+	}
+	want := `{"cloud_subscription_id":"` + cloudID + `","endpoint":"https://web.push.apple.com/QW",` +
+		`"keys":{"auth":"c2VjcmV0","p256dh":"BPk"}}`
+	if got := r.last(); got.Path != "/v1/push/subscribe" || string(got.Body) != want {
+		t.Fatalf("routed %s %s", got.Path, got.Body)
+	}
+
+	twice := subscription()
+	twice["cloud_subscription_id"] = cloudID
+	r = &router{}
+	answer = open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "push-subscribe", "session": MachineReplySession, "request": "req",
+		"subscription": twice, "cloud_subscription_id": cloudID}))
+	if answer.OK() || len(r.seen) != 0 {
+		t.Fatalf("an id given twice was routed: %+v", answer)
+	}
+}
+
 // TestEveryDivergenceIsAboutAWordThisDaemonActuallyAnswers. A divergence on a
 // word with no route would be a note about nothing, and the list is read at
 // the moment somebody decides what to advertise.

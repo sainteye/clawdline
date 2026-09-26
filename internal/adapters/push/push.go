@@ -169,9 +169,18 @@ type Subscription struct {
 	// Safari needs it to turn a root-relative session address into Declarative
 	// Web Push's absolute `navigate` URL. Older stored rows have no origin and
 	// deliberately keep the service-worker path.
-	Origin  string
+	Origin string
+	// CloudID is the id Clawdline Cloud gave this endpoint when the browser
+	// subscribed with the account's VAPID key rather than this machine's.
+	// Such a row is sealed here exactly like any other and forwarded through
+	// Cloud's `POST /v1/push/send`, because the endpoint is bound to a key only
+	// Cloud holds. Empty is the direct path with this machine's own key.
+	CloudID string
 	Created time.Time
 }
+
+// Cloud is whether this subscription is delivered through Clawdline Cloud.
+func (s Subscription) Cloud() bool { return s.CloudID != "" }
 
 // Delivery is what the push services actually accepted. A route that promised
 // content to a person must not confuse "the send was started" with "a service
@@ -235,7 +244,16 @@ func FromBrowser(body map[string]any, id, device, rawOrigin string) (Subscriptio
 	if err != nil || len(secret) != AuthSecretBytes {
 		return Subscription{}, false
 	}
+	var cloudID string
+	if raw, present := body["cloud_subscription_id"]; present {
+		cloudID, _ = raw.(string)
+		if !CloudSubscriptionID(cloudID) {
+			return Subscription{}, false
+		}
+		cloudID = strings.ToLower(cloudID)
+	}
 	return Subscription{
+		CloudID:  cloudID,
 		ID:       id,
 		Endpoint: raw,
 		P256dh:   p256dh,
@@ -244,6 +262,29 @@ func FromBrowser(body map[string]any, id, device, rawOrigin string) (Subscriptio
 		Origin:   WebAppOrigin(rawOrigin),
 		Created:  time.Now(),
 	}, true
+}
+
+// CloudSubscriptionID is whether text is the shape Cloud's subscription ids
+// have: a UUID, 8-4-4-4-12 hexadecimal. It goes into a JSON body and an audit
+// line and nowhere else, and it is checked so that nothing else can.
+func CloudSubscriptionID(text string) bool {
+	if len(text) != 36 {
+		return false
+	}
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // WebAppOrigin keeps only the RFC 6454 origin a browser supplied. A path,
