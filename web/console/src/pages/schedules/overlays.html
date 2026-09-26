@@ -68,6 +68,13 @@
             <div class="row" id="schedule-days"></div>
         </div>
 
+        <!-- Which machine the schedule is on. Shown only to an account with more than one
+             machine; changing it on a saved schedule moves it (cloud/schedule-move.ts). -->
+        <div class="block" id="schedule-machine-block" hidden>
+            <span class="field-label" id="schedule-machine-label">Machine</span>
+            <div class="row" id="schedule-machine"></div>
+        </div>
+
         <div class="block">
             <span class="field-label" id="schedule-where-label">Where</span>
             <!-- Collapsed to one line, and the reason is the phone. The project list is long

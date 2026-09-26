@@ -193,6 +193,35 @@ const words = {
     screenCloudNotCarried: "Cloud does not carry the live screen. Open the local console on that machine.",
     screenUnanswered: "Clawdline did not answer the screen read. Check the connection and try again.",
     schedulePlacesUnanswered: "The place list did not answer. Check this browser's connection to Clawdline and try again.",
+    scheduleMachineField: "Machine",
+    scheduleMachineOffline: "{machine}: offline (last seen {time})",
+    scheduleMachineUnread: "{machine}: offline or unreadable",
+    scheduleMoving: "Moving to {machine}…",
+    scheduleMoved: "Moved to {machine}.",
+    scheduleMoveTargetOffline: "{machine} is offline, so the schedule was not moved. Move it once that machine is back.",
+    scheduleMoveTargetOutdated:
+      "Clawdline on {machine} is too old to say which repository each project clones, so the schedule was not moved. Update Clawdline on {machine}, then move it.",
+    scheduleMoveSourceOutdated:
+      "Clawdline on {machine} is too old to say which repository this project clones, so the schedule was not moved. Update Clawdline on {machine}, then move it.",
+    scheduleMoveNoOrigin:
+      "“{project}” has no origin remote, so there is nothing to find it by on another machine. Give it an origin, or make a new schedule on the other machine.",
+    scheduleMoveSourceUnlisted:
+      "“{project}” is no longer in {machine}'s project list, so this schedule cannot be switched off there to move it. Open the project on {machine} once, then move it.",
+    scheduleMoveNoProject: "{machine} has no project cloned from {repo}. Clone it there and open it once, then move the schedule.",
+    scheduleMoveWebhookBound:
+      "“{title}” has a webhook bound to it on {machine}, which would keep calling a schedule that is no longer there. Disable the webhook first, then move it.",
+    scheduleMoveWebhookUnknown:
+      "Whether “{title}” has a webhook could not be read on {machine}, so it was not moved. Try again.",
+    scheduleMoveSpent:
+      "“{title}” ran once and is done; a copy would run it again. Make a new schedule on the other machine instead.",
+    scheduleMoveUnformed:
+      "This schedule has settings the form does not show ({fields}); a copy on another machine would lose them, so it was not moved.",
+    scheduleMoveNotStarted: "{source} did not switch the schedule off, so nothing was moved. {why}",
+    scheduleMoveCreateFailed: "{machine} refused the copy, so the schedule stays on {source} as it was. {why}",
+    scheduleMoveCreateFailedDisabled:
+      "{machine} refused the copy, and the schedule on {source} could not be switched back on: it is there, disabled. {why}",
+    scheduleMoveDeleteFailed:
+      "The schedule now runs on {machine}. The old copy is still on {source}, disabled; delete it there. {why}",
     cloudMachineSessions: "{count} sessions",
     cloudAccessProblem:
       "Machine {machine}'s data could not be read in this browser ({code}). Pair that machine with this browser again; if it still cannot be read, sign in again.",
@@ -487,6 +516,29 @@ const words = {
     screenCloudNotCarried: "Cloud 目前不傳送即時畫面；請到那台機器的本機 console 查看。",
     screenUnanswered: "Clawdline 沒有回答畫面讀取；請檢查連線後再試。",
     schedulePlacesUnanswered: "地點清單沒有回答；請檢查這個瀏覽器到 Clawdline 的連線後再試。",
+    scheduleMachineField: "機器",
+    scheduleMachineOffline: "{machine}：離線（最後在線 {time}）",
+    scheduleMachineUnread: "{machine}：離線／讀不到",
+    scheduleMoving: "正在搬到 {machine}…",
+    scheduleMoved: "已搬到 {machine}。",
+    scheduleMoveTargetOffline: "{machine} 目前離線，排程沒有搬。等那台機器上線後再搬。",
+    scheduleMoveTargetOutdated:
+      "{machine} 上的 Clawdline 版本太舊，還不會說每個專案 clone 自哪個 repository，所以排程沒有搬。請先更新 {machine} 上的 Clawdline 再搬。",
+    scheduleMoveSourceOutdated:
+      "{machine} 上的 Clawdline 版本太舊，還不會說這個專案 clone 自哪個 repository，所以排程沒有搬。請先更新 {machine} 上的 Clawdline 再搬。",
+    scheduleMoveNoOrigin:
+      "「{project}」沒有 origin remote，在別台機器上找不到同一個專案，所以沒辦法搬。請替它設定 origin，或直接在另一台機器上新增排程。",
+    scheduleMoveSourceUnlisted:
+      "「{project}」已經不在 {machine} 的專案清單裡，沒辦法先在那裡停用這個排程再搬。請在 {machine} 上開過一次這個專案再搬。",
+    scheduleMoveNoProject: "{machine} 上沒有 clone 自 {repo} 的專案。請先在那台機器 clone 並開過一次，再搬這個排程。",
+    scheduleMoveWebhookBound: "「{title}」在 {machine} 上綁了 webhook，搬走後它會一直呼叫一個已經不在的排程。請先停用 webhook 再搬。",
+    scheduleMoveWebhookUnknown: "讀不到「{title}」在 {machine} 上有沒有綁 webhook，所以沒有搬。請再試一次。",
+    scheduleMoveSpent: "「{title}」是只跑一次的排程，而且已經跑過了；搬過去會再跑一次。請直接在另一台機器新增一個。",
+    scheduleMoveUnformed: "這個排程有表單沒有顯示的設定（{fields}），搬到另一台機器會把它們弄丟，所以沒有搬。",
+    scheduleMoveNotStarted: "{source} 沒有停用這個排程，所以什麼都沒搬。{why}",
+    scheduleMoveCreateFailed: "{machine} 拒絕建立這份排程，排程仍在 {source}，維持原狀。{why}",
+    scheduleMoveCreateFailedDisabled: "{machine} 拒絕建立這份排程，而 {source} 上的原排程沒能重新啟用：它還在那裡，目前停用。{why}",
+    scheduleMoveDeleteFailed: "排程已經在 {machine} 上執行。舊的那份還在 {source}，目前停用；請到那台機器刪掉它。{why}",
     cloudMachineSessions: "{count} 個 session",
     cloudAccessProblem: "機器 {machine} 的資料在這個瀏覽器讀不出來（{code}）。請重新配對這台機器；若仍然讀不到，請重新登入。",
     cloudSwitch: "換一台機器",

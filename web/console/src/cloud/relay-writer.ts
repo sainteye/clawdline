@@ -746,7 +746,11 @@ export class RelayWriter {
         )
       }
       case "places":
-        return client.places(this.host.machine)
+        // `?machine=` is the schedule form's: a schedule is made on the
+        // machine chosen in its 「機器」 field, and the Projects offered are
+        // that machine's (docs/schedules.md). Every other reader asks this
+        // page's machine, as before.
+        return client.places(this.namedMachine(url))
       case "past":
         return client.pastSessions(route.place, route.assistant)
       case "start":
@@ -867,24 +871,33 @@ export class RelayWriter {
         if (typeof client._scheduleBody !== "function" || typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", "schedule-update", 501)
         }
+        // The row's machine, which the list named (`?machine=`); this page's
+        // own machine when nothing was named, as before.
+        const machine = this.namedMachine(url)
         const routed = client._scheduleBody(schedule)
-        if (routed.machine !== this.host.machine) {
+        // A save stays a save. Moving a schedule to another machine is not a
+        // save with another machine's Project in it — that would be one
+        // machine storing a Project it does not have — but three writes the
+        // page makes in order: disable here, create there, delete here
+        // (`cloud/schedule-move.ts`). So a save naming another machine's
+        // Project is still refused.
+        if (routed.machine !== machine) {
           throw failure("cloud_schedule_machine_mismatch", "a schedule cannot be moved to a Project on another machine", 409)
         }
-        return client._machineRequest(this.host.machine, "schedule-update",
+        return client._machineRequest(machine, "schedule-update",
           { id: route.schedule, schedule: routed.schedule }, "action")
       }
       case "schedule-delete": {
         if (typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", "schedule-delete", 501)
         }
-        return client._machineRequest(this.host.machine, "schedule-delete", { id: route.schedule }, "action")
+        return client._machineRequest(this.namedMachine(url), "schedule-delete", { id: route.schedule }, "action")
       }
       case "schedule-run": {
         if (typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", "schedule-run", 501)
         }
-        return client._machineRequest(this.host.machine, "schedule-run", { id: route.schedule }, "action")
+        return client._machineRequest(this.namedMachine(url), "schedule-run", { id: route.schedule }, "action")
       }
       case "snippet-create": {
         // The sheet's own body, whole: `view/snippets-data.js`'s
@@ -1091,6 +1104,20 @@ export class RelayWriter {
    * Both halves of the sheet name one (`session/snippets-api.ts`), so this is
    * a caller that is not this sheet.
    */
+  /**
+   * The machine a schedule request names with `?machine=`, else this page's.
+   *
+   * A schedule lives on the machine that runs it, and the list shows every
+   * machine's rows, so an action on a row names the row's machine. The name is
+   * an authenticated channel's, never a descriptor's: the copied client refuses
+   * one it has no route to (`_machineRequest`, `places`), and a machine this
+   * browser is not paired with cannot be written to at all.
+   */
+  private namedMachine(url: URL): string {
+    const named = url.searchParams.get("machine")
+    return named ? named : this.host.machine
+  }
+
   private snippetIdentity(url: URL): CloudIdentity {
     const session = url.searchParams.get("session")
     if (!session) throw failure("bad_request", "a snippet write names the session it was made from", 400)

@@ -1,0 +1,20 @@
+/* The machine each group of schedules is on, drawn only for an account with
+   more than one machine (`cloud/schedule-machines.ts`). */
+.schedule-machine {
+  padding: 10px 12px 4px;
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 600;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.schedule-machine[data-state="unanswered"] {
+  padding-bottom: 10px;
+  font-weight: 400;
+}
+
+.schedule-machine + .schedule-row { border-top: 0; }
+.schedule-row + .schedule-machine { border-top: 1px solid var(--line); }
+
+#schedule-machine-block[hidden] { display: none; }

@@ -189,8 +189,10 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 	out := contract.StartPlaceList{At: time.Now().Unix(), Assistants: installedAssistants(),
 		Places: make([]contract.StartPlace, 0, len(list))}
 	for _, p := range list {
+		// `repo` is what a schedule moving here from another machine finds its
+		// project by (docs/schedules.md): the id is a digest of this path.
 		out.Places = append(out.Places, contract.StartPlace{ID: p.ID, Label: p.Label, Path: p.Path,
-			At: p.At.Unix(), Icon: wireIcon(s.icons.For(p.Path))})
+			At: p.At.Unix(), Icon: wireIcon(s.icons.For(p.Path)), Repo: projects.OriginRepo(p.Path)})
 	}
 	writeJSON(w, out)
 }

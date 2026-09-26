@@ -228,14 +228,75 @@ fires.
 | 一個排程的 run 還沒結束 | 由 broker 的心跳推進 | 同樣由 broker 的 beat 推進（收 `result.json`、跑逾時）；「還在跑嗎」直接讀 broker 那一列的 state | 一個不寫 result 的 run 在自己的逾時到時結束，放行下一次（D53） |
 | webhook 綁定與投遞 | Cloud 指令在 app 內處理 | 同樣的綁定帳本；機器憑證啟用 hook，持久 claim／lease／receipt journal 再走既有 broker | 收到但尚未回 receipt 或已派工但尚未記 receipt 時重啟，都以同一 task id 重播，不重複開 Agent |
 
+## Which machine a schedule is on, and moving it (2026-09-26)
+
+A schedule lives on the machine that runs it: its row is in that machine's SQLite and that machine's
+clock fires it. There is no shared schedule and no machine-to-machine channel, and none is added here.
+
+**The list.** On an account with more than one selectable machine, the Cloud Schedules panel reads every
+machine (`cloud/relay-reader.ts`, `_freshSchedules`) and draws one group per machine, the header's first,
+each headed by the machine's name and platform word as the header switcher says it. A machine that did not
+answer is a named line — "offline (last seen HH:MM)" when a last-seen time is known, "offline or unreadable"
+otherwise — never an empty group. Every action on a row (history, Run now, Edit, Delete, the webhook
+binding) is sent to the machine the row was listed on (`?machine=`, `relay-writer.ts` `namedMachine`).
+A console with one machine — the daemon's own page, or an account with one machine — draws no machine
+column and no machine field, and sends what it sent before.
+
+**Creating.** The form has a Machine field, defaulting to the header's machine; the project list is the
+chosen machine's `GET /v1/places`. The create is routed by the place id, which names its machine.
+
+**Moving** (`cloud/schedule-move.ts`). Choosing another machine while editing makes Save a move. The browser
+is the courier, in three writes, in this order:
+
+1. the source is saved with `enabled: false` and every stored field (`model` is omitted, which leaves it as
+   stored);
+2. a copy is created on the target with every field the form holds, plus a one-time schedule's `on`;
+3. the source is deleted.
+
+At no instant are two enabled copies stored. If (2) is refused the source is saved back to its previous
+`enabled`, and the page shows the target's refusal; if that restore is also refused the page says the
+source is there, disabled. If (3) is refused the page says the old copy is still on the source machine,
+disabled. The target does not run an occurrence from before the copy existed: a created schedule is first
+seen and created at that instant — `TestAScheduleCreatedByAMoveDoesNotRunThePastOccurrence`
+(`internal/app/schedule_move_test.go`) creates one at 09:00:30 with a six-hour catch-up window and measures
+0 due that beat and 1 the next day.
+
+The project is found on the target by the repository it clones, not by its path: a place id is a digest of
+a path on one machine. `GET /v1/places` (and the Cloud `places` op, which returns the same body) carries
+`repo` on every place — `host/owner/name` from the checkout's `[remote "origin"] url`, read from the git
+config file directly and bounded at 64 KiB (`places.git_config_bytes`, `docs/limits.md`), or `""` when
+there is no portable origin. `repo` is always present so an older daemon is recognisable by its absence.
+
+Everything that can refuse is asked before (1), so a refusal changes nothing. Each is a sentence naming
+what to act on (`next-strings.ts`, `scheduleMove*`):
+
+| Refusal | When |
+|---|---|
+| target offline | the target is offline, or its project list could not be read |
+| target / source outdated | that machine's Clawdline sends no `repo`: update it there |
+| no origin | the project has no origin remote, so nothing names it on another machine |
+| source unlisted | the project is gone from the source's list, so the disable cannot name it |
+| no project | the target has no clone of that repository |
+| webhook bound / unknown | a Cloud webhook is bound to the schedule id (`schedule-webhook-bind-v1`), or the binding could not be read; the copy gets a new id, so the hook would call a schedule that is gone |
+| spent | a one-time schedule that already ran; a copy would arm it again |
+| unformed fields | the template carries fields the form has no control for (`claims`, `permission_mode`, `serialize`, `isolation`, `isolation_base`, `deliverables`, `kind`, `plan`, `graph`, `reasoning_effort`); a create cannot send them, so the move refuses rather than dropping them |
+
+A save that changes nothing about the machine keeps the relay's `cloud_schedule_machine_mismatch` refusal
+for a body whose place is on another machine than the schedule: a move is three writes, not a save.
+
+**Needs a redeploy.** Both the source and the target daemon must send `repo`; a machine running a build
+from before 2026-09-26 is refused by name as outdated until it is updated.
+
 ## 還沒有的（依賴別的工作線）
 
-- ~~派工本身還是 Go 的第一版~~：W4 起排程走 broker，有 CHILD.md、task secret、`timeout_minutes`、`model`、
-  `permission_mode`、worktree 隔離。**還沒有的**：`close_tab`（結束後關分頁屬於 linger，W6）；排程 run 以
-  failure／timeout／spawn_failed 結束時的推播（舊版 `scheduleNotifyFailure`，要等 broker 的推播接上，W5／D24）；
-  範本裡 broker 還不支援的欄位（`serialize`、`graph`）會在發射時被具名拒絕（`bad_task`），
-  不再像舊骨架那樣安靜地忽略。`reasoning_effort` 2026-09-20 起支援了：存得下去、也發得出去，
-  不再是「存檔說好、每次發射說 `bad_task`」的陷阱。
-- **Cloud 的 `schedule`／`schedule-create` 等指令**：`internal/app/cloudops` 還回 `unknown_command`；
-  路由已經有了，接上是 cloudops 那邊的事。
-- **執行紀錄的 `terminal_id`／`session_id`、`finished_at`**：Go 的 task 記錄沒有這些，run 列只能是「沒有動作」。
+2026-09-26 對照程式碼重看過這一節：
+
+- ~~`close_tab`~~：linger 已經照排程的 `close_tab` 關分頁（`internal/app/orchestrator/linger.go`）。
+- ~~Cloud 的 `schedule`／`schedule-create` 等指令回 `unknown_command`~~：`internal/app/cloudops/ops.go`
+  已經有 `schedules`、`schedule-create`、`schedule-update` 等 op，Cloud 的排程面板就是走它們。
+- 推播：missed 與派工被拒（`refused`）時會推播（`internal/app/scheduler.go`）；run 以
+  failure／timeout／spawn_failed **結束**時的推播這次沒有查證，照舊列為未確認。
+- 範本裡 broker 還不支援的欄位（`serialize`、`graph`）會在發射時被具名拒絕（`bad_task`）。
+- **執行紀錄的 `terminal_id`／`session_id`、`finished_at`**：這次沒有查證，照舊列著。
+- 搬移只能從表單做，一次一個；表單沒有「只跑一次」的日期欄位，所以只跑一次的排程搬移時帶著原本的 `on`，
+  但無法在搬移時改它。

@@ -23,13 +23,17 @@
       "description": "One directory a session can be started in. `id` is sixteen hex characters of the path's SHA-256 and is the only part a client sends back; `path` is here so two projects with one name can be told apart.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "id", "label", "path"],
+      "required": ["at", "id", "label", "path", "repo"],
       "properties": {
         "at": { "description": "When this place was last worked in, Unix seconds.", "type": "integer" },
         "icon": { "$ref": "common.schema.json#/$defs/Icon" },
         "id": { "type": "string" },
         "label": { "type": "string" },
-        "path": { "type": "string" }
+        "path": { "type": "string" },
+        "repo": {
+          "description": "The repository this place's checkout clones, host/owner/name from its origin remote, or empty when it has none. Always sent, so a console can tell a machine whose projects have no origin from one whose Clawdline is too old to say. `id` is a digest of a path on this machine, so this is the name one project has on two machines; a schedule is moved between machines by it.",
+          "type": "string"
+        }
       }
     },
     "StartPlaceList": {
