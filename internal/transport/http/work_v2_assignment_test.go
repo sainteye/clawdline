@@ -484,3 +484,40 @@ func TestTheEditRouteNamesThePhaseRouteAndAnyFieldItRefuses(t *testing.T) {
 		t.Fatalf("unknown field edit: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// A landing that names a Project the catalog does not hold is refused by
+// name, leaves the item in merging, and releases its key for a corrected try.
+func TestALandingInAnUnknownProjectIsRefusedByName(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	owned, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct {
+		next         work.Phase
+		verification string
+	}{{work.PhaseImplementing, ""}, {work.PhaseVerifying, ""}, {work.PhaseMerging, "verified"}} {
+		owned, err = s.workV2().Advance(context.Background(), v.Item.ID, app.AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+			SessionID: p.s.ConversationID, Next: step.next, Verification: step.verification, Actor: p.s.ConversationID}, nil)
+		if err != nil {
+			t.Fatalf("advance %s: %v", step.next, err)
+		}
+	}
+	body, _ := json.Marshal(map[string]any{"expected_version": owned.Item.Version, "session_id": p.s.ConversationID,
+		"next": "deploying", "landing": map[string]string{"commit": "HEAD", "target": "main", "remote": "origin",
+			"project": "no-such-project"}})
+	req := httptest.NewRequest(http.MethodPost, "/v1/work/v2/agent/items/"+v.Item.ID+"/phase", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "landing-in-unknown-project")
+	req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{machine: true, verdict: auth.Verdict{Allowed: true}}))
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "landing_project_not_found") {
+		t.Fatalf("unknown landing project: %d %s", rec.Code, rec.Body)
+	}
+	after, err := s.workV2().Item(context.Background(), v.Item.ID)
+	if err != nil || after.Item.Phase != work.PhaseMerging || after.Item.Version != owned.Item.Version {
+		t.Fatalf("item after refusal: %+v %v", after.Item, err)
+	}
+}

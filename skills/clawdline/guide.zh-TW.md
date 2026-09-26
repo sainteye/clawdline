@@ -639,6 +639,7 @@ clawdline item phase <item id> implementing                  # 開始動手時
 clawdline item phase <item id> verifying                     # 改動已經在了，開始檢查
 clawdline item phase <item id> merging --verification "跑了什麼、結果是什麼"
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin
+clawdline item phase <item id> deploying --commit <sha> --target main --remote origin --landing-project <place id>
 clawdline item phase <item id> done --deployment "上線了什麼、在哪裡、哪個版本"
 clawdline item phase <item id> done --no-deployment-reason "為什麼不需要部署"
 ```
@@ -648,7 +649,7 @@ clawdline item phase <item id> done --no-deployment-reason "為什麼不需要�
 ```
 POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>", "next": "<phase>",
- "verification"?: "…", "landing"?: {"commit", "target", "remote"},
+ "verification"?: "…", "landing"?: {"commit", "target", "remote", "project"?},
  "deployment"?: "…", "no_deployment_reason"?: "…"}
 ```
 
@@ -657,14 +658,17 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   只能從 `deploying` 進入。
 - `merging` 要帶 `verification`。`deploying` 要有 landing：這個項目的 broker child 已經 land，或用
   `landing` 指名一個 commit，daemon 要在 Project 的本機 `target` branch 和
-  `refs/remotes/<remote>/<target>` 上都找得到它——先 push。`done` 要帶 `deployment` 或
+  `refs/remotes/<remote>/<target>` 上都找得到它——先 push。工作落在別的 repository 時（後端項目、
+  改動卻是前端的 commit），用 `landing.project`（`--landing-project`）指名那個 Project 在
+  `GET /v1/places` 的 id，daemon 就改在那裡找 commit，收據會記下是哪個 repository。`done` 要帶 `deployment` 或
   `no_deployment_reason`，由項目的 `deployment_policy` 決定（`required` 只收 `deployment`，
   `not_required` 只收 `no_deployment_reason`，`agent_decides` 兩者皆可）。所有 step 都要先完成。
 - `done` 會釋放你的 assignment，項目移到這個 Session 的「最近完成」。需要結案報告時（見下文）
   要在這之前加上。
 - 拒絕：`invalid_transition`（不是下一個 phase，或缺它要的證據）、`steps_incomplete`、
   `not_item_owner`、`item_unassigned`、`item_terminal`（要由人重開）、`evidence_unknown`、
-  `direct_landing_not_applicable`、`invalid_landing_evidence`、`landing_commit_unresolved`、
+  `direct_landing_not_applicable`、`invalid_landing_evidence`、`landing_project_not_found`、
+  `landing_commit_unresolved`、
   `landing_target_unresolved`、`landing_not_on_target`、`landing_remote_unresolved`、
   `landing_not_published`，以及 `version_conflict`：重讀後再送。
 

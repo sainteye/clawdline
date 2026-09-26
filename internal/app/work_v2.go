@@ -719,6 +719,10 @@ type VerifiedLandingV2 struct {
 	TargetCommit string `json:"target_commit"`
 	Remote       string `json:"remote"`
 	RemoteCommit string `json:"remote_commit"`
+	// Repository is the other catalog Project's path when the work landed
+	// outside the item's own Project — a backend item whose change was a
+	// frontend commit. Empty means the item's Project.
+	Repository string `json:"repository,omitempty"`
 }
 
 func (l *VerifiedLandingV2) complete() bool {

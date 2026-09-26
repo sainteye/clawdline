@@ -218,6 +218,12 @@ The owning-Agent phase request carries the claim as structured input, not prose:
 
 The stored event replaces `<full commit>` and both target spellings with Git's resolved object ids.
 
+Work can land outside the item's own Project: a backend item whose change turned out to be a
+frontend commit. The landing then carries `"project": "<place id>"`, and the daemon looks for the
+commit in that catalog Project's repository instead, refusing an id the catalog does not hold
+(`landing_project_not_found`); the receipt carries the `repository` it was verified in. A caller
+still cannot name an arbitrary path, only a Project this machine already lists.
+
 The request is `POST /v1/work/v2/agent/items/<id>/phase`, and `clawdline item phase <item id> <next>`
 sends it with the version it reads first. The owner's edit route refuses a `phase` field by name
 (`phase_not_editable`) and points at this route, and every brief an owner receives — the courtesy

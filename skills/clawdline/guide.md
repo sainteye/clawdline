@@ -704,6 +704,7 @@ clawdline item phase <item id> implementing                  # when you start
 clawdline item phase <item id> verifying                     # the change exists; now check it
 clawdline item phase <item id> merging --verification "what was run and what it showed"
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin
+clawdline item phase <item id> deploying --commit <sha> --target main --remote origin --landing-project <place id>
 clawdline item phase <item id> done --deployment "what went live, where, which version"
 clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
 ```
@@ -714,7 +715,7 @@ and prints the item. It is
 ```
 POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>", "next": "<phase>",
- "verification"?: "…", "landing"?: {"commit", "target", "remote"},
+ "verification"?: "…", "landing"?: {"commit", "target", "remote", "project"?},
  "deployment"?: "…", "no_deployment_reason"?: "…"}
 ```
 
@@ -723,7 +724,10 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `verifying`. Nothing skips a phase, and `done` is reached only from `deploying`.
 - `merging` needs `verification`. `deploying` needs a landing: a broker child of this item that
   landed, or `landing` naming a commit the daemon finds on both the Project's local `target` branch
-  and `refs/remotes/<remote>/<target>` — push first. `done` needs `deployment` or
+  and `refs/remotes/<remote>/<target>` — push first. When the work landed in another repository
+  (a backend item whose change was a frontend commit), `landing.project` (`--landing-project`)
+  names that Project's id from `GET /v1/places`, and the commit is looked for there instead; the
+  receipt records the repository. `done` needs `deployment` or
   `no_deployment_reason`; the item's `deployment_policy` decides which (`required` takes only
   `deployment`, `not_required` only `no_deployment_reason`, `agent_decides` either). Every step
   must be complete first.
@@ -731,7 +735,8 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   completion report (below) before it when one is owed.
 - Refusals: `invalid_transition` (not a next phase, or its evidence is missing), `steps_incomplete`,
   `not_item_owner`, `item_unassigned`, `item_terminal` (a person reopens it), `evidence_unknown`,
-  `direct_landing_not_applicable`, `invalid_landing_evidence`, `landing_commit_unresolved`,
+  `direct_landing_not_applicable`, `invalid_landing_evidence`, `landing_project_not_found`,
+  `landing_commit_unresolved`,
   `landing_target_unresolved`, `landing_not_on_target`, `landing_remote_unresolved`,
   `landing_not_published`, and `version_conflict`: reread and send again.
 

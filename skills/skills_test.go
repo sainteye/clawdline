@@ -364,6 +364,8 @@ func TestEveryGuideExplainsAdvancingAnItemsPhase(t *testing.T) {
 		"phase_not_editable",
 		"invalid_transition",
 		"landing_not_published",
+		"--landing-project <place id>",
+		"landing_project_not_found",
 	}
 	for _, topic := range Topics() {
 		guide, err := Guide(topic)

@@ -161,7 +161,7 @@ func TestItemPhasePostsTheNextPhaseWithItsEvidence(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
 	env := envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
 	var out, errs bytes.Buffer
-	f := itemFlags{phase: phaseEvidence{commit: "abc123", target: "main", remote: "origin"}}
+	f := itemFlags{phase: phaseEvidence{commit: "abc123", target: "main", remote: "origin", landingProject: "p2"}}
 	if code := sessionItem(&out, &errs, b, "phase", f, []string{"item-1", "deploying"}, "", "", env); code != 0 {
 		t.Fatalf("phase exit %d: %s", code, errs.String())
 	}
@@ -180,7 +180,8 @@ func TestItemPhasePostsTheNextPhaseWithItsEvidence(t *testing.T) {
 	}
 	landing, _ := body["landing"].(map[string]any)
 	if body["expected_version"] != float64(2) || body["session_id"] != thinConversation || body["next"] != "deploying" ||
-		landing["commit"] != "abc123" || landing["target"] != "main" || landing["remote"] != "origin" || len(body) != 4 {
+		landing["commit"] != "abc123" || landing["target"] != "main" || landing["remote"] != "origin" ||
+		landing["project"] != "p2" || len(body) != 4 {
 		t.Fatalf("phase body = %s", p.Body)
 	}
 }

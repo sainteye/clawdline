@@ -40,7 +40,7 @@ type itemFlags struct {
 // phaseEvidence is what `item phase` carries to the daemon besides the next
 // phase; the daemon decides which of it the transition needs.
 type phaseEvidence struct {
-	verification, commit, target, remote, deployment, noDeployment string
+	verification, commit, target, remote, landingProject, deployment, noDeployment string
 }
 
 func itemCommand(args []string) {
@@ -67,6 +67,7 @@ func itemCommand(args []string) {
 	fs.StringVar(&ev.commit, "commit", "", "for deploying: the landed commit")
 	fs.StringVar(&ev.target, "target", "", "for deploying: the local target branch the commit is on")
 	fs.StringVar(&ev.remote, "remote", "", "for deploying: the remote whose tracking target also holds it")
+	fs.StringVar(&ev.landingProject, "landing-project", "", "for deploying: the catalog Project whose repository holds the commit, when it is not the item's")
 	fs.StringVar(&ev.deployment, "deployment", "", "for done: what was deployed, where, which version")
 	fs.StringVar(&ev.noDeployment, "no-deployment-reason", "", "for done: why nothing needs deploying")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -129,7 +130,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r]")
+	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id]]")
 	fmt.Fprintln(os.Stderr, "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
 	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
@@ -297,7 +298,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		itemID, next := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
 		ev := f.phase
 		landing := ev.commit != "" || ev.target != "" || ev.remote != ""
-		if landing && (ev.commit == "" || ev.target == "" || ev.remote == "") {
+		if (landing || ev.landingProject != "") && (ev.commit == "" || ev.target == "" || ev.remote == "") {
 			fmt.Fprintf(stderr, "clawdline %s: --commit, --target and --remote go together. Nothing was changed.\n", name)
 			return 2
 		}
@@ -318,7 +319,11 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			}
 		}
 		if landing {
-			body["landing"] = map[string]string{"commit": ev.commit, "target": ev.target, "remote": ev.remote}
+			l := map[string]string{"commit": ev.commit, "target": ev.target, "remote": ev.remote}
+			if ev.landingProject != "" {
+				l["project"] = ev.landingProject
+			}
+			body["landing"] = l
 		}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/phase"
 	default:
