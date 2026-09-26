@@ -112,7 +112,7 @@ The "Today" column is clawdline-go on macOS (master `d40545e`).
 | Inventory of existing sessions (iTerm2) | osascript/JXA | ✅ `iterm_darwin.go` | ❌ no iTerm2 | ❌ Windows Terminal has **no remote-control API at all** | Unsupported by name (`hosts_other.go` already returns only tmux) | — |
 | Process inventory | `/bin/ps -ax -o tty,pid,pgid,tpgid,command` | ✅ `process/ps_unix.go` (darwin\|\|linux) | ✅ works; better to read `/proc` (slim containers have no `ps`) | ⚠️ `process/ps_windows.go` honestly returns `Complete:false` today | Windows: `Complete:false` + "process inventory on this machine is not implemented yet" | M |
 | Opening its own session | `tmux new-session -d` | ✅ | ✅ | ⚠️ needs ConPTY (§4.1) | — | L |
-| Send message / send key / interrupt / close | `send-keys` (`-l`, `-H`), `C-c`, `kill-pane` | ✅ | ✅ | ⚠️ ConPTY: write straight to the input pipe (`\x03` is the interrupt) | — | M |
+| Send message / send key / interrupt / close | `send-keys` (`-l`, `-H`; interrupt is `-H 1b`, one Escape), `kill-pane` | ✅ | ✅ | ⚠️ ConPTY: write straight to the input pipe (`\x03` is the interrupt) | — | M |
 | Reading the screen (attached) | `capture-pane -p -e -J` | ✅ | ✅ | ❌ no tmux, no screen | "This session's screen cannot be read", not a blank screen | — |
 | Reading the screen (owned) | — | — | Own pty + VT parser | ConPTY + VT parser (**the same component**) | — | X |
 | Live screen push | `pipe-pane` → FIFO; readability is the signal | ✅ `signal_unix.go` | ✅ same path | ❌ no mkfifo; `signal_other.go` returns nil | Already right: the screen is marked `on-demand`, and does not pretend to 4 ms | — |

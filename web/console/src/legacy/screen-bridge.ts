@@ -17,6 +17,7 @@ import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../client.js"
 import { esc } from "./js/core/esc.js"
 import { T } from "./js/core/i18n.js"
+import { uuid } from "./js/core/util.js"
 import { createVisibleInterval } from "./js/core/visibility.js"
 
 const e = esc as (s: unknown) => string
@@ -552,6 +553,39 @@ export async function askFocus(id: string): Promise<void> {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+  } catch (err) {
+    throw new TransportError(path + " could not be reached", err)
+  }
+  if (res.ok) return
+  let parsed: unknown = null
+  try {
+    parsed = await res.json()
+  } catch {
+    parsed = null
+  }
+  if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
+  throw new TransportError(path + " answered " + res.status + " with no refusal in it")
+}
+
+/**
+ * The menu's stop: one Escape typed into the session (`POST /interrupt`),
+ * which is the key Claude Code and Codex both name on their working line.
+ *
+ * The request carries its own Idempotency-Key because across Clawdline Cloud it
+ * is the answer channel, and a relay that retries an unanswered envelope must
+ * not become a second Escape. A success says the key reached the terminal, not
+ * that the turn has ended; the session's own row says that when it goes idle.
+ */
+export async function askInterrupt(id: string): Promise<void> {
+  const path = "/v1/sessions/" + encodeURIComponent(id) + "/interrupt"
+  let res: Response
+  try {
+    res = await fetch(client.url(path), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": uuid() },
       body: "{}",
     })
   } catch (err) {

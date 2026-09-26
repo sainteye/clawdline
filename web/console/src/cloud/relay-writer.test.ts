@@ -249,7 +249,10 @@ test("each console route is the Cloud word the machine lists, and nothing else",
   assert.deepEqual(writeRoute("POST", "/v1/places/p1/resume/claude/abc"), {
     op: "resume", word: "resume", place: "p1", assistant: "claude", past: "abc",
   })
-  assert.equal(writeRoute("POST", "/v1/sessions/s1/interrupt")?.op, "uncarried")
+  assert.deepEqual(writeRoute("POST", "/v1/sessions/s1/interrupt"), {
+    op: "interrupt", word: "interrupt", session: "s1",
+  })
+  assert.equal(writeRoute("POST", "/v1/sessions/s1/rename")?.op, "uncarried")
   assert.deepEqual(writeRoute("POST", "/v1/sessions/s1/smart-title"), {
     op: "smart-title", word: "smart-title", session: "s1",
   })
@@ -298,6 +301,29 @@ test("smart naming reaches the session once under the confirmation's idempotency
   assert.equal(unkeyed.status, 400)
   assert.equal((await json(unkeyed)).error, "bad_request")
   assert.deepEqual(client.calls, [], "an unreceipted model turn never leaves the browser")
+})
+
+test("a stop reaches the session once under the press's idempotency key", async () => {
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/sessions/s1/interrupt", post({}, { "Idempotency-Key": "stop-press-1" }))
+  assert.equal(res.status, 200)
+  assert.deepEqual(client.calls, [[
+    "_read",
+    { machine: "mac-a", session: "s1" },
+    "interrupt",
+    { request: "stop-press-1" },
+    "action:stop-press-1",
+    undefined,
+    undefined,
+  ]])
+
+  client.calls = []
+  const unkeyed = await reader.fetch("/v1/sessions/s1/interrupt", post({}))
+  assert.equal(unkeyed.status, 400)
+  assert.equal((await json(unkeyed)).error, "bad_request")
+  assert.deepEqual(client.calls, [], "a stop that a retry could press twice never leaves the browser")
 })
 
 test("a machine's refusal comes back typed, in the flat spelling `ClawdlineClient` recognises", async () => {
@@ -509,11 +535,11 @@ test("a spoken intent follows dictation to the chosen voice machine", async () =
 test("a route with no Cloud word is refused by name before anything is sealed", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
-  const res = await reader.fetch("/v1/sessions/s1/interrupt", post({}))
+  const res = await reader.fetch("/v1/sessions/s1/rename", post({}))
   assert.equal(res.status, 501)
   const body = await json(res)
   assert.equal(body.error, "cloud_not_carried")
-  assert.equal(body.word, "interrupt")
+  assert.equal(body.word, "title")
   assert.deepEqual(client.calls, [])
 })
 

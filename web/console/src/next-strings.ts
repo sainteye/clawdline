@@ -62,6 +62,8 @@ const words = {
       "Clawdline will send this session's first request to {assistant} for one small model turn, then save its answer as the session title. This uses that assistant's quota. Cancel to make no model call and edit the title yourself instead.",
     smartTitleWorking: "Naming…",
     smartTitleSaved: "Smart title saved.",
+    sessionStop: "Stop current work (Esc)",
+    sessionStopSent: "Esc sent. The session stops its current turn once it reads it.",
     sessionStateUnrecognizedDetail:
       "Clawdline read the screen but could not identify its state. Inspect the conversation below before deciding what to do.",
     sessionCountNotStarted: "{n} not started yet",
@@ -642,6 +644,8 @@ const words = {
       "Clawdline 會把這個 session 的第一則需求交給 {assistant} 跑一次小型模型 turn，再把答案存成 session 標題；這會使用該助理的額度。取消就不會呼叫模型，也可以改用手動編輯標題。",
     smartTitleWorking: "命名中…",
     smartTitleSaved: "智能標題已儲存。",
+    sessionStop: "停止目前的工作（Esc）",
+    sessionStopSent: "已送出 Esc，session 讀到後會停下目前這一輪。",
   },
 } as const
 

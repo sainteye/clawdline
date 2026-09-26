@@ -14,7 +14,7 @@ import * as L from "../legacy/bridge.js"
 import { requestDocuments } from "../legacy/documents-bridge.js"
 import { requestUserMessages } from "../legacy/user-messages-bridge.js"
 import { SNIPPET_PROJECT_KNOWN, requestSnippets, snippetProjectFor } from "../legacy/snippets-bridge.js"
-import { askFocus } from "../legacy/screen-bridge.js"
+import { askFocus, askInterrupt } from "../legacy/screen-bridge.js"
 import { Transcript } from "./Transcript.js"
 import { GitPanel } from "./GitPanel.js"
 import { Composer } from "./Composer.js"
@@ -417,10 +417,9 @@ function detailSub(row: SessionRow | null): string {
 /**
  * The detail pane's controls, as the original has them.
  *
- * One chip and the `⋯` menu, and no more: the original has no interrupt button
- * here, so neither does this. The daemon can interrupt, but adding a control the
- * screen being replicated does not have would make this a different screen with
- * the same paint.
+ * One chip and the `⋯` menu, and no more. The original had no way to stop a
+ * turn from here; this one has it as the menu's first row, because the person
+ * asked for Esc from the phone, where there is no Esc key.
  *
  * The menu is `index.html`'s two levels plus the two rows `user-messages.js` and
  * `snippets.js` insert before Git, switched the way `SessionActions.level` does
@@ -428,6 +427,9 @@ function detailSub(row: SessionRow | null): string {
  * dropped: a menu that is missing rows is a menu somebody will assume they
  * imagined, and a disabled row says which part is not here.
  *
+ * - Stop current work types one Escape (`POST /interrupt`). It crosses no
+ *   confirmation sheet: its whole effect is the one both assistants give Esc,
+ *   and a stop that waits behind a sheet arrives after the thing it was for.
  * - Show on Mac and Live screen are routes this daemon now owns: the chip and
  *   the row both POST `/focus`, and Live screen opens `#screen-panel`.
  * - Documents opens the Documents page on this session (`pages/documents.tsx`),
@@ -563,6 +565,20 @@ function Tools({
     )
   }
 
+  /** The stop row: the answer, or the refusal, as a toast on the session it was for. */
+  const stop = () => {
+    if (!row) return
+    const mine = row.id
+    askInterrupt(mine).then(
+      () => {
+        if (openNow.current?.id === mine) toast(nextWord("sessionStopSent"))
+      },
+      (e) => {
+        if (openNow.current?.id === mine) toastFailure(e, T.webRequestFailed)
+      },
+    )
+  }
+
   const onTriggerKey = (ev: ReactKeyboardEvent) => {
     if (ev.key !== "ArrowDown") return
     ev.preventDefault()
@@ -661,6 +677,18 @@ function Tools({
               aria-hidden={leveled ? git : undefined}
               inert={git}
             >
+              <button
+                id="session-interrupt"
+                type="button"
+                role="menuitem"
+                disabled={!row || ending}
+                onClick={() => {
+                  closeMenu(false)
+                  stop()
+                }}
+              >
+                {nextWord("sessionStop")}
+              </button>
               <button
                 id="session-focus"
                 type="button"
