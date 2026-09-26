@@ -24,18 +24,44 @@ import (
 // on the pasteboard into `[Image #1]`; Codex, and Claude Code where there is no
 // pasteboard, is given the path. Either way the file has to outlive the send:
 // a terminal accepting a prompt is not the program on the other end having
-// opened it. So these are kept, and pruned by count, oldest first by name — how
-// often somebody sends a picture is not something a clock knows.
+// opened it, and a session may read the path again after a compaction or a
+// resume.
+//
+// The Swift app kept the newest forty by count, reasoning that how often
+// somebody sends a picture is not something a clock knows. That is true, and
+// it is not what the clock is asked here: a young file is one a session is
+// still likely to read, whatever the send rate, and a count of forty removes a
+// file typed into a prompt minutes ago as soon as an afternoon's screenshots
+// pass it. So a file goes once it is older than DropsAgeLimit, except the
+// newest Keep, which age alone never removes (somebody who sends one picture a
+// fortnight still has the last forty); and whatever its age, the oldest go
+// while the directory holds more than MaxBytes, since forty pictures at the
+// normalize limit are nearly half a gigabyte. A file the byte cap removes
+// before it is DropsYoungLimit old is the one removal worth a person's phone:
+// the cache is too small for how it is used (limits N16).
 type Drops struct {
-	Dir  string
+	Dir string
+	// Keep is how many of the newest files age alone never removes.
 	Keep int
-	mu   sync.Mutex
+	// MaxBytes is the most the directory holds; the oldest go past it.
+	MaxBytes int64
+	// MaxAge is when a file past the newest Keep is removed.
+	MaxAge time.Duration
+	// Young is how young a file the byte cap removes has to be for the
+	// removal to be told as the cache being too small.
+	Young time.Duration
+	mu    sync.Mutex
 
 	// What pruning let go since this process began, and who hears that a
 	// picture was written (limits N16). Guarded by mu.
 	evicted   int64
-	evictedAt time.Time
-	stored    func()
+	expired   int64
+	removedAt time.Time
+	// youngAt is when the byte cap removed a file younger than Young, for
+	// the removals within the last Young; youngTotal counts every one.
+	youngAt    []time.Time
+	youngTotal int64
+	stored     func()
 }
 
 // OnStored hands f every picture written, after the cache has let go of its
@@ -47,35 +73,77 @@ func (d *Drops) OnStored(f func()) {
 	d.mu.Unlock()
 }
 
-// Reading is the `artifacts.drops` row: the pictures in the cache, each
-// already typed into somebody's prompt as a path, and how many pruning let go.
-// One directory listing.
-func (d *Drops) Reading() capacity.Reading {
+// Reading is the `artifacts.drops` row: the bytes the pictures in the cache
+// hold against MaxBytes, each already typed into somebody's prompt as a path,
+// and how many pruning let go by age and by bytes. Files past their age are
+// removed first, so a cache nobody has sent to for a week does not read as
+// holding what it would let go at the next picture. One directory listing.
+func (d *Drops) Reading() capacity.Reading { return d.ReadingAt(time.Now()) }
+
+// ReadingAt is Reading at now.
+func (d *Drops) ReadingAt(now time.Time) capacity.Reading {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	r := capacity.Reading{Known: true, Counters: capacity.Counters{Evicted: d.evicted, LastActionAt: d.evictedAt}}
-	entries, err := os.ReadDir(d.Dir)
+	files, err := d.listLocked()
 	if errors.Is(err, os.ErrNotExist) {
-		r.Note = "no picture has been sent from a page on this machine"
+		r := capacity.Reading{Known: true, WindowSeconds: int64(d.maxAge() / time.Second),
+			Note: "no picture has been sent from a page on this machine"}
+		r.Counters = d.countersLocked()
 		return r
 	}
 	if err != nil {
 		return capacity.Unmeasured(err.Error())
 	}
-	for _, e := range entries {
-		if e.Type().IsRegular() && dropName.MatchString(e.Name()) {
-			r.Used++
-		}
+	files = d.pruneLocked(files, now)
+	r := capacity.Reading{Known: true, WindowSeconds: int64(d.maxAge() / time.Second), Counters: d.countersLocked()}
+	for _, f := range files {
+		r.Used += f.size
+	}
+	if len(files) > 0 {
+		r.OldestAt = files[0].at
+	}
+	r.Note = fmt.Sprintf("%d picture(s); the newest %d are kept whatever their age", len(files), d.keep())
+	return r
+}
+
+// YoungReading is the `artifacts.drops_young` row: how many files the byte
+// cap removed within the last Young while they were younger than Young. Each
+// was typed into a prompt recently enough to be read again, so one is a cache
+// too small for how it is used — the only thing about this cache a person is
+// pushed.
+func (d *Drops) YoungReading() capacity.Reading { return d.YoungReadingAt(time.Now()) }
+
+// YoungReadingAt is YoungReading at now.
+func (d *Drops) YoungReadingAt(now time.Time) capacity.Reading {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.forgetYoungLocked(now)
+	r := capacity.Reading{Known: true, Used: int64(len(d.youngAt)), WindowSeconds: int64(d.young() / time.Second),
+		Counters: capacity.Counters{Evicted: d.youngTotal}}
+	if n := len(d.youngAt); n > 0 {
+		r.Counters.LastActionAt = d.youngAt[n-1]
+		r.Note = fmt.Sprintf("the byte cap removed %d picture(s) sent less than %s before", n, d.young())
 	}
 	return r
 }
 
-// DropsKeep is the Swift app's `prune(keeping: 40)`.
-const DropsKeep = 40
+func (d *Drops) countersLocked() capacity.Counters {
+	return capacity.Counters{Evicted: d.evicted, Expired: d.expired, LastActionAt: d.removedAt}
+}
+
+// The drop cache's bounds. DropsKeep is the Swift app's `prune(keeping: 40)`,
+// now a floor under the age rule rather than the whole rule.
+const (
+	DropsKeep       = 40
+	MaxDropsBytes   = 256 << 20
+	DropsAgeLimit   = 7 * 24 * time.Hour
+	DropsYoungLimit = 24 * time.Hour
+)
 
 // NewDrops is the drop cache under this daemon's own directory.
 func NewDrops(stateDir string) *Drops {
-	return &Drops{Dir: DropsDir(stateDir), Keep: DropsKeep}
+	return &Drops{Dir: DropsDir(stateDir), Keep: DropsKeep, MaxBytes: MaxDropsBytes,
+		MaxAge: DropsAgeLimit, Young: DropsYoungLimit}
 }
 
 // DropsDir is where NewDrops writes. The transcript reader asks the same
@@ -101,7 +169,9 @@ func (d *Drops) Store(data []byte, now time.Time) (string, error) {
 		d.mu.Unlock()
 		return "", err
 	}
-	d.pruneLocked(now)
+	if files, err := d.listLocked(); err == nil {
+		d.pruneLocked(files, now)
+	}
 	stored := d.stored
 	d.mu.Unlock()
 	if stored != nil {
@@ -124,38 +194,137 @@ func (d *Drops) Discard(paths []string) {
 	}
 }
 
-func (d *Drops) pruneLocked(now time.Time) {
+func (d *Drops) keep() int {
+	if d.Keep <= 0 {
+		return DropsKeep
+	}
+	return d.Keep
+}
+
+func (d *Drops) maxBytes() int64 {
+	if d.MaxBytes <= 0 {
+		return MaxDropsBytes
+	}
+	return d.MaxBytes
+}
+
+func (d *Drops) maxAge() time.Duration {
+	if d.MaxAge <= 0 {
+		return DropsAgeLimit
+	}
+	return d.MaxAge
+}
+
+func (d *Drops) young() time.Duration {
+	if d.Young <= 0 {
+		return DropsYoungLimit
+	}
+	return d.Young
+}
+
+// drop is one file of the cache: its name, when it was written and its size.
+type drop struct {
+	name string
+	at   time.Time
+	size int64
+}
+
+// listLocked is every file this cache wrote, oldest first. The name starts
+// with the time Store was handed, so sorting by name is sorting by age; that
+// time is the age too, and the file's own time only when the name cannot be
+// read.
+func (d *Drops) listLocked() ([]drop, error) {
 	entries, err := os.ReadDir(d.Dir)
 	if err != nil {
-		return
+		return nil, err
 	}
-	names := []string{}
+	var files []drop
 	for _, e := range entries {
-		if e.Type().IsRegular() && dropName.MatchString(e.Name()) {
-			names = append(names, e.Name())
+		if !e.Type().IsRegular() || !dropName.MatchString(e.Name()) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		at, ok := dropTime(e.Name())
+		if !ok {
+			at = info.ModTime()
+		}
+		files = append(files, drop{name: e.Name(), at: at, size: info.Size()})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
+	return files, nil
+}
+
+// dropTime reads the time out of `clawdline-<yyyyMMdd-HHmmss-SSS>-…`, which
+// Store wrote in the local zone.
+func dropTime(name string) (time.Time, bool) {
+	const stamp = "20060102-150405-000"
+	rest := strings.TrimPrefix(name, "clawdline-")
+	if len(rest) < len(stamp) {
+		return time.Time{}, false
+	}
+	s := rest[:len(stamp)]
+	at, err := time.ParseInLocation("20060102-150405.000", s[:15]+"."+s[16:], time.Local)
+	return at, err == nil
+}
+
+// pruneLocked removes, oldest first, every file past MaxAge that is not one
+// of the newest Keep, and then the oldest while the directory holds more than
+// MaxBytes — never the newest, which was just typed into a prompt. It answers
+// the files left. Each file removed was typed into a prompt as a path, so it
+// is counted, and one the byte cap removed while young is remembered for the
+// row that tells a person.
+func (d *Drops) pruneLocked(files []drop, now time.Time) []drop {
+	maxAge, young := d.maxAge(), d.young()
+	floor := len(files) - d.keep()
+	kept := files[:0:0]
+	expired := 0
+	for i, f := range files {
+		if i < floor && now.Sub(f.at) > maxAge && os.Remove(filepath.Join(d.Dir, f.name)) == nil {
+			expired++
+			continue
+		}
+		kept = append(kept, f)
+	}
+	var total int64
+	for _, f := range kept {
+		total += f.size
+	}
+	evicted, youngs := 0, 0
+	for len(kept) > 1 && total > d.maxBytes() {
+		f := kept[0]
+		if err := os.Remove(filepath.Join(d.Dir, f.name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		kept, total = kept[1:], total-f.size
+		evicted++
+		if now.Sub(f.at) < young {
+			youngs++
+			d.youngAt = append(d.youngAt, now)
 		}
 	}
-	keep := d.Keep
-	if keep <= 0 {
-		keep = DropsKeep
+	if expired+evicted == 0 {
+		return kept
 	}
-	if len(names) <= keep {
-		return
+	d.expired += int64(expired)
+	d.evicted += int64(evicted)
+	d.youngTotal += int64(youngs)
+	d.removedAt = now
+	d.forgetYoungLocked(now)
+	log.Printf("drops: %d past %s, %d over %d bytes (%d of them under %s old); kept %d", expired, maxAge, evicted, d.maxBytes(), youngs, young, len(kept))
+	return kept
+}
+
+// forgetYoungLocked lets go of young removals older than Young: the row
+// reads the last Young's worth.
+func (d *Drops) forgetYoungLocked(now time.Time) {
+	cut := 0
+	for cut < len(d.youngAt) && now.Sub(d.youngAt[cut]) >= d.young() {
+		cut++
 	}
-	// The name starts with the time, so this is oldest first. Each one
-	// removed was typed into a prompt as a path, so it is counted, and the
-	// register — which measured this cache as it filled — has it on the row.
-	sort.Strings(names)
-	extra := len(names) - keep
-	removed := 0
-	for _, n := range names[:extra] {
-		if os.Remove(filepath.Join(d.Dir, n)) == nil {
-			removed++
-		}
-	}
-	d.evicted += int64(removed)
-	d.evictedAt = now
-	log.Printf("drops: pruned %d, kept %d", removed, keep)
+	d.youngAt = d.youngAt[cut:]
 }
 
 // ensurePrivateDir makes dir 0700, and makes an existing one 0700 too: a cache

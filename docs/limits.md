@@ -166,7 +166,7 @@ HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST
 | N13 | 裝置清單 `remote.json` | 裝置數**無上限**，每次密碼登入新增一台（`auth/authority.go:718`）；讀取上限 4 MiB（`devices/files.go:70`） | **超過 4 MiB 時 auth 在啟動時整個失敗**（`gate.go:120-124`） | log | 服務中斷 | c（滿了是全面停擺） |
 | N14 | push 訂閱 | 無數量上限（`push/store.go:225-237`）；檔案讀取上限 1 MiB | 超過 1 MiB → `ErrUnreadable`，**所有推播都失敗** | log；notify 回 502 | — | c |
 | N15 | 圖片 | 照搬舊版 policy（`artifacts/artifact.go:59-70`） | 淘汰最舊，**不記 log**（`store.go:365-372`）；讀者拿到 410 `artifact_expired` | 讀的人事後才知道 | 是 | b |
-| N16 | Drops | 40（`drops.go:33-34`） | 淘汰，有 log | log | 是 | b |
+| N16 | Drops | 兩個登記列：`artifacts.drops`（**256 MiB**，量位元組；`MaxDropsBytes`，另有來源 `DropsAgeLimit`）與 `artifacts.drops_young`（**1 張**：過去 24 小時內被位元組上限刪掉、當時還不到 24 小時的圖；`DropsYoungLimit`）。保留規則：超過 **7 天**的檔案刪掉，但**最新 40 張**（`DropsKeep`，是地板不是上限，所以不是登記列）不因年齡被刪；目錄超過 256 MiB 時不論年齡從最舊的刪起，只有剛寫入的那張不刪。2026-09-26 起不再「只留最新 40 張」：舊規則在每天都傳圖的人身上天天 40／40，每次都推「容量已滿」卻沒有任何事可做，而且一個下午傳 40 張就會刪掉幾分鐘前才打進 prompt 的檔案（`drops.go`） | 過期與超量都刪最舊的，有計數（expired／evicted）與 log；每次量測（capacity beat）也會先清掉過期的，一週沒人傳圖的快取不會一直讀成滿 | `artifacts.drops`：diagnostics、log，**不推播**——它滿代表位元組上限正在刪檔，這是快取在運作。`artifacts.drops_young`：diagnostics、log、**notice（推播）**，句子說哪些圖被提早刪掉、assistant 回頭讀會讀不到、需要時重新貼；過了一天沒有再發生只記下、不推「已恢復」 | 是 | ✓ |
 | N17 | transcript | 8 MiB 尾端、150 KiB 回應（`transcript/turns.go:36-39`、`http/transcript.go`） | 同舊版；React `Transcript.tsx` 不讀 `truncation` | 沒人 | 否 | b |
 | N18 | 記憶體快取（transcript titles） | 256 筆 LRU（`transcript/claude.go`、`transcript/lru.go`） | 淘汰最久未使用的讀數並計數 | diagnostics、notice | 是 | ✓ |
 | N19 | SSE（自己供應時） | 訂閱者數**無上限**；screen bus 每訂閱 chan 16，**滿了走 `default` 直接丟、沒有計數**（`http/screen.go:189-197`）；沒有 Last-Event-ID | 丟 | 沒人 | 下次變動才補回 | b（訂閱者無上限那一半是 c） |

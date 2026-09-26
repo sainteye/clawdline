@@ -567,6 +567,12 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return s.pictures.drops.Reading()
 		},
+		capacity.ArtifactsDropsYoung: func() capacity.Reading {
+			if s.pictures.drops == nil {
+				return capacity.Unmeasured("this server keeps no drop cache")
+			}
+			return s.pictures.drops.YoungReading()
+		},
 		// W5's three rows, read from the store the broker writes them to.
 		capacity.LeasesQueue: func() capacity.Reading {
 			leases, err := s.store.Leases(context.Background())

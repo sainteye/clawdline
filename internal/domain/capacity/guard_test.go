@@ -271,10 +271,13 @@ func TestRegisterRowsAnswerTheFourQuestions(t *testing.T) {
 		if (e.Class == Evidence || e.Class == SecurityAudit) && e.EvictedBy != Person {
 			t.Errorf("%s: only a person may let go of %s", e.Name, e.Class)
 		}
-		// Injectable: lowered by an override, and never raised.
-		lower, problems := Resolve([]Entry{e}, e.Name+"="+itoa(e.Limit-1))
-		if len(problems) != 0 || lower[0].Limit != e.Limit-1 || !lower[0].Overridden {
-			t.Errorf("%s: the limit cannot be lowered: %v %v", e.Name, lower, problems)
+		// Injectable: lowered by an override, and never raised. A limit of
+		// one is "any at all" and has nothing under it to lower to.
+		if e.Limit > 1 {
+			lower, problems := Resolve([]Entry{e}, e.Name+"="+itoa(e.Limit-1))
+			if len(problems) != 0 || lower[0].Limit != e.Limit-1 || !lower[0].Overridden {
+				t.Errorf("%s: the limit cannot be lowered: %v %v", e.Name, lower, problems)
+			}
 		}
 		higher, problems := Resolve([]Entry{e}, e.Name+"="+itoa(e.Limit+1))
 		if len(problems) != 1 || higher[0].Limit != e.Limit || higher[0].Overridden {
