@@ -601,8 +601,8 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		// Without `conversations` it is every one on offer, and the route is
 		// sent no list at all rather than an empty one.
-		word: "dismiss-restorable",
-		body: map[string]any{"type": "dismiss-restorable", "session": machine, "request": "req-dismiss"},
+		word:    "dismiss-restorable",
+		body:    map[string]any{"type": "dismiss-restorable", "session": machine, "request": "req-dismiss"},
 		session: machine, name: "action:req-dismiss",
 		method: "POST", path: "/v1/sessions/restorable/dismiss",
 		body2: `{}`,

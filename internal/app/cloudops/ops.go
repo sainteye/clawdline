@@ -222,12 +222,12 @@ type plan struct {
 	status, query                  string
 	environment, category, cursor  string
 	// kind is a digest's daily-or-weekly, named rather than folded into `id`.
-	kind                            string
-	images                          []string
+	kind   string
+	images []string
 	// conversations is a restore's or a dismissal's list; allConversations
 	// is a dismissal that named none, which means every one on offer.
-	conversations    []string
-	allConversations bool
+	conversations                   []string
+	allConversations                bool
 	upcoming, acceptLoss            bool
 	closeability                    string
 	rate, limit, byteWindow, offset int64
