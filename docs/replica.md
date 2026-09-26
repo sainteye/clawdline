@@ -265,6 +265,15 @@ token。Cloud 分頁可以走 GitHub 登入的來回，但不能被導到 consol
 邀請（`POST /v1/cloud/pairing`，就是 `clawdline cloud pair` 印的那張），把連結放進分頁、按下接受，
 頁面顯示的兩組指紋與 daemon 回報的一致才關掉卡片。任何一步不如預期就留在手動配對畫面，每次啟動只試一次。
 
+跟**另一台**機器配對時，可以交給這台 Mac 自己的 AI（2026-09-27）。只有 Cloud view 註冊
+`clawdlinePairAgent` reply handler，而且只回應 Cloud 來源的主框架；配對卡在等待時於複製框上方多一顆
+「交給這台 Mac 的 AI」。按下後殼先跳原生確認，寫出機器名稱與要執行的指令；按「開始」才以本機 token 呼叫
+`POST /v1/cloud/pairing/agent`，只帶 offer、machine id、名稱三個值。daemon 用 `/offer` 同一套檢查驗 offer、
+用 Cloud 的 `mac_…` 格式驗 id、把名稱裁成一行，再以固定範本開一個 detached task（claims `[]`、15 分鐘、
+家目錄、第一個已安裝的 assistant）：用這台 Mac 既有的連線方式連過去，在那裡執行
+`clawdline cloud pair -offer '<offer>'`，其他什麼都不改，回報指紋行。id 是這台 Mac 自己時直接完成配對，
+不開 AI。offer 仍然走使用者自己的管道，從不經過 Cloud；其他瀏覽器照舊只有複製這條路。
+
 上方原生列的網址只報告目前前面那一頁：可選取與複製，但沒有邊框、輸入 action 或可編輯狀態。返回、前進、
 重新整理與縮放作用在前面那一頁，縮放兩邊各自記在 `shell-zoom.json`；「顯示方式」選單的 ⌘1／⌘2 切換
 兩個分頁。顏色與間距仍直接使用 `legacy/tokens.css` 的值；Cloud 使用 SF Symbol `cloud` 加上可見短字

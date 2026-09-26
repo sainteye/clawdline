@@ -737,7 +737,17 @@ ordinary login ticket. When the system cannot open a browser sign-in, the tab si
 then asks that tab to be paired, the shell pairs it with this Mac itself (`CloudPairing.swift`): it draws an invitation
 from its own daemon (`POST /v1/cloud/pairing`, the one `clawdline cloud pair` prints), puts the link in the tab, answers
 it, and closes the card only when the two fingerprints the page shows equal the ones the daemon reports. Anything else
-leaves the manual pairing screen to the person, once per launch. The address is a
+leaves the manual pairing screen to the person, once per launch. Pairing the tab with **another** machine can be
+handed to this Mac's own assistant: the Cloud view alone registers a `clawdlinePairAgent` reply handler, answered only
+for the main frame of Cloud's origin, and the offer card then shows **交給這台 Mac 的 AI** above the copy box. The shell
+asks in a native sheet naming the machine and showing the command; on yes it posts `POST /v1/cloud/pairing/agent`
+(local token only) with the offer, the machine id and its name. The daemon checks the offer as `/offer` does, the id
+against the Cloud's `mac_…` shape, cuts the name to one line, and — for another machine — admits a detached task
+(claims `[]`, 15 minutes, the home directory, the first installed assistant) whose brief is a fixed template: reach
+that machine with the access this Mac already has, run `clawdline cloud pair -offer '<offer>'` there, change nothing
+else, report the fingerprint lines. When the id is this Mac's own, it completes the offer directly and starts nothing.
+The offer still travels over the person's own channel, never through Cloud; every other browser keeps the copy path.
+The address is a
 selectable, read-only value rather than navigation UI. It remains the only shell with Keychain,
 the notch, Carbon hotkeys and `SMAppService`; these are exactly "the few features only a Mac has".
 

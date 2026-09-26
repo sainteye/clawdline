@@ -365,7 +365,8 @@ In order, and only the person can do 1 and 3:
    (`clawdline cloud login`) — see §2.
 2. On the machine: `clawdline cloud on`, then restart the daemon. The switch is read at start.
 3. **Pair the phone.** Either press **Pair** on the machine's row in the hosted console and run the
-   line it shows on the machine (`clawdline cloud pair -offer <code>`), or run `clawdline cloud pair`
+   line it shows on the machine (`clawdline cloud pair -offer <code>`) — from the Mac app's Cloud tab,
+   **Hand it to this Mac's AI** runs it there for you over the Mac's own access — or run `clawdline cloud pair`
    on the machine and open the link it prints in the app. Either way, check that both fingerprints
    match what the machine prints.
 4. On the machine, if the phone is to act and not only watch: `clawdline cloud commands on`.

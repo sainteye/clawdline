@@ -194,7 +194,9 @@ The other way round works too, and suits a machine you reach only over SSH: in t
 press **Pair** on the machine's row. It shows one line to run on the machine,
 `clawdline cloud pair -offer <code>`, with the browser's fingerprint beside it; the command prints
 the same fingerprint on its `browser` line, and the console then shows the one on its `machine`
-line.
+line. Inside the Mac app's Cloud tab you need not carry that line yourself: **Hand it to this Mac's
+AI** asks you first, then an assistant on the Mac reaches the machine with the access the Mac already
+has (ssh, for example) and runs the same line there.
 
 The phone can now read. To let it act on this machine too, meaning send text, answer, start or end
 a session:
