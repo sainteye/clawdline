@@ -250,8 +250,31 @@ is the courier, in three writes, in this order:
 
 1. the source is saved with `enabled: false` and every stored field (`model` is omitted, which leaves it as
    stored);
-2. a copy is created on the target with every field the form holds, plus a one-time schedule's `on`;
+2. a copy is created on the target with every field the form holds, plus a one-time schedule's `on`, plus
+   the source's template fields the form has no control for, in `template` (below);
 3. the source is deleted.
+
+**The fields the form does not show travel in `template`.** `POST /v1/orchestrator/schedules` takes an
+optional `template` object (`ScheduleTemplate` in `api/v1/schedules.schema.json`) holding exactly the keys a
+save already carries from the stored file — `claims`, `serialize`, `isolation`, `isolation_base`,
+`deliverables`, `kind`, `plan`, `graph`, and `reasoning_effort` when the assistant is codex
+(`createTemplate`, `internal/app/schedules.go`). They reach `build` as if a stored file carried them, so the
+schedule parser reads each value, as it reads a file. Any other key is refused by name
+(`unknown template field: …`). **`permission_mode` is refused** (`template_permission_mode`): any device
+that may send could otherwise make a schedule that runs with more than the form can grant, so a schedule
+carrying a permission setting is still not moved. A `PATCH` naming `template` is refused — a save keeps the
+stored fields itself. The Cloud `schedule-create` word, the relay writer and the copied client carry the
+body whole; `TestACloudMoveCarriesTheTemplateToTheStoredFile` (`internal/transport/http`) reads the stored
+file back after a Cloud create. The console sends `template` only when the source has such fields, so a
+schedule without them still moves to an older target; a target from before this change answers
+`unknown field: template`, which the page says as "Clawdline on <machine> is too old to take the settings
+this schedule carries" (`scheduleMoveTargetTooOld`), and the move is never retried without the fields.
+
+**The project path in the first message is rewritten.** When the copy's instructions name the source
+schedule's `project_dir` as a whole path — the exact string, not the tail of a longer path and not followed
+by a character that continues a name, so `/a/dual` is not found inside `/a/dual-astro` or `/a/dual.git` —
+it is replaced by the target place's path (`retargetInstructions`); nothing else in the text changes. The
+success toast says so: 「第一則訊息裡的路徑已換成 <path>」 (`scheduleMovePathRewritten`).
 
 At no instant are two enabled copies stored. If (2) is refused the source is saved back to its previous
 `enabled`, and the page shows the target's refusal; if that restore is also refused the page says the
@@ -279,13 +302,14 @@ what to act on (`next-strings.ts`, `scheduleMove*`):
 | no project | the target has no clone of that repository |
 | webhook bound / unknown | a Cloud webhook is bound to the schedule id (`schedule-webhook-bind-v1`), or the binding could not be read; the copy gets a new id, so the hook would call a schedule that is gone |
 | spent | a one-time schedule that already ran; a copy would arm it again |
-| unformed fields | the template carries fields the form has no control for (`claims`, `permission_mode`, `serialize`, `isolation`, `isolation_base`, `deliverables`, `kind`, `plan`, `graph`, `reasoning_effort`); a create cannot send them, so the move refuses rather than dropping them |
+| unformed fields | the template carries a permission setting (`permission_mode`); a create may not set it, so the move refuses rather than dropping it. Every other hidden field travels in `template` |
 
 A save that changes nothing about the machine keeps the relay's `cloud_schedule_machine_mismatch` refusal
 for a body whose place is on another machine than the schedule: a move is three writes, not a save.
 
 **Needs a redeploy.** Both the source and the target daemon must send `repo`; a machine running a build
-from before 2026-09-26 is refused by name as outdated until it is updated.
+from before 2026-09-26 is refused by name as outdated until it is updated. A schedule with hidden template fields also needs a target
+that takes `template`; an older one is refused by name as too old, after the source was switched back on.
 
 ## 還沒有的（依賴別的工作線）
 

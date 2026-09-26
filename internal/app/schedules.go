@@ -416,6 +416,56 @@ var formFields = map[string]bool{
 	"notify_on_failure": true, "timeout_minutes": true, "model": true,
 }
 
+// templateFields are the task-template keys a create may carry in `template`:
+// the ones a save already carries from the stored file (`build`), so a
+// schedule moved from another machine arrives with them rather than without.
+// `permission_mode` is carried by a save and never taken from a create: any
+// device that may send could otherwise make a schedule that runs with more
+// than the form can grant.
+var templateFields = map[string]bool{
+	"claims": true, "serialize": true, "isolation": true, "isolation_base": true,
+	"deliverables": true, "kind": true, "plan": true, "graph": true, "reasoning_effort": true,
+}
+
+// createTemplate takes `template` out of a create's body. What it holds is
+// handed to `build` as if a stored file carried it, so the parser reads each
+// value exactly as it reads a stored one; this only says which keys may come.
+func createTemplate(body map[string]any) (map[string]any, map[string]any, *ScheduleReply) {
+	raw, present := body["template"]
+	if !present {
+		return body, nil, nil
+	}
+	form := make(map[string]any, len(body))
+	for k, v := range body {
+		if k != "template" {
+			form[k] = v
+		}
+	}
+	tmpl, ok := raw.(map[string]any)
+	if !ok {
+		r := refusedSchedule(400, "bad_request", "template must be an object of task-template fields.")
+		return nil, nil, &r
+	}
+	if _, named := tmpl["permission_mode"]; named {
+		r := refusedSchedule(400, "template_permission_mode",
+			"template may not set permission_mode: a schedule made here runs with the permission the form gives it. "+
+				"Make it without, then change the permission setting on this machine.")
+		return nil, nil, &r
+	}
+	unknown := []string{}
+	for k := range tmpl {
+		if !templateFields[k] {
+			unknown = append(unknown, k)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		r := refusedSchedule(400, "bad_request", "unknown template field: "+strings.Join(unknown, ", "))
+		return nil, nil, &r
+	}
+	return form, tmpl, nil
+}
+
 func orEmpty(body map[string]any, key string) any {
 	if v, ok := body[key]; ok {
 		return v
@@ -579,9 +629,13 @@ func (b *ScheduleBook) Create(ctx context.Context, body map[string]any, authorit
 			return *r
 		}
 	}
+	body, carried, refusal := createTemplate(body)
+	if refusal != nil {
+		return *refusal
+	}
 	now := b.now()
 	id := newUUID()
-	obj, _, refusal := b.build(ctx, body, id, now, nil)
+	obj, _, refusal := b.build(ctx, body, id, now, carried)
 	if refusal != nil {
 		return *refusal
 	}
@@ -636,6 +690,10 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 		if r := b.MachineRefusal(ctx, "PATCH", id, body); r != nil {
 			return *r
 		}
+	}
+	if _, named := body["template"]; named {
+		return refusedSchedule(400, "bad_request",
+			"template is taken when a schedule is made; a save keeps the stored template fields itself.")
 	}
 	// On the dispatch lane: a save that lands while an occurrence is being
 	// dispatched would otherwise race the one-shot's `fired_at` stamp.

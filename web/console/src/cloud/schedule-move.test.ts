@@ -3,7 +3,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { moveSchedule, planScheduleMove, recordBody, targetBody, type MoveRecord, type MovePlace } from "./schedule-move.ts"
+import { moveSchedule, planScheduleMove, recordBody, refusedForTemplate, retargetInstructions, targetBody, type MoveRecord, type MovePlace } from "./schedule-move.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { choosesMachine, groupSchedules, type ScheduleFleet } from "./schedule-machines.ts"
 
@@ -59,8 +59,9 @@ test("every refusal is asked before anything is written, and names what to act o
       { code: "schedule_move_webhook_unknown", title: "Nightly", machine: "Studio" }],
     ["a one-time schedule that ran", { record: { ...record, fired_at: 1_790_000_000 } },
       { code: "schedule_move_spent", title: "Nightly" }],
-    ["fields the form cannot send", { record: { ...record, task: { ...record.task, claims: ["web"] } } },
-      { code: "schedule_move_unformed_fields", fields: ["claims"] }],
+    ["a permission setting a create may not grant",
+      { record: { ...record, task: { ...record.task, claims: ["web"], permission_mode: "full" } } },
+      { code: "schedule_move_unformed_fields", fields: ["permission_mode"] }],
   ]
   for (const [name, over, refusal] of cases) {
     assert.deepEqual(plan(over), { refusal }, name)
@@ -135,8 +136,70 @@ test("the disable carries every stored field and leaves the model alone", () => 
   })
   // A one-time schedule's date goes with the copy; the form has no control for it.
   const once = { ...record, when: { at: "09:00", on: "2026-10-01" } }
-  assert.deepEqual(targetBody({ title: "x", days: "daily", place_id: "old" }, once, "cloud.dst"),
+  assert.deepEqual(targetBody({ title: "x", days: "daily", place_id: "old" }, once, targetPlaces[1]),
     { title: "x", place_id: "cloud.dst", on: "2026-10-01" })
+})
+
+test("the copy carries the settings the form does not show, and sends no template when there are none", () => {
+  const hidden: MoveRecord = {
+    ...record,
+    task: { ...record.task, deliverables: ["docs/report.md"], claims: ["web"], isolation: "worktree" },
+  }
+  assert.ok("plan" in plan({ record: hidden }), "a schedule with deliverables and claims is moved")
+  const copy = targetBody({ title: "Nightly", instructions: "run it" }, hidden, targetPlaces[1])
+  assert.deepEqual(copy.template, { claims: ["web"], isolation: "worktree", deliverables: ["docs/report.md"] })
+  // Without any, the key is absent, so a target older than it still takes the copy.
+  assert.equal("template" in targetBody({ title: "Nightly" }, record, targetPlaces[1]), false)
+})
+
+test("the project directory in the first message becomes the target's, as a whole path only", () => {
+  const from = "/Users/alice/code/dual"
+  const to = "/home/bob/dual"
+  const cases: [string, string][] = [
+    ["你在 /Users/alice/code/dual。先讀 README。", "你在 /home/bob/dual。先讀 README。"],
+    ["cd /Users/alice/code/dual/web && npm test", "cd /home/bob/dual/web && npm test"],
+    ["Work in /Users/alice/code/dual.", "Work in /home/bob/dual."],
+    ["`/Users/alice/code/dual` then /Users/alice/code/dual", "`/home/bob/dual` then /home/bob/dual"],
+    // Not this project: a longer name, a longer path, another file.
+    ["/Users/alice/code/dual-astro stays", "/Users/alice/code/dual-astro stays"],
+    ["/Users/alice/code/dual.git stays", "/Users/alice/code/dual.git stays"],
+    ["/mnt/Users/alice/code/dual stays", "/mnt/Users/alice/code/dual stays"],
+    ["no path here", "no path here"],
+  ]
+  for (const [text, want] of cases) assert.equal(retargetInstructions(text, from, to), want, text)
+  assert.equal(retargetInstructions("in /Users/alice/code/dual", from + "/", to + "/"), "in /home/bob/dual")
+  const copy = targetBody({ instructions: "你在 /Users/alice/tool。" }, record, targetPlaces[1])
+  assert.equal(copy.instructions, "你在 /home/bob/tool。")
+})
+
+test("a target older than template is told apart from any other refusal", () => {
+  assert.equal(refusedForTemplate(Object.assign(new Error("unknown field: template"), { code: "bad_request" })), true)
+  assert.equal(refusedForTemplate(new Error("unknown field: on, template")), true)
+  assert.equal(refusedForTemplate(new Error("unknown template field: model")), false)
+  assert.equal(refusedForTemplate(new Error("place_id must be one of the ids GET /v1/places lists.")), false)
+  assert.equal(refusedForTemplate(null), false)
+})
+
+test("a target that refuses the template is not asked again without it", async () => {
+  const sent: Record<string, unknown>[] = []
+  const writes = {
+    update: async () => ({}),
+    create: async (body: Record<string, unknown>) => {
+      sent.push(body)
+      throw new Error("unknown field: template")
+    },
+    remove: async () => ({}),
+  }
+  const hidden: MoveRecord = { ...record, task: { ...record.task, deliverables: ["docs/report.md"] } }
+  const answer = plan({ record: hidden })
+  assert.ok("plan" in answer)
+  const outcome = await moveSchedule(writes, {
+    record: hidden, source: "mac-a", plan: answer.plan,
+    copy: targetBody({ title: "Nightly" }, hidden, targetPlaces[1]),
+  })
+  assert.equal(outcome.state, "create_failed")
+  assert.equal(sent.length, 1)
+  assert.ok(refusedForTemplate((outcome as { error: unknown }).error))
 })
 
 const fleet: ScheduleFleet = {

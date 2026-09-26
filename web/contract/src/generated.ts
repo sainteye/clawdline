@@ -4409,6 +4409,7 @@ export interface ScheduleRequest {
    * session-authorized repeating write.
    */
   session_id?: string
+  template?: ScheduleTemplate
   timeout_minutes?: number
   title: string
   via?: ScheduleUserAuthorization
@@ -4515,6 +4516,28 @@ export interface ScheduleTask {
   serialize?: string[]
   timeout_minutes?: number
   title?: string
+}
+
+/**
+ * Task-template fields the form has no control for, which a create may carry —
+ * what a save already carries from the stored file, so a schedule moved from
+ * another machine arrives as it was. Accepted on POST only; a PATCH that names it
+ * is refused, because a save carries the stored fields itself. The file's parser
+ * reads each value, as it reads a stored file. `graph` is accepted too, as a stored
+ * file holds it (the generator has no type for it). `permission_mode` is refused by
+ * name: a create may not grant a schedule more than the form can. Any other key is
+ * refused by name. `reasoning_effort` is kept only when the assistant is codex, as
+ * a save keeps it.
+ */
+export interface ScheduleTemplate {
+  claims?: string[]
+  deliverables?: string[]
+  isolation?: string
+  isolation_base?: string
+  kind?: string
+  plan?: string
+  reasoning_effort?: string
+  serialize?: string[]
 }
 
 /**

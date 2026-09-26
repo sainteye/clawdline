@@ -53,7 +53,7 @@ import {
   scheduleOwner,
   type ScheduleMachine,
 } from "../cloud/schedule-machines.js"
-import { moveSchedule, planScheduleMove, targetBody, type MoveRefusal, type MoveWrites } from "../cloud/schedule-move.js"
+import { moveSchedule, planScheduleMove, refusedForTemplate, targetBody, type MoveRefusal, type MoveWrites } from "../cloud/schedule-move.js"
 import "./schedules/machines.css"
 import overlaysMarkup from "./schedules/overlays.html?raw"
 
@@ -1231,22 +1231,30 @@ const Schedule = (() => {
     creating = true
     said(nextWord("scheduleMoving", { machine: targetName }))
     paint()
+    const copy = targetBody({ ...form } as Record<string, unknown>, record, place)
+    // The success sentence says so when the first message's path was changed.
+    const retargeted = copy.instructions !== form.instructions
     moveSchedule(writes, {
       record,
       source: from.id,
       plan: answer.plan,
-      copy: targetBody({ ...form } as Record<string, unknown>, record, place.id),
+      copy,
     }).then((outcome) => {
       creating = false
-      const reason = (error: unknown) => why(error as ScheduleFailureLike, T().webRequestFailed)
+      const reason = (error: unknown) =>
+        // A target older than `template` refuses the key; the fields are not
+        // sent again without it, and updating that machine is what to do.
+        refusedForTemplate(error)
+          ? nextWord("scheduleMoveTargetTooOld", { machine: targetName })
+          : why(error as ScheduleFailureLike, T().webRequestFailed)
       if (outcome.state === "moved" || outcome.state === "delete_failed") {
         close()
         Schedules.refresh()
-        toast(
+        const moved =
           outcome.state === "moved"
             ? nextWord("scheduleMoved", { machine: targetName })
-            : nextWord("scheduleMoveDeleteFailed", { machine: targetName, source: sourceName, why: reason(outcome.error) }),
-        )
+            : nextWord("scheduleMoveDeleteFailed", { machine: targetName, source: sourceName, why: reason(outcome.error) })
+        toast(retargeted ? moved + " " + nextWord("scheduleMovePathRewritten", { path: place.path }) : moved)
         return
       }
       if (outcome.state === "not_started") {
