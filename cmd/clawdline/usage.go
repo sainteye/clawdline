@@ -255,6 +255,13 @@ func showCompactionComparison(stdout, stderr io.Writer, b *broker, since string,
 	if json.Unmarshal(a.Body, &c) != nil {
 		return unreadableUsage(stderr)
 	}
+	writeCompactionComparison(stdout, c)
+	return 0
+}
+
+// writeCompactionComparison is the comparison as a table and the lines that
+// qualify it; `clawdline verify show` prints a record's data with it too.
+func writeCompactionComparison(stdout io.Writer, c contract.UsageCompactionComparison) {
 	fmt.Fprintf(stdout, "child tasks created %s – %s, by the compaction window they were launched with\n",
 		time.Unix(c.Since, 0).UTC().Format("2006-01-02 15:04Z"), time.Unix(c.Until, 0).UTC().Format("2006-01-02 15:04Z"))
 	if len(c.Groups) == 0 {
@@ -313,7 +320,6 @@ func showCompactionComparison(stdout, stderr io.Writer, b *broker, since string,
 	for _, m := range c.NotRecorded {
 		fmt.Fprintf(stdout, "not recorded: %s — %s\n", m.Name, m.Why)
 	}
-	return 0
 }
 
 // comparePercent is a share as a percentage, or why there is none.

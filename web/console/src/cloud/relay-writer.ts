@@ -232,6 +232,12 @@ export type WriteRoute =
   | { op: "work-v2-image"; word: Carried<"work.v2.image">; artifact: string }
   | { op: "usage"; word: Carried<"usage.session" | "usage.task" | "usage.item">; id: string }
   | { op: "usage-compare"; word: Carried<"usage.compare-compaction"> }
+  // Things waiting to be verified. Machine words, not session ones: a record
+  // belongs to the machine, and the page that reads it holds no session.
+  | { op: "verification-read"; word: Carried<"verification.list" | "verification.get">; id: string }
+  | { op: "verification-write"; word: Carried<"verification.create" | "verification.note" | "verification.close">; id: string }
+  | { op: "verification-criterion"; word: Carried<"verification.criterion">; id: string; index: number }
+  | { op: "verification-delete"; word: Carried<"verification.delete">; id: string }
   | { op: "push-subscribe"; word: Carried<"push-subscribe"> }
   | { op: "push-unsubscribe"; word: Carried<"push-unsubscribe"> }
   | { op: "push-test"; word: Carried<"push-test"> }
@@ -380,6 +386,12 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
       const word = USAGE_WORD[a ?? ""]
       if (word) return { op: "usage", word, id: b }
     }
+    if (head === "verifications" && segments.length === 1) {
+      return { op: "verification-read", word: "verification.list", id: "" }
+    }
+    if (head === "verifications" && a && segments.length === 2) {
+      return { op: "verification-read", word: "verification.get", id: a }
+    }
     if (head === "places" && segments.length === 1) return { op: "places", word: "places" }
     if (head === "places" && a && b === "sessions" && segments.length <= 4) {
       return { op: "past", word: "past-sessions", place: a, assistant: c ?? "" }
@@ -432,7 +444,20 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "project-sync" && a === "mirror" && segments.length === 2 && method === "DELETE") {
     return { op: "project-mirror-detach", word: "project-mirror-detach" }
   }
+  // One record, by its id: there is no route that deletes more than one.
+  if (head === "verifications" && a && segments.length === 2 && method === "DELETE") {
+    return { op: "verification-delete", word: "verification.delete", id: a }
+  }
   if (method !== "POST") return null
+  if (head === "verifications") {
+    if (segments.length === 1) return { op: "verification-write", word: "verification.create", id: "" }
+    if (a && b === "notes" && segments.length === 3) return { op: "verification-write", word: "verification.note", id: a }
+    if (a && b === "close" && segments.length === 3) return { op: "verification-write", word: "verification.close", id: a }
+    if (a && b === "criteria" && c && /^(0|[1-9][0-9]?)$/.test(c) && segments.length === 4) {
+      return { op: "verification-criterion", word: "verification.criterion", id: a, index: Number(c) }
+    }
+    return null
+  }
   if (head === "project-sync" && a === "mirror" && segments.length === 2) return { op: "project-mirror-apply", word: "project-mirror-apply" }
   if (head === "work" && a === "v2") {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
@@ -600,6 +625,12 @@ function spellingOf(route: WriteRoute): Spelling {
     // (internal/transport/http/usage.go), and the bill's reader takes it.
     case "usage":
     case "usage-compare":
+    // `/v1/verifications*` refuses with `writeRefusal`, flat
+    // (internal/transport/http/verify.go), and `pages/verify/api.ts` reads it.
+    case "verification-read":
+    case "verification-write":
+    case "verification-criterion":
+    case "verification-delete":
       return "flat"
     default:
       return "nested"
@@ -806,6 +837,38 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
         }
         return client._machineRequest(this.host.machine, route.word, { id: route.id }, "read")
+      }
+      case "verification-read": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", route.word, 501)
+        }
+        // The routes read no query, and neither do the words: a field added
+        // here would be dropped on the machine, so it is refused by name.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
+        }
+        return client._machineRequest(this.host.machine, route.word, route.id ? { id: route.id } : {}, "read")
+      }
+      case "verification-write": {
+        const verification = await bodyOf(init)
+        const body: Record<string, unknown> = route.id ? { id: route.id, verification } : { verification }
+        return this.machineWorkV2(client, route.word, body, headerOf(init, "idempotency-key"))
+      }
+      case "verification-criterion": {
+        return this.machineWorkV2(client, route.word, { id: route.id, index: route.index, verification: await bodyOf(init) },
+          headerOf(init, "idempotency-key"))
+      }
+      case "verification-delete": {
+        // `force` is the one query field, and the word always names it, so a
+        // phone that did not say is read as not forcing — never as either.
+        let force = false
+        for (const [key, value] of url.searchParams) {
+          if (key !== "force" || (value !== "1" && value !== "true")) {
+            throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
+          }
+          force = true
+        }
+        return this.machineWorkV2(client, route.word, { id: route.id, force }, headerOf(init, "idempotency-key"))
       }
       case "usage-compare": {
         if (typeof client._machineRequest !== "function") {

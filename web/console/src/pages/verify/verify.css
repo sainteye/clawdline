@@ -1,0 +1,79 @@
+/* 驗收 (docs/verifications.md).
+
+   Not a copy: the Swift app has no screen for this. Like the "now" page beside
+   it, it invents no palette and no furniture: every colour is a token of
+   legacy/tokens.css, the page is board.css's `.board-page`, the buttons its
+   `.board-button`.
+
+   What it has to get right on a phone (390px): nothing wider than the screen.
+   Long titles and notes wrap anywhere, buttons wrap to a new line, and the
+   comparison table — ten columns — scrolls inside its own box, so the page
+   itself never scrolls sideways. */
+
+.verify-page .verify-wrap { width: min(880px, 100%); margin-inline: auto; min-width: 0; }
+.verify-page h1 { margin: 0; font-size: clamp(26px, 5vw, 44px); line-height: 1.15; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.verify-lede { margin: 14px 0 0; color: var(--dim); font-size: 14px; line-height: 1.7; }
+
+.verify-rows { display: grid; gap: 10px; margin: 24px 0 0; padding: 0; list-style: none; }
+.verify-row {
+    display: grid; gap: 4px; width: 100%; min-width: 0; padding: 14px 16px; text-align: left;
+    border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink);
+    font: inherit; cursor: pointer;
+}
+.verify-row:hover { border-color: var(--accent-ed); }
+.verify-row b { font-size: 15px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.verify-due { color: var(--ok); font-size: 13px; font-weight: 600; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.verify-due[data-overdue] { color: var(--bad); }
+.verify-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 0; color: var(--dim); font-size: 12px; line-height: 1.6; }
+.verify-meta span, .verify-meta b { overflow-wrap: anywhere; }
+.verify-empty { margin: 16px 0 0; color: var(--faint); font-size: 13px; }
+.verify-failure { margin: 16px 0 0; color: var(--bad); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.verify-closed { margin-top: 24px; }
+
+.verify-detail { display: grid; gap: 16px; min-width: 0; }
+.verify-back { justify-self: start; }
+.verify-detail-head { display: grid; gap: 8px; }
+.verify-status { color: var(--ink); font-weight: 600; }
+.verify-detail[data-status="accepted"] .verify-status { color: var(--ok); }
+.verify-detail[data-status="rejected"] .verify-status { color: var(--bad); }
+.verify-reason { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.verify-block {
+    display: grid; gap: 10px; min-width: 0; padding: 16px 18px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink);
+}
+.verify-block h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: .02em; }
+.verify-block .verify-empty { margin: 0; }
+.verify-text { margin: 0; font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap; }
+.verify-note { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+
+.verify-criteria { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.verify-criteria > li { display: grid; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+.verify-criterion { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; }
+.verify-mark { color: var(--faint); font: 600 14px/1 var(--mono); }
+.verify-state { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.verify-criteria > li[data-state="passed"] .verify-mark, .verify-criteria > li[data-state="passed"] .verify-state { color: var(--ok); }
+.verify-criteria > li[data-state="failed"] .verify-mark, .verify-criteria > li[data-state="failed"] .verify-state { color: var(--bad); }
+
+.verify-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.verify-page .board-button[data-tone="ok"] { color: var(--ok); }
+.verify-page .board-button[data-tone="bad"] { color: var(--bad); }
+
+.verify-notes { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.verify-notes > li { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); }
+.verify-form { display: grid; gap: 8px; }
+.verify-page textarea {
+    box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 12px; resize: vertical;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 inherit; font-family: inherit;
+}
+
+.verify-table { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.verify-table table { border-collapse: collapse; font: 12px/1.5 var(--mono); white-space: nowrap; }
+.verify-table th, .verify-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: right; }
+.verify-table th[scope="row"], .verify-table thead th:first-child { text-align: left; color: var(--ink); }
+.verify-table thead th { color: var(--dim); font-weight: 600; }
+.verify-table tbody tr:last-child > * { border-bottom: 0; }
+
+.verify-danger { border-color: transparent; background: transparent; padding-inline: 0; }
+.verify-danger p { margin: 0 0 8px; color: var(--bad); font-size: 13px; line-height: 1.6; }

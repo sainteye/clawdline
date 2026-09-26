@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "verifications.schema.json",
+  "title": "Verifications",
+  "description": "Things waiting to be verified (docs/verifications.md): GET and POST /v1/verifications, GET and DELETE /v1/verifications/{id}, POST /v1/verifications/{id}/notes, POST /v1/verifications/{id}/criteria/{index}, POST /v1/verifications/{id}/close; and POST /v1/orchestrator/tasks/{task}/verification-note, a scheduled task writing its readout with its own task secret. Read and written with a paired device that may send, or this machine's orchestrator token. Refusals are the flat `{error, message}`.",
+  "$defs": {
+    "VerificationStatus": {
+      "description": "`open` until the person settles it; `accepted` or `rejected` after, with the reason.",
+      "type": "string",
+      "enum": ["open", "accepted", "rejected"]
+    },
+    "VerificationCriterionState": {
+      "type": "string",
+      "enum": ["unset", "passed", "failed"]
+    },
+    "VerificationAuthorKind": {
+      "description": "`person` is a paired device; `session` is this machine's orchestrator token (an assistant through the CLI) or a scheduled task's secret.",
+      "type": "string",
+      "enum": ["person", "session"]
+    },
+    "VerificationSourceKind": {
+      "description": "Where a record's evidence is read from. `compaction_compare` is GET /v1/usage/compare-compaction over `since`. Any other kind is refused by name as `unknown_source`.",
+      "type": "string",
+      "enum": ["compaction_compare"]
+    },
+    "VerificationCriterion": {
+      "description": "One sentence the check is judged by. `index` is its position, from 0; `updated_at` is when it was last marked, 0 if never.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "state", "text", "updated_at"],
+      "properties": {
+        "index": { "type": "integer" },
+        "text": { "type": "string" },
+        "state": { "$ref": "#/$defs/VerificationCriterionState" },
+        "updated_at": { "type": "integer" }
+      }
+    },
+    "VerificationNote": {
+      "description": "One note. `author` is the session's name when it gave one (a scheduled task writes `task:<id>`), empty for the person.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "author", "author_kind", "id", "text"],
+      "properties": {
+        "id": { "type": "integer" },
+        "at": { "type": "integer" },
+        "author_kind": { "$ref": "#/$defs/VerificationAuthorKind" },
+        "author": { "type": "string" },
+        "text": { "type": "string" }
+      }
+    },
+    "VerificationSource": {
+      "description": "A data source and its parameters. For `compaction_compare`, `since` is `<n>d`, `<n>h` or a Unix time, 14d when absent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string" },
+        "since": { "type": "string" }
+      }
+    },
+    "Verification": {
+      "description": "One record. Times are Unix seconds. `source` is absent when it has none; `schedule_id` is empty when no schedule is linked. `closed_at` is 0 and `close_reason` empty while it is open. `seed` names the record the daemon planted itself, empty for one somebody made.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["close_reason", "closed_at", "created_at", "criteria", "due_at", "id", "notes", "schedule_id", "seed", "started_at", "status", "title", "updated_at", "why"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "why": { "type": "string" },
+        "started_at": { "type": "integer" },
+        "due_at": { "type": "integer" },
+        "criteria": { "type": "array", "items": { "$ref": "#/$defs/VerificationCriterion" } },
+        "source": { "$ref": "#/$defs/VerificationSource" },
+        "schedule_id": { "type": "string" },
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/VerificationNote" } },
+        "status": { "$ref": "#/$defs/VerificationStatus" },
+        "close_reason": { "type": "string" },
+        "closed_at": { "type": "integer" },
+        "seed": { "type": "string" },
+        "created_at": { "type": "integer" },
+        "updated_at": { "type": "integer" }
+      }
+    },
+    "VerificationList": {
+      "description": "GET /v1/verifications: every record, open ones first by due time, then the closed ones. `at` is the daemon's clock, for a countdown.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "verifications"],
+      "properties": {
+        "at": { "type": "integer" },
+        "verifications": { "type": "array", "items": { "$ref": "#/$defs/Verification" } }
+      }
+    },
+    "VerificationData": {
+      "description": "A record's data source, read when it was asked for. `compaction_compare` carries the comparison; `error` says why it could not be read, and then the answer is absent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string" },
+        "compaction_compare": { "$ref": "usage.schema.json#/$defs/UsageCompactionComparison" },
+        "error": { "type": "string" }
+      }
+    },
+    "VerificationDetail": {
+      "description": "GET /v1/verifications/{id}, and the answer to every write on one record: the record, and its data source read live (absent when it has none, and on a write's answer).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "verification"],
+      "properties": {
+        "at": { "type": "integer" },
+        "verification": { "$ref": "#/$defs/Verification" },
+        "data": { "$ref": "#/$defs/VerificationData" }
+      }
+    },
+    "VerificationCreate": {
+      "description": "POST /v1/verifications. `started_at` is now when absent; `due_at` is required and not before it. At most 12 criteria.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["due_at", "title"],
+      "properties": {
+        "title": { "type": "string" },
+        "why": { "type": "string" },
+        "started_at": { "type": "integer" },
+        "due_at": { "type": "integer" },
+        "criteria": { "type": "array", "items": { "type": "string" } },
+        "source": { "$ref": "#/$defs/VerificationSource" },
+        "schedule_id": { "type": "string" }
+      }
+    },
+    "VerificationNoteCreate": {
+      "description": "POST /v1/verifications/{id}/notes. `session` names the writing session when the orchestrator token writes; a paired device writes as the person and may not name one. An Idempotency-Key makes a repeat answer the first note.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" },
+        "session": { "type": "string" }
+      }
+    },
+    "VerificationCriterionSet": {
+      "description": "POST /v1/verifications/{id}/criteria/{index}.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "$ref": "#/$defs/VerificationCriterionState" }
+      }
+    },
+    "VerificationClose": {
+      "description": "POST /v1/verifications/{id}/close: `accepted` or `rejected`, with the reason. Closing it again the same way is answered as done.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "status"],
+      "properties": {
+        "status": { "$ref": "#/$defs/VerificationStatus" },
+        "reason": { "type": "string" }
+      }
+    },
+    "VerificationTaskNote": {
+      "description": "POST /v1/orchestrator/tasks/{task}/verification-note with the task's own X-Clawdline-Task-Secret: a task a schedule started writes a note on a record linked to that schedule, as the session `task:<id>`. Answered with the note.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "verification"],
+      "properties": {
+        "verification": { "type": "string" },
+        "text": { "type": "string" }
+      }
+    },
+    "VerificationNoteResult": {
+      "description": "The answer to a note written with a task secret.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["note", "ok", "verification"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "verification": { "type": "string" },
+        "note": { "$ref": "#/$defs/VerificationNote" }
+      }
+    }
+  }
+}

@@ -399,6 +399,18 @@ body）與 `DELETE /v1/orchestrator/schedules/<id>`（以 JSON body 送出兩個
 指示。絕對不要把一次 run 當成使用者沒有要求之工作的概括授權。這份證據讓代轉行為可以稽核；它不會把
 整台機器共用的 orchestrator token 變成某個 Session 專屬的憑證。
 
+排程啟動的 task 若是替某件「等待驗收」的事讀資料（側欄的「驗收」，見 docs/verifications.md），用它自己的
+task secret 把讀數寫成那筆紀錄上的一則紀錄——不用 orchestrator token，它本來就不該拿著：
+
+```sh
+curl -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
+  -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<讀數>"}'
+```
+
+只寫得進 `schedule_id` 正是啟動這個 task 的排程的那筆紀錄（否則回 `schedule_mismatch`），署名為
+`task:<task id>`；不是排程啟動的 task 會被拒絕為 `not_scheduled`。紀錄 id 用 `clawdline verify list` 查。
+
 ## 7. 回報你自己完成的 turn
 
 這一輪真的做完了——工作做完、驗證過、該 commit 的也 commit 了——就在最後回答之前，把這一步當成最後一個

@@ -5822,6 +5822,174 @@ type UsageTokens struct {
 	Unpriced float64 `json:"unpriced"`
 }
 
+// One record. Times are Unix seconds. `source` is absent when it has none;
+// `schedule_id` is empty when no schedule is linked. `closed_at` is 0 and
+// `close_reason` empty while it is open. `seed` names the record the daemon
+// planted itself, empty for one somebody made.
+type Verification struct {
+	CloseReason string                  `json:"close_reason"`
+	ClosedAt    int64                   `json:"closed_at"`
+	CreatedAt   int64                   `json:"created_at"`
+	Criteria    []VerificationCriterion `json:"criteria"`
+	DueAt       int64                   `json:"due_at"`
+	ID          string                  `json:"id"`
+	Notes       []VerificationNote      `json:"notes"`
+	ScheduleID  string                  `json:"schedule_id"`
+	Seed        string                  `json:"seed"`
+	Source      *VerificationSource     `json:"source,omitempty"`
+	StartedAt   int64                   `json:"started_at"`
+	Status      VerificationStatus      `json:"status"`
+	Title       string                  `json:"title"`
+	UpdatedAt   int64                   `json:"updated_at"`
+	Why         string                  `json:"why"`
+}
+
+// `person` is a paired device; `session` is this machine's orchestrator token
+// (an assistant through the CLI) or a scheduled task's secret.
+type VerificationAuthorKind string
+
+const (
+	VerificationAuthorKindPerson  VerificationAuthorKind = "person"
+	VerificationAuthorKindSession VerificationAuthorKind = "session"
+)
+
+// VerificationAuthorKindValues is every value the contract allows, in contract order.
+var VerificationAuthorKindValues = []VerificationAuthorKind{VerificationAuthorKindPerson, VerificationAuthorKindSession}
+
+// POST /v1/verifications/{id}/close: `accepted` or `rejected`, with the reason.
+// Closing it again the same way is answered as done.
+type VerificationClose struct {
+	Reason string             `json:"reason"`
+	Status VerificationStatus `json:"status"`
+}
+
+// POST /v1/verifications. `started_at` is now when absent; `due_at` is required
+// and not before it. At most 12 criteria.
+type VerificationCreate struct {
+	Criteria   []string            `json:"criteria,omitempty"`
+	DueAt      int64               `json:"due_at"`
+	ScheduleID string              `json:"schedule_id,omitempty"`
+	Source     *VerificationSource `json:"source,omitempty"`
+	StartedAt  int64               `json:"started_at,omitempty"`
+	Title      string              `json:"title"`
+	Why        string              `json:"why,omitempty"`
+}
+
+// One sentence the check is judged by. `index` is its position, from 0;
+// `updated_at` is when it was last marked, 0 if never.
+type VerificationCriterion struct {
+	Index     int64                      `json:"index"`
+	State     VerificationCriterionState `json:"state"`
+	Text      string                     `json:"text"`
+	UpdatedAt int64                      `json:"updated_at"`
+}
+
+// POST /v1/verifications/{id}/criteria/{index}.
+type VerificationCriterionSet struct {
+	State VerificationCriterionState `json:"state"`
+}
+
+type VerificationCriterionState string
+
+const (
+	VerificationCriterionStateUnset  VerificationCriterionState = "unset"
+	VerificationCriterionStatePassed VerificationCriterionState = "passed"
+	VerificationCriterionStateFailed VerificationCriterionState = "failed"
+)
+
+// VerificationCriterionStateValues is every value the contract allows, in contract order.
+var VerificationCriterionStateValues = []VerificationCriterionState{VerificationCriterionStateUnset, VerificationCriterionStatePassed, VerificationCriterionStateFailed}
+
+// A record's data source, read when it was asked for. `compaction_compare`
+// carries the comparison; `error` says why it could not be read, and then the
+// answer is absent.
+type VerificationData struct {
+	CompactionCompare *UsageCompactionComparison `json:"compaction_compare,omitempty"`
+	Error             string                     `json:"error,omitempty"`
+	Kind              string                     `json:"kind"`
+}
+
+// GET /v1/verifications/{id}, and the answer to every write on one record: the
+// record, and its data source read live (absent when it has none, and on a
+// write's answer).
+type VerificationDetail struct {
+	At           int64             `json:"at"`
+	Data         *VerificationData `json:"data,omitempty"`
+	Verification Verification      `json:"verification"`
+}
+
+// GET /v1/verifications: every record, open ones first by due time, then the
+// closed ones. `at` is the daemon's clock, for a countdown.
+type VerificationList struct {
+	At            int64          `json:"at"`
+	Verifications []Verification `json:"verifications"`
+}
+
+// One note. `author` is the session's name when it gave one (a scheduled task
+// writes `task:<id>`), empty for the person.
+type VerificationNote struct {
+	At         int64                  `json:"at"`
+	Author     string                 `json:"author"`
+	AuthorKind VerificationAuthorKind `json:"author_kind"`
+	ID         int64                  `json:"id"`
+	Text       string                 `json:"text"`
+}
+
+// POST /v1/verifications/{id}/notes. `session` names the writing session when
+// the orchestrator token writes; a paired device writes as the person and may
+// not name one. An Idempotency-Key makes a repeat answer the first note.
+type VerificationNoteCreate struct {
+	Session string `json:"session,omitempty"`
+	Text    string `json:"text"`
+}
+
+// The answer to a note written with a task secret.
+type VerificationNoteResult struct {
+	Note         VerificationNote `json:"note"`
+	OK           bool             `json:"ok"`
+	Verification string           `json:"verification"`
+}
+
+// A data source and its parameters. For `compaction_compare`, `since` is
+// `<n>d`, `<n>h` or a Unix time, 14d when absent.
+type VerificationSource struct {
+	Kind  string `json:"kind"`
+	Since string `json:"since,omitempty"`
+}
+
+// Where a record's evidence is read from. `compaction_compare` is GET
+// /v1/usage/compare-compaction over `since`. Any other kind is refused by name
+// as `unknown_source`.
+type VerificationSourceKind string
+
+const (
+	VerificationSourceKindCompactionCompare VerificationSourceKind = "compaction_compare"
+)
+
+// VerificationSourceKindValues is every value the contract allows, in contract order.
+var VerificationSourceKindValues = []VerificationSourceKind{VerificationSourceKindCompactionCompare}
+
+// `open` until the person settles it; `accepted` or `rejected` after, with the
+// reason.
+type VerificationStatus string
+
+const (
+	VerificationStatusOpen     VerificationStatus = "open"
+	VerificationStatusAccepted VerificationStatus = "accepted"
+	VerificationStatusRejected VerificationStatus = "rejected"
+)
+
+// VerificationStatusValues is every value the contract allows, in contract order.
+var VerificationStatusValues = []VerificationStatus{VerificationStatusOpen, VerificationStatusAccepted, VerificationStatusRejected}
+
+// POST /v1/orchestrator/tasks/{task}/verification-note with the task's own
+// X-Clawdline-Task-Secret: a task a schedule started writes a note on a record
+// linked to that schedule, as the session `task:<id>`. Answered with the note.
+type VerificationTaskNote struct {
+	Text         string `json:"text"`
+	Verification string `json:"verification"`
+}
+
 // GET /v1/voice/language: what the next recording will be read as, and who said
 // so. `auto` follows Clawdline's own language (the `language` setting), then
 // this machine's languages, then the catalog this daemon ships; the settings

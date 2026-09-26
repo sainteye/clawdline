@@ -13,6 +13,7 @@ import { drawerEntries, pageReady } from "./pages/registry.js"
 import { pageFromHash } from "./page-route.js"
 import { workWord } from "./pages/work/words.js"
 import { nowWord } from "./pages/now/words.js"
+import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
 import { NewBuild } from "./NewBuild.js"
@@ -45,7 +46,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "now"
+type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "now" | "verify"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -768,6 +769,21 @@ export default function App({ aside }: { aside?: ReactNode } = {}) {
           >
             <SidebarIcon name="now" />
             {nowWord("nav")}
+          </button>
+          {/* 驗收 (docs/verifications.md): what was changed and waits for
+              someone to look again by a date. After "now", which only reads;
+              this one is where a verdict is written down. */}
+          <button
+            className="sidebar-item"
+            id="nav-verify"
+            type="button"
+            data-page-to="verify"
+            aria-current={page === "verify" ? "page" : undefined}
+            disabled={!ready("verify")}
+            onClick={() => go("verify")}
+          >
+            <SidebarIcon name="verify" />
+            {verifyWord("nav")}
           </button>
         </div>
       </nav>

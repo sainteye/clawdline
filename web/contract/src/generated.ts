@@ -6960,6 +6960,190 @@ export interface UsageTokens {
 }
 
 /**
+ * One record. Times are Unix seconds. `source` is absent when it has none;
+ * `schedule_id` is empty when no schedule is linked. `closed_at` is 0 and
+ * `close_reason` empty while it is open. `seed` names the record the daemon planted
+ * itself, empty for one somebody made.
+ */
+export interface Verification {
+  close_reason: string
+  closed_at: number
+  created_at: number
+  criteria: VerificationCriterion[]
+  due_at: number
+  id: string
+  notes: VerificationNote[]
+  schedule_id: string
+  seed: string
+  source?: VerificationSource
+  started_at: number
+  status: VerificationStatus
+  title: string
+  updated_at: number
+  why: string
+}
+
+/**
+ * `person` is a paired device; `session` is this machine's orchestrator token (an
+ * assistant through the CLI) or a scheduled task's secret.
+ */
+export type VerificationAuthorKind =
+    "person"
+  | "session"
+
+export const VerificationAuthorKindValues: readonly VerificationAuthorKind[] = ["person", "session"] as const
+
+/**
+ * POST /v1/verifications/{id}/close: `accepted` or `rejected`, with the reason.
+ * Closing it again the same way is answered as done.
+ */
+export interface VerificationClose {
+  reason: string
+  status: VerificationStatus
+}
+
+/**
+ * POST /v1/verifications. `started_at` is now when absent; `due_at` is required and
+ * not before it. At most 12 criteria.
+ */
+export interface VerificationCreate {
+  criteria?: string[]
+  due_at: number
+  schedule_id?: string
+  source?: VerificationSource
+  started_at?: number
+  title: string
+  why?: string
+}
+
+/**
+ * One sentence the check is judged by. `index` is its position, from 0;
+ * `updated_at` is when it was last marked, 0 if never.
+ */
+export interface VerificationCriterion {
+  index: number
+  state: VerificationCriterionState
+  text: string
+  updated_at: number
+}
+
+/**
+ * POST /v1/verifications/{id}/criteria/{index}.
+ */
+export interface VerificationCriterionSet {
+  state: VerificationCriterionState
+}
+
+export type VerificationCriterionState =
+    "unset"
+  | "passed"
+  | "failed"
+
+export const VerificationCriterionStateValues: readonly VerificationCriterionState[] = ["unset", "passed", "failed"] as const
+
+/**
+ * A record's data source, read when it was asked for. `compaction_compare` carries
+ * the comparison; `error` says why it could not be read, and then the answer is
+ * absent.
+ */
+export interface VerificationData {
+  compaction_compare?: UsageCompactionComparison
+  error?: string
+  kind: string
+}
+
+/**
+ * GET /v1/verifications/{id}, and the answer to every write on one record: the
+ * record, and its data source read live (absent when it has none, and on a write's
+ * answer).
+ */
+export interface VerificationDetail {
+  at: number
+  data?: VerificationData
+  verification: Verification
+}
+
+/**
+ * GET /v1/verifications: every record, open ones first by due time, then the closed
+ * ones. `at` is the daemon's clock, for a countdown.
+ */
+export interface VerificationList {
+  at: number
+  verifications: Verification[]
+}
+
+/**
+ * One note. `author` is the session's name when it gave one (a scheduled task
+ * writes `task:<id>`), empty for the person.
+ */
+export interface VerificationNote {
+  at: number
+  author: string
+  author_kind: VerificationAuthorKind
+  id: number
+  text: string
+}
+
+/**
+ * POST /v1/verifications/{id}/notes. `session` names the writing session when the
+ * orchestrator token writes; a paired device writes as the person and may not name
+ * one. An Idempotency-Key makes a repeat answer the first note.
+ */
+export interface VerificationNoteCreate {
+  session?: string
+  text: string
+}
+
+/**
+ * The answer to a note written with a task secret.
+ */
+export interface VerificationNoteResult {
+  note: VerificationNote
+  ok: boolean
+  verification: string
+}
+
+/**
+ * A data source and its parameters. For `compaction_compare`, `since` is `<n>d`,
+ * `<n>h` or a Unix time, 14d when absent.
+ */
+export interface VerificationSource {
+  kind: string
+  since?: string
+}
+
+/**
+ * Where a record's evidence is read from. `compaction_compare` is GET
+ * /v1/usage/compare-compaction over `since`. Any other kind is refused by name as
+ * `unknown_source`.
+ */
+export type VerificationSourceKind =
+    "compaction_compare"
+
+export const VerificationSourceKindValues: readonly VerificationSourceKind[] = ["compaction_compare"] as const
+
+/**
+ * `open` until the person settles it; `accepted` or `rejected` after, with the
+ * reason.
+ */
+export type VerificationStatus =
+    "open"
+  | "accepted"
+  | "rejected"
+
+export const VerificationStatusValues: readonly VerificationStatus[] = ["open", "accepted", "rejected"] as const
+
+/**
+ * POST /v1/orchestrator/tasks/{task}/verification-note with the task's own
+ * X-Clawdline-Task-Secret: a task a schedule started writes a note on a record
+ * linked to that schedule, as the session `task:<id>`. Answered with the note.
+ */
+export interface VerificationTaskNote {
+  text: string
+  verification: string
+}
+
+/**
  * GET /v1/voice/language: what the next recording will be read as, and who said so.
  * `auto` follows Clawdline's own language (the `language` setting), then this
  * machine's languages, then the catalog this daemon ships; the settings window says
