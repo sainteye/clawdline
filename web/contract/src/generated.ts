@@ -5882,11 +5882,12 @@ export interface StartPlace {
 
   /**
    * The repository this place's checkout clones, host/owner/name from its origin
-   * remote, absent when it has none. `id` is a digest of a path on this machine, so
-   * this is the name one project has on two machines; a schedule is moved between
-   * machines by it.
+   * remote, or empty when it has none. Always sent, so a console can tell a machine
+   * whose projects have no origin from one whose Clawdline is too old to say. `id`
+   * is a digest of a path on this machine, so this is the name one project has on
+   * two machines; a schedule is moved between machines by it.
    */
-  repo?: string
+  repo: string
 }
 
 /**

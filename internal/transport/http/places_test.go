@@ -128,7 +128,8 @@ func TestBrokerCheckoutsAreNotOfferedAsPlaces(t *testing.T) {
 
 // A schedule moved to this machine finds its project by the repository the
 // place clones (docs/schedules.md), so the list a Cloud `places` op relays
-// carries it — and leaves it off a folder that clones nothing.
+// carries it — and says "" for a folder that clones nothing, so an older
+// daemon, which sends no key at all, can be told apart.
 func TestPlacesNameTheRepositoryTheyClone(t *testing.T) {
 	home := placesHome(t)
 	state := filepath.Join(home, ".config", "clawdline-next")
@@ -164,7 +165,7 @@ func TestPlacesNameTheRepositoryTheyClone(t *testing.T) {
 	if repos[cloned] != "example.com/team/tool" {
 		t.Errorf("the clone answered repo %v", repos[cloned])
 	}
-	if got, present := repos[plain]; !present || got != nil {
+	if got, present := repos[plain]; !present || got != "" {
 		t.Errorf("the plain folder answered repo %v (listed: %v)", got, present)
 	}
 }
