@@ -529,6 +529,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-capacity",
 		method: "GET", path: "/v1/capacity",
 	}, {
+		// The dashboard behind the session counts: machine-wide and
+		// parameterless, as the local route is.
+		word:    "machine-usage",
+		body:    map[string]any{"type": "machine-usage", "session": machine, "request": "req-usage"},
+		session: machine, name: "read:req-usage",
+		method: "GET", path: "/v1/machine/usage",
+	}, {
 		word: "send",
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",
 			"text": "hello", "images": []any{}},
@@ -1384,7 +1391,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "landings", "capacity",
+		"project-worktree-lifecycle-refresh", "landings", "capacity", "machine-usage",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
@@ -2003,5 +2010,30 @@ func TestTheCapacityReadCrossesWithNothingButItsName(t *testing.T) {
 		"type": "capacity", "session": MachineReplySession, "request": "req"}))
 	if answer.Status != 405 || answer.Code != "bad_request" {
 		t.Fatalf("answered %d/%q, wanted 405/bad_request", answer.Status, answer.Code)
+	}
+}
+
+func TestTheMachineUsageReadCrossesWithNothingButItsName(t *testing.T) {
+	r := &router{}
+	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": "machine-usage", "session": MachineReplySession, "request": "req"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Method != "GET" || r.last().Path != "/v1/machine/usage" || len(r.last().Query) != 0 {
+		t.Fatalf("answered %+v, asked %+v", answer, r.seen)
+	}
+	for _, body := range []map[string]any{
+		{"type": "machine-usage", "session": MachineReplySession, "request": "req", "pid": 1},
+		{"type": "machine-usage", "session": pane, "request": "req"},
+		{"type": "machine-usage", "session": MachineReplySession},
+	} {
+		r := &router{}
+		if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); answer.Code != "malformed_read" || len(r.seen) != 0 {
+			t.Fatalf("took %v: %+v, asked %v", body, answer, r.seen)
+		}
+	}
+	refused := &router{status: 501, body: `{"error":"machine_usage_unsupported","detail":"machine usage is read on Linux only"}`}
+	answer = open(refused).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "machine-usage", "session": MachineReplySession, "request": "req"}))
+	if answer.Status != 501 || answer.Code != "machine_usage_unsupported" {
+		t.Fatalf("answered %d/%q, wanted 501/machine_usage_unsupported", answer.Status, answer.Code)
 	}
 }

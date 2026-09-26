@@ -293,6 +293,190 @@
         "served_by": { "type": "string" },
         "sessions": { "type": "array", "items": { "$ref": "#/$defs/InventorySession" } }
       }
+    },
+    "MachineUsage": {
+      "description": "GET /v1/machine/usage, for any paired device: this machine's CPU and memory now, and each session's share of them — the dashboard opened from the session counts beside the wordmark. Clawdline Cloud carries it as the `machine-usage` word. The CPU figures are shares over `interval_ms`, the time between two readings, because a process's CPU time is a counter: a share needs two. Every percentage is of the whole machine, all cores together, 0-100. A session's figures are its whole process tree: the assistant, the shells it opened and what they started, each process given to the nearest session above it. A process that ended inside the interval is in the machine's figures and in no row. On a platform without a reader the route answers 501 `machine_usage_unsupported` rather than an idle machine.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "interval_ms",
+        "cores",
+        "cpu_percent",
+        "load",
+        "memory_total_bytes",
+        "memory_used_bytes",
+        "memory_available_bytes",
+        "swap_total_bytes",
+        "swap_used_bytes",
+        "groups",
+        "others"
+      ],
+      "properties": {
+        "at": {
+          "type": "integer"
+        },
+        "interval_ms": {
+          "type": "integer"
+        },
+        "cores": {
+          "description": "The cores the kernel counts.",
+          "type": "integer"
+        },
+        "cpu_percent": {
+          "type": "number"
+        },
+        "load": {
+          "description": "The load averages over one, five and fifteen minutes: runnable and uninterruptible tasks, which above `cores` means waiting.",
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "memory_total_bytes": {
+          "type": "integer"
+        },
+        "memory_used_bytes": {
+          "description": "Total less what the kernel says is available without swapping.",
+          "type": "integer"
+        },
+        "memory_available_bytes": {
+          "type": "integer"
+        },
+        "swap_total_bytes": {
+          "type": "integer"
+        },
+        "swap_used_bytes": {
+          "type": "integer"
+        },
+        "pressure": {
+          "description": "The kernel's pressure-stall averages over ten seconds. Absent where the kernel keeps none, which is not the same as none.",
+          "$ref": "#/$defs/MachinePressure"
+        },
+        "groups": {
+          "description": "One row per session whose process is alive, and one for this daemon.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MachineUsageGroup"
+          }
+        },
+        "others": {
+          "description": "The heaviest process names in memory outside every row, a few at most, each summed over its processes: what the rest of the used memory is.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MachineUsageOther"
+          }
+        }
+      }
+    },
+    "MachinePressure": {
+      "description": "Percent of the last ten seconds in which some task (or, for `memory_full`, every task) waited on the resource.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_some",
+        "memory_some",
+        "memory_full",
+        "io_some"
+      ],
+      "properties": {
+        "cpu_some": {
+          "type": "number"
+        },
+        "memory_some": {
+          "type": "number"
+        },
+        "memory_full": {
+          "type": "number"
+        },
+        "io_some": {
+          "type": "number"
+        }
+      }
+    },
+    "MachineUsageGroupKind": {
+      "description": "`session`: an assistant session's tree, keyed by the session id the session list uses. `daemon`: this daemon's own process.",
+      "type": "string",
+      "enum": [
+        "session",
+        "daemon"
+      ]
+    },
+    "MachineUsageGroup": {
+      "description": "What one tree of processes used.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "pid",
+        "processes",
+        "cpu_percent",
+        "rss_bytes",
+        "swap_bytes"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/MachineUsageGroupKind"
+        },
+        "id": {
+          "description": "The session id, as the session list spells it; empty for the daemon.",
+          "type": "string"
+        },
+        "label": {
+          "description": "The session's name as the scan read it. The console prefers the name its own session row carries.",
+          "type": "string"
+        },
+        "assistant": {
+          "type": "string"
+        },
+        "tty": {
+          "type": "string"
+        },
+        "pid": {
+          "description": "The root of the tree.",
+          "type": "integer"
+        },
+        "processes": {
+          "type": "integer"
+        },
+        "cpu_percent": {
+          "type": "number"
+        },
+        "rss_bytes": {
+          "description": "Resident memory summed over the tree. Pages shared between processes are counted in each.",
+          "type": "integer"
+        },
+        "swap_bytes": {
+          "description": "Swapped-out memory summed over the tree: memory the session holds that the machine had no room for.",
+          "type": "integer"
+        }
+      }
+    },
+    "MachineUsageOther": {
+      "description": "Processes outside every row that share a name.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "processes",
+        "cpu_percent",
+        "rss_bytes"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "processes": {
+          "type": "integer"
+        },
+        "cpu_percent": {
+          "type": "number"
+        },
+        "rss_bytes": {
+          "type": "integer"
+        }
+      }
     }
   }
 }

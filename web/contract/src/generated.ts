@@ -3480,6 +3480,132 @@ export type Liveness =
 
 export const LivenessValues: readonly Liveness[] = ["online", "offline", "unknown"] as const
 
+/**
+ * Percent of the last ten seconds in which some task (or, for `memory_full`, every
+ * task) waited on the resource.
+ */
+export interface MachinePressure {
+  cpu_some: number
+  io_some: number
+  memory_full: number
+  memory_some: number
+}
+
+/**
+ * GET /v1/machine/usage, for any paired device: this machine's CPU and memory now,
+ * and each session's share of them — the dashboard opened from the session counts
+ * beside the wordmark. Clawdline Cloud carries it as the `machine-usage` word. The
+ * CPU figures are shares over `interval_ms`, the time between two readings, because
+ * a process's CPU time is a counter: a share needs two. Every percentage is of the
+ * whole machine, all cores together, 0-100. A session's figures are its whole
+ * process tree: the assistant, the shells it opened and what they started, each
+ * process given to the nearest session above it. A process that ended inside the
+ * interval is in the machine's figures and in no row. On a platform without a
+ * reader the route answers 501 `machine_usage_unsupported` rather than an idle
+ * machine.
+ */
+export interface MachineUsage {
+  at: number
+
+  /**
+   * The cores the kernel counts.
+   */
+  cores: number
+  cpu_percent: number
+
+  /**
+   * One row per session whose process is alive, and one for this daemon.
+   */
+  groups: MachineUsageGroup[]
+  interval_ms: number
+
+  /**
+   * The load averages over one, five and fifteen minutes: runnable and
+   * uninterruptible tasks, which above `cores` means waiting.
+   */
+  load: number[]
+  memory_available_bytes: number
+  memory_total_bytes: number
+
+  /**
+   * Total less what the kernel says is available without swapping.
+   */
+  memory_used_bytes: number
+
+  /**
+   * The heaviest process names in memory outside every row, a few at most, each
+   * summed over its processes: what the rest of the used memory is.
+   */
+  others: MachineUsageOther[]
+
+  /**
+   * The kernel's pressure-stall averages over ten seconds. Absent where the kernel
+   * keeps none, which is not the same as none.
+   */
+  pressure?: MachinePressure
+  swap_total_bytes: number
+  swap_used_bytes: number
+}
+
+/**
+ * What one tree of processes used.
+ */
+export interface MachineUsageGroup {
+  assistant?: string
+  cpu_percent: number
+
+  /**
+   * The session id, as the session list spells it; empty for the daemon.
+   */
+  id: string
+  kind: MachineUsageGroupKind
+
+  /**
+   * The session's name as the scan read it. The console prefers the name its own
+   * session row carries.
+   */
+  label?: string
+
+  /**
+   * The root of the tree.
+   */
+  pid: number
+  processes: number
+
+  /**
+   * Resident memory summed over the tree. Pages shared between processes are
+   * counted in each.
+   */
+  rss_bytes: number
+
+  /**
+   * Swapped-out memory summed over the tree: memory the session holds that the
+   * machine had no room for.
+   */
+  swap_bytes: number
+  tty?: string
+}
+
+/**
+ * `session`: an assistant session's tree, keyed by the session id the session list
+ * uses. `daemon`: this daemon's own process.
+ */
+export type MachineUsageGroupKind =
+    "session"
+  | "daemon"
+
+export const MachineUsageGroupKindValues: readonly MachineUsageGroupKind[] = ["session", "daemon"] as const
+
+/**
+ * Processes outside every row that share a name.
+ */
+export interface MachineUsageOther {
+  cpu_percent: number
+  name: string
+  processes: number
+  rss_bytes: number
+}
+
 export interface Mover {
   id: string
   kind: MoverKind

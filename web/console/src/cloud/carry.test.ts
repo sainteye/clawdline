@@ -191,6 +191,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/usage/items/w1"],
     ["GET", "/v1/usage/compare-compaction"],
     ["GET", "/v1/capacity"],
+    ["GET", "/v1/machine/usage"],
     ["GET", "/v1/verifications"],
     ["GET", "/v1/verifications/v1"],
     ["POST", "/v1/verifications"],
@@ -221,7 +222,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   // 64, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
   // copied client's reconnect ask for every Session row, the token bill's three usage reads, the menu's stop and the
-  // compaction comparison, the seven verification words, and the Settings page's capacity read. Keep the count beside the catalog so
+  // compaction comparison, the seven verification words, the Settings page's capacity read, and the machine dashboard's read. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
@@ -229,8 +230,9 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("interrupt" in CARRIED)
   assert.ok("usage.compare-compaction" in CARRIED)
   assert.ok("capacity" in CARRIED)
+  assert.ok("machine-usage" in CARRIED)
   assert.ok("verification.delete" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 82)
+  assert.equal(Object.keys(CARRIED).length, 83)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

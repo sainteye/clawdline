@@ -17,6 +17,7 @@ import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
 import { NewBuild } from "./NewBuild.js"
+import { MachineDashboard } from "./machine/MachineDashboard.js"
 import { SidebarIcon, type SidebarIconName } from "./SidebarIcon.js"
 import { sessionCountState, sessionReadingChinese, totalSessionWords } from "./session-reading.js"
 import {
@@ -190,6 +191,9 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
   const light = useConnectionLight(fleet.live, fleet.refresh)
   const [page, setPage] = useState<Page>("sessions")
   const [menu, setMenu] = useState(false)
+  // The machine dashboard, opened from the counts (machine/MachineDashboard.tsx).
+  const [machine, setMachine] = useState(false)
+  const closeMachine = useCallback(() => setMachine(false), [])
   const [, setLoaded] = useState(0)
   const brandRef = useRef<HTMLButtonElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
@@ -703,7 +707,11 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
           <canvas id="brand-mark" width={0} height={0} ref={markRef} />
           <b>clawdline</b>
         </button>
-        <Counts reading={sessionCountState(fleet)} recovering={!!fleet.snapshot && !fleet.snapshot.scan.complete} />
+        <Counts
+          reading={sessionCountState(fleet)}
+          recovering={!!fleet.snapshot && !fleet.snapshot.scan.complete}
+          onOpen={() => setMachine(true)}
+        />
         {typeof aside === "function" ? aside(light) : (
           <>
             {aside}
@@ -822,6 +830,7 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
         <Component key={id} shown={page === id} />
       ))}
       <Overlays />
+      {machine ? <MachineDashboard sessions={fleet.snapshot?.sessions ?? []} onClose={closeMachine} /> : null}
       <NewBuild />
     </>
   )
@@ -841,13 +850,19 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
  * so it takes the `recovering` part. It reports no per-machine failure, so the
  * `failures` part has no input here; when it does, its words need
  * `describeFailure` (`core/failure-text.js`) from the bridge.
+ *
+ * Pressing the counts opens the machine dashboard: how many sessions are
+ * running is half of "why is everything slow", and what they are using is the
+ * other half (machine/MachineDashboard.tsx).
  */
 function Counts({
   reading,
   recovering,
+  onOpen,
 }: {
   reading: ReturnType<typeof sessionCountState>
   recovering: boolean
+  onOpen: () => void
 }) {
   const T = L.strings
   const rows = reading.phase === "ready" ? reading.value : []
@@ -891,7 +906,20 @@ function Counts({
     bits.push({ cls: "part quiet", text: sessionReadingChinese() ? "都很安靜" : "all quiet" })
   }
   return (
-    <div className="counts" id="counts">
+    <div
+      className="counts"
+      id="counts"
+      role="button"
+      tabIndex={0}
+      title={sessionReadingChinese() ? "機器負載：CPU、記憶體與各 session 的用量" : "Machine load: CPU, memory and each session's share"}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          onOpen()
+        }
+      }}
+    >
       {bits.map((b, i) => (
         <span key={i} className={b.cls}>
           {b.text}

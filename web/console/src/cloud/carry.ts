@@ -57,6 +57,9 @@ export const CARRIED = {
   // The capacity block on Settings (`pages/settings/CapacityBlock.tsx`), which
   // every capacity push names: a machine read with no parameter.
   capacity: "GET /v1/capacity",
+  // The dashboard behind the session counts (`machine/`): this machine's CPU
+  // and memory and each session's share, a machine read with no parameter.
+  "machine-usage": "GET /v1/machine/usage",
   "board.items": "GET /v1/board?project=&audience=&cursor=&limit=",
   end: "POST /v1/sessions/{id}/close",
   focus: "POST /v1/sessions/{id}/focus",

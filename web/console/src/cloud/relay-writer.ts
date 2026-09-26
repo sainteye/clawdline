@@ -233,6 +233,7 @@ export type WriteRoute =
   | { op: "usage"; word: Carried<"usage.session" | "usage.task" | "usage.item">; id: string }
   | { op: "usage-compare"; word: Carried<"usage.compare-compaction"> }
   | { op: "capacity"; word: Carried<"capacity"> }
+  | { op: "machine-usage"; word: Carried<"machine-usage"> }
   // Things waiting to be verified. Machine words, not session ones: a record
   // belongs to the machine, and the page that reads it holds no session.
   | { op: "verification-read"; word: Carried<"verification.list" | "verification.get">; id: string }
@@ -390,6 +391,11 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // The capacity block on Settings: the register's rows and the dead
     // letters, machine-wide, on the machine's one reply channel.
     if (head === "capacity" && segments.length === 1) return { op: "capacity", word: "capacity" }
+    // The dashboard behind the session counts: the machine's CPU and memory
+    // and each session's share, on the machine's one reply channel.
+    if (head === "machine" && a === "usage" && segments.length === 2) {
+      return { op: "machine-usage", word: "machine-usage" }
+    }
     if (head === "verifications" && segments.length === 1) {
       return { op: "verification-read", word: "verification.list", id: "" }
     }
@@ -842,7 +848,8 @@ export class RelayWriter {
         }
         return client._machineRequest(this.host.machine, route.word, { id: route.id }, "read")
       }
-      case "capacity": {
+      case "capacity":
+      case "machine-usage": {
         if (typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", route.word, 501)
         }

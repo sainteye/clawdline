@@ -1,0 +1,162 @@
+/* The machine dashboard (MachineDashboard.tsx), opened from the session counts. The sheet's
+   furniture (`.overlay`, `.sheet`) is the other sheets'; this adds a wider card that scrolls
+   inside itself, three gauges, the memory bar and the rows. Colours are the console's tokens;
+   the session hues are the validated slots in model.ts. */
+
+.counts[role="button"] { cursor: pointer; border-radius: 6px; transition: background 120ms var(--ease), color 120ms var(--ease); }
+.counts[role="button"]:hover { color: var(--ink); }
+.counts[role="button"]:hover .quiet { color: var(--dim); }
+.counts[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.overlay.machine-overlay { align-items: flex-start; padding: 40px 16px 24px; }
+/* The card scrolls inside itself, so its title and close button stay put while the rows move. */
+.sheet.machine-sheet {
+    width: min(640px, 100%); padding: 0 20px 16px;
+    max-height: calc(100dvh - 64px); overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: 14px;
+    animation: machine-rise 160ms var(--ease);
+}
+@keyframes machine-rise { from { transform: translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sheet.machine-sheet { animation: none; } }
+
+.machine-head {
+    display: flex; align-items: flex-start; gap: 12px;
+    position: sticky; top: 0; z-index: 1; margin: 0 -20px; padding: 18px 20px 10px;
+    background: var(--card); border-radius: 16px 16px 0 0;
+}
+.machine-heading { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sheet.machine-sheet h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0.2px; }
+.machine-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--faint); }
+.machine-live { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); margin-left: 4px; animation: machine-pulse 3s ease-in-out infinite; }
+.machine-live.stale { background: var(--warn); animation: none; }
+@keyframes machine-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.machine-close {
+    flex: none; width: 30px; height: 30px; border-radius: 8px;
+    border: 1px solid var(--line); background: transparent; color: var(--dim);
+    font-size: 18px; line-height: 1; cursor: pointer;
+}
+.machine-close:hover { color: var(--ink); background: var(--line); }
+.machine-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The verdict: the one sentence that answers "is it the machine". */
+.machine-verdict {
+    margin: 0; display: flex; gap: 10px; align-items: flex-start;
+    padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+    font-size: 13px; line-height: 1.5; color: var(--ink);
+    background: color-mix(in srgb, var(--ok) 8%, transparent);
+}
+.machine-verdict[data-level="warn"] { background: color-mix(in srgb, var(--warn) 10%, transparent); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+.machine-verdict[data-level="bad"] { background: color-mix(in srgb, var(--bad) 14%, transparent); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+
+.machine-level {
+    flex: none; display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11.5px; font-weight: 600; color: var(--ok); white-space: nowrap;
+}
+.machine-level b {
+    display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%;
+    font-size: 9.5px; color: var(--card); background: currentColor;
+}
+.machine-level b { color: var(--card); }
+.machine-level[data-level="ok"] b { background: var(--ok); }
+.machine-level[data-level="warn"] { color: var(--warn); }
+.machine-level[data-level="warn"] b { background: var(--warn); }
+.machine-level[data-level="bad"] { color: #d9826f; }
+.machine-level[data-level="bad"] b { background: var(--bad); }
+
+/* The three gauges. */
+.machine-gauges { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.machine-gauge {
+    min-width: 0; padding: 11px 12px 10px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--bg);
+    display: flex; flex-direction: column; gap: 6px;
+}
+.machine-gauge-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.machine-label { font-size: 11.5px; color: var(--dim); letter-spacing: 0.2px; }
+.machine-gauge-mid { display: flex; align-items: flex-end; gap: 10px; }
+.machine-value { flex: none; font: 600 24px/1.1 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.machine-meter { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.machine-meter i { display: block; height: 100%; border-radius: 2px; background: var(--ok); transition: width 400ms var(--ease); }
+.machine-gauge[data-level="warn"] .machine-meter i { background: var(--warn); }
+.machine-gauge[data-level="bad"] .machine-meter i { background: var(--bad); }
+.machine-sub-line { font: 11px/1.35 var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.machine-spark { flex: 1 1 auto; min-width: 0; height: 26px; overflow: visible; }
+.machine-spark-base { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.machine-spark polyline { fill: none; stroke: var(--dim); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.machine-gauge[data-level="warn"] .machine-spark polyline { stroke: var(--warn); }
+.machine-gauge[data-level="bad"] .machine-spark polyline { stroke: var(--bad); }
+
+.machine-pressure { margin: -2px 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 12px; color: var(--dim); }
+.machine-wait b { font: 600 12px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.machine-wait[data-level="warn"] b { color: var(--warn); }
+.machine-wait[data-level="bad"] b { color: #d9826f; }
+
+/* Sections. */
+.machine-section { display: flex; flex-direction: column; gap: 8px; }
+.machine-section h3 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--dim); }
+.machine-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+.machine-stack { display: flex; gap: 2px; height: 14px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.machine-stack i { display: block; height: 100%; min-width: 2px; transition: width 400ms var(--ease); }
+.machine-stack i:hover { filter: brightness(1.2); }
+.machine-scale { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+
+.machine-sort { display: inline-flex; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+.machine-sort button {
+    border: 0; background: transparent; color: var(--faint); cursor: pointer;
+    font-size: 11.5px; padding: 3px 10px; border-radius: 6px;
+}
+.machine-sort button[aria-pressed="true"] { background: var(--line); color: var(--ink); }
+.machine-sort button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.machine-rows { list-style: none; margin: 0; padding: 0; }
+.machine-row {
+    display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; grid-template-rows: auto 4px;
+    column-gap: 10px; row-gap: 6px; align-items: center;
+    padding: 9px 0; border-bottom: 1px solid var(--line);
+}
+.machine-row:last-child { border-bottom: 0; }
+.machine-dot { width: 10px; height: 10px; border-radius: 3px; }
+.machine-who { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.machine-title { font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.machine-detail { font: 11px var(--mono); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.machine-amounts { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-variant-numeric: tabular-nums; }
+.machine-mem { font: 600 12.5px var(--mono); color: var(--ink); white-space: nowrap; }
+.machine-mem em { font-style: normal; font-weight: 400; color: var(--warn); }
+.machine-cpu { font: 11px var(--mono); color: var(--dim); white-space: nowrap; }
+.machine-bar { grid-column: 2 / 4; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.machine-bar i { display: block; height: 100%; border-radius: 2px; transition: width 400ms var(--ease); }
+.machine-row[data-kind="daemon"] .machine-title { color: var(--dim); }
+.machine-empty { padding: 12px 0; font-size: 12.5px; color: var(--faint); }
+
+.machine-others summary { cursor: pointer; font-size: 12.5px; color: var(--dim); padding: 2px 0; }
+.machine-others summary:hover { color: var(--ink); }
+.machine-others ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.machine-others li {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px; align-items: baseline;
+    padding: 5px 0; border-bottom: 1px solid var(--line);
+}
+.machine-others li:last-child { border-bottom: 0; }
+
+.machine-note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--faint); }
+
+/* First reading: the shape of what is coming, not a spinner. */
+.machine-skeleton { display: flex; flex-direction: column; gap: 12px; }
+.machine-skeleton i { display: block; height: 40px; border-radius: 10px; background: var(--line); animation: machine-pulse 1.4s ease-in-out infinite; }
+.machine-skeleton .machine-gauges i { height: 104px; }
+@media (prefers-reduced-motion: reduce) { .machine-skeleton i, .machine-live { animation: none; } }
+
+@media (max-width: 560px) {
+    .overlay.machine-overlay { padding: 12px 0 0; align-items: flex-end; }
+    .sheet.machine-sheet { width: 100%; border-radius: 16px 16px 0 0; padding: 0 16px 20px; max-height: calc(100dvh - 12px); }
+    .machine-head { margin: 0 -16px; padding: 16px 16px 10px; }
+    .machine-gauges { grid-template-columns: 1fr; gap: 8px; }
+    .machine-gauge { display: grid; grid-template-columns: auto minmax(0, 1fr) 64px; grid-template-areas: "top top top" "value meter spark" "sub sub sub"; gap: 4px 12px; align-items: center; }
+    .machine-gauge-top { grid-area: top; }
+    .machine-gauge-mid { display: contents; }
+    .machine-value { grid-area: value; font-size: 20px; }
+    .machine-meter { grid-area: meter; }
+    .machine-sub-line { grid-area: sub; }
+    .machine-spark { grid-area: spark; width: 64px; }
+    .machine-others li { grid-template-columns: minmax(0, 1fr) auto auto; }
+    .machine-others li .machine-detail { display: none; }
+}

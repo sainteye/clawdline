@@ -1309,3 +1309,26 @@ test("the capacity block crosses as its machine word, with no field of its own",
   assert.equal(bad.status, 405)
   assert.equal((await json<{ error: { code: string } }>(bad)).error.code, "bad_request")
 })
+
+test("the machine dashboard crosses as its machine word, with no field of its own", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal(writeRoute("GET", "/v1/machine/usage")?.word, "machine-usage")
+  const read = await reader.fetch("/v1/machine/usage")
+  assert.equal(read.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "machine-usage", {}, "read"])
+
+  assert.equal(writeRoute("GET", "/v1/machine"), null)
+  assert.equal(writeRoute("GET", "/v1/machine/usage/1"), null)
+  assert.equal(writeRoute("POST", "/v1/machine/usage"), null)
+
+  const extra = await reader.fetch("/v1/machine/usage?pid=1")
+  assert.equal(extra.status, 501)
+  assert.equal((await json<{ error: { code: string } }>(extra)).error.code, "cloud_not_carried")
+
+  // A machine without a reader says so with its own code.
+  client.fail._machineRequest = refusal("machine_usage_unsupported", { status: 501, layer: "mac_route", message: "machine usage is read on Linux only" })
+  const bad = await reader.fetch("/v1/machine/usage")
+  assert.equal(bad.status, 501)
+  assert.equal((await json<{ error: { code: string } }>(bad)).error.code, "machine_usage_unsupported")
+})
