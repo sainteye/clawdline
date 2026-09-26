@@ -430,7 +430,14 @@ func spawnVerdict(present, sourceComplete, choosing bool, r Record) (State, stri
 // terminal.
 func (b *Broker) runClocks(ctx context.Context, rd reading, r Record, p *Pulse) bool {
 	now := b.now()
-	if r.State == StateSpawning && !r.SpawnedAt.IsZero() && now.Sub(r.SpawnedAt) > readyLimit {
+	// A child left at a dialog is the person's to answer, not the spawn
+	// clock's to judge: its tab is watched instead (dialog.go), and only the
+	// task's own timeout below ends the wait.
+	if r.leftAtDialog() {
+		if b.tendDialog(ctx, rd, r, p) {
+			return true
+		}
+	} else if r.State == StateSpawning && !r.SpawnedAt.IsZero() && now.Sub(r.SpawnedAt) > readyLimit {
 		_, present := rd.session(r.ChildTerminalID)
 		if r.ChildTerminalID == "" {
 			present = false
