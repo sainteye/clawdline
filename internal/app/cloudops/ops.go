@@ -1010,42 +1010,60 @@ func init() {
 
 		op{name: "work.v2.items", read: true,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "project") {
+				legacy := b.has("type", "session", "request", "project")
+				if !legacy && !b.has("type", "session", "request", "project", "cursor") {
 					return plan{}, false
 				}
 				p, ok := machinePlan(b)
 				project, projectOK := b.str("project")
+				cursor := ""
+				if !legacy {
+					var cursorOK bool
+					cursor, cursorOK = b.str("cursor")
+					if !cursorOK || len(cursor) > 1024 {
+						return plan{}, false
+					}
+				}
 				if !ok || !projectOK || len(project) > 256 {
 					return plan{}, false
 				}
-				p.project = project
+				p.project, p.cursor = project, cursor
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/work/v2/items",
-					Query: someOf(map[string]string{"project": p.project})}
+					Query: someOf(map[string]string{"project": p.project, "cursor": p.cursor})}
 			}},
 
 		op{name: "work.v2.search", read: true,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "project", "status", "query") {
+				legacy := b.has("type", "session", "request", "project", "status", "query")
+				if !legacy && !b.has("type", "session", "request", "project", "status", "query", "cursor") {
 					return plan{}, false
 				}
 				p, ok := machinePlan(b)
 				project, projectOK := b.str("project")
 				status, statusOK := b.str("status")
 				query, queryOK := b.str("query")
+				cursor := ""
+				if !legacy {
+					var cursorOK bool
+					cursor, cursorOK = b.str("cursor")
+					if !cursorOK || len(cursor) > 1024 {
+						return plan{}, false
+					}
+				}
 				if !ok || !projectOK || len(project) > 256 || !statusOK ||
 					(status != "open" && status != "done" && status != "all") ||
 					!queryOK || len(query) > 1024 {
 					return plan{}, false
 				}
-				p.project, p.status, p.query = project, status, query
+				p.project, p.status, p.query, p.cursor = project, status, query, cursor
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/work/v2/items",
-					Query: someOf(map[string]string{"project": p.project, "status": p.status, "q": p.query})}
+					Query: someOf(map[string]string{"project": p.project, "status": p.status, "q": p.query, "cursor": p.cursor})}
 			}},
 
 		op{name: "work.v2.proposals", read: true,

@@ -363,16 +363,16 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}, {
 		word: "work.v2.items",
 		body: map[string]any{"type": "work.v2.items", "session": machine,
-			"request": "req-work-v2-items", "project": "p1"},
+			"request": "req-work-v2-items", "project": "p1", "cursor": "page-2"},
 		session: machine, name: "read:req-work-v2-items",
-		method: "GET", path: "/v1/work/v2/items", query: map[string]string{"project": "p1"},
+		method: "GET", path: "/v1/work/v2/items", query: map[string]string{"project": "p1", "cursor": "page-2"},
 	}, {
 		word: "work.v2.search",
 		body: map[string]any{"type": "work.v2.search", "session": machine,
-			"request": "req-work-v2-search", "project": "p1", "status": "done", "query": "needle"},
+			"request": "req-work-v2-search", "project": "p1", "status": "done", "query": "needle", "cursor": "page-3"},
 		session: machine, name: "read:req-work-v2-search",
 		method: "GET", path: "/v1/work/v2/items",
-		query: map[string]string{"project": "p1", "status": "done", "q": "needle"},
+		query: map[string]string{"project": "p1", "status": "done", "q": "needle", "cursor": "page-3"},
 	}, {
 		word: "work.v2.proposals",
 		body: map[string]any{"type": "work.v2.proposals", "session": machine,
