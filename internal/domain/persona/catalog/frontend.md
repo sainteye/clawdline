@@ -1,6 +1,6 @@
 ---
 id: frontend
-team: engineering
+teams: [engineering, design]
 name_en: Frontend Engineer
 name_zh: 前端工程師
 summary_en: Builds web console features that work at phone width, are accessible, and handle loading, error and empty states.

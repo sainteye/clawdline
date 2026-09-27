@@ -32,7 +32,7 @@ import (
 const (
 	// MaxPersonas is how many personas the catalog may hold. A catalog past
 	// it does not load.
-	MaxPersonas = 32
+	MaxPersonas = 64
 	// MaxPersonaBytes is the most one persona's injected text — the
 	// precedence preamble, the body and the source line — may be. It is read
 	// on every turn of the session it is given to.
@@ -58,8 +58,9 @@ var Order = []string{
 
 // Teams are the closed set a persona belongs to, in the order the console's
 // team switcher lists them. The console names them; the catalog only says
-// which one.
-var Teams = []string{"engineering", "marketing"}
+// which. A persona may belong to several: the same role is at home in more
+// than one team.
+var Teams = []string{"engineering", "marketing", "product", "quality", "operations", "design", "business"}
 
 func knownTeam(team string) bool {
 	for _, t := range Teams {
@@ -89,8 +90,9 @@ type Names struct {
 // Persona is one entry of the catalog.
 type Persona struct {
 	ID string
-	// Team is one of Teams: the group the console's switcher shows it in.
-	Team    string
+	// Teams are the groups the console's switcher shows it in: at least one,
+	// each of Teams, none twice, in the order the file lists them.
+	Teams   []string
 	Name    Names
 	Summary Names
 	// SuggestedKinds are the Board item kinds this persona is offered for
@@ -248,7 +250,7 @@ func parse(raw string) (Persona, error) {
 		}
 		fields[key] = value
 	}
-	want := []string{"id", "team", "name_en", "name_zh", "summary_en", "summary_zh", "suggested_kinds", "source"}
+	want := []string{"id", "teams", "name_en", "name_zh", "summary_en", "summary_zh", "suggested_kinds", "source"}
 	for _, key := range want {
 		if _, ok := fields[key]; !ok {
 			return Persona{}, fmt.Errorf("frontmatter has no %s", key)
@@ -262,7 +264,6 @@ func parse(raw string) (Persona, error) {
 	}
 	p := Persona{
 		ID:      fields["id"],
-		Team:    fields["team"],
 		Name:    Names{En: fields["name_en"], ZhHant: fields["name_zh"]},
 		Summary: Names{En: fields["summary_en"], ZhHant: fields["summary_zh"]},
 		Source:  fields["source"],
@@ -271,8 +272,22 @@ func parse(raw string) (Persona, error) {
 	if !idShape.MatchString(p.ID) {
 		return Persona{}, fmt.Errorf("id %q is not lower-case words joined by hyphens", p.ID)
 	}
-	if !knownTeam(p.Team) {
-		return Persona{}, fmt.Errorf("team %q is not one of %v", p.Team, Teams)
+	var err error
+	if p.Teams, err = list(fields["teams"]); err != nil {
+		return Persona{}, fmt.Errorf("teams: %w", err)
+	}
+	if len(p.Teams) == 0 {
+		return Persona{}, errors.New("teams is empty; a persona belongs to at least one")
+	}
+	inTeam := map[string]bool{}
+	for _, team := range p.Teams {
+		if !knownTeam(team) {
+			return Persona{}, fmt.Errorf("team %q is not one of %v", team, Teams)
+		}
+		if inTeam[team] {
+			return Persona{}, fmt.Errorf("team %s is listed twice", team)
+		}
+		inTeam[team] = true
 	}
 	// The English name goes into a Codex command line, which `ps` renders
 	// under LC_ALL=C: anything but printable ASCII would come back escaped.
@@ -282,16 +297,12 @@ func parse(raw string) (Persona, error) {
 	if !strings.HasPrefix(p.Source, UpstreamRepository+"/blob/"+UpstreamCommit+"/") {
 		return Persona{}, fmt.Errorf("source %q is not a file of %s at %s", p.Source, UpstreamRepository, UpstreamCommit)
 	}
-	list := fields["suggested_kinds"]
-	inner, ok := strings.CutPrefix(list, "[")
-	if inner, ok = strings.CutSuffix(inner, "]"); !ok || !strings.HasPrefix(list, "[") {
-		return Persona{}, fmt.Errorf("suggested_kinds %q is not a [list]", list)
+	suggested, err := list(fields["suggested_kinds"])
+	if err != nil {
+		return Persona{}, fmt.Errorf("suggested_kinds: %w", err)
 	}
 	p.SuggestedKinds = []string{}
-	for _, k := range strings.Split(inner, ",") {
-		if k = strings.TrimSpace(k); k == "" {
-			continue
-		}
+	for _, k := range suggested {
 		if !kinds[k] {
 			return Persona{}, fmt.Errorf("suggested_kinds names %q, which is not epic, feature or issue", k)
 		}
@@ -301,6 +312,24 @@ func parse(raw string) (Persona, error) {
 		return Persona{}, errors.New("the body is empty")
 	}
 	return p, nil
+}
+
+// list reads a frontmatter `[a, b]` value; `[]` is an empty list.
+func list(value string) ([]string, error) {
+	inner, ok := strings.CutPrefix(value, "[")
+	if !ok {
+		return nil, fmt.Errorf("%q is not a [list]", value)
+	}
+	if inner, ok = strings.CutSuffix(inner, "]"); !ok {
+		return nil, fmt.Errorf("%q is not a [list]", value)
+	}
+	out := []string{}
+	for _, item := range strings.Split(inner, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out, nil
 }
 
 func printableASCII(s string) bool {

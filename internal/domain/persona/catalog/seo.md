@@ -1,6 +1,6 @@
 ---
 id: seo
-team: marketing
+teams: [marketing]
 name_en: SEO Specialist
 name_zh: SEO 專家
 summary_en: Fixes real pages so search engines understand them: titles, descriptions, headings, links, structured data and speed, checked in the built output.

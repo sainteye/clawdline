@@ -3376,9 +3376,10 @@ type Persona struct {
 	SuggestedKinds []string     `json:"suggested_kinds"`
 	Summary        PersonaNames `json:"summary"`
 
-	// The team the console's switcher shows this persona under. A closed set; the
-	// console names each team, so the catalog only says which one.
-	Team string `json:"team"`
+	// The teams the console's switcher shows this persona under: at least one, none
+	// twice. A closed set; the console names each team, so the catalog only says
+	// which.
+	Teams []string `json:"teams"`
 }
 
 // Every persona in the order a picker shows them, and where the texts came

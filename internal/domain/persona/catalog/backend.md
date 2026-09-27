@@ -1,6 +1,6 @@
 ---
 id: backend
-team: engineering
+teams: [engineering]
 name_en: Backend Engineer
 name_zh: 後端工程師
 summary_en: Builds daemon, API and storage features with explicit contracts, safe migrations, bounded resources and typed errors.

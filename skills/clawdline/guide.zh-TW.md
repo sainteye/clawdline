@@ -877,7 +877,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 - **角色（persona）**是新 Session 開啟時帶著的一個角色：加進它 system prompt 的一段文字，讓它整段對話都照
   那個角色的方式做事。只用在新 Session（`--assign-new`、`--new`、`dispatch`）；既有 Session 維持開啟時的
   角色。預設沒有。角色絕不凌駕 `CLAUDE.md`／`AGENTS.md`、brief、`CHILD.md` 或這份協定。
-  `GET /v1/personas` 列出全部；十六個 id，每個團隊八個（每筆有 `team`）：
+  `GET /v1/personas` 列出全部；十六個 id（每筆的 `teams` 列出它所屬的每個團隊，同一個角色可以在好幾個團隊）：
   - `architect`——規劃 Epic；
   - `backend`——daemon、API 或 store 的 Feature；
   - `frontend`——console 或手機版面的 Feature；

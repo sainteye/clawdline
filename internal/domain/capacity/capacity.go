@@ -542,7 +542,7 @@ func Register() []Entry {
 			// stops asking is passed over at once and forgotten after half an
 			// hour. Used is the longest line.
 			Name: LeasesQueue, Class: Buffer, Unit: Rows,
-			Limit: 32, AtLimit: Refuse,
+			Limit: 64, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Sender},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app/orchestrator.LeaseQueueLimit"},
@@ -604,7 +604,7 @@ func Register() []Entry {
 		},
 		{
 			Name: WorkDocumentsPerItem, Class: Evidence, Unit: Rows,
-			Limit: 32, AtLimit: Refuse,
+			Limit: 64, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/store.WorkV2DocumentLimit"},
@@ -745,7 +745,7 @@ func Register() []Entry {
 			// open or closed; the thirty-third is refused epic_children_full
 			// and nothing is written.
 			Name: EpicChildItems, Class: Buffer, Unit: Rows,
-			Limit: 32, AtLimit: Refuse,
+			Limit: 64, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/work.EpicChildLimit"},
 		},
@@ -1325,7 +1325,7 @@ func Register() []Entry {
 			// catalog past the limit does not load, and the persona package's
 			// own test refuses it before a build ships. Nothing is let go.
 			Name: PersonasCatalog, Class: Buffer, Unit: Rows,
-			Limit: 32, AtLimit: Refuse,
+			Limit: 64, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/domain/persona.MaxPersonas"},

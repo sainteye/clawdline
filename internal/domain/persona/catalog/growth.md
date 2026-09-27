@@ -1,6 +1,6 @@
 ---
 id: growth
-team: marketing
+teams: [marketing]
 name_en: Growth Hacker
 name_zh: 成長駭客
 summary_en: Turns growth ideas into stated hypotheses and small, reversible, measurable changes, using the site's real data and never dark patterns.
