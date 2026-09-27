@@ -25,10 +25,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+// PairingAgentKind is the kind every hand-off's task has, and the only kind
+// the card's progress route answers for.
+const PairingAgentKind = "cloud-pairing"
 
 // PairingAgentTimeoutMinutes is how long the assistant has. Reaching a host
 // and running one command takes a minute; the rest is room for a slow login.
@@ -109,8 +116,9 @@ a note, a log, a message — except into that one command.
 //
 // The inventory receipt a caller's dispatch carries is read here, by the
 // broker itself, when the project directory is a repository at all: this
-// caller did not read an inventory, and a home directory under version
-// control must not turn the hand-off into a `stale_inventory` refusal.
+// caller did not read an inventory, and a state directory that happens to sit
+// inside a repository must not turn the hand-off into a `stale_inventory`
+// refusal.
 func (b *Broker) DispatchPairingAgent(ctx context.Context, run PairingAgentRun) (Dispatched, error) {
 	if !IsTaskID(run.TaskID) {
 		return Dispatched{}, refuse(http.StatusUnprocessableEntity, "bad_task",
@@ -123,7 +131,7 @@ func (b *Broker) DispatchPairingAgent(ctx context.Context, run PairingAgentRun) 
 	brief := map[string]any{
 		"clawdline_protocol": Protocol,
 		"task_id":            run.TaskID,
-		"kind":               "cloud-pairing",
+		"kind":               PairingAgentKind,
 		"assistant":          run.Assistant,
 		"permission_mode":    "full",
 		"project_dir":        run.ProjectDir,
@@ -142,4 +150,113 @@ func (b *Broker) DispatchPairingAgent(ctx context.Context, run PairingAgentRun) 
 		req.Generation, req.Offered = inv.Generation, true
 	}
 	return b.Dispatch(ctx, req)
+}
+
+// PairingAgentDirName is the folder under this machine's Clawdline state
+// directory that a pairing hand-off's assistant starts in.
+const PairingAgentDirName = "pairing-agent"
+
+// PairingAgentDir makes, or makes private again, the one folder a pairing
+// hand-off's assistant starts in: `<state>/pairing-agent`, mode 0700, and
+// answers its absolute path.
+//
+// It used to be the home directory. That was far wider than a task that reads
+// the machine's own ssh and cloud configuration by path and writes nothing
+// here, and it was a folder Claude Code asks about before it draws a composer:
+// the person who used it for real had to find the new tab and press "Yes, I
+// trust this folder" before anything moved. A folder of Clawdline's own, empty
+// and used for nothing else, is one the daemon can record as trusted without
+// that answer reaching anything of the person's (the caller does, through
+// projects.TrustClaudeProject; Codex is answered per launch by trustArgs).
+func PairingAgentDir(stateDir string) (string, error) {
+	if !filepath.IsAbs(stateDir) {
+		abs, err := filepath.Abs(stateDir)
+		if err != nil {
+			return "", err
+		}
+		stateDir = abs
+	}
+	dir := filepath.Join(stateDir, PairingAgentDirName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s is not a directory", dir)
+	}
+	if info.Mode().Perm() != 0o700 {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
+}
+
+// PairingAgentProgress is what the Cloud card may know about a hand-off while
+// it runs: a word for where the task is, and the task's own sentence once it
+// ended. Never the brief, which holds the offer.
+type PairingAgentProgress struct {
+	// State is one of starting, dialog, working, done, failed.
+	State        string `json:"state"`
+	Summary      string `json:"summary,omitempty"`
+	FailedReason string `json:"failed_reason,omitempty"`
+}
+
+// Pairing hand-off progress words.
+const (
+	PairingAgentStarting = "starting"
+	PairingAgentDialog   = "dialog"
+	PairingAgentWorking  = "working"
+	PairingAgentDone     = "done"
+	PairingAgentFailed   = "failed"
+)
+
+// pairingOfferInBrief finds the offer in a hand-off's instructions, so that a
+// summary that repeats it can have it taken out.
+var pairingOfferInBrief = regexp.MustCompile(`-offer '([^']+)'`)
+
+// PairingAgentProgressOf maps a hand-off's record onto the card's words.
+//
+// The child's summary is its own words and it was told never to write the
+// offer; it is read here as if it might have, and the offer is cut out of it
+// before it leaves, as is anything past 600 characters.
+func PairingAgentProgressOf(r Record) PairingAgentProgress {
+	scrub := func(s string) string {
+		s = strings.TrimSpace(s)
+		if m := pairingOfferInBrief.FindStringSubmatch(r.Instructions); m != nil && m[1] != "" {
+			s = strings.ReplaceAll(s, m[1], "…")
+		}
+		return truncate(s, 600)
+	}
+	switch r.State {
+	case StateSuccess:
+		summary := ""
+		if r.Result != nil {
+			summary = scrub(r.Result.Summary)
+		}
+		return PairingAgentProgress{State: PairingAgentDone, Summary: summary}
+	case StateFailure, StateTimeout, StateCancelled, StateSpawnFailed:
+		reason := ""
+		switch {
+		case r.Result != nil && strings.TrimSpace(r.Result.Summary) != "":
+			reason = r.Result.Summary
+		case strings.TrimSpace(r.Verdict) != "":
+			reason = r.Verdict
+		case strings.TrimSpace(r.SpawnError) != "":
+			reason = r.SpawnError
+		default:
+			reason = string(r.State)
+		}
+		return PairingAgentProgress{State: PairingAgentFailed, FailedReason: scrub(reason)}
+	}
+	if !r.AwaitingDialogSince.IsZero() {
+		return PairingAgentProgress{State: PairingAgentDialog}
+	}
+	if !r.AcceptedAt.IsZero() {
+		return PairingAgentProgress{State: PairingAgentWorking}
+	}
+	return PairingAgentProgress{State: PairingAgentStarting}
 }

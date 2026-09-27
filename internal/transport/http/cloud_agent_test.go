@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -224,6 +226,135 @@ func TestAPairingHandOffNameIsOneShortLine(t *testing.T) {
 	} {
 		if got := pairAgentMachineName(raw); got != want {
 			t.Errorf("%q became %q, want %q", raw, got, want)
+		}
+	}
+}
+
+// The hand-off starts in the daemon's own folder, and says whether Claude Code
+// was told to trust it and when the offer runs out.
+func TestAPairingHandOffStartsInTheDaemonsOwnFolder(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	h := newPairAgentHarness(t)
+	rec := h.post(t, map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_build-host-01", "machine_name": "b"}, true)
+	if rec.Code != http.StatusOK || len(h.dispatched) != 1 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if want := filepath.Join(h.s.cfg.Dir, orchestrator.PairingAgentDirName); h.dispatched[0].ProjectDir != want {
+		t.Fatalf("the assistant starts in %q, want %q", h.dispatched[0].ProjectDir, want)
+	}
+	var out struct {
+		Trust     string `json:"trust"`
+		ExpiresAt int64  `json:"expires_at"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.Trust == "" || out.ExpiresAt != h.offer.ExpiresAt {
+		t.Fatalf("answered %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), h.offer.Fragment()) {
+		t.Fatal("the answer carries the offer")
+	}
+}
+
+// Claude Code is told to trust exactly the hand-off's folder, and a machine
+// where that cannot be written still hands off, saying why.
+func TestAPairingHandOffRecordsTrustForItsFolderOnly(t *testing.T) {
+	config := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", config)
+	dir, err := orchestrator.PairingAgentDir(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	trust, why := pairAgentTrust("claude", dir)
+	if trust != pairAgentTrustNotRecorded || why == "" {
+		t.Fatalf("with no Claude config: %q %q", trust, why)
+	}
+
+	file := filepath.Join(config, ".claude.json")
+	if err := os.WriteFile(file, []byte(`{"projects":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if trust, why := pairAgentTrust("claude", dir); trust != pairAgentTrustRecorded || why != "" {
+		t.Fatalf("with a config: %q %q", trust, why)
+	}
+	var written struct {
+		Projects map[string]map[string]any `json:"projects"`
+	}
+	body, _ := os.ReadFile(file)
+	if err := json.Unmarshal(body, &written); err != nil {
+		t.Fatal(err)
+	}
+	real, _ := filepath.EvalSymlinks(dir)
+	if len(written.Projects) != 1 || written.Projects[filepath.ToSlash(real)]["hasTrustDialogAccepted"] != true {
+		t.Fatalf("recorded %s", body)
+	}
+
+	if err := os.Mkdir(file+".lock", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	other, _ := orchestrator.PairingAgentDir(t.TempDir())
+	if trust, why := pairAgentTrust("claude", other); trust != pairAgentTrustNotRecorded || !strings.Contains(why, "lock") {
+		t.Fatalf("with the lock held: %q %q", trust, why)
+	}
+
+	if trust, _ := pairAgentTrust("codex", dir); trust != pairAgentTrustPerLaunch {
+		t.Fatalf("codex: %q", trust)
+	}
+}
+
+func (h *pairAgentHarness) get(t *testing.T, path string, local bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req = req.WithContext(context.WithValue(req.Context(), accessKey{},
+		access{verdict: auth.Verdict{Allowed: true, Local: local}}))
+	rec := httptest.NewRecorder()
+	h.s.cloudPairingAgentTaskRoute(rec, req)
+	return rec
+}
+
+// The card reads where a hand-off is: only a cloud-pairing task, only with
+// this machine's token, and never the brief that holds the offer.
+func TestAPairingHandOffProgressAnswersOnlyForAHandOff(t *testing.T) {
+	h := newPairAgentHarness(t)
+	offer := h.offer.Fragment()
+	const pairID = "7ab00050-0000-4000-8000-000000000051"
+	const otherID = "7ab00050-0000-4000-8000-000000000052"
+	brief := orchestrator.PairingAgentInstructions("mac_x", "x", offer)
+	h.s.pairAgentTask = func(_ context.Context, id string) (orchestrator.Record, error) {
+		switch id {
+		case pairID:
+			return orchestrator.Record{ID: id, Kind: orchestrator.PairingAgentKind, State: orchestrator.StateBriefed,
+				AcceptedAt: time.Now(), Instructions: brief}, nil
+		case otherID:
+			return orchestrator.Record{ID: id, Kind: "custom", State: orchestrator.StateBriefed, Instructions: "secret work"}, nil
+		}
+		return orchestrator.Record{}, context.Canceled
+	}
+	rec := h.get(t, "/v1/cloud/pairing/agent/"+pairID, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out["state"] != orchestrator.PairingAgentWorking || len(out) != 1 {
+		t.Fatalf("answered %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), offer) || strings.Contains(rec.Body.String(), "clawdline cloud pair") {
+		t.Fatal("the answer carries the brief")
+	}
+	for _, c := range []struct {
+		name, path string
+		local      bool
+		status     int
+	}{
+		{"not this machine's token", "/v1/cloud/pairing/agent/" + pairID, false, http.StatusForbidden},
+		{"another kind of task", "/v1/cloud/pairing/agent/" + otherID, true, http.StatusNotFound},
+		{"no such task", "/v1/cloud/pairing/agent/7ab00050-0000-4000-8000-000000000053", true, http.StatusNotFound},
+		{"not a task id", "/v1/cloud/pairing/agent/../../orchestrator/tasks", true, http.StatusNotFound},
+	} {
+		rec := h.get(t, c.path, c.local)
+		if rec.Code != c.status || strings.Contains(rec.Body.String(), "secret work") {
+			t.Errorf("%s: %d %s", c.name, rec.Code, rec.Body.String())
 		}
 	}
 }
