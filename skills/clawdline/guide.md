@@ -979,7 +979,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   it work the way that role works, for the whole conversation. It is only for a new Session
   (`--assign-new`, `--new`, `dispatch`); an existing Session keeps the one it opened with. None by
   default. A persona never overrides `CLAUDE.md`/`AGENTS.md`, the brief, `CHILD.md` or this
-  protocol. `GET /v1/personas` lists them; the sixteen ids, eight per team (`team` on each):
+  protocol. `GET /v1/personas` lists them; the sixteen ids (`teams` on each lists every team a persona is in, and one may be in several):
   - `architect` — planning an Epic;
   - `backend` — a daemon, API or store feature;
   - `frontend` — a console or phone-layout feature;

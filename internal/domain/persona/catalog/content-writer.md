@@ -1,6 +1,6 @@
 ---
 id: content-writer
-team: marketing
+teams: [marketing]
 name_en: Content Writer
 name_zh: 文章寫手
 summary_en: Drafts articles as files in the site's own format and voice, outline first, with verified facts and first-hand detail instead of filler.

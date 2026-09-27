@@ -14,33 +14,39 @@ call it "Role".
 
 The catalog is closed and compiled into the daemon (`internal/domain/persona`). Each persona is
 one Markdown file under `internal/domain/persona/catalog/`, with a frontmatter of exactly eight
-keys (`id`, `team`, `name_en`, `name_zh`, `summary_en`, `summary_zh`, `suggested_kinds`, `source`) and a
+keys (`id`, `teams`, `name_en`, `name_zh`, `summary_en`, `summary_zh`, `suggested_kinds`, `source`) and a
 body. The files are parsed when the package loads. `TestTheCatalogLoads` turns a malformed file, a
 file missing from `persona.Order`, or a text past the bounds into a failing test, so a daemon
 never finds one at run time.
 
-Every persona belongs to one **team**, `engineering` or `marketing` (`team` in the frontmatter and
-on the wire, a closed set `parse` refuses anything outside of). The console names the teams; the
-catalog only says which one.
+Every persona belongs to one or more **teams** (`teams: [engineering, quality]` in the frontmatter,
+the same list syntax as `suggested_kinds`; `teams` on the wire). The set is closed, in this order:
+`engineering`, `marketing`, `product`, `quality`, `operations`, `design`, `business`. `parse`
+refuses an empty list, a name outside the set and a name listed twice. The console names the teams
+(工程團隊, 行銷團隊, 產品團隊, 品質團隊, 維運團隊, 設計團隊, 商業營運團隊); the catalog only says which.
 
-The engineering team:
+**The same role may appear in several teams, and that is wanted**: a code reviewer is as much at
+home in a quality team as in an engineering one. A persona in two teams is still one persona —
+one id, one text, one bot — shown among the chips of each team it belongs to.
 
-| id | Name | Suggested for |
-| --- | --- | --- |
-| `architect` | Architect | epic |
-| `backend` | Backend Engineer | feature |
-| `frontend` | Frontend Engineer | feature |
-| `minimal-change` | Minimal-Change Engineer | issue |
-| `code-reviewer` | Code Reviewer | — |
-| `reality-checker` | Reality Checker | — |
-| `security` | Security Engineer | — |
-| `technical-writer` | Technical Writer | — |
+The engineering team; the last column is every team the persona is in:
+
+| id | Name | Suggested for | Teams |
+| --- | --- | --- | --- |
+| `architect` | Architect | epic | engineering |
+| `backend` | Backend Engineer | feature | engineering |
+| `frontend` | Frontend Engineer | feature | engineering, design |
+| `minimal-change` | Minimal-Change Engineer | issue | engineering |
+| `code-reviewer` | Code Reviewer | — | engineering, quality |
+| `reality-checker` | Reality Checker | — | engineering, quality |
+| `security` | Security Engineer | — | engineering, operations |
+| `technical-writer` | Technical Writer | — | engineering, marketing |
 
 The marketing team, for a session working in a blog, a site or a docs repository. Each was
 adapted, not copied: upstream emoji, hype, invented metrics and tool-specific pipelines were
 dropped, and every one edits files in the repository, never posts or sends anything itself, and
 writes in the site's own language and locale (Taiwan usage for zh-TW). None is suggested for a
-Board kind.
+Board kind. The eight below are in the marketing team only; `technical-writer` is in it too.
 
 | id | Name | 中文 | Adapted from |
 | --- | --- | --- | --- |
@@ -210,16 +216,20 @@ showed before this feature, never a sheet that breaks after a press.
 
 - **The team switcher.** The start sheet, its resume step and the Board's new-Session assignment
   draw one role row (`session/RoleRow.tsx`). When the catalog has personas in more than one team,
-  its "Role" label is a native select, 工程團隊 / Engineering and 行銷團隊 / Marketing, styled like
+  its "Role" label is a native select naming the teams that have at least one persona, in the
+  order above (工程團隊 / Engineering, 行銷團隊 / Marketing, 品質團隊 / Quality, …), styled like
   the label with a caret so a phone opens its own picker; the chips to its right are "No role"
-  and that team's personas only. The team shown is the chosen persona's own team, otherwise the
-  team last picked in this browser (localStorage, `clawdline.persona.team`), otherwise
-  engineering, so the Board's kind default (epic → architect, issue → minimal-change) shows the
-  engineering team. Switching to a team that does not hold the chosen persona resets the choice
-  to "No role": a start never sends a persona the person cannot see. A catalog without `team`
-  (a daemon older than the field, or a Cloud machine not yet updated) is all engineering, and
-  with one team the label stays the plain "Role" it was. The decisions are pure functions in
-  `personas.ts` (`shownTeam`, `switchTeam`, `teamsOffered`, `personasOfTeam`).
+  and that team's personas only. With a persona chosen, the team shown is the team last picked
+  in this browser (localStorage, `clawdline.persona.team`) when it holds the persona, otherwise
+  the persona's first team in that order; so the Board's kind default (epic → architect, issue
+  → minimal-change) shows the engineering team. With none chosen it is the remembered team,
+  otherwise engineering. Switching team keeps the chosen persona when the new team holds it too
+  (a code reviewer stays chosen from engineering to quality) and otherwise resets the choice to
+  "No role": a start never sends a persona the person cannot see. A catalog from an older daemon
+  is read as it was: a single `team` string is a list of one, and a catalog with neither field
+  (or a Cloud machine not yet updated) is all engineering; with one team the label stays the
+  plain "Role" it was. The decisions are pure functions in `personas.ts` (`personaTeams`,
+  `shownTeam`, `switchTeam`, `teamsOffered`, `personasOfTeam`).
 - **Session list.** A row whose `persona` the catalog names shows the bot alone, at two pixels a
   cell (16×14, the height of the line's 11 px text), at the head of its second line, before the
   path; the full name and summary are its title and accessible name. It first rode in the title

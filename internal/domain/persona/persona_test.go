@@ -1,6 +1,7 @@
 package persona
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -28,10 +29,15 @@ func TestTheCatalogLoads(t *testing.T) {
 			t.Errorf("%s twice", p.ID)
 		}
 		seen[p.ID] = true
-		if !knownTeam(p.Team) {
-			t.Errorf("%s has team %q", p.ID, p.Team)
+		if len(p.Teams) == 0 {
+			t.Errorf("%s has no team", p.ID)
 		}
-		perTeam[p.Team]++
+		for _, team := range p.Teams {
+			if !knownTeam(team) {
+				t.Errorf("%s has team %q", p.ID, team)
+			}
+			perTeam[team]++
+		}
 		raw, err := files.ReadFile("catalog/" + FileName(p.ID))
 		if err != nil {
 			t.Fatal(err)
@@ -61,8 +67,12 @@ func TestTheCatalogLoads(t *testing.T) {
 			}
 		}
 	}
-	if perTeam["engineering"] != 8 || perTeam["marketing"] != 8 {
-		t.Errorf("personas per team %v, want 8 and 8", perTeam)
+	wantTeams := map[string]int{"engineering": 8, "marketing": 9, "quality": 2, "operations": 1, "design": 1}
+	if fmt.Sprint(perTeam) != fmt.Sprint(wantTeams) {
+		t.Errorf("personas per team %v, want %v", perTeam, wantTeams)
+	}
+	if technicalWriter, _ := Known("technical-writer"); strings.Join(technicalWriter.Teams, ",") != "engineering,marketing" {
+		t.Errorf("technical-writer is in %v, want engineering then marketing", technicalWriter.Teams)
 	}
 	if len(All()) > MaxPersonas {
 		t.Errorf("%d personas; at most %d", len(All()), MaxPersonas)
@@ -86,7 +96,7 @@ func TestThePreambleSaysWhatItNeverOverrides(t *testing.T) {
 }
 
 func TestParseRefusesAMalformedFile(t *testing.T) {
-	good := "---\nid: x\nteam: marketing\nname_en: X\nname_zh: 叉\nsummary_en: s\nsummary_zh: 說\nsuggested_kinds: [epic]\n" +
+	good := "---\nid: x\nteams: [marketing, quality]\nname_en: X\nname_zh: 叉\nsummary_en: s\nsummary_zh: 說\nsuggested_kinds: [epic]\n" +
 		"source: " + UpstreamRepository + "/blob/" + UpstreamCommit + "/a.md\n---\n# X\nbody\n"
 	if _, err := parse(good); err != nil {
 		t.Fatalf("the control file is refused: %v", err)
@@ -96,9 +106,13 @@ func TestParseRefusesAMalformedFile(t *testing.T) {
 		"unclosed":       "---\nid: x\n",
 		"missing key":    strings.Replace(good, "name_zh: 叉\n", "", 1),
 		"extra key":      strings.Replace(good, "id: x\n", "id: x\ncolour: red\n", 1),
-		"unknown team":   strings.Replace(good, "team: marketing", "team: sales", 1),
-		"empty team":     strings.Replace(good, "team: marketing", "team:", 1),
-		"no team":        strings.Replace(good, "team: marketing\n", "", 1),
+		"unknown team":   strings.Replace(good, "[marketing, quality]", "[marketing, sales]", 1),
+		"empty teams":    strings.Replace(good, "[marketing, quality]", "[]", 1),
+		"blank teams":    strings.Replace(good, "teams: [marketing, quality]", "teams:", 1),
+		"teams not list": strings.Replace(good, "[marketing, quality]", "marketing", 1),
+		"team twice":     strings.Replace(good, "[marketing, quality]", "[marketing, marketing]", 1),
+		"no teams":       strings.Replace(good, "teams: [marketing, quality]\n", "", 1),
+		"old team key":   strings.Replace(good, "teams: [marketing, quality]", "team: marketing", 1),
 		"unknown kind":   strings.Replace(good, "[epic]", "[epic, chore]", 1),
 		"not a list":     strings.Replace(good, "[epic]", "epic", 1),
 		"bad id":         strings.Replace(good, "id: x", "id: X_1", 1),

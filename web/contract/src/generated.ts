@@ -3859,10 +3859,11 @@ export interface Persona {
   summary: PersonaNames
 
   /**
-   * The team the console's switcher shows this persona under. A closed set; the
-   * console names each team, so the catalog only says which one.
+   * The teams the console's switcher shows this persona under: at least one, none
+   * twice. A closed set; the console names each team, so the catalog only says
+   * which.
    */
-  team: string
+  teams: string[]
 }
 
 /**

@@ -1,6 +1,6 @@
 ---
 id: pr
-team: marketing
+teams: [marketing]
 name_en: PR & Communications
 name_zh: 公關傳播
 summary_en: Drafts press releases, announcements and media lists as files, with every claim fact-checked and nothing released without the person's approval.

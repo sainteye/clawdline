@@ -2,12 +2,12 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { Persona } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
-import { headPersona, personaById, personasOfTeam, rowPersonaLine, shownTeam, suggestedPersona, switchTeam, teamsOffered } from "./personas.ts"
+import { headPersona, personaById, personasOfTeam, personaTeams, rowPersonaLine, shownTeam, suggestedPersona, switchTeam, teamsOffered, withTeams } from "./personas.ts"
 
 const icon = { accent: "#000000", cells: [["#000000"]] }
-const persona = (id: string, kinds: string[], team = "engineering"): Persona => ({
+const persona = (id: string, kinds: string[], teams = ["engineering"]): Persona => ({
   id,
-  team,
+  teams,
   name: { en: id, "zh-Hant": id },
   summary: { en: "", "zh-Hant": "" },
   suggested_kinds: kinds,
@@ -103,17 +103,39 @@ test("a session row has a role line only for a persona the catalog names", () =>
 })
 
 const teams = [
-  ...catalog,
-  persona("seo", [], "marketing"),
-  persona("content-writer", [], "marketing"),
+  ...catalog.map((p) =>
+    p.id === "frontend" ? { ...p, teams: ["engineering", "design"] } : p.id === "code-reviewer" ? { ...p, teams: ["engineering", "quality"] } : p,
+  ),
+  persona("seo", [], ["marketing"]),
+  persona("technical-writer", [], ["engineering", "marketing"]),
+  persona("qa", [], ["quality"]),
 ]
-// A daemon older than the `team` field sends personas without one.
-const untagged = catalog.map(({ team: _team, ...rest }) => rest as unknown as Persona)
+// A daemon older than the `teams` field sends one `team`, or older still, none.
+const single = [
+  ...catalog.map(({ teams: _teams, ...rest }) => ({ ...rest, team: "engineering" }) as unknown as Persona),
+  { ...persona("seo", []), teams: undefined, team: "marketing" } as unknown as Persona,
+]
+const untagged = catalog.map(({ teams: _teams, ...rest }) => rest as unknown as Persona)
 
-test("the switcher offers the teams that have personas, and the chips show one team", () => {
-  assert.deepEqual(teamsOffered(teams), ["engineering", "marketing"])
-  assert.deepEqual(personasOfTeam(teams, "marketing").map((p) => p.id), ["seo", "content-writer"])
-  assert.deepEqual(personasOfTeam(teams, "engineering").map((p) => p.id), catalog.map((p) => p.id))
+test("the switcher offers the teams that have personas, in team order, and the chips show one team", () => {
+  assert.deepEqual(teamsOffered(teams), ["engineering", "marketing", "quality", "design"])
+  assert.deepEqual(personasOfTeam(teams, "marketing").map((p) => p.id), ["seo", "technical-writer"])
+  assert.deepEqual(personasOfTeam(teams, "quality").map((p) => p.id), ["code-reviewer", "qa"])
+  assert.deepEqual(personasOfTeam(teams, "design").map((p) => p.id), ["frontend"])
+  assert.deepEqual(personasOfTeam(teams, "engineering").map((p) => p.id), [...catalog.map((p) => p.id), "technical-writer"])
+  assert.deepEqual(personasOfTeam(teams, "business"), [])
+})
+
+test("a persona's teams are read from teams, an older single team, or neither", () => {
+  assert.deepEqual(personaTeams(teams[2]), ["engineering", "design"])
+  // Listed out of order, the switcher's order wins; unknown names are dropped.
+  assert.deepEqual(personaTeams(persona("x", [], ["quality", "sales", "engineering"])), ["engineering", "quality"])
+  assert.deepEqual(personaTeams(persona("x", [], ["sales"])), ["engineering"])
+  assert.deepEqual(personaTeams(persona("x", [], [])), ["engineering"])
+  assert.deepEqual(single.map(personaTeams).at(-1), ["marketing"])
+  assert.deepEqual(teamsOffered(single), ["engineering", "marketing"])
+  assert.deepEqual(withTeams(single.at(-1)!).teams, ["marketing"])
+  assert.deepEqual(withTeams(untagged[0]).teams, ["engineering"])
 })
 
 test("a catalog without teams is all engineering, one team, so no switcher", () => {
@@ -121,22 +143,33 @@ test("a catalog without teams is all engineering, one team, so no switcher", () 
   assert.equal(personasOfTeam(untagged, "engineering").length, catalog.length)
   assert.equal(personasOfTeam(untagged, "marketing").length, 0)
   assert.equal(shownTeam(untagged, "", "marketing"), "engineering")
-  assert.deepEqual(teamsOffered([persona("x", [], "sales")]), ["engineering"])
   assert.deepEqual(teamsOffered(null), [])
 })
 
-test("the team shown is the chosen persona's, then the remembered one, then engineering", () => {
+test("the team shown holds the chosen persona: the remembered one if it does, else its first team", () => {
   assert.equal(shownTeam(teams, "seo", "engineering"), "marketing")
   assert.equal(shownTeam(teams, "architect", "marketing"), "engineering")
-  assert.equal(shownTeam(teams, "", "marketing"), "marketing")
+  // In several teams: the remembered one when it holds the persona.
+  assert.equal(shownTeam(teams, "technical-writer", "marketing"), "marketing")
+  assert.equal(shownTeam(teams, "code-reviewer", "quality"), "quality")
+  // Otherwise the persona's first team in switcher order.
+  assert.equal(shownTeam(teams, "code-reviewer", "marketing"), "engineering")
+  assert.equal(shownTeam(teams, "qa", "engineering"), "quality")
+  assert.equal(shownTeam(teams, "frontend", "sales"), "engineering")
+  // No persona: the remembered team, then engineering.
+  assert.equal(shownTeam(teams, "", "quality"), "quality")
+  assert.equal(shownTeam(teams, "", "business"), "engineering")
   assert.equal(shownTeam(teams, "janitor", "sales"), "engineering")
   assert.equal(shownTeam(teams, null, ""), "engineering")
   // The Board's kind default (epic → architect) shows the engineering team.
   assert.equal(shownTeam(teams, suggestedPersona(teams, "epic")?.id, "marketing"), "engineering")
 })
 
-test("switching team keeps a choice only when that team shows it", () => {
+test("switching team keeps a choice when the new team holds it too", () => {
   assert.deepEqual(switchTeam(teams, "architect", "marketing"), { team: "marketing", chosen: "" })
   assert.deepEqual(switchTeam(teams, "seo", "marketing"), { team: "marketing", chosen: "seo" })
+  assert.deepEqual(switchTeam(teams, "technical-writer", "marketing"), { team: "marketing", chosen: "technical-writer" })
+  assert.deepEqual(switchTeam(teams, "code-reviewer", "quality"), { team: "quality", chosen: "code-reviewer" })
+  assert.deepEqual(switchTeam(teams, "code-reviewer", "design"), { team: "design", chosen: "" })
   assert.deepEqual(switchTeam(teams, "", "engineering"), { team: "engineering", chosen: "" })
 })

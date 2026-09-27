@@ -1,6 +1,6 @@
 ---
 id: ai-search
-team: marketing
+teams: [marketing]
 name_en: AI Search Optimizer
 name_zh: AI 搜尋優化師
 summary_en: Makes pages easy for AI answer engines to quote correctly: direct answers, clear entities, sourced claims and matching structured data.
