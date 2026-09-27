@@ -41,6 +41,30 @@
 /** The uncovered width: `--swipe-action-w` in `legacy/responsive.css`. */
 export const ACTION_WIDTH = 126
 
+/**
+ * One of the two buttons a row with a conversation uncovers: 封存 and 關閉,
+ * side by side (docs/session-archive.md). Each is narrower than the close
+ * alone and still wider than a thumb; `session/swipe-archive.css` draws them.
+ */
+export const BUTTON_WIDTH = 88
+
+/** The uncovered width when both buttons are there. */
+export const BOTH_WIDTH = 2 * BUTTON_WIDTH
+
+/**
+ * Whether a row can be archived: only one that names its conversation. The
+ * daemon refuses the rest (`archive_no_conversation`), because with nothing
+ * to resume an archive would be a close under another name.
+ */
+export function archivable(conversation: string | null | undefined): boolean {
+  return typeof conversation === "string" && conversation.trim() !== ""
+}
+
+/** How much a row uncovers: both buttons, or the close alone. */
+export function actionWidth(conversation: string | null | undefined): number {
+  return archivable(conversation) ? BOTH_WIDTH : ACTION_WIDTH
+}
+
 /** How far a finger travels before the gesture says which axis it is. */
 export const AXIS_SLOP = 10
 
@@ -68,11 +92,11 @@ export type SwipeState = "" | "dragging" | "open"
  * width the row gives a little and then stops, which is the difference between
  * an edge and a wall.
  */
-export function offsetFor(base: number, dx: number): number {
+export function offsetFor(base: number, dx: number, width = ACTION_WIDTH): number {
   const raw = base - dx
   if (raw <= 0) return 0
-  if (raw <= ACTION_WIDTH) return raw
-  return ACTION_WIDTH + Math.pow(raw - ACTION_WIDTH, STRETCH * 2) * STRETCH
+  if (raw <= width) return raw
+  return width + Math.pow(raw - width, STRETCH * 2) * STRETCH
 }
 
 /**
@@ -81,10 +105,10 @@ export function offsetFor(base: number, dx: number): number {
  * A flick is answered by its direction whatever the distance — that is what a
  * flick is for — and anything slower is answered by how far it got.
  */
-export function settleOpen(offset: number, velocity: number): boolean {
+export function settleOpen(offset: number, velocity: number, width = ACTION_WIDTH): boolean {
   if (velocity <= -FLICK) return true
   if (velocity >= FLICK) return false
-  return offset >= ACTION_WIDTH * OPEN_AT
+  return offset >= width * OPEN_AT
 }
 
 /** A closeability as the copied projection answers it (`view/derive.js`). */
@@ -124,6 +148,8 @@ interface Drag {
   y0: number
   /** What was already uncovered when the finger went down. */
   base: number
+  /** This row's action width (`actionWidth`). */
+  width: number
   axis: Axis
   offset: number
   /** The last move, for the flick. */
@@ -145,6 +171,7 @@ interface Drag {
 export class Swipes {
   private drag: Drag | null = null
   private opened: string | null = null
+  private openedWidth = ACTION_WIDTH
   private swallow = false
   private watchers = new Set<() => void>()
 
@@ -160,7 +187,7 @@ export class Swipes {
   /** How far left that row's contents are, in px. */
   offsetOf(id: string): number {
     if (this.drag && this.drag.id === id && this.drag.axis === "row") return this.drag.offset
-    return this.opened === id ? ACTION_WIDTH : 0
+    return this.opened === id ? this.openedWidth : 0
   }
 
   /** Which axis the gesture in progress belongs to. */
@@ -177,9 +204,10 @@ export class Swipes {
    * A finger went down on `id` (or on nothing, when it went down off a row).
    *
    * Returns true when this press was spent closing what was open, so the press
-   * opens no session and starts no drag.
+   * opens no session and starts no drag. `width` is that row's action width
+   * (`actionWidth`), read from the row by the caller.
    */
-  begin(id: string | null, x: number, y: number, now: number): boolean {
+  begin(id: string | null, x: number, y: number, now: number, width = ACTION_WIDTH): boolean {
     const closing = this.opened !== null && this.opened !== id
     if (closing) {
       this.opened = null
@@ -197,9 +225,10 @@ export class Swipes {
       id,
       x0: x,
       y0: y,
-      base: this.opened === id ? ACTION_WIDTH : 0,
+      base: this.opened === id ? width : 0,
+      width,
       axis: "undecided",
-      offset: this.opened === id ? ACTION_WIDTH : 0,
+      offset: this.opened === id ? width : 0,
       at: now,
       x,
       velocity: 0,
@@ -231,7 +260,7 @@ export class Swipes {
     drag.velocity = (x - drag.x) / gap
     drag.at = now
     drag.x = x
-    drag.offset = offsetFor(drag.base, dx)
+    drag.offset = offsetFor(drag.base, dx, drag.width)
     drag.moved = true
     return "row"
   }
@@ -241,9 +270,10 @@ export class Swipes {
     const drag = this.drag
     this.drag = null
     if (!drag || drag.axis !== "row") return null
-    const open = settleOpen(drag.offset, drag.velocity)
+    const open = settleOpen(drag.offset, drag.velocity, drag.width)
     const was = this.opened
     this.opened = open ? drag.id : null
+    if (open) this.openedWidth = drag.width
     // A gesture that moved the row is not a press, however it ended.
     if (drag.moved) this.swallow = true
     if (was !== this.opened) this.tell()

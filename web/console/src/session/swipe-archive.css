@@ -1,0 +1,32 @@
+/*
+ * The swipe's second button: 封存 beside 關閉 (docs/session-archive.md).
+ *
+ * `legacy/responsive.css` draws the one close button the copied app had and
+ * stays byte for byte, so the pair is drawn here on top of it. A row that can
+ * be archived says so with `data-swipe-width` (`swipe.ts`, `actionWidth`); on
+ * it the close narrows to one of two 88px buttons, and 封存 stands to its left.
+ * Both travel in by the same `--swipe-button-x`, so they arrive as one strip.
+ * A row without a conversation id draws no 封存 and keeps the 126px close.
+ */
+.row[data-swipe][data-swipe-width="176"] { --swipe-action-w: 88px; }
+
+.row > .swipe-archive {
+    display: none;
+    position: absolute; z-index: 3; top: -1px; bottom: -1px;
+    right: calc(var(--swipe-action-w, 88px) - 1px);
+    width: var(--swipe-action-w, 88px);
+    align-items: center; justify-content: center;
+    padding: 0 8px;
+    border: 0;
+    background: var(--card-hi); color: var(--ink);
+    font: inherit; font-size: 12.5px; font-weight: 600;
+    text-align: center; line-height: 1.3;
+    transform: translateX(var(--swipe-button-x, 176px));
+    transition: transform 180ms var(--ease), background 160ms var(--ease);
+}
+.row[data-swipe] > .swipe-archive:not([hidden]) { display: flex; }
+.row[data-swipe="dragging"] > .swipe-archive { transition: none; }
+.row > .swipe-archive:active { background: var(--line); }
+
+/* Two words in 88px: let "Close Session" take two lines rather than be cut. */
+.row[data-swipe-width="176"] > .swipe-end { padding: 0 8px; text-align: center; line-height: 1.3; }

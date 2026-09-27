@@ -198,6 +198,9 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/sessions/s%201/send", "send"],
     ["POST", "/v1/sessions/s1/key", "answer"],
     ["POST", "/v1/sessions/s1/close", "end"],
+    ["POST", "/v1/sessions/s1/archive", "archive-session"],
+    ["GET", "/v1/sessions/archived", "archived-sessions"],
+    ["POST", "/v1/sessions/archived/restore", "restore-archived"],
     ["POST", "/v1/sessions/s1/focus", "focus"],
     ["POST", "/v1/places/p1/start", "start"],
     ["POST", "/v1/places/p1/start/codex/gpt-5", "start"],
@@ -1466,6 +1469,61 @@ test("the sessions a reboot took away cross as the machine's three words, under 
     post({ conversations: ["c1"] }, { "Idempotency-Key": "press-restore-2" }))
   assert.equal(tooMany.status, 400)
   assert.equal((await json<{ error: string }>(tooMany)).error, "restore_batch_too_large")
+})
+
+test("an archive rides its Session's channel, and the archive's list and restore are the machine's", async () => {
+  // Parsed before the session writes, which would take `archived` for a
+  // session id and `restore` for an action it does not have.
+  assert.deepEqual(writeRoute("POST", "/v1/sessions/s1/archive"), { op: "archive", word: "archive-session", session: "s1" })
+  assert.deepEqual(writeRoute("GET", "/v1/sessions/archived"), { op: "archived", word: "archived-sessions" })
+  assert.deepEqual(writeRoute("POST", "/v1/sessions/archived/restore"), { op: "restore-archived", word: "restore-archived" })
+  assert.equal(writeRoute("POST", "/v1/sessions/archived"), null)
+  assert.equal(writeRoute("GET", "/v1/sessions/archived/restore"), null)
+  assert.equal(writeRoute("POST", "/v1/sessions/archived/other"), null)
+
+  const client = new FakeClient()
+  client.rows = [row("s1")]
+  const { reader } = seam(client)
+  assert.deepEqual((await reader.snapshot()).sessions.map((s) => s.id), ["s1"])
+
+  // The archive is the close's decision: its key is the command's request and
+  // `force` is carried as the word spells it.
+  const archived = await reader.fetch("/v1/sessions/s1/archive", post({ force: true }, { "Idempotency-Key": "press-archive-1" }))
+  assert.equal(archived.status, 200)
+  assert.deepEqual(client.calls.pop(), [
+    "_read", { machine: "mac-a", session: "s1" }, "archive-session",
+    { request: "press-archive-1", force: true }, "action:press-archive-1", undefined, undefined,
+  ])
+  assert.deepEqual((await reader.snapshot()).sessions, [], "an archive is a close: the row goes with it")
+
+  // Without the press's key nothing is sealed.
+  client.rows = [row("s2")]
+  const keyless = await reader.fetch("/v1/sessions/s2/archive", post({}))
+  assert.equal(keyless.status, 400)
+  assert.equal(client.calls.filter((c) => c[0] === "_read").length, 0)
+
+  const list = await reader.fetch("/v1/sessions/archived")
+  assert.equal(list.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "archived-sessions", {}, "read"])
+  const extra = await reader.fetch("/v1/sessions/archived?all=1")
+  assert.equal(extra.status, 501)
+
+  const restored = await reader.fetch("/v1/sessions/archived/restore",
+    post({ conversations: ["c1"] }, { "Idempotency-Key": "press-restore-archived-1" }))
+  assert.equal(restored.status, 200)
+  assert.deepEqual(client.calls.pop(),
+    ["_machineRequestAs", "press-restore-archived-1", "mac-a", "restore-archived", { conversations: ["c1"] }, "action"])
+  const restoreKeyless = await reader.fetch("/v1/sessions/archived/restore", post({ conversations: ["c1"] }))
+  assert.equal(restoreKeyless.status, 400)
+
+  // The route's refusal crosses flat, with its code.
+  client.fail._machineRequestAs = failureFromMac({
+    code: "archive_batch_too_large", layer: "mac_route", message: "At most 20 conversations.",
+  }, 400, REF)
+  const tooMany = await reader.fetch("/v1/sessions/archived/restore",
+    post({ conversations: ["c1"] }, { "Idempotency-Key": "press-restore-archived-2" }))
+  assert.equal(tooMany.status, 400)
+  assert.equal((await json<{ error: string }>(tooMany)).error, "archive_batch_too_large")
 })
 
 test("the machine dashboard crosses as its machine word, with no field of its own", async () => {

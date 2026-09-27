@@ -3,12 +3,13 @@ import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { requestConfirm } from "../overlays/events.js"
-import { ACTION_WIDTH, revealFor, swipes, type Reveal } from "./swipe.js"
+import { ACTION_WIDTH, actionWidth, archivable, revealFor, swipes, type Reveal } from "./swipe.js"
 import { conversationNotStarted } from "./readiness.js"
 import { retainedStateWords } from "../session-reading.js"
 import { rowPersonaLine } from "../personas.js"
 import { usePersonas } from "./PersonaBot.js"
 import "./list-density.css"
+import "./swipe-archive.css"
 
 export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: number; id?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -289,10 +290,12 @@ export function Row({
   useLayoutEffect(() => {
     const node = ref.current
     if (!node) return
-    paintSwipe(node, swiped ? "open" : "", swiped ? ACTION_WIDTH : 0)
-  }, [swiped])
+    paintSwipe(node, swiped ? "open" : "", swiped ? actionWidthOf(node) : 0)
+  }, [swiped, row.sessionId])
   const reveal = swipeReveal(row)
   const name = row.label || row.tty || row.id
+  // 封存 only where there is a conversation to bring back (`swipe.ts`).
+  const canArchive = archivable(row.sessionId)
   const activity = sessionActivityWord(row)
   // A gesture that moved the row, and the press that put an uncovered action
   // away, are not presses on the row (`swipe.ts`, `tookThePress`).
@@ -320,6 +323,7 @@ export function Row({
       aria-disabled="false"
       data-coordinator={coordinator ? "1" : undefined}
       data-depth={place.chip && place.depth ? String(place.depth) : undefined}
+      data-swipe-width={actionWidth(row.sessionId)}
       onClick={onPress}
     >
       <span className="kid" hidden={!place.depth} aria-hidden="true">
@@ -383,6 +387,25 @@ export function Row({
           other close in this console goes through, which is where the reasons
           are and where the second press is. Hidden until a gesture uncovers it,
           as the original starts it — on a desk nothing ever does. */}
+      {/* 封存 beside 關閉 (docs/session-archive.md): the same rule — the press
+          opens a confirmation that names the row, never the archive itself.
+          Not drawn for a row with no conversation id, which the daemon would
+          refuse. */}
+      {canArchive ? (
+        <button
+          className="swipe-archive"
+          type="button"
+          hidden={!swiped}
+          aria-label={nextWord("swipeArchiveLabel", { session: name })}
+          title={nextWord("swipeArchiveLabel", { session: name })}
+          onClick={(event) => {
+            event.stopPropagation()
+            requestConfirm({ kind: "archive", id: row.id, opener: event.currentTarget, subject: name, focus: "cancel" })
+          }}
+        >
+          <span className="word">{nextWord("swipeArchiveAction")}</span>
+        </button>
+      ) : null}
       <button
         className="swipe-end"
         type="button"
@@ -428,7 +451,12 @@ export function paintSwipe(node: HTMLElement, state: "" | "dragging" | "open", o
   if (state) node.dataset.swipe = state
   else delete node.dataset.swipe
   node.style.setProperty("--swipe-x", -offset + "px")
-  node.style.setProperty("--swipe-button-x", Math.max(0, ACTION_WIDTH - offset) + "px")
-  const action = node.querySelector<HTMLElement>(".swipe-end")
-  if (action) action.hidden = !state
+  node.style.setProperty("--swipe-button-x", Math.max(0, actionWidthOf(node) - offset) + "px")
+  for (const action of node.querySelectorAll<HTMLElement>(".swipe-end, .swipe-archive")) action.hidden = !state
+}
+
+/** A row's action width as the row wrote it (`data-swipe-width`), else the close's alone. */
+export function actionWidthOf(node: HTMLElement): number {
+  const width = Number(node.dataset.swipeWidth)
+  return Number.isFinite(width) && width > 0 ? width : ACTION_WIDTH
 }
