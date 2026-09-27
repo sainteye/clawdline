@@ -8,9 +8,16 @@ const source = readFileSync(new URL("./Todos.tsx", import.meta.url), "utf8")
 
 test("fleet refreshes do not clear and reload the same Session todos", () => {
   assert.match(source, /const rowID = row\?\.id \?\? ""/)
-  assert.match(source, /const load = useCallback[\s\S]*?readSessionWorkV2\(rowID\)[\s\S]*?}, \[rowID\]\)/)
+  assert.match(source, /const rowSessionID = row\?\.sessionId \?\? ""/)
+  assert.match(source, /const load = useCallback[\s\S]*?readSessionWorkV2\(rowID, rowSessionID\)[\s\S]*?}, \[rowID, rowSessionID\]\)/)
   assert.doesNotMatch(source, /}, \[row\]\)/)
   assert.doesNotMatch(source, /useEffect\(\(\) => \{ if \(open\) void load\(\) \}/)
+})
+
+test("Session todo reads use durable conversation identity when it is available", () => {
+  const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
+  assert.match(api, /conversationID \? `conversation:\$\{conversationID\}` : terminalID/)
+  assert.match(source, /readSessionWorkV2\(rowID, rowSessionID\)/)
 })
 
 test("opening an answered todo fold explicitly refreshes it once", () => {

@@ -1330,18 +1330,36 @@ func directTodoAnswer(td work.DirectTodoV2, images []work.DirectTodoImageV2) []b
 	return b
 }
 
+const sessionTodoConversationPrefix = "conversation:"
+
 func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, parts []string) {
 	actor, ok := requirePersonWorkV2(w, r)
 	if !ok {
 		return
 	}
-	terminalID := decodeSegment(parts[0])
-	sess, err := s.actions().Find(r.Context(), terminalID)
-	if err != nil || sess.ConversationID == "" {
-		writeRefusal(w, http.StatusConflict, "session_unavailable", "The Session is unavailable or has no conversation id.")
-		return
+	targetID := decodeSegment(parts[0])
+	terminalID, conversation := targetID, ""
+	var err error
+	// The list row already carries the Session's durable conversation id. A
+	// read of work keyed by that id must not depend on a fresh terminal scan:
+	// Cloud may still be drawing an honestly retained, unverified row while an
+	// iTerm or tmux inventory read is temporarily incomplete. Mutations keep
+	// resolving the terminal below because Send and ownership-changing actions
+	// need the live target they act on.
+	if len(parts) == 1 && r.Method == http.MethodGet && strings.HasPrefix(targetID, sessionTodoConversationPrefix) {
+		conversation = strings.TrimPrefix(targetID, sessionTodoConversationPrefix)
+		if !workID(conversation) {
+			writeRefusal(w, http.StatusBadRequest, "conversation_id_malformed", "The Session conversation id must be one lowercase UUID.")
+			return
+		}
+	} else {
+		sess, findErr := s.actions().Find(r.Context(), terminalID)
+		if findErr != nil || sess.ConversationID == "" {
+			writeRefusal(w, http.StatusConflict, "session_unavailable", "The Session is unavailable or has no conversation id.")
+			return
+		}
+		conversation = sess.ConversationID
 	}
-	conversation := sess.ConversationID
 	if len(parts) == 1 && r.Method == http.MethodGet {
 		rows, truncated, err := s.workV2().DirectTodos(r.Context(), conversation, true, false)
 		if err != nil {

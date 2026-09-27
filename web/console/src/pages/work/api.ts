@@ -514,8 +514,13 @@ export const deleteWorkV2Image = (item: WorkV2Item, imageID: string) =>
     expected_version: item.version,
   }, "DELETE")
 
-export const readSessionWorkV2 = (terminalID: string) =>
-  call<SessionWorkV2>(`/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}`)
+// A durable conversation selector lets a read survive a temporarily
+// unverified terminal inventory. Mutations still use the terminal id because
+// Send and the other actions need the live target they act on.
+export const readSessionWorkV2 = (terminalID: string, conversationID = "") => {
+  const target = conversationID ? `conversation:${conversationID}` : terminalID
+  return call<SessionWorkV2>(`/v1/work/v2/session-todos/${encodeURIComponent(target)}`)
+}
 export const readSessionsForWorkV2 = () => call<SessionsSnapshot>("/v1/sessions")
 /** The token ledger's bill of a Board item, and of one session (docs/token-ledger.md). */
 export const readItemUsage = (itemID: string) => call<UsageItem>(`/v1/usage/items/${encodeURIComponent(itemID)}`)

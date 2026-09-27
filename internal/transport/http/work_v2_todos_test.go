@@ -62,6 +62,47 @@ func TestPersonTodoReadRetainsACompletedDirectTodo(t *testing.T) {
 	}
 }
 
+// A Session row carried across a temporarily unreadable terminal inventory still
+// has its durable conversation id. Reading work keyed by that id must not ask
+// the terminal layer to prove that the tab is visible right now.
+func TestPersonReadsSessionTodosByConversationWhenTheTerminalIsUnavailable(t *testing.T) {
+	s, p, id := directTodoServer(t)
+	rec := httptest.NewRecorder()
+	path := "/v1/work/v2/session-todos/conversation:" + p.s.ConversationID
+	s.workV2Route(rec, personWorkV2Request(http.MethodGet, path, "", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("read durable Session work without a terminal lookup: %d %s", rec.Code, rec.Body)
+	}
+	var answer struct {
+		Direct []directTodoV2Wire `json:"direct_todos"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if len(answer.Direct) != 1 || answer.Direct[0].ID != id {
+		t.Fatalf("direct todos: %+v", answer.Direct)
+	}
+
+	// The selector is read-only. A write still has to resolve the live terminal
+	// that owns the side effect instead of treating a known conversation id as
+	// proof that the tab is actionable.
+	write := httptest.NewRecorder()
+	s.workV2Route(write, personWorkV2Request(http.MethodPost, path, `{"text":"must not be added"}`, "conversation-write"))
+	if write.Code != http.StatusConflict || codeOf(t, write) != "session_unavailable" {
+		t.Fatalf("write through a conversation selector: %d %s", write.Code, write.Body)
+	}
+	if rows, _, err := s.workV2().DirectTodos(context.Background(), p.s.ConversationID, true, false); err != nil || len(rows) != 1 {
+		t.Fatalf("refused write changed durable todos: %+v %v", rows, err)
+	}
+
+	bad := httptest.NewRecorder()
+	s.workV2Route(bad, personWorkV2Request(http.MethodGet,
+		"/v1/work/v2/session-todos/conversation:not-a-session", "", ""))
+	if bad.Code != http.StatusBadRequest || codeOf(t, bad) != "conversation_id_malformed" {
+		t.Fatalf("malformed conversation selector: %d %s", bad.Code, bad.Body)
+	}
+}
+
 func TestPersonCanRemindOnlyAfterThePreviousDeliveryWasRead(t *testing.T) {
 	s, p, id := directTodoServer(t)
 	// Sent just now: inside app.DirectTodoResendAfter an unread delivery is

@@ -39,13 +39,14 @@ export function Todos({ row }: { row: SessionRow | null }) {
   const ticket = useRef(0)
   const reader = useRef<OneRead | null>(null)
   const rowID = row?.id ?? ""
+  const rowSessionID = row?.sessionId ?? ""
 
   const load = useCallback(async () => {
     if (!rowID) return
     const mine = ++ticket.current
     setReading(true)
     try {
-      const next = await readSessionWorkV2(rowID)
+      const next = await readSessionWorkV2(rowID, rowSessionID)
       if (mine === ticket.current) { setPage(next); setReadFailure(null) }
     } catch (e) {
       // The last good page stays: a refresh that failed marks it, it does
@@ -54,7 +55,7 @@ export function Todos({ row }: { row: SessionRow | null }) {
     } finally {
       if (mine === ticket.current) setReading(false)
     }
-  }, [rowID])
+  }, [rowID, rowSessionID])
 
   useEffect(() => {
     // Fleet refreshes replace SessionRow objects even when this is still the
