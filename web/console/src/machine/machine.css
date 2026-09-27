@@ -110,12 +110,14 @@
 
 .machine-rows { list-style: none; margin: 0; padding: 0; }
 .machine-row {
-    display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; grid-template-rows: auto 4px;
+    display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; grid-template-rows: auto 4px;
     column-gap: 10px; row-gap: 6px; align-items: center;
     padding: 9px 0; border-bottom: 1px solid var(--line);
 }
 .machine-row:last-child { border-bottom: 0; }
 .machine-dot { width: 10px; height: 10px; border-radius: 3px; }
+.machine-icon { width: auto; height: auto; border-radius: 0; display: flex; }
+.machine-icon .mark { display: block; image-rendering: pixelated; }
 .machine-who { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .machine-title { font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .machine-detail { font: 11px var(--mono); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

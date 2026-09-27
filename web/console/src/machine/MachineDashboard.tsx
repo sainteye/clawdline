@@ -19,6 +19,7 @@ import {
   type Sort,
 } from "./model.js"
 import { failureWords, readMachineUsage } from "./read.js"
+import { Mark } from "../session/List.js"
 import "./machine.css"
 
 /** How often an open dashboard asks. The route answers a second ask inside 1.5 s from its last reading. */
@@ -217,7 +218,13 @@ export function MachineDashboard({ sessions, onClose }: { sessions: readonly Ses
                   const weight = sort === "cpu" ? r.cpu : r.rss + r.swap
                   return (
                     <li key={r.key} className="machine-row" data-kind={r.kind}>
-                      <span className="machine-dot" style={{ background: r.color }} aria-hidden="true" />
+                      {r.icon ? (
+                        <span className="machine-dot machine-icon" aria-hidden="true">
+                          <Mark icon={r.icon} cellPx={2} />
+                        </span>
+                      ) : (
+                        <span className="machine-dot" style={{ background: r.color }} aria-hidden="true" />
+                      )}
                       <div className="machine-who">
                         <span className="machine-title">{r.title}</span>
                         <span className="machine-detail">{r.detail}</span>

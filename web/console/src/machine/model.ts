@@ -162,6 +162,8 @@ export interface Row {
   id: string
   title: string
   detail: string
+  /** The project mark the session list draws for this session; none when it has none. */
+  icon?: SessionRow["icon"]
   color: string
   cpu: number
   rss: number
@@ -188,7 +190,8 @@ export function rows(u: MachineUsage, sessions: readonly SessionRow[], slots: Re
       id: g.id,
       title: daemon ? "Clawdline" : known?.label || g.label || terminal(g) || g.id,
       detail: daemon ? (zh ? "這個服務本身" : "this service itself") : detail(g, known, zh),
-      color: daemon ? MORE : slot === undefined ? MORE : SLOTS[slot],
+      icon: daemon ? undefined : known?.icon,
+      color: daemon ? MORE : known?.icon?.accent || (slot === undefined ? MORE : SLOTS[slot]),
       cpu: g.cpu_percent,
       rss: g.rss_bytes,
       swap: g.swap_bytes,

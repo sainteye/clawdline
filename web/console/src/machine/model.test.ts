@@ -129,3 +129,20 @@ test("the sparkline is right-aligned and clamped", () => {
   assert.equal(pts[0], "50.0,19.0")
   assert.deepEqual(remember([1, 2, 3], 4, 3), [2, 3, 4])
 })
+
+test("a session with a project icon is drawn in that icon and its accent, not a made-up slot colour", () => {
+  const icon = { accent: "#D97757", cells: [["#D97757", null]] } as SessionRow["icon"]
+  const u = usage({
+    groups: [
+      { kind: "session", id: "%1", pid: 10, processes: 1, cpu_percent: 0, rss_bytes: 20 * MB, swap_bytes: 0 },
+      { kind: "session", id: "%2", pid: 20, processes: 1, cpu_percent: 0, rss_bytes: 10 * MB, swap_bytes: 0 },
+    ],
+  })
+  const list = [{ id: "%1", label: "with icon", icon } as SessionRow, { id: "%2", label: "without" } as SessionRow]
+  const [withIcon, without] = rows(u, list, assignSlots(["%1", "%2"], new Map()), "memory", true)
+  assert.equal(withIcon.icon, icon)
+  assert.equal(withIcon.color, "#D97757")
+  // No registered icon: nothing is invented for it, and the slot colour still tells it apart.
+  assert.equal(without.icon, undefined)
+  assert.equal(without.color, SLOTS[1])
+})
