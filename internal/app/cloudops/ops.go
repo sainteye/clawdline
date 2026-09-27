@@ -218,6 +218,8 @@ type plan struct {
 	parts, priority, text, key, audio string
 	// expect is a menu answer's question, session.MenuFingerprint's hex.
 	expect string
+	// persona is the catalog id a start or a resume names, or "" for none.
+	persona string
 	// typed is the end of the words an `enter` submits, and namesTyped whether
 	// the body named them at all: a send of pictures alone names "".
 	typed                          string
@@ -414,6 +416,19 @@ func machinePlan(b body) (plan, bool) {
 		return plan{}, false
 	}
 	return plan{session: id, request: request, name: "read:" + request}, true
+}
+
+// personaName is a start's or a resume's optional `persona`: absent is none,
+// and present it is a non-empty, bounded, printable name, held to the same
+// shape as a session name before it becomes a path segment. Whether the catalog
+// has it is the local route's to say (`unknown_persona`), so the code a page
+// reads is the one the machine's own network would have given it.
+func personaName(b body) (string, bool) {
+	value, present := b["persona"]
+	if !present {
+		return "", true
+	}
+	return sessionName(value)
 }
 
 // conversationList is a list of conversation ids: each one a printable,
@@ -770,6 +785,20 @@ func init() {
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/places"}
+			}},
+
+		// The built-in personas a start or a resume may name (docs/personas.md):
+		// machine-wide and parameterless, as the local route is. Only the names,
+		// the summaries and the bots cross; the texts stay on the machine.
+		op{name: "personas", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/personas"}
 			}},
 
 		op{name: "past-sessions", read: true,
@@ -1783,7 +1812,11 @@ func init() {
 
 		op{name: "start",
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "place", "assistant", "model") {
+				// `persona` is optional: a page from before personas sends the
+				// six keys it always sent, and one that chose a persona sends a
+				// seventh (docs/personas.md).
+				if !b.hasOneOf([]string{"type", "session", "request", "place", "assistant", "model"},
+					[]string{"type", "session", "request", "place", "assistant", "model", "persona"}) {
 					return plan{}, false
 				}
 				p, ok := actionPlan(b, false)
@@ -1793,10 +1826,11 @@ func init() {
 				place, placeOK := b.nonEmpty("place")
 				assistant, assistantOK := b.str("assistant")
 				model, modelOK := b.str("model")
-				if !placeOK || !assistantOK || !modelOK {
+				persona, personaOK := personaName(b)
+				if !placeOK || !assistantOK || !modelOK || !personaOK {
 					return plan{}, false
 				}
-				p.place, p.assistant, p.model = place, assistant, model
+				p.place, p.assistant, p.model, p.persona = place, assistant, model, persona
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
@@ -1805,18 +1839,24 @@ func init() {
 				if assistant == "" {
 					assistant = "claude"
 				}
-				if p.assistant != "" || p.model != "" {
+				// `/as/<persona>` is recognised only after a named assistant,
+				// so a persona always spells the assistant out.
+				if p.assistant != "" || p.model != "" || p.persona != "" {
 					route += "/" + segment(assistant)
 				}
 				if p.model != "" {
 					route += "/" + segment(p.model)
+				}
+				if p.persona != "" {
+					route += "/as/" + segment(p.persona)
 				}
 				return LocalRequest{Method: "POST", Path: route, Body: []byte("{}")}
 			}},
 
 		op{name: "resume",
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "place", "past", "assistant") {
+				if !b.hasOneOf([]string{"type", "session", "request", "place", "past", "assistant"},
+					[]string{"type", "session", "request", "place", "past", "assistant", "persona"}) {
 					return plan{}, false
 				}
 				p, ok := actionPlan(b, false)
@@ -1826,18 +1866,29 @@ func init() {
 				place, placeOK := b.nonEmpty("place")
 				past, pastOK := b.nonEmpty("past")
 				assistant, assistantOK := b.str("assistant")
-				if !placeOK || !pastOK || !assistantOK {
+				persona, personaOK := personaName(b)
+				if !placeOK || !pastOK || !assistantOK || !personaOK {
 					return plan{}, false
 				}
-				p.place, p.past, p.assistant = place, past, assistant
+				p.place, p.past, p.assistant, p.persona = place, past, assistant, persona
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
 				route := "/v1/places/" + segment(p.place) + "/resume/"
-				if p.assistant != "" {
-					route += segment(p.assistant) + "/"
+				assistant := p.assistant
+				// The route reads `/as/<persona>` only on a resume that names
+				// its assistant, so a persona spells out the default one.
+				if assistant == "" && p.persona != "" {
+					assistant = "claude"
 				}
-				return LocalRequest{Method: "POST", Path: route + segment(p.past), Body: []byte("{}")}
+				if assistant != "" {
+					route += segment(assistant) + "/"
+				}
+				route += segment(p.past)
+				if p.persona != "" {
+					route += "/as/" + segment(p.persona)
+				}
+				return LocalRequest{Method: "POST", Path: route, Body: []byte("{}")}
 			}},
 
 		// The sessions a reboot took away (docs/session-restore.md). The

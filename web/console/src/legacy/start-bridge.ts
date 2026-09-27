@@ -102,11 +102,16 @@ export const startApi = {
     if (assistant) path += "/" + encodeURIComponent(assistant)
     return jsonFetch<{ sessions?: PastRow[]; more?: boolean }>(path)
   },
-  /** The key is minted once per press: a retry of this request is the same start. */
-  startPlace: (id: string, assistant?: string | null, model?: string) => {
+  /**
+   * The key is minted once per press: a retry of this request is the same start.
+   * A persona is the route's last two segments, `/as/{persona}`, which the
+   * daemon reads only after an assistant is named (docs/personas.md).
+   */
+  startPlace: (id: string, assistant?: string | null, model?: string, persona?: string) => {
     let path = "/v1/places/" + encodeURIComponent(id) + "/start"
-    if (assistant || model) path += "/" + encodeURIComponent(assistant || "claude")
+    if (assistant || model || persona) path += "/" + encodeURIComponent(assistant || "claude")
     if (model) path += "/" + encodeURIComponent(model)
+    if (persona) path += "/as/" + encodeURIComponent(persona)
     return jsonFetch<StartAnswer>(path, post(uuid()))
   },
   resumePlace: (id: string, session: string, assistant?: string | null, requestId?: string) => {

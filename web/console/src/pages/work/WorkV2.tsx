@@ -5,6 +5,9 @@ import * as L from "../../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js"
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
+import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
+import { personaById, personaName, personaTitle, suggestedPersona } from "../../personas.js"
+import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem, type NewWorkItemDraft } from "./new-item.js"
@@ -300,6 +303,7 @@ function WorkCardLink({ id, onBoard, className, children }: { id: string; onBoar
 /** On an Epic: the items created under it, how far they have got, and who has each. */
 function EpicChildren({ item, sessions }: { item: WorkV2Item; sessions: SessionRow[] }) {
   const family = useContext(EpicFamilyContext)
+  const personas = usePersonas()
   const children = epicChildren(family.rows, item.id)
   if (!children.length) return null
   const progress = epicProgress(children)
@@ -316,11 +320,14 @@ function EpicChildren({ item, sessions }: { item: WorkV2Item; sessions: SessionR
     <ul>{children.map((child) => {
       const owner = child.owner_session ? sessions.find((session) => session.sessionId === child.owner_session) : undefined
       const who = owner ? (owner.label || owner.id) : child.owner_session ? `Session ${child.owner_session.slice(0, 8)}` : "未指派"
+      const ownerPersona = personaById(personas, owner?.persona)
       return <li key={child.id} data-phase={child.phase}>
         <WorkCardLink id={child.id} onBoard={family.onBoard.has(child.id)} className="work-epic-child">
           <span className="work-epic-child-kind" aria-label={KIND_META[child.kind].label} title={KIND_META[child.kind].label}>{KIND_META[child.kind].icon}</span>
           <span className="work-epic-child-title">{child.title}</span>
-          <span className="work-epic-child-meta">{phaseName(child.phase)} · {who}</span>
+          <span className="work-epic-child-meta">{phaseName(child.phase)} · {ownerPersona
+            ? <span className="work-owner-persona" title={personaTitle(ownerPersona)}><PersonaBot persona={ownerPersona} cellPx={2} className="persona-tag-bot" />{who}</span>
+            : who}</span>
         </WorkCardLink>
       </li>
     })}</ul>
@@ -363,6 +370,12 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
 }) {
   const [terminal, setTerminal] = useState("")
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
+  // The role a new Session is opened as. Until the person picks one, the
+  // item's kind suggests it (epic → architect, issue → minimal-change); a kind
+  // no single persona suggests starts with none. "" is none, chosen.
+  const personas = usePersonas()
+  const [personaChoice, setPersonaChoice] = useState<string | null>(null)
+  const persona = personaById(personas, personaChoice ?? suggestedPersona(personas, item.kind)?.id)
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [completing, setCompleting] = useState(false)
@@ -443,9 +456,19 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
       </div>
+      {personas.length > 0 && <div className="work-new-session work-new-persona" role="radiogroup" aria-label={nextWord("personaPicker")}>
+        <button className={`chip${!persona ? " on" : ""}`} type="button" role="radio" aria-checked={!persona} disabled={!!busy}
+          onClick={() => setPersonaChoice("")}>{nextWord("personaNone")}</button>
+        {personas.map((choice) => <button key={choice.id} className={`chip persona-chip${choice.id === persona?.id ? " on" : ""}`} type="button"
+          role="radio" aria-checked={choice.id === persona?.id} disabled={!!busy} title={personaTitle(choice)}
+          onClick={() => setPersonaChoice(choice.id)}>
+          <PersonaBot persona={choice} cellPx={2} className="persona-tag-bot" /><span>{personaName(choice)}</span></button>)}
+      </div>}
       <button className="chip" type="button" disabled={!!busy} aria-busy={busy === item.id}
-        onClick={() => assign(() => assignNewWorkV2(item, assistant))}>
-        {busy === item.id ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button>
+        onClick={() => assign(() => assignNewWorkV2(item, assistant, persona?.id))}>
+        {persona
+          ? nextWord(busy === item.id ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })
+          : busy === item.id ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button>
       {reassignable && <button className="chip" type="button" disabled={!!busy} onClick={() => setReassigning(false)}>取消</button>}
       {assignFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     </div>}
@@ -550,6 +573,7 @@ function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false 
   autoFocus?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const personas = usePersonas()
   const [readings, setReadings] = useState<Record<string, SessionWorkReading>>({})
   const root = useRef<HTMLDivElement>(null)
   const ticket = useRef(0)
@@ -601,7 +625,7 @@ function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false 
     <div className="work-session-anchor">
     <button className="work-session-trigger" type="button" aria-label="指派既有 Session" aria-haspopup="listbox"
       aria-expanded={open} autoFocus={autoFocus} onClick={() => setOpen((shown) => !shown)}>
-      {selected ? <><SessionStateDot session={selected} /><span><b>{selected.label || selected.id}</b>
+      {selected ? <><SessionStateDot session={selected} /><span><b>{selected.label || selected.id}</b><PersonaTag id={selected.persona} personas={personas} />
         <small>{assistantName(selected.assistant)} · {sessionActivityName(selected.state)} · {sessionWorkStateName(selected.work_state)}</small></span></>
         : <><span className="work-session-placeholder" aria-hidden="true">◌</span><span>選擇既有 Session</span></>}
       <span className="work-project-chevron" aria-hidden="true">⌄</span>
@@ -623,9 +647,10 @@ function SessionChoice({ session, reading, selected, onChoose }: {
   onChoose: () => void
 }) {
   const counts = reading?.page ? sessionWorkCounts(reading.page) : null
+  const personas = usePersonas()
   return <button className="work-session-option" type="button" role="option" aria-selected={selected} onClick={onChoose}>
     <SessionStateDot session={session} />
-    <span><b>{session.label || session.id}</b><small>{assistantName(session.assistant)} · {sessionActivityName(session.state)} · {sessionWorkStateName(session.work_state)}</small></span>
+    <span><b>{session.label || session.id}</b><PersonaTag id={session.persona} personas={personas} /><small>{assistantName(session.assistant)} · {sessionActivityName(session.state)} · {sessionWorkStateName(session.work_state)}</small></span>
     <span className="work-session-counts">{reading?.loading ? "讀取中…" : reading?.error ? "讀不到工作" : counts
       ? `${counts.board} 看板 · ${counts.todos} TODO` : "—"}</span>
   </button>

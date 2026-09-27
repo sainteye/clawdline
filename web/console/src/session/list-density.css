@@ -154,3 +154,36 @@
     max-width: 42%;
   }
 }
+
+/*
+ * A session launched as a persona (docs/personas.md): its bot, at two pixels a
+ * cell, and its short name follow the assistant's in the title. The bot was
+ * first drawn at three pixels a cell under the project mark, and that made
+ * every row with one taller (93.2 to 95.4px on a 390px phone, 88.4 to 95.4px
+ * for a working row), so it rides in the title line instead, which it does not
+ * heighten. The name is the first thing in the title to give way, after the
+ * session's own label.
+ */
+.row .title .persona-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--faint);
+  font: 11px/1 var(--mono);
+}
+
+.row .title .persona-name-bot {
+  flex: none;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.row .title .persona-name-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

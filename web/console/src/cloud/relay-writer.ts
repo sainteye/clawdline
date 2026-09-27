@@ -230,8 +230,9 @@ export type WriteRoute =
   | { op: "focus"; word: Carried<"focus">; session: string }
   | { op: "smart-title"; word: Carried<"smart-title">; session: string }
   | { op: "interrupt"; word: Carried<"interrupt">; session: string }
-  | { op: "start"; word: Carried<"start">; place: string; assistant: string; model: string }
-  | { op: "resume"; word: Carried<"resume">; place: string; assistant: string; past: string }
+  // `persona` is "" for none: the route did not end `/as/<persona>`.
+  | { op: "start"; word: Carried<"start">; place: string; assistant: string; model: string; persona: string }
+  | { op: "resume"; word: Carried<"resume">; place: string; assistant: string; past: string; persona: string }
   | { op: "voice"; word: Carried<"voice"> }
   | { op: "intents"; word: Carried<"intents"> }
   | { op: "places"; word: Carried<"places"> }
@@ -563,13 +564,29 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (b && NO_CLOUD_WORD[b]) return { op: "uncarried", word: NO_CLOUD_WORD[b], session: a }
     return null
   }
-  if (head === "places" && a && b === "start" && segments.length <= 5) {
-    return { op: "start", word: "start", place: a, assistant: c ?? "", model: d ?? "" }
-  }
-  if (head === "places" && a && b === "resume") {
+  if (head === "places" && a && (b === "start" || b === "resume")) {
+    // `…/as/<persona>` ends a start or a resume that names its assistant, read
+    // exactly as the machine's own route reads it (`placeRoute`,
+    // internal/transport/http/start.go): `as` only as the second-to-last
+    // segment, so `/start/claude/as` is still a model called "as".
+    const n = segments.length
+    let persona = ""
+    let rest = segments
+    if (n >= 6 && segments[n - 2] === "as" && (b === "start" && n <= 7 || b === "resume" && n === 7)) {
+      persona = segments[n - 1]
+      rest = segments.slice(0, n - 2)
+    }
+    const [, , , assistant, tail] = rest
+    if (b === "start" && rest.length <= 5) {
+      return { op: "start", word: "start", place: a, assistant: assistant ?? "", model: tail ?? "", persona }
+    }
     // `/resume/<past>` or `/resume/<assistant>/<past>`, as `start-bridge.ts` spells it.
-    if (segments.length === 4 && c) return { op: "resume", word: "resume", place: a, assistant: "", past: c }
-    if (segments.length === 5 && c && d) return { op: "resume", word: "resume", place: a, assistant: c, past: d }
+    if (b === "resume" && rest.length === 4 && assistant) {
+      return { op: "resume", word: "resume", place: a, assistant: "", past: assistant, persona }
+    }
+    if (b === "resume" && rest.length === 5 && assistant && tail) {
+      return { op: "resume", word: "resume", place: a, assistant, past: tail, persona }
+    }
     return null
   }
   if (head === "voice" && segments.length === 1) return { op: "voice", word: "voice" }
@@ -744,6 +761,45 @@ export class RelayWriter {
     }
   }
 
+  /**
+   * A start or a resume that names a persona (docs/personas.md).
+   *
+   * The copied client's `startPlace` and `resumePlace` spell the body without
+   * `persona` and cannot be taught it (they are hash-guarded copies), so this
+   * sends the same word with the same fields plus `persona`, to the machine the
+   * Project was read from, through the same generic they call. The press's own
+   * key is the request when the page sent one — as `resumePlace` carries it — so
+   * a retried press is the same request and opens nothing twice.
+   *
+   * A machine that does not list `personas` among its commands is a daemon from
+   * before them: its `start` and `resume` take an exact key set, so a seventh key
+   * would be refused as malformed after the envelope had already gone. It is
+   * refused here instead, before anything is sealed. A machine whose descriptor
+   * has not arrived is asked anyway, as the copied client asks it any word.
+   */
+  private asPersona(
+    client: CloudWriteClient,
+    word: "start" | "resume",
+    placeID: string,
+    fields: Record<string, string>,
+    persona: string,
+    key: string,
+  ): Promise<unknown> {
+    if (typeof client._place !== "function" || typeof client._machineRequest !== "function") {
+      throw failure("cloud_not_carried", word, 501)
+    }
+    const place = client._place(placeID)
+    const commands = declaredCommands(client, place.machine)
+    if (commands && !commands.includes("personas")) {
+      throw failure("cloud_machine_unsupported", "this machine cannot open a session as a persona", 501)
+    }
+    const body = { place: place.id, ...fields, persona }
+    if (key && typeof client._machineRequestAs === "function") {
+      return client._machineRequestAs(key, place.machine, word, body, "action")
+    }
+    return client._machineRequest(place.machine, word, body, "action")
+  }
+
   private async carry(client: CloudWriteClient, route: WriteRoute, url: URL, init?: RequestInit): Promise<unknown> {
     switch (route.op) {
       case "send": {
@@ -849,11 +905,21 @@ export class RelayWriter {
       case "past":
         return client.pastSessions(route.place, route.assistant)
       case "start":
+        if (route.persona) {
+          return this.asPersona(client, "start", route.place, {
+            assistant: route.assistant, model: route.model,
+          }, route.persona, headerOf(init, "idempotency-key"))
+        }
         return client.startPlace(route.place, route.assistant, route.model)
       case "resume": {
         // The sheet mints one key per press; carried as the command's request
         // id, a retry of that press is the same request (`resumePlace`).
         const key = headerOf(init, "idempotency-key")
+        if (route.persona) {
+          return this.asPersona(client, "resume", route.place, {
+            past: route.past, assistant: route.assistant,
+          }, route.persona, key)
+        }
         return client.resumePlace(route.place, route.past, route.assistant, key || undefined)
       }
       case "voice": {

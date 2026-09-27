@@ -172,6 +172,8 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/sessions/s1/screen"],
     ["POST", "/v1/places/p1/start"],
     ["POST", "/v1/places/p1/resume/claude/abc"],
+    ["POST", "/v1/places/p1/start/claude/as/architect"],
+    ["POST", "/v1/places/p1/resume/claude/abc/as/architect"],
     ["POST", "/v1/voice"],
     ["POST", "/v1/intents"],
     ["GET", "/v1/places"],
@@ -253,7 +255,9 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("screen" in CARRIED)
   // And the Shell panel's read, which the phone needs as much as the desk.
   assert.ok("shell" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 87)
+  // The personas a start may name (docs/personas.md).
+  assert.ok("personas" in CARRIED)
+  assert.equal(Object.keys(CARRIED).length, 89)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

@@ -250,7 +250,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
   }
   assert.deepEqual(writeRoute("POST", "/v1/sessions/s%201/send"), { op: "send", word: "send", session: "s 1" })
   assert.deepEqual(writeRoute("POST", "/v1/places/p1/resume/claude/abc"), {
-    op: "resume", word: "resume", place: "p1", assistant: "claude", past: "abc",
+    op: "resume", word: "resume", place: "p1", assistant: "claude", past: "abc", persona: "",
   })
   assert.deepEqual(writeRoute("POST", "/v1/sessions/s1/interrupt"), {
     op: "interrupt", word: "interrupt", session: "s1",
@@ -498,6 +498,78 @@ test("start and resume go as the machine's words; a refusal keeps `app` in the n
   assert.equal(body.error.code, "terminal_closed")
   assert.equal(body.error.app, "iTerm")
   assert.equal(body.error.outcome, "not_done")
+})
+
+test("`/as/<persona>` is read off a start or a resume exactly where the machine's route reads it", () => {
+  const cases: [string, Record<string, unknown> | null][] = [
+    ["/v1/places/p1/start/claude/as/architect",
+      { op: "start", word: "start", place: "p1", assistant: "claude", model: "", persona: "architect" }],
+    ["/v1/places/p1/start/codex/gpt-5/as/security",
+      { op: "start", word: "start", place: "p1", assistant: "codex", model: "gpt-5", persona: "security" }],
+    ["/v1/places/p1/resume/claude/abc/as/code-reviewer",
+      { op: "resume", word: "resume", place: "p1", assistant: "claude", past: "abc", persona: "code-reviewer" }],
+    ["/v1/places/p1/start/codex/gpt-5",
+      { op: "start", word: "start", place: "p1", assistant: "codex", model: "gpt-5", persona: "" }],
+    // `as` only as the second-to-last segment of a route that names its
+    // assistant: `/start/claude/as` is a model called "as", and the machine
+    // refuses it; `/start/as/x` names an assistant called "as".
+    ["/v1/places/p1/start/claude/as",
+      { op: "start", word: "start", place: "p1", assistant: "claude", model: "as", persona: "" }],
+    ["/v1/places/p1/start/as/architect",
+      { op: "start", word: "start", place: "p1", assistant: "as", model: "architect", persona: "" }],
+    // A resume with a persona must name its assistant, as the route requires.
+    ["/v1/places/p1/resume/abc/as/architect", null],
+    ["/v1/places/p1/start/claude/opus/extra/as/architect", null],
+    ["/v1/places/p1/resume/claude/abc/as", null],
+  ]
+  for (const [path, want] of cases) {
+    assert.deepEqual(writeRoute("POST", path), want, path)
+  }
+  assert.equal(writeRoute("POST", "/v1/places/p1/start/claude/as/a%2Fb")?.op, "start")
+  assert.equal((writeRoute("POST", "/v1/places/p1/start/claude/as/a%2Fb") as { persona: string }).persona, "a/b")
+})
+
+test("a start or a resume as a persona goes as the same word with `persona`, to the Project's machine, under the press's key", async () => {
+  const client = new FakeClient()
+  client.descriptors.set("mac-a", { machine: { commands: ["start", "resume", "personas"] } })
+  const { reader } = seam(client)
+
+  const started = await reader.fetch("/v1/places/cloud-p1/start/codex/gpt-5/as/architect", post({}, { "Idempotency-Key": "press-7" }))
+  assert.equal(started.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "press-7", "mac-a", "start",
+    { place: "p1", assistant: "codex", model: "gpt-5", persona: "architect" }, "action"])
+
+  // Without a key the generic mints its own request, as `startPlace` does.
+  await reader.fetch("/v1/places/cloud-p1/start/claude/as/security", post({}))
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "start",
+    { place: "p1", assistant: "claude", model: "", persona: "security" }, "action"])
+
+  await reader.fetch("/v1/places/cloud-p1/resume/claude/past-9/as/backend", post({}, { "Idempotency-Key": "press-8" }))
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "press-8", "mac-a", "resume",
+    { place: "p1", past: "past-9", assistant: "claude", persona: "backend" }, "action"], "one press, one request id")
+
+  // Without a persona nothing changes: the copied client's own methods.
+  await reader.fetch("/v1/places/cloud-p1/start/claude", post({}))
+  assert.deepEqual(client.calls.pop(), ["startPlace", "cloud-p1", "claude", ""])
+  await reader.fetch("/v1/places/cloud-p1/resume/claude/past-9", post({}, { "Idempotency-Key": "press-9" }))
+  assert.deepEqual(client.calls.pop(), ["resumePlace", "cloud-p1", "past-9", "claude", "press-9"])
+})
+
+test("a persona start to a machine from before personas is refused before anything is sealed", async () => {
+  const client = new FakeClient()
+  client.descriptors.set("mac-a", { machine: { commands: ["start", "resume"] } })
+  const { reader } = seam(client)
+  const res = await reader.fetch("/v1/places/cloud-p1/start/claude/as/architect", post({}, { "Idempotency-Key": "press-1" }))
+  assert.equal(res.status, 501)
+  const body = await json<{ error: { code: string; outcome: string } }>(res)
+  assert.equal(body.error.code, "cloud_machine_unsupported")
+  assert.equal(body.error.outcome, "not_done")
+  assert.deepEqual(client.calls, [], "nothing was asked of the machine")
+
+  // A Project this page never read is refused by the client's own code.
+  const unknown = await reader.fetch("/v1/places/nowhere/resume/claude/past-9/as/architect", post({}))
+  assert.equal((await json<{ error: { code: string } }>(unknown)).error.code, "not_found")
+  assert.deepEqual(client.calls, [])
 })
 
 test("a machine without `past-sessions` refuses the resume list by the client's own code", async () => {

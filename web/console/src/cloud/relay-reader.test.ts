@@ -730,6 +730,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/v2/proposals?state=pending", "work.v2.proposals", { state: "pending" }],
   ["/v1/work/v2/session-todos/%251", "work.v2.session-todos", { terminal: "%1" }],
   ["/v1/projects", "projects", {}],
+  ["/v1/personas", "personas", {}],
   ["/v1/projects/%2Fp/worktrees", "project-worktree-lifecycle", { project: "/p" }],
   ["/v1/board?project=p1", "board", { project: "p1", item: "" }],
   ["/v1/board?project=p1&item=i1", "board", { project: "p1", item: "i1" }],
