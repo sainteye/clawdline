@@ -199,6 +199,11 @@ export const DEFERRED = {
   // chosen for (F1, `RelayWriter.press`). `key` is the older spelling and is
   // deliberately never sent.
   key: "A waiting card's press is sent as `answer`, which names the question it answers; `key` is the older spelling of the same command.",
+  // Archived Sessions (docs/session-archive.md): the daemon answers these, and
+  // the console's Archive action and sidebar section are still to be built.
+  "archive-session": "Archiving a session is not offered over Clawdline Cloud yet: end it on the machine, or archive it from the machine's console.",
+  "archived-sessions": "The archived sessions are not listed over Clawdline Cloud yet: open the machine's own console to see them.",
+  "restore-archived": "An archived session is not brought back over Clawdline Cloud yet: restore it from the machine's own console.",
 } as const
 
 /**

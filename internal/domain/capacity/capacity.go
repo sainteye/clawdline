@@ -252,6 +252,10 @@ const (
 	SessionsRestoreSeenAge = "sessions.restore_seen_age"
 	SessionsRestoreBeat    = "sessions.restore_heartbeat"
 	SessionsRestoreGrace   = "sessions.restore_grace"
+	// The Sessions a person archived: closed, recorded, and resumable again
+	// (docs/session-archive.md).
+	SessionsArchiveRows  = "sessions.archive_rows"
+	SessionsArchiveBatch = "sessions.archive_restore_batch"
 	// Provider-native work under a session: how many rows the fleet carries,
 	// and the immutable metadata/changing-tail cursors held to make a one-second
 	// reading cheap.
@@ -1110,6 +1114,27 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app.restoreGraceLimit"},
+		},
+		{
+			// Archived conversations kept. Each is a row a person asked for,
+			// so past the limit the one archived longest ago is dropped and
+			// the count says so; its transcript stays in the assistant's own
+			// history, resumable from the place's past list while it is
+			// still on it.
+			Name: SessionsArchiveRows, Class: Journal, Unit: Rows,
+			Limit: 500, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.archiveRowsLimit"},
+		},
+		{
+			// Conversations one archive restore may name. A longer list is
+			// refused whole, and nothing is opened.
+			Name: SessionsArchiveBatch, Class: Buffer, Unit: Rows,
+			Limit: 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.archiveBatchLimit"},
 		},
 		{
 			Name: "icons.saved", Class: Evidence, Unit: Rows,

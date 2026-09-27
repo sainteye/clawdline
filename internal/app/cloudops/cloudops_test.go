@@ -619,6 +619,26 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/sessions/restorable/dismiss",
 		body2: `{}`,
 	}, {
+		// The Sessions a person archived (docs/session-archive.md). The
+		// archive rides the session's channel, as `end` does.
+		word: "archive-session",
+		body: map[string]any{"type": "archive-session", "session": pane, "request": "req-archive",
+			"force": true},
+		session: pane, name: "action:req-archive",
+		method: "POST", path: "/v1/sessions/%2519/archive",
+		body2: `{"force":true}`,
+	}, {
+		word:    "archived-sessions",
+		body:    map[string]any{"type": "archived-sessions", "session": machine, "request": "req-archived"},
+		session: machine, name: "read:req-archived",
+		method: "GET", path: "/v1/sessions/archived",
+	}, {
+		word: "restore-archived",
+		body: map[string]any{"type": "restore-archived", "session": machine, "request": "req-unarchive",
+			"conversations": []any{"018f2f7a"}},
+		session: machine, name: "action:req-unarchive",
+		method: "POST", path: "/v1/sessions/archived/restore",
+		body2: `{"conversations":["018f2f7a"]}`}, {
 		word: "voice",
 		body: map[string]any{"type": "voice", "session": machine, "request": "req-voice",
 			"audio": "AAAAAA==", "rate": 16000},
@@ -2094,6 +2114,39 @@ func TestRestoringCarriesTheRequestAsItsKeyAndRefusesABadList(t *testing.T) {
 	}
 	if len(r.seen) != before {
 		t.Fatalf("a malformed list reached the route: %+v", r.seen[before:])
+	}
+}
+
+// TestArchivingCarriesTheRequestAsItsKey: an archive is a close and a
+// restore is one resume per conversation, so a retried envelope reaches the
+// route under the same key; an archive without `force` is not a forced one,
+// and a malformed field never reaches the route.
+func TestArchivingCarriesTheRequestAsItsKey(t *testing.T) {
+	r := &router{}
+	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "archive-session", "session": pane, "request": "req-archive"}))
+	if got := r.last(); got.Header["Idempotency-Key"] != "req-archive" || string(got.Body) != `{"force":false}` {
+		t.Fatalf("the archive reached the route as %+v", got)
+	}
+	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "restore-archived", "session": MachineReplySession, "request": "req-unarchive",
+		"conversations": []any{"018f2f7a"}}))
+	if key := r.last().Header["Idempotency-Key"]; key != "req-unarchive" {
+		t.Fatalf("the key is %q, wanted the request id", key)
+	}
+	before := len(r.seen)
+	for _, bad := range []map[string]any{
+		{"type": "archive-session", "session": pane, "request": "req-bad", "force": "yes"},
+		{"type": "archive-session", "session": pane, "request": "req-bad", "conversations": []any{"x"}},
+		{"type": "restore-archived", "session": MachineReplySession, "request": "req-bad", "conversations": []any{}},
+		{"type": "restore-archived", "session": pane, "request": "req-bad", "conversations": []any{"x"}},
+	} {
+		if answer := open(r).Handle(context.Background(), request(t, ClassCtl, bad)); answer.Status == 200 {
+			t.Fatalf("%v was answered 200", bad)
+		}
+	}
+	if len(r.seen) != before {
+		t.Fatalf("a malformed body reached the route: %+v", r.seen[before:])
 	}
 }
 

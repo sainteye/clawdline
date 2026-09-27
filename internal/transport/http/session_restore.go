@@ -252,11 +252,29 @@ func (s *Server) restoreSessions(w http.ResponseWriter, raw []byte) {
 	writeJSON(w, out)
 }
 
-// resumeRestorable is one row through the same opening queue and the same
-// Starter.Resume a person's resume goes through. The row's directory is added
-// to the places the starter may resolve, as a live one is: after a reboot it is
-// not live, and it was a place this machine had a session in.
+// resumeRestorable is one row through the shared resume path.
 func (s *Server) resumeRestorable(ctx context.Context, reading startReading, row store.RestoreRow) (app.Started, error) {
+	return s.resumeConversation(ctx, reading, resumeTarget{verb: "restore", cwd: row.CWD, place: row.Place,
+		conversation: row.ConversationID, assistant: row.Assistant, persona: row.Persona})
+}
+
+// resumeTarget is one conversation a record of this daemon's names, to be
+// opened again: a reboot restore's row or an archived one.
+type resumeTarget struct {
+	// verb names the audit line: place.restore or place.unarchive.
+	verb                                         string
+	cwd, place, conversation, assistant, persona string
+	// recorded admits a conversation whose transcript is on disk though it
+	// has fallen off the past list (Starter.ResumeRecorded).
+	recorded bool
+}
+
+// resumeConversation is one conversation through the same opening queue and
+// the same Starter a person's resume goes through. The directory is added to
+// the places the starter may resolve, as a live one is: after a reboot, or
+// once its Session was archived, it is not live, and it was a place this
+// machine had a session in.
+func (s *Server) resumeConversation(ctx context.Context, reading startReading, t resumeTarget) (app.Started, error) {
 	release, ok := tryOpening(ctx)
 	if !ok {
 		return app.Started{}, app.ErrRestoreOverCapacity
@@ -264,22 +282,26 @@ func (s *Server) resumeRestorable(ctx context.Context, reading startReading, row
 	defer release()
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	reading.live = append(append([]string(nil), reading.live...), row.CWD)
+	reading.live = append(append([]string(nil), reading.live...), t.cwd)
 	starter := s.starter(reading)
-	place, ok := starter.Place(ctx, row.Place)
+	place, ok := starter.Place(ctx, t.place)
 	if !ok {
-		log.Printf("audit place.restore place=%.64s ok=0 why=place_unavailable", row.Place)
+		log.Printf("audit place.%s place=%.64s ok=0 why=place_unavailable", t.verb, t.place)
 		return app.Started{}, app.ErrRestorePlaceUnavailable
 	}
+	resume := starter.Resume
+	if t.recorded {
+		resume = starter.ResumeRecorded
+	}
 	// With the persona it was launched with, as its command line said.
-	made, err := starter.Resume(ctx, place, row.ConversationID, row.Assistant, restorablePersona(row.Persona))
+	made, err := resume(ctx, place, t.conversation, t.assistant, restorablePersona(t.persona))
 	if err != nil {
-		log.Printf("audit place.restore place=%s cwd=%q assistant=%s session=%.64s ok=0 why=%v",
-			place.ID, place.Path, row.Assistant, row.ConversationID, err)
+		log.Printf("audit place.%s place=%s cwd=%q assistant=%s session=%.64s ok=0 why=%v",
+			t.verb, place.ID, place.Path, t.assistant, t.conversation, err)
 		return app.Started{}, err
 	}
-	log.Printf("audit place.restore place=%s cwd=%q assistant=%s session=%s ok=1 id=%s",
-		place.ID, place.Path, row.Assistant, row.ConversationID, made.ID)
+	log.Printf("audit place.%s place=%s cwd=%q assistant=%s session=%s ok=1 id=%s",
+		t.verb, place.ID, place.Path, t.assistant, t.conversation, made.ID)
 	return made, nil
 }
 

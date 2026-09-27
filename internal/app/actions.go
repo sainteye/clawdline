@@ -51,6 +51,9 @@ type Actions struct {
 	// Restore is told of every close, so the record of this boot's sessions
 	// never offers a conversation the person closed here. Nil tells nobody.
 	Restore *SessionRestore
+	// Archives is the archive record Archive writes to after a close. Nil
+	// refuses every archive.
+	Archives *SessionArchive
 	// Processes ends a session no terminal backend lists (ProcessCloser).
 	Processes ports.ProcessCloser
 }

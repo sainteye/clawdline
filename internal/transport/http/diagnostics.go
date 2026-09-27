@@ -456,6 +456,10 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.SessionsRestoreGrace: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "offer window before the previous boot's last sight; no retained buffer"}
 		},
+		capacity.SessionsArchiveRows: s.archiveRowsReading,
+		capacity.SessionsArchiveBatch: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
 		capacity.SessionTodoBatchRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},
