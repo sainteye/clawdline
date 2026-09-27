@@ -5,23 +5,6 @@ import (
 	"testing"
 )
 
-// catalogFiles is how many persona files catalog/ holds, so a count follows
-// the catalog rather than a number every new team has to edit.
-func catalogFiles(t *testing.T) int {
-	t.Helper()
-	entries, err := files.ReadDir("catalog")
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := 0
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".md") {
-			n++
-		}
-	}
-	return n
-}
-
 // The design and business teams: each persona is in the catalog with the
 // teams it was written for, in that order, suggests no Board kind, and has a
 // bot of its own team's family.

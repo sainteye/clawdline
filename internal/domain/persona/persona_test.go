@@ -1,7 +1,6 @@
 package persona
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
