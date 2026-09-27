@@ -156,34 +156,30 @@
 }
 
 /*
- * A session launched as a persona (docs/personas.md): its bot, at two pixels a
- * cell, and its short name follow the assistant's in the title. The bot was
- * first drawn at three pixels a cell under the project mark, and that made
- * every row with one taller (93.2 to 95.4px on a 390px phone, 88.4 to 95.4px
- * for a working row), so it rides in the title line instead, which it does not
- * heighten. The name is the first thing in the title to give way, after the
- * session's own label.
+ * A session launched as a persona (docs/personas.md): its bot, at three pixels
+ * a cell, and its full name on a line of their own at the bottom of the row,
+ * in the text column under the state line. It first rode in the title line
+ * after the assistant's name, where a 390px phone cut the name to its first
+ * character and squeezed the bot against the edge. A row with no persona has
+ * no such line and keeps its height; a row with one grows by this line.
  */
-.row .title .persona-name {
-  flex: 0 1 auto;
-  min-width: 0;
-  display: inline-flex;
+.row .persona-line {
+  grid-column: 2;
+  display: flex;
   align-items: center;
-  gap: 4px;
-  overflow: hidden;
-  color: var(--faint);
-  font: 11px/1 var(--mono);
+  gap: 6px;
+  min-width: 0;
+  color: var(--dim);
+  font: 11px/1.2 var(--mono);
 }
 
-.row .title .persona-name-bot {
+.row .persona-line-bot {
   flex: none;
   display: block;
   image-rendering: pixelated;
 }
 
-.row .title .persona-name-words {
+.row .persona-line-name {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }

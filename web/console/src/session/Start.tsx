@@ -35,8 +35,13 @@ import "./persona.css"
  *   machine's persona catalog as chips under the assistant chips, "No role"
  *   first and chosen until the person picks another. The last choice is
  *   remembered in this browser. The row is not drawn when the catalog is empty
- *   — an older daemon, or a machine on Cloud that does not offer `personas` —
- *   nor while resuming, which this sheet does without a persona.
+ *   — an older daemon, or a machine on Cloud that does not offer `personas`.
+ *   Resuming draws the same row over a place's past conversations, for the
+ *   resume route's `/as/{persona}`. It starts at "No role" each time a place
+ *   is entered and is not remembered: a past conversation's list does not say
+ *   which role it had, and a new start's habit is not a claim about an old
+ *   conversation. While the places are listed for a resume the row stands
+ *   down, since nothing opens from that step.
  * - **Moving the highlight without opening** (a late arrival, or one after the
  *   person moved on) has no seam on this page, so that case leaves the list as
  *   it is.
@@ -68,6 +73,8 @@ let assistants: L.StartAssistantRow[] = []
 let with_: string | null = null
 /** The persona chosen for the next start; "" for none. */
 let persona = ""
+/** The persona chosen for the next resume from the place entered; "" for none. */
+let resumeAs = ""
 let loading = false
 let pressing: string | null = null
 let find = ""
@@ -237,7 +244,8 @@ function drawWith(): void {
 
 /** The chosen persona, when the catalog still names it; "" for none. */
 function chosenPersona(): string {
-  return personaById(personasNow(), persona) ? persona : ""
+  const id = at ? resumeAs : persona
+  return personaById(personasNow(), id) ? id : ""
 }
 
 /** The role chips; see the header. */
@@ -247,7 +255,7 @@ function drawPersona(): void {
   // Every draw rebuilds the chips; the sideways scroll is kept across it, so a
   // press on a chip the person scrolled to does not throw the row back.
   const scrolled = row.scrollLeft
-  row.hidden = !catalog.length || !!at || (resume && resumable())
+  row.hidden = !catalog.length || (!at && resume && resumable())
   row.innerHTML = ""
   if (row.hidden) return
   const label = document.createElement("span")
@@ -263,8 +271,12 @@ function drawPersona(): void {
     button.setAttribute("aria-pressed", id === chosen ? "true" : "false")
     if (title) button.title = title
     button.onclick = () => {
-      persona = id
-      rememberPersona(id)
+      if (at) {
+        resumeAs = id
+      } else {
+        persona = id
+        rememberPersona(id)
+      }
       draw()
     }
     const name = document.createElement("span")
@@ -572,6 +584,7 @@ function enter(place: Place): void {
 
 function leave(): void {
   at = null
+  resumeAs = ""
   pasts = null
   pastsUnread = false
   capped = false
@@ -634,7 +647,8 @@ function pick(sessionID: string): void {
   said("")
   draw()
   startPress.start()
-  asked(() => api.resumePlace(place.id, sessionID, with_))
+  const as = chosenPersona()
+  asked(() => api.resumePlace(place.id, sessionID, with_, undefined, as || undefined))
     .then((d) => {
       startPress.settle(() => {
         pressing = null

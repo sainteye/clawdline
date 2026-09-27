@@ -28,6 +28,8 @@ import { Snippets } from "./Snippets.js"
 import { conversationNotStarted } from "./readiness.js"
 import { agentName, agentStateWord } from "./WorkTree.js"
 import { nextWord } from "../next-strings.js"
+import { headPersona } from "../personas.js"
+import { PersonaBot, usePersonas } from "./PersonaBot.js"
 import "./work-tree.css"
 import "./git-status.css"
 
@@ -229,6 +231,7 @@ export function Detail({
             </span>
           </button>
         </div>
+        <DetailPersona row={row} />
         <div className="tools">
           <Tools
             row={row}
@@ -326,6 +329,27 @@ function HomeHero() {
         <p>{T.webPickSession}</p>
       </div>
     </section>
+  )
+}
+
+/**
+ * The role this session was launched as (docs/personas.md): a large bot, the
+ * full name and the one-line summary. Nothing for a row with no persona or one
+ * the catalog does not name; on Cloud the catalog is empty unless the machine
+ * offers `personas`, so nothing there either. On a phone only the bot shows;
+ * the words stay for a screen reader and the title (persona.css).
+ */
+function DetailPersona({ row }: { row: SessionRow | null }) {
+  const head = headPersona(usePersonas(), row?.persona)
+  if (!head) return null
+  return (
+    <span className="detail-persona" id="detail-persona" title={head.title}>
+      <PersonaBot persona={head.persona} cellPx={4} className="detail-persona-bot" />
+      <span className="detail-persona-words">
+        <span className="detail-persona-name">{head.name}</span>
+        {head.summary ? <span className="detail-persona-summary">{head.summary}</span> : null}
+      </span>
+    </span>
   )
 }
 

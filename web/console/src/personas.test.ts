@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { Persona } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
-import { personaById, suggestedPersona } from "./personas.ts"
+import { headPersona, personaById, rowPersonaLine, suggestedPersona } from "./personas.ts"
 
 const icon = { accent: "#000000", cells: [["#000000"]] }
 const persona = (id: string, kinds: string[]): Persona => ({
@@ -73,4 +73,30 @@ test("a catalog read keeps only well-formed personas", async () => {
     list.map((p) => p.id),
     ["architect"],
   )
+})
+
+test("the detail header shows a persona only when the catalog names it", () => {
+  const named: Persona[] = [{ ...persona("architect", []), summary: { en: "Draws the plan.", "zh-Hant": "畫出計畫。" } }]
+  const known = headPersona(named, "architect")
+  assert.equal(known?.persona.id, "architect")
+  assert.ok(known?.name)
+  assert.ok(known?.summary)
+  assert.ok(known?.title.includes(known.summary))
+  assert.equal(headPersona(named, "janitor"), null, "unknown to the catalog")
+  assert.equal(headPersona(named, undefined), null, "no persona on the row")
+  assert.equal(headPersona(named, ""), null, "an empty persona")
+  assert.equal(headPersona(null, "architect"), null, "catalog not read")
+  assert.equal(headPersona([], "architect"), null, "catalog unreadable")
+})
+
+test("a session row has a role line only for a persona the catalog names", () => {
+  const known = { ...persona("frontend", ["feature"]), summary: { en: "Builds the console.", "zh-Hant": "" } }
+  const line = rowPersonaLine([known, ...catalog], "frontend")
+  assert.equal(line?.persona, known)
+  assert.equal(line?.name, "frontend")
+  assert.equal(line?.title, "frontend — Builds the console.")
+  assert.equal(rowPersonaLine(catalog, "janitor"), null)
+  assert.equal(rowPersonaLine(catalog, undefined), null)
+  assert.equal(rowPersonaLine(catalog, ""), null)
+  assert.equal(rowPersonaLine(null, "frontend"), null)
 })
