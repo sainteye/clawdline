@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import type { Assistant, SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
@@ -11,7 +12,8 @@ import { RoleRow } from "../../session/RoleRow.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
-import { onOpenNewWorkItem, type NewWorkItemDraft } from "./new-item.js"
+import { onOpenNewWorkItem, onOpenWorkItem, type NewWorkItemDraft } from "./new-item.js"
+import { DecisionCard } from "./Board.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports, WorkEpicPlanDocuments } from "./WorkCompletionReport.js"
@@ -26,6 +28,7 @@ import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import { completeConfirmWords } from "./complete-item.js"
 import {
+  answerDecision,
   assignNewWorkV2,
   assignWorkV2,
   addWorkV2Image,
@@ -34,13 +37,16 @@ import {
   deleteWorkV2,
   deleteWorkV2Image,
   editWorkV2,
+  readDecisions,
   readProjectPlaces,
   readSessionWorkV2,
   readSessionsForWorkV2,
   readWorkV2,
+  readWorkV2Item,
   readWorkV2Proposals,
   remindWorkV2,
   resolveWorkV2Proposal,
+  type Decision,
   type ProjectPlace,
   type WorkV2Item,
   type WorkV2Kind,
@@ -76,6 +82,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [places, setPlaces] = useState<ProjectPlace[]>([])
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [proposals, setProposals] = useState<WorkV2Proposal[]>([])
+  const [decisions, setDecisions] = useState<Decision[]>([])
   const [project, setProject] = useState("")
   const [routeProject, setRouteProject] = useState(() => typeof location === "undefined" ? "" : workRouteFromHash(location.hash).project)
   const [status, setStatus] = useState<WorkV2Status>("open")
@@ -87,6 +94,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [creating, setCreating] = useState(false)
   const [createDraft, setCreateDraft] = useState<NewWorkItemDraft>({})
   const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
+  const [openedItem, setOpenedItem] = useState<WorkV2Item | null>(null)
   const [busy, setBusy] = useState("")
   const [failure, setFailure] = useState("")
   const loadGeneration = useRef(0)
@@ -100,7 +108,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current
     try {
-      const [projects, live, suggestions] = await Promise.all([readProjectPlaces(), readSessionsForWorkV2(), readWorkV2Proposals()])
+      const [projects, live, suggestions, questions] = await Promise.all([readProjectPlaces(), readSessionsForWorkV2(), readWorkV2Proposals(), readDecisions()])
       const selectedProject = workProjectID(routeProject, projects.places)
       const work = await readWorkV2(selectedProject || undefined, status, search)
       const relatives = await readEpicFamily(selectedProject, status, search, work)
@@ -112,8 +120,9 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       const rows = arrangeWorkItems(work.rows, kept)
       arrangement.current = { view, places: workItemPlaces(rows) }
       setItems(rows); setTruncated(work.truncated); setFamily(relatives); setLoaded(true)
-      setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setFailure("")
+      setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setDecisions(questions.rows); setFailure("")
       setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
+      setOpenedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
     } catch (e) {
       if (generation === loadGeneration.current) { setLoaded(true); setFailure(failureWords(e)) }
     }
@@ -141,16 +150,22 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   }, [searchInput])
   useEffect(() => { if (shown) rearrange.current = true }, [shown])
   useEffect(() => {
-    if (!shown && !creating && !createdItem) return
+    if (!shown && !creating && !createdItem && !openedItem) return
     void load()
     const timer = setInterval(() => { if (document.visibilityState === "visible") void load() }, 30_000)
     return () => clearInterval(timer)
-  }, [shown, creating, createdItem?.id, load])
+  }, [shown, creating, createdItem?.id, openedItem?.id, load])
   useEffect(() => onOpenNewWorkItem((draft) => {
     setFailure("")
     setCreatedItem(null)
     setCreateDraft(draft)
     setCreating(true)
+  }), [])
+  useEffect(() => onOpenWorkItem((item) => {
+    setFailure("")
+    setOpenedItem(item)
+    void readWorkV2Item(item.id).then((answer) => setOpenedItem((current) => current?.id === item.id ? answer.item : current))
+      .catch((error: unknown) => setFailure(failureWords(error)))
   }), [])
 
   const run = async (key: string, task: () => Promise<unknown>) => {
@@ -160,7 +175,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       const answer = await task()
       if (answer && typeof answer === "object" && "item" in answer) {
         const changed = (answer as { item?: WorkV2Item }).item
-        if (changed) setCreatedItem((current) => current?.id === changed.id ? changed : current)
+        if (changed) {
+          setCreatedItem((current) => current?.id === changed.id ? changed : current)
+          setOpenedItem((current) => current?.id === changed.id ? changed : current)
+        }
       }
       await load()
       return true
@@ -205,6 +223,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
             <button className="chip danger" disabled={!!busy} onClick={() => void run(p.id, () => resolveWorkV2Proposal(p.id, "reject"))}>拒絕</button></div>
         </article>)}</div>
       </details>}
+      {decisions.length > 0 && <details className="work-fold" open><summary><strong>待你決定</strong><span className="work-count">{decisions.length}</span></summary>
+        <div className="work-fold-body work-cards">{decisions.map((d) => <DecisionCard key={d.id} decision={d} busy={!!busy}
+          run={(task) => void run(d.id, task)} onAnswer={(d, o) => answerDecision(d.id, o)} />)}</div>
+      </details>}
       <BoardRegion title="規劃區" items={planning} sessions={sessions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
       <BoardRegion title="待指派" items={unassigned} sessions={sessions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
       {PHASES.map((phase) => <BoardRegion key={phase} title={phaseName(phase)}
@@ -248,6 +270,8 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     }} />}
     {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} busy={busy} failure={failure}
       clearFailure={() => setFailure("")} run={run} onClose={() => setCreatedItem(null)} />}
+    {openedItem && <CreatedWorkModal item={openedItem} created={false} sessions={sessions} busy={busy} failure={failure}
+      clearFailure={() => setFailure("")} run={run} onClose={() => setOpenedItem(null)} />}
   </EpicFamilyContext.Provider>
 }
 
@@ -360,7 +384,7 @@ function BoardRegion({ title, items, sessions, busy, failure, clearFailure, run 
   </section>
 }
 
-function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssignment = false }: {
+function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssignment = false, reportsExpanded = false }: {
   item: WorkV2Item
   sessions: SessionRow[]
   busy: string
@@ -368,6 +392,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   clearFailure: () => void
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
   focusAssignment?: boolean
+  reportsExpanded?: boolean
 }) {
   const [terminal, setTerminal] = useState("")
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
@@ -477,7 +502,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     <WorkEpicPlanDocuments item={item} />
     <WorkSteps steps={item.steps} />
     <WorkMilestones phase={item.phase} />
-    <WorkCompletionReports item={item} />
+    <WorkCompletionReports item={item} expanded={reportsExpanded} />
     {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
       {item.images.map((image) => <WorkReferenceImage key={image.id} item={item} image={image} busy={busy} run={run} />)}
     </div>}
@@ -694,8 +719,9 @@ function SessionWorkList({ title, empty, rows }: {
   </li>)}</ul> : <small>{empty}</small>}</div>
 }
 
-function CreatedWorkModal({ item, sessions, busy, failure, clearFailure, run, onClose }: {
+function CreatedWorkModal({ item, created = true, sessions, busy, failure, clearFailure, run, onClose }: {
   item: WorkV2Item
+  created?: boolean
   sessions: SessionRow[]
   busy: string
   failure: string
@@ -704,15 +730,19 @@ function CreatedWorkModal({ item, sessions, busy, failure, clearFailure, run, on
   onClose: () => void
 }) {
   useModalDismiss(!!busy, onClose)
-  return <div className="session-todo-modal work-created-modal" role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id}`}
+  // Opened from a Session too, so it lives beside the app root, never inside
+  // the fixed Session pane: a phone then keeps one scroll surface.
+  return createPortal(<div className={created ? "session-todo-modal work-created-modal" : "session-todo-modal work-created-modal work-item-detail-modal"}
+    role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id}`}
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
-    <div className="work-created-panel">
-      <div className="work-modal-head"><div><p className="board-eyebrow">WORK ITEM CREATED</p><h2 id={`work-created-title-${item.id}`}>看板項目已建立</h2></div>
+    <div className={created ? "work-created-panel" : "work-created-panel work-item-detail-panel"}>
+      <div className="work-modal-head"><div><p className="board-eyebrow">{created ? "WORK ITEM CREATED" : "BOARD ITEM"}</p>
+        <h2 id={`work-created-title-${item.id}`}>{created ? "看板項目已建立" : "看板項目"}</h2></div>
         <button className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <WorkCard item={item} sessions={sessions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} focusAssignment />
+      <WorkCard item={item} sessions={sessions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} focusAssignment={created} reportsExpanded={!created} />
     </div>
-  </div>
+  </div>, document.body)
 }
 
 function EditWorkModal({ item, busy, failure, onClose, onSave }: {

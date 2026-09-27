@@ -324,7 +324,7 @@ function ItemCard({
 }
 
 /** A question a session asked a person (Waiting on you): its options, and what stands if nobody answers. */
-function DecisionCard({
+export function DecisionCard({
   decision,
   busy,
   run,

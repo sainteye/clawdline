@@ -131,9 +131,8 @@ test("every word the bills say is in both catalogs", () => {
   for (const k of keys("en")) assert.ok(workWordIn("zh-Hant", k as never).length > 0, k)
 })
 
-test("the card, the item detail and the session detail each draw the bill", () => {
+test("the card and the session detail each draw the bill", () => {
   assert.match(card, /<ItemUsageCard itemId=\{item\.id\} version=\{item\.version\} \/>/)
-  assert.match(todos, /<ItemUsageDetail itemId=\{item\.id\} version=\{item\.version\} \/>/)
   assert.match(todos, /\{row\.sessionId && <SessionUsage conversation=\{row\.sessionId\} \/>\}/)
   // The card asks once it is on screen, through the shared cache, and a session asks when its fold opens.
   assert.match(bill, /const \[ref, seen\] = useSeen<HTMLDivElement>\(\)\n\s+const \{ reading \} = useUsage\(items, itemId, seen, version\)/)

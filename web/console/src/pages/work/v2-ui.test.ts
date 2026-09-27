@@ -285,3 +285,17 @@ test("an Epic lists its children with progress, and a child links back to its Ep
   assert.match(styles, /\.work-epic-children \{/)
   assert.match(styles, /\.work-epic-parent \{[^}]*var\(--work-epic\)/)
 })
+
+test("the Board shows the open questions Sessions asked and answers them there", () => {
+  assert.match(source, /readDecisions\(\)/)
+  assert.match(source, /<DecisionCard key=\{d\.id\} decision=\{d\}/)
+  assert.match(source, /answerDecision\(d\.id, o\)/)
+})
+
+test("a Session opens its Board item as the Board's own card, with the same controls", () => {
+  assert.match(todos, /openWorkItem\(item\)/)
+  assert.doesNotMatch(todos, /function WorkItemDetailModal/)
+  assert.match(source, /onOpenWorkItem\(/)
+  assert.match(source, /\{openedItem && <CreatedWorkModal item=\{openedItem\} created=\{false\}/)
+  assert.match(source, /<WorkCard item=\{item\}[^>]*reportsExpanded=\{!created\}/)
+})

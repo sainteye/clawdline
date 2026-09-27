@@ -339,6 +339,9 @@ function daemon(): Server {
     if (path === "/v1/work/v2/proposals" && req.method === "GET") {
       return json(res, 200, { rows: [], truncated: false })
     }
+    if (path === "/v1/work/decisions" && req.method === "GET") {
+      return json(res, 200, { counts: {}, rows: [], next_cursor: null })
+    }
     if (path === "/v1/work/v2/items/work-fixture" && req.method === "GET") return json(res, 200, {
       ok: true,
       item: {
@@ -1130,19 +1133,19 @@ test("an assigned Board item opens its detail and requested action on a phone", 
       `a real finger drag did not scroll the completion report: ${JSON.stringify(scrolled)}`)
     const reminded = await tab.run(`new Promise((resolve, reject) => {
       const button = [...document.querySelectorAll('.work-item-detail-modal button')]
-        .find((node) => node.textContent?.includes('再次提醒 Session'))
+        .find((node) => node.textContent?.includes('提醒 Session'))
       if (!button) return reject(new Error('the Session reminder button is missing'))
       button.click()
       const deadline = Date.now() + 8000
       const read = () => {
         const text = document.querySelector('.work-item-detail-modal')?.textContent || ''
-        if (text.includes('已再次提醒這個 Session。')) return resolve(text)
+        if (text.includes('已提醒')) return resolve(text)
         if (Date.now() >= deadline) return reject(new Error('the Session reminder did not settle: ' + text))
         setTimeout(read, 25)
       }
       read()
     })`)
-    assert.match(reminded, /已再次提醒這個 Session/)
+    assert.match(reminded, /已提醒/)
     assert.equal(workReminders, 1)
     await tab.shot("session-board-item-detail")
   }))

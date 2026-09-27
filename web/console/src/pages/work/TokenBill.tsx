@@ -82,15 +82,6 @@ export function ItemUsageCard({ itemId, version }: { itemId: string; version: nu
 }
 
 /** An item's whole bill, as the item detail shows it: read when the detail opens. */
-export function ItemUsageDetail({ itemId, version }: { itemId: string; version?: number }) {
-  const { reading, retry } = useUsage(items, itemId, true, version)
-  return <section className="work-usage-detail" aria-label={workWord("usageTitle")}>
-    <h3>{workWord("usageTitle")}</h3>
-    <ReadingState reading={reading} retry={retry} />
-    {reading.phase === "ready" && <ItemUsageBody usage={reading.value} />}
-  </section>
-}
-
 /**
  * A session's bill, folded in the session detail and read the first time it
  * is opened.

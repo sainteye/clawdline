@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { createPortal } from "react-dom"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, completeWorkV2, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, readWorkV2Item, remindWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
+import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
-import { completeConfirmWords } from "../pages/work/complete-item.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { WorkSteps } from "../pages/work/WorkSteps.js"
-import { completionReports, WorkCompletionReports } from "../pages/work/WorkCompletionReport.js"
+import { completionReports } from "../pages/work/WorkCompletionReport.js"
 import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { PendingPictures } from "../pages/work/ReferencePictures.js"
 import { VoiceTextarea } from "../pages/work/VoiceTextarea.js"
+import { openWorkItem } from "../pages/work/new-item.js"
 import { useReferenceImage } from "../pages/work/useReferenceImage.js"
 import { workWord } from "../pages/work/words.js"
 import { Mark } from "./List.js"
@@ -20,7 +19,7 @@ import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import { OneRead, readFailureReason, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
 import { nextWord } from "../next-strings.js"
-import { ItemUsageDetail, SessionUsage } from "../pages/work/TokenBill.js"
+import { SessionUsage } from "../pages/work/TokenBill.js"
 import "../pages/work/work.css"
 import "./todos.css"
 
@@ -31,10 +30,6 @@ export function Todos({ row }: { row: SessionRow | null }) {
   const [text, setText] = useState("")
   const [images, setImages] = useState<File[]>([])
   const [page, setPage] = useState<SessionWorkV2 | null>(null)
-  const [detail, setDetail] = useState<WorkV2Item | null>(null)
-  const [detailFailure, setDetailFailure] = useState("")
-  const [detailActionFailure, setDetailActionFailure] = useState("")
-  const [detailNotice, setDetailNotice] = useState("")
   const [failure, setFailure] = useState("")
   // A failed read is its own state, apart from a failed action: the header
   // shows it, and only a later successful read clears it.
@@ -66,7 +61,7 @@ export function Todos({ row }: { row: SessionRow | null }) {
     // same Session. Key the answer to its stable id: otherwise every refresh
     // clears a good answer, flashes "loading", and asks the work API again.
     ticket.current += 1
-    setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setDetail(null); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice(""); setFailure("")
+    setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setFailure("")
     setReadFailure(null); setReading(false)
     if (!rowID) return
     // One read in flight per Session; the page asks again every fifteen
@@ -98,45 +93,6 @@ export function Todos({ row }: { row: SessionRow | null }) {
     setBusy(key); setFailure("")
     try { await task(); await refresh(true); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
   }
-  const showDetail = (item: WorkV2Item) => {
-    setDetail(item); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice("")
-    void readWorkV2Item(item.id).then((answer) => setDetail((current) => current?.id === item.id ? answer.item : current))
-      .catch((error: unknown) => setDetailFailure(failureWords(error)))
-  }
-  const remindDetail = async (item: WorkV2Item) => {
-    const key = `remind-${item.id}`
-    if (busy) return
-    setBusy(key); setDetailActionFailure(""); setDetailNotice("")
-    try {
-      const answer = await remindWorkV2(item)
-      setDetail((current) => current?.id === item.id ? answer.item : current)
-      setDetailNotice("已再次提醒這個 Session。")
-      await refresh(true)
-    } catch (error) {
-      setDetailActionFailure(`提醒傳送失敗：${failureWords(error)}`)
-    } finally {
-      setBusy("")
-    }
-  }
-  // The person's override: the item closes as done whatever its phase and
-  // steps, and leaves this Session's open list for its recent history.
-  const completeDetail = async (item: WorkV2Item) => {
-    const key = `complete-${item.id}`
-    if (busy) return false
-    setBusy(key); setDetailActionFailure(""); setDetailNotice("")
-    try {
-      const answer = await completeWorkV2(item)
-      setDetail((current) => current?.id === item.id ? answer.item : current)
-      setDetailNotice("已標記完成。")
-      await refresh(true)
-      return true
-    } catch (error) {
-      setDetailActionFailure(`標記完成失敗：${failureWords(error)}`)
-      return false
-    } finally {
-      setBusy("")
-    }
-  }
 
   return (
     <>
@@ -164,12 +120,12 @@ export function Todos({ row }: { row: SessionRow | null }) {
           {page && hasAssigned && <section className="session-todos-list" aria-label="負責項目">
             <p>這個 Session 尚未關閉的負責項目</p>
             {page.assigned_items.map((item) => (
-              <SessionOwnedItem item={item} key={item.id} onOpen={() => showDetail(item)} />
+              <SessionOwnedItem item={item} key={item.id} onOpen={() => openWorkItem(item)} />
             ))}
           </section>}
           {page && hasRecent && <section className="session-todos-list session-recent-work" aria-label="最近完成的項目">
             <p>最近完成的看板項目</p>
-            {page.recent_items.map((item) => <SessionOwnedItem item={item} completed key={item.id} onOpen={() => showDetail(item)} />)}
+            {page.recent_items.map((item) => <SessionOwnedItem item={item} completed key={item.id} onOpen={() => openWorkItem(item)} />)}
           </section>}
           {page && hasDirect && <section className="session-todos-list" aria-label="直接待辦">
             <p>直接交給這個 Session 的待辦。✓✓ 只表示已同步到 Session，尚未完成；需要時可以再次 Send。</p>
@@ -211,10 +167,6 @@ export function Todos({ row }: { row: SessionRow | null }) {
           </div>
         </form>
       </div>}
-      {detail && <WorkItemDetailModal item={detail} failure={detailFailure} actionFailure={detailActionFailure} notice={detailNotice}
-        reminding={busy === `remind-${detail.id}`} onRemind={() => { void remindDetail(detail) }}
-        completing={busy === `complete-${detail.id}`} onComplete={() => completeDetail(detail)}
-        onClose={() => { setDetail(null); setDetailFailure(""); setDetailActionFailure(""); setDetailNotice("") }} />}
     </>
   )
 }
@@ -257,69 +209,6 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
     <WorkMilestones phase={item.phase} />
     <WorkSteps steps={item.steps} />
   </article>
-}
-
-function WorkItemDetailModal({ item, failure, actionFailure, notice, reminding, onRemind, completing, onComplete, onClose }: {
-  item: WorkV2Item
-  failure: string
-  actionFailure: string
-  notice: string
-  reminding: boolean
-  onRemind: () => void
-  completing: boolean
-  onComplete: () => Promise<boolean>
-  onClose: () => void
-}) {
-  const [confirming, setConfirming] = useState(false)
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose() }
-    document.addEventListener("keydown", close)
-    return () => document.removeEventListener("keydown", close)
-  }, [onClose])
-  // A phone's Session pane is itself fixed to the visual viewport. Keeping a
-  // second fixed scroller inside it leaves iOS with no reliable pan target, so
-  // the dialog lives beside the app root and owns the one scroll surface.
-  return createPortal(<div className="session-todo-modal work-item-detail-modal" role="dialog" aria-modal="true"
-    aria-labelledby={`session-work-detail-title-${item.id}`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <article className="work-created-panel work-item-detail-panel">
-      <div className="work-modal-head"><div><p className="board-eyebrow">BOARD ITEM</p>
-        <h2 id={`session-work-detail-title-${item.id}`}>{item.title}</h2></div>
-        <button className="work-modal-close" type="button" aria-label="關閉" autoFocus onClick={onClose}><WorkIcon name="close" /></button></div>
-      <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} />
-        <span>{item.project.label} · {item.kind} · {phaseName(item.phase)}</span></div>
-      {item.condition && <p className="session-work-detail-condition">{conditionName(item.condition)}</p>}
-      {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
-        <strong>需要你做的事</strong><p>{item.user_action}</p>
-      </section>}
-      <p className="session-work-detail-description">{item.description}</p>
-      <WorkMilestones phase={item.phase} />
-      <WorkCompletionReports item={item} expanded />
-      {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
-        {item.images.map((image) => <ReferenceImage key={image.id} image={image} />)}
-      </div>}
-      {failure && <p className="work-note" role="alert">最新資料讀取失敗：{failure}</p>}
-      {actionFailure && <p className="work-note" role="alert">{actionFailure}</p>}
-      {notice && <p className="work-note" role="status">{notice}</p>}
-      <ItemUsageDetail itemId={item.id} version={item.version} />
-      {!item.closed_at && (confirming
-        ? <div className="work-actions" role="group" aria-label="確認標記完成">
-          <p className="work-note">{completeConfirmWords(item)}</p>
-          <button className="chip on" type="button" disabled={completing}
-            onClick={() => { void onComplete().then((ok) => { if (ok) setConfirming(false) }) }}>
-            <WorkIcon name="check" />{completing ? "標記中…" : "確認標記完成"}</button>
-          <button className="chip" type="button" disabled={completing} onClick={() => setConfirming(false)}>取消</button>
-        </div>
-        : <div className="work-actions">
-          {!!item.owner_session && <button className="chip on" type="button" disabled={reminding} onClick={onRemind}>
-            {reminding ? "提醒中…" : notice ? "✓ 已提醒" : "再次提醒 Session"}
-          </button>}
-          <button className="chip" type="button" disabled={reminding} onClick={() => setConfirming(true)}>
-            <WorkIcon name="check" />標記完成</button>
-        </div>)}
-      <div className="work-meta"><span>{deploymentPolicyName(item.deployment_policy)}</span>
-        <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span></div>
-    </article>
-  </div>, document.body)
 }
 
 function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2; conversation?: string; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
@@ -384,10 +273,6 @@ function conditionName(condition: string): string {
   return ({ waiting_user: "等待你的決定", blocked: "遇到阻礙", evidence_unknown: "缺少可驗證證據",
     owner_required: "等待負責人", owner_offline: "負責 Session 離線", assignment_failed: "指派失敗",
     assigned_unnotified: "已指派，尚未通知" } as Record<string, string>)[condition] ?? condition
-}
-
-function deploymentPolicyName(policy: WorkV2Item["deployment_policy"]): string {
-  return ({ required: "需要部署", not_required: "不需要部署", agent_decides: "由 Agent 判斷是否部署" } as const)[policy]
 }
 
 /**
