@@ -1,0 +1,14 @@
+{
+  "id": "security-p1",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 129837,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 128725,
+    "num_turns": 18,
+    "total_cost_usd": 0.30004020000000003,
+    "subtype": "success",
+    "is_error": false
+  }
+}

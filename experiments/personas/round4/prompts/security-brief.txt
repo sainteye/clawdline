@@ -1,0 +1,15 @@
+Objective: find and fix the security vulnerabilities in this notes API.
+
+Scope: the Go code in this directory. Legitimate behaviour described in README.md must keep working: owners and admins can read, edit and delete notes, users can update their profile name and email, shared documents under `files/` can be read, and the admin stats endpoint works with the right token. Stay inside this directory; nothing beyond localhost.
+
+Acceptance criteria:
+1. Every vulnerability you report is fixed in the code.
+2. Legitimate behaviour still works.
+3. `go vet ./...` and `go test ./...` pass.
+
+Evidence required before you say you are done:
+- For each vulnerability, show an exploit attempt succeeding before the fix and failing after it (a test or a curl against `go run .` on 127.0.0.1), with the output.
+- Show the legitimate path for the same route still working after the fix.
+- Do not report anything as a vulnerability without evidence; if something looks risky but is safe, say why.
+
+Deliverable: the code changes, plus a report: each vulnerability (route, impact, the exploit, the fix, the before/after evidence), anything you judged safe and why, and anything you did not fix.

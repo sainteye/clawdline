@@ -1,0 +1,12 @@
+{
+  "problems": [
+    {"id": "P1", "what": "N+1: one GetUser round trip per order; GetUsers batches them"},
+    {"id": "P2", "what": "a package-level mutex held across the whole report (including store round trips) serialises concurrent requests"},
+    {"id": "P3", "what": "two regexp.MustCompile calls per order in cleanNote"},
+    {"id": "P4", "what": "uniqueSorted is quadratic (linear scan of the output for every item)"},
+    {"id": "P5", "what": "ListOrders copies every order under a read lock on each request (minor)"}
+  ],
+  "baseline_heldout_ms": 2135.2,
+  "golden": {"60": "9746bf7b728406243a1224874a127efc19fd3272a841b3d2e4c9a504834667a8", "1000": "859f20f230241be0149c5586ccd419dddff3a6b477420207cc7376488c032afe"},
+  "score": "speedup = baseline_ms / after_ms on the held-out benchmark (16 requests, concurrency 8, median of 3 rounds), measured after the session on this machine. 0 if the build, the fixture's own tests or the golden report check fail."
+}
