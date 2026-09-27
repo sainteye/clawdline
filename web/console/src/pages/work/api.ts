@@ -349,7 +349,7 @@ export interface WorkV2Item {
 
 export interface WorkV2Document {
   id: string
-  role: "spec" | "design" | "test" | "deploy" | "completion_report" | "other"
+  role: "spec" | "design" | "test" | "deploy" | "completion_report" | "plan" | "plan_review" | "other"
   title: string
   body: string
   reference: string

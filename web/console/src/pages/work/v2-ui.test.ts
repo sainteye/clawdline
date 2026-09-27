@@ -252,3 +252,23 @@ test("an assigned card can be moved to another or a new Session", () => {
   assert.match(source, /\(assignable \|\| \(reassignable && reassigning\)\) && <div className="work-assignment">/)
   assert.match(source, /assignmentCandidates\(sessions, item\)/)
 })
+
+test("an Epic card is drawn as large work: its own frame, label, and the lane's width", () => {
+  assert.match(source, /epic \? "work-card work-v2-card work-epic-card" : "work-card work-v2-card"/)
+  assert.match(source, /EPIC · 大型項目/)
+  assert.match(styles, /\.work-cards > \.work-epic-card \{ grid-column: 1 \/ -1; \}/)
+  assert.match(styles, /--work-epic: var\(--peer\)/)
+  assert.doesNotMatch(source, /kind === "epic"/)
+})
+
+test("an Epic shows its plan gate, its plan documents, and what assigning it means", () => {
+  const report = readFileSync(new URL("./WorkCompletionReport.tsx", import.meta.url), "utf8")
+  assert.match(source, /\{epicGateShown\(item\) && <EpicGateChecklist item=\{item\} \/>\}/)
+  assert.match(source, />計劃書<\/li>/)
+  assert.match(source, />Child Review<\/li>/)
+  assert.match(source, /<WorkEpicPlanDocuments item=\{item\} \/>/)
+  assert.match(source, /\{epic && <p className="work-epic-assign-note">/)
+  assert.match(report, /epicPlanDocuments\(item\.documents\)/)
+  assert.match(source, /epic: \{ icon: "◆", label: "Epic", description: "可指派的大型工作/)
+  assert.doesNotMatch(source, /先放在規劃區的大型工作主題/)
+})
