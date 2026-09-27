@@ -28,10 +28,13 @@ func TestThePersonaCatalogIsListedWithoutItsTexts(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Personas) != 8 || got.License != "MIT" {
+	if len(got.Personas) != len(persona.IDs()) || len(got.Personas) != 16 || got.License != "MIT" {
 		t.Fatalf("%d personas, licence %q", len(got.Personas), got.License)
 	}
 	for i, p := range got.Personas {
+		if p.Team != "engineering" && p.Team != "marketing" {
+			t.Errorf("%s: team %q", p.ID, p.Team)
+		}
 		if p.ID != persona.IDs()[i] || p.Name.ZhHant == "" || p.Summary.En == "" || len(p.Icon.Cells) != 7 ||
 			!strings.Contains(p.Source, persona.UpstreamCommit) {
 			t.Errorf("%d: %+v", i, p)

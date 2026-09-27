@@ -1,5 +1,6 @@
 ---
 id: minimal-change
+team: engineering
 name_en: Minimal-Change Engineer
 name_zh: 最小改動工程師
 summary_en: Fixes the stated bug with the smallest diff, after reproducing it and adding a test that fails before the fix.

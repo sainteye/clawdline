@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
-import { loadPersonas, personaById, personaName, personaTitle, personasNow, rememberPersona, rememberedPersona } from "../personas.js"
+import { loadPersonas, personaById, personasNow, rememberPersona, rememberTeam, rememberedPersona, rememberedTeam, switchTeam } from "../personas.js"
+import { drawRoleRow } from "./RoleRow.js"
 import "./persona.css"
 
 /**
@@ -73,6 +74,8 @@ let assistants: L.StartAssistantRow[] = []
 let with_: string | null = null
 /** The persona chosen for the next start; "" for none. */
 let persona = ""
+/** The team the role row shows when no persona is chosen. */
+let team = ""
 /** The persona chosen for the next resume from the place entered; "" for none. */
 let resumeAs = ""
 let loading = false
@@ -258,40 +261,31 @@ function drawPersona(): void {
   row.hidden = !catalog.length || (!at && resume && resumable())
   row.innerHTML = ""
   if (row.hidden) return
-  const label = document.createElement("span")
-  label.className = "with-label"
-  label.textContent = nextWord("personaPicker")
-  row.appendChild(label)
-  const chosen = chosenPersona()
-  const chip = (id: string, words: string, title: string) => {
-    const button = document.createElement("button")
-    button.type = "button"
-    button.className = "chip" + (id ? " persona-chip" : "") + (id === chosen ? " on" : "")
-    button.disabled = !!pressing || !!wait
-    button.setAttribute("aria-pressed", id === chosen ? "true" : "false")
-    if (title) button.title = title
-    button.onclick = () => {
-      if (at) {
-        resumeAs = id
-      } else {
-        persona = id
-        rememberPersona(id)
-      }
-      draw()
+  const choose = (id: string) => {
+    if (at) {
+      resumeAs = id
+    } else {
+      persona = id
+      rememberPersona(id)
     }
-    const name = document.createElement("span")
-    name.textContent = words
-    button.appendChild(name)
-    row.appendChild(button)
-    return button
   }
-  chip("", nextWord("personaNone"), "")
-  catalog.forEach((p) => {
-    const button = chip(p.id, personaName(p), personaTitle(p))
-    const bot = document.createElement("canvas")
-    bot.className = "persona-tag-bot"
-    bot.setAttribute("aria-hidden", "true")
-    if (L.drawIcon(bot, p.icon, 2)) button.insertBefore(bot, button.firstChild)
+  drawRoleRow(row, {
+    personas: catalog,
+    chosen: chosenPersona(),
+    team,
+    disabled: !!pressing || !!wait,
+    press: "pressed",
+    onPick: (id) => {
+      choose(id)
+      draw()
+    },
+    onTeam: (next) => {
+      const switched = switchTeam(catalog, chosenPersona(), next)
+      team = next
+      rememberTeam(next)
+      choose(switched.chosen)
+      draw()
+    },
   })
   const on = row.querySelector<HTMLElement>(".chip.on")
   // A remembered choice past the edge is brought into view when the sheet opens.
@@ -717,6 +711,7 @@ function open(): void {
   said("")
   leave()
   persona = rememberedPersona()
+  team = rememberedTeam()
   void loadPersonas().then(() => draw())
   if (write && !wait) load()
   draw()

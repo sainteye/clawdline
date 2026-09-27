@@ -6,7 +6,8 @@ import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
-import { personaById, personaName, personaTitle, suggestedPersona } from "../../personas.js"
+import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, suggestedPersona, switchTeam } from "../../personas.js"
+import { RoleRow } from "../../session/RoleRow.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
@@ -375,6 +376,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   // no single persona suggests starts with none. "" is none, chosen.
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState<string | null>(null)
+  const [team, setTeam] = useState(rememberedTeam)
   const persona = personaById(personas, personaChoice ?? suggestedPersona(personas, item.kind)?.id)
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -456,14 +458,14 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
       </div>
-      {personas.length > 0 && <div className="work-new-session work-new-persona" role="radiogroup" aria-label={nextWord("personaPicker")}>
-        <button className={`chip${!persona ? " on" : ""}`} type="button" role="radio" aria-checked={!persona} disabled={!!busy}
-          onClick={() => setPersonaChoice("")}>{nextWord("personaNone")}</button>
-        {personas.map((choice) => <button key={choice.id} className={`chip persona-chip${choice.id === persona?.id ? " on" : ""}`} type="button"
-          role="radio" aria-checked={choice.id === persona?.id} disabled={!!busy} title={personaTitle(choice)}
-          onClick={() => setPersonaChoice(choice.id)}>
-          <PersonaBot persona={choice} cellPx={2} className="persona-tag-bot" /><span>{personaName(choice)}</span></button>)}
-      </div>}
+      {personas.length > 0 && <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
+        team={team} disabled={!!busy} press="radio" onPick={(id) => setPersonaChoice(id)}
+        onTeam={(next) => {
+          const switched = switchTeam(personas, persona?.id, next)
+          setTeam(next)
+          rememberTeam(next)
+          setPersonaChoice(switched.chosen)
+        }} />}
       <button className="chip" type="button" disabled={!!busy} aria-busy={busy === item.id}
         onClick={() => assign(() => assignNewWorkV2(item, assistant, persona?.id))}>
         {persona

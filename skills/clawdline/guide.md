@@ -979,7 +979,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   it work the way that role works, for the whole conversation. It is only for a new Session
   (`--assign-new`, `--new`, `dispatch`); an existing Session keeps the one it opened with. None by
   default. A persona never overrides `CLAUDE.md`/`AGENTS.md`, the brief, `CHILD.md` or this
-  protocol. `GET /v1/personas` lists them; the eight ids:
+  protocol. `GET /v1/personas` lists them; the sixteen ids, eight per team (`team` on each):
   - `architect` — planning an Epic;
   - `backend` — a daemon, API or store feature;
   - `frontend` — a console or phone-layout feature;
@@ -987,7 +987,10 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - `code-reviewer` — review and `plan_review` children;
   - `reality-checker` — verifying: evidence before "it works";
   - `security` — work touching permissions, pairing or Cloud;
-  - `technical-writer` — docs and guides.
+  - `technical-writer` — docs and guides;
+  - marketing, for a blog, site or docs repository: `seo` (pages and metadata), `content-writer`
+    (articles drafted in files), `ai-search` (pages AI answer engines can cite), `social-media`,
+    `instagram`, `email` (newsletters), `growth` (measured experiments) and `pr` (announcements).
 - **You remain responsible for the Epic.** Follow every child to done (`clawdline item steps <child
   id>` reads one), integrate their work, and move the Epic to done only when every child is done or
   cancelled: `clawdline item phase <epic id> done` is refused `epic_children_open`, naming how many

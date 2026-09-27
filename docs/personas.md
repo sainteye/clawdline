@@ -13,11 +13,17 @@ call it "Role".
 ## The catalog
 
 The catalog is closed and compiled into the daemon (`internal/domain/persona`). Each persona is
-one Markdown file under `internal/domain/persona/catalog/`, with a frontmatter of exactly seven
-keys (`id`, `name_en`, `name_zh`, `summary_en`, `summary_zh`, `suggested_kinds`, `source`) and a
+one Markdown file under `internal/domain/persona/catalog/`, with a frontmatter of exactly eight
+keys (`id`, `team`, `name_en`, `name_zh`, `summary_en`, `summary_zh`, `suggested_kinds`, `source`) and a
 body. The files are parsed when the package loads. `TestTheCatalogLoads` turns a malformed file, a
 file missing from `persona.Order`, or a text past the bounds into a failing test, so a daemon
 never finds one at run time.
+
+Every persona belongs to one **team**, `engineering` or `marketing` (`team` in the frontmatter and
+on the wire, a closed set `parse` refuses anything outside of). The console names the teams; the
+catalog only says which one.
+
+The engineering team:
 
 | id | Name | Suggested for |
 | --- | --- | --- |
@@ -29,6 +35,23 @@ never finds one at run time.
 | `reality-checker` | Reality Checker | — |
 | `security` | Security Engineer | — |
 | `technical-writer` | Technical Writer | — |
+
+The marketing team, for a session working in a blog, a site or a docs repository. Each was
+adapted, not copied: upstream emoji, hype, invented metrics and tool-specific pipelines were
+dropped, and every one edits files in the repository, never posts or sends anything itself, and
+writes in the site's own language and locale (Taiwan usage for zh-TW). None is suggested for a
+Board kind.
+
+| id | Name | 中文 | Adapted from |
+| --- | --- | --- | --- |
+| `seo` | SEO Specialist | SEO 專家 | [`marketing-seo-specialist.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-seo-specialist.md) |
+| `content-writer` | Content Writer | 文章寫手 | [`marketing-content-creator.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-content-creator.md), with the long-form voice of `marketing-book-co-author.md` |
+| `ai-search` | AI Search Optimizer | AI 搜尋優化師 | [`marketing-ai-citation-strategist.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-ai-citation-strategist.md) and `marketing-aeo-foundations.md` |
+| `social-media` | Social Media Strategist | 社群策略師 | [`marketing-social-media-strategist.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-social-media-strategist.md) |
+| `instagram` | Instagram Curator | Instagram 經營 | [`marketing-instagram-curator.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-instagram-curator.md) |
+| `email` | Email Strategist | 電子報策略師 | [`marketing-email-strategist.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-email-strategist.md) |
+| `growth` | Growth Hacker | 成長駭客 | [`marketing-growth-hacker.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-growth-hacker.md) |
+| `pr` | PR & Communications | 公關傳播 | [`marketing-pr-communications-manager.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-pr-communications-manager.md) |
 
 `suggested_kinds` tells a picker which personas to show first for a Board item's kind. It only
 orders the choices: no kind gives a persona to anything.
@@ -185,6 +208,18 @@ per machine. A read that fails for any reason is an empty catalog, and an empty 
 chips and no bots: an older daemon, or a machine on Cloud that cannot answer, shows the console it
 showed before this feature, never a sheet that breaks after a press.
 
+- **The team switcher.** The start sheet, its resume step and the Board's new-Session assignment
+  draw one role row (`session/RoleRow.tsx`). When the catalog has personas in more than one team,
+  its "Role" label is a native select, 工程團隊 / Engineering and 行銷團隊 / Marketing, styled like
+  the label with a caret so a phone opens its own picker; the chips to its right are "No role"
+  and that team's personas only. The team shown is the chosen persona's own team, otherwise the
+  team last picked in this browser (localStorage, `clawdline.persona.team`), otherwise
+  engineering, so the Board's kind default (epic → architect, issue → minimal-change) shows the
+  engineering team. Switching to a team that does not hold the chosen persona resets the choice
+  to "No role": a start never sends a persona the person cannot see. A catalog without `team`
+  (a daemon older than the field, or a Cloud machine not yet updated) is all engineering, and
+  with one team the label stays the plain "Role" it was. The decisions are pure functions in
+  `personas.ts` (`shownTeam`, `switchTeam`, `teamsOffered`, `personasOfTeam`).
 - **Session list.** A row whose `persona` the catalog names starts its third line, before the
   state words, with the bot at two pixels a cell and the role's full name in the console's
   language (11.5 px, as the words beside it), with name and summary as its title. It is written
@@ -194,7 +229,7 @@ showed before this feature, never a sheet that breaks after a press.
   (a 390 px phone cut the name to one character); a line of its own under the state line with a
   24×21 bot (rows 25 px taller, and it did not swipe); the bot alone on the second line (the person
   could not tell which role it was). Measured with mocked rows and the real catalog: every row is
-  87.9 px on a 390 px phone and 77.6 px on a desktop, with or without a role; all eight names fit
+  87.9 px on a 390 px phone and 77.6 px on a desktop, with or without a role; all sixteen names (both teams) fit
   whole at 390 px in both languages, beside a long working sentence too; no sideways scroll.
 - **Session info.** Under the status, a "Role" section holds a `details` shaped like the statuses:
   the bot at three pixels a cell and the full name, and, opened, the one-line summary and the
