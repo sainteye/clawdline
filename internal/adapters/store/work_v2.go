@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS work_v2_assignments (
   created_at         INTEGER NOT NULL,
   updated_at         INTEGER NOT NULL,
   released_at        INTEGER,
-  claimed_via        TEXT NOT NULL DEFAULT ''
+  claimed_via        TEXT NOT NULL DEFAULT '',
+  persona            TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS work_v2_one_active_assignment ON work_v2_assignments(work_id)
   WHERE state = 'active';
@@ -217,6 +218,16 @@ func openWorkV2(db *sql.DB) error {
 		return err
 	} else if !has {
 		if _, err = db.Exec(`ALTER TABLE work_v2_assignments ADD COLUMN claimed_via TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	// persona is the built-in persona a new Session was opened as; assignments
+	// written before it opened none. The catalog is closed in Go, not with a
+	// CHECK, so a new persona needs no table rebuild.
+	if has, err = hasColumn(db, "work_v2_assignments", "persona"); err != nil {
+		return err
+	} else if !has {
+		if _, err = db.Exec(`ALTER TABLE work_v2_assignments ADD COLUMN persona TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 	}
@@ -600,7 +611,7 @@ func scanAssignmentV2(sc scanner) (work.AssignmentV2, error) {
 	var released sql.NullInt64
 	var via string
 	err := sc.Scan(&a.ID, &a.WorkID, &a.Mode, &a.SessionID, &a.TerminalID, &a.Assistant, &a.Model,
-		&a.State, &a.HumanActor, &a.RootAssignment, &a.Failure, &created, &updated, &released, &via)
+		&a.State, &a.HumanActor, &a.RootAssignment, &a.Failure, &created, &updated, &released, &via, &a.Persona)
 	if err != nil {
 		return a, err
 	}
@@ -619,7 +630,7 @@ func scanAssignmentV2(sc scanner) (work.AssignmentV2, error) {
 }
 
 const assignmentV2Columns = `id, work_id, mode, session_id, terminal_id, assistant, model, state,
-  human_actor, root_assignment_id, failure, created_at, updated_at, released_at, claimed_via`
+  human_actor, root_assignment_id, failure, created_at, updated_at, released_at, claimed_via, persona`
 
 // AssignmentsClaimedBy counts every assignment, active or released, a Session
 // claimed on actor's word — how many items one person's message has already
@@ -672,11 +683,11 @@ func (t *WorkV2Tx) CreateAssignment(a work.AssignmentV2) error {
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_assignments
       (id, work_id, mode, session_id, terminal_id, assistant, model, state, human_actor,
-       root_assignment_id, failure, created_at, updated_at, released_at, claimed_via)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       root_assignment_id, failure, created_at, updated_at, released_at, claimed_via, persona)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, a.WorkID, a.Mode, a.SessionID, a.TerminalID, a.Assistant, a.Model, a.State, a.HumanActor,
 		a.RootAssignment, a.Failure, a.CreatedAt.Unix(), a.UpdatedAt.Unix(), zeroOrUnix(a.ReleasedAt),
-		createdViaColumn(a.ClaimedVia))
+		createdViaColumn(a.ClaimedVia), a.Persona)
 	if err == nil {
 		t.wrote++
 	}

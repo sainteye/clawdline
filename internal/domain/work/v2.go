@@ -161,6 +161,10 @@ type AssignmentV2 struct {
 	// the same provenance an item a Session created carries, recorded on
 	// the assignment it produced. Nil for an assignment a person made.
 	ClaimedVia *CreatedViaV2
+	// Persona is the built-in persona a new Session was opened as for this
+	// assignment (docs/personas.md); empty for none and for every
+	// existing-session assignment.
+	Persona string
 }
 
 type DocumentV2 struct {

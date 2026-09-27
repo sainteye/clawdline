@@ -187,7 +187,7 @@ owned child 是掛在你底下、範圍有限的 task。**彙整、整合和 lan
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
   [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
-  [--work-id uuid] [--label "…"] [--project-dir D] < brief.md     # 或 --instructions-file brief.md
+  [--persona <id>] [--work-id uuid] [--label "…"] [--project-dir D] < brief.md     # 或 --instructions-file brief.md
 ```
 
 它會產生 id 和 secret、讀 inventory 拿 `generation` 和 `task_root`、寫 `task.json`、送出 task；遇到
@@ -198,6 +198,10 @@ clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--as
 child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預設是目前目錄的 git top-level，
 `--project-dir` 可以改。`--claims ""` 表示這個 child 什麼都不寫。secret 不會出現在 argv、`task.json` 或
 輸出裡，token 的讀法跟其他 thin command 一樣。
+
+`--persona <id>` 讓 child 以內建角色（persona）開啟（`task.json` 的 `persona`）；這個版本沒有的 id 會在
+本機就被拒絕。任何 kind 都不會自動套用角色，`plan_review` 也一樣：要審查員就自己寫 `code-reviewer`。
+角色是什麼、八個 id 各自的用途，見 §10 的 Epic 段落（`clawdline guide epic`）。
 
 它做的步驟如下，給沒有這個 binary 的呼叫者照著做：
 
@@ -233,6 +237,7 @@ claims、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 | `timeout_minutes` | 1–240，預設 30 |
 | `kind`、`deliverables`、`model` | 選填；`model` 只能用 `[a-z0-9._-]`，最多 64 字元 |
 | `work_id` | 選填，這個 task 所服務的看板項目的 UUID |
+| `persona` | 選填，內建角色的 id（`GET /v1/personas`）；預設沒有 |
 | `auto_compact_window` | 選填，只限 Claude：child 在 context 到多少 token（50000–1000000）時壓縮，或 `null` 表示不壓縮。不寫就跟著這台機器的 `claude_auto_compact_window`，使用者沒設就是關閉。用來比較兩次執行，不是每份 brief 都要寫：壓縮可能漏掉細節 |
 | `root` | **必填**：`{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "label": "…"}` |
 
@@ -843,8 +848,8 @@ Epic 跟 Feature、Issue 一樣可以指派，也走同樣的 phase；但 Epic �
 ```
 clawdline item child <epic id> --kind feature|issue --title "…" [--step "…"]… \
   [--description-file f | 描述從 stdin] [--deploy policy] \
-  [--assign-terminal <terminal id> | --assign-new [--assistant claude|codex] [--model m]]
-clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant a] [--model m])
+  [--assign-terminal <terminal id> | --assign-new [--assistant claude|codex] [--model m] [--persona <id>]]
+clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona <id>])
 ```
 
 - terminal id 在 session 通訊錄 `GET /v1/orchestrator/sessions` 裡（`clawdline guide send`）；那個
@@ -853,7 +858,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 - `item child` 會先讀 Epic 的版本，送出前印出 Idempotency-Key（`--key` 重試同一筆寫入），做完印出子項目。
   它就是 `POST /v1/work/v2/agent/items/<epic id>/children`，body 是 `{"expected_version", "session_id",
   "kind", "title", "description", "steps"?, "deployment_policy"?, "assign"?: {"mode": "existing_session",
-  "terminal_id"} | {"mode": "new_session", "assistant"?, "model"?}}`，回 `201` 與
+  "terminal_id"} | {"mode": "new_session", "assistant"?, "model"?, "persona"?}}`，回 `201` 與
   `{"item", "assigned", "assignment_error"?: {"code", "message"}}`。子項目在 Epic 的 Project 裡，帶著
   `parent_id`（那個 Epic），卡片上會寫明是 Epic 的負責 Session 建立的。steps 是你給的 `--step`；沒給的話，
   指派時從描述的清單產生。
@@ -861,13 +866,26 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   錯誤碼（`session_unavailable`、`project_mismatch`、`assignment_failed`……），指令以 1 結束：用
   `item assign` 再指派一次，或留給使用者。
 - `item assign` 就是 `POST /v1/work/v2/agent/items/<child id>/assign`，body 是 `{"expected_version",
-  "session_id", "mode", "terminal_id"? | "assistant"?, "model"?}`；它把你 Epic 底下一個未結束的子項目
+  "session_id", "mode", "terminal_id"? | "assistant"?, "model"?, "persona"?}`；它把你 Epic 底下一個未結束的子項目
   移給另一個 Session，跟使用者自己選的指派是同一種。
 - 拒絕，都不會寫入任何東西：`not_epic_owner`（你不是這個 Epic 的負責 Session）、`parent_not_epic`
   （上層不是 Epic）、`epic_not_planned`（Epic 還沒進 `implementing`：子項目要出自審查過的計畫）、
   `item_terminal`（Epic 已結束）、`child_kind_not_allowed`（只能是 `feature` 或 `issue`）、
   `epic_children_full`（一個 Epic 最多 32 個子項目，含已結束的）、`not_epic_child`（`item assign`
-  的對象不是任何 Epic 的子項目——那要由使用者指派）、`invalid_assignment`、`version_conflict`。
+  的對象不是任何 Epic 的子項目——那要由使用者指派）、`invalid_assignment`、`version_conflict`、
+  `persona_not_applicable`（422：既有 Session 帶了角色）、`unknown_persona`（400：清單裡沒有這個 id）。
+- **角色（persona）**是新 Session 開啟時帶著的一個角色：加進它 system prompt 的一段文字，讓它整段對話都照
+  那個角色的方式做事。只用在新 Session（`--assign-new`、`--new`、`dispatch`）；既有 Session 維持開啟時的
+  角色。預設沒有。角色絕不凌駕 `CLAUDE.md`／`AGENTS.md`、brief、`CHILD.md` 或這份協定。
+  `GET /v1/personas` 列出全部；八個 id：
+  - `architect`——規劃 Epic；
+  - `backend`——daemon、API 或 store 的 Feature；
+  - `frontend`——console 或手機版面的 Feature；
+  - `minimal-change`——Issue：站得住的最小修正；
+  - `code-reviewer`——審查與 `plan_review` 類的 child；
+  - `reality-checker`——驗證：先有證據才說「會動」；
+  - `security`——動到權限、配對或 Cloud 的工作；
+  - `technical-writer`——文件與 guide。
 - **Epic 仍然由你負責。** 追每個子項目到完成（`clawdline item steps <child id>` 可以讀一個），整合它們的
   成果，所有子項目都完成或取消後才把 Epic 移到 done：在那之前 `clawdline item phase <epic id> done` 會被
   `epic_children_open` 拒絕，並寫明還有幾個沒結束。除了 Epic 的子項目，不要建立任何其他看板項目。

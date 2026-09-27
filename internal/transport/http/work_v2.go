@@ -22,6 +22,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
@@ -118,6 +119,9 @@ type workV2AssignmentWire struct {
 	// ClaimedVia is the person's message a Session claimed the item on;
 	// absent for an assignment a person made.
 	ClaimedVia *workV2CreatedViaWire `json:"claimed_via,omitempty"`
+	// Persona is the built-in persona the new Session was opened as; absent
+	// for none and for an existing Session.
+	Persona string `json:"persona,omitempty"`
 }
 
 type workV2DocumentWire struct {
@@ -429,7 +433,8 @@ func (s *Server) workV2ItemOf(ctx context.Context, v app.WorkV2View) workV2ItemW
 	for _, a := range v.Assignments {
 		out.Assignments = append(out.Assignments, workV2AssignmentWire{ID: a.ID, Mode: a.Mode, SessionID: a.SessionID,
 			TerminalID: a.TerminalID, Assistant: a.Assistant, Model: a.Model, State: a.State,
-			RootAssignment: a.RootAssignment, Failure: a.Failure, CreatedAt: a.CreatedAt.Unix(), UpdatedAt: a.UpdatedAt.Unix()})
+			RootAssignment: a.RootAssignment, Failure: a.Failure, CreatedAt: a.CreatedAt.Unix(), UpdatedAt: a.UpdatedAt.Unix(),
+			Persona: a.Persona})
 		if via := a.ClaimedVia; via != nil && strings.HasPrefix(a.HumanActor, work.ActorViaSession) {
 			out.Assignments[len(out.Assignments)-1].ClaimedVia = &workV2CreatedViaWire{Run: via.Run,
 				SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
@@ -995,6 +1000,7 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 		TerminalID      string `json:"terminal_id"`
 		Assistant       string `json:"assistant"`
 		Model           string `json:"model"`
+		Persona         string `json:"persona"`
 		Reason          string `json:"reason"`
 		Note            string `json:"note"`
 	}
@@ -1015,7 +1021,8 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 	var err error
 	switch action {
 	case "assign":
-		out, err = s.assignWorkV2(r.Context(), id, actor, body.ExpectedVersion, body.Mode, body.TerminalID, body.Assistant, body.Model, file)
+		out, err = s.assignWorkV2By(r.Context(), id, actor, "", body.ExpectedVersion, body.Mode, body.TerminalID,
+			body.Assistant, body.Model, body.Persona, file)
 	case "remind":
 		out, err = s.remindWorkV2(r.Context(), id, body.ExpectedVersion)
 		if err == nil {
@@ -1105,7 +1112,27 @@ func workV2ReminderError(err error) error {
 
 func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected int64, mode, terminalID, assistant, model string,
 	file app.WorkV2Filer) (app.WorkV2View, error) {
-	return s.assignWorkV2By(ctx, id, actor, "", expected, mode, terminalID, assistant, model, file)
+	return s.assignWorkV2By(ctx, id, actor, "", expected, mode, terminalID, assistant, model, "", file)
+}
+
+// checkWorkV2Persona refuses a persona an assignment cannot carry: one on an
+// existing Session, whose system prompt was fixed when it opened, and a name
+// the catalog does not have. An empty persona is none, which every mode
+// accepts. A mode that is neither choice is left to the refusal that names
+// the two choices.
+func checkWorkV2Persona(mode, id string) error {
+	if id == "" {
+		return nil
+	}
+	if mode == "existing_session" {
+		return &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "persona_not_applicable",
+			Message: "A persona is chosen when a new Session opens; an existing Session keeps the one it was opened with. Nothing was assigned."}
+	}
+	if _, ok := persona.Known(id); mode == "new_session" && !ok {
+		return &app.WorkError{Status: http.StatusBadRequest, Code: "unknown_persona",
+			Message: "persona must be one of: " + strings.Join(persona.IDs(), ", ") + ". Nothing was assigned."}
+	}
+	return nil
 }
 
 // workV2ParentOf is the Epic an item was broken out of, when it has one and
@@ -1121,8 +1148,11 @@ func (s *Server) workV2ParentOf(ctx context.Context, item work.ItemV2) (work.Ite
 // assignWorkV2By is assignWorkV2 made by the owner Session of the item's
 // parent Epic when epicOwner names it (the owner check is inside the
 // assignment's transaction), and by a person when it is empty.
-func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string, expected int64, mode, terminalID, assistant, model string,
-	file app.WorkV2Filer) (app.WorkV2View, error) {
+func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string, expected int64,
+	mode, terminalID, assistant, model, personaID string, file app.WorkV2Filer) (app.WorkV2View, error) {
+	if err := checkWorkV2Persona(mode, personaID); err != nil {
+		return app.WorkV2View{}, err
+	}
 	if mode == "existing_session" {
 		sess, err := s.actions().Find(ctx, terminalID)
 		if err != nil {
@@ -1210,12 +1240,13 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 	}
 	assignmentID, requestID := newWorkV2UUID(), newWorkV2UUID()
 	pending, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
-		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID, EpicOwner: epicOwner}, true, nil)
+		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID, EpicOwner: epicOwner,
+		Persona: personaID}, true, nil)
 	if err != nil {
 		return app.WorkV2View{}, err
 	}
 	ra, _, openErr := s.broker.OpenRootAssignment(ctx, requestID, orchestrator.RootAssignmentRequest{
-		RequestID: requestID, Assistant: assistant, Model: model, ProjectDir: item.Item.ProjectPath,
+		RequestID: requestID, Assistant: assistant, Model: model, Persona: personaID, ProjectDir: item.Item.ProjectPath,
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
 			Scope: scope, Constraints: workV2RootConstraints(item.Item.ID, item.Item.Kind),
 			RelevantReferences: references,
@@ -2102,6 +2133,8 @@ type workV2EpicAssignRequest struct {
 	TerminalID string `json:"terminal_id"`
 	Assistant  string `json:"assistant"`
 	Model      string `json:"model"`
+	// Persona is the built-in persona a new Session opens as; none when empty.
+	Persona string `json:"persona"`
 }
 
 // check refuses a malformed choice before anything is written.
@@ -2111,9 +2144,10 @@ func (a workV2EpicAssignRequest) check() error {
 	case a.Mode == "new_session" && (a.Assistant == "" || a.Assistant == "codex" || a.Assistant == "claude"):
 	default:
 		return &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assignment",
-			Message: "assign is {\"mode\":\"existing_session\",\"terminal_id\":…} or {\"mode\":\"new_session\",\"assistant\":\"claude\"|\"codex\"}; nothing was created."}
+			Message: "assign is {\"mode\":\"existing_session\",\"terminal_id\":…} or " +
+				"{\"mode\":\"new_session\",\"assistant\":\"claude\"|\"codex\",\"persona\":…optional}; nothing was created."}
 	}
-	return nil
+	return checkWorkV2Persona(a.Mode, a.Persona)
 }
 
 // agentCreateEpicChild is POST /v1/work/v2/agent/items/<epic id>/children:
@@ -2164,7 +2198,7 @@ func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, ep
 	answer := map[string]any{"ok": true, "assigned": false}
 	if a := body.Assign; a != nil {
 		_, assignErr := s.assignWorkV2By(r.Context(), created.Item.ID, work.EpicOwnerActor(body.SessionID), body.SessionID,
-			created.Item.Version, a.Mode, a.TerminalID, a.Assistant, a.Model, nil)
+			created.Item.Version, a.Mode, a.TerminalID, a.Assistant, a.Model, a.Persona, nil)
 		if assignErr != nil {
 			code, message := "assignment_failed", assignErr.Error()
 			var we *app.WorkError
@@ -2222,7 +2256,7 @@ func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id
 	}
 	var answer []byte
 	_, err := s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, body.ExpectedVersion,
-		body.Mode, body.TerminalID, body.Assistant, body.Model,
+		body.Mode, body.TerminalID, body.Assistant, body.Model, body.Persona,
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
 			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true

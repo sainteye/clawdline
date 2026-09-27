@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/domain/persona"
 )
 
 // `clawdline item`: a Board item a Session creates because the person told it
@@ -50,8 +52,27 @@ type itemFlags struct {
 // assignFlags is who `item child` or `item assign` hands the item to: an
 // existing Session by terminal id, or a new Session Clawdline opens.
 type assignFlags struct {
-	terminal, assistant, model string
-	open                       bool
+	terminal, assistant, model, persona string
+	open                                bool
+}
+
+// personaRefusal is why --persona cannot go with this choice, or "": a
+// persona is chosen when a new Session opens, so it never goes with an
+// existing terminal, and a name this build's catalog lacks is refused before
+// anything is asked, as `dispatch --persona` does.
+func (a assignFlags) personaRefusal(terminalFlag, newFlag string) string {
+	switch {
+	case a.persona == "":
+		return ""
+	case a.terminal != "":
+		return "--persona goes with a new Session, not with " + terminalFlag + "; an existing Session keeps the persona it was opened with."
+	case !a.open:
+		return "--persona goes with " + newFlag + "; it names what the new Session opens as."
+	}
+	if _, ok := persona.Known(a.persona); !ok {
+		return fmt.Sprintf("--persona %q is not a persona this build has; it has %s.", a.persona, strings.Join(persona.IDs(), ", "))
+	}
+	return ""
 }
 
 // request is the daemon's assign object, or nil when no Session was named.
@@ -66,6 +87,9 @@ func (a assignFlags) request() map[string]any {
 		}
 		if a.model != "" {
 			out["model"] = a.model
+		}
+		if a.persona != "" {
+			out["persona"] = a.persona
 		}
 		return out
 	}
@@ -111,6 +135,7 @@ func itemCommand(args []string) {
 	fs.BoolVar(&assign.open, "new", false, "for assign: a new Session Clawdline opens")
 	fs.StringVar(&assign.assistant, "assistant", "", "with a new Session: claude or codex (default codex)")
 	fs.StringVar(&assign.model, "model", "", "with a new Session: the model (default the assistant's)")
+	fs.StringVar(&assign.persona, "persona", "", "with a new Session: a built-in persona to open it as (none by default)")
 	var steps stringList
 	fs.Var(&steps, "step", "one step of the item, in order; repeat it for each step")
 	var ev phaseEvidence
@@ -259,9 +284,9 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item child --kind <feature|issue> --title <t> [--step <text>]… [--steps-file f]")
 	fmt.Fprintln(os.Stderr, "                          [--description-file f | stdin] [--deploy policy]")
-	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m]]")
+	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
 	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <epic id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item assign (--terminal <terminal id> | --new [--assistant a] [--model m])")
+	fmt.Fprintln(os.Stderr, "       clawdline item assign (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona id])")
 	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <child item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin")
@@ -278,6 +303,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "  child breaks an Epic this Session owns, after its reviewed plan (implementing or later), into a")
 	fmt.Fprintln(os.Stderr, "  feature or issue item, assigned to the Session in that terminal, to a new one, or to nobody yet;")
 	fmt.Fprintln(os.Stderr, "  assign hands a child of an Epic this Session owns to a Session (terminal ids: `clawdline guide send`);")
+	fmt.Fprintln(os.Stderr, "  --persona opens that new Session as a built-in persona (`GET /v1/personas` lists them); none by default;")
 	fmt.Fprintln(os.Stderr, "  step-add breaks an item this Session owns into ordered steps, after any it already has;")
 	fmt.Fprintln(os.Stderr, "  doc adds a document to an item this Session owns; an Epic needs a plan, and a plan_review")
 	fmt.Fprintln(os.Stderr, "  whose --reference is the id of the plan_review child that reviewed it, before implementing;")
@@ -432,6 +458,10 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			fmt.Fprintf(stderr, "clawdline %s: --assign-terminal and --assign-new are one choice. Nothing was created.\n", name)
 			return 2
 		}
+		if why := f.assign.personaRefusal("--assign-terminal", "--assign-new"); why != "" {
+			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was created.\n", name, why)
+			return 2
+		}
 		it, code := readItem(stdout, stderr, b, name, epicID)
 		if code != 0 {
 			return code
@@ -453,6 +483,10 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		a := f.assign.request()
 		if a == nil || (f.assign.terminal != "" && f.assign.open) {
 			fmt.Fprintf(stderr, "clawdline %s: name one Session: --terminal <terminal id> or --new. Nothing was changed.\n", name)
+			return 2
+		}
+		if why := f.assign.personaRefusal("--terminal", "--new"); why != "" {
+			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was changed.\n", name, why)
 			return 2
 		}
 		it, code := readItem(stdout, stderr, b, name, itemID)

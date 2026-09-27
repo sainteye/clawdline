@@ -73,15 +73,17 @@ splits each line the way a POSIX shell does and checks this.
   session launched with no persona is unaffected.
 
 Three launch paths take a persona. Every one of them goes through `Admit`, so all three refuse a
-name the catalog does not have:
+name the catalog does not have. A Board assignment to a new Session reaches the third:
 
 | Path | How it names one |
 | --- | --- |
 | Start or resume from a place | `POST /v1/places/{place}/start/{assistant}[/{model}]/as/{persona}` and `POST /v1/places/{place}/resume/{assistant}/{conversation}/as/{persona}` |
 | A dispatched child | `persona` in `task.json`, or `clawdline dispatch --persona <id>` |
 | A Root Assignment | `persona` in `POST /v1/orchestrator/root-assignments` |
+| A Board item assigned to a new Session | `persona` in the assign body (below), or `clawdline item child --assign-new --persona <id>` / `clawdline item assign <id> --new --persona <id>` |
 
-A handoff's receiver and a schedule's run carry no persona in this version.
+A handoff's receiver and a schedule's run carry no persona in this version. No path gives one by
+default: a Board item's kind and a dispatch's kind (`plan_review` included) only suggest.
 
 ## Routes and contract shapes
 
@@ -126,6 +128,31 @@ locally, before anything is written or sent. The task record keeps it, and `Task
 `PERSONA` section naming the persona and its file. The persona is part of the request the receipt
 compares, so the same `request_id` with another persona gets `request_conflict`. A request without
 one digests exactly as it did before the field existed. `BrokerRootAssignment.persona` reports it.
+
+**Board assignment.** Three routes assign a Board item to a Session, and each takes an optional
+`persona` string beside `mode`:
+
+- the person's `POST /v1/work/v2/items/<id>/assign`: `{"expected_version", "mode": "new_session",
+  "assistant"?, "model"?, "persona"?}`;
+- the Epic owner's `POST /v1/work/v2/agent/items/<epic id>/children`, in its `assign` object;
+- the Epic owner's `POST /v1/work/v2/agent/items/<child id>/assign`, beside `mode`.
+
+An empty or absent `persona` is none. With `"mode": "new_session"`, a name the catalog does not
+have is `400 unknown_persona`. With `"mode": "existing_session"`, any persona is
+`422 persona_not_applicable`: that Session's system prompt was fixed when it opened. Both are
+refused before anything is written; on the children route that means before the child is created.
+The persona goes into the `RootAssignmentRequest` that opens the Session, so its `ASSIGNMENT.md`
+carries the `PERSONA` section.
+
+The assignment records it: `work_v2_assignments.persona` (`TEXT NOT NULL DEFAULT ''`, no CHECK —
+the catalog is closed in Go, so a new persona needs no table rebuild). A table from before the
+column gains it empty. Each item's `assignments[]` on the Board wire carries `persona` when the
+assignment opened one, and leaves it out otherwise.
+
+`clawdline item child … --assign-new --persona <id>` and `clawdline item assign <id> --new
+--persona <id>` send it. `--persona` with `--assign-terminal` or `--terminal`, or without a new
+Session, is a usage error (exit 2), and so is an id this build lacks; nothing is asked of the
+daemon.
 
 ## Reading it back
 

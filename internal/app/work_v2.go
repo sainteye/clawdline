@@ -463,6 +463,9 @@ type AssignWorkV2 struct {
 	// (epic_children.go); empty for a person's own assignment. The owner
 	// check is made inside the assignment's transaction.
 	EpicOwner string
+	// Persona is the built-in persona a new Session is opened as; empty for
+	// none. The transport checks it against the catalog before this is built.
+	Persona string
 }
 
 func descriptionStepTitles(description string) []string {
@@ -559,12 +562,15 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		}
 		a := work.AssignmentV2{ID: c.AssignmentID, WorkID: id, Mode: c.Mode, SessionID: c.SessionID,
 			TerminalID: c.TerminalID, Assistant: c.Assistant, Model: c.Model, State: state,
-			HumanActor: c.Actor, CreatedAt: now, UpdatedAt: now, ClaimedVia: c.Claim}
+			HumanActor: c.Actor, CreatedAt: now, UpdatedAt: now, ClaimedVia: c.Claim, Persona: c.Persona}
 		if !pending && strings.TrimSpace(a.SessionID) == "" {
 			return work.RefuseV2("session_required", "An active assignment needs a Session conversation id.")
 		}
 		if pending && c.Mode != "new_session" {
 			return work.RefuseV2("invalid_assignment", "Only a new Session has an assigning state.")
+		}
+		if c.Persona != "" && c.Mode != "new_session" {
+			return work.RefuseV2("persona_not_applicable", "A persona is chosen when a new Session opens.")
 		}
 		old, err := tx.ActiveAssignment(id)
 		if err != nil {
