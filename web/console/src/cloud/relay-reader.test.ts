@@ -580,6 +580,51 @@ test("one schedule is asked of the chosen machine so its history and webhook pan
   ])
 })
 
+// Measured on 2026-09-27 against app.clawdline.com: a tab that had been hidden
+// past the grace had its client retired by `keepConnected` (`tryQuiesce`), and
+// every schedule — timed or trigger-only — then opened as "Could not reach
+// Clawdline. Is it still running on the machine? (offline)" within a second,
+// with the machine online: the seam threw `NotConnected` without asking the
+// client to come back, and `jsonFetch` turned the throw into `offline`.
+test("a machine read asked while the page's connection is paused waits for it to come back", async () => {
+  const retired = new FakeClient()
+  retired.ready = false
+  const demands: string[] = []
+  const paused = retired as FakeClient & { lifecycle?: (reason: string) => boolean | "hidden" }
+  paused.lifecycle = (reason) => {
+    demands.push(reason)
+    return true
+  }
+  const r = reader(retired, { t: 1000 })
+  const renewed = new FakeClient()
+  renewed.readAnswer = async (word) => ({ schedule: { id: "t-1", when: { trigger_only: true }, word } })
+
+  const asked = r.fetch("/v1/orchestrator/schedules/t-1")
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  r.attach(renewed)
+  const res = await asked
+  assert.equal(res.status, 200)
+  assert.deepEqual(await res.json(), { schedule: { id: "t-1", when: { trigger_only: true }, word: "schedule" } })
+  assert.deepEqual(demands, ["demand"], "the paused client is asked to reconnect")
+  assert.deepEqual(retired.reads, [], "nothing is sent through the retired client")
+  assert.deepEqual(renewed.reads, [{ machine: "mac-a", word: "schedule", body: { id: "t-1" } }])
+})
+
+test("a machine read the connection does not come back for is refused as reconnecting, not offline", async () => {
+  for (const coming of [false, "hidden" as const]) {
+    const retired = new FakeClient() as FakeClient & { lifecycle?: (reason: string) => boolean | "hidden" }
+    retired.ready = false
+    retired.lifecycle = () => coming
+    const r = new RelayReader("mac-a", { now: () => 1000, reconnectWaitMs: 20 })
+    r.attach(retired)
+    const res = await r.fetch("/v1/orchestrator/schedules/t-1")
+    assert.equal(res.status, 503, `lifecycle answered ${String(coming)}`)
+    const refusal = await body<{ error: string }>(res)
+    assert.equal(refusal.error, "cloud_reconnecting")
+    assert.deepEqual(retired.reads, [])
+  }
+})
+
 // The distinction this whole read is drawn around: "this machine has none" and
 // "nobody answered" are opposite facts, and `pages/schedules.tsx` draws the
 // section for one and leaves it alone for the other. An empty answer is an

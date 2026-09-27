@@ -5,6 +5,7 @@ import { toast } from "../overlays/index.js"
 import { readAnswer, readFailure, readReady, type ReadState } from "../read-state.js"
 import { invalidScheduleErrorHTML } from "../schedule-errors.js"
 import { isTriggerOnly, scheduleNextLine, scheduleWhenFields } from "../schedule-when.js"
+import { historyRecordFor, shouldOpenHistory } from "../schedule-history-open.js"
 import "../schedule-errors.css"
 import {
   createPlacesCache,
@@ -1862,7 +1863,11 @@ const ScheduleHistory = (() => {
   }
 
   function open(id: string | undefined): void {
-    if (!id || !el("schedule-history").hidden) return
+    const sheet = { shown: !el("schedule-history").hidden, scheduleId, busy: !!pressing || runningNow }
+    if (!id || !shouldOpenHistory(sheet, id)) return
+    // Another schedule's sheet is replaced whole — its hook, its deliveries,
+    // its one-time URL — before anything of this one is drawn.
+    if (sheet.shown) close(true)
     webhook = scheduleWebhookManagement()
     scheduleId = id
     record = null
@@ -1882,7 +1887,15 @@ const ScheduleHistory = (() => {
     Promise.all([detail, availablePlaces])
       .then((answers) => {
         if (mine !== ticket || scheduleId !== id) return
-        record = (answers[0] && answers[0].schedule) || null
+        record = historyRecordFor(answers[0], id)
+        if (!record) {
+          // An answer that is not this schedule is a failed read, and is
+          // said as one: the sheet stays empty and Run now stays off.
+          loading = false
+          el("schedule-history-said").textContent = T().webRequestFailed
+          draw()
+          return
+        }
         places = (answers[1] && answers[1].places) || []
         placesNote = unansweredSentence(answers[1])
         if (placesNote && ((record && record.runs) || []).some((candidate) => candidate && candidate.session_id)) {
