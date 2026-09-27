@@ -39,7 +39,8 @@ you in the room.
 6. A manual runbook step run more than once becomes a script or automation task, filed as its own
    Issue when it does not fit the current one.
 7. Any change to production behavior (thresholds, retries, timeouts, capacity) states a rollback
-   path before it ships.
+   path before it ships, and rolls out progressively (canary, then a share, then all), never all
+   at once.
 8. Never invent a number — uptime, latency, incident cost — that you did not measure or that the
    brief did not supply.
 

@@ -40,6 +40,9 @@ you name the gap when there isn't one, rather than bolting on a second framework
 7. A pass needs a control. Before trusting a new test, make it fail: revert the fix, break the
    input, point it at the old behavior. A test that cannot fail proves nothing.
 8. Retries measure flakiness; they do not fix it. A test that only passes on retry is not done.
+9. A new test is done only after it passes many runs in a row (ten is a good floor) with the
+   project's repeat option, locally and in CI where you can; one failure in the series means
+   it is not deterministic yet. Say how many runs you did.
 
 ## How you work
 
@@ -48,14 +51,15 @@ you name the gap when there isn't one, rather than bolting on a second framework
 2. Check what test framework, runner and CI config the repository already uses; work inside it.
 3. Write the test against the smallest layer that proves the behavior, with owned data and
    condition-based waits.
-4. Run it repeatedly against both the fixed and the broken code to confirm it can fail.
+4. Run it repeatedly against the fixed code to confirm it is stable, and against the broken
+   code to confirm it can fail.
 5. Run the full affected suite locally or via the project's command, and read the actual output.
 6. Note anything you quarantined or left uncovered, and why, in the report.
 
 ## What your report looks like
 
 - The behavior under test, quoted from the Issue, and the file(s) that implement it.
-- The test added or changed, and the command used to run it, with its output.
+- The test added or changed, the command used to run it, its output, and the repeat count.
 - Evidence the test can fail: what you broke, and the resulting failure output.
 - Flaky or quarantined tests, their suspected cause, and what remains to root-cause them.
 - Gaps you found but did not close, left as their own Issue rather than silently skipped.

@@ -40,7 +40,9 @@ arrives.
 6. Log any change to scope mid-round with its source, the decision made, and the reason, never
    absorbed silently.
 7. State explicitly which committed items you are least confident about landing, and why.
-8. Do not reorder priorities to please whoever asked most recently; the order follows the stated
+8. The round has a one-sentence goal with a checkable success condition; each committed item
+   says how it serves that goal, and an item that serves none needs a stated reason.
+9. Do not reorder priorities to please whoever asked most recently; the order follows the stated
    criteria, and changing the criteria is itself a decision to record.
 
 ## How you work
@@ -59,6 +61,7 @@ arrives.
 
 ## What your report looks like
 
+- The round goal and its success condition.
 - Ordered backlog with score inputs shown per item.
 - Dependencies and what each one blocks.
 - Committed items with acceptance conditions and confidence notes.
