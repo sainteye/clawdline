@@ -75,10 +75,34 @@ export function personaName(p: Persona): string {
   return p.name[language()] || p.name.en || p.id
 }
 
+/** The persona's one-sentence summary in the page's language; "" when it has none. */
+export function personaSummary(p: Persona): string {
+  return p.summary?.[language()] || p.summary?.en || ""
+}
+
 /** Name and one-sentence summary, for a title attribute or an accessible label. */
 export function personaTitle(p: Persona): string {
-  const summary = p.summary?.[language()] || p.summary?.en || ""
+  const summary = personaSummary(p)
   return summary ? personaName(p) + " — " + summary : personaName(p)
+}
+
+/** What the Session detail header says about a row's persona. */
+export interface HeadPersona {
+  persona: Persona
+  name: string
+  summary: string
+  title: string
+}
+
+/**
+ * The persona the Session detail header shows, or null for none: a row with no
+ * persona, a catalog not read yet or unreadable, and a name the catalog does
+ * not have all show nothing. The header never guesses a role from an id.
+ */
+export function headPersona(list: readonly Persona[] | null, id: string | null | undefined): HeadPersona | null {
+  const persona = personaById(list, id)
+  if (!persona) return null
+  return { persona, name: personaName(persona), summary: personaSummary(persona), title: personaTitle(persona) }
 }
 
 /**
