@@ -22,6 +22,7 @@
 //   is its answer for a feature that is missing rather than refused.
 import { T } from "./js/core/i18n.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
+import { resumePath, startPath } from "../session/place-routes.js"
 import { bindFailureLine as bindFailureLineOriginal } from "./js/core/failure-text.js"
 import {
   bandSpin as bandSpinOriginal,
@@ -104,22 +105,12 @@ export const startApi = {
   },
   /**
    * The key is minted once per press: a retry of this request is the same start.
-   * A persona is the route's last two segments, `/as/{persona}`, which the
-   * daemon reads only after an assistant is named (docs/personas.md).
+   * The paths, persona included, are `session/place-routes.ts`'s.
    */
-  startPlace: (id: string, assistant?: string | null, model?: string, persona?: string) => {
-    let path = "/v1/places/" + encodeURIComponent(id) + "/start"
-    if (assistant || model || persona) path += "/" + encodeURIComponent(assistant || "claude")
-    if (model) path += "/" + encodeURIComponent(model)
-    if (persona) path += "/as/" + encodeURIComponent(persona)
-    return jsonFetch<StartAnswer>(path, post(uuid()))
-  },
-  resumePlace: (id: string, session: string, assistant?: string | null, requestId?: string) => {
-    let path = "/v1/places/" + encodeURIComponent(id) + "/resume/"
-    if (assistant) path += encodeURIComponent(assistant) + "/"
-    path += encodeURIComponent(session)
-    return jsonFetch<StartAnswer>(path, post(requestId || uuid()))
-  },
+  startPlace: (id: string, assistant?: string | null, model?: string, persona?: string) =>
+    jsonFetch<StartAnswer>(startPath(id, assistant, model, persona), post(uuid())),
+  resumePlace: (id: string, session: string, assistant?: string | null, requestId?: string, persona?: string) =>
+    jsonFetch<StartAnswer>(resumePath(id, session, assistant, persona), post(requestId || uuid())),
 }
 
 export const uuid = uuidOriginal as () => string

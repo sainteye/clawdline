@@ -18,6 +18,7 @@ import {
   sendRestore,
   type RowOutcome,
 } from "./restore-offer.js"
+import { PersonaTag, usePersonas } from "./PersonaBot.js"
 import "./restore.css"
 
 /**
@@ -141,6 +142,10 @@ export function RestoreSheet({
   const acted = rows.size > 0
   const body = restoreBody(sessions, ticked)
   const count = body?.conversations.length ?? 0
+  // A row's role is the one it was launched with, and restoring it launches it
+  // with the same one (restore.schema.json), so the sheet shows it rather than
+  // offering a choice the restore route has no field for.
+  const personas = usePersonas()
 
   useEffect(() => {
     goRef.current?.focus()
@@ -276,6 +281,7 @@ export function RestoreSheet({
                       <span className="restore-name">{rowName(s)}</span>
                       <span className="restore-meta">
                         <span>{assistantName(s.assistant)}</span>
+                        <PersonaTag id={s.persona} personas={personas} />
                         <span className="restore-path" title={s.cwd}>{s.cwd}</span>
                         {seen && <span>{nextWord("restoreLastSeen", { time: seen })}</span>}
                       </span>
