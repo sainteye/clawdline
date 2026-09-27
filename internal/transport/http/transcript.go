@@ -264,7 +264,7 @@ func transcriptEntry(e transcript.Entry) contract.TranscriptEntry {
 	if n := e.Notice; n != nil {
 		notice := &contract.TranscriptNotice{
 			Kind: n.Kind, Audience: n.Audience, State: n.State, ResultPath: n.ResultPath,
-			Outstanding: n.Outstanding, ClaimsReleased: n.ClaimsReleased,
+			Outstanding: n.Outstanding, Leftovers: n.Leftovers, ClaimsReleased: n.ClaimsReleased,
 			ChildMayStillWrite: n.ChildMayStillWrite, NoticeID: n.NoticeID, AckPath: n.AckPath,
 			WaitID: n.WaitID, Repository: n.Repository, Paths: n.Paths,
 			WaiterSessionID: n.WaiterSessionID, Reason: n.Reason, ReleaseCondition: n.ReleaseCondition,

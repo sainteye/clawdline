@@ -5707,8 +5707,12 @@ type TranscriptNotice struct {
 	Commit         string `json:"commit,omitempty"`
 	HandoffID      string `json:"handoff_id,omitempty"`
 	Kind           string `json:"kind"`
-	Note           string `json:"note,omitempty"`
-	NoticeID       string `json:"notice_id,omitempty"`
+
+	// task_finished only: how many things the delivery said it left undone. Present
+	// only when above zero.
+	Leftovers int64  `json:"leftovers,omitempty"`
+	Note      string `json:"note,omitempty"`
+	NoticeID  string `json:"notice_id,omitempty"`
 
 	// task_finished only, where the decoder requires it, so absence there means 0.
 	Outstanding      int64                     `json:"outstanding,omitempty"`
@@ -5745,7 +5749,11 @@ type TranscriptPage struct {
 	Entries  []TranscriptEntry `json:"entries"`
 	Evidence Evidence          `json:"evidence"`
 	ID       string            `json:"id"`
-	Note     string            `json:"note,omitempty"`
+
+	// task_finished only: how many things the delivery said it left undone. Present
+	// only when above zero.
+	Leftovers int64  `json:"leftovers,omitempty"`
+	Note      string `json:"note,omitempty"`
 
 	// Which file this was read from. A reading that cannot name its source is not
 	// evidence.

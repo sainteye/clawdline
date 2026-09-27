@@ -6871,6 +6871,12 @@ export interface TranscriptNotice {
   commit?: string
   handoff_id?: string
   kind: string
+
+  /**
+   * task_finished only: how many things the delivery said it left undone. Present
+   * only when above zero.
+   */
+  leftovers?: number
   note?: string
   notice_id?: string
 
@@ -6914,6 +6920,12 @@ export interface TranscriptPage {
   entries: TranscriptEntry[]
   evidence: Evidence
   id: string
+
+  /**
+   * task_finished only: how many things the delivery said it left undone. Present
+   * only when above zero.
+   */
+  leftovers?: number
   note?: string
 
   /**

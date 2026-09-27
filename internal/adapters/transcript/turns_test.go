@@ -309,6 +309,32 @@ func TestNoticeAndSessionMessage(t *testing.T) {
 	}
 }
 
+// The notice a root receives when a child finished with something left
+// undone, in the shape the broker writes it. Its `leftovers` was once
+// outside the closed key set, and the whole envelope showed as raw text.
+func TestAFinishedNoticeWithLeftoversIsANotice(t *testing.T) {
+	notice := `<clawdline-notice>{"protocol":"clawdline.notice","version":2,"kind":"task_finished","audience":"root","task":{"id":"a7000000-0000-4000-8000-000000000002","title":"Board shows Epic children and parent (web)"},"state":"success","result_path":"/tmp/result.json","outstanding":1,"leftovers":2,"claims_released":false,"child_may_still_write":false,"body":"task finished","notice_id":"a7000000-0000-4000-8000-00000000000a","ack_path":"/v1/orchestrator/tasks/a7000000-0000-4000-8000-000000000002/completion/ack"}</clawdline-notice>`
+	path := writeRecord(t,
+		claudeRow("user", notice),
+		claudeRow("user", strings.Replace(notice, `"leftovers":2`, `"leftovers":-1`, 1)),
+		claudeRow("user", strings.Replace(notice, `"leftovers":2`, `"leftovers":"2"`, 1)),
+		claudeRow("user", strings.Replace(notice, `"leftovers":2`, `"surplus":2`, 1)),
+	)
+	page, _ := ReadClaude(path, 10)
+	if len(page.Entries) != 4 {
+		t.Fatalf("%+v", page.Entries)
+	}
+	n := page.Entries[0]
+	if n.Kind != KindNotice || n.Notice.Leftovers != 2 || n.Notice.Outstanding != 1 || n.Notice.Audience != "root" {
+		t.Fatalf("notice: %+v %+v", n, n.Notice)
+	}
+	for i, why := range []string{"a negative count", "a count that is text", "a key no notice carries"} {
+		if page.Entries[i+1].Kind != KindUser {
+			t.Errorf("%s was read as a notice: %+v", why, page.Entries[i+1])
+		}
+	}
+}
+
 func TestTailWindowDropsItsCutLine(t *testing.T) {
 	// A first row longer than the whole window: whatever of it the window
 	// holds is a fragment, and must not be read as a turn.

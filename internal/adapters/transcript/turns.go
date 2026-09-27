@@ -141,6 +141,7 @@ type Notice struct {
 	State              string
 	ResultPath         string
 	Outstanding        int64
+	Leftovers          int64
 	ClaimsReleased     bool
 	ChildMayStillWrite bool
 	NoticeID           string
@@ -1959,7 +1960,8 @@ func markerRemoval(raw string, start, end int) (int, int) {
 
 // decodeNotice decodes Clawdline's own notice about a task, a wait or a
 // handoff: `<clawdline-notice>{…}</clawdline-notice>`, with each kind's
-// closed key set, exactly as the Swift app's `ClawdlineMessage.decode`.
+// closed key set, as the Swift app's `ClawdlineMessage.decode` — plus
+// `task_finished`'s `leftovers`, which the broker began writing after it.
 func decodeNotice(raw string) (*Notice, bool) {
 	obj, ok := envelope(raw, "<clawdline-notice>", "</clawdline-notice>")
 	if !ok {
@@ -1999,8 +2001,13 @@ func decodeNotice(raw string) (*Notice, bool) {
 	case "task_finished":
 		legacy := []string{"protocol", "version", "kind", "audience", "task", "state", "result_path",
 			"outstanding", "claims_released", "child_may_still_write", "body"}
-		if id, ok := nonempty("notice_id"); version == 2 && ok && sameKeys(obj, append(legacy, "notice_id", "ack_path")...) &&
-			isUUID(id) {
+		// Version 2 also names the notice to acknowledge, and — only when the
+		// delivery said it left something undone — how many things it left.
+		current := append(legacy, "notice_id", "ack_path")
+		if _, has := obj["leftovers"]; has {
+			current = append(current, "leftovers")
+		}
+		if id, ok := nonempty("notice_id"); version == 2 && ok && sameKeys(obj, current...) && isUUID(id) {
 			path, ok := nonempty("ack_path")
 			if !ok || !strings.HasPrefix(path, "/") {
 				return nil, false
@@ -2015,10 +2022,15 @@ func decodeNotice(raw string) (*Notice, bool) {
 		outstanding, hasOutstanding := obj.integer("outstanding")
 		released, hasReleased := obj.boolean("claims_released")
 		mayWrite, hasMayWrite := obj.boolean("child_may_still_write")
+		leftovers, hasLeftovers := obj.integer("leftovers")
+		if _, present := obj["leftovers"]; present && (!hasLeftovers || leftovers < 0) {
+			return nil, false
+		}
 		if !taskAudience() || !ok || (version == 1 && n.NoticeID != "") || !knownTaskState(state) ||
 			resultPath == "" || !hasOutstanding || outstanding < 0 || !hasReleased || !hasMayWrite {
 			return nil, false
 		}
+		n.Leftovers = leftovers
 		n.Task, n.State, n.ResultPath = &task, state, resultPath
 		n.Outstanding, n.ClaimsReleased, n.ChildMayStillWrite = outstanding, released, mayWrite
 

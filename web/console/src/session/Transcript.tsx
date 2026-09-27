@@ -1167,6 +1167,12 @@ function noticeHTML(v: View, e: Entry, at: number): ReactElement {
           : fill(outstanding === 1 ? T.webNoticeOneSibling : T.webNoticeManySiblings, { n: outstanding })
       detail += '<div class="notice-meta">' + esc(siblings) + "</div>"
     }
+    // Present only when the delivery said it left something undone.
+    const leftovers = n.leftovers ?? 0
+    if (Number.isSafeInteger(leftovers) && leftovers > 0) {
+      const left = nextWord(leftovers === 1 ? "noticeOneLeftover" : "noticeManyLeftovers", { n: leftovers })
+      detail += '<div class="notice-warning">' + esc(left) + "</div>"
+    }
     if (n.claims_released === true && n.child_may_still_write === true) {
       detail += '<div class="notice-warning">' + esc(T.webNoticeClaimsReleased) + "</div>"
     }
