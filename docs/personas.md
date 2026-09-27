@@ -192,7 +192,16 @@ showed before this feature, never a sheet that breaks after a press.
   line, where the rows measure the same with and without it (phone 93.2, desktop 82.9).
 - **Start sheet.** A row of role chips under the assistant chips, "No role" first and chosen by
   default. It scrolls sideways on a phone. The choice becomes the start route's `/as/{persona}`
-  and is remembered in this browser only. Resuming does not offer it in this version.
+  and is remembered in this browser only.
+- **Resuming from a place.** After the person picks a place to resume in, the same role row stands
+  over its past conversations, "No role" chosen. A past conversation's list does not say which
+  role it had, so nothing is preselected and the start sheet's remembered choice is not carried
+  over. A role makes the resume route `…/resume/{assistant}/{conversation}/as/{persona}`; both
+  sheets build their paths in `web/console/src/session/place-routes.ts`, and
+  `place-routes.test.ts` checks that Cloud's `writeRoute` reads each one back as the same resume.
+- **Restoring after a reboot.** Each row on the restore sheet shows the role it was launched with
+  (`RestorableSession.persona`). Restoring relaunches it with that role; the restore request has
+  no field to change it, so the sheet shows it rather than offering chips.
 - **Board.** A new-Session assignment shows the role chips beside the assistant chips. The item's
   kind picks the default when exactly one persona suggests that kind (epic → architect, issue →
   minimal-change); feature, which two suggest, starts with none. The button names the role, and

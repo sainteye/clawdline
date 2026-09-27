@@ -78,3 +78,5 @@
     .restore-buttons .chip { width: 100%; }
     .restore-buttons .chip.restore-go { order: 0; }
 }
+/* A row's role sits in the meta line's own gaps. */
+.restore-meta .persona-tag { margin-left: 0; }
