@@ -956,17 +956,36 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
     const reviewed = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
       const open = () => {
-        const card = document.querySelector(".project-setup")
-        const readiness = card?.querySelector(".project-readiness-card")
+        const launcher = document.querySelector(".project-setup")
+        const trigger = launcher?.querySelector(".project-setup-open")
+        const dialog = launcher?.querySelector(".project-setup-dialog")
+        const readiness = dialog?.querySelector(".project-readiness-card")
         const button = readiness?.querySelector(".project-readiness-action")
-        if (!card || !readiness || !button) {
-          if (Date.now() >= deadline) return reject(new Error("the Project readiness overview did not load its Projects"))
+        if (!launcher || !trigger || !dialog || !readiness || !button) {
+          if (Date.now() >= deadline) return reject(new Error("the Project setup launcher did not load its Projects"))
           return setTimeout(open, 25)
         }
+        const launcherBox = launcher.getBoundingClientRect()
+        const inlineCards = launcher.querySelectorAll(":scope > .project-readiness-list").length
+        trigger.click()
         setTimeout(() => {
+          const dialogBox = dialog.getBoundingClientRect()
           const actionBox = readiness.getBoundingClientRect()
           const buttonBox = button.getBoundingClientRect()
-          button.click()
+          const capabilities = readiness.querySelectorAll(".project-readiness-capability").length
+          dialog.querySelector(".project-setup-close").click()
+          const closed = () => {
+            if (dialog.open || document.activeElement !== trigger) {
+              if (Date.now() >= deadline) return reject(new Error("the Project setup dialog did not close"))
+              return setTimeout(closed, 25)
+            }
+            trigger.click()
+            button.click()
+            waitForDraft(true, dialogBox, actionBox, buttonBox, capabilities, launcherBox, inlineCards)
+          }
+          closed()
+        }, 0)
+        const waitForDraft = (returnedFocus, dialogBox, actionBox, buttonBox, capabilities, launcherBox, inlineCards) => {
           const wait = () => {
             const draft = document.getElementById("command-draft")
             if (draft && !draft.hidden) return resolve({
@@ -976,13 +995,23 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
               focused: document.activeElement?.id,
               buttonWidth: buttonBox.width,
               cardWidth: actionBox.width,
-              capabilities: readiness.querySelectorAll(".project-readiness-capability").length,
+              capabilities,
+              launcherHeight: launcherBox.height,
+              inlineCards,
+              returnedFocus,
+              dialog: {
+                left: dialogBox.left,
+                top: dialogBox.top,
+                right: dialogBox.right,
+                bottom: dialogBox.bottom,
+              },
+              viewport: { width: innerWidth, height: innerHeight },
             })
             if (Date.now() >= deadline) return reject(new Error("the Project setup review did not open"))
             setTimeout(wait, 25)
           }
           wait()
-        }, 0)
+        }
       }
       open()
     })`)
@@ -993,6 +1022,12 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
     assert.match(reviewed.instructions, /clawdline guide zh-TW project/)
     assert.match(reviewed.instructions, /deploy／CI/)
     assert.match(reviewed.instructions, /\.devstack\.json/)
+    assert.equal(reviewed.inlineCards, 0, "the Project page does not repeat the readiness list in its main flow")
+    assert.ok(reviewed.launcherHeight <= 110, `the compact launcher is ${reviewed.launcherHeight}px tall`)
+    assert.equal(reviewed.returnedFocus, true, "closing the audit returns keyboard focus to its launcher")
+    assert.ok(reviewed.dialog.left <= 1 && reviewed.dialog.top <= 1, "the phone audit starts at the viewport edge")
+    assert.ok(reviewed.dialog.right >= reviewed.viewport.width - 1, "the phone audit spans the viewport width")
+    assert.ok(reviewed.dialog.bottom >= reviewed.viewport.height - 1, "the phone audit spans the viewport height")
     assert.equal(reviewed.capabilities, 4, "the phone shows each configuration layer")
     assert.ok(reviewed.buttonWidth >= reviewed.cardWidth - 30, "the primary phone action keeps the card width")
   }))

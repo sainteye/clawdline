@@ -22,8 +22,11 @@ test("labels and paths are quoted as data rather than interpolated as new instru
   assert.match(words, /Project root："\/work\/`odd`"/)
 })
 
-test("the setup card gives both unreadable and empty Project lists an actionable next step", () => {
+test("the setup dialog gives both unreadable and empty Project lists an actionable next step", () => {
   const source = readFileSync(new URL("./ProjectSetup.tsx", import.meta.url), "utf8")
+  assert.match(source, /showModal\(\)/)
+  assert.match(source, /aria-haspopup="dialog"/)
+  assert.match(source, /focus\(\{ preventScroll: true \}\)/)
   assert.match(source, /role="alert"/)
   assert.match(source, /重新讀取/)
   assert.match(source, /clawdline project add/)

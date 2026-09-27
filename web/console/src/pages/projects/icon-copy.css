@@ -8,11 +8,21 @@
 .project-icon-actions button { padding: 8px 12px; }
 .project-icon-copy [role="alert"] { color: var(--bad); }
 
-.project-setup { margin: 16px 0 22px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, var(--card-hi), var(--card)); }
-.project-setup-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.project-setup-heading h2 { margin: 2px 0 0; font-size: 20px; }
-.project-setup-heading p:not(.project-setup-eyebrow) { max-width: 680px; margin: 8px 0 0; color: var(--dim); line-height: 1.55; }
+.project-setup { display: flex; align-items: center; gap: 16px; margin: 16px 0 22px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, var(--card-hi), var(--card)); }
+.project-setup-launcher-copy { min-width: 0; flex: 1; }
+.project-setup-launcher-copy h2 { margin: 2px 0 0; font-size: 17px; }
+.project-setup-launcher-copy > p:last-child { overflow: hidden; margin: 5px 0 0; color: var(--dim); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.project-setup-launcher-copy > p.is-error { color: var(--bad); }
+.project-setup-open { min-height: 40px; flex: none; }
 .project-setup-eyebrow { margin: 0; color: var(--accent); font: 600 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.project-setup-dialog { box-sizing: border-box; width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; overflow: hidden; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 80px #0008; }
+.project-setup-dialog::backdrop { background: #0009; }
+.project-setup-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.project-setup-dialog-heading h2 { margin: 2px 0 0; font-size: 20px; }
+.project-setup-close { min-width: 44px; min-height: 44px; flex: none; }
+.project-setup-dialog-body { box-sizing: border-box; max-height: calc(100dvh - 132px); padding: 18px; overflow-y: auto; overscroll-behavior: contain; }
+.project-setup-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.project-setup-heading > p { max-width: 580px; margin: 0; color: var(--dim); line-height: 1.55; }
 .project-setup-total { display: grid; min-width: 74px; padding: 10px 12px; border: 1px solid var(--accent-ed); border-radius: 10px; color: var(--accent); font: 700 20px/1 var(--mono); text-align: center; }
 .project-setup-total small { margin-top: 6px; color: var(--dim); font: inherit; font-size: 11px; font-weight: 400; line-height: 1.2; white-space: nowrap; }
 .project-readiness-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 12px; margin: 16px 0 0; padding: 0; list-style: none; }
@@ -40,13 +50,17 @@
 .project-readiness-capability.is-attention .project-readiness-state { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .project-readiness-action { width: 100%; min-height: 40px; margin-top: auto; }
 .project-setup-refresh { margin-top: 14px; }
-.project-setup-loading, .project-setup-empty, .project-setup [role="alert"] { margin: 16px 0 0; color: var(--dim); line-height: 1.5; }
-.project-setup [role="alert"] { color: var(--bad); }
+.project-setup-loading, .project-setup-empty, .project-setup-dialog [role="alert"] { margin: 16px 0 0; color: var(--dim); line-height: 1.5; }
+.project-setup-dialog [role="alert"] { color: var(--bad); }
 
 @media (max-width: 899px) {
-  .project-setup { margin-inline: -2px; padding: 14px; }
+  .project-setup { margin-inline: -2px; padding: 12px; }
+  .project-setup-open { min-height: 44px; }
+  .project-setup-dialog { width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .project-setup-dialog-heading { padding: max(12px, env(safe-area-inset-top)) 14px 12px; }
+  .project-setup-dialog-body { max-height: calc(100dvh - 69px - env(safe-area-inset-top)); padding: 14px 14px max(18px, env(safe-area-inset-bottom)); }
   .project-setup-heading { align-items: center; }
-  .project-setup-heading p:not(.project-setup-eyebrow) { font-size: 13px; }
+  .project-setup-heading > p { font-size: 13px; }
   .project-readiness-list { grid-template-columns: 1fr; }
   .project-readiness-action, .project-setup-refresh { min-height: 44px; }
 }
