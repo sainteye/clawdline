@@ -178,6 +178,27 @@ export interface CloudReadClient {
   snippets?(identity: CloudIdentity, options?: { fresh?: boolean }): Promise<CloudSnippets>
   transcript(identity: CloudIdentity, phases?: unknown, demand?: { foreground?: boolean }): Promise<unknown>
   /**
+   * One provider subagent's conversation, and one background command's
+   * output: the session reads whose subject is a second id.
+   *
+   * These two are session reads, not machine reads. The machine decodes each
+   * body against an exact key set — `{type, session, agent, limit}`,
+   * `{type, session, shell, bytes}` (`internal/app/cloudops/ops.go`) — and
+   * answers on the session's own channel under `agent:<id>` / `shell:<id>`.
+   * `_machineRequest` adds a `request` and waits on the machine's reply
+   * channel, so the same words sent through it are a malformed read the
+   * machine can answer to nobody: the subagent pane sat on its skeleton for
+   * the whole read timeout, every time.
+   *
+   * The copied client asks each for a fixed window (`AGENT_LIMIT`,
+   * `SHELL_BYTES`); `CLOUD_AGENT_LIMIT` and `CLOUD_SHELL_BYTES` below are the
+   * same numbers, and a page asking for another window is refused by name.
+   *
+   * Optional for the reason `pushKey` is.
+   */
+  agent?(identity: CloudIdentity, agent: string): Promise<unknown>
+  shell?(identity: CloudIdentity, shell: string): Promise<unknown>
+  /**
    * The application server key, as the machine's `push-key` read answers it.
    *
    * Optional because a copied client older than the word does not have it, and
@@ -225,6 +246,11 @@ export interface CloudReadClient {
  * the same fifteen seconds).
  */
 export const TRANSCRIPT_LINE_REREAD_MS = 15_000
+
+/** The copied client's `AGENT_LIMIT`: the entries one subagent read carries. */
+export const CLOUD_AGENT_LIMIT = 200
+/** The copied client's `SHELL_BYTES`: the tail one background-command read carries. */
+export const CLOUD_SHELL_BYTES = 64 * 1024
 
 /**
  * The longest an answer is reused with nothing on its row moving at all. A
@@ -511,20 +537,16 @@ export class RelayReader {
       const agent = sessionAgent(path)
       if (agent) {
         const q = this.only(url, path, "limit")
-        return await this.machineRead(init?.signal, method, path, "agent", {
-          session: agent.session,
-          agent: agent.agent,
-          limit: clampedWhole(q.limit, 200, 1, 1000),
-        })
+        this.window(path, "limit", q.limit, CLOUD_AGENT_LIMIT)
+        return await this.sessionRead(init?.signal, method, path, "agent", (client) =>
+          client.agent?.({ machine: this.machine, session: agent.session }, agent.agent))
       }
       const shell = sessionShell(path)
       if (shell) {
         const q = this.only(url, path, "bytes")
-        return await this.machineRead(init?.signal, method, path, "shell", {
-          session: shell.session,
-          shell: shell.shell,
-          bytes: clampedWhole(q.bytes, 65536, 1024, 1048576),
-        })
+        this.window(path, "bytes", q.bytes, CLOUD_SHELL_BYTES)
+        return await this.sessionRead(init?.signal, method, path, "shell", (client) =>
+          client.shell?.({ machine: this.machine, session: shell.session }, shell.shell))
       }
       const workTerminal = workV2SessionTodosTerminal(path)
       if (workTerminal) {
@@ -1121,6 +1143,41 @@ export class RelayReader {
   }
 
   /**
+   * A session read through the copied client's own method for it (`agent`,
+   * `shell`), with the caller's deadline and the log line `machineRead` gives.
+   * `ask` answers undefined when the client has no such method.
+   */
+  private async sessionRead(
+    signal: AbortSignal | null | undefined,
+    method: string,
+    path: string,
+    word: CarriedWord,
+    ask: (client: CloudReadClient) => Promise<unknown> | undefined,
+  ): Promise<Response> {
+    const pending = ask(this.connected())
+    if (!pending) {
+      return this.refuse(method, path, 501, "cloud_not_carried",
+        `This console cannot ask this machine for ${word}.`)
+    }
+    const answer = await abandonable(pending, signal, word)
+    this.note(method, path, "relay", undefined, { word })
+    return json(200, answer)
+  }
+
+  /**
+   * A window the copied client asks for on its own (`CLOUD_AGENT_LIMIT`,
+   * `CLOUD_SHELL_BYTES`). Absent, or the same number, is that window; any other
+   * number is a question this path would answer with a different one, so it
+   * is refused by name as `only` refuses a field.
+   */
+  private window(path: string, field: string, asked: string | undefined, fixed: number): void {
+    if (asked === undefined || Number(asked) === fixed) return
+    throw Object.assign(new Error(`${path}?${field}=${asked} is not carried over Clawdline Cloud: it reads ${fixed}.`), {
+      code: "cloud_not_carried", status: 501,
+    })
+  }
+
+  /**
    * The query fields a carried read may carry, or a refusal naming one it may
    * not.
    *
@@ -1283,14 +1340,6 @@ const BOARD_PAGE_DEFAULT = 30
 function whole(value: string | undefined, fallback: number): number {
   const n = Number(value)
   return value !== undefined && Number.isSafeInteger(n) && n >= 0 ? n : fallback
-}
-
-/** An integer query field clamped the same way the local route clamps it. */
-function clampedWhole(value: string | undefined, fallback: number, low: number, high: number): number {
-  if (value === undefined || !/^[+-]?\d+$/.test(value)) return fallback
-  const n = Number(value)
-  if (!Number.isSafeInteger(n)) return fallback
-  return Math.min(high, Math.max(low, n))
 }
 
 /** The two ids in `/v1/sessions/{session}/shells/{shell}`, decoded after splitting. */
