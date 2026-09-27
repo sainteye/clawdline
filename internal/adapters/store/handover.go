@@ -260,6 +260,17 @@ func (s *Store) ReadOpened(ctx context.Context, table, id string) (Opened, error
 
 // ListOpened reads the newest rows first, at most limit of them.
 func (s *Store) ListOpened(ctx context.Context, table string, limit int) ([]Opened, error) {
+	return s.listOpened(ctx, table, "", limit)
+}
+
+// ListOpenedIn is ListOpened for the rows in one state only: what the beat
+// reads on every pass, so its cost is the rows waiting on it rather than the
+// history.
+func (s *Store) ListOpenedIn(ctx context.Context, table, state string, limit int) ([]Opened, error) {
+	return s.listOpened(ctx, table, state, limit)
+}
+
+func (s *Store) listOpened(ctx context.Context, table, state string, limit int) ([]Opened, error) {
 	name, err := openedTable(table)
 	if err != nil {
 		return nil, err
@@ -268,7 +279,8 @@ func (s *Store) ListOpened(ctx context.Context, table string, limit int) ([]Open
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, state, record, created_at, updated_at FROM `+name+` ORDER BY created_at DESC, id LIMIT ?`, limit)
+		`SELECT id, state, record, created_at, updated_at FROM `+name+` WHERE ? = '' OR state = ?
+		 ORDER BY created_at DESC, id LIMIT ?`, state, state, limit)
 	if err != nil {
 		return nil, classify(err)
 	}

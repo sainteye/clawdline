@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -1251,6 +1252,48 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 			Scope: scope, Constraints: workV2RootConstraints(item.Item.ID, item.Item.Kind),
 			RelevantReferences: references,
 			Acceptance:         workV2RootAssignmentAcceptance(item.Item.ID, item.Item.Kind)}})
+	// Its first screen was a question only the person may answer: the
+	// assignment stays pending and the item asks them to answer it, and the
+	// broker's beat finishes it either way (settleAwaitedAssignments).
+	if openErr == nil && ra.State == orchestrator.AssignmentAwaitingDialog && ra.Executor != nil {
+		waiting, err := s.workV2().AwaitAssignmentDialog(ctx, id, app.AwaitDialogV2{AssignmentID: assignmentID,
+			RootAssignment: ra.ID, TerminalID: ra.Executor.TerminalID, Actor: actor})
+		if err != nil {
+			return pending, err
+		}
+		return waiting, s.fileWorkV2Answer(ctx, waiting, file)
+	}
+	finished, failure, err := s.finishRootAssignment(ctx, id, assignmentID, actor, ra, openErr, previous, item.Item.Title)
+	if err != nil {
+		return pending, err
+	}
+	if failure != "" {
+		return finished, &app.WorkError{Status: http.StatusBadGateway, Code: "assignment_failed", Message: failure}
+	}
+	// File the answer after the external root was opened and the local owner is durable.
+	return finished, s.fileWorkV2Answer(ctx, finished, file)
+}
+
+// fileWorkV2Answer completes the request's receipt with the item as it now is.
+func (s *Server) fileWorkV2Answer(ctx context.Context, view app.WorkV2View, file app.WorkV2Filer) error {
+	if file == nil {
+		return nil
+	}
+	k, a, ok := file(view)
+	if !ok {
+		return nil
+	}
+	if len(a.Body) == 0 {
+		a = store.ReceiptAnswer{Status: http.StatusOK, Body: workV2Answer(s.workV2ItemOf(ctx, view))}
+	}
+	return s.store.CompleteReceipt(ctx, k, a)
+}
+
+// finishRootAssignment settles a pending new-Session assignment from the
+// Feature Root opened for it: active on the Session it opened, or failed
+// saying why. The failure is also returned, empty when it became active.
+func (s *Server) finishRootAssignment(ctx context.Context, workID, assignmentID, actor string,
+	ra orchestrator.RootAssignment, openErr error, previous work.AssignmentV2, title string) (app.WorkV2View, string, error) {
 	failure, resolvedTerminal, resolvedSession := "", "", ""
 	if openErr != nil {
 		failure = openErr.Error()
@@ -1272,30 +1315,49 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 			failure = "opened Session has no conversation id yet"
 		}
 	}
-	finished, finishErr := s.workV2().FinishAssignment(ctx, id, app.FinishAssignmentV2{AssignmentID: assignmentID,
+	finished, err := s.workV2().FinishAssignment(ctx, workID, app.FinishAssignmentV2{AssignmentID: assignmentID,
 		SessionID: resolvedSession, TerminalID: resolvedTerminal, RootAssignment: ra.ID, Failure: failure, Actor: actor})
-	if finishErr != nil {
-		return pending, finishErr
+	if err != nil {
+		return app.WorkV2View{}, "", err
 	}
-	if failure != "" {
-		return finished, &app.WorkError{Status: http.StatusBadGateway, Code: "assignment_failed", Message: failure}
+	if failure == "" && previous.ID != "" && previous.SessionID != resolvedSession {
+		s.tellReleasedOwner(ctx, previous, workID, title)
 	}
-	if previous.ID != "" && previous.SessionID != resolvedSession {
-		s.tellReleasedOwner(ctx, previous, id, item.Item.Title)
+	return finished, failure, nil
+}
+
+// settleAwaitedAssignments finishes every Board assignment whose Feature Root
+// was left at a dialog and has since been briefed or failed. The broker's beat
+// asks for it when it settles such a Root, and the daemon once when it starts,
+// for a Root settled while nothing was listening. An assignment another sweep
+// finished first is refused by FinishAssignment and left alone.
+func (s *Server) settleAwaitedAssignments(ctx context.Context) {
+	if s.broker == nil {
+		return
 	}
-	// File the answer after the external root was opened and the local owner is durable.
-	answer := workV2Answer(s.workV2ItemOf(ctx, finished))
-	if file != nil {
-		if k, a, ok := file(finished); ok {
-			if len(a.Body) == 0 {
-				a = store.ReceiptAnswer{Status: http.StatusOK, Body: answer}
-			}
-			if err := s.store.CompleteReceipt(ctx, k, a); err != nil {
-				return finished, err
-			}
+	awaited, err := s.workV2().AwaitedAssignments(ctx)
+	if err != nil {
+		log.Printf("work v2: the assignments waiting on a dialog could not be read: %v", err)
+		return
+	}
+	for _, a := range awaited {
+		ra, err := s.broker.RootAssignmentByID(ctx, a.RootAssignment)
+		if err != nil || ra.State == orchestrator.AssignmentAwaitingDialog {
+			continue
+		}
+		item, err := s.workV2().Item(ctx, a.WorkID)
+		if err != nil {
+			continue
+		}
+		_, failure, err := s.finishRootAssignment(ctx, a.WorkID, a.ID, a.HumanActor, ra, nil,
+			workV2ActiveOwner(item), item.Item.Title)
+		switch {
+		case err != nil:
+			log.Printf("work v2: assignment %s waiting on Root Assignment %s was not settled: %v", a.ID, ra.ID, err)
+		case failure != "":
+			log.Printf("work v2: assignment %s failed after its dialog: %s", a.ID, failure)
 		}
 	}
-	return finished, nil
 }
 
 type directTodoV2Wire struct {

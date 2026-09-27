@@ -552,6 +552,15 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 				return err
 			}
 		}
+		// A new Session still standing on its first screen will be briefed as
+		// this item's owner the moment the person answers it; a second
+		// assignment meanwhile would give the item two.
+		if awaited, err := tx.AwaitedAssignment(id); err != nil {
+			return err
+		} else if awaited.ID != "" {
+			return work.RefuseV2("assignment_awaiting_dialog", "A new Session opened for this item is waiting "+
+				"for you to answer its first screen. Answer it, or close its tab, before assigning again.")
+		}
 		if c.AssignmentID == "" {
 			c.AssignmentID = newWorkID()
 		}
@@ -654,6 +663,9 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 		pending.UpdatedAt, pending.RootAssignment = now, c.RootAssignment
 		if c.Failure != "" {
 			pending.State, pending.Failure = "failed", c.Failure
+			if prev.UserAction == AssignmentDialogAction {
+				next.Condition, next.UserAction = "", ""
+			}
 			if prev.OwnerSession == "" {
 				next.Phase, next.Condition = work.PhaseCreated, work.ConditionAssignmentFailed
 				next.UserAction = ""
@@ -703,6 +715,60 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 		return nil
 	})
 	return out, mapWorkV2Error(err)
+}
+
+// AssignmentDialogAction is what a Board item waiting on its new Session's
+// first screen asks of the person. It is the daemon's own sentence, so a
+// failed assignment can take back exactly this and nothing a Session wrote.
+const AssignmentDialogAction = "新開的 Session 一開啟就停在一個需要你回答的畫面（例如 Codex 的更新提示）。" +
+	"請到那個 Session 回答；回答後工作說明會自動送出。不想繼續的話，關掉那個分頁即可。"
+
+// AwaitDialogV2 is a pending new-Session assignment whose Feature Root was
+// opened and stopped on a dialog (orchestrator root_dialog.go).
+type AwaitDialogV2 struct {
+	AssignmentID   string
+	RootAssignment string
+	TerminalID     string
+	Actor          string
+}
+
+// AwaitAssignmentDialog keeps a new-Session assignment pending while its
+// Session waits for the person to answer its first screen: the Root
+// Assignment and the tab are recorded on it, so the assignment can be
+// finished when that Root is briefed or fails (WorkV2AwaitedAssignments), and
+// the item asks the person to answer.
+func (w *WorkSystemV2) AwaitAssignmentDialog(ctx context.Context, workID string, c AwaitDialogV2) (WorkV2View, error) {
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.Item(workID)
+		if err != nil {
+			return err
+		}
+		pending, err := tx.Assignment(c.AssignmentID)
+		if err != nil || pending.WorkID != workID || pending.State != "assigning" {
+			return work.RefuseV2("assignment_not_pending", "No pending assignment has that id.")
+		}
+		now := w.now()
+		pending.RootAssignment, pending.TerminalID, pending.UpdatedAt = c.RootAssignment, c.TerminalID, now
+		if err := tx.UpdateAssignment(pending); err != nil {
+			return err
+		}
+		next := prev
+		next.Condition, next.UserAction, next.UpdatedAt = work.ConditionWaitingUser, AssignmentDialogAction, now
+		if err := tx.PutItem(prev, next, "assignment.awaiting_dialog", c.Actor, payload(map[string]any{
+			"assignment_id": pending.ID, "root_assignment_id": c.RootAssignment})); err != nil {
+			return err
+		}
+		next.Version++
+		out = WorkV2View{Item: next, Assignments: []work.AssignmentV2{pending}}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
+// AwaitedAssignments is every pending assignment waiting on a Feature Root.
+func (w *WorkSystemV2) AwaitedAssignments(ctx context.Context) ([]work.AssignmentV2, error) {
+	return w.Store.WorkV2AwaitedAssignments(ctx)
 }
 
 func (w *WorkSystemV2) Unassign(ctx context.Context, id string, expected int64, actor string, file WorkV2Filer) (WorkV2View, error) {
