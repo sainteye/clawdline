@@ -9,8 +9,9 @@ test("the seam reads the named machine, not the one on screen, through the clien
   const asked: unknown[] = []
   const client = {
     machines: async () => ({ machines: [
-      { id: "mac-a", label: "Studio · A", selectable: true },
-      { id: "linux-b", name: "B", label: "Linux · B", selectable: true },
+      { id: "mac-a", label: "Studio · A", selectable: true, freshness: "current" as const },
+      { id: "linux-b", name: "B", label: "Linux · B", selectable: true, freshness: "stale" as const },
+      { id: "linux-c", label: "Linux · C", selectable: true, freshness: "unknown" as const },
     ] }),
     machineDescriptor: (id: string) => (id === "mac-a" ? { machine: { commands: ["project-manifest"] } } : null),
     _machineRequest: async (machine: string, word: string, body: Record<string, unknown>, kind: string) => {
@@ -23,8 +24,9 @@ test("the seam reads the named machine, not the one on screen, through the clien
   await assert.rejects(seam.machines(), /not ready/)
   current = client
   assert.deepEqual(await seam.machines(), [
-    { id: "mac-a", name: "Studio · A", offers: true, selectable: true },
-    { id: "linux-b", name: "B", offers: null, selectable: true },
+    { id: "mac-a", name: "Studio · A", offers: true, selectable: true, online: true },
+    { id: "linux-b", name: "B", offers: null, selectable: true, online: false },
+    { id: "linux-c", name: "Linux · C", offers: null, selectable: true, online: null },
   ])
   assert.deepEqual(await seam.read("mac-a", "project-entry", { repo: "github.com/o/n" }), { projects: [] })
   assert.deepEqual(asked, [["mac-a", "project-entry", { repo: "github.com/o/n" }, "read"]])

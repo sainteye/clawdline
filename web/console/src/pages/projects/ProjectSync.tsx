@@ -78,7 +78,8 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
     const others = list.filter((x) => x.id !== here && x.selectable)
     setMachines(others)
     const owner = m.projects.find((p) => p.source.machine)?.source.machine ?? ""
-    setSourceID((was) => was || (others.some((x) => x.id === owner) ? owner : ""))
+    // A source known to be offline is not picked for the person; they can still choose it.
+    setSourceID((was) => was || (others.some((x) => x.id === owner && x.online !== false) ? owner : ""))
     return { mirror: m, machines: others }
   }, [seam, here])
 
@@ -86,9 +87,13 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
   const follow = useCallback(async (m: SyncMirror, others: SyncMachine[]) => {
     if (!seam) return
     const bySource = new Map<string, SyncMirror["projects"]>()
+    const waiting = new Set<string>()
     for (const p of m.projects) {
-      if (!p.source.machine || !others.some((x) => x.id === p.source.machine)) continue
-      bySource.set(p.source.machine, [...(bySource.get(p.source.machine) ?? []), p])
+      const from = others.find((x) => x.id === p.source.machine)
+      if (!from) continue
+      // A source known to be offline would only answer machine_offline; say so once, by name.
+      if (from.online === false) { waiting.add(from.name); continue }
+      bySource.set(from.id, [...(bySource.get(from.id) ?? []), p])
     }
     const done: string[] = []
     for (const [machine, records] of bySource) {
@@ -103,11 +108,13 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
           done.push(`${entry.project.label}（${record.repo}）：${describe(answer.result)}`)
         }
       } catch (e) {
-        done.push(`${records[0]?.source.name || machine}：${failureSentence(e, FAILED)}`)
+        const name = others.find((x) => x.id === machine)?.name || records[0]?.source.name || machine
+        done.push(`${name}：${failureSentence(e, FAILED)}`)
       }
     }
+    const offline = [...waiting].map((name) => `${name} 目前離線，上線後打開這頁就會更新。`)
+    if (done.length || offline.length) setLines([...(done.length ? ["已從主要機器更新：", ...done] : []), ...offline])
     if (done.length) {
-      setLines(["已從主要機器更新：", ...done])
       changed()
       await reload()
     }
@@ -128,14 +135,14 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
   }, [shown, reload, follow])
 
   async function readSource() {
-    if (!seam || !source || busy) return
+    if (!seam || !source || source.online === false || busy) return
     setBusy(true); setError(""); setLines([]); setManifest(null)
     try {
       const offer = await seam.read<SyncManifest>(source.id, "project-manifest", {})
       setManifest(offer)
       setPicked(new Set(offer.projects.map((p) => p.repo)))
     } catch (e) {
-      setError(failureSentence(e, FAILED))
+      setError(`${source.name}：${failureSentence(e, FAILED)}`)
     } finally { setBusy(false) }
   }
 
@@ -147,11 +154,14 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
     for (const p of manifest.projects) {
       if (!picked.has(p.repo)) continue
       try {
+        // A failed read is the source's; name it so the line says which machine did not answer.
         const entry = await seam.read<{ project: SyncEntry }>(source.id, "project-entry", { repo: p.repo })
+          .catch((e) => { throw Object.assign(new Error(`${source.name}：${failureSentence(e, FAILED)}`), { named: true }) })
         const answer = await applyProjectMirror(from, entry.project, clone)
         out.push(`${p.label}（${p.repo}）：${describe(answer.result)}`)
       } catch (e) {
-        out.push(`${p.label}（${p.repo}）：${failureSentence(e, FAILED)}`)
+        const why = (e as { named?: boolean }).named ? (e as Error).message : failureSentence(e, FAILED)
+        out.push(`${p.label}（${p.repo}）：${why}`)
       }
       setLines([...out])
     }
@@ -205,12 +215,15 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
         <select value={sourceID} disabled={busy} onChange={(e) => { setSourceID(e.target.value); setManifest(null); setLines([]) }}>
           <option value="">選擇機器</option>
           {machines.map((m) => <option key={m.id} value={m.id} disabled={m.offers === false}>
-            {m.name}{m.offers === false ? "（需要更新 Clawdline）" : ""}
+            {m.name}{m.offers === false ? "（需要更新 Clawdline）" : m.online === false ? "（離線）" : ""}
           </option>)}
         </select>
       </label>
+      {source?.online === false && <p className="project-sync-offline" role="status">
+        「{source.name}」目前離線，要等它上線才能讀取它的專案。可以在「裝置」頁查看它的狀態。
+      </p>}
       <div className="project-sync-actions">
-        <button type="button" disabled={!source || busy} onClick={() => void readSource()}>{busy && !manifest ? "讀取中…" : "讀取它的專案"}</button>
+        <button type="button" disabled={!source || source.online === false || busy} onClick={() => void readSource()}>{busy && !manifest ? "讀取中…" : "讀取它的專案"}</button>
       </div>
     </>}
 
