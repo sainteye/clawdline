@@ -25,8 +25,9 @@
  * `cloud-boot.js` already sends to this origin (`credentials: "include"`,
  * `/v1/auth/session`), so this needs nothing new; the machine **list** on the
  * gate is not from this API at all — it is what the relay client decrypted —
- * which is why a forgotten machine does not disappear from it and is marked
- * here instead.
+ * so the relay can keep a forgotten machine's last snapshot. The gate leaves
+ * every machine this tab or the account's roster calls forgotten off both the
+ * picker and the Devices page (`CloudGate.tsx`, `devicesPageRows`).
  *
  * Nothing is imported at run time, so `node --test` loads it as it is.
  */

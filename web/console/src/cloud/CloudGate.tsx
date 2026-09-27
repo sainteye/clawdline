@@ -26,7 +26,7 @@ import { NAME_MAX, renameMachine, type RenameOutcome } from "./rename.js"
 import { setAccountMachines, setMachineForgetting, setMachinePairing } from "../legacy/devices-bridge.js"
 import { setProjectSyncSeam, syncSeamFor, type SyncClient } from "./project-sync.js"
 import { machinePresentation } from "../legacy/js/session/selection.js"
-import { accountMachineRoster, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
+import { accountMachineRoster, devicesPageRows, machineIdentityFacts, sessionsFact, withAccountNames, type AccountName } from "./unpaired-rows.js"
 import { machineSeenWord } from "./machine-seen.js"
 import { PairingRun, dropInvitation, watchInvitations, type PairStart, type PairState } from "./pair.js"
 import {
@@ -188,7 +188,8 @@ export function CloudGate({ declared }: { declared: string }) {
   // Forgetting a machine (`forget.ts`): which one is being asked about, which
   // ones this tab or the account says are forgotten, and what the account
   // answered about the last one. The relay can retain an old snapshot after
-  // revocation, so the account roster keeps those rows off the picker.
+  // revocation, so the account roster keeps those rows off the picker and the
+  // Devices page alike.
   const [asking, setAsking] = useState<CloudMachine | null>(null)
   const [forgetting, setForgetting] = useState(false)
   const [forgotten, setForgotten] = useState<readonly string[]>([])
@@ -639,10 +640,10 @@ export function CloudGate({ declared }: { declared: string }) {
           // The Devices page reads the account's machines through this, and
           // says so under its heading. It is the client at the moment of the
           // call rather than this one, because a renewal replaces it
-          // (`legacy/devices-bridge.ts`). A machine this tab has forgotten is
-          // still on the list the relay decrypted, and a card offering "New
-          // session" on it would be the page saying something the account has
-          // stopped being true.
+          // (`legacy/devices-bridge.ts`). A machine this tab or the account
+          // has forgotten can still be on the list the relay decrypted; it is
+          // left out here as the picker leaves it out, because the account has
+          // stopped listing it.
           // Project settings sync reads a source machine while this console
           // shows another (`cloud/project-sync.ts`); the client is read per
           // call because a renewal replaces it.
@@ -654,18 +655,12 @@ export function CloudGate({ declared }: { declared: string }) {
             const current = client.current
             if (!current) return { machines: [], syncing: true, retryAfterMs: 1000 }
             const answer = await machinesByCapability(current, claimedPairings.current)
-            // The same two corrections the gate's list makes: the account's
-            // name where this browser has none of its own, and no session
-            // count where it could not read the sessions to count them.
+            // The same corrections the gate's list makes: the account's name
+            // where this browser has none of its own, no forgotten machine, and
+            // no session count where it could not read the sessions to count them.
             const named = withAccountNames(answer.machines, namesRef.current, described, present)
             return {
-              machines: named.map((m) => {
-                const row: Record<string, unknown> = gone.current.includes(m.id)
-                  ? { ...m, selectable: false, autoSelectable: false }
-                  : { ...m }
-                if (typeof sessionsFact(m) === "string") delete row.sessions
-                return row
-              }),
+              machines: devicesPageRows(named, gone.current),
               syncing: answer.syncing,
               retryAfterMs: answer.retryAfterMs,
             }
@@ -1443,21 +1438,19 @@ function GateCard(props: {
             {machines ? (
               <ul className="cloud-machines" id="cloud-machines">
                 {machines.map((m) => {
-                  const gone = forgotten.includes(m.id)
                   const count = sessionsFact(m)
                   const name = m.name || m.label || m.id
                   const identity = machineIdentityFacts(m)
-                  const pairable = !gone && m.pairing === "not_paired"
+                  const pairable = m.pairing === "not_paired"
                   return (
                     <li
                       key={m.id}
-                      data-forgotten={gone ? "true" : undefined}
                       data-pairable={pairable ? "true" : undefined}
                     >
                       <button
                         type="button"
                         data-machine={m.id}
-                        disabled={!m.selectable || gone}
+                        disabled={!m.selectable}
                         onClick={() => onChoose(m)}
                       >
                         <span className="cloud-machine-name">{name}</span>
@@ -1475,61 +1468,57 @@ function GateCard(props: {
                               ? nextWord("cloudMachineSessionsUnread")
                               : nextWord("cloudMachineSessionsUnknown")}
                           {" · "}
-                          {gone
-                            ? nextWord("cloudForgottenRow")
-                            : m.pairing === "not_paired"
-                              ? T.webDeviceNotPaired
-                              : m.freshness === "current"
-                                ? T.webDeviceOnline
-                                : T.webStartMachineStale}
+                          {m.pairing === "not_paired"
+                            ? T.webDeviceNotPaired
+                            : m.freshness === "current"
+                              ? T.webDeviceOnline
+                              : T.webStartMachineStale}
                         </span>
                       </button>
-                      {!gone && (
-                        /* The row and its controls are siblings: nesting buttons
-                           would be invalid, while a disabled unpaired row must
-                           leave Pair, Rename and Forget in the focus order. */
-                        <div
-                          className="cloud-machine-actions"
-                          role="group"
-                          aria-label={nextWord("cloudMachineActions", { machine: name })}
-                        >
-                          {pairable && (
-                            <button
-                              className="cloud-pair"
-                              type="button"
-                              data-pair={m.id}
-                              disabled={forgetting || renaming}
-                              title={nextWord("cloudPairOne", { machine: name })}
-                              aria-label={nextWord("cloudPairOne", { machine: name })}
-                              onClick={() => onPair({ id: m.id, name })}
-                            >
-                              {nextWord("cloudPair")}
-                            </button>
-                          )}
+                      {/* The row and its controls are siblings: nesting buttons
+                         would be invalid, while a disabled unpaired row must
+                         leave Pair, Rename and Forget in the focus order. */}
+                      <div
+                        className="cloud-machine-actions"
+                        role="group"
+                        aria-label={nextWord("cloudMachineActions", { machine: name })}
+                      >
+                        {pairable && (
                           <button
-                            className="cloud-rename"
+                            className="cloud-pair"
                             type="button"
-                            data-rename={m.id}
+                            data-pair={m.id}
                             disabled={forgetting || renaming}
-                            title={nextWord("cloudRenameOne", { machine: name })}
-                            aria-label={nextWord("cloudRenameOne", { machine: name })}
-                            onClick={() => onName(m)}
+                            title={nextWord("cloudPairOne", { machine: name })}
+                            aria-label={nextWord("cloudPairOne", { machine: name })}
+                            onClick={() => onPair({ id: m.id, name })}
                           >
-                            <span aria-hidden="true">✎</span>
+                            {nextWord("cloudPair")}
                           </button>
-                          <button
-                            className="cloud-forget"
-                            type="button"
-                            data-forget={m.id}
-                            disabled={forgetting}
-                            title={nextWord("cloudForgetOne", { machine: name })}
-                            aria-label={nextWord("cloudForgetOne", { machine: name })}
-                            onClick={() => onAsk(m)}
-                          >
-                            <span aria-hidden="true">×</span>
-                          </button>
-                        </div>
-                      )}
+                        )}
+                        <button
+                          className="cloud-rename"
+                          type="button"
+                          data-rename={m.id}
+                          disabled={forgetting || renaming}
+                          title={nextWord("cloudRenameOne", { machine: name })}
+                          aria-label={nextWord("cloudRenameOne", { machine: name })}
+                          onClick={() => onName(m)}
+                        >
+                          <span aria-hidden="true">✎</span>
+                        </button>
+                        <button
+                          className="cloud-forget"
+                          type="button"
+                          data-forget={m.id}
+                          disabled={forgetting}
+                          title={nextWord("cloudForgetOne", { machine: name })}
+                          aria-label={nextWord("cloudForgetOne", { machine: name })}
+                          onClick={() => onAsk(m)}
+                        >
+                          <span aria-hidden="true">×</span>
+                        </button>
+                      </div>
                     </li>
                   )
                 })}

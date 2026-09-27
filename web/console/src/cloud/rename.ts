@@ -18,7 +18,7 @@
  *    network.
  * 3. **The machine list this console draws is not this API's.** It is what the
  *    relay client decrypted from what the machines themselves published, the
- *    same reason a forgotten machine stays on it (`forget.ts`). So a rename
+ *    same reason a forgotten machine's snapshot can outlive it (`forget.ts`). So a rename
  *    that worked shows the old name until that machine reports in again, and
  *    the page says so instead of redrawing a row it has no new answer for.
  *

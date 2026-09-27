@@ -149,8 +149,6 @@
 }
 .cloud-machines .cloud-rename:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); border-color: var(--line); }
 .cloud-machines .cloud-rename:disabled { opacity: 0.4; cursor: default; }
-.cloud-machines li[data-forgotten] > button:first-child { text-decoration: line-through; }
-.cloud-machines li[data-forgotten] .cloud-machine-facts { text-decoration: none; color: #e09985; }
 
 .cloud-forget-ask .say {
     margin: 12px 0 0 0; color: var(--dim); font-size: 12.5px; line-height: 1.55;
