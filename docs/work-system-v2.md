@@ -597,8 +597,9 @@ A Session may ask a two-to-four-option decision only from an open Board item it 
 required on `POST /v1/orchestrator/decisions`; the daemon derives Project from that item and refuses
 a missing, unknown, closed, or differently owned source. The Board draws the open decision inside
 that item's card, after the item's description, so its question, safe default and answer controls
-never appear without the work that explains them. Rows persisted before this invariant remain in a
-closed compatibility fold and are labelled as unlinked old data instead of being silently hidden.
+never appear without the work that explains them. Store upgrade removes rows persisted before this
+invariant when they have no `work_id`, and the database then rejects any new question without one;
+linked questions and their answers remain unchanged.
 
 ## 11. Session to-do panel
 

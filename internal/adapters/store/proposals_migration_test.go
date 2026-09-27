@@ -78,3 +78,60 @@ VALUES ('proposal', 'line', 'root', 'session', '/project', 'Checked condition',
 		t.Fatalf("migrated resolution: %+v", got)
 	}
 }
+
+// Questions written before work_id became mandatory have no Board context to
+// present to a person. Opening that store removes only those rows, keeps every
+// linked answer, and leaves a schema that cannot admit another unlinked row.
+func TestOpeningAnOlderDecisionTableRemovesOnlyUnlinkedQuestions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE decisions (
+  id TEXT PRIMARY KEY, session TEXT NOT NULL, work_id TEXT, task_id TEXT,
+  project TEXT NOT NULL DEFAULT '', question TEXT NOT NULL, options TEXT NOT NULL,
+  default_option TEXT NOT NULL, blocking INTEGER NOT NULL, state TEXT NOT NULL,
+  answer TEXT, answered_by TEXT, answered_at INTEGER, created_at INTEGER NOT NULL,
+  due_at INTEGER NOT NULL, push TEXT NOT NULL, pushed_at INTEGER,
+  version INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO decisions
+  (id,session,work_id,project,question,options,default_option,blocking,state,answer,answered_by,
+   answered_at,created_at,due_at,push)
+VALUES
+  ('unlinked-null','session-a',NULL,'/p','Old question','[{"id":"yes","label":"Yes"}]','yes',0,
+   'open',NULL,NULL,NULL,10,20,'none'),
+  ('unlinked-blank','session-a','','/p','Blank question','[{"id":"yes","label":"Yes"}]','yes',0,
+   'open',NULL,NULL,NULL,11,21,'none'),
+  ('linked','session-a','work-a','/p','Kept answer','[{"id":"yes","label":"Yes"}]','yes',0,
+   'answered','yes','person',30,12,22,'none');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	rows, err := st.Decisions(ctx, DecisionQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != "linked" || rows[0].Answer != "yes" {
+		t.Fatalf("linked decision after cleanup: %+v", rows)
+	}
+	for _, workID := range []any{nil, ""} {
+		_, err = st.db.Exec(`INSERT INTO decisions
+  (id,session,work_id,project,question,options,default_option,blocking,state,created_at,due_at,push)
+VALUES ('again','session-a',?,'/p','No context','[]','yes',0,'open',40,50,'none')`, workID)
+		if err == nil {
+			t.Fatalf("work_id %v was accepted by the migrated schema", workID)
+		}
+	}
+}

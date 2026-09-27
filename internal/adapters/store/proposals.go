@@ -30,8 +30,11 @@ import (
 //     or the week, so a digest is written once however many passes see it
 //     due.
 //
-// Answered proposals and closed decisions are a person's answers — evidence —
-// and are kept, like `moves`, on store.db. What waits for a person is bounded
+// Answered proposals and closed decisions that belong to work are a person's
+// answers — evidence — and are kept, like `moves`, on store.db. Rows from the
+// retired question path that name no work are removed when the store opens;
+// without their Board item they have no context and no longer have a reader.
+// What waits for a person is bounded
 // by its own register row (proposals.open, decisions.open), and each has an
 // exit that needs nobody: a proposal's wait, a decision's due.
 
@@ -81,7 +84,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS proposals_one_pending ON proposals(work_id) WH
 CREATE TABLE IF NOT EXISTS decisions (
   id             TEXT    PRIMARY KEY,
   session        TEXT    NOT NULL CHECK (session <> ''),
-  work_id        TEXT,
+  work_id        TEXT    NOT NULL CHECK (work_id <> ''),
   task_id        TEXT,
   project        TEXT    NOT NULL DEFAULT '',
   question       TEXT    NOT NULL CHECK (question <> ''),
@@ -152,8 +155,50 @@ func openParticipation(db *sql.DB) error {
 	if err := widenProposalStates(db); err != nil {
 		return err
 	}
-	_, err := db.Exec(participationSchema)
-	return err
+	if _, err := db.Exec(participationSchema); err != nil {
+		return err
+	}
+	return requireDecisionWorkIDs(db)
+}
+
+// requireDecisionWorkIDs removes the last rows written before every question
+// had to name the Board item that explains it, then makes that invariant true
+// in SQLite as well as in OpenDecision. The rebuild is intentionally narrower
+// than a general participation reset: every linked question and its answer is
+// copied byte for byte, while only NULL or blank work_id rows are left behind.
+func requireDecisionWorkIDs(db *sql.DB) error {
+	var ddl string
+	err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'decisions'`).Scan(&ddl)
+	if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "CHECK (work_id <> '')")) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	steps := []string{
+		`ALTER TABLE decisions RENAME TO decisions_before_work_required`,
+		`DROP INDEX IF EXISTS decisions_state`,
+		`DROP INDEX IF EXISTS decisions_work`,
+		`DROP INDEX IF EXISTS decisions_push`,
+		participationSchema,
+		`INSERT INTO decisions (id, session, work_id, task_id, project, question, options, default_option,
+			blocking, state, answer, answered_by, answered_at, created_at, due_at, push, pushed_at, version)
+		 SELECT id, session, work_id, task_id, project, question, options, default_option,
+			blocking, state, answer, answered_by, answered_at, created_at, due_at, push, pushed_at, version
+		 FROM decisions_before_work_required WHERE work_id IS NOT NULL AND TRIM(work_id) <> ''`,
+		`DROP TABLE decisions_before_work_required`,
+	}
+	for _, step := range steps {
+		if _, err := tx.Exec(step); err != nil {
+			return fmt.Errorf("decisions.work_id: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 // widenProposalStates lets a store made before withdrawal or resolution

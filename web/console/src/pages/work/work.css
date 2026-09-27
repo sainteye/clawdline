@@ -100,8 +100,6 @@
 .work-proposal-detail dt { color: var(--faint); font: 10px/1.5 var(--mono); }
 .work-proposal-detail dd { margin: 0; color: var(--dim); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .work-proposal-actions { justify-content: flex-end; padding-top: 1px; }
-.work-legacy-decisions { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
-
 /* The board's four regions, top to bottom. */
 .work-section { margin-top: 28px; }
 .work-section-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; }

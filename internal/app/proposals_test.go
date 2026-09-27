@@ -672,7 +672,7 @@ func TestUnansweredDefaultsStand(t *testing.T) {
 		t.Fatalf("a late answer: %+v %v", late, err)
 	}
 	// A push recorded and never given an outcome.
-	stuck := work.Decision{ID: newWorkID(), Session: theRoot, Question: "stuck?", Options: []work.Option{{ID: "a", Label: "a"},
+	stuck := work.Decision{ID: newWorkID(), Session: theRoot, WorkID: tracked.Item.ID, Question: "stuck?", Options: []work.Option{{ID: "a", Label: "a"},
 		{ID: "b", Label: "b"}}, Default: "a", Blocking: true, State: work.DecisionOpen, CreatedAt: clock.at,
 		DueAt: clock.at.Add(time.Hour), Push: work.PushPending}
 	if err := st.WriteWork(ctx, func(tx *store.WorkTx) error { return tx.PutDecision(stuck, nil, 0) }); err != nil {

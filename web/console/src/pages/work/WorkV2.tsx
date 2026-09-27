@@ -26,7 +26,7 @@ import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import { completeConfirmWords } from "./complete-item.js"
-import { decisionsForWorkItem, proposalsForProject, unattachedDecisions } from "./board-attention.js"
+import { decisionsForWorkItem, proposalsForProject } from "./board-attention.js"
 import {
   answerDecision,
   assignNewWorkV2,
@@ -188,7 +188,6 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const unassigned = items.filter((item) => item.area === "unassigned" && !item.closed_at)
   const done = items.filter((item) => item.closed_at)
   const visibleProposals = proposalsForProject(proposals, project)
-  const legacyDecisions = unattachedDecisions(decisions)
   const familyView = useMemo<EpicFamilyView>(() => ({ rows: family.rows, truncated: family.truncated, onBoard: new Set(items.map((item) => item.id)) }),
     [family, items])
 
@@ -219,7 +218,6 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {truncated && <p className="work-note" role="status">符合項目超過 100 筆，請縮小搜尋或 Project 範圍。</p>}
       {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
-      {legacyDecisions.length > 0 && <LegacyDecisions decisions={legacyDecisions} busy={busy} run={run} />}
       <BoardRegion title="規劃區" items={planning} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
       <BoardRegion title="待指派" items={unassigned} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
       {PHASES.map((phase) => <BoardRegion key={phase} title={phaseName(phase)}
@@ -405,29 +403,15 @@ function ProposalQueue({ proposals, items, places, busy, run }: {
   </details>
 }
 
-/** Old persisted rows remain answerable, but are visibly an integrity case. */
-function LegacyDecisions({ decisions, busy, run }: {
-  decisions: Decision[]
-  busy: string
-  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
-}) {
-  return <details className="work-fold work-legacy-decisions">
-    <summary><strong>未連結的舊問題</strong><span className="work-count">{decisions.length}</span>
-      <span className="work-fold-hint">這些舊資料沒有記下所屬看板項目</span></summary>
-    <div className="work-fold-body"><WorkItemDecisions decisions={decisions} busy={!!busy} run={run} legacy /></div>
-  </details>
-}
-
 /** A person's answer is part of its item, immediately after the item's scope. */
-function WorkItemDecisions({ decisions, busy, run, legacy = false }: {
+function WorkItemDecisions({ decisions, busy, run }: {
   decisions: Decision[]
   busy: boolean
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
-  legacy?: boolean
 }) {
   if (!decisions.length) return null
-  return <section className="work-item-decisions" aria-label={legacy ? "未連結的舊問題" : "這個項目需要你回答的問題"}>
-    {!legacy && <div className="work-item-decisions-head"><strong>需要你決定</strong><span>{decisions.length}</span></div>}
+  return <section className="work-item-decisions" aria-label="這個項目需要你回答的問題">
+    <div className="work-item-decisions-head"><strong>需要你決定</strong><span>{decisions.length}</span></div>
     {decisions.map((decision) => {
       const fallback = decision.options.find((option) => option.id === decision.default)?.label ?? decision.default
       return <div className="work-item-decision" key={decision.id} data-decision-id={decision.id}>
