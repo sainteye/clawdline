@@ -59,6 +59,9 @@ type workV2ItemWire struct {
 	OwnerSession     *string               `json:"owner_session"`
 	CreatedBy        string                `json:"created_by"`
 	CreatedVia       *workV2CreatedViaWire `json:"created_via,omitempty"`
+	// ParentID is the Epic this item was broken out of by the Epic's owner
+	// Session; absent for every other item.
+	ParentID string `json:"parent_id,omitempty"`
 	// ClaimedVia is the person's message the owning Session claimed the item
 	// on; absent when the person assigned it, or nobody holds it.
 	ClaimedVia  *workV2CreatedViaWire  `json:"claimed_via,omitempty"`
@@ -82,6 +85,10 @@ type workV2CreatedViaWire struct {
 	SessionID string `json:"session_id"`
 	At        int64  `json:"at"`
 	Excerpt   string `json:"excerpt,omitempty"`
+	// EpicID names the Epic whose owner Session created the item; such an
+	// item carries no run, because the person's assignment of the Epic is its
+	// authority.
+	EpicID string `json:"epic_id,omitempty"`
 }
 
 type workV2ImageWire struct {
@@ -197,6 +204,45 @@ func workV2EpicInstruction(id string) string {
 		"daemon refuses until a review newer than the latest plan is recorded. `clawdline guide epic` has the whole procedure."
 }
 
+// workV2EpicChildrenInstruction is the exception an Epic's owner holds to
+// "do not create Board items" (work-system-v2 §6.5): once its reviewed plan
+// has taken it into implementing, it may break the Epic into Feature and
+// Issue items and hand them to other Sessions, and it stays responsible for
+// the whole. The daemon refuses a child before implementing
+// (epic_not_planned) and the Epic's done while a child is open
+// (epic_children_open).
+func workV2EpicChildrenInstruction(id string) string {
+	return "After the reviewed plan, when parts of this Epic are better done by other Sessions, you may break it into " +
+		"Feature and Issue items and assign them: `clawdline item child " + id + " --kind feature|issue --title \"…\" " +
+		"[--step \"…\"]… --description-file <file> [--assign-terminal <terminal id> | --assign-new]` (terminal ids are in the " +
+		"session address book, `clawdline guide send`; without an --assign flag the item waits for the person), and " +
+		"`clawdline item assign <child id> --terminal <id> | --new` to hand one to another Session. You remain responsible " +
+		"for the Epic: follow every child to done, integrate their work, and move the Epic to done only when all its " +
+		"children are closed — the daemon refuses done while one is open. Create no other Board items."
+}
+
+// workV2CreateRule is what an owner is told about creating Board items: an
+// Epic's owner may create the Epic's children; every other owner creates none.
+func workV2CreateRule(id string, kind work.Kind) string {
+	if kind == work.KindEpic {
+		return workV2EpicChildrenInstruction(id)
+	}
+	return "Do not create Board items."
+}
+
+// workV2RootConstraints is the Constraints of the Root Assignment a new
+// Session is opened with for an item.
+func workV2RootConstraints(id string, kind work.Kind) string {
+	return "Own only this Board item. " + workV2CreateRule(id, kind)
+}
+
+// workV2ParentNote is what the owner of an Epic's child is told about the
+// Epic it belongs to: the Epic's owner broke it out and follows it to done.
+func workV2ParentNote(parent work.ItemV2) string {
+	return fmt.Sprintf("This item is part of Epic %s: %s; that Epic's owner Session created it and follows it to done, "+
+		"so keep its phase and steps current.", parent.ID, parent.Title)
+}
+
 // workV2KindSteps is the steps instruction for the item's kind: an Epic
 // always has steps, so it gets the Epic procedure instead.
 func workV2KindSteps(id string, kind work.Kind) string {
@@ -209,16 +255,17 @@ func workV2KindSteps(id string, kind work.Kind) string {
 // workV2AssignmentBrief is what an existing Session is sent when it is
 // assigned an item.
 func workV2AssignmentBrief(id, title string, kind work.Kind) string {
-	return fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items. %s %s %s", id, title,
-		workV2KindSteps(id, kind), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
+	return fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it. %s %s %s %s", id, title,
+		workV2CreateRule(id, kind), workV2KindSteps(id, kind), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
 }
 
 // workV2ReassignmentBrief is what an existing Session is sent when the person
 // moves an item to it from another Session: the item is mid-flight, so it is
 // told to continue from what is recorded rather than start over.
 func workV2ReassignmentBrief(id, title string, kind work.Kind, phase work.Phase) string {
-	return fmt.Sprintf("Clawdline reassigned Board item %s: %s to you. %s %s %s %s", id, title,
-		workV2TakeoverNote(phase), workV2KindSteps(id, kind), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
+	return fmt.Sprintf("Clawdline reassigned Board item %s: %s to you. %s %s %s %s %s", id, title,
+		workV2TakeoverNote(phase), workV2CreateRule(id, kind), workV2KindSteps(id, kind), workV2PhaseInstruction(id),
+		workV2CompletionReportInstruction)
 }
 
 // workV2TakeoverNote says what a Session taking an item over from another one
@@ -364,9 +411,11 @@ func (s *Server) workV2ItemOf(ctx context.Context, v app.WorkV2View) workV2ItemW
 		Phase: string(i.Phase), Condition: optionalString(string(i.Condition)), UserAction: i.UserAction, Area: i.Area(),
 		DeploymentPolicy: string(i.DeploymentPolicy), OwnerSession: optionalString(i.OwnerSession),
 		CreatedBy: i.CreatedBy, CreatedAt: i.CreatedAt.Unix(), UpdatedAt: i.UpdatedAt.Unix(),
-		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, Version: i.Version}
+		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, Version: i.Version, ParentID: i.ParentID}
 	if via := i.CreatedVia; via != nil && strings.HasPrefix(i.CreatedBy, work.ActorViaSession) {
 		out.CreatedVia = &workV2CreatedViaWire{Run: via.Run, SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
+	} else if via != nil && via.Epic != "" && strings.HasPrefix(i.CreatedBy, work.ActorEpicOwner) {
+		out.CreatedVia = &workV2CreatedViaWire{SessionID: via.Session, At: via.At, EpicID: via.Epic}
 	}
 	claim := v.Claim
 	for _, a := range v.Assignments {
@@ -1056,6 +1105,24 @@ func workV2ReminderError(err error) error {
 
 func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected int64, mode, terminalID, assistant, model string,
 	file app.WorkV2Filer) (app.WorkV2View, error) {
+	return s.assignWorkV2By(ctx, id, actor, "", expected, mode, terminalID, assistant, model, file)
+}
+
+// workV2ParentOf is the Epic an item was broken out of, when it has one and
+// it can be read.
+func (s *Server) workV2ParentOf(ctx context.Context, item work.ItemV2) (work.ItemV2, bool) {
+	if item.ParentID == "" {
+		return work.ItemV2{}, false
+	}
+	parent, err := s.workV2().Item(ctx, item.ParentID)
+	return parent.Item, err == nil
+}
+
+// assignWorkV2By is assignWorkV2 made by the owner Session of the item's
+// parent Epic when epicOwner names it (the owner check is inside the
+// assignment's transaction), and by a person when it is empty.
+func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string, expected int64, mode, terminalID, assistant, model string,
+	file app.WorkV2Filer) (app.WorkV2View, error) {
 	if mode == "existing_session" {
 		sess, err := s.actions().Find(ctx, terminalID)
 		if err != nil {
@@ -1074,7 +1141,8 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 				Message: "That Session already owns this item; choose another Session, or remind it instead."}
 		}
 		assigned, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
-			SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant), Actor: actor}, false, nil)
+			SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant), Actor: actor,
+			EpicOwner: epicOwner}, false, nil)
 		if err != nil {
 			return app.WorkV2View{}, err
 		}
@@ -1086,6 +1154,9 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		if previous.ID != "" {
 			brief = workV2ReassignmentBrief(id, item.Item.Title, item.Item.Kind, assigned.Item.Phase)
 			s.tellReleasedOwner(ctx, previous, id, item.Item.Title)
+		}
+		if parent, ok := s.workV2ParentOf(ctx, item.Item); ok {
+			brief += " " + workV2ParentNote(parent)
 		}
 		if _, sendErr := s.actions().SendIfIdle(ctx, sess.ID, brief); sendErr != nil {
 			refusal, deferred := sendErr.(app.Refusal)
@@ -1132,17 +1203,22 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 	if previous.ID != "" {
 		scope = workV2TakeoverNote(item.Item.Phase) + "\n\n" + scope
 	}
+	references := "Board item: " + item.Item.ID
+	if parent, ok := s.workV2ParentOf(ctx, item.Item); ok {
+		scope = workV2ParentNote(parent) + "\n\n" + scope
+		references += "; parent Epic: " + parent.ID
+	}
 	assignmentID, requestID := newWorkV2UUID(), newWorkV2UUID()
 	pending, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
-		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID}, true, nil)
+		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID, EpicOwner: epicOwner}, true, nil)
 	if err != nil {
 		return app.WorkV2View{}, err
 	}
 	ra, _, openErr := s.broker.OpenRootAssignment(ctx, requestID, orchestrator.RootAssignmentRequest{
 		RequestID: requestID, Assistant: assistant, Model: model, ProjectDir: item.Item.ProjectPath,
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
-			Scope: scope, Constraints: "Own only this Board item. Do not create Board items.",
-			RelevantReferences: "Board item: " + item.Item.ID,
+			Scope: scope, Constraints: workV2RootConstraints(item.Item.ID, item.Item.Kind),
+			RelevantReferences: references,
 			Acceptance:         workV2RootAssignmentAcceptance(item.Item.ID, item.Item.Kind)}})
 	failure, resolvedTerminal, resolvedSession := "", "", ""
 	if openErr != nil {
@@ -1489,6 +1565,14 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write(answer)
+		return
+	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "children" && r.Method == http.MethodPost {
+		s.agentCreateEpicChild(w, r, parts[1])
+		return
+	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "assign" && r.Method == http.MethodPost {
+		s.agentAssignEpicChild(w, r, parts[1])
 		return
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "claim" && r.Method == http.MethodPost {
@@ -1998,6 +2082,147 @@ func (s *Server) agentClaimItem(w http.ResponseWriter, r *http.Request, id strin
 	var answer []byte
 	_, err = s.workV2().ClaimFromSession(r.Context(), id, app.ClaimWorkV2{Run: *run, ExpectedVersion: body.ExpectedVersion,
 		SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant)},
+		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+		})
+	if err != nil {
+		refuse(err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
+}
+
+// workV2EpicAssignRequest is how an Epic's owner hands a child item to a
+// Session: an existing one by terminal id, or a new one it asks Clawdline to
+// open — the same two choices a person has.
+type workV2EpicAssignRequest struct {
+	Mode       string `json:"mode"`
+	TerminalID string `json:"terminal_id"`
+	Assistant  string `json:"assistant"`
+	Model      string `json:"model"`
+}
+
+// check refuses a malformed choice before anything is written.
+func (a workV2EpicAssignRequest) check() error {
+	switch {
+	case a.Mode == "existing_session" && strings.TrimSpace(a.TerminalID) != "":
+	case a.Mode == "new_session" && (a.Assistant == "" || a.Assistant == "codex" || a.Assistant == "claude"):
+	default:
+		return &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assignment",
+			Message: "assign is {\"mode\":\"existing_session\",\"terminal_id\":…} or {\"mode\":\"new_session\",\"assistant\":\"claude\"|\"codex\"}; nothing was created."}
+	}
+	return nil
+}
+
+// agentCreateEpicChild is POST /v1/work/v2/agent/items/<epic id>/children:
+// the owner Session of an Epic breaking it into a Feature or Issue item and,
+// optionally, assigning that item to a Session (work-system-v2 §6.5). The
+// person's assignment of the Epic is the authority, so no run is named; the
+// owner, kind, plan-gate and per-Epic bounds are checked where the item is
+// written. The item is created first, whole, and then assigned: when the
+// assignment fails the item stays, unassigned, and the answer says so with
+// the assignment's refusal code rather than pretending nothing happened.
+// The receipt is filed only once both are known, so a replay answers the same.
+func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, epicID string) {
+	var body struct {
+		ExpectedVersion  int64                    `json:"expected_version"`
+		SessionID        string                   `json:"session_id"`
+		Kind             string                   `json:"kind"`
+		Title            string                   `json:"title"`
+		Description      string                   `json:"description"`
+		DeploymentPolicy string                   `json:"deployment_policy"`
+		Steps            []string                 `json:"steps"`
+		Assign           *workV2EpicAssignRequest `json:"assign"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+	if !ok {
+		return
+	}
+	refuse := func(err error) {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		s.writeWorkV2Error(w, err)
+	}
+	if body.Assign != nil {
+		if err := body.Assign.check(); err != nil {
+			refuse(err)
+			return
+		}
+	}
+	created, err := s.workV2().CreateEpicChild(r.Context(), app.NewEpicChildV2{EpicID: epicID,
+		ExpectedVersion: body.ExpectedVersion, SessionID: body.SessionID, Kind: work.Kind(body.Kind), Title: body.Title,
+		Description: body.Description, DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps})
+	if err != nil {
+		refuse(err)
+		return
+	}
+	answer := map[string]any{"ok": true, "assigned": false}
+	if a := body.Assign; a != nil {
+		_, assignErr := s.assignWorkV2By(r.Context(), created.Item.ID, work.EpicOwnerActor(body.SessionID), body.SessionID,
+			created.Item.Version, a.Mode, a.TerminalID, a.Assistant, a.Model, nil)
+		if assignErr != nil {
+			code, message := "assignment_failed", assignErr.Error()
+			var we *app.WorkError
+			if errors.As(assignErr, &we) {
+				code, message = we.Code, we.Message
+			}
+			answer["assignment_error"] = map[string]string{"code": code, "message": message}
+		} else {
+			answer["assigned"] = true
+		}
+	}
+	view := created
+	if fresh, err := s.workV2().Item(r.Context(), created.Item.ID); err == nil {
+		view = fresh
+	}
+	answer["item"] = s.workV2ItemOf(r.Context(), view)
+	b, _ := json.Marshal(answer)
+	if err := s.store.CompleteReceipt(context.WithoutCancel(r.Context()), k,
+		store.ReceiptAnswer{Status: http.StatusCreated, Body: b}); err != nil {
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write(b)
+}
+
+// agentAssignEpicChild is POST /v1/work/v2/agent/items/<child id>/assign: the
+// owner Session of an item's parent Epic (re)assigning that open child to a
+// Session, existing or new, through the same assignment a person's choice
+// makes. The owner check runs inside the assignment's transaction; an item
+// with no parent Epic is refused not_epic_child and stays the person's to
+// assign.
+func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id string) {
+	var body struct {
+		ExpectedVersion int64  `json:"expected_version"`
+		SessionID       string `json:"session_id"`
+		workV2EpicAssignRequest
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+	if !ok {
+		return
+	}
+	refuse := func(err error) {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		s.writeWorkV2Error(w, err)
+	}
+	if err := body.check(); err != nil {
+		refuse(err)
+		return
+	}
+	var answer []byte
+	_, err := s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, body.ExpectedVersion,
+		body.Mode, body.TerminalID, body.Assistant, body.Model,
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
 			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true

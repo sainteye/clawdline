@@ -51,6 +51,20 @@ and is refused by both existing-Session and new-Session assignment routes. No ex
 assignment is made. (Amended 2026-09-27: an Epic is executable and appears in Unassigned; before it
 enters `implementing` it needs a `plan` and a newer `plan_review` — work-system-v2 §6.4.)
 
+### WS2-C02E — An Epic's owner breaks it into child items
+
+Given an Epic assigned to Session A and moved to `implementing` after its reviewed plan, Session A
+creates a Feature under it assigned to Session B's terminal and an Issue left unassigned. Both
+appear with `parent_id` = the Epic, in the Epic's Project, marked as created by the Epic's owner;
+Session B receives the brief naming the Epic; the Issue waits in Unassigned. Session A's
+`phase done` on the Epic is refused `epic_children_open` until both are done or cancelled.
+
+Negative controls: Session B creating a child (`not_epic_owner`); a child of a Feature
+(`parent_not_epic`); a child while the Epic is `assigned` (`epic_not_planned`); an `epic`, `plan` or
+`refactor` child (`child_kind_not_allowed`); the thirty-third child (`epic_children_full`); Session
+A assigning an item that is no Epic's child (`not_epic_child`). None writes anything. A failed
+new-Session assignment leaves the child unassigned and the answer names `assignment_error`.
+
 ### WS2-C03 — Every card carries the Project presentation
 
 Given two Projects with different icon grids and equal item titles, all-Projects and Project-scoped

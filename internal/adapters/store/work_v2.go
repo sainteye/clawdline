@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS work_v2_items (
   closed_at         INTEGER,
   cycle             INTEGER NOT NULL DEFAULT 1,
   version           INTEGER NOT NULL DEFAULT 1,
-  created_via       TEXT NOT NULL DEFAULT ''
+  created_via       TEXT NOT NULL DEFAULT '',
+  parent_id         TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS work_v2_items_project ON work_v2_items(project_id, updated_at DESC, id);
 CREATE INDEX IF NOT EXISTS work_v2_items_owner ON work_v2_items(owner_session, phase, updated_at DESC)
@@ -219,6 +220,21 @@ func openWorkV2(db *sql.DB) error {
 			return err
 		}
 	}
+	// parent_id is the Epic an item was broken out of by the Epic's owner
+	// Session; items written before it have none. The index is made here,
+	// after the column exists, not in the schema: on an old store the schema
+	// runs before this column is added.
+	if has, err = hasColumn(db, "work_v2_items", "parent_id"); err != nil {
+		return err
+	} else if !has {
+		if _, err = db.Exec(`ALTER TABLE work_v2_items ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if _, err = db.Exec(`CREATE INDEX IF NOT EXISTS work_v2_items_parent ON work_v2_items(parent_id, phase)
+    WHERE parent_id <> ''`); err != nil {
+		return err
+	}
 	if err := migrateWorkV2DocumentRoles(db); err != nil {
 		return err
 	}
@@ -311,10 +327,10 @@ func (t *WorkV2Tx) AddEffect(e Effect) (int64, error) {
 }
 
 const workV2Columns = `id, project_id, project_path, kind, title, description, phase, condition, user_action,
-  deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version, created_via`
+  deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version, created_via, parent_id`
 
 const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description, i.phase, i.condition, i.user_action,
-  i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle, i.version, i.created_via`
+  i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle, i.version, i.created_via, i.parent_id`
 
 func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	var i work.ItemV2
@@ -323,7 +339,7 @@ func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	var via string
 	err := sc.Scan(&i.ID, &i.ProjectID, &i.ProjectPath, &i.Kind, &i.Title, &i.Description, &i.Phase,
 		&i.Condition, &i.UserAction, &i.DeploymentPolicy, &i.OwnerSession, &i.CreatedBy, &created, &updated, &closed,
-		&i.Cycle, &i.Version, &via)
+		&i.Cycle, &i.Version, &via, &i.ParentID)
 	if err == sql.ErrNoRows {
 		return work.ItemV2{}, ErrNoWorkV2
 	}
@@ -338,7 +354,7 @@ func scanWorkV2(sc scanner) (work.ItemV2, error) {
 		var v work.CreatedViaV2
 		// A column this daemon wrote and cannot read is kept out of the
 		// answer rather than failing the whole Board read.
-		if json.Unmarshal([]byte(via), &v) == nil && v.Run != "" {
+		if json.Unmarshal([]byte(via), &v) == nil && (v.Run != "" || v.Epic != "") {
 			i.CreatedVia = &v
 		}
 	}
@@ -401,17 +417,25 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_items
       (id, project_id, project_path, kind, title, description, phase, condition, user_action,
-       deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version, created_via)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+       deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version, created_via, parent_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
 		i.ID, i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.Phase, i.Condition,
 		i.UserAction, i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle, i.Version,
-		createdViaColumn(i.CreatedVia))
+		createdViaColumn(i.CreatedVia), i.ParentID)
 	if err != nil {
 		return err
 	}
 	t.wrote++
 	return t.AppendEvent(work.EventV2{WorkID: i.ID, Kind: "item.created", Actor: actor,
 		PreviousVersion: 0, NextVersion: i.Version, Payload: payload, At: i.CreatedAt})
+}
+
+// Children counts an Epic's child items: all of them, open or closed, and
+// the open ones among them.
+func (t *WorkV2Tx) Children(parentID string) (all, open int64, err error) {
+	err = t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*), COALESCE(SUM(CASE WHEN phase NOT IN ('done','cancelled') THEN 1 ELSE 0 END),0)
+    FROM work_v2_items WHERE parent_id = ?`, parentID).Scan(&all, &open)
+	return all, open, err
 }
 
 // ItemsCreatedBy counts every item, open or closed, whose creator is actor —

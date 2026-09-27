@@ -175,8 +175,14 @@ func TestAPlanReviewMustBeARealChildReview(t *testing.T) {
 	if err := addDoc(w, &epic, work.DocumentPlanReview, good.ID); err != nil {
 		t.Fatalf("a finished review of this plan: %v", err)
 	}
+	// Every document here has position 0, and the read orders ties by their
+	// random id, so the good review is found by its reference, not by index.
 	docs, err := w.Store.WorkV2Documents(ctx, epic.Item.ID)
-	if err != nil || len(docs) != 3 || docs[2].Reference != good.ID {
+	references := map[string]bool{}
+	for _, d := range docs {
+		references[d.Reference] = true
+	}
+	if err != nil || len(docs) != 3 || !references[good.ID] {
 		t.Fatalf("documents: %+v %v", docs, err)
 	}
 }

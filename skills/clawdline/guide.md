@@ -562,7 +562,8 @@ that it is rare. `--session <terminal>` makes a tap open that session.
 The board has three structures — board items, the Backlog, and each session's own to-do list — and
 **a person decides what goes on it**. A session creates a Board item only when the person's own
 message, sent through Clawdline, tells it to; otherwise it proposes. It never files a card on its
-own initiative.
+own initiative. The one exception is the owner of an Epic: after the Epic's reviewed plan it may
+break the Epic into Feature and Issue items and assign them to Sessions (`clawdline guide epic`).
 
 **TODO / 待辦 / 土度 said together with a Board item means that item's steps.** Put them on the
 item with `--step`. Do **not** also write them with `clawdline todo add`. `clawdline todo add` is
@@ -639,7 +640,8 @@ clawdline item claim <item id>
 
 Never claim an item on your own initiative — only the one the person's message names — and never
 use the person's `POST /v1/work/v2/items/<id>/assign`, which refuses a Session
-(`session_cannot_create_item`).
+(`session_cannot_create_item`). An Epic's owner assigns the Epic's own children with
+`clawdline item assign` (`clawdline guide epic`), and nothing else.
 
 **Propose a Board item.** The Board's **Agent proposals** queue is fed by one route:
 
@@ -905,6 +907,49 @@ are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and
 - `clawdline item phase <item id> implementing` on an Epic is refused `epic_plan_required` (no
   plan yet) or `epic_plan_review_required` (no review newer than the latest plan), `409` like the
   other transition refusals.
+
+**Break the Epic into child items, and hand them out.** This is the one exception to "a session
+creates a Board item only when the person's message tells it to" and to "only the person assigns
+items": the person assigned you the Epic, and that is the authority to break it up. After the
+reviewed plan has taken the Epic into `implementing`, when parts of it are better done by other
+Sessions, create Feature or Issue items under it and assign them:
+
+```
+clawdline item child <epic id> --kind feature|issue --title "…" [--step "…"]… \
+  [--description-file f | description on stdin] [--deploy policy] \
+  [--assign-terminal <terminal id> | --assign-new [--assistant claude|codex] [--model m]]
+clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant a] [--model m])
+```
+
+- Terminal ids are in the session address book, `GET /v1/orchestrator/sessions` (`clawdline guide
+  send`); the Session must work in the Epic's Project. You may assign a child to yourself, and
+  `--assign-new` opens a new Session with a Root Assignment that names the Epic. Without an
+  `--assign` flag the child waits unassigned for the person.
+- `item child` reads the Epic for its version, prints its Idempotency-Key (`--key` retries the same
+  write) and prints the child. It is `POST /v1/work/v2/agent/items/<epic id>/children` with
+  `{"expected_version", "session_id", "kind", "title", "description", "steps"?, "deployment_policy"?,
+  "assign"?: {"mode": "existing_session", "terminal_id"} | {"mode": "new_session", "assistant"?,
+  "model"?}}`, answered `201` with `{"item", "assigned", "assignment_error"?: {"code", "message"}}`.
+  The child is in the Epic's Project, carries `parent_id` (the Epic), and its card says the Epic's
+  owner Session created it. Its steps are your `--step` rows, or — when you give none — its
+  description's list once it is assigned.
+- The child is created first and assigned second. When the assignment fails the child **stays,
+  unassigned**, the answer carries `assignment_error` with the assignment's code
+  (`session_unavailable`, `project_mismatch`, `assignment_failed`, …), and the command exits 1:
+  assign it again with `item assign`, or leave it for the person.
+- `item assign` is `POST /v1/work/v2/agent/items/<child id>/assign` with `{"expected_version",
+  "session_id", "mode", "terminal_id"? | "assistant"?, "model"?}`; it moves an open child of your Epic
+  to another Session, the same assignment a person's choice makes.
+- Refusals, each writing nothing: `not_epic_owner` (you are not the Epic's owner), `parent_not_epic`
+  (the parent is not an Epic), `epic_not_planned` (the Epic is still before `implementing`: the
+  children come out of a reviewed plan), `item_terminal` (the Epic is finished),
+  `child_kind_not_allowed` (only `feature` or `issue`), `epic_children_full` (an Epic holds at most
+  32 children, open or closed), `not_epic_child` (`item assign` of an item that is no Epic's child —
+  the person assigns it), `invalid_assignment`, `version_conflict`.
+- **You remain responsible for the Epic.** Follow every child to done (`clawdline item steps <child
+  id>` reads one), integrate their work, and move the Epic to done only when every child is done or
+  cancelled: `clawdline item phase <epic id> done` is refused `epic_children_open`, naming how many
+  are open, until then. Create no Board item other than the Epic's children.
 
 ## 11. Coordination
 

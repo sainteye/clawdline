@@ -459,6 +459,10 @@ type AssignWorkV2 struct {
 	// Claim is the person's message a Session claims the item on
 	// (ClaimFromSession); nil for a person's own assignment.
 	Claim *work.CreatedViaV2
+	// EpicOwner is the Session assigning a child of the Epic it owns
+	// (epic_children.go); empty for a person's own assignment. The owner
+	// check is made inside the assignment's transaction.
+	EpicOwner string
 }
 
 func descriptionStepTitles(description string) []string {
@@ -537,6 +541,11 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		}
 		if c.Claim != nil {
 			if err := claimable(tx, prev, c.Actor); err != nil {
+				return err
+			}
+		}
+		if c.EpicOwner != "" {
+			if err := epicOwnerMayAssign(tx, prev, c.EpicOwner); err != nil {
 				return err
 			}
 		}
@@ -801,6 +810,15 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 			}
 			if err := work.EpicPlanGate(prev, c.Next, plans); err != nil {
 				return err
+			}
+			if c.Next == work.PhaseDone {
+				_, open, err := tx.Children(id)
+				if err != nil {
+					return err
+				}
+				if err := work.EpicDoneGate(prev, c.Next, open); err != nil {
+					return err
+				}
 			}
 		}
 		if c.Next == work.PhaseDone {

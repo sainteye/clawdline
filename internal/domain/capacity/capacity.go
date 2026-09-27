@@ -201,6 +201,7 @@ const (
 	ReportOpenTodoCharacters  = "session.report_open_todo_characters"
 	RunCreatedItems           = "run.created_items"
 	RunClaimedItems           = "run.claimed_items"
+	EpicChildItems            = "epic.child_items"
 	WorkRequestBodyBytes      = "work.request_body_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
@@ -729,6 +730,16 @@ func Register() []Entry {
 			Limit: 5, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app.runClaimLimit"},
+		},
+		{
+			// The child items one Epic's owner Session may break it into
+			// (work-system-v2 §6.5). Counted over every child of that Epic,
+			// open or closed; the thirty-third is refused epic_children_full
+			// and nothing is written.
+			Name: EpicChildItems, Class: Buffer, Unit: Rows,
+			Limit: 32, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/work.EpicChildLimit"},
 		},
 		{
 			Name: WorkRequestBodyBytes, Class: Buffer, Unit: Bytes,

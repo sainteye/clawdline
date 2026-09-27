@@ -40,12 +40,16 @@ and projects an assigned item into its owner's Session to-do panel.
    one machine-credential path is `POST /v1/work/v2/agent/items`, and it needs the run of a message
    the person sent that same Session through this daemon (§7.1). Task secrets never create one, and
    a person typing straight into a terminal leaves no run, so that case stays a proposal (§10).
+   *(Amended 2026-09-27:)* the owner Session of an Epic past its plan gate may also create Feature
+   and Issue items under that Epic (§6.5): the person's assignment of the Epic is the authority, so
+   no run is needed, and nothing else may be created that way.
 2. **Only a person assigns, reassigns, unassigns, deletes/cancels, completes by hand, or reopens an
    item.** An Agent may not
    appoint itself or another Session — except that an item created under §7.1 arrives assigned to
    the Session that relayed the person's message, and an item claimed under §7.2 is assigned to
    the Session the person's message told to take it, because that message is the person's
-   assignment. A person's completion (`POST /v1/work/v2/items/<id>/complete`, event
+   assignment — and *(amended 2026-09-27)* the owner Session of an Epic assigns and reassigns that
+   Epic's own open child items (§6.5), because the person assigned it the Epic. A person's completion (`POST /v1/work/v2/items/<id>/complete`, event
    `item.completed`) needs no evidence and is not refused by open steps, whose count it records; no
    Agent can retract it — only a person reopens it.
 3. **An Agent may propose, never promote.** A proposal is a previewable draft. It becomes a work
@@ -96,8 +100,9 @@ The closed kind vocabulary is:
 
 Planning items (Refactor and Plan) are retained and editable but do not acquire an owner or enter
 the execution lifecycle in v2.0. Epic was a planning kind until 2026-09-27; it became executable
-then, and Epics already in a store simply appear in Unassigned — nothing was migrated. Later work may create linked Feature/Issue items; it must not silently mutate a
-planning item into executable work.
+then, and Epics already in a store simply appear in Unassigned — nothing was migrated. An Epic's
+owner creates linked Feature/Issue items under it (§6.5); nothing silently mutates a planning item
+into executable work.
 
 The local `issue` kind is not a GitHub Issue and does not call GitHub. Any future external link is
 an explicit reference, not a synchronization contract.
@@ -312,12 +317,64 @@ review written in the same second keep the order they were written in. The brief
 receives — typed into an existing Session, or a new Session's Root Assignment acceptance — spell the
 procedure out, and `clawdline item add|claim` prints it when the item is an Epic.
 
+### 6.5 An Epic's owner breaks it into child items and hands them out
+
+*(Added 2026-09-27 by the owner: "the Session that holds an Epic has the power to create Feature and
+Issue items and assign them to other Sessions".)* An Epic is large and its owner plans it; the
+reviewed plan (§6.4) often says that parts of it are separate pieces of work better done by other
+Sessions. Until this change the owner could not act on that: a Session created an item only on a
+person's message (§7.1), the item was always assigned to the creating Session, only a person
+assigned items to Sessions, and a Root opened for an item was told "Do not create Board items". So
+the person assigning an Epic to a Session is now the authority for that Session to break it up —
+and only it:
+
+- `POST /v1/work/v2/agent/items/<epic id>/children` (`clawdline item child`) creates a Feature or
+  Issue under the Epic, and `POST /v1/work/v2/agent/items/<child id>/assign` (`clawdline item
+  assign`) (re)assigns an open child. Both need the Idempotency-Key and the machine credential, and
+  the caller's `session_id` must be the Epic's active owner (`not_epic_owner`).
+- The parent is an Epic (`parent_not_epic`), not terminal (`item_terminal`), and past its plan gate —
+  phase `implementing` or later — so the children come out of a reviewed plan (`epic_not_planned`).
+- A child is a `feature` or an `issue` (`child_kind_not_allowed`): an Epic inside an Epic, or a
+  Planning kind, is not a piece another Session can own and finish.
+- One Epic holds at most 32 children, open or closed (`epic_children_full`, capacity row
+  `epic.child_items`, limits N51): an Epic broken into more pieces than that is two Epics, and a
+  Session looping on the route is stopped.
+- The child is in the Epic's Project, records `parent_id` (the Epic; immutable, on the item wire as
+  `parent_id`), `created_by = epic_owner:<session id>`, and `created_via = {"session_id", "at",
+  "epic_id"}` with no run, so its card can say the Epic's owner Session created it. Its steps are the
+  explicit `steps`, or its description's list when it is assigned, as for any item. The Epic gains
+  an `epic.child_created` event.
+- Assignment reuses the person's assignment path — an existing Session by terminal id, which must
+  work in the Project, gets the typed brief and the assigned-item projection; a new Session gets a
+  Root Assignment — with the owner check inside the assignment's transaction and the actor recorded
+  as `epic_owner:<session id>`, a Session, never a person. Assigning a child to the Epic's owner
+  itself is allowed. The child's owner is told which Epic it belongs to.
+- Creation and assignment are two writes, in that order. When the assignment fails the child
+  **stays, unassigned** (a failed new-Session attempt is recorded as `assignment_failed`, as a
+  person's would be), and the `201` answer carries `assigned: false` and `assignment_error: {code,
+  message}` rather than pretending nothing happened. The idempotency receipt is filed only after
+  both are known, so a replay answers the same and creates nothing more.
+- An existing child moved by `…/assign` must have a parent Epic the caller owns; an item with no
+  parent is refused `not_epic_child` and stays the person's to assign.
+- The owner stays responsible for the Epic: the owning Agent's move of an Epic to `done` is refused
+  `409 epic_children_open`, naming how many children are open, until every child is done or
+  cancelled. A person's completion by hand (§2 invariant 2) is not gated: the person may close the
+  whole regardless.
+
+The Epic's owner is told all of this where it is told the Epic procedure: the Root Assignment's
+Constraints and acceptance and the assignment and reassignment briefs name `clawdline item child`
+and `clawdline item assign`, the address book the terminal ids come from, and the responsibility
+for the children. Every other owner's brief still says "Do not create Board items." Limits kept on
+purpose: a child cannot have children of its own through this route (it is never an Epic); the
+owner cannot cancel a child (a person can), and an Epic that is reassigned hands its children's
+coordination to the new owner, whose `session_id` then passes the check.
+
 ## 7. Authority
 
 | Operation | Person/device | Owning Agent | Other Agent | Broker/rule |
 | --- | ---: | ---: | ---: | ---: |
-| Create item | yes | yes, on the person's explicit message relayed by its run (§7.1); arrives assigned to itself | no | no |
-| Assign/reassign/unassign/delete (cancel) | yes | no | no | no |
+| Create item | yes | yes, on the person's explicit message relayed by its run (§7.1); arrives assigned to itself. An Epic's owner: Feature/Issue children of that Epic, after its plan gate (§6.5) | no | no |
+| Assign/reassign/unassign/delete (cancel) | yes | assign/reassign only, by an Epic's owner, of that Epic's open children (§6.5) | no | no |
 | Complete by hand (to `done` without evidence) | yes | no | no | no |
 | Reopen terminal work | yes | own just-completed `done` only, never a person's completion | no | no |
 | Change Project/kind/deployment policy | yes | no | no | no |
