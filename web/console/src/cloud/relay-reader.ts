@@ -801,7 +801,7 @@ export class RelayReader {
           return await this.machineRead(init?.signal, method, path, "work.digests", { kind: q.kind ?? "" })
         }
         case "/v1/work/v2/items": {
-          const q = this.only(url, path, "project", "status", "q")
+          const q = this.only(url, path, "project", "status", "q", "cursor")
           let project = q.project ?? ""
           if (project) {
             const client = this.connected()
@@ -820,10 +820,10 @@ export class RelayReader {
           }
           if (q.status !== undefined || q.q !== undefined) {
             return await this.machineRead(init?.signal, method, path, "work.v2.search", {
-              project, status: q.status ?? "open", query: q.q ?? "",
+              project, status: q.status ?? "open", query: q.q ?? "", cursor: q.cursor ?? "",
             })
           }
-          return await this.machineRead(init?.signal, method, path, "work.v2.items", { project })
+          return await this.machineRead(init?.signal, method, path, "work.v2.items", { project, cursor: q.cursor ?? "" })
         }
         case "/v1/work/v2/proposals": {
           const q = this.only(url, path, "state")

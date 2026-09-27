@@ -1,0 +1,117 @@
+{
+  "seed": "persona-exp-2026-r5-codex",
+  "runs": [
+    {
+      "id": "53e1d44c",
+      "order": 1,
+      "role": "performance",
+      "arm": "rewrite-vague",
+      "rep": 1
+    },
+    {
+      "id": "e9f0453b",
+      "order": 2,
+      "role": "performance",
+      "arm": "rewrite-vague",
+      "rep": 2
+    },
+    {
+      "id": "937b8e9a",
+      "order": 3,
+      "role": "security",
+      "arm": "upstream-vague",
+      "rep": 2
+    },
+    {
+      "id": "f6627f95",
+      "order": 4,
+      "role": "security",
+      "arm": "upstream-vague",
+      "rep": 1
+    },
+    {
+      "id": "f90f84e4",
+      "order": 5,
+      "role": "security",
+      "arm": "rewrite-vague",
+      "rep": 1
+    },
+    {
+      "id": "3600ba02",
+      "order": 6,
+      "role": "security",
+      "arm": "none-brief",
+      "rep": 2
+    },
+    {
+      "id": "470caea8",
+      "order": 7,
+      "role": "performance",
+      "arm": "upstream-vague",
+      "rep": 1
+    },
+    {
+      "id": "f63aeab7",
+      "order": 8,
+      "role": "security",
+      "arm": "none-vague",
+      "rep": 2
+    },
+    {
+      "id": "89b9f5c1",
+      "order": 9,
+      "role": "performance",
+      "arm": "none-brief",
+      "rep": 1
+    },
+    {
+      "id": "4797e964",
+      "order": 10,
+      "role": "security",
+      "arm": "none-vague",
+      "rep": 1
+    },
+    {
+      "id": "6538c83a",
+      "order": 11,
+      "role": "performance",
+      "arm": "none-vague",
+      "rep": 2
+    },
+    {
+      "id": "4d10a1e8",
+      "order": 12,
+      "role": "performance",
+      "arm": "none-vague",
+      "rep": 1
+    },
+    {
+      "id": "58f188ca",
+      "order": 13,
+      "role": "security",
+      "arm": "rewrite-vague",
+      "rep": 2
+    },
+    {
+      "id": "0166a720",
+      "order": 14,
+      "role": "performance",
+      "arm": "none-brief",
+      "rep": 2
+    },
+    {
+      "id": "d23c259a",
+      "order": 15,
+      "role": "performance",
+      "arm": "upstream-vague",
+      "rep": 2
+    },
+    {
+      "id": "e412eb98",
+      "order": 16,
+      "role": "security",
+      "arm": "none-brief",
+      "rep": 1
+    }
+  ]
+}

@@ -28,12 +28,15 @@ n = 2 per arm is a demonstration, not proof. See "Threats to validity" in `resul
 | 2 | Harder fixtures calibrated by pilots, a wrong-persona control, transcripts | No consistent effect: right better in accessibility, worse in minimal-change, no difference in code-reviewer and seo | [`round2/`](round2/README.md): [`results.md`](round2/results.md) |
 | 3 | Upstream setup: a separate verifier with tools (tests, server, curl, headless browser), 2×2 persona × structured brief | All 16 runs refused to pass and found 7–9/9 defects; no factor moved a primary metric (ceiling). The brief changed method; the evidence-collector persona alone gave no verdict | [`round3/`](round3/README.md): [`results.md`](round3/results.md) |
 | 4 | Maker tasks (performance, security) scored by held-out benchmark and exploit tests, 2×2 persona × brief | The none + vague pilots were already at the ceiling; no factor made a difference. The brief made security runs attack the running service, and its evidence rule made 3/4 brief runs skip a timing-unsafe compare fix | [`round4/`](round4/README.md): [`results.md`](round4/results.md) |
+| 5 | Codex; upstream original vs audited rewrite vs none vs structured brief, with harder held-out maker fixtures | Calibration still hit the ceiling: two no-persona runs scored 21/22 after the security key grew to 22 checks. The pre-registered stop rule fired, so no comparative arms ran | [`round5/`](round5/README.md): [`results.md`](round5/results.md) |
 
-**Combined headline:** across four rounds, a matching persona never reliably improved the
+**Combined headline:** across five rounds, a matching persona has not reliably improved the
 result. Rounds 1–2 (one session, vague prompt, few tools): no gain in round 1, one role better and
 one worse in round 2. Rounds 3–4 (the upstream way: persona × structured brief, real tools, a
 verifier in round 3 and makers with held-out scores in round 4): the plain run was already at the
-ceiling, so neither persona nor brief nor both together could show a gain. The brief reliably
+ceiling, so neither persona nor brief nor both together could show a gain. Round 5 moved to Codex
+and expanded security to 22 held-out checks, but no-persona calibration still averaged 95%; its
+stop rule correctly prevented an uninformative comparison. The brief reliably
 changed the method (it started the service and used curl), and role instructions had side effects:
 the evidence-collector persona withheld a verdict, and the brief's evidence rule withheld a correct
 fix. Personas reliably change style and raise cost (≈2×; with the brief ≈3–4×). Every comparison

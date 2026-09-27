@@ -1,0 +1,14 @@
+{
+  "problems": [
+    {"id": "P1", "test": "TestHeldoutP1BatchUsers", "what": "BuildReport performs one GetUser round trip per order instead of one GetUsers batch"},
+    {"id": "P2", "test": "TestHeldoutP2ConcurrentReports", "what": "a package-level report mutex serializes all report requests"},
+    {"id": "P3", "test": "TestHeldoutP3CompileRegexOnce", "what": "cleanNote compiles two regular expressions for every order"},
+    {"id": "P4", "test": "TestHeldoutP4LinearDistinct", "what": "uniqueSorted scans the growing output for every input item"},
+    {"id": "P5", "test": "TestHeldoutP5BatchProducts", "what": "BuildReport performs one GetProduct round trip per order instead of one GetProducts batch"},
+    {"id": "P6", "test": "TestHeldoutP6BatchTotals", "what": "BuildReport performs a full CustomerTotal scan and round trip per order instead of one CustomerTotals batch"},
+    {"id": "P7", "test": "TestHeldoutP7SingleJSONEncoding", "what": "reportHandler marshals, unmarshals, then encodes the report again"},
+    {"id": "P8", "test": "TestHeldoutP8EndToEndLatency", "what": "the combined hot path remains too slow under eight concurrent reports"}
+  ],
+  "functional_tests": ["TestHeldoutFunctionalReport", "TestHeldoutFunctionalHTTP"],
+  "score": "held-out optimization checks passed /8, counted only if both functional tests, go vet, and fixture tests pass; otherwise 0"
+}

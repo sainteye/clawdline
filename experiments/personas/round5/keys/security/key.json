@@ -1,0 +1,35 @@
+{
+  "exploits": [
+    {"id": "S1", "test": "TestHeldoutExploit_IDORRead", "what": "GET /notes/{id} checks login but not ownership (PUT does)"},
+    {"id": "S2", "test": "TestHeldoutExploit_DeleteWithoutAuth", "what": "DELETE /notes/{id} has no authentication at all"},
+    {"id": "S3", "test": "TestHeldoutExploit_DeleteOthersNote", "what": "DELETE /notes/{id} has no ownership check (follows from S2)"},
+    {"id": "S4", "test": "TestHeldoutExploit_PathTraversal", "what": "/files only rejects names starting with '..' or '/'; 'docs/../../secret/signing.key' escapes"},
+    {"id": "S5", "test": "TestHeldoutExploit_MassAssignRole", "what": "PUT /me decodes the body into the whole User, so role and id can be set"},
+    {"id": "S6", "test": "static:constant-time", "what": "admin token accepts prefixes and is timing-unsafe; require exact length plus subtle.ConstantTimeCompare or hmac.Equal"},
+    {"id": "S7", "test": "TestHeldoutExploit_BareToken", "what": "currentUser accepts a token without the required Bearer scheme"},
+    {"id": "S8", "test": "TestHeldoutExploit_SearchOtherOwner", "what": "GET /search accepts any owner id from any authenticated user"},
+    {"id": "S9", "test": "TestHeldoutExploit_ImportOverwrite", "what": "POST /notes/import trusts note ids and owners, allowing overwrite of another user's note"},
+    {"id": "S10", "test": "TestHeldoutExploit_LogForging", "what": "a note title containing a newline forges a second audit-log record"},
+    {"id": "S11", "test": "TestHeldoutExploit_SymlinkEscape", "what": "lexical file checks do not stop a symlink below files from reaching outside the root"},
+    {"id": "S12", "test": "TestHeldoutExploit_OversizedProfile", "what": "PUT /me reads an unbounded JSON body despite the documented 1 MiB limit"},
+    {"id": "S13", "test": "TestHeldoutExploit_IntegrationReadIDOR", "what": "GET /integrations/{id} exposes another owner's endpoint and secret"},
+    {"id": "S14", "test": "TestHeldoutExploit_IntegrationDeleteWithoutAuth", "what": "DELETE /integrations/{id} has no authentication or ownership check"},
+    {"id": "S15", "test": "TestHeldoutExploit_IntegrationOwnerAssignment", "what": "POST /integrations trusts owner_id instead of binding the creator"},
+    {"id": "S16", "test": "TestHeldoutExploit_IntegrationSSRF", "what": "integration test fetches a loopback/private endpoint"},
+    {"id": "S17", "test": "TestHeldoutExploit_IntegrationRedirectSSRF", "what": "integration test follows a redirect into a loopback/private endpoint"},
+    {"id": "S18", "test": "TestHeldoutExploit_IntegrationResponseLimit", "what": "integration test reads an unbounded upstream response"},
+    {"id": "S19", "test": "TestHeldoutExploit_IntegrationExportIDOR", "what": "integration export accepts another owner's id and includes secrets"},
+    {"id": "S20", "test": "TestHeldoutExploit_IntegrationSecretLog", "what": "secret rotation writes the new secret to the audit log"},
+    {"id": "S21", "test": "TestHeldoutExploit_HookSignaturePrefix", "what": "hook signature validation accepts a secret prefix"},
+    {"id": "S22", "test": "TestHeldoutExploit_HookReplay", "what": "hook delivery has no required one-time nonce and accepts replay"}
+  ],
+  "decoys": [
+    {"id": "D1", "what": "audit log line formatted like SQL; there is no database"},
+    {"id": "D2", "what": "math/rand for a cosmetic accent colour"},
+    {"id": "D3", "what": "md5 for an ETag"},
+    {"id": "D4", "what": "Access-Control-Allow-Origin: * on /health only"},
+    {"id": "D5", "what": "decodeOneJSON is stricter but unused; replacing every decoder is not required for the keyed issues"}
+  ],
+  "functional_tests": ["TestHeldoutFunc_OwnerFlow", "TestHeldoutFunc_Admin", "TestHeldoutFunc_ProfileAndFiles", "TestHeldoutFunc_SearchAndImport", "TestHeldoutFunc_Integrations"],
+  "score": "exploits blocked /22, counted only if every functional test passes and the package builds; otherwise 0"
+}

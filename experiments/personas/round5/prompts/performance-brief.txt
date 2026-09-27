@@ -1,0 +1,15 @@
+Objective: reduce latency for the report endpoint under concurrent requests without changing its response.
+
+Scope: the Go code in this directory. Use the included load test or another reproducible local measurement. Stay inside this directory and do not use any network beyond localhost.
+
+Acceptance criteria:
+1. The report JSON keeps the same fields and values.
+2. Concurrent request latency is materially lower.
+3. `go vet ./...` and `go test ./...` pass.
+
+Evidence required before you say you are done:
+- Record a repeated baseline before editing and the same repeated measurement afterward, including command and load shape.
+- Explain the bottlenecks the measurements or code establish.
+- If a measurement cannot be reproduced, mark it unverified and say why; do not drop it silently.
+
+Deliverable: code changes plus a report with baseline, after measurement, commands, user-visible meaning, tradeoffs, and anything not measured.

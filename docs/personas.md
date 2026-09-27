@@ -352,7 +352,7 @@ reports them. See docs/limits.md N52. The 42 shipped texts are 4–5 KiB each.
 
 ## Does a persona help?
 
-`experiments/personas/` holds four rounds of blind experiments with Claude Sonnet 5 that ask whether
+`experiments/personas/` holds five rounds of experiments that ask whether
 giving a session the matching persona measurably improves its work. The short answer so far: a
 matching persona reliably changes the style and usually the cost, but it did not reliably improve
 the result. One round showed a gain for accessibility and a loss for minimal-change (the text was
@@ -360,7 +360,10 @@ then rewritten; see `round2-followup/`). A structured brief changed how a verifi
 the persona did. Round 4 (maker tasks with held-out scores, performance and security) was again at
 the ceiling: neither persona, brief nor both changed the result, both raised cost, and the brief's
 "no evidence, no report" rule made most runs skip a correct timing-safe compare fix. Every
-comparison is n = 2 per arm: directional, not significant. Start at
+comparison is n = 2 per arm: directional, not significant. Round 5 moved to Codex and a harder
+22-check security fixture, but the no-persona calibration still scored 21/22 twice; its
+pre-registered stop rule ended the experiment before persona arms, so it makes no comparative
+claim. Start at
 `experiments/personas/README.md`. A later audit compared all 42 texts with their upstream files
 and restored the rules the rewrite had lost or reversed by accident, among them the Evidence
 Collector's per-claim verdict with FAIL as the default; see `experiments/personas/rewrite-audit.md`.

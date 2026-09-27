@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,10 @@ import (
 )
 
 const (
-	WorkV2PageSize              = 100
+	WorkV2PageSize = 100
+	// WorkV2ListPageLimit keeps the Board's first useful paint bounded; rows
+	// beyond it remain available through the list cursor.
+	WorkV2ListPageLimit         = 24
 	workV2TitleLimit            = 240
 	workV2DescriptionLimit      = 64 << 10
 	workV2UserActionLimit       = 8 << 10
@@ -235,6 +239,78 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner, status, search 
 		out = append(out, WorkV2View{Item: i, Documents: documents, Images: images, Steps: steps, Claim: claim})
 	}
 	return out, truncated, nil
+}
+
+type WorkV2ListPage struct {
+	Rows []WorkV2View
+	Next string
+}
+
+type workV2ListCursor struct {
+	UpdatedAt int64  `json:"updated_at"`
+	ID        string `json:"id"`
+}
+
+func encodeWorkV2ListCursor(i work.ItemV2) string {
+	b, _ := json.Marshal(workV2ListCursor{UpdatedAt: i.UpdatedAt.Unix(), ID: i.ID})
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func decodeWorkV2ListCursor(raw string) (workV2ListCursor, error) {
+	if raw == "" {
+		return workV2ListCursor{}, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return workV2ListCursor{}, workV2Error(http.StatusBadRequest, "bad_cursor", "The Board page cursor is not valid.")
+	}
+	var cursor workV2ListCursor
+	if json.Unmarshal(b, &cursor) != nil || cursor.UpdatedAt <= 0 || len(cursor.ID) != 36 {
+		return workV2ListCursor{}, workV2Error(http.StatusBadRequest, "bad_cursor", "The Board page cursor is not valid.")
+	}
+	return cursor, nil
+}
+
+// ListPage is the Console Board's bounded read. The older List method remains
+// the complete 100-row projection used by Session ownership and internal
+// reconciliation; paging the person's screen must not silently page those.
+func (w *WorkSystemV2) ListPage(ctx context.Context, project, status, search, rawCursor string) (WorkV2ListPage, error) {
+	if status != "open" && status != "done" && status != "all" {
+		return WorkV2ListPage{}, workV2Error(http.StatusBadRequest, "invalid_status", "Status is open, done or all.")
+	}
+	cursor, err := decodeWorkV2ListCursor(rawCursor)
+	if err != nil {
+		return WorkV2ListPage{}, err
+	}
+	items, truncated, err := w.Store.WorkV2ItemsPage(ctx, project, "", status, search,
+		cursor.UpdatedAt, cursor.ID, WorkV2ListPageLimit)
+	if err != nil {
+		return WorkV2ListPage{}, mapWorkV2Error(err)
+	}
+	page := WorkV2ListPage{Rows: make([]WorkV2View, 0, len(items))}
+	for _, i := range items {
+		documents, documentErr := w.Store.WorkV2Documents(ctx, i.ID)
+		if documentErr != nil {
+			return WorkV2ListPage{}, mapWorkV2Error(documentErr)
+		}
+		images, imageErr := w.Store.WorkV2Images(ctx, i.ID)
+		if imageErr != nil {
+			return WorkV2ListPage{}, mapWorkV2Error(imageErr)
+		}
+		steps, stepErr := w.Store.WorkV2Steps(ctx, i.ID)
+		if stepErr != nil {
+			return WorkV2ListPage{}, mapWorkV2Error(stepErr)
+		}
+		claim, claimErr := w.Store.WorkV2ActiveClaim(ctx, i.ID)
+		if claimErr != nil {
+			return WorkV2ListPage{}, mapWorkV2Error(claimErr)
+		}
+		page.Rows = append(page.Rows, WorkV2View{Item: i, Documents: documents, Images: images, Steps: steps, Claim: claim})
+	}
+	if truncated && len(items) > 0 {
+		page.Next = encodeWorkV2ListCursor(items[len(items)-1])
+	}
+	return page, nil
 }
 
 func (w *WorkSystemV2) RecentlyCompleted(ctx context.Context, session string) ([]WorkV2View, bool, error) {

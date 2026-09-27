@@ -1,0 +1,15 @@
+Objective: find and fix the security vulnerabilities in this notes API.
+
+Scope: the Go code in this directory. Legitimate behavior described in README.md must keep working. Stay inside this directory and do not use any network beyond localhost.
+
+Acceptance criteria:
+1. Every vulnerability you report is fixed in the code.
+2. Legitimate behavior still works.
+3. `go vet ./...` and `go test ./...` pass.
+
+Evidence required before you say you are done:
+- For each vulnerability, show an exploit attempt succeeding before the fix and failing after it, with the output.
+- Show the legitimate path for the same route still working after the fix.
+- If you cannot verify a plausible issue, mark it unverified and say why; do not present it as confirmed.
+
+Deliverable: code changes plus a report with each vulnerability's route, impact, exploit, fix, and before/after evidence; what you judged safe and why; and anything still unverified or unfixed.

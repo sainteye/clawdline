@@ -51,6 +51,7 @@ import {
   type WorkV2Item,
   type WorkV2Kind,
   type WorkV2Proposal,
+  type WorkV2Page,
   type WorkV2Status,
   type SessionWorkV2,
 } from "./api.js"
@@ -66,6 +67,7 @@ import {
 } from "./session-assignment.js"
 import { workV2CreateDecision, type WorkV2CreateDecision } from "./create-decision.js"
 import { claimedViaLine, createdViaLine, workWord } from "./words.js"
+import { appendWorkPage } from "./work-pages.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
 const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
@@ -88,9 +90,12 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [status, setStatus] = useState<WorkV2Status>("open")
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
-  const [truncated, setTruncated] = useState(false)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [family, setFamily] = useState<{ rows: WorkV2Item[]; truncated: boolean }>({ rows: [], truncated: false })
   const [loaded, setLoaded] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [paging, setPaging] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createDraft, setCreateDraft] = useState<NewWorkItemDraft>({})
   const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
@@ -98,6 +103,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [busy, setBusy] = useState("")
   const [failure, setFailure] = useState("")
   const loadGeneration = useRef(0)
+  const loadedView = useRef("")
   const board = useRef<HTMLElement>(null)
   // What is on screen keeps its place until the view is opened afresh, its
   // filter changes, or Refresh is pressed; see `board-order.ts`.
@@ -105,12 +111,28 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const rearrange = useRef(true)
   useBoardMotion(board)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (announce = false) => {
     const generation = ++loadGeneration.current
+    if (announce) setRefreshing(true)
+    const requestedView = `${routeProject}\n${status}\n${search}`
+    const replacing = loadedView.current !== requestedView
+    if (replacing) {
+      setLoading(true); setFailure(""); setItems([]); setFamily({ rows: [], truncated: false }); setNextCursor(null)
+    }
     try {
-      const [projects, live, suggestions, questions] = await Promise.all([readProjectPlaces(), readSessionsForWorkV2(), readWorkV2Proposals(), readDecisions()])
+      // Sessions can be the slowest inventory read. Start the independent
+      // reads now; the Board waits only for the Project catalog it needs to
+      // resolve the URL, never for those reads before it starts its own.
+      const supportRead = Promise.all([readSessionsForWorkV2(), readWorkV2Proposals(), readDecisions()])
+      // If the Project catalog fails first, these already-started reads still
+      // have a rejection handler; awaiting the same promise below keeps their
+      // real failure when the catalog succeeds.
+      void supportRead.catch(() => {})
+      const projects = await readProjectPlaces()
       const selectedProject = workProjectID(routeProject, projects.places)
-      const work = await readWorkV2(selectedProject || undefined, status, search)
+      const [work, [live, suggestions, questions]] = await Promise.all([
+        readWorkV2(selectedProject || undefined, status, search), supportRead,
+      ])
       const relatives = await readEpicFamily(selectedProject, status, search, work)
       if (generation !== loadGeneration.current) return
       setProject(selectedProject)
@@ -119,14 +141,38 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       rearrange.current = false
       const rows = arrangeWorkItems(work.rows, kept)
       arrangement.current = { view, places: workItemPlaces(rows) }
-      setItems(rows); setTruncated(work.truncated); setFamily(relatives); setLoaded(true)
+      setItems(rows); setNextCursor(work.next_cursor); setFamily(relatives); setLoaded(true); setLoading(false)
+      loadedView.current = requestedView
       setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setDecisions(questions.rows); setFailure("")
       setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
       setOpenedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
     } catch (e) {
-      if (generation === loadGeneration.current) { setLoaded(true); setFailure(failureWords(e)) }
+      if (generation === loadGeneration.current) { setLoaded(true); setLoading(false); setFailure(failureWords(e)) }
+    } finally {
+      if (generation === loadGeneration.current) setRefreshing(false)
     }
   }, [routeProject, status, search])
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || paging) return
+    const generation = loadGeneration.current
+    setPaging(true); setFailure("")
+    try {
+      const page = await readWorkV2(project || undefined, status, search, nextCursor)
+      if (generation !== loadGeneration.current) return
+      setItems((current) => {
+        const merged = appendWorkPage(current, page.rows)
+        const rows = arrangeWorkItems(merged, arrangement.current?.places ?? null)
+        arrangement.current = { view: `${project}\n${status}\n${search}`, places: workItemPlaces(rows) }
+        return rows
+      })
+      setFamily((current) => ({ rows: appendWorkPage(current.rows, page.rows), truncated: !!page.next_cursor }))
+      setNextCursor(page.next_cursor)
+    } catch (e) {
+      if (generation === loadGeneration.current) setFailure(failureWords(e))
+    } finally {
+      if (generation === loadGeneration.current) setPaging(false)
+    }
+  }, [nextCursor, paging, project, status, search])
   const refreshPlaces = useCallback(async () => {
     try {
       const projects = await readProjectPlaces()
@@ -192,12 +238,15 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     [family, items])
 
   return <EpicFamilyContext.Provider value={familyView}>
-  <section ref={board} id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title">
+  <section ref={board} id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title"
+    aria-busy={loading || refreshing || paging ? "true" : undefined}>
     <header className="board-head">
       <div><p className="board-eyebrow">WORK SYSTEM V2</p><h1 id="work-v2-title">看板</h1></div>
       <div className="work-head-tools">
         <button className="board-button" type="button" onClick={() => { setFailure(""); setCreatedItem(null); setCreateDraft({}); setCreating(true) }}>＋ 建立項目</button>
-        <button className="board-button" type="button" disabled={!!busy} onClick={() => { rearrange.current = true; void load() }}>{L.strings.webInfoRefresh}</button>
+        <button className="board-button" type="button" disabled={!!busy || loading || refreshing || paging}
+          aria-busy={refreshing ? "true" : undefined} aria-label={refreshing ? "正在重新整理看板" : undefined}
+          onClick={() => { rearrange.current = true; void load(true) }}>{L.strings.webInfoRefresh}</button>
       </div>
     </header>
     <div className="work-wrap">
@@ -216,7 +265,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
         </label>
       </div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      {truncated && <p className="work-note" role="status">符合項目超過 100 筆，請縮小搜尋或 Project 範圍。</p>}
+      {loading ? <BoardSkeleton /> : <>
       {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
       <BoardRegion title="規劃區" items={planning} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
       <BoardRegion title="待指派" items={unassigned} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
@@ -234,6 +283,11 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       {loaded && !failure && items.length === 0 && <p className="work-empty work-filter-empty" role="status">
         {search ? `找不到包含「${search}」的項目。` : status === "done" ? "還沒有已完成的項目。" : "這個範圍目前沒有項目。"}
       </p>}
+      {nextCursor && <div className="work-pagination">
+        <button className="board-button work-more" type="button" disabled={paging} aria-busy={paging ? "true" : undefined}
+          onClick={() => void loadMore()}>{paging ? "正在載入…" : "載入更多項目"}</button>
+      </div>}
+      </>}
     </div>
   </section>
     {creating && <NewWorkModal places={places} initialProject={project} initialDraft={createDraft} busy={!!busy} failure={failure}
@@ -274,7 +328,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
  * and the family drawn from what is on screen.
  */
 async function readEpicFamily(project: string, status: WorkV2Status, search: string,
-  work: { rows: WorkV2Item[]; truncated: boolean }): Promise<{ rows: WorkV2Item[]; truncated: boolean }> {
+  work: WorkV2Page): Promise<{ rows: WorkV2Item[]; truncated: boolean }> {
   if (!needsFamilyList(work.rows)) return { rows: [], truncated: false }
   if (status === "all" && !search) return work
   try {
@@ -282,6 +336,23 @@ async function readEpicFamily(project: string, status: WorkV2Status, search: str
   } catch {
     return { rows: work.rows, truncated: true }
   }
+}
+
+/** The first page's lane and card geometry, using the Board's own surfaces. */
+function BoardSkeleton() {
+  return <div className="work-board-skeleton" role="status" aria-label={L.strings.webLoading}>
+    {[0, 1, 2].map((lane) => <section className="work-skeleton-lane" aria-hidden="true" key={lane}>
+      <span className="work-skeleton-line work-skeleton-heading" />
+      <div className="work-cards">
+        {[0, 1].map((card) => <div className="work-card work-skeleton-card" key={card}>
+          <span className="work-skeleton-line work-skeleton-meta" />
+          <span className="work-skeleton-line work-skeleton-title" />
+          <span className="work-skeleton-line" />
+          <span className="work-skeleton-line work-skeleton-short" />
+        </div>)}
+      </div>
+    </section>)}
+  </div>
 }
 
 interface EpicFamilyView {

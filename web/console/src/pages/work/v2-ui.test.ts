@@ -77,9 +77,21 @@ test("the Board can filter lifecycle state and search titles and descriptions", 
   assert.match(source, /aria-label="篩選項目狀態"/)
   assert.match(source, /搜尋標題與內容/)
   assert.match(source, /readWorkV2\(selectedProject \|\| undefined, status, search\)/)
-  assert.match(source, /符合項目超過 100 筆/)
+  assert.match(source, /readWorkV2\(project \|\| undefined, status, search, nextCursor\)/)
+  assert.match(source, /載入更多項目/)
   assert.match(styles, /\.work-filter-bar/)
   assert.match(styles, /\.work-search/)
+})
+
+test("the Board distinguishes initial loading, paging, empty, stale, and error states", () => {
+  assert.match(source, /loading \? <BoardSkeleton \/>/)
+  assert.match(source, /role="status" aria-label=\{L\.strings\.webLoading\}/)
+  assert.match(source, /aria-busy=\{loading \|\| refreshing \|\| paging/)
+  assert.match(source, /failure && <p className="work-note" role="alert">/)
+  assert.match(source, /loaded && !failure && items\.length === 0/)
+  assert.match(source, /setFailure\(failureWords\(e\)\)/)
+  assert.match(styles, /\.work-board-skeleton \{[^}]*min-height:/)
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.work-skeleton-line::after \{ animation: none; \}/)
 })
 
 test("closed Board cards retain and open Agent completion reports", () => {

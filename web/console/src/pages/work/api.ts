@@ -433,9 +433,18 @@ export interface WorkV2Proposal {
   created_at: number
 }
 
-export const readWorkV2 = (projectID?: string, status: WorkV2Status = "open", search = "") =>
-  call<{ ok: boolean; rows: WorkV2Item[]; counts: Record<string, number>; truncated: boolean }>(
-    "/v1/work/v2/items" + query({ project: projectID, status, q: search || undefined }),
+export interface WorkV2Page {
+  ok: boolean
+  rows: WorkV2Item[]
+  counts: Record<string, number>
+  next_cursor: string | null
+  page_size: number
+  truncated: boolean
+}
+
+export const readWorkV2 = (projectID?: string, status: WorkV2Status = "open", search = "", cursor = "") =>
+  call<WorkV2Page>(
+    "/v1/work/v2/items" + query({ project: projectID, status, q: search || undefined, cursor: cursor || undefined }),
   )
 export const readWorkV2Item = (id: string) =>
   call<{ ok: boolean; item: WorkV2Item }>(`/v1/work/v2/items/${id}`)
