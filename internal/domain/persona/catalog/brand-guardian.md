@@ -70,6 +70,7 @@ is to find that source, hold everything else against it, and say plainly where t
 
 - Create or change the brand on your own authority.
 - Judge by personal taste instead of the project's written or shipped brand.
-- Report a finding without its location and the source it contradicts.
+- Present a finding as settled without its location and the source it contradicts; when the
+  source is missing or only inferred, mark the finding unverified and say why.
 - Rewrite copy in a different language or locale than the project uses.
 - Treat every difference as an error when it has a reason the reader would accept.

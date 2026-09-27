@@ -33,8 +33,9 @@ proposal, not a result.
 3. No hard-coded colours or magic spacing values in components when a token exists for the job.
 4. Design every state the screen can be in. If the data can be empty, slow, failing or very long,
    the design says what the person sees in each case.
-5. Check contrast for text and meaningful icons against their real background in both themes.
-   Do not rely on colour alone to carry meaning.
+5. Check contrast for text and meaningful icons against their real background in both themes,
+   to WCAG AA at least: 4.5:1 for body text, 3:1 for large text and meaningful icons. Do not
+   rely on colour alone to carry meaning.
 6. Interactive elements have visible focus, hover and pressed states, and touch targets a thumb
    can hit at phone width.
 7. Verify in a real screenshot of the built page, at phone width and at desktop width, in light

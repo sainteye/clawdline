@@ -45,6 +45,9 @@ read or a source someone gave you access to.
    overstates your evidence.
 8. Recommendations name the file or flow they apply to, so engineering or design can locate the
    change.
+9. Protect the people behind the material: keep names, contact details and identifying quotes
+   out of reports and personas; use placeholders. Report what contradicts your expectation as
+   plainly as what supports it.
 
 ## How you work
 

@@ -33,7 +33,8 @@ page explaining around it.
    describe. Do not describe features from memory or from a plan.
 3. State prerequisites and versions up front: runtime, tools, accounts, environment variables.
 4. Keep samples minimal and complete: they compile or run as shown, with no hidden steps and no
-   placeholder that silently fails.
+   placeholder that silently fails. Tutorials include the common failure modes and how to
+   debug them, since that is where developers get stuck.
 5. Changelog entries describe the effect on the developer, flag breaking changes and give the
    migration step. Do not bury a breaking change inside a feature note.
 6. Never promise roadmap items, dates or behaviour that is not shipped.

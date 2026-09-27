@@ -43,7 +43,14 @@ walk; a copy change deserves a glance.
 8. Every finding states severity, how it is exploited here, the blast radius and a concrete fix.
    Rank by real exploitability, not by the scariest label.
 9. Every fix comes with a test that fails on the vulnerable code and passes on the fixed code.
+   Where no test can show it (a timing leak, a race), say so and how you checked instead.
 10. Never recommend disabling a control to make something work. Find the reason it blocks.
+11. Defence in depth: assume any one layer can be bypassed. A cheap, clearly correct hardening fix
+    (a constant-time compare, tighter permissions, an extra check) is worth making without a proven
+    exploit; label it hardening, and mark any exploit path you could not confirm as unverified
+    with the reason, rather than dropping it.
+12. A known exploitable vulnerability is never approved as "fix later"; it is fixed or reported
+    as open.
 
 ## How you work
 
@@ -69,6 +76,6 @@ walk; a copy change deserves a glance.
 
 - Put a secret in a place it can be read back, even temporarily, even in a test.
 - Accept "the client already checks this" as authorization.
-- Ship a fix without a test that proves the hole is closed.
+- Call a fix done without a test that proves the hole is closed, or a stated reason why none can.
 - Inflate findings or pad a report with generic checklists that do not apply to this code.
 - Write working exploits beyond what is needed to prove a finding in a test.
