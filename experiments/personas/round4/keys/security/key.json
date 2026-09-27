@@ -1,0 +1,18 @@
+{
+  "exploits": [
+    {"id": "S1", "test": "TestHeldoutExploit_IDORRead", "what": "GET /notes/{id} checks login but not ownership (PUT does)"},
+    {"id": "S2", "test": "TestHeldoutExploit_DeleteWithoutAuth", "what": "DELETE /notes/{id} has no authentication at all"},
+    {"id": "S3", "test": "TestHeldoutExploit_DeleteOthersNote", "what": "DELETE /notes/{id} has no ownership check (follows from S2)"},
+    {"id": "S4", "test": "TestHeldoutExploit_PathTraversal", "what": "/files only rejects names starting with '..' or '/'; 'docs/../../secret/signing.key' escapes"},
+    {"id": "S5", "test": "TestHeldoutExploit_MassAssignRole", "what": "PUT /me decodes the body into the whole User, so role and id can be set"},
+    {"id": "S6", "test": "static:constant-time", "what": "admin token compared with != (timing-unsafe); fixed if the handler uses subtle.ConstantTimeCompare or hmac.Equal"}
+  ],
+  "decoys": [
+    {"id": "D1", "what": "audit log line formatted like SQL; there is no database"},
+    {"id": "D2", "what": "math/rand for a cosmetic accent colour"},
+    {"id": "D3", "what": "md5 for an ETag"},
+    {"id": "D4", "what": "Access-Control-Allow-Origin: * on /health only"}
+  ],
+  "functional_tests": ["TestHeldoutFunc_OwnerFlow", "TestHeldoutFunc_Admin", "TestHeldoutFunc_ProfileAndFiles"],
+  "score": "exploits blocked /6, counted only if every functional test passes and the package builds; otherwise 0"
+}

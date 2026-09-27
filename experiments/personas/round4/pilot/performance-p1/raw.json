@@ -1,0 +1,14 @@
+{
+  "id": "performance-p1",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 94481,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 93316,
+    "num_turns": 19,
+    "total_cost_usd": 0.22907639999999999,
+    "subtype": "success",
+    "is_error": false
+  }
+}

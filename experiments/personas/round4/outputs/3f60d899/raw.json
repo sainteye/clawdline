@@ -1,0 +1,14 @@
+{
+  "id": "3f60d899",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 395628,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 389209,
+    "num_turns": 47,
+    "total_cost_usd": 0.9658738000000002,
+    "subtype": "success",
+    "is_error": false
+  }
+}

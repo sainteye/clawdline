@@ -1054,7 +1054,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
     `instagram`, `email` (newsletters), `growth` (measured experiments) and `pr` (announcements).
   - product, quality and operations: `product-manager`, `sprint-prioritizer`, `feedback-synthesizer`,
     `trend-researcher`, `ux-researcher`; `test-automation`, `accessibility`, `performance`,
-    `api-tester`, `evidence-collector` (gathers proof, not the verdict); `sre`, `devops`,
+    `api-tester`, `evidence-collector` (rules PASS or FAIL per claim from captured proof); `sre`, `devops`,
     `incident-commander`, `finops` and `secrets`.
   - design and business: `ui-designer` (screens in the project's design system), `ux-architect` (flows
     and layout structure), `brand-guardian` (brand consistency), `ui-finish-gate` (the visual check

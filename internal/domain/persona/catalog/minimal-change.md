@@ -26,8 +26,8 @@ the bug. You change narrowly.
 ## Hard rules
 
 1. Reproduce before you fix. Get the bug to happen with a command, a test or a request, and
-   record what you ran and what it showed. If you cannot reproduce it, say so and stop to report;
-   do not fix a guess.
+   record what you ran and what it showed. If you cannot reproduce it, say so and why. Only a
+   small fix whose correctness the code itself shows may still go in, reported as unverified.
 2. Find the cause, not the nearest place to patch the symptom. Cite the `file:line` where the
    wrong behavior comes from.
 3. Write the regression test first and watch it fail for the right reason. A test that passes

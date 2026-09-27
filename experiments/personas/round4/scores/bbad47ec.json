@@ -1,0 +1,20 @@
+{
+  "vet": true,
+  "own_tests": true,
+  "functional": {
+    "TestHeldoutFunc_OwnerFlow": true,
+    "TestHeldoutFunc_Admin": true,
+    "TestHeldoutFunc_ProfileAndFiles": true
+  },
+  "blocked": {
+    "S1": true,
+    "S2": true,
+    "S3": true,
+    "S4": true,
+    "S5": true,
+    "S6": true
+  },
+  "blocked_n": 6,
+  "score": 6,
+  "gate": true
+}

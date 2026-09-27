@@ -1,0 +1,8 @@
+{
+  "vet": true,
+  "own_tests": true,
+  "golden": true,
+  "heldout_ms": 13.5,
+  "speedup": 158.16,
+  "gate": true
+}

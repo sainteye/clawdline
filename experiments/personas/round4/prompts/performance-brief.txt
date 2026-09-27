@@ -1,0 +1,16 @@
+Objective: make `GET /report` in this service faster, especially under concurrent load, without changing what it returns.
+
+Scope: the Go code in this directory. Do not change the HTTP API, the response body (it must stay byte-for-byte identical for the same data), the store's simulated round-trip cost (`queryLatency`), or the seed data. Stay inside this directory; nothing beyond localhost.
+
+Acceptance criteria:
+1. `GET /report` returns exactly the same bytes as before for the same store.
+2. Latency and throughput under concurrent load are measurably better than before.
+3. `go vet ./...` and `go test ./...` pass.
+
+Evidence required before you say you are done:
+- Measure before you change anything (for example `go run .` plus `go run ./loadtest`, or a Go benchmark you write) and record the numbers.
+- Measure again after your changes with the same method, and show the before/after numbers.
+- Show that the response is unchanged (for example compare the body before and after).
+- For each change, say which measurement shows it helped.
+
+Deliverable: the code changes, plus a short report: what was slow and why, what you changed, the before/after numbers with the commands that produced them, and anything you chose not to change.

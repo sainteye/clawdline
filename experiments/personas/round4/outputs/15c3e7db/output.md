@@ -1,0 +1,1 @@
+That deletion needs your approval since `.vulncheck` sits inside the working directory. It's the scratch copy of the vulnerable code I created purely to prove the tests catch the bugs — safe to delete. Shall I proceed, or would you like to remove it yourself?
