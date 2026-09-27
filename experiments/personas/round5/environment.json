@@ -1,0 +1,34 @@
+{
+  "date": "2026-09-27T13:49:55Z",
+  "codex_cli": "codex-cli 0.157.1",
+  "model": "gpt-5.6-sol",
+  "go": "go version go1.27.1 darwin/arm64",
+  "node": "v24.1.0",
+  "platform": "darwin 24.6.0 arm64",
+  "isolation": {
+    "fresh_outside_repo_copy": true,
+    "clean_codex_home_auth_only": true,
+    "ignore_user_config": true,
+    "ignore_rules": true,
+    "ephemeral": true,
+    "requested_sandbox": "workspace-write",
+    "effective_sandbox": "inherited outer seatbelt",
+    "inner_bypass_reason": "codex-cli documents bypass for externally sandboxed environments; nested macOS sandbox-exec was rejected",
+    "external_network_policy": "prompt-localhost-only, GOPROXY off, dead proxy environment, transcript command audit",
+    "control_clean": true
+  },
+  "upstream": {
+    "repository": "https://github.com/msitarzewski/agency-agents",
+    "commit": "053ddbbf392a1688fc7043d81529f47ef2cf86c8",
+    "license": "MIT",
+    "security_concatenated_files": 2
+  },
+  "persona_sha256": {
+    "upstream/security": "d67e86f355a364fdcf75b3354fc058af72adac0b97713cb6a959b6636fd90550",
+    "rewrite/security": "85fc6e825d6e6a33d0b2fa83a5a1509ffac267725252b284c5b6c1e5e7dcf28a",
+    "upstream/performance": "24dbd3a55cf6ca36c5f8af4081e87859914131199d87b6f90d129643fcfba43e",
+    "rewrite/performance": "1eff98de0e0ff58cdaf2e00b5d6effb18a3ddafa7ac5ba62ecc6bea1fca50402"
+  },
+  "call_cap": 27,
+  "actual_calls": 6
+}

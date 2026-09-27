@@ -1,0 +1,36 @@
+{
+  "status": "stopped_during_calibration",
+  "stop_reason": "Two valid none-vague runs on the harder 22-check security fixture both scored 21/22 (95.5%), above the pre-registered 60% ceiling threshold.",
+  "pilots": [
+    {"id": "security-p1", "valid": false, "reason": "nested sandbox bootstrap rejected", "score": 0, "max": 12},
+    {"id": "security-p2", "valid": false, "reason": "nested sandbox bootstrap rejected", "score": 0, "max": 12},
+    {"id": "security-p3", "valid": true, "score": 12, "max": 12, "percent": 100.0},
+    {"id": "security-p4", "valid": true, "score": 21, "max": 22, "percent": 95.455},
+    {"id": "security-p5", "valid": true, "score": 21, "max": 22, "percent": 95.455}
+  ],
+  "final_design_calibration": {
+    "runs": 2,
+    "mean_score": 21.0,
+    "max": 22,
+    "mean_percent": 95.455,
+    "target_percent": [30, 60]
+  },
+  "scored_runs": [],
+  "comparisons": {
+    "persona_helped": null,
+    "rewrite_vs_none": null,
+    "upstream_vs_none": null,
+    "rewrite_vs_upstream": null,
+    "brief_vs_best_persona": null
+  },
+  "usage": {
+    "codex_calls": 6,
+    "pilot_input_tokens": 1103589,
+    "pilot_cached_input_tokens": 929664,
+    "pilot_output_tokens": 33949,
+    "pilot_reasoning_output_tokens": 4602,
+    "pilot_wall_ms": 857501,
+    "billing_basis": "ChatGPT login; exact monetary or quota cost was not reported by codex-cli",
+    "estimated_marginal_cost_ntd": 0
+  }
+}

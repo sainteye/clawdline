@@ -1,0 +1,30 @@
+{
+  "role": "security",
+  "max": 12,
+  "score": 12,
+  "gate": true,
+  "vet": true,
+  "own_tests": true,
+  "functional": {
+    "TestHeldoutFunc_OwnerFlow": true,
+    "TestHeldoutFunc_Admin": true,
+    "TestHeldoutFunc_ProfileAndFiles": true,
+    "TestHeldoutFunc_SearchAndImport": true
+  },
+  "checks": {
+    "S1": true,
+    "S2": true,
+    "S3": true,
+    "S4": true,
+    "S5": true,
+    "S6": true,
+    "S7": true,
+    "S8": true,
+    "S9": true,
+    "S10": true,
+    "S11": true,
+    "S12": true
+  },
+  "heldout_exit": 0,
+  "heldout_tail": "=== RUN   TestHeldoutExploit_IDORRead\n--- PASS: TestHeldoutExploit_IDORRead (0.00s)\n=== RUN   TestHeldoutExploit_DeleteWithoutAuth\n--- PASS: TestHeldoutExploit_DeleteWithoutAuth (0.00s)\n=== RUN   TestHeldoutExploit_DeleteOthersNote\n--- PASS: TestHeldoutExploit_DeleteOthersNote (0.00s)\n=== RUN   TestHeldoutExploit_PathTraversal\n--- PASS: TestHeldoutExploit_PathTraversal (0.00s)\n=== RUN   TestHeldoutExploit_MassAssignRole\n--- PASS: TestHeldoutExploit_MassAssignRole (0.00s)\n=== RUN   TestHeldoutExploit_BareToken\n--- PASS: TestHeldoutExploit_BareToken (0.00s)\n=== RUN   TestHeldoutExploit_SearchOtherOwner\n--- PASS: TestHeldoutExploit_SearchOtherOwner (0.00s)\n=== RUN   TestHeldoutExploit_ImportOverwrite\n--- PASS: TestHeldoutExploit_ImportOverwrite (0.00s)\n=== RUN   TestHeldoutExploit_LogForging\n--- PASS: TestHeldoutExploit_LogForging (0.00s)\n=== RUN   TestHeldoutExploit_SymlinkEscape\n--- PASS: TestHeldoutExploit_SymlinkEscape (0.00s)\n=== RUN   TestHeldoutExploit_OversizedProfile\n--- PASS: TestHeldoutExploit_OversizedProfile (0.00s)\n=== RUN   TestHeldoutFunc_OwnerFlow\n2026/09/27 21:32:29 audit: created note id=3 title=\"new\"\n--- PASS: TestHeldoutFunc_OwnerFlow (0.00s)\n=== RUN   TestHeldoutFunc_Admin\n--- PASS: TestHeldoutFunc_Admin (0.00s)\n=== RUN   TestHeldoutFunc_ProfileAndFiles\n--- PASS: TestHeldoutFunc_ProfileAndFiles (0.00s)\n=== RUN   TestHeldoutFunc_SearchAndImport\n--- PASS: TestHeldoutFunc_SearchAndImport (0.00s)\nPASS\nok  \tnotesapi\t0.218s\ntools/heavy.sh: no clawdline with `heavy` found; running without the compile slot\n"
+}

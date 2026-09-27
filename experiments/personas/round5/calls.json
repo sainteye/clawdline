@@ -1,0 +1,41 @@
+{
+  "cap": 27,
+  "calls": [
+    {
+      "number": 1,
+      "kind": "control",
+      "id": "isolation",
+      "started_at": "2026-09-27T13:24:01.935Z"
+    },
+    {
+      "number": 2,
+      "kind": "pilot",
+      "id": "security-p1",
+      "started_at": "2026-09-27T13:24:36.550Z"
+    },
+    {
+      "number": 3,
+      "kind": "pilot",
+      "id": "security-p2",
+      "started_at": "2026-09-27T13:26:54.846Z"
+    },
+    {
+      "number": 4,
+      "kind": "pilot",
+      "id": "security-p3",
+      "started_at": "2026-09-27T13:28:55.334Z"
+    },
+    {
+      "number": 5,
+      "kind": "pilot",
+      "id": "security-p4",
+      "started_at": "2026-09-27T13:36:19.691Z"
+    },
+    {
+      "number": 6,
+      "kind": "pilot",
+      "id": "security-p5",
+      "started_at": "2026-09-27T13:44:28.034Z"
+    }
+  ]
+}

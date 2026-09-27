@@ -1,0 +1,30 @@
+{
+  "role": "security",
+  "max": 12,
+  "score": 0,
+  "gate": true,
+  "vet": true,
+  "own_tests": true,
+  "functional": {
+    "TestHeldoutFunc_OwnerFlow": true,
+    "TestHeldoutFunc_Admin": true,
+    "TestHeldoutFunc_ProfileAndFiles": true,
+    "TestHeldoutFunc_SearchAndImport": true
+  },
+  "checks": {
+    "S1": false,
+    "S2": false,
+    "S3": false,
+    "S4": false,
+    "S5": false,
+    "S6": false,
+    "S7": false,
+    "S8": false,
+    "S9": false,
+    "S10": false,
+    "S11": false,
+    "S12": false
+  },
+  "heldout_exit": 1,
+  "heldout_tail": "=== RUN   TestHeldoutExploit_IDORRead\n    heldout_test.go:45: bob read alice's note: 200 {\"id\":1,\"owner_id\":1,\"title\":\"alice private\",\"body\":\"alice's secret plans\"}\n--- FAIL: TestHeldoutExploit_IDORRead (0.00s)\n=== RUN   TestHeldoutExploit_DeleteWithoutAuth\n    heldout_test.go:54: anonymous delete: 204, note now 404\n--- FAIL: TestHeldoutExploit_DeleteWithoutAuth (0.00s)\n=== RUN   TestHeldoutExploit_DeleteOthersNote\n    heldout_test.go:63: bob deleted alice's note: 204, note now 404\n--- FAIL: TestHeldoutExploit_DeleteOthersNote (0.00s)\n=== RUN   TestHeldoutExploit_PathTraversal\n    heldout_test.go:72: traversal via \"docs/../../secret/signing.key\" served the key\n--- FAIL: TestHeldoutExploit_PathTraversal (0.00s)\n=== RUN   TestHeldoutExploit_MassAssignRole\n    heldout_test.go:84: bob escalated: {\"accent\":\"#64b5f6\",\"user\":{\"id\":1,\"name\":\"Bob\",\"email\":\"\\u003cemail\\u003e\",\"role\":\"admin\"}}\n--- FAIL: TestHeldoutExploit_MassAssignRole (0.00s)\n=== RUN   TestHeldoutExploit_BareToken\n    heldout_test.go:96: bare token authenticated: 200 {\"accent\":\"#e57373\",\"user\":{\"id\":2,\"name\":\"Bob\",\"email\":\"\\u003cemail\\u003e\",\"role\":\"user\"}}\n--- FAIL: TestHeldoutExploit_BareToken (0.00s)\n=== RUN   TestHeldoutExploit_SearchOtherOwner\n    heldout_test.go:103: bob searched alice's notes: 200 {\"notes\":[{\"id\":1,\"owner_id\":1,\"title\":\"alice private\",\"body\":\"alice's secret plans\"}]}\n--- FAIL: TestHeldoutExploit_SearchOtherOwner (0.00s)\n=== RUN   TestHeldoutExploit_ImportOverwrite\n    heldout_test.go:112: bob overwrote alice's note: 201 {\"imported\":1}\n        ; now {\"id\":1,\"owner_id\":2,\"title\":\"owned\",\"body\":\"replaced\"}\n--- FAIL: TestHeldoutExploit_ImportOverwrite (0.00s)\n=== RUN   TestHeldoutExploit_LogForging\n    heldout_test.go:126: title forged a physical log line: \"2026/09/27 21:27:18 audit: created note id=3 title=ordinary\\nadmin granted\\n\"\n--- FAIL: TestHeldoutExploit_LogForging (0.00s)\n=== RUN   TestHeldoutExploit_SymlinkEscape\n    heldout_test.go:146: symlink escaped files root: OUTSIDE-SECRET\n--- FAIL: TestHeldoutExploit_SymlinkEscape (0.00s)\n=== RUN   TestHeldoutExploit_OversizedProfile\n    heldout_test.go:154: oversized profile = 200, want 413\n--- FAIL: TestHeldoutExploit_OversizedProfile (0.00s)\n=== RUN   TestHeldoutFunc_OwnerFlow\n2026/09/27 21:27:18 audit: created note id=3 title=new\n--- PASS: TestHeldoutFunc_OwnerFlow (0.00s)\n=== RUN   TestHeldoutFunc_Admin\n--- PASS: TestHeldoutFunc_Admin (0.00s)\n=== RUN   TestHeldoutFunc_ProfileAndFiles\n--- PASS: TestHeldoutFunc_ProfileAndFiles (0.00s)\n=== RUN   TestHeldoutFunc_SearchAndImport\n--- PASS: TestHeldoutFunc_SearchAndImport (0.00s)\nFAIL\nFAIL\tnotesapi\t0.222s\nFAIL\ntools/heavy.sh: no clawdline with `heavy` found; running without the compile slot\n"
+}

@@ -1,0 +1,41 @@
+{
+  "role": "security",
+  "max": 22,
+  "score": 21,
+  "gate": true,
+  "vet": true,
+  "own_tests": true,
+  "functional": {
+    "TestHeldoutFunc_OwnerFlow": true,
+    "TestHeldoutFunc_Admin": true,
+    "TestHeldoutFunc_ProfileAndFiles": true,
+    "TestHeldoutFunc_SearchAndImport": true,
+    "TestHeldoutFunc_Integrations": true
+  },
+  "checks": {
+    "S1": true,
+    "S2": true,
+    "S3": true,
+    "S4": true,
+    "S5": true,
+    "S6": true,
+    "S7": true,
+    "S8": true,
+    "S9": true,
+    "S10": true,
+    "S11": true,
+    "S12": false,
+    "S13": true,
+    "S14": true,
+    "S15": true,
+    "S16": true,
+    "S17": true,
+    "S18": true,
+    "S19": true,
+    "S20": true,
+    "S21": true,
+    "S22": true
+  },
+  "heldout_exit": 1,
+  "heldout_tail": "=== RUN   TestHeldoutExploit_IDORRead\n--- PASS: TestHeldoutExploit_IDORRead (0.00s)\n=== RUN   TestHeldoutExploit_DeleteWithoutAuth\n--- PASS: TestHeldoutExploit_DeleteWithoutAuth (0.00s)\n=== RUN   TestHeldoutExploit_DeleteOthersNote\n--- PASS: TestHeldoutExploit_DeleteOthersNote (0.00s)\n=== RUN   TestHeldoutExploit_PathTraversal\n--- PASS: TestHeldoutExploit_PathTraversal (0.00s)\n=== RUN   TestHeldoutExploit_MassAssignRole\n--- PASS: TestHeldoutExploit_MassAssignRole (0.00s)\n=== RUN   TestHeldoutExploit_BareToken\n--- PASS: TestHeldoutExploit_BareToken (0.00s)\n=== RUN   TestHeldoutExploit_SearchOtherOwner\n--- PASS: TestHeldoutExploit_SearchOtherOwner (0.00s)\n=== RUN   TestHeldoutExploit_ImportOverwrite\n--- PASS: TestHeldoutExploit_ImportOverwrite (0.00s)\n=== RUN   TestHeldoutExploit_LogForging\n--- PASS: TestHeldoutExploit_LogForging (0.00s)\n=== RUN   TestHeldoutExploit_SymlinkEscape\n--- PASS: TestHeldoutExploit_SymlinkEscape (0.00s)\n=== RUN   TestHeldoutExploit_OversizedProfile\n    heldout_test.go:155: oversized profile = 400, want 413\n--- FAIL: TestHeldoutExploit_OversizedProfile (0.00s)\n=== RUN   TestHeldoutExploit_IntegrationReadIDOR\n--- PASS: TestHeldoutExploit_IntegrationReadIDOR (0.00s)\n=== RUN   TestHeldoutExploit_IntegrationDeleteWithoutAuth\n--- PASS: TestHeldoutExploit_IntegrationDeleteWithoutAuth (0.00s)\n=== RUN   TestHeldoutExploit_IntegrationOwnerAssignment\n--- PASS: TestHeldoutExploit_IntegrationOwnerAssignment (0.00s)\n=== RUN   TestHeldoutExploit_IntegrationSSRF\n--- PASS: TestHeldoutExploit_IntegrationSSRF (0.00s)\n=== RUN   TestHeldoutExploit_IntegrationRedirectSSRF\n--- PASS: TestHeldoutExploit_IntegrationRedirectSSRF (0.00s)\n=== RUN   TestHeldoutExploit_IntegrationResponseLimit\n--- PASS: TestHeldoutExploit_IntegrationResponseLimit (0.00s)\n=== RUN   TestHeldoutExploit_IntegrationExportIDOR\n--- PASS: TestHeldoutExploit_IntegrationExportIDOR (0.00s)\n=== RUN   TestHeldoutExploit_IntegrationSecretLog\n--- PASS: TestHeldoutExploit_IntegrationSecretLog (0.00s)\n=== RUN   TestHeldoutExploit_HookSignaturePrefix\n--- PASS: TestHeldoutExploit_HookSignaturePrefix (0.00s)\n=== RUN   TestHeldoutExploit_HookReplay\n--- PASS: TestHeldoutExploit_HookReplay (0.00s)\n=== RUN   TestHeldoutFunc_OwnerFlow\n2026/09/27 21:44:27 audit: created note id=3 title=\"new\"\n--- PASS: TestHeldoutFunc_OwnerFlow (0.00s)\n=== RUN   TestHeldoutFunc_Admin\n--- PASS: TestHeldoutFunc_Admin (0.00s)\n=== RUN   TestHeldoutFunc_ProfileAndFiles\n--- PASS: TestHeldoutFunc_ProfileAndFiles (0.00s)\n=== RUN   TestHeldoutFunc_SearchAndImport\n--- PASS: TestHeldoutFunc_SearchAndImport (0.00s)\n=== RUN   TestHeldoutFunc_Integrations\n--- PASS: TestHeldoutFunc_Integrations (0.00s)\nFAIL\nFAIL\tnotesapi\t0.217s\nFAIL\ntools/heavy.sh: no clawdline with `heavy` found; running without the compile slot\n"
+}

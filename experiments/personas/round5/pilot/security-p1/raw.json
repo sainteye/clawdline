@@ -1,0 +1,21 @@
+{
+  "id": "security-p1",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 22963,
+  "model": "gpt-5.6-sol",
+  "usage": {
+    "input_tokens": 89267,
+    "cached_input_tokens": 75776,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 689,
+    "reasoning_output_tokens": 186
+  },
+  "method": {
+    "commands": 0,
+    "edits": 0,
+    "tests_or_measurements": 0,
+    "measured_before_first_edit": 0
+  },
+  "stderr": "Reading additional input from stdin...\n"
+}
