@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { Assistant, SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
@@ -12,6 +12,7 @@ import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports, WorkEpicPlanDocuments } from "./WorkCompletionReport.js"
 import { EPIC_GATE_HINT, epicGate, epicGateShown, isEpic } from "./epic-gate.js"
+import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, shortWorkID } from "./epic-family.js"
 import { WorkIcon } from "./WorkIcon.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
 import { useReferenceImage } from "./useReferenceImage.js"
@@ -77,6 +78,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
   const [truncated, setTruncated] = useState(false)
+  const [family, setFamily] = useState<{ rows: WorkV2Item[]; truncated: boolean }>({ rows: [], truncated: false })
   const [loaded, setLoaded] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createDraft, setCreateDraft] = useState<NewWorkItemDraft>({})
@@ -97,6 +99,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       const [projects, live, suggestions] = await Promise.all([readProjectPlaces(), readSessionsForWorkV2(), readWorkV2Proposals()])
       const selectedProject = workProjectID(routeProject, projects.places)
       const work = await readWorkV2(selectedProject || undefined, status, search)
+      const relatives = await readEpicFamily(selectedProject, status, search, work)
       if (generation !== loadGeneration.current) return
       setProject(selectedProject)
       const view = `${selectedProject}\n${status}\n${search}`
@@ -104,7 +107,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       rearrange.current = false
       const rows = arrangeWorkItems(work.rows, kept)
       arrangement.current = { view, places: workItemPlaces(rows) }
-      setItems(rows); setTruncated(work.truncated); setLoaded(true)
+      setItems(rows); setTruncated(work.truncated); setFamily(relatives); setLoaded(true)
       setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setFailure("")
       setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
     } catch (e) {
@@ -162,8 +165,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const planning = items.filter((item) => item.area === "planning" && !item.closed_at)
   const unassigned = items.filter((item) => item.area === "unassigned" && !item.closed_at)
   const done = items.filter((item) => item.closed_at)
+  const familyView = useMemo<EpicFamilyView>(() => ({ rows: family.rows, truncated: family.truncated, onBoard: new Set(items.map((item) => item.id)) }),
+    [family, items])
 
-  return <>
+  return <EpicFamilyContext.Provider value={familyView}>
   <section ref={board} id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title">
     <header className="board-head">
       <div><p className="board-eyebrow">WORK SYSTEM V2</p><h1 id="work-v2-title">看板</h1></div>
@@ -239,7 +244,96 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     }} />}
     {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} busy={busy} failure={failure}
       clearFailure={() => setFailure("")} run={run} onClose={() => setCreatedItem(null)} />}
-  </>
+  </EpicFamilyContext.Provider>
+}
+
+/**
+ * The list an Epic's children and a child's parent are read from. The Board's
+ * own list leaves out closed items under 「進行中」 and anything a search does
+ * not match, so when an Epic or a child is on screen the family is read again
+ * with every status and no search. A failure here leaves the Board as it is
+ * and the family drawn from what is on screen.
+ */
+async function readEpicFamily(project: string, status: WorkV2Status, search: string,
+  work: { rows: WorkV2Item[]; truncated: boolean }): Promise<{ rows: WorkV2Item[]; truncated: boolean }> {
+  if (!needsFamilyList(work.rows)) return { rows: [], truncated: false }
+  if (status === "all" && !search) return work
+  try {
+    return await readWorkV2(project || undefined, "all")
+  } catch {
+    return { rows: work.rows, truncated: true }
+  }
+}
+
+interface EpicFamilyView {
+  rows: WorkV2Item[]
+  truncated: boolean
+  /** Items that have a card on the Board, which a family link can bring into view. */
+  onBoard: Set<string>
+}
+
+const EpicFamilyContext = createContext<EpicFamilyView>({ rows: [], truncated: false, onBoard: new Set() })
+
+/**
+ * Brings another card on the Board into view and moves focus to it, opening
+ * the folded 已關閉 section when the card is inside it. Only the Board's own
+ * cards are searched; a modal's copy of a card is not a place to go to.
+ */
+function showWorkCard(id: string) {
+  const card = document.querySelector<HTMLElement>(`#work [data-work-id="${CSS.escape(id)}"]`)
+  if (!card) return
+  for (let fold = card.closest("details"); fold; fold = fold.parentElement?.closest("details") ?? null) fold.open = true
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  card.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" })
+  card.focus({ preventScroll: true })
+  card.setAttribute("data-arrived", "")
+  window.setTimeout(() => card.removeAttribute("data-arrived"), 1600)
+}
+
+/** A link to another card on the Board, or its words alone when that card is not shown. */
+function WorkCardLink({ id, onBoard, className, children }: { id: string; onBoard: boolean; className: string; children: ReactNode }) {
+  return onBoard
+    ? <button className={className} type="button" onClick={() => showWorkCard(id)}>{children}</button>
+    : <span className={className}>{children}</span>
+}
+
+/** On an Epic: the items created under it, how far they have got, and who has each. */
+function EpicChildren({ item, sessions }: { item: WorkV2Item; sessions: SessionRow[] }) {
+  const family = useContext(EpicFamilyContext)
+  const children = epicChildren(family.rows, item.id)
+  if (!children.length) return null
+  const progress = epicProgress(children)
+  const complete = progress.total > 0 && progress.done === progress.total
+  return <section className="work-epic-children" aria-label="子項目" data-complete={complete ? "" : undefined}>
+    <div className="work-epic-children-head">
+      <strong>子項目</strong>
+      <span>{epicProgressWords(progress)}{family.truncated && " · 清單不完整"}</span>
+    </div>
+    {progress.total > 0 && <div className="work-epic-progress" role="progressbar" aria-label="子項目完成度"
+      aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done}>
+      <i style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+    </div>}
+    <ul>{children.map((child) => {
+      const owner = child.owner_session ? sessions.find((session) => session.sessionId === child.owner_session) : undefined
+      const who = owner ? (owner.label || owner.id) : child.owner_session ? `Session ${child.owner_session.slice(0, 8)}` : "未指派"
+      return <li key={child.id} data-phase={child.phase}>
+        <WorkCardLink id={child.id} onBoard={family.onBoard.has(child.id)} className="work-epic-child">
+          <span className="work-epic-child-kind" aria-label={KIND_META[child.kind].label} title={KIND_META[child.kind].label}>{KIND_META[child.kind].icon}</span>
+          <span className="work-epic-child-title">{child.title}</span>
+          <span className="work-epic-child-meta">{phaseName(child.phase)} · {who}</span>
+        </WorkCardLink>
+      </li>
+    })}</ul>
+  </section>
+}
+
+/** On a child: the Epic it was created under. */
+function EpicParentLine({ item }: { item: WorkV2Item }) {
+  const family = useContext(EpicFamilyContext)
+  const parent = epicParent(item, family.rows)
+  if (!parent) return null
+  return <p className="work-epic-parent">屬於 Epic：<WorkCardLink id={parent.id} onBoard={family.onBoard.has(parent.id)} className="work-epic-parent-link">
+    {parent.title ? `〈${parent.title}〉` : <code>{shortWorkID(parent.id)}</code>}</WorkCardLink></p>
 }
 
 function BoardRegion({ title, items, sessions, busy, failure, clearFailure, run }: {
@@ -291,7 +385,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   const reassignable = item.area !== "planning" && !item.closed_at && !!item.owner_session
   const epic = isEpic(item)
   return <article className={epic ? "work-card work-v2-card work-epic-card" : "work-card work-v2-card"} data-work-id={item.id}
-    data-phase={item.phase} data-kind={item.kind}>
+    data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
     <div className="work-card-toolbar">
       <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></div>
       <div className="work-card-controls" aria-label="項目操作">
@@ -323,10 +417,12 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
       ? <span className="work-state work-epic-label"><b>EPIC · 大型項目</b> · {phaseName(item.phase)}</span>
       : <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>}
     <h3>{item.title}</h3>
+    <EpicParentLine item={item} />
     <CreatedViaNote item={item} />
     <ClaimedViaNote item={item} />
     <p>{item.description}</p>
     {epicGateShown(item) && <EpicGateChecklist item={item} />}
+    {epic && <EpicChildren item={item} sessions={sessions} />}
     {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
       <strong>需要你做的事</strong><p>{item.user_action}</p>
     </section>}
