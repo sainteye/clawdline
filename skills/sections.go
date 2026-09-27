@@ -47,7 +47,7 @@ var sections = []section{
 	{"send", "talking to another session", false},
 	{"notify", "telling the person", true},
 	{"board", "the board: items, steps, proposals, decisions, to-dos", false},
-	{"epic", "an Epic you own: its plan, the child review of it, then implementing", false},
+	{"epic", "an Epic you own: its plan, the child review of it, implementing, and its child items", false},
 	{"coordination", "coordination between sessions", false},
 	{"refused", "what to do when something is refused", true},
 }

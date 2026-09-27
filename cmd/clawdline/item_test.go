@@ -421,3 +421,105 @@ func TestItemDocPostsADocumentAfterTheLastOne(t *testing.T) {
 		t.Fatalf("no role: exit %d, %d requests", code, len(s2.requests()))
 	}
 }
+
+const epicItem = `{"ok":true,"item":{"id":"epic-1","title":"Big","kind":"epic","phase":"implementing",
+ "owner_session":"` + thinConversation + `","version":7}}`
+
+// `item child` reads the Epic for its version and posts the child with its
+// kind, steps and the Session it is assigned to, under a printed key, to the
+// Epic's children route; no run is read, because the Epic's assignment is
+// the authority.
+func TestItemChildPostsTheChildUnderTheEpicsVersion(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodGet {
+			return 200, epicItem
+		}
+		return 201, `{"ok":true,"assigned":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"other","version":2}}`
+	})
+	var out, errs bytes.Buffer
+	code := sessionItem(&out, &errs, b, "child", itemFlags{kind: "feature", title: "Part", description: "Build it.",
+		steps: []string{"one", " ", "two"}, assign: assignFlags{terminal: "%9"}}, []string{"epic-1"}, thinConversation, "", envOf(nil))
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 2 || seen[0].Method != "GET" || seen[0].EscapedPath != "/v1/work/v2/items/epic-1" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	r := seen[1]
+	if r.Method != "POST" || r.EscapedPath != "/v1/work/v2/agent/items/epic-1/children" ||
+		!strings.Contains(errs.String(), "Idempotency-Key: "+r.Key) {
+		t.Fatalf("create = %+v, stderr %q", r, errs.String())
+	}
+	var body struct {
+		ExpectedVersion int64             `json:"expected_version"`
+		SessionID       string            `json:"session_id"`
+		Kind            string            `json:"kind"`
+		Steps           []string          `json:"steps"`
+		Assign          map[string]string `json:"assign"`
+		Via             any               `json:"via"`
+	}
+	if err := json.Unmarshal(r.Body, &body); err != nil || body.ExpectedVersion != 7 || body.SessionID != thinConversation ||
+		body.Kind != "feature" || strings.Join(body.Steps, "|") != "one|two" || body.Via != nil ||
+		body.Assign["mode"] != "existing_session" || body.Assign["terminal_id"] != "%9" {
+		t.Fatalf("body = %s", r.Body)
+	}
+	if !strings.Contains(out.String(), "child-1  Part  [feature, assigned, assigned to other]") {
+		t.Fatalf("stdout = %s", out.String())
+	}
+}
+
+// A child created but not assigned says so, names the assignment's code and
+// how to assign it, and exits non-zero; two Session choices are refused
+// before anything is asked.
+func TestItemChildSaysAnAssignmentThatFailed(t *testing.T) {
+	_, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodGet {
+			return 200, epicItem
+		}
+		return 201, `{"ok":true,"assigned":false,"assignment_error":{"code":"assignment_failed","message":"no terminal"},
+ "item":{"id":"child-2","title":"Part","kind":"issue","phase":"created","owner_session":null,"version":2}}`
+	})
+	var out, errs bytes.Buffer
+	code := sessionItem(&out, &errs, b, "child", itemFlags{kind: "issue", title: "Part", description: "d",
+		assign: assignFlags{open: true, assistant: "claude"}}, []string{"epic-1"}, thinConversation, "", envOf(nil))
+	if code != 1 || !strings.Contains(errs.String(), "created but not assigned: assignment_failed") ||
+		!strings.Contains(errs.String(), "clawdline item assign child-2") || !strings.Contains(out.String(), "child-2") {
+		t.Fatalf("exit %d\nstdout %s\nstderr %s", code, out.String(), errs.String())
+	}
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, epicItem })
+	errs.Reset()
+	code = sessionItem(&out, &errs, b, "child", itemFlags{kind: "issue", title: "Part",
+		assign: assignFlags{open: true, terminal: "%9"}}, []string{"epic-1"}, thinConversation, "", envOf(nil))
+	if code != 2 || len(s.requests()) != 0 {
+		t.Fatalf("two choices: exit %d, %d requests, %s", code, len(s.requests()), errs.String())
+	}
+}
+
+// `item assign` reads the child's version and posts the chosen Session to
+// its assign route; without a Session named it asks nothing.
+func TestItemAssignPostsTheChosenSession(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4}}`
+	})
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true, assistant: "codex", model: "m"}},
+		[]string{"child-1"}, thinConversation, "k-1", envOf(nil)); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 2 || seen[1].EscapedPath != "/v1/work/v2/agent/items/child-1/assign" || seen[1].Key != "k-1" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(seen[1].Body, &body); err != nil || body["mode"] != "new_session" ||
+		body["assistant"] != "codex" || body["model"] != "m" || body["expected_version"] != float64(4) ||
+		body["session_id"] != thinConversation {
+		t.Fatalf("body = %s", seen[1].Body)
+	}
+	s, b = newStandIn(t, func(r *http.Request) (int, string) { return 200, epicItem })
+	if code := sessionItem(&out, &errs, b, "assign", itemFlags{}, []string{"child-1"}, thinConversation, "", envOf(nil)); code != 2 ||
+		len(s.requests()) != 0 {
+		t.Fatalf("no Session named: exit %d, %d requests", code, len(s.requests()))
+	}
+}

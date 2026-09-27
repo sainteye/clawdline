@@ -515,7 +515,8 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 
 看板有三種結構——看板項目、Backlog，以及每個 session 自己的待辦清單——而且**上面放什麼由人決定**。
 只有在使用者透過 Clawdline 送來的訊息親口要求時，session 才自己建立看板項目；其他時候只能提案。
-從不主動建卡片。
+從不主動建卡片。唯一的例外是 Epic 的負責 Session：Epic 的計畫審查過之後，它可以把 Epic 拆成 Feature、
+Issue 項目並指派給其他 Session（`clawdline guide epic`）。
 
 **TODO／待辦／土度跟看板項目一起講，指的就是那個項目的 steps。** 用 `--step` 放到項目上。**不要**
 再用 `clawdline todo add` 寫一次。`clawdline todo add` 只用在使用者要你把一份清單記成這個 Session
@@ -581,7 +582,8 @@ clawdline item claim <item id>
 - **沒有 run** 會回 `no_run` 或 `run_unknown`：把項目留給使用者指派。
 
 絕對不要主動認領項目——只認領使用者訊息指名的那一個——也不要用使用者的
-`POST /v1/work/v2/items/<id>/assign`，那條會拒絕 Session（`session_cannot_create_item`）。
+`POST /v1/work/v2/items/<id>/assign`，那條會拒絕 Session（`session_cannot_create_item`）。Epic 的負責
+Session 用 `clawdline item assign` 指派的只有那個 Epic 自己的子項目（`clawdline guide epic`），其他一律不行。
 
 **提議一個看板項目。** 看板上的 **Agent 提案**佇列只由這一條路由餵進去：
 
@@ -814,6 +816,42 @@ Epic 跟 Feature、Issue 一樣可以指派，也走同樣的 phase；但 Epic �
   `epic_plan_required` 拒絕。
 - Epic 執行 `clawdline item phase <item id> implementing` 時，還沒有 plan 會被 `epic_plan_required`
   拒絕，沒有比最新 plan 更新的審查會被 `epic_plan_review_required` 拒絕，跟其他 phase 拒絕一樣是 `409`。
+
+**把 Epic 拆成子項目，再分派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
+能指派項目」的唯一例外：使用者把 Epic 指派給你，這就是拆分它的授權。等審查過的計畫讓 Epic 進入
+`implementing` 之後，如果其中某些部分交給其他 Session 做比較好，就在它底下建立 Feature 或 Issue 項目並指派：
+
+```
+clawdline item child <epic id> --kind feature|issue --title "…" [--step "…"]… \
+  [--description-file f | 描述從 stdin] [--deploy policy] \
+  [--assign-terminal <terminal id> | --assign-new [--assistant claude|codex] [--model m]]
+clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant a] [--model m])
+```
+
+- terminal id 在 session 通訊錄 `GET /v1/orchestrator/sessions` 裡（`clawdline guide send`）；那個
+  Session 必須在 Epic 的 Project 裡工作。也可以把子項目指派給自己；`--assign-new` 會開一個新 Session，
+  它的 Root Assignment 會寫明所屬的 Epic。沒給 `--assign` 旗標，子項目就留在未指派，等使用者指派。
+- `item child` 會先讀 Epic 的版本，送出前印出 Idempotency-Key（`--key` 重試同一筆寫入），做完印出子項目。
+  它就是 `POST /v1/work/v2/agent/items/<epic id>/children`，body 是 `{"expected_version", "session_id",
+  "kind", "title", "description", "steps"?, "deployment_policy"?, "assign"?: {"mode": "existing_session",
+  "terminal_id"} | {"mode": "new_session", "assistant"?, "model"?}}`，回 `201` 與
+  `{"item", "assigned", "assignment_error"?: {"code", "message"}}`。子項目在 Epic 的 Project 裡，帶著
+  `parent_id`（那個 Epic），卡片上會寫明是 Epic 的負責 Session 建立的。steps 是你給的 `--step`；沒給的話，
+  指派時從描述的清單產生。
+- 子項目先建立、再指派。指派失敗時子項目**會留下來、維持未指派**，回應裡的 `assignment_error` 帶著指派的
+  錯誤碼（`session_unavailable`、`project_mismatch`、`assignment_failed`……），指令以 1 結束：用
+  `item assign` 再指派一次，或留給使用者。
+- `item assign` 就是 `POST /v1/work/v2/agent/items/<child id>/assign`，body 是 `{"expected_version",
+  "session_id", "mode", "terminal_id"? | "assistant"?, "model"?}`；它把你 Epic 底下一個未結束的子項目
+  移給另一個 Session，跟使用者自己選的指派是同一種。
+- 拒絕，都不會寫入任何東西：`not_epic_owner`（你不是這個 Epic 的負責 Session）、`parent_not_epic`
+  （上層不是 Epic）、`epic_not_planned`（Epic 還沒進 `implementing`：子項目要出自審查過的計畫）、
+  `item_terminal`（Epic 已結束）、`child_kind_not_allowed`（只能是 `feature` 或 `issue`）、
+  `epic_children_full`（一個 Epic 最多 32 個子項目，含已結束的）、`not_epic_child`（`item assign`
+  的對象不是任何 Epic 的子項目——那要由使用者指派）、`invalid_assignment`、`version_conflict`。
+- **Epic 仍然由你負責。** 追每個子項目到完成（`clawdline item steps <child id>` 可以讀一個），整合它們的
+  成果，所有子項目都完成或取消後才把 Epic 移到 done：在那之前 `clawdline item phase <epic id> done` 會被
+  `epic_children_open` 拒絕，並寫明還有幾個沒結束。除了 Epic 的子項目，不要建立任何其他看板項目。
 
 ## 11. 協調
 

@@ -9,6 +9,17 @@
 > records a child's `plan_review` of the latest plan, because an Epic is large and a second reader
 > checks the plan before code is written. The lifecycle, commands and refusal codes are in
 > [`work-system-v2.md` §6.4](work-system-v2.md).
+>
+> **An Epic's owner breaks it into child items (2026-09-27).** After the reviewed plan has taken an
+> Epic into `implementing`, the Session the person assigned it to may create Feature and Issue items
+> under it (`clawdline item child`) and assign them to other Sessions or new ones (`clawdline item
+> assign`). This is the one exception to "a Session creates an item only on the person's message,
+> and only a person assigns": the person's assignment of the Epic is the authority, because the
+> Epic's owner plans it and is the one who knows how it divides. The limits keep the exception
+> narrow — only that Epic's owner, only after its plan gate, only Feature or Issue, at most 32
+> children, each recorded with its parent and its creator — and the owner stays responsible: the
+> Epic cannot be moved to `done` while a child is open. Details and refusal codes are in
+> [`work-system-v2.md` §6.5](work-system-v2.md).
 
 > 這一份講完整套工作系統：四個物件各在什麼情況下用、怎麼開始、怎麼推進、怎麼結束、達成什麼，
 > 以及哪些已經在跑、哪些只是設計。依據是本 repo `13d08ea` 的程式，加上 2026-09-19 對執行中的 daemon

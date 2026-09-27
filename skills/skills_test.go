@@ -461,3 +461,38 @@ func TestEveryGuideExplainsTheEpicPlanGate(t *testing.T) {
 		}
 	}
 }
+
+// An Epic's owner may break the Epic into Feature and Issue items and assign
+// them, the one exception to "only on the person's word": every guide names
+// the commands, the routes, every refusal, and that the owner stays
+// responsible until every child is closed.
+func TestEveryGuideExplainsAnEpicsChildItems(t *testing.T) {
+	wants := []string{
+		"clawdline item child <epic id> --kind feature|issue",
+		"clawdline item assign <child id>",
+		"--assign-terminal <terminal id>", "--assign-new",
+		"POST /v1/work/v2/agent/items/<epic id>/children",
+		"POST /v1/work/v2/agent/items/<child id>/assign",
+		"GET /v1/orchestrator/sessions", "assignment_error", "parent_id",
+		"not_epic_owner", "parent_not_epic", "epic_not_planned", "child_kind_not_allowed",
+		"epic_children_full", "not_epic_child", "epic_children_open",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain an Epic's child items with %q", topic, want)
+			}
+		}
+	}
+	epic, err := Section("en", "epic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(epic, []byte("clawdline item child")) {
+		t.Error("`clawdline guide epic` does not carry the child-item procedure")
+	}
+}
