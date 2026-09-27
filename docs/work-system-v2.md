@@ -533,6 +533,20 @@ steps in the same transaction as ownership. A failed opening seeds nothing.
 For a first assignment, failure returns the item to `created` with `assignment_failed`; the failed
 assignment remains in history and no owner is projected.
 
+A new Session whose first screen is a dialog — Codex's "Update available" menu opened two Board
+items' Sessions on 2026-09-27 — is not a failure. Nothing answers it: the question is the person's.
+The Root Assignment becomes `awaiting_dialog`, the assignment stays `assigning` with the Root
+Assignment and tab recorded on it, and the item carries `waiting_user` with a `user_action` saying
+which Session to answer. The broker's beat watches the tab: once the person answers and a composer is
+up, the briefing line is typed and the assignment is activated as in step 6; if the assistant leaves
+the tab or the tab is closed, it fails as above and the question is taken back. There is no clock —
+closing the tab is how to give up. A second assignment of the item is refused
+(`assignment_awaiting_dialog`) while one waits, so an answer cannot give it two owners. The daemon
+finishes, when it starts, any such assignment whose Root was settled while it was down.
+
+Codex is launched with `-c check_for_update_on_startup=false` for this one run, so its update menu
+is not among those dialogs; a Codex the person opens themselves still offers the update.
+
 ### 8.3 Reassignment and unassignment
 
 Reassignment to an existing Session changes the active owner and the Session projections in one

@@ -664,6 +664,18 @@ func (t *WorkV2Tx) ActiveAssignment(workID string) (work.AssignmentV2, error) {
 	return a, err
 }
 
+// AwaitedAssignment is the item's pending assignment whose Feature Root is
+// waiting on a dialog (WorkV2AwaitedAssignments); zero when there is none.
+func (t *WorkV2Tx) AwaitedAssignment(workID string) (work.AssignmentV2, error) {
+	a, err := scanAssignmentV2(t.tx.QueryRowContext(t.ctx, `SELECT `+assignmentV2Columns+`
+    FROM work_v2_assignments WHERE work_id=? AND state='assigning' AND root_assignment_id<>''
+    ORDER BY rowid DESC LIMIT 1`, workID))
+	if err == sql.ErrNoRows {
+		return work.AssignmentV2{}, nil
+	}
+	return a, err
+}
+
 // LatestAssignment returns the last assignment fact written for one item.
 // rowid is the insertion order inside this append-only ledger; timestamps have
 // one-second precision and cannot distinguish two assignments made together.
@@ -727,6 +739,27 @@ func (t *WorkV2Tx) UpdateAssignment(a work.AssignmentV2) error {
 func (s *Store) WorkV2Assignments(ctx context.Context, workID string) ([]work.AssignmentV2, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+assignmentV2Columns+`
     FROM work_v2_assignments WHERE work_id=? ORDER BY created_at, id`, workID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []work.AssignmentV2{}
+	for rows.Next() {
+		a, err := scanAssignmentV2(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// WorkV2AwaitedAssignments is every new-Session assignment still pending on a
+// Feature Root that was opened and is waiting for a person to answer its first
+// screen. Pending rows are bounded by WorkV2AssignmentLimit.
+func (s *Store) WorkV2AwaitedAssignments(ctx context.Context) ([]work.AssignmentV2, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+assignmentV2Columns+`
+    FROM work_v2_assignments WHERE state='assigning' AND root_assignment_id<>'' ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
