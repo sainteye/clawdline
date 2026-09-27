@@ -20,6 +20,10 @@ const (
 	webhookAccepted = "schedule_dispatch_accepted"
 	webhookRefused  = "schedule_dispatch_refused"
 	webhookTerminal = "task_execution_terminal"
+	// The two journal states Cloud ends a delivery in by refusing a receipt.
+	// Neither is a receipt kind: no receipt follows them.
+	webhookExpired  = "expired"
+	webhookCanceled = "canceled"
 )
 
 // ScheduleWebhookRuntime turns Cloud deliveries into ordinary scheduled broker
@@ -155,6 +159,13 @@ func (r *ScheduleWebhookRuntime) binding(ctx context.Context, hookID string) (st
 }
 
 func (r *ScheduleWebhookRuntime) advance(ctx context.Context, row store.ScheduleWebhookDelivery) error {
+	// Cloud said this delivery is over before the machine had it durably: its
+	// deadline passed, or its hook went away. That is final. Nothing about it
+	// is sent again and nothing of it is dispatched, even if Cloud, against its
+	// own contract, offers the same delivery again.
+	if row.State == webhookExpired || row.State == webhookCanceled {
+		return nil
+	}
 	if len(row.PendingReceipt) != 0 {
 		var receipt schedulewebhook.Receipt
 		if err := json.Unmarshal(row.PendingReceipt, &receipt); err != nil {
@@ -166,9 +177,17 @@ func (r *ScheduleWebhookRuntime) advance(ctx context.Context, row store.Schedule
 			if errors.As(err, &api) {
 				switch api.Code {
 				case "delivery_canceled":
-					return r.finishWithoutReceipt(ctx, row, "canceled")
+					r.logf("schedule webhooks: delivery %s was canceled before receipt %d; not dispatching it",
+						row.DeliveryID, receipt.ReceiptVersion)
+					return r.finishWithoutReceipt(ctx, row, webhookCanceled)
 				case "delivery_expired":
-					return r.finishWithoutReceipt(ctx, row, "expired")
+					// C2: the deadline is absolute. A refused version-1
+					// receipt means the task must not run, now or later —
+					// a deploy that was due while this machine was off is
+					// not one to start when it wakes.
+					r.logf("schedule webhooks: delivery %s expired before receipt %d; not dispatching it",
+						row.DeliveryID, receipt.ReceiptVersion)
+					return r.finishWithoutReceipt(ctx, row, webhookExpired)
 				case "stale_lease":
 					if receipt.ReceiptVersion == 1 {
 						return nil
@@ -218,12 +237,24 @@ func (r *ScheduleWebhookRuntime) advance(ctx context.Context, row store.Schedule
 		if err != nil {
 			return err
 		}
-		terminal := map[string]string{"success": "success", "failure": "failure", "timeout": "timed_out", "cancelled": "cancelled", "spawn_failed": "spawn_failed"}
-		if cloudState := terminal[state]; cloudState != "" {
+		if cloudState := webhookTerminalOutcome(state); cloudState != "" {
 			return r.queueAndAdvance(ctx, row, webhookTerminal, webhookTerminal, "", cloudState, time.Time{}, true)
 		}
 	}
 	return nil
+}
+
+// webhookTerminalOutcome is the `task_terminal_state` a finished broker task
+// is reported as, or "" for a task that is not finished. The broker says
+// `timeout`; the protocol says `timed_out`.
+func webhookTerminalOutcome(state string) string {
+	switch state {
+	case "success", "failure", "cancelled", "spawn_failed":
+		return state
+	case "timeout":
+		return "timed_out"
+	}
+	return ""
 }
 
 func (r *ScheduleWebhookRuntime) queueAndAdvance(ctx context.Context, row store.ScheduleWebhookDelivery, kind, state, outcome, terminal string, retry time.Time, isTerminal bool) error {

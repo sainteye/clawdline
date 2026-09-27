@@ -1,8 +1,9 @@
 # Scheduled tasks and webhooks
 
-After this page you can save a task that Claude Code or Codex runs on its own — once, or on chosen
-days at a chosen time — see each run's result, and, on Clawdline Cloud Pro, start the same task
-from a webhook. You can tell it worked from the schedule's history.
+After this page you can save a task that Claude Code or Codex runs on its own — once, on chosen
+days at a chosen time, or with no time at all, only when you or a webhook start it — see each
+run's result, and, on Clawdline Cloud Pro, start the same task from a webhook and wait for its
+result. You can tell it worked from the schedule's history.
 
 ## Availability
 
@@ -24,6 +25,8 @@ running when a schedule is due; see [platforms.md](platforms.md) for keeping it 
 2. Press **+** (**新增排程**, new schedule) in its heading.
 3. Fill in the form:
    - **標題** (title)
+   - **不設時間——只由 webhook 或手動執行** (no time — runs only by webhook or by hand) — tick it
+     for a task the clock never starts; the two fields below disappear.
    - **時間** (at) — the time of day.
    - **星期** (on) — **每天** (daily), or the days of the week.
    - **機器** (machine) — shown only when your Cloud account has more than one machine.
@@ -53,6 +56,9 @@ running when a schedule is due; see [platforms.md](platforms.md) for keeping it 
   Outside the window the occurrence is recorded as missed, and you get a notification if **Tell me
   if it fails** is on ([notifications.md](notifications.md)).
 - Each run is recorded in the schedule's history, with the session it ran in.
+- A schedule with no time is never due. Its row reads **只由 webhook 或手動執行** (runs only by
+  webhook or by hand) instead of a next time; it runs when you press **立即執行** (run now) or its
+  webhook is called, and only while it is **啟用** (enabled).
 
 ## Change, pause or delete
 
@@ -89,15 +95,38 @@ event can open a full agent session on your machine instead of running a fixed s
    ```
 
 - The body is not passed to the agent. A webhook cannot replace the schedule's saved first
-  message; it only says "run it now".
+  message; it only says "run it now". The body may be empty, `{}`, or
+  `{"deliver_within_seconds": N}` (10 to 86400): if your machine has not taken the run within N
+  seconds, it is void and never starts later. Without it the limit is 24 hours.
 - Send an `Idempotency-Key`: the same key never starts a second run. Without one, every call is a
   new run.
-- `202` means Clawdline Cloud durably accepted the request, not that the run finished. The result
-  is in the schedule's history.
+- `202` means Clawdline Cloud durably accepted the request, not that the run finished. Its
+  `delivery_id` names the run's delivery: `GET` the same URL followed by
+  `/deliveries/<delivery_id>` to read whether it was taken, refused, finished — and how — or
+  expired. The result is also in the schedule's history.
+- To start it and wait for the answer from a script or another machine, use
+  `clawdline webhook fire` (below).
 - **輪替網址** (rotate URL) replaces the address; **停用 Webhook** (disable) turns it off.
 - Moving the schedule to another machine (changing **機器**) moves its webhook too, and the URL stays
   the same, so whatever calls it needs no change. A disabled webhook is not moved; generate a new one
   on the other machine if you need one.
+
+### Start it and wait: `clawdline webhook fire`
+
+`clawdline webhook fire` calls the webhook and waits for the run to end, from any machine with the
+`clawdline` binary — no daemon, no pairing. The URL is a secret, so it is never an argument: put it
+in a file readable only by you, or in `CLAWDLINE_WEBHOOK_URL`.
+
+```sh
+clawdline webhook fire --url-file ~/.config/deploy-webhook-url
+```
+
+It asks for delivery within 60 seconds (`--deliver-within`), waits up to 60 minutes (`--timeout`),
+prints each change on stderr and one final line on stdout, and exits `0` when the run succeeded,
+`1` when it finished without success, `2` when it never reached your machine (for instance the
+machine was off), `3` when it was refused (the schedule is disabled or already running, or the URL
+was rotated or disabled), and `4` when it stopped waiting. `--no-wait` prints the delivery id and
+returns at once. [schedules.md](../schedules.md) lists every final line.
 
 ## Troubleshooting
 

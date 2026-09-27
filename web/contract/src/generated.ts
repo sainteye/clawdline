@@ -4632,6 +4632,7 @@ export interface ScheduleRecord {
   runs_may_be_truncated?: boolean
   task: ScheduleTask
   title: string
+  trigger_only?: boolean
   webhook_binding_availability: string
   webhook_hook_id?: string
   when: ScheduleWhen
@@ -4640,18 +4641,20 @@ export interface ScheduleRecord {
 /**
  * The body POST /v1/orchestrator/schedules and PATCH /v1/orchestrator/schedules/:id
  * take — the form's fields, flattened. `place_id` is an id from GET /v1/places,
- * never a path. Exactly one of `days` and `on`; `days` is not defaulted.
- * schedule_id, created_at, when_changed_at, fired_at and project_dir are the
- * machine's and are refused as unknown fields. Writes need an Idempotency-Key and
- * either a device that may send or, for a schedule that runs once, this machine's
- * orchestrator token. A session carrying a person's recent instruction may write a
- * repeating schedule by sending both `session_id` and `via.run`; the run must have
- * been issued for a message to that conversation. Those proof fields are audit
- * evidence and are not stored in the schedule.
+ * never a path. Either `at` with exactly one of `days` and `on` (`days` is not
+ * defaulted), or `trigger_only: true` with none of `at`, `days` and `on` — a
+ * schedule the clock never fires, run only by hand or by webhook. schedule_id,
+ * created_at, when_changed_at, fired_at and project_dir are the machine's and are
+ * refused as unknown fields. Writes need an Idempotency-Key and either a device
+ * that may send or, for a schedule that runs once, this machine's orchestrator
+ * token. A session carrying a person's recent instruction may write a repeating
+ * schedule by sending both `session_id` and `via.run`; the run must have been
+ * issued for a message to that conversation. Those proof fields are audit evidence
+ * and are not stored in the schedule.
  */
 export interface ScheduleRequest {
   assistant: string
-  at: string
+  at?: string
   catch_up_hours?: number
   close_tab?: string
   days?: string[]
@@ -4683,6 +4686,13 @@ export interface ScheduleRequest {
   template?: ScheduleTemplate
   timeout_minutes?: number
   title: string
+
+  /**
+   * True for a schedule with no time: send it without at, days and on. A save may
+   * turn a timed repeating schedule into one and back; a schedule that runs once
+   * stays once.
+   */
+  trigger_only?: boolean
   via?: ScheduleUserAuthorization
 }
 
@@ -4730,6 +4740,12 @@ export interface ScheduleRow {
    */
   state?: string
   title?: string
+
+  /**
+   * Present and true for a schedule with no time (`when.trigger_only`): the clock
+   * never fires it, and it runs only by hand or by webhook. It never has next_fire.
+   */
+  trigger_only?: boolean
 }
 
 /**
@@ -4822,12 +4838,14 @@ export interface ScheduleUserAuthorization {
 /**
  * `when` in the file's own spelling: `at` (HH:MM, local time) and exactly one of
  * `days` (`daily`, or weekday names sun…sat) or `on` (YYYY-MM-DD, a schedule that
- * runs once).
+ * runs once) — or, alone, `trigger_only: true`, a schedule with no time that runs
+ * only by hand or by webhook.
  */
 export interface ScheduleWhen {
-  at: string
+  at?: string
   days?: string[]
   on?: string
+  trigger_only?: boolean
 }
 
 /**

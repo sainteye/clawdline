@@ -8,7 +8,7 @@
 ## 模型：就是舊版的檔案
 
 先前 Go 版的排程是 `every 1h`／`at 09:00` 的間隔模型，舊 app 沒有這種東西。現在整個換成舊版的檔案格式，
-欄位一個不改：`clawdline_schedule`、`schedule_id`、`title`、`when {at, days|on}`、`task {…}`、`enabled`、
+欄位一個不改：`clawdline_schedule`、`schedule_id`、`title`、`when {at, days|on}`（or `{trigger_only: true}`, below）、`task {…}`、`enabled`、
 `close_tab`、`catch_up_hours`、`notify_on_failure`、`created_at`、`when_changed_at`、`fired_at`。
 解析器（`internal/domain/schedule`）的每一句拒絕都是舊版 parser 的原句，所以舊檔搬過來是**複製**，不是翻譯。
 
@@ -88,7 +88,94 @@ only the list, not Session-starting routes such as `/v1/places/:id/start`.
 還原或匯入的檔會在出現的那一分鐘就發射——正是 §3.2 第二次事故換個寫法。所以每一次都還要跟這支 daemon
 第一次看見這一列的時間比；這個時間在**讀取時**蓋章，因為會出事的正是沒經過寫入路徑的那些列。
 
-## Migration: moving the old schedules over
+## Trigger-only schedules and `clawdline webhook fire` (2026-09-27)
+
+The problem: an agent session on one machine must be able to start a fixed, pre-defined task on
+another machine through Schedule Webhook v1, and must learn from the command it ran whether the task
+succeeded, failed, was refused, or never reached the machine. A trigger that does not reach the
+machine quickly must be void for good: when the target is off, a deploy must not run hours later
+when it wakes. There is still no machine-to-machine channel, and none is added; the caller waits on
+the result instead.
+
+**A schedule may have no time.** `when` may be exactly `{"trigger_only": true}` — no `at`, `days` or
+`on` beside it, and `false` is refused rather than read as "timed". The clock never fires it:
+`LatestFire` and `NextFire` are zero for it, so the minute timer skips it before any of the seven
+questions above, it is never missed, never caught up and never notified about, and it has no
+`next_fire`. `Decide` answers `no_clock` if it is ever asked anyway. It runs by a manual Run or by
+its webhook, and **only while `enabled` is true**: a disabled one refuses the webhook with
+`schedule_disabled` as before, and — unlike a timed schedule, whose manual Run is a validation
+press that ignores `enabled` — refuses a manual Run with `409 schedule_disabled` too, because for a
+schedule without a clock the press is the run itself. Lists and details carry `trigger_only: true`.
+The form body sends `trigger_only: true` instead of `at`/`days`/`on` (all three beside it is
+`400 bad_request`); a save may turn a repeating schedule into a trigger-only one and back, and a
+schedule that runs once stays once. The orchestrator token alone cannot make one: like a repeating
+schedule it is a standing instruction, and it needs a person's device or the `session_id` + `via.run`
+relay. `TestATriggerOnlyScheduleHasNoClock` (a week of moments, midnight included) and
+`TestATriggerOnlyScheduleIsRunOnlyByHand` (a week of beats, then Run enabled and disabled) pin it.
+
+**A delivery's deadline is absolute on this side too.** A trigger may carry
+`{"deliver_within_seconds": N}` (10…86400, default 86400); Cloud refuses the version-1
+`mac_durable_accepted` receipt with `409 delivery_expired` once `accepted_at + N` has passed. The
+runtime (`internal/app/schedule_webhooks.go`) treats that answer as final: the journal row becomes
+`expired`, one log line says so, no receipt is retried and nothing is dispatched. A row in `expired`
+or `canceled` is left alone even if Cloud offers the same delivery again.
+`TestAnExpiredDeliveryNeverReachesTheBroker` counts `DispatchScheduled` calls through a wrapper and
+asserts zero across three polls, with `TestAnAcceptedDeliveryReachesTheBrokerOnce` as its control;
+with the re-offer guard disabled it failed, sending receipt versions 2 and 3 for a delivery Cloud had
+already declared expired. A `schedule_dispatch_refused` receipt carries a stable code, never text:
+`schedule_not_found`, `schedule_disabled`, `schedule_spent`, `schedule_active`,
+`orchestrator_disabled`, `hook_unbound`, `binding_store_unavailable`, `outcome_unknown` or
+`dispatch_failed`. A finished run sends `task_execution_terminal` with `success`, `failure`,
+`timed_out` (the broker's `timeout`), `cancelled` or `spawn_failed`;
+`TestEveryTerminalTaskStateHasAWebhookOutcome` fails if the broker grows a terminal state with no
+outcome.
+
+**What the caller gets.** The `202 clawdline.schedule_webhook.accepted.v1` answer names the delivery
+(`delivery_id`, `deliver_by`), and
+`GET /v1/schedule-webhook-trigger/<token>/deliveries/<delivery_id>` — authorised by the same token —
+answers its `state` (`queued`, `leased`, `mac_accepted`, `dispatch_deferred`, `dispatch_accepted`,
+`dispatch_refused`, `terminal`, `expired`, `canceled`), the terminal `outcome` and the refusal's
+`refusal_code`. No task content, schedule id or machine id is in it.
+
+`clawdline webhook fire` is that caller, in the same binary on every platform, with no daemon:
+
+```
+usage: clawdline webhook fire [--url-file path] [--deliver-within 60s] [--timeout 60m] [--no-wait]
+  start a schedule through its webhook; no daemon needed. The URL is read from --url-file or CLAWDLINE_WEBHOOK_URL, never from an argument
+  stdout, one line: success|failed|not_delivered|refused|gave_up delivery=<id|-> [state=<s>] [outcome=<o>] [refusal_code=<c>] [code=<c> status=<n>] [reason=unreachable]
+  --no-wait prints only the delivery id. Exit: 0 success, 1 failed, 2 never reached the machine, 3 refused, 4 gave up waiting, 64 usage
+```
+
+- The URL is a credential: never a positional argument (refused with 64, not echoed), never
+  printed. Transport errors are stripped of the URL and host, and every output line is passed
+  through a redaction of the URL and any long path segment. Redirects are not followed (a
+  redirected POST would become a GET and carry the token elsewhere). `https` only, except `http`
+  to a loopback host.
+- One random `Idempotency-Key` per invocation. Transport errors and 5xx are retried with that key,
+  backing off, only while the `--deliver-within` deadline (default 60s, whole seconds 10…86400,
+  sent as `deliver_within_seconds`) has not passed; then exit 2. Any other non-202 is not retried.
+- After the 202 it polls the status every 3 s, growing by half to 10 s, until a final state or
+  `--timeout` (default 60m, counted from the 202). Each state change is one stderr line
+  (`clawdline webhook fire: delivery <id>: leased`). A 429, a 5xx or a transport error while
+  polling keeps polling. Unknown states are treated as still in progress.
+- Final lines, one per outcome:
+
+| Exit | stdout |
+|---|---|
+| 0 | `success delivery=<id> state=terminal outcome=success` (`--no-wait`: just `<id>`) |
+| 1 | `failed delivery=<id> state=terminal outcome=timed_out` (or failure, cancelled, spawn_failed) |
+| 2 | `not_delivered delivery=<id> state=expired` (or canceled); `not_delivered delivery=- reason=unreachable`; `not_delivered delivery=<id> state=unknown code=not_found` |
+| 3 | `refused delivery=<id> state=dispatch_refused refusal_code=schedule_disabled`; `refused delivery=- code=webhook_unavailable status=404` (the trigger's 429 and 400 alike) |
+| 4 | `gave_up delivery=<id> state=dispatch_deferred` (the last state seen) |
+
+Decisions the contract left open: a usage error is 64 (EX_USAGE), because 2 already means "never
+reached the machine"; a `404 not_found` for a delivery Cloud has just accepted is 2 (it was dropped
+before anyone refused it), while any other 4xx while polling is 3; a 202 with no readable
+`delivery_id` is `failed … reason=unreadable_answer`, exit 1. Pinned by `cmd/clawdline/webhook_fire_test.go`
+against an `httptest` server speaking the contract, every test also asserting that neither stdout
+nor stderr contains the URL or the token.
+
+
 
 ```sh
 # On the machine taking over. <port> and <state> are the new daemon's port and its CLAWDLINE_NEXT_DIR

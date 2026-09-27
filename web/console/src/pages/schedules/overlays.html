@@ -58,12 +58,18 @@
                    data-1p-ignore data-lpignore="true" data-bwignore>
         </div>
 
-        <div class="block">
+        <!-- No time: a schedule the clock never fires, run only by Run now or its webhook.
+             Hidden while editing a schedule that runs once, which stays once. -->
+        <div class="block" id="schedule-trigger-block">
+            <div class="row" id="schedule-trigger"></div>
+        </div>
+
+        <div class="block" id="schedule-at-block">
             <span class="field-label" id="schedule-at-label">At</span>
             <input class="find time" id="schedule-at" type="time" required>
         </div>
 
-        <div class="block">
+        <div class="block" id="schedule-days-block">
             <span class="field-label" id="schedule-days-label">On</span>
             <div class="row" id="schedule-days"></div>
         </div>

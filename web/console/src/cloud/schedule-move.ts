@@ -48,7 +48,7 @@ export interface MoveRecord {
   id: string
   title?: string
   enabled?: boolean
-  when?: { at?: string; days?: string | string[]; on?: string }
+  when?: { at?: string; days?: string | string[]; on?: string; trigger_only?: boolean }
   task?: Record<string, unknown> & {
     assistant?: string
     model?: string
@@ -222,14 +222,19 @@ export function recordBody(record: MoveRecord, place: string, enabled: boolean):
   const task = record.task || {}
   const body: Record<string, unknown> = {
     title: record.title || "",
-    at: when.at || "",
     place_id: place,
     assistant: task.assistant || "",
     instructions: task.instructions || "",
     enabled,
   }
-  if (when.days !== undefined) body.days = when.days
-  if (when.on !== undefined) body.on = when.on
+  // A schedule with no time sends none of at, days and on (`ScheduleRequest`).
+  if (when.trigger_only) {
+    body.trigger_only = true
+  } else {
+    body.at = when.at || ""
+    if (when.days !== undefined) body.days = when.days
+    if (when.on !== undefined) body.on = when.on
+  }
   if (record.close_tab !== undefined) body.close_tab = record.close_tab
   if (record.catch_up_hours !== undefined) body.catch_up_hours = record.catch_up_hours
   if (record.notify_on_failure !== undefined) body.notify_on_failure = record.notify_on_failure
