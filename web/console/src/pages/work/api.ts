@@ -427,6 +427,8 @@ export interface WorkV2Proposal {
   reason: string
   suggested_acceptance: string
   session_id: string
+  source_work_id: string
+  source_todo_id: string
   state: string
   created_at: number
 }

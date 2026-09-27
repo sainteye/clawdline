@@ -49,8 +49,15 @@ From then on the session moves the item itself, and each move needs evidence:
 Each card carries a **Token 帳單** (token bill): what the work cost so far
 ([usage.md](usage.md)).
 
-**Proposals.** A session can propose an item. It waits under **Agent 提案** until you press
-**接受並建立** (accept) or **拒絕** (reject); nothing is accepted for you.
+**Proposals.** A session can propose an item. **Agent 提案** uses plain language in a compact review
+row: what the session proposes, why it should be done, its Project and source. Press
+**Explain / 詳細說明** to reveal **會改什麼** (what changes) and **完成後會看到什麼** (the observable
+result). Press **接受並建立** (accept) or **拒絕** (reject); nothing is accepted for you.
+
+**Questions.** When the owning session needs an answer, the question and its answer buttons appear
+inside that Board item's card under **需要你決定**. The item title and description stay beside the
+question, and the card says which answer becomes the default at the deadline. A new question cannot
+be created without an open item owned by that session.
 
 ## Session to-dos
 

@@ -414,16 +414,22 @@ func TestPlanningNeverBecomesExecutableAndProposalNeedsOwnedEvidence(t *testing.
 	}
 	p, err := w.Propose(context.Background(), work.ProposalV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindIssue,
 		Title: "Follow-up", Description: "A newly discovered concern", Reason: "Found while implementing",
-		SessionID: "session-a", SourceWorkID: assigned.Item.ID})
+		SuggestedAcceptance: "The person can see the corrected result.", SessionID: "session-a", SourceWorkID: assigned.Item.ID})
 	if err != nil || p.State != "pending" {
 		t.Fatalf("proposal: %+v %v", p, err)
 	}
 	_, err = w.Propose(context.Background(), work.ProposalV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindIssue,
 		Title: "Foreign", Description: "Not this owner's evidence", Reason: "No authority",
-		SessionID: "session-b", SourceWorkID: assigned.Item.ID})
+		SuggestedAcceptance: "The person can see the result.", SessionID: "session-b", SourceWorkID: assigned.Item.ID})
 	var refusal *WorkError
 	if !errors.As(err, &refusal) || refusal.Code != "proposal_source_invalid" {
 		t.Fatalf("foreign proposal: %v", err)
+	}
+	_, err = w.Propose(context.Background(), work.ProposalV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindIssue,
+		Title: "Vague finish", Description: "Change the thing", Reason: "It matters",
+		SessionID: "session-a", SourceWorkID: assigned.Item.ID})
+	if !errors.As(err, &refusal) || refusal.Code != "invalid_proposal" {
+		t.Fatalf("proposal without an observable result: %v", err)
 	}
 }
 

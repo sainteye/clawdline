@@ -576,16 +576,29 @@ transition guard, but the owning Agent still requests the transition.
 ## 10. Agent proposals
 
 A proposal contains Project, proposed kind, title, description, reason, suggested acceptance,
-proposing Session, optional source item/quick-to-do, and version. Its states are `pending`,
-`accepted`, and `rejected`.
+proposing Session, one source item/quick-to-do, and version. Title, description, reason, and
+suggested acceptance are all required and form a plain-language explanation for the person:
+observable outcome, what changes, why it matters now, and what done looks like. Unexplained
+acronyms, internal identifiers, paths, and implementation jargon are supporting detail, not the
+proposal's main wording. Its states are `pending`, `accepted`, and `rejected`.
 
 A proposal is also the fallback when a Session has no run to create an item under (§7.1): the
 person typed straight into the terminal, so the Session proposes and tells them to accept it here.
 
 It does not expire into acceptance, does not create a work item through a rule, and is never mixed
-with the Board count. The person can preview and edit it before accepting. Acceptance creates one
-new item and links the proposal to it in one idempotent transaction. Rejection keeps provenance
-without creating work.
+with the Board count. The compact row shows the title, source, and reason; its **Explain / 詳細說明**
+control reveals what changes and the observable completion result. The person can preview and edit
+it before accepting. Acceptance creates one new item and links the proposal to it in one idempotent
+transaction. Rejection keeps provenance without creating work.
+
+### 10.1 Questions that need a person's answer
+
+A Session may ask a two-to-four-option decision only from an open Board item it owns. `work_id` is
+required on `POST /v1/orchestrator/decisions`; the daemon derives Project from that item and refuses
+a missing, unknown, closed, or differently owned source. The Board draws the open decision inside
+that item's card, after the item's description, so its question, safe default and answer controls
+never appear without the work that explains them. Rows persisted before this invariant remain in a
+closed compatibility fold and are labelled as unlinked old data instead of being silently hidden.
 
 ## 11. Session to-do panel
 

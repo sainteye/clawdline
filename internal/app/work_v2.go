@@ -1641,9 +1641,10 @@ func (w *WorkSystemV2) DeleteDirectTodo(ctx context.Context, id, session string,
 
 func (w *WorkSystemV2) Propose(ctx context.Context, p work.ProposalV2) (work.ProposalV2, error) {
 	p.ID, p.Title, p.Description, p.Reason = newWorkID(), strings.TrimSpace(p.Title), strings.TrimSpace(p.Description), strings.TrimSpace(p.Reason)
+	p.SuggestedAcceptance = strings.TrimSpace(p.SuggestedAcceptance)
 	p.ProjectID, p.ProjectPath, p.SessionID = strings.TrimSpace(p.ProjectID), strings.TrimSpace(p.ProjectPath), strings.TrimSpace(p.SessionID)
-	if !p.Kind.Valid() || p.ProjectID == "" || p.ProjectPath == "" || p.SessionID == "" || p.Title == "" || p.Description == "" || p.Reason == "" {
-		return p, workV2Error(http.StatusUnprocessableEntity, "invalid_proposal", "A proposal needs Project, kind, title, description, reason, and Session.")
+	if !p.Kind.Valid() || p.ProjectID == "" || p.ProjectPath == "" || p.SessionID == "" || p.Title == "" || p.Description == "" || p.Reason == "" || p.SuggestedAcceptance == "" {
+		return p, workV2Error(http.StatusUnprocessableEntity, "invalid_proposal", "A proposal needs Project, kind, title, description, reason, suggested acceptance, and Session; explain the work for a person in plain language.")
 	}
 	if err := validateWorkV2Text(p.Title, p.Description); err != nil {
 		return p, err

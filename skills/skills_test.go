@@ -265,6 +265,8 @@ func TestEveryGuideExplainsSessionOwnTodosAndBoardProposals(t *testing.T) {
 		`"source_todo_id"`,
 		"source_todo_id",
 		"suggested_acceptance",
+		"plain language",
+		"Explain",
 		"child_session",
 		"direct_todos_full",
 		"`description`",

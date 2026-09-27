@@ -277,6 +277,14 @@ func (t *WorkTx) Item(id string) (work.Item, error) {
 	return scanWork(t.tx.QueryRowContext(t.ctx, `SELECT `+workColumns+workFrom+` WHERE w.id = ?`, id))
 }
 
+// WorkV2Item reads the current Board item a participation write names. The
+// decisions register predates work system v2, but its source check and its row
+// must share one transaction: a question may not be admitted after its item
+// was closed or handed to another Session between two separate reads.
+func (t *WorkTx) WorkV2Item(id string) (work.ItemV2, error) {
+	return scanWorkV2(t.tx.QueryRowContext(t.ctx, `SELECT `+workV2Columns+` FROM work_v2_items WHERE id = ?`, id))
+}
+
 // Tasks reads every broker task bound to a work item, as the transaction
 // sees them: the facts a change is decided from.
 func (t *WorkTx) Tasks(id string) ([]BrokerRow, error) {

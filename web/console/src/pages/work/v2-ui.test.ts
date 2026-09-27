@@ -286,10 +286,24 @@ test("an Epic lists its children with progress, and a child links back to its Ep
   assert.match(styles, /\.work-epic-parent \{[^}]*var\(--work-epic\)/)
 })
 
-test("the Board shows the open questions Sessions asked and answers them there", () => {
+test("the Board puts each open question inside the item that explains it", () => {
   assert.match(source, /readDecisions\(\)/)
-  assert.match(source, /<DecisionCard key=\{d\.id\} decision=\{d\}/)
-  assert.match(source, /answerDecision\(d\.id, o\)/)
+  assert.match(source, /decisionsForWorkItem\(decisions, item\.id\)/)
+  assert.match(source, /<WorkItemDecisions decisions=\{decisions\}/)
+  assert.match(source, /answerDecision\(decision\.id, option\.id\)/)
+  assert.match(source, /未連結的舊問題/)
+  assert.match(styles, /\.work-item-decisions/)
+})
+
+test("Agent proposals are compact review rows with labelled detail on demand", () => {
+  assert.match(source, /<ProposalQueue proposals=\{visibleProposals\}/)
+  assert.match(source, /為什麼要做/)
+  assert.match(source, /Explain/)
+  assert.match(source, /詳細說明/)
+  assert.match(source, /<dt>會改什麼<\/dt>/)
+  assert.match(source, /<dt>完成後會看到什麼<\/dt>/)
+  assert.match(styles, /\.work-proposal \{[\s\S]*grid-template-columns/)
+  assert.doesNotMatch(source, /work-fold-body work-cards[^\n]*proposals\.map/)
 })
 
 test("a Session opens its Board item as the Board's own card, with the same controls", () => {
