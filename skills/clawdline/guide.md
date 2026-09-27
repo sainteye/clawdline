@@ -991,6 +991,10 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - marketing, for a blog, site or docs repository: `seo` (pages and metadata), `content-writer`
     (articles drafted in files), `ai-search` (pages AI answer engines can cite), `social-media`,
     `instagram`, `email` (newsletters), `growth` (measured experiments) and `pr` (announcements).
+  - product, quality and operations: `product-manager`, `sprint-prioritizer`, `feedback-synthesizer`,
+    `trend-researcher`, `ux-researcher`; `test-automation`, `accessibility`, `performance`,
+    `api-tester`, `evidence-collector` (gathers proof, not the verdict); `sre`, `devops`,
+    `incident-commander`, `finops` and `secrets`.
 - **You remain responsible for the Epic.** Follow every child to done (`clawdline item steps <child
   id>` reads one), integrate their work, and move the Epic to done only when every child is done or
   cancelled: `clawdline item phase <epic id> done` is refused `epic_children_open`, naming how many

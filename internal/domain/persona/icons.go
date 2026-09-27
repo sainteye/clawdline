@@ -64,6 +64,23 @@ func (a art) grid() (Icon, error) {
 
 const ink = "#141416"
 
+// iconSets are the bots, one map per file that draws a team's family; a new
+// team's file adds its map here on a line of its own.
+var iconSets = []map[string]art{
+	icons,
+	productQualityOperationsIcons,
+}
+
+// iconFor is id's bot from whichever set draws it.
+func iconFor(id string) (art, bool) {
+	for _, set := range iconSets {
+		if a, ok := set[id]; ok {
+			return a, true
+		}
+	}
+	return art{}, false
+}
+
 var icons = map[string]art{
 	"architect": {accent: 'B', palette: map[byte]string{'B': "#6c7bd9", 'o': ink, 'Y': "#f2c14e", 'y': "#c9962a"},
 		rows: [iconHeight]string{

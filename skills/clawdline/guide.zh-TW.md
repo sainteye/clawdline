@@ -889,6 +889,9 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - 行銷團隊，用在部落格、網站或文件 repository：`seo`（頁面與 metadata）、`content-writer`（在檔案裡寫文章）、
     `ai-search`（讓 AI 搜尋引用的頁面）、`social-media`、`instagram`、`email`（電子報）、`growth`（可量測的
     實驗）與 `pr`（對外公告）。
+  - 產品、品質與維運團隊：`product-manager`、`sprint-prioritizer`、`feedback-synthesizer`、`trend-researcher`、
+    `ux-researcher`；`test-automation`、`accessibility`、`performance`、`api-tester`、`evidence-collector`
+    （蒐集證據，不下結論）；`sre`、`devops`、`incident-commander`、`finops` 與 `secrets`。
 - **Epic 仍然由你負責。** 追每個子項目到完成（`clawdline item steps <child id>` 可以讀一個），整合它們的
   成果，所有子項目都完成或取消後才把 Epic 移到 done：在那之前 `clawdline item phase <epic id> done` 會被
   `epic_children_open` 拒絕，並寫明還有幾個沒結束。除了 Epic 的子項目，不要建立任何其他看板項目。

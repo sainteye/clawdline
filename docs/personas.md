@@ -53,6 +53,31 @@ Board kind.
 | `growth` | Growth Hacker | 成長駭客 | [`marketing-growth-hacker.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-growth-hacker.md) |
 | `pr` | PR & Communications | 公關傳播 | [`marketing-pr-communications-manager.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-pr-communications-manager.md) |
 
+The product, quality and operations teams, adapted the same way: upstream emoji, hype, invented
+metrics and vendor-specific pipelines were dropped, and each works inside the repository and the
+Epic flow — plans, steps, evidence and reports in the project's own language. None is suggested
+for a Board kind. `evidence-collector` gathers the proof (screenshots, logs, measurements, and how
+each was produced); `reality-checker` gives the verdict on it. Their bots are drawn in
+`icons_product_quality_operations.go`, one colour family per team.
+
+| id | Name | 中文 | Teams | Adapted from |
+| --- | --- | --- | --- | --- |
+| `product-manager` | Product Manager | 產品經理 | product | [`product-manager.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/product/product-manager.md) |
+| `sprint-prioritizer` | Sprint Prioritizer | Sprint 排序員 | product | [`product-sprint-prioritizer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/product/product-sprint-prioritizer.md) |
+| `feedback-synthesizer` | Feedback Synthesizer | 回饋整理師 | product | [`product-feedback-synthesizer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/product/product-feedback-synthesizer.md) |
+| `trend-researcher` | Trend Researcher | 趨勢研究員 | product, marketing | [`product-trend-researcher.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/product/product-trend-researcher.md) |
+| `ux-researcher` | UX Researcher | UX 研究員 | product, design | [`design-ux-researcher.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/design/design-ux-researcher.md) |
+| `test-automation` | Test Automation Engineer | 自動化測試工程師 | quality, engineering | [`testing-test-automation-engineer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/testing/testing-test-automation-engineer.md) |
+| `accessibility` | Accessibility Auditor | 無障礙稽核員 | quality, design | [`testing-accessibility-auditor.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/testing/testing-accessibility-auditor.md) |
+| `performance` | Performance Benchmarker | 效能量測師 | quality, engineering | [`testing-performance-benchmarker.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/testing/testing-performance-benchmarker.md) |
+| `api-tester` | API Tester | API 測試員 | quality | [`testing-api-tester.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/testing/testing-api-tester.md) |
+| `evidence-collector` | Evidence Collector | 證據蒐集員 | quality | [`testing-evidence-collector.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/testing/testing-evidence-collector.md) |
+| `sre` | Site Reliability Engineer | SRE | operations, engineering | [`engineering-sre.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/engineering/engineering-sre.md) |
+| `devops` | DevOps Automator | DevOps 自動化工程師 | operations, engineering | [`engineering-devops-automator.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/engineering/engineering-devops-automator.md) |
+| `incident-commander` | Incident Commander | 事故指揮官 | operations | [`engineering-incident-response-commander.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/engineering/engineering-incident-response-commander.md) |
+| `finops` | FinOps Engineer | FinOps 成本工程師 | operations | [`engineering-finops-engineer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/engineering/engineering-finops-engineer.md) |
+| `secrets` | Secrets & Credentials Engineer | 密鑰憑證工程師 | operations, engineering | [`security-secrets-credential-engineer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/security/security-secrets-credential-engineer.md) |
+
 `suggested_kinds` tells a picker which personas to show first for a Board item's kind. It only
 orders the choices: no kind gives a persona to anything.
 
