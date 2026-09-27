@@ -1,0 +1,14 @@
+{
+  "id": "f259c16b",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 298740,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 297417,
+    "num_turns": 36,
+    "total_cost_usd": 0.6103728,
+    "subtype": "success",
+    "is_error": false
+  }
+}

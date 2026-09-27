@@ -1,0 +1,14 @@
+{
+  "id": "8a884ffb",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 233574,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 232188,
+    "num_turns": 35,
+    "total_cost_usd": 0.4930895999999999,
+    "subtype": "success",
+    "is_error": false
+  }
+}

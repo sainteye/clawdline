@@ -1,0 +1,14 @@
+{
+  "id": "bbad47ec",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 195315,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 194032,
+    "num_turns": 27,
+    "total_cost_usd": 0.4709012,
+    "subtype": "success",
+    "is_error": false
+  }
+}

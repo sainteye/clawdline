@@ -1,0 +1,1 @@
+The /report endpoint is slow, can you speed it up?

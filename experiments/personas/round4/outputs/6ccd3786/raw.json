@@ -1,0 +1,14 @@
+{
+  "id": "6ccd3786",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 163648,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 162281,
+    "num_turns": 22,
+    "total_cost_usd": 0.2723436,
+    "subtype": "success",
+    "is_error": false
+  }
+}

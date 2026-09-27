@@ -1,0 +1,67 @@
+diff --git a/report.go b/report.go
+index 5d9cbfb..fd47f57 100644
+--- a/report.go
++++ b/report.go
+@@ -6,7 +6,6 @@ import (
+ 	"regexp"
+ 	"sort"
+ 	"strings"
+-	"sync"
+ )
+ 
+ type ReportLine struct {
+@@ -24,27 +23,21 @@ type Report struct {
+ 	Customers []string     `json:"customers"`
+ }
+ 
+-// reportMu keeps report generation consistent.
+-var reportMu sync.Mutex
++
++var ws = regexp.MustCompile(`\s+`)
++var angle = regexp.MustCompile(`[<>]`)
+ 
+ func cleanNote(s string) string {
+-	ws := regexp.MustCompile(`\s+`)
+-	angle := regexp.MustCompile(`[<>]`)
+ 	s = angle.ReplaceAllString(s, "")
+ 	return strings.TrimSpace(ws.ReplaceAllString(s, " "))
+ }
+ 
+ func uniqueSorted(items []string) []string {
+ 	var out []string
++	seen := map[string]bool{}
+ 	for _, it := range items {
+-		seen := false
+-		for _, o := range out {
+-			if o == it {
+-				seen = true
+-				break
+-			}
+-		}
+-		if !seen {
++		if !seen[it] {
++			seen[it] = true
+ 			out = append(out, it)
+ 		}
+ 	}
+@@ -53,12 +46,16 @@ func uniqueSorted(items []string) []string {
+ }
+ 
+ func BuildReport(s *Store) Report {
+-	reportMu.Lock()
+-	defer reportMu.Unlock()
+ 	var r Report
+ 	var tags, customers []string
+-	for _, o := range s.ListOrders() {
+-		u, _ := s.GetUser(o.UserID)
++	orders := s.ListOrders()
++	ids := make([]int, 0, len(orders))
++	for _, o := range orders {
++		ids = append(ids, o.UserID)
++	}
++	users := s.GetUsers(ids)
++	for _, o := range orders {
++		u := users[o.UserID]
+ 		r.Lines = append(r.Lines, ReportLine{OrderID: o.ID, Customer: u.Name, Amount: o.Amount, Note: cleanNote(o.Note), Tags: o.Tags})
+ 		r.Total += o.Amount
+ 		tags = append(tags, o.Tags...)

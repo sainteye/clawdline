@@ -351,12 +351,15 @@ reports them. See docs/limits.md N52. The 42 shipped texts are 4–5 KiB each.
 
 ## Does a persona help?
 
-`experiments/personas/` holds three rounds of blind experiments with Claude Sonnet 5 that ask whether
+`experiments/personas/` holds four rounds of blind experiments with Claude Sonnet 5 that ask whether
 giving a session the matching persona measurably improves its work. The short answer so far: a
 matching persona reliably changes the style and usually the cost, but it did not reliably improve
 the result. One round showed a gain for accessibility and a loss for minimal-change (the text was
 then rewritten; see `round2-followup/`). A structured brief changed how a verifier worked more than
-the persona did. Every comparison is n = 2 per arm: directional, not significant. Start at
+the persona did. Round 4 (maker tasks with held-out scores, performance and security) was again at
+the ceiling: neither persona, brief nor both changed the result, both raised cost, and the brief's
+"no evidence, no report" rule made most runs skip a correct timing-safe compare fix. Every
+comparison is n = 2 per arm: directional, not significant. Start at
 `experiments/personas/README.md`.
 
 ## Attribution
