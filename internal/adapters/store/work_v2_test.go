@@ -420,11 +420,11 @@ func TestWorkV2ProjectCountsMatchTheBoardsOpenFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := counts["project-a"]; got != (WorkV2ProjectCount{Items: 2, Open: 1}) {
-		t.Errorf("project-a = %+v", got)
+	if got := counts["/project-a"]; got != (WorkV2ProjectCount{Items: 2, Open: 1}) {
+		t.Errorf("/project-a = %+v", got)
 	}
-	if got := counts["project-b"]; got != (WorkV2ProjectCount{Items: 2, Open: 1}) {
-		t.Errorf("project-b = %+v", got)
+	if got := counts["/project-b"]; got != (WorkV2ProjectCount{Items: 2, Open: 1}) {
+		t.Errorf("/project-b = %+v", got)
 	}
 }
 
