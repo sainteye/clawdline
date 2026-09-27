@@ -543,6 +543,9 @@ const words = {
       "Read-only overview. Refresh asks the owning machine for one bounded observation. Cleanup is intentionally unavailable in a browser.",
     projectsDeliveredNotLanded: "Delivered, not landed",
     projectsUnattributedWorktrees: "Unattributed worktrees",
+    projectsActivityHelpTitle: "Why is the in-progress count unavailable?",
+    projectsActivityHelpCopy:
+      "Clawdline has not received complete current work data. This does not mean the Project has no progress; open it to see every work item.",
     pushCloudReached: "Notifications are on: {machines} will notify this device.",
     pushCloudUnreached: "{machines} did not take it this time ({why}); this page tries again the next time it opens.",
     pushCloudNoMachine:
@@ -986,6 +989,8 @@ const words = {
     projectsLifecycleBoundary: "唯讀總覽。重新整理只會向擁有這個版本庫的機器取得一次有界觀測；瀏覽器刻意不提供清理操作。",
     projectsDeliveredNotLanded: "做完了，沒有落地",
     projectsUnattributedWorktrees: "歸不到專案的工作樹",
+    projectsActivityHelpTitle: "為什麼看不到進行中數量？",
+    projectsActivityHelpCopy: "Clawdline 還沒取得完整的即時工作資料；這不代表專案沒有進度。打開專案仍可查看所有工作項目。",
     proposalNeedsYourDecision:
       "系統沒有待辦可重新判定；工作完成不會撤回這筆提議，請自行回答，否則它會等到過期。",
     proposalNotNow: "現在不要",
