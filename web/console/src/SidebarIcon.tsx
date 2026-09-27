@@ -1,9 +1,9 @@
-export type SidebarIconName = "sessions" | "devices" | "projects" | "plan" | "settings" | "work" | "verify"
+export type SidebarIconName = "sessions" | "devices" | "projects" | "plan" | "settings" | "work" | "verify" | "archive"
 
 /**
  * One visual language for the drawer, with a distinct object for each place:
- * terminal, devices, folder, payment card, settings gear, board, clock, and a
- * checked list.
+ * terminal, devices, folder, payment card, settings gear, board, clock, a
+ * checked list, and an archive box.
  * The label beside the mark remains the accessible name, so these are
  * deliberately decorative rather than eight repeated announcements.
  */
@@ -53,6 +53,12 @@ export function SidebarIcon({ name }: { name: SidebarIconName }) {
           <rect x="3" y="4" width="5" height="16" rx="1.25" />
           <rect x="9.5" y="4" width="5" height="10.5" rx="1.25" />
           <rect x="16" y="4" width="5" height="13.5" rx="1.25" />
+        </>
+      )}
+      {name === "archive" && (
+        <>
+          <rect x="3" y="4.5" width="18" height="4.5" rx="1.25" />
+          <path d="M4.75 9v8.75A2.25 2.25 0 0 0 7 20h10a2.25 2.25 0 0 0 2.25-2.25V9M10 13h4" />
         </>
       )}
       {name === "verify" && (

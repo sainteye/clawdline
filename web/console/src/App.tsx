@@ -46,7 +46,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify"
+type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify" | "archive"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -783,6 +783,20 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
           >
             <SidebarIcon name="verify" />
             {verifyWord("nav")}
+          </button>
+          {/* 封存 (docs/session-archive.md): the Sessions archived from the
+              list's swipe, each with the way back. */}
+          <button
+            className="sidebar-item"
+            id="nav-archive"
+            type="button"
+            data-page-to="archive"
+            aria-current={page === "archive" ? "page" : undefined}
+            disabled={!ready("archive")}
+            onClick={() => go("archive")}
+          >
+            <SidebarIcon name="archive" />
+            {nextWord("archiveNav")}
           </button>
         </div>
       </nav>
