@@ -380,3 +380,29 @@ func TestTaskAckPostsTheNotice(t *testing.T) {
 		t.Fatalf("stderr: %q", errs.String())
 	}
 }
+
+// --persona names a built-in persona; it is written into task.json only when
+// given, and a name this build does not have is refused before anything is
+// written or sent.
+func TestDispatchPersona(t *testing.T) {
+	o := testDispatchOptions()
+	if _, ok := taskFile(dispatchID, o, thinConversation, "claude")["persona"]; ok {
+		t.Fatal("a task with no --persona names one")
+	}
+	o.Persona = "minimal-change"
+	if got := taskFile(dispatchID, o, thinConversation, "claude")["persona"]; got != "minimal-change" {
+		t.Fatalf("persona = %v", got)
+	}
+	w := &dispatchWorld{root: t.TempDir(), generations: []string{"aaaaaaaaaaaaaaaa"}}
+	s, b := w.daemon(t, func(int) (int, string) { return 200, dispatchedAnswer("spawning") })
+	o.Persona = "wizard"
+	var out, errs bytes.Buffer
+	if code := dispatchTask(&out, &errs, b, o,
+		testDispatchEnv(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})); code != 2 ||
+		!strings.Contains(errs.String(), `--persona "wizard" is not a persona this build has; it has architect, `) {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	if len(postBodies(s)) != 0 {
+		t.Fatal("a refused persona was sent")
+	}
+}

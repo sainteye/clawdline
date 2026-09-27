@@ -50,7 +50,7 @@ func TestTheHandOverTypesAreTheContracts(t *testing.T) {
 	a := orchestrator.RootAssignment{ID: "i", RequestID: "q", Assistant: "claude", Model: "m", ProjectDir: "/p",
 		Label: "l", State: "briefed", Assignment: orchestrator.Assignment{Objective: "o", Scope: "s", Constraints: "c",
 			RelevantReferences: "r", Acceptance: "a"}, CreatedAt: 1, Ownership: "independent_root", BriefPath: "/b",
-		BriefAttemptedAt: 2, BriefedAt: 3, Failure: "f"}
+		BriefAttemptedAt: 2, BriefedAt: 3, Failure: "f", Persona: "architect"}
 	if got, want := asJSON(t, wireAssignment(a)), asJSON(t, a); !reflect.DeepEqual(got, want) {
 		t.Fatalf("root assignment:\n got %v\nwant %v", got, want)
 	}

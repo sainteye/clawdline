@@ -465,6 +465,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/devstacks", s.devStacksRoute)
 	// Starting and resuming a session in a place, and what was said there (start.go).
 	mux.HandleFunc("/v1/places/", s.placeRoute)
+	// The built-in personas a start or a dispatch may name (personas.go).
+	mux.HandleFunc("/v1/personas", s.personasRoute)
 	mux.HandleFunc("/v1/projects", s.projectCatalogRoute)
 	mux.HandleFunc("/v1/projects/", s.projectsRoute)
 	// Project settings a source machine offers and a mirror applies (project_sync.go).

@@ -21,6 +21,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
+	personas "github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -93,6 +94,22 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No such route", "")
 		return
 	}
+	// `…/as/<persona>` ends a start or a resume that names its assistant:
+	// the persona is a path segment like every other input here, resolved
+	// against the closed catalog, and so part of the idempotency digest.
+	// `as` is recognised only as the second-to-last segment of a route long
+	// enough to name the assistant, so `/start/claude/as` is still a model
+	// called "as", and still refused.
+	persona := ""
+	if n := len(parts); r.Method == http.MethodPost && n >= 5 && parts[n-2] == "as" &&
+		(parts[1] == "start" && n <= 6 || parts[1] == "resume" && n == 6) {
+		persona, parts = parts[n-1], parts[:n-2]
+		if _, ok := personas.Known(persona); !ok {
+			writePlaceRefusal(w, http.StatusBadRequest, "unknown_persona",
+				"No persona named that. GET /v1/personas lists the ones this machine has.", "")
+			return
+		}
+	}
 	switch {
 	case r.Method == http.MethodPost && parts[1] == "start" && len(parts) <= 4:
 		assistant := projects.AssistantClaude
@@ -111,7 +128,7 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		s.writing(w, r, func(w http.ResponseWriter) { s.startPlace(w, r, parts[0], assistant, model) })
+		s.writing(w, r, func(w http.ResponseWriter) { s.startPlace(w, r, parts[0], assistant, model, persona) })
 	case r.Method == http.MethodPost && parts[1] == "resume" && (len(parts) == 3 || len(parts) == 4):
 		assistant, conversation := projects.AssistantClaude, parts[2]
 		if len(parts) == 4 {
@@ -121,7 +138,7 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		s.writing(w, r, func(w http.ResponseWriter) { s.resumePlace(w, r, parts[0], assistant, conversation) })
+		s.writing(w, r, func(w http.ResponseWriter) { s.resumePlace(w, r, parts[0], assistant, conversation, persona) })
 	case r.Method == http.MethodGet && parts[1] == "sessions" && (len(parts) == 2 || len(parts) == 3):
 		assistant := projects.AssistantClaude
 		if len(parts) == 3 {
@@ -231,6 +248,7 @@ func (s *Server) starter(reading startReading) app.Starter {
 		Past: func(ctx context.Context, place projects.Place, assistant string) []projects.Past {
 			return s.past(ctx, place, assistant, reading, 200)
 		},
+		PersonaDir: personas.Dir(s.cfg.Dir),
 		// The broker's answer, so a session the person starts and one the
 		// broker opens answer in the same language.
 		Language: func(assistant string) string {
@@ -322,7 +340,7 @@ func manualConversationTitle(rows []swiftTitle, id, custom string) string {
 	return hit.Title
 }
 
-func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistant, model string) {
+func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistant, model, persona string) {
 	release, ok := admitOpening(w, r)
 	if !ok {
 		return
@@ -337,19 +355,21 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No place named that", "")
 		return
 	}
-	made, err := starter.Start(ctx, place, assistant, model, "")
+	made, err := starter.Start(ctx, place, assistant, model, "", persona)
 	if err != nil {
 		code := writeStartRefusal(w, err)
-		log.Printf("audit place.start place=%s cwd=%q assistant=%s ok=0 why=%s", place.ID, place.Path, assistant, code)
+		log.Printf("audit place.start place=%s cwd=%q assistant=%s persona=%s ok=0 why=%s",
+			place.ID, place.Path, assistant, persona, code)
 		return
 	}
-	log.Printf("audit place.start place=%s cwd=%q assistant=%s ok=1 id=%s", place.ID, place.Path, assistant, made.ID)
+	log.Printf("audit place.start place=%s cwd=%q assistant=%s persona=%s ok=1 id=%s",
+		place.ID, place.Path, assistant, persona, made.ID)
 	writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.Backend(made.Backend),
-		Assistant: assistant, Model: model, Place: place.ID, CWD: place.Path, Attach: made.Attach,
+		Assistant: assistant, Model: model, Persona: persona, Place: place.ID, CWD: place.Path, Attach: made.Attach,
 		At: time.Now().Unix()})
 }
 
-func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assistant, conversation string) {
+func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assistant, conversation, persona string) {
 	release, ok := admitOpening(w, r)
 	if !ok {
 		return
@@ -364,17 +384,17 @@ func (s *Server) resumePlace(w http.ResponseWriter, r *http.Request, id, assista
 		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No place named that", "")
 		return
 	}
-	made, err := starter.Resume(ctx, place, conversation, assistant)
+	made, err := starter.Resume(ctx, place, conversation, assistant, persona)
 	if err != nil {
 		code := writeStartRefusal(w, err)
-		log.Printf("audit place.resume place=%s cwd=%q assistant=%s session=%.64s ok=0 why=%s",
-			place.ID, place.Path, assistant, conversation, code)
+		log.Printf("audit place.resume place=%s cwd=%q assistant=%s session=%.64s persona=%s ok=0 why=%s",
+			place.ID, place.Path, assistant, conversation, persona, code)
 		return
 	}
-	log.Printf("audit place.resume place=%s cwd=%q assistant=%s session=%s ok=1 id=%s",
-		place.ID, place.Path, assistant, conversation, made.ID)
+	log.Printf("audit place.resume place=%s cwd=%q assistant=%s session=%s persona=%s ok=1 id=%s",
+		place.ID, place.Path, assistant, conversation, persona, made.ID)
 	writeJSON(w, contract.PlaceResumed{OK: true, ID: made.ID, Backend: contract.Backend(made.Backend),
-		Assistant: assistant, Place: place.ID, CWD: place.Path, Session: conversation,
+		Assistant: assistant, Persona: persona, Place: place.ID, CWD: place.Path, Session: conversation,
 		Attach: made.Attach, At: time.Now().Unix()})
 }
 

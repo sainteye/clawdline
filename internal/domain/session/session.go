@@ -190,6 +190,11 @@ type Session struct {
 	// wire in this shape; the transport puts it where a person reads it.
 	BindingDetail string `json:"-"`
 
+	// Persona is the built-in persona this session's process was launched
+	// with, read from its command line (persona.FromCommandLine); empty for
+	// none. The command line is the record: nothing else stores it.
+	Persona string `json:"persona,omitempty"`
+
 	// Rungs are the parts Label was chosen from, kept so a reader holding a
 	// higher rung (a name typed in the Swift app, the task that opened the tab)
 	// can choose again without reading the transcript twice. Not on the wire.

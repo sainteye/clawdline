@@ -1396,6 +1396,12 @@ export interface BrokerRootAssignment {
   label: string
   model: string
   ownership: string
+
+  /**
+   * The built-in persona the Feature Root was launched as; absent for none.
+   * ASSIGNMENT.md then carries a PERSONA section naming it and its file.
+   */
+  persona?: string
   project_dir: string
   request_id: string
   state: BrokerRootAssignmentState
@@ -1424,6 +1430,14 @@ export interface BrokerRootAssignmentRequest {
    * "default" or a model name.
    */
   model?: string
+
+  /**
+   * A built-in persona (GET /v1/personas) to launch the Feature Root as; omitted
+   * for none. A name not in the catalog is 422 `bad_root_assignment`. Part of the
+   * request its receipt compares, so the same request_id with another persona is
+   * `request_conflict`.
+   */
+  persona?: string
   project_dir: string
   request_id: string
 }
@@ -1654,6 +1668,12 @@ export interface BrokerTask {
    * The ceiling the dispatch asked for; `full` when task.json said nothing.
    */
   permission: string
+
+  /**
+   * The built-in persona the child is launched as, from task.json `persona`; absent
+   * for none. No kind has a default.
+   */
+  persona?: string
   progress?: BrokerProgressNote[]
   projectDir: string
   repository?: string
@@ -3813,10 +3833,57 @@ export interface PastSessionList {
 }
 
 /**
+ * One persona. `id` is what a start or resume path ends `/as/{id}` with, what a
+ * dispatch's `persona` and a Root Assignment's `persona` name, and what a session
+ * row's `persona` reads back.
+ */
+export interface Persona {
+  /**
+   * The persona's pixel bot, eight columns by seven rows, in the shape a project's
+   * mark has.
+   */
+  icon: Icon
+  id: string
+  name: PersonaNames
+
+  /**
+   * The upstream file this persona was adapted from, at a fixed commit.
+   */
+  source: string
+
+  /**
+   * Board item kinds (epic, feature, issue) this persona is offered for first. A
+   * suggestion: nothing is given a persona nobody chose.
+   */
+  suggested_kinds: string[]
+  summary: PersonaNames
+}
+
+/**
+ * Every persona in the order a picker shows them, and where the texts came from.
+ */
+export interface PersonaCatalog {
+  /**
+   * The upstream licence the texts are adapted under, by its SPDX name (MIT).
+   */
+  license: string
+  personas: Persona[]
+}
+
+/**
+ * A name or a one-sentence summary in the two languages the console speaks.
+ */
+export interface PersonaNames {
+  en: string
+  "zh-Hant": string
+}
+
+/**
  * A refusal from the start, resume and history routes: not_found, forbidden,
  * bad_request, invalid_launch, terminal_closed, terminal_unsupported,
  * terminal_io_failed, iterm_attention_required, capability_unavailable,
- * terminal_busy.
+ * terminal_busy, unknown_persona (a start or resume ending `/as/{persona}` that
+ * names no persona in GET /v1/personas).
  */
 export interface PlaceError {
   /**
@@ -3834,9 +3901,10 @@ export interface PlaceRefusal {
 }
 
 /**
- * POST /v1/places/{id}/resume/[{assistant}/]{session}: a conversation this machine
- * listed for that place, picked back up in a new terminal. The same gate and replay
- * as a start.
+ * POST /v1/places/{id}/resume/[{assistant}/]{session}[/as/{persona}]: a
+ * conversation this machine listed for that place, picked back up in a new
+ * terminal. The persona form needs the assistant named. The same gate and replay as
+ * a start.
  */
 export interface PlaceResumed {
   assistant: string
@@ -3846,6 +3914,12 @@ export interface PlaceResumed {
   cwd: string
   id: string
   ok: boolean
+
+  /**
+   * The persona the resumed session was launched as, when the path ended
+   * `/as/{persona}`; absent for none.
+   */
+  persona?: string
   place: string
 
   /**
@@ -3855,11 +3929,11 @@ export interface PlaceResumed {
 }
 
 /**
- * POST /v1/places/{id}/start[/{assistant}[/{model}]]: a terminal was opened and the
- * assistant typed into it. The body is not read. `id` is in the same space as every
- * id in /v1/sessions, but the session is not in that list yet. Needs a device that
- * may send and an Idempotency-Key; a retry within ten minutes is answered from the
- * first reply rather than opening a second tab.
+ * POST /v1/places/{id}/start[/{assistant}[/{model}][/as/{persona}]]: a terminal was
+ * opened and the assistant typed into it. The body is not read. `id` is in the same
+ * space as every id in /v1/sessions, but the session is not in that list yet. Needs
+ * a device that may send and an Idempotency-Key; a retry within ten minutes is
+ * answered from the first reply rather than opening a second tab.
  */
 export interface PlaceStarted {
   /**
@@ -3886,6 +3960,12 @@ export interface PlaceStarted {
    */
   model: string
   ok: boolean
+
+  /**
+   * The persona the session was launched as, when the path ended `/as/{persona}`
+   * (GET /v1/personas); absent for none.
+   */
+  persona?: string
   place: string
 }
 
@@ -4369,6 +4449,12 @@ export interface RestorableSession {
    * sessions.restore_seen_age stale.
    */
   last_seen: number
+
+  /**
+   * The persona the conversation was launched with, as its command line said;
+   * restoring it launches it with the same one. Absent for none.
+   */
+  persona?: string
 
   /**
    * The place id of the directory (POST /v1/places/{id}/…).
@@ -5526,6 +5612,13 @@ export interface SessionRow {
   line?: string
   menu?: SessionMenu
   owed?: WorkOwed
+
+  /**
+   * The built-in persona (GET /v1/personas) this session was launched as, read back
+   * from its process command line; absent for none, and absent on a row with no
+   * process reading.
+   */
+  persona?: string
   root_assignment?: RootAssignmentRecord
 
   /**
@@ -6391,6 +6484,12 @@ export interface TaskRow {
   kind: string
   model?: string
   permission: string
+
+  /**
+   * The built-in persona the child was launched as (task.json `persona`, GET
+   * /v1/personas); absent for none.
+   */
+  persona?: string
   project_dir: string
   reasoning_effort?: string
   resultVerifiedAt?: number

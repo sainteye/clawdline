@@ -274,6 +274,10 @@ const (
 	// A release keeps the previous selector until the restarted daemon and
 	// its console prove the new commit. At this deadline it rolls back.
 	DeployHealthSeconds = "deploy.health_seconds"
+	// The built-in session personas: how many the catalog holds, and the
+	// most one persona's injected text may be (docs/personas.md).
+	PersonasCatalog   = "personas.catalog"
+	PersonasTextBytes = "personas.text_bytes"
 )
 
 // Entry is one row of the register.
@@ -1289,6 +1293,27 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/domain/capacity.DeployHealthLimit"},
+		},
+		{
+			// The personas compiled into this daemon (docs/personas.md). The
+			// catalog is embedded, so it cannot grow while the daemon runs: a
+			// catalog past the limit does not load, and the persona package's
+			// own test refuses it before a build ships. Nothing is let go.
+			Name: PersonasCatalog, Class: Buffer, Unit: Rows,
+			Limit: 32, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/domain/persona.MaxPersonas"},
+		},
+		{
+			// One persona's injected text — the precedence preamble, the body
+			// and its source line — which a session reads on every turn. A
+			// longer one is refused at load in the same way.
+			Name: PersonasTextBytes, Class: Buffer, Unit: Bytes,
+			Limit: 8 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/domain/persona.MaxPersonaBytes"},
 		},
 	}
 }

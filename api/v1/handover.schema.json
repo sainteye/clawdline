@@ -106,6 +106,7 @@
       "additionalProperties": false,
       "required": ["request_id", "assistant", "project_dir", "label", "assignment"],
       "properties": {
+        "persona": { "description": "A built-in persona (GET /v1/personas) to launch the Feature Root as; omitted for none. A name not in the catalog is 422 `bad_root_assignment`. Part of the request its receipt compares, so the same request_id with another persona is `request_conflict`.", "type": "string" },
         "request_id": { "type": "string" },
         "assistant": { "type": "string", "enum": ["claude", "codex"] },
         "model": { "description": "\"default\" or a model name.", "type": "string" },
@@ -124,6 +125,7 @@
       "additionalProperties": false,
       "required": ["id", "request_id", "assistant", "model", "project_dir", "label", "state", "assignment", "created_at", "ownership", "brief_path"],
       "properties": {
+        "persona": { "description": "The built-in persona the Feature Root was launched as; absent for none. ASSIGNMENT.md then carries a PERSONA section naming it and its file.", "type": "string" },
         "id": { "type": "string" },
         "request_id": { "type": "string" },
         "assistant": { "type": "string" },

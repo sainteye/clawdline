@@ -1220,21 +1220,25 @@ type BrokerRoot struct {
 // it. `brief_attempted_at` is durable before the keystroke, so the brief is
 // typed at most once.
 type BrokerRootAssignment struct {
-	Assignment       BrokerAssignment          `json:"assignment"`
-	Assistant        string                    `json:"assistant"`
-	BriefAttemptedAt int64                     `json:"brief_attempted_at,omitempty"`
-	BriefPath        string                    `json:"brief_path"`
-	BriefedAt        int64                     `json:"briefed_at,omitempty"`
-	CreatedAt        int64                     `json:"created_at"`
-	Executor         *BrokerOpenedSession      `json:"executor,omitempty"`
-	Failure          string                    `json:"failure,omitempty"`
-	ID               string                    `json:"id"`
-	Label            string                    `json:"label"`
-	Model            string                    `json:"model"`
-	Ownership        string                    `json:"ownership"`
-	ProjectDir       string                    `json:"project_dir"`
-	RequestID        string                    `json:"request_id"`
-	State            BrokerRootAssignmentState `json:"state"`
+	Assignment       BrokerAssignment     `json:"assignment"`
+	Assistant        string               `json:"assistant"`
+	BriefAttemptedAt int64                `json:"brief_attempted_at,omitempty"`
+	BriefPath        string               `json:"brief_path"`
+	BriefedAt        int64                `json:"briefed_at,omitempty"`
+	CreatedAt        int64                `json:"created_at"`
+	Executor         *BrokerOpenedSession `json:"executor,omitempty"`
+	Failure          string               `json:"failure,omitempty"`
+	ID               string               `json:"id"`
+	Label            string               `json:"label"`
+	Model            string               `json:"model"`
+	Ownership        string               `json:"ownership"`
+
+	// The built-in persona the Feature Root was launched as; absent for none.
+	// ASSIGNMENT.md then carries a PERSONA section naming it and its file.
+	Persona    string                    `json:"persona,omitempty"`
+	ProjectDir string                    `json:"project_dir"`
+	RequestID  string                    `json:"request_id"`
+	State      BrokerRootAssignmentState `json:"state"`
 }
 
 type BrokerRootAssignmentEnvelope struct {
@@ -1256,7 +1260,13 @@ type BrokerRootAssignmentRequest struct {
 	Label      string           `json:"label"`
 
 	// "default" or a model name.
-	Model      string `json:"model,omitempty"`
+	Model string `json:"model,omitempty"`
+
+	// A built-in persona (GET /v1/personas) to launch the Feature Root as; omitted for
+	// none. A name not in the catalog is 422 `bad_root_assignment`. Part of the
+	// request its receipt compares, so the same request_id with another persona is
+	// `request_conflict`.
+	Persona    string `json:"persona,omitempty"`
 	ProjectDir string `json:"project_dir"`
 	RequestID  string `json:"request_id"`
 }
@@ -1451,7 +1461,11 @@ type BrokerTask struct {
 	LeaseScope string `json:"lease_scope,omitempty"`
 
 	// The ceiling the dispatch asked for; `full` when task.json said nothing.
-	Permission        string               `json:"permission"`
+	Permission string `json:"permission"`
+
+	// The built-in persona the child is launched as, from task.json `persona`; absent
+	// for none. No kind has a default.
+	Persona           string               `json:"persona,omitempty"`
 	Progress          []BrokerProgressNote `json:"progress,omitempty"`
 	ProjectDir        string               `json:"projectDir"`
 	Repository        string               `json:"repository,omitempty"`
@@ -3293,10 +3307,44 @@ type PastSessionList struct {
 	Sessions []PastSession `json:"sessions"`
 }
 
+// One persona. `id` is what a start or resume path ends `/as/{id}` with, what a
+// dispatch's `persona` and a Root Assignment's `persona` name, and what a
+// session row's `persona` reads back.
+type Persona struct {
+	// The persona's pixel bot, eight columns by seven rows, in the shape a project's
+	// mark has.
+	Icon Icon         `json:"icon"`
+	ID   string       `json:"id"`
+	Name PersonaNames `json:"name"`
+
+	// The upstream file this persona was adapted from, at a fixed commit.
+	Source string `json:"source"`
+
+	// Board item kinds (epic, feature, issue) this persona is offered for first. A
+	// suggestion: nothing is given a persona nobody chose.
+	SuggestedKinds []string     `json:"suggested_kinds"`
+	Summary        PersonaNames `json:"summary"`
+}
+
+// Every persona in the order a picker shows them, and where the texts came
+// from.
+type PersonaCatalog struct {
+	// The upstream licence the texts are adapted under, by its SPDX name (MIT).
+	License  string    `json:"license"`
+	Personas []Persona `json:"personas"`
+}
+
+// A name or a one-sentence summary in the two languages the console speaks.
+type PersonaNames struct {
+	En     string `json:"en"`
+	ZhHant string `json:"zh-Hant"`
+}
+
 // A refusal from the start, resume and history routes: not_found, forbidden,
 // bad_request, invalid_launch, terminal_closed, terminal_unsupported,
 // terminal_io_failed, iterm_attention_required, capability_unavailable,
-// terminal_busy.
+// terminal_busy, unknown_persona (a start or resume ending `/as/{persona}` that
+// names no persona in GET /v1/personas).
 type PlaceError struct {
 	// The terminal the refusal is about, on terminal_closed and
 	// iterm_attention_required, so a page can name it in its own language.
@@ -3310,9 +3358,10 @@ type PlaceRefusal struct {
 	Error PlaceError `json:"error"`
 }
 
-// POST /v1/places/{id}/resume/[{assistant}/]{session}: a conversation this
-// machine listed for that place, picked back up in a new terminal. The same
-// gate and replay as a start.
+// POST /v1/places/{id}/resume/[{assistant}/]{session}[/as/{persona}]: a
+// conversation this machine listed for that place, picked back up in a new
+// terminal. The persona form needs the assistant named. The same gate and
+// replay as a start.
 type PlaceResumed struct {
 	Assistant string  `json:"assistant"`
 	At        int64   `json:"at"`
@@ -3321,17 +3370,22 @@ type PlaceResumed struct {
 	CWD       string  `json:"cwd"`
 	ID        string  `json:"id"`
 	OK        bool    `json:"ok"`
-	Place     string  `json:"place"`
+
+	// The persona the resumed session was launched as, when the path ended
+	// `/as/{persona}`; absent for none.
+	Persona string `json:"persona,omitempty"`
+	Place   string `json:"place"`
 
 	// The conversation that was resumed.
 	Session string `json:"session"`
 }
 
-// POST /v1/places/{id}/start[/{assistant}[/{model}]]: a terminal was opened and
-// the assistant typed into it. The body is not read. `id` is in the same space
-// as every id in /v1/sessions, but the session is not in that list yet. Needs a
-// device that may send and an Idempotency-Key; a retry within ten minutes is
-// answered from the first reply rather than opening a second tab.
+// POST /v1/places/{id}/start[/{assistant}[/{model}][/as/{persona}]]: a terminal
+// was opened and the assistant typed into it. The body is not read. `id` is in
+// the same space as every id in /v1/sessions, but the session is not in that
+// list yet. Needs a device that may send and an Idempotency-Key; a retry within
+// ten minutes is answered from the first reply rather than opening a second
+// tab.
 type PlaceStarted struct {
 	// claude or codex, as the path named it (claude when it named none).
 	Assistant string `json:"assistant"`
@@ -3349,7 +3403,11 @@ type PlaceStarted struct {
 	// The model the path named, or empty.
 	Model string `json:"model"`
 	OK    bool   `json:"ok"`
-	Place string `json:"place"`
+
+	// The persona the session was launched as, when the path ended `/as/{persona}`
+	// (GET /v1/personas); absent for none.
+	Persona string `json:"persona,omitempty"`
+	Place   string `json:"place"`
 }
 
 // One platform capability on this machine.
@@ -3761,6 +3819,10 @@ type RestorableSession struct {
 	// Unix seconds: the last complete reading that recorded it open, at most
 	// sessions.restore_seen_age stale.
 	LastSeen int64 `json:"last_seen"`
+
+	// The persona the conversation was launched with, as its command line said;
+	// restoring it launches it with the same one. Absent for none.
+	Persona string `json:"persona,omitempty"`
 
 	// The place id of the directory (POST /v1/places/{id}/…).
 	Place      string `json:"place"`
@@ -4688,9 +4750,14 @@ type SessionRow struct {
 	// menu it is instead that menu's revision (the Swift app's menuRevision), which no
 	// row draws and which changes whenever the question does. The Swift app sends it
 	// under this name and the row's height depends on it.
-	Line           string                `json:"line,omitempty"`
-	Menu           *SessionMenu          `json:"menu,omitempty"`
-	Owed           *WorkOwed             `json:"owed,omitempty"`
+	Line string       `json:"line,omitempty"`
+	Menu *SessionMenu `json:"menu,omitempty"`
+	Owed *WorkOwed    `json:"owed,omitempty"`
+
+	// The built-in persona (GET /v1/personas) this session was launched as, read back
+	// from its process command line; absent for none, and absent on a row with no
+	// process reading.
+	Persona        string                `json:"persona,omitempty"`
 	RootAssignment *RootAssignmentRecord `json:"root_assignment,omitempty"`
 
 	// The assistant's own conversation id, when one was recovered from its command
@@ -5315,15 +5382,19 @@ type TaskRow struct {
 	Created int64 `json:"created"`
 
 	// Unix seconds; the same instant as `created`.
-	CreatedAt        int64      `json:"created_at"`
-	Depth            int64      `json:"depth"`
-	Dir              string     `json:"dir"`
-	FinishedAt       int64      `json:"finishedAt,omitempty"`
-	ID               string     `json:"id"`
-	Isolation        string     `json:"isolation,omitempty"`
-	Kind             string     `json:"kind"`
-	Model            string     `json:"model,omitempty"`
-	Permission       string     `json:"permission"`
+	CreatedAt  int64  `json:"created_at"`
+	Depth      int64  `json:"depth"`
+	Dir        string `json:"dir"`
+	FinishedAt int64  `json:"finishedAt,omitempty"`
+	ID         string `json:"id"`
+	Isolation  string `json:"isolation,omitempty"`
+	Kind       string `json:"kind"`
+	Model      string `json:"model,omitempty"`
+	Permission string `json:"permission"`
+
+	// The built-in persona the child was launched as (task.json `persona`, GET
+	// /v1/personas); absent for none.
+	Persona          string     `json:"persona,omitempty"`
 	ProjectDir       string     `json:"project_dir"`
 	ReasoningEffort  string     `json:"reasoning_effort,omitempty"`
 	ResultVerifiedAt int64      `json:"resultVerifiedAt,omitempty"`

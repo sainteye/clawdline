@@ -946,6 +946,7 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 		RespawnOf:      r.RespawnOf,
 		LeaseScope:     r.Scope(),
 		Verdict:        r.Verdict,
+		Persona:        r.Persona,
 	}
 	if r.AssistantQuota != nil {
 		row.AssistantQuota = brokerAssistantQuotaDecision(r.AssistantQuota)

@@ -33,6 +33,9 @@ type Starter struct {
 	// assistant (projects.ClaudeLanguage), or "" to leave it as Claude Code
 	// starts. Nil is "", which only a test wants.
 	Language func(assistant string) string
+	// PersonaDir is where the daemon wrote the persona texts
+	// (persona.Dir). Empty refuses every persona, which only a test wants.
+	PersonaDir string
 }
 
 // Started is StartPoints.Outcome.started. Attach is filled for the one plan
@@ -74,15 +77,19 @@ func (s Starter) Place(ctx context.Context, id string) (projects.Place, bool) {
 	return projects.Place{}, false
 }
 
-// Start is StartPoints.start(_:assistant:model:…resume:).
-func (s Starter) Start(ctx context.Context, place projects.Place, assistant, model, resume string) (Started, error) {
+// Start is StartPoints.start(_:assistant:model:…resume:), with the persona
+// the session is launched as ("" for none).
+func (s Starter) Start(ctx context.Context, place projects.Place, assistant, model, resume, persona string) (Started, error) {
 	language := ""
 	if s.Language != nil {
 		language = s.Language(assistant)
 	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
-		Model: model, Resume: resume, Language: language})
+		Model: model, Resume: resume, Language: language, Persona: persona, PersonaDir: s.PersonaDir})
 	if err != nil {
+		if errors.Is(err, projects.ErrUnknownPersona) {
+			return Started{}, StartRefusal{Status: http.StatusBadRequest, Code: "unknown_persona", Message: err.Error()}
+		}
 		if errors.Is(err, projects.ErrInvalidLaunch) {
 			return Started{}, StartRefusal{Status: http.StatusBadRequest, Code: "invalid_launch", Message: err.Error()}
 		}
@@ -155,7 +162,10 @@ func unavailableTerminal(choice projects.TerminalChoice, goos string) StartRefus
 // (Orchestrator.scheduledResumeTitle) and remembers the resumed title for the
 // new terminal (CodexNaming.rememberResumedTitle). This daemon has neither
 // record, so a conversation off the ordinary list is the only one it resumes.
-func (s Starter) Resume(ctx context.Context, place projects.Place, sessionID, assistant string) (Started, error) {
+//
+// persona is the one the resumed session is launched as: a system prompt is
+// given at launch, so a conversation resumed without one runs without it.
+func (s Starter) Resume(ctx context.Context, place projects.Place, sessionID, assistant, persona string) (Started, error) {
 	id, ok := projects.SessionName(sessionID)
 	if !ok {
 		return Started{}, notFound("No conversation named that")
@@ -170,7 +180,7 @@ func (s Starter) Resume(ctx context.Context, place projects.Place, sessionID, as
 	if !found {
 		return Started{}, notFound("No conversation named that")
 	}
-	return s.Start(ctx, place, assistant, "", id)
+	return s.Start(ctx, place, assistant, "", id, persona)
 }
 
 // openRefusal is the Swift mapping from a terminal failure to a refusal:

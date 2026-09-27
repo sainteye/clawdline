@@ -21,6 +21,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -173,6 +174,16 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
 		capacity.DeployHealthSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-deploy health guard; no retained wait"}
+		},
+		capacity.PersonasCatalog: func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(len(persona.All())), Note: "compiled in; refused at load"}
+		},
+		capacity.PersonasTextBytes: func() capacity.Reading {
+			largest := 0
+			for _, p := range persona.All() {
+				largest = max(largest, len(p.Text()))
+			}
+			return capacity.Reading{Known: true, Used: int64(largest), Note: "the largest persona's injected text"}
 		},
 		"icons.saved": func() capacity.Reading {
 			if s.icons == nil {

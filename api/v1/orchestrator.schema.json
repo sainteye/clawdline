@@ -193,6 +193,7 @@
       "additionalProperties": false,
       "required": ["assistant", "claims", "claims_declared", "created", "dir", "id", "isolation", "kind", "permission", "projectDir", "state", "title"],
       "properties": {
+        "persona": { "description": "The built-in persona the child is launched as, from task.json `persona`; absent for none. No kind has a default.", "type": "string" },
         "id": { "type": "string" },
         "state": { "$ref": "tasks.schema.json#/$defs/TaskState" },
         "kind": { "type": "string" },

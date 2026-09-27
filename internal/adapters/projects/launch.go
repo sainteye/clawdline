@@ -2,7 +2,11 @@ package projects
 
 import (
 	"errors"
+	"fmt"
+	"path/filepath"
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/domain/persona"
 )
 
 // The rules for starting an assistant in a place, from StartPoints.swift and
@@ -141,6 +145,13 @@ type LaunchRequest struct {
 	// ClaudeLanguage answers and nothing else, and a Claude setting: Codex is
 	// refused one as Claude is refused a reasoning effort.
 	Language string
+	// Persona is a built-in persona id (internal/domain/persona), empty for
+	// none. It is a closed list like the model and the language, and a name
+	// that is not on it is refused, never passed through.
+	Persona string
+	// PersonaDir is the directory the daemon wrote the persona texts to
+	// (persona.Dir). It is needed exactly when Persona is set.
+	PersonaDir string
 }
 
 // Launch is ProviderLaunchPlan: the one command a new terminal is given.
@@ -152,6 +163,62 @@ type Launch struct {
 
 // ErrInvalidLaunch is SessionLaunchRefusal.invalid.
 var ErrInvalidLaunch = errors.New("invalid_launch")
+
+// ErrUnknownPersona is a persona id the catalog does not have. It is always
+// joined with ErrInvalidLaunch; a route that names the persona in its path
+// answers it as `unknown_persona`.
+var ErrUnknownPersona = errors.New("the persona is not one this machine knows")
+
+// PersonaArgs is how each assistant is given a persona, every value already
+// quoted for the shell the line is typed into: the joiners that build that
+// line (Launch.ShellCommand, the broker's shellCommand and openSession) only
+// put spaces between arguments.
+//
+//   - Claude Code reads the file into its system prompt, which survives
+//     compaction: `--append-system-prompt-file <path>`.
+//   - Codex has no such flag, so its developer instructions point at the
+//     file (persona.CodexInstruction). `-c` overrides in memory and writes
+//     nothing, and it replaces a `developer_instructions` the person set in
+//     ~/.codex/config.toml for this session (docs/personas.md).
+func PersonaArgs(assistant string, p persona.Persona, path string) []string {
+	if assistant == AssistantCodex {
+		return []string{"-c", ShellQuoted("developer_instructions=" + TOMLString(persona.CodexInstruction(p, path)))}
+	}
+	return []string{"--append-system-prompt-file", ShellQuoted(path)}
+}
+
+// TOMLString is value as a TOML basic string: quoted, with the backslash, the
+// double quote and every control character escaped.
+func TOMLString(value string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range value {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\u%04X`, r)
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
 
 // Admit is SessionLaunchPolicy.admit with the capability half left to the
 // caller, which knows what this platform can open.
@@ -193,6 +260,18 @@ func Admit(req LaunchRequest) (Launch, error) {
 				errors.New("the response language is not one this machine starts"))
 		}
 	}
+	var personaArgs []string
+	if req.Persona != "" {
+		p, ok := persona.Known(req.Persona)
+		if !ok {
+			return Launch{}, errors.Join(ErrInvalidLaunch, ErrUnknownPersona)
+		}
+		if !usable(req.PersonaDir) {
+			return Launch{}, errors.Join(ErrInvalidLaunch,
+				errors.New("the persona directory is not a safe absolute path"))
+		}
+		personaArgs = PersonaArgs(req.Assistant, p, filepath.Join(req.PersonaDir, persona.FileName(p.ID)))
+	}
 	var args []string
 	// `resume` first: its value is optional to the CLI, so anything but the id
 	// immediately after it changes what it means.
@@ -215,6 +294,7 @@ func Admit(req LaunchRequest) (Launch, error) {
 	if req.Language != "" {
 		args = append(args, claudeLanguageArgs(req.Language)...)
 	}
+	args = append(args, personaArgs...)
 	return Launch{ProjectRoot: req.ProjectRoot, Assistant: req.Assistant, Arguments: args}, nil
 }
 

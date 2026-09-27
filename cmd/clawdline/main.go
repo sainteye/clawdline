@@ -17,6 +17,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -168,6 +169,13 @@ func serve() {
 	// Off the startup path, and never fatal: without it a session cannot read
 	// the guide, which is worth a log line, not a daemon that will not start.
 	go projectBinary(cfg.Dir)
+	// The persona texts every launch that names one points at, written
+	// before anything can launch a session. Never fatal: a session launched
+	// without a persona does not need them, and a launch that names one whose
+	// file could not be written is explained by this log line.
+	if err := app.WritePersonaFiles(cfg.Dir); err != nil {
+		log.Printf("personas: %v", err)
+	}
 	srv, err := httptransport.New(cfg)
 	if err != nil {
 		refuseToServe(1, err.Error())

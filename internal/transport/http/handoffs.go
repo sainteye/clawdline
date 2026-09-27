@@ -92,7 +92,7 @@ func (s *Server) rootAssignmentsRoute(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, out)
 	case id == "" && r.Method == http.MethodPost:
 		var body orchestrator.RootAssignmentRequest
-		if !decodeClosed(w, r, &body, "request_id", "assistant", "model", "project_dir", "label", "assignment") {
+		if !decodeClosed(w, r, &body, "request_id", "assistant", "model", "project_dir", "label", "assignment", "persona") {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 4*time.Minute)

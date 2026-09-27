@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -93,6 +94,9 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 			s.Binding = session.BindingCommandLine
 			s.Evidence = session.EvidenceProcess
 		}
+		// The persona is read off the same command line, by the same rule:
+		// what the process was launched with is proof, not inference.
+		s.Persona = persona.FromCommandLine(command)
 		inv.Sessions = append(inv.Sessions, s)
 	}
 	inv.Sessions = p.bindCodex(ctx, inv.Sessions)

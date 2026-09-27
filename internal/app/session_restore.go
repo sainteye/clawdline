@@ -253,7 +253,7 @@ func (r *SessionRestore) Observe(ctx context.Context, inv session.Inventory) {
 		}
 		rows = append(rows, store.RestoreRow{
 			ConversationID: s.ConversationID, Assistant: string(s.Assistant), CWD: s.CWD,
-			Place: projects.PlaceID(s.CWD), Title: title, Backend: string(s.Backend),
+			Place: projects.PlaceID(s.CWD), Title: title, Backend: string(s.Backend), Persona: s.Persona,
 		})
 	}
 	evicted, err := r.Store.RecordBoot(ctx, store.BootReading{Boot: boot, Rows: rows, At: now,
@@ -302,7 +302,7 @@ func restoreKey(rows []session.Session) string {
 	parts := make([]string, 0, len(rows))
 	for _, s := range rows {
 		parts = append(parts, strings.Join([]string{s.ConversationID, string(s.Assistant), s.CWD,
-			string(s.Backend), s.ID, s.Label, s.CustomTitle}, "\x1f"))
+			string(s.Backend), s.ID, s.Label, s.CustomTitle, s.Persona}, "\x1f"))
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, "\x1e")
