@@ -446,8 +446,12 @@
     color: var(--faint);
 }
 .session-todo-receipt-mark { display: inline-block; margin-right: 5px; letter-spacing: -4px; padding-right: 4px; }
+/* One column exactly as wide as the screen allows. An `auto` column grows to its
+   content's narrowest layout, so a row that scrolls sideways by design (the
+   role chips) widened it past a phone's edge and pushed the sheet off screen. */
 .session-todo-modal {
-    position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: #0009;
+    position: fixed; inset: 0; z-index: 1000; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center;
+    padding: 16px; background: #0009;
 }
 .session-todo-modal form {
     box-sizing: border-box; width: min(520px, 100%); padding: 22px; border: 1px solid var(--line);
