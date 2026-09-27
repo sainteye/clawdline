@@ -201,12 +201,13 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-func summarizeProjectWork(row contract.CatalogProject, counts map[string]store.WorkV2ProjectCount, err error) contract.CatalogProject {
+func summarizeProjectWork(row contract.CatalogProject, projectPath string,
+	counts map[string]store.WorkV2ProjectCount, err error) contract.CatalogProject {
 	row.SummaryCoverage = "unknown"
-	if err != nil {
+	if err != nil || projectPath == "" {
 		return row
 	}
-	count := counts[row.ID]
+	count := counts[projectPath]
 	row.ItemCount = count.Items
 	row.ActiveItemCount = count.Open
 	row.SummaryCoverage = "complete"
@@ -278,9 +279,10 @@ func (s *Server) projectCatalogRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	workCounts, workCountsErr := s.store.WorkV2ProjectCounts(r.Context())
 	for _, p := range board.Projects {
-		row := summarizeProjectWork(contract.CatalogProject{ID: p.ID, Name: p.Name, ItemCount: int64(p.ItemCount)},
+		pres, presented := byID[p.ID]
+		row := summarizeProjectWork(contract.CatalogProject{ID: p.ID, Name: p.Name, ItemCount: int64(p.ItemCount)}, pres.path,
 			workCounts, workCountsErr)
-		if pres, ok := byID[p.ID]; ok {
+		if presented {
 			row.IsStartPoint = true
 			row.Label = pres.label
 			row.DisplayPath = pres.path

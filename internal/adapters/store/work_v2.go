@@ -1400,14 +1400,16 @@ type WorkV2ProjectCount struct {
 	Open  int64
 }
 
-// WorkV2ProjectCounts groups the current work-system items by their durable
-// Project id. Terminal work remains in Items, while Open excludes done and
-// cancelled exactly as WorkV2Items(status="open") does.
+// WorkV2ProjectCounts groups the current work-system items by their canonical
+// Project path. The start-place id stored by Work System v2 and the retired
+// catalog's Project id use different namespaces, while both retain this path.
+// Terminal work remains in Items, while Open excludes done and cancelled
+// exactly as WorkV2Items(status="open") does.
 func (s *Store) WorkV2ProjectCounts(ctx context.Context) (map[string]WorkV2ProjectCount, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT project_id,COUNT(*),
+	rows, err := s.db.QueryContext(ctx, `SELECT project_path,COUNT(*),
     SUM(CASE WHEN phase NOT IN ('done','cancelled') THEN 1 ELSE 0 END)
     FROM work_v2_items GROUP BY project_id`)
 	if err != nil {
@@ -1416,12 +1418,12 @@ func (s *Store) WorkV2ProjectCounts(ctx context.Context) (map[string]WorkV2Proje
 	defer rows.Close()
 	out := map[string]WorkV2ProjectCount{}
 	for rows.Next() {
-		var project string
+		var projectPath string
 		var count WorkV2ProjectCount
-		if err := rows.Scan(&project, &count.Items, &count.Open); err != nil {
+		if err := rows.Scan(&projectPath, &count.Items, &count.Open); err != nil {
 			return nil, err
 		}
-		out[project] = count
+		out[projectPath] = count
 	}
 	return out, rows.Err()
 }
