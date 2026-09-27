@@ -36,3 +36,31 @@
   cursor: default;
   opacity: 0.35;
 }
+
+/* The role section (docs/personas.md): the bot at three pixels a cell (24x21)
+ * and the role's full name, in the summary of a `details` like the statuses
+ * above it; opened, the summary and the file it was adapted from. */
+.info-sheet .persona-detail .persona-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.info-sheet .persona-detail .persona-info-bot {
+  flex: none;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.info-sheet .persona-detail .persona-info-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.info-sheet .persona-detail .note a {
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}

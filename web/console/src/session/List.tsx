@@ -7,7 +7,7 @@ import { ACTION_WIDTH, revealFor, swipes, type Reveal } from "./swipe.js"
 import { conversationNotStarted } from "./readiness.js"
 import { retainedStateWords } from "../session-reading.js"
 import { rowPersonaLine } from "../personas.js"
-import { PersonaBot, usePersonas } from "./PersonaBot.js"
+import { usePersonas } from "./PersonaBot.js"
 import "./list-density.css"
 
 export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: number; id?: string }) {
@@ -161,13 +161,24 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
  * row is painted. React rewrites the markup only when the string changes, and
  * only then is there a new, undrawn canvas.
  */
-function StateLine({ row }: { row: SessionRow }) {
+/**
+ * The row's third line: the role this session was launched as, when there is
+ * one, and then `stateLine`'s words. The role is written into the same markup
+ * as the words so that it swipes with them and adds no line of its own.
+ */
+function StateLine({ row, role }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine> }) {
   const ref = useRef<HTMLDivElement>(null)
   const { html, shape } = stateLine(row)
+  const roleHTML = role
+    ? '<span class="persona-state" title="' + L.escapeHTML(role.title) + '">' +
+      '<canvas class="persona-state-bot" width="0" height="0" aria-hidden="true"></canvas>' +
+      '<span class="persona-state-name">' + L.escapeHTML(role.name) + "</span></span>"
+    : ""
   useLayoutEffect(() => {
     L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
-  }, [html])
-  return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: html }} />
+    if (role) L.paintIcon(ref.current?.querySelector<HTMLCanvasElement>("canvas.persona-state-bot") ?? null, role.persona.icon, 2)
+  }, [html, role?.persona])
+  return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: roleHTML + html }} />
 }
 
 /**
@@ -291,9 +302,9 @@ export function Row({
   }
   const mark = <Mark icon={row.icon} cellPx={4} />
   // The role this session was launched as (docs/personas.md), when the
-  // machine's catalog names it: its bot alone at the head of the second line,
-  // with name and summary as its title and accessible name. An id the catalog
-  // does not have draws nothing.
+  // machine's catalog names it: its bot and full name at the head of the third
+  // line, with name and summary as its title. An id the catalog does not have
+  // draws nothing.
   const role = rowPersonaLine(usePersonas(), row.persona)
   return (
     <li
@@ -343,11 +354,6 @@ export function Row({
         <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} />
       </div>
       <div className="meta">
-        {role ? (
-          <span className="persona-mark" role="img" title={role.title} aria-label={role.title}>
-            <PersonaBot persona={role.persona} cellPx={2} className="persona-mark-bot" />
-          </span>
-        ) : null}
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.tty || row.backend || ""}</span>
         {activity ? <span className="session-activity">{activity}</span> : null}
@@ -371,7 +377,7 @@ export function Row({
           {place.chip ? place.chip.text : ""}
         </span>
       </div>
-      <StateLine row={row} />
+      <StateLine row={row} role={role} />
       {/* The phone's swipe control, in `buildRow`'s markup and uncovered by
           `swipe.ts`. It never closes anything: it opens the confirmation every
           other close in this console goes through, which is where the reasons

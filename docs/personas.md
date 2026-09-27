@@ -185,14 +185,22 @@ per machine. A read that fails for any reason is an empty catalog, and an empty 
 chips and no bots: an older daemon, or a machine on Cloud that cannot answer, shows the console it
 showed before this feature, never a sheet that breaks after a press.
 
-- **Session list.** A row whose `persona` the catalog names shows the bot alone, at two pixels a
-  cell (16×14, the height of the line's 11 px text), at the head of its second line, before the
-  path; the full name and summary are its title and accessible name. It first rode in the title
-  line after the assistant's name, where a 390 px phone cut the name to its first character, and
-  then had a line of its own under the state line with the bot at three pixels a cell and the full
-  name, which the person found too large for the row. Measured 2026-09-27 with mocked rows and the
-  real catalog: a row with a persona is now as tall as one without (phone 112.9 → 87.9 px; desktop
-  101.6 → 77.6), and the page does not scroll sideways at 390 px.
+- **Session list.** A row whose `persona` the catalog names starts its third line, before the
+  state words, with the bot at two pixels a cell and the role's full name in the console's
+  language (11.5 px, as the words beside it), with name and summary as its title. It is written
+  into the state line's markup, so it swipes with the line and adds no height; the name takes at
+  most 65 % of the line and does not shrink below its own width, so a long working sentence takes
+  the ellipsis instead. The history, all from 2026-09-27: after the assistant's name in the title
+  (a 390 px phone cut the name to one character); a line of its own under the state line with a
+  24×21 bot (rows 25 px taller, and it did not swipe); the bot alone on the second line (the person
+  could not tell which role it was). Measured with mocked rows and the real catalog: every row is
+  87.9 px on a 390 px phone and 77.6 px on a desktop, with or without a role; all eight names fit
+  whole at 390 px in both languages, beside a long working sentence too; no sideways scroll.
+- **Session info.** Under the status, a "Role" section holds a `details` shaped like the statuses:
+  the bot at three pixels a cell and the full name, and, opened, the one-line summary and the
+  upstream files it was adapted from, each a link named by its file. The injected text is not
+  shown: it never leaves the machine. Opened, it stays open when the card redraws. No persona, or
+  one the catalog does not name, has no section.
 - **Session detail header.** A row whose `persona` the catalog names shows the bot alone, at two
   pixels a cell, at the head of the line under the session's name, before the path. The name and
   summary are its title and the session button's description (`aria-describedby`), never drawn.

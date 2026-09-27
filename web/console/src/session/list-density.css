@@ -63,12 +63,14 @@
   max-width: 100%;
 }
 
-.row .state > .session-work-completion:not(:only-child),
-.row .state > .session-closeability:not(:only-child),
-.row .state > .session-work-owed:not(:only-child),
-.row .state > .session-work-copy:not(:only-child),
-.row .state > .coordination-wait:not(:only-child),
-.row .state > .shells:not(:only-child) {
+/* A role at the head of the line (below) is not a status: a status beside
+ * only the role still has the rest of the line. */
+.row .state > .session-work-completion:not(:only-child):not(.persona-state + :last-child),
+.row .state > .session-closeability:not(:only-child):not(.persona-state + :last-child),
+.row .state > .session-work-owed:not(:only-child):not(.persona-state + :last-child),
+.row .state > .session-work-copy:not(:only-child):not(.persona-state + :last-child),
+.row .state > .coordination-wait:not(:only-child):not(.persona-state + :last-child),
+.row .state > .shells:not(:only-child):not(.persona-state + :last-child) {
   max-width: 46%;
 }
 
@@ -156,23 +158,41 @@
 }
 
 /*
- * A session launched as a persona (docs/personas.md): its bot alone, at two
- * pixels a cell (16x14, the height of this line's 11px text), at the head of
- * the second line, before the path. The name and summary are its title and
- * accessible name. It first rode after the assistant's name in the title,
- * where a 390px phone cut the name to one character; then it had a line of its
- * own under the state line, bot at three pixels a cell and full name, which
- * made every such row 25px taller and the bot larger than any text beside it.
- * Here it adds no height. It never gives way: it is the one fixed-size thing
- * on the line, and the path and tty after it take the ellipsis.
+ * A session launched as a persona (docs/personas.md): its bot, at two pixels a
+ * cell (16x14, the height of the line's text), and its full name at the head
+ * of the third line, before the state words, with name and summary as its
+ * title. It is written into the state line's markup, so it swipes with it and
+ * adds no height. The name gives way to an ellipsis past 65% of the line,
+ * which every catalog name fits at 390px in both languages. It does not
+ * shrink below that: a long working sentence beside it takes the ellipsis.
+ *
+ * Before: a line of its own under the state line (bot at three pixels a cell,
+ * 25px taller rows, and it did not swipe), then the bot alone on the second
+ * line, where the person could not tell which role it was.
  */
-.row .meta .persona-mark {
-  flex: none;
+.row .state > .persona-state {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 65%;
+  color: var(--dim);
+  font: 11.5px/1 var(--mono);
 }
 
-.row .meta .persona-mark-bot {
+.row .state .persona-state-bot {
+  flex: none;
   display: block;
+  /* 14px drawn, 11px counted: no taller than the 11.5px words beside it, so
+   * the line, and the row, keep their height. */
+  margin: -1.5px 0;
   image-rendering: pixelated;
+}
+
+.row .state .persona-state-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

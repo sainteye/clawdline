@@ -24,6 +24,7 @@ import {
   workStateBadgeHTML,
   workStateOf,
 } from "../legacy/bridge.js"
+import { loadPersonas, onPersonas, personaById, personaName, personaSummary, personasNow } from "../personas.js"
 import { toast } from "./toast.js"
 import { ActionConfirm } from "./action-confirm.js"
 import "./info-next.css"
@@ -354,6 +355,33 @@ function statusHTML(s: Row | null): string {
  * 61%`, but a phone hides nothing here, and this card was the one place that
  * had the tokens and not the window. Unknown is said, never drawn as 0%.
  */
+/**
+ * The role this session was launched as (docs/personas.md), named in full, as
+ * a `details` like the statuses above it: the bot and the name, and, opened,
+ * the one-line summary and the file it was adapted from. The text the session
+ * was launched with stays on the machine (the catalog never carries it).
+ * Nothing when the row has no persona or the catalog does not name it.
+ */
+function roleHTML(s: Row | null): string {
+  const persona = personaById(personasNow(), s?.persona)
+  if (!persona) return ""
+  const summary = personaSummary(persona)
+  // `source` names one upstream file or several, comma-separated; each is a
+  // link named by its file.
+  const links = (persona.source || "").split(",").map((u) => u.trim()).filter(openable)
+    .map((u) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer" title="' + esc(u) + '">' +
+      esc(u.replace(/[?#].*$/, "").split("/").pop() || u) + "</a>")
+  const source = links.length ? '<p class="note">' + esc(nextWord("personaSource")) + " " + links.join(", ") + "</p>" : ""
+  return (
+    '<details class="session-status-detail persona-detail" data-status-kind="role"><summary>' +
+    '<span class="persona-info"><canvas class="persona-info-bot" width="0" height="0" aria-hidden="true"></canvas>' +
+    '<span class="persona-info-name">' + esc(personaName(persona)) + "</span></span>" +
+    '<span class="status-tap">' + esc(T.webInfoTapForDetails) + "</span>" +
+    '</summary><div class="status-explanation">' + (summary ? "<p>" + esc(summary) + "</p>" : "") + source +
+    "</div></details>"
+  )
+}
+
 function contextHTML(c: Facts["context"]): string {
   const cell = contextCell(c, T.webInfoTokens)
   if (!cell || !c) return note(T.webInfoUnknown)
@@ -487,6 +515,8 @@ function html(d: Facts): string {
   let out = hero(s, u)
   let i = 0
   out += sec(++i, T.webInfoStatus, "", statusHTML(session() || (s as unknown as Row)))
+  const role = roleHTML(session())
+  if (role) out += sec(++i, nextWord("personaPicker"), "", role)
   // Read-only pairings get no buttons rather than dead ones.
   if (models.length && host.writable()) out += sec(++i, T.webInfoSwitchModel, "", modelsHTML(models, current))
   out += sec(++i, nextWord("infoContext"), "", contextHTML(d.context))
@@ -522,9 +552,16 @@ function draw(): void {
   const keptTitle = titleBox ? titleBox.value : null
   const titleFocused = !!titleBox && document.activeElement === titleBox
   const titleCaret = titleFocused ? titleBox?.selectionStart ?? null : null
+  const roleOpen = !!box.querySelector<HTMLDetailsElement>('details[data-status-kind="role"]')?.open
   const again = drawn
   box.classList.toggle("again", again)
   box.innerHTML = data ? html(data) : ""
+  const roleBox = box.querySelector<HTMLDetailsElement>('details[data-status-kind="role"]')
+  if (roleBox) {
+    roleBox.open = roleOpen
+    const persona = personaById(personasNow(), session()?.persona)
+    if (persona) L.paintIcon(roleBox.querySelector<HTMLCanvasElement>("canvas.persona-info-bot"), persona.icon, 3)
+  }
   if (data) drawn = true
   const refresh = node("info-refresh") as HTMLButtonElement | null
   if (refresh) refresh.disabled = loading
@@ -859,6 +896,9 @@ export function bindInfo(): () => void {
       Info.cancelTitle()
     }
   }
+  // The role section needs the catalog; a card open when it arrives draws again.
+  void loadPersonas()
+  const offPersonas = onPersonas(() => draw())
   overlay.addEventListener("click", onOverlay)
   sheet.addEventListener("click", onSheet)
   close.addEventListener("click", onClose)
@@ -867,6 +907,7 @@ export function bindInfo(): () => void {
   body.addEventListener("submit", onSubmit)
   body.addEventListener("keydown", onKeyDown)
   return () => {
+    offPersonas()
     overlay.removeEventListener("click", onOverlay)
     sheet.removeEventListener("click", onSheet)
     close.removeEventListener("click", onClose)
