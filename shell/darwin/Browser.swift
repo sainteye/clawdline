@@ -84,6 +84,12 @@ enum Ink {
 /// showing its name did not stop having one.
 final class PillButton: NSButton {
     var isSelected = false { didSet { paint() } }
+    /// For the two tabs, which one the window is showing: that one reads in
+    /// `--ink`, the other in `--dim`. Nil for every other pill. A tab is never
+    /// filled with the accent — the accent reads as a warning — so the Cloud
+    /// tab says it is in front with its cloud in `--ok` instead, the colour of
+    /// the console tab's live dot.
+    var isFront: Bool? { didSet { paint() } }
     override var isEnabled: Bool {
         didSet {
             paint()
@@ -214,13 +220,15 @@ final class PillButton: NSButton {
     }
 
     private func paint() {
-        let selected = isSelected && !hasDot
-        let colour = !isEnabled ? Ink.faint : ((hasDot && isSelected) ? Ink.ink : (selected ? Ink.accent : Ink.dim))
+        let selected = isSelected && !hasDot && isFront == nil
+        var colour = !isEnabled ? Ink.faint : ((hasDot && isSelected) ? Ink.ink : (selected ? Ink.accent : Ink.dim))
+        if let front = isFront, isEnabled { colour = front ? Ink.ink : Ink.dim }
         if hasDot {
-            image = PillButton.dot(isEnabled && isSelected ? Ink.ok : Ink.faint)
+            let live = isEnabled && isSelected ? Ink.ok : Ink.faint
+            image = PillButton.dot(isFront == false ? live.withAlphaComponent(0.5) : live)
             alternateImage = image
         } else if image != nil {
-            contentTintColor = colour
+            contentTintColor = isFront == true && isEnabled ? Ink.ok : colour
         }
         if !isIcon {
             attributedTitle = NSAttributedString(string: title, attributes: [
@@ -904,7 +912,8 @@ extension Shell {
         // Green only while the console is actually loaded: a daemon that
         // stopped answering takes the pill back to plain, as `.conn` does.
         bar.consoleTab.isSelected = pageLoaded
-        bar.cloudTab.isSelected = showingCloud
+        bar.consoleTab.isFront = !showingCloud
+        bar.cloudTab.isFront = showingCloud
         let zoom = view.pageZoom
         bar.zoom.show(PageZoom.label(zoom))
         bar.zoom.isSelected = PageZoom.larger(than: zoom) == nil || PageZoom.smaller(than: zoom) == nil

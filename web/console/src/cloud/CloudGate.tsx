@@ -836,6 +836,12 @@ export function CloudGate({ declared }: { declared: string }) {
     [machineList, names, forgotten],
   )
   const quickMachines = shown.phase === "ready" ? shown.machines.filter((machine) => machine.selectable) : []
+  // Machines on the account this browser cannot read yet. They are listed
+  // under the ones it can, each with its Pair press, so pairing another
+  // machine does not mean finding the full machine screen first.
+  const quickUnpaired = shown.phase === "ready"
+    ? shown.machines.filter((machine) => !machine.selectable && machine.pairing === "not_paired")
+    : []
 
   // The machines a schedule may be on are the ones this switcher offers, in
   // its words (`cloud/schedule-machines.ts`). Published by value, so the
@@ -940,6 +946,36 @@ export function CloudGate({ declared }: { declared: string }) {
               )
             })}
           </div>
+          {quickUnpaired.length > 0 && (
+            <>
+              <p className="cloud-switch-title">{nextWord("cloudSwitchUnpaired")}</p>
+              <div className="cloud-switch-options" id="cloud-quick-unpaired">
+                {quickUnpaired.map((machine) => {
+                  const name = machine.name || machine.label || machine.id
+                  const identity = machineIdentityFacts(machine)
+                  return (
+                    <div className="cloud-switch-option" data-unpaired="true" data-machine={machine.id} key={machine.id}>
+                      <span className="cloud-switch-option-name">{name}</span>
+                      <button
+                        type="button"
+                        className="cloud-pair cloud-switch-pair"
+                        data-pair={machine.id}
+                        title={nextWord("cloudPairOne", { machine: name })}
+                        aria-label={nextWord("cloudPairOne", { machine: name })}
+                        onClick={() => {
+                          setSwitcherOpen(false)
+                          openPairing({ id: machine.id, name })
+                        }}
+                      >
+                        {nextWord("cloudPair")}
+                      </button>
+                      <span className="cloud-switch-option-platform">{platformWord(identity.platform)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
           <button
             type="button"
             className="cloud-switch-manage"
