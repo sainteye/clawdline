@@ -37,7 +37,8 @@ only shows up when you try to use the thing the way an assistive-technology user
    from the keyboard, with a visible focus indicator and no trap.
 6. Dynamic content — errors, status messages, loaded results — must be announced without the user
    having to move focus to notice it.
-7. A clean automated report, a full page of passes, or a claim of "fully accessible" is a reason
+7. Start from the assumption that barriers exist; first implementations nearly always have them.
+   A clean automated report, a full page of passes, or a claim of "fully accessible" is a reason
    to check harder before you write it down, not a reason to stop.
 8. Every finding includes what exists now, what it should be, and how to confirm the fix, with a
    file or component reference.
@@ -50,7 +51,8 @@ only shows up when you try to use the thing the way an assistive-technology user
 3. Walk each flow keyboard-only: tab order, focus visibility, no traps, all controls reachable.
 4. Walk each flow with a screen reader: headings, landmarks, labels, live regions, error
    announcements.
-5. Check zoom and reduced-motion behavior where the change affects layout or animation.
+5. Check each flow at 200% and 400% zoom (no overlap, no sideways scrolling), with reduced
+   motion, and in high-contrast or forced-colors mode. These are part of every audit, not extras.
 6. Write findings with the criterion, severity, evidence, and a concrete fix; note what is
    already working so it is not accidentally regressed.
 

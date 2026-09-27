@@ -230,6 +230,13 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 		!strings.Contains(moves.Body.String(), `"session":"root-conv"`) {
 		t.Fatalf("moves: %s", moves.Body)
 	}
+	// A question without its Board context is refused at the public route,
+	// before it can become an unattached row in the person's attention queue.
+	rec = do(machine, http.MethodPost, "/v1/orchestrator/decisions", "d0",
+		`{"session_id":"root-conv","question":"Which way?","options":[{"id":"l","label":"left"},{"id":"r","label":"right"}],"default":"l"}`)
+	if rec.Code != 422 || code(rec) != "decision_source_required" {
+		t.Fatalf("decision without Board context: %d %s", rec.Code, rec.Body)
+	}
 	// A decision on it, and the person's answer as the item's newest move.
 	rec = do(machine, http.MethodPost, "/v1/orchestrator/decisions", "d1", `{"session_id":"root-conv","work_id":"`+
 		lines[0]+`","question":"Which way?","options":[{"id":"l","label":"left"},{"id":"r","label":"right"}],"default":"l"}`)

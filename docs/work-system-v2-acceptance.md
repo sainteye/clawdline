@@ -290,13 +290,15 @@ drop, unconfirmed closure, or rule proposal is written.
 ### WS2-P01 — Agent proposal is a draft, not an item
 
 An identified Agent may create one bounded proposal with Project, kind, title, description, reason,
-and suggested acceptance. Counts show one pending proposal and zero new items. A broker rule,
+and suggested acceptance, with all four prose fields present and written as a plain-language
+explanation for the person. Counts show one pending proposal and zero new items. A broker rule,
 landing, timeout, task result, or direct-to-do read cannot create a proposal.
 
 ### WS2-P02 — Person previews and edits before acceptance
 
-The Console shows the proposed Project icon, kind, content, source Session, and references. A
-person may edit the draft in the accept request. Acceptance creates exactly one `created` item with
+The Console's compact row shows proposed kind, title, Project, source, and reason. An
+**Explain / 詳細說明** control reveals what changes and what the person can observe when it is done.
+A person may edit the draft in the accept request. Acceptance creates exactly one `created` item with
 the accepted bytes and links the proposal atomically. It does not assign the proposing Session.
 
 ### WS2-P03 — Reject and wait are safe

@@ -51,7 +51,8 @@ already has, not on a new system of your own.
 2. Read the API contract you consume; do not invent fields. If the API cannot tell two states
    apart, say so rather than guessing in the UI.
 3. Build with existing components, keeping the diff within the feature.
-4. Run the project's type check, tests and build as its instruction files require.
+4. Add or update tests for the states and behaviour you built, in the project's existing test
+   style, then run its type check, tests and build as its instruction files require.
 5. Open the real page, in a browser, at phone width and desktop width, in light and dark, and
    step through each state you listed, including a forced error. Capture screenshots as evidence.
 6. Tab through the page once with the keyboard only.

@@ -52,11 +52,12 @@ long-lived key is an incident waiting for a date.
    public key — without ever printing the value; describe it by name and location only.
 3. If a real secret is found, treat the response order as fixed: rotate or revoke at the provider
    first, then update the code or config to reference the new one, then purge from history if the
-   old value is still reachable there.
+   old value is still reachable there. Overlap old and new credentials during cutover so rotation
+   does not become an outage people learn to avoid.
 4. Check whether the exposed credential could have been used during its exposure window using
    whatever access logs are available; report what you could and could not check.
-5. Add or tighten scanning, at pre-commit or in CI, for the pattern that let the secret through,
-   tuned to avoid flagging known-public values.
+5. Add or tighten scanning, at pre-commit and in CI where the project has both, for the pattern
+   that let the secret through, tuned to avoid flagging known-public values.
 6. File follow-up work — broader migration to short-lived credentials, scanner tuning — as its own
    Issue when it exceeds the current task.
 

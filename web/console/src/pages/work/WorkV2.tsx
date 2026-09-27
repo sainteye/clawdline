@@ -13,7 +13,6 @@ import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem, onOpenWorkItem, type NewWorkItemDraft } from "./new-item.js"
-import { DecisionCard } from "./Board.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports, WorkEpicPlanDocuments } from "./WorkCompletionReport.js"
@@ -27,6 +26,7 @@ import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import { completeConfirmWords } from "./complete-item.js"
+import { decisionsForWorkItem, proposalsForProject, unattachedDecisions } from "./board-attention.js"
 import {
   answerDecision,
   assignNewWorkV2,
@@ -187,6 +187,8 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const planning = items.filter((item) => item.area === "planning" && !item.closed_at)
   const unassigned = items.filter((item) => item.area === "unassigned" && !item.closed_at)
   const done = items.filter((item) => item.closed_at)
+  const visibleProposals = proposalsForProject(proposals, project)
+  const legacyDecisions = unattachedDecisions(decisions)
   const familyView = useMemo<EpicFamilyView>(() => ({ rows: family.rows, truncated: family.truncated, onBoard: new Set(items.map((item) => item.id)) }),
     [family, items])
 
@@ -216,29 +218,20 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       </div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {truncated && <p className="work-note" role="status">符合項目超過 100 筆，請縮小搜尋或 Project 範圍。</p>}
-      {proposals.length > 0 && <details className="work-fold" open><summary><strong>Agent 提案</strong><span className="work-count">{proposals.length}</span></summary>
-        <div className="work-fold-body work-cards">{proposals.map((p) => <article className="work-card" key={p.id}>
-          <span className="work-state">{p.kind} · {p.session_id.slice(0, 8)}</span><h3>{p.title}</h3><p>{p.description}</p><small>{p.reason}</small>
-          <div className="work-actions"><button className="chip on" disabled={!!busy} onClick={() => void run(p.id, () => resolveWorkV2Proposal(p.id, "accept"))}>接受並建立</button>
-            <button className="chip danger" disabled={!!busy} onClick={() => void run(p.id, () => resolveWorkV2Proposal(p.id, "reject"))}>拒絕</button></div>
-        </article>)}</div>
-      </details>}
-      {decisions.length > 0 && <details className="work-fold" open><summary><strong>待你決定</strong><span className="work-count">{decisions.length}</span></summary>
-        <div className="work-fold-body work-cards">{decisions.map((d) => <DecisionCard key={d.id} decision={d} busy={!!busy}
-          run={(task) => void run(d.id, task)} onAnswer={(d, o) => answerDecision(d.id, o)} />)}</div>
-      </details>}
-      <BoardRegion title="規劃區" items={planning} sessions={sessions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
-      <BoardRegion title="待指派" items={unassigned} sessions={sessions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
+      {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
+      {legacyDecisions.length > 0 && <LegacyDecisions decisions={legacyDecisions} busy={busy} run={run} />}
+      <BoardRegion title="規劃區" items={planning} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
+      <BoardRegion title="待指派" items={unassigned} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
       {PHASES.map((phase) => <BoardRegion key={phase} title={phaseName(phase)}
-        items={items.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} busy={busy}
+        items={items.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} decisions={decisions} busy={busy}
         failure={failure} clearFailure={() => setFailure("")} run={run} />)}
-      {done.length > 0 && status === "done" && <BoardRegion title="已完成" items={done} sessions={sessions} busy={busy}
+      {done.length > 0 && status === "done" && <BoardRegion title="已完成" items={done} sessions={sessions} decisions={decisions} busy={busy}
         failure={failure} clearFailure={() => setFailure("")} run={run} />}
-      {done.length > 0 && status !== "done" && search && <BoardRegion title="已關閉" items={done} sessions={sessions} busy={busy}
+      {done.length > 0 && status !== "done" && search && <BoardRegion title="已關閉" items={done} sessions={sessions} decisions={decisions} busy={busy}
         failure={failure} clearFailure={() => setFailure("")} run={run} />}
       {done.length > 0 && status !== "done" && !search && <details className="work-section work-done"><summary><div className="work-section-head"><h2>已關閉</h2><span className="work-count">{done.length}</span></div></summary>
         <div className="work-cards">{done.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy}
-          failure={failure} clearFailure={() => setFailure("")} run={run} />)}</div>
+          decisions={decisionsForWorkItem(decisions, item.id)} failure={failure} clearFailure={() => setFailure("")} run={run} />)}</div>
       </details>}
       {loaded && !failure && items.length === 0 && <p className="work-empty work-filter-empty" role="status">
         {search ? `找不到包含「${search}」的項目。` : status === "done" ? "還沒有已完成的項目。" : "這個範圍目前沒有項目。"}
@@ -268,9 +261,9 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
         setCreatedItem(created)
       })
     }} />}
-    {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} busy={busy} failure={failure}
+    {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} decisions={decisionsForWorkItem(decisions, createdItem.id)} busy={busy} failure={failure}
       clearFailure={() => setFailure("")} run={run} onClose={() => setCreatedItem(null)} />}
-    {openedItem && <CreatedWorkModal item={openedItem} created={false} sessions={sessions} busy={busy} failure={failure}
+    {openedItem && <CreatedWorkModal item={openedItem} created={false} sessions={sessions} decisions={decisionsForWorkItem(decisions, openedItem.id)} busy={busy} failure={failure}
       clearFailure={() => setFailure("")} run={run} onClose={() => setOpenedItem(null)} />}
   </EpicFamilyContext.Provider>
 }
@@ -368,10 +361,94 @@ function EpicParentLine({ item }: { item: WorkV2Item }) {
     {parent.title ? `〈${parent.title}〉` : <code>{shortWorkID(parent.id)}</code>}</WorkCardLink></p>
 }
 
-function BoardRegion({ title, items, sessions, busy, failure, clearFailure, run }: {
+/**
+ * Proposals are an inbox, not another Board column. The row says the proposed
+ * outcome and why it matters; the longer scope and acceptance stay one
+ * disclosure away instead of making every suggestion as tall as a work card.
+ */
+function ProposalQueue({ proposals, items, places, busy, run }: {
+  proposals: WorkV2Proposal[]
+  items: WorkV2Item[]
+  places: ProjectPlace[]
+  busy: string
+  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+}) {
+  return <details className="work-fold work-proposal-fold" open>
+    <summary><strong>Agent 提案</strong><span className="work-count">{proposals.length}</span>
+      <span className="work-fold-hint">先用白話說清楚，需要時再 Explain</span></summary>
+    <div className="work-fold-body"><ul className="work-proposals">{proposals.map((proposal) => {
+      const project = places.find((place) => place.id === proposal.project_id)
+      const source = proposal.source_work_id ? items.find((item) => item.id === proposal.source_work_id) : undefined
+      const sourceLine = source ? `從「${source.title}」延伸`
+        : proposal.source_work_id ? `來自看板項目 #${proposal.source_work_id.slice(0, 8)}`
+          : proposal.source_todo_id ? "來自 Session 待辦" : "來源資料不完整"
+      return <li key={proposal.id} className="work-proposal" data-proposal-id={proposal.id}>
+        <div className="work-proposal-main">
+          <span className="work-state">建議建立 {KIND_META[proposal.kind].label}</span>
+          <h3>{proposal.title}</h3>
+          <p className="work-proposal-context">{project?.label ?? proposal.project_id} · {sourceLine}</p>
+          <p className="work-proposal-reason"><strong>為什麼要做</strong><span>{proposal.reason}</span></p>
+          <details className="work-proposal-detail">
+            <summary><span lang="en">Explain</span><span>詳細說明</span></summary>
+            <dl><div><dt>會改什麼</dt><dd>{proposal.description}</dd></div>
+              <div><dt>完成後會看到什麼</dt><dd>{proposal.suggested_acceptance || "這筆舊提案沒有記下可觀察的完成結果。"}</dd></div></dl>
+          </details>
+        </div>
+        <div className="work-actions work-proposal-actions" aria-label={`處理提案「${proposal.title}」`}>
+          <button className="chip on" type="button" disabled={!!busy}
+            onClick={() => void run(proposal.id, () => resolveWorkV2Proposal(proposal.id, "accept"))}>接受並建立</button>
+          <button className="chip danger" type="button" disabled={!!busy}
+            onClick={() => void run(proposal.id, () => resolveWorkV2Proposal(proposal.id, "reject"))}>拒絕</button>
+        </div>
+      </li>
+    })}</ul></div>
+  </details>
+}
+
+/** Old persisted rows remain answerable, but are visibly an integrity case. */
+function LegacyDecisions({ decisions, busy, run }: {
+  decisions: Decision[]
+  busy: string
+  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+}) {
+  return <details className="work-fold work-legacy-decisions">
+    <summary><strong>未連結的舊問題</strong><span className="work-count">{decisions.length}</span>
+      <span className="work-fold-hint">這些舊資料沒有記下所屬看板項目</span></summary>
+    <div className="work-fold-body"><WorkItemDecisions decisions={decisions} busy={!!busy} run={run} legacy /></div>
+  </details>
+}
+
+/** A person's answer is part of its item, immediately after the item's scope. */
+function WorkItemDecisions({ decisions, busy, run, legacy = false }: {
+  decisions: Decision[]
+  busy: boolean
+  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  legacy?: boolean
+}) {
+  if (!decisions.length) return null
+  return <section className="work-item-decisions" aria-label={legacy ? "未連結的舊問題" : "這個項目需要你回答的問題"}>
+    {!legacy && <div className="work-item-decisions-head"><strong>需要你決定</strong><span>{decisions.length}</span></div>}
+    {decisions.map((decision) => {
+      const fallback = decision.options.find((option) => option.id === decision.default)?.label ?? decision.default
+      return <div className="work-item-decision" key={decision.id} data-decision-id={decision.id}>
+        <p className="work-item-decision-state">{decision.blocking ? "回答前，這個項目的工作暫停" : "這個問題不會暫停工作"}</p>
+        <h4>{decision.question}</h4>
+        <p className="work-clock">到 {when(decision.due_at)} 還沒回答，就採用「{fallback}」</p>
+        <div className="work-actions" role="group" aria-label={`回答「${decision.question}」`}>
+          {decision.options.map((option) => <button key={option.id} type="button"
+            className={option.id === decision.default ? "chip on" : "chip"} disabled={busy}
+            onClick={() => void run(decision.id, () => answerDecision(decision.id, option.id))}>{option.label}</button>)}
+        </div>
+      </div>
+    })}
+  </section>
+}
+
+function BoardRegion({ title, items, sessions, decisions, busy, failure, clearFailure, run }: {
   title: string
   items: WorkV2Item[]
   sessions: SessionRow[]
+  decisions: Decision[]
   busy: string
   failure: string
   clearFailure: () => void
@@ -380,13 +457,14 @@ function BoardRegion({ title, items, sessions, busy, failure, clearFailure, run 
   if (!items.length) return null
   return <section className="work-section"><div className="work-section-head"><h2>{title}</h2><span className="work-count">{items.length}</span></div>
     <div className="work-cards">{items.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy}
-      failure={failure} clearFailure={clearFailure} run={run} />)}</div>
+      decisions={decisionsForWorkItem(decisions, item.id)} failure={failure} clearFailure={clearFailure} run={run} />)}</div>
   </section>
 }
 
-function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssignment = false, reportsExpanded = false }: {
+function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run, focusAssignment = false, reportsExpanded = false }: {
   item: WorkV2Item
   sessions: SessionRow[]
+  decisions: Decision[]
   busy: string
   failure: string
   clearFailure: () => void
@@ -461,6 +539,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
     <CreatedViaNote item={item} />
     <ClaimedViaNote item={item} />
     <p>{item.description}</p>
+    <WorkItemDecisions decisions={decisions} busy={!!busy} run={run} />
     {epicGateShown(item) && <EpicGateChecklist item={item} />}
     {epic && <EpicChildren item={item} sessions={sessions} />}
     {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
@@ -719,10 +798,11 @@ function SessionWorkList({ title, empty, rows }: {
   </li>)}</ul> : <small>{empty}</small>}</div>
 }
 
-function CreatedWorkModal({ item, created = true, sessions, busy, failure, clearFailure, run, onClose }: {
+function CreatedWorkModal({ item, created = true, sessions, decisions, busy, failure, clearFailure, run, onClose }: {
   item: WorkV2Item
   created?: boolean
   sessions: SessionRow[]
+  decisions: Decision[]
   busy: string
   failure: string
   clearFailure: () => void
@@ -740,7 +820,7 @@ function CreatedWorkModal({ item, created = true, sessions, busy, failure, clear
         <h2 id={`work-created-title-${item.id}`}>{created ? "看板項目已建立" : "看板項目"}</h2></div>
         <button className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <WorkCard item={item} sessions={sessions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} focusAssignment={created} reportsExpanded={!created} />
+      <WorkCard item={item} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} focusAssignment={created} reportsExpanded={!created} />
     </div>
   </div>, document.body)
 }

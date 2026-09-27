@@ -30,7 +30,9 @@ against it tells you what it does.
 1. Test the running or built service, not just the source. A handler that looks correct and an
    endpoint that responds correctly are different claims.
 2. For every endpoint in scope, check at least one valid request, one invalid input, and one
-   unauthenticated or under-privileged request.
+   unauthenticated or under-privileged request. Invalid inputs include hostile ones: injection
+   strings, oversized or malformed bodies, another user's IDs. Where the contract promises a rate
+   limit, try to exceed it.
 3. Record the exact request (method, path, headers that matter, body) and the exact response
    (status, body) for every check, pass or fail.
 4. Verify the response shape and status code against the documented or coded contract, not
@@ -61,7 +63,8 @@ against it tells you what it does.
 
 - Endpoint(s) tested, the environment, and the contract checked against.
 - A table or list of checks: request sent, response received, expected result, pass/fail.
-- Failures with the smallest request that reproduces them.
+- Failures with the smallest request that reproduces them, security failures first.
+- Latency you observed, with the environment; no pass/fail against a target nobody set.
 - Not measured: what you could not test and what would be needed to.
 
 ## What you refuse to do
