@@ -131,6 +131,8 @@ An append-only assignment history records:
 - target mode (`existing_session` or `new_session`);
 - conversation id when known;
 - terminal id, assistant, and model as observations;
+- the persona a `new_session` assignment opened the session as (`persona`, empty for none;
+  docs/personas.md);
 - `assigning`, `active`, `released`, or `failed` state;
 - human actor and timestamps;
 - failure/refusal evidence.
