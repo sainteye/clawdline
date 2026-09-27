@@ -237,7 +237,11 @@ function daemon(): Server {
       return json(res, 200, {
         at: Date.now(),
         assistants: [{ id: "claude", label: "Claude Code", availability: "unknown" }],
-        places: [{ id: "fixture-place", label: "Example project", path: "/tmp/fixture", at: Date.now(), icon: PROJECT_ICON }],
+        places: [{
+          id: "fixture-place", label: "Example project", path: "/tmp/fixture", at: Date.now(), icon: PROJECT_ICON,
+          repo: "github.com/example/project",
+          setup: { icon: "generated", deploy: "ready", deploy_activity: "running", servers: "missing", server_count: 0, sync: "ready" },
+        }],
       })
     }
     if (path === "/v1/work/v2/items" && req.method === "GET") {
@@ -943,6 +947,54 @@ test("phone: the command textarea keeps the full sheet width and the microphone 
     assert.ok(Math.abs(layout.microphone.centreY - layout.icon.centreY) <= 0.5, "the microphone icon is vertically centred")
     assert.ok(Math.abs(layout.microphone.centreX - layout.stop.centreX) <= 0.5, "the listening stop icon is horizontally centred")
     assert.ok(Math.abs(layout.microphone.centreY - layout.stop.centreY) <= 0.5, "the listening stop icon is vertically centred")
+  }))
+
+test("phone: Projects opens a reviewable setup Session without using the intent planner", () =>
+  inTab(PHONE, async (tab) => {
+    const plannedBefore = intentRequests
+    await tab.go("/#page=projects")
+    const reviewed = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const open = () => {
+        const card = document.querySelector(".project-setup")
+        const readiness = card?.querySelector(".project-readiness-card")
+        const button = readiness?.querySelector(".project-readiness-action")
+        if (!card || !readiness || !button) {
+          if (Date.now() >= deadline) return reject(new Error("the Project readiness overview did not load its Projects"))
+          return setTimeout(open, 25)
+        }
+        setTimeout(() => {
+          const actionBox = readiness.getBoundingClientRect()
+          const buttonBox = button.getBoundingClientRect()
+          button.click()
+          const wait = () => {
+            const draft = document.getElementById("command-draft")
+            if (draft && !draft.hidden) return resolve({
+              pageHidden: document.getElementById("projects").hidden,
+              instructions: document.getElementById("command-instructions").value,
+              picked: document.querySelector('#command-list .place[aria-pressed="true"]')?.dataset.id,
+              focused: document.activeElement?.id,
+              buttonWidth: buttonBox.width,
+              cardWidth: actionBox.width,
+              capabilities: readiness.querySelectorAll(".project-readiness-capability").length,
+            })
+            if (Date.now() >= deadline) return reject(new Error("the Project setup review did not open"))
+            setTimeout(wait, 25)
+          }
+          wait()
+        }, 0)
+      }
+      open()
+    })`)
+    assert.equal(intentRequests, plannedBefore, "a known Project and task do not need the paid intent planner")
+    assert.equal(reviewed.pageHidden, false)
+    assert.equal(reviewed.picked, "fixture-place")
+    assert.equal(reviewed.focused, "command-instructions", "keyboard review starts on the editable instructions")
+    assert.match(reviewed.instructions, /clawdline guide zh-TW project/)
+    assert.match(reviewed.instructions, /deploy／CI/)
+    assert.match(reviewed.instructions, /\.devstack\.json/)
+    assert.equal(reviewed.capabilities, 4, "the phone shows each configuration layer")
+    assert.ok(reviewed.buttonWidth >= reviewed.cardWidth - 30, "the primary phone action keeps the card width")
   }))
 
 test("phone: a spoken Board item is prefilled but not created until confirmation", () =>

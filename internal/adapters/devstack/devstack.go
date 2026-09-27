@@ -15,6 +15,7 @@ package devstack
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -77,6 +78,45 @@ type Spec struct {
 	// Commands are the keys the file names, in commandKeys order. None of
 	// them is ever run here.
 	Commands []string
+}
+
+// InspectionState describes the nearest .devstack.json without probing or
+// executing anything. It is the static configuration fact the Projects page
+// can show; live server state remains the server list's separate concern.
+type InspectionState string
+
+const (
+	InspectionReady      InspectionState = "ready"
+	InspectionMissing    InspectionState = "missing"
+	InspectionUnreadable InspectionState = "unreadable"
+)
+
+// Inspect walks from dir towards home, like discovery, and stops at the first
+// file it can name. An invalid nearest file is surfaced rather than skipped:
+// it is a configuration problem worth fixing, not evidence that no file was
+// supplied. No command or port probe is performed.
+func Inspect(dir, home string) (Spec, InspectionState) {
+	if dir == "" || !filepath.IsAbs(dir) {
+		return Spec{}, InspectionMissing
+	}
+	at := filepath.Clean(dir)
+	home = filepath.Clean(home)
+	for {
+		path := filepath.Join(at, Filename)
+		if _, err := os.Lstat(path); err == nil {
+			if spec, ok := readSpec(at); ok {
+				return spec, InspectionReady
+			}
+			return Spec{}, InspectionUnreadable
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return Spec{}, InspectionUnreadable
+		}
+		parent := filepath.Dir(at)
+		if parent == at || at == home || at == "/" {
+			return Spec{}, InspectionMissing
+		}
+		at = parent
+	}
 }
 
 // Declares says whether the file names a command.

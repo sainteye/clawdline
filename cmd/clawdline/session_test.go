@@ -316,6 +316,11 @@ func TestGuidePrints(t *testing.T) {
 		t.Fatalf("zh-TW board: exit %d: %.20q", code, out.String())
 	}
 	out.Reset()
+	if code := printGuide(&out, &errs, []string{"zh-TW", "project"}); code != 0 ||
+		!strings.Contains(out.String(), "Project 在 Clawdline") || !strings.Contains(out.String(), ".devstack.json") {
+		t.Fatalf("zh-TW project: exit %d: %.80q", code, out.String())
+	}
+	out.Reset()
 	if code := printGuide(&out, &errs, []string{"-sections"}); code != 0 || !strings.Contains(out.String(), "dispatch\n") {
 		t.Fatalf("sections = %q", out.String())
 	}

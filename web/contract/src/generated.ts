@@ -4159,6 +4159,19 @@ export interface ProjectCatalogAnswer {
 }
 
 /**
+ * The current deploy evidence, when a producer has written one. `idle` includes a
+ * configured producer with no run worth drawing.
+ */
+export type ProjectDeployActivity =
+    "idle"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "unknown"
+
+export const ProjectDeployActivityValues: readonly ProjectDeployActivity[] = ["idle", "running", "succeeded", "failed", "unknown"] as const
+
+/**
  * What the workflow file said on a beat it drew no row. `repository: github`
  * answers that a run *could* be named; this answers what was found under that name,
  * so that no deploy row stops being one silence and becomes the sentence the file
@@ -4221,6 +4234,18 @@ export type ProjectDeployQuietKind =
 export const ProjectDeployQuietKindValues: readonly ProjectDeployQuietKind[] = ["no_file", "unreadable", "state_not_drawn", "no_address", "running_stale"] as const
 
 /**
+ * Whether local workflow-status evidence is connected. This reports configuration,
+ * separately from the current run's outcome.
+ */
+export type ProjectDeploySetup =
+    "ready"
+  | "missing"
+  | "attention"
+  | "not_applicable"
+
+export const ProjectDeploySetupValues: readonly ProjectDeploySetup[] = ["ready", "missing", "attention", "not_applicable"] as const
+
+/**
  * Which way the git read failed, present only with `unreadable`. Four words because
  * what to do about each is different: install git, wait, look at the repository.
  */
@@ -4231,6 +4256,18 @@ export type ProjectGitFailure =
   | "git_answer_too_large"
 
 export const ProjectGitFailureValues: readonly ProjectGitFailure[] = ["git_missing", "git_timeout", "git_failed", "git_answer_too_large"] as const
+
+/**
+ * Where this Project's icon comes from. `generated` is the stable path-derived
+ * fallback, not a configured identity.
+ */
+export type ProjectIconSetup =
+    "mirrored"
+  | "override"
+  | "registry"
+  | "generated"
+
+export const ProjectIconSetupValues: readonly ProjectIconSetup[] = ["mirrored", "override", "registry", "generated"] as const
 
 /**
  * One address a project has. `kind` says which of the walk's sources it came from
@@ -4355,6 +4392,18 @@ export type ProjectRepository =
 export const ProjectRepositoryValues: readonly ProjectRepository[] = ["github", "remote_not_github", "no_remote", "not_a_repository", "unreadable"] as const
 
 /**
+ * Whether a readable .devstack.json declares at least one server. This is static
+ * configuration; it does not probe or start anything.
+ */
+export type ProjectServerSetup =
+    "ready"
+  | "missing"
+  | "empty"
+  | "attention"
+
+export const ProjectServerSetupValues: readonly ProjectServerSetup[] = ["ready", "missing", "empty", "attention"] as const
+
+/**
  * Why a `server` row has no state. `status_not_run`: the project declares a status
  * command and this daemon runs no command a repository names, so only a declared
  * port could have been asked and there was none. `nothing_declared`: the file
@@ -4366,6 +4415,29 @@ export type ProjectServerUnknown =
   | "nothing_declared"
 
 export const ProjectServerUnknownValues: readonly ProjectServerUnknown[] = ["status_not_run", "nothing_declared"] as const
+
+/**
+ * Cheap, local-only configuration evidence for a Project. It executes no repository
+ * command, probes no port and reaches no network.
+ */
+export interface ProjectSetup {
+  deploy: ProjectDeploySetup
+  deploy_activity: ProjectDeployActivity
+  icon: ProjectIconSetup
+  server_count: number
+  servers: ProjectServerSetup
+  sync: ProjectSyncSetup
+}
+
+/**
+ * Whether an origin repository gives this checkout an identity that another machine
+ * can match.
+ */
+export type ProjectSyncSetup =
+    "ready"
+  | "missing"
+
+export const ProjectSyncSetupValues: readonly ProjectSyncSetup[] = ["ready", "missing"] as const
 
 /**
  * /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what the
@@ -6467,6 +6539,7 @@ export interface StartPlace {
    * two machines; a schedule is moved between machines by it.
    */
   repo: string
+  setup?: ProjectSetup
 }
 
 /**

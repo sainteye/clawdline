@@ -33,6 +33,37 @@ exist. Under **版本庫生命週期** (repository lifecycle) each repository sh
 Each project has a pixel icon, used in the session list and on the Board. Icons are described in
 [project-icons.md](../project-icons.md).
 
+## Set up how a project appears
+
+At the top of **專案** (Projects), **專案能力健檢** (Project capability check) shows four separate
+facts for every project: whether its icon was chosen or only generated from the path, whether local
+deploy-progress evidence is connected, whether `.devstack.json` declares development services,
+and whether a git origin can identify the same project on another machine. The deploy row separates
+"progress is connected" from the current run's outcome, so a failed run asks for attention without
+being misreported as missing configuration. A non-GitHub remote is marked not applicable and is
+not counted as unfinished GitHub-workflow setup.
+
+This check is local and read-only. It runs no repository command, probes no port, reaches no
+network and starts or deploys nothing. An older daemon that does not send the evidence is shown as
+unknown rather than guessed. Loading, empty and unreadable answers each remain visible and offer
+**重新讀取** (read again).
+
+Press **補齊設定**, **檢查設定** or **重新檢視** on a project. Clawdline opens its ordinary
+new-Session review with that project already chosen and a first message covering the Project name
+and pixel icon, deploy and long-running progress, and the development-server list. You can edit the
+message, assistant and model before pressing Start; no Session is created until that final press.
+
+The new Session reads the project-specific section compiled into the Clawdline binary:
+
+```sh
+./bin/clawdline guide project
+./bin/clawdline guide zh-TW project
+```
+
+That guide separates display configuration from operational changes. It does not authorize the
+Session to deploy, start or restart anything, and it requires unknown, stale and unreadable states
+to remain visible rather than being reported as success.
+
 ## Bring your projects to another machine
 
 A second machine — a Linux server on the same Cloud account, say — can have the repositories and

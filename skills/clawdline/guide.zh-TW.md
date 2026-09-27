@@ -149,6 +149,48 @@ daemon 時才會轉送出去，轉不到則回 `502 upstream_unreachable`，並�
 這個 daemon 給的答案。2026-09-19 之前轉送是預設開著、且指向 7717 的 Swift app，所以當時寫的筆記
 會說沒接管的路由會跑到那個 app——現在不會。
 
+### 設定 Project 在 Clawdline 裡的顯示
+
+使用者要你把目前工作的 Project 在 Clawdline 裡整理清楚時，讀這一段。完成不是「有幾個檔案」；完成是
+這個 Project 有正確的名稱與圖示、長時間工作能回報進度，而且 Clawdline 能看見開發伺服器、卻不會替它
+啟動伺服器。
+
+先讀這個 repository 的指示、README、deploy/build scripts 與現有 process manager 設定。沿用 Project
+已經使用的指令。不要只為 Clawdline 另加一條 deploy 路徑或另一個 supervisor；除非使用者明確要求實際
+操作，否則不要啟動、停止、重啟或部署任何東西。顯示設定和真的部署是兩件不同的工作。
+
+依序檢查以下四項；真的不適用時才略過：
+
+1. **Project。** 執行 `clawdline project list`。清單沒有這個 checkout 時，用
+   `clawdline project add <absolute-root>` 加入 repository root，再列一次。這只記錄能從哪裡開 Session，
+   不會改 repository。
+2. **名稱與圖示。** 沒有設定時，Clawdline 會從路徑產生一個穩定圖示。使用者想指定名稱或像素圖示時，
+   保留 `~/.claude/project-icons.json` 裡的其他每一列，只修改這個 Project 最長相符路徑的那一列。格式在
+   Clawdline repository 的 `docs/project-status.md`；Projects 頁也能複製已解析好的圖示，不必手改 JSON。
+   全域使用者檔案不是 repository 內容；若原要求沒有授權修改，先把準備寫入的完整 entry 給使用者看。
+3. **Deploy 與長時間工作。** Clawdline 只讀狀態收據，從不執行 deploy。GitHub repository 的 deploy 收據
+   是 `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json`，owner 與 repo 取自 `origin`。已經知道 run
+   狀態的 producer 要用 atomic write 寫入 `state`（`running`、`ok`、`fail` 或 `none`）、`label`、`url`、
+   `started_at`，以及實測過的 `typical_seconds`。本機 build、test、import 或 deploy command 可在 helper
+   存在時用 `clawdline-progress run --label <label> -- <command>` 包住，否則依
+   `docs/project-status.md` 實作 `run-<path>.json` contract。時間沒有量過就省略，不要猜；producer 被中止
+   時也不能永遠留下 running。
+4. **開發伺服器。** 在最近的 deployable root 新增或更新 `.devstack.json`。目前 Go daemon 只讀
+   `processes` 並探測它們的 loopback `port`，或開啟 `url`；它不會從 browser 執行 `status`、`up`、
+   `down`、`restart` 或 `logs`。優先寫最小而正確的 Tier 0，例如：
+
+   ```json
+   {"version":1,"name":"myapp","processes":[{"name":"api","port":8002},{"name":"web","port":3001}]}
+   ```
+
+   沒有固定 port 或 URL 的 process 不要猜進去。驗證開發環境宣告時，不要探測或重啟 production。
+
+每一層分開驗證：`clawdline project list` 要列出 checkout；每個 JSON 都能 parse；改過的 script 要通過
+repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示成 running、stopped 或 unknown，而
+不是靜默省略；Project 裡的 Session 要能看到新鮮的 progress/deploy 收據。讀不到、格式錯誤或過期時，說清楚
+是哪一項並保留 unknown，絕不能把「沒有答案」回報成成功。最後列出完成的設定、刻意判定不適用的項目，
+以及 git 以外被修改的使用者檔案。
+
 ## 3. 派工之前：先讀已經存在的東西
 
 別的 session 可能已經在做你要做的事，而且從共用的 working tree 上看不出來：一份已經完成、放在還沒

@@ -40,6 +40,26 @@ func TestMatchAnswersTheLongestRegisteredPath(t *testing.T) {
 	}
 }
 
+func TestResolveNamesConfiguredAndGeneratedSources(t *testing.T) {
+	r := registryAt(t, `{"projects":{"/w/shop":{"label":"Shop","hue":3,"tone":1,"shape":8}}}`)
+	if _, source := r.Resolve("/w/shop/src"); source != SourceRegistry {
+		t.Errorf("registered source = %q", source)
+	}
+	if _, source := r.Resolve("/w/other"); source != SourceGenerated {
+		t.Errorf("fallback source = %q", source)
+	}
+	r.overrides = map[string]Grid{"/w/other": creature(1, 0, 2)}
+	if _, source := r.Resolve("/w/other/src"); source != SourceOverride {
+		t.Errorf("override source = %q", source)
+	}
+	r.SetMirror(func(cwd string) (Grid, string, bool) {
+		return creature(2, 0, 3), "Mirror", cwd == "/w/shop/src"
+	})
+	if _, source := r.Resolve("/w/shop/src"); source != SourceMirrored {
+		t.Errorf("mirror source = %q", source)
+	}
+}
+
 // A row that names a directory through a symbolic link, asked by a caller whose
 // own path has been resolved. Matching one side only is the answer that is not
 // "no row" but the wrong no: without the row's own spelling going through the

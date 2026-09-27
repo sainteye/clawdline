@@ -161,6 +161,10 @@ func TestPlacesNameTheRepositoryTheyClone(t *testing.T) {
 	repos := map[string]any{}
 	for _, p := range answer.Places {
 		repos[p["path"].(string)] = p["repo"]
+		setup, ok := p["setup"].(map[string]any)
+		if !ok || setup["icon"] == nil || setup["deploy"] == nil || setup["servers"] == nil || setup["sync"] == nil {
+			t.Errorf("%v setup = %#v", p["path"], p["setup"])
+		}
 	}
 	if repos[cloned] != "example.com/team/tool" {
 		t.Errorf("the clone answered repo %v", repos[cloned])

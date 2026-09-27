@@ -3562,6 +3562,21 @@ type ProjectCatalogAnswer struct {
 	Catalog ProjectCatalog `json:"catalog"`
 }
 
+// The current deploy evidence, when a producer has written one. `idle` includes
+// a configured producer with no run worth drawing.
+type ProjectDeployActivity string
+
+const (
+	ProjectDeployActivityIdle      ProjectDeployActivity = "idle"
+	ProjectDeployActivityRunning   ProjectDeployActivity = "running"
+	ProjectDeployActivitySucceeded ProjectDeployActivity = "succeeded"
+	ProjectDeployActivityFailed    ProjectDeployActivity = "failed"
+	ProjectDeployActivityUnknown   ProjectDeployActivity = "unknown"
+)
+
+// ProjectDeployActivityValues is every value the contract allows, in contract order.
+var ProjectDeployActivityValues = []ProjectDeployActivity{ProjectDeployActivityIdle, ProjectDeployActivityRunning, ProjectDeployActivitySucceeded, ProjectDeployActivityFailed, ProjectDeployActivityUnknown}
+
 // What the workflow file said on a beat it drew no row. `repository: github`
 // answers that a run *could* be named; this answers what was found under that
 // name, so that no deploy row stops being one silence and becomes the sentence
@@ -3619,6 +3634,20 @@ const (
 // ProjectDeployQuietKindValues is every value the contract allows, in contract order.
 var ProjectDeployQuietKindValues = []ProjectDeployQuietKind{ProjectDeployQuietKindNoFile, ProjectDeployQuietKindUnreadable, ProjectDeployQuietKindStateNotDrawn, ProjectDeployQuietKindNoAddress, ProjectDeployQuietKindRunningStale}
 
+// Whether local workflow-status evidence is connected. This reports
+// configuration, separately from the current run's outcome.
+type ProjectDeploySetup string
+
+const (
+	ProjectDeploySetupReady         ProjectDeploySetup = "ready"
+	ProjectDeploySetupMissing       ProjectDeploySetup = "missing"
+	ProjectDeploySetupAttention     ProjectDeploySetup = "attention"
+	ProjectDeploySetupNotApplicable ProjectDeploySetup = "not_applicable"
+)
+
+// ProjectDeploySetupValues is every value the contract allows, in contract order.
+var ProjectDeploySetupValues = []ProjectDeploySetup{ProjectDeploySetupReady, ProjectDeploySetupMissing, ProjectDeploySetupAttention, ProjectDeploySetupNotApplicable}
+
 // Which way the git read failed, present only with `unreadable`. Four words
 // because what to do about each is different: install git, wait, look at the
 // repository.
@@ -3633,6 +3662,20 @@ const (
 
 // ProjectGitFailureValues is every value the contract allows, in contract order.
 var ProjectGitFailureValues = []ProjectGitFailure{ProjectGitFailureGitMissing, ProjectGitFailureGitTimeout, ProjectGitFailureGitFailed, ProjectGitFailureGitAnswerTooLarge}
+
+// Where this Project's icon comes from. `generated` is the stable path-derived
+// fallback, not a configured identity.
+type ProjectIconSetup string
+
+const (
+	ProjectIconSetupMirrored  ProjectIconSetup = "mirrored"
+	ProjectIconSetupOverride  ProjectIconSetup = "override"
+	ProjectIconSetupRegistry  ProjectIconSetup = "registry"
+	ProjectIconSetupGenerated ProjectIconSetup = "generated"
+)
+
+// ProjectIconSetupValues is every value the contract allows, in contract order.
+var ProjectIconSetupValues = []ProjectIconSetup{ProjectIconSetupMirrored, ProjectIconSetupOverride, ProjectIconSetupRegistry, ProjectIconSetupGenerated}
 
 // One address a project has. `kind` says which of the walk's sources it came
 // from and decides how a reader draws it; `state` is the colour of its dot,
@@ -3731,6 +3774,20 @@ const (
 // ProjectRepositoryValues is every value the contract allows, in contract order.
 var ProjectRepositoryValues = []ProjectRepository{ProjectRepositoryGithub, ProjectRepositoryRemoteNotGithub, ProjectRepositoryNoRemote, ProjectRepositoryNotARepository, ProjectRepositoryUnreadable}
 
+// Whether a readable .devstack.json declares at least one server. This is
+// static configuration; it does not probe or start anything.
+type ProjectServerSetup string
+
+const (
+	ProjectServerSetupReady     ProjectServerSetup = "ready"
+	ProjectServerSetupMissing   ProjectServerSetup = "missing"
+	ProjectServerSetupEmpty     ProjectServerSetup = "empty"
+	ProjectServerSetupAttention ProjectServerSetup = "attention"
+)
+
+// ProjectServerSetupValues is every value the contract allows, in contract order.
+var ProjectServerSetupValues = []ProjectServerSetup{ProjectServerSetupReady, ProjectServerSetupMissing, ProjectServerSetupEmpty, ProjectServerSetupAttention}
+
 // Why a `server` row has no state. `status_not_run`: the project declares a
 // status command and this daemon runs no command a repository names, so only a
 // declared port could have been asked and there was none. `nothing_declared`:
@@ -3745,6 +3802,29 @@ const (
 
 // ProjectServerUnknownValues is every value the contract allows, in contract order.
 var ProjectServerUnknownValues = []ProjectServerUnknown{ProjectServerUnknownStatusNotRun, ProjectServerUnknownNothingDeclared}
+
+// Cheap, local-only configuration evidence for a Project. It executes no
+// repository command, probes no port and reaches no network.
+type ProjectSetup struct {
+	Deploy         ProjectDeploySetup    `json:"deploy"`
+	DeployActivity ProjectDeployActivity `json:"deploy_activity"`
+	Icon           ProjectIconSetup      `json:"icon"`
+	ServerCount    int64                 `json:"server_count"`
+	Servers        ProjectServerSetup    `json:"servers"`
+	Sync           ProjectSyncSetup      `json:"sync"`
+}
+
+// Whether an origin repository gives this checkout an identity that another
+// machine can match.
+type ProjectSyncSetup string
+
+const (
+	ProjectSyncSetupReady   ProjectSyncSetup = "ready"
+	ProjectSyncSetupMissing ProjectSyncSetup = "missing"
+)
+
+// ProjectSyncSetupValues is every value the contract allows, in contract order.
+var ProjectSyncSetupValues = []ProjectSyncSetup{ProjectSyncSetupReady, ProjectSyncSetupMissing}
 
 // /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what
 // the server decided about asking a person in the conversation, and what the
@@ -5361,7 +5441,8 @@ type StartPlace struct {
 	// whose projects have no origin from one whose Clawdline is too old to say. `id`
 	// is a digest of a path on this machine, so this is the name one project has on
 	// two machines; a schedule is moved between machines by it.
-	Repo string `json:"repo"`
+	Repo  string        `json:"repo"`
+	Setup *ProjectSetup `json:"setup,omitempty"`
 }
 
 // GET /v1/places: explicitly registered directories, recorded Claude Code

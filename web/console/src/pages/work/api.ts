@@ -198,6 +198,17 @@ export interface ProjectPlace {
   label: string
   path: string
   icon?: unknown
+  repo?: string
+  setup?: ProjectSetupEvidence
+}
+
+export interface ProjectSetupEvidence {
+  icon: "mirrored" | "override" | "registry" | "generated"
+  deploy: "ready" | "missing" | "attention" | "not_applicable"
+  deploy_activity: "idle" | "running" | "succeeded" | "failed" | "unknown"
+  servers: "ready" | "missing" | "empty" | "attention"
+  server_count: number
+  sync: "ready" | "missing"
 }
 
 export interface ProjectPlacePage {

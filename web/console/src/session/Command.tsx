@@ -376,6 +376,53 @@ function open(): void {
   paint()
 }
 
+/**
+ * A Projects-page setup press already knows both the Project and the work. It
+ * enters the ordinary review step directly, without paying the intent planner
+ * to rediscover either fact. Nothing is created until the person presses the
+ * command sheet's own start button.
+ */
+async function reviewProjectSetup(place: string, instructions: string): Promise<void> {
+  if (busy()) {
+    open()
+    return
+  }
+  open()
+  reset()
+  const mine = ++run
+  phase = "thinking"
+  sayStatus(T().webLoading, true)
+  paint()
+  try {
+    await ensurePlaces()
+    if (mine !== run || phase !== "thinking") return
+    if (!places?.some(row => row.id === place)) {
+      phase = "idle"
+      sayStatus(T().webStartGone)
+      paint()
+      return
+    }
+    chosenPlace = place
+    chosenAssistant = assistants[0]?.id || null
+    chosenModel = ""
+    el<HTMLTextAreaElement>("command-instructions").value = instructions
+    drawWith()
+    drawModel()
+    drawList()
+    el("command-draft").hidden = false
+    phase = "draft"
+    sayTop(T().webCommandDraft)
+    sayStatus("")
+    paint()
+    el<HTMLTextAreaElement>("command-instructions").focus({ preventScroll: true })
+  } catch (error) {
+    if (mine !== run) return
+    phase = "idle"
+    sayStatus(L.failureSentence(error, { fallback: T().webStartFailed }))
+    paint()
+  }
+}
+
 function close(): void {
   run += 1
   V.cancel()
@@ -434,6 +481,7 @@ export const Command = {
   openAndListen(): void {
     listen()
   },
+  reviewProjectSetup,
   close,
   press,
   repaint: paint,
