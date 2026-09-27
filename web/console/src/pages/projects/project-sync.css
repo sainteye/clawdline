@@ -11,3 +11,4 @@
 .project-sync-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
 .project-sync button { padding: 8px 12px; }
 .project-sync [role="alert"] { color: var(--bad); }
+.project-sync .project-sync-offline { margin: 8px 0 0; }

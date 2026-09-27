@@ -16,6 +16,8 @@ export interface SyncMachine {
   /** Whether the machine says it answers `project-manifest`; null when its descriptor has not arrived. */
   offers: boolean | null
   selectable: boolean
+  /** Whether the account's machine list says it is online; null when that list does not know. */
+  online: boolean | null
 }
 
 export interface ProjectSyncSeam {
@@ -41,7 +43,7 @@ export function projectSyncSeam(): ProjectSyncSeam | null {
 
 /** The client surface the gate hands over; typed loosely, as the copied client is. */
 export interface SyncClient {
-  machines(): Promise<{ machines: { id: string; name?: string; label: string; selectable: boolean }[] }>
+  machines(): Promise<{ machines: { id: string; name?: string; label: string; selectable: boolean; freshness?: "current" | "stale" | "unknown" }[] }>
   machineDescriptor?: (machine: string) => { machine?: { commands?: unknown } } | null
   _machineRequest?: (machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action") => Promise<unknown>
 }
@@ -65,6 +67,7 @@ export function syncSeamFor(current: () => SyncClient | null, here: () => string
           name: m.name || m.label || m.id,
           offers: Array.isArray(commands) ? commands.includes("project-manifest") : null,
           selectable: m.selectable,
+          online: m.freshness === "current" ? true : m.freshness === "stale" ? false : null,
         }
       })
     },
