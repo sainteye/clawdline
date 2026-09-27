@@ -156,30 +156,23 @@
 }
 
 /*
- * A session launched as a persona (docs/personas.md): its bot, at three pixels
- * a cell, and its full name on a line of their own at the bottom of the row,
- * in the text column under the state line. It first rode in the title line
- * after the assistant's name, where a 390px phone cut the name to its first
- * character and squeezed the bot against the edge. A row with no persona has
- * no such line and keeps its height; a row with one grows by this line.
+ * A session launched as a persona (docs/personas.md): its bot alone, at two
+ * pixels a cell (16x14, the height of this line's 11px text), at the head of
+ * the second line, before the path. The name and summary are its title and
+ * accessible name. It first rode after the assistant's name in the title,
+ * where a 390px phone cut the name to one character; then it had a line of its
+ * own under the state line, bot at three pixels a cell and full name, which
+ * made every such row 25px taller and the bot larger than any text beside it.
+ * Here it adds no height. It never gives way: it is the one fixed-size thing
+ * on the line, and the path and tty after it take the ellipsis.
  */
-.row .persona-line {
-  grid-column: 2;
-  display: flex;
+.row .meta .persona-mark {
+  flex: none;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-width: 0;
-  color: var(--dim);
-  font: 11px/1.2 var(--mono);
 }
 
-.row .persona-line-bot {
-  flex: none;
+.row .meta .persona-mark-bot {
   display: block;
   image-rendering: pixelated;
-}
-
-.row .persona-line-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }

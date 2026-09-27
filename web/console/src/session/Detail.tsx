@@ -28,7 +28,7 @@ import { Snippets } from "./Snippets.js"
 import { conversationNotStarted } from "./readiness.js"
 import { agentName, agentStateWord } from "./WorkTree.js"
 import { nextWord } from "../next-strings.js"
-import { headPersona } from "../personas.js"
+import { headPersona, type HeadPersona } from "../personas.js"
 import { PersonaBot, usePersonas } from "./PersonaBot.js"
 import "./work-tree.css"
 import "./git-status.css"
@@ -153,6 +153,7 @@ export function Detail({
     setDrew(L.paintIcon(markRef.current, mark ?? undefined, 5))
   }, [mark])
 
+  const role = headPersona(usePersonas(), row?.persona)
   const snippetsSays = SNIPPETS_READABLE ? T.webSnippets : row ? projectLabel(row.cwd) : ""
 
   // `renderTranscript`: with nothing open the pane is the home screen, and it
@@ -220,18 +221,19 @@ export function Detail({
             onClick={requestInfo}
             title={T.webSessionInfo}
             aria-label={T.webSessionInfo}
+            aria-describedby={role ? "detail-persona-words" : undefined}
           >
             <span className="who detail-who">
               <span className="name" id="detail-name" style={mark ? { color: L.accentTint(mark.accent) } : undefined}>
                 {row ? row.label || row.tty || row.id : listUnknown ? "" : T.webNoSessionOpen}
               </span>
               <span className="sub" id="detail-sub">
+                {role ? <DetailPersona head={role} /> : null}
                 {detailSub(row)}
               </span>
             </span>
           </button>
         </div>
-        <DetailPersona row={row} />
         <div className="tools">
           <Tools
             row={row}
@@ -333,21 +335,20 @@ function HomeHero() {
 }
 
 /**
- * The role this session was launched as (docs/personas.md): a large bot, the
- * full name and the one-line summary. Nothing for a row with no persona or one
- * the catalog does not name; on Cloud the catalog is empty unless the machine
- * offers `personas`, so nothing there either. On a phone only the bot shows;
- * the words stay for a screen reader and the title (persona.css).
+ * The role this session was launched as (docs/personas.md): its bot alone, at
+ * two pixels a cell, at the head of the line under the session's name. Its
+ * name and summary are the bot's title and the session button's description,
+ * so a screen reader hears them after "session info". The caller draws nothing
+ * for a row with no persona or one the catalog does not name; on Cloud the
+ * catalog is empty unless the machine offers `personas`, so nothing there
+ * either.
  */
-function DetailPersona({ row }: { row: SessionRow | null }) {
-  const head = headPersona(usePersonas(), row?.persona)
-  if (!head) return null
+function DetailPersona({ head }: { head: HeadPersona }) {
   return (
     <span className="detail-persona" id="detail-persona" title={head.title}>
-      <PersonaBot persona={head.persona} cellPx={4} className="detail-persona-bot" />
-      <span className="detail-persona-words">
-        <span className="detail-persona-name">{head.name}</span>
-        {head.summary ? <span className="detail-persona-summary">{head.summary}</span> : null}
+      <PersonaBot persona={head.persona} cellPx={2} className="detail-persona-bot" />
+      <span className="detail-persona-words" id="detail-persona-words">
+        {head.title}
       </span>
     </span>
   )

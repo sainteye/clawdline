@@ -185,22 +185,22 @@ per machine. A read that fails for any reason is an empty catalog, and an empty 
 chips and no bots: an older daemon, or a machine on Cloud that cannot answer, shows the console it
 showed before this feature, never a sheet that breaks after a press.
 
-- **Session list.** A row whose `persona` the catalog names ends in a line of its own, in the text
-  column under the state line: the bot at three pixels a cell and the role's full name in the
-  console's language, with the full name and summary as its title. It first rode in the title line
-  after the assistant's name at two pixels a cell, where a 390 px phone cut the name to its first
-  character. Measured 2026-09-27 with mocked rows (long title, `tmux` row): a row without a persona
-  is as tall as before (phone 87.9 px, 88.4 working; desktop 77.6, 78.1), and a row with one grows
-  by this line (phone 112.9, 113.4; desktop 101.6, 102.1). All eight names fit whole at 390 px in
-  both languages.
-- **Session detail header.** A row whose `persona` the catalog names shows the bot at four pixels
-  a cell (32×28) between the session's name and its tools, with the full name and the one-line
-  summary beside it on a desktop (at most 300 px, ellipsised). On a phone (below 900 px) only the
-  bot shows; the name and summary stay for a screen reader and in the title. Measured with mocked
-  rows at 390 px and 1280 px: the header is 65 px tall with and without a role at both widths. At
-  390 px a visible role name left the session's name 46 px wide, so the phone keeps the bot alone,
-  which costs the name 40 px (94 → 54). No persona, or one the catalog does not name, draws
-  nothing (`headPersona`).
+- **Session list.** A row whose `persona` the catalog names shows the bot alone, at two pixels a
+  cell (16×14, the height of the line's 11 px text), at the head of its second line, before the
+  path; the full name and summary are its title and accessible name. It first rode in the title
+  line after the assistant's name, where a 390 px phone cut the name to its first character, and
+  then had a line of its own under the state line with the bot at three pixels a cell and the full
+  name, which the person found too large for the row. Measured 2026-09-27 with mocked rows and the
+  real catalog: a row with a persona is now as tall as one without (phone 112.9 → 87.9 px; desktop
+  101.6 → 77.6), and the page does not scroll sideways at 390 px.
+- **Session detail header.** A row whose `persona` the catalog names shows the bot alone, at two
+  pixels a cell, at the head of the line under the session's name, before the path. The name and
+  summary are its title and the session button's description (`aria-describedby`), never drawn.
+  It was a 32×28 bot between the name and the tools, the largest thing in a phone's header after
+  the project mark, and it took 40 px from the session's name. Measured 2026-09-27 with the header's
+  markup and stylesheets at 390 px and 1200 px: the line under the name is 15.9 px with and without
+  a role, and the name is as wide as with no role. No persona, or one the catalog does not name,
+  draws nothing (`headPersona`).
 - **Start sheet.** A row of role chips under the assistant chips, "No role" first and chosen by
   default. It scrolls sideways on a phone. The choice becomes the start route's `/as/{persona}`
   and is remembered in this browser only.
