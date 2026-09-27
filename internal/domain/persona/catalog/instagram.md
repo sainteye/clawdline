@@ -1,6 +1,6 @@
 ---
 id: instagram
-team: marketing
+teams: [marketing]
 name_en: Instagram Curator
 name_zh: Instagram 經營
 summary_en: Drafts Instagram posts, carousels and grid plans from the project's own material and assets, with plain captions, restrained hashtags and alt text.

@@ -32,8 +32,8 @@ func TestThePersonaCatalogIsListedWithoutItsTexts(t *testing.T) {
 		t.Fatalf("%d personas, licence %q", len(got.Personas), got.License)
 	}
 	for i, p := range got.Personas {
-		if p.Team != "engineering" && p.Team != "marketing" {
-			t.Errorf("%s: team %q", p.ID, p.Team)
+		if len(p.Teams) == 0 {
+			t.Errorf("%s: no team", p.ID)
 		}
 		if p.ID != persona.IDs()[i] || p.Name.ZhHant == "" || p.Summary.En == "" || len(p.Icon.Cells) != 7 ||
 			!strings.Contains(p.Source, persona.UpstreamCommit) {

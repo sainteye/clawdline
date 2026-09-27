@@ -18,10 +18,10 @@
       "description": "One persona. `id` is what a start or resume path ends `/as/{id}` with, what a dispatch's `persona` and a Root Assignment's `persona` name, and what a session row's `persona` reads back.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "team", "name", "summary", "suggested_kinds", "icon", "source"],
+      "required": ["id", "teams", "name", "summary", "suggested_kinds", "icon", "source"],
       "properties": {
         "id": { "type": "string" },
-        "team": { "description": "The team the console's switcher shows this persona under. A closed set; the console names each team, so the catalog only says which one.", "type": "string", "enum": ["engineering", "marketing"] },
+        "teams": { "description": "The teams the console's switcher shows this persona under: at least one, none twice. A closed set; the console names each team, so the catalog only says which.", "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "enum": ["engineering", "marketing", "product", "quality", "operations", "design", "business"] } },
         "name": { "$ref": "#/$defs/PersonaNames" },
         "summary": { "$ref": "#/$defs/PersonaNames" },
         "suggested_kinds": { "description": "Board item kinds (epic, feature, issue) this persona is offered for first. A suggestion: nothing is given a persona nobody chose.", "type": "array", "items": { "type": "string" } },

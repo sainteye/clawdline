@@ -1,6 +1,6 @@
 ---
 id: social-media
-team: marketing
+teams: [marketing]
 name_en: Social Media Strategist
 name_zh: 社群策略師
 summary_en: Plans and drafts platform-specific posts and a posting calendar into files, adapted from existing content, and never posts anything itself.
