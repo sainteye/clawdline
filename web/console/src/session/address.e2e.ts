@@ -970,10 +970,13 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
         trigger.click()
         setTimeout(() => {
           const dialogBox = dialog.getBoundingClientRect()
+          const close = dialog.querySelector(".project-setup-close")
+          const closeStyle = getComputedStyle(close)
           const actionBox = readiness.getBoundingClientRect()
           const buttonBox = button.getBoundingClientRect()
           const capabilities = readiness.querySelectorAll(".project-readiness-capability").length
-          dialog.querySelector(".project-setup-close").click()
+          const initialFocus = document.activeElement === dialog
+          close.click()
           const closed = () => {
             if (dialog.open || document.activeElement !== trigger) {
               if (Date.now() >= deadline) return reject(new Error("the Project setup dialog did not close"))
@@ -981,11 +984,11 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
             }
             trigger.click()
             button.click()
-            waitForDraft(true, dialogBox, actionBox, buttonBox, capabilities, launcherBox, inlineCards)
+            waitForDraft(true, initialFocus, closeStyle.outlineStyle, dialogBox, actionBox, buttonBox, capabilities, launcherBox, inlineCards)
           }
           closed()
         }, 0)
-        const waitForDraft = (returnedFocus, dialogBox, actionBox, buttonBox, capabilities, launcherBox, inlineCards) => {
+        const waitForDraft = (returnedFocus, initialFocus, closeOutlineStyle, dialogBox, actionBox, buttonBox, capabilities, launcherBox, inlineCards) => {
           const wait = () => {
             const draft = document.getElementById("command-draft")
             if (draft && !draft.hidden) return resolve({
@@ -999,6 +1002,8 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
               launcherHeight: launcherBox.height,
               inlineCards,
               returnedFocus,
+              initialFocus,
+              closeOutlineStyle,
               dialog: {
                 left: dialogBox.left,
                 top: dialogBox.top,
@@ -1024,6 +1029,8 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
     assert.match(reviewed.instructions, /\.devstack\.json/)
     assert.equal(reviewed.inlineCards, 0, "the Project page does not repeat the readiness list in its main flow")
     assert.ok(reviewed.launcherHeight <= 110, `the compact launcher is ${reviewed.launcherHeight}px tall`)
+    assert.equal(reviewed.initialFocus, true, "opening the audit focuses its labelled dialog instead of outlining Close")
+    assert.equal(reviewed.closeOutlineStyle, "none", "the touch-opened Close control has no accent frame")
     assert.equal(reviewed.returnedFocus, true, "closing the audit returns keyboard focus to its launcher")
     assert.ok(reviewed.dialog.left <= 1 && reviewed.dialog.top <= 1, "the phone audit starts at the viewport edge")
     assert.ok(reviewed.dialog.right >= reviewed.viewport.width - 1, "the phone audit spans the viewport width")
