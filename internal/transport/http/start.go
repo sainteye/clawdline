@@ -248,6 +248,7 @@ func (s *Server) starter(reading startReading) app.Starter {
 		Past: func(ctx context.Context, place projects.Place, assistant string) []projects.Past {
 			return s.past(ctx, place, assistant, reading, 200)
 		},
+		Recorded:   projects.Recorded,
 		PersonaDir: personas.Dir(s.cfg.Dir),
 		// The broker's answer, so a session the person starts and one the
 		// broker opens answer in the same language.

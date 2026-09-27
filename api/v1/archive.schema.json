@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "archive.schema.json",
+  "title": "Session archive",
+  "description": "Archived Sessions (docs/session-archive.md): POST /v1/sessions/{id}/archive closes a Session through the close path and records its conversation; GET /v1/sessions/archived lists the record, read by any paired device; POST /v1/sessions/archived/restore resumes archived conversations. Both writes need a device that may send and an Idempotency-Key; a retry with the same key is answered with the first answer. An archive answers every refusal a close answers, verbatim (`close_blocked` with its reasons unless `force`, `closeability_unknown` never overridable, the close ladder's codes), plus `archive_no_conversation` (409: nothing to resume), `archive_unavailable` (503) and `archive_not_recorded` (500: closed, and the row could not be written). Other refusals are the flat `{error, message}`.",
+  "$defs": {
+    "ArchiveRequest": {
+      "description": "POST /v1/sessions/{id}/archive. An absent body is an archive without force. `force` goes over `close_blocked` exactly as a close's does.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "force": { "type": "boolean" }
+      }
+    },
+    "ArchivedSession": {
+      "description": "One archived conversation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversation_id", "assistant", "place", "place_label", "cwd", "title", "archived_at"],
+      "properties": {
+        "conversation_id": { "type": "string" },
+        "assistant": {
+          "description": "`claude` or `codex`.",
+          "type": "string"
+        },
+        "place": {
+          "description": "The place id of the directory (POST /v1/places/{id}/…).",
+          "type": "string"
+        },
+        "place_label": { "type": "string" },
+        "cwd": { "type": "string" },
+        "title": {
+          "description": "The label the Session row showed when it was archived.",
+          "type": "string"
+        },
+        "persona": { "description": "The persona the Session was launched with; restoring it launches it with the same one. Absent for none.", "type": "string" },
+        "icon": {
+          "description": "The project's mark for `cwd`, computed when read, as the Session row draws it. Absent when there is none.",
+          "$ref": "common.schema.json#/$defs/Icon"
+        },
+        "archived_at": {
+          "description": "Unix seconds: when it was archived.",
+          "type": "integer"
+        }
+      }
+    },
+    "ArchiveAnswer": {
+      "description": "The answer to an archive: the close's answer (`ok`, `id`, `action` = `archived`, `forced`) and the row it recorded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "id", "action", "archived"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "id": { "type": "string" },
+        "action": { "type": "string" },
+        "forced": { "description": "Present on an archive that went ahead over open obligations.", "type": "boolean" },
+        "archived": { "$ref": "#/$defs/ArchivedSession" }
+      }
+    },
+    "ArchivedSessions": {
+      "description": "GET /v1/sessions/archived. Most recently archived first; at most sessions.archive_rows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessions", "at"],
+      "properties": {
+        "sessions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ArchivedSession" }
+        },
+        "at": { "type": "integer" }
+      }
+    },
+    "RestoreArchivedRequest": {
+      "description": "POST /v1/sessions/archived/restore. At most sessions.archive_restore_batch conversations; a longer list is refused whole with `archive_batch_too_large`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversations"],
+      "properties": {
+        "conversations": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "RestoreArchivedCode": {
+      "description": "Why one archived conversation was not restored. `not_archived`: it has no row in the archive. `already_open`: it is open in a terminal now; nothing was opened and the row stays. `place_unavailable`: its directory is no longer a place this machine can open. `conversation_not_found`: the assistant's record of it is gone. `open_failed`: the terminal could not open it; `message` says why. `over_capacity`: other sessions were being opened; ask again. Every code but `ok` leaves the row in the archive.",
+      "type": "string",
+      "enum": ["not_archived", "already_open", "place_unavailable", "conversation_not_found", "open_failed", "over_capacity"]
+    },
+    "RestoreArchivedResult": {
+      "description": "One named conversation's answer. `ok` carries the new terminal (`id`, `backend`, and `attach` for a detached tmux server) and the row is gone from the archive; otherwise `code` and `message`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversation_id", "ok"],
+      "properties": {
+        "conversation_id": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "code": { "$ref": "#/$defs/RestoreArchivedCode" },
+        "message": { "type": "string" },
+        "id": { "type": "string" },
+        "backend": { "$ref": "common.schema.json#/$defs/Backend" },
+        "attach": { "type": "string" }
+      }
+    },
+    "RestoreArchivedAnswer": {
+      "description": "The answer to an archive restore: one result per distinct conversation named, in the order named.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["results", "at"],
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RestoreArchivedResult" }
+        },
+        "at": { "type": "integer" }
+      }
+    }
+  }
+}

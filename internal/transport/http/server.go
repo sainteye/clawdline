@@ -102,6 +102,10 @@ type Server struct {
 	// scan readings takes, and offers the previous boot's back
 	// (session_restore.go, docs/session-restore.md).
 	restore *app.SessionRestore
+	// archive is the record of the Sessions a person archived: closed to give
+	// their memory back, and resumable again (session_archive.go,
+	// docs/session-archive.md).
+	archive *app.SessionArchive
 	// screenBus carries a moved screen's revision to every open event stream.
 	screenBus *screenBus
 	// broker is the loop from a root asking for work to a child reporting that
@@ -224,6 +228,7 @@ func New(cfg config.Config) (*Server, error) {
 	srv.readings = app.NewInventoryReading(srv.inventory.Read, 0)
 	srv.readings.SetRetentionAge(CapacityLimit(capacity.CacheSessionInventory))
 	srv.restore = srv.newSessionRestore()
+	srv.archive = srv.newSessionArchive()
 	srv.readings.Observe(srv.restore.Observe)
 	srv.inventory.Held.SetLimits(CapacityLimit(capacity.ScreensCaptureSlots),
 		CapacityLimit(capacity.CacheTerminalScreens))
@@ -323,6 +328,10 @@ func (s *Server) Handler() http.Handler {
 		// The sessions a reboot took away: three fixed paths, asked before
 		// anything reads the next segment as a session id.
 		if s.restorableRoute(w, r) {
+			return
+		}
+		// The archived Sessions: two fixed paths, asked for the same reason.
+		if s.archivedRoute(w, r) {
 			return
 		}
 		if sessionID, agentID, ok := agentPath(r); ok {

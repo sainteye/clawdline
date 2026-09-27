@@ -112,6 +112,9 @@ with a different body is refused `idempotency_key_reused`.
 Clawdline Cloud carries the same three as the relay words `restorable-sessions`,
 `restore-sessions` and `dismiss-restorable`.
 
+Archiving a Session ([session-archive.md](session-archive.md)) is a close that keeps a record of
+its own, and its restore opens conversations through this same resume path.
+
 The bounds — rows per boot, boots kept, conversations per restore, how stale `last_seen` may grow,
 the boot's heartbeat and the grace window — are registered and listed in [limits.md](limits.md)
 (N49).

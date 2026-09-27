@@ -29,6 +29,10 @@ type Starter struct {
 	Launcher ports.Launcher
 	// Past lists what an assistant has already recorded in a place.
 	Past func(ctx context.Context, place projects.Place, assistant string) []projects.Past
+	// Recorded is whether the assistant's own record of a conversation is on
+	// disk for a place (projects.Recorded). Only ResumeRecorded asks it; nil
+	// admits nothing beyond Past.
+	Recorded func(place projects.Place, assistant, id string) bool
 	// Language is Claude Code's response language for a session started with
 	// assistant (projects.ClaudeLanguage), or "" to leave it as Claude Code
 	// starts. Nil is "", which only a test wants.
@@ -179,6 +183,22 @@ func (s Starter) Resume(ctx context.Context, place projects.Place, sessionID, as
 	}
 	if !found {
 		return Started{}, notFound("No conversation named that")
+	}
+	return s.Start(ctx, place, assistant, "", id, persona)
+}
+
+// ResumeRecorded is Resume for a conversation this daemon itself recorded —
+// an archived one (docs/session-archive.md) — which is admitted when its
+// transcript is on disk even after it has fallen off the past list. That
+// list stops at the newest few hundred conversations of a directory, and a
+// conversation archived months ago in a busy one is well past it.
+func (s Starter) ResumeRecorded(ctx context.Context, place projects.Place, sessionID, assistant, persona string) (Started, error) {
+	id, ok := projects.SessionName(sessionID)
+	if !ok {
+		return Started{}, notFound("No conversation named that")
+	}
+	if s.Recorded == nil || !s.Recorded(place, assistant, id) {
+		return s.Resume(ctx, place, id, assistant, persona)
 	}
 	return s.Start(ctx, place, assistant, "", id, persona)
 }

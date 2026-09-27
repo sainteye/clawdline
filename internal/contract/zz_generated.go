@@ -55,6 +55,57 @@ type AdoptRequest struct {
 	Token string `json:"token"`
 }
 
+// The answer to an archive: the close's answer (`ok`, `id`, `action` =
+// `archived`, `forced`) and the row it recorded.
+type ArchiveAnswer struct {
+	Action   string          `json:"action"`
+	Archived ArchivedSession `json:"archived"`
+
+	// Present on an archive that went ahead over open obligations.
+	Forced bool   `json:"forced,omitempty"`
+	ID     string `json:"id"`
+	OK     bool   `json:"ok"`
+}
+
+// POST /v1/sessions/{id}/archive. An absent body is an archive without force.
+// `force` goes over `close_blocked` exactly as a close's does.
+type ArchiveRequest struct {
+	Force bool `json:"force,omitempty"`
+}
+
+// One archived conversation.
+type ArchivedSession struct {
+	// Unix seconds: when it was archived.
+	ArchivedAt int64 `json:"archived_at"`
+
+	// `claude` or `codex`.
+	Assistant      string `json:"assistant"`
+	ConversationID string `json:"conversation_id"`
+	CWD            string `json:"cwd"`
+
+	// The project's mark for `cwd`, computed when read, as the Session row draws it.
+	// Absent when there is none.
+	Icon *Icon `json:"icon,omitempty"`
+
+	// The persona the Session was launched with; restoring it launches it with the
+	// same one. Absent for none.
+	Persona string `json:"persona,omitempty"`
+
+	// The place id of the directory (POST /v1/places/{id}/…).
+	Place      string `json:"place"`
+	PlaceLabel string `json:"place_label"`
+
+	// The label the Session row showed when it was archived.
+	Title string `json:"title"`
+}
+
+// GET /v1/sessions/archived. Most recently archived first; at most
+// sessions.archive_rows.
+type ArchivedSessions struct {
+	At       int64             `json:"at"`
+	Sessions []ArchivedSession `json:"sessions"`
+}
+
 type Assistant string
 
 const (
@@ -3848,6 +3899,53 @@ type RestorableSessions struct {
 	PreviousBootLastSeen int64               `json:"previous_boot_last_seen,omitempty"`
 	Reason               RestorableReason    `json:"reason,omitempty"`
 	Sessions             []RestorableSession `json:"sessions"`
+}
+
+// The answer to an archive restore: one result per distinct conversation named,
+// in the order named.
+type RestoreArchivedAnswer struct {
+	At      int64                   `json:"at"`
+	Results []RestoreArchivedResult `json:"results"`
+}
+
+// Why one archived conversation was not restored. `not_archived`: it has no row
+// in the archive. `already_open`: it is open in a terminal now; nothing was
+// opened and the row stays. `place_unavailable`: its directory is no longer a
+// place this machine can open. `conversation_not_found`: the assistant's record
+// of it is gone. `open_failed`: the terminal could not open it; `message` says
+// why. `over_capacity`: other sessions were being opened; ask again. Every code
+// but `ok` leaves the row in the archive.
+type RestoreArchivedCode string
+
+const (
+	RestoreArchivedCodeNotArchived          RestoreArchivedCode = "not_archived"
+	RestoreArchivedCodeAlreadyOpen          RestoreArchivedCode = "already_open"
+	RestoreArchivedCodePlaceUnavailable     RestoreArchivedCode = "place_unavailable"
+	RestoreArchivedCodeConversationNotFound RestoreArchivedCode = "conversation_not_found"
+	RestoreArchivedCodeOpenFailed           RestoreArchivedCode = "open_failed"
+	RestoreArchivedCodeOverCapacity         RestoreArchivedCode = "over_capacity"
+)
+
+// RestoreArchivedCodeValues is every value the contract allows, in contract order.
+var RestoreArchivedCodeValues = []RestoreArchivedCode{RestoreArchivedCodeNotArchived, RestoreArchivedCodeAlreadyOpen, RestoreArchivedCodePlaceUnavailable, RestoreArchivedCodeConversationNotFound, RestoreArchivedCodeOpenFailed, RestoreArchivedCodeOverCapacity}
+
+// POST /v1/sessions/archived/restore. At most sessions.archive_restore_batch
+// conversations; a longer list is refused whole with `archive_batch_too_large`.
+type RestoreArchivedRequest struct {
+	Conversations []string `json:"conversations"`
+}
+
+// One named conversation's answer. `ok` carries the new terminal (`id`,
+// `backend`, and `attach` for a detached tmux server) and the row is gone from
+// the archive; otherwise `code` and `message`.
+type RestoreArchivedResult struct {
+	Attach         string              `json:"attach,omitempty"`
+	Backend        Backend             `json:"backend,omitempty"`
+	Code           RestoreArchivedCode `json:"code,omitempty"`
+	ConversationID string              `json:"conversation_id"`
+	ID             string              `json:"id,omitempty"`
+	Message        string              `json:"message,omitempty"`
+	OK             bool                `json:"ok"`
 }
 
 // Why one conversation was not restored. `not_restorable`: it is not on offer
