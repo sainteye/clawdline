@@ -390,6 +390,43 @@ func TestWorkV2ListFiltersLifecycleAndSearchesTitleOrDescription(t *testing.T) {
 	}
 }
 
+func TestWorkV2ListPagesByNewestUpdateWithoutRepeatingRows(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_100_000, 0)
+	for n := 0; n < 27; n++ {
+		item := v2Item(fmt.Sprintf("12000000-0000-4000-8000-%012d", n), at.Add(time.Duration(n/3)*time.Second))
+		if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.CreateItem(item, "local", `{}`) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, more, err := s.WorkV2ItemsPage(ctx, "", "", "open", "", 0, "", 10)
+	if err != nil || !more || len(first) != 10 {
+		t.Fatalf("first page: rows=%d more=%v err=%v", len(first), more, err)
+	}
+	last := first[len(first)-1]
+	second, more, err := s.WorkV2ItemsPage(ctx, "", "", "open", "", last.UpdatedAt.Unix(), last.ID, 10)
+	if err != nil || !more || len(second) != 10 {
+		t.Fatalf("second page: rows=%d more=%v err=%v", len(second), more, err)
+	}
+	seen := map[string]bool{}
+	for _, item := range first {
+		seen[item.ID] = true
+	}
+	for _, item := range second {
+		if seen[item.ID] {
+			t.Fatalf("%s appeared on both keyset pages", item.ID)
+		}
+		if item.UpdatedAt.After(last.UpdatedAt) || item.UpdatedAt.Equal(last.UpdatedAt) && item.ID >= last.ID {
+			t.Fatalf("second-page row is not after cursor: %+v after %+v", item, last)
+		}
+	}
+}
+
 func TestWorkV2RootAssignmentIsFoundByConversation(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

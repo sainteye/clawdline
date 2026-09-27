@@ -188,6 +188,60 @@ func TestWorkV2ListCarriesStatusAndSearchToTheStore(t *testing.T) {
 	}
 }
 
+func TestWorkV2ListReturnsABoundedCursorPage(t *testing.T) {
+	s, _, first := workV2AssignmentServer(t, session.StateIdle)
+	for n := 0; n < app.WorkV2ListPageLimit; n++ {
+		if _, err := s.workV2().Create(context.Background(), app.NewWorkV2{
+			ProjectID: "project-1", ProjectPath: first.Item.ProjectPath, Kind: work.KindFeature,
+			Title: fmt.Sprintf("Paged item %02d", n), Description: "Visible after Load more.", Actor: "local",
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	read := func(target string) struct {
+		Rows       []workV2ItemWire `json:"rows"`
+		NextCursor *string          `json:"next_cursor"`
+		PageSize   int              `json:"page_size"`
+		Truncated  bool             `json:"truncated"`
+	} {
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list %s: %d %s", target, rec.Code, rec.Body)
+		}
+		var answer struct {
+			Rows       []workV2ItemWire `json:"rows"`
+			NextCursor *string          `json:"next_cursor"`
+			PageSize   int              `json:"page_size"`
+			Truncated  bool             `json:"truncated"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+			t.Fatal(err)
+		}
+		return answer
+	}
+	page := read("/v1/work/v2/items?status=open")
+	if len(page.Rows) != app.WorkV2ListPageLimit || page.PageSize != app.WorkV2ListPageLimit || !page.Truncated || page.NextCursor == nil {
+		t.Fatalf("first page = rows %d size %d truncated %v cursor %v", len(page.Rows), page.PageSize, page.Truncated, page.NextCursor)
+	}
+	next := read("/v1/work/v2/items?status=open&cursor=" + *page.NextCursor)
+	if len(next.Rows) != 1 || next.Truncated || next.NextCursor != nil {
+		t.Fatalf("last page = rows %d truncated %v cursor %v", len(next.Rows), next.Truncated, next.NextCursor)
+	}
+	for _, row := range page.Rows {
+		if row.ID == next.Rows[0].ID {
+			t.Fatalf("%s appeared on both pages", row.ID)
+		}
+	}
+
+	bad := httptest.NewRecorder()
+	s.workV2Route(bad, httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?cursor=not-a-cursor", nil))
+	if bad.Code != http.StatusBadRequest || !strings.Contains(bad.Body.String(), `"error":"bad_cursor"`) {
+		t.Fatalf("bad cursor: %d %s", bad.Code, bad.Body)
+	}
+}
+
 func TestOnlyAnIdleSessionReceivesAnAssignmentBrief(t *testing.T) {
 	for _, state := range []session.State{session.StateWorking, session.StateWaiting, session.StateUnknown} {
 		t.Run(string(state), func(t *testing.T) {

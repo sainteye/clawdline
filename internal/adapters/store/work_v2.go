@@ -545,6 +545,15 @@ func queryWorkV2(ctx context.Context, q interface {
 }
 
 func (s *Store) WorkV2Items(ctx context.Context, project, owner, status, search string, limit int) ([]work.ItemV2, bool, error) {
+	return s.WorkV2ItemsPage(ctx, project, owner, status, search, 0, "", limit)
+}
+
+// WorkV2ItemsPage reads one newest-first keyset page. The last row from the
+// preceding page is named by afterUpdated and afterID; an empty id is the first
+// page. Rows that change after a page was read move to the front on the next
+// fresh read instead of making an offset skip or duplicate unrelated rows.
+func (s *Store) WorkV2ItemsPage(ctx context.Context, project, owner, status, search string,
+	afterUpdated int64, afterID string, limit int) ([]work.ItemV2, bool, error) {
 	if err := reading(); err != nil {
 		return nil, false, err
 	}
@@ -573,6 +582,10 @@ func (s *Store) WorkV2Items(ctx context.Context, project, owner, status, search 
 	if search = strings.TrimSpace(search); search != "" {
 		stmt += ` AND (instr(lower(title), lower(?)) > 0 OR instr(lower(description), lower(?)) > 0)`
 		args = append(args, search, search)
+	}
+	if afterID != "" {
+		stmt += ` AND (updated_at < ? OR (updated_at = ? AND id < ?))`
+		args = append(args, afterUpdated, afterUpdated, afterID)
 	}
 	stmt += ` ORDER BY updated_at DESC, id DESC LIMIT ?`
 	args = append(args, limit+1)

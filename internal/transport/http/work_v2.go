@@ -663,7 +663,7 @@ func (s *Server) workV2ResolveProposal(w http.ResponseWriter, r *http.Request, i
 }
 
 func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
-	q, ok := workQuery(w, r, "project", "owner", "terminal", "status", "q")
+	q, ok := workQuery(w, r, "project", "owner", "terminal", "status", "q", "cursor")
 	if !ok {
 		return
 	}
@@ -674,6 +674,35 @@ func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
 			status = "all"
 		}
 	}
+	// Owner/terminal reads are Session projections and keep the complete internal
+	// page. The Console's Board read is the cursor-bounded public projection.
+	if q["owner"] != "" || q["terminal"] == "true" {
+		s.workV2ListProjection(w, r, q, status)
+		return
+	}
+	page, err := s.workV2().ListPage(r.Context(), q["project"], status, q["q"], q["cursor"])
+	if err != nil {
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	out := struct {
+		OK        bool             `json:"ok"`
+		Rows      []workV2ItemWire `json:"rows"`
+		Counts    map[string]int   `json:"counts"`
+		Next      *string          `json:"next_cursor"`
+		PageSize  int              `json:"page_size"`
+		Truncated bool             `json:"truncated"`
+	}{OK: true, Rows: []workV2ItemWire{}, Counts: map[string]int{}, Next: optionalString(page.Next),
+		PageSize: app.WorkV2ListPageLimit, Truncated: page.Next != ""}
+	for _, row := range page.Rows {
+		wire := s.workV2ItemOf(r.Context(), row)
+		out.Rows = append(out.Rows, wire)
+		out.Counts[wire.Area]++
+	}
+	writeJSON(w, out)
+}
+
+func (s *Server) workV2ListProjection(w http.ResponseWriter, r *http.Request, q map[string]string, status string) {
 	rows, truncated, err := s.workV2().List(r.Context(), q["project"], q["owner"], status, q["q"])
 	if err != nil {
 		s.writeWorkV2Error(w, err)

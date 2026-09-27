@@ -531,6 +531,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: n}
 		},
 		capacity.BoardReceipts: func() capacity.Reading { return s.boardReceiptReading() },
+		capacity.WorkListPageRows: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-answer Board page; later rows remain behind next_cursor"}
+		},
 		// The Timeline stores nothing, so what is measured is what the next
 		// read would walk.
 		capacity.TimelineEntries: func() capacity.Reading {

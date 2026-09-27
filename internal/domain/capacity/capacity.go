@@ -177,6 +177,7 @@ const (
 	WaitsOpen          = "waits.open"
 	// T3: the board and the Backlog.
 	WorkOpen                  = "work.open"
+	WorkListPageRows          = "work.list_page_rows"
 	WorkPlanning              = "work.planning"
 	WorkAssignments           = "work.assignments"
 	WorkDocumentsPerItem      = "work.documents_per_item"
@@ -586,6 +587,18 @@ func Register() []Entry {
 			EvictedBy: Person,
 			Projects:  true,
 			Sources:   []string{"internal/adapters/store.WorkOpenLimit", "internal/adapters/store.WorkV2OpenLimit"},
+		},
+		{
+			// One page of the current Board. The page is an observation, not
+			// retained data: rows after this one stay in the store and the
+			// answer names the keyset cursor that reads them next. Keeping the
+			// first page small also bounds the documents, images, steps and
+			// active-claim reads needed before the Console can paint.
+			Name: WorkListPageRows, Class: Observation, Unit: Rows,
+			Limit: 24, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.WorkV2ListPageLimit"},
 		},
 		{
 			Name: WorkPlanning, Class: Evidence, Unit: Rows,

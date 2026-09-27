@@ -107,6 +107,23 @@
 .work-count { color: var(--faint); font: 11px/1 var(--mono); }
 .work-empty { margin: 0; padding: 14px 0; color: var(--faint); font-size: 12px; border-top: 1px solid var(--line); }
 .work-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.work-board-skeleton { min-height: 680px; }
+.work-skeleton-lane { margin-top: 28px; }
+.work-skeleton-heading { width: 112px; height: 15px; margin-bottom: 12px; }
+.work-skeleton-card { min-height: 154px; justify-content: flex-start; }
+.work-skeleton-line {
+    position: relative; display: block; width: 100%; height: 11px; overflow: hidden;
+    border-radius: 999px; background: var(--card-hi);
+}
+.work-skeleton-line::after {
+    content: ""; position: absolute; inset: 0; width: 240%; transform: translateX(-76%); pointer-events: none;
+    background: linear-gradient(100deg, transparent 36%, color-mix(in srgb, var(--line) 88%, transparent) 50%, transparent 64%);
+    animation: work-skeleton-sheen 1.5s linear infinite;
+}
+.work-skeleton-meta { width: 34%; height: 9px; }
+.work-skeleton-title { width: 72%; height: 17px; margin-top: 2px; }
+.work-skeleton-short { width: 58%; }
+@keyframes work-skeleton-sheen { from { transform: translateX(-76%); } to { transform: translateX(17.5%); } }
 .work-section[data-section="decide"] { --work-edge: var(--accent); }
 .work-section[data-section="active"] { --work-edge: var(--ink); }
 .work-section[data-section="scheduled"] { --work-edge: var(--dim); }
@@ -255,7 +272,8 @@
 .work-project-picker button, .session-todos summary { cursor: pointer; }
 .work-page button:disabled, .session-todo-modal button:disabled { cursor: not-allowed; }
 .work-note { margin: 0; color: var(--warn); font-size: 12px; line-height: 1.5; }
-.work-more { margin-top: 12px; }
+.work-pagination { display: flex; justify-content: center; min-height: 42px; margin-top: 24px; }
+.work-more { min-width: 136px; margin-top: 0; }
 .work-done > summary { list-style: none; cursor: pointer; }
 .work-done > summary::-webkit-details-marker { display: none; }
 .work-done > summary h2::before { content: "› "; color: var(--faint); }
@@ -371,6 +389,7 @@
     to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
+    .work-skeleton-line::after { animation: none; }
     .session-todos, .session-todos::after, .session-todos > summary::before { transition: none; }
     .session-todos[open] .session-todos-body { animation: none; }
 }
