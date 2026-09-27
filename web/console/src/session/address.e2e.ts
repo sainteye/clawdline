@@ -94,6 +94,27 @@ let smartTitleNamedBy = ""
 let interruptRequests: { id: string; key: string }[] = []
 let requestedPaths: string[] = []
 let failPlacesOnRequest = 0
+// The machine's persona catalog, as many roles as the daemon compiles in and
+// with its longest names: the assignment row lays every one of them out on a
+// phone. No suggested kinds, so the new-Session button keeps its plain words.
+const PERSONA_NAMES: [string, string, string][] = [
+  ["architect", "Architect", "架構師"],
+  ["backend", "Backend Engineer", "後端工程師"],
+  ["frontend", "Frontend Engineer", "前端工程師"],
+  ["security", "Security Engineer", "資安工程師"],
+  ["code-reviewer", "Code Reviewer", "程式碼審查員"],
+  ["reality-checker", "Reality Checker", "驗證員"],
+  ["technical-writer", "Technical Writer", "技術文件寫手"],
+  ["minimal-change", "Minimal-Change Engineer", "最小改動工程師"],
+]
+const PERSONAS = PERSONA_NAMES.map(([id, en, zh]) => ({
+  id,
+  name: { en, "zh-Hant": zh },
+  summary: { en, "zh-Hant": zh },
+  icon: { accent: "#e07a5f", cells: Array.from({ length: 7 }, () => Array.from({ length: 8 }, () => "#e07a5f")) },
+  source: "fixture",
+  suggested_kinds: [],
+}))
 let createdWork: Record<string, unknown> | null = null
 let createdWorkBody: Record<string, unknown> | null = null
 const PROJECT_ICON = {
@@ -205,6 +226,7 @@ function daemon(): Server {
       return
     }
     if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path === "/v1/personas") return json(res, 200, { license: "MIT", personas: PERSONAS })
     if (path === "/__project_request_count") return json(res, 200, { count: placeRequests })
     if (path === "/v1/places") {
       placeRequests++
@@ -1107,6 +1129,24 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
         const modal = document.querySelector(".work-created-modal")
         const card = modal?.querySelector(".work-v2-card")
         if (card) return resolve({
+          fits: (() => {
+            // Every edge the person sees stays inside the phone's width: the
+            // panel, and each control of the assignment row inside the panel.
+            // The role chips scroll sideways within their own row, so the row
+            // is measured, not the chips it has scrolled out of view.
+            const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
+            const roles = card.querySelector(".work-new-persona")
+            const outside = [...card.querySelectorAll(".work-assignment > button, .work-assignment > .work-new-session")]
+              .map((el) => el.getBoundingClientRect())
+              .filter((box) => box.left < panel.left - 0.5 || box.right > panel.right + 0.5)
+            return {
+              panelInView: panel.left >= 0 && panel.right <= innerWidth,
+              modalScrollsSideways: modal.scrollWidth > modal.clientWidth,
+              controlsOutsidePanel: outside.length,
+              personaChips: roles.querySelectorAll(".chip").length,
+              rolesScrollSideways: roles.scrollWidth > roles.clientWidth,
+            }
+          })(),
           title: card.querySelector("h3")?.textContent,
           picker: card.querySelector(".work-session-trigger > span:not(.work-session-placeholder):not(.work-project-chevron)")?.textContent,
           actions: [...card.querySelectorAll(".work-assignment > button")].map((button) => button.textContent),
@@ -1120,6 +1160,7 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
       read()
     })`)
     assert.deepEqual(card, {
+      fits: { panelInView: true, modalScrollsSideways: false, controlsOutsidePanel: 0, personaChips: PERSONAS.length + 1, rolesScrollSideways: true },
       title: "Shortcut-created work",
       picker: "選擇既有 Session",
       actions: ["指派", "開新 Codex Session"],
