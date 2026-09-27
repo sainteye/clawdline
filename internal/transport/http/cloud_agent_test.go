@@ -42,6 +42,9 @@ type pairAgentHarness struct {
 
 func newPairAgentHarness(t *testing.T) *pairAgentHarness {
 	t.Helper()
+	// A hand-off records Claude Code trust for its folder; a test's folder
+	// must never reach the person's own ~/.claude.json.
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	h := &pairAgentHarness{}
 	h.offer = testViewerOffer(t, "usr_test")
 	plane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +236,6 @@ func TestAPairingHandOffNameIsOneShortLine(t *testing.T) {
 // The hand-off starts in the daemon's own folder, and says whether Claude Code
 // was told to trust it and when the offer runs out.
 func TestAPairingHandOffStartsInTheDaemonsOwnFolder(t *testing.T) {
-	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	h := newPairAgentHarness(t)
 	rec := h.post(t, map[string]any{"offer": h.offer.Fragment(), "machine_id": "mac_build-host-01", "machine_name": "b"}, true)
 	if rec.Code != http.StatusOK || len(h.dispatched) != 1 {
