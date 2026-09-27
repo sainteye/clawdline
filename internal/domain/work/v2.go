@@ -348,32 +348,38 @@ func DocumentRoleApplies(i ItemV2, role string) error {
 // Epic is large, so its plan is written onto the item and a second reader, a
 // child review, checks it before code is written. plans is every plan and
 // plan_review document on the item, oldest first; a plan written after the
-// last review needs a review of its own. Other kinds and other transitions
-// pass untouched.
+// last review needs a review of its own, until EpicPlanReviewRounds reviews
+// have been recorded. Other kinds and other transitions pass untouched.
 func EpicPlanGate(i ItemV2, next Phase, plans []DocumentV2) error {
 	if i.Kind != KindEpic || i.Phase != PhaseAssigned || next != PhaseImplementing {
 		return nil
 	}
-	lastPlan, lastReview := -1, -1
+	lastPlan, lastReview, reviews := -1, -1, 0
 	for n, d := range plans {
 		switch d.Role {
 		case DocumentPlan:
 			lastPlan = n
 		case DocumentPlanReview:
 			lastReview = n
+			reviews++
 		}
 	}
 	switch {
 	case lastPlan < 0:
 		return RefuseV2("epic_plan_required",
 			"Write the Epic's plan onto the item first: `clawdline item doc "+i.ID+" --role plan --title \"Plan\"` with the plan as its body.")
-	case lastReview < lastPlan:
+	case lastReview < lastPlan && reviews < EpicPlanReviewRounds:
 		return RefuseV2("epic_plan_review_required",
 			"Have a child review the latest plan (`clawdline dispatch --kind plan_review --work-id "+i.ID+
 				"`), then record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")
 	}
 	return nil
 }
+
+// EpicPlanReviewRounds is how many plan reviews the gate asks of an Epic at
+// most: after the second, a revised plan goes into implementing without a
+// third.
+const EpicPlanReviewRounds = 2
 
 // ActorEpicOwner is the prefix of the actor an Epic's owner Session writes
 // under when it creates or assigns the Epic's child items:

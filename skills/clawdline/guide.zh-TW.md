@@ -821,7 +821,7 @@ Epic 跟 Feature、Issue 一樣可以指派，也走同樣的 phase；但 Epic �
    clawdline item doc <item id> --role plan_review --title "Plan review" --reference <task id> --body-file review.md
    ```
    審查找到真正的問題，就修改計畫（寫一份新的 `plan` 文件），再審一次：寫在最後一次審查之後的計畫，
-   需要新的審查。
+   需要新的審查。審查最多兩次：第二次審查後再改的計畫，不必第三次審查就能繼續。
 4. 用 `clawdline item step-add <item id> …` 把工作拆成 steps。
 5. 這些都做完，才 `clawdline item phase <item id> implementing`。
 
@@ -839,7 +839,7 @@ Epic 跟 Feature、Issue 一樣可以指派，也走同樣的 phase；但 Epic �
   派出時間不早於最新的 plan（`plan_review_task_stale`）。還沒有 plan 就送審查，會被
   `epic_plan_required` 拒絕。
 - Epic 執行 `clawdline item phase <item id> implementing` 時，還沒有 plan 會被 `epic_plan_required`
-  拒絕，沒有比最新 plan 更新的審查會被 `epic_plan_review_required` 拒絕，跟其他 phase 拒絕一樣是 `409`。
+  拒絕，審查還不到兩次、又沒有比最新 plan 更新的審查，會被 `epic_plan_review_required` 拒絕，跟其他 phase 拒絕一樣是 `409`。
 
 **把 Epic 拆成子項目，再分派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
 能指派項目」的唯一例外：使用者把 Epic 指派給你，這就是拆分它的授權。等審查過的計畫讓 Epic 進入

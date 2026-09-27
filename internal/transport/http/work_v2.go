@@ -203,9 +203,9 @@ func workV2EpicInstruction(id string) string {
 		"to review the plan critically with `clawdline dispatch --kind plan_review --work-id " + id + " --claims \"\"`; " +
 		"(3) record its review with `clawdline item doc " + id + " --role plan_review --title \"Plan review\" " +
 		"--reference <task id> --body-file <file>` — what it found and what the plan changed — and if it found real " +
-		"problems, revise the plan (a new plan document) and have that reviewed again; (4) break the work into steps with " +
+		"problems, revise the plan (a new plan document) and have that reviewed again, at most twice in all; (4) break the work into steps with " +
 		"`clawdline item step-add " + id + "`; (5) only then `clawdline item phase " + id + " implementing`, which the " +
-		"daemon refuses until a review newer than the latest plan is recorded. `clawdline guide epic` has the whole procedure."
+		"daemon refuses until a review newer than the latest plan, or a second review, is recorded. `clawdline guide epic` has the whole procedure."
 }
 
 // workV2EpicChildrenInstruction is the exception an Epic's owner holds to
