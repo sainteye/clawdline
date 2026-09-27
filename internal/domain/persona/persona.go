@@ -54,6 +54,21 @@ var Order = []string{
 	"code-reviewer", "reality-checker", "security", "technical-writer",
 	"seo", "content-writer", "ai-search", "social-media",
 	"instagram", "email", "growth", "pr",
+	"product-manager",
+	"sprint-prioritizer",
+	"feedback-synthesizer",
+	"trend-researcher",
+	"ux-researcher",
+	"test-automation",
+	"accessibility",
+	"performance",
+	"api-tester",
+	"evidence-collector",
+	"sre",
+	"devops",
+	"incident-commander",
+	"finops",
+	"secrets",
 	"ui-designer", "ux-architect", "brand-guardian", "ui-finish-gate", "image-prompt",
 	"pricing", "customer-success", "support", "analytics", "devrel", "privacy",
 }
@@ -205,7 +220,7 @@ func load() ([]Persona, error) {
 		if p.ID != id {
 			return nil, fmt.Errorf("catalog/%s names itself %q", FileName(id), p.ID)
 		}
-		icon, ok := icons[id]
+		icon, ok := iconFor(id)
 		if !ok {
 			return nil, fmt.Errorf("%s has no icon", id)
 		}

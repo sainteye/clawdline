@@ -889,6 +889,9 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - 行銷團隊，用在部落格、網站或文件 repository：`seo`（頁面與 metadata）、`content-writer`（在檔案裡寫文章）、
     `ai-search`（讓 AI 搜尋引用的頁面）、`social-media`、`instagram`、`email`（電子報）、`growth`（可量測的
     實驗）與 `pr`（對外公告）。
+  - 產品、品質與維運團隊：`product-manager`、`sprint-prioritizer`、`feedback-synthesizer`、`trend-researcher`、
+    `ux-researcher`；`test-automation`、`accessibility`、`performance`、`api-tester`、`evidence-collector`
+    （蒐集證據，不下結論）；`sre`、`devops`、`incident-commander`、`finops` 與 `secrets`。
   - 設計與商業營運團隊：`ui-designer`（照專案設計系統做畫面）、`ux-architect`（流程與版面結構）、
     `brand-guardian`（品牌一致性）、`ui-finish-gate`（上線前的畫面把關）、`image-prompt`（生圖提示詞）、
     `pricing`、`customer-success`、`support`（回覆草稿）、`analytics`（用真實資料回答）、`devrel`（跑得起來的
