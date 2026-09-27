@@ -190,6 +190,14 @@ showed before this feature, never a sheet that breaks after a press.
   first drawn at three pixels a cell under the project mark; measured at 390 px that made each such
   row taller (93.2 → 95.4 px, and 88.4 → 95.4 px for a working row), so it moved into the title
   line, where the rows measure the same with and without it (phone 93.2, desktop 82.9).
+- **Session detail header.** A row whose `persona` the catalog names shows the bot at four pixels
+  a cell (32×28) between the session's name and its tools, with the full name and the one-line
+  summary beside it on a desktop (at most 300 px, ellipsised). On a phone (below 900 px) only the
+  bot shows; the name and summary stay for a screen reader and in the title. Measured with mocked
+  rows at 390 px and 1280 px: the header is 65 px tall with and without a role at both widths. At
+  390 px a visible role name left the session's name 46 px wide, so the phone keeps the bot alone,
+  which costs the name 40 px (94 → 54). No persona, or one the catalog does not name, draws
+  nothing (`headPersona`).
 - **Start sheet.** A row of role chips under the assistant chips, "No role" first and chosen by
   default. It scrolls sideways on a phone. The choice becomes the start route's `/as/{persona}`
   and is remembered in this browser only. Resuming does not offer it in this version.
