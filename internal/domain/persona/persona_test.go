@@ -12,15 +12,17 @@ func TestTheCatalogLoads(t *testing.T) {
 	if loadErr != nil {
 		t.Fatalf("the catalog does not load: %v", loadErr)
 	}
+	// Other teams add personas beside these; the ones every list starts
+	// with stay first and in this order, and every catalog file is loaded.
 	want := []string{"architect", "backend", "frontend", "minimal-change",
 		"code-reviewer", "reality-checker", "security", "technical-writer",
 		"seo", "content-writer", "ai-search", "social-media",
 		"instagram", "email", "growth", "pr"}
-	if got := strings.Join(IDs(), ","); got != strings.Join(want, ",") {
-		t.Fatalf("catalog order %s, want %s", got, strings.Join(want, ","))
+	if got := strings.Join(IDs()[:len(want)], ","); got != strings.Join(want, ",") {
+		t.Fatalf("catalog order %s, want it to start %s", strings.Join(IDs(), ","), strings.Join(want, ","))
 	}
-	if len(All()) != 16 {
-		t.Fatalf("%d personas, want 16", len(All()))
+	if n := catalogFiles(t); len(All()) != n {
+		t.Fatalf("%d personas, but catalog/ has %d files", len(All()), n)
 	}
 	perTeam := map[string]int{}
 	seen := map[string]bool{}
@@ -67,9 +69,13 @@ func TestTheCatalogLoads(t *testing.T) {
 			}
 		}
 	}
+	// At least these: other teams' personas may join a team too.
 	wantTeams := map[string]int{"engineering": 8, "marketing": 9, "quality": 2, "operations": 1, "design": 1}
-	if fmt.Sprint(perTeam) != fmt.Sprint(wantTeams) {
-		t.Errorf("personas per team %v, want %v", perTeam, wantTeams)
+	for team, least := range wantTeams {
+		if perTeam[team] < least {
+			t.Errorf("personas per team %s, want at least %v", fmt.Sprint(perTeam), wantTeams)
+			break
+		}
 	}
 	if technicalWriter, _ := Known("technical-writer"); strings.Join(technicalWriter.Teams, ",") != "engineering,marketing" {
 		t.Errorf("technical-writer is in %v, want engineering then marketing", technicalWriter.Teams)
