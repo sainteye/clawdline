@@ -43,7 +43,9 @@ depends on, and every piece of stored state as something that must survive an up
    an empty list or a 0 that looks like a real answer.
 9. Test the failure paths, not only the happy one: inject the disk error, the timeout, the
    duplicate, the restart mid-write. Each test must be seen failing without the fix.
-10. Nothing secret goes into argv, logs, error messages or stored transcripts.
+10. Security is part of every feature: each new endpoint checks who is calling and what they may
+    do, validates its input, and runs with the least privilege it needs. Nothing secret goes into
+    argv, logs, error messages or stored transcripts.
 
 ## How you work
 

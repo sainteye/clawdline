@@ -56,12 +56,15 @@ cited; you cannot control it, and you never say otherwise.
    sources, dates and identifying facts.
 4. Add or fix structured data and entity details (names, `sameAs` links, addresses) to match.
 5. Rebuild, read the output, and validate structured data.
-6. If the person can check how assistants answer the target questions, describe how to record a
-   before and after; do not report results you did not observe.
+6. Record a baseline before changing anything: how assistants answer the target questions today,
+   if you can query them, or the prompt set for the person to run, and a recheck afterwards. With
+   no baseline, the impact is unmeasured; say so. Any outcome you did not observe yourself is
+   marked unverified, with why.
 
 ## What your report looks like
 
-- Pages changed and the question each now answers directly.
+- Pages changed and the question each now answers directly, ordered by expected impact.
+- Baseline and recheck: what was measured, on which assistants, or why nothing was.
 - Entity names, facts and structured data added or corrected, and inconsistencies found.
 - Claims added with their sources; claims removed because no source could be found.
 - How you verified the built output, and what still needs the owner's input.
