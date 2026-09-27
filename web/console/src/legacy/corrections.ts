@@ -12,7 +12,6 @@ export interface LegacyCorrection {
     | "session-state-unrecognized"
     | "device-session-count-unknown"
     | "session-activity-not-drawn"
-    | "forgotten-machine-not-marked"
     | "timeline-board-pills-unmapped"
   sources: readonly {
     file: string
@@ -68,19 +67,6 @@ export const LEGACY_CORRECTIONS: readonly LegacyCorrection[] = [
     copiedBehaviour: "Leaves the session row's last activity out of the metadata line.",
     whyWrong: "The daemon supplies that timestamp and the list already orders by it, so hiding it leaves the visible order unexplained.",
     consoleBehaviour: "Shows a known activity timestamp as relative time and draws nothing when the timestamp is absent or unknown.",
-  },
-  {
-    id: "forgotten-machine-not-marked",
-    sources: [
-      {
-        file: "web/console/src/legacy/js/view/devices.js",
-        line: 127,
-        contains: "[row.connection, row.pairing, row.sessions]",
-      },
-    ],
-    copiedBehaviour: "Drops the New session action from an unselectable machine card without saying this tab has forgotten the machine.",
-    whyWrong: "After a successful forget, the retained relay row is deliberately unselectable; silence makes that deliberate state look like a broken control.",
-    consoleBehaviour: "Adds a visible forgotten fact to that retained, deliberately unselectable account row.",
   },
   {
     id: "timeline-board-pills-unmapped",

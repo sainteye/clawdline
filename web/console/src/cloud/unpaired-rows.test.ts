@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
-import { accountMachineNames, accountMachineRoster, machineIdentityFacts, sessionsFact, withAccountNames } from "./unpaired-rows.ts"
+import { accountMachineNames, accountMachineRoster, devicesPageRows, machineIdentityFacts, sessionsFact, withAccountNames } from "./unpaired-rows.ts"
 
 const API = "https://api.example.test"
 
@@ -135,4 +135,19 @@ test("the header switches machines in place and leaves account actions on the fu
   assert.match(gate, /className="cloud-switch-manage"/)
   assert.match(css, /\.cloud-switch-menu \{/)
   assert.match(css, /\.cloud-switch-option\[data-current="true"\]/)
+})
+
+test("the Devices page leaves a forgotten machine out and keeps the others as they were", () => {
+  const rows = [
+    { id: "mac_1", pairing: "paired", sessions: 3, selectable: true },
+    { id: "mac_old", pairing: "paired", sessions: 0, selectable: true },
+    { id: "mac_unread", pairing: "not_paired", sessions: 0, selectable: false },
+  ]
+  assert.deepEqual(devicesPageRows(rows, ["mac_old"]), [
+    { id: "mac_1", pairing: "paired", sessions: 3, selectable: true },
+    { id: "mac_unread", pairing: "not_paired", selectable: false },
+  ])
+  assert.deepEqual(devicesPageRows(rows, []).map((row) => row.id), ["mac_1", "mac_old", "mac_unread"])
+  // An account whose only machine is forgotten is the page's own empty list.
+  assert.deepEqual(devicesPageRows([rows[1]!], ["mac_old"]), [])
 })

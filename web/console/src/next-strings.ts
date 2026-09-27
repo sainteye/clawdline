@@ -285,7 +285,6 @@ const words = {
       "Routing stops now. A device that already holds the master key can still open ciphertext it recorded earlier; key rotation happens lazily.",
     cloudForgetting: "Forgetting {machine}…",
     cloudForgotten: "{machine} was forgotten. It is no longer on this account.",
-    cloudForgottenRow: "forgotten",
     cloudForgetSaid: "Clawdline Cloud said: {note}",
     cloudForgetHonestUnread:
       "Clawdline Cloud did not say what this does to keys already handed out, so this page does not say it either.",
@@ -714,7 +713,6 @@ const words = {
     cloudForgetHonest: "routing 會立刻停止。但已經握有主金鑰的裝置，仍然解得開它先前錄下的密文；金鑰輪替是延遲的。",
     cloudForgetting: "正在忘記 {machine}…",
     cloudForgotten: "{machine} 已經忘記了，它不在這個帳號上了。",
-    cloudForgottenRow: "已忘記",
     cloudForgetSaid: "Clawdline Cloud 說：{note}",
     cloudForgetHonestUnread: "Clawdline Cloud 沒有說這對已經發出去的金鑰有什麼影響，所以這一頁也不替它說。",
     cloudForgetRefused: "Clawdline Cloud 拒絕忘記 {machine}（{code}）：這個瀏覽器已經不是那個帳號的登入狀態。什麼都沒有改變。",

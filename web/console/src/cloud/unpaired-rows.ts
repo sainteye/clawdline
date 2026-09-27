@@ -114,6 +114,23 @@ export function withAccountNames<T extends Row>(
 }
 
 /**
+ * The rows the Devices page draws. A machine this tab or the account has
+ * forgotten is left out, as the gate's own list leaves it out: the relay can
+ * still hold its last snapshot, but the account has stopped listing it. A row
+ * whose sessions this browser could not count loses the count (`sessionsFact`).
+ */
+export function devicesPageRows<T extends { id: string; pairing: string; sessions?: number }>(
+  rows: readonly T[],
+  forgotten: readonly string[],
+): Record<string, unknown>[] {
+  return rows.filter((m) => !forgotten.includes(m.id)).map((m) => {
+    const row: Record<string, unknown> = { ...m }
+    if (typeof sessionsFact(m) === "string") delete row.sessions
+    return row
+  })
+}
+
+/**
  * How many sessions a row may claim. A count is only a count when this
  * browser could read the machine's list; see above.
  */
