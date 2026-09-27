@@ -431,6 +431,42 @@ func TestPasteMarksComeOffAndTheirContentStays(t *testing.T) {
 	}
 }
 
+// Clawdline types an envelope as a bracketed paste, and Claude Code records
+// the paste's marks around it. The envelope is still the whole turn, and must
+// still be read as one — not shown as JSON in the person's name.
+func TestAPastedEnvelopeIsStillTheEnvelope(t *testing.T) {
+	notice := `<clawdline-notice>{"audience":"parent","body":"Task done","child_may_still_write":false,"claims_released":true,"kind":"task_finished","outstanding":0,"protocol":"clawdline.notice","result_path":"/tmp/r.json","state":"success","task":{"id":"t1","title":"Do it"},"version":1}</clawdline-notice>`
+	message := `<clawdline-message>{"body":"hi","kind":"session_message","protocol":"clawdline.message","source":{"assistant":"codex","id":"%1","label":"Root"},"version":1}</clawdline-message>`
+	pasted := func(id, inner string) string {
+		return "\n\n<pasted_content id=\"" + id + "\">\n" + inner + "\n</pasted_content id=\"" + id + "\">\n"
+	}
+	path := writeRecord(t,
+		claudeRow("user", pasted("3684", notice)),
+		m{"type": "queue-operation", "operation": "enqueue", "timestamp": "2026-09-16T10:00:01.000Z",
+			"content": pasted("3685", notice)},
+		claudeRow("user", []m{{"type": "text", "text": pasted("3686", message)}}),
+		// Not one paste that is the whole turn: each stays the person's text.
+		claudeRow("user", "<pasted_content id=\"a\">\n"+notice+"\n</pasted_content id=\"b\">"),
+		claudeRow("user", "look at this: "+pasted("3687", notice)),
+		claudeRow("user", pasted("3688", notice)+pasted("3689", notice)),
+	)
+	page, _ := ReadClaude(path, 10)
+	kinds := []string{}
+	for _, e := range page.Entries {
+		kinds = append(kinds, e.Kind)
+	}
+	want := []string{KindNotice, KindNotice, KindMessage, KindUser, KindUser, KindUser}
+	if strings.Join(kinds, ",") != strings.Join(want, ",") {
+		t.Fatalf("kinds %v, want %v", kinds, want)
+	}
+	if n := page.Entries[0]; n.Text != "Task done" || n.Notice.Task.Title != "Do it" {
+		t.Fatalf("notice: %+v %+v", n, n.Notice)
+	}
+	if msg := page.Entries[2]; msg.Text != "hi" || msg.Source != "Root" {
+		t.Fatalf("message: %+v", msg)
+	}
+}
+
 func TestClaudeBashModeReadsAsTheLineThatWasTyped(t *testing.T) {
 	path := writeRecord(t,
 		claudeRow("user", "<bash-input> ls -la</bash-input>"),
