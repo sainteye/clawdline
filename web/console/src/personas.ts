@@ -106,10 +106,10 @@ export function headPersona(list: readonly Persona[] | null, id: string | null |
 }
 
 /**
- * What a session row's bottom line shows for the role it was launched as: the
- * bot, the full name in the page's language, and name plus summary for its
- * title. A row with no persona, or one whose id this machine's catalog does
- * not name, has no such line and stays as tall as it was.
+ * What a session row shows for the role it was launched as: the bot at the
+ * head of its second line, with name plus summary for its title and accessible
+ * name. A row with no persona, or one whose id this machine's catalog does not
+ * name, draws nothing there.
  */
 export function rowPersonaLine(
   list: readonly Persona[] | null,
