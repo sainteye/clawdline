@@ -544,7 +544,7 @@ func refusalReply(b body, word string, class Class) (string, string, bool) {
 		return "", "", false
 	}
 	switch word {
-	case "send", "answer", "key", "end", "focus", "interrupt", "smart-title", "shell-kill":
+	case "send", "answer", "key", "end", "archive-session", "focus", "interrupt", "smart-title", "shell-kill":
 		return session, "action:" + request, true
 	}
 	// Every machine command, and any word this machine does not know, is answered
@@ -1955,6 +1955,68 @@ func init() {
 					return LocalRequest{Method: "POST", Path: "/v1/sessions/restorable/dismiss", Body: []byte("{}")}
 				}
 				return LocalRequest{Method: "POST", Path: "/v1/sessions/restorable/dismiss",
+					Body: jsonBody(map[string]any{"conversations": p.conversations})}
+			}},
+
+		// The Sessions a person archived (docs/session-archive.md). The
+		// archive names the session it closes, so its answer rides that
+		// session's channel as `end`'s does; `force` is `end`'s
+		// `accept_loss`. The list is a machine read, and the restore a
+		// machine command that carries the viewer's request as its
+		// Idempotency-Key, as `restore-sessions` does.
+		op{name: "archive-session",
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf([]string{"type", "session", "request"},
+					[]string{"type", "session", "request", "force"}) {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, true)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				if _, named := b["force"]; named {
+					force, forceOK := b.boolean("force")
+					if !forceOK {
+						return plan{}, false
+					}
+					p.acceptLoss = force
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/sessions/" + segment(p.target) + "/archive",
+					Body: jsonBody(map[string]any{"force": p.acceptLoss})}
+			}},
+
+		op{name: "archived-sessions", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/sessions/archived"}
+			}},
+
+		op{name: "restore-archived",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "conversations") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				ids, ok := conversationList(b["conversations"])
+				if !ok || len(ids) == 0 {
+					return plan{}, false
+				}
+				p.conversations = ids
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/sessions/archived/restore",
 					Body: jsonBody(map[string]any{"conversations": p.conversations})}
 			}},
 

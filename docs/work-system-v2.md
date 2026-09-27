@@ -299,11 +299,13 @@ after the latest `plan`. The owner writes the plan (`clawdline item doc <id> --r
 dispatches a read-only child with `--kind plan_review --work-id <id>`, and records that child's
 review as a `plan_review` whose `reference` is the child's task id and whose body is the review's
 substance for the person — what it found and what the plan changed in response. A plan rewritten
-after a review needs a fresh review. Then the owner breaks the Epic into steps and moves it to
+after a review needs a fresh review, up to two reviews: a plan rewritten after the second goes on
+without a third. Then the owner breaks the Epic into steps and moves it to
 `implementing`. Feature and Issue are unaffected.
 
 The phase route refuses the transition with `409 epic_plan_required` (no plan) or
-`409 epic_plan_review_required` (no review newer than the latest plan). The document route accepts
+`409 epic_plan_review_required` (no review newer than the latest plan, while fewer than two are
+recorded). The document route accepts
 a `plan_review` only when its task is a real review of this plan, read from the broker's task
 record in the same transaction as the item's owner: the task exists
 (`plan_review_task_unknown`), was dispatched by the item's owning Session

@@ -120,6 +120,7 @@ func TestEpicPlanGate(t *testing.T) {
 		{"a rewritten plan", epic, PhaseImplementing, docs(DocumentPlan, DocumentPlanReview, DocumentPlan), "epic_plan_review_required"},
 		{"a reviewed plan", epic, PhaseImplementing, docs(DocumentPlan, DocumentPlanReview), ""},
 		{"a re-reviewed plan", epic, PhaseImplementing, docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview), ""},
+		{"a plan rewritten after two reviews", epic, PhaseImplementing, docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview, DocumentPlan), ""},
 		{"a Feature", ItemV2{Kind: KindFeature, Phase: PhaseAssigned}, PhaseImplementing, docs(), ""},
 		{"back from verifying", ItemV2{Kind: KindEpic, Phase: PhaseVerifying}, PhaseImplementing, docs(), ""},
 	}

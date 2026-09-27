@@ -205,6 +205,18 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSON(w, contract.ActionResult{OK: true, ID: id, Action: "closed", Forced: body.Force})
 		})
+	case "archive":
+		// A close and a record; a retried POST must not close a second time
+		// or answer differently, so unlike a close it has to name its key.
+		if strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "an archive needs an Idempotency-Key header")
+			return
+		}
+		s.sessionWrite(w, r, closeBodyLimit, func(size string, limit int64) string {
+			return fmt.Sprintf("That was %s bytes and an archive's options are at most %d.", size, limit)
+		}, func(w http.ResponseWriter, raw []byte) {
+			s.archiveSession(w, r, id, raw)
+		})
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "no such action on a session")
 	}
@@ -292,6 +304,7 @@ func sessionWriteFiled(status int) bool {
 func (s *Server) actions() app.Actions {
 	return app.Actions{Inventory: s.inventory, Reading: s.readings, Terminals: s.terminals, Store: s.store,
 		Restore:   s.restore,
+		Archives:  s.archive,
 		Processes: terminal.ProcessCloser{},
 		Pictures:  app.Pictures{Drops: s.pictures.drops, Pasteboard: s.pictures.pasteboard},
 		Owed: func(ctx context.Context) ([]task.Obligation, error) {
@@ -390,6 +403,17 @@ func actionStatus(code string) int {
 		return http.StatusConflict
 	case "pictures_unavailable":
 		return http.StatusServiceUnavailable
+	case app.ArchiveNoConversation:
+		// Nothing was closed: the session has no conversation to resume, and
+		// archiving it would be a close that says it is something else.
+		return http.StatusConflict
+	case app.ArchiveUnavailable:
+		return http.StatusServiceUnavailable
+	case app.ArchiveNotRecorded:
+		// The session was closed and the row was not written. 500, which
+		// sessionWriteFiled keeps, so a retry is told this rather than closing
+		// a second time.
+		return http.StatusInternalServerError
 	case "nobody_attached":
 		// The selection landed and no screen is showing it: a tmux session with
 		// no client attached. 409 for the same reason the two readings above

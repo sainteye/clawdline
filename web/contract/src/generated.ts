@@ -53,6 +53,79 @@ export interface AdoptRequest {
   token: string
 }
 
+/**
+ * The answer to an archive: the close's answer (`ok`, `id`, `action` = `archived`,
+ * `forced`) and the row it recorded.
+ */
+export interface ArchiveAnswer {
+  action: string
+  archived: ArchivedSession
+
+  /**
+   * Present on an archive that went ahead over open obligations.
+   */
+  forced?: boolean
+  id: string
+  ok: boolean
+}
+
+/**
+ * POST /v1/sessions/{id}/archive. An absent body is an archive without force.
+ * `force` goes over `close_blocked` exactly as a close's does.
+ */
+export interface ArchiveRequest {
+  force?: boolean
+}
+
+/**
+ * One archived conversation.
+ */
+export interface ArchivedSession {
+  /**
+   * Unix seconds: when it was archived.
+   */
+  archived_at: number
+
+  /**
+   * `claude` or `codex`.
+   */
+  assistant: string
+  conversation_id: string
+  cwd: string
+
+  /**
+   * The project's mark for `cwd`, computed when read, as the Session row draws it.
+   * Absent when there is none.
+   */
+  icon?: Icon
+
+  /**
+   * The persona the Session was launched with; restoring it launches it with the
+   * same one. Absent for none.
+   */
+  persona?: string
+
+  /**
+   * The place id of the directory (POST /v1/places/{id}/…).
+   */
+  place: string
+  place_label: string
+
+  /**
+   * The label the Session row showed when it was archived.
+   */
+  title: string
+}
+
+/**
+ * GET /v1/sessions/archived. Most recently archived first; at most
+ * sessions.archive_rows.
+ */
+export interface ArchivedSessions {
+  at: number
+  sessions: ArchivedSession[]
+}
+
 export type Assistant =
     "claude"
   | "codex"
@@ -3859,10 +3932,11 @@ export interface Persona {
   summary: PersonaNames
 
   /**
-   * The team the console's switcher shows this persona under. A closed set; the
-   * console names each team, so the catalog only says which one.
+   * The teams the console's switcher shows this persona under: at least one, none
+   * twice. A closed set; the console names each team, so the catalog only says
+   * which.
    */
-  team: string
+  teams: string[]
 }
 
 /**
@@ -4490,6 +4564,57 @@ export interface RestorableSessions {
   previous_boot_last_seen?: number
   reason?: RestorableReason
   sessions: RestorableSession[]
+}
+
+/**
+ * The answer to an archive restore: one result per distinct conversation named, in
+ * the order named.
+ */
+export interface RestoreArchivedAnswer {
+  at: number
+  results: RestoreArchivedResult[]
+}
+
+/**
+ * Why one archived conversation was not restored. `not_archived`: it has no row in
+ * the archive. `already_open`: it is open in a terminal now; nothing was opened and
+ * the row stays. `place_unavailable`: its directory is no longer a place this
+ * machine can open. `conversation_not_found`: the assistant's record of it is gone.
+ * `open_failed`: the terminal could not open it; `message` says why.
+ * `over_capacity`: other sessions were being opened; ask again. Every code but `ok`
+ * leaves the row in the archive.
+ */
+export type RestoreArchivedCode =
+    "not_archived"
+  | "already_open"
+  | "place_unavailable"
+  | "conversation_not_found"
+  | "open_failed"
+  | "over_capacity"
+
+export const RestoreArchivedCodeValues: readonly RestoreArchivedCode[] = ["not_archived", "already_open", "place_unavailable", "conversation_not_found", "open_failed", "over_capacity"] as const
+
+/**
+ * POST /v1/sessions/archived/restore. At most sessions.archive_restore_batch
+ * conversations; a longer list is refused whole with `archive_batch_too_large`.
+ */
+export interface RestoreArchivedRequest {
+  conversations: string[]
+}
+
+/**
+ * One named conversation's answer. `ok` carries the new terminal (`id`, `backend`,
+ * and `attach` for a detached tmux server) and the row is gone from the archive;
+ * otherwise `code` and `message`.
+ */
+export interface RestoreArchivedResult {
+  attach?: string
+  backend?: Backend
+  code?: RestoreArchivedCode
+  conversation_id: string
+  id?: string
+  message?: string
+  ok: boolean
 }
 
 /**

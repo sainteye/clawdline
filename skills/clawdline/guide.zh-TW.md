@@ -821,7 +821,7 @@ Epic 跟 Feature、Issue 一樣可以指派，也走同樣的 phase；但 Epic �
    clawdline item doc <item id> --role plan_review --title "Plan review" --reference <task id> --body-file review.md
    ```
    審查找到真正的問題，就修改計畫（寫一份新的 `plan` 文件），再審一次：寫在最後一次審查之後的計畫，
-   需要新的審查。
+   需要新的審查。審查最多兩次：第二次審查後再改的計畫，不必第三次審查就能繼續。
 4. 用 `clawdline item step-add <item id> …` 把工作拆成 steps。
 5. 這些都做完，才 `clawdline item phase <item id> implementing`。
 
@@ -839,7 +839,7 @@ Epic 跟 Feature、Issue 一樣可以指派，也走同樣的 phase；但 Epic �
   派出時間不早於最新的 plan（`plan_review_task_stale`）。還沒有 plan 就送審查，會被
   `epic_plan_required` 拒絕。
 - Epic 執行 `clawdline item phase <item id> implementing` 時，還沒有 plan 會被 `epic_plan_required`
-  拒絕，沒有比最新 plan 更新的審查會被 `epic_plan_review_required` 拒絕，跟其他 phase 拒絕一樣是 `409`。
+  拒絕，審查還不到兩次、又沒有比最新 plan 更新的審查，會被 `epic_plan_review_required` 拒絕，跟其他 phase 拒絕一樣是 `409`。
 
 **把 Epic 拆成子項目，再分派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
 能指派項目」的唯一例外：使用者把 Epic 指派給你，這就是拆分它的授權。等審查過的計畫讓 Epic 進入
@@ -877,7 +877,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 - **角色（persona）**是新 Session 開啟時帶著的一個角色：加進它 system prompt 的一段文字，讓它整段對話都照
   那個角色的方式做事。只用在新 Session（`--assign-new`、`--new`、`dispatch`）；既有 Session 維持開啟時的
   角色。預設沒有。角色絕不凌駕 `CLAUDE.md`／`AGENTS.md`、brief、`CHILD.md` 或這份協定。
-  `GET /v1/personas` 列出全部；十六個 id，每個團隊八個（每筆有 `team`）：
+  `GET /v1/personas` 列出全部；十六個 id（每筆的 `teams` 列出它所屬的每個團隊，同一個角色可以在好幾個團隊）：
   - `architect`——規劃 Epic；
   - `backend`——daemon、API 或 store 的 Feature；
   - `frontend`——console 或手機版面的 Feature；

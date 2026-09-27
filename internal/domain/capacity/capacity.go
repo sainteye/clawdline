@@ -252,6 +252,10 @@ const (
 	SessionsRestoreSeenAge = "sessions.restore_seen_age"
 	SessionsRestoreBeat    = "sessions.restore_heartbeat"
 	SessionsRestoreGrace   = "sessions.restore_grace"
+	// The Sessions a person archived: closed, recorded, and resumable again
+	// (docs/session-archive.md).
+	SessionsArchiveRows  = "sessions.archive_rows"
+	SessionsArchiveBatch = "sessions.archive_restore_batch"
 	// Provider-native work under a session: how many rows the fleet carries,
 	// and the immutable metadata/changing-tail cursors held to make a one-second
 	// reading cheap.
@@ -538,7 +542,7 @@ func Register() []Entry {
 			// stops asking is passed over at once and forgotten after half an
 			// hour. Used is the longest line.
 			Name: LeasesQueue, Class: Buffer, Unit: Rows,
-			Limit: 32, AtLimit: Refuse,
+			Limit: 64, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Sender},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app/orchestrator.LeaseQueueLimit"},
@@ -600,7 +604,7 @@ func Register() []Entry {
 		},
 		{
 			Name: WorkDocumentsPerItem, Class: Evidence, Unit: Rows,
-			Limit: 32, AtLimit: Refuse,
+			Limit: 64, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/store.WorkV2DocumentLimit"},
@@ -741,7 +745,7 @@ func Register() []Entry {
 			// open or closed; the thirty-third is refused epic_children_full
 			// and nothing is written.
 			Name: EpicChildItems, Class: Buffer, Unit: Rows,
-			Limit: 32, AtLimit: Refuse,
+			Limit: 64, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/work.EpicChildLimit"},
 		},
@@ -1112,6 +1116,27 @@ func Register() []Entry {
 			Sources:   []string{"internal/app.restoreGraceLimit"},
 		},
 		{
+			// Archived conversations kept. Each is a row a person asked for,
+			// so past the limit the one archived longest ago is dropped and
+			// the count says so; its transcript stays in the assistant's own
+			// history, resumable from the place's past list while it is
+			// still on it.
+			Name: SessionsArchiveRows, Class: Journal, Unit: Rows,
+			Limit: 500, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.archiveRowsLimit"},
+		},
+		{
+			// Conversations one archive restore may name. A longer list is
+			// refused whole, and nothing is opened.
+			Name: SessionsArchiveBatch, Class: Buffer, Unit: Rows,
+			Limit: 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.archiveBatchLimit"},
+		},
+		{
 			Name: "icons.saved", Class: Evidence, Unit: Rows,
 			Limit: 512, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person,
 			Sources: []string{"internal/domain/icon.MaxIconOverrides"},
@@ -1300,7 +1325,7 @@ func Register() []Entry {
 			// catalog past the limit does not load, and the persona package's
 			// own test refuses it before a build ships. Nothing is let go.
 			Name: PersonasCatalog, Class: Buffer, Unit: Rows,
-			Limit: 32, AtLimit: Refuse,
+			Limit: 64, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/domain/persona.MaxPersonas"},

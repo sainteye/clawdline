@@ -14,6 +14,17 @@ import {
 import "./persona.css"
 import "./role-row.css"
 
+/** Each team's name in next-strings.ts. */
+const TEAM_WORDS = {
+  engineering: "personaTeamEngineering",
+  marketing: "personaTeamMarketing",
+  product: "personaTeamProduct",
+  quality: "personaTeamQuality",
+  operations: "personaTeamOperations",
+  design: "personaTeamDesign",
+  business: "personaTeamBusiness",
+} as const satisfies Record<PersonaTeam, string>
+
 /** What one role row draws and what it answers to. */
 export interface RoleRowChoice {
   personas: readonly Persona[]
@@ -35,7 +46,7 @@ export interface RoleRowChoice {
  *
  * With personas in more than one team the label is a native select naming the
  * team (a phone gets its own picker); with one team, or a catalog from a daemon
- * older than `team`, it is the plain label it always was.
+ * older than teams, it is the plain label it always was.
  */
 export function drawRoleRow(row: HTMLElement, c: RoleRowChoice): void {
   row.innerHTML = ""
@@ -51,7 +62,7 @@ export function drawRoleRow(row: HTMLElement, c: RoleRowChoice): void {
     offered.forEach((t) => {
       const option = document.createElement("option")
       option.value = t
-      option.textContent = nextWord(t === "marketing" ? "personaTeamMarketing" : "personaTeamEngineering")
+      option.textContent = nextWord(TEAM_WORDS[t])
       option.selected = t === team
       select.appendChild(option)
     })

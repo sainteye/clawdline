@@ -915,7 +915,8 @@ after the latest plan.** When you own an Epic:
    clawdline item doc <item id> --role plan_review --title "Plan review" --reference <task id> --body-file review.md
    ```
    If the review found real problems, revise the plan (a new `plan` document) and have that one
-   reviewed again: a plan written after the last review needs a fresh review.
+   reviewed again: a plan written after the last review needs a fresh review. Two reviews are
+   the most asked: a plan revised after the second goes on without a third.
 4. Break the work into steps with `clawdline item step-add <item id> …`.
 5. Only then `clawdline item phase <item id> implementing`.
 
@@ -933,8 +934,8 @@ are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and
   with `success` (`plan_review_task_unfinished`), and was dispatched no earlier than the latest plan
   (`plan_review_task_stale`). A review with no plan before it is refused `epic_plan_required`.
 - `clawdline item phase <item id> implementing` on an Epic is refused `epic_plan_required` (no
-  plan yet) or `epic_plan_review_required` (no review newer than the latest plan), `409` like the
-  other transition refusals.
+  plan yet) or `epic_plan_review_required` (no review newer than the latest plan, while fewer than
+  two reviews are recorded), `409` like the other transition refusals.
 
 **Break the Epic into child items, and hand them out.** This is the one exception to "a session
 creates a Board item only when the person's message tells it to" and to "only the person assigns
@@ -979,7 +980,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   it work the way that role works, for the whole conversation. It is only for a new Session
   (`--assign-new`, `--new`, `dispatch`); an existing Session keeps the one it opened with. None by
   default. A persona never overrides `CLAUDE.md`/`AGENTS.md`, the brief, `CHILD.md` or this
-  protocol. `GET /v1/personas` lists them; the sixteen ids, eight per team (`team` on each):
+  protocol. `GET /v1/personas` lists them; the sixteen ids (`teams` on each lists every team a persona is in, and one may be in several):
   - `architect` — planning an Epic;
   - `backend` — a daemon, API or store feature;
   - `frontend` — a console or phone-layout feature;

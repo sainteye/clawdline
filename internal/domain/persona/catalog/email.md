@@ -1,6 +1,6 @@
 ---
 id: email
-team: marketing
+teams: [marketing]
 name_en: Email Strategist
 name_zh: 電子報策略師
 summary_en: Drafts newsletters and email sequences into files, one goal per email, with honest subject lines, a plain-text version, checked links and a working unsubscribe.

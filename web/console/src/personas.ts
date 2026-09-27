@@ -30,7 +30,7 @@ export function loadPersonas(read: typeof fetch = (...args) => fetch(...args)): 
       const res = await read("/v1/personas", { credentials: "same-origin" })
       if (!res.ok) return []
       const body = (await res.json()) as PersonaCatalog | null
-      return Array.isArray(body?.personas) ? body.personas.filter(wellFormed) : []
+      return Array.isArray(body?.personas) ? body.personas.filter(wellFormed).map(withTeams) : []
     } catch {
       // refusal-ok: a missing catalog is shown as no roles to pick, not as a failure.
       return []
@@ -152,40 +152,57 @@ export function rememberPersona(id: string): void {
 }
 
 /**
- * The teams a persona belongs to (`team` in personas.schema.json), in the
+ * The teams a persona can belong to (`teams` in personas.schema.json), in the
  * order the role row's switcher lists them. The console names them
- * (`personaTeam_*` in next-strings.ts); the catalog only says which one.
+ * (`personaTeam*` in next-strings.ts); the catalog only says which.
  */
-export const PERSONA_TEAMS = ["engineering", "marketing"] as const
+export const PERSONA_TEAMS = ["engineering", "marketing", "product", "quality", "operations", "design", "business"] as const
 export type PersonaTeam = (typeof PERSONA_TEAMS)[number]
 
+function knownTeam(team: unknown): team is PersonaTeam {
+  return (PERSONA_TEAMS as readonly unknown[]).includes(team)
+}
+
 /**
- * A persona's team. A catalog from a daemon older than the field (or a Cloud
- * machine not yet updated) has none, and a name this console does not know is
- * no team it can show: both are engineering, which is every persona such a
- * daemon has.
+ * A persona's teams, never empty. The daemon sends `teams`; one from before
+ * that field sends a single `team` (read as a list of one) or, older still,
+ * neither, which is engineering: every persona such a daemon has. Names this
+ * console does not know are dropped, and a persona left with none is
+ * engineering too.
  */
-export function personaTeam(p: Persona): PersonaTeam {
-  const team = (p as { team?: unknown }).team
-  return (PERSONA_TEAMS as readonly unknown[]).includes(team) ? (team as PersonaTeam) : "engineering"
+export function personaTeams(p: Persona): PersonaTeam[] {
+  const raw = p as { teams?: unknown; team?: unknown }
+  const listed = Array.isArray(raw.teams) ? raw.teams : raw.team !== undefined ? [raw.team] : []
+  const teams = PERSONA_TEAMS.filter((t) => listed.includes(t))
+  return teams.length ? teams : ["engineering"]
+}
+
+/** A catalog entry with `teams` filled in from whatever the daemon sent. */
+export function withTeams(p: Persona): Persona {
+  return { ...p, teams: personaTeams(p) }
+}
+
+function inTeam(p: Persona, team: string): boolean {
+  return (personaTeams(p) as string[]).includes(team)
 }
 
 /** The teams that have at least one persona, in switcher order. One or none hides the switcher. */
 export function teamsOffered(list: readonly Persona[] | null): PersonaTeam[] {
-  const present = new Set((list ?? []).map(personaTeam))
+  const present = new Set((list ?? []).flatMap(personaTeams))
   return PERSONA_TEAMS.filter((t) => present.has(t))
 }
 
 /** The personas the chips show for one team, in catalog order. */
 export function personasOfTeam(list: readonly Persona[] | null, team: PersonaTeam): Persona[] {
-  return (list ?? []).filter((p) => personaTeam(p) === team)
+  return (list ?? []).filter((p) => inTeam(p, team))
 }
 
 /**
- * The team the role row shows: the chosen persona's own team, so a choice is
- * never hidden behind the other team; otherwise the team last picked in this
- * browser, when it still has personas; otherwise engineering (or the only
- * team there is).
+ * The team the role row shows. A chosen persona is never hidden behind a team
+ * that does not hold it: the team last picked in this browser when it holds
+ * the persona, otherwise the persona's first team in switcher order. With no
+ * persona chosen, the remembered team when it still has personas; otherwise
+ * engineering (or the first team there is).
  */
 export function shownTeam(
   list: readonly Persona[] | null,
@@ -193,16 +210,16 @@ export function shownTeam(
   preferred: string | null | undefined,
 ): PersonaTeam {
   const persona = personaById(list, chosen)
-  if (persona) return personaTeam(persona)
+  if (persona) return preferred && knownTeam(preferred) && inTeam(persona, preferred) ? preferred : personaTeams(persona)[0]
   const offered = teamsOffered(list)
   if (preferred && (offered as string[]).includes(preferred)) return preferred as PersonaTeam
   return offered.includes("engineering") || !offered.length ? "engineering" : offered[0]
 }
 
 /**
- * Switching team: the chosen persona stays only when it is one of the new
- * team's chips; otherwise the choice becomes no role, so a start never sends a
- * persona the person cannot see.
+ * Switching team: the chosen persona stays when the new team holds it too;
+ * otherwise the choice becomes no role, so a start never sends a persona the
+ * person cannot see.
  */
 export function switchTeam(
   list: readonly Persona[] | null,
@@ -210,7 +227,7 @@ export function switchTeam(
   team: PersonaTeam,
 ): { team: PersonaTeam; chosen: string } {
   const persona = personaById(list, chosen)
-  return { team, chosen: persona && personaTeam(persona) === team ? persona.id : "" }
+  return { team, chosen: persona && inTeam(persona, team) ? persona.id : "" }
 }
 
 const REMEMBERED_TEAM = "clawdline.persona.team"
