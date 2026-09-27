@@ -8,7 +8,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see `order.test.ts`.
-import { ACTION_WIDTH, offsetFor, revealFor, settleOpen, Swipes, type RevealWords } from "./swipe.ts"
+import { ACTION_WIDTH, actionWidth, archivable, BOTH_WIDTH, BUTTON_WIDTH, offsetFor, revealFor, settleOpen, Swipes, type RevealWords } from "./swipe.ts"
 
 const WORDS: RevealWords = {
   end: "關閉 Session",
@@ -152,4 +152,50 @@ test("a row that goes away takes its open action with it", () => {
   assert.equal(s.openId(), null)
   assert.equal(told, 1, "and the list is told once, so it redraws")
   stop()
+})
+
+// Archive (docs/session-archive.md): a row whose conversation can be brought
+// back uncovers two buttons, 封存 beside 關閉; a row with nothing to resume
+// keeps the one close it had.
+
+test("a row with a conversation uncovers two thumb-sized buttons side by side", () => {
+  assert.equal(archivable("conv-1"), true)
+  assert.equal(actionWidth("conv-1"), BOTH_WIDTH)
+  assert.equal(BOTH_WIDTH, 2 * BUTTON_WIDTH, "two buttons, the same width each")
+  assert.ok(BUTTON_WIDTH >= 72, "each one still takes a thumb: " + BUTTON_WIDTH)
+  assert.ok(BOTH_WIDTH > ACTION_WIDTH, "wider than the close alone")
+})
+
+test("a row with no conversation id offers no archive, and keeps the close's own width", () => {
+  for (const none of ["", "   ", undefined, null]) {
+    assert.equal(archivable(none), false, JSON.stringify(none))
+    assert.equal(actionWidth(none), ACTION_WIDTH, JSON.stringify(none))
+  }
+})
+
+test("the wider action stretches past its own edge, not the close's", () => {
+  assert.equal(offsetFor(0, -150, BOTH_WIDTH), 150, "150 of 176 is still inside the two buttons")
+  const far = offsetFor(0, -(BOTH_WIDTH + 200), BOTH_WIDTH)
+  assert.ok(far > BOTH_WIDTH && far < BOTH_WIDTH + 40, "it gives, then stops: " + far)
+  assert.equal(offsetFor(BOTH_WIDTH, 400, BOTH_WIDTH), 0)
+})
+
+test("letting go measures how far it got against the row's own width", () => {
+  // 70px is past the 45% line of the close alone and short of it for two.
+  assert.equal(settleOpen(70, 0), true)
+  assert.equal(settleOpen(70, 0, BOTH_WIDTH), false)
+  assert.equal(settleOpen(100, 0, BOTH_WIDTH), true)
+})
+
+test("a row dragged open with two buttons rests with both uncovered", () => {
+  const s = new Swipes()
+  s.begin("a", 300, 400, 0, BOTH_WIDTH)
+  s.move(280, 400, 16)
+  s.move(150, 400, 32)
+  assert.equal(s.offsetOf("a"), 150)
+  assert.deepEqual(s.end(), { id: "a", open: true })
+  assert.equal(s.offsetOf("a"), BOTH_WIDTH, "open means both buttons, not the close's 126")
+  s.begin("a", 150, 400, 100, BOTH_WIDTH)
+  s.move(170, 400, 116)
+  assert.equal(s.offsetOf("a"), BOTH_WIDTH - 20, "a drag on an open row starts from its own width")
 })

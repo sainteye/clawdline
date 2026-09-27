@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
-import { paintSwipe, Row } from "./session/List.js"
+import { actionWidthOf, paintSwipe, Row } from "./session/List.js"
 import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { Command, CommandSheet } from "./session/Command.js"
@@ -562,7 +562,8 @@ function useSwipeToEnd(scrollRef: RefObject<HTMLDivElement | null>): string | nu
       if (ev.touches.length !== 1) return
       const el = rowAt(ev.target)
       const id = el?.dataset.id ?? null
-      const closed = swipes.begin(id, ev.touches[0].clientX, ev.touches[0].clientY, ev.timeStamp)
+      const width = el ? actionWidthOf(el) : undefined
+      const closed = swipes.begin(id, ev.touches[0].clientX, ev.touches[0].clientY, ev.timeStamp, width)
       if (closed) {
         for (const other of scroller.querySelectorAll<HTMLElement>("li.row[data-swipe]")) paintSwipe(other, "", 0)
         node = null

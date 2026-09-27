@@ -1,4 +1,5 @@
-.confirm-sheet[data-kind="end"] .say {
+.confirm-sheet[data-kind="end"] .say,
+.confirm-sheet[data-kind="archive"] .say {
   display: grid;
   gap: 12px;
   white-space: normal;

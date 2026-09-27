@@ -248,6 +248,12 @@ export type WriteRoute =
   // machine no longer has a terminal for.
   | { op: "restorable"; word: Carried<"restorable-sessions"> }
   | { op: "restore"; word: Carried<"restore-sessions" | "dismiss-restorable"> }
+  // Archived Sessions (docs/session-archive.md). The archive closes a Session,
+  // so it rides that Session's channel as `end` does; the list and the restore
+  // are the machine's, like the reboot offer's.
+  | { op: "archive"; word: Carried<"archive-session">; session: string }
+  | { op: "archived"; word: Carried<"archived-sessions"> }
+  | { op: "restore-archived"; word: Carried<"restore-archived"> }
   // Things waiting to be verified. Machine words, not session ones: a record
   // belongs to the machine, and the page that reads it holds no session.
   | { op: "verification-read"; word: Carried<"verification.list" | "verification.get">; id: string }
@@ -409,6 +415,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "sessions" && a === "restorable" && segments.length === 2) {
       return { op: "restorable", word: "restorable-sessions" }
     }
+    if (head === "sessions" && a === "archived" && segments.length === 2) {
+      return { op: "archived", word: "archived-sessions" }
+    }
     // The dashboard behind the session counts: the machine's CPU and memory
     // and each session's share, on the machine's one reply channel.
     if (head === "machine" && a === "usage" && segments.length === 2) {
@@ -546,6 +555,11 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (b === "dismiss") return { op: "restore", word: "dismiss-restorable" }
     return null
   }
+  // The same for the archive: `archived` is not a session id.
+  if (head === "sessions" && a === "archived" && segments.length === 3) {
+    if (b === "restore") return { op: "restore-archived", word: "restore-archived" }
+    return null
+  }
   if (head === "sessions" && a && segments.length === 3) {
     switch (b) {
       case "send":
@@ -554,6 +568,8 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
         return { op: "answer", word: "answer", session: a }
       case "close":
         return { op: "end", word: "end", session: a }
+      case "archive":
+        return { op: "archive", word: "archive-session", session: a }
       case "focus":
         return { op: "focus", word: "focus", session: a }
       case "smart-title":
@@ -629,6 +645,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "send":
     case "answer":
     case "end":
+    case "archive":
     case "focus":
     case "smart-title":
     case "interrupt":
@@ -695,6 +712,10 @@ function spellingOf(route: WriteRoute): Spelling {
     // `session/restore-offer.ts` reads that spelling.
     case "restorable":
     case "restore":
+    // `/v1/sessions/{id}/archive` answers a close's refusals verbatim, flat,
+    // and `/v1/sessions/archived*` refuses flat too (docs/session-archive.md).
+    case "archived":
+    case "restore-archived":
       return "flat"
     default:
       return "nested"
@@ -753,7 +774,8 @@ export class RelayWriter {
       // daemon reporting that its terminal backend took the tab or pane away.
       // Apply that existence fact before an older retained Cloud row can win
       // the redraw; a later current terminal enumeration may supersede it.
-      if (route.op === "end") this.host.closed(route.session)
+      // An archive is a close first: its answer is the same existence fact.
+      if (route.op === "end" || route.op === "archive") this.host.closed(route.session)
       this.host.note({ method, path, answer: "relay", word: route.word, ms })
       return json(200, cleanAnswer(body))
     } catch (error) {
@@ -840,6 +862,18 @@ export class RelayWriter {
           }, "action:" + request)
         }
         return client.end(identity, body.force === true, version)
+      }
+      case "archive": {
+        // The close's own decision key is the command's request, as `end`
+        // carries it, so a retried envelope is answered with the first answer
+        // and closes nothing twice. The route refuses an archive without one,
+        // and so does this seam, before anything is sealed.
+        const request = headerOf(init, "idempotency-key")
+        if (!request) throw failure("bad_request", `${route.word} needs an Idempotency-Key`, 400)
+        if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
+        const body = await bodyOf(init)
+        const identity = await this.identity(client, route.session)
+        return client._read(identity, route.word, { request, force: body.force === true }, "action:" + request)
       }
       case "focus":
         return client.focus(await this.identity(client, route.session))
@@ -979,6 +1013,25 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
         }
         return client._machineRequest(this.host.machine, route.word, {}, "read")
+      }
+      case "archived": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", route.word, 501)
+        }
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
+        }
+        return client._machineRequest(this.host.machine, route.word, {}, "read")
+      }
+      case "restore-archived": {
+        // One resume per conversation, as `restore` below: the press's key is
+        // the command's request.
+        const request = headerOf(init, "idempotency-key")
+        if (!request) throw failure("bad_request", `${route.word} needs an Idempotency-Key`, 400)
+        if (typeof client._machineRequestAs !== "function") throw failure("cloud_not_carried", route.word, 501)
+        const sent = await bodyOf(init)
+        const conversations = Array.isArray(sent.conversations) ? sent.conversations : []
+        return client._machineRequestAs(request, this.host.machine, route.word, { conversations }, "action")
       }
       case "restore": {
         // A restore is one resume per conversation, so the sheet's one key per
@@ -1445,6 +1498,7 @@ function sessionOf(route: WriteRoute): string | null {
     case "send":
     case "answer":
     case "end":
+    case "archive":
     case "focus":
     case "interrupt":
       return route.session

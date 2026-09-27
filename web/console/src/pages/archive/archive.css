@@ -1,0 +1,48 @@
+/* 封存 (docs/session-archive.md).
+
+   Not a copy: the Swift app had no archive. Every colour is a token of
+   legacy/tokens.css (the console is dark only, on purpose), the page is
+   board.css's `.board-page`, the buttons its `.board-button`, and the mark is
+   the Session row's own canvas.
+
+   On a phone (390px) nothing is wider than the screen: the gutters are 16px,
+   a long title or folder wraps anywhere, and Restore drops under the words
+   rather than squeezing them. */
+
+.archive-page .archive-wrap { width: min(880px, 100%); margin-inline: auto; min-width: 0; }
+.archive-page h1 { margin: 0; font-size: clamp(26px, 5vw, 44px); line-height: 1.15; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.archive-lede { margin: 14px 0 0; color: var(--dim); font-size: 14px; line-height: 1.7; }
+
+.archive-list { display: grid; gap: 10px; margin: 24px 0 0; padding: 0; list-style: none; }
+.archive-entry {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 14px; align-items: start;
+    min-width: 0; padding: 14px 16px;
+    border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink);
+}
+.archive-entry > .mark { margin-top: 3px; }
+.archive-copy { display: grid; gap: 4px; min-width: 0; }
+.archive-title { font-size: 15px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.archive-where { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; color: var(--dim); font-size: 12px; line-height: 1.6; min-width: 0; }
+.archive-path { font-family: var(--mono); overflow-wrap: anywhere; min-width: 0; }
+.archive-when { color: var(--faint); font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.archive-outcome { margin: 2px 0 0; color: var(--dim); font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.archive-outcome[data-failed] { color: var(--bad); }
+.archive-restore { align-self: center; min-height: 40px; white-space: nowrap; }
+
+.archive-empty { margin: 16px 0 0; color: var(--faint); font-size: 13px; line-height: 1.6; }
+.archive-failure { margin: 16px 0 0; color: var(--bad); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+
+.archive-reopened { display: grid; gap: 8px; margin: 20px 0 0; padding: 0; list-style: none; }
+.archive-reopened > li {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0;
+    padding: 10px 14px; border: 1px solid var(--line); border-left: 2px solid var(--ok); border-radius: 10px;
+    background: var(--card); color: var(--ink); font-size: 13px; line-height: 1.5;
+}
+.archive-reopened-name { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.archive-reopened .board-button { margin-left: auto; }
+
+@media (max-width: 640px) {
+    .archive-page { padding-inline: 16px; }
+    .archive-entry { grid-template-columns: auto minmax(0, 1fr); padding: 14px; }
+    .archive-restore { grid-column: 1 / -1; justify-self: stretch; margin-top: 6px; }
+}

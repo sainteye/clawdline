@@ -1407,7 +1407,9 @@ test("a left swipe uncovers a close, and the swipe itself closes nothing", () =>
     const open = await swipeOpen(tab, SAFE)
     assert.equal(open.action, "關閉 Session", "the uncovered control says what pressing it does")
     assert.equal(open.actionKind, "safe")
-    assert.equal(open.swipeX, "-126px", "and the row's contents have moved out of its way")
+    // The row names its conversation, so it uncovers 封存 beside the close:
+    // two 88px buttons (docs/session-archive.md, `archive.e2e.ts`).
+    assert.equal(open.swipeX, "-176px", "and the row's contents have moved out of its way")
     await tab.shot("swipe-safe")
     // The whole point: the gesture is not the decision.
     assert.deepEqual(closes, [], "nothing has been closed by the gesture")

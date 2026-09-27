@@ -36,7 +36,11 @@ import { toast, toastFailure } from "./toast.js"
  *   the closeability lines — the original's `reopenEndWithLost` answer to a
  *   refusal that carries a list. Pressing "still close" overrides that known
  *   obligation and asks again under a fresh decision id.
- * - A command other than "end" is sent as one line with `/send` and
+ * - "archive" (docs/session-archive.md) is the close with a different ending:
+ *   the same sheet, the same work reminder, the same `close_blocked` reopen
+ *   and forced second decision, sent to `/v1/sessions/{id}/archive`, which
+ *   answers every close refusal verbatim. Only its words differ.
+ * - A command other than "end" or "archive" is sent as one line with `/send` and
  *   acknowledged with a toast; the original also draws it into the transcript
  *   optimistically, which this console's transcript does not support.
  */
@@ -99,6 +103,13 @@ export function hostConfirm(next: ConfirmHost): void {
 }
 
 const T = L.strings
+
+/** Whether a kind is a close: `end`, or `archive`, which is a close that remembers. */
+function closes(kind: string): kind is CloseKind {
+  return kind === "end" || kind === "archive"
+}
+type CloseKind = "end" | "archive"
+
 const node = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E | null
 
 /**
@@ -198,20 +209,20 @@ export const ActionConfirm = {
     const title = node("action-confirm-title")
     const go = node("action-confirm-go")
     if (!id || !host.writable() || !overlay || !sheet || !title || !go) return
-    const action = kind === "end" ? T.webEndSession : kind
+    const action = kind === "end" ? T.webEndSession : kind === "archive" ? nextWord("archiveGo") : kind
     const returnFocus = opener || node("detail-actions-trigger")
     const row = byId(id)
     // What the close would take, at the only moment it can still change the outcome.
-    const lost = kind === "end" ? lostIfClosed(id) : []
+    const lost = closes(kind) ? lostIfClosed(id) : []
     // Why the broker cannot yet say it is safe, and which one thing moves each of those.
-    const why = kind === "end" ? closeabilityLines(row) : []
-    const closeable = kind === "end" ? closeabilityOf(row) : null
+    const why = closes(kind) ? closeabilityLines(row) : []
+    const closeable = closes(kind) ? closeabilityOf(row) : null
     const help = closeabilityHelpModel(closeable)
     this.pending = {
       id, kind, action, opener: returnFocus, ask: ask || null, lost, why,
-      closeNotes: kind === "end" ? closeabilityPlainReasons(row) : [],
+      closeNotes: closes(kind) ? closeabilityPlainReasons(row) : [],
       closeability: closeable && closeable.state, help, work: [], recentWork: [], directTodos: [],
-      workState: kind === "end" ? "loading" : "ready", workTruncated: false,
+      workState: closes(kind) ? "loading" : "ready", workTruncated: false,
       force: false, request: mintRequest(),
     }
     this.busy = false
@@ -222,9 +233,13 @@ export const ActionConfirm = {
         ? asked && asked.subject
           ? nextWord("endNamedTitle", { session: asked.subject })
           : T.webConfirmEndTitle
-        : L.fillString(T.webConfirmActionTitle, { action })
+        : kind === "archive"
+          ? asked && asked.subject
+            ? nextWord("archiveNamedTitle", { session: asked.subject })
+            : nextWord("archiveTitle")
+          : L.fillString(T.webConfirmActionTitle, { action })
     if (ask && ask.say) this.renderSay(ask.say, null, [])
-    else if (kind === "end") this.renderEnd(this.pending)
+    else if (closes(kind)) this.renderEnd(this.pending)
     else this.renderSay(L.fillString(T.webConfirmActionSay, { action }), null, [])
     overlay.hidden = false
     this.sync()
@@ -234,7 +249,7 @@ export const ActionConfirm = {
     const cancel = node<HTMLButtonElement>("action-confirm-cancel")
     const first = ((asked && asked.focus === "cancel") || this.pending.workState === "loading") && cancel ? cancel : go
     first.focus({ preventScroll: true })
-    if (kind === "end") void this.loadOpenWork(this.pending)
+    if (closes(kind)) void this.loadOpenWork(this.pending)
   },
 
   async loadOpenWork(pending: Pending): Promise<void> {
@@ -270,7 +285,7 @@ export const ActionConfirm = {
     const recordedWorkClear = workState === "ready" && work.length === 0 && openDirect.length === 0
     const lede = document.createElement("p")
     lede.className = "end-work-lede"
-    lede.textContent = T.webConfirmEndSay
+    lede.textContent = pending.kind === "archive" ? nextWord("archiveSay") : T.webConfirmEndSay
     say.appendChild(lede)
 
     if (lost && lost.length) {
@@ -469,8 +484,8 @@ export const ActionConfirm = {
    * the authoritative list, from a fresher reading than the page's, so the
    * sheet comes back up carrying them.
    */
-  reopenEndBlocked(id: string, reasons: readonly CloseReason[]): void {
-    this.open("end", id)
+  reopenEndBlocked(id: string, reasons: readonly CloseReason[], kind: CloseKind = "end"): void {
+    this.open(kind, id)
     const pending = this.pending
     if (!pending) return
     // A fresh request id: the refusal is the daemon's answer to the first
@@ -513,13 +528,13 @@ export const ActionConfirm = {
       )
       return
     }
-    if (pending.kind === "end") {
+    if (closes(pending.kind)) {
       // The decision stays on screen until the daemon has answered; both ways
       // out are disabled so the one request is the only thing in flight. A
       // refusal to start leaves nothing to release them, so the sheet lets go.
       this.busy = true
       this.sync()
-      if (!end(pending.id, pending.request, pending.force)) {
+      if (!end(pending.id, pending.request, pending.force, pending.kind)) {
         this.busy = false
         this.sync()
         this.close(false)
@@ -545,7 +560,7 @@ export const ActionConfirm = {
     if (this.busy && endWait.visible) {
       go.innerHTML = '<span class="busy"><canvas></canvas><span></span></span>'
       const word = go.querySelector(".busy span")
-      if (word) word.textContent = T.webClosing
+      if (word) word.textContent = this.pending?.kind === "archive" ? nextWord("archiving") : T.webClosing
       setConfirmSpin(go.querySelector("canvas"))
     } else if (this.busy && this.pending?.ask?.waiting) {
       // An ask's turn takes seconds (a model call for smart naming), so it
@@ -557,13 +572,18 @@ export const ActionConfirm = {
     } else {
       const recordedWorkClear = this.pending?.workState === "ready" &&
         this.pending.work.length === 0 && !this.pending.directTodos.some((todo) => !todo.completed_at)
+      const archiving = this.pending?.kind === "archive"
       go.textContent = help
-        ? recordedWorkClear ? nextWord("endWorkConfirmClose") : help.confirmLabel
+        ? archiving
+          ? recordedWorkClear ? nextWord("archiveGo") : nextWord("archiveAnyway")
+          : recordedWorkClear ? nextWord("endWorkConfirmClose") : help.confirmLabel
         : this.pending?.force
-          ? T.webConfirmEndAnyway
+          ? archiving ? nextWord("archiveAnyway") : T.webConfirmEndAnyway
           : this.pending?.kind === "end"
             ? nextWord("endWorkClose")
-            : T.webConfirm
+            : archiving
+              ? nextWord("archiveGo")
+              : T.webConfirm
     }
   },
 
@@ -592,6 +612,8 @@ export const ActionConfirm = {
 let endTicket = 0
 let settlingEnd = false
 let endWasOpen = false
+/** Which close is in flight: the words of its ending and where a refusal reopens. */
+let endKind: CloseKind = "end"
 
 /**
  * A fresh request id for one decision.
@@ -617,15 +639,17 @@ function mintRequest(): string {
 }
 
 /** `false` is the only answer that tells the sheet nothing is coming back. */
-function end(id: string, request: string, force: boolean): boolean {
+function end(id: string, request: string, force: boolean, kind: CloseKind): boolean {
   if (!id || !host.writable() || getClosingId()) return false
   const ticket = ++endTicket
+  endKind = kind
   setClosingId(id)
   endWasOpen = host.openId() === id
   settlingEnd = false
   endWait.start()
   ActionConfirm.sync()
-  client.close(id, force, request).then(
+  const sent = kind === "archive" ? client.archive(id, force, request) : client.close(id, force, request)
+  sent.then(
     () => finishEnd(id, ticket, true),
     (e) => finishEnd(id, ticket, false, e),
   )
@@ -648,14 +672,14 @@ function finishEnd(id: string, ticket: number, ok: boolean, error?: unknown): vo
     ActionConfirm.finish()
     if (!ok && error instanceof RefusalError && error.code === "close_blocked") {
       endWasOpen = false
-      ActionConfirm.reopenEndBlocked(id, error.reasons)
+      ActionConfirm.reopenEndBlocked(id, error.reasons, endKind)
       return
     }
     const open = host.openId()
     if (ok && endWasOpen && (!open || open === id)) host.closeDetail()
     endWasOpen = false
     host.refresh()
-    if (ok) toast(T.webEndSession + " ✓", false)
+    if (ok) toast(endKind === "archive" ? nextWord("archiveDone") : T.webEndSession + " ✓", false)
     else toastFailure(error, T.webRequestFailed)
   })
 }
@@ -663,7 +687,10 @@ function finishEnd(id: string, ticket: number, ok: boolean, error?: unknown): vo
 /** The list no longer has the session being closed: that is the answer. */
 export function endedIfGone(ids: ReadonlySet<string>): void {
   const id = getClosingId()
-  if (id && !ids.has(id)) finishEnd(id, endTicket, true)
+  // Not for an archive: its row goes when the close does, but the archive is
+  // only done when the row is recorded, and `archive_not_recorded` says so
+  // after the list has already lost it. Its own answer is the one to wait for.
+  if (id && !ids.has(id) && endKind !== "archive") finishEnd(id, endTicket, true)
 }
 
 /** `SessionActions.prompt`: one command typed into the session, acknowledged with a toast. */

@@ -257,7 +257,12 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("shell" in CARRIED)
   // The personas a start may name (docs/personas.md).
   assert.ok("personas" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 89)
+  // Archived Sessions (docs/session-archive.md): the swipe's 封存 and the
+  // sidebar's Archive page, carried rather than deferred.
+  assert.ok("archive-session" in CARRIED)
+  assert.ok("archived-sessions" in CARRIED)
+  assert.ok("restore-archived" in CARRIED)
+  assert.equal(Object.keys(CARRIED).length, 92)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

@@ -1,5 +1,7 @@
 import type {
   ActionResult,
+  ArchiveAnswer,
+  ArchivedSessions,
   BoardSnapshot,
   BoardWriteResult,
   CoordinatorSnapshot,
@@ -11,6 +13,7 @@ import type {
   ScheduleList,
   ScheduleRequest,
   ScheduleSaved,
+  RestoreArchivedAnswer,
   SessionsSnapshot,
   SessionTitleReply,
   SettleResult,
@@ -119,6 +122,32 @@ export class ClawdlineClient {
    */
   close(id: string, force = false, request?: string): Promise<ActionResult> {
     return this.post(sessionRoutes.close(id), { force }, request ? { "Idempotency-Key": request } : undefined)
+  }
+
+  /**
+   * Closes a session and keeps its conversation to bring back later
+   * (docs/session-archive.md).
+   *
+   * It is a close first: every refusal a close answers comes back the same,
+   * `close_blocked` with its reasons included, and `force` goes over it as a
+   * close's does. `request` is the decision's key, as it is for `close`.
+   */
+  archive(id: string, force = false, request?: string): Promise<ArchiveAnswer> {
+    return this.post(sessionRoutes.archive(id), { force }, request ? { "Idempotency-Key": request } : undefined)
+  }
+
+  /** The archived conversations, most recently archived first. */
+  archived(): Promise<ArchivedSessions> {
+    return this.get(routes.archived)
+  }
+
+  /**
+   * Resumes archived conversations: one result per id, in the order named.
+   * A row that did not open says why in its own `code`; the call as a whole
+   * only rejects when the daemon refused the request.
+   */
+  restoreArchived(conversations: string[], request: string): Promise<RestoreArchivedAnswer> {
+    return this.post(routes.restoreArchived, { conversations }, { "Idempotency-Key": request })
   }
 
   /**
