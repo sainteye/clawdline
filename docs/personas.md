@@ -72,6 +72,16 @@ splits each line the way a POSIX shell does and checks this.
   the person set in `~/.codex/config.toml` for that session. It does not add to them. A Codex
   session launched with no persona is unaffected.
 
+  A Codex session given any `-c` override also runs without Codex's shared background server:
+  codex-cli 0.157.1 shows the startup warning "command-line configuration overrides (-c, …)
+  requires embedded mode". Children and Root Assignments already start Codex that way (their
+  directory-trust answer is a `-c` too), so a persona adds nothing new for them; a Codex session
+  started from a place with a persona is the one that newly runs embedded. It binds its
+  conversation and reports its persona as any other row does (measured 2026-09-27: a disposable
+  daemon started `claude` as `code-reviewer` and `codex` as `architect` in tmux; `ps` showed each
+  value as one argument, both rows carried `persona`, the Codex row bound its conversation, and
+  asked for their role both answered from their persona file).
+
 Three launch paths take a persona. Every one of them goes through `Admit`, so all three refuse a
 name the catalog does not have. A Board assignment to a new Session reaches the third:
 
