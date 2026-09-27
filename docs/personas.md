@@ -62,8 +62,9 @@ Board kind. The eight below are in the marketing team only; `technical-writer` i
 The product, quality and operations teams, adapted the same way: upstream emoji, hype, invented
 metrics and vendor-specific pipelines were dropped, and each works inside the repository and the
 Epic flow — plans, steps, evidence and reports in the project's own language. None is suggested
-for a Board kind. `evidence-collector` gathers the proof (screenshots, logs, measurements, and how
-each was produced); `reality-checker` gives the verdict on it. Their bots are drawn in
+for a Board kind. `evidence-collector` captures the proof (screenshots, logs, measurements, and how
+each was produced) and rules PASS or FAIL on each claim, defaulting to FAIL; `reality-checker`
+judges the whole change end to end. Their bots are drawn in
 `icons_product_quality_operations.go`, one colour family per team.
 
 | id | Name | 中文 | Teams | Adapted from |
@@ -360,7 +361,9 @@ the persona did. Round 4 (maker tasks with held-out scores, performance and secu
 the ceiling: neither persona, brief nor both changed the result, both raised cost, and the brief's
 "no evidence, no report" rule made most runs skip a correct timing-safe compare fix. Every
 comparison is n = 2 per arm: directional, not significant. Start at
-`experiments/personas/README.md`.
+`experiments/personas/README.md`. A later audit compared all 42 texts with their upstream files
+and restored the rules the rewrite had lost or reversed by accident, among them the Evidence
+Collector's per-claim verdict with FAIL as the default; see `experiments/personas/rewrite-audit.md`.
 
 ## Attribution
 
