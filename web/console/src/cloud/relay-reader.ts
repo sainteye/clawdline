@@ -818,12 +818,17 @@ export class RelayReader {
             }
             project = place.id
           }
+          // Keep the first page's older body exact: daemons from before Board
+          // pagination reject an extra empty cursor instead of ignoring it.
           if (q.status !== undefined || q.q !== undefined) {
             return await this.machineRead(init?.signal, method, path, "work.v2.search", {
-              project, status: q.status ?? "open", query: q.q ?? "", cursor: q.cursor ?? "",
+              project, status: q.status ?? "open", query: q.q ?? "",
+              ...(q.cursor ? { cursor: q.cursor } : {}),
             })
           }
-          return await this.machineRead(init?.signal, method, path, "work.v2.items", { project, cursor: q.cursor ?? "" })
+          return await this.machineRead(init?.signal, method, path, "work.v2.items", {
+            project, ...(q.cursor ? { cursor: q.cursor } : {}),
+          })
         }
         case "/v1/work/v2/proposals": {
           const q = this.only(url, path, "state")
