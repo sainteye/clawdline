@@ -71,6 +71,10 @@ export const CARRIED = {
   intents: "POST /v1/intents",
   "past-sessions": "GET /v1/places/{id}/sessions[/{assistant}]",
   places: "GET /v1/places",
+  // The built-in personas a start may name (docs/personas.md): a machine read
+  // with no parameter. A machine that does not list it is refused by the copied
+  // client before anything leaves (`_unsupportedRefusal`).
+  personas: "GET /v1/personas",
   "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",
   "project-icon-copy": "PUT /v1/projects/{id}/icon",
   // Project settings sync (docs/project-sync.md). The two source reads are
@@ -87,7 +91,7 @@ export const CARRIED = {
   "push-subscribe": "POST /v1/push/subscribe",
   "push-test": "POST /v1/push/test",
   "push-unsubscribe": "POST /v1/push/unsubscribe",
-  resume: "POST /v1/places/{id}/resume[/{assistant}]/{past}",
+  resume: "POST /v1/places/{id}/resume[/{assistant}]/{past}[/as/{persona}]",
   // The live screen (`session/ScreenPanel.tsx`). It sat in `DEFERRED` and in
   // `DEFERRED_ASKED` while this machine answered it, so 「即時畫面」 on a phone
   // only ever said to go and look on the machine — including from the Waiting
@@ -121,7 +125,7 @@ export const CARRIED = {
   "snippet-order": "POST /v1/snippets/order",
   "snippet-update": "PATCH /v1/snippets/{id}",
   snippets: "GET /v1/snippets",
-  start: "POST /v1/places/{id}/start[/{assistant}[/{model}]]",
+  start: "POST /v1/places/{id}/start[/{assistant}[/{model}][/as/{persona}]]",
   timeline: "GET /v1/timeline?project=&entry=&cursor=&environment=&category=&upcoming=",
   transcript: "GET /v1/transcript?session={id}",
   // The token bill (`pages/work/TokenBill.tsx`). Machine reads, not session

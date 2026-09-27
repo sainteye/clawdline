@@ -448,12 +448,14 @@ export const assignWorkV2 = (item: WorkV2Item, terminalID: string) =>
     terminal_id: terminalID,
   })
 
-export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude") =>
+/** `persona` is sent only when one was chosen: a new Session with none is the Session it always was. */
+export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude", persona?: string) =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/assign`, {
     expected_version: item.version,
     mode: "new_session",
     assistant,
     model: "default",
+    ...(persona ? { persona } : {}),
   })
 
 export const remindWorkV2 = (item: WorkV2Item) =>

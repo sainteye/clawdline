@@ -140,6 +140,45 @@ It accepts only ids in the catalog, so a file with the same name elsewhere reads
 process scanner sets `Session.Persona`. When the terminal row and the process row are merged, the
 merge keeps it whichever side it arrived on (`richer`). `SessionRow.persona` reports it.
 
+## Console and Cloud
+
+The console calls a persona a "Role" (角色). It reads `GET /v1/personas` once per page
+(`web/console/src/personas.ts`); a console shows one machine for its whole life, so that is once
+per machine. A read that fails for any reason is an empty catalog, and an empty catalog draws no
+chips and no bots: an older daemon, or a machine on Cloud that cannot answer, shows the console it
+showed before this feature, never a sheet that breaks after a press.
+
+- **Session list.** A row whose `persona` the catalog names shows the bot at two pixels a cell and
+  the short name after the assistant's, with the full name and summary as its title. The bot was
+  first drawn at three pixels a cell under the project mark; measured at 390 px that made each such
+  row taller (93.2 → 95.4 px, and 88.4 → 95.4 px for a working row), so it moved into the title
+  line, where the rows measure the same with and without it (phone 93.2, desktop 82.9).
+- **Start sheet.** A row of role chips under the assistant chips, "No role" first and chosen by
+  default. It scrolls sideways on a phone. The choice becomes the start route's `/as/{persona}`
+  and is remembered in this browser only. Resuming does not offer it in this version.
+- **Board.** A new-Session assignment shows the role chips beside the assistant chips. The item's
+  kind picks the default when exactly one persona suggests that kind (epic → architect, issue →
+  minimal-change); feature, which two suggest, starts with none. The button names the role, and
+  `persona` goes into the assign body only when one is chosen. The existing-Session picker and an
+  Epic's children list show the owner's bot when its session row has a persona.
+
+On Clawdline Cloud the same bundle reaches the machine through the encrypted relay
+(`internal/app/cloudops`, `web/console/src/cloud`):
+
+- **`personas`** is a read the machine answers as `GET /v1/personas`. It is in `Implemented()`, so
+  it appears in the machine descriptor's `machine.commands`, and in `carry.ts`. The copied client
+  refuses a read the descriptor does not list before anything is sealed
+  (`cloud_machine_unsupported`), which is what hides the chips in front of an older daemon.
+- **`start` and `resume`** take an optional `persona` and build the `/as/{persona}` route, naming
+  the assistant (`claude` when none was given). The relay writer parses `as` only as the
+  second-to-last segment, as `placeRoute` does. The copied client's `startPlace` and `resumePlace`
+  cannot carry a persona, so a route with one is sent with `_machineRequestAs` under the
+  request's Idempotency-Key; one without keeps the old path. When the descriptor says the machine
+  does not offer `personas`, a start with one is refused before it is sealed, because an older
+  daemon would refuse the extra key as malformed.
+- **Board assignment** crosses as the route body, verbatim, so its `persona` needs nothing of the
+  relay.
+
 ## Restore
 
 `restore_sessions` has a `persona` column (`TEXT NOT NULL DEFAULT ''`). A table from before the

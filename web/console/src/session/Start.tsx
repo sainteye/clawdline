@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { loadPersonas, personaById, personaName, personaTitle, personasNow, rememberPersona, rememberedPersona } from "../personas.js"
+import "./persona.css"
 
 /**
  * Starting a session, and picking one back up — `input/start.js`, function for
@@ -29,6 +31,12 @@ import { nextWord } from "../next-strings.js"
  *   the conversation id from the moment they appear, so the exact key would
  *   never match and every start would read as late. `byId` with the bare id is
  *   the original's own fallback for an unambiguous row.
+ * - **A role row** (docs/personas.md), which the original never had: the
+ *   machine's persona catalog as chips under the assistant chips, "No role"
+ *   first and chosen until the person picks another. The last choice is
+ *   remembered in this browser. The row is not drawn when the catalog is empty
+ *   — an older daemon, or a machine on Cloud that does not offer `personas` —
+ *   nor while resuming, which this sheet does without a persona.
  * - **Moving the highlight without opening** (a late arrival, or one after the
  *   person moved on) has no seam on this page, so that case leaves the list as
  *   it is.
@@ -58,6 +66,8 @@ let write = true // `S.write`
 let places: Place[] | null = null
 let assistants: L.StartAssistantRow[] = []
 let with_: string | null = null
+/** The persona chosen for the next start; "" for none. */
+let persona = ""
 let loading = false
 let pressing: string | null = null
 let find = ""
@@ -225,6 +235,62 @@ function drawWith(): void {
   })
 }
 
+/** The chosen persona, when the catalog still names it; "" for none. */
+function chosenPersona(): string {
+  return personaById(personasNow(), persona) ? persona : ""
+}
+
+/** The role chips; see the header. */
+function drawPersona(): void {
+  const row = el("start-persona")
+  const catalog = personasNow() ?? []
+  // Every draw rebuilds the chips; the sideways scroll is kept across it, so a
+  // press on a chip the person scrolled to does not throw the row back.
+  const scrolled = row.scrollLeft
+  row.hidden = !catalog.length || !!at || (resume && resumable())
+  row.innerHTML = ""
+  if (row.hidden) return
+  const label = document.createElement("span")
+  label.className = "with-label"
+  label.textContent = nextWord("personaPicker")
+  row.appendChild(label)
+  const chosen = chosenPersona()
+  const chip = (id: string, words: string, title: string) => {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "chip" + (id ? " persona-chip" : "") + (id === chosen ? " on" : "")
+    button.disabled = !!pressing || !!wait
+    button.setAttribute("aria-pressed", id === chosen ? "true" : "false")
+    if (title) button.title = title
+    button.onclick = () => {
+      persona = id
+      rememberPersona(id)
+      draw()
+    }
+    const name = document.createElement("span")
+    name.textContent = words
+    button.appendChild(name)
+    row.appendChild(button)
+    return button
+  }
+  chip("", nextWord("personaNone"), "")
+  catalog.forEach((p) => {
+    const button = chip(p.id, personaName(p), personaTitle(p))
+    const bot = document.createElement("canvas")
+    bot.className = "persona-tag-bot"
+    bot.setAttribute("aria-hidden", "true")
+    if (L.drawIcon(bot, p.icon, 2)) button.insertBefore(bot, button.firstChild)
+  })
+  const on = row.querySelector<HTMLElement>(".chip.on")
+  // A remembered choice past the edge is brought into view when the sheet opens.
+  row.scrollLeft = scrolled
+  if (!scrolled && on) {
+    const edge = row.getBoundingClientRect()
+    const chip = on.getBoundingClientRect()
+    if (chip.right > edge.right) row.scrollLeft = chip.left - edge.left - (edge.width - chip.width) / 2
+  }
+}
+
 /** `drawMachines`: this transport has no machine read, so the row is hidden. */
 function drawMachines(): void {
   const row = el("start-machine")
@@ -308,6 +374,7 @@ function draw(): void {
     say(T().webStartOff)
     box.hidden = true
     el("start-with").hidden = true
+    el("start-persona").hidden = true
     el("start-machine").hidden = true
     el("start-resume").hidden = true
     el("start-clawdfather-row").hidden = true
@@ -317,6 +384,7 @@ function draw(): void {
 
   drawMachines()
   drawWith()
+  drawPersona()
   drawResume()
   drawClawdfather()
 
@@ -525,7 +593,8 @@ function press(id: string): void {
   said("")
   draw()
   startPress.start()
-  asked(() => api.startPlace(id, with_))
+  const as = chosenPersona()
+  asked(() => api.startPlace(id, with_, undefined, as || undefined))
     .then((d) => {
       startPress.settle(() => {
         pressing = null
@@ -633,6 +702,8 @@ function open(): void {
   el("start").hidden = false
   said("")
   leave()
+  persona = rememberedPersona()
+  void loadPersonas().then(() => draw())
   if (write && !wait) load()
   draw()
   el("start-close").focus({ preventScroll: true })
@@ -796,6 +867,7 @@ export function StartSheet() {
           <p className="say" id="start-say" role="status" aria-live="polite"></p>
           <div className="row" id="start-machine" hidden></div>
           <div className="row" id="start-with" hidden></div>
+          <div className="row persona-row" id="start-persona" role="group" aria-label={nextWord("personaPicker")} hidden></div>
           <div className="row" id="start-resume" hidden></div>
           <div className="row" id="start-clawdfather-row" hidden>
             <button className="chip check" id="start-clawdfather" type="button" aria-pressed="false" disabled>

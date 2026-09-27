@@ -534,6 +534,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-usage",
 		method: "GET", path: "/v1/machine/usage",
 	}, {
+		// The built-in personas a start may name: machine-wide and
+		// parameterless, as the local route is.
+		word:    "personas",
+		body:    map[string]any{"type": "personas", "session": machine, "request": "req-personas"},
+		session: machine, name: "read:req-personas",
+		method: "GET", path: "/v1/personas",
+	}, {
 		word: "send",
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",
 			"text": "hello", "images": []any{}},
@@ -1436,7 +1443,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "capacity", "machine-usage",
+		"project-worktree-lifecycle-refresh", "capacity", "machine-usage", "personas",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.complete", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
@@ -2112,5 +2119,97 @@ func TestTheMachineUsageReadCrossesWithNothingButItsName(t *testing.T) {
 		"type": "machine-usage", "session": MachineReplySession, "request": "req"}))
 	if answer.Status != 501 || answer.Code != "machine_usage_unsupported" {
 		t.Fatalf("answered %d/%q, wanted 501/machine_usage_unsupported", answer.Status, answer.Code)
+	}
+}
+
+func TestThePersonasReadCrossesWithNothingButItsName(t *testing.T) {
+	r := &router{}
+	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": "personas", "session": MachineReplySession, "request": "req"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Method != "GET" || r.last().Path != "/v1/personas" || len(r.last().Query) != 0 {
+		t.Fatalf("answered %+v, asked %+v", answer, r.seen)
+	}
+	for _, body := range []map[string]any{
+		{"type": "personas", "session": MachineReplySession, "request": "req", "kind": "epic"},
+		{"type": "personas", "session": pane, "request": "req"},
+		{"type": "personas", "session": MachineReplySession},
+	} {
+		r := &router{}
+		if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); answer.Code != "malformed_read" || len(r.seen) != 0 {
+			t.Fatalf("took %v: %+v, asked %v", body, answer, r.seen)
+		}
+	}
+}
+
+// TestAStartOrAResumeMayNameAPersona: `persona` is an optional seventh key on
+// both words. With it the route ends `/as/<persona>` after a spelled-out
+// assistant, because the local route reads `as` only there; without it the
+// route is the one a page from before personas always reached.
+func TestAStartOrAResumeMayNameAPersona(t *testing.T) {
+	const place = "/Users/sean/code/clawdline-go"
+	const escaped = "%2FUsers%2Fsean%2Fcode%2Fclawdline-go"
+	for _, c := range []struct {
+		name string
+		body map[string]any
+		path string
+	}{
+		{"start with none", map[string]any{"type": "start", "session": MachineReplySession, "request": "req",
+			"place": place, "assistant": "", "model": ""}, "/v1/places/" + escaped + "/start"},
+		{"start with a model", map[string]any{"type": "start", "session": MachineReplySession, "request": "req",
+			"place": place, "assistant": "claude", "model": "opus", "persona": "architect"},
+			"/v1/places/" + escaped + "/start/claude/opus/as/architect"},
+		{"start with the default assistant", map[string]any{"type": "start", "session": MachineReplySession, "request": "req",
+			"place": place, "assistant": "", "model": "", "persona": "code-reviewer"},
+			"/v1/places/" + escaped + "/start/claude/as/code-reviewer"},
+		{"start in codex", map[string]any{"type": "start", "session": MachineReplySession, "request": "req",
+			"place": place, "assistant": "codex", "model": "", "persona": "security"},
+			"/v1/places/" + escaped + "/start/codex/as/security"},
+		{"resume with none", map[string]any{"type": "resume", "session": MachineReplySession, "request": "req",
+			"place": place, "past": "018f2f7a", "assistant": ""}, "/v1/places/" + escaped + "/resume/018f2f7a"},
+		{"resume with an assistant", map[string]any{"type": "resume", "session": MachineReplySession, "request": "req",
+			"place": place, "past": "018f2f7a", "assistant": "codex", "persona": "backend"},
+			"/v1/places/" + escaped + "/resume/codex/018f2f7a/as/backend"},
+		{"resume with the default assistant", map[string]any{"type": "resume", "session": MachineReplySession, "request": "req",
+			"place": place, "past": "018f2f7a", "assistant": "", "persona": "frontend"},
+			"/v1/places/" + escaped + "/resume/claude/018f2f7a/as/frontend"},
+		// Whether the catalog has the name is the route's answer, not this
+		// bridge's: it travels escaped, and the route says unknown_persona.
+		{"a name the catalog may not have", map[string]any{"type": "start", "session": MachineReplySession, "request": "req",
+			"place": place, "assistant": "claude", "model": "", "persona": "a/b"},
+			"/v1/places/" + escaped + "/start/claude/as/a%2Fb"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := &router{}
+			answer := open(r).Handle(context.Background(), request(t, ClassCtl, c.body))
+			if answer.Status != 200 || len(r.seen) != 1 {
+				t.Fatalf("answered %+v, asked %+v", answer, r.seen)
+			}
+			got := r.last()
+			if got.Method != "POST" || got.Path != c.path || got.Header["Idempotency-Key"] != "req" {
+				t.Fatalf("routed %s %s key %q, wanted POST %s key req", got.Method, got.Path, got.Header["Idempotency-Key"], c.path)
+			}
+		})
+	}
+	for _, persona := range []any{"", 7, nil, "a\nb", strings.Repeat("x", 257)} {
+		for _, word := range []string{"start", "resume"} {
+			body := map[string]any{"type": word, "session": MachineReplySession, "request": "req",
+				"place": place, "assistant": "claude", "persona": persona}
+			if word == "start" {
+				body["model"] = ""
+			} else {
+				body["past"] = "018f2f7a"
+			}
+			r := &router{}
+			if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); answer.Status == 200 || len(r.seen) != 0 {
+				t.Fatalf("%s with persona %q was taken: %+v, asked %v", word, persona, answer, r.seen)
+			}
+		}
+	}
+	refused := &router{status: 400, body: `{"error":{"code":"unknown_persona","message":"No persona named that."}}`}
+	answer := open(refused).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "start", "session": MachineReplySession, "request": "req",
+		"place": place, "assistant": "claude", "model": "", "persona": "nobody"}))
+	if answer.Status != 400 || answer.Code != "unknown_persona" {
+		t.Fatalf("answered %d/%q, wanted 400/unknown_persona", answer.Status, answer.Code)
 	}
 }

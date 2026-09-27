@@ -1,0 +1,108 @@
+/*
+ * Persona bots and role pickers (docs/personas.md), wherever they are drawn
+ * outside the session row: the start sheet, the Board's new-Session chips, a
+ * session choice on the Board and an Epic child's owner.
+ *
+ * A bot is a crisp pixel image at a whole number of pixels per cell; it never
+ * scales with the text around it.
+ */
+.persona-tag-bot {
+  display: inline-block;
+  flex: none;
+  image-rendering: pixelated;
+  vertical-align: middle;
+}
+
+.persona-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin-left: 6px;
+  color: var(--faint);
+  font: 10.5px/1.2 var(--mono);
+  vertical-align: middle;
+}
+
+.persona-tag-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A session choice names the session in bold on its own line; the tag rides
+ * after it on that line rather than below. */
+.work-session-trigger b:has(+ .persona-tag),
+.work-session-option b:has(+ .persona-tag) {
+  display: inline-block;
+  max-width: calc(100% - 7.5em);
+  vertical-align: middle;
+}
+
+.work-owner-persona {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The role chips. One line that scrolls sideways on a narrow screen, so nine
+ * choices never push the button that uses them off the card. */
+.persona-row,
+.work-new-persona {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.persona-row::-webkit-scrollbar,
+.work-new-persona::-webkit-scrollbar {
+  display: none;
+}
+
+.work-new-persona {
+  flex: 1 1 100%;
+  align-self: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  gap: 4px;
+}
+
+.work-new-persona .chip,
+.persona-row .chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.work-new-persona .chip {
+  padding: 2px 9px;
+  border-color: var(--line);
+}
+
+.persona-chip:not(.on) .persona-tag-bot {
+  opacity: 0.7;
+}
+
+/* `.sheet .row` wraps; this one scrolls sideways instead. */
+.sheet #start-persona {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  margin: 2px 0 8px 0;
+}
+
+.sheet #start-persona .with-label {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--dim);
+  margin-right: 2px;
+}

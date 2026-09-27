@@ -6,6 +6,8 @@ import { requestConfirm } from "../overlays/events.js"
 import { ACTION_WIDTH, revealFor, swipes, type Reveal } from "./swipe.js"
 import { conversationNotStarted } from "./readiness.js"
 import { retainedStateWords } from "../session-reading.js"
+import { personaById, personaName, personaTitle } from "../personas.js"
+import { PersonaBot, usePersonas } from "./PersonaBot.js"
 import "./list-density.css"
 
 export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: number; id?: string }) {
@@ -288,6 +290,10 @@ export function Row({
     onOpen(row.id)
   }
   const mark = <Mark icon={row.icon} cellPx={4} />
+  // The role this session was launched as (docs/personas.md), when the
+  // machine's catalog names it: its bot and short name after the assistant's.
+  // An id the catalog does not have draws nothing.
+  const persona = personaById(usePersonas(), row.persona)
   return (
     <li
       ref={ref}
@@ -334,6 +340,12 @@ export function Row({
       <div className="title" style={{ color: L.accentTint(row.icon?.accent) }}>
         <span className="label">{row.label || row.tty || row.id}</span>
         <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} />
+        {persona ? (
+          <span className="persona-name" title={personaTitle(persona)} aria-label={personaTitle(persona)}>
+            <PersonaBot persona={persona} cellPx={2} className="persona-name-bot" />
+            <span className="persona-name-words">{personaName(persona)}</span>
+          </span>
+        ) : null}
       </div>
       <div className="meta">
         <span className="path">{L.path(row.cwd)}</span>
