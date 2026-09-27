@@ -620,7 +620,7 @@ func TestUnansweredDefaultsStand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tracked, err := w.Create(ctx, NewWork{Title: "on the board", Project: "/p", Place: work.PlaceBoard, Actor: "user"}, nil)
+	tracked, err := w.Create(ctx, NewWork{Title: "on the board", Project: "/p", Place: work.PlaceBoard, Owner: theRoot, Actor: "user"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -692,7 +692,7 @@ func TestUnansweredDefaultsStand(t *testing.T) {
 func TestAnOpenDecisionHoldsTheQuietClock(t *testing.T) {
 	p, w, st, clock := newParticipation(t)
 	ctx := context.Background()
-	item, err := w.Create(ctx, NewWork{Title: "waits on you", Project: "/p", Place: work.PlaceBoard, Actor: "user"}, nil)
+	item, err := w.Create(ctx, NewWork{Title: "waits on you", Project: "/p", Place: work.PlaceBoard, Owner: theRoot, Actor: "user"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -808,13 +808,18 @@ func TestTheWeeklyDigestAsksAboutAStaleBacklogOnce(t *testing.T) {
 // Blocking decisions are pushed at most thirty an hour; past it one is
 // recorded over_budget and waits on the board.
 func TestBlockingPushesHaveABudget(t *testing.T) {
-	p, _, _, _ := newParticipation(t)
+	p, board, _, _ := newParticipation(t)
 	ctx := context.Background()
 	bell := &pushes{sent: 1}
 	p.Push = bell.push
+	item, err := board.Create(ctx, NewWork{Title: "needs a decision", Project: "/p", Place: work.PlaceBoard,
+		Owner: theRoot, Actor: "user"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var last work.Decision
 	for i := 0; i <= decisionPushHourLimit; i++ {
-		d, err := p.OpenDecision(ctx, DecisionRequest{Session: theRoot, Question: "q", Blocking: true,
+		d, err := p.OpenDecision(ctx, DecisionRequest{Session: theRoot, WorkID: item.Item.ID, Question: "q", Blocking: true,
 			Options: []work.Option{{ID: "a", Label: "a"}, {ID: "b", Label: "b"}}, Default: "a"}, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -829,9 +834,60 @@ func TestBlockingPushesHaveABudget(t *testing.T) {
 	}
 	// A decision without a safe default is refused: nobody answering is the
 	// ordinary case.
-	if _, err := p.OpenDecision(ctx, DecisionRequest{Session: theRoot, Question: "q",
+	if _, err := p.OpenDecision(ctx, DecisionRequest{Session: theRoot, WorkID: item.Item.ID, Question: "q",
 		Options: []work.Option{{ID: "a", Label: "a"}, {ID: "b", Label: "b"}}}, nil); codeOf(err) != "decision_default_required" {
 		t.Fatalf("no default: %v", err)
+	}
+}
+
+func TestADecisionRequiresTheOwningSessionsBoardItem(t *testing.T) {
+	p, _, st, _ := newParticipation(t)
+	ctx := context.Background()
+	request := DecisionRequest{Session: theRoot, Question: "Which way?", Default: "a",
+		Options: []work.Option{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}}
+	if _, err := p.OpenDecision(ctx, request, nil); codeOf(err) != "decision_source_required" {
+		t.Fatalf("no source: %v", err)
+	}
+
+	v2 := NewWorkSystemV2(st)
+	created, err := v2.Create(ctx, NewWorkV2{ProjectID: "project-p", ProjectPath: "/p", Kind: work.KindIssue,
+		Title: "A contextual decision", Description: "The item explains why the question exists.", Actor: "user"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.WorkID = created.Item.ID
+	if _, err := p.OpenDecision(ctx, request, nil); codeOf(err) != "decision_source_invalid" {
+		t.Fatalf("unassigned source: %v", err)
+	}
+	assigned, err := v2.Assign(ctx, created.Item.ID, AssignWorkV2{ExpectedVersion: created.Item.Version,
+		Mode: "existing_session", SessionID: theRoot, Actor: "user"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Project = "/untrusted"
+	d, err := p.OpenDecision(ctx, request, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.WorkID != assigned.Item.ID || d.Project != "/p" {
+		t.Fatalf("decision source = %+v", d)
+	}
+	request.Session = "another-session"
+	if _, err := p.OpenDecision(ctx, request, nil); codeOf(err) != "decision_source_invalid" {
+		t.Fatalf("another Session's source: %v", err)
+	}
+	request.Session = theRoot
+	request.WorkID = newWorkID()
+	if _, err := p.OpenDecision(ctx, request, nil); codeOf(err) != "decision_source_not_found" {
+		t.Fatalf("unknown source: %v", err)
+	}
+	closed, err := v2.Complete(ctx, assigned.Item.ID, assigned.Item.Version, "user", "No more decisions", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.WorkID = closed.Item.ID
+	if _, err := p.OpenDecision(ctx, request, nil); codeOf(err) != "decision_source_closed" {
+		t.Fatalf("closed source: %v", err)
 	}
 }
 
@@ -859,7 +915,7 @@ func digestBody(t *testing.T, st *store.Store, key string) DigestBody {
 // decisions.open a new decision is refused and none open is let go. The
 // control is the same request once a slot is free.
 func TestWhatWaitsForAPersonIsBounded(t *testing.T) {
-	p, _, st, clock := newParticipation(t)
+	p, board, st, clock := newParticipation(t)
 	ctx := context.Background()
 	p.ProposalLimit, p.DecisionLimit = 1, 1
 	lines := []string{newWorkID(), newWorkID()}
@@ -882,7 +938,12 @@ func TestWhatWaitsForAPersonIsBounded(t *testing.T) {
 	if _, err := propose(p, lines[1], ""); err != nil {
 		t.Fatalf("control, a slot free: %v", err)
 	}
-	ask := DecisionRequest{Session: theRoot, Question: "q", Default: "a",
+	item, err := board.Create(ctx, NewWork{Title: "bounded decision", Project: "/p", Place: work.PlaceBoard,
+		Owner: theRoot, Actor: "user"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ask := DecisionRequest{Session: theRoot, WorkID: item.Item.ID, Question: "q", Default: "a",
 		Options: []work.Option{{ID: "a", Label: "a"}, {ID: "b", Label: "b"}}}
 	d, err := p.OpenDecision(ctx, ask, nil)
 	if err != nil {

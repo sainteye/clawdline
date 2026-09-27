@@ -666,6 +666,10 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
   （`proposal_source_required`、`proposal_source_invalid`）。從使用者要求而來的提案，要引用它來自
   的那筆待辦——所以路徑是：使用者提出要求、你用 `clawdline todo add` 記下來（見下文）、再以那筆待辦
   的 id 提案。
+- 提案要用一般人能直接理解的白話（plain language）：`title` 說可感受到的結果，`description` 說會改什麼，`reason`
+  說為什麼現在值得做，`suggested_acceptance` 說完成後可以觀察到什麼。四欄都必填；不要拿未解釋的
+  縮寫、內部識別碼、程式路徑或實作術語當成主要說明。看板會先顯示標題、來源與原因；使用者按
+  **Explain／詳細說明**後才展開「會改什麼」與「完成後會看到什麼」。
 - **要提一個帶 TODO 清單的項目**，就在 `description` 裡寫兩列以上的頂層 Markdown 清單。使用者接受並
   指派這個項目時，每一列都會變成它的一個 `steps`（見下文）。
 - `201` 會回傳這筆待決提案。使用者在看板的 Agent 提案佇列裡接受、編輯或拒絕；在那之前它不會變成
@@ -680,12 +684,15 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
 
 ```
 POST /v1/orchestrator/decisions     (Idempotency-Key required)
-{"session_id": "…", "project": "<project>", "question": "…", "options": [{"id": "a", "label": "…"}, …],
+{"session_id": "…", "work_id": "<這個問題所屬的看板項目>", "question": "…", "options": [{"id": "a", "label": "…"}, …],
  "default": "a", "blocking": true, "due_in_minutes": 1440}
 ```
 
-二到四個選項；`default` 必須是其中之一，也就是沒人回答時會採用的選項（7 天後，除非 `due_in_minutes`
-指定 60–10080）。只有 `blocking` 的 decision 會推播。用 `GET /v1/orchestrator/decisions/<id>` 讀答案。
+項目必須仍開啟，而且由這個 Session 負責；看板會把問題放在那張項目卡裡，讓人看得到脈絡
+（`decision_source_required`、`decision_source_not_found`、`decision_source_invalid`、
+`decision_source_closed`）。二到四個選項；`default` 必須是其中之一，也就是沒人回答時會採用的選項
+（7 天後，除非 `due_in_minutes` 指定 60–10080）。只有 `blocking` 的 decision 會推播。用
+`GET /v1/orchestrator/decisions/<id>` 讀答案。
 
 **回答的是使用者；Session 只能代轉他說的話。** proposal、decision 和看板項目都在 `/v1/work/…`
 底下回答。Session 要寫進去，必須指名帶著使用者那句話的 run：`"via": {"run": "<id>"}`，沒帶就被

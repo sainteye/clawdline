@@ -738,6 +738,12 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
   Session's own to-dos (`proposal_source_required`, `proposal_source_invalid`). A proposal that
   came from something the person asked for cites the to-do it came from — so the path is: the
   person asks, you `clawdline todo add` it (below), and you propose from that to-do's id.
+- Write the proposal in plain language a person can understand directly: `title` names the outcome
+  they can notice, `description` says what changes, `reason` says why it is worth doing now, and
+  `suggested_acceptance` says what they can observe when it is done. All four are required. Do not
+  make unexplained acronyms, internal identifiers, code paths, or implementation jargon the main
+  explanation. The Board first shows title, source, and reason; **Explain / 詳細說明** expands what
+  changes and what the person will see when it is done.
 - **To propose an item with a TODO list**, write the list as two or more top-level Markdown list
   rows in `description`. When the person accepts and assigns the item, each row becomes one of its
   `steps` (see below).
@@ -755,13 +761,15 @@ is not how to put an item in front of the person on the Board.
 
 ```
 POST /v1/orchestrator/decisions     (Idempotency-Key required)
-{"session_id": "…", "project": "<project>", "question": "…", "options": [{"id": "a", "label": "…"}, …],
+{"session_id": "…", "work_id": "<the Board item this is about>", "question": "…", "options": [{"id": "a", "label": "…"}, …],
  "default": "a", "blocking": true, "due_in_minutes": 1440}
 ```
 
-Two to four options; `default` must be one of them and is what happens when nobody answers (after
-7 days unless `due_in_minutes` says 60–10080). Only a `blocking` decision is pushed. Read the answer
-with `GET /v1/orchestrator/decisions/<id>`.
+The item must be open and owned by this Session: its card is the context in which the Board shows
+the question (`decision_source_required`, `decision_source_not_found`, `decision_source_invalid`,
+`decision_source_closed`). Two to four options; `default` must be one of them and is what happens
+when nobody answers (after 7 days unless `due_in_minutes` says 60–10080). Only a `blocking`
+decision is pushed. Read the answer with `GET /v1/orchestrator/decisions/<id>`.
 
 **The person answers; a session only relays what they said.** Proposals, decisions and board items
 are answered under `/v1/work/…`. A session writing there must name the run that carried the

@@ -874,7 +874,10 @@ func (p *Participation) OpenDecision(ctx context.Context, req DecisionRequest, f
 	switch {
 	case checkSession(req.Session) != nil:
 		return work.Decision{}, checkSession(req.Session)
-	case req.WorkID != "" && !orchestrator.IsTaskID(req.WorkID):
+	case req.WorkID == "":
+		return work.Decision{}, workRefusal(422, "decision_source_required",
+			"A decision belongs to the Board item that gives the question its context; work_id is required.")
+	case !orchestrator.IsTaskID(req.WorkID):
 		return work.Decision{}, workRefusal(400, "invalid_work_id", "work_id is a lowercase UUID.")
 	case req.TaskID != "" && !orchestrator.IsTaskID(req.TaskID):
 		return work.Decision{}, workRefusal(400, "invalid_task_id", "task_id is a broker task id.")
@@ -882,13 +885,18 @@ func (p *Participation) OpenDecision(ctx context.Context, req DecisionRequest, f
 		return work.Decision{}, workRefusal(400, "invalid_project", "project is at most "+strconv.Itoa(workProjectLimit)+" characters.")
 	}
 	now := p.now()
-	d, err := work.NewDecision(work.Decision{ID: newWorkID(), Session: req.Session, WorkID: req.WorkID,
-		TaskID: req.TaskID, Project: strings.TrimSpace(req.Project), Question: req.Question, Options: req.Options,
-		Default: req.Default, Blocking: req.Blocking}, req.Due, p.Decisions, now)
-	if err != nil {
-		return work.Decision{}, participationRefusal(err)
-	}
-	err = p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+	var d work.Decision
+	err := p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		project, err := decisionSource(tx, req.WorkID, req.Session)
+		if err != nil {
+			return err
+		}
+		d, err = work.NewDecision(work.Decision{ID: newWorkID(), Session: req.Session, WorkID: req.WorkID,
+			TaskID: req.TaskID, Project: project, Question: req.Question, Options: req.Options,
+			Default: req.Default, Blocking: req.Blocking}, req.Due, p.Decisions, now)
+		if err != nil {
+			return err
+		}
 		if err := tx.PutDecision(d, nil, limitOr(p.DecisionLimit, store.DecisionOpenLimit)); err != nil {
 			return err
 		}
@@ -906,6 +914,37 @@ func (p *Participation) OpenDecision(ctx context.Context, req DecisionRequest, f
 		p.PushDecision(context.WithoutCancel(ctx), d.ID)
 	}
 	return d, nil
+}
+
+// decisionSource accepts the current v2 Board and the read-only v1 residue
+// during cutover. In both, the asking Session must own one open item. Project
+// is derived from that item, never trusted from the request.
+func decisionSource(tx *store.WorkTx, id, session string) (string, error) {
+	item, err := tx.WorkV2Item(id)
+	switch {
+	case err == nil:
+		if item.Phase.Terminal() {
+			return "", workRefusal(409, "decision_source_closed", "A closed Board item cannot receive a new decision.")
+		}
+		if item.OwnerSession != session {
+			return "", workRefusal(409, "decision_source_invalid", "The decision's Board item is not owned by this Session.")
+		}
+		return item.ProjectPath, nil
+	case !errors.Is(err, store.ErrNoWorkV2):
+		return "", err
+	}
+	legacy, err := tx.Item(id)
+	if errors.Is(err, store.ErrNoWork) {
+		return "", workRefusal(404, "decision_source_not_found", "No Board item has that work_id.")
+	}
+	if err != nil {
+		return "", err
+	}
+	if legacy.Place != work.PlaceBoard || legacy.Owner != session ||
+		!(legacy.State == work.ItemActive || legacy.State == work.ItemAwaitingClosure) {
+		return "", workRefusal(409, "decision_source_invalid", "The decision's Board item is not open and owned by this Session.")
+	}
+	return legacy.Project, nil
 }
 
 // pushText is a blocking decision's notification, its title and its body,
