@@ -472,6 +472,7 @@ func claudeEntries(line []byte, sidechains bool) []Entry {
 		if op != "enqueue" || !ok {
 			return nil
 		}
+		raw = unpasted(raw)
 		if e, ok := sessionMessage(raw, at); ok {
 			return []Entry{e}
 		}
@@ -508,6 +509,7 @@ func claudeEntries(line []byte, sidechains bool) []Entry {
 	if typ == "user" && len(blocks) == 1 {
 		if kind, _ := blocks[0].str("type"); kind == "text" {
 			if raw, ok := blocks[0].str("text"); ok {
+				raw = unpasted(raw)
 				if e, ok := sessionMessage(raw, at); ok {
 					return []Entry{e}
 				}
@@ -893,7 +895,31 @@ func withoutMachineBlocks(text string) string {
 // tag in general.
 var pasteMark = regexp.MustCompile(`</?pasted_content(?:\s[^>]*)?>`)
 
-// withoutPasteMarks takes off those marks and keeps what is inside them.
+// pasteWhole is a turn that is one paste of one line and nothing else, with
+// the closing mark repeating the opening one's attributes.
+var pasteWhole = regexp.MustCompile(`^<pasted_content((?:\s[^>]*)?)>\n?([^\n]*)\n?</pasted_content((?:\s[^>]*)?)>$`)
+
+// unpasted is an envelope as Clawdline typed it. The envelope is typed as a
+// bracketed paste, and Claude Code's record — first seen on 2026-09-20, with
+// 2.1.278, and nearly every envelope since — keeps the paste's marks around
+// it, with blank lines before:
+// `\n\n<pasted_content id="3684">\n<clawdline-notice>{…}</clawdline-notice>\n</pasted_content id="3684">\n`.
+// An envelope must be the whole turn, so every one of them failed that test
+// and the conversation showed the raw JSON as the person's words. Only a turn
+// that is exactly one such paste is unwrapped; anything else is returned as
+// it was, for the envelope's own test to refuse.
+func unpasted(raw string) string {
+	if !strings.Contains(raw, "pasted_content") {
+		return raw
+	}
+	m := pasteWhole.FindStringSubmatch(strings.TrimSpace(raw))
+	if m == nil || m[1] != m[3] {
+		return raw
+	}
+	return m[2]
+}
+
+// withoutPasteMarks takes off the paste marks and keeps what is inside them.
 //
 // **Unlike everything in `machineTags`, the content here is the person's.**
 // Clawdline types a relayed message into the session as a bracketed paste
